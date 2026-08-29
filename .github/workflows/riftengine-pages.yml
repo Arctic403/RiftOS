@@ -59,21 +59,42 @@ jobs:
           test -s riftengine/engine/webcore.js
           ls -lh riftengine/dist/
 
-      - name: Assemble Pages site
+      - name: Assemble lean Pages site
         run: |
           set -euxo pipefail
-          mkdir -p _site
-          rsync -a ./ _site/ \
-            --exclude '.git/' \
-            --exclude '.github/' \
-            --exclude '.riftengine-work/' \
-            --exclude '_site/' \
-            --exclude 'riftengine/src/' \
-            --exclude 'riftengine/tools/' \
-            --exclude 'riftengine/config/' \
-            --exclude 'riftengine/cmake/' \
-            --exclude 'riftengine/logs/' \
-            --exclude '*.log'
+          rm -rf _site
+          mkdir -p _site/src _site/riftengine/engine _site/riftengine/dist _site/riftengine/jsc-dist
+
+          # RiftOS shell.
+          cp index.html styles.css sw.js manifest.webmanifest _site/
+          cp -a src/. _site/src/
+
+          # Browser-facing RiftEngine JavaScript only.
+          cp -a riftengine/engine/. _site/riftengine/engine/
+
+          # Small prototype harness built in this workflow.
+          cp riftengine/dist/riftengine-core.js _site/riftengine/dist/
+          cp riftengine/dist/riftengine-core.wasm _site/riftengine/dist/
+
+          # Preserved JSC runtime used by the browser worker. Do not publish
+          # the source tree, Emscripten SDK/cache, WebKit build trees, or
+          # prebuilt duplication.
+          if [ -s riftengine/jsc-dist/jsc.js ] && [ -s riftengine/jsc-dist/jsc.wasm ]; then
+            cp riftengine/jsc-dist/jsc.js _site/riftengine/jsc-dist/
+            cp riftengine/jsc-dist/jsc.wasm _site/riftengine/jsc-dist/
+          fi
+
+          echo 'Pages payload:'
+          du -sh _site
+          find _site -type f -printf '%s %p\n' | sort -nr | head -20
+
+          # Guard against accidentally publishing build caches again.
+          payload_bytes=$(du -sb _site | cut -f1)
+          max_bytes=$((120 * 1024 * 1024))
+          if [ "$payload_bytes" -gt "$max_bytes" ]; then
+            echo "Pages payload is unexpectedly large: $payload_bytes bytes" >&2
+            exit 1
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
