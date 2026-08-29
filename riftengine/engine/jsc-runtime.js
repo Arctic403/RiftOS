@@ -1,4 +1,4 @@
-const DEFAULT_TIMEOUT = 15000;
+const DEFAULT_TIMEOUT = 120000;
 
 export class RiftJSCRuntime {
   constructor(options = {}) {
@@ -12,6 +12,7 @@ export class RiftJSCRuntime {
     const timeout = options.timeout || this.timeout;
     const stdout = [];
     const stderr = [];
+    const lifecycle = [];
     const started = performance.now();
     const worker = new Worker(this.workerURL);
 
@@ -27,9 +28,12 @@ export class RiftJSCRuntime {
         if (settled) return;
         settled = true;
         cleanup();
-        const error = new Error(message || 'RiftJSC execution failed.');
+        const lastStage = lifecycle.at(-1);
+        const detail = lastStage ? `${message || 'RiftJSC execution failed.'} Last stage: ${lastStage}.` : (message || 'RiftJSC execution failed.');
+        const error = new Error(detail);
         error.stdout = stdout;
         error.stderr = stderr;
+        error.lifecycle = lifecycle;
         reject(error);
       };
 
@@ -40,6 +44,7 @@ export class RiftJSCRuntime {
         resolve({
           stdout,
           stderr,
+          lifecycle,
           durationMs: performance.now() - started,
           engine: 'JavaScriptCore',
           runtime: 'RiftEngine JSC wasm v1'
@@ -56,6 +61,7 @@ export class RiftJSCRuntime {
 
         if (message.type === 'stdout') stdout.push(String(message.text ?? ''));
         else if (message.type === 'stderr') stderr.push(String(message.text ?? ''));
+        else if (message.type === 'status') lifecycle.push(String(message.stage ?? 'unknown'));
         else if (message.type === 'done') succeed();
         else if (message.type === 'error') fail(message.error);
       };
