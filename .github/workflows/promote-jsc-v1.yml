@@ -20,6 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Download successful engine artifact
         env:
@@ -55,4 +56,6 @@ jobs:
             exit 0
           fi
           git commit -m 'Preserve successful RiftEngine JSC wasm v1'
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
