@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v3-apphost";
+const CACHE="riftos-shell-v4-riftbrowser";
 const CORE=["./","./index.html","./styles.css","./src/riftos.js","./manifest.webmanifest"];
 
 self.addEventListener("install",e=>e.waitUntil(

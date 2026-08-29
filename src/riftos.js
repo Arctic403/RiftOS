@@ -1,7 +1,7 @@
 const APPS = [
   {id:"files",name:"Files",icon:"▣",desc:"Persistent RiftFS"},
   {id:"terminal",name:"RiftShell",icon:">_",desc:"System command shell"},
-  {id:"browser",name:"Browser",icon:"◎",desc:"Web view prototype"},
+  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"Web transport v0.2"},
   {id:"editor",name:"Editor",icon:"{}",desc:"Pocket code editor"},
   {id:"tasks",name:"Tasks",icon:"≡",desc:"Runtime processes"},
   {id:"settings",name:"Settings",icon:"⚙",desc:"System controls"}
@@ -84,11 +84,222 @@ async function openEditor(path="/home/scratch.txt"){
 }
 
 function openBrowser(){
-  const body=openWindow("browser","Browser","EXPERIMENTAL");
-  body.innerHTML=`<div class="browser"><div><form class="browser-bar"><input aria-label="URL" value="https://example.com"><button>Go</button></form><p class="browser-note">Prototype: sites may block embedding. The later Rift network/browser layer will replace this limitation.</p></div><iframe class="webview" sandbox="allow-forms allow-scripts allow-same-origin allow-popups"></iframe></div>`;
-  const form=body.querySelector("form"), input=form.querySelector("input"), frame=body.querySelector("iframe");
-  const go=()=>{let u=input.value.trim();if(!/^https?:\/\//i.test(u))u="https://"+u;frame.src=u};
-  form.onsubmit=e=>{e.preventDefault();go()};go();
+  const body=openWindow("browser","RiftBrowser","WEB / V0.2");
+  body.innerHTML=`
+    <div class="browser rift-browser">
+      <div class="browser-chrome">
+        <form class="browser-bar" id="browserForm">
+          <button type="button" class="browser-icon" id="browserBack" aria-label="Back">‹</button>
+          <button type="button" class="browser-icon" id="browserHome" aria-label="Home">⌂</button>
+          <input id="browserAddress" aria-label="Search or enter address" placeholder="Search Google or enter a URL" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button type="submit">Go</button>
+        </form>
+        <div class="browser-status">
+          <span id="browserState">Ready</span>
+          <button class="browser-link" id="browserExternal" type="button">Open in Safari ↗</button>
+        </div>
+      </div>
+      <div class="browser-surface" id="browserSurface"></div>
+    </div>`;
+
+  const form=body.querySelector("#browserForm");
+  const input=body.querySelector("#browserAddress");
+  const surface=body.querySelector("#browserSurface");
+  const state=body.querySelector("#browserState");
+  const external=body.querySelector("#browserExternal");
+  const back=body.querySelector("#browserBack");
+  const home=body.querySelector("#browserHome");
+
+  const history=[];
+  let historyIndex=-1;
+  let currentUrl="";
+
+  const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+  const isProbablyUrl=value=>/^(https?:\/\/|localhost(?::\d+)?(?:\/|$)|(?:[\w-]+\.)+[a-z]{2,}(?:[/:?#]|$))/i.test(value.trim());
+
+  function resolveInput(value){
+    const v=value.trim();
+    if(!v) return {type:"home"};
+    if(isProbablyUrl(v)){
+      let url=v;
+      if(!/^https?:\/\//i.test(url)) url="https://"+url;
+      return {type:"url",url};
+    }
+    return {type:"search",url:"https://www.google.com/search?q="+encodeURIComponent(v),query:v};
+  }
+
+  function setState(text,busy=false){
+    state.textContent=text;
+    state.classList.toggle("busy",busy);
+  }
+
+  function renderHome(){
+    currentUrl="";
+    input.value="";
+    setState("RiftBrowser ready");
+    surface.innerHTML=`
+      <section class="browser-start">
+        <div class="browser-logo">R</div>
+        <h2>RiftBrowser</h2>
+        <p>Search the web or enter an address above.</p>
+        <div class="browser-quick">
+          <button data-query="GitHub">GitHub</button>
+          <button data-query="RiftCity">RiftCity</button>
+          <button data-query="OpenAI">OpenAI</button>
+        </div>
+        <div class="browser-capability">
+          <strong>v0.2 web transport</strong>
+          <span>RiftOS can directly render CORS-enabled pages. Sites that block browser-to-browser fetching or embedding can be handed to Safari until the Rift remote transport is connected.</span>
+        </div>
+      </section>`;
+    surface.querySelectorAll("[data-query]").forEach(btn=>{
+      btn.onclick=()=>{input.value=btn.dataset.query; navigate(input.value)};
+    });
+  }
+
+  function renderBlocked(url,reason){
+    currentUrl=url;
+    setState("Site requires external/remote transport");
+    surface.innerHTML=`
+      <section class="browser-blocked">
+        <div class="browser-warning">↗</div>
+        <h2>This site won't render directly inside RiftOS yet.</h2>
+        <p>${esc(reason||"The destination blocks cross-origin fetching or embedding.")}</p>
+        <code>${esc(url)}</code>
+        <div class="browser-block-actions">
+          <button class="action" id="blockedExternal">Open in Safari</button>
+          <button class="action secondary" id="blockedTryFrame">Try embedded view</button>
+        </div>
+        <small>This is a web-platform security boundary, not a RiftOS crash. The planned remote transport will sit behind RiftBrowser and remove the iframe dependency.</small>
+      </section>`;
+    surface.querySelector("#blockedExternal").onclick=()=>openExternal(url);
+    surface.querySelector("#blockedTryFrame").onclick=()=>renderFrame(url);
+  }
+
+  function renderFrame(url){
+    currentUrl=url;
+    setState("Embedded compatibility mode");
+    surface.innerHTML=`
+      <div class="browser-frame-wrap">
+        <div class="browser-frame-hint">If the page below stays blank, the site blocks iframe embedding. <button id="frameExternal">Open externally</button></div>
+        <iframe class="webview" referrerpolicy="no-referrer" sandbox="allow-forms allow-scripts allow-same-origin allow-popups" src="${esc(url)}"></iframe>
+      </div>`;
+    surface.querySelector("#frameExternal").onclick=()=>openExternal(url);
+  }
+
+  function sanitizeDocument(text,url){
+    const doc=new DOMParser().parseFromString(text,"text/html");
+    doc.querySelectorAll("script,object,embed,applet,meta[http-equiv='refresh']").forEach(n=>n.remove());
+    doc.querySelectorAll("iframe").forEach(n=>n.remove());
+    for(const el of doc.querySelectorAll("*")){
+      for(const attr of [...el.attributes]){
+        if(/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+      }
+    }
+    const base=doc.createElement("base");
+    base.href=url;
+    doc.head.prepend(base);
+    const style=doc.createElement("style");
+    style.textContent="html,body{max-width:100%;overflow-wrap:anywhere}img,video{max-width:100%;height:auto}";
+    doc.head.append(style);
+    return "<!doctype html>"+doc.documentElement.outerHTML;
+  }
+
+  async function renderDirect(url){
+    currentUrl=url;
+    input.value=url;
+    setState("Fetching directly…",true);
+    surface.innerHTML=`<div class="browser-loading"><i></i><span>Connecting to ${esc(new URL(url).hostname)}…</span></div>`;
+    try{
+      const controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),9000);
+      const res=await fetch(url,{method:"GET",mode:"cors",redirect:"follow",credentials:"omit",signal:controller.signal});
+      clearTimeout(timer);
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const type=(res.headers.get("content-type")||"").toLowerCase();
+      if(!type.includes("text/html") && !type.includes("text/plain") && !type.includes("application/xhtml+xml")){
+        throw new Error(`Unsupported direct content type: ${type||"unknown"}`);
+      }
+      const text=await res.text();
+      const srcdoc=sanitizeDocument(text,res.url||url);
+      surface.innerHTML=`<iframe class="webview direct-view" sandbox="allow-forms allow-popups" referrerpolicy="no-referrer"></iframe>`;
+      const frame=surface.querySelector("iframe");
+      frame.srcdoc=srcdoc;
+      setState(`Direct · ${new URL(res.url||url).hostname}`);
+      frame.addEventListener("load",()=>{
+        try{
+          const fdoc=frame.contentDocument;
+          if(!fdoc) return;
+          fdoc.addEventListener("click",ev=>{
+            const a=ev.target.closest?.("a[href]");
+            if(!a) return;
+            const href=a.href;
+            if(/^https?:/i.test(href)){
+              ev.preventDefault();
+              navigate(href);
+            }
+          });
+        }catch(_){}
+      },{once:true});
+      return true;
+    }catch(err){
+      const reason=err?.name==="AbortError" ? "The direct request timed out." :
+        "The site did not allow RiftOS to fetch its page directly (usually CORS), or returned content the lightweight renderer cannot safely display.";
+      renderBlocked(url,reason);
+      return false;
+    }
+  }
+
+  function openExternal(url=currentUrl){
+    if(!url) return;
+    const w=window.open(url,"_blank","noopener,noreferrer");
+    if(!w) location.href=url;
+  }
+
+  async function navigate(value,push=true){
+    const target=resolveInput(value);
+    if(target.type==="home"){renderHome();return}
+    currentUrl=target.url;
+    input.value=target.type==="search" ? target.query : target.url;
+    if(push){
+      history.splice(historyIndex+1);
+      history.push({value:input.value,url:target.url});
+      historyIndex=history.length-1;
+    }
+    back.disabled=historyIndex<=0;
+
+    if(target.type==="search"){
+      setState("Google search requires external/remote transport");
+      surface.innerHTML=`
+        <section class="browser-search-fallback">
+          <div class="browser-logo small">G</div>
+          <h2>Search Google</h2>
+          <p>Google blocks the iframe/direct-fetch tricks a static GitHub Pages app can use. RiftBrowser can hand this search to Safari now; the remote transport phase will bring it back inside RiftOS.</p>
+          <button class="action" id="searchExternal">Search “${esc(target.query)}” ↗</button>
+          <button class="action secondary" id="searchFrame">Try Google embedded anyway</button>
+        </section>`;
+      surface.querySelector("#searchExternal").onclick=()=>openExternal(target.url);
+      surface.querySelector("#searchFrame").onclick=()=>renderFrame(target.url);
+      return;
+    }
+
+    await renderDirect(target.url);
+  }
+
+  form.onsubmit=e=>{e.preventDefault();navigate(input.value)};
+  external.onclick=()=>currentUrl ? openExternal(currentUrl) : null;
+  home.onclick=renderHome;
+  back.onclick=()=>{
+    if(historyIndex<=0) return;
+    historyIndex--;
+    const item=history[historyIndex];
+    input.value=item.value;
+    back.disabled=historyIndex<=0;
+    if(isProbablyUrl(item.value)) renderDirect(item.url);
+    else navigate(item.value,false);
+  };
+
+  renderHome();
 }
 
 function openTasks(){
