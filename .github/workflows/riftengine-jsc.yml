@@ -55,6 +55,7 @@ jobs:
           test -s riftengine/jsc-dist/jsc.wasm
           node riftengine/jsc-dist/jsc.js -e 'print("RIFT_JSC_RELEASE=" + (20 + 22));' | tee /tmp/rift-jsc-smoke.txt
           grep -F 'RIFT_JSC_RELEASE=42' /tmp/rift-jsc-smoke.txt
+          grep -F 'Module["callMain"]' riftengine/jsc-dist/jsc.js
           ls -lh riftengine/jsc-dist/jsc.js riftengine/jsc-dist/jsc.wasm
 
       - name: Capture clean-port diff
@@ -86,6 +87,7 @@ jobs:
 
       - name: Publish immutable engine release
         if: success()
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: riftengine-jsc-${{ github.sha }}
