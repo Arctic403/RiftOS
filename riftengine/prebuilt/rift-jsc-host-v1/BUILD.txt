@@ -1,0 +1,6 @@
+RiftEngine persistent RiftJSC host v1
+Source run: 33270832073
+Source artifact: 9720424810
+Source commit: e805b92819948cb6102a38f2bab5aca02906dcb9
+Persistence: RIFT_HOST_PERSISTENCE=42
+Reset: RIFT_HOST_RESET=undefined
