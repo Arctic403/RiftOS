@@ -7,6 +7,8 @@ on:
     paths:
       - '.github/workflows/riftengine-jsc.yml'
       - 'riftengine/tools/build-jsc-wasm.sh'
+      - 'riftengine/tools/build-rift-jsc-host.sh'
+      - 'riftengine/host/**'
       - 'riftengine/tools/build-icu-wasm.sh'
       - 'riftengine/tools/prepare-webkit.sh'
       - 'riftengine/tools/port-jsc-emscripten.py'
@@ -57,6 +59,9 @@ jobs:
           grep -F 'RIFT_JSC_RELEASE=42' /tmp/rift-jsc-smoke.txt
           grep -F 'Module["callMain"]' riftengine/jsc-dist/jsc.js
           ls -lh riftengine/jsc-dist/jsc.js riftengine/jsc-dist/jsc.wasm
+
+      - name: Capture custom RiftEngine host link graph
+        run: bash riftengine/tools/build-rift-jsc-host.sh
 
       - name: Capture clean-port diff
         if: always()
