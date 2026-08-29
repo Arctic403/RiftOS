@@ -39,16 +39,29 @@ jobs:
       - name: Build RiftEngine port harness
         run: bash riftengine/tools/build-prototype.sh
 
-      - name: Stage preserved JSC wasm runtime
+      - name: Stage preserved JSC wasm runtimes
         run: |
           set -euxo pipefail
-          mkdir -p riftengine/jsc-dist
+          mkdir -p riftengine/jsc-dist riftengine/jsc-dist/custom
+
+          # Stock JSC shell remains a compatibility fallback while the
+          # persistent host is proven across iOS/Safari versions.
           if [ -s riftengine/prebuilt/jsc-v1/jsc.js ] && [ -s riftengine/prebuilt/jsc-v1/jsc.wasm ]; then
             cp riftengine/prebuilt/jsc-v1/jsc.js riftengine/jsc-dist/jsc.js
             cp riftengine/prebuilt/jsc-v1/jsc.wasm riftengine/jsc-dist/jsc.wasm
             ls -lh riftengine/jsc-dist/jsc.js riftengine/jsc-dist/jsc.wasm
           else
-            echo 'Prebuilt JSC v1 has not been promoted yet; deploying prototype without it.'
+            echo 'Prebuilt stock JSC v1 is unavailable; deploying without stock fallback.'
+          fi
+
+          # Preferred browser runtime: tiny RiftEngine-owned host linked to
+          # JavaScriptCore, with one long-lived JSGlobalContextRef.
+          if [ -s riftengine/prebuilt/rift-jsc-host-v1/rift-jsc.js ] && [ -s riftengine/prebuilt/rift-jsc-host-v1/rift-jsc.wasm ]; then
+            cp riftengine/prebuilt/rift-jsc-host-v1/rift-jsc.js riftengine/jsc-dist/custom/rift-jsc.js
+            cp riftengine/prebuilt/rift-jsc-host-v1/rift-jsc.wasm riftengine/jsc-dist/custom/rift-jsc.wasm
+            ls -lh riftengine/jsc-dist/custom/rift-jsc.js riftengine/jsc-dist/custom/rift-jsc.wasm
+          else
+            echo 'Persistent RiftJSC host has not been promoted yet; worker will use stock fallback.'
           fi
 
       - name: Verify prototype
@@ -63,7 +76,7 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf _site
-          mkdir -p _site/src _site/riftengine/engine _site/riftengine/dist _site/riftengine/jsc-dist
+          mkdir -p _site/src _site/riftengine/engine _site/riftengine/dist _site/riftengine/jsc-dist/custom
 
           # RiftOS shell.
           cp index.html styles.css sw.js manifest.webmanifest _site/
@@ -76,12 +89,15 @@ jobs:
           cp riftengine/dist/riftengine-core.js _site/riftengine/dist/
           cp riftengine/dist/riftengine-core.wasm _site/riftengine/dist/
 
-          # Preserved JSC runtime used by the browser worker. Do not publish
-          # the source tree, Emscripten SDK/cache, WebKit build trees, or
-          # prebuilt duplication.
+          # JSC runtimes only. Never publish WebKit trees, build caches,
+          # sysroots, Emscripten SDKs, diagnostics, or duplicate prebuilts.
           if [ -s riftengine/jsc-dist/jsc.js ] && [ -s riftengine/jsc-dist/jsc.wasm ]; then
             cp riftengine/jsc-dist/jsc.js _site/riftengine/jsc-dist/
             cp riftengine/jsc-dist/jsc.wasm _site/riftengine/jsc-dist/
+          fi
+          if [ -s riftengine/jsc-dist/custom/rift-jsc.js ] && [ -s riftengine/jsc-dist/custom/rift-jsc.wasm ]; then
+            cp riftengine/jsc-dist/custom/rift-jsc.js _site/riftengine/jsc-dist/custom/
+            cp riftengine/jsc-dist/custom/rift-jsc.wasm _site/riftengine/jsc-dist/custom/
           fi
 
           echo 'Pages payload:'
