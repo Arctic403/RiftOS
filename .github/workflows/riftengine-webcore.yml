@@ -8,6 +8,7 @@ on:
       - '.github/workflows/riftengine-webcore.yml'
       - 'riftengine/tools/build-webcore-wasm.sh'
       - 'riftengine/tools/build-libxml2-wasm.sh'
+      - 'riftengine/tools/build-sqlite-wasm.sh'
       - 'riftengine/tools/port-webcore-emscripten.py'
       - 'riftengine/webcore/**'
       - 'riftengine/cmake/RiftWebKitFeatures.cmake'
