@@ -42,6 +42,7 @@ emcmake cmake -S "$WEBKIT" -B "$BUILD" -GNinja \
   -DCMAKE_PREFIX_PATH="$SYSROOT" \
   -DCMAKE_FIND_ROOT_PATH="$SYSROOT" \
   -DJSC_EMBED_ICU_DATA_FILE="$ICU_DATA" \
+  -DCMAKE_EXE_LINKER_FLAGS="-sEXPORTED_RUNTIME_METHODS=['callMain']" \
   > "$LOGDIR/jsc-configure.log" 2>&1
 configure_rc=$?
 set -e
@@ -93,6 +94,16 @@ if [ "$smoke_rc" -ne 0 ] || ! grep -q 'RIFT_JSC_SMOKE=42' "$LOGDIR/jsc-smoke.log
   exit 5
 fi
 
+# The browser worker needs a reusable entry point after the first cold boot.
+# Emscripten only places runtime helpers on Module when they are explicitly
+# exported, so fail the build if callMain was optimized away.
+if ! grep -q 'Module\["callMain"\]' "$ROOT/riftengine/jsc-dist/jsc.js"; then
+  echo "error: JSC build does not expose Module.callMain for warm re-entry" >&2
+  exit 6
+fi
+
+echo "RIFT_JSC_CALLMAIN=exported" | tee "$LOGDIR/jsc-callmain.txt"
 cat "$LOGDIR/jsc-smoke.log"
 ls -lh "$ROOT/riftengine/jsc-dist/jsc.js" "$ROOT/riftengine/jsc-dist/jsc.wasm"
 echo "RiftEngine Phase 1: real JavaScriptCore executed JavaScript inside wasm."
+echo "RiftEngine Phase 2 compatibility: Module.callMain is exported for warm worker re-entry."
