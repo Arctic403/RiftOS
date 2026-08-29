@@ -77,6 +77,7 @@ fi
 mkdir -p "$ROOT/riftengine/jsc-dist"
 cp "$JSC_JS" "$ROOT/riftengine/jsc-dist/jsc.js"
 cp "$JSC_WASM" "$ROOT/riftengine/jsc-dist/jsc.wasm"
+printf 'print("RIFT_JSC_SMOKE=" + (20 + 22));\n' > "$ROOT/riftengine/jsc-dist/smoke.js"
 
 # Smoke-test the engine itself without relying on Node host-file visibility.
 # The Emscripten runtime has its own virtual filesystem, so passing a host path
