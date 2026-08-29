@@ -90,3 +90,35 @@ button{color:inherit}
 .engine-empty{position:absolute;inset:0;display:grid;place-content:center;gap:6px;text-align:center;padding:20px;background:#0a0d12;color:var(--text)}
 .engine-empty span{max-width:420px;color:var(--muted);font-size:11px;line-height:1.45}
 .engine-log{margin:0;max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#05070a;color:#b9c5d1;padding:10px;font:10px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
+
+/* RiftEngine mobile-first usability pass */
+.engine-jsc-console{display:grid;gap:10px;border:1px solid #345b4e;background:#0b1211;border-radius:16px;padding:12px}
+.engine-jsc-console .engine-head{border:0;background:transparent;padding:0;border-radius:0}
+.engine-jsc-console .engine-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible;gap:8px}
+.engine-jsc-console .engine-actions button{width:100%;min-height:44px;white-space:normal}
+.engine-jsc-console #jscSource{min-height:220px!important;resize:none!important;font-size:13px!important;line-height:1.55!important}
+.engine-jsc-console #jscOutput{max-height:none;min-height:150px;font-size:11px;line-height:1.55}
+.engine-jsc-console .engine-diagnostics{grid-template-columns:1fr 1fr}
+
+@media(max-width:699px){
+  .window{inset:4px;border-radius:16px;grid-template-rows:52px minmax(0,1fr)}
+  .window-bar{padding:0 12px}
+  .window-body{padding:10px;overflow:auto}
+  .engine-lab{height:auto;min-height:100%;display:flex;flex-direction:column;gap:12px;padding-bottom:24px;overflow:visible}
+  .engine-jsc-console{order:-10}
+  .engine-lab>.engine-head{order:-9}
+  .engine-lab>.engine-actions{order:-8;display:grid;grid-template-columns:1fr;overflow:visible}
+  .engine-lab>.engine-actions .action{width:100%;min-height:42px;white-space:normal}
+  .engine-lab>.engine-diagnostics{display:none}
+  .engine-viewport{order:5;min-height:260px;height:260px;flex:none}
+  .engine-viewport canvas{min-height:260px}
+  .engine-lab>.engine-log{order:6;max-height:180px;min-height:100px}
+  .engine-head{align-items:center}
+  .engine-head strong{font-size:14px}
+  .engine-head p{font-size:11px}
+  .engine-badge{flex:none;font-size:10px;padding:7px 9px}
+  .engine-jsc-console .engine-actions{grid-template-columns:1fr}
+  .engine-jsc-console .engine-diagnostics{grid-template-columns:1fr}
+  .engine-jsc-console #jscSource{min-height:250px!important}
+  .engine-jsc-console #jscOutput{min-height:180px}
+}
