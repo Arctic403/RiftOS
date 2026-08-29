@@ -1,4 +1,4 @@
-name: Build and deploy RiftEngine prototype
+name: Build RiftEngine Phase 1
 
 on:
   workflow_dispatch:
@@ -19,24 +19,25 @@ permissions:
   id-token: write
 
 concurrency:
-  group: riftengine-pages
+  group: riftengine-phase1
   cancel-in-progress: true
 
 jobs:
-  build:
+  prototype:
+    name: Fast RiftEngine canvas prototype
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
 
-      - name: Install Emscripten
+      - name: Install pinned Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: '4.0.12'
+          version: '6.0.0'
           actions-cache-folder: 'emsdk-cache'
 
-      - name: Build RiftEngine port-harness prototype
+      - name: Build RiftEngine port harness
         run: bash riftengine/tools/build-prototype.sh
 
       - name: Verify prototype
@@ -54,11 +55,14 @@ jobs:
           rsync -a ./ _site/ \
             --exclude '.git/' \
             --exclude '.github/' \
-            --exclude '.devcontainer/' \
+            --exclude '.riftengine-work/' \
             --exclude '_site/' \
             --exclude 'riftengine/src/' \
             --exclude 'riftengine/tools/' \
+            --exclude 'riftengine/config/' \
             --exclude 'riftengine/cmake/' \
+            --exclude 'riftengine/logs/' \
+            --exclude 'riftengine/jsc-dist/' \
             --exclude '*.log'
 
       - name: Upload Pages artifact
@@ -66,12 +70,68 @@ jobs:
         with:
           path: _site
 
+  jsc:
+    name: Real JavaScriptCore wasm bring-up
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      RIFT_JOBS: '2'
+      RIFTENGINE_WORK: ${{ runner.temp }}/riftengine-work
+    steps:
+      - name: Checkout RiftOS
+        uses: actions/checkout@v4
+
+      - name: Install host build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            ruby-full bison flex gperf perl python3 curl xz-utils
+
+      - name: Install pinned Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '6.0.0'
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Build real JSCOnly wasm
+        run: bash riftengine/tools/build-jsc-wasm.sh
+
+      - name: Capture clean-port diff
+        if: always()
+        run: |
+          mkdir -p riftengine/logs
+          if [ -d "$RIFTENGINE_WORK/WebKit/.git" ]; then
+            git -C "$RIFTENGINE_WORK/WebKit" diff --binary > riftengine/logs/webkit-rift-port.diff || true
+            git -C "$RIFTENGINE_WORK/WebKit" status --short > riftengine/logs/webkit-rift-port-status.txt || true
+          fi
+          find riftengine/logs -maxdepth 1 -type f -print -exec ls -lh {} \; 2>/dev/null || true
+
+      - name: Upload JSC diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: riftengine-jsc-diagnostics-${{ github.run_id }}
+          path: riftengine/logs
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload JSC wasm smoke runtime
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: riftengine-jsc-wasm-${{ github.run_id }}
+          path: riftengine/jsc-dist
+          if-no-files-found: error
+          retention-days: 7
+
   deploy:
+    name: Deploy current RiftOS prototype
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: prototype
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
