@@ -1,0 +1,64 @@
+name: Build RiftEngine Pages experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: riftengine-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout RiftOS
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl cmake ninja-build make python3 pkg-config tar xz-utils unzip clang
+
+      - name: Clone WebkitWasm research port
+        run: |
+          git clone --depth 1 --branch non-pthread https://github.com/theogbob/WebkitWasm.git /tmp/WebkitWasm
+
+      - name: Bootstrap WebKit + Emscripten dependencies
+        working-directory: /tmp/WebkitWasm
+        run: bash tools/bootstrap.sh
+
+      - name: Build non-pthread WebCore/WASM
+        working-directory: /tmp/WebkitWasm
+        env:
+          BIB_PTHREAD: "0"
+        run: bash tools/build-webcore.sh
+
+      - name: Assemble static Pages artifact
+        run: |
+          mkdir -p _site
+          cp -a README.md index.html manifest.webmanifest styles.css sw.js src _site/
+          mkdir -p _site/riftengine/engine
+          cp -a /tmp/WebkitWasm/build/webcore/bin/. _site/riftengine/engine/
+          mkdir -p _site/riftengine/upstream-web
+          cp -a /tmp/WebkitWasm/web/. _site/riftengine/upstream-web/
+          touch _site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

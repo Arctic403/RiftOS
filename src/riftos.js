@@ -2,6 +2,7 @@ const APPS = [
   {id:"files",name:"Files",icon:"▣",desc:"Persistent RiftFS"},
   {id:"terminal",name:"RiftShell",icon:">_",desc:"System command shell"},
   {id:"browser",name:"RiftBrowser",icon:"◎",desc:"Web transport v0.2"},
+  {id:"riftengine",name:"RiftEngine",icon:"◉",desc:"Local WASM WebKit experiment"},
   {id:"editor",name:"Editor",icon:"{}",desc:"Pocket code editor"},
   {id:"tasks",name:"Tasks",icon:"≡",desc:"Runtime processes"},
   {id:"settings",name:"Settings",icon:"⚙",desc:"System controls"}
@@ -302,6 +303,113 @@ function openBrowser(){
   renderHome();
 }
 
+
+function openRiftEngine(){
+  const body=openWindow("riftengine","RiftEngine","WASM WEBKIT / EXPERIMENT");
+  body.innerHTML=`
+    <div class="engine-lab">
+      <section class="engine-head">
+        <div>
+          <strong>Local browser-engine experiment</strong>
+          <p>Attempts to boot a non-pthread WebKit/WASM build entirely on this device. No remote desktop or remote browser rendering.</p>
+        </div>
+        <span class="engine-badge" id="engineBadge">CHECKING</span>
+      </section>
+      <div class="engine-actions">
+        <button class="action" id="engineBoot">Boot embedded engine</button>
+        <button class="action secondary" id="engineDemo">Load local demo</button>
+        <button class="action secondary" id="engineReload">Re-check assets</button>
+      </div>
+      <div class="engine-diagnostics" id="engineDiagnostics"></div>
+      <div class="engine-viewport" id="engineViewport">
+        <canvas id="riftEngineCanvas" tabindex="0"></canvas>
+        <div class="engine-empty" id="engineEmpty">
+          <strong>RiftEngine viewport</strong>
+          <span>The WebKit/WASM build will paint here once the generated engine assets are present.</span>
+        </div>
+      </div>
+      <pre class="engine-log" id="engineLog"></pre>
+    </div>`;
+
+  const badge=body.querySelector("#engineBadge");
+  const diag=body.querySelector("#engineDiagnostics");
+  const log=body.querySelector("#engineLog");
+  const canvas=body.querySelector("#riftEngineCanvas");
+  const empty=body.querySelector("#engineEmpty");
+  const boot=body.querySelector("#engineBoot");
+  const demo=body.querySelector("#engineDemo");
+  const reload=body.querySelector("#engineReload");
+  let moduleInstance=null;
+
+  const write=(msg)=>{log.textContent+=`[${new Date().toLocaleTimeString()}] ${msg}\n`;log.scrollTop=log.scrollHeight};
+  const asset="./riftengine/engine/webcore.js";
+
+  async function check(){
+    badge.textContent="CHECKING";
+    const rows=[
+      ["WebAssembly",typeof WebAssembly==="object"],
+      ["WebGL2",!!canvas.getContext("webgl2")],
+      ["SharedArrayBuffer",typeof SharedArrayBuffer!=="undefined"],
+      ["crossOriginIsolated",self.crossOriginIsolated===true],
+      ["OPFS",!!navigator.storage?.getDirectory]
+    ];
+    let engine=false;
+    try{
+      const r=await fetch(asset,{method:"HEAD",cache:"no-store"});
+      engine=r.ok;
+    }catch(_){}
+    rows.push(["Generated WebKit engine",engine]);
+    diag.innerHTML=rows.map(([k,v])=>`<div><span>${k}</span><b class="${v?"ok":"no"}">${v?"YES":"NO"}</b></div>`).join("");
+    badge.textContent=engine?"ENGINE READY":"BUILD NEEDED";
+    badge.classList.toggle("ok",engine);
+    write(engine
+      ?"Generated engine loader found. Ready to attempt local boot."
+      :"Engine binary is not in this snapshot yet. The included GitHub Actions experiment can build the non-pthread WebKit/WASM assets; RiftOS itself remains static.");
+    return engine;
+  }
+
+  async function bootEngine(){
+    if(moduleInstance){write("Engine already booted.");return}
+    if(!(await check())){write("Boot stopped: generated engine assets are missing.");return}
+    badge.textContent="BOOTING";
+    boot.disabled=true;
+    try{
+      const mod=await import("../riftengine/engine/webcore.js");
+      const factory=mod.default||mod.createWebCoreModule||window.createWebCoreModule;
+      if(typeof factory!=="function") throw new Error("Engine module factory was not exported in the expected Emscripten shape.");
+      moduleInstance=await factory({
+        canvas,
+        locateFile:(name)=>new URL(`../riftengine/engine/${name}`,import.meta.url).href,
+        print:(t)=>write(String(t)),
+        printErr:(t)=>write("ERR "+String(t))
+      });
+      empty.classList.add("hidden");
+      badge.textContent="RUNNING";
+      badge.classList.add("ok");
+      write("WebKit/WASM module initialized locally.");
+    }catch(err){
+      badge.textContent="BOOT ERROR";
+      write(String(err?.stack||err));
+    }finally{boot.disabled=false}
+  }
+
+  demo.onclick=()=>{
+    write("Local demo requested. This validates the RiftOS viewport/input shell; real page loading is enabled after the engine build is wired to its embedder API.");
+    empty.innerHTML="<strong>Local renderer shell is alive.</strong><span>Next checkpoint: WebKit paints this canvas itself.</span>";
+  };
+  boot.onclick=bootEngine;
+  reload.onclick=check;
+
+  const forwardPointer=(ev)=>{
+    canvas.focus();
+    // Reserved adapter point for WebKit embedder mouse/touch events.
+    canvas.dataset.lastPointer=`${ev.type}:${Math.round(ev.offsetX)},${Math.round(ev.offsetY)}`;
+  };
+  ["pointerdown","pointermove","pointerup"].forEach(type=>canvas.addEventListener(type,forwardPointer,{passive:true}));
+  check();
+}
+
+
 function openTasks(){
   const body=openWindow("tasks","Tasks","KERNEL");
   const render=()=>body.innerHTML=`<p class="muted">Uptime ${kernel.uptime()}s</p><div class="file-list">${[...kernel.tasks.values()].map(t=>`<div class="file-row"><span><strong>${t.name}</strong><br><small>pid ${t.pid} · ${t.state}</small></span>${t.pid>2?`<button class="action" data-kill="${t.pid}">Kill</button>`:""}</div>`).join("")}</div>`;
@@ -346,6 +454,7 @@ async function launch(id){
     if(id==="files")return await openFiles();
     if(id==="terminal")return openTerminal();
     if(id==="browser")return openBrowser();
+    if(id==="riftengine")return openRiftEngine();
     if(id==="editor")return await openEditor();
     if(id==="tasks")return openTasks();
     if(id==="settings")return await openSettings();

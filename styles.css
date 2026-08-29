@@ -73,3 +73,20 @@ button{color:inherit}
 .browser-loading i{width:26px;height:26px;border:2px solid #34404c;border-top-color:var(--accent);border-radius:50%;animation:browserSpin .8s linear infinite}
 .direct-view{border:0;border-radius:0;min-height:100%;height:100%}
 .browser-search-fallback .action{margin-top:8px}
+
+
+/* RiftEngine experimental local WASM browser */
+.engine-lab{height:100%;display:grid;grid-template-rows:auto auto auto minmax(220px,1fr) minmax(90px,auto);gap:9px}
+.engine-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border:1px solid var(--line);background:var(--panel);padding:12px;border-radius:14px}
+.engine-head p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.45}
+.engine-badge{white-space:nowrap;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:9px;color:var(--muted)}
+.engine-badge.ok{color:var(--accent);border-color:#345b4e}
+.engine-actions{display:flex;gap:7px;overflow:auto;padding-bottom:2px}.engine-actions button{white-space:nowrap}
+.engine-diagnostics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.engine-diagnostics div{display:flex;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:10px;background:#0a0d12;padding:8px;font-size:10px}
+.engine-diagnostics b.ok{color:var(--accent)}.engine-diagnostics b.no{color:var(--danger)}
+.engine-viewport{position:relative;min-height:220px;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:white;touch-action:none}
+.engine-viewport canvas{display:block;width:100%;height:100%;min-height:220px;outline:0}
+.engine-empty{position:absolute;inset:0;display:grid;place-content:center;gap:6px;text-align:center;padding:20px;background:#0a0d12;color:var(--text)}
+.engine-empty span{max-width:420px;color:var(--muted);font-size:11px;line-height:1.45}
+.engine-log{margin:0;max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#05070a;color:#b9c5d1;padding:10px;font:10px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
