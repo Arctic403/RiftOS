@@ -83,7 +83,11 @@ set(WTF_LIBRARY_TYPE STATIC)
 set(PAL_LIBRARY_TYPE STATIC)
 set(WebCore_LIBRARY_TYPE STATIC)
 
+# WebCore links imported dependency targets (for example LibXml2::LibXml2),
+# not legacy LIBXML2_* cache variables. Resolve the wasm sysroot packages here
+# so those targets exist before WebCore's framework targets are generated.
 find_package(ICU 70.1 REQUIRED COMPONENTS data i18n uc)
+find_package(LibXml2 REQUIRED)
 ''')
 
 print("RIFT_WEBCORE_PORT=emscripten-scaffold-ready")
