@@ -51,9 +51,17 @@ function appGrid(){
   $("#appGrid").innerHTML=APPS.map(a=>`<button class="app-card" data-open="${a.id}"><span class="app-icon">${a.icon}</span><span><strong>${a.name}</strong><br><small>${a.desc}</small></span></button>`).join("");
 }
 
-function closeWindow(){stage.innerHTML="";workspace.classList.remove("workspace-hidden");document.querySelectorAll(".dock-btn").forEach(x=>x.classList.toggle("active",x.dataset.open==="home"));setStatus("Ready")}
+function closeWindow(){
+  stage.innerHTML="";
+  stage.classList.add("hidden");
+  workspace.classList.remove("hidden");
+  document.querySelectorAll(".dock-btn").forEach(x=>x.classList.toggle("active",x.dataset.open==="home"));
+  setStatus("Ready");
+}
 function openWindow(id,title,kicker="RIFT APP"){
-  workspace.classList.add("workspace-hidden"); stage.innerHTML="";
+  workspace.classList.add("hidden");
+  stage.classList.remove("hidden");
+  stage.innerHTML="";
   const win=$("#windowTemplate").content.firstElementChild.cloneNode(true);
   win.dataset.app=id;win.querySelector(".window-title").textContent=title;win.querySelector(".window-kicker").textContent=kicker;
   win.querySelector(".window-close").onclick=closeWindow;stage.append(win);
@@ -133,7 +141,6 @@ async function launch(id){
     throw new Error(`Unknown app: ${id}`);
   }catch(err){
     console.error("[RiftOS] app launch failed", id, err);
-    workspace.classList.add("workspace-hidden");
     const body=openWindow("error","App Error","RIFT RUNTIME");
     body.innerHTML=`<p><strong>${id} failed to open.</strong></p><pre class="shell-output">${String(err?.stack||err?.message||err)}</pre><button class="action" id="errorHome">Return Home</button>`;
     body.querySelector("#errorHome").onclick=closeWindow;

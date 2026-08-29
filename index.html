@@ -26,7 +26,8 @@
       <time id="clock"></time>
     </header>
 
-    <section id="workspace" class="workspace">
+    <section id="content" class="content">
+      <section id="workspace" class="workspace">
       <div class="hero">
         <div>
           <span class="eyebrow">RIFT RUNTIME / V0.1</span>
@@ -36,10 +37,11 @@
         <button class="pill" data-open="terminal">Open RiftShell</button>
       </div>
 
-      <div class="app-grid" id="appGrid"></div>
-    </section>
+        <div class="app-grid" id="appGrid"></div>
+      </section>
 
-    <section id="stage" class="stage" aria-live="polite"></section>
+      <section id="stage" class="stage hidden" aria-live="polite"></section>
+    </section>
 
     <nav class="dock" aria-label="Dock">
       <button data-open="home" class="dock-btn active">⌂<span>Home</span></button>
