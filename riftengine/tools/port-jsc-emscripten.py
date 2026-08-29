@@ -93,6 +93,43 @@ replace_once(
     "#if (OS(LINUX) && !defined(__GLIBC__)) || OS(HAIKU) || defined(__EMSCRIPTEN__)"
 )
 
+# Browser-targeted wasm in this phase is deliberately single-threaded. WTF's
+# POSIX backend normally suspends peer threads with Unix signals and sigsuspend,
+# but Emscripten does not provide sigsuspend and fabricating it would make GC
+# register scanning unsafe. Keep the APIs present, but make suspension report
+# ENOTSUP and compile the signal/semaphore machinery out of the wasm target.
+threading_rel = "Source/WTF/wtf/posix/ThreadingPOSIX.cpp"
+replace_once(
+    threading_rel,
+    "#if !OS(DARWIN)\nclass Semaphore final {",
+    "#if !OS(DARWIN) && !defined(__EMSCRIPTEN__)\nclass Semaphore final {"
+)
+replace_once(
+    threading_rel,
+    "#if !OS(DARWIN)\n    globalSemaphoreForSuspendResume.construct(0);",
+    "#if !OS(DARWIN) && !defined(__EMSCRIPTEN__)\n    globalSemaphoreForSuspendResume.construct(0);"
+)
+replace_once(
+    threading_rel,
+    "#if !OS(DARWIN)\n    RELEASE_ASSERT(g_wtfConfig.isThreadSuspendResumeSignalConfigured);",
+    "#if !OS(DARWIN) && !defined(__EMSCRIPTEN__)\n    RELEASE_ASSERT(g_wtfConfig.isThreadSuspendResumeSignalConfigured);"
+)
+replace_once(
+    threading_rel,
+    "    return { };\n#else\n    if (!m_suspendCount) {",
+    "    return { };\n#elif defined(__EMSCRIPTEN__)\n    return makeUnexpected(ENOTSUP);\n#else\n    if (!m_suspendCount) {"
+)
+replace_once(
+    threading_rel,
+    "#if OS(DARWIN)\n    thread_resume(m_platformThread);\n#else\n    if (m_suspendCount == 1) {",
+    "#if OS(DARWIN)\n    thread_resume(m_platformThread);\n#elif defined(__EMSCRIPTEN__)\n    return;\n#else\n    if (m_suspendCount == 1) {"
+)
+replace_once(
+    threading_rel,
+    "    return metadata.userCount * sizeof(uintptr_t);\n#else\n    ASSERT_WITH_MESSAGE(m_suspendCount, \"We can get registers only if the thread is suspended.\");",
+    "    return metadata.userCount * sizeof(uintptr_t);\n#elif defined(__EMSCRIPTEN__)\n    UNUSED_PARAM(registers);\n    RELEASE_ASSERT_NOT_REACHED();\n    return 0;\n#else\n    ASSERT_WITH_MESSAGE(m_suspendCount, \"We can get registers only if the thread is suspended.\");"
+)
+
 # Build the JSC shell with enough stack/heap to make a smoke test meaningful.
 # ICU archive data is embedded only into this diagnostic shell; later the
 # RiftEngine host owns the profile/data mounting policy.
