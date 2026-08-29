@@ -20,10 +20,12 @@ fi
 cd "$ROOT"
 python3 - <<'PY'
 from pathlib import Path
-p=Path('tools/build-deps/webcore-deps.sh')
-s=p.read_text()
-marker='echo "=== freetype (no harfbuzz first pass) ==="'
-block=r'''echo "=== brotli prebuild for freetype WOFF2 ==="
+
+# FreeType needs Brotli before the upstream curl tier runs.
+p = Path('tools/build-deps/webcore-deps.sh')
+s = p.read_text()
+marker = 'echo "=== freetype (no harfbuzz first pass) ==="'
+block = r'''echo "=== brotli prebuild for freetype WOFF2 ==="
 if [ ! -f "$SYSROOT/lib/libbrotlidec.a" ]; then
   fetch https://github.com/google/brotli/archive/refs/tags/v1.1.0.tar.gz brotli.tar.gz
   unpack brotli.tar.gz brotli
@@ -34,8 +36,18 @@ fi
 if 'brotli prebuild for freetype WOFF2' not in s:
     if marker not in s:
         raise SystemExit('Could not locate FreeType stage in upstream webcore-deps.sh')
-    s=s.replace(marker,block+marker,1)
-    p.write_text(s)
+    p.write_text(s.replace(marker, block + marker, 1))
+
+# freedesktop.org can return HTTP 418 to GitHub-hosted environments.
+# Debian mirrors the exact fontconfig 2.15.0 release source tarball.
+p = Path('tools/build-deps/curl-tier.sh')
+s = p.read_text()
+old = 'https://www.freedesktop.org/software/fontconfig/release/fontconfig-2.15.0.tar.xz'
+new = 'https://deb.debian.org/debian/pool/main/f/fontconfig/fontconfig_2.15.0.orig.tar.xz'
+if old in s:
+    p.write_text(s.replace(old, new))
+elif new not in s:
+    raise SystemExit('Could not locate the pinned fontconfig 2.15.0 download URL')
 PY
 
 echo
