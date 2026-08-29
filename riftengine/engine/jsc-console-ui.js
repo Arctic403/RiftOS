@@ -34,16 +34,17 @@ function mountConsole(lab) {
   panel.innerHTML = `
     <div class="engine-head">
       <div>
-        <strong>JavaScriptCore + RiftDOM</strong>
-        <p>JavaScript executes inside the compiled JSC WASM worker. DOM output is bridged back into RiftOS through RiftDOM v0.1.</p>
+        <strong>JavaScriptCore + RiftDOM Session</strong>
+        <p>RiftOS now keeps one JSC worker alive and attempts warm re-entry into the already-instantiated WASM engine. Session smoke verifies whether the current shell also preserves the same JSC global context.</p>
       </div>
       <span class="engine-badge" id="jscStatus">READY</span>
     </div>
     <div class="engine-actions">
+      <button class="action" id="jscSessionSmoke" type="button">Session smoke</button>
       <button class="action" id="jscDomSmoke" type="button">DOM smoke</button>
       <button class="action secondary" id="jscRun" type="button">Run code</button>
       <button class="action secondary" id="jscSmoke" type="button">JSC smoke</button>
-      <button class="action secondary" id="jscReset" type="button">Reset</button>
+      <button class="action secondary" id="jscReset" type="button">Reset session</button>
       <button class="action secondary" id="jscClear" type="button">Clear output</button>
     </div>
     <textarea id="jscSource" spellcheck="false" autocapitalize="off" autocomplete="off" style="width:100%;min-height:190px;resize:vertical;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#080b10;color:#e8eef7;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;box-sizing:border-box"></textarea>
@@ -53,11 +54,13 @@ function mountConsole(lab) {
     </section>
     <div class="engine-diagnostics" id="jscMeta">
       <div><span>Engine</span><b class="ok">JavaScriptCore</b></div>
-      <div><span>DOM</span><b class="ok">RiftDOM v0.1</b></div>
-      <div><span>Thread</span><b>Web Worker</b></div>
+      <div><span>DOM</span><b class="ok">RiftDOM session</b></div>
+      <div><span>Worker</span><b id="jscWorkerState">Persistent</b></div>
+      <div><span>WASM reuse</span><b id="jscWasmState">Not tested</b></div>
+      <div><span>JSC context</span><b id="jscContextState">Not tested</b></div>
       <div><span>Last run</span><b id="jscDuration">—</b></div>
     </div>
-    <pre class="engine-log" id="jscOutput">RiftJSC console ready.\n</pre>`;
+    <pre class="engine-log" id="jscOutput">RiftJSC session console ready.\n</pre>`;
 
   const viewport = lab.querySelector('.engine-viewport');
   if (viewport) viewport.insertAdjacentElement('beforebegin', panel);
@@ -68,11 +71,16 @@ function mountConsole(lab) {
   const preview = panel.querySelector('#jscDomPreview');
   const status = panel.querySelector('#jscStatus');
   const duration = panel.querySelector('#jscDuration');
+  const workerState = panel.querySelector('#jscWorkerState');
+  const wasmState = panel.querySelector('#jscWasmState');
+  const contextState = panel.querySelector('#jscContextState');
   const run = panel.querySelector('#jscRun');
   const smoke = panel.querySelector('#jscSmoke');
   const domSmoke = panel.querySelector('#jscDomSmoke');
+  const sessionSmoke = panel.querySelector('#jscSessionSmoke');
   const reset = panel.querySelector('#jscReset');
   const clear = panel.querySelector('#jscClear');
+  const buttons = [run, smoke, domSmoke, sessionSmoke];
 
   source.value = DEFAULT_SOURCE;
 
@@ -82,9 +90,7 @@ function mountConsole(lab) {
   };
 
   const setBusy = busy => {
-    run.disabled = busy;
-    smoke.disabled = busy;
-    domSmoke.disabled = busy;
+    buttons.forEach(button => { button.disabled = busy; });
     status.textContent = busy ? 'RUNNING' : 'READY';
     status.classList.toggle('ok', !busy);
   };
@@ -93,6 +99,18 @@ function mountConsole(lab) {
     if (!result?.domSnapshot) return;
     renderRiftDOM(result.domSnapshot, preview);
     write(`[${result.domRuntime || 'RiftDOM'} · rendered]`);
+  };
+
+  const showSession = result => {
+    const session = result?.session || {};
+    workerState.textContent = session.workerPersistent === false ? 'Fresh' : 'Persistent';
+    if (session.wasmReused === true) {
+      wasmState.textContent = 'REUSED';
+      wasmState.classList.add('ok');
+    } else if (session.fallbackFresh) {
+      wasmState.textContent = 'Fresh fallback';
+      wasmState.classList.remove('ok');
+    }
   };
 
   async function execute(code, label = 'Execution') {
@@ -105,10 +123,13 @@ function mountConsole(lab) {
       result.stdout.forEach(line => write(line));
       result.stderr.forEach(line => write(`ERR ${line}`));
       renderResult(result);
+      showSession(result);
       duration.textContent = formatDuration(result.durationMs);
       status.textContent = 'PASS';
       status.classList.add('ok');
       write(`[${result.engine} · ${formatDuration(result.durationMs)}]`);
+      if (result.session?.wasmReused) write('[session · warm WASM reused]');
+      if (result.session?.fallbackFresh) write('[session · current shell required a fresh-worker fallback]');
       return result;
     } catch (error) {
       (error.stdout || []).forEach(line => write(line));
@@ -119,13 +140,62 @@ function mountConsole(lab) {
       write(`ERROR ${error.message || error}`);
       throw error;
     } finally {
-      run.disabled = false;
-      smoke.disabled = false;
-      domSmoke.disabled = false;
+      buttons.forEach(button => { button.disabled = false; });
     }
   }
 
   run.onclick = () => execute(source.value, 'Run in JavaScriptCore + RiftDOM').catch(() => {});
+
+  sessionSmoke.onclick = async () => {
+    setBusy(true);
+    duration.textContent = '…';
+    wasmState.textContent = 'Testing…';
+    contextState.textContent = 'Testing…';
+    write('\n> Persistent session smoke test');
+    try {
+      const result = await RiftJSC.sessionSmoke();
+      result.first?.stdout?.forEach(line => write(line));
+      result.second?.stdout?.forEach(line => write(line));
+      if (!result.supported) {
+        status.textContent = 'PARTIAL';
+        status.classList.remove('ok');
+        wasmState.textContent = 'No warm re-entry';
+        contextState.textContent = 'Needs engine API';
+        duration.textContent = formatDuration(result.first?.durationMs);
+        write('PARTIAL: persistent worker is live, but this prebuilt JSC shell does not expose warm callMain re-entry.');
+        write(`DETAIL: ${result.error?.message || 'warm re-entry unavailable'}`);
+        return;
+      }
+
+      wasmState.textContent = result.wasmReused ? 'REUSED' : 'NOT REUSED';
+      wasmState.classList.toggle('ok', result.wasmReused);
+      contextState.textContent = result.contextPersistent ? 'PERSISTENT' : 'RESET PER RUN';
+      contextState.classList.toggle('ok', result.contextPersistent);
+      duration.textContent = formatDuration(result.warmMs);
+
+      if (result.ok) {
+        status.textContent = 'PASS';
+        status.classList.add('ok');
+        write(`PASS: same WASM + same JSC context. Cold ${formatDuration(result.coldMs)} → warm ${formatDuration(result.warmMs)}`);
+      } else if (result.wasmReused) {
+        status.textContent = 'PARTIAL';
+        status.classList.remove('ok');
+        write(`PARTIAL: WASM instance reused (${formatDuration(result.warmMs)} warm), but JSC global state resets between shell invocations.`);
+        write('NEXT: persistent JSC evaluation API is required before timers/events can hold real JS callbacks.');
+      } else {
+        status.textContent = 'FAIL';
+        status.classList.remove('ok');
+        write('FAIL: warm session reuse did not succeed.');
+      }
+    } catch (error) {
+      status.textContent = 'ERROR';
+      status.classList.remove('ok');
+      duration.textContent = 'failed';
+      write(`ERROR ${error.message || error}`);
+    } finally {
+      buttons.forEach(button => { button.disabled = false; });
+    }
+  };
 
   domSmoke.onclick = async () => {
     setBusy(true);
@@ -136,6 +206,7 @@ function mountConsole(lab) {
       result.stdout.forEach(line => write(line));
       result.stderr.forEach(line => write(`ERR ${line}`));
       renderResult(result);
+      showSession(result);
       duration.textContent = formatDuration(result.durationMs);
       status.textContent = result.ok ? 'PASS' : 'FAIL';
       status.classList.toggle('ok', result.ok);
@@ -148,9 +219,7 @@ function mountConsole(lab) {
       duration.textContent = 'failed';
       write(`ERROR ${error.message || error}`);
     } finally {
-      run.disabled = false;
-      smoke.disabled = false;
-      domSmoke.disabled = false;
+      buttons.forEach(button => { button.disabled = false; });
     }
   };
 
@@ -162,6 +231,7 @@ function mountConsole(lab) {
       const result = await RiftJSC.smoke();
       result.stdout.forEach(line => write(line));
       result.stderr.forEach(line => write(`ERR ${line}`));
+      showSession(result);
       duration.textContent = formatDuration(result.durationMs);
       status.textContent = result.ok ? 'PASS' : 'FAIL';
       status.classList.toggle('ok', result.ok);
@@ -174,13 +244,21 @@ function mountConsole(lab) {
       duration.textContent = 'failed';
       write(`ERROR ${error.message || error}`);
     } finally {
-      run.disabled = false;
-      smoke.disabled = false;
-      domSmoke.disabled = false;
+      buttons.forEach(button => { button.disabled = false; });
     }
   };
 
-  reset.onclick = () => { source.value = DEFAULT_SOURCE; };
+  reset.onclick = () => {
+    RiftJSC.reset();
+    wasmState.textContent = 'Not tested';
+    wasmState.classList.remove('ok');
+    contextState.textContent = 'Not tested';
+    contextState.classList.remove('ok');
+    duration.textContent = '—';
+    status.textContent = 'READY';
+    status.classList.add('ok');
+    write('\n[session reset · next run will cold boot JSC WASM]');
+  };
   clear.onclick = () => { output.textContent = ''; };
 }
 
