@@ -2,10 +2,6 @@ name: Build RiftEngine Pages experiment
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/riftengine-pages.yml'
 
 permissions:
   contents: read
