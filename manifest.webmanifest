@@ -1,0 +1,11 @@
+{
+  "name":"RiftOS",
+  "short_name":"RiftOS",
+  "description":"A browser-native, touch-first pocket operating environment.",
+  "start_url":"./",
+  "scope":"./",
+  "display":"standalone",
+  "background_color":"#080a0e",
+  "theme_color":"#0a0d12",
+  "orientation":"any"
+}

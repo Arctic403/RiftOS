@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#0a0d12">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RiftOS">
+  <title>RiftOS</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="boot" class="boot">
+    <div class="boot-mark">R</div>
+    <div class="boot-title">RiftOS</div>
+    <div class="boot-sub">mobile runtime</div>
+    <div class="boot-bar"><i></i></div>
+  </div>
+
+  <main id="os" class="os hidden" aria-label="RiftOS desktop">
+    <header class="statusbar">
+      <strong>RiftOS</strong>
+      <span id="statusText">Ready</span>
+      <time id="clock"></time>
+    </header>
+
+    <section id="workspace" class="workspace">
+      <div class="hero">
+        <div>
+          <span class="eyebrow">RIFT RUNTIME / V0.1</span>
+          <h1>Your pocket computer.</h1>
+          <p>Browser-native, touch-first, persistent.</p>
+        </div>
+        <button class="pill" data-open="terminal">Open RiftShell</button>
+      </div>
+
+      <div class="app-grid" id="appGrid"></div>
+    </section>
+
+    <section id="stage" class="stage" aria-live="polite"></section>
+
+    <nav class="dock" aria-label="Dock">
+      <button data-open="home" class="dock-btn active">⌂<span>Home</span></button>
+      <button data-open="files" class="dock-btn">▣<span>Files</span></button>
+      <button data-open="terminal" class="dock-btn">&gt;_<span>Shell</span></button>
+      <button data-open="browser" class="dock-btn">◎<span>Web</span></button>
+      <button data-open="settings" class="dock-btn">⚙<span>Settings</span></button>
+    </nav>
+  </main>
+
+  <template id="windowTemplate">
+    <article class="window">
+      <header class="window-bar">
+        <div>
+          <small class="window-kicker"></small>
+          <strong class="window-title"></strong>
+        </div>
+        <button class="window-close" aria-label="Close">×</button>
+      </header>
+      <div class="window-body"></div>
+    </article>
+  </template>
+
+  <script type="module" src="./src/riftos.js"></script>
+</body>
+</html>
