@@ -13,8 +13,10 @@ mkdir -p "$LOGDIR" "$BUILD"
 command -v emcmake >/dev/null 2>&1 || { echo 'error: Emscripten environment is not active' >&2; exit 2; }
 
 # Reuse the same pinned ICU/WebKit preparation that already produced our
-# on-device persistent JavaScriptCore build.
+# on-device persistent JavaScriptCore build. WebCore additionally needs its
+# platform libraries cross-compiled into the same wasm sysroot.
 bash "$ROOT/riftengine/tools/build-icu-wasm.sh" 2>&1 | tee "$LOGDIR/icu.log"
+bash "$ROOT/riftengine/tools/build-libxml2-wasm.sh" 2>&1 | tee "$LOGDIR/libxml2.log"
 bash "$ROOT/riftengine/tools/prepare-webkit.sh" 2>&1 | tee "$LOGDIR/prepare-webkit.log"
 python3 "$ROOT/riftengine/tools/port-webcore-emscripten.py" "$WEBKIT" 2>&1 | tee "$LOGDIR/port-webcore.log"
 
@@ -38,6 +40,8 @@ emcmake cmake -S "$WEBKIT" -B "$BUILD" -GNinja \
   -DICU_ROOT="$SYSROOT" \
   -DCMAKE_PREFIX_PATH="$SYSROOT" \
   -DCMAKE_FIND_ROOT_PATH="$SYSROOT" \
+  -DLIBXML2_INCLUDE_DIR="$SYSROOT/include/libxml2" \
+  -DLIBXML2_LIBRARY="$SYSROOT/lib/libxml2.a" \
   -DJSC_EMBED_ICU_DATA_FILE="$ICU_DATA" \
   > "$LOGDIR/configure.log" 2>&1
 configure_rc=$?
