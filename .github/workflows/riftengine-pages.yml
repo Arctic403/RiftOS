@@ -1,15 +1,13 @@
-name: Build RiftEngine Pages experiment
+name: Build RiftEngine audited experiment
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: riftengine-pages
+  group: riftengine-build
   cancel-in-progress: false
 
 jobs:
@@ -40,38 +38,10 @@ jobs:
       - name: Build audited iPhone profile
         run: bash scripts/riftengine-codespace-build.sh
 
-      - name: Assemble RiftOS + local engine runtime
+      - name: Verify local build only
         run: |
-          mkdir -p _site
-          cp -a README.md index.html manifest.webmanifest styles.css sw.js src _site/
-
-          # Keep the upstream host and engine adjacent exactly as browser.html
-          # expects: runtime/browser.html -> runtime/engine/embedder.js.
-          mkdir -p _site/riftengine/runtime/engine
-          cp -a "$RIFTENGINE_ROOT/web/." _site/riftengine/runtime/
-          cp -a "$RIFTENGINE_ROOT/build/webcore/bin/." _site/riftengine/runtime/engine/
-
-          # Preserve the upstream license beside the shipped research-derived
-          # runtime. RiftOS code remains separate from the vendored build output.
-          cp "$RIFTENGINE_ROOT/LICENSING.md" _site/riftengine/UPSTREAM-LICENSING.md
-          touch _site/.nojekyll
-
-          test -s _site/riftengine/runtime/browser.html
-          test -s _site/riftengine/runtime/engine/embedder.js
-          test -s _site/riftengine/runtime/engine/embedder.wasm
-          echo 'RiftEngine payload:'
-          du -sh _site/riftengine
-
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  deploy:
-    environment:
-      name: github-pages
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy RiftOS + RiftEngine to GitHub Pages
-        uses: actions/deploy-pages@v4
+          test -s "$RIFTENGINE_ROOT/build/webcore/bin/embedder.js"
+          test -s "$RIFTENGINE_ROOT/build/webcore/bin/embedder.wasm"
+          test -s "$RIFTENGINE_ROOT/build/webcore/bin/bib-build-config.js"
+          ls -lh "$RIFTENGINE_ROOT/build/webcore/bin/"
+          echo 'Build verified. Public packaging/deployment is intentionally disabled until upstream original-code licensing is clarified.'
