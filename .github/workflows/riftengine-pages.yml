@@ -1,7 +1,15 @@
-name: Build RiftEngine audited experiment
+name: Build RiftEngine on GitHub
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/riftengine-pages.yml'
+      - 'scripts/riftengine/**'
+      - 'scripts/riftengine-codespace-setup.sh'
+      - 'scripts/riftengine-codespace-build.sh'
 
 permissions:
   contents: read
@@ -21,16 +29,22 @@ jobs:
       BIB_PTHREAD: '0'
       BIB_JOBS: '2'
       JOBS: '2'
+
     steps:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
 
       - name: Show runner resources
         run: |
+          set -euxo pipefail
+          uname -a
           nproc
           free -h
           df -h /
           node --version
+          python3 --version
+          cmake --version
+          ninja --version || true
 
       - name: Prepare pinned RiftEngine source and dependencies
         run: bash scripts/riftengine-codespace-setup.sh
@@ -38,10 +52,56 @@ jobs:
       - name: Build audited iPhone profile
         run: bash scripts/riftengine-codespace-build.sh
 
-      - name: Verify local build only
+      - name: Verify engine outputs
+        if: success()
         run: |
+          set -euxo pipefail
           test -s "$RIFTENGINE_ROOT/build/webcore/bin/embedder.js"
           test -s "$RIFTENGINE_ROOT/build/webcore/bin/embedder.wasm"
           test -s "$RIFTENGINE_ROOT/build/webcore/bin/bib-build-config.js"
-          ls -lh "$RIFTENGINE_ROOT/build/webcore/bin/"
-          echo 'Build verified. Public packaging/deployment is intentionally disabled until upstream original-code licensing is clarified.'
+          ls -lah "$RIFTENGINE_ROOT/build/webcore/bin/"
+          du -sh "$RIFTENGINE_ROOT/build/webcore/bin/"
+          echo 'Build verified. Public Pages deployment remains disabled until upstream redistribution/licensing is clarified.'
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/riftengine-diagnostics"
+
+          if [ -f "$RIFTENGINE_LOG_DIR/riftengine-build.log" ]; then
+            cp "$RIFTENGINE_LOG_DIR/riftengine-build.log" "$RUNNER_TEMP/riftengine-diagnostics/"
+          fi
+
+          find "$RIFTENGINE_ROOT/third_party/build-deps" "$RIFTENGINE_ROOT/build" \
+            -type f \( -name '*.log' -o -name '*configure.log' -o -name '*build.log' -o -name '*make*.log' \) \
+            -print 2>/dev/null | while read -r f; do
+              rel="${f#$RIFTENGINE_ROOT/}"
+              dest="$RUNNER_TEMP/riftengine-diagnostics/$rel"
+              mkdir -p "$(dirname "$dest")"
+              cp "$f" "$dest" 2>/dev/null || true
+            done
+
+          echo '=== diagnostic files ==='
+          find "$RUNNER_TEMP/riftengine-diagnostics" -type f -maxdepth 8 -print -exec ls -lh {} \; 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: riftengine-diagnostics-${{ github.run_id }}
+          path: ${{ runner.temp }}/riftengine-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload compiled engine
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: riftengine-iphone-single-thread-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/WebkitWasm/build/webcore/bin/embedder.js
+            ${{ runner.temp }}/WebkitWasm/build/webcore/bin/embedder.wasm
+            ${{ runner.temp }}/WebkitWasm/build/webcore/bin/bib-build-config.js
+          if-no-files-found: error
+          retention-days: 7
