@@ -1,10 +1,11 @@
-const CACHE="riftos-shell-v8-safe-cache";
+const CACHE="riftos-shell-v9-riftapp-files";
 const CORE=[
   "./",
   "./index.html",
   "./styles.css",
   "./src/riftos.js",
   "./src/riftapps.js",
+  "./src/riftapps-files.js",
   "./manifest.webmanifest"
 ];
 
