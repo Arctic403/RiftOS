@@ -76,7 +76,7 @@ jobs:
     timeout-minutes: 240
     env:
       RIFT_JOBS: '2'
-      RIFTENGINE_WORK: ${{ runner.temp }}/riftengine-work
+      RIFTENGINE_WORK: /tmp/riftengine-work
     steps:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
