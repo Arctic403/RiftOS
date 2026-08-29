@@ -23,14 +23,29 @@ self.onmessage = (event) => {
   }
 
   const jscBase = new URL('../jsc-dist/', self.location.href);
+  const completionSentinel = `__RIFT_JSC_DONE__:${id}`;
+  const wrappedSource = `${source}\n;print(${JSON.stringify(completionSentinel)});`;
+
+  send('status', { stage: 'worker-started' });
 
   self.Module = {
-    arguments: ['-e', source],
+    arguments: ['-e', wrappedSource],
     locateFile(name) {
-      return new URL(name, jscBase).href;
+      const url = new URL(name, jscBase).href;
+      if (name.endsWith('.wasm')) send('status', { stage: 'wasm-requested' });
+      return url;
+    },
+    monitorRunDependencies(count) {
+      send('status', { stage: count > 0 ? `runtime-loading-${count}` : 'runtime-dependencies-ready' });
     },
     print(text) {
-      send('stdout', { text: String(text) });
+      const value = String(text);
+      if (value === completionSentinel) {
+        send('status', { stage: 'javascript-complete' });
+        finish(true);
+        return;
+      }
+      send('stdout', { text: value });
     },
     printErr(text) {
       send('stderr', { text: String(text) });
@@ -39,12 +54,15 @@ self.onmessage = (event) => {
       finish(false, { error: `JSC aborted: ${String(reason)}` });
     },
     postRun() {
+      send('status', { stage: 'post-run' });
       finish(true);
     }
   };
 
   try {
+    send('status', { stage: 'loading-jsc-shell' });
     importScripts(new URL('jsc.js', jscBase).href);
+    send('status', { stage: 'jsc-shell-loaded' });
   } catch (error) {
     const name = error?.name || '';
     const message = error?.message || String(error);
