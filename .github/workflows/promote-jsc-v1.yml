@@ -8,7 +8,7 @@ on:
       - '.github/workflows/promote-jsc-v1.yml'
 
 permissions:
-  actions: read
+  actions: write
   contents: write
 
 jobs:
@@ -67,9 +67,16 @@ jobs:
           git add riftengine/prebuilt/rift-jsc-host-v1
           if git diff --cached --quiet; then
             echo 'Persistent RiftJSC host v1 is already preserved.'
-            exit 0
+          else
+            git commit -m 'Preserve persistent RiftJSC host v1'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
           fi
-          git commit -m 'Preserve persistent RiftJSC host v1'
-          git fetch origin main
-          git rebase origin/main
-          git push origin HEAD:main
+
+      - name: Redeploy current RiftOS with promoted host
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          gh workflow run riftengine-pages.yml --repo "$GITHUB_REPOSITORY" --ref main
