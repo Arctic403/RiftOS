@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v5-riftengine";
+const CACHE="riftos-shell-v6-jsc-wasm-fix";
 const CORE=["./","./index.html","./styles.css","./src/riftos.js","./manifest.webmanifest"];
 
 self.addEventListener("install",e=>e.waitUntil(
@@ -19,11 +19,27 @@ self.addEventListener("fetch",e=>{
     e.respondWith(
       fetch(e.request)
         .then(res=>{
-          const copy=res.clone();
-          caches.open(CACHE).then(c=>c.put(e.request,copy));
+          if(res.ok){
+            const copy=res.clone();
+            caches.open(CACHE).then(c=>c.put(e.request,copy));
+          }
           return res;
         })
-        .catch(()=>caches.match(e.request).then(hit=>hit||caches.match("./index.html")))
+        .catch(async()=>{
+          const hit=await caches.match(e.request);
+          if(hit) return hit;
+
+          // Only browser navigations may fall back to the app shell.
+          // Returning index.html for .wasm/.js/worker requests makes the
+          // WebAssembly compiler receive '<!doctype html>' instead of \0asm.
+          if(e.request.mode==="navigate") return caches.match("./index.html");
+
+          return new Response("Offline asset unavailable",{
+            status:503,
+            statusText:"Offline asset unavailable",
+            headers:{"Content-Type":"text/plain; charset=utf-8"}
+          });
+        })
     );
     return;
   }
