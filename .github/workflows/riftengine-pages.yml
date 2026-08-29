@@ -1,17 +1,17 @@
-name: Build RiftEngine Phase 1
+name: Build and deploy RiftOS
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/riftengine-pages.yml'
-      - 'riftengine/**'
-      - 'index.html'
-      - 'styles.css'
-      - 'src/**'
-      - 'sw.js'
-      - 'manifest.webmanifest'
+    paths-ignore:
+      - '.github/workflows/riftengine-jsc.yml'
+      - 'riftengine/tools/build-jsc-wasm.sh'
+      - 'riftengine/tools/build-icu-wasm.sh'
+      - 'riftengine/tools/prepare-webkit.sh'
+      - 'riftengine/tools/port-jsc-emscripten.py'
+      - 'riftengine/config/pins.env'
+      - 'riftengine/cmake/**'
 
 permissions:
   contents: read
@@ -20,11 +20,11 @@ permissions:
 
 jobs:
   prototype:
-    name: Fast RiftEngine canvas prototype
+    name: Fast RiftOS + RiftEngine prototype
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
-      group: riftengine-prototype-${{ github.ref }}
+      group: riftos-fast-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - name: Checkout RiftOS
@@ -38,6 +38,23 @@ jobs:
 
       - name: Build RiftEngine port harness
         run: bash riftengine/tools/build-prototype.sh
+
+      - name: Fetch preserved JSC wasm runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          mkdir -p riftengine/jsc-dist
+          if gh release view riftengine-jsc-v1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download riftengine-jsc-v1 \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern 'jsc.js' \
+              --pattern 'jsc.wasm' \
+              --dir riftengine/jsc-dist
+            ls -lh riftengine/jsc-dist
+          else
+            echo 'Preserved JSC release is not published yet; deploying prototype without it.'
+          fi
 
       - name: Verify prototype
         run: |
@@ -61,7 +78,6 @@ jobs:
             --exclude 'riftengine/config/' \
             --exclude 'riftengine/cmake/' \
             --exclude 'riftengine/logs/' \
-            --exclude 'riftengine/jsc-dist/' \
             --exclude '*.log'
 
       - name: Upload Pages artifact
@@ -69,66 +85,8 @@ jobs:
         with:
           path: _site
 
-  jsc:
-    name: Real JavaScriptCore wasm bring-up
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    concurrency:
-      group: riftengine-jsc-${{ github.ref }}
-      cancel-in-progress: true
-    env:
-      RIFT_JOBS: '2'
-      RIFTENGINE_WORK: /tmp/riftengine-work
-    steps:
-      - name: Checkout RiftOS
-        uses: actions/checkout@v4
-
-      - name: Install host build prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config \
-            ruby-full bison flex gperf perl python3 curl xz-utils
-
-      - name: Install pinned Emscripten
-        uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: '6.0.0'
-          actions-cache-folder: 'emsdk-cache'
-
-      - name: Build real JSCOnly wasm
-        run: bash riftengine/tools/build-jsc-wasm.sh
-
-      - name: Capture clean-port diff
-        if: always()
-        run: |
-          mkdir -p riftengine/logs
-          if [ -d "$RIFTENGINE_WORK/WebKit/.git" ]; then
-            git -C "$RIFTENGINE_WORK/WebKit" diff --binary > riftengine/logs/webkit-rift-port.diff || true
-            git -C "$RIFTENGINE_WORK/WebKit" status --short > riftengine/logs/webkit-rift-port-status.txt || true
-          fi
-          find riftengine/logs -maxdepth 1 -type f -print -exec ls -lh {} \; 2>/dev/null || true
-
-      - name: Upload JSC diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: riftengine-jsc-diagnostics-${{ github.run_id }}
-          path: riftengine/logs
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Upload JSC wasm smoke runtime
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: riftengine-jsc-wasm-${{ github.run_id }}
-          path: riftengine/jsc-dist
-          if-no-files-found: error
-          retention-days: 7
-
   deploy:
-    name: Deploy current RiftOS prototype
+    name: Deploy current RiftOS
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
