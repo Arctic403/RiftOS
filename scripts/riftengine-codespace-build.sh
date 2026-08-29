@@ -43,6 +43,47 @@ on_exit() {
 }
 trap on_exit EXIT
 
+# Apply small reproducible fixes to the upstream research checkout.
+# 1) WebCore's FreeType stage requires Brotli before the upstream curl tier runs.
+python3 - <<'PY'
+from pathlib import Path
+p = Path('tools/build-deps/webcore-deps.sh')
+s = p.read_text()
+marker = 'echo "=== freetype (no harfbuzz first pass) ==="'
+block = r'''echo "=== brotli prebuild for freetype WOFF2 ==="
+if [ ! -f "$SYSROOT/lib/libbrotlidec.a" ]; then
+  fetch https://github.com/google/brotli/archive/refs/tags/v1.1.0.tar.gz brotli.tar.gz
+  unpack brotli.tar.gz brotli
+  cmake_build brotli brotli-build -DBROTLI_DISABLE_TESTS=ON
+fi
+
+'''
+if 'brotli prebuild for freetype WOFF2' not in s:
+    if marker not in s:
+        raise SystemExit('Could not locate FreeType stage in upstream webcore-deps.sh')
+    p.write_text(s.replace(marker, block + marker, 1))
+
+# 2) freedesktop.org returns HTTP 418 from some GitHub-hosted environments.
+# Use Debian's mirror of the exact fontconfig 2.15.0 source tarball instead.
+p = Path('tools/build-deps/curl-tier.sh')
+s = p.read_text()
+old = 'https://www.freedesktop.org/software/fontconfig/release/fontconfig-2.15.0.tar.xz'
+new = 'https://deb.debian.org/debian/pool/main/f/fontconfig/fontconfig_2.15.0.orig.tar.xz'
+if old in s:
+    p.write_text(s.replace(old, new))
+elif new not in s:
+    raise SystemExit('Could not locate the pinned fontconfig 2.15.0 download URL')
+PY
+
+# Remove a failed/partial prior download so fetch() will retry from the mirror.
+FONTCONFIG_TARBALL="third_party/build-deps/fontconfig.tar.xz"
+if [ -f "$FONTCONFIG_TARBALL" ] && ! tar -tf "$FONTCONFIG_TARBALL" >/dev/null 2>&1; then
+  echo 'Removing incomplete fontconfig tarball from the previous HTTP 418 attempt.'
+  rm -f "$FONTCONFIG_TARBALL"
+fi
+
+echo 'Applied RiftEngine dependency hotfixes (Brotli order + fontconfig mirror).'
+
 echo '=== RiftEngine persistent bootstrap ==='
 bash tools/bootstrap.sh
 
