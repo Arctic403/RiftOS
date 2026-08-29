@@ -79,10 +79,10 @@ cp "$JSC_JS" "$ROOT/riftengine/jsc-dist/jsc.js"
 cp "$JSC_WASM" "$ROOT/riftengine/jsc-dist/jsc.wasm"
 printf 'print("RIFT_JSC_SMOKE=" + (20 + 22));\n' > "$ROOT/riftengine/jsc-dist/smoke.js"
 
-# Smoke-test the engine itself without relying on Node host-file visibility.
-# The Emscripten runtime has its own virtual filesystem, so passing a host path
-# like smoke.js makes JSC fail before JavaScript execution begins. JSC's -e
-# option executes source directly and proves the produced wasm can boot and run.
+# Smoke-test the generated JSC runtime itself. The Node-hosted Emscripten shell
+# has a virtual filesystem, so a normal host path is not automatically visible
+# to JSC. Executing source with -e avoids confusing filesystem mounting with
+# engine correctness and proves that the generated wasm boots and runs JS.
 set +e
 node "$ROOT/riftengine/jsc-dist/jsc.js" -e 'print("RIFT_JSC_SMOKE=" + (20 + 22));' > "$LOGDIR/jsc-smoke.log" 2>&1
 smoke_rc=$?
