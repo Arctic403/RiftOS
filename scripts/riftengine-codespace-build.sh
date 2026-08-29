@@ -59,14 +59,25 @@ fi
 # RiftOS mutates the pinned upstream source before bootstrap/build.
 python3 "$RIFTOS_ROOT/scripts/riftengine/apply-upstream-patches.py" "$ROOT"
 
-# Recover from the two failures already observed without deleting successful
-# dependency work. The source archive retry and fontconfig reconfigure are tiny
-# compared with throwing away the full wasm sysroot.
+# Recover from the failures already observed without deleting successful
+# dependency work. fontconfig's upstream freedesktop URL returns HTTP 418 from
+# some GitHub-hosted environments. Seed the exact archive from Debian first;
+# upstream's fetch() is idempotent and will reuse this local tarball.
 FONTCONFIG_TARBALL="third_party/build-deps/fontconfig.tar.xz"
+FONTCONFIG_MIRROR="https://deb.debian.org/debian/pool/main/f/fontconfig/fontconfig_2.15.0.orig.tar.xz"
 if [ -f "$FONTCONFIG_TARBALL" ] && ! tar -tf "$FONTCONFIG_TARBALL" >/dev/null 2>&1; then
   echo 'Removing incomplete fontconfig tarball.'
   rm -f "$FONTCONFIG_TARBALL"
 fi
+if [ ! -f "$FONTCONFIG_TARBALL" ]; then
+  echo 'Seeding fontconfig 2.15.0 from Debian mirror.'
+  tmp="${FONTCONFIG_TARBALL}.tmp"
+  rm -f "$tmp"
+  curl -fL --retry 3 --retry-delay 2 -o "$tmp" "$FONTCONFIG_MIRROR"
+  tar -tf "$tmp" >/dev/null
+  mv "$tmp" "$FONTCONFIG_TARBALL"
+fi
+
 if [ ! -f "third_party/wasm-sysroot/lib/pkgconfig/fontconfig.pc" ] || [ ! -f "third_party/wasm-sysroot/etc/fonts/fonts.conf" ]; then
   rm -f third_party/build-deps/fontconfig/config.status third_party/build-deps/fontconfig/config.cache 2>/dev/null || true
   rm -rf third_party/build-deps/fontconfig-dest 2>/dev/null || true
