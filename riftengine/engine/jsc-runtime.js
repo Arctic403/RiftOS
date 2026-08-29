@@ -13,6 +13,7 @@ export class RiftJSCRuntime {
     const stdout = [];
     const stderr = [];
     const lifecycle = [];
+    let domSnapshot = null;
     const started = performance.now();
     const worker = new Worker(this.workerURL);
 
@@ -34,6 +35,7 @@ export class RiftJSCRuntime {
         error.stdout = stdout;
         error.stderr = stderr;
         error.lifecycle = lifecycle;
+        error.domSnapshot = domSnapshot;
         reject(error);
       };
 
@@ -45,9 +47,11 @@ export class RiftJSCRuntime {
           stdout,
           stderr,
           lifecycle,
+          domSnapshot,
           durationMs: performance.now() - started,
           engine: 'JavaScriptCore',
-          runtime: 'RiftEngine JSC wasm v1'
+          runtime: 'RiftEngine JSC wasm v1',
+          domRuntime: domSnapshot?.version || null
         });
       };
 
@@ -62,6 +66,7 @@ export class RiftJSCRuntime {
         if (message.type === 'stdout') stdout.push(String(message.text ?? ''));
         else if (message.type === 'stderr') stderr.push(String(message.text ?? ''));
         else if (message.type === 'status') lifecycle.push(String(message.stage ?? 'unknown'));
+        else if (message.type === 'dom') domSnapshot = message.snapshot || null;
         else if (message.type === 'done') succeed();
         else if (message.type === 'error') fail(message.error);
       };
@@ -77,6 +82,18 @@ export class RiftJSCRuntime {
   async smoke() {
     const result = await this.evaluate('print("RIFT_JSC_BROWSER=" + (20 + 22));');
     result.ok = result.stdout.includes('RIFT_JSC_BROWSER=42');
+    return result;
+  }
+
+  async domSmoke() {
+    const result = await this.evaluate(`
+      const title = document.createElement('h1');
+      title.textContent = 'Hello from JavaScriptCore';
+      const note = document.createElement('p');
+      note.textContent = 'Rendered through RiftDOM v0.1';
+      document.body.append(title, note);
+    `);
+    result.ok = result.domSnapshot?.body?.children?.length >= 2;
     return result;
   }
 }
