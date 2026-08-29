@@ -39,21 +39,16 @@ jobs:
       - name: Build RiftEngine port harness
         run: bash riftengine/tools/build-prototype.sh
 
-      - name: Fetch preserved JSC wasm runtime
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Stage preserved JSC wasm runtime
         run: |
           set -euxo pipefail
           mkdir -p riftengine/jsc-dist
-          if gh release view riftengine-jsc-v1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release download riftengine-jsc-v1 \
-              --repo "$GITHUB_REPOSITORY" \
-              --pattern 'jsc.js' \
-              --pattern 'jsc.wasm' \
-              --dir riftengine/jsc-dist
-            ls -lh riftengine/jsc-dist
+          if [ -s riftengine/prebuilt/jsc-v1/jsc.js ] && [ -s riftengine/prebuilt/jsc-v1/jsc.wasm ]; then
+            cp riftengine/prebuilt/jsc-v1/jsc.js riftengine/jsc-dist/jsc.js
+            cp riftengine/prebuilt/jsc-v1/jsc.wasm riftengine/jsc-dist/jsc.wasm
+            ls -lh riftengine/jsc-dist/jsc.js riftengine/jsc-dist/jsc.wasm
           else
-            echo 'Preserved JSC release is not published yet; deploying prototype without it.'
+            echo 'Prebuilt JSC v1 has not been promoted yet; deploying prototype without it.'
           fi
 
       - name: Verify prototype
