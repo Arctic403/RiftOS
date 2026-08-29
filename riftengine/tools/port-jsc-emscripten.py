@@ -6,7 +6,6 @@ vendoring WebKit source. Every edit is marker-checked so upstream drift fails
 loudly rather than silently producing a different engine.
 """
 from pathlib import Path
-import re
 import sys
 
 root = Path(sys.argv[1]).resolve()
@@ -71,7 +70,6 @@ replace_once(
     "#if CPU(ADDRESS64) || OS(DARWIN) || OS(HAIKU)",
     "#if CPU(ADDRESS64) || OS(DARWIN) || OS(HAIKU) || defined(__EMSCRIPTEN__)"
 )
-# The matching endif comment is cosmetic and intentionally left unchanged.
 
 # Emscripten has POSIX-style file handles but does not define WebKit's Linux OS
 # policy macro in every JSCOnly configuration.
@@ -96,6 +94,8 @@ replace_once(
 )
 
 # Build the JSC shell with enough stack/heap to make a smoke test meaningful.
+# ICU archive data is embedded only into this diagnostic shell; later the
+# RiftEngine host owns the profile/data mounting policy.
 shell_rel = "Source/JavaScriptCore/shell/CMakeLists.txt"
 shell = read(shell_rel)
 if "RIFT_JSC_WASM_RUNTIME" not in shell:
@@ -111,6 +111,9 @@ if (EMSCRIPTEN)
         "SHELL:-sINITIAL_MEMORY=128MB"
         "SHELL:-sALLOW_MEMORY_GROWTH=1"
         "SHELL:-sMAXIMUM_MEMORY=1GB")
+    if (JSC_EMBED_ICU_DATA_FILE)
+        target_link_options(jsc PRIVATE "SHELL:--embed-file ${JSC_EMBED_ICU_DATA_FILE}@${JSC_EMBED_ICU_DATA_FILE}")
+    endif ()
 endif ()
 '''
     write(shell_rel, shell.replace(marker, marker + extra, 1))
