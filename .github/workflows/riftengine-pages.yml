@@ -16,111 +16,49 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    env:
+      RIFTENGINE_ROOT: ${{ runner.temp }}/WebkitWasm
+      RIFTENGINE_LOG_DIR: ${{ runner.temp }}/riftengine-logs
+      RIFTOS_ROOT: ${{ github.workspace }}
+      BIB_PTHREAD: '0'
+      BIB_JOBS: '2'
+      JOBS: '2'
     steps:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
 
       - name: Show runner resources
         run: |
-          echo 'CPU:'
           nproc
-          echo 'Memory:'
           free -h
-          echo 'Disk:'
           df -h /
           node --version
 
-      - name: Install host build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential git curl cmake ninja-build make python3 pkg-config \
-            tar xz-utils unzip clang ripgrep gperf autoconf automake libtool gettext
+      - name: Prepare pinned RiftEngine source and dependencies
+        run: bash scripts/riftengine-codespace-setup.sh
 
-      - name: Clone WebkitWasm non-pthread research port
-        run: |
-          git clone --depth 1 --branch non-pthread https://github.com/theogbob/WebkitWasm.git /tmp/WebkitWasm
-          git -C /tmp/WebkitWasm rev-parse HEAD
+      - name: Build audited iPhone profile
+        run: bash scripts/riftengine-codespace-build.sh
 
-      - name: Patch upstream fresh-clone dependency cycle
-        working-directory: /tmp/WebkitWasm
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('tools/build-deps/webcore-deps.sh')
-          s=p.read_text()
-          marker='echo "=== freetype (no harfbuzz first pass) ==="'
-          if marker not in s:
-              raise SystemExit('Could not locate FreeType stage in upstream webcore-deps.sh')
-          block=r'''echo "=== brotli prebuild for freetype WOFF2 ==="
-          if [ ! -f "$SYSROOT/lib/libbrotlidec.a" ]; then
-            fetch https://github.com/google/brotli/archive/refs/tags/v1.1.0.tar.gz brotli.tar.gz
-            unpack brotli.tar.gz brotli
-            cmake_build brotli brotli-build -DBROTLI_DISABLE_TESTS=ON
-          fi
-
-          '''
-          s=s.replace(marker,block+marker,1)
-          p.write_text(s)
-          PY
-          echo 'Patched dependency order: Brotli will be built before FreeType.'
-          rg -n 'brotli prebuild|freetype' tools/build-deps/webcore-deps.sh
-
-      - name: Bootstrap WebKit, Emscripten and WASM dependencies
-        working-directory: /tmp/WebkitWasm
-        env:
-          JOBS: '2'
-        run: |
-          set +e
-          bash tools/bootstrap.sh
-          rc=$?
-          if [ "$rc" -ne 0 ]; then
-            echo '=== bootstrap failed; dumping dependency logs ==='
-            find third_party/build-deps -maxdepth 2 -type f \( -name '*configure.log' -o -name '*build.log' -o -name '*make*.log' \) -print 2>/dev/null | sort | while read -r f; do
-              echo
-              echo "===== $f ====="
-              tail -n 160 "$f" || true
-            done
-            exit "$rc"
-          fi
-          npm ci
-
-      - name: Build local non-pthread WebCore/WASM
-        working-directory: /tmp/WebkitWasm
-        env:
-          BIB_PTHREAD: '0'
-          BIB_JOBS: '2'
-        run: |
-          set +e
-          bash tools/build-webcore.sh
-          rc=$?
-          if [ "$rc" -ne 0 ]; then
-            echo '=== WebCore build failed; recent build logs ==='
-            find build -type f -name '*.log' -print 2>/dev/null | sort | tail -n 30 | while read -r f; do
-              echo
-              echo "===== $f ====="
-              tail -n 160 "$f" || true
-            done
-            exit "$rc"
-          fi
-
-      - name: Verify generated engine
-        working-directory: /tmp/WebkitWasm
-        run: |
-          test -s build/webcore/bin/embedder.js
-          test -s build/webcore/bin/embedder.wasm
-          test -s build/webcore/bin/bib-build-config.js
-          ls -lh build/webcore/bin/
-
-      - name: Assemble RiftOS static artifact
+      - name: Assemble RiftOS + local engine runtime
         run: |
           mkdir -p _site
           cp -a README.md index.html manifest.webmanifest styles.css sw.js src _site/
-          mkdir -p _site/riftengine/engine
-          cp -a /tmp/WebkitWasm/build/webcore/bin/. _site/riftengine/engine/
-          mkdir -p _site/riftengine/upstream-web
-          cp -a /tmp/WebkitWasm/web/. _site/riftengine/upstream-web/
+
+          # Keep the upstream host and engine adjacent exactly as browser.html
+          # expects: runtime/browser.html -> runtime/engine/embedder.js.
+          mkdir -p _site/riftengine/runtime/engine
+          cp -a "$RIFTENGINE_ROOT/web/." _site/riftengine/runtime/
+          cp -a "$RIFTENGINE_ROOT/build/webcore/bin/." _site/riftengine/runtime/engine/
+
+          # Preserve the upstream license beside the shipped research-derived
+          # runtime. RiftOS code remains separate from the vendored build output.
+          cp "$RIFTENGINE_ROOT/LICENSING.md" _site/riftengine/UPSTREAM-LICENSING.md
           touch _site/.nojekyll
+
+          test -s _site/riftengine/runtime/browser.html
+          test -s _site/riftengine/runtime/engine/embedder.js
+          test -s _site/riftengine/runtime/engine/embedder.wasm
           echo 'RiftEngine payload:'
           du -sh _site/riftengine
 
