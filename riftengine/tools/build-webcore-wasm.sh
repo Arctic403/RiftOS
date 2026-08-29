@@ -22,6 +22,8 @@ python3 "$ROOT/riftengine/tools/port-webcore-emscripten.py" "$WEBKIT" 2>&1 | tee
 
 ICU_DATA="$(find "$SYSROOT/share/icu" -type f -name 'icudt*.dat' -print -quit 2>/dev/null || true)"
 [ -n "$ICU_DATA" ] || { echo 'error: ICU data archive missing' >&2; exit 3; }
+[ -f "$SYSROOT/lib/libxml2.a" ] || { echo 'error: libxml2 wasm archive missing' >&2; exit 4; }
+[ -f "$SYSROOT/include/libxml2/libxml/parser.h" ] || { echo 'error: libxml2 wasm headers missing' >&2; exit 5; }
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
@@ -40,8 +42,6 @@ emcmake cmake -S "$WEBKIT" -B "$BUILD" -GNinja \
   -DICU_ROOT="$SYSROOT" \
   -DCMAKE_PREFIX_PATH="$SYSROOT" \
   -DCMAKE_FIND_ROOT_PATH="$SYSROOT" \
-  -DLIBXML2_INCLUDE_DIR="$SYSROOT/include/libxml2" \
-  -DLIBXML2_LIBRARY="$SYSROOT/lib/libxml2.a" \
   -DJSC_EMBED_ICU_DATA_FILE="$ICU_DATA" \
   > "$LOGDIR/configure.log" 2>&1
 configure_rc=$?
