@@ -28,7 +28,7 @@ hash_path() {
 
 PORT_HASH="$(hash_path "$PORT_SCRIPT")"
 CMAKE_HASH="$(hash_path "$CMAKE_DIR")"
-KEY_INPUT="webkit=${WEBKIT_COMMIT:-unknown};emsdk=${EMSDK_VERSION:-unknown};icu=${ICU_VERSION:-unknown};profile=$PROFILE;port=$PORT_HASH;cmake=$CMAKE_HASH"
+KEY_INPUT="webkit=${RIFT_WEBKIT_COMMIT};emsdk=${RIFT_EMSDK_VERSION};icu=${RIFT_ICU_RELEASE};profile=$PROFILE;port=$PORT_HASH;cmake=$CMAKE_HASH"
 CORE_KEY="$(printf '%s' "$KEY_INPUT" | sha256sum | awk '{print $1}')"
 CORE_KEY_SHORT="${CORE_KEY:0:20}"
 
