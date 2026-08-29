@@ -1,5 +1,15 @@
 const DEFAULT_TIMEOUT = 120000;
 
+function freshSessionInfo() {
+  return {
+    workerPersistent: true,
+    wasmReused: false,
+    contextPersistent: null,
+    mode: 'uninitialized',
+    reentry: 'not-tested'
+  };
+}
+
 export class RiftJSCRuntime {
   constructor(options = {}) {
     this.workerURL = options.workerURL || new URL('./jsc-worker.js', import.meta.url);
@@ -7,12 +17,7 @@ export class RiftJSCRuntime {
     this.sequence = 0;
     this.worker = null;
     this.pending = new Map();
-    this.sessionInfo = {
-      workerPersistent: true,
-      wasmReused: false,
-      contextPersistent: null,
-      reentry: 'not-tested'
-    };
+    this.sessionInfo = freshSessionInfo();
   }
 
   ensureWorker() {
@@ -24,6 +29,12 @@ export class RiftJSCRuntime {
       const message = event.data || {};
       const request = this.pending.get(message.id);
       if (!request) return;
+
+      if (request.kind === 'control') {
+        if (message.type === 'runtime-info' || message.type === 'reset') this.finishControl(request, true, message);
+        else if (message.type === 'error') this.finishControl(request, false, message);
+        return;
+      }
 
       if (message.type === 'stdout') request.stdout.push(String(message.text ?? ''));
       else if (message.type === 'stderr') request.stderr.push(String(message.text ?? ''));
@@ -37,7 +48,8 @@ export class RiftJSCRuntime {
     worker.onerror = event => {
       const message = event.message || 'RiftJSC worker crashed.';
       for (const request of [...this.pending.values()]) {
-        this.finishRequest(request, false, { error: message, code: 'worker-crash' });
+        if (request.kind === 'control') this.finishControl(request, false, { error: message, code: 'worker-crash' });
+        else this.finishRequest(request, false, { error: message, code: 'worker-crash' });
       }
       this.disposeWorker();
     };
@@ -50,16 +62,21 @@ export class RiftJSCRuntime {
     this.worker = null;
   }
 
+  mergeSession(session = {}) {
+    if (session.workerPersistent != null) this.sessionInfo.workerPersistent = Boolean(session.workerPersistent);
+    if (session.wasmReused != null) this.sessionInfo.wasmReused = Boolean(session.wasmReused);
+    if (session.contextPersistent != null) this.sessionInfo.contextPersistent = Boolean(session.contextPersistent);
+    if (session.mode) this.sessionInfo.mode = session.mode;
+    if (session.reentry) this.sessionInfo.reentry = session.reentry;
+    return { ...this.sessionInfo, ...session };
+  }
+
   finishRequest(request, ok, message = {}) {
     if (!request || request.settled) return;
     request.settled = true;
     clearTimeout(request.timer);
     this.pending.delete(request.id);
-
-    const session = message.session || {};
-    if (session.workerPersistent != null) this.sessionInfo.workerPersistent = Boolean(session.workerPersistent);
-    if (session.wasmReused != null) this.sessionInfo.wasmReused = Boolean(session.wasmReused);
-    if (session.reentry) this.sessionInfo.reentry = session.reentry;
+    const session = this.mergeSession(message.session || {});
 
     if (ok) {
       request.resolve({
@@ -68,10 +85,11 @@ export class RiftJSCRuntime {
         lifecycle: request.lifecycle,
         domSnapshot: request.domSnapshot,
         meta: request.meta,
-        session: { ...this.sessionInfo, ...session },
+        value: message.value,
+        session,
         durationMs: performance.now() - request.started,
         engine: 'JavaScriptCore',
-        runtime: 'RiftEngine JSC wasm v1',
+        runtime: session.mode === 'persistent-host' ? 'RiftJSC persistent host v1' : 'RiftEngine JSC wasm v1',
         domRuntime: request.domSnapshot?.version || null
       });
       return;
@@ -87,7 +105,25 @@ export class RiftJSCRuntime {
     error.lifecycle = request.lifecycle;
     error.domSnapshot = request.domSnapshot;
     error.meta = request.meta;
-    error.session = { ...this.sessionInfo, ...session };
+    error.session = session;
+    request.reject(error);
+  }
+
+  finishControl(request, ok, message = {}) {
+    if (!request || request.settled) return;
+    request.settled = true;
+    clearTimeout(request.timer);
+    this.pending.delete(request.id);
+    const session = this.mergeSession(message.session || {});
+
+    if (ok) {
+      request.resolve({ ok: message.ok !== false, workerClosed: Boolean(message.workerClosed), session });
+      return;
+    }
+
+    const error = new Error(message.error || `RiftJSC ${request.controlType} failed.`);
+    error.code = message.code || null;
+    error.session = session;
     request.reject(error);
   }
 
@@ -99,6 +135,7 @@ export class RiftJSCRuntime {
     return new Promise((resolve, reject) => {
       const request = {
         id,
+        kind: 'evaluate',
         stdout: [],
         stderr: [],
         lifecycle: [],
@@ -123,12 +160,38 @@ export class RiftJSCRuntime {
     });
   }
 
+  _control(controlType, options = {}) {
+    const id = ++this.sequence;
+    const timeout = options.timeout || Math.min(this.timeout, 15000);
+    const worker = this.ensureWorker();
+
+    return new Promise((resolve, reject) => {
+      const request = {
+        id,
+        kind: 'control',
+        controlType,
+        settled: false,
+        resolve,
+        reject,
+        timer: null
+      };
+      request.timer = setTimeout(() => {
+        this.finishControl(request, false, {
+          error: `RiftJSC ${controlType} timed out after ${timeout} ms.`,
+          code: 'control-timeout'
+        });
+      }, timeout);
+      this.pending.set(id, request);
+      worker.postMessage({ id, type: controlType });
+    });
+  }
+
   async evaluate(source, options = {}) {
     try {
       return await this._evaluateOnce(source, options);
     } catch (error) {
       if (error.code !== 'warm-reentry-unavailable' || options.allowFreshFallback === false) throw error;
-      this.reset();
+      await this.reset();
       const result = await this._evaluateOnce(source, options);
       result.session.fallbackFresh = true;
       result.session.wasmReused = false;
@@ -136,17 +199,46 @@ export class RiftJSCRuntime {
     }
   }
 
-  reset() {
+  async status() {
+    if (!this.worker) return { ok: true, workerClosed: true, session: { ...this.sessionInfo } };
+    return this._control('status-query');
+  }
+
+  async reset() {
+    const existing = this.worker;
     for (const request of [...this.pending.values()]) {
-      this.finishRequest(request, false, { error: 'RiftJSC session reset.', code: 'session-reset' });
+      if (request.kind === 'control') this.finishControl(request, false, { error: 'RiftJSC session reset.', code: 'session-reset' });
+      else this.finishRequest(request, false, { error: 'RiftJSC session reset.', code: 'session-reset' });
     }
-    this.disposeWorker();
+
+    if (!existing) {
+      this.sessionInfo = freshSessionInfo();
+      return { ok: true, workerClosed: true, session: { ...this.sessionInfo } };
+    }
+
+    let result;
+    try {
+      result = await this._control('reset');
+    } catch (error) {
+      this.disposeWorker();
+      this.sessionInfo = freshSessionInfo();
+      throw error;
+    }
+
+    if (result.workerClosed) {
+      this.disposeWorker();
+      this.sessionInfo = freshSessionInfo();
+      this.sessionInfo.mode = result.session?.mode || 'uninitialized';
+      return { ...result, session: { ...this.sessionInfo } };
+    }
+
     this.sessionInfo = {
-      workerPersistent: true,
-      wasmReused: false,
-      contextPersistent: null,
-      reentry: 'not-tested'
+      ...freshSessionInfo(),
+      ...result.session,
+      wasmReused: true,
+      contextPersistent: result.session?.mode === 'persistent-host'
     };
+    return { ...result, session: { ...this.sessionInfo } };
   }
 
   async smoke() {
@@ -168,7 +260,7 @@ export class RiftJSCRuntime {
   }
 
   async sessionSmoke() {
-    this.reset();
+    await this.reset();
     const first = await this.evaluate(`
       globalThis.__RIFT_USER_STATE__ = 41;
       print('RIFT_SESSION_FIRST=' + globalThis.__RIFT_USER_STATE__);
@@ -199,15 +291,25 @@ export class RiftJSCRuntime {
     );
     const statePreserved = second.stdout.includes('RIFT_SESSION_SECOND=42');
     const wasmReused = Boolean(second.session?.wasmReused);
-    this.sessionInfo.contextPersistent = sameContext && statePreserved;
+    const persistentHost = second.session?.mode === 'persistent-host';
 
+    await this.reset();
+    const afterReset = await this.evaluate(`
+      print('RIFT_SESSION_RESET=' + typeof globalThis.__RIFT_USER_STATE__);
+    `, { allowFreshFallback: false });
+    const resetCleared = afterReset.stdout.includes('RIFT_SESSION_RESET=undefined');
+
+    this.sessionInfo.contextPersistent = persistentHost && sameContext && statePreserved;
     return {
-      ok: wasmReused && sameContext && statePreserved,
-      supported: true,
+      ok: persistentHost && wasmReused && sameContext && statePreserved && resetCleared,
+      supported: persistentHost,
       first,
       second,
+      afterReset,
+      mode: second.session?.mode,
       wasmReused,
       contextPersistent: sameContext && statePreserved,
+      resetCleared,
       coldMs: first.durationMs,
       warmMs: second.durationMs
     };
@@ -221,8 +323,8 @@ if (typeof window !== 'undefined') {
   window.dispatchEvent(new CustomEvent('rift:jsc-bridge-ready', {
     detail: {
       engine: 'JavaScriptCore',
-      runtime: 'RiftEngine JSC wasm v1',
-      session: 'persistent-worker-v0.2'
+      runtime: 'RiftJSC persistent host v1',
+      session: 'persistent-host-v1-with-stock-fallback'
     }
   }));
 }
