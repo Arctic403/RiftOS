@@ -17,6 +17,7 @@ command -v emcmake >/dev/null 2>&1 || { echo 'error: Emscripten environment is n
 # platform libraries cross-compiled into the same wasm sysroot.
 bash "$ROOT/riftengine/tools/build-icu-wasm.sh" 2>&1 | tee "$LOGDIR/icu.log"
 bash "$ROOT/riftengine/tools/build-libxml2-wasm.sh" 2>&1 | tee "$LOGDIR/libxml2.log"
+bash "$ROOT/riftengine/tools/build-sqlite-wasm.sh" 2>&1 | tee "$LOGDIR/sqlite.log"
 bash "$ROOT/riftengine/tools/prepare-webkit.sh" 2>&1 | tee "$LOGDIR/prepare-webkit.log"
 python3 "$ROOT/riftengine/tools/port-webcore-emscripten.py" "$WEBKIT" 2>&1 | tee "$LOGDIR/port-webcore.log"
 
@@ -24,6 +25,8 @@ ICU_DATA="$(find "$SYSROOT/share/icu" -type f -name 'icudt*.dat' -print -quit 2>
 [ -n "$ICU_DATA" ] || { echo 'error: ICU data archive missing' >&2; exit 3; }
 [ -f "$SYSROOT/lib/libxml2.a" ] || { echo 'error: libxml2 wasm archive missing' >&2; exit 4; }
 [ -f "$SYSROOT/include/libxml2/libxml/parser.h" ] || { echo 'error: libxml2 wasm headers missing' >&2; exit 5; }
+[ -f "$SYSROOT/lib/libsqlite3.a" ] || { echo 'error: SQLite wasm archive missing' >&2; exit 6; }
+[ -f "$SYSROOT/include/sqlite3.h" ] || { echo 'error: SQLite wasm header missing' >&2; exit 7; }
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
@@ -40,6 +43,7 @@ emcmake cmake -S "$WEBKIT" -B "$BUILD" -GNinja \
   -DENABLE_WEBASSEMBLY=OFF \
   -DUSE_SYSTEM_MALLOC=ON \
   -DICU_ROOT="$SYSROOT" \
+  -DSQLite3_ROOT="$SYSROOT" \
   -DCMAKE_PREFIX_PATH="$SYSROOT" \
   -DCMAKE_FIND_ROOT_PATH="$SYSROOT" \
   -DJSC_EMBED_ICU_DATA_FILE="$ICU_DATA" \
