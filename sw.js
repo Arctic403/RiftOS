@@ -1,5 +1,5 @@
-const CACHE="riftos-shell-v6-jsc-wasm-fix";
-const CORE=["./","./index.html","./styles.css","./src/riftos.js","./manifest.webmanifest"];
+const CACHE="riftos-shell-v7-riftapps";
+const CORE=["./","./index.html","./styles.css","./src/riftos.js","./src/riftapps.js","./manifest.webmanifest"];
 
 self.addEventListener("install",e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())
