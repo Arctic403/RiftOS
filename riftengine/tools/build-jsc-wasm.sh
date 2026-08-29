@@ -78,12 +78,12 @@ mkdir -p "$ROOT/riftengine/jsc-dist"
 cp "$JSC_JS" "$ROOT/riftengine/jsc-dist/jsc.js"
 cp "$JSC_WASM" "$ROOT/riftengine/jsc-dist/jsc.wasm"
 
-printf 'print("RIFT_JSC_SMOKE=" + (20 + 22));\n' > "$ROOT/riftengine/jsc-dist/smoke.js"
-
-# Node is only a CI smoke host here; the produced wasm remains browser-targeted
-# groundwork for the RiftEngine bridge.
+# Smoke-test the engine itself without relying on Node host-file visibility.
+# The Emscripten runtime has its own virtual filesystem, so passing a host path
+# like smoke.js makes JSC fail before JavaScript execution begins. JSC's -e
+# option executes source directly and proves the produced wasm can boot and run.
 set +e
-node "$ROOT/riftengine/jsc-dist/jsc.js" "$ROOT/riftengine/jsc-dist/smoke.js" > "$LOGDIR/jsc-smoke.log" 2>&1
+node "$ROOT/riftengine/jsc-dist/jsc.js" -e 'print("RIFT_JSC_SMOKE=" + (20 + 22));' > "$LOGDIR/jsc-smoke.log" 2>&1
 smoke_rc=$?
 set -e
 if [ "$smoke_rc" -ne 0 ] || ! grep -q 'RIFT_JSC_SMOKE=42' "$LOGDIR/jsc-smoke.log"; then
