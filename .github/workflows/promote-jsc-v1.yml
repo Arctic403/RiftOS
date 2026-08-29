@@ -1,0 +1,48 @@
+name: Promote RiftEngine JSC v1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/promote-jsc-v1.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  promote:
+    name: Preserve successful JSC wasm artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download successful engine artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: '9717472558'
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/rift-jsc-v1
+          gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/rift-jsc-v1.zip
+          unzip -q /tmp/rift-jsc-v1.zip -d /tmp/rift-jsc-v1
+          find /tmp/rift-jsc-v1 -maxdepth 2 -type f -print -exec ls -lh {} \;
+          test -s /tmp/rift-jsc-v1/jsc.js
+          test -s /tmp/rift-jsc-v1/jsc.wasm
+
+      - name: Publish durable v1 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: '5b81034050881b6935ab8bcbe1ddf8bd876821b9'
+        run: |
+          set -euxo pipefail
+          if gh release view riftengine-jsc-v1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'riftengine-jsc-v1 already exists; nothing to replace.'
+            exit 0
+          fi
+          gh release create riftengine-jsc-v1 \
+            /tmp/rift-jsc-v1/jsc.js \
+            /tmp/rift-jsc-v1/jsc.wasm \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title 'RiftEngine JSC wasm v1' \
+            --notes 'First successful pinned JSCOnly/Emscripten runtime. Promoted from Actions artifact 9717472558 (run 33260852535).'
