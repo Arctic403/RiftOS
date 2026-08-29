@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+RIFTOS_ROOT="${RIFTOS_ROOT:-/workspaces/RiftOS}"
 ROOT="${RIFTENGINE_ROOT:-/workspaces/.riftengine/WebkitWasm}"
+source "$RIFTOS_ROOT/scripts/riftengine/version.env"
 
 sudo apt-get update
 sudo apt-get install -y \
@@ -10,46 +12,19 @@ sudo apt-get install -y \
 
 mkdir -p "$(dirname "$ROOT")"
 if [ ! -d "$ROOT/.git" ]; then
-  git clone --depth 1 --branch non-pthread https://github.com/theogbob/WebkitWasm.git "$ROOT"
-else
-  git -C "$ROOT" fetch origin non-pthread --depth 1
-  git -C "$ROOT" checkout non-pthread
-  git -C "$ROOT" reset --hard origin/non-pthread
+  git clone --filter=blob:none --no-checkout "$RIFTENGINE_UPSTREAM_REPO" "$ROOT"
 fi
 
-cd "$ROOT"
-python3 - <<'PY'
-from pathlib import Path
+# Do not build a moving branch head. The audit/refactor is tied to this exact
+# upstream commit so tomorrow's compile is reproducible.
+git -C "$ROOT" fetch origin "$RIFTENGINE_UPSTREAM_COMMIT" --depth 1
+git -C "$ROOT" checkout --detach "$RIFTENGINE_UPSTREAM_COMMIT"
+git -C "$ROOT" reset --hard "$RIFTENGINE_UPSTREAM_COMMIT"
 
-# FreeType needs Brotli before the upstream curl tier runs.
-p = Path('tools/build-deps/webcore-deps.sh')
-s = p.read_text()
-marker = 'echo "=== freetype (no harfbuzz first pass) ==="'
-block = r'''echo "=== brotli prebuild for freetype WOFF2 ==="
-if [ ! -f "$SYSROOT/lib/libbrotlidec.a" ]; then
-  fetch https://github.com/google/brotli/archive/refs/tags/v1.1.0.tar.gz brotli.tar.gz
-  unpack brotli.tar.gz brotli
-  cmake_build brotli brotli-build -DBROTLI_DISABLE_TESTS=ON
-fi
+python3 "$RIFTOS_ROOT/scripts/riftengine/apply-upstream-patches.py" "$ROOT"
 
-'''
-if 'brotli prebuild for freetype WOFF2' not in s:
-    if marker not in s:
-        raise SystemExit('Could not locate FreeType stage in upstream webcore-deps.sh')
-    p.write_text(s.replace(marker, block + marker, 1))
-
-# freedesktop.org can return HTTP 418 to GitHub-hosted environments.
-# Debian mirrors the exact fontconfig 2.15.0 release source tarball.
-p = Path('tools/build-deps/curl-tier.sh')
-s = p.read_text()
-old = 'https://www.freedesktop.org/software/fontconfig/release/fontconfig-2.15.0.tar.xz'
-new = 'https://deb.debian.org/debian/pool/main/f/fontconfig/fontconfig_2.15.0.orig.tar.xz'
-if old in s:
-    p.write_text(s.replace(old, new))
-elif new not in s:
-    raise SystemExit('Could not locate the pinned fontconfig 2.15.0 download URL')
-PY
-
-echo
-printf 'RiftEngine Codespace ready at %s\n' "$ROOT"
-printf 'Next: bash scripts/riftengine-codespace-build.sh\n'
+printf '\nRiftEngine Codespace ready.\n'
+printf 'Upstream: %s\n' "$(git -C "$ROOT" rev-parse HEAD)"
+printf 'Profile:  %s (pthread=%s)\n' "$RIFTENGINE_PROFILE" "$RIFTENGINE_BIB_PTHREAD"
+printf 'Root:     %s\n' "$ROOT"
+printf 'Next:     bash scripts/riftengine-codespace-build.sh\n'
