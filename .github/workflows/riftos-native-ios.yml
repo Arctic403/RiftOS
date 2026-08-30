@@ -60,26 +60,56 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/RiftOSDerivedData" \
             CODE_SIGNING_ALLOWED=NO \
-            clean build | tee "$RUNNER_TEMP/riftos-native-xcodebuild.log"
+            clean build | tee "$RUNNER_TEMP/riftos-native-simulator-xcodebuild.log"
 
           test -d "$RUNNER_TEMP/RiftOSDerivedData/Build/Products/Debug-iphonesimulator/RiftOSNative.app"
 
-      - name: Upload simulator build
+      - name: Build unsigned iPhone target
+        working-directory: native/ios
+        run: |
+          set -euxo pipefail
+          xcodebuild \
+            -project RiftOSNative.xcodeproj \
+            -scheme RiftOSNative \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/RiftOSDeviceDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            clean build | tee "$RUNNER_TEMP/riftos-native-device-xcodebuild.log"
+
+          app="$RUNNER_TEMP/RiftOSDeviceDerivedData/Build/Products/Release-iphoneos/RiftOSNative.app"
+          test -d "$app"
+          rm -rf "$RUNNER_TEMP/RiftOSIPA"
+          mkdir -p "$RUNNER_TEMP/RiftOSIPA/Payload"
+          cp -R "$app" "$RUNNER_TEMP/RiftOSIPA/Payload/RiftOSNative.app"
+          (
+            cd "$RUNNER_TEMP/RiftOSIPA"
+            /usr/bin/zip -qry "$RUNNER_TEMP/RiftOSNative-unsigned-device.ipa" Payload
+          )
+          test -s "$RUNNER_TEMP/RiftOSNative-unsigned-device.ipa"
+
+      - name: Upload native builds
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: RiftOSNative-simulator-${{ github.sha }}
+          name: RiftOSNative-builds-${{ github.sha }}
           path: |
             ${{ runner.temp }}/RiftOSDerivedData/Build/Products/Debug-iphonesimulator/RiftOSNative.app
-            ${{ runner.temp }}/riftos-native-xcodebuild.log
+            ${{ runner.temp }}/RiftOSNative-unsigned-device.ipa
+            ${{ runner.temp }}/riftos-native-simulator-xcodebuild.log
+            ${{ runner.temp }}/riftos-native-device-xcodebuild.log
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload build log on failure
+      - name: Upload build logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: RiftOSNative-failed-build-log-${{ github.sha }}
-          path: ${{ runner.temp }}/riftos-native-xcodebuild.log
+          name: RiftOSNative-failed-build-logs-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/riftos-native-simulator-xcodebuild.log
+            ${{ runner.temp }}/riftos-native-device-xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
