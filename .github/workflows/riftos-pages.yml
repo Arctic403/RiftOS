@@ -58,6 +58,7 @@ jobs:
           grep -F 'RiftOS core and RiftWorkspace MUST NOT require WebAssembly or native iOS code to boot.' docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md
           grep -F 'RiftOS core MUST NOT require WebAssembly to boot.' docs/RIFTBROWSER_ARCHITECTURE.md
           grep -F 'ENGINE_ID="wasm-gecko"' src/riftbrowser-engines.js
+          grep -F 'engine-manifest.json' src/riftbrowser-engines.js
           grep -F 'stableBrowser:false' src/riftbrowser-kernel.js
           grep -F 'Cross-Origin-Embedder-Policy' sw.js
           grep -F 'workspaceJSON' src/riftruntime.js
@@ -230,6 +231,47 @@ jobs:
       group: riftos-pages-deploy
       cancel-in-progress: false
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Wait for legacy branch Pages deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          legacy_id=""
+
+          for _ in $(seq 1 8); do
+            legacy_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=20" \
+              --jq '.workflow_runs[] | select(.name == "pages build and deployment") | .id' | head -n1 || true)
+            if [ -n "$legacy_id" ]; then break; fi
+            sleep 2
+          done
+
+          if [ -z "$legacy_id" ]; then
+            echo "No legacy branch Pages deployment detected; custom artifact can deploy now."
+            exit 0
+          fi
+
+          echo "Legacy Pages deployment $legacy_id detected; waiting so it cannot overwrite the Gecko artifact."
+          for _ in $(seq 1 90); do
+            status=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$legacy_id" --jq '.status')
+            if [ "$status" = "completed" ]; then
+              conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$legacy_id" --jq '.conclusion')
+              echo "Legacy Pages deployment finished: $conclusion"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Timed out waiting for legacy Pages deployment $legacy_id" >&2
+          exit 1
+
+      - name: Deploy generated RiftOS artifact to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify deployed Gecko engine manifest
+        run: |
+          set -euxo pipefail
+          base='${{ steps.deployment.outputs.page_url }}'
+          curl -fL --retry 12 --retry-delay 2 --retry-all-errors "${base}engines/gecko/engine-manifest.json" -o /tmp/live-engine-manifest.json
+          grep -F '"id": "wasm-gecko"' /tmp/live-engine-manifest.json
+          grep -F '"release": "v0.0.1"' /tmp/live-engine-manifest.json
