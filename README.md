@@ -81,9 +81,9 @@ See `riftengine/README.md` for the preserved engine roadmap.
 
 The normal Pages workflow now assembles only the RiftOS shell and the pinned RiftDev clone.
 
-The native iOS workflow runs automatically when `native/ios/**` or its workflow changes on `main`, also validates matching pull requests, and can still be started manually with `workflow_dispatch`. It generates the Xcode project with XcodeGen, performs an unsigned iOS Simulator build, and uploads the simulator `.app` plus build log for seven days.
+The native iOS workflow runs automatically when `native/ios/**` or its workflow changes on `main`, also validates matching pull requests, and can still be started manually with `workflow_dispatch`. It generates the Xcode project with XcodeGen, compiles both the iOS Simulator target and the real ARM iPhone target, and uploads the resulting builds and Xcode logs for seven days.
 
-The CI artifact is a **Simulator build**, not a signed installable iPhone IPA. Installing RiftOS Native on a physical iPhone still requires an Apple signing/provisioning path (for example Xcode/TestFlight or another legitimate signing flow).
+The device artifact is packaged as `RiftOSNative-unsigned-device.ipa`. It proves the physical-iPhone target compiles and gives signing tools a normal IPA payload, but it is intentionally unsigned. Installing it on an iPhone still requires a legitimate Apple signing/provisioning path such as Xcode, TestFlight, or another signing flow.
 
 ## Native RiftBrowser and AI workspace
 
