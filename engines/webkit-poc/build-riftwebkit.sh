@@ -84,6 +84,33 @@ test -s "$FSROOT/fonts/DejaVuSans.ttf"
 test -n "$(find "$FSROOT/etc-fonts/conf.d" -type f -name '*.conf' -print -quit)"
 echo "RiftWebKit fontconfig configs staged: $(find "$FSROOT/etc-fonts/conf.d" -type f -name '*.conf' | wc -l)"
 
+# The pinned helper's WebKit port normally requires FreeType's Brotli-backed
+# WOFF2 support. Our survival bootstrap intentionally disables that feature to
+# break the dependency-order cycle. For this local HTML paint proof, web-font
+# decoding is nonessential, so expose HAVE_WOFF_SUPPORT=OFF instead of lying
+# that the missing codec exists or aborting configuration.
+OPTIONS_EMSCRIPTEN="$TP/WebKit/Source/cmake/OptionsEmscripten.cmake"
+test -s "$OPTIONS_EMSCRIPTEN"
+python3 - "$OPTIONS_EMSCRIPTEN" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding='utf-8')
+old = '''    else ()
+        message(FATAL_ERROR "Sysroot FreeType lacks brotli/WOFF2 — rerun tools/build-deps/webcore-deps.sh (freetype section)")
+    endif ()'''
+new = '''    else ()
+        message(WARNING "RiftWebKit probe: sysroot FreeType lacks Brotli/WOFF2; continuing without downloadable WOFF/WOFF2 fonts")
+        SET_AND_EXPOSE_TO_BUILD(HAVE_WOFF_SUPPORT OFF)
+    endif ()'''
+if text.count(old) != 1:
+    raise SystemExit('Pinned OptionsEmscripten WOFF2 requirement changed unexpectedly')
+path.write_text(text.replace(old, new, 1), encoding='utf-8')
+PY
+grep -F 'continuing without downloadable WOFF/WOFF2 fonts' "$OPTIONS_EMSCRIPTEN" >/dev/null
+echo "RiftWebKit probe WOFF2 requirement relaxed."
+
 EMBEDDER_CMAKE="$RIFTOS_ROOT/engines/webkit-poc/riftwebkit-embedder.cmake"
 test -s "$EMBEDDER_CMAKE"
 test -s "$RIFTOS_ROOT/engines/webkit-poc/riftwebkit-probe.cpp"
