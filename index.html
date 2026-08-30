@@ -16,14 +16,14 @@
   <div id="boot" class="boot">
     <div class="boot-mark">R</div>
     <div class="boot-title">RiftOS</div>
-    <div class="boot-sub">RiftKernel / True OS Core</div>
+    <div class="boot-sub">RiftKernel / WebKit Runtime</div>
     <div class="boot-bar"><i></i></div>
   </div>
 
   <main id="os" class="os hidden" aria-label="RiftOS desktop">
     <header class="statusbar">
       <strong>RiftOS</strong>
-      <span id="statusText">Booting kernel</span>
+      <span id="statusText">Booting RiftKernel</span>
       <time id="clock"></time>
     </header>
 
@@ -31,9 +31,9 @@
       <section id="workspace" class="workspace">
         <div class="hero">
           <div>
-            <span class="eyebrow">RIFTKERNEL / TRUE OS CORE 1.0</span>
+            <span class="eyebrow">RIFTKERNEL / WEBKIT HOST</span>
             <h1>Your pocket computer.</h1>
-            <p>One kernel. One filesystem. Apple WebKit browser.</p>
+            <p>One kernel. OPFS filesystem. Apple WebKit host. No signed RiftOS app required.</p>
           </div>
           <button class="pill" data-open="terminal">Open RiftShell</button>
         </div>
@@ -66,6 +66,7 @@
   </template>
 
   <script type="module" src="./src/riftcore.js"></script>
+  <script type="module" src="./src/riftruntime.js"></script>
   <script type="module" src="./src/riftbrowser-kernel.js"></script>
   <script type="module" src="./src/riftapps.js"></script>
   <script type="module" src="./src/riftapps-files.js"></script>

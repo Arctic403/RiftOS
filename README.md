@@ -1,102 +1,108 @@
 # RiftOS
 
-RiftOS is a native-first iOS operating environment built around one RiftKernel runtime and a Swift host.
+RiftOS is an **unsigned, WebKit-hosted user-space operating environment** built around one RiftKernel runtime.
 
-The production runtime is **RiftOS Native**. GitHub Pages remains available only as a development/demo surface for the same web shell.
+The primary runtime is the RiftKernel running inside Apple WebKit on iPhone/iPad. Adding RiftOS to the Home Screen is the delivery/launch mechanism; it is not a separate "PWA mode" and it does not require RiftOS to ship a signed native executable.
 
-## Production architecture
+## Primary architecture
 
 ```text
-RiftOSNative.app
-      |
-      +-- bundled RiftOS shell (riftos://)
-      |         |
-      |     RiftKernel
-      |    /    |     \
-      | RiftFS apps  RiftKernel.browser
-      |                 |
-      +----------- native browser bridge
-                        |
-                 RiftBrowserStore
-                        |
-                WKWebView per tab
-                        |
-                   Apple WebKit
+iPhone / iPad
+    |
+Apple-signed WebKit host
+    |
+Home Screen web app / Safari delivery
+    |
+RiftOS shell
+    |
+RiftKernel
+ |      |         |          |
+RiftFS Processes  Apps   Capabilities
+  |
+ OPFS
+  |
+ IndexedDB compatibility mirror
+
+RiftKernel.browser
+    |
+web-transport / top-level WebKit navigation
 ```
 
-The installed app no longer boots its privileged shell from GitHub Pages. `index.html`, `src/**`, RiftDev and the rest of the shell are copied into the `.app` during the Xcode build, then served locally through `RiftBundleSchemeHandler` at `riftos:///index.html`.
+RiftKernel is **not the iOS kernel**. It is a user-space OS abstraction implemented in JavaScript and WebAssembly-capable WebKit. Apple still controls device-level privileges and requires signing for native executable code.
 
-## RiftKernel
+## What runs without app signing
 
-`src/riftcore.js` remains the runtime authority for process lifecycle, apps, capabilities, mounts, RiftFS, system information and native bridge state.
+The unsigned RiftKernel runtime can provide:
 
-`src/riftbrowser-kernel.js` installs `RiftKernel.browser`. In the native app it is synchronized with the real Swift browser through a narrow `riftBrowser` command channel plus native-state events. The kernel can open/navigate/select/close tabs, go back/forward, reload/stop, switch Desktop/Mobile mode, open Share and Find on Page, and inspect the current native tab state.
+- process and app lifecycle
+- RiftFS backed primarily by Origin Private File System (OPFS)
+- directories/files and persistent OS state
+- permissions/capability brokerage inside RiftOS
+- service workers and offline shell caching
+- Web Workers for isolated/background-capable kernel tasks while the web runtime is active
+- WebAssembly services
+- installed RiftApps and RiftDev
+- Home Screen standalone launch
+- supported web notifications/share/clipboard capabilities when the host allows them
+
+No separate RiftOS IPA signature is required for those web-platform capabilities.
+
+## RiftFS
+
+`src/riftcore.js` already uses OPFS as the primary RiftFS backend when available and keeps IndexedDB as a compatibility mirror/migration store.
+
+```text
+/
+├── home/
+├── apps/
+├── system/
+└── mounts/
+```
+
+The web runtime owns its origin-private filesystem. It does not claim arbitrary access to the iPhone filesystem.
+
+## Runtime identity
+
+`src/riftruntime.js` separates **runtime** from **delivery**.
+
+Typical unsigned iPhone state:
+
+```text
+mode: riftkernel-webkit
+host: Apple WebKit
+delivery: home-screen-web-app
+appSigningRequiredForKernel: false
+```
+
+A future native bridge changes available capabilities, not the identity of RiftKernel.
 
 ## RiftBrowser
 
-The production browser is `native/ios/RiftOSNative/RiftBrowser.swift`.
+`src/riftbrowser-kernel.js` remains the browser service owned by RiftKernel.
 
-RiftOS owns the browser product while Apple WebKit owns standards rendering. Current native support includes:
+In the unsigned WebKit runtime, RiftBrowser is constrained by normal web security: CORS, CSP, frame restrictions and other browser boundaries still apply. RiftOS cannot create a privileged arbitrary `WKWebView` from JavaScript.
 
-- real multi-tab `WKWebView` browsing
-- Desktop Website mode by default
-- per-tab Desktop / Mobile switching
-- persistent WebKit cookies/site data
-- restored browser sessions across launches
-- `target=_blank` / `window.open()` into RiftBrowser tabs
-- back, forward, reload and stop
-- Find on Page
-- iOS Share sheet
-- navigation/process error UI
-- downloads saved directly into `RiftWorkspace/downloads`
-- normal non-web URL handoff to iOS when appropriate
+Sites that cannot be safely rendered by the web transport must open through normal top-level WebKit navigation/external browser behavior. A signed native host can optionally provide the `native-webkit` backend later, but it is not required for RiftOS itself.
 
-Browser tabs never receive `riftNative`, `riftBrowser` or RiftWorkspace filesystem capabilities.
+## Optional native capability host
 
-## Native shell boundary
+`native/ios/` remains an optional experiment/capability layer for features the web platform cannot expose, such as native filesystem mounts and a full custom `WKWebView` tab host.
 
-The privileged shell WKWebView loads only the bundled `riftos://` origin. Main-frame HTTP/HTTPS navigation is intercepted and sent to RiftBrowser instead of replacing the shell.
-
-This prevents a normal website from becoming the privileged RiftOS document.
-
-## RiftWorkspace
-
-The native host owns `Documents/RiftWorkspace`:
-
-```text
-RiftWorkspace/
-├── projects/
-├── downloads/
-├── documents/
-├── patches/
-└── .rift/
-```
-
-Trusted RiftOS code can use native list/read/write/move/remove methods plus JSON patch preview/apply/history/rollback. Browser downloads land in `downloads/`.
-
-## Web development preview
-
-GitHub Pages still deploys the RiftOS shell for UI/kernel testing. It is **not** the production OS runtime and cannot reproduce unrestricted native browsing because the host browser still enforces normal CORS/CSP/frame rules.
-
-The web-only `web-transport` backend exists for development diagnostics only.
+It is **not the production definition of RiftOS** and its GitHub Action is manual-only. Native executables still require Apple-authorized signing before installation on a physical iPhone.
 
 ## GitHub Actions
 
-- `.github/workflows/riftos-pages.yml` validates and deploys the web development preview.
-- `.github/workflows/riftos-native-ios.yml` validates the native-first contract, builds Simulator + physical-iPhone targets, verifies the bundled shell exists inside the built `.app`, packages the unsigned IPA, and uploads artifacts.
+- `.github/workflows/riftos-pages.yml` validates and deploys the primary unsigned RiftKernel/WebKit runtime.
+- `.github/workflows/riftos-native-ios.yml` is an optional manual compile check for the Swift capability host.
 
-The native workflow now runs when either Swift/native files **or bundled shell files** change, because those shell files are part of the installed application.
+CI validates OPFS, runtime identity, standalone delivery assets, service-worker caching and the browser security boundary.
 
-## Browser development rule
+## Architecture rule
 
-Do not add another WebCore/JSC/WASM browser engine. Browser features belong in one of these layers:
+Do not reintroduce a custom JSC/WebCore browser-engine build. RiftOS uses the WebKit engine already provided by Apple and builds its kernel/services above the web platform.
 
-```text
-RiftKernel.browser            OS/browser API and state
-RiftBrowserCommandBridge      trusted kernel -> Swift commands
-RiftBrowserKernelSync         Swift -> kernel state sync
-RiftBrowser.swift             browser behavior/chrome
-WKWebView / Apple WebKit      web platform implementation
-```
+See:
 
-See `docs/RIFTBROWSER_ARCHITECTURE.md` and `docs/TRUE_OS_ARCHITECTURE.md`.
+- `docs/TRUE_OS_ARCHITECTURE.md`
+- `docs/RIFTBROWSER_ARCHITECTURE.md`
+- `docs/UNSIGNED_WEBKIT_RUNTIME.md`

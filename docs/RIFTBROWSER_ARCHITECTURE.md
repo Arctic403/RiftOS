@@ -2,102 +2,103 @@
 
 ## Decision
 
-RiftBrowser is a **native-first custom iOS browser built around Apple WebKit**.
+RiftBrowser is a **RiftKernel browser service hosted by Apple WebKit**.
 
-RiftOS owns tabs, chrome, session state, kernel integration, downloads and OS actions. `WKWebView` supplies the web engine.
+The primary RiftOS runtime is unsigned web-delivered RiftKernel. A signed Swift app is optional and must not be treated as a prerequisite for the OS.
 
-## Production path
+## Primary path
 
 ```text
-bundled RiftOS shell
-       |
+Home Screen web app / Safari
+          |
+     Apple WebKit
+          |
+      RiftKernel
+          |
+RiftKernel.browser
+          |
+    web-transport
+          |
+WebKit security model
+```
+
+RiftOS owns browser state, URL normalization, tabs/history/bookmarks, browser UI and OS integration. The host browser owns standards rendering and security enforcement.
+
+## What the unsigned browser can do
+
+The WebKit-hosted browser service can:
+
+- manage RiftBrowser tabs and logical history
+- normalize addresses/searches
+- persist browser state
+- fetch/render CORS-readable HTML/text through the constrained web transport
+- use top-level/external navigation when embedded transport is not allowed
+- keep browser behavior integrated with RiftKernel processes/apps
+
+## Hard web boundary
+
+JavaScript running inside a Home Screen web app cannot create its own privileged arbitrary `WKWebView`.
+
+Therefore RiftBrowser must respect:
+
+- CORS
+- CSP
+- `frame-ancestors` / iframe restrictions
+- origin isolation
+- WebKit navigation/security policies
+
+A site such as a login-heavy or frame-blocking service may need to open as normal top-level WebKit navigation instead of rendering inside the RiftBrowser document surface.
+
+This is a host security boundary, not evidence that RiftKernel is "only a PWA".
+
+## Runtime identity
+
+`src/riftruntime.js` reports the normal unsigned state as:
+
+```text
+mode: riftkernel-webkit
+host: Apple WebKit
+delivery: home-screen-web-app
+```
+
+The browser backend may still report `web-transport`; that describes how RiftBrowser obtains page content, not the identity of the OS runtime.
+
+## Optional native backend
+
+The existing `native-webkit` backend remains optional for a future signed/native capability host:
+
+```text
 RiftKernel.browser
        |
-riftBrowser command channel
+riftBrowser bridge
        |
 RiftBrowserStore
        |
-RiftBrowserTabSession
-       |
-    WKWebView
-       |
-  Apple WebKit
+WKWebView tabs
 ```
 
-Native state flows back in the opposite direction through `RiftBrowserKernelSync`, so the kernel can inspect the real Swift tab set rather than maintaining an unrelated fake tab model.
+That optional backend can provide unrestricted normal `WKWebView` navigation, downloads and native browser chrome. It is not required for RiftKernel, RiftFS, RiftApps or the Home Screen operating environment.
 
-## Bundled shell
+## Desktop rendering
 
-RiftOS Native does not load a privileged GitHub Pages document.
+Desktop-site preferences such as `WKWebpagePreferences.preferredContentMode = .desktop` apply only to the optional native `WKWebView` backend.
 
-During the Xcode build, the root shell assets are copied into `RiftOSNative.app/Web`. `RiftBundleSchemeHandler` serves them through the local `riftos://` scheme and `RiftOSWebView` boots `riftos:///index.html`.
-
-Main-frame web navigation is always diverted into RiftBrowser.
-
-## Browser kernel API
-
-`RiftKernel.browser` owns the OS-facing browser API:
-
-- open / new tab
-- navigate
-- select / close tab
-- back / forward
-- reload / stop
-- Desktop / Mobile mode
-- share
-- Find on Page
-- bookmarks and lightweight kernel history
-- native browser state inspection
-
-In native mode those commands are sent through `RiftBrowserCommandBridge`. In the web development preview they fall back to the constrained `web-transport` implementation.
-
-## Native tabs
-
-Every real tab is a `RiftBrowserTabSession` containing its own `WKWebView`.
-
-The browser currently supports:
-
-- persistent default `WKWebsiteDataStore`
-- Desktop Website mode on new tabs
-- per-tab Mobile/Desktop override
-- navigation gestures
-- progress and back/forward state
-- popup/new-window capture into new RiftBrowser tabs
-- page error recovery UI
-- WebKit download handling
-- Find on Page
-- Share sheet
-- session restoration through `UserDefaults`
-
-## Downloads
-
-Downloads use `WKDownload` and are written directly into:
-
-```text
-RiftWorkspace/downloads/
-```
-
-Names are sanitized and collisions receive numbered filenames. The browser UI reports the saved filename after completion.
-
-## Desktop-first rendering
-
-New tabs set WebKit page preferences to `.desktop`. The navigation delegate also supplies the selected content mode for each navigation, so the setting is per-tab and persists when that tab is restored.
-
-This is WebKit's supported content-mode mechanism; no separate desktop rendering engine is compiled.
+The unsigned web runtime cannot force the containing iOS WebKit web app to impersonate a separate desktop browser engine for arbitrary third-party sites. RiftBrowser should instead provide responsive RiftOS chrome and let WebKit enforce the page's normal rendering/security rules.
 
 ## Security boundary
 
-There are two different WKWebView roles:
+Normal third-party page content never receives privileged RiftOS capabilities merely because it is displayed or fetched by RiftBrowser.
 
-1. **Trusted RiftOS shell** — local bundled `riftos://` content with the privileged RiftNative and browser command handlers.
-2. **RiftBrowser tabs** — ordinary web content with no privileged RiftOS script handlers.
-
-Never attach RiftNative, RiftWorkspace, JSON patch or browser-command handlers to normal website tabs.
-
-## Web preview
-
-GitHub Pages is a development target only. The `web-transport` backend can test kernel/UI behavior and some CORS-readable documents, but it is not the production browser.
+RiftFS, OPFS, app permissions and kernel state remain scoped to the RiftOS origin/runtime.
 
 ## Removed direction
 
-RiftEngine, custom WebCore/JSC WASM builds, Emscripten browser-engine tooling and prebuilt engine binaries are intentionally absent. Missing browser-product features should be added around WKWebView, not by reintroducing a second engine.
+RiftEngine, custom WebCore/JSC WASM builds, Emscripten browser-engine tooling and large prebuilt engine binaries remain intentionally removed.
+
+The rule is now:
+
+```text
+Use Apple WebKit as the host engine.
+Build RiftKernel above it.
+Never rebuild WebKit just to make RiftOS feel like an OS.
+```

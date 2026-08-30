@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   site:
-    name: Build True OS site
+    name: Validate unsigned RiftKernel/WebKit runtime
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
@@ -33,6 +33,7 @@ jobs:
         run: |
           set -euxo pipefail
           node --check src/riftcore.js
+          node --check src/riftruntime.js
           node --check src/riftbrowser-kernel.js
           node --check src/riftbrowser-ui.js
           node --check src/riftapps.js
@@ -43,14 +44,25 @@ jobs:
           node --check src/riftos.js
           node --check sw.js
 
-      - name: Validate RiftBrowser architecture
+      - name: Validate RiftKernel WebKit architecture
         run: |
           set -euxo pipefail
-          grep -F './src/riftbrowser-kernel.js' index.html
-          grep -F './src/riftbrowser-ui.js' index.html
-          grep -F './src/riftbrowser-ui.css' index.html
-          grep -F 'Apple WebKit' docs/RIFTBROWSER_ARCHITECTURE.md
-          grep -F 'native-webkit' src/riftbrowser-kernel.js
+          grep -F './src/riftruntime.js' index.html
+          grep -F 'navigator.storage?.getDirectory' src/riftcore.js
+          grep -F 'riftkernel-webkit' src/riftruntime.js
+          grep -F 'appSigningRequiredForKernel:false' src/riftruntime.js
+          grep -F '"display":"standalone"' manifest.webmanifest
+          grep -F './src/riftruntime.js' sw.js
+          grep -F 'unsigned, WebKit-hosted user-space operating environment' README.md
+          grep -F 'RiftKernel first' docs/TRUE_OS_ARCHITECTURE.md
+          grep -F 'Unsigned WebKit Runtime Validation' docs/UNSIGNED_WEBKIT_RUNTIME.md
+          grep -F 'RiftKernel browser service hosted by Apple WebKit' docs/RIFTBROWSER_ARCHITECTURE.md
+
+          if grep -R -n -E 'The production runtime is \*\*RiftOS Native\*\*|native-first custom iOS browser' README.md docs index.html; then
+            echo 'Legacy native-first architecture wording is still present.' >&2
+            exit 1
+          fi
+
           if grep -R -n -E 'RiftEngineBrowserBackend|WebCore/WASM|jsc\.wasm' README.md docs src index.html sw.js; then
             echo 'Removed custom-engine references are still present in the active RiftOS shell.' >&2
             exit 1
@@ -111,7 +123,7 @@ jobs:
             echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Assemble RiftOS Pages site
+      - name: Assemble RiftOS WebKit runtime
         run: |
           set -euxo pipefail
           rm -rf _site
@@ -121,6 +133,8 @@ jobs:
           cp -a src/. _site/src/
           cp -a apps/riftdev/. _site/apps/riftdev/
 
+          test -s _site/src/riftcore.js
+          test -s _site/src/riftruntime.js
           test -s _site/src/riftbrowser-kernel.js
           test -s _site/src/riftbrowser-ui.js
           test -s _site/src/riftbrowser-ui.css
@@ -128,13 +142,13 @@ jobs:
           test -s _site/apps/riftdev/riftos-overlay.js
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
-          echo "Pages payload:"
+          echo "RiftKernel/WebKit payload:"
           du -sh _site
 
           payload_bytes=$(du -sb _site | cut -f1)
           max_bytes=$((32 * 1024 * 1024))
           if [ "$payload_bytes" -gt "$max_bytes" ]; then
-            echo "Pages payload is unexpectedly large: $payload_bytes bytes" >&2
+            echo "RiftOS payload is unexpectedly large: $payload_bytes bytes" >&2
             exit 1
           fi
 

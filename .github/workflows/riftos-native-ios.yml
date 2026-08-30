@@ -1,63 +1,33 @@
-# Native-first CI: the iOS app bundles the RiftKernel shell and compiles the
-# production Apple-WebKit browser on current Apple tooling.
-name: Build RiftOS Native iOS shell
+# Optional native capability-host validation.
+# RiftKernel/WebKit is the primary unsigned runtime; this workflow is manual-only.
+name: Optional RiftOS Native iOS host
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'native/ios/**'
-      - 'index.html'
-      - 'styles.css'
-      - 'manifest.webmanifest'
-      - 'sw.js'
-      - 'src/**'
-      - 'apps/riftdev/**'
-      - '.github/workflows/riftos-native-ios.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'native/ios/**'
-      - 'index.html'
-      - 'styles.css'
-      - 'manifest.webmanifest'
-      - 'sw.js'
-      - 'src/**'
-      - 'apps/riftdev/**'
-      - '.github/workflows/riftos-native-ios.yml'
 
 permissions:
   contents: read
 
-concurrency:
-  group: riftos-native-ios-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  ios-shell:
-    name: Validate native-first RiftOS
+  ios-host:
+    name: Validate optional Swift capability host
     runs-on: macos-26
     timeout-minutes: 30
     steps:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
 
-      - name: Validate native-first architecture
+      - name: Validate optional-host boundary
         run: |
           set -euxo pipefail
-          test -s index.html
-          test -s src/riftcore.js
-          test -s src/riftbrowser-kernel.js
-          test -s native/ios/RiftOSNative/RiftBundleSchemeHandler.swift
-          test -s native/ios/RiftOSNative/RiftBrowserCommandBridge.swift
-          test -s native/ios/RiftOSNative/RiftBrowserKernelSync.swift
+          test -s native/ios/project.yml
+          test -s native/ios/RiftOSNative/RiftBrowser.swift
+          test -s native/ios/RiftOSNative/RiftOSWebView.swift
+          test -s native/ios/RiftOSNative/RiftNativeBridge.swift
+          grep -F 'preferredContentMode' native/ios/RiftOSNative/RiftBrowser.swift
           grep -F 'riftos:///index.html' native/ios/RiftOSNative/RiftOSWebView.swift
-          grep -F 'preferredContentMode = .desktop' native/ios/RiftOSNative/RiftBrowser.swift
-          if grep -F 'https://arctic403.github.io/RiftOS/' native/ios/RiftOSNative/RiftOSWebView.swift; then
-            echo 'Native RiftOS must not fall back to a remote privileged shell.' >&2
-            exit 1
-          fi
+          grep -F 'optional' README.md
+          grep -F 'appSigningRequiredForKernel:false' src/riftruntime.js
 
       - name: Select current Xcode
         run: |
@@ -92,13 +62,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             clean build | tee "$RUNNER_TEMP/riftos-native-simulator-xcodebuild.log"
 
-          app="$RUNNER_TEMP/RiftOSDerivedData/Build/Products/Debug-iphonesimulator/RiftOSNative.app"
-          test -d "$app"
-          test -s "$app/Web/index.html"
-          test -s "$app/Web/src/riftcore.js"
-          test -s "$app/Web/src/riftbrowser-kernel.js"
-          test -s "$app/Web/src/riftbrowser-ui.js"
-
       - name: Build unsigned iPhone target
         working-directory: native/ios
         run: |
@@ -114,38 +77,11 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             clean build | tee "$RUNNER_TEMP/riftos-native-device-xcodebuild.log"
 
-          app="$RUNNER_TEMP/RiftOSDeviceDerivedData/Build/Products/Release-iphoneos/RiftOSNative.app"
-          test -d "$app"
-          test -s "$app/Web/index.html"
-          test -s "$app/Web/src/riftcore.js"
-          test -s "$app/Web/src/riftbrowser-kernel.js"
-          rm -rf "$RUNNER_TEMP/RiftOSIPA"
-          mkdir -p "$RUNNER_TEMP/RiftOSIPA/Payload"
-          cp -R "$app" "$RUNNER_TEMP/RiftOSIPA/Payload/RiftOSNative.app"
-          (
-            cd "$RUNNER_TEMP/RiftOSIPA"
-            /usr/bin/zip -qry "$RUNNER_TEMP/RiftOSNative-unsigned-device.ipa" Payload
-          )
-          test -s "$RUNNER_TEMP/RiftOSNative-unsigned-device.ipa"
-
-      - name: Upload native builds
-        if: success()
+      - name: Upload optional host build logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: RiftOSNative-builds-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/RiftOSDerivedData/Build/Products/Debug-iphonesimulator/RiftOSNative.app
-            ${{ runner.temp }}/RiftOSNative-unsigned-device.ipa
-            ${{ runner.temp }}/riftos-native-simulator-xcodebuild.log
-            ${{ runner.temp }}/riftos-native-device-xcodebuild.log
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: RiftOSNative-failed-build-logs-${{ github.sha }}
+          name: RiftOS-optional-native-host-${{ github.sha }}
           path: |
             ${{ runner.temp }}/riftos-native-simulator-xcodebuild.log
             ${{ runner.temp }}/riftos-native-device-xcodebuild.log

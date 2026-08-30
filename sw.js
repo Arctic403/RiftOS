@@ -1,9 +1,10 @@
-const CACHE="riftos-shell-v19-apple-webkit-browser";
+const CACHE="riftos-shell-v20-riftkernel-webkit";
 const CORE=[
   "./",
   "./index.html",
   "./styles.css",
   "./src/riftcore.js",
+  "./src/riftruntime.js",
   "./src/riftbrowser-kernel.js",
   "./src/riftbrowser-ui.js",
   "./src/riftbrowser-ui.css",
@@ -50,7 +51,7 @@ self.addEventListener("fetch",event=>{
         }
         return response;
       }catch{
-        return (await caches.match(request)) || new Response("Offline core asset unavailable",{status:503});
+        return (await caches.match(request)) || new Response("Offline RiftKernel asset unavailable",{status:503});
       }
     })());
     return;

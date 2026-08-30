@@ -1,7 +1,7 @@
 {
   "name":"RiftOS",
   "short_name":"RiftOS",
-  "description":"A browser-native, touch-first pocket operating environment.",
+  "description":"An unsigned RiftKernel operating environment hosted by Apple WebKit.",
   "start_url":"./",
   "scope":"./",
   "display":"standalone",
