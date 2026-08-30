@@ -1,4 +1,4 @@
-const RIFTDEV_URL = "./apps/riftdev/index.html?riftos=1";
+const RIFTDEV_URL = new URL("../apps/riftdev/index.html?riftos=1", import.meta.url).href;
 let riftDevFrame = null;
 let riftDevHost = null;
 let riftDevProcess = null;
@@ -123,4 +123,4 @@ if(grid){
 }
 
 window.RiftDev=Object.freeze({open:openRiftDev,close:closeRiftDev});
-console.info("[RiftDev] fullscreen Editor clone host ready");
+console.info("[RiftDev] fullscreen Editor clone host ready", RIFTDEV_URL);
