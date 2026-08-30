@@ -7,9 +7,13 @@ on:
     paths-ignore:
       - '.github/workflows/riftos-native-ios.yml'
       - '.github/workflows/riftgecko-mobile.yml'
+      - '.github/workflows/riftwebkit-poc.yml'
       - 'native/ios/**'
       - 'engines/gecko/riftgecko-mobile-profile.py'
       - 'engines/gecko/RIFTGECKO_MOBILE.md'
+      - 'engines/webkit-poc/riftwebkit-probe.cpp'
+      - 'engines/webkit-poc/riftwebkit-embedder.cmake'
+      - 'engines/webkit-poc/build-riftwebkit.sh'
 
 permissions:
   actions: write
@@ -221,17 +225,47 @@ jobs:
           du -sh /tmp/gecko-stage
           cat /tmp/gecko-stage/engine-manifest.json
 
+      - name: Fetch optional RiftWebKit Safari probe package
+        env:
+          RIFTWEBKIT_RELEASE_URL: https://github.com/Arctic403/RiftOS/releases/download/riftwebkit-poc-v1/riftwebkit-poc-v1.tar.gz
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/riftwebkit-package /tmp/riftwebkit-stage /tmp/riftwebkit.tar.gz
+          mkdir -p /tmp/riftwebkit-package /tmp/riftwebkit-stage
+          cp engines/webkit-poc/engine-manifest.json /tmp/riftwebkit-stage/engine-manifest.json
+
+          if curl -fL --retry 2 --retry-delay 1 "$RIFTWEBKIT_RELEASE_URL" -o /tmp/riftwebkit.tar.gz; then
+            tar -xzf /tmp/riftwebkit.tar.gz -C /tmp/riftwebkit-package
+            packaged_manifest=$(find /tmp/riftwebkit-package -type f -name engine-manifest.json | head -n1)
+            test -n "$packaged_manifest" && test -s "$packaged_manifest"
+            package_root=$(dirname "$packaged_manifest")
+            rm -rf /tmp/riftwebkit-stage
+            mkdir -p /tmp/riftwebkit-stage
+            cp -a "$package_root/." /tmp/riftwebkit-stage/
+            test -s /tmp/riftwebkit-stage/runtime/riftwebkit.js
+            test -s /tmp/riftwebkit-stage/runtime/riftwebkit.wasm
+            grep -F '"available": true' /tmp/riftwebkit-stage/engine-manifest.json
+            echo 'Using RiftWebKit Safari probe release.'
+          else
+            echo 'RiftWebKit Safari probe release not available yet; deploying pending probe host only.'
+          fi
+
+          cat /tmp/riftwebkit-stage/engine-manifest.json
+          du -sh /tmp/riftwebkit-stage
+
       - name: Assemble RiftOS WebKit runtime
         run: |
           set -euxo pipefail
           rm -rf _site
-          mkdir -p _site/src _site/apps/riftdev _site/engines/gecko
+          mkdir -p _site/src _site/apps/riftdev _site/engines/gecko _site/engines/webkit-poc
 
           cp index.html styles.css sw.js manifest.webmanifest _site/
           cp -a src/. _site/src/
           cp -a apps/riftdev/. _site/apps/riftdev/
           cp engines/gecko/index.html _site/engines/gecko/index.html
           cp -a /tmp/gecko-stage/. _site/engines/gecko/
+          cp engines/webkit-poc/index.html _site/engines/webkit-poc/index.html
+          cp -a /tmp/riftwebkit-stage/. _site/engines/webkit-poc/
 
           test -s _site/src/riftcore.js
           test -s _site/src/riftworkspace-web.js
@@ -247,9 +281,16 @@ jobs:
           test -s _site/engines/gecko/vendor/gecko.wasm.zst
           test -s _site/engines/gecko/engine-manifest.json
           test -s _site/engines/gecko/LICENSE.txt
+          test -s _site/engines/webkit-poc/index.html
+          test -s _site/engines/webkit-poc/engine-manifest.json
+          grep -F '"id": "riftwebkit-poc"' _site/engines/webkit-poc/engine-manifest.json
+          if grep -Fq '"available": true' _site/engines/webkit-poc/engine-manifest.json; then
+            test -s _site/engines/webkit-poc/runtime/riftwebkit.js
+            test -s _site/engines/webkit-poc/runtime/riftwebkit.wasm
+          fi
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
-          echo "RiftKernel/WebKit payload with lazy Gecko engine:"
+          echo "RiftKernel/WebKit payload with lazy Gecko and optional RiftWebKit probe:"
           du -sh _site
 
           payload_bytes=$(du -sb _site | cut -f1)
@@ -319,10 +360,12 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Verify deployed Gecko engine manifest
+      - name: Verify deployed engine manifests
         run: |
           set -euxo pipefail
           base='${{ steps.deployment.outputs.page_url }}'
           curl -fL --retry 12 --retry-delay 2 --retry-all-errors "${base}engines/gecko/engine-manifest.json" -o /tmp/live-engine-manifest.json
           grep -F '"id": "wasm-gecko"' /tmp/live-engine-manifest.json
           grep -E '"release": "(v0\.0\.1|riftgecko-mobile-v1)"' /tmp/live-engine-manifest.json
+          curl -fL --retry 12 --retry-delay 2 --retry-all-errors "${base}engines/webkit-poc/engine-manifest.json" -o /tmp/live-riftwebkit-manifest.json
+          grep -F '"id": "riftwebkit-poc"' /tmp/live-riftwebkit-manifest.json
