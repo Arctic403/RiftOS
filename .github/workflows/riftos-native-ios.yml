@@ -1,0 +1,36 @@
+name: Build RiftOS Native iOS shell
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-shell:
+    name: Validate Swift native host
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout RiftOS
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: native/ios
+        run: xcodegen generate --spec project.yml
+
+      - name: Build for iOS Simulator
+        working-directory: native/ios
+        run: |
+          set -euxo pipefail
+          xcodebuild \
+            -project RiftOSNative.xcodeproj \
+            -scheme RiftOSNative \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
