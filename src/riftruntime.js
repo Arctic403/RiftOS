@@ -13,6 +13,8 @@ function deliveryMode(){
 function runtimeCapabilities(){
   return {
     opfs:!!navigator.storage?.getDirectory,
+    workspace:!!core.workspace?.available,
+    workspaceJSON:!!window.RiftWorkspaceJSON?.invoke,
     workers:typeof Worker==="function",
     serviceWorker:"serviceWorker" in navigator,
     webAssembly:typeof WebAssembly==="object",

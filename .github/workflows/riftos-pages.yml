@@ -33,6 +33,7 @@ jobs:
         run: |
           set -euxo pipefail
           node --check src/riftcore.js
+          node --check src/riftworkspace-web.js
           node --check src/riftruntime.js
           node --check src/riftbrowser-kernel.js
           node --check src/riftbrowser-ui.js
@@ -47,11 +48,17 @@ jobs:
       - name: Validate RiftKernel WebKit architecture
         run: |
           set -euxo pipefail
+          grep -F './src/riftworkspace-web.js' index.html
           grep -F './src/riftruntime.js' index.html
           grep -F 'navigator.storage?.getDirectory' src/riftcore.js
+          grep -F 'mode:"local-sandbox"' src/riftworkspace-web.js
+          grep -F 'window.RiftWorkspaceJSON' src/riftworkspace-web.js
+          grep -F 'RiftOS core and RiftWorkspace MUST NOT require WebAssembly or native iOS code to boot.' docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md
+          grep -F 'workspaceJSON' src/riftruntime.js
           grep -F 'riftkernel-webkit' src/riftruntime.js
           grep -F 'appSigningRequiredForKernel:false' src/riftruntime.js
           grep -F '"display":"standalone"' manifest.webmanifest
+          grep -F './src/riftworkspace-web.js' sw.js
           grep -F './src/riftruntime.js' sw.js
           grep -F 'unsigned, WebKit-hosted user-space operating environment' README.md
           grep -F 'RiftKernel first' docs/TRUE_OS_ARCHITECTURE.md
@@ -134,6 +141,7 @@ jobs:
           cp -a apps/riftdev/. _site/apps/riftdev/
 
           test -s _site/src/riftcore.js
+          test -s _site/src/riftworkspace-web.js
           test -s _site/src/riftruntime.js
           test -s _site/src/riftbrowser-kernel.js
           test -s _site/src/riftbrowser-ui.js

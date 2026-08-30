@@ -1,9 +1,10 @@
-const CACHE="riftos-shell-v20-riftkernel-webkit";
+const CACHE="riftos-shell-v21-local-workspace";
 const CORE=[
   "./",
   "./index.html",
   "./styles.css",
   "./src/riftcore.js",
+  "./src/riftworkspace-web.js",
   "./src/riftruntime.js",
   "./src/riftbrowser-kernel.js",
   "./src/riftbrowser-ui.js",
