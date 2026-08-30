@@ -27,7 +27,7 @@ PROFILE = {
     "pthreadPoolSize": 4,
     "pthreadPoolStrict": False,
     "manualGpuJSPI": False,
-    "wasmOpt": "--all -Oz",
+    "wasmOpt": "--all -Os",
     "profilingFunctionNames": False,
 }
 
@@ -68,13 +68,15 @@ def main() -> None:
     # payload we do not need in the mobile artifact.
     replace_once(build, '  "$LINK_OPT" --profiling-funcs\n', '  "$LINK_OPT"\n')
 
-    # Optimize the final linked module for download/code footprint. Gecko itself
-    # remains compiled with the upstream -O2 configuration to avoid an unnecessary
-    # performance regression in SpiderMonkey/layout code.
+    # Optimize the final linked module for size while staying on Binaryen's more
+    # conservative -Os path. This is deliberate for the first Safari target:
+    # current iOS 26 WebKit reports demonstrate a large threaded module becoming
+    # viable after -Os, and -Os has fewer large-module optimizer edge cases than
+    # chasing the last few bytes with -Oz. Gecko itself remains upstream -O2.
     replace_once(
         build,
         'WASMOPT_FLAGS="${GECKO_WASMOPT_FLAGS:--all -O4 -O3}"',
-        'WASMOPT_FLAGS="${GECKO_WASMOPT_FLAGS:--all -Oz}"',
+        'WASMOPT_FLAGS="${GECKO_WASMOPT_FLAGS:--all -Os}"',
     )
 
     # Keep upstream shader/proxy fixes, but remove Patch 3 entirely. Patch 3 wraps
