@@ -24,7 +24,7 @@ function createWindow(){
   killBrowserProcess();workspace.classList.add("hidden");stage.classList.remove("hidden");stage.innerHTML="";
   const win=template.content.firstElementChild.cloneNode(true);win.dataset.app="browser-kernel";
   win.querySelector(".window-title").textContent="RiftBrowser";
-  win.querySelector(".window-kicker").textContent="EXPERIMENTAL ENGINE LAB";
+  win.querySelector(".window-kicker").textContent="EXPERIMENTAL GECKO ENGINE";
   win.querySelector(".window-close").onclick=closeWebBrowser;
   stage.append(win);browserProcess=core.kernel.launchProcess("browser","RiftBrowser",{kind:"experimental-browser"});
   document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="browser"));
@@ -49,11 +49,11 @@ function renderChrome(){
     </form>
     <div class="kbrowser-meta">
       <span id="kbState">${escapeHTML(status.active)}</span>
-      <span>${wasm?.available?"Gecko WASM ready":"Gecko WASM artifact pending"}</span>
+      <span>${wasm?.available?"Gecko WASM ready":"Gecko WASM unavailable"}</span>
       <span class="kbrowser-spacer"></span>
       <button type="button" id="kbEngine">Engine</button>
       <button type="button" id="kbWisp">Wisp</button>
-      <button type="button" id="kbExternal">↗</button>
+      <button type="button" id="kbExternal" title="Open current URL in host browser">↗</button>
     </div>
     <div class="kbrowser-surface" id="kbSurface"></div>
   </div>`;
@@ -78,7 +78,7 @@ function renderChrome(){
 function renderStart(){
   const surface=browserWindow?.querySelector("#kbSurface");if(!surface)return;
   const status=browser.backendStatus(),wasm=status.backends.find(item=>item.id==="wasm-gecko");
-  surface.innerHTML=`<section class="browser-start kbrowser-start"><div class="browser-logo">R</div><h2>RiftBrowser is an engine experiment.</h2><p>There is no fake “stable browser” fallback. RiftKernel stays stable while browser engines are replaceable services.</p><div class="browser-capability"><strong>${wasm?.available?"Gecko WASM engine detected":"Gecko WASM engine not deployed yet"}</strong><span>${wasm?.available?"This unsigned Gecko engine renders into a canvas and uses Wisp for arbitrary network access.":"The shell is ready; the engine package still has to deploy and cross-origin isolation must be active."}</span></div><div class="browser-block-actions"><button class="action" id="kbProbeEngine">Probe engine</button><button class="action" id="kbConfigureWisp">Configure Wisp</button></div></section>`;
+  surface.innerHTML=`<section class="browser-start kbrowser-start"><div class="browser-logo">R</div><h2>RiftBrowser is a real engine experiment.</h2><p>RiftKernel stays JavaScript/OPFS-first. Gecko WASM is an optional browser service loaded only when needed.</p><div class="browser-capability"><strong>${wasm?.available?"Gecko WASM engine detected":"Gecko WASM engine unavailable"}</strong><span>${wasm?.available?"Gecko renders guest pages into a canvas. Configure Wisp for arbitrary external networking.":escapeHTML(wasm?.details?.error||"Probe the engine after the current deployment/reload completes.")}</span></div><div class="browser-block-actions"><button class="action" id="kbProbeEngine">Probe engine</button><button class="action" id="kbConfigureWisp">Configure Wisp</button></div></section>`;
   surface.querySelector("#kbProbeEngine").onclick=async()=>{await browser.refreshEngines(true);renderChrome();};
   surface.querySelector("#kbConfigureWisp").onclick=()=>configureWisp();
 }
@@ -86,10 +86,10 @@ function renderStart(){
 function showEnginePanel(){
   const surface=browserWindow?.querySelector("#kbSurface");if(!surface)return;
   const info=browser.info();
-  surface.innerHTML=`<section class="browser-start kbrowser-start"><h2>RiftBrowser engine status</h2><pre class="kbrowser-diagnostics">${escapeHTML(JSON.stringify(info,null,2))}</pre><div class="browser-block-actions"><button class="action" id="kbEngineAuto">Auto</button><button class="action" id="kbEngineWasm">Gecko WASM</button><button class="action" id="kbEngineLegacy">Legacy transport</button></div></section>`;
+  surface.innerHTML=`<section class="browser-start kbrowser-start"><h2>RiftBrowser engine status</h2><pre class="kbrowser-diagnostics">${escapeHTML(JSON.stringify(info,null,2))}</pre><div class="browser-block-actions"><button class="action" id="kbEngineAuto">Auto</button><button class="action" id="kbEngineWasm">Gecko WASM</button>${info.backends.some(item=>item.id==="native-webkit"&&item.available)?'<button class="action" id="kbEngineNative">Native WebKit</button>':""}</div></section>`;
   surface.querySelector("#kbEngineAuto").onclick=()=>browser.setBackend("auto").then(()=>browser.reload()).catch(showError);
   surface.querySelector("#kbEngineWasm").onclick=()=>browser.setBackend("wasm-gecko").then(()=>browser.reload()).catch(showError);
-  surface.querySelector("#kbEngineLegacy").onclick=()=>browser.setBackend("web-transport").then(()=>browser.reload()).catch(showError);
+  const nativeButton=surface.querySelector("#kbEngineNative");if(nativeButton)nativeButton.onclick=()=>browser.setBackend("native-webkit").then(()=>browser.reload()).catch(showError);
 }
 
 function configureWisp(){
@@ -112,11 +112,10 @@ function renderResult(detail){
   if(result.mode==="engine-frame"){
     surface.innerHTML='<iframe class="kbrowser-engine-frame" title="RiftBrowser Gecko WASM engine" allow="clipboard-read; clipboard-write; autoplay; fullscreen"></iframe>';
     surface.querySelector("iframe").src=result.src;
-  }else if(result.mode==="document"){
-    surface.innerHTML='<iframe class="webview direct-view kbrowser-frame" sandbox="allow-forms allow-popups" referrerpolicy="no-referrer"></iframe>';
-    surface.querySelector("iframe").srcdoc=result.html||"";
-  }else if(result.mode==="external"){
-    surface.innerHTML=`<section class="browser-blocked"><div class="browser-warning">↗</div><h2>No full engine is available yet</h2><p>The legacy transport hit normal web security. Once Gecko WASM is ready, auto mode will use that engine instead.</p><code>${escapeHTML(result.url||"")}</code><small>${escapeHTML(result.reason||"")}</small><div class="browser-block-actions"><button class="action" id="kbOpenExternal">Open externally</button><button class="action" id="kbRetryEngine">Probe engine</button></div></section>`;
+  }else if(result.mode==="native"){
+    surface.innerHTML='<section class="browser-start kbrowser-start"><h2>Native WebKit surface active</h2><p>The optional signed capability host owns the visible browser surface.</p></section>';
+  }else if(result.mode==="unavailable"){
+    surface.innerHTML=`<section class="browser-blocked"><div class="browser-warning">!</div><h2>No RiftBrowser engine is available</h2><p>${escapeHTML(result.reason||"Gecko WASM is unavailable.")}</p><code>${escapeHTML(result.url||"")}</code><div class="browser-block-actions"><button class="action" id="kbOpenExternal">Open in host browser</button><button class="action" id="kbRetryEngine">Probe Gecko</button></div></section>`;
     surface.querySelector("#kbOpenExternal").onclick=()=>externalOpen(result.url);
     surface.querySelector("#kbRetryEngine").onclick=async()=>{await browser.refreshEngines(true);await browser.reload();};
   }
@@ -168,14 +167,14 @@ document.addEventListener("submit",event=>{
     if(sub==="bookmark")return print(JSON.stringify(browser.bookmark(parts.join(" ")||undefined),null,2));
     if(sub==="bookmarks")return print(JSON.stringify(browser.bookmarks(),null,2));
     if(sub==="close")return print(browser.closeTab(parts[0]||browser.activeTab()?.id));
-    print("usage: browserctl [status|tabs|backends|backend <auto|wasm-gecko|native-webkit|web-transport>|probe|wisp <wss://.../>|new [url]|back|forward|reload|bookmark [url]|bookmarks|close [tabId]]");
+    print("usage: browserctl [status|tabs|backends|backend <auto|wasm-gecko|native-webkit>|probe|wisp <wss://.../>|new [url]|back|forward|reload|bookmark [url]|bookmarks|close [tabId]]");
   })().catch(error=>print(`browser error: ${error.message}`));
 },true);
 
 window.RiftBrowserUI=Object.freeze({open:openBrowser,close:closeWebBrowser});
 
 function labelBrowserLauncher(){
-  document.querySelectorAll('[data-open="browser"] small').forEach(node=>{node.textContent="Experimental engine browser · Gecko WASM";});
+  document.querySelectorAll('[data-open="browser"] small').forEach(node=>{node.textContent="Experimental Gecko WASM browser";});
 }
 window.addEventListener("riftos:launcher-ready",labelBrowserLauncher);
 window.addEventListener("riftos:trueos-ready",labelBrowserLauncher);
