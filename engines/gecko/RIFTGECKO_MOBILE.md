@@ -39,7 +39,7 @@ The first goal is therefore **boot reliably on iPhone with much lower baseline p
 
 ## Build and release flow
 
-`.github/workflows/riftgecko-mobile.yml` is manual-only because a full Gecko build is expensive. It:
+`.github/workflows/riftgecko-mobile.yml` is isolated from normal RiftOS deployment. It runs manually or when the RiftGecko build profile/workflow itself changes; ordinary RiftOS commits do not trigger the expensive engine compile. It:
 
 1. checks out the exact upstream commit,
 2. applies `riftgecko-mobile-profile.py`,
