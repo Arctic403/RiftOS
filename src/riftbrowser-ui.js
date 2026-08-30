@@ -24,7 +24,7 @@ function createWindow(){
   killBrowserProcess();workspace.classList.add("hidden");stage.classList.remove("hidden");stage.innerHTML="";
   const win=template.content.firstElementChild.cloneNode(true);win.dataset.app="browser-kernel";
   win.querySelector(".window-title").textContent="RiftBrowser";
-  win.querySelector(".window-kicker").textContent="RIFTKERNEL / APPLE WEBKIT";
+  win.querySelector(".window-kicker").textContent="RIFTKERNEL BROWSER SERVICE";
   win.querySelector(".window-close").onclick=closeWebBrowser;
   stage.append(win);browserProcess=core.kernel.launchProcess("browser","RiftBrowser",{kind:"kernel-browser"});
   document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="browser"));
@@ -40,8 +40,8 @@ function renderChrome(){
       <button class="kbrowser-icon" id="kbNewTab" title="New tab">＋</button>
     </div>
     <form class="kbrowser-bar" id="kbAddressForm">
-      <button type="button" class="kbrowser-icon" id="kbBack" ${!tab||tab.historyIndex<=0?"disabled":""}>‹</button>
-      <button type="button" class="kbrowser-icon" id="kbForward" ${!tab||tab.historyIndex>=tab.history.length-1?"disabled":""}>›</button>
+      <button type="button" class="kbrowser-icon" id="kbBack" ${!tab||(!tab.canGoBack&&tab.historyIndex<=0)?"disabled":""}>‹</button>
+      <button type="button" class="kbrowser-icon" id="kbForward" ${!tab||(!tab.canGoForward&&tab.historyIndex>=tab.history.length-1)?"disabled":""}>›</button>
       <button type="button" class="kbrowser-icon" id="kbReload">↻</button>
       <input id="kbAddress" value="${escapeHTML(tab?.url||"")}" placeholder="Search or enter a URL" autocomplete="off" autocapitalize="off" spellcheck="false">
       <button type="submit" class="kbrowser-go">Go</button>
@@ -58,16 +58,17 @@ function renderChrome(){
   body.querySelector("#kbExternal").onclick=()=>externalOpen(browser.activeTab()?.url);
   body.querySelectorAll("[data-browser-tab]").forEach(button=>button.addEventListener("click",event=>{
     if(event.target.closest("[data-browser-close]"))return;
-    const selected=browser.selectTab(button.dataset.browserTab);renderChrome();browser.navigate(selected.url,{tabId:selected.id,replace:true}).catch(showError);
+    const selected=browser.selectTab(button.dataset.browserTab);renderChrome();
+    if(browser.backendStatus().active!=="native-webkit")browser.navigate(selected.url,{tabId:selected.id,replace:true}).catch(showError);
   }));
   body.querySelectorAll("[data-browser-close]").forEach(button=>button.onclick=event=>{
-    event.stopPropagation();browser.closeTab(button.dataset.browserClose);if(!browser.activeTab())browser.createTab();renderChrome();browser.reload().catch(showError);
+    event.stopPropagation();browser.closeTab(button.dataset.browserClose);if(!browser.activeTab())browser.createTab();renderChrome();
   });
   renderStart();
 }
 function renderStart(){
   const surface=browserWindow?.querySelector("#kbSurface");if(!surface)return;
-  surface.innerHTML=`<section class="browser-start kbrowser-start"><div class="browser-logo">R</div><h2>RiftBrowser uses Apple WebKit.</h2><p>Inside RiftOS Native, websites open in our custom WKWebView browser with desktop mode enabled by default. The Pages/PWA build keeps this lightweight preview only for testing kernel tabs, history and bookmarks.</p><div class="browser-capability"><strong>No custom browser engine build</strong><span>RiftOS owns the browser UI and kernel state; Apple WebKit handles HTML, CSS, JavaScript, cookies and rendering.</span></div></section>`;
+  surface.innerHTML=`<section class="browser-start kbrowser-start"><div class="browser-logo">R</div><h2>RiftBrowser is native-first.</h2><p>The installed RiftOS app boots its own bundled RiftKernel shell and controls the Apple WebKit browser through the kernel bridge. GitHub Pages is only a development preview.</p><div class="browser-capability"><strong>Production renderer: WKWebView</strong><span>Desktop mode is the default. Tabs, session state, popups, downloads, share and find-on-page are implemented by RiftOS around Apple WebKit.</span></div></section>`;
 }
 function showError(error){
   const surface=browserWindow?.querySelector("#kbSurface");if(surface)surface.innerHTML=`<section class="browser-blocked"><div class="browser-warning">!</div><h2>Browser service error</h2><p>${escapeHTML(error?.message||error)}</p></section>`;
@@ -82,7 +83,7 @@ function renderResult(detail){
     surface.innerHTML='<iframe class="webview direct-view kbrowser-frame" sandbox="allow-forms allow-popups" referrerpolicy="no-referrer"></iframe>';
     surface.querySelector("iframe").srcdoc=result.html||"";
   }else if(result.mode==="external"){
-    surface.innerHTML=`<section class="browser-blocked"><div class="browser-warning">↗</div><h2>Native RiftBrowser required</h2><p>The PWA preview cannot embed this site because of normal browser security restrictions. Install/run RiftOS Native to use the full Apple WebKit browser.</p><code>${escapeHTML(result.url||"")}</code><small>${escapeHTML(result.reason||"")}</small><div class="browser-block-actions"><button class="action" id="kbOpenExternal">Open externally</button></div></section>`;
+    surface.innerHTML=`<section class="browser-blocked"><div class="browser-warning">↗</div><h2>Native RiftBrowser required</h2><p>The web development preview cannot embed this destination because of normal browser security restrictions.</p><code>${escapeHTML(result.url||"")}</code><small>${escapeHTML(result.reason||"")}</small><div class="browser-block-actions"><button class="action" id="kbOpenExternal">Open externally</button></div></section>`;
     surface.querySelector("#kbOpenExternal").onclick=()=>externalOpen(result.url);
   }
 }
@@ -100,6 +101,7 @@ browser.addEventListener("loading",event=>{
   if(surface)surface.innerHTML=`<div class="browser-loading"><i></i><span>Loading ${escapeHTML(event.detail.tab.url)}</span></div>`;
 });
 browser.addEventListener("render",event=>renderResult(event.detail));
+browser.addEventListener("native",()=>{if(browserWindow)renderChrome();});
 
 document.addEventListener("click",event=>{
   const target=event.target.closest?.("[data-open]");if(!target)return;
@@ -124,23 +126,27 @@ document.addEventListener("submit",event=>{
     }
     const sub=(parts.shift()||"status").toLowerCase();
     if(sub==="status")return print(JSON.stringify(browser.info(),null,2));
-    if(sub==="tabs")return print(browser.listTabs().map(tab=>`${tab.id===browser.activeTab()?.id?"*":" "} ${tab.id} ${tab.url}`).join("\n")||"(no tabs)");
+    if(sub==="tabs")return print(browser.listTabs().map(tab=>`${tab.id===browser.activeTab()?.id?"*":" "} ${tab.desktop?"D":"M"} ${tab.id} ${tab.url}`).join("\n")||"(no tabs)");
     if(sub==="backends")return print(browser.backendStatus().backends.map(item=>`${item.available?"+":"-"} ${item.id} ${item.name}`).join("\n"));
     if(sub==="new")return openBrowser(parts.join(" ")||"https://chatgpt.com",{newTab:true});
     if(sub==="back")return browser.back();
     if(sub==="forward")return browser.forward();
     if(sub==="reload")return browser.reload();
+    if(sub==="stop")return browser.stop();
+    if(sub==="desktop")return print(`desktop=${browser.setDesktopMode(!["off","false","0","mobile"].includes((parts[0]||"on").toLowerCase()))}`);
+    if(sub==="share")return print(browser.share()?"share sheet opened":"native browser required");
+    if(sub==="find")return print(browser.find()?"find-on-page opened":"native browser required");
     if(sub==="bookmark")return print(JSON.stringify(browser.bookmark(parts.join(" ")||undefined),null,2));
     if(sub==="bookmarks")return print(JSON.stringify(browser.bookmarks(),null,2));
     if(sub==="close")return print(browser.closeTab(parts[0]||browser.activeTab()?.id));
-    print("usage: browserctl [status|tabs|backends|new [url]|back|forward|reload|bookmark [url]|bookmarks|close [tabId]]");
+    print("usage: browserctl [status|tabs|backends|new [url]|back|forward|reload|stop|desktop <on|off>|share|find|bookmark [url]|bookmarks|close [tabId]]");
   })().catch(error=>print(`browser error: ${error.message}`));
 },true);
 
 window.RiftBrowserUI=Object.freeze({open:openBrowser,close:closeWebBrowser});
 
 function labelBrowserLauncher(){
-  document.querySelectorAll('[data-open="browser"] small').forEach(node=>{node.textContent=core.native.connected?"Apple WebKit · desktop by default":"Kernel browser · PWA preview";});
+  document.querySelectorAll('[data-open="browser"] small').forEach(node=>{node.textContent=core.native.connected?"Native Apple WebKit · desktop first":"Kernel browser · web dev preview";});
 }
 window.addEventListener("riftos:launcher-ready",labelBrowserLauncher);
 window.addEventListener("riftos:trueos-ready",labelBrowserLauncher);
