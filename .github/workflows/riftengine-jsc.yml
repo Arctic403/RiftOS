@@ -9,6 +9,7 @@ on:
       - 'riftengine/tools/build-jsc-wasm.sh'
       - 'riftengine/tools/build-rift-jsc-host.sh'
       - 'riftengine/host/**'
+      - '!riftengine/host/**/*.md'
       - 'riftengine/tools/build-icu-wasm.sh'
       - 'riftengine/tools/prepare-webkit.sh'
       - 'riftengine/tools/port-jsc-emscripten.py'
@@ -24,6 +25,7 @@ concurrency:
 
 jobs:
   jsc:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip-engine-build]') }}
     name: Build versioned JavaScriptCore wasm
     runs-on: ubuntu-latest
     timeout-minutes: 240

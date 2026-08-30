@@ -36,6 +36,8 @@ jobs:
         run: |
           set -euxo pipefail
           node --check src/riftcore.js
+          node --check src/riftbrowser-kernel.js
+          node --check src/riftbrowser-ui.js
           node --check src/riftapps.js
           node --check src/riftapps-files.js
           node --check src/riftdev-host.js
@@ -43,6 +45,15 @@ jobs:
           node --check src/riftgit.js
           node --check src/riftos.js
           node --check sw.js
+
+      - name: Validate BrowserService wiring
+        run: |
+          set -euxo pipefail
+          grep -F './src/riftbrowser-kernel.js' index.html
+          grep -F './src/riftbrowser-ui.js' index.html
+          grep -F './src/riftbrowser-ui.css' index.html
+          grep -F 'RiftKernel.browser' docs/RIFTBROWSER_ARCHITECTURE.md
+          grep -F 'RiftEngineBrowserBackend' riftengine/README.md
 
       - name: Clone pinned RiftDev Editor source
         env:
@@ -109,13 +120,16 @@ jobs:
           cp -a src/. _site/src/
           cp -a apps/riftdev/. _site/apps/riftdev/
 
+          test -s _site/src/riftbrowser-kernel.js
+          test -s _site/src/riftbrowser-ui.js
+          test -s _site/src/riftbrowser-ui.css
           test -s _site/apps/riftdev/index.html
           test -s _site/apps/riftdev/riftos-overlay.js
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
-          # The browser-engine source and heavyweight WASM builds are on hold.
-          # Normal RiftOS UI changes no longer install Emscripten or rebuild
-          # RiftEngine. Its dedicated workflows remain available separately.
+          # Heavy WebCore/JSC builds stay isolated in dedicated workflows.
+          # BrowserService and renderer adapters deploy as normal lightweight
+          # RiftOS source and do not wake the engine toolchain.
           echo "Pages payload:"
           du -sh _site
 

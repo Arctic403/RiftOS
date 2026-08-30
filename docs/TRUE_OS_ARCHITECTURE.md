@@ -2,46 +2,36 @@
 
 ## Goal
 
-RiftOS is no longer structured as a desktop simulation layered on top of a second compatibility runtime. The True OS 1.0 refactor makes the browser or WKWebView a hardware abstraction layer and puts one RiftOS-owned userspace runtime above it.
+RiftOS has one userspace operating environment above the host browser or native WKWebView. Host technology is treated as a hardware/platform layer, not as the owner of RiftOS application policy.
 
 ```text
-RiftOS Desktop / RiftDev / RiftApps
-              |
-          RiftKernel
-     _________|_________
-    |         |         |
- RiftFS   Processes  Capabilities
-    |                   |
- OPFS/IDB          RiftNative
-    |                   |
- browser         Swift / iOS APIs
+RiftOS Desktop / RiftDev / RiftApps / RiftShell
+                    |
+                RiftKernel
+       ______________|_______________
+      |          |          |         |
+   RiftFS    Processes  Capabilities  BrowserService
+      |                                  |
+ OPFS/IDB                         Renderer contract
+                                      /   |   \
+                              WebKit  Engine  Web fallback
+      |
+  RiftNative <---------------- Swift / iOS APIs
 ```
 
 ## 1. One kernel
 
-`src/riftcore.js` is the only kernel/runtime authority.
+`src/riftcore.js` is the runtime authority. It owns process IDs/lifecycle, app registration, grants, mounts, boot/system information, RiftNative and RiftFS.
 
-It owns:
+`src/riftbrowser-kernel.js` attaches the browser subsystem as `RiftKernel.browser`. It is a kernel service, not a second kernel and not an engine-specific app runtime.
 
-- process IDs and lifecycle
-- system and installed-app registration
-- permission grants
-- mount table
-- boot/system information
-- native bridge
-- RiftFS
-
-The previous `RiftFS` and `RiftKernel` classes inside `src/riftos.js` are removed.
+No new subsystem should create a competing filesystem, process table, permission system or browser-policy store.
 
 ## 2. One filesystem
 
-RiftFS uses OPFS when available.
+RiftFS uses OPFS when available. The original IndexedDB `riftos/files` store remains only as a compatibility mirror so existing user data survives migrations.
 
-The original IndexedDB `riftos/files` store remains only as a compatibility mirror so existing user files survive the refactor. New built-in subsystems no longer open that database directly.
-
-RiftGit and RiftApps both use `window.RiftOSCore.fs`.
-
-### Namespace
+RiftGit and RiftApps use `window.RiftOSCore.fs`.
 
 ```text
 /
@@ -54,163 +44,130 @@ RiftGit and RiftApps both use `window.RiftOSCore.fs`.
 └── mounts/
 ```
 
-### Native mounts
-
-RiftOS Native can expose user-approved iOS Files directories below `/mounts/<name>`.
-
-The same methods are used regardless of backend:
-
-- `get` / `readText`
-- `write` / `writeText`
-- `mkdir`
-- `remove`
-- `stat`
-- `list`
-
-Native mounts are backed by security-scoped document-picker URLs and bookmark records in the Swift host. Removing a mount does not delete its files.
+RiftOS Native can expose user-approved Files directories under `/mounts/<name>`. Security-scoped URLs/bookmarks are resolved by the Swift host; unmounting never deletes the underlying files.
 
 ## 3. Process model
 
-Each visible built-in app, RiftDev session, and installed RiftApp receives a RiftKernel process record.
+Visible built-ins, RiftDev sessions and installed RiftApps receive RiftKernel process records. Protected kernel/desktop/native processes cannot be killed by normal user controls. Tasks and `ps` read the same table.
 
-Protected kernel/desktop/native bridge processes cannot be killed by normal user process controls.
-
-The Tasks app and `ps` read the same process table.
+The Web/PWA RiftBrowser window receives a normal browser process record. A native renderer can present outside the HTML desktop while still being launched through the browser service.
 
 ## 4. Capability model
 
-Kernel capabilities:
+Kernel capabilities include:
 
-- `fs.read`
-- `fs.write`
+- `fs.read`, `fs.write`
 - `network`
-- `clipboard.read`
-- `clipboard.write`
-- `share`
-- `notifications`
-- `process.read`
-- `process.manage`
+- `clipboard.read`, `clipboard.write`
+- `share`, `notifications`
+- `process.read`, `process.manage`
 - `system.settings`
-- `native.read`
-- `native.files`
-- `native.background`
+- `native.read`, `native.files`, `native.background`
 
-Trusted built-ins receive declared capabilities.
+Trusted built-ins receive declared capabilities. Installed `.rift` apps request only their declared package permissions through the broker.
 
-Installed `.rift` apps declare a limited package permission set. Sensitive capabilities are granted on first use through the kernel broker.
+A renderer is **not** automatically granted filesystem capabilities merely because it renders browser content.
 
 ## 5. Rift Apps
 
-`.rift` v1 remains a JSON/text package format, but installed packages and app data now live in RiftFS instead of a separate `riftapps` IndexedDB runtime.
-
-The refactor migrates existing installed packages/data once.
-
-The sandbox runtime injects:
-
-- scoped storage
-- permission requests
-- clipboard bridge
-- share bridge
-- notification bridge
-
-A CSP is injected into each app document. Apps without `network` permission receive `connect-src 'none'`.
+`.rift` packages and app data live in RiftFS. The sandbox injects scoped storage, permission requests, clipboard/share/notification bridges and CSP. Apps without `network` permission receive `connect-src 'none'`.
 
 ## 6. RiftGit
 
-RiftGit no longer opens IndexedDB itself.
-
-Workspaces live at:
-
-```text
-/home/repos/<owner>/<repo>
-```
-
-The terminal backend supports:
-
-```text
-git auth
-git clone owner/repo [branch]
-git use owner/repo
-git repo
-git status
-git pull
-git push <message>
-git branches
-git switch <branch>
-```
-
-Push uses the Git Data API to create one tree and one commit for the entire working set. A remote-head check prevents silently overwriting newer remote work.
+Workspaces live at `/home/repos/<owner>/<repo>`. Push uses the Git Data API to make one tree/commit for the working set, with a remote-head check to prevent silent overwrite.
 
 ## 7. RiftDev
 
-`Arctic403/Editor` remains read-only source material.
-
-The Pages workflow:
-
-1. clones the pinned Editor commit;
-2. removes its `.git` metadata;
-3. copies it into the staged RiftOS site;
-4. injects `riftos-overlay.js` only into that deployed copy.
-
-The source Editor repository is not patched by RiftOS.
+`Arctic403/Editor` is read-only source material. Pages clones a pinned commit, removes Git metadata, copies it into the staging site and injects only the RiftOS overlay. `apps/riftdev` therefore remains generated mirror content.
 
 ## 8. Native bridge
 
-The main RiftOS document is the only WKWebView frame allowed to call the native script-message handler directly. Sandboxed RiftApps must route requests through RiftKernel.
+Only the trusted top-level RiftOS shell WKWebView receives the `riftNative` message handler. Sandboxed apps and browser pages do not.
 
-Native bridge methods include:
+Native methods cover device/filesystem mounts, workspace transactions, clipboard/share, notifications and browser-surface control. Native access remains inside iOS sandbox/user-permission boundaries.
 
-- `native.capabilities`
-- `device.info`
-- `files.pickDirectory`
-- `files.pickDocument`
-- `files.mounts`
-- `files.unmount`
-- `fs.list`
-- `fs.stat`
-- `fs.readText`
-- `fs.writeText`
-- `fs.mkdir`
-- `fs.remove`
-- `clipboard.readText`
-- `clipboard.writeText`
-- `share.text`
-- `notifications.request`
-- `notifications.schedule`
+## 9. RiftKernel BrowserService
 
-This does not bypass iOS sandboxing.
+`RiftKernel.browser` is the stable browser control plane. It is exposed as `window.RiftBrowser` for trusted RiftOS UI/shell code.
 
-## 9. Browser-engine separation
+The service owns:
 
-RiftEngine/WebCore is paused.
+- logical tab records and active-tab selection;
+- navigation intent and URL/search normalization;
+- logical history/bookmark metadata;
+- renderer registry, selection and capability discovery;
+- renderer-independent shell/UI API;
+- persistence of browser metadata in the RiftOS origin.
 
-Normal Pages deployments do not build Emscripten, the prototype engine, JSC or WebCore. The engine source and dedicated workflows remain preserved for later work.
-
-This separation means a UI/RiftDev/True OS change should deploy in minutes or seconds instead of waiting on browser-engine compilation.
-
-## 10. Compatibility rule
-
-No new subsystem should create its own filesystem, kernel, process table or permission implementation.
-
-Use:
+Primary API:
 
 ```js
-window.RiftOSCore
+RiftOSCore.kernel.browser.open(url)
+RiftOSCore.kernel.browser.newTab(url)
+RiftOSCore.kernel.browser.navigate(url)
+RiftOSCore.kernel.browser.back()
+RiftOSCore.kernel.browser.forward()
+RiftOSCore.kernel.browser.reload()
+RiftOSCore.kernel.browser.listTabs()
+RiftOSCore.kernel.browser.bookmarks()
+RiftOSCore.kernel.browser.rendererStatus()
+RiftOSCore.kernel.browser.setRenderer("auto")
 ```
 
-for system services.
+`src/riftbrowser-ui.js` is only an adapter between this service and the current desktop/RiftShell UI. Engine choice does not live in `src/riftos.js`.
 
-Compatibility stores may exist only as migration/read-through layers and should not become new sources of truth.
+## 10. Renderer contract
 
-## 11. Native RiftBrowser + RiftWorkspace
+A renderer provides at minimum:
 
-The iOS host now owns a real browser surface instead of forwarding normal sites to Safari.
+```js
+{
+  id,
+  name,
+  priority,
+  capabilities,
+  available: () => boolean,
+  open: async ({ url, tab, newTab, service }) => result
+}
+```
 
-`RiftBrowserStore` manages persistent WebKit tab sessions with shared website data, navigation, history gestures, address/search input, popup handling and normal HTTP/HTTPS navigation. Launching the Browser app while native-hosted opens this surface directly; ChatGPT is the default launch destination.
+Optional renderer-private operations may be exposed while the kernel keeps cross-renderer browser policy above them. Render results identify a mode (`native`, `document`, `external`, `riftengine`, or a future custom mode) and may update URL/title metadata.
 
-The privileged `riftNative` message handler is **not installed in browser tabs**. It exists only in the RiftOS shell WKWebView. This keeps ordinary sites from seeing filesystem, patch, clipboard or other OS capabilities.
+Built-ins are:
 
-The native host also creates a sandboxed `Documents/RiftWorkspace` tree:
+### `native-webkit`
+
+Available only when the Swift host is connected. It delegates page rendering to the native RiftBrowser `WKWebView` surface. This is the current full-web renderer on iOS Native.
+
+### `riftengine`
+
+An integration slot for the custom local WebCore/JSC WASM stack. It becomes available only when `window.RiftEngineBrowserBackend` exists and passes its own readiness gate. RiftEngine no longer owns browser chrome, top-level tab policy or a second browser API.
+
+### `web-transport`
+
+Always available in PWA mode. It can directly fetch/sanitize CORS-readable text/HTML and otherwise returns an external-open result. It cannot bypass normal browser CORS/CSP/frame restrictions and is deliberately labeled a fallback, not a full browser engine.
+
+Auto-selection currently prefers native WebKit, then a ready RiftEngine backend, then web transport.
+
+## 11. Browser security boundary
+
+Rendered websites do not receive `RiftNative` or `RiftWorkspace` simply because RiftBrowser opened them.
+
+- Native browser tabs are created without the `riftNative` script-message handler.
+- Web fallback documents render in sandboxed iframes after active script/event-handler stripping.
+- RiftEngine implementations must expose only browser-rendering primitives unless a separate kernel capability grant is explicitly designed.
+
+This keeps “browser can view a site” separate from “site can control RiftOS.”
+
+## 12. RiftEngine build isolation
+
+The kernel browser integration is active; the heavyweight WebCore port remains isolated. Normal Pages changes do not install Emscripten or rebuild JSC/WebCore. Dedicated engine workflows remain the only place for those expensive builds.
+
+When RiftEngine becomes usable, integration is a renderer registration, not a browser rewrite.
+
+## 13. Native RiftWorkspace
+
+The iOS host creates:
 
 ```text
 RiftWorkspace/
@@ -223,8 +180,8 @@ RiftWorkspace/
     └── history/
 ```
 
-The app exposes Documents through iOS file sharing/open-in-place, so the workspace can also be inspected from Files. RiftWorkspace is automatically surfaced to RiftFS as the protected `/mounts/RiftWorkspace` system mount.
+It is exposed through iOS Files and mounted as `/mounts/RiftWorkspace`. Trusted code can use `window.RiftWorkspace` for constrained file operations and transactional `riftcity-ai-patch` preview/apply/history/rollback. `.rift` metadata is protected.
 
-Trusted RiftOS code can call `window.RiftWorkspace` for list/stat/read/write/move/remove operations and for JSON patch transactions. The native patch engine accepts the existing `riftcity-ai-patch` v1/v2 contract, validates per-file `base_sha256` values when supplied, rejects path overlap/traversal, protects `.rift` metadata, snapshots every affected path before applying, and can roll back a completed patch from native history.
+## 14. Compatibility rule
 
-A future Rift AI/OpenAI API client can therefore use the narrow tool surface (`list`, `readText`, `previewPatch`, `applyPatch`, `rollback`) without exposing unrestricted iOS filesystem access to websites.
+Use `window.RiftOSCore` for system services and `RiftOSCore.kernel.browser` for browser control. Compatibility layers may exist for migration/read-through only and must not become new sources of truth.

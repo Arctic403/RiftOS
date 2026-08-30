@@ -1,9 +1,12 @@
-const CACHE="riftos-shell-v17-native-browser-workspace";
+const CACHE="riftos-shell-v18-kernel-browser-service";
 const CORE=[
   "./",
   "./index.html",
   "./styles.css",
   "./src/riftcore.js",
+  "./src/riftbrowser-kernel.js",
+  "./src/riftbrowser-ui.js",
+  "./src/riftbrowser-ui.css",
   "./src/riftos.js",
   "./src/riftapps.js",
   "./src/riftapps-files.js",
@@ -37,8 +40,6 @@ self.addEventListener("fetch",event=>{
   const isCore=coreURLs.has(url.href);
   const isRiftDev=url.pathname.includes("/apps/riftdev/");
 
-  // Core shell files are network-first so a successful deployment appears
-  // immediately. The last known-good copy remains available offline.
   if(isCore){
     event.respondWith((async()=>{
       try{
@@ -55,8 +56,6 @@ self.addEventListener("fetch",event=>{
     return;
   }
 
-  // RiftDev is deployed as a pinned clone. Cache successful reads lazily so
-  // opening the IDE once makes its static shell available offline.
   if(isRiftDev){
     event.respondWith((async()=>{
       const cache=await caches.open(CACHE);

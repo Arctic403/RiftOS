@@ -12,6 +12,7 @@ on:
       - 'riftengine/tools/build-zlib-wasm.sh'
       - 'riftengine/tools/port-webcore-emscripten.py'
       - 'riftengine/webcore/**'
+      - '!riftengine/webcore/**/*.md'
       - 'riftengine/cmake/RiftWebKitFeatures.cmake'
 
 permissions:
@@ -23,6 +24,7 @@ concurrency:
 
 jobs:
   webcore:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip-engine-build]') }}
     name: Compile WebCore Gate 2
     runs-on: ubuntu-latest
     timeout-minutes: 240

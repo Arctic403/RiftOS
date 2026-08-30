@@ -10,6 +10,7 @@
   <title>RiftOS</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./src/riftbrowser-ui.css">
 </head>
 <body>
   <div id="boot" class="boot">
@@ -32,7 +33,7 @@
           <div>
             <span class="eyebrow">RIFTKERNEL / TRUE OS CORE 1.0</span>
             <h1>Your pocket computer.</h1>
-            <p>One kernel. One filesystem. Native-ready.</p>
+            <p>One kernel. One filesystem. Replaceable browser renderers.</p>
           </div>
           <button class="pill" data-open="terminal">Open RiftShell</button>
         </div>
@@ -65,10 +66,12 @@
   </template>
 
   <script type="module" src="./src/riftcore.js"></script>
+  <script type="module" src="./src/riftbrowser-kernel.js"></script>
   <script type="module" src="./src/riftapps.js"></script>
   <script type="module" src="./src/riftapps-files.js"></script>
   <script type="module" src="./src/riftgit.js"></script>
   <script type="module" src="./src/riftdev-host.js"></script>
   <script type="module" src="./src/riftos.js"></script>
+  <script type="module" src="./src/riftbrowser-ui.js"></script>
 </body>
 </html>

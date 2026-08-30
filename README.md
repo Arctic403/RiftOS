@@ -1,29 +1,23 @@
 # RiftOS
 
-RiftOS is a touch-first operating environment that runs in two modes:
+RiftOS is a touch-first operating environment with one userspace runtime and two host modes:
 
 - **Web/PWA mode** on Safari and other modern browsers.
 - **RiftOS Native** inside a thin Swift/WKWebView iOS host.
 
-The True OS refactor removes the old duplicated runtime layers. RiftOS now has one kernel API, one filesystem API, one process table, one shell path, and one capability model.
+The True OS refactor removes duplicated runtime layers. RiftOS now has one kernel API, one filesystem API, one process table, one shell path, one capability model, and one browser-service contract.
 
 ## True OS Core
 
 ### RiftKernel
-`src/riftcore.js` owns:
 
-- boot state and versioning
-- process/PID lifecycle
-- application registry
-- capability grants
-- RiftNative bridge state
-- mount table
-- system information
+`src/riftcore.js` is the system authority. It owns boot state, process/PID lifecycle, application registration, capability grants, RiftNative bridge state, mounts, and RiftFS.
+
+Browser policy is attached as the first-class `RiftKernel.browser` service by `src/riftbrowser-kernel.js`. Browser UI code does not choose engines directly.
 
 ### RiftFS
-RiftFS prefers **OPFS** for the local filesystem and keeps the original `riftos` IndexedDB store as a compatibility mirror.
 
-The namespace starts with:
+RiftFS prefers **OPFS** and keeps the original `riftos` IndexedDB store as a compatibility mirror.
 
 ```text
 /
@@ -33,75 +27,105 @@ The namespace starts with:
 └── mounts/
 ```
 
-When RiftOS runs inside the native iOS host, user-approved Files folders can be mounted below `/mounts` and accessed through the same RiftFS API used by the web runtime.
+When RiftOS runs inside the native iOS host, user-approved Files folders can be mounted below `/mounts` through the same RiftFS API used by web mode.
 
 ### RiftShell
-RiftShell talks directly to RiftKernel/RiftFS. It includes filesystem, process, mount, storage, capability and Git commands.
+
+RiftShell talks to RiftKernel/RiftFS. In addition to filesystem, process, storage, capability and Git commands, the shell can drive the browser service:
+
+```text
+browser [url]
+browserctl status
+browserctl tabs
+browserctl renderers
+browserctl renderer <auto|renderer-id>
+browserctl new [url]
+browserctl back
+browserctl forward
+browserctl reload
+browserctl bookmark [url]
+browserctl bookmarks
+```
 
 ### Rift Apps
-`.rift` packages are stored under RiftFS `/apps`. Installed apps launch in sandboxed iframes and request declared capabilities through the kernel permission broker.
+
+`.rift` packages live below RiftFS `/apps`. Installed apps launch in sandboxed iframes and request declared capabilities through the kernel permission broker.
 
 ### RiftGit
+
 RiftGit uses RiftFS directly. GitHub workspaces live under:
 
 ```text
 /home/repos/<owner>/<repo>
 ```
 
-Push creates one Git commit containing the complete local change set instead of one commit per changed file.
+Push creates one Git commit containing the complete local change set instead of one commit per file.
 
 ### RiftDev
-RiftDev remains a pinned, read-only clone of `Arctic403/Editor`. The Editor repository itself is never modified by RiftOS. RiftOS adds its integration overlay only to the staged Pages copy.
 
-## RiftOS Native
+RiftDev remains a pinned, read-only clone of `Arctic403/Editor`. RiftOS modifies only the staged Pages mirror by adding its integration overlay. Files under `apps/riftdev` are generated mirror content, not a second RiftOS architecture source.
 
-`native/ios` contains the Swift host scaffold.
+## RiftBrowser: one service, replaceable renderers
 
-The bridge currently supports:
+RiftBrowser is no longer defined by whichever engine happens to draw a page. The stable API is `RiftKernel.browser` / `window.RiftBrowser`.
 
-- persistent user-selected Files directory mounts
-- directory listing/stat/read/write/create/remove
-- document picking
-- clipboard
-- share sheet
-- device information
-- notification authorization and local notification scheduling
+```text
+RiftBrowser UI / RiftShell / RiftApps
+                 |
+          RiftKernel.browser
+      ___________|____________
+     |            |            |
+Native WebKit  RiftEngine   Web transport
+   backend      backend       fallback
+```
 
-Native access remains inside normal iOS sandbox and user permission boundaries.
+The service owns logical tabs, active-tab selection, navigation intent, history/bookmark metadata, renderer selection, and renderer capability discovery. Renderer implementations register behind one contract and can be replaced without rewriting browser chrome or shell commands.
+
+Current renderer priority in `auto` mode:
+
+1. **`native-webkit`** — full native `WKWebView` surface when RiftOS runs in the Swift host.
+2. **`riftengine`** — future local WebCore/JSC WASM renderer when `window.RiftEngineBrowserBackend` passes its availability gate.
+3. **`web-transport`** — PWA fallback for CORS-readable text/HTML plus external-open fallback for sites a normal web page cannot embed.
+
+The PWA fallback is intentionally not presented as a full browser engine. Browser restrictions such as CSP, frame policy and CORS still apply until a full renderer backend is available.
+
+### Renderer extension point
+
+A future renderer registers through:
+
+```js
+window.RiftBrowserRendererContract.register({
+  id: "my-renderer",
+  name: "My Renderer",
+  priority: 150,
+  available: () => true,
+  capabilities: { fullWeb: true },
+  open: async ({ url, tab }) => ({ mode: "custom", url })
+});
+```
+
+See `docs/RIFTBROWSER_ARCHITECTURE.md` for the contract and ownership rules.
+
+## Native RiftOS
+
+`native/ios` contains the Swift host. It provides persistent Files mounts, document picking, clipboard/share, device information, notifications, RiftWorkspace, JSON patch transactions, and the native browser renderer.
+
+The native RiftBrowser uses multi-tab WebKit with persistent website data. The privileged `RiftNative` message handler is **not** installed in normal browser tabs, so sites such as ChatGPT do not receive RiftOS filesystem or patch privileges.
+
+A dedicated `Documents/RiftWorkspace` is exposed through iOS Files and mounted in RiftFS at `/mounts/RiftWorkspace`. Trusted RiftOS code receives `window.RiftWorkspace` for constrained read/write/list/move operations plus `riftcity-ai-patch` preview/apply/history/rollback.
 
 ## RiftEngine status
 
-The custom WebKit/WebCore experiment is **on hold**, not deleted.
+RiftEngine is still the long-term custom local renderer path, but it is no longer a separate browser architecture. Its job is to implement the `RiftKernel.browser` renderer contract.
 
-RiftEngine source, pins and dedicated GitHub Actions workflows remain in the repository, but normal RiftOS Pages deployments no longer install Emscripten or rebuild/publish the heavyweight engine. This keeps ordinary RiftOS/RiftDev iteration fast.
+The heavyweight JSC/WebCore port remains isolated behind dedicated Actions workflows. Normal RiftOS UI/kernel deployments do **not** rebuild Emscripten/WebKit. This lets browser-service, UI and OS work move quickly while the expensive engine port progresses independently.
 
-See `riftengine/README.md` for the preserved engine roadmap.
+See `riftengine/README.md` and `riftengine/webcore/README.md`.
 
-## Deploy
+## Deploy and validation
 
-The normal Pages workflow now assembles only the RiftOS shell and the pinned RiftDev clone.
+The normal Pages workflow validates all RiftOS JavaScript browser/kernel modules, assembles the shell plus pinned RiftDev mirror, and deploys GitHub Pages.
 
-The native iOS validation workflow runs automatically when `native/ios/**` or its workflow changes on `main`, also validates matching pull requests, and can still be started manually with `workflow_dispatch`. It uses the current Xcode 26 toolchain, generates the Xcode project with XcodeGen, builds both the iOS Simulator target and an unsigned physical-iPhone target, and uploads the resulting CI artifacts for seven days.
+The native iOS workflow runs for `native/ios/**`, uses the current Xcode 26 toolchain, generates the Xcode project with XcodeGen, and compiles both Simulator and unsigned physical-iPhone targets.
 
-### TestFlight from GitHub Actions
-
-`.github/workflows/riftos-testflight.yml` is a manual delivery workflow. It signs the physical-device archive with an App Store distribution certificate/profile and uploads the IPA to App Store Connect/TestFlight using an App Store Connect API key. Signing material is decoded only on the ephemeral macOS runner and is removed at the end of the job; the signed IPA itself is not published as a public GitHub artifact.
-
-The workflow expects these GitHub Actions secrets:
-
-- `IOS_DISTRIBUTION_CERTIFICATE_BASE64`
-- `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`
-- `IOS_APPSTORE_PROVISIONING_PROFILE_BASE64`
-- `APPSTORE_CONNECT_KEY_ID`
-- `APPSTORE_CONNECT_ISSUER_ID`
-- `APPSTORE_CONNECT_PRIVATE_KEY_BASE64`
-
-The App Store Connect app record and provisioning profile must cover the bundle identifier `com.riftos.native`. The workflow uses its GitHub run number as the unique TestFlight build number.
-
-## Native RiftBrowser and AI workspace
-
-The native iOS shell now includes a multi-tab `WKWebView` RiftBrowser. Native Browser launches no longer depend on Safari, and the default Browser destination is ChatGPT. Browser tabs deliberately do not receive `RiftNative` filesystem privileges.
-
-A dedicated `RiftWorkspace` is created under the app's Documents container and exposed through the iOS Files app. It is also mounted inside RiftFS as `/mounts/RiftWorkspace`.
-
-Trusted RiftOS code receives `window.RiftWorkspace` with native workspace read/write/list/move APIs plus `riftcity-ai-patch` preview/apply/history/rollback support. Patch writes are constrained to the workspace, validate paths and optional base hashes, and preserve rollback snapshots under protected `.rift` metadata.
+`.github/workflows/riftos-testflight.yml` is an optional manual App Store Connect/TestFlight delivery path for accounts with Apple distribution signing material. It is not required for Web/PWA development or for unsigned native compile validation.
