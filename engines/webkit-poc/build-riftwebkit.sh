@@ -28,9 +28,8 @@ command -v emcmake >/dev/null
 command -v ninja >/dev/null
 emcc --version | head -1
 
-# ICU's archive data location is install-layout dependent. The pinned helper
-# currently installs it below lib/icu, while some ICU layouts use share/icu.
-# Discover the archive from the sysroot rather than assuming either layout.
+# ICU's archive data location is install-layout dependent. Discover the
+# archive from the sysroot rather than assuming a fixed share/lib path.
 ICU_DATA="$(find "$SYSROOT" -type f -name 'icudt*.dat' -print -quit)"
 if [ -z "$ICU_DATA" ] || [ ! -s "$ICU_DATA" ]; then
   echo "RiftWebKit ICU archive was not found below $SYSROOT." >&2
@@ -39,20 +38,51 @@ if [ -z "$ICU_DATA" ] || [ ! -s "$ICU_DATA" ]; then
 fi
 echo "RiftWebKit ICU archive: $ICU_DATA"
 
-# Minimal runtime font tree. The sysroot conf.d entries are install-root
-# symlinks, so stage real files for Emscripten's --embed-file packager.
+# Minimal runtime font tree. fontconfig's installed conf.d entries can be
+# absolute/install-root symlinks after DESTDIR staging, so do not require the
+# symlinks themselves to resolve inside the host filesystem. Use their names
+# to copy the real conf.avail files into a self-contained Emscripten FS tree.
 rm -rf "$FSROOT"
 mkdir -p "$FSROOT/etc-fonts/conf.d" "$FSROOT/fonts"
 cp "$SYSROOT/etc/fonts/fonts.conf" "$FSROOT/etc-fonts/fonts.conf"
-for entry in "$SYSROOT/etc/fonts/conf.d/"*.conf; do
-  [ -e "$entry" ] || continue
-  source_file="$SYSROOT/share/fontconfig/conf.avail/$(basename "$entry")"
-  [ -f "$source_file" ] && cp "$source_file" "$FSROOT/etc-fonts/conf.d/"
+
+fontconfig_conf_avail=""
+for candidate in \
+  "$SYSROOT/share/fontconfig/conf.avail" \
+  "$SYSROOT/etc/fonts/conf.avail"; do
+  if [ -d "$candidate" ]; then
+    fontconfig_conf_avail="$candidate"
+    break
+  fi
 done
+if [ -z "$fontconfig_conf_avail" ]; then
+  echo "RiftWebKit fontconfig conf.avail directory was not found." >&2
+  find "$SYSROOT" -maxdepth 5 -type d -name 'conf.avail' -print >&2 || true
+  exit 5
+fi
+
+for entry in "$SYSROOT/etc/fonts/conf.d/"*.conf; do
+  [ -L "$entry" ] || [ -f "$entry" ] || continue
+  source_file="$fontconfig_conf_avail/$(basename "$entry")"
+  if [ -f "$source_file" ]; then
+    cp "$source_file" "$FSROOT/etc-fonts/conf.d/"
+  else
+    echo "Skipping unresolved fontconfig entry: $(basename "$entry")" >&2
+  fi
+done
+
+# Some DESTDIR/fontconfig combinations can install conf.d without usable
+# links. Falling back to the available configs is safer than an empty runtime
+# config and keeps the proof build independent of host symlink resolution.
+if ! find "$FSROOT/etc-fonts/conf.d" -type f -name '*.conf' -print -quit | grep -q .; then
+  cp "$fontconfig_conf_avail/"*.conf "$FSROOT/etc-fonts/conf.d/"
+fi
+
 cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FSROOT/fonts/DejaVuSans.ttf"
 test -s "$FSROOT/etc-fonts/fonts.conf"
 test -s "$FSROOT/fonts/DejaVuSans.ttf"
 test -n "$(find "$FSROOT/etc-fonts/conf.d" -type f -name '*.conf' -print -quit)"
+echo "RiftWebKit fontconfig configs staged: $(find "$FSROOT/etc-fonts/conf.d" -type f -name '*.conf' | wc -l)"
 
 EMBEDDER_CMAKE="$RIFTOS_ROOT/engines/webkit-poc/riftwebkit-embedder.cmake"
 test -s "$EMBEDDER_CMAKE"
