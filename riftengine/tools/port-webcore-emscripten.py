@@ -110,6 +110,14 @@ rift_promote_imported_target(LibXml2::LibXml2)
 rift_promote_imported_target(SQLite::SQLite3)
 rift_promote_imported_target(ZLIB::ZLIB)
 
+# WebCore's generic target graph still names OpenGL::GLES during Gate 2 even
+# with WebGL/WebGPU disabled. Emscripten supplies the GLES headers/runtime at
+# the toolchain level, so provide the CMake interface target without enabling a
+# graphics feature or introducing a native host OpenGL dependency.
+if (NOT TARGET OpenGL::GLES)
+    add_library(OpenGL::GLES INTERFACE IMPORTED GLOBAL)
+endif ()
+
 # Older CMake exposes SQLite::SQLite3 while this WebKit revision asks for
 # SQLite3::SQLite3. Promote the real imported target first, then create the
 # alias so the alias resolves globally through the promoted target.
@@ -125,8 +133,12 @@ endif ()
 if (NOT TARGET ZLIB::ZLIB)
     message(FATAL_ERROR "zlib was found but no ZLIB::ZLIB imported target is available")
 endif ()
+if (NOT TARGET OpenGL::GLES)
+    message(FATAL_ERROR "WebCore requires an OpenGL::GLES target for Gate 2 generation")
+endif ()
 
 message(STATUS "RIFT_WEBCORE_DEP_TARGETS=global")
+message(STATUS "RIFT_WEBCORE_GLES_TARGET=emscripten-interface")
 ''')
 
 print("RIFT_WEBCORE_PORT=emscripten-scaffold-ready")
