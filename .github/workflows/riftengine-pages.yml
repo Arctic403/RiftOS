@@ -30,6 +30,20 @@ jobs:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
 
+      - name: Clone pinned RiftDev Editor source
+        env:
+          RIFTDEV_EDITOR_COMMIT: e25f31e45446fd30fd3d26346689c053f596f664
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/riftdev-editor
+          git init /tmp/riftdev-editor
+          git -C /tmp/riftdev-editor remote add origin https://github.com/Arctic403/Editor.git
+          git -C /tmp/riftdev-editor fetch --depth 1 origin "$RIFTDEV_EDITOR_COMMIT"
+          git -C /tmp/riftdev-editor checkout --detach FETCH_HEAD
+          rm -rf /tmp/riftdev-editor/.git
+          test -s /tmp/riftdev-editor/index.html
+          echo "RiftDev source pinned to $RIFTDEV_EDITOR_COMMIT"
+
       - name: Install pinned Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
@@ -76,11 +90,15 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf _site
-          mkdir -p _site/src _site/riftengine/engine _site/riftengine/dist _site/riftengine/jsc-dist/custom
+          mkdir -p _site/src _site/apps/riftdev _site/riftengine/engine _site/riftengine/dist _site/riftengine/jsc-dist/custom
 
           # RiftOS shell.
           cp index.html styles.css sw.js manifest.webmanifest _site/
           cp -a src/. _site/src/
+
+          # RiftDev is a pinned, read-only clone of Arctic403/Editor. The
+          # Editor source repository is never modified by this workflow.
+          cp -a /tmp/riftdev-editor/. _site/apps/riftdev/
 
           # Browser-facing RiftEngine JavaScript only.
           cp -a riftengine/engine/. _site/riftengine/engine/
