@@ -55,11 +55,13 @@ jobs:
           grep -F 'navigator.storage?.getDirectory' src/riftcore.js
           grep -F 'mode:"local-sandbox"' src/riftworkspace-web.js
           grep -F 'window.RiftWorkspaceJSON' src/riftworkspace-web.js
-          grep -F 'RiftOS core and RiftWorkspace MUST NOT require WebAssembly or native iOS code to boot.' docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md
+          grep -F 'RiftOS core and RiftWorkspace MUST NOT require WebAssembly, Gecko, or native iOS code to boot.' docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md
           grep -F 'RiftOS core MUST NOT require WebAssembly to boot.' docs/RIFTBROWSER_ARCHITECTURE.md
           grep -F 'ENGINE_ID="wasm-gecko"' src/riftbrowser-engines.js
           grep -F 'engine-manifest.json' src/riftbrowser-engines.js
           grep -F 'stableBrowser:false' src/riftbrowser-kernel.js
+          grep -F 'BACKENDS=["auto","wasm-gecko","native-webkit"]' src/riftbrowser-kernel.js
+          grep -F 'mode:"unavailable"' src/riftbrowser-kernel.js
           grep -F 'Cross-Origin-Embedder-Policy' sw.js
           grep -F 'workspaceJSON' src/riftruntime.js
           grep -F 'riftkernel-webkit' src/riftruntime.js
@@ -74,6 +76,11 @@ jobs:
 
           if grep -R -n -E 'The production runtime is \*\*RiftOS Native\*\*|native-first custom iOS browser' README.md docs index.html; then
             echo 'Legacy native-first architecture wording is still present.' >&2
+            exit 1
+          fi
+
+          if grep -n -E 'web-transport|openWithWebTransport|removeDangerousMarkup|DOMParser|srcdoc' src/riftbrowser-kernel.js src/riftbrowser-ui.js; then
+            echo 'Removed legacy CORS/srcdoc RiftBrowser transport was reintroduced.' >&2
             exit 1
           fi
 
