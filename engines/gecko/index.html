@@ -127,24 +127,42 @@
       console.error("[RiftBrowser Gecko] init failed",error);
     };
 
-    function installSoftwareJSPICompatibility(){
-      const nativeJSPI=typeof WebAssembly.Suspending==="function"&&typeof WebAssembly.promising==="function";
-      if(nativeJSPI)return {nativeJSPI:true,softwareFallback:false};
+    const hasNativeJSPI=()=>typeof WebAssembly.Suspending==="function"&&typeof WebAssembly.promising==="function";
 
-      const SuspendingFallback=function RiftSoftwareSuspendingFallback(fn){return fn;};
-      const promisingFallback=fn=>(...args)=>{
-        try{return Promise.resolve(fn(...args));}
-        catch(error){return Promise.reject(error);}
-      };
-
-      try{
-        if(typeof WebAssembly.Suspending!=="function")Object.defineProperty(WebAssembly,"Suspending",{configurable:true,writable:true,value:SuspendingFallback});
-        if(typeof WebAssembly.promising!=="function")Object.defineProperty(WebAssembly,"promising",{configurable:true,writable:true,value:promisingFallback});
-      }catch(error){
-        throw new Error(`Safari software-mode compatibility could not install: ${error?.message||error}`);
+    async function loadGeckoModule(){
+      const moduleURL=new URL("./vendor/gecko.js",location.href).href;
+      if(hasNativeJSPI()){
+        trace("JSPI: native host support detected; using upstream Gecko module unchanged");
+        return {module:await import(moduleURL),nativeJSPI:true,softwareBundlePatch:false};
       }
-      if(typeof WebAssembly.Suspending!=="function"||typeof WebAssembly.promising!=="function")throw new Error("Safari software-mode compatibility could not expose the JSPI entry shims.");
-      return {nativeJSPI:false,softwareFallback:true};
+
+      mark("Preparing Safari software Gecko…","patching bundled pthread runtime");
+      const response=await fetch(moduleURL,{cache:"no-store"});
+      if(!response.ok)throw new Error(`Could not fetch Gecko module for Safari compatibility (${response.status}).`);
+      let source=await response.text();
+
+      const suspendingNeedle="new WebAssembly.Suspending(_gl_present_yield)";
+      const promisingNeedle="WebAssembly.promising(getWasmTableEntry(ptr))(arg)";
+      const suspendingCount=source.split(suspendingNeedle).length-1;
+      const promisingCount=source.split(promisingNeedle).length-1;
+      if(suspendingCount<1||promisingCount<1){
+        throw new Error(`Safari Gecko compatibility patch did not find the expected upstream JSPI hooks (Suspending=${suspendingCount}, promising=${promisingCount}).`);
+      }
+
+      source=source.split(suspendingNeedle).join("_gl_present_yield");
+      source=source.split(promisingNeedle).join("Promise.resolve(getWasmTableEntry(ptr)(arg))");
+
+      if(source.includes(suspendingNeedle)||source.includes(promisingNeedle)){
+        throw new Error("Safari Gecko compatibility patch left an active JSPI hook in the bundled runtime.");
+      }
+
+      trace(`Safari software patch: removed ${suspendingCount} Suspending hook(s), restored ${promisingCount} pthread entry hook(s)`);
+      const blobURL=URL.createObjectURL(new Blob([source],{type:"text/javascript"}));
+      try{
+        return {module:await import(blobURL),nativeJSPI:false,softwareBundlePatch:true};
+      }finally{
+        URL.revokeObjectURL(blobURL);
+      }
     }
 
     try{
@@ -152,21 +170,13 @@
       if(typeof SharedArrayBuffer!=="function")throw new Error("SharedArrayBuffer is unavailable in this WebKit context.");
 
       mark("Checking Safari compatibility…");
-      const compat=installSoftwareJSPICompatibility();
-      window.RiftGeckoCompat=Object.freeze({...compat,gpu:false});
-      trace(`JSPI: ${compat.nativeJSPI?"native":"software-mode compatibility"}`);
-
-      mark("Loading Gecko JavaScript module…");
-      const {Gecko}=await import("./vendor/gecko.js");
+      const loaded=await loadGeckoModule();
+      const {Gecko}=loaded.module;
+      window.RiftGeckoCompat=Object.freeze({nativeJSPI:loaded.nativeJSPI,softwareBundlePatch:loaded.softwareBundlePatch,gpu:false});
       const wasmURL=new URL("./vendor/gecko.wasm.zst",location.href).href;
-      mark("Gecko module loaded","preparing engine runtime");
+      mark("Gecko module loaded",loaded.softwareBundlePatch?"Safari software worker patch active":"native JSPI runtime");
 
-      const env={
-        GECKO_NOWASMJIT:"1",
-        GECKO_SKIP_OPFS:"1"
-      };
-      if(env.GECKO_GPU)throw new Error("Safari software JSPI compatibility cannot be used with Gecko GPU mode.");
-
+      const env={GECKO_NOWASMJIT:"1",GECKO_SKIP_OPFS:"1"};
       const gecko=new Gecko({
         canvas,
         wasm:{url:wasmURL,compressed:true},
@@ -188,12 +198,12 @@
       }finally{
         clearTimeout(timeoutId);
       }
-      mark("Gecko engine ready",compat.softwareFallback?"Safari software mode":"native JSPI");
-      tell("ready",{target,wispConfigured:!!wisp,nativeJSPI:compat.nativeJSPI,softwareJSPICompatibility:compat.softwareFallback,profilePersistence:false,bootSeconds:Number(elapsed())});
+      mark("Gecko engine ready",loaded.softwareBundlePatch?"Safari software mode":"native JSPI");
+      tell("ready",{target,wispConfigured:!!wisp,nativeJSPI:loaded.nativeJSPI,softwareBundlePatch:loaded.softwareBundlePatch,profilePersistence:false,bootSeconds:Number(elapsed())});
 
       if(/^https?:/i.test(target)&&!wisp){
         const safeTarget=String(target).replace(/[<>&"']/g,"");
-        const start=`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;padding:24px;line-height:1.45}code{word-break:break-all}</style><h1>Gecko engine ready</h1><p>RiftBrowser successfully booted Firefox Gecko inside RiftOS.</p><p>Safari diagnostic mode currently uses an ephemeral Gecko profile. RiftOS storage is unaffected.</p><p>Configure a Wisp endpoint to browse external HTTPS sites.</p><p>Requested: <code>${safeTarget}</code></p>`)}`;
+        const start=`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;padding:24px;line-height:1.45}code{word-break:break-all}</style><h1>Gecko engine ready</h1><p>RiftBrowser successfully booted Firefox Gecko inside RiftOS.</p><p>Safari software mode uses an ephemeral Gecko profile while compatibility work continues. RiftOS storage is unaffected.</p><p>Configure a Wisp endpoint to browse external HTTPS sites.</p><p>Requested: <code>${safeTarget}</code></p>`)}`;
         mark("Engine ready","Wisp required for external sites");
         tracePanel.classList.add("hidden");
         await gecko.load(start);
