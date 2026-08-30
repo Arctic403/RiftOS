@@ -44,6 +44,7 @@ function openShellFromRiftDev(){
 
 function openRiftDev(){
   injectRiftDevStyles();
+  window.RiftDesktop?.closeWindow?.();
   closeRiftDev();
   document.documentElement.classList.add("riftdev-active");
   riftDevProcess=window.RiftOSCore?.kernel?.launchProcess?.("riftdev","RiftDev",{kind:"app"})||null;

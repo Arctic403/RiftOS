@@ -1,11 +1,10 @@
-const CACHE="riftos-shell-v15-trueos-core";
+const CACHE="riftos-shell-v16-trueos-refactor";
 const CORE=[
   "./",
   "./index.html",
   "./styles.css",
   "./src/riftcore.js",
   "./src/riftos.js",
-  "./src/riftos-system-ui.js",
   "./src/riftapps.js",
   "./src/riftapps-files.js",
   "./src/riftgit.js",
@@ -16,9 +15,7 @@ const CORE=[
 const coreURLs=new Set(CORE.map(path=>new URL(path,self.registration.scope).href));
 
 self.addEventListener("install",event=>event.waitUntil(
-  caches.open(CACHE)
-    .then(cache=>cache.addAll(CORE))
-    .then(()=>self.skipWaiting())
+  caches.open(CACHE).then(cache=>cache.addAll(CORE)).then(()=>self.skipWaiting())
 ));
 
 self.addEventListener("activate",event=>event.waitUntil(
@@ -29,55 +26,59 @@ self.addEventListener("activate",event=>event.waitUntil(
 
 self.addEventListener("fetch",event=>{
   const request=event.request;
-  if(request.method!=="GET") return;
+  if(request.method!=="GET")return;
 
   const url=new URL(request.url);
-
-  // RiftEngine/JSC/WebCore assets can be tens of MB and may expand much
-  // further once WebAssembly is compiled. Never persist them in CacheStorage.
-  // They stay network-only so iOS cannot grow the installed PWA to hundreds
-  // of MB just by launching/testing the engine.
-  if(
-    url.origin===location.origin &&
-    (url.pathname.endsWith(".wasm") ||
-     url.pathname.includes("/riftengine/prebuilt/") ||
-     url.pathname.includes("/riftengine/dist/"))
-  ){
+  if(url.origin!==location.origin){
     event.respondWith(fetch(request));
     return;
   }
 
-  if(url.origin===location.origin){
-    const isCore=coreURLs.has(url.href);
+  const isCore=coreURLs.has(url.href);
+  const isRiftDev=url.pathname.includes("/apps/riftdev/");
 
+  // Core shell files are network-first so a successful deployment appears
+  // immediately. The last known-good copy remains available offline.
+  if(isCore){
     event.respondWith((async()=>{
       try{
-        const response=await fetch(request);
-        if(response.ok && isCore){
+        const response=await fetch(request,{cache:"no-cache"});
+        if(response.ok){
           const cache=await caches.open(CACHE);
           await cache.put(request,response.clone());
         }
         return response;
-      }catch(error){
-        if(isCore){
-          const hit=await caches.match(request);
-          if(hit) return hit;
-        }
-
-        if(request.mode==="navigate"){
-          const shell=await caches.match(new URL("./index.html",self.registration.scope).href);
-          if(shell) return shell;
-        }
-
-        return new Response("Offline asset unavailable",{
-          status:503,
-          statusText:"Offline asset unavailable",
-          headers:{"Content-Type":"text/plain; charset=utf-8"}
-        });
+      }catch{
+        return (await caches.match(request)) || new Response("Offline core asset unavailable",{status:503});
       }
     })());
     return;
   }
 
-  event.respondWith(fetch(request));
+  // RiftDev is deployed as a pinned clone. Cache successful reads lazily so
+  // opening the IDE once makes its static shell available offline.
+  if(isRiftDev){
+    event.respondWith((async()=>{
+      const cache=await caches.open(CACHE);
+      try{
+        const response=await fetch(request);
+        if(response.ok)await cache.put(request,response.clone());
+        return response;
+      }catch{
+        return (await cache.match(request)) || new Response("Offline RiftDev asset unavailable",{status:503});
+      }
+    })());
+    return;
+  }
+
+  event.respondWith((async()=>{
+    try{return await fetch(request);}
+    catch{
+      if(request.mode==="navigate"){
+        const shell=await caches.match(new URL("./index.html",self.registration.scope).href);
+        if(shell)return shell;
+      }
+      return new Response("Offline asset unavailable",{status:503,statusText:"Offline asset unavailable"});
+    }
+  })());
 });

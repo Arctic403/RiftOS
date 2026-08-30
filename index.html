@@ -15,28 +15,27 @@
   <div id="boot" class="boot">
     <div class="boot-mark">R</div>
     <div class="boot-title">RiftOS</div>
-    <div class="boot-sub">true os core</div>
+    <div class="boot-sub">RiftKernel / True OS Core</div>
     <div class="boot-bar"><i></i></div>
   </div>
 
   <main id="os" class="os hidden" aria-label="RiftOS desktop">
     <header class="statusbar">
       <strong>RiftOS</strong>
-      <span id="statusText">Ready</span>
+      <span id="statusText">Booting kernel</span>
       <time id="clock"></time>
     </header>
 
     <section id="content" class="content">
       <section id="workspace" class="workspace">
-      <div class="hero">
-        <div>
-          <span class="eyebrow">RIFTKERNEL / TRUE OS CORE</span>
-          <h1>Your pocket computer.</h1>
-          <p>OPFS-backed, capability-aware, native-ready.</p>
+        <div class="hero">
+          <div>
+            <span class="eyebrow">RIFTKERNEL / TRUE OS CORE 1.0</span>
+            <h1>Your pocket computer.</h1>
+            <p>One kernel. One filesystem. Native-ready.</p>
+          </div>
+          <button class="pill" data-open="terminal">Open RiftShell</button>
         </div>
-        <button class="pill" data-open="terminal">Open RiftShell</button>
-      </div>
-
         <div class="app-grid" id="appGrid"></div>
       </section>
 
@@ -65,14 +64,11 @@
     </article>
   </template>
 
-  <script type="module" src="./riftengine/engine/jsc-runtime.js"></script>
-  <script type="module" src="./riftengine/engine/jsc-console-ui.js"></script>
   <script type="module" src="./src/riftcore.js"></script>
   <script type="module" src="./src/riftapps.js"></script>
   <script type="module" src="./src/riftapps-files.js"></script>
   <script type="module" src="./src/riftgit.js"></script>
   <script type="module" src="./src/riftdev-host.js"></script>
   <script type="module" src="./src/riftos.js"></script>
-  <script type="module" src="./src/riftos-system-ui.js"></script>
 </body>
 </html>

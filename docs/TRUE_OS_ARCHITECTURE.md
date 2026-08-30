@@ -1,61 +1,93 @@
-# RiftOS True OS Core
+# RiftOS True OS Architecture
 
-This refactor changes RiftOS from a collection of browser-app simulations into a layered operating environment that can run in two modes: web/PWA today and a thin native iOS host later.
+## Goal
 
-## Layer model
+RiftOS is no longer structured as a desktop simulation layered on top of a second compatibility runtime. The True OS 1.0 refactor makes the browser or WKWebView a hardware abstraction layer and puts one RiftOS-owned userspace runtime above it.
 
-1. **RiftKernel** (`src/riftcore.js`)
-   - process table and PID lifecycle
-   - app registry
-   - capability/permission vocabulary
-   - system information and mount table
-   - a stable native-bridge boundary
+```text
+RiftOS Desktop / RiftDev / RiftApps
+              |
+          RiftKernel
+     _________|_________
+    |         |         |
+ RiftFS   Processes  Capabilities
+    |                   |
+ OPFS/IDB          RiftNative
+    |                   |
+ browser         Swift / iOS APIs
+```
 
-2. **RiftFS 2**
-   - OPFS is the preferred browser filesystem when available
-   - the existing `riftos` IndexedDB files store remains as a compatibility mirror
-   - legacy files are migrated into OPFS once, without deleting IndexedDB data
-   - reads reconcile the newer copy and writes update both layers
-   - this lets existing RiftGit/RiftOS code continue to operate during migration
+## 1. One kernel
 
-3. **RiftShell / system UI** (`src/riftos-system-ui.js`)
-   - Files, Editor, Tasks and Settings are backed by the new kernel
-   - RiftShell adds filesystem navigation, mounts, storage stats, process management and capability diagnostics
-   - Git commands remain delegated to RiftGit
+`src/riftcore.js` is the only kernel/runtime authority.
 
-4. **RiftDev**
-   - remains a pinned clone of the separate Editor repository
-   - only RiftOS's deployed clone gets RiftOS integration overlays
-   - the source Editor repository is not modified by RiftOS development
+It owns:
 
-5. **RiftNative**
-   - JavaScript calls `RiftNative.call(method, args)`
-   - in a normal PWA the API reports that no native host is connected
-   - in a WKWebView host, Swift receives messages through the `riftNative` script-message channel and resolves the JavaScript request
+- process IDs and lifecycle
+- system and installed-app registration
+- permission grants
+- mount table
+- boot/system information
+- native bridge
+- RiftFS
 
-## Initial filesystem namespace
+The previous `RiftFS` and `RiftKernel` classes inside `src/riftos.js` are removed.
+
+## 2. One filesystem
+
+RiftFS uses OPFS when available.
+
+The original IndexedDB `riftos/files` store remains only as a compatibility mirror so existing user files survive the refactor. New built-in subsystems no longer open that database directly.
+
+RiftGit and RiftApps both use `window.RiftOSCore.fs`.
+
+### Namespace
 
 ```text
 /
 ├── home/
+│   └── repos/<owner>/<repo>
 ├── apps/
+│   ├── packages/
+│   └── data/
 ├── system/
 └── mounts/
 ```
 
-`/` is backed by OPFS in supported browsers. IndexedDB remains a mirrored compatibility layer while old components are migrated. A future native host can expose user-approved iOS Files locations below `/mounts`.
+### Native mounts
 
-## Capability vocabulary
+RiftOS Native can expose user-approved iOS Files directories below `/mounts/<name>`.
 
-The first kernel capability set is:
+The same methods are used regardless of backend:
+
+- `get` / `readText`
+- `write` / `writeText`
+- `mkdir`
+- `remove`
+- `stat`
+- `list`
+
+Native mounts are backed by security-scoped document-picker URLs and bookmark records in the Swift host. Removing a mount does not delete its files.
+
+## 3. Process model
+
+Each visible built-in app, RiftDev session, and installed RiftApp receives a RiftKernel process record.
+
+Protected kernel/desktop/native bridge processes cannot be killed by normal user process controls.
+
+The Tasks app and `ps` read the same process table.
+
+## 4. Capability model
+
+Kernel capabilities:
 
 - `fs.read`
 - `fs.write`
 - `network`
 - `clipboard.read`
 - `clipboard.write`
-- `notifications`
 - `share`
+- `notifications`
 - `process.read`
 - `process.manage`
 - `system.settings`
@@ -63,52 +95,109 @@ The first kernel capability set is:
 - `native.files`
 - `native.background`
 
-Built-in system apps declare their kernel capabilities. Installed RiftApps can move onto the same broker in a later package-format revision.
+Trusted built-ins receive declared capabilities.
 
-## RiftShell additions
+Installed `.rift` apps declare a limited package permission set. Sensitive capabilities are granted on first use through the kernel broker.
+
+## 5. Rift Apps
+
+`.rift` v1 remains a JSON/text package format, but installed packages and app data now live in RiftFS instead of a separate `riftapps` IndexedDB runtime.
+
+The refactor migrates existing installed packages/data once.
+
+The sandbox runtime injects:
+
+- scoped storage
+- permission requests
+- clipboard bridge
+- share bridge
+- notification bridge
+
+A CSP is injected into each app document. Apps without `network` permission receive `connect-src 'none'`.
+
+## 6. RiftGit
+
+RiftGit no longer opens IndexedDB itself.
+
+Workspaces live at:
 
 ```text
-sysinfo
-mount
-df
-ps
-kill <pid>
-apps
-permissions
-native
-pwd
-cd <dir>
-ls [path]
-cat <file>
-write <file> <text>
-mkdir <dir>
-rm <path>
-syncfs
-open <app>
+/home/repos/<owner>/<repo>
 ```
 
-Existing Git commands continue through RiftGit.
+The terminal backend supports:
 
-## Native iOS host
+```text
+git auth
+git clone owner/repo [branch]
+git use owner/repo
+git repo
+git status
+git pull
+git push <message>
+git branches
+git switch <branch>
+```
 
-`native/ios` contains a SwiftUI/WKWebView host scaffold. The first bridge supports:
+Push uses the Git Data API to create one tree and one commit for the entire working set. A remote-head check prevents silently overwriting newer remote work.
 
-- device/capability information
-- user-selected Files directory mounts for the current native session
-- directory listing and UTF-8 text read/write within those mounts
-- document picking
-- clipboard read/write
-- share sheet
-- local-notification permission and scheduling
+## 7. RiftDev
 
-This does **not** bypass the iOS sandbox. Native files are exposed only through user-approved document-picker locations or normal iOS APIs.
+`Arctic403/Editor` remains read-only source material.
 
-The native project is generated with XcodeGen. `.github/workflows/riftos-native-ios.yml` is intentionally `workflow_dispatch` only, so normal RiftOS pushes do not consume macOS build minutes.
+The Pages workflow:
 
-## Migration rule
+1. clones the pinned Editor commit;
+2. removes its `.git` metadata;
+3. copies it into the staged RiftOS site;
+4. injects `riftos-overlay.js` only into that deployed copy.
 
-Do not rewrite every existing RiftOS component at once. New system-level features should use `window.RiftOSCore`. Old components may continue using IndexedDB during migration because RiftFS 2 mirrors that store. Once a subsystem is migrated, it should stop creating its own filesystem/process/permission implementation.
+The source Editor repository is not patched by RiftOS.
 
-## Browser engine status
+## 8. Native bridge
 
-RiftEngine/WebCore work is intentionally independent of the True OS refactor. The native-capability and filesystem work does not require completing the custom browser engine first.
+The main RiftOS document is the only WKWebView frame allowed to call the native script-message handler directly. Sandboxed RiftApps must route requests through RiftKernel.
+
+Native bridge methods include:
+
+- `native.capabilities`
+- `device.info`
+- `files.pickDirectory`
+- `files.pickDocument`
+- `files.mounts`
+- `files.unmount`
+- `fs.list`
+- `fs.stat`
+- `fs.readText`
+- `fs.writeText`
+- `fs.mkdir`
+- `fs.remove`
+- `clipboard.readText`
+- `clipboard.writeText`
+- `share.text`
+- `notifications.request`
+- `notifications.schedule`
+
+This does not bypass iOS sandboxing.
+
+## 9. Browser-engine separation
+
+RiftEngine/WebCore is paused.
+
+Normal Pages deployments do not build Emscripten, the prototype engine, JSC or WebCore. The engine source and dedicated workflows remain preserved for later work.
+
+This separation means a UI/RiftDev/True OS change should deploy in minutes or seconds instead of waiting on browser-engine compilation.
+
+## 10. Compatibility rule
+
+No new subsystem should create its own filesystem, kernel, process table or permission implementation.
+
+Use:
+
+```js
+window.RiftOSCore
+```
+
+for system services.
+
+Compatibility stores may exist only as migration/read-through layers and should not become new sources of truth.

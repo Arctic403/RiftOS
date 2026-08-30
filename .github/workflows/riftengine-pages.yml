@@ -6,12 +6,8 @@ on:
     branches: [main]
     paths-ignore:
       - '.github/workflows/riftengine-jsc.yml'
-      - 'riftengine/tools/build-jsc-wasm.sh'
-      - 'riftengine/tools/build-icu-wasm.sh'
-      - 'riftengine/tools/prepare-webkit.sh'
-      - 'riftengine/tools/port-jsc-emscripten.py'
-      - 'riftengine/config/pins.env'
-      - 'riftengine/cmake/**'
+      - '.github/workflows/riftengine-webcore.yml'
+      - 'riftengine/**'
 
 permissions:
   contents: read
@@ -19,12 +15,12 @@ permissions:
   id-token: write
 
 jobs:
-  prototype:
-    name: Fast RiftOS + RiftEngine prototype
+  site:
+    name: Build True OS site
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     concurrency:
-      group: riftos-fast-${{ github.ref }}
+      group: riftos-site-${{ github.ref }}
       cancel-in-progress: true
     steps:
       - name: Checkout RiftOS
@@ -42,70 +38,25 @@ jobs:
           git -C /tmp/riftdev-editor checkout --detach FETCH_HEAD
           rm -rf /tmp/riftdev-editor/.git
           test -s /tmp/riftdev-editor/index.html
-          echo "RiftDev source pinned to $RIFTDEV_EDITOR_COMMIT"
 
-      - name: Install pinned Emscripten
-        uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: '6.0.0'
-          actions-cache-folder: 'emsdk-cache'
-
-      - name: Build RiftEngine port harness
-        run: bash riftengine/tools/build-prototype.sh
-
-      - name: Stage preserved JSC wasm runtimes
-        run: |
-          set -euxo pipefail
-          mkdir -p riftengine/jsc-dist riftengine/jsc-dist/custom
-
-          # Stock JSC shell remains a compatibility fallback while the
-          # persistent host is proven across iOS/Safari versions.
-          if [ -s riftengine/prebuilt/jsc-v1/jsc.js ] && [ -s riftengine/prebuilt/jsc-v1/jsc.wasm ]; then
-            cp riftengine/prebuilt/jsc-v1/jsc.js riftengine/jsc-dist/jsc.js
-            cp riftengine/prebuilt/jsc-v1/jsc.wasm riftengine/jsc-dist/jsc.wasm
-            ls -lh riftengine/jsc-dist/jsc.js riftengine/jsc-dist/jsc.wasm
-          else
-            echo 'Prebuilt stock JSC v1 is unavailable; deploying without stock fallback.'
-          fi
-
-          # Preferred browser runtime: tiny RiftEngine-owned host linked to
-          # JavaScriptCore, with one long-lived JSGlobalContextRef.
-          if [ -s riftengine/prebuilt/rift-jsc-host-v1/rift-jsc.js ] && [ -s riftengine/prebuilt/rift-jsc-host-v1/rift-jsc.wasm ]; then
-            cp riftengine/prebuilt/rift-jsc-host-v1/rift-jsc.js riftengine/jsc-dist/custom/rift-jsc.js
-            cp riftengine/prebuilt/rift-jsc-host-v1/rift-jsc.wasm riftengine/jsc-dist/custom/rift-jsc.wasm
-            ls -lh riftengine/jsc-dist/custom/rift-jsc.js riftengine/jsc-dist/custom/rift-jsc.wasm
-          else
-            echo 'Persistent RiftJSC host has not been promoted yet; worker will use stock fallback.'
-          fi
-
-      - name: Verify prototype
-        run: |
-          set -euxo pipefail
-          test -s riftengine/dist/riftengine-core.js
-          test -s riftengine/dist/riftengine-core.wasm
-          test -s riftengine/engine/webcore.js
-          ls -lh riftengine/dist/
-
-      - name: Assemble lean Pages site
+      - name: Assemble RiftOS Pages site
         run: |
           set -euxo pipefail
           rm -rf _site
-          mkdir -p _site/src _site/apps/riftdev _site/riftengine/engine _site/riftengine/dist _site/riftengine/jsc-dist/custom
+          mkdir -p _site/src _site/apps/riftdev
 
-          # RiftOS shell.
           cp index.html styles.css sw.js manifest.webmanifest _site/
           cp -a src/. _site/src/
 
-          # RiftDev starts as a pinned, read-only clone of Arctic403/Editor.
-          # The original Editor repository is never modified. RiftOS adds its
-          # own integration overlay only to this staged deployment copy.
+          # RiftDev is a read-only source clone. Only the staged RiftOS copy is
+          # modified with our integration overlay.
           cp -a /tmp/riftdev-editor/. _site/apps/riftdev/
           cp src/riftdev-overlay.js _site/apps/riftdev/riftos-overlay.js
           python3 - <<'PY'
           from pathlib import Path
           path = Path('_site/apps/riftdev/index.html')
           html = path.read_text(encoding='utf-8')
-          script = '<script src="riftos-overlay.js?v=2"></script>'
+          script = '<script src="riftos-overlay.js?v=3"></script>'
           if script not in html:
               if '</body>' not in html:
                   raise SystemExit('RiftDev index.html has no closing body tag')
@@ -113,33 +64,16 @@ jobs:
               path.write_text(html, encoding='utf-8')
           PY
           test -s _site/apps/riftdev/riftos-overlay.js
-          grep -F 'riftos-overlay.js?v=2' _site/apps/riftdev/index.html
+          grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
-          # Browser-facing RiftEngine JavaScript only.
-          cp -a riftengine/engine/. _site/riftengine/engine/
-
-          # Small prototype harness built in this workflow.
-          cp riftengine/dist/riftengine-core.js _site/riftengine/dist/
-          cp riftengine/dist/riftengine-core.wasm _site/riftengine/dist/
-
-          # JSC runtimes only. Never publish WebKit trees, build caches,
-          # sysroots, Emscripten SDKs, diagnostics, or duplicate prebuilts.
-          if [ -s riftengine/jsc-dist/jsc.js ] && [ -s riftengine/jsc-dist/jsc.wasm ]; then
-            cp riftengine/jsc-dist/jsc.js _site/riftengine/jsc-dist/
-            cp riftengine/jsc-dist/jsc.wasm _site/riftengine/jsc-dist/
-          fi
-          if [ -s riftengine/jsc-dist/custom/rift-jsc.js ] && [ -s riftengine/jsc-dist/custom/rift-jsc.wasm ]; then
-            cp riftengine/jsc-dist/custom/rift-jsc.js _site/riftengine/jsc-dist/custom/
-            cp riftengine/jsc-dist/custom/rift-jsc.wasm _site/riftengine/jsc-dist/custom/rift-jsc.wasm
-          fi
-
-          echo 'Pages payload:'
+          # The browser-engine source and heavyweight WASM builds are on hold.
+          # Normal RiftOS UI changes no longer install Emscripten or rebuild
+          # RiftEngine. Its dedicated workflows remain available separately.
+          echo "Pages payload:"
           du -sh _site
-          find _site -type f -printf '%s %p\n' | sort -nr | head -20
 
-          # Guard against accidentally publishing build caches again.
           payload_bytes=$(du -sb _site | cut -f1)
-          max_bytes=$((120 * 1024 * 1024))
+          max_bytes=$((32 * 1024 * 1024))
           if [ "$payload_bytes" -gt "$max_bytes" ]; then
             echo "Pages payload is unexpectedly large: $payload_bytes bytes" >&2
             exit 1
@@ -156,7 +90,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: prototype
+    needs: site
     concurrency:
       group: riftos-pages-deploy
       cancel-in-progress: false

@@ -1,46 +1,84 @@
 # RiftOS
 
-RiftOS is an experimental browser-native, touch-first operating environment designed to run well on mobile Safari and static hosting such as GitHub Pages.
+RiftOS is a touch-first operating environment that runs in two modes:
 
-## Current shell
+- **Web/PWA mode** on Safari and other modern browsers.
+- **RiftOS Native** inside a thin Swift/WKWebView iOS host.
 
-- Mobile-first desktop shell and dock
-- Rift Runtime task registry
-- RiftFS persistent virtual filesystem using IndexedDB
-- RiftShell with filesystem/process/app commands
-- Files app
-- Pocket code editor
-- RiftBrowser v0.2
-- Settings and task viewer
-- PWA manifest and offline shell cache
-- No Linux or Windows image required
+The True OS refactor removes the old duplicated runtime layers. RiftOS now has one kernel API, one filesystem API, one process table, one shell path, and one capability model.
 
-## RiftEngine
+## True OS Core
 
-RiftEngine is now a **clean RiftOS-owned WebKit-to-WASM port project**. The previous WebkitWasm build experiment, Codespace scripts, compatibility patcher, temporary logs and Codespace configuration have been removed.
+### RiftKernel
+`src/riftcore.js` owns:
 
-The production target is upstream WebKit/WebCore/JavaScriptCore compiled with Emscripten against a small RiftPlatform layer owned by RiftOS. Page parsing, JavaScript, layout and painting are intended to execute locally on the device. A future Wisp service may relay network bytes, but it will not render pages remotely.
+- boot state and versioning
+- process/PID lifecycle
+- application registry
+- capability grants
+- RiftNative bridge state
+- mount table
+- system information
 
-### Prototype milestone
+### RiftFS
+RiftFS prefers **OPFS** for the local filesystem and keeps the original `riftos` IndexedDB store as a compatibility mirror.
 
-The current Phase 0 port harness is intentionally smaller than WebKit. It proves our build and runtime boundary first:
+The namespace starts with:
 
-- GitHub Actions builds C++ to WebAssembly with Emscripten
-- GitHub Pages receives the generated runtime
-- the RiftEngine app boots the WASM module locally
-- WASM owns a pixel buffer which is presented to the RiftOS canvas
-- pointer input is forwarded into WASM
-- the viewport resizes without restarting the OS shell
-- memory is growable but capped for the mobile prototype
+```text
+/
+├── home/
+├── apps/
+├── system/
+└── mounts/
+```
 
-Once that works reliably on iPhone, Milestone 2 is JavaScriptCore bring-up, followed by WebCore local-document rendering and then networking.
+When RiftOS runs inside the native iOS host, user-approved Files folders can be mounted below `/mounts` and accessed through the same RiftFS API used by the web runtime.
 
-See `riftengine/README.md` for the architecture and feature-cut plan.
+### RiftShell
+RiftShell talks directly to RiftKernel/RiftFS. It includes filesystem, process, mount, storage, capability and Git commands.
 
-## Run
+### Rift Apps
+`.rift` packages are stored under RiftFS `/apps`. Installed apps launch in sandboxed iframes and request declared capabilities through the kernel permission broker.
 
-The main branch is built and deployed through the RiftEngine GitHub Pages workflow. Service Workers and persistent browser features work best over HTTPS.
+### RiftGit
+RiftGit uses RiftFS directly. GitHub workspaces live under:
 
-## Architecture
+```text
+/home/repos/<owner>/<repo>
+```
 
-The browser is the hardware abstraction layer. RiftOS builds its own runtime and APIs on browser primitives instead of emulating a desktop OS.
+Push creates one Git commit containing the complete local change set instead of one commit per changed file.
+
+### RiftDev
+RiftDev remains a pinned, read-only clone of `Arctic403/Editor`. The Editor repository itself is never modified by RiftOS. RiftOS adds its integration overlay only to the staged Pages copy.
+
+## RiftOS Native
+
+`native/ios` contains the Swift host scaffold.
+
+The bridge currently supports:
+
+- persistent user-selected Files directory mounts
+- directory listing/stat/read/write/create/remove
+- document picking
+- clipboard
+- share sheet
+- device information
+- notification authorization and local notification scheduling
+
+Native access remains inside normal iOS sandbox and user permission boundaries.
+
+## RiftEngine status
+
+The custom WebKit/WebCore experiment is **on hold**, not deleted.
+
+RiftEngine source, pins and dedicated GitHub Actions workflows remain in the repository, but normal RiftOS Pages deployments no longer install Emscripten or rebuild/publish the heavyweight engine. This keeps ordinary RiftOS/RiftDev iteration fast.
+
+See `riftengine/README.md` for the preserved engine roadmap.
+
+## Deploy
+
+The normal Pages workflow now assembles only the RiftOS shell and the pinned RiftDev clone.
+
+The native iOS workflow is manual (`workflow_dispatch`) so macOS runner minutes are used only when validating the Swift host.
