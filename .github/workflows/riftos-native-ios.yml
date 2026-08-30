@@ -1,3 +1,4 @@
+# Native-only CI: compile Swift on macOS whenever the iOS host changes.
 name: Build RiftOS Native iOS shell
 
 on:
