@@ -38,10 +38,11 @@
       if(typeof SharedArrayBuffer!=="function")throw new Error("SharedArrayBuffer is unavailable in this WebKit context.");
       status.textContent="Loading Gecko module…";
       const {Gecko}=await import("./vendor/gecko.js");
-      const assetBase=new URL("./vendor/",location.href).href;
+      const wasmURL=new URL("./vendor/gecko.wasm.zst",location.href).href;
       const gecko=new Gecko({
         canvas,
-        assetBase,
+        wasm:{url:wasmURL,compressed:true},
+        profile:"riftbrowser/gecko-profile",
         wispUrl:wisp||undefined,
         width:1024,
         height:768,
@@ -52,11 +53,20 @@
       window.RiftGecko=gecko;
       status.textContent="Initializing Gecko…";
       await gecko.init();
-      status.textContent=wisp?`Loading ${target}`:"Engine ready · Wisp not configured";
       tell("ready",{target,wispConfigured:!!wisp});
-      await gecko.load(target);
-      status.textContent=target;
-      tell("loaded",{url:target});
+
+      if(/^https?:/i.test(target)&&!wisp){
+        const safeTarget=String(target).replace(/[<>&"']/g,"");
+        const start=`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;padding:24px;line-height:1.45}code{word-break:break-all}</style><h1>Gecko engine ready</h1><p>RiftBrowser successfully booted Firefox Gecko inside RiftOS.</p><p>Configure a Wisp endpoint to browse external HTTPS sites.</p><p>Requested: <code>${safeTarget}</code></p>`)}`;
+        status.textContent="Engine ready · Wisp required for external sites";
+        await gecko.load(start);
+        tell("loaded",{url:start,engineReady:true,wispRequired:true,requested:target});
+      }else{
+        status.textContent=`Loading ${target}`;
+        await gecko.load(target);
+        status.textContent=target;
+        tell("loaded",{url:target,engineReady:true});
+      }
       canvas.focus({preventScroll:true});
     }catch(error){fail(error);}
   </script>
