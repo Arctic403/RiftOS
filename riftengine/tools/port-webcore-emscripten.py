@@ -84,17 +84,26 @@ set(PAL_LIBRARY_TYPE STATIC)
 set(WebCore_LIBRARY_TYPE STATIC)
 
 # WebCore links imported dependency targets, not just legacy cache variables.
-# Resolve the wasm sysroot packages before WebCore's framework targets are
-# generated. Older CMake exposes SQLite::SQLite3 while this WebKit revision
-# asks for SQLite3::SQLite3, so bridge the target name when required.
+# Resolve every Gate-2 dependency from RiftEngine's wasm sysroot before
+# WebCore's framework targets are generated. Older CMake exposes
+# SQLite::SQLite3 while this WebKit revision asks for SQLite3::SQLite3, so
+# bridge that target name when required.
 find_package(ICU 70.1 REQUIRED COMPONENTS data i18n uc)
 find_package(LibXml2 REQUIRED)
 find_package(SQLite3 3.7.17 REQUIRED)
+find_package(ZLIB REQUIRED)
+
 if (TARGET SQLite::SQLite3 AND NOT TARGET SQLite3::SQLite3)
     add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
 endif ()
 if (NOT TARGET SQLite3::SQLite3)
     message(FATAL_ERROR "SQLite3 was found but no SQLite3::SQLite3 imported target is available")
+endif ()
+if (NOT TARGET LibXml2::LibXml2)
+    message(FATAL_ERROR "LibXml2 was found but no LibXml2::LibXml2 imported target is available")
+endif ()
+if (NOT TARGET ZLIB::ZLIB)
+    message(FATAL_ERROR "zlib was found but no ZLIB::ZLIB imported target is available")
 endif ()
 ''')
 
