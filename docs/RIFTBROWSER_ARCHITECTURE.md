@@ -1,106 +1,125 @@
 # RiftBrowser Architecture
 
-## Contract first
+## Decision
 
-RiftBrowser is a RiftKernel service with replaceable renderers. The browser must remain usable while renderer technology changes underneath it.
+RiftBrowser is a custom RiftOS browser built on **Apple WebKit**, not a custom WebKit/WebCore/JSC build.
+
+RiftOS owns the browser product. Apple owns the rendering engine implementation provided by `WKWebView`.
+
+## Production path
 
 ```text
-Launcher / RiftShell / future APIs
+RiftBrowser launcher / RiftShell
               |
        RiftKernel.browser
-     _________|___________
-    |         |           |
- WebKit   RiftEngine   Web transport
- native    WebCore      fallback
+              |
+          RiftNative
+              |
+      RiftBrowserStore
+              |
+   RiftBrowserTabSession
+              |
+           WKWebView
+              |
+         Apple WebKit
 ```
 
-The browser service is implemented in `src/riftbrowser-kernel.js`. The current desktop adapter is `src/riftbrowser-ui.js`.
+## Responsibilities
 
-## Service ownership
+### RiftKernel.browser
 
-The service is responsible for renderer-independent state and policy:
+Owns OS-level browser state and API:
 
-- logical tabs and selected tab;
-- normalized URLs/search queries;
-- navigation requests;
-- logical history and bookmarks;
-- renderer registry and priority;
-- renderer capability/status reporting;
-- persistent browser metadata.
+- logical tabs
+- active-tab selection
+- URL/search normalization
+- bookmarks
+- lightweight history
+- native-vs-PWA backend selection
 
-Renderer code is responsible for drawing/executing a page and reporting a result. It must not create a second RiftOS kernel, filesystem or permission broker.
+### RiftBrowser.swift
 
-## Renderer registration
+Owns native browser behavior:
 
-```js
-window.RiftBrowserRendererContract.register({
-  id: "renderer-id",
-  name: "Renderer name",
-  priority: 150,
-  available: () => true,
-  capabilities: {
-    fullWeb: true,
-    localEngine: true
-  },
-  open: async ({ url, tab, newTab, service }) => {
-    return { mode: "custom", url, title: "Optional title" };
-  }
-});
+- real WebKit tabs
+- address/search field
+- back/forward/reload
+- loading progress
+- popup/new-window handling
+- persistent website data
+- desktop/mobile content mode
+
+### Apple WebKit
+
+Owns:
+
+- HTML/CSS parsing
+- DOM
+- JavaScript execution
+- layout/painting
+- networking
+- cookies/cache/site data
+- normal web compatibility
+
+## Desktop-first mode
+
+Every new native RiftBrowser tab starts with:
+
+```swift
+configuration.defaultWebpagePreferences.preferredContentMode = .desktop
 ```
 
-Required fields are `id`, `available()` and `open()`. Higher priority wins when selection is `auto`.
+The browser chrome exposes a per-tab Desktop / Mobile toggle. Switching mode updates WebKit's content preference and reloads the current page.
 
-A renderer should return enough metadata for the browser service/UI to understand what happened without handing the renderer unrelated OS privileges.
+This is the supported WebKit mechanism used instead of maintaining a desktop-UA emulation engine.
 
-## Current backends
+## Security boundary
 
-### Native WebKit
+The privileged `riftNative` handler is installed only in the trusted RiftOS shell WKWebView.
 
-`native-webkit` delegates to the Swift `RiftBrowserStore` via `browser.open`. It is the current full-web backend when RiftNative is connected. Swift browser tabs intentionally omit the privileged native script-message handler.
+RiftBrowser tabs are ordinary website contexts and cannot directly access:
 
-### RiftEngine
+- RiftWorkspace
+- native mounts
+- JSON patch APIs
+- clipboard/native notification methods through RiftNative
+- other privileged shell capabilities
 
-`riftengine` is an adapter slot. A usable engine publishes `window.RiftEngineBrowserBackend` with `open()` or `navigate()` and optionally an `available()` readiness check. The kernel then promotes it automatically ahead of the PWA fallback.
+Any future website-to-OS integration must go through an explicit permission/broker design; do not inject unrestricted filesystem bridges into browser tabs.
 
-RiftEngine should focus on page execution/rendering: JSC, WebCore, networking, painting, input and page storage. Browser chrome and OS policy remain above it.
+## PWA fallback
 
-### Web transport fallback
+GitHub Pages cannot embed every website because the host browser still enforces CORS, CSP and frame restrictions.
 
-`web-transport` is always available. It can display CORS-readable HTML/text after sanitization and return an external-open result otherwise. This is useful for testing BrowserService behavior on GitHub Pages before a full custom renderer is ready.
+`web-transport` exists only so the PWA build can exercise the browser kernel, tabs, bookmarks and UI. It may render safe CORS-readable text/HTML documents or send the destination to the external browser.
 
-It cannot make `chatgpt.com` or another site ignore CORS/CSP/frame policy.
+It is not a replacement for native RiftBrowser.
 
-## UI and shell
+## Removed architecture
 
-The existing desktop is deliberately not duplicated. `src/riftbrowser-ui.js` captures normal Browser launcher actions and routes them to `RiftKernel.browser` while using the existing RiftOS window template/process model for web-mode chrome.
+The following are no longer part of RiftOS:
 
-RiftShell commands:
+- RiftEngine browser backend
+- custom WebCore-to-WASM port
+- custom JSC WASM browser runtime
+- Emscripten browser-engine build chain
+- prebuilt JSC/WebCore WASM artifacts
+- engine promotion workflows
 
-```text
-browser [url]
-browserctl status
-browserctl tabs
-browserctl renderers
-browserctl renderer <auto|native-webkit|riftengine|web-transport>
-browserctl new [url]
-browserctl back
-browserctl forward
-browserctl reload
-browserctl bookmark [url]
-browserctl bookmarks
-browserctl close [tabId]
-```
+If browser compatibility is missing, fix the RiftBrowser/WKWebView integration first rather than starting another engine port.
 
-## Security invariants
+## Next browser features
 
-1. A page renderer does not receive RiftWorkspace by default.
-2. Native web pages never receive the shell's `riftNative` message handler.
-3. Web fallback content is sandboxed and active markup is stripped before `srcdoc` rendering.
-4. Renderer registration is a trusted RiftOS extension point, not an API exposed to arbitrary page content.
-5. Future downloads/filesystem integration must go through explicit kernel capability checks.
+Build new features around the existing WebKit browser:
 
-## Engine promotion gates
+- persistent native tab/session restoration
+- native bookmarks/history storage
+- downloads into RiftWorkspace
+- share/open-in actions
+- per-site desktop/mobile preference
+- content blockers/privacy controls
+- search-engine settings
+- find-in-page
+- tab groups/private profile if needed
 
-RiftEngine may become the preferred non-native backend only after it can satisfy the browser renderer contract and pass its own engine gates: stable JSC context, WebCore document rendering, input/event loop, networking, persistent profile and iPhone memory/stability testing.
-
-The browser service itself should not wait on those expensive gates. Tabs, shell commands, history/bookmarks, renderer selection and UI behavior can be tested continuously on normal Pages deployments.
+These are browser-product features and do not require compiling WebKit.

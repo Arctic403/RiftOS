@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v18-kernel-browser-service";
+const CACHE="riftos-shell-v19-apple-webkit-browser";
 const CORE=[
   "./",
   "./index.html",

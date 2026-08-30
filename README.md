@@ -1,23 +1,77 @@
 # RiftOS
 
-RiftOS is a touch-first operating environment with one userspace runtime and two host modes:
+RiftOS is a touch-first operating environment with one RiftKernel runtime and a native iOS host.
 
-- **Web/PWA mode** on Safari and other modern browsers.
-- **RiftOS Native** inside a thin Swift/WKWebView iOS host.
+It runs in two modes:
 
-The True OS refactor removes duplicated runtime layers. RiftOS now has one kernel API, one filesystem API, one process table, one shell path, one capability model, and one browser-service contract.
+- **Web/PWA mode** for the RiftOS shell, RiftDev, RiftFS and lightweight browser-state testing.
+- **RiftOS Native** inside Swift + `WKWebView`, where RiftBrowser becomes a full custom iPhone browser powered by Apple WebKit.
 
-## True OS Core
+## Current architecture
 
-### RiftKernel
+```text
+RiftOS Desktop / RiftDev / RiftApps
+                |
+            RiftKernel
+       _________|__________
+      |         |          |
+   RiftFS   Processes   BrowserService
+      |                    |
+ OPFS/IDB              RiftNative
+                           |
+                    Swift iOS host
+                           |
+                 RiftBrowser / WKWebView
+                           |
+                      Apple WebKit
+```
 
-`src/riftcore.js` is the system authority. It owns boot state, process/PID lifecycle, application registration, capability grants, RiftNative bridge state, mounts, and RiftFS.
+RiftOS owns the browser chrome, tabs, kernel state, bookmarks, app integration and native bridge. Apple WebKit owns HTML, CSS, JavaScript, cookies, networking and page rendering.
 
-Browser policy is attached as the first-class `RiftKernel.browser` service by `src/riftbrowser-kernel.js`. Browser UI code does not choose engines directly.
+There is no custom WebCore/JSC/WASM browser engine in the active repository anymore.
 
-### RiftFS
+## RiftKernel
 
-RiftFS prefers **OPFS** and keeps the original `riftos` IndexedDB store as a compatibility mirror.
+`src/riftcore.js` is the runtime authority for:
+
+- boot state and versioning
+- process/PID lifecycle
+- application registry
+- capability grants
+- RiftNative bridge state
+- mount table
+- system information
+- RiftFS
+
+`src/riftbrowser-kernel.js` attaches `RiftKernel.browser` as the browser service. It owns logical tabs, history, bookmarks, URL normalization and backend selection.
+
+The browser has only two execution backends:
+
+1. `native-webkit` — the full browser inside RiftOS Native.
+2. `web-transport` — a lightweight PWA fallback for kernel/UI testing when native WebKit is unavailable.
+
+## RiftBrowser
+
+The production browser lives in `native/ios/RiftOSNative/RiftBrowser.swift`.
+
+Each tab owns a normal `WKWebView` with persistent website data. RiftBrowser provides:
+
+- multi-tab browsing
+- address/search input
+- back/forward/reload
+- popup handling
+- persistent cookies/site data through WebKit
+- desktop website mode by default
+- a per-tab Desktop / Mobile website toggle
+- normal HTTP/HTTPS browsing
+
+Desktop mode uses WebKit's `preferredContentMode = .desktop`; the browser does not fake a desktop page by compiling another engine.
+
+Browser tabs deliberately do **not** receive the privileged `riftNative` script-message handler. Ordinary websites, including ChatGPT, cannot call RiftWorkspace or native filesystem methods.
+
+## RiftFS and RiftWorkspace
+
+RiftFS prefers OPFS in web mode and keeps the old IndexedDB filesystem only as a compatibility mirror.
 
 ```text
 /
@@ -27,105 +81,35 @@ RiftFS prefers **OPFS** and keeps the original `riftos` IndexedDB store as a com
 └── mounts/
 ```
 
-When RiftOS runs inside the native iOS host, user-approved Files folders can be mounted below `/mounts` through the same RiftFS API used by web mode.
+The native host creates `Documents/RiftWorkspace` and exposes it as the protected `/mounts/RiftWorkspace` mount. Trusted RiftOS code can use native list/read/write/move/remove methods and the JSON patch transaction/rollback API.
 
-### RiftShell
+## RiftDev
 
-RiftShell talks to RiftKernel/RiftFS. In addition to filesystem, process, storage, capability and Git commands, the shell can drive the browser service:
+RiftDev remains a pinned mirror of `Arctic403/Editor`. RiftOS adds its integration overlay only to the staged Pages copy. The Editor source repository is not modified by RiftOS.
 
-```text
-browser [url]
-browserctl status
-browserctl tabs
-browserctl renderers
-browserctl renderer <auto|renderer-id>
-browserctl new [url]
-browserctl back
-browserctl forward
-browserctl reload
-browserctl bookmark [url]
-browserctl bookmarks
-```
+## GitHub Actions
 
-### Rift Apps
+The active workflows are intentionally small:
 
-`.rift` packages live below RiftFS `/apps`. Installed apps launch in sandboxed iframes and request declared capabilities through the kernel permission broker.
+- `.github/workflows/riftos-pages.yml` validates and deploys the web/PWA shell.
+- `.github/workflows/riftos-native-ios.yml` generates the Xcode project and compiles both Simulator and unsigned physical-iPhone targets.
 
-### RiftGit
+The old RiftEngine/JSC/WebCore build/promote workflows were removed with the custom engine source and prebuilt WASM files.
 
-RiftGit uses RiftFS directly. GitHub workspaces live under:
+Signed App Store/TestFlight delivery is not configured in the active repo. The unsigned device build remains useful for compile validation, while Simulator artifacts can be used for cloud/simulator testing.
+
+## Browser development rule
+
+Do not add another browser engine to RiftOS unless the project explicitly changes direction again.
+
+New browser features should be implemented at one of these layers:
 
 ```text
-/home/repos/<owner>/<repo>
+RiftKernel.browser        browser state / OS API
+src/riftbrowser-ui.js     PWA diagnostics + fallback UI
+RiftNative               trusted shell-to-native calls
+RiftBrowser.swift         production browser behavior
+WKWebView / Apple WebKit  web platform implementation
 ```
 
-Push creates one Git commit containing the complete local change set instead of one commit per file.
-
-### RiftDev
-
-RiftDev remains a pinned, read-only clone of `Arctic403/Editor`. RiftOS modifies only the staged Pages mirror by adding its integration overlay. Files under `apps/riftdev` are generated mirror content, not a second RiftOS architecture source.
-
-## RiftBrowser: one service, replaceable renderers
-
-RiftBrowser is no longer defined by whichever engine happens to draw a page. The stable API is `RiftKernel.browser` / `window.RiftBrowser`.
-
-```text
-RiftBrowser UI / RiftShell / RiftApps
-                 |
-          RiftKernel.browser
-      ___________|____________
-     |            |            |
-Native WebKit  RiftEngine   Web transport
-   backend      backend       fallback
-```
-
-The service owns logical tabs, active-tab selection, navigation intent, history/bookmark metadata, renderer selection, and renderer capability discovery. Renderer implementations register behind one contract and can be replaced without rewriting browser chrome or shell commands.
-
-Current renderer priority in `auto` mode:
-
-1. **`native-webkit`** — full native `WKWebView` surface when RiftOS runs in the Swift host.
-2. **`riftengine`** — future local WebCore/JSC WASM renderer when `window.RiftEngineBrowserBackend` passes its availability gate.
-3. **`web-transport`** — PWA fallback for CORS-readable text/HTML plus external-open fallback for sites a normal web page cannot embed.
-
-The PWA fallback is intentionally not presented as a full browser engine. Browser restrictions such as CSP, frame policy and CORS still apply until a full renderer backend is available.
-
-### Renderer extension point
-
-A future renderer registers through:
-
-```js
-window.RiftBrowserRendererContract.register({
-  id: "my-renderer",
-  name: "My Renderer",
-  priority: 150,
-  available: () => true,
-  capabilities: { fullWeb: true },
-  open: async ({ url, tab }) => ({ mode: "custom", url })
-});
-```
-
-See `docs/RIFTBROWSER_ARCHITECTURE.md` for the contract and ownership rules.
-
-## Native RiftOS
-
-`native/ios` contains the Swift host. It provides persistent Files mounts, document picking, clipboard/share, device information, notifications, RiftWorkspace, JSON patch transactions, and the native browser renderer.
-
-The native RiftBrowser uses multi-tab WebKit with persistent website data. The privileged `RiftNative` message handler is **not** installed in normal browser tabs, so sites such as ChatGPT do not receive RiftOS filesystem or patch privileges.
-
-A dedicated `Documents/RiftWorkspace` is exposed through iOS Files and mounted in RiftFS at `/mounts/RiftWorkspace`. Trusted RiftOS code receives `window.RiftWorkspace` for constrained read/write/list/move operations plus `riftcity-ai-patch` preview/apply/history/rollback.
-
-## RiftEngine status
-
-RiftEngine is still the long-term custom local renderer path, but it is no longer a separate browser architecture. Its job is to implement the `RiftKernel.browser` renderer contract.
-
-The heavyweight JSC/WebCore port remains isolated behind dedicated Actions workflows. Normal RiftOS UI/kernel deployments do **not** rebuild Emscripten/WebKit. This lets browser-service, UI and OS work move quickly while the expensive engine port progresses independently.
-
-See `riftengine/README.md` and `riftengine/webcore/README.md`.
-
-## Deploy and validation
-
-The normal Pages workflow validates all RiftOS JavaScript browser/kernel modules, assembles the shell plus pinned RiftDev mirror, and deploys GitHub Pages.
-
-The native iOS workflow runs for `native/ios/**`, uses the current Xcode 26 toolchain, generates the Xcode project with XcodeGen, and compiles both Simulator and unsigned physical-iPhone targets.
-
-`.github/workflows/riftos-testflight.yml` is an optional manual App Store Connect/TestFlight delivery path for accounts with Apple distribution signing material. It is not required for Web/PWA development or for unsigned native compile validation.
+See `docs/RIFTBROWSER_ARCHITECTURE.md` and `docs/TRUE_OS_ARCHITECTURE.md`.

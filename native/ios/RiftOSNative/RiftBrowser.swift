@@ -12,6 +12,7 @@ final class RiftBrowserTabSession: NSObject, ObservableObject, Identifiable, WKN
     @Published var estimatedProgress: Double = 0
     @Published var canGoBack = false
     @Published var canGoForward = false
+    @Published var prefersDesktopMode = true
 
     private var observations: [NSKeyValueObservation] = []
 
@@ -19,10 +20,11 @@ final class RiftBrowserTabSession: NSObject, ObservableObject, Identifiable, WKN
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.defaultWebpagePreferences.preferredContentMode = .desktop
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
 
-        // Deliberately DO NOT attach RiftNative here. Normal websites, including
-        // ChatGPT, get a standard web browser surface with no filesystem bridge.
+        // RiftBrowser owns the chrome and tab model; Apple WebKit owns the web
+        // engine. Never attach RiftNative to ordinary browser tabs.
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = self
         view.uiDelegate = self
@@ -45,14 +47,25 @@ final class RiftBrowserTabSession: NSObject, ObservableObject, Identifiable, WKN
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard let url = destination(for: trimmed) else { return }
+        applyContentMode()
         addressText = url.absoluteString
         webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 60))
     }
 
+    func setDesktopMode(_ enabled: Bool, reload: Bool = true) {
+        prefersDesktopMode = enabled
+        applyContentMode()
+        if reload, webView.url != nil { webView.reload() }
+    }
+
     func goBack() { if webView.canGoBack { webView.goBack() } }
     func goForward() { if webView.canGoForward { webView.goForward() } }
-    func reload() { webView.reload() }
+    func reload() { applyContentMode(); webView.reload() }
     func stop() { webView.stopLoading() }
+
+    private func applyContentMode() {
+        webView.configuration.defaultWebpagePreferences.preferredContentMode = prefersDesktopMode ? .desktop : .mobile
+    }
 
     private func destination(for input: String) -> URL? {
         if let url = URL(string: input), let scheme = url.scheme?.lowercased(), ["http", "https", "about"].contains(scheme) {
@@ -100,6 +113,7 @@ final class RiftBrowserTabSession: NSObject, ObservableObject, Identifiable, WKN
             return
         }
         if ["http", "https", "about", "blob", "data"].contains(scheme) {
+            applyContentMode()
             decisionHandler(.allow)
         } else {
             UIApplication.shared.open(url)
@@ -235,6 +249,22 @@ private struct RiftBrowserChrome: View {
                     .disabled(!session.canGoBack)
                 Button(action: session.goForward) { Image(systemName: "chevron.right") }
                     .disabled(!session.canGoForward)
+
+                Menu {
+                    Button {
+                        session.setDesktopMode(true)
+                    } label: {
+                        Label("Desktop Website", systemImage: session.prefersDesktopMode ? "checkmark.circle.fill" : "desktopcomputer")
+                    }
+                    Button {
+                        session.setDesktopMode(false)
+                    } label: {
+                        Label("Mobile Website", systemImage: session.prefersDesktopMode ? "iphone" : "checkmark.circle.fill")
+                    }
+                } label: {
+                    Image(systemName: session.prefersDesktopMode ? "desktopcomputer" : "iphone")
+                }
+                .accessibilityLabel(session.prefersDesktopMode ? "Desktop website mode" : "Mobile website mode")
 
                 Spacer()
 

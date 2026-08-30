@@ -1,4 +1,0 @@
-RiftEngine JSC wasm v1
-Source run: 33260852535
-Source artifact: 9717472558
-Source commit: 5b81034050881b6935ab8bcbe1ddf8bd876821b9
