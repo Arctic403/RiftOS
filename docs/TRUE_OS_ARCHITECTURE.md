@@ -201,3 +201,30 @@ window.RiftOSCore
 for system services.
 
 Compatibility stores may exist only as migration/read-through layers and should not become new sources of truth.
+
+## 11. Native RiftBrowser + RiftWorkspace
+
+The iOS host now owns a real browser surface instead of forwarding normal sites to Safari.
+
+`RiftBrowserStore` manages persistent WebKit tab sessions with shared website data, navigation, history gestures, address/search input, popup handling and normal HTTP/HTTPS navigation. Launching the Browser app while native-hosted opens this surface directly; ChatGPT is the default launch destination.
+
+The privileged `riftNative` message handler is **not installed in browser tabs**. It exists only in the RiftOS shell WKWebView. This keeps ordinary sites from seeing filesystem, patch, clipboard or other OS capabilities.
+
+The native host also creates a sandboxed `Documents/RiftWorkspace` tree:
+
+```text
+RiftWorkspace/
+├── projects/
+├── downloads/
+├── documents/
+├── patches/
+└── .rift/
+    ├── workspace.json
+    └── history/
+```
+
+The app exposes Documents through iOS file sharing/open-in-place, so the workspace can also be inspected from Files. RiftWorkspace is automatically surfaced to RiftFS as the protected `/mounts/RiftWorkspace` system mount.
+
+Trusted RiftOS code can call `window.RiftWorkspace` for list/stat/read/write/move/remove operations and for JSON patch transactions. The native patch engine accepts the existing `riftcity-ai-patch` v1/v2 contract, validates per-file `base_sha256` values when supplied, rejects path overlap/traversal, protects `.rift` metadata, snapshots every affected path before applying, and can roll back a completed patch from native history.
+
+A future Rift AI/OpenAI API client can therefore use the narrow tool surface (`list`, `readText`, `previewPatch`, `applyPatch`, `rollback`) without exposing unrestricted iOS filesystem access to websites.

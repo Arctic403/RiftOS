@@ -153,7 +153,11 @@ class RiftNativeBridge extends EventTarget{
       notifications:"Notification" in window,
       clipboard:!!navigator.clipboard,
       serviceWorker:"serviceWorker" in navigator,
-      backgroundSync:"serviceWorker" in navigator&&"SyncManager" in window
+      backgroundSync:"serviceWorker" in navigator&&"SyncManager" in window,
+      browser:this.connected,
+      workspace:this.connected,
+      jsonPatches:this.connected,
+      patchRollback:this.connected
     };
   }
   call(method,args={}){
@@ -220,7 +224,7 @@ class RiftFS extends EventTarget{
     if(!mount?.mountId)return null;
     let name=safeMountName(mount.name||mount.mountId),path=`/mounts/${name}`,i=2;
     while([...this.mounts.values()].some(item=>item.path===path&&item.mountId!==mount.mountId))path=`/mounts/${name}-${i++}`;
-    const record={mountId:String(mount.mountId),name,path,type:"rift-native",mode:"rw",persistent:mount.persistent!==false};
+    const record={mountId:String(mount.mountId),name,path,type:mount.system===true?"rift-native-workspace":"rift-native",mode:"rw",persistent:mount.persistent!==false,system:mount.system===true};
     this.mounts.set(record.mountId,record);this.dispatchEvent(new CustomEvent("mount",{detail:record}));return record;
   }
   async mountNativeDirectory(){
@@ -230,7 +234,7 @@ class RiftFS extends EventTarget{
   }
   async unmount(pathOrId){
     const mount=[...this.mounts.values()].find(item=>item.mountId===pathOrId||item.path===normalizePath(pathOrId));
-    if(!mount)return false;
+    if(!mount||mount.system)return false;
     if(this.native.connected)await this.native.call("files.unmount",{mountId:mount.mountId}).catch(()=>{});
     this.mounts.delete(mount.mountId);this.dispatchEvent(new CustomEvent("unmount",{detail:mount}));return true;
   }
@@ -445,8 +449,26 @@ window.RiftNative=Object.freeze({
   __resolve:(id,ok,value,error)=>kernel.native.resolve(id,!!ok,value,error)
 });
 
+window.RiftWorkspace=Object.freeze({
+  get available(){return kernel.native.connected;},
+  info:()=>kernel.native.call("workspace.info",{}),
+  list:(path="",options={})=>kernel.native.call("workspace.list",{path,recursive:options.recursive!==false,includeHidden:options.includeHidden===true}),
+  stat:(path)=>kernel.native.call("workspace.stat",{path}),
+  readText:(path)=>kernel.native.call("workspace.readText",{path}),
+  writeText:(path,text)=>kernel.native.call("workspace.writeText",{path,text:String(text??"")}),
+  mkdir:(path)=>kernel.native.call("workspace.mkdir",{path}),
+  remove:(path)=>kernel.native.call("workspace.remove",{path}),
+  move:(path,newPath)=>kernel.native.call("workspace.move",{path,newPath}),
+  previewPatch:(patch)=>kernel.native.call("workspace.previewPatch",{patch}),
+  applyPatch:(patch)=>kernel.native.call("workspace.applyPatch",{patch}),
+  history:()=>kernel.native.call("workspace.history",{}),
+  rollback:(historyId=null)=>kernel.native.call("workspace.rollback",historyId?{historyId}:{}),
+  copyFromMount:(mountId,path,destination)=>kernel.native.call("workspace.copyFromMount",{mountId,path,destination}),
+  copyToMount:(source,mountId,path)=>kernel.native.call("workspace.copyToMount",{source,mountId,path})
+});
+
 window.RiftOSCore=Object.freeze({
-  version:CORE_VERSION,ready,kernel,fs:kernel.fs,processes:kernel.processes,permissions:kernel.permissions,native:kernel.native,
+  version:CORE_VERSION,ready,kernel,fs:kernel.fs,processes:kernel.processes,permissions:kernel.permissions,native:kernel.native,workspace:window.RiftWorkspace,
   path:Object.freeze({normalize:normalizePath,parent:parentPath,basename,join:joinPath})
 });
 

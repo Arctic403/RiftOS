@@ -7,6 +7,21 @@ import UserNotifications
 final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPickerDelegate {
     weak var webView: WKWebView?
 
+    private let browserStore: RiftBrowserStore
+    private let workspace = RiftWorkspace.shared
+    private lazy var patchEngine = RiftPatchEngine(workspace: workspace)
+
+    init(browserStore: RiftBrowserStore) {
+        self.browserStore = browserStore
+        super.init()
+    }
+
+    func openBrowser(_ url: String = "https://chatgpt.com") {
+        DispatchQueue.main.async { [weak self] in
+            self?.browserStore.open(url)
+        }
+    }
+
     private struct MountRecord: Codable {
         let id: String
         let name: String
@@ -14,6 +29,7 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
     }
 
     private let bookmarkKey = "RiftOS.NativeMounts.v1"
+    private let workspaceMountID = "rift-workspace"
     private var pendingPickerID: String?
     private var pendingPickerKind: String?
     private var mounts: [String: URL] = [:]
@@ -34,7 +50,7 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
         // Only RiftOS's top-level document receives native capabilities.
         // Sandboxed RiftApps and embedded web content must go through the
         // capability broker in the main RiftOS document.
-        guard message.frameInfo.isMainFrame else { return }
+        guard message.frameInfo.isMainFrame, isTrustedRiftOSOrigin(message.frameInfo.securityOrigin) else { return }
 
         guard
             let body = message.body as? [String: Any],
@@ -52,6 +68,10 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
                 "share": true,
                 "clipboard": true,
                 "notifications": true,
+                "browser": true,
+                "workspace": true,
+                "jsonPatches": true,
+                "patchRollback": true,
                 "background": false
             ])
         case "device.info":
@@ -70,6 +90,46 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
             respond(id: id, value: mountList())
         case "files.unmount":
             unmount(id: id, args: args)
+        case "browser.open":
+            let url = args["url"] as? String
+            let newTab = args["newTab"] as? Bool ?? false
+            DispatchQueue.main.async { [weak self] in
+                self?.browserStore.open(url, newTab: newTab)
+                self?.respond(id: id, value: true)
+            }
+        case "browser.close":
+            DispatchQueue.main.async { [weak self] in
+                self?.browserStore.closeBrowser()
+                self?.respond(id: id, value: true)
+            }
+        case "workspace.info":
+            workspaceInfo(id: id)
+        case "workspace.list":
+            workspaceList(id: id, args: args)
+        case "workspace.stat":
+            workspaceStat(id: id, args: args)
+        case "workspace.readText":
+            workspaceReadText(id: id, args: args)
+        case "workspace.writeText":
+            workspaceWriteText(id: id, args: args)
+        case "workspace.mkdir":
+            workspaceMkdir(id: id, args: args)
+        case "workspace.remove":
+            workspaceRemove(id: id, args: args)
+        case "workspace.move":
+            workspaceMove(id: id, args: args)
+        case "workspace.previewPatch":
+            workspacePatch(id: id, args: args, apply: false)
+        case "workspace.applyPatch":
+            workspacePatch(id: id, args: args, apply: true)
+        case "workspace.history":
+            workspaceHistory(id: id)
+        case "workspace.rollback":
+            workspaceRollback(id: id, args: args)
+        case "workspace.copyFromMount":
+            workspaceCopyFromMount(id: id, args: args)
+        case "workspace.copyToMount":
+            workspaceCopyToMount(id: id, args: args)
         case "fs.list":
             listMount(id: id, args: args)
         case "fs.stat":
@@ -96,6 +156,122 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
         default:
             respond(id: id, ok: false, error: "Unsupported native method: \(method)")
         }
+    }
+
+    private func isTrustedRiftOSOrigin(_ origin: WKSecurityOrigin) -> Bool {
+        let host = origin.host.lowercased()
+        // Bundled file:// RiftOS has an empty host. Production remote fallback is
+        // pinned to the RiftOS GitHub Pages origin. Browser tabs never receive
+        // this script-message handler at all.
+        return host.isEmpty || host == "arctic403.github.io"
+    }
+
+    private func workspaceInfo(id: String) {
+        do { respond(id: id, value: try workspace.info()) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceList(id: String, args: [String: Any]) {
+        do {
+            let rows = try workspace.list(
+                path: args["path"] as? String ?? "",
+                recursive: args["recursive"] as? Bool ?? true,
+                includeHidden: args["includeHidden"] as? Bool ?? false
+            )
+            respond(id: id, value: rows)
+        } catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceStat(id: String, args: [String: Any]) {
+        do { respond(id: id, value: try workspace.stat(path: args["path"] as? String ?? "") ?? NSNull()) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceReadText(id: String, args: [String: Any]) {
+        guard let path = args["path"] as? String else { respond(id: id, ok: false, error: "path is required"); return }
+        do { respond(id: id, value: try workspace.readText(path: path)) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceWriteText(id: String, args: [String: Any]) {
+        guard let path = args["path"] as? String else { respond(id: id, ok: false, error: "path is required"); return }
+        do { respond(id: id, value: try workspace.writeText(path: path, text: args["text"] as? String ?? "")) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceMkdir(id: String, args: [String: Any]) {
+        guard let path = args["path"] as? String else { respond(id: id, ok: false, error: "path is required"); return }
+        do { try workspace.makeDirectory(path: path); respond(id: id, value: true) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceRemove(id: String, args: [String: Any]) {
+        guard let path = args["path"] as? String else { respond(id: id, ok: false, error: "path is required"); return }
+        do { try workspace.remove(path: path); respond(id: id, value: true) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceMove(id: String, args: [String: Any]) {
+        guard let path = args["path"] as? String, let newPath = args["newPath"] as? String else {
+            respond(id: id, ok: false, error: "path and newPath are required"); return
+        }
+        do { try workspace.move(from: path, to: newPath); respond(id: id, value: true) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func patchData(_ args: [String: Any]) throws -> Data {
+        if let json = args["json"] as? String, let data = json.data(using: .utf8) { return data }
+        if let patch = args["patch"] {
+            guard JSONSerialization.isValidJSONObject(patch) else {
+                throw NSError(domain: "RiftNative", code: 40, userInfo: [NSLocalizedDescriptionKey: "patch must be a JSON object or json string"])
+            }
+            return try JSONSerialization.data(withJSONObject: patch)
+        }
+        throw NSError(domain: "RiftNative", code: 41, userInfo: [NSLocalizedDescriptionKey: "patch or json is required"])
+    }
+
+    private func workspacePatch(id: String, args: [String: Any], apply: Bool) {
+        do {
+            let data = try patchData(args)
+            respond(id: id, value: apply ? try patchEngine.apply(data: data) : try patchEngine.preview(data: data))
+        } catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceHistory(id: String) {
+        do { respond(id: id, value: try patchEngine.history()) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceRollback(id: String, args: [String: Any]) {
+        do { respond(id: id, value: try patchEngine.rollback(id: args["historyId"] as? String)) }
+        catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceCopyFromMount(id: String, args: [String: Any]) {
+        guard let destination = args["destination"] as? String else {
+            respond(id: id, ok: false, error: "destination is required"); return
+        }
+        do {
+            let source = try mountedURL(args)
+            respond(id: id, value: try workspace.copyItem(from: source, to: destination))
+        } catch { respond(id: id, ok: false, error: error.localizedDescription) }
+    }
+
+    private func workspaceCopyToMount(id: String, args: [String: Any]) {
+        guard let sourcePath = args["source"] as? String, let mountID = args["mountId"] as? String else {
+            respond(id: id, ok: false, error: "source and mountId are required"); return
+        }
+        guard mountID != workspaceMountID else {
+            respond(id: id, ok: false, error: "Use workspace move/write APIs inside RiftWorkspace"); return
+        }
+        do {
+            let destination = try mountedURL([
+                "mountId": mountID,
+                "path": args["path"] as? String ?? ""
+            ])
+            try workspace.copyItemToExternal(path: sourcePath, destination: destination)
+            respond(id: id, value: true)
+        } catch { respond(id: id, ok: false, error: error.localizedDescription) }
     }
 
     private func topViewController() -> UIViewController? {
@@ -237,7 +413,14 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
     }
 
     private func mountList() -> [[String: Any]] {
-        mounts.keys.sorted().compactMap { id in
+        let workspaceMount: [String: Any] = [
+            "mountId": workspaceMountID,
+            "name": "RiftWorkspace",
+            "kind": "directory",
+            "persistent": true,
+            "system": true
+        ]
+        let external = mounts.keys.sorted().compactMap { id -> [String: Any]? in
             guard mounts[id] != nil else { return nil }
             return [
                 "mountId": id,
@@ -246,11 +429,16 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
                 "persistent": true
             ]
         }
+        return [workspaceMount] + external
     }
 
     private func unmount(id: String, args: [String: Any]) {
         guard let mountID = args["mountId"] as? String else {
             respond(id: id, ok: false, error: "mountId is required")
+            return
+        }
+        if mountID == workspaceMountID {
+            respond(id: id, ok: false, error: "RiftWorkspace is a protected system mount")
             return
         }
 
@@ -262,21 +450,58 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
     }
 
     private func mountedURL(_ args: [String: Any]) throws -> URL {
-        guard let mountID = args["mountId"] as? String, let root = mounts[mountID] else {
+        guard let mountID = args["mountId"] as? String else {
+            throw NSError(domain: "RiftNative", code: 1, userInfo: [NSLocalizedDescriptionKey: "mountId is required"])
+        }
+
+        if mountID == workspaceMountID {
+            return try workspace.url(for: args["path"] as? String ?? "")
+        }
+
+        guard let root = mounts[mountID] else {
             throw NSError(domain: "RiftNative", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unknown mount"])
         }
 
-        let relative = (args["path"] as? String ?? "")
-            .replacingOccurrences(of: "\\", with: "/")
-            .split(separator: "/")
-            .filter { $0 != "." && $0 != ".." }
-            .map(String.init)
-
-        var url = root
-        for part in relative {
-            url.appendPathComponent(part)
+        let raw = (args["path"] as? String ?? "").replacingOccurrences(of: "\\", with: "/")
+        guard !raw.hasPrefix("/"), !raw.contains("\0") else {
+            throw NSError(domain: "RiftNative", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid mount path"])
         }
-        return url
+        let relative = raw.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !relative.contains("."), !relative.contains("..") else {
+            throw NSError(domain: "RiftNative", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid mount path"])
+        }
+        if relative.isEmpty { return root.standardizedFileURL }
+
+        var candidate = root
+        for part in relative { candidate.appendPathComponent(part) }
+        candidate = candidate.standardizedFileURL
+
+        let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        let resolvedParent = candidate.deletingLastPathComponent().resolvingSymlinksInPath()
+        let parentPath = resolvedParent.path
+        let rootPath = resolvedRoot.path
+        guard parentPath == rootPath || parentPath.hasPrefix(rootPath + "/") else {
+            throw NSError(domain: "RiftNative", code: 3, userInfo: [NSLocalizedDescriptionKey: "Mount path escapes selected directory"])
+        }
+        if FileManager.default.fileExists(atPath: candidate.path) {
+            let resolvedCandidate = candidate.resolvingSymlinksInPath().path
+            guard resolvedCandidate == rootPath || resolvedCandidate.hasPrefix(rootPath + "/") else {
+                throw NSError(domain: "RiftNative", code: 3, userInfo: [NSLocalizedDescriptionKey: "Mount path escapes selected directory"])
+            }
+        }
+        return candidate
+    }
+
+    private func isWorkspaceMount(_ args: [String: Any]) -> Bool {
+        (args["mountId"] as? String) == workspaceMountID
+    }
+
+    private func requireWritableMountedPath(_ args: [String: Any]) throws {
+        let path = args["path"] as? String ?? ""
+        guard !path.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")).isEmpty else {
+            throw NSError(domain: "RiftNative", code: 4, userInfo: [NSLocalizedDescriptionKey: "Mount root cannot be modified directly"])
+        }
+        if isWorkspaceMount(args) { try workspace.assertEditable(path) }
     }
 
     private func descriptor(_ url: URL, root: URL) -> [String: Any] {
@@ -353,6 +578,7 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
 
     private func writeText(id: String, args: [String: Any]) {
         do {
+            try requireWritableMountedPath(args)
             let url = try mountedURL(args)
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -368,6 +594,7 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
 
     private func makeDirectory(id: String, args: [String: Any]) {
         do {
+            try requireWritableMountedPath(args)
             let url = try mountedURL(args)
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true, attributes: nil)
             respond(id: id, value: true)
@@ -378,6 +605,7 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
 
     private func removeItem(id: String, args: [String: Any]) {
         do {
+            try requireWritableMountedPath(args)
             let url = try mountedURL(args)
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)

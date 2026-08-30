@@ -4,7 +4,7 @@ if(!core)throw new Error("RiftOSCore must load before RiftOS desktop");
 const BUILTIN_APPS=[
   {id:"files",name:"Files",icon:"▣",desc:"RiftFS + mounted Files"},
   {id:"terminal",name:"RiftShell",icon:">_",desc:"Kernel command shell"},
-  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"Light web transport"},
+  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"Native WebKit browser / web fallback"},
   {id:"editor",name:"Editor",icon:"{}",desc:"RiftFS text editor"},
   {id:"tasks",name:"Tasks",icon:"≡",desc:"RiftKernel processes"},
   {id:"settings",name:"Settings",icon:"⚙",desc:"System + capabilities"}
@@ -143,6 +143,13 @@ function browserTarget(value){
 }
 
 function openBrowser(){
+  if(core.native.connected){
+    core.native.call("browser.open",{}).catch(error=>{
+      console.error("[RiftBrowser] Native browser launch failed",error);
+      setStatus("RiftBrowser native launch failed");
+    });
+    return;
+  }
   const body=openWindow("browser","RiftBrowser","WEB TRANSPORT");
   body.innerHTML=`
     <div class="browser rift-browser">
@@ -235,7 +242,7 @@ async function runShell(raw,print,state){
   if(cmd==="help")return print(`RiftShell / True OS Core
 help  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native
 pwd  cd <dir>  ls [path]  cat <file>  write <file> <text>  mkdir <dir>  rm <path>
-syncfs  open <app>  clear  uptime  version
+syncfs  open <app>  browser [url]  workspace [info|ls|history|rollback]  clear  uptime  version
 git help
 
 Native host:
@@ -260,6 +267,19 @@ Native host:
   }
   if(cmd==="permissions")return print(core.permissions.describe().join("\n"));
   if(cmd==="native")return print(JSON.stringify(core.native.capabilities(),null,2));
+  if(cmd==="browser"){
+    if(!core.native.connected)return print("RiftBrowser native host is unavailable in web/PWA mode.");
+    const url=args.join(" ").trim()||"https://chatgpt.com";await core.native.call("browser.open",{url,newTab:false});return print(`opened RiftBrowser · ${url}`);
+  }
+  if(cmd==="workspace"){
+    if(!core.native.connected)return print("RiftWorkspace requires the native iOS host.");
+    const sub=(args.shift()||"info").toLowerCase();
+    if(sub==="info")return print(JSON.stringify(await window.RiftWorkspace.info(),null,2));
+    if(sub==="ls")return print((await window.RiftWorkspace.list(args[0]||"",{recursive:false})).map(row=>`${row.kind==="directory"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");
+    if(sub==="history")return print(JSON.stringify(await window.RiftWorkspace.history(),null,2));
+    if(sub==="rollback")return print(JSON.stringify(await window.RiftWorkspace.rollback(args[0]||null),null,2));
+    return print("usage: workspace [info|ls [path]|history|rollback [historyId]]");
+  }
   if(cmd==="pwd")return print(state.cwd);
   if(cmd==="cd"){state.cwd=resolvePath(state.cwd,args[0]||"/home");return print(state.cwd);}
   if(cmd==="ls"){

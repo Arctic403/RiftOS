@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v16-trueos-refactor";
+const CACHE="riftos-shell-v17-native-browser-workspace";
 const CORE=[
   "./",
   "./index.html",

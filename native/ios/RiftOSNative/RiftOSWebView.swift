@@ -3,8 +3,15 @@ import WebKit
 import UIKit
 
 struct RiftOSWebView: UIViewRepresentable {
+    @ObservedObject var browserStore: RiftBrowserStore
+
     final class Coordinator: NSObject, WKNavigationDelegate {
-        let bridge = RiftNativeBridge()
+        let bridge: RiftNativeBridge
+
+        init(browserStore: RiftBrowserStore) {
+            bridge = RiftNativeBridge(browserStore: browserStore)
+            super.init()
+        }
 
         func webView(
             _ webView: WKWebView,
@@ -20,17 +27,20 @@ struct RiftOSWebView: UIViewRepresentable {
                 return
             }
 
-            if url.host?.lowercased() == "arctic403.github.io" {
+            // The OS surface stays pinned to RiftOS. External navigation belongs
+            // to the native RiftBrowser, which intentionally has no RiftNative bridge.
+            if url.host?.lowercased() == "arctic403.github.io",
+               url.path == "/RiftOS" || url.path.hasPrefix("/RiftOS/") {
                 decisionHandler(.allow)
                 return
             }
 
-            UIApplication.shared.open(url)
+            bridge.openBrowser(url.absoluteString)
             decisionHandler(.cancel)
         }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(browserStore: browserStore) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()

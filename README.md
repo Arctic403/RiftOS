@@ -82,3 +82,11 @@ See `riftengine/README.md` for the preserved engine roadmap.
 The normal Pages workflow now assembles only the RiftOS shell and the pinned RiftDev clone.
 
 The native iOS workflow is manual (`workflow_dispatch`) so macOS runner minutes are used only when validating the Swift host.
+
+## Native RiftBrowser and AI workspace
+
+The native iOS shell now includes a multi-tab `WKWebView` RiftBrowser. Native Browser launches no longer depend on Safari, and the default Browser destination is ChatGPT. Browser tabs deliberately do not receive `RiftNative` filesystem privileges.
+
+A dedicated `RiftWorkspace` is created under the app's Documents container and exposed through the iOS Files app. It is also mounted inside RiftFS as `/mounts/RiftWorkspace`.
+
+Trusted RiftOS code receives `window.RiftWorkspace` with native workspace read/write/list/move APIs plus `riftcity-ai-patch` preview/apply/history/rollback support. Patch writes are constrained to the workspace, validate paths and optional base hashes, and preserve rollback snapshots under protected `.rift` metadata.
