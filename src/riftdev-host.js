@@ -1,6 +1,7 @@
 const RIFTDEV_URL = "./apps/riftdev/index.html?riftos=1";
 let riftDevFrame = null;
 let riftDevHost = null;
+let riftDevProcess = null;
 
 function injectRiftDevStyles(){
   if(document.querySelector("#riftDevHostStyle")) return;
@@ -26,6 +27,10 @@ function closeRiftDev(){
   riftDevHost?.remove();
   riftDevHost=null;
   document.documentElement.classList.remove("riftdev-active");
+  if(riftDevProcess){
+    window.RiftOSCore?.kernel?.kill?.(riftDevProcess.pid);
+    riftDevProcess=null;
+  }
   setRiftDevStatus("Ready");
 }
 
@@ -41,6 +46,7 @@ function openRiftDev(){
   injectRiftDevStyles();
   closeRiftDev();
   document.documentElement.classList.add("riftdev-active");
+  riftDevProcess=window.RiftOSCore?.kernel?.launchProcess?.("riftdev","RiftDev",{kind:"app"})||null;
 
   const host=document.createElement("section");
   host.className="riftdev-fullscreen-host";
