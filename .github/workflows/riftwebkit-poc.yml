@@ -77,6 +77,27 @@ jobs:
           test -s engines/webkit-poc/riftwebkit-embedder.cmake
           test -s engines/webkit-poc/build-riftwebkit.sh
 
+      - name: Apply probe-only dependency bootstrap fix
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('_riftwebkit-src/tools/build-deps/webcore-deps.sh')
+          text = path.read_text(encoding='utf-8')
+          old = '    -DFT_DISABLE_BROTLI=OFF -DFT_REQUIRE_BROTLI=ON \\\n'
+          new = '    -DFT_DISABLE_BROTLI=ON \\\n'
+          if text.count(old) != 1:
+              raise SystemExit('Pinned helper FreeType/Brotli stanza changed unexpectedly')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          grep -F -- '-DFT_DISABLE_BROTLI=ON' _riftwebkit-src/tools/build-deps/webcore-deps.sh
+          if grep -F -- '-DFT_REQUIRE_BROTLI=ON' _riftwebkit-src/tools/build-deps/webcore-deps.sh; then
+            echo 'Probe bootstrap still requires Brotli before the curl tier.' >&2
+            exit 1
+          fi
+          echo 'Probe-only fix applied: FreeType WOFF2/Brotli disabled for the survival build.'
+
       - name: Add build swap headroom
         run: |
           set -euxo pipefail
@@ -126,6 +147,13 @@ jobs:
       - name: Show build diagnostics on failure
         if: failure()
         run: |
+          echo '=== dependency configure/build errors ==='
+          find _riftwebkit-src/third_party/build-deps -maxdepth 1 -type f \( -name '*configure.log' -o -name '*build.log' \) -print 2>/dev/null | sort | while read -r file; do
+            if grep -qiE 'error:|CMake Error|FAILED|not found|Could NOT find' "$file"; then
+              echo "--- $file ---"
+              tail -n 100 "$file"
+            fi
+          done
           echo '=== configure tail ==='
           tail -n 180 _riftwebkit-src/build/riftwebkit-configure.log 2>/dev/null || true
           echo '=== ninja errors ==='
@@ -152,7 +180,7 @@ jobs:
               rm -f "$out"
             fi
           else
-            echo 'wasm-opt -Os failed; keeping the linker's original WASM.'
+            echo 'wasm-opt -Os failed; keeping the linker original WASM.'
             rm -f "$out"
           fi
 
@@ -161,7 +189,6 @@ jobs:
           set -euxo pipefail
           test -s .riftwebkit-output/riftwebkit.js
           test -s .riftwebkit-output/riftwebkit.wasm
-          grep -F 'RIFTWEBKIT: boot start' .riftwebkit-output/riftwebkit.js || true
 
           # This target is deliberately built without -pthread. A separate
           # Emscripten pthread worker companion would indicate the wrong target.
@@ -231,7 +258,7 @@ jobs:
           Emscripten: ${EMSDK_VERSION}
 
           This proof package contains RiftOS-owned probe glue plus the resulting
-          WebKit binary. It does not redistribute the helper project's original
+          WebKit binary. It does not redistribute the helper project original
           browser UI/embedder source.
           EOF
 
