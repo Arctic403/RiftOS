@@ -61,16 +61,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config git curl tar xz-utils unzip \
-            python3 ripgrep ca-certificates fonts-dejavu-core zstd gperf
+            python3 ripgrep ca-certificates fonts-dejavu-core zstd gperf ccache
           cmake --version | head -1
           ninja --version
           python3 --version
           gperf --version | head -1
+          ccache --version | head -1
 
       - name: Validate pinned helper source
         run: |
           set -euxo pipefail
           command -v gperf
+          command -v ccache
           test "$(git -C _riftwebkit-src rev-parse HEAD)" = "$HELPER_COMMIT"
           grep -F 'BIB_PTHREAD="${BIB_PTHREAD:-0}"' _riftwebkit-src/tools/build-webcore.sh
           grep -F 'WEBKIT_PIN="aec9d2ad958e716ab4bca4bf03007e6edac7323f"' _riftwebkit-src/tools/bootstrap.sh
@@ -100,6 +102,37 @@ jobs:
           fi
           echo 'Probe-only fix applied: FreeType WOFF2/Brotli disabled for the survival build.'
 
+      - name: Prepare resumable cache directories
+        run: |
+          set -euxo pipefail
+          mkdir -p \
+            _riftwebkit-src/third_party/emsdk \
+            _riftwebkit-src/third_party/wasm-sysroot \
+            _riftwebkit-src/third_party/build-deps \
+            .ccache-riftwebkit
+
+      - name: Restore resumable bootstrap cache
+        id: bootstrap-cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _riftwebkit-src/third_party/emsdk
+            _riftwebkit-src/third_party/wasm-sysroot
+            _riftwebkit-src/third_party/build-deps
+          key: riftwebkit-bootstrap-${{ runner.os }}-${{ env.HELPER_COMMIT }}-${{ env.EMSDK_VERSION }}-${{ hashFiles('_riftwebkit-src/tools/bootstrap.sh', '_riftwebkit-src/tools/build-deps/*.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            riftwebkit-bootstrap-${{ runner.os }}-${{ env.HELPER_COMMIT }}-${{ env.EMSDK_VERSION }}-${{ hashFiles('_riftwebkit-src/tools/bootstrap.sh', '_riftwebkit-src/tools/build-deps/*.sh') }}-
+
+      - name: Show restored bootstrap state
+        run: |
+          set -euxo pipefail
+          echo "cache matched: ${{ steps.bootstrap-cache.outputs.cache-matched-key }}"
+          du -sh _riftwebkit-src/third_party/emsdk 2>/dev/null || true
+          du -sh _riftwebkit-src/third_party/wasm-sysroot 2>/dev/null || true
+          du -sh _riftwebkit-src/third_party/build-deps 2>/dev/null || true
+          find _riftwebkit-src/third_party/wasm-sysroot/lib -maxdepth 1 -type f -name '*.a' -print 2>/dev/null | wc -l || true
+
       - name: Add build swap headroom
         run: |
           set -euxo pipefail
@@ -126,6 +159,17 @@ jobs:
           test -d third_party/wasm-sysroot
           du -sh third_party
 
+      - name: Save resumable bootstrap cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            _riftwebkit-src/third_party/emsdk
+            _riftwebkit-src/third_party/wasm-sysroot
+            _riftwebkit-src/third_party/build-deps
+          key: ${{ steps.bootstrap-cache.outputs.cache-primary-key }}
+
       - name: Verify Emscripten toolchain before WebCore build
         working-directory: _riftwebkit-src
         run: |
@@ -139,12 +183,46 @@ jobs:
           wasm-opt --version | head -1
           emcc --version | grep -F "$EMSDK_VERSION"
 
+      - name: Restore RiftWebKit compiler cache
+        id: compile-cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache-riftwebkit
+          key: riftwebkit-ccache-${{ runner.os }}-${{ env.WEBKIT_COMMIT }}-${{ env.EMSDK_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            riftwebkit-ccache-${{ runner.os }}-${{ env.WEBKIT_COMMIT }}-${{ env.EMSDK_VERSION }}-
+
       - name: Build RiftWebKit Safari probe
         env:
           RIFTWEBKIT_JOBS: '4'
+          CCACHE_DIR: ${{ github.workspace }}/.ccache-riftwebkit
+          CCACHE_MAXSIZE: 3G
+          CCACHE_COMPRESS: '1'
+          CCACHE_COMPILERCHECK: content
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
         run: |
           set -euxo pipefail
+          ccache --max-size "$CCACHE_MAXSIZE"
+          ccache --zero-stats
           bash engines/webkit-poc/build-riftwebkit.sh _riftwebkit-src
+
+      - name: Show RiftWebKit compiler cache stats
+        if: always()
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache-riftwebkit
+        run: |
+          ccache --show-stats || true
+          du -sh .ccache-riftwebkit 2>/dev/null || true
+
+      - name: Save RiftWebKit compiler cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache-riftwebkit
+          key: ${{ steps.compile-cache.outputs.cache-primary-key }}
 
       - name: Show build diagnostics on failure
         if: failure()
