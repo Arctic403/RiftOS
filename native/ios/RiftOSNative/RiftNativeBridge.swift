@@ -163,7 +163,7 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
     private func writeText(id: String, args: [String: Any]) {
         do {
             let url = try mountedURL(args)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
             try (args["text"] as? String ?? "").write(to: url, atomically: true, encoding: .utf8)
             respond(id: id, value: true)
         } catch { respond(id: id, ok: false, error: error.localizedDescription) }
