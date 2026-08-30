@@ -129,14 +129,20 @@
 
     const hasNativeJSPI=()=>typeof WebAssembly.Suspending==="function"&&typeof WebAssembly.promising==="function";
 
+    async function importBlobSource(source){
+      const blobURL=URL.createObjectURL(new Blob([source],{type:"text/javascript"}));
+      try{return await import(blobURL);}
+      finally{URL.revokeObjectURL(blobURL);}
+    }
+
     async function loadGeckoModule(){
       const moduleURL=new URL("./vendor/gecko.js",location.href).href;
       if(hasNativeJSPI()){
-        trace("JSPI: native host support detected; using upstream Gecko module unchanged");
-        return {module:await import(moduleURL),nativeJSPI:true,softwareBundlePatch:false};
+        trace("JSPI: native host support detected; using Gecko module unchanged");
+        return {module:await import(moduleURL),nativeJSPI:true,softwareBundlePatch:false,preStrippedJSPI:false};
       }
 
-      mark("Preparing Safari software Gecko…","patching bundled pthread runtime");
+      mark("Preparing Safari software Gecko…","checking bundled pthread runtime");
       const response=await fetch(moduleURL,{cache:"no-store"});
       if(!response.ok)throw new Error(`Could not fetch Gecko module for Safari compatibility (${response.status}).`);
       let source=await response.text();
@@ -145,24 +151,21 @@
       const promisingNeedle="WebAssembly.promising(getWasmTableEntry(ptr))(arg)";
       const suspendingCount=source.split(suspendingNeedle).length-1;
       const promisingCount=source.split(promisingNeedle).length-1;
+
+      if(suspendingCount===0&&promisingCount===0){
+        trace("RiftGecko Mobile: GPU-only JSPI hooks already stripped at build time");
+        return {module:await importBlobSource(source),nativeJSPI:false,softwareBundlePatch:false,preStrippedJSPI:true};
+      }
       if(suspendingCount<1||promisingCount<1){
-        throw new Error(`Safari Gecko compatibility patch did not find the expected upstream JSPI hooks (Suspending=${suspendingCount}, promising=${promisingCount}).`);
+        throw new Error(`Safari Gecko compatibility found a partial/unknown JSPI layout (Suspending=${suspendingCount}, promising=${promisingCount}).`);
       }
 
       source=source.split(suspendingNeedle).join("_gl_present_yield");
       source=source.split(promisingNeedle).join("Promise.resolve(getWasmTableEntry(ptr)(arg))");
+      if(source.includes(suspendingNeedle)||source.includes(promisingNeedle))throw new Error("Safari Gecko compatibility patch left an active JSPI hook in the bundled runtime.");
 
-      if(source.includes(suspendingNeedle)||source.includes(promisingNeedle)){
-        throw new Error("Safari Gecko compatibility patch left an active JSPI hook in the bundled runtime.");
-      }
-
-      trace(`Safari software patch: removed ${suspendingCount} Suspending hook(s), restored ${promisingCount} pthread entry hook(s)`);
-      const blobURL=URL.createObjectURL(new Blob([source],{type:"text/javascript"}));
-      try{
-        return {module:await import(blobURL),nativeJSPI:false,softwareBundlePatch:true};
-      }finally{
-        URL.revokeObjectURL(blobURL);
-      }
+      trace(`Upstream compatibility patch: removed ${suspendingCount} Suspending hook(s), restored ${promisingCount} pthread entry hook(s)`);
+      return {module:await importBlobSource(source),nativeJSPI:false,softwareBundlePatch:true,preStrippedJSPI:false};
     }
 
     try{
@@ -172,9 +175,10 @@
       mark("Checking Safari compatibility…");
       const loaded=await loadGeckoModule();
       const {Gecko}=loaded.module;
-      window.RiftGeckoCompat=Object.freeze({nativeJSPI:loaded.nativeJSPI,softwareBundlePatch:loaded.softwareBundlePatch,gpu:false});
+      window.RiftGeckoCompat=Object.freeze({nativeJSPI:loaded.nativeJSPI,softwareBundlePatch:loaded.softwareBundlePatch,preStrippedJSPI:loaded.preStrippedJSPI,gpu:false});
       const wasmURL=new URL("./vendor/gecko.wasm.zst",location.href).href;
-      mark("Gecko module loaded",loaded.softwareBundlePatch?"Safari software worker patch active":"native JSPI runtime");
+      const modeDetail=loaded.preStrippedJSPI?"RiftGecko Mobile · JSPI-free worker build":loaded.softwareBundlePatch?"upstream Safari worker patch active":"native JSPI runtime";
+      mark("Gecko module loaded",modeDetail);
 
       const env={GECKO_NOWASMJIT:"1",GECKO_SKIP_OPFS:"1"};
       const gecko=new Gecko({
@@ -193,13 +197,11 @@
       const timeout=new Promise((_,reject)=>{
         timeoutId=setTimeout(()=>reject(new Error(`Gecko initialization timed out after ${timeoutMs/1000}s. Last phase: ${phase}.`)),timeoutMs);
       });
-      try{
-        await Promise.race([gecko.init(),timeout]);
-      }finally{
-        clearTimeout(timeoutId);
-      }
-      mark("Gecko engine ready",loaded.softwareBundlePatch?"Safari software mode":"native JSPI");
-      tell("ready",{target,wispConfigured:!!wisp,nativeJSPI:loaded.nativeJSPI,softwareBundlePatch:loaded.softwareBundlePatch,profilePersistence:false,bootSeconds:Number(elapsed())});
+      try{await Promise.race([gecko.init(),timeout]);}
+      finally{clearTimeout(timeoutId);}
+
+      mark("Gecko engine ready",loaded.preStrippedJSPI?"RiftGecko Mobile":loaded.softwareBundlePatch?"Safari software mode":"native JSPI");
+      tell("ready",{target,wispConfigured:!!wisp,nativeJSPI:loaded.nativeJSPI,softwareBundlePatch:loaded.softwareBundlePatch,preStrippedJSPI:loaded.preStrippedJSPI,profilePersistence:false,bootSeconds:Number(elapsed())});
 
       if(/^https?:/i.test(target)&&!wisp){
         const safeTarget=String(target).replace(/[<>&"']/g,"");
