@@ -18,7 +18,7 @@ jobs:
   site:
     name: Validate unsigned RiftKernel/WebKit runtime
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     concurrency:
       group: riftos-site-${{ github.ref }}
       cancel-in-progress: true
@@ -145,7 +145,6 @@ jobs:
 
           gecko_js=$(find /tmp/gecko-package -type f -path '*/dist/gecko.js' | head -n1)
           gecko_wasm=$(find /tmp/gecko-package -type f \( -name 'gecko.wasm' -o -name 'gecko.wasm.zst' \) | head -n1)
-
           test -n "$gecko_js" && test -s "$gecko_js"
           test -n "$gecko_wasm" && test -s "$gecko_wasm"
 
@@ -214,23 +213,6 @@ jobs:
         with:
           path: _site
 
-      - name: Redeploy mirror commit
-        if: steps.mirror.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run riftos-pages.yml --repo "$GITHUB_REPOSITORY" --ref main
-
-  deploy:
-    name: Deploy current RiftOS
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: site
-    concurrency:
-      group: riftos-pages-deploy
-      cancel-in-progress: false
-    steps:
       - name: Wait for legacy branch Pages deployment
         env:
           GH_TOKEN: ${{ github.token }}
@@ -246,12 +228,12 @@ jobs:
           done
 
           if [ -z "$legacy_id" ]; then
-            echo "No legacy branch Pages deployment detected; custom artifact can deploy now."
+            echo "No legacy branch Pages deployment detected; generated artifact can deploy now."
             exit 0
           fi
 
-          echo "Legacy Pages deployment $legacy_id detected; waiting so it cannot overwrite the Gecko artifact."
-          for _ in $(seq 1 90); do
+          echo "Waiting for legacy Pages deployment $legacy_id before entering the github-pages environment."
+          for _ in $(seq 1 120); do
             status=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$legacy_id" --jq '.status')
             if [ "$status" = "completed" ]; then
               conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$legacy_id" --jq '.conclusion')
@@ -264,6 +246,24 @@ jobs:
           echo "Timed out waiting for legacy Pages deployment $legacy_id" >&2
           exit 1
 
+      - name: Redeploy mirror commit
+        if: steps.mirror.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run riftos-pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+  deploy:
+    name: Deploy current RiftOS
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: site
+    timeout-minutes: 10
+    concurrency:
+      group: riftos-pages-deploy
+      cancel-in-progress: false
+    steps:
       - name: Deploy generated RiftOS artifact to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
