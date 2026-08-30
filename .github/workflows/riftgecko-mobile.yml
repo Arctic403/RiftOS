@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: riftgecko-mobile-v1
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   UPSTREAM_REPO: HeyPuter/firefox-wasm
@@ -110,7 +110,7 @@ jobs:
           grep -F -- '-sINITIAL_MEMORY=268435456 -sMAXIMUM_MEMORY=1073741824' _riftgecko-src/gecko.js/build-lib.sh
           grep -F -- '-sSTACK_SIZE=16777216' _riftgecko-src/gecko.js/build-lib.sh
           grep -F -- '-sPTHREAD_POOL_SIZE=4 -sPTHREAD_POOL_SIZE_STRICT=0' _riftgecko-src/gecko.js/build-lib.sh
-          grep -F -- 'GECKO_WASMOPT_FLAGS:--all -Oz' _riftgecko-src/gecko.js/build-lib.sh
+          grep -F -- 'GECKO_WASMOPT_FLAGS:--all -Os' _riftgecko-src/gecko.js/build-lib.sh
           if grep -F 'WebAssembly.Suspending' _riftgecko-src/gecko.js/patch-gecko-shaderfix.mjs; then exit 1; fi
           if grep -F 'WebAssembly.promising' _riftgecko-src/gecko.js/patch-gecko-shaderfix.mjs; then exit 1; fi
 
@@ -142,7 +142,6 @@ jobs:
           make vendor
           make configure RELEASE=1
           test -s obj-full-emscripten-release/config.status
-          grep -F 'wasm32-unknown-emscripten' obj-full-emscripten-release/config.status >/dev/null || true
           echo 'RiftGecko configure preflight passed.'
 
       - name: Add final-link swap headroom
@@ -168,7 +167,7 @@ jobs:
       - name: Build RiftGecko Mobile release
         working-directory: _riftgecko-src
         env:
-          GECKO_WASMOPT_FLAGS: --all -Oz
+          GECKO_WASMOPT_FLAGS: --all -Os
         run: |
           set -euxo pipefail
           command -v emcc
@@ -204,9 +203,7 @@ jobs:
 
           wasm_zst_bytes=$(stat -c%s _riftgecko-src/gecko.js/dist/gecko.wasm.zst)
           echo "Compressed RiftGecko WASM: ${wasm_zst_bytes} bytes"
-          # This is a warning target, not a hard compatibility claim. Current iOS 26
-          # WebKit reports show large threaded WASM is especially fragile, so size is
-          # recorded explicitly for every build and should trend downward.
+          # Warning target only, not a hard Safari compatibility threshold.
           if [ "$wasm_zst_bytes" -gt $((128 * 1024 * 1024)) ]; then
             echo '::warning::RiftGecko is still over 128 MiB compressed; Safari memory/large-module risk remains high.'
           fi
