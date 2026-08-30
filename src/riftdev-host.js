@@ -1,17 +1,17 @@
 const RIFTDEV_URL = "./apps/riftdev/index.html?riftos=1";
 let riftDevFrame = null;
+let riftDevHost = null;
 
 function injectRiftDevStyles(){
   if(document.querySelector("#riftDevHostStyle")) return;
   const style=document.createElement("style");
   style.id="riftDevHostStyle";
   style.textContent=`
-    .riftdev-shell{display:flex!important;flex-direction:column!important;width:100%!important;height:100%!important;min-height:0!important;max-width:none!important;margin:0!important;border-radius:0!important}
-    .riftdev-shell>.window-bar{flex:0 0 auto}
-    .riftdev-window-body{padding:0!important;overflow:hidden!important;min-height:0!important;flex:1 1 auto!important}
-    .riftdev-frame{display:block;width:100%;height:100%;min-height:0;border:0;background:#11141a}
-    .riftdev-host-action{border:1px solid #344154;background:#172130;color:#f4f7fb;border-radius:8px;padding:6px 9px;font:700 12px system-ui,-apple-system,sans-serif;margin-left:auto}
-    .riftdev-host-action+.window-close{margin-left:6px}
+    html.riftdev-active,html.riftdev-active body{overflow:hidden!important;overscroll-behavior:none!important}
+    .riftdev-fullscreen-host{position:fixed!important;inset:0!important;z-index:2147483000!important;width:100vw!important;height:100dvh!important;min-height:100dvh!important;margin:0!important;padding:0!important;border:0!important;background:#11141a!important;overflow:hidden!important}
+    .riftdev-frame{display:block!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;border:0!important;background:#11141a!important;overflow:auto!important;-webkit-overflow-scrolling:touch!important;touch-action:auto!important}
+    .riftdev-exit{position:absolute;z-index:2147483001;top:max(7px,env(safe-area-inset-top));left:max(7px,env(safe-area-inset-left));width:34px;height:34px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.22);border-radius:50%;background:rgba(7,11,16,.82);color:#fff;font:500 27px/1 system-ui,-apple-system,sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.35);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:0}
+    .riftdev-exit:active{transform:scale(.94);background:rgba(26,35,48,.95)}
   `;
   document.head.append(style);
 }
@@ -23,11 +23,9 @@ function setRiftDevStatus(text){
 
 function closeRiftDev(){
   riftDevFrame=null;
-  const stage=document.querySelector("#stage");
-  const workspace=document.querySelector("#workspace");
-  if(stage){stage.innerHTML="";stage.classList.add("hidden")}
-  workspace?.classList.remove("hidden");
-  document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="home"));
+  riftDevHost?.remove();
+  riftDevHost=null;
+  document.documentElement.classList.remove("riftdev-active");
   setRiftDevStatus("Ready");
 }
 
@@ -41,47 +39,34 @@ function openShellFromRiftDev(){
 
 function openRiftDev(){
   injectRiftDevStyles();
-  const stage=document.querySelector("#stage");
-  const workspace=document.querySelector("#workspace");
-  const template=document.querySelector("#windowTemplate");
-  if(!stage||!workspace||!template) throw new Error("RiftOS window host is unavailable.");
+  closeRiftDev();
+  document.documentElement.classList.add("riftdev-active");
 
-  workspace.classList.add("hidden");
-  stage.classList.remove("hidden");
-  stage.innerHTML="";
+  const host=document.createElement("section");
+  host.className="riftdev-fullscreen-host";
+  host.setAttribute("role","application");
+  host.setAttribute("aria-label","RiftDev");
 
-  const win=template.content.firstElementChild.cloneNode(true);
-  win.dataset.app="riftdev";
-  win.classList.add("riftdev-shell");
-  win.querySelector(".window-kicker").textContent="RIFTDEV / RIFTOS WORKSPACE";
-  win.querySelector(".window-title").textContent="RiftDev";
-  const close=win.querySelector(".window-close");
-  close.onclick=closeRiftDev;
-
-  const reload=document.createElement("button");
-  reload.className="riftdev-host-action";
-  reload.type="button";
-  reload.textContent="Reload";
-  reload.onclick=()=>{
-    if(!riftDevFrame) return;
-    setRiftDevStatus("Reloading RiftDev");
-    riftDevFrame.src=RIFTDEV_URL+`&reload=${Date.now()}`;
-  };
-  close.before(reload);
-
-  const body=win.querySelector(".window-body");
-  body.classList.add("riftdev-window-body");
   const frame=document.createElement("iframe");
   frame.className="riftdev-frame";
   frame.title="RiftDev Editor";
   frame.src=RIFTDEV_URL;
   frame.allow="clipboard-read; clipboard-write";
+  frame.setAttribute("scrolling","yes");
   frame.addEventListener("load",()=>setRiftDevStatus("RiftDev"));
   frame.addEventListener("error",()=>setRiftDevStatus("RiftDev failed to load"));
-  body.append(frame);
-  riftDevFrame=frame;
 
-  stage.append(win);
+  const exit=document.createElement("button");
+  exit.className="riftdev-exit";
+  exit.type="button";
+  exit.setAttribute("aria-label","Exit RiftDev");
+  exit.textContent="×";
+  exit.onclick=closeRiftDev;
+
+  host.append(frame,exit);
+  document.body.append(host);
+  riftDevHost=host;
+  riftDevFrame=frame;
   setRiftDevStatus("Loading RiftDev");
 }
 
@@ -102,6 +87,7 @@ document.addEventListener("click",event=>{
   event.stopImmediatePropagation();
   try{openRiftDev()}catch(error){
     console.error("[RiftDev] launch failed",error);
+    closeRiftDev();
     setRiftDevStatus(`RiftDev: ${error.message}`);
   }
 },true);
@@ -130,4 +116,4 @@ if(grid){
 }
 
 window.RiftDev=Object.freeze({open:openRiftDev,close:closeRiftDev});
-console.info("[RiftDev] native Editor clone host ready");
+console.info("[RiftDev] fullscreen Editor clone host ready");
