@@ -105,7 +105,7 @@ jobs:
           from pathlib import Path
           path = Path('_site/apps/riftdev/index.html')
           html = path.read_text(encoding='utf-8')
-          script = '<script src="riftos-overlay.js?v=1"></script>'
+          script = '<script src="riftos-overlay.js?v=2"></script>'
           if script not in html:
               if '</body>' not in html:
                   raise SystemExit('RiftDev index.html has no closing body tag')
@@ -113,7 +113,7 @@ jobs:
               path.write_text(html, encoding='utf-8')
           PY
           test -s _site/apps/riftdev/riftos-overlay.js
-          grep -F 'riftos-overlay.js?v=1' _site/apps/riftdev/index.html
+          grep -F 'riftos-overlay.js?v=2' _site/apps/riftdev/index.html
 
           # Browser-facing RiftEngine JavaScript only.
           cp -a riftengine/engine/. _site/riftengine/engine/
@@ -130,7 +130,7 @@ jobs:
           fi
           if [ -s riftengine/jsc-dist/custom/rift-jsc.js ] && [ -s riftengine/jsc-dist/custom/rift-jsc.wasm ]; then
             cp riftengine/jsc-dist/custom/rift-jsc.js _site/riftengine/jsc-dist/custom/
-            cp riftengine/jsc-dist/custom/rift-jsc.wasm _site/riftengine/jsc-dist/custom/
+            cp riftengine/jsc-dist/custom/rift-jsc.wasm _site/riftengine/jsc-dist/custom/rift-jsc.wasm
           fi
 
           echo 'Pages payload:'
