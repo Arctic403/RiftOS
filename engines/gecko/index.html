@@ -10,15 +10,23 @@
     #status{display:flex;gap:8px;align-items:center;padding:6px 9px;background:#111720;border-bottom:1px solid rgba(255,255,255,.09);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #status strong{font-size:11px;letter-spacing:.08em}#status span{opacity:.72;overflow:hidden;text-overflow:ellipsis}
     #screen{display:block;flex:1;width:100%;min-height:0;background:#fff;touch-action:none}
-    #error{display:none;position:absolute;inset:34px 0 0;padding:24px;background:#10151d;color:#eef3fb;overflow:auto}#error.show{display:block}
-    code{white-space:pre-wrap;word-break:break-word}
+    #error{display:none;position:absolute;inset:34px 0 0;background:#10151d;color:#eef3fb;overflow:hidden;z-index:20;touch-action:pan-y}
+    #error.show{display:block}
+    #errorBar{position:absolute;inset:0 0 auto 0;height:52px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#151c26;border-bottom:1px solid rgba(255,255,255,.1);z-index:2}
+    #errorBar strong{font-size:15px;flex:1}
+    #errorBar button{border:1px solid rgba(255,255,255,.15);background:#202936;color:#eef3fb;border-radius:10px;padding:8px 11px;font:600 12px system-ui,-apple-system,sans-serif}
+    #errorScroll{position:absolute;inset:52px 0 0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;padding:14px 14px calc(28px + env(safe-area-inset-bottom));box-sizing:border-box}
+    #errorText{display:block;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:text;-webkit-user-select:text}
   </style>
 </head>
 <body>
   <main id="host">
     <div id="status"><strong>GECKO WASM</strong><span id="statusText">Booting engine…</span></div>
     <canvas id="screen" width="1024" height="768" tabindex="0"></canvas>
-    <section id="error"><h2>Engine failed</h2><code id="errorText"></code></section>
+    <section id="error">
+      <div id="errorBar"><strong>Engine diagnostics</strong><button type="button" id="copyTrace">Copy trace</button><button type="button" id="jumpTrace">Latest</button></div>
+      <div id="errorScroll"><code id="errorText"></code></div>
+    </section>
   </main>
   <script type="module">
     const params=new URLSearchParams(location.search);
@@ -26,13 +34,17 @@
     const wisp=params.get("wisp")||"";
     const status=document.querySelector("#statusText");
     const errorBox=document.querySelector("#error");
+    const errorScroll=document.querySelector("#errorScroll");
     const errorText=document.querySelector("#errorText");
+    const copyTrace=document.querySelector("#copyTrace");
+    const jumpTrace=document.querySelector("#jumpTrace");
     const canvas=document.querySelector("#screen");
     const tell=(type,detail={})=>parent.postMessage({type:`riftbrowser:gecko:${type}`,...detail},location.origin);
 
     const bootStarted=performance.now();
     const bootTrace=[];
     let phase="Host preflight";
+    let lastDiagnosticText="";
     const elapsed=()=>((performance.now()-bootStarted)/1000).toFixed(1);
     const trace=(message)=>{
       const line=`[${elapsed()}s] ${message}`;
@@ -58,15 +70,35 @@
       else if(line.includes("READY cmd="))mark("Gecko READY");
       if(kind==="stderr")console.warn("[Gecko]",line);else console.log("[Gecko]",line);
     };
+    const copyDiagnostic=async()=>{
+      const text=lastDiagnosticText||errorText.textContent||"";
+      if(!text)return;
+      try{
+        await navigator.clipboard.writeText(text);
+        copyTrace.textContent="Copied";
+      }catch{
+        const area=document.createElement("textarea");
+        area.value=text;area.setAttribute("readonly","");area.style.position="fixed";area.style.opacity="0";
+        document.body.append(area);area.select();
+        try{document.execCommand("copy");copyTrace.textContent="Copied";}catch{copyTrace.textContent="Select trace";}
+        area.remove();
+      }
+      setTimeout(()=>{copyTrace.textContent="Copy trace";},1400);
+    };
+    copyTrace.onclick=copyDiagnostic;
+    jumpTrace.onclick=()=>{errorScroll.scrollTop=errorScroll.scrollHeight;};
+
     const fail=error=>{
       const name=error?.name||"Error";
       const detail=error?.message||String(error);
       const stack=error?.stack||"";
       const diagnostics=`Last phase: ${phase}\nElapsed: ${elapsed()}s\n\nBoot trace:\n${bootTrace.join("\n")}`;
       const message=`${name}: ${detail}\n\n${diagnostics}${stack?`\n\nStack:\n${stack}`:""}`.trim();
-      status.textContent="Engine failed";
+      lastDiagnosticText=message;
+      status.textContent="Engine failed · diagnostics ready";
       errorText.textContent=message;
       errorBox.classList.add("show");
+      requestAnimationFrame(()=>{errorScroll.scrollTop=0;});
       tell("error",{name,detail,stack,message,phase,bootTrace:[...bootTrace]});
       console.error("[RiftBrowser Gecko] init failed",error);
     };
