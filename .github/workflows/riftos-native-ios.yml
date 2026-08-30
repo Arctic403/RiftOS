@@ -1,4 +1,4 @@
-# Native-only CI: compile Swift on macOS whenever the iOS host changes.
+# Native-only CI: compile Swift on current Apple tooling whenever the iOS host changes.
 name: Build RiftOS Native iOS shell
 
 on:
@@ -24,15 +24,16 @@ concurrency:
 jobs:
   ios-shell:
     name: Validate Swift native host
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
 
-      - name: Show Apple toolchain
+      - name: Select current Xcode
         run: |
           set -euxo pipefail
+          sudo xcode-select -s /Applications/Xcode_26.6.app
           xcodebuild -version
           swift --version
 
