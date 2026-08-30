@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v13-riftdev-native";
+const CACHE="riftos-shell-v14-riftdev-fullscreen";
 const CORE=[
   "./",
   "./index.html",
