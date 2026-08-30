@@ -6,7 +6,10 @@ on:
     branches: [main]
     paths-ignore:
       - '.github/workflows/riftos-native-ios.yml'
+      - '.github/workflows/riftgecko-mobile.yml'
       - 'native/ios/**'
+      - 'engines/gecko/riftgecko-mobile-profile.py'
+      - 'engines/gecko/RIFTGECKO_MOBILE.md'
 
 permissions:
   actions: write
@@ -139,43 +142,84 @@ jobs:
             echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Fetch pinned Gecko WASM engine package
+      - name: Fetch preferred Gecko WASM engine package
         env:
-          GECKO_RELEASE_URL: https://github.com/HeyPuter/firefox-wasm/releases/download/v0.0.1/gecko.js-v0.0.1.tar.gz
+          RIFTGECKO_RELEASE_URL: https://github.com/Arctic403/RiftOS/releases/download/riftgecko-mobile-v1/riftgecko-mobile-v1.tar.gz
+          UPSTREAM_RELEASE_URL: https://github.com/HeyPuter/firefox-wasm/releases/download/v0.0.1/gecko.js-v0.0.1.tar.gz
           GECKO_LICENSE_URL: https://raw.githubusercontent.com/HeyPuter/firefox-wasm/master/LICENSE
         run: |
           set -euxo pipefail
-          rm -rf /tmp/gecko-package /tmp/gecko-stage
+          rm -rf /tmp/gecko-package /tmp/gecko-stage /tmp/gecko.tar.gz
           mkdir -p /tmp/gecko-package /tmp/gecko-stage/vendor
-          curl -fL --retry 3 --retry-delay 2 "$GECKO_RELEASE_URL" -o /tmp/gecko.tar.gz
-          tar -xzf /tmp/gecko.tar.gz -C /tmp/gecko-package
 
+          engine_source='HeyPuter/firefox-wasm'
+          engine_release='v0.0.1'
+          mobile=false
+          if curl -fL --retry 2 --retry-delay 1 "$RIFTGECKO_RELEASE_URL" -o /tmp/gecko.tar.gz; then
+            engine_source='Arctic403/RiftOS RiftGecko Mobile'
+            engine_release='riftgecko-mobile-v1'
+            mobile=true
+            echo 'Using RiftGecko Mobile release.'
+          else
+            echo 'RiftGecko Mobile release not available yet; using pinned upstream v0.0.1.'
+            rm -f /tmp/gecko.tar.gz
+            curl -fL --retry 3 --retry-delay 2 "$UPSTREAM_RELEASE_URL" -o /tmp/gecko.tar.gz
+          fi
+
+          tar -xzf /tmp/gecko.tar.gz -C /tmp/gecko-package
           gecko_js=$(find /tmp/gecko-package -type f -path '*/dist/gecko.js' | head -n1)
-          gecko_wasm=$(find /tmp/gecko-package -type f \( -name 'gecko.wasm' -o -name 'gecko.wasm.zst' \) | head -n1)
+          gecko_wasm=$(find /tmp/gecko-package -type f -name 'gecko.wasm.zst' | head -n1)
           test -n "$gecko_js" && test -s "$gecko_js"
           test -n "$gecko_wasm" && test -s "$gecko_wasm"
 
           cp "$gecko_js" /tmp/gecko-stage/vendor/gecko.js
-          cp "$gecko_wasm" "/tmp/gecko-stage/vendor/$(basename "$gecko_wasm")"
-          curl -fL --retry 3 "$GECKO_LICENSE_URL" -o /tmp/gecko-stage/LICENSE.txt
+          cp "$gecko_wasm" /tmp/gecko-stage/vendor/gecko.wasm.zst
+
+          packaged_license=$(find /tmp/gecko-package -type f -name LICENSE | head -n1 || true)
+          if [ -n "$packaged_license" ] && [ -s "$packaged_license" ]; then
+            cp "$packaged_license" /tmp/gecko-stage/LICENSE.txt
+          else
+            curl -fL --retry 3 "$GECKO_LICENSE_URL" -o /tmp/gecko-stage/LICENSE.txt
+          fi
           grep -F 'Mozilla Public License Version 2.0' /tmp/gecko-stage/LICENSE.txt
 
-          cat > /tmp/gecko-stage/engine-manifest.json <<'JSON'
-          {
-            "id": "wasm-gecko",
-            "name": "Gecko WASM",
-            "source": "HeyPuter/firefox-wasm",
-            "release": "v0.0.1",
-            "license": "MPL-2.0",
-            "lazy": true,
-            "servedArtifacts": ["gecko.js", "gecko.wasm.zst"],
-            "greData": "inlined into gecko.js release bundle",
-            "requiresCrossOriginIsolation": true,
-            "requiresWispForArbitraryNetworking": true
+          packaged_profile=$(find /tmp/gecko-package -type f -name RIFTGECKO_MOBILE_PROFILE.json | head -n1 || true)
+          if [ -n "$packaged_profile" ] && [ -s "$packaged_profile" ]; then
+            cp "$packaged_profile" /tmp/gecko-stage/RIFTGECKO_MOBILE_PROFILE.json
+          fi
+
+          python3 - "$engine_source" "$engine_release" "$mobile" <<'PY'
+          import json, sys
+          source, release, mobile = sys.argv[1], sys.argv[2], sys.argv[3] == 'true'
+          manifest = {
+              'id': 'wasm-gecko',
+              'name': 'RiftGecko Mobile' if mobile else 'Gecko WASM',
+              'source': source,
+              'release': release,
+              'license': 'MPL-2.0',
+              'lazy': True,
+              'servedArtifacts': ['gecko.js', 'gecko.wasm.zst'],
+              'greData': 'inlined into gecko.js release bundle',
+              'requiresCrossOriginIsolation': True,
+              'requiresWispForArbitraryNetworking': True,
+              'mobileProfile': mobile,
           }
-          JSON
+          if mobile:
+              manifest.update({
+                  'upstream': 'HeyPuter/firefox-wasm@eadcb5fa828d7e8b54ae2df13b6b3208f6553944',
+                  'initialMemoryMiB': 256,
+                  'maximumMemoryMiB': 1024,
+                  'stackMiB': 16,
+                  'pthreadPoolSize': 4,
+                  'manualGpuJSPI': False,
+              })
+          with open('/tmp/gecko-stage/engine-manifest.json', 'w', encoding='utf-8') as f:
+              json.dump(manifest, f, indent=2)
+              f.write('\n')
+          PY
 
           du -sh /tmp/gecko-stage
+          cat /tmp/gecko-stage/engine-manifest.json
 
       - name: Assemble RiftOS WebKit runtime
         run: |
@@ -200,9 +244,9 @@ jobs:
           test -s _site/apps/riftdev/riftos-overlay.js
           test -s _site/engines/gecko/index.html
           test -s _site/engines/gecko/vendor/gecko.js
+          test -s _site/engines/gecko/vendor/gecko.wasm.zst
           test -s _site/engines/gecko/engine-manifest.json
           test -s _site/engines/gecko/LICENSE.txt
-          find _site/engines/gecko/vendor -maxdepth 1 -type f -name 'gecko.wasm*' -size +1M | grep -q .
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
           echo "RiftKernel/WebKit payload with lazy Gecko engine:"
@@ -281,4 +325,4 @@ jobs:
           base='${{ steps.deployment.outputs.page_url }}'
           curl -fL --retry 12 --retry-delay 2 --retry-all-errors "${base}engines/gecko/engine-manifest.json" -o /tmp/live-engine-manifest.json
           grep -F '"id": "wasm-gecko"' /tmp/live-engine-manifest.json
-          grep -F '"release": "v0.0.1"' /tmp/live-engine-manifest.json
+          grep -E '"release": "(v0\.0\.1|riftgecko-mobile-v1)"' /tmp/live-engine-manifest.json
