@@ -85,14 +85,34 @@ set(WebCore_LIBRARY_TYPE STATIC)
 
 # WebCore links imported dependency targets, not just legacy cache variables.
 # Resolve every Gate-2 dependency from RiftEngine's wasm sysroot before
-# WebCore's framework targets are generated. Older CMake exposes
-# SQLite::SQLite3 while this WebKit revision asks for SQLite3::SQLite3, so
-# bridge that target name when required.
+# WebCore's framework targets are generated. Imported targets created by
+# find_package() are directory scoped unless promoted to IMPORTED_GLOBAL; this
+# port options file is loaded from Source/cmake while WebCore is generated from
+# sibling directories later in configure, so promote them here.
 find_package(ICU 70.1 REQUIRED COMPONENTS data i18n uc)
 find_package(LibXml2 REQUIRED)
 find_package(SQLite3 3.7.17 REQUIRED)
 find_package(ZLIB REQUIRED)
 
+function(rift_promote_imported_target target_name)
+    if (TARGET ${target_name})
+        get_target_property(_rift_imported ${target_name} IMPORTED)
+        if (_rift_imported)
+            set_property(TARGET ${target_name} PROPERTY IMPORTED_GLOBAL TRUE)
+        endif ()
+    endif ()
+endfunction()
+
+rift_promote_imported_target(ICU::data)
+rift_promote_imported_target(ICU::i18n)
+rift_promote_imported_target(ICU::uc)
+rift_promote_imported_target(LibXml2::LibXml2)
+rift_promote_imported_target(SQLite::SQLite3)
+rift_promote_imported_target(ZLIB::ZLIB)
+
+# Older CMake exposes SQLite::SQLite3 while this WebKit revision asks for
+# SQLite3::SQLite3. Promote the real imported target first, then create the
+# alias so the alias resolves globally through the promoted target.
 if (TARGET SQLite::SQLite3 AND NOT TARGET SQLite3::SQLite3)
     add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
 endif ()
@@ -105,6 +125,8 @@ endif ()
 if (NOT TARGET ZLIB::ZLIB)
     message(FATAL_ERROR "zlib was found but no ZLIB::ZLIB imported target is available")
 endif ()
+
+message(STATUS "RIFT_WEBCORE_DEP_TARGETS=global")
 ''')
 
 print("RIFT_WEBCORE_PORT=emscripten-scaffold-ready")
