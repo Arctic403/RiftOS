@@ -81,9 +81,22 @@ See `riftengine/README.md` for the preserved engine roadmap.
 
 The normal Pages workflow now assembles only the RiftOS shell and the pinned RiftDev clone.
 
-The native iOS workflow runs automatically when `native/ios/**` or its workflow changes on `main`, also validates matching pull requests, and can still be started manually with `workflow_dispatch`. It generates the Xcode project with XcodeGen, compiles both the iOS Simulator target and the real ARM iPhone target, and uploads the resulting builds and Xcode logs for seven days.
+The native iOS validation workflow runs automatically when `native/ios/**` or its workflow changes on `main`, also validates matching pull requests, and can still be started manually with `workflow_dispatch`. It uses the current Xcode 26 toolchain, generates the Xcode project with XcodeGen, builds both the iOS Simulator target and an unsigned physical-iPhone target, and uploads the resulting CI artifacts for seven days.
 
-The device artifact is packaged as `RiftOSNative-unsigned-device.ipa`. It proves the physical-iPhone target compiles and gives signing tools a normal IPA payload, but it is intentionally unsigned. Installing it on an iPhone still requires a legitimate Apple signing/provisioning path such as Xcode, TestFlight, or another signing flow.
+### TestFlight from GitHub Actions
+
+`.github/workflows/riftos-testflight.yml` is a manual delivery workflow. It signs the physical-device archive with an App Store distribution certificate/profile and uploads the IPA to App Store Connect/TestFlight using an App Store Connect API key. Signing material is decoded only on the ephemeral macOS runner and is removed at the end of the job; the signed IPA itself is not published as a public GitHub artifact.
+
+The workflow expects these GitHub Actions secrets:
+
+- `IOS_DISTRIBUTION_CERTIFICATE_BASE64`
+- `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`
+- `IOS_APPSTORE_PROVISIONING_PROFILE_BASE64`
+- `APPSTORE_CONNECT_KEY_ID`
+- `APPSTORE_CONNECT_ISSUER_ID`
+- `APPSTORE_CONNECT_PRIVATE_KEY_BASE64`
+
+The App Store Connect app record and provisioning profile must cover the bundle identifier `com.riftos.native`. The workflow uses its GitHub run number as the unique TestFlight build number.
 
 ## Native RiftBrowser and AI workspace
 
