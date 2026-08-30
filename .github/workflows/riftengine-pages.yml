@@ -96,9 +96,24 @@ jobs:
           cp index.html styles.css sw.js manifest.webmanifest _site/
           cp -a src/. _site/src/
 
-          # RiftDev is a pinned, read-only clone of Arctic403/Editor. The
-          # Editor source repository is never modified by this workflow.
+          # RiftDev starts as a pinned, read-only clone of Arctic403/Editor.
+          # The original Editor repository is never modified. RiftOS adds its
+          # own integration overlay only to this staged deployment copy.
           cp -a /tmp/riftdev-editor/. _site/apps/riftdev/
+          cp src/riftdev-overlay.js _site/apps/riftdev/riftos-overlay.js
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('_site/apps/riftdev/index.html')
+          html = path.read_text(encoding='utf-8')
+          script = '<script src="riftos-overlay.js?v=1"></script>'
+          if script not in html:
+              if '</body>' not in html:
+                  raise SystemExit('RiftDev index.html has no closing body tag')
+              html = html.replace('</body>', f'    {script}\n</body>')
+              path.write_text(html, encoding='utf-8')
+          PY
+          test -s _site/apps/riftdev/riftos-overlay.js
+          grep -F 'riftos-overlay.js?v=1' _site/apps/riftdev/index.html
 
           # Browser-facing RiftEngine JavaScript only.
           cp -a riftengine/engine/. _site/riftengine/engine/
