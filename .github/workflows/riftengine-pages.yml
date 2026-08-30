@@ -10,7 +10,8 @@ on:
       - 'riftengine/**'
 
 permissions:
-  contents: read
+  actions: write
+  contents: write
   pages: write
   id-token: write
 
@@ -25,6 +26,9 @@ jobs:
     steps:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Clone pinned RiftDev Editor source
         env:
@@ -39,22 +43,20 @@ jobs:
           rm -rf /tmp/riftdev-editor/.git
           test -s /tmp/riftdev-editor/index.html
 
-      - name: Assemble RiftOS Pages site
+      - name: Sync pinned RiftDev mirror into RiftOS
+        id: mirror
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
-          rm -rf _site
-          mkdir -p _site/src _site/apps/riftdev
+          rm -rf apps/riftdev
+          mkdir -p apps/riftdev
+          cp -a /tmp/riftdev-editor/. apps/riftdev/
+          cp src/riftdev-overlay.js apps/riftdev/riftos-overlay.js
 
-          cp index.html styles.css sw.js manifest.webmanifest _site/
-          cp -a src/. _site/src/
-
-          # RiftDev is a read-only source clone. Only the staged RiftOS copy is
-          # modified with our integration overlay.
-          cp -a /tmp/riftdev-editor/. _site/apps/riftdev/
-          cp src/riftdev-overlay.js _site/apps/riftdev/riftos-overlay.js
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('_site/apps/riftdev/index.html')
+          path = Path('apps/riftdev/index.html')
           html = path.read_text(encoding='utf-8')
           script = '<script src="riftos-overlay.js?v=3"></script>'
           if script not in html:
@@ -63,6 +65,37 @@ jobs:
               html = html.replace('</body>', f'    {script}\n</body>')
               path.write_text(html, encoding='utf-8')
           PY
+
+          test -s apps/riftdev/index.html
+          test -s apps/riftdev/riftos-overlay.js
+          grep -F 'riftos-overlay.js?v=3' apps/riftdev/index.html
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A apps/riftdev
+
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Pinned RiftDev mirror is already current.'
+          else
+            git commit -m 'Sync pinned RiftDev runtime mirror'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Assemble RiftOS Pages site
+        run: |
+          set -euxo pipefail
+          rm -rf _site
+          mkdir -p _site/src _site/apps/riftdev
+
+          cp index.html styles.css sw.js manifest.webmanifest _site/
+          cp -a src/. _site/src/
+          cp -a apps/riftdev/. _site/apps/riftdev/
+
+          test -s _site/apps/riftdev/index.html
           test -s _site/apps/riftdev/riftos-overlay.js
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
@@ -83,6 +116,12 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
+      - name: Redeploy mirror commit
+        if: steps.mirror.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run riftengine-pages.yml --repo "$GITHUB_REPOSITORY" --ref main
 
   deploy:
     name: Deploy current RiftOS
