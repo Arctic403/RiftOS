@@ -2,109 +2,91 @@
 
 ## Goal
 
-RiftOS has one userspace runtime above the host browser/native APIs. It does not attempt to replace the iOS kernel or ship its own WebKit fork.
+RiftOS has one userspace kernel and one native iOS host. The installed app is the primary runtime; the PWA/Pages build is a development preview.
 
 ```text
-RiftOS Desktop / RiftDev / RiftApps
-                |
-            RiftKernel
-       _________|___________
-      |         |           |
-   RiftFS   Processes   Capabilities
-      |                     |
- OPFS/IDB                RiftNative
-                            |
-                       Swift / iOS
-                            |
-              RiftBrowser + Apple WebKit
+iPhone
+  |
+RiftOSNative.app
+  |
+local bundled RiftOS shell
+  |
+RiftKernel
+  |-----------------------------|
+RiftFS / apps / processes   BrowserService
+  |                             |
+RiftNative                  browser command bridge
+  |                             |
+RiftWorkspace              RiftBrowser.swift
+                                |
+                             WKWebView
+                                |
+                           Apple WebKit
 ```
 
-## 1. One kernel
+## 1. Native-first boot
+
+The production shell is bundled into the application at build time and served by `RiftBundleSchemeHandler` from `riftos:///index.html`.
+
+RiftOS Native has no remote privileged-shell fallback. HTTP/HTTPS main-frame navigation from the shell is rerouted into RiftBrowser.
+
+GitHub Pages therefore cannot become the privileged native document.
+
+## 2. One kernel
 
 `src/riftcore.js` owns process lifecycle, app registration, permissions, mounts, system information, native bridge state and RiftFS.
 
-No subsystem should create a second kernel, process table, filesystem authority or capability broker.
+System services attach to this kernel; they do not create parallel runtime authorities.
 
-## 2. One filesystem
-
-RiftFS uses OPFS where available and keeps IndexedDB as a compatibility mirror for older RiftOS data.
-
-```text
-/
-├── home/
-│   └── repos/<owner>/<repo>
-├── apps/
-│   ├── packages/
-│   └── data/
-├── system/
-└── mounts/
-```
-
-Native user-approved Files directories and `RiftWorkspace` appear below `/mounts`.
-
-## 3. Process model
-
-Visible built-ins, RiftDev sessions and installed RiftApps receive RiftKernel process records. Protected system processes cannot be terminated by normal app controls.
-
-## 4. Capability model
-
-Trusted built-ins declare capabilities such as filesystem, network, clipboard, sharing, notifications, process management and native access. Installed RiftApps receive a narrower brokered permission surface.
-
-## 5. Native bridge
-
-Only the trusted top-level RiftOS shell WKWebView receives the `riftNative` script-message handler.
-
-The bridge covers:
-
-- device information
-- Files directory/document picking
-- persistent external mounts
-- native filesystem operations
-- clipboard/share/notifications
-- RiftBrowser open/close
-- RiftWorkspace operations
-- JSON patch preview/apply/history/rollback
-
-Browser tabs do not receive this bridge.
-
-## 6. Browser service
+## 3. Browser service
 
 `src/riftbrowser-kernel.js` installs `RiftKernel.browser`.
 
-It owns logical browser state:
-
-- tabs
-- active tab
-- URL normalization
-- lightweight history
-- bookmarks
-- backend selection
-
-The active browser architecture has only two backends:
+The service owns OS-facing browser state and commands. In native mode it talks to Swift through the dedicated `riftBrowser` message handler and receives real tab state from `RiftBrowserKernelSync`.
 
 ```text
 RiftKernel.browser
       |
-      +-- native-webkit   -> RiftNative -> RiftBrowser.swift -> WKWebView
+      +-- native-webkit -> RiftBrowserCommandBridge -> RiftBrowserStore -> WKWebView
       |
-      `-- web-transport   -> PWA-only constrained fallback
+      `-- web-transport -> development-preview fallback only
 ```
 
-There is no RiftEngine/WebCore/JSC/WASM production backend.
+## 4. Native browser
 
-## 7. Native RiftBrowser
+`RiftBrowser.swift` owns the browser product around Apple WebKit.
 
-`native/ios/RiftOSNative/RiftBrowser.swift` is the production browser.
+Current support:
 
-RiftOS owns the chrome and tab model while Apple WebKit performs web-platform work. Each tab uses a normal `WKWebView` with persistent website data.
+- multi-tab browsing
+- Desktop mode by default
+- per-tab Mobile/Desktop mode
+- restored sessions
+- persistent cookies/site data
+- popup/new-window tabs
+- downloads into RiftWorkspace
+- Find on Page
+- Share sheet
+- error recovery
+- back/forward/reload/stop
 
-Desktop website mode is enabled by default through `WKWebpagePreferences.preferredContentMode = .desktop`. Each tab can switch between Desktop and Mobile mode and reload with the selected preference.
+## 5. Capability boundary
 
-This gives RiftOS a custom browser without maintaining a browser-engine fork.
+The privileged handlers exist only on the local shell WKWebView.
 
-## 8. RiftWorkspace
+Browser tabs are normal website contexts and do not receive:
 
-The native host creates:
+- RiftNative
+- RiftBrowser command channel
+- RiftWorkspace
+- external mount access
+- JSON patch APIs
+
+Native integrations must be brokered by trusted RiftOS code.
+
+## 6. RiftWorkspace
+
+The Swift host owns:
 
 ```text
 RiftWorkspace/
@@ -117,31 +99,31 @@ RiftWorkspace/
     └── history/
 ```
 
-Trusted RiftOS code can list/stat/read/write/move/remove files and use transactional JSON patches with rollback. `.rift` metadata is protected.
+The workspace provides sandboxed path normalization, native file operations, SHA-256 support and transactional patch history/rollback. Browser downloads now use the same workspace.
 
-## 9. RiftGit
+## 7. RiftFS
 
-RiftGit uses RiftFS workspaces at `/home/repos/<owner>/<repo>`. Push creates one Git commit for the local change set and checks the remote head before replacing it.
+RiftFS remains the kernel filesystem abstraction for shell/apps. Web storage backends are compatibility/runtime storage for the shell; native filesystem authority is exposed through RiftNative/RiftWorkspace rather than giving website tabs direct filesystem access.
 
-## 10. Rift Apps
+## 8. Processes and apps
 
-`.rift` packages live below `/apps` and launch in sandboxed frames. Apps use scoped storage and brokered permissions rather than direct native access.
+Built-ins, RiftDev sessions and installed RiftApps receive RiftKernel process records. RiftApps remain sandboxed and use brokered permissions.
 
-## 11. RiftDev
+## 9. RiftDev
 
-RiftDev is a pinned mirror of `Arctic403/Editor`. The Pages workflow stages the pinned Editor source and injects the RiftOS overlay into the staged copy only.
+RiftDev remains a pinned mirror of `Arctic403/Editor`. Pages stages that mirror for the development preview, and the current mirror is also bundled into native builds so RiftDev remains available when RiftOS boots offline.
 
-## 12. Build boundaries
+## 10. Build boundaries
 
-Normal RiftOS development must stay lightweight.
+Active CI has only two product paths:
 
-Active CI consists of:
+- `riftos-pages.yml` — web development preview validation/deploy
+- `riftos-native-ios.yml` — production native compile/bundle validation
 
-- Pages shell validation/deploy
-- native iOS compile validation
+The native job validates that the built `.app` contains `Web/index.html` and the RiftKernel/browser modules before it packages artifacts.
 
-Custom JSC/WebCore/Emscripten build jobs and large prebuilt WASM artifacts are intentionally absent.
+## 11. Compatibility rule
 
-## 13. Compatibility rule
+GitHub Pages, service workers, OPFS and IndexedDB are not the definition of RiftOS. They are host capabilities used by the web preview or compatibility layers.
 
-System services are reached through `window.RiftOSCore` and its kernel-owned services. Compatibility stores may exist only for migration/read-through and must not become new sources of truth.
+The production architecture is the bundled RiftKernel shell plus Swift native services.
