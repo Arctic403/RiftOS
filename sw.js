@@ -1,9 +1,11 @@
-const CACHE="riftos-shell-v14-riftdev-fullscreen";
+const CACHE="riftos-shell-v15-trueos-core";
 const CORE=[
   "./",
   "./index.html",
   "./styles.css",
+  "./src/riftcore.js",
   "./src/riftos.js",
+  "./src/riftos-system-ui.js",
   "./src/riftapps.js",
   "./src/riftapps-files.js",
   "./src/riftgit.js",
