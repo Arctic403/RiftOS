@@ -177,10 +177,17 @@ jobs:
           source third_party/emsdk/emsdk_env.sh >/dev/null 2>&1
           command -v emcc
           command -v em++
-          command -v wasm-opt
+          wasm_opt="$(command -v wasm-opt || true)"
+          if [ -z "$wasm_opt" ]; then
+            wasm_opt="$(find third_party/emsdk/upstream -name wasm-opt -print -quit)"
+          fi
+          test -n "$wasm_opt"
+          test -x "$wasm_opt"
+          wasm_opt="$(realpath "$wasm_opt")"
+          echo "WASM_OPT=$wasm_opt" >> "$GITHUB_ENV"
           emcc --version | head -1
           em++ --version | head -1
-          wasm-opt --version | head -1
+          "$wasm_opt" --version | head -1
           emcc --version | grep -F "$EMSDK_VERSION"
 
       - name: Restore RiftWebKit compiler cache
@@ -248,10 +255,15 @@ jobs:
         run: |
           set -euxo pipefail
           source _riftwebkit-src/third_party/emsdk/emsdk_env.sh >/dev/null 2>&1
+          wasm_opt="${WASM_OPT:-}"
+          if [ -z "$wasm_opt" ]; then
+            wasm_opt="$(find _riftwebkit-src/third_party/emsdk/upstream -name wasm-opt -print -quit)"
+          fi
+          test -x "$wasm_opt"
           in=.riftwebkit-output/riftwebkit.wasm
           out=.riftwebkit-output/riftwebkit.os.wasm
           before=$(stat -c '%s' "$in")
-          if wasm-opt --all -Os "$in" -o "$out"; then
+          if "$wasm_opt" --all -Os "$in" -o "$out"; then
             after=$(stat -c '%s' "$out")
             echo "wasm-opt -Os: $before -> $after bytes"
             if [ "$after" -lt "$before" ]; then
