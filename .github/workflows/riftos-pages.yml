@@ -134,7 +134,7 @@ jobs:
       - name: Fetch pinned Gecko WASM engine package
         env:
           GECKO_RELEASE_URL: https://github.com/HeyPuter/firefox-wasm/releases/download/v0.0.1/gecko.js-v0.0.1.tar.gz
-          GECKO_LICENSE_URL: https://raw.githubusercontent.com/HeyPuter/firefox-wasm/v0.0.1/LICENSE
+          GECKO_LICENSE_URL: https://raw.githubusercontent.com/HeyPuter/firefox-wasm/master/LICENSE
         run: |
           set -euxo pipefail
           rm -rf /tmp/gecko-package /tmp/gecko-stage
@@ -151,6 +151,7 @@ jobs:
           cp "$gecko_js" /tmp/gecko-stage/vendor/gecko.js
           cp "$gecko_wasm" "/tmp/gecko-stage/vendor/$(basename "$gecko_wasm")"
           curl -fL --retry 3 "$GECKO_LICENSE_URL" -o /tmp/gecko-stage/LICENSE.txt
+          grep -F 'Mozilla Public License Version 2.0' /tmp/gecko-stage/LICENSE.txt
 
           cat > /tmp/gecko-stage/engine-manifest.json <<'JSON'
           {
@@ -193,6 +194,7 @@ jobs:
           test -s _site/engines/gecko/index.html
           test -s _site/engines/gecko/vendor/gecko.js
           test -s _site/engines/gecko/engine-manifest.json
+          test -s _site/engines/gecko/LICENSE.txt
           find _site/engines/gecko/vendor -maxdepth 1 -type f -name 'gecko.wasm*' -size +1M | grep -q .
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
