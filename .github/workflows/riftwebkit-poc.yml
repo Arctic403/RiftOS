@@ -1,0 +1,280 @@
+name: Build RiftWebKit Safari Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/riftwebkit-poc.yml'
+      - 'engines/webkit-poc/riftwebkit-probe.cpp'
+      - 'engines/webkit-poc/riftwebkit-embedder.cmake'
+      - 'engines/webkit-poc/build-riftwebkit.sh'
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: riftwebkit-poc-v1
+  cancel-in-progress: true
+
+env:
+  HELPER_REPO: theogbob/WebkitWasm
+  HELPER_COMMIT: cbdc40b3ca68f45fff8de61fd843f81a55026178
+  WEBKIT_COMMIT: aec9d2ad958e716ab4bca4bf03007e6edac7323f
+  EMSDK_VERSION: '6.0.0'
+  RELEASE_TAG: riftwebkit-poc-v1
+
+jobs:
+  build:
+    name: Build single-threaded RiftWebKit probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout RiftOS
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Checkout pinned WebKit-WASM port helper
+        uses: actions/checkout@v4
+        with:
+          repository: theogbob/WebkitWasm
+          ref: cbdc40b3ca68f45fff8de61fd843f81a55026178
+          path: _riftwebkit-src
+          fetch-depth: 1
+
+      - name: Free runner disk
+        run: |
+          set -euxo pipefail
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          df -h /
+
+      - name: Install host prerequisites
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git curl tar xz-utils unzip \
+            python3 ripgrep ca-certificates fonts-dejavu-core zstd
+          cmake --version | head -1
+          ninja --version
+          python3 --version
+
+      - name: Validate pinned helper source
+        run: |
+          set -euxo pipefail
+          test "$(git -C _riftwebkit-src rev-parse HEAD)" = "$HELPER_COMMIT"
+          grep -F 'BIB_PTHREAD="${BIB_PTHREAD:-0}"' _riftwebkit-src/tools/build-webcore.sh
+          grep -F 'WEBKIT_PIN="aec9d2ad958e716ab4bca4bf03007e6edac7323f"' _riftwebkit-src/tools/bootstrap.sh
+          grep -F 'EMSDK_VERSION="6.0.0"' _riftwebkit-src/tools/bootstrap.sh
+          test -s engines/webkit-poc/riftwebkit-probe.cpp
+          test -s engines/webkit-poc/riftwebkit-embedder.cmake
+          test -s engines/webkit-poc/build-riftwebkit.sh
+
+      - name: Add build swap headroom
+        run: |
+          set -euxo pipefail
+          if swapon --show 2>/dev/null | grep -q .; then
+            echo 'Swap already available.'
+          else
+            sudo fallocate -l 12G /swapfile || true
+            if [ -f /swapfile ]; then
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile || true
+            fi
+          fi
+          free -h
+          df -h /
+
+      - name: Bootstrap pinned WebKit Emscripten port
+        working-directory: _riftwebkit-src
+        run: |
+          set -euxo pipefail
+          bash tools/bootstrap.sh
+          test "$(git -C third_party/WebKit rev-parse HEAD)" = "$WEBKIT_COMMIT"
+          test -s third_party/emsdk/emsdk_env.sh
+          test -d third_party/wasm-sysroot
+          du -sh third_party
+
+      - name: Verify Emscripten toolchain before WebCore build
+        working-directory: _riftwebkit-src
+        run: |
+          set -euxo pipefail
+          source third_party/emsdk/emsdk_env.sh >/dev/null 2>&1
+          command -v emcc
+          command -v em++
+          command -v wasm-opt
+          emcc --version | head -1
+          em++ --version | head -1
+          wasm-opt --version | head -1
+          emcc --version | grep -F "$EMSDK_VERSION"
+
+      - name: Build RiftWebKit Safari probe
+        env:
+          RIFTWEBKIT_JOBS: '4'
+        run: |
+          set -euxo pipefail
+          bash engines/webkit-poc/build-riftwebkit.sh _riftwebkit-src
+
+      - name: Show build diagnostics on failure
+        if: failure()
+        run: |
+          echo '=== configure tail ==='
+          tail -n 180 _riftwebkit-src/build/riftwebkit-configure.log 2>/dev/null || true
+          echo '=== ninja errors ==='
+          grep -n 'error:' _riftwebkit-src/build/riftwebkit-ninja.log 2>/dev/null | tail -n 100 || true
+          echo '=== ninja tail ==='
+          tail -n 220 _riftwebkit-src/build/riftwebkit-ninja.log 2>/dev/null || true
+          echo '=== resources ==='
+          free -h || true
+          df -h / || true
+
+      - name: Size-optimize probe WASM when safe
+        run: |
+          set -euxo pipefail
+          source _riftwebkit-src/third_party/emsdk/emsdk_env.sh >/dev/null 2>&1
+          in=.riftwebkit-output/riftwebkit.wasm
+          out=.riftwebkit-output/riftwebkit.os.wasm
+          before=$(stat -c '%s' "$in")
+          if wasm-opt --all -Os "$in" -o "$out"; then
+            after=$(stat -c '%s' "$out")
+            echo "wasm-opt -Os: $before -> $after bytes"
+            if [ "$after" -lt "$before" ]; then
+              mv "$out" "$in"
+            else
+              rm -f "$out"
+            fi
+          else
+            echo 'wasm-opt -Os failed; keeping the linker's original WASM.'
+            rm -f "$out"
+          fi
+
+      - name: Validate Safari probe artifact
+        run: |
+          set -euxo pipefail
+          test -s .riftwebkit-output/riftwebkit.js
+          test -s .riftwebkit-output/riftwebkit.wasm
+          grep -F 'RIFTWEBKIT: boot start' .riftwebkit-output/riftwebkit.js || true
+
+          # This target is deliberately built without -pthread. A separate
+          # Emscripten pthread worker companion would indicate the wrong target.
+          if find .riftwebkit-output -maxdepth 1 -type f \( -name '*.worker.js' -o -name '*.pthread.*' \) | grep -q .; then
+            echo 'Unexpected pthread worker artifact in RiftWebKit probe.' >&2
+            exit 1
+          fi
+
+          echo 'RiftWebKit probe artifact:'
+          ls -lh .riftwebkit-output/riftwebkit.js .riftwebkit-output/riftwebkit.wasm
+          sha256sum .riftwebkit-output/riftwebkit.js .riftwebkit-output/riftwebkit.wasm
+
+      - name: Package RiftWebKit proof release
+        run: |
+          set -euxo pipefail
+          rm -rf stage
+          mkdir -p stage/riftwebkit-poc/runtime
+          cp .riftwebkit-output/riftwebkit.js stage/riftwebkit-poc/runtime/riftwebkit.js
+          cp .riftwebkit-output/riftwebkit.wasm stage/riftwebkit-poc/runtime/riftwebkit.wasm
+
+          wasm_bytes=$(stat -c '%s' stage/riftwebkit-poc/runtime/riftwebkit.wasm)
+          js_bytes=$(stat -c '%s' stage/riftwebkit-poc/runtime/riftwebkit.js)
+          wasm_sha=$(sha256sum stage/riftwebkit-poc/runtime/riftwebkit.wasm | cut -d' ' -f1)
+          js_sha=$(sha256sum stage/riftwebkit-poc/runtime/riftwebkit.js | cut -d' ' -f1)
+
+          python3 - "$wasm_bytes" "$js_bytes" "$wasm_sha" "$js_sha" "$GITHUB_SHA" <<'PY'
+          import json, sys
+          wasm_bytes, js_bytes = map(int, sys.argv[1:3])
+          wasm_sha, js_sha, build = sys.argv[3:6]
+          manifest = {
+              "id": "riftwebkit-poc",
+              "name": "RiftWebKit Safari Probe",
+              "available": True,
+              "build": build,
+              "mode": "single-threaded-raster",
+              "sourceCommit": "cbdc40b3ca68f45fff8de61fd843f81a55026178",
+              "webkitCommit": "aec9d2ad958e716ab4bca4bf03007e6edac7323f",
+              "emscripten": "6.0.0",
+              "requiresWebAssembly": True,
+              "requiresSharedArrayBuffer": False,
+              "requiresCrossOriginIsolation": False,
+              "requiresWisp": False,
+              "threaded": False,
+              "guestJavaScript": False,
+              "gpu": False,
+              "networking": False,
+              "persistence": False,
+              "initialMemoryMiB": 256,
+              "maximumMemoryMiB": 1024,
+              "stackMiB": 8,
+              "wasmBytes": wasm_bytes,
+              "wasmMiB": round(wasm_bytes / 1048576, 1),
+              "jsBytes": js_bytes,
+              "sha256": {"riftwebkit.wasm": wasm_sha, "riftwebkit.js": js_sha},
+              "purpose": "iPhone Safari survival, first-paint, linear-memory, and touch-to-WebCore validation"
+          }
+          with open('stage/riftwebkit-poc/engine-manifest.json', 'w', encoding='utf-8') as f:
+              json.dump(manifest, f, indent=2)
+              f.write('\n')
+          PY
+
+          cat > stage/riftwebkit-poc/SOURCE.txt <<EOF
+          RiftWebKit Safari Probe v1
+          RiftOS host/embedder source: https://github.com/${GITHUB_REPOSITORY}/tree/main/engines/webkit-poc
+          WebKit-WASM Emscripten port helper reference: https://github.com/theogbob/WebkitWasm/commit/${HELPER_COMMIT}
+          WebKit source: https://github.com/WebKit/WebKit/commit/${WEBKIT_COMMIT}
+          Emscripten: ${EMSDK_VERSION}
+
+          This proof package contains RiftOS-owned probe glue plus the resulting
+          WebKit binary. It does not redistribute the helper project's original
+          browser UI/embedder source.
+          EOF
+
+          cat > stage/riftwebkit-poc/NOTICE.txt <<'EOF'
+          RiftWebKit Safari Probe includes a WebKit-derived WebAssembly binary.
+          WebCore is distributed under LGPL-2.1-or-later terms in the WebKit tree;
+          JavaScriptCore/WTF and other WebKit components include BSD-style terms.
+          Third-party libraries retain their respective upstream licenses.
+          Corresponding source and exact source/build pins are listed in SOURCE.txt.
+          EOF
+
+          tar -C stage -czf "${RELEASE_TAG}.tar.gz" riftwebkit-poc
+          sha256sum "${RELEASE_TAG}.tar.gz" > "${RELEASE_TAG}.tar.gz.sha256"
+          cat stage/riftwebkit-poc/engine-manifest.json
+          ls -lh "${RELEASE_TAG}.tar.gz" "${RELEASE_TAG}.tar.gz.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: riftwebkit-poc-v1
+          path: |
+            riftwebkit-poc-v1.tar.gz
+            riftwebkit-poc-v1.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Publish or replace RiftWebKit proof release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title 'RiftWebKit Safari Probe v1' \
+              --notes 'Experimental single-threaded WebKit/WASM survival probe for iPhone Safari. Not the production RiftBrowser engine.'
+          fi
+          gh release upload "$RELEASE_TAG" \
+            "${RELEASE_TAG}.tar.gz" "${RELEASE_TAG}.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Deploy RiftOS with RiftWebKit probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run riftos-pages.yml --repo "$GITHUB_REPOSITORY" --ref main
