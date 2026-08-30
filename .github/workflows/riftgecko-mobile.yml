@@ -1,0 +1,185 @@
+name: Build RiftGecko Mobile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: riftgecko-mobile-v1
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: HeyPuter/firefox-wasm
+  UPSTREAM_COMMIT: eadcb5fa828d7e8b54ae2df13b6b3208f6553944
+  RELEASE_TAG: riftgecko-mobile-v1
+  EMSDK_VERSION: '6.0.1'
+  RUST_VERSION: '1.95.0'
+  PNPM_VERSION: '9.12.0'
+
+jobs:
+  build:
+    name: Build iPhone-oriented Gecko artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout RiftOS profile source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Checkout pinned firefox-wasm source
+        uses: actions/checkout@v4
+        with:
+          repository: HeyPuter/firefox-wasm
+          ref: eadcb5fa828d7e8b54ae2df13b6b3208f6553944
+          path: _riftgecko-src
+          fetch-depth: 1
+
+      - name: Free runner disk before Gecko build
+        run: |
+          set -euxo pipefail
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          df -h /
+
+      - name: Install Gecko host prerequisites
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang llvm-dev libpulse-dev python3 mercurial unzip zstd rsync \
+            wget lsb-release gnupg software-properties-common
+          LLVM_VER=21
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh ${LLVM_VER}
+          sudo apt-get install -y --no-install-recommends libclang-${LLVM_VER}-dev
+          echo "LIBCLANG_PATH=/usr/lib/llvm-${LLVM_VER}/lib" >> "$GITHUB_ENV"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          components: rust-src
+          targets: wasm32-unknown-emscripten
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare "pnpm@${PNPM_VERSION}" --activate
+          pnpm --version
+
+      - name: Apply RiftGecko Mobile v1 profile
+        run: |
+          set -euxo pipefail
+          test "$(git -C _riftgecko-src rev-parse HEAD)" = "$UPSTREAM_COMMIT"
+          python3 engines/gecko/riftgecko-mobile-profile.py _riftgecko-src
+          grep -F -- '-sINITIAL_MEMORY=268435456 -sMAXIMUM_MEMORY=1073741824' _riftgecko-src/gecko.js/build-lib.sh
+          grep -F -- '-sSTACK_SIZE=16777216' _riftgecko-src/gecko.js/build-lib.sh
+          grep -F -- '-sPTHREAD_POOL_SIZE=4 -sPTHREAD_POOL_SIZE_STRICT=0' _riftgecko-src/gecko.js/build-lib.sh
+          grep -F -- 'GECKO_WASMOPT_FLAGS:--all -Oz' _riftgecko-src/gecko.js/build-lib.sh
+          if grep -F 'WebAssembly.Suspending' _riftgecko-src/gecko.js/patch-gecko-shaderfix.mjs; then exit 1; fi
+          if grep -F 'WebAssembly.promising' _riftgecko-src/gecko.js/patch-gecko-shaderfix.mjs; then exit 1; fi
+
+      - name: Add swap headroom
+        run: |
+          set -euxo pipefail
+          if ! swapon --show | grep -q .; then
+            sudo fallocate -l 10G /swapfile || true
+            if [ -f /swapfile ]; then
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile || true
+            fi
+          fi
+          free -h
+          df -h /
+
+      - name: Build RiftGecko Mobile release
+        working-directory: _riftgecko-src
+        env:
+          GECKO_WASMOPT_FLAGS: --all -Oz
+        run: |
+          set -euxo pipefail
+          ulimit -s unlimited || ulimit -s 524288 || true
+          make libxul RELEASE=1
+
+      - name: Validate built runtime
+        run: |
+          set -euxo pipefail
+          test -s _riftgecko-src/gecko.js/dist/gecko.js
+          test -s _riftgecko-src/gecko.js/dist/gecko.wasm.zst
+          if grep -F 'new WebAssembly.Suspending(_gl_present_yield)' _riftgecko-src/gecko.js/dist/gecko.js; then
+            echo 'Safari-incompatible JSPI wrapper remained in release.' >&2
+            exit 1
+          fi
+          if grep -F 'WebAssembly.promising(getWasmTableEntry(ptr))(arg)' _riftgecko-src/gecko.js/dist/gecko.js; then
+            echo 'Safari-incompatible pthread JSPI wrapper remained in release.' >&2
+            exit 1
+          fi
+          echo 'Built artifact sizes:'
+          ls -lh _riftgecko-src/gecko.js/dist/gecko.js _riftgecko-src/gecko.js/dist/gecko.wasm.zst
+
+      - name: Package reproducible RiftGecko release
+        run: |
+          set -euxo pipefail
+          rm -rf stage
+          mkdir -p stage/gecko.js/dist
+          cp _riftgecko-src/gecko.js/dist/gecko.js stage/gecko.js/dist/gecko.js
+          cp _riftgecko-src/gecko.js/dist/gecko.wasm.zst stage/gecko.js/dist/gecko.wasm.zst
+          cp _riftgecko-src/gecko.js/package.json stage/gecko.js/package.json
+          cp _riftgecko-src/RIFTGECKO_MOBILE_PROFILE.json stage/gecko.js/RIFTGECKO_MOBILE_PROFILE.json
+          cp engines/gecko/riftgecko-mobile-profile.py stage/gecko.js/RIFTOS_PROFILE_SOURCE.py
+          curl -fL --retry 3 https://raw.githubusercontent.com/HeyPuter/firefox-wasm/master/LICENSE -o stage/gecko.js/LICENSE
+          cat > stage/gecko.js/SOURCE.txt <<EOF
+          RiftGecko Mobile v1
+          Upstream: https://github.com/HeyPuter/firefox-wasm
+          Upstream commit: ${UPSTREAM_COMMIT}
+          RiftOS modification source: https://github.com/${GITHUB_REPOSITORY}/blob/main/engines/gecko/riftgecko-mobile-profile.py
+          Profile documentation: https://github.com/${GITHUB_REPOSITORY}/blob/main/engines/gecko/RIFTGECKO_MOBILE.md
+          EOF
+          tar -C stage -czf "${RELEASE_TAG}.tar.gz" gecko.js
+          sha256sum "${RELEASE_TAG}.tar.gz" > "${RELEASE_TAG}.tar.gz.sha256"
+          ls -lh "${RELEASE_TAG}.tar.gz" "${RELEASE_TAG}.tar.gz.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: riftgecko-mobile-v1
+          path: |
+            riftgecko-mobile-v1.tar.gz
+            riftgecko-mobile-v1.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Publish or replace RiftGecko release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title 'RiftGecko Mobile v1' \
+              --notes 'RiftOS iPhone-oriented Gecko WASM build. Reproducible profile/source is stored under engines/gecko in this repository.'
+          fi
+          gh release upload "$RELEASE_TAG" \
+            "${RELEASE_TAG}.tar.gz" "${RELEASE_TAG}.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Deploy RiftOS with the new engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run riftos-pages.yml --repo "$GITHUB_REPOSITORY" --ref main
