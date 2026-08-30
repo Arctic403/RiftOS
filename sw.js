@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v12-riftdev";
+const CACHE="riftos-shell-v13-riftdev-native";
 const CORE=[
   "./",
   "./index.html",
@@ -7,7 +7,6 @@ const CORE=[
   "./src/riftapps.js",
   "./src/riftapps-files.js",
   "./src/riftgit.js",
-  "./src/riftgit-app.js",
   "./src/riftdev-host.js",
   "./manifest.webmanifest"
 ];
