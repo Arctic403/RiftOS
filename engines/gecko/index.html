@@ -29,15 +29,45 @@
     const errorText=document.querySelector("#errorText");
     const canvas=document.querySelector("#screen");
     const tell=(type,detail={})=>parent.postMessage({type:`riftbrowser:gecko:${type}`,...detail},location.origin);
+
+    const bootStarted=performance.now();
+    const bootTrace=[];
+    let phase="Host preflight";
+    const elapsed=()=>((performance.now()-bootStarted)/1000).toFixed(1);
+    const trace=(message)=>{
+      const line=`[${elapsed()}s] ${message}`;
+      bootTrace.push(line);
+      if(bootTrace.length>48)bootTrace.shift();
+      console.info("[RiftBrowser Gecko]",line);
+      return line;
+    };
+    const mark=(next,detail="")=>{
+      phase=next;
+      status.textContent=detail?`${next} · ${detail}`:next;
+      trace(detail?`${next}: ${detail}`:next);
+      tell("phase",{phase,detail,elapsedSeconds:Number(elapsed())});
+    };
+    const engineOutput=(kind,value)=>{
+      const line=String(value??"");
+      trace(`${kind}: ${line}`);
+      if(line.includes("wasm instantiate failed"))mark("WASM instantiate failed");
+      else if(line.includes("xul_init: GRE dir"))mark("WASM instantiated","Gecko runtime thread started");
+      else if(line.includes("OPFS mount skipped"))mark("Filesystem ready","Gecko profile OPFS bypassed for Safari diagnostic");
+      else if(line.includes("calling NS_InitXPCOM"))mark("Starting Gecko XPCOM…");
+      else if(line.includes("NS_InitXPCOM returned")&&line.includes("SUCCESS"))mark("Gecko XPCOM online","starting browser services");
+      else if(line.includes("READY cmd="))mark("Gecko READY");
+      if(kind==="stderr")console.warn("[Gecko]",line);else console.log("[Gecko]",line);
+    };
     const fail=error=>{
       const name=error?.name||"Error";
       const detail=error?.message||String(error);
       const stack=error?.stack||"";
-      const message=`${name}: ${detail}\n${stack}`.trim();
+      const diagnostics=`Last phase: ${phase}\nElapsed: ${elapsed()}s\n\nBoot trace:\n${bootTrace.join("\n")}`;
+      const message=`${name}: ${detail}\n\n${diagnostics}${stack?`\n\nStack:\n${stack}`:""}`.trim();
       status.textContent="Engine failed";
       errorText.textContent=message;
       errorBox.classList.add("show");
-      tell("error",{name,detail,stack,message});
+      tell("error",{name,detail,stack,message,phase,bootTrace:[...bootTrace]});
       console.error("[RiftBrowser Gecko] init failed",error);
     };
 
@@ -46,9 +76,8 @@
       if(nativeJSPI)return {nativeJSPI:true,softwareFallback:false};
 
       // firefox-wasm v0.0.1 manually wires JSPI only for its GPU present/yield path.
-      // RiftOS intentionally boots Gecko in software-composited mode on iOS, so Safari
-      // can use the original synchronous pthread behavior when JSPI is unavailable.
-      // This is NOT a JSPI implementation and must never be used with GECKO_GPU.
+      // RiftOS boots Gecko in software-composited mode on iOS. These shims restore
+      // the synchronous pthread behavior required by that path; they are NOT JSPI.
       const SuspendingFallback=function RiftSoftwareSuspendingFallback(fn){return fn;};
       const promisingFallback=fn=>(...args)=>{
         try{return Promise.resolve(fn(...args));}
@@ -61,7 +90,6 @@
       }catch(error){
         throw new Error(`Safari software-mode compatibility could not install: ${error?.message||error}`);
       }
-
       if(typeof WebAssembly.Suspending!=="function"||typeof WebAssembly.promising!=="function")throw new Error("Safari software-mode compatibility could not expose the JSPI entry shims.");
       return {nativeJSPI:false,softwareFallback:true};
     }
@@ -70,22 +98,23 @@
       if(!crossOriginIsolated)throw new Error("Gecko WASM requires cross-origin isolation. Reload RiftOS once after the service worker update.");
       if(typeof SharedArrayBuffer!=="function")throw new Error("SharedArrayBuffer is unavailable in this WebKit context.");
 
-      status.textContent="Checking Gecko compatibility…";
+      mark("Checking Safari compatibility…");
       const compat=installSoftwareJSPICompatibility();
       window.RiftGeckoCompat=Object.freeze({...compat,gpu:false});
-      console.info("[RiftBrowser Gecko] compatibility",window.RiftGeckoCompat);
+      trace(`JSPI: ${compat.nativeJSPI?"native":"software-mode compatibility"}`);
 
-      status.textContent="Loading Gecko module…";
+      mark("Loading Gecko JavaScript module…");
       const {Gecko}=await import("./vendor/gecko.js");
       const wasmURL=new URL("./vendor/gecko.wasm.zst",location.href).href;
+      mark("Gecko module loaded","preparing engine runtime");
 
-      // Keep this constructor intentionally aligned with the upstream v0.0.1
-      // embed demo. Extra host knobs are added only after the base engine boots.
-      const env={};
-      // Gecko itself still runs as WASM. Disable the experimental guest-content
-      // WASM JIT while proving the iOS/WebKit base engine path.
-      env.GECKO_NOWASMJIT="1";
-      // Critical invariant for the Safari fallback above: do NOT enable GECKO_GPU.
+      const env={
+        GECKO_NOWASMJIT:"1",
+        // v0.0.1 normally mounts its profile through WasmFS native OPFS. Safari is
+        // currently hanging during startup, so isolate engine boot from profile
+        // persistence first. Upstream explicitly provides this diagnostic escape.
+        GECKO_SKIP_OPFS:"1"
+      };
       if(env.GECKO_GPU)throw new Error("Safari software JSPI compatibility cannot be used with Gecko GPU mode.");
 
       const gecko=new Gecko({
@@ -93,23 +122,33 @@
         wasm:{url:wasmURL,compressed:true},
         wispUrl:wisp.trim()||undefined,
         env,
-        print:value=>console.log("[Gecko]",value),
-        printErr:value=>console.warn("[Gecko]",value)
+        print:value=>engineOutput("stdout",value),
+        printErr:value=>engineOutput("stderr",value)
       });
       window.RiftGecko=gecko;
 
-      status.textContent=compat.nativeJSPI?"Initializing Gecko…":"Initializing Gecko · Safari software mode…";
-      await gecko.init();
-      tell("ready",{target,wispConfigured:!!wisp,nativeJSPI:compat.nativeJSPI,softwareJSPICompatibility:compat.softwareFallback});
+      mark("Initializing Gecko","fetch → zstd decode → WASM instantiate → pthreads");
+      let timeoutId;
+      const timeoutMs=120000;
+      const timeout=new Promise((_,reject)=>{
+        timeoutId=setTimeout(()=>reject(new Error(`Gecko initialization timed out after ${timeoutMs/1000}s. Last phase: ${phase}.`)),timeoutMs);
+      });
+      try{
+        await Promise.race([gecko.init(),timeout]);
+      }finally{
+        clearTimeout(timeoutId);
+      }
+      mark("Gecko engine ready",compat.softwareFallback?"Safari software mode":"native JSPI");
+      tell("ready",{target,wispConfigured:!!wisp,nativeJSPI:compat.nativeJSPI,softwareJSPICompatibility:compat.softwareFallback,profilePersistence:false,bootSeconds:Number(elapsed())});
 
       if(/^https?:/i.test(target)&&!wisp){
         const safeTarget=String(target).replace(/[<>&"']/g,"");
-        const start=`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;padding:24px;line-height:1.45}code{word-break:break-all}</style><h1>Gecko engine ready</h1><p>RiftBrowser successfully booted Firefox Gecko inside RiftOS.</p><p>Configure a Wisp endpoint to browse external HTTPS sites.</p><p>Requested: <code>${safeTarget}</code></p>`)}`;
-        status.textContent=`Engine ready${compat.softwareFallback?" · Safari software mode":""} · Wisp required`;
+        const start=`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;padding:24px;line-height:1.45}code{word-break:break-all}</style><h1>Gecko engine ready</h1><p>RiftBrowser successfully booted Firefox Gecko inside RiftOS.</p><p>Safari diagnostic mode currently uses an ephemeral Gecko profile. RiftOS storage is unaffected.</p><p>Configure a Wisp endpoint to browse external HTTPS sites.</p><p>Requested: <code>${safeTarget}</code></p>`)}`;
+        mark("Engine ready","Wisp required for external sites");
         await gecko.load(start);
         tell("loaded",{url:start,engineReady:true,wispRequired:true,requested:target});
       }else{
-        status.textContent=`Loading ${target}`;
+        mark("Loading page",target);
         await gecko.load(target);
         status.textContent=target;
         tell("loaded",{url:target,engineReady:true});
