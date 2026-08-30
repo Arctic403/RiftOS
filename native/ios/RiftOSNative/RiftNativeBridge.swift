@@ -394,7 +394,9 @@ final class RiftNativeBridge: NSObject, WKScriptMessageHandler, UIDocumentPicker
             do {
                 let url = try URL(
                     resolvingBookmarkData: record.bookmark,
-                    options: [.withSecurityScope],
+                    // `.withSecurityScope` is macOS-only. On iOS the document-picker
+                    // bookmark is resolved normally, then access is activated below.
+                    options: [],
                     relativeTo: nil,
                     bookmarkDataIsStale: &stale
                 )
