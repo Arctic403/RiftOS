@@ -2,103 +2,86 @@
 
 ## Decision
 
-RiftBrowser is a **RiftKernel browser service hosted by Apple WebKit**.
+RiftBrowser is an **experimental multi-engine browser service owned by RiftKernel**. RiftOS does not currently claim a stable browser backend.
 
-The primary RiftOS runtime is unsigned web-delivered RiftKernel. A signed Swift app is optional and must not be treated as a prerequisite for the OS.
+The stable boundary is the unsigned RiftKernel + RiftFS/OPFS runtime. Browser engines are optional, lazy-loaded services that may be replaced without changing the OS boot path.
 
-## Primary path
+## Primary experiment
 
 ```text
-Home Screen web app / Safari
-          |
-     Apple WebKit
-          |
-      RiftKernel
-          |
+iPhone / iPad
+     |
+Apple WebKit host
+     |
+RiftOS Home Screen runtime
+     |
+RiftKernel
+     |
 RiftKernel.browser
-          |
-    web-transport
-          |
-WebKit security model
+     |
+RiftBrowser Engine Adapter
+     |
+Gecko compiled to WebAssembly
+     |
+canvas + Wisp networking
 ```
 
-RiftOS owns browser state, URL normalization, tabs/history/bookmarks, browser UI and OS integration. The host browser owns standards rendering and security enforcement.
+The first engine package is pinned to the MPL-2.0 `HeyPuter/firefox-wasm` `gecko.js` v0.0.1 release. RiftOS does not rebuild Gecko during normal Pages deployment; CI downloads the published release package and stages the engine assets next to the RiftBrowser host.
 
-## What the unsigned browser can do
+## Why this is separate from the kernel
 
-The WebKit-hosted browser service can:
+RiftOS core MUST NOT require WebAssembly to boot.
 
-- manage RiftBrowser tabs and logical history
-- normalize addresses/searches
-- persist browser state
-- fetch/render CORS-readable HTML/text through the constrained web transport
-- use top-level/external navigation when embedded transport is not allowed
-- keep browser behavior integrated with RiftKernel processes/apps
+`src/riftbrowser-engines.js` probes the optional engine only when RiftBrowser needs it. The service worker deliberately does not pre-cache the large Gecko binaries as part of the core shell.
 
-## Hard web boundary
+If the engine fails, runs out of memory, or is unavailable, RiftKernel, RiftFS, OPFS, RiftWorkspace and the rest of the desktop remain usable.
 
-JavaScript running inside a Home Screen web app cannot create its own privileged arbitrary `WKWebView`.
+## Cross-origin isolation
 
-Therefore RiftBrowser must respect:
+Gecko WASM uses pthreads and therefore requires `SharedArrayBuffer` and a cross-origin-isolated page.
 
-- CORS
-- CSP
-- `frame-ancestors` / iframe restrictions
-- origin isolation
-- WebKit navigation/security policies
-
-A site such as a login-heavy or frame-blocking service may need to open as normal top-level WebKit navigation instead of rendering inside the RiftBrowser document surface.
-
-This is a host security boundary, not evidence that RiftKernel is "only a PWA".
-
-## Runtime identity
-
-`src/riftruntime.js` reports the normal unsigned state as:
+GitHub Pages cannot set arbitrary response headers directly, so the existing RiftOS service worker adds these headers to same-origin controlled responses:
 
 ```text
-mode: riftkernel-webkit
-host: Apple WebKit
-delivery: home-screen-web-app
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Resource-Policy: same-origin
 ```
 
-The browser backend may still report `web-transport`; that describes how RiftBrowser obtains page content, not the identity of the OS runtime.
+The first visit after the service-worker update may require one reload before `crossOriginIsolated === true`. The engine registry reports this state instead of pretending the engine is ready.
 
-## Optional native backend
+## Networking
 
-The existing `native-webkit` backend remains optional for a future signed/native capability host:
+A browser engine nested inside a browser tab cannot open arbitrary raw TCP sockets through normal Web APIs. Gecko therefore uses a Wisp WebSocket transport for arbitrary HTTP/HTTPS networking.
+
+RiftBrowser stores the Wisp endpoint as browser configuration and passes it into the engine host. Wisp is transport only; RiftKernel remains the owner of tabs, logical history, bookmarks and browser process state.
+
+## Storage
+
+RiftOS workspace data remains under RiftFS/OPFS. The browser engine may maintain its own browser profile data, but third-party guest pages do not receive direct RiftKernel or RiftWorkspace capabilities.
 
 ```text
-RiftKernel.browser
-       |
-riftBrowser bridge
-       |
-RiftBrowserStore
-       |
-WKWebView tabs
+RiftKernel
+  |-- RiftWorkspace -> RiftFS -> OPFS
+  |
+  `-- RiftBrowser
+       `-- Gecko WASM guest web content
 ```
 
-That optional backend can provide unrestricted normal `WKWebView` navigation, downloads and native browser chrome. It is not required for RiftKernel, RiftFS, RiftApps or the Home Screen operating environment.
+That separation is important for the future ChatGPT/workspace bridge: guest web content should exchange controlled JSON messages with RiftKernel rather than receiving raw filesystem objects.
 
-## Desktop rendering
+## Backends
 
-Desktop-site preferences such as `WKWebpagePreferences.preferredContentMode = .desktop` apply only to the optional native `WKWebView` backend.
+Current backend IDs:
 
-The unsigned web runtime cannot force the containing iOS WebKit web app to impersonate a separate desktop browser engine for arbitrary third-party sites. RiftBrowser should instead provide responsive RiftOS chrome and let WebKit enforce the page's normal rendering/security rules.
+- `wasm-gecko` — experimental full browser-engine path; preferred in unsigned auto mode when ready.
+- `native-webkit` — optional signed native host retained as a capability adapter.
+- `web-transport` — legacy CORS-readable document transport and emergency fallback only. It is not described as a stable browser.
 
-## Security boundary
+## Rules
 
-Normal third-party page content never receives privileged RiftOS capabilities merely because it is displayed or fetched by RiftBrowser.
-
-RiftFS, OPFS, app permissions and kernel state remain scoped to the RiftOS origin/runtime.
-
-## Removed direction
-
-RiftEngine, custom WebCore/JSC WASM builds, Emscripten browser-engine tooling and large prebuilt engine binaries remain intentionally removed.
-
-The rule is now:
-
-```text
-Use Apple WebKit as the host engine.
-Build RiftKernel above it.
-Never rebuild WebKit just to make RiftOS feel like an OS.
-```
+1. RiftKernel and RiftWorkspace boot without Gecko, WebAssembly or native iOS code.
+2. Browser-engine binaries load only when RiftBrowser is opened.
+3. The browser UI talks to a replaceable engine adapter, not directly to one engine implementation.
+4. Untrusted guest pages never gain direct RiftFS/OPFS capability access.
+5. A future engine can replace Gecko without rewriting RiftKernel browser state.

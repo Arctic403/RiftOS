@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v21-local-workspace";
+const CACHE="riftos-shell-v22-gecko-engine-lab";
 const CORE=[
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const CORE=[
   "./src/riftcore.js",
   "./src/riftworkspace-web.js",
   "./src/riftruntime.js",
+  "./src/riftbrowser-engines.js",
   "./src/riftbrowser-kernel.js",
   "./src/riftbrowser-ui.js",
   "./src/riftbrowser-ui.css",
@@ -19,65 +20,72 @@ const CORE=[
 
 const coreURLs=new Set(CORE.map(path=>new URL(path,self.registration.scope).href));
 
-self.addEventListener("install",event=>event.waitUntil(
-  caches.open(CACHE).then(cache=>cache.addAll(CORE)).then(()=>self.skipWaiting())
-));
+function isolateResponse(response){
+  if(!response||response.type==="opaque")return response;
+  const headers=new Headers(response.headers);
+  headers.set("Cross-Origin-Opener-Policy","same-origin");
+  headers.set("Cross-Origin-Embedder-Policy","require-corp");
+  headers.set("Cross-Origin-Resource-Policy","same-origin");
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+async function networkIsolated(request,options){return isolateResponse(await fetch(request,options));}
+
+self.addEventListener("install",event=>event.waitUntil((async()=>{
+  const cache=await caches.open(CACHE);
+  for(const path of CORE){
+    const request=new Request(new URL(path,self.registration.scope),{cache:"reload"});
+    const response=await networkIsolated(request);
+    if(!response.ok)throw new Error(`RiftOS core cache failed: ${path} HTTP ${response.status}`);
+    await cache.put(request,response);
+  }
+  await self.skipWaiting();
+})()));
 
 self.addEventListener("activate",event=>event.waitUntil(
-  caches.keys()
-    .then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key))))
-    .then(()=>self.clients.claim())
+  caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())
 ));
 
 self.addEventListener("fetch",event=>{
-  const request=event.request;
-  if(request.method!=="GET")return;
-
+  const request=event.request;if(request.method!=="GET")return;
   const url=new URL(request.url);
-  if(url.origin!==location.origin){
-    event.respondWith(fetch(request));
-    return;
-  }
+  if(url.origin!==location.origin){event.respondWith(fetch(request));return;}
 
   const isCore=coreURLs.has(url.href);
   const isRiftDev=url.pathname.includes("/apps/riftdev/");
+  const isBrowserEngine=url.pathname.includes("/engines/gecko/");
 
   if(isCore){
     event.respondWith((async()=>{
       try{
-        const response=await fetch(request,{cache:"no-cache"});
-        if(response.ok){
-          const cache=await caches.open(CACHE);
-          await cache.put(request,response.clone());
-        }
+        const response=await networkIsolated(request,{cache:"no-cache"});
+        if(response.ok){const cache=await caches.open(CACHE);await cache.put(request,response.clone());}
         return response;
       }catch{
-        return (await caches.match(request)) || new Response("Offline RiftKernel asset unavailable",{status:503});
+        const cached=await caches.match(request);
+        return cached?isolateResponse(cached):new Response("Offline RiftKernel asset unavailable",{status:503});
       }
-    })());
-    return;
+    })());return;
   }
 
-  if(isRiftDev){
+  if(isRiftDev||isBrowserEngine){
     event.respondWith((async()=>{
       const cache=await caches.open(CACHE);
       try{
-        const response=await fetch(request);
+        const response=await networkIsolated(request);
         if(response.ok)await cache.put(request,response.clone());
         return response;
       }catch{
-        return (await cache.match(request)) || new Response("Offline RiftDev asset unavailable",{status:503});
+        const cached=await cache.match(request);
+        return cached?isolateResponse(cached):new Response(isBrowserEngine?"RiftBrowser engine artifact unavailable":"Offline RiftDev asset unavailable",{status:503});
       }
-    })());
-    return;
+    })());return;
   }
 
   event.respondWith((async()=>{
-    try{return await fetch(request);}
-    catch{
+    try{return await networkIsolated(request);}catch{
       if(request.mode==="navigate"){
         const shell=await caches.match(new URL("./index.html",self.registration.scope).href);
-        if(shell)return shell;
+        if(shell)return isolateResponse(shell);
       }
       return new Response("Offline asset unavailable",{status:503,statusText:"Offline asset unavailable"});
     }

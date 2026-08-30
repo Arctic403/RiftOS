@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <title>RiftBrowser Gecko Engine</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0e13;color:#eef3fb;font:13px system-ui,-apple-system,sans-serif}
+    #host{position:fixed;inset:0;display:flex;flex-direction:column}
+    #status{display:flex;gap:8px;align-items:center;padding:6px 9px;background:#111720;border-bottom:1px solid rgba(255,255,255,.09);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #status strong{font-size:11px;letter-spacing:.08em}#status span{opacity:.72;overflow:hidden;text-overflow:ellipsis}
+    #screen{display:block;flex:1;width:100%;min-height:0;background:#fff;touch-action:none}
+    #error{display:none;position:absolute;inset:34px 0 0;padding:24px;background:#10151d;color:#eef3fb;overflow:auto}#error.show{display:block}
+    code{white-space:pre-wrap;word-break:break-word}
+  </style>
+</head>
+<body>
+  <main id="host">
+    <div id="status"><strong>GECKO WASM</strong><span id="statusText">Booting engine…</span></div>
+    <canvas id="screen" width="1024" height="768" tabindex="0"></canvas>
+    <section id="error"><h2>Engine failed</h2><code id="errorText"></code></section>
+  </main>
+  <script type="module">
+    const params=new URLSearchParams(location.search);
+    const target=params.get("url")||"data:text/html,<h1>RiftBrowser</h1>";
+    const wisp=params.get("wisp")||"";
+    const status=document.querySelector("#statusText");
+    const errorBox=document.querySelector("#error");
+    const errorText=document.querySelector("#errorText");
+    const canvas=document.querySelector("#screen");
+    const tell=(type,detail={})=>parent.postMessage({type:`riftbrowser:gecko:${type}`,...detail},location.origin);
+    const fail=error=>{
+      const message=error?.stack||error?.message||String(error);
+      status.textContent="Engine failed";errorText.textContent=message;errorBox.classList.add("show");tell("error",{message});
+    };
+    try{
+      if(!crossOriginIsolated)throw new Error("Gecko WASM requires cross-origin isolation. Reload RiftOS once after the service worker update.");
+      if(typeof SharedArrayBuffer!=="function")throw new Error("SharedArrayBuffer is unavailable in this WebKit context.");
+      status.textContent="Loading Gecko module…";
+      const {Gecko}=await import("./vendor/gecko.js");
+      const assetBase=new URL("./vendor/",location.href).href;
+      const gecko=new Gecko({
+        canvas,
+        assetBase,
+        wispUrl:wisp||undefined,
+        width:1024,
+        height:768,
+        forwardInput:true,
+        print:value=>console.log("[Gecko]",value),
+        printErr:value=>console.warn("[Gecko]",value)
+      });
+      window.RiftGecko=gecko;
+      status.textContent="Initializing Gecko…";
+      await gecko.init();
+      status.textContent=wisp?`Loading ${target}`:"Engine ready · Wisp not configured";
+      tell("ready",{target,wispConfigured:!!wisp});
+      await gecko.load(target);
+      status.textContent=target;
+      tell("loaded",{url:target});
+      canvas.focus({preventScroll:true});
+    }catch(error){fail(error);}
+  </script>
+</body>
+</html>

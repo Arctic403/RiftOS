@@ -18,7 +18,7 @@ jobs:
   site:
     name: Validate unsigned RiftKernel/WebKit runtime
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     concurrency:
       group: riftos-site-${{ github.ref }}
       cancel-in-progress: true
@@ -35,6 +35,7 @@ jobs:
           node --check src/riftcore.js
           node --check src/riftworkspace-web.js
           node --check src/riftruntime.js
+          node --check src/riftbrowser-engines.js
           node --check src/riftbrowser-kernel.js
           node --check src/riftbrowser-ui.js
           node --check src/riftapps.js
@@ -45,33 +46,33 @@ jobs:
           node --check src/riftos.js
           node --check sw.js
 
-      - name: Validate RiftKernel WebKit architecture
+      - name: Validate RiftKernel browser architecture
         run: |
           set -euxo pipefail
           grep -F './src/riftworkspace-web.js' index.html
+          grep -F './src/riftbrowser-engines.js' index.html
           grep -F './src/riftruntime.js' index.html
           grep -F 'navigator.storage?.getDirectory' src/riftcore.js
           grep -F 'mode:"local-sandbox"' src/riftworkspace-web.js
           grep -F 'window.RiftWorkspaceJSON' src/riftworkspace-web.js
           grep -F 'RiftOS core and RiftWorkspace MUST NOT require WebAssembly or native iOS code to boot.' docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md
+          grep -F 'RiftOS core MUST NOT require WebAssembly to boot.' docs/RIFTBROWSER_ARCHITECTURE.md
+          grep -F 'ENGINE_ID="wasm-gecko"' src/riftbrowser-engines.js
+          grep -F 'stableBrowser:false' src/riftbrowser-kernel.js
+          grep -F 'Cross-Origin-Embedder-Policy' sw.js
           grep -F 'workspaceJSON' src/riftruntime.js
           grep -F 'riftkernel-webkit' src/riftruntime.js
           grep -F 'appSigningRequiredForKernel:false' src/riftruntime.js
           grep -F '"display":"standalone"' manifest.webmanifest
+          grep -F './src/riftbrowser-engines.js' sw.js
           grep -F './src/riftworkspace-web.js' sw.js
           grep -F './src/riftruntime.js' sw.js
           grep -F 'unsigned, WebKit-hosted user-space operating environment' README.md
           grep -F 'RiftKernel first' docs/TRUE_OS_ARCHITECTURE.md
           grep -F 'Unsigned WebKit Runtime Validation' docs/UNSIGNED_WEBKIT_RUNTIME.md
-          grep -F 'RiftKernel browser service hosted by Apple WebKit' docs/RIFTBROWSER_ARCHITECTURE.md
 
           if grep -R -n -E 'The production runtime is \*\*RiftOS Native\*\*|native-first custom iOS browser' README.md docs index.html; then
             echo 'Legacy native-first architecture wording is still present.' >&2
-            exit 1
-          fi
-
-          if grep -R -n -E 'RiftEngineBrowserBackend|WebCore/WASM|jsc\.wasm' README.md docs src index.html sw.js; then
-            echo 'Removed custom-engine references are still present in the active RiftOS shell.' >&2
             exit 1
           fi
 
@@ -130,31 +131,76 @@ jobs:
             echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Fetch pinned Gecko WASM engine package
+        env:
+          GECKO_RELEASE_URL: https://github.com/HeyPuter/firefox-wasm/releases/download/v0.0.1/gecko.js-v0.0.1.tar.gz
+          GECKO_LICENSE_URL: https://raw.githubusercontent.com/HeyPuter/firefox-wasm/v0.0.1/LICENSE
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/gecko-package /tmp/gecko-stage
+          mkdir -p /tmp/gecko-package /tmp/gecko-stage/vendor
+          curl -fL --retry 3 --retry-delay 2 "$GECKO_RELEASE_URL" -o /tmp/gecko.tar.gz
+          tar -xzf /tmp/gecko.tar.gz -C /tmp/gecko-package
+
+          gecko_js=$(find /tmp/gecko-package -type f -path '*/dist/gecko.js' | head -n1)
+          gecko_wasm=$(find /tmp/gecko-package -type f \( -name 'gecko.wasm' -o -name 'gecko.wasm.zst' \) | head -n1)
+          gecko_data=$(find /tmp/gecko-package -type f \( -name 'gecko.data' -o -name 'gecko.data.zst' \) | head -n1)
+
+          test -n "$gecko_js" && test -s "$gecko_js"
+          test -n "$gecko_wasm" && test -s "$gecko_wasm"
+          test -n "$gecko_data" && test -s "$gecko_data"
+
+          cp "$gecko_js" /tmp/gecko-stage/vendor/gecko.js
+          cp "$gecko_wasm" "/tmp/gecko-stage/vendor/$(basename "$gecko_wasm")"
+          cp "$gecko_data" "/tmp/gecko-stage/vendor/$(basename "$gecko_data")"
+          curl -fL --retry 3 "$GECKO_LICENSE_URL" -o /tmp/gecko-stage/LICENSE.txt
+
+          cat > /tmp/gecko-stage/engine-manifest.json <<'JSON'
+          {
+            "id": "wasm-gecko",
+            "name": "Gecko WASM",
+            "source": "HeyPuter/firefox-wasm",
+            "release": "v0.0.1",
+            "license": "MPL-2.0",
+            "lazy": true,
+            "requiresCrossOriginIsolation": true,
+            "requiresWispForArbitraryNetworking": true
+          }
+          JSON
+
+          du -sh /tmp/gecko-stage
+
       - name: Assemble RiftOS WebKit runtime
         run: |
           set -euxo pipefail
           rm -rf _site
-          mkdir -p _site/src _site/apps/riftdev
+          mkdir -p _site/src _site/apps/riftdev _site/engines/gecko
 
           cp index.html styles.css sw.js manifest.webmanifest _site/
           cp -a src/. _site/src/
           cp -a apps/riftdev/. _site/apps/riftdev/
+          cp engines/gecko/index.html _site/engines/gecko/index.html
+          cp -a /tmp/gecko-stage/. _site/engines/gecko/
 
           test -s _site/src/riftcore.js
           test -s _site/src/riftworkspace-web.js
           test -s _site/src/riftruntime.js
+          test -s _site/src/riftbrowser-engines.js
           test -s _site/src/riftbrowser-kernel.js
           test -s _site/src/riftbrowser-ui.js
           test -s _site/src/riftbrowser-ui.css
           test -s _site/apps/riftdev/index.html
           test -s _site/apps/riftdev/riftos-overlay.js
+          test -s _site/engines/gecko/index.html
+          test -s _site/engines/gecko/vendor/gecko.js
+          test -s _site/engines/gecko/engine-manifest.json
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
-          echo "RiftKernel/WebKit payload:"
+          echo "RiftKernel/WebKit payload with lazy Gecko engine:"
           du -sh _site
 
           payload_bytes=$(du -sb _site | cut -f1)
-          max_bytes=$((32 * 1024 * 1024))
+          max_bytes=$((768 * 1024 * 1024))
           if [ "$payload_bytes" -gt "$max_bytes" ]; then
             echo "RiftOS payload is unexpectedly large: $payload_bytes bytes" >&2
             exit 1
