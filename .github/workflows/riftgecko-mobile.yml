@@ -23,6 +23,8 @@ env:
   EMSDK_VERSION: '6.0.1'
   RUST_VERSION: '1.95.0'
   PNPM_VERSION: '9.12.0'
+  MOZBUILD_STATE_PATH: ${{ github.workspace }}/.mozbuild
+  MACH_NO_TERMINAL_FOOTER: '1'
 
 jobs:
   build:
@@ -67,6 +69,21 @@ jobs:
           sudo apt-get install -y --no-install-recommends libclang-${LLVM_VER}-dev
           echo "LIBCLANG_PATH=/usr/lib/llvm-${LLVM_VER}/lib" >> "$GITHUB_ENV"
 
+      # Match upstream's proven CI ordering: make the pinned emscripten compiler
+      # visible to every later Actions shell BEFORE Firefox configure runs.
+      - name: Set up pinned Emscripten
+        run: |
+          set -euxo pipefail
+          rm -rf "$HOME/emsdk"
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION"
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          echo "$HOME/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+          echo "$HOME/emsdk" >> "$GITHUB_PATH"
+          "$HOME/emsdk/upstream/emscripten/emcc" --version | head -1
+          "$HOME/emsdk/upstream/bin/wasm-opt" --version | head -1
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
@@ -97,17 +114,54 @@ jobs:
           if grep -F 'WebAssembly.Suspending' _riftgecko-src/gecko.js/patch-gecko-shaderfix.mjs; then exit 1; fi
           if grep -F 'WebAssembly.promising' _riftgecko-src/gecko.js/patch-gecko-shaderfix.mjs; then exit 1; fi
 
-      - name: Add swap headroom
+      # The upstream Makefile patches emscripten's WasmFS/Wisp support. Running it
+      # here is cheap and ensures the same compiler that configure sees is patched.
+      - name: Patch Emscripten and verify toolchain
+        working-directory: _riftgecko-src
         run: |
           set -euxo pipefail
-          if ! swapon --show | grep -q .; then
-            sudo fallocate -l 10G /swapfile || true
-            if [ -f /swapfile ]; then
-              sudo chmod 600 /swapfile
-              sudo mkswap /swapfile
-              sudo swapon /swapfile || true
+          make emsdk
+          command -v emcc
+          command -v em++
+          emcc --version | head -1
+          em++ --version | head -1
+          test -x "$EMSDK/upstream/bin/wasm-opt"
+          "$EMSDK/upstream/bin/wasm-opt" --version | head -1
+          test -d "$LIBCLANG_PATH"
+          rustc --version
+          pnpm --version
+
+      # Fail configuration/toolchain mistakes before spending hours compiling libxul.
+      - name: Configure RiftGecko preflight
+        working-directory: _riftgecko-src
+        run: |
+          set -euxo pipefail
+          command -v emcc
+          command -v em++
+          make firefox
+          make vendor
+          make configure RELEASE=1
+          test -s obj-full-emscripten-release/config.status
+          grep -F 'wasm32-unknown-emscripten' obj-full-emscripten-release/config.status >/dev/null || true
+          echo 'RiftGecko configure preflight passed.'
+
+      - name: Add final-link swap headroom
+        run: |
+          set -euxo pipefail
+          free -h
+          df -h /
+          swap_kib=$(awk '/SwapTotal:/ {print $2}' /proc/meminfo)
+          target_kib=$((12 * 1024 * 1024))
+          if [ "$swap_kib" -lt "$target_kib" ]; then
+            SW=/swapfile-riftgecko
+            (sudo fallocate -l 16G "$SW" || sudo dd if=/dev/zero of="$SW" bs=1M count=16384) 2>/dev/null || true
+            if [ -f "$SW" ]; then
+              sudo chmod 600 "$SW" || true
+              sudo mkswap "$SW" >/dev/null 2>&1 || true
+              sudo swapon "$SW" 2>/dev/null || true
             fi
           fi
+          swapon --show || true
           free -h
           df -h /
 
@@ -117,8 +171,20 @@ jobs:
           GECKO_WASMOPT_FLAGS: --all -Oz
         run: |
           set -euxo pipefail
+          command -v emcc
+          command -v em++
           ulimit -s unlimited || ulimit -s 524288 || true
           make libxul RELEASE=1
+
+      - name: Show Gecko build diagnostics on failure
+        if: failure()
+        run: |
+          echo '=== build-lib link.err (tail) ==='
+          tail -n 100 _riftgecko-src/gecko.js/build/link.err 2>/dev/null || echo '(no link.err yet)'
+          echo '=== configure/build warnings (recent) ==='
+          find _riftgecko-src/obj-full-emscripten-release/.mozbuild/logs -type f -maxdepth 4 -print 2>/dev/null | tail -20 || true
+          free -h || true
+          df -h / || true
 
       - name: Validate built runtime
         run: |
@@ -135,6 +201,15 @@ jobs:
           fi
           echo 'Built artifact sizes:'
           ls -lh _riftgecko-src/gecko.js/dist/gecko.js _riftgecko-src/gecko.js/dist/gecko.wasm.zst
+
+          wasm_zst_bytes=$(stat -c%s _riftgecko-src/gecko.js/dist/gecko.wasm.zst)
+          echo "Compressed RiftGecko WASM: ${wasm_zst_bytes} bytes"
+          # This is a warning target, not a hard compatibility claim. Current iOS 26
+          # WebKit reports show large threaded WASM is especially fragile, so size is
+          # recorded explicitly for every build and should trend downward.
+          if [ "$wasm_zst_bytes" -gt $((128 * 1024 * 1024)) ]; then
+            echo '::warning::RiftGecko is still over 128 MiB compressed; Safari memory/large-module risk remains high.'
+          fi
 
       - name: Package reproducible RiftGecko release
         run: |
