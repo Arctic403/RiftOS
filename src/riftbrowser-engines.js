@@ -1,10 +1,11 @@
 const ENGINE_ID="wasm-gecko";
 const ENGINE_ROOT=new URL("../engines/gecko/",import.meta.url);
-const PROBE_FILE=new URL("vendor/gecko.js",ENGINE_ROOT);
+const PROBE_FILE=new URL("engine-manifest.json",ENGINE_ROOT);
 const HOST_FILE=new URL("index.html",ENGINE_ROOT);
+const ENGINE_MODULE=new URL("vendor/gecko.js",ENGINE_ROOT);
 const WISP_KEY="riftos.browser.wisp.v1";
 
-const state={checked:false,artifactReady:false,available:false,checking:null,error:null,checkedAt:0};
+const state={checked:false,artifactReady:false,available:false,checking:null,error:null,checkedAt:0,manifest:null};
 
 function normalizeWisp(value=""){
   const raw=String(value??"").trim();
@@ -28,10 +29,15 @@ async function probe({force=false}={}){
   if(state.checked&&!force)return {...state};
   state.checking=(async()=>{
     try{
-      const response=await fetch(PROBE_FILE,{method:"HEAD",cache:"no-store"});
-      state.artifactReady=response.ok;
-      state.error=response.ok?null:`engine artifact HTTP ${response.status}`;
+      const response=await fetch(PROBE_FILE,{cache:"no-store",headers:{Accept:"application/json"}});
+      if(!response.ok)throw new Error(`engine manifest HTTP ${response.status}`);
+      const manifest=await response.json();
+      if(manifest?.id!==ENGINE_ID)throw new Error("engine manifest id mismatch");
+      state.manifest=manifest;
+      state.artifactReady=true;
+      state.error=null;
     }catch(error){
+      state.manifest=null;
       state.artifactReady=false;
       state.error=error?.message||String(error);
     }
@@ -62,8 +68,10 @@ function info(){
     checked:state.checked,
     checkedAt:state.checkedAt,
     error:state.error,
+    manifest:state.manifest,
     host:HOST_FILE.href,
-    artifact:PROBE_FILE.href,
+    artifact:ENGINE_MODULE.href,
+    probe:PROBE_FILE.href,
     wisp:configuredWisp(),
     crossOriginIsolated:globalThis.crossOriginIsolated===true,
     requiresWebAssembly:true,
