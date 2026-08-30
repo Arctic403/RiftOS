@@ -2,7 +2,7 @@
 
 RiftWorkspace is the unsigned RiftKernel workspace boundary. It runs inside the same Apple WebKit host as RiftOS and stores its local sandbox through RiftFS, which uses OPFS when available and IndexedDB as the compatibility fallback.
 
-The workspace does **not** depend on `WKWebView`, Safari controller APIs, a signed iOS executable, WebAssembly, or direct access to the iPhone filesystem.
+The workspace does **not** depend on `WKWebView`, Safari controller APIs, a signed iOS executable, WebAssembly, Gecko, or direct access to the iPhone filesystem.
 
 ## Runtime path
 
@@ -81,7 +81,7 @@ Example response:
 }
 ```
 
-The bridge also accepts same-origin `postMessage` requests using `type: "riftworkspace:request"`. Cross-origin pages do not receive workspace access merely because they are displayed by WebKit.
+The bridge also accepts same-origin `postMessage` requests using `type: "riftworkspace:request"`. Cross-origin pages do not receive workspace access merely because they are displayed by a browser engine.
 
 ## Patch contract
 
@@ -95,12 +95,21 @@ The patch engine validates paths, overlapping operations, destination conflicts,
 
 RiftBrowser and RiftWorkspace are intentionally separate capabilities.
 
-A pure Home Screen web app cannot promote itself into a privileged Safari or `WKWebView` controller. CORS, CSP, frame restrictions, and same-origin rules still apply to arbitrary websites.
+The current unsigned RiftBrowser experiment runs Gecko compiled to WebAssembly inside the WebKit-hosted RiftOS environment. That changes how guest webpages are rendered, but it does **not** grant those webpages direct workspace authority.
 
-That browser ceiling does **not** block the workspace goal. RiftKernel owns its OPFS sandbox and can expose controlled JSON operations to RiftOS code without requiring privileged browser-engine access.
+```text
+RiftKernel
+  |-- RiftWorkspace -> RiftFS -> OPFS
+  |
+  `-- RiftBrowser -> Gecko WASM -> guest web content
+```
 
-The architecture rule is therefore:
+Guest pages may only interact with workspace data through an explicit, brokered JSON interface that RiftKernel chooses to expose. They never receive raw OPFS handles or unrestricted `window.RiftWorkspace` access.
 
-> RiftOS core and RiftWorkspace MUST NOT require WebAssembly or native iOS code to boot.
+This separation is the key design for future ChatGPT/workspace integration: the browser can host the AI surface while RiftKernel remains the trusted filesystem and patch authority.
 
-WebAssembly and the optional native host may add capabilities later, but neither is a dependency of the local workspace.
+## Architecture rule
+
+> RiftOS core and RiftWorkspace MUST NOT require WebAssembly, Gecko, or native iOS code to boot.
+
+WebAssembly and the optional native host may add capabilities, but neither is a dependency of the local workspace.
