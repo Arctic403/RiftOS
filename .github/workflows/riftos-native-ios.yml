@@ -2,9 +2,23 @@ name: Build RiftOS Native iOS shell
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'native/ios/**'
+      - '.github/workflows/riftos-native-ios.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native/ios/**'
+      - '.github/workflows/riftos-native-ios.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: riftos-native-ios-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ios-shell:
@@ -15,8 +29,19 @@ jobs:
       - name: Checkout RiftOS
         uses: actions/checkout@v4
 
+      - name: Show Apple toolchain
+        run: |
+          set -euxo pipefail
+          xcodebuild -version
+          swift --version
+
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          set -euxo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
 
       - name: Generate Xcode project
         working-directory: native/ios
@@ -32,5 +57,28 @@ jobs:
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/RiftOSDerivedData" \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            clean build | tee "$RUNNER_TEMP/riftos-native-xcodebuild.log"
+
+          test -d "$RUNNER_TEMP/RiftOSDerivedData/Build/Products/Debug-iphonesimulator/RiftOSNative.app"
+
+      - name: Upload simulator build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RiftOSNative-simulator-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/RiftOSDerivedData/Build/Products/Debug-iphonesimulator/RiftOSNative.app
+            ${{ runner.temp }}/riftos-native-xcodebuild.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RiftOSNative-failed-build-log-${{ github.sha }}
+          path: ${{ runner.temp }}/riftos-native-xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
