@@ -144,15 +144,12 @@ jobs:
 
           gecko_js=$(find /tmp/gecko-package -type f -path '*/dist/gecko.js' | head -n1)
           gecko_wasm=$(find /tmp/gecko-package -type f \( -name 'gecko.wasm' -o -name 'gecko.wasm.zst' \) | head -n1)
-          gecko_data=$(find /tmp/gecko-package -type f \( -name 'gecko.data' -o -name 'gecko.data.zst' \) | head -n1)
 
           test -n "$gecko_js" && test -s "$gecko_js"
           test -n "$gecko_wasm" && test -s "$gecko_wasm"
-          test -n "$gecko_data" && test -s "$gecko_data"
 
           cp "$gecko_js" /tmp/gecko-stage/vendor/gecko.js
           cp "$gecko_wasm" "/tmp/gecko-stage/vendor/$(basename "$gecko_wasm")"
-          cp "$gecko_data" "/tmp/gecko-stage/vendor/$(basename "$gecko_data")"
           curl -fL --retry 3 "$GECKO_LICENSE_URL" -o /tmp/gecko-stage/LICENSE.txt
 
           cat > /tmp/gecko-stage/engine-manifest.json <<'JSON'
@@ -163,6 +160,8 @@ jobs:
             "release": "v0.0.1",
             "license": "MPL-2.0",
             "lazy": true,
+            "servedArtifacts": ["gecko.js", "gecko.wasm.zst"],
+            "greData": "inlined into gecko.js release bundle",
             "requiresCrossOriginIsolation": true,
             "requiresWispForArbitraryNetworking": true
           }
@@ -194,6 +193,7 @@ jobs:
           test -s _site/engines/gecko/index.html
           test -s _site/engines/gecko/vendor/gecko.js
           test -s _site/engines/gecko/engine-manifest.json
+          find _site/engines/gecko/vendor -maxdepth 1 -type f -name 'gecko.wasm*' -size +1M | grep -q .
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
           echo "RiftKernel/WebKit payload with lazy Gecko engine:"
