@@ -61,14 +61,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config git curl tar xz-utils unzip \
-            python3 ripgrep ca-certificates fonts-dejavu-core zstd
+            python3 ripgrep ca-certificates fonts-dejavu-core zstd gperf
           cmake --version | head -1
           ninja --version
           python3 --version
+          gperf --version | head -1
 
       - name: Validate pinned helper source
         run: |
           set -euxo pipefail
+          command -v gperf
           test "$(git -C _riftwebkit-src rev-parse HEAD)" = "$HELPER_COMMIT"
           grep -F 'BIB_PTHREAD="${BIB_PTHREAD:-0}"' _riftwebkit-src/tools/build-webcore.sh
           grep -F 'WEBKIT_PIN="aec9d2ad958e716ab4bca4bf03007e6edac7323f"' _riftwebkit-src/tools/bootstrap.sh
