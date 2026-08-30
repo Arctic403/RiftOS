@@ -6,22 +6,33 @@
   <title>RiftBrowser Gecko Engine</title>
   <style>
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b0e13;color:#eef3fb;font:13px system-ui,-apple-system,sans-serif}
-    #host{position:fixed;inset:0;display:flex;flex-direction:column}
-    #status{display:flex;gap:8px;align-items:center;padding:6px 9px;background:#111720;border-bottom:1px solid rgba(255,255,255,.09);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    #status strong{font-size:11px;letter-spacing:.08em}#status span{opacity:.72;overflow:hidden;text-overflow:ellipsis}
+    #host{position:fixed;inset:0;display:flex;flex-direction:column;min-height:0}
+    #status{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:start;padding:7px 9px;background:#111720;border-bottom:1px solid rgba(255,255,255,.09);max-height:96px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;box-sizing:border-box}
+    #status strong{font-size:11px;letter-spacing:.08em;line-height:1.4;white-space:nowrap}
+    #status span{opacity:.82;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;line-height:1.4;min-width:0}
+    #tracePanel{display:flex;flex-direction:column;max-height:150px;min-height:72px;background:#080b10;border-bottom:1px solid rgba(255,255,255,.09)}
+    #tracePanel.hidden{display:none}
+    #traceHead{display:flex;align-items:center;gap:8px;padding:5px 8px;background:#0d1219;border-bottom:1px solid rgba(255,255,255,.07);font-size:10px;letter-spacing:.06em}
+    #traceHead strong{flex:1}
+    #traceHead button{border:1px solid rgba(255,255,255,.13);background:#151c26;color:#eef3fb;border-radius:8px;padding:5px 8px;font:600 10px system-ui,-apple-system,sans-serif}
+    #liveTrace{flex:1;min-height:0;margin:0;padding:7px 9px 10px;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;overscroll-behavior:contain;white-space:pre;word-break:normal;font:10px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#b9c8da;user-select:text;-webkit-user-select:text}
     #screen{display:block;flex:1;width:100%;min-height:0;background:#fff;touch-action:none}
-    #error{display:none;position:absolute;inset:34px 0 0;background:#10151d;color:#eef3fb;overflow:hidden;z-index:20;touch-action:pan-y}
+    #error{display:none;position:absolute;inset:0;background:#10151d;color:#eef3fb;overflow:hidden;z-index:20;touch-action:pan-y}
     #error.show{display:block}
     #errorBar{position:absolute;inset:0 0 auto 0;height:52px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#151c26;border-bottom:1px solid rgba(255,255,255,.1);z-index:2}
     #errorBar strong{font-size:15px;flex:1}
     #errorBar button{border:1px solid rgba(255,255,255,.15);background:#202936;color:#eef3fb;border-radius:10px;padding:8px 11px;font:600 12px system-ui,-apple-system,sans-serif}
-    #errorScroll{position:absolute;inset:52px 0 0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;padding:14px 14px calc(28px + env(safe-area-inset-bottom));box-sizing:border-box}
+    #errorScroll{position:absolute;inset:52px 0 0;overflow-y:auto;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-x pan-y;padding:14px 14px calc(28px + env(safe-area-inset-bottom));box-sizing:border-box}
     #errorText{display:block;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;user-select:text;-webkit-user-select:text}
   </style>
 </head>
 <body>
   <main id="host">
     <div id="status"><strong>GECKO WASM</strong><span id="statusText">Booting engine…</span></div>
+    <section id="tracePanel">
+      <div id="traceHead"><strong>LIVE BOOT TRACE</strong><button type="button" id="copyLive">Copy live</button><button type="button" id="jumpLive">Latest</button></div>
+      <pre id="liveTrace">Waiting for Gecko bootstrap…</pre>
+    </section>
     <canvas id="screen" width="1024" height="768" tabindex="0"></canvas>
     <section id="error">
       <div id="errorBar"><strong>Engine diagnostics</strong><button type="button" id="copyTrace">Copy trace</button><button type="button" id="jumpTrace">Latest</button></div>
@@ -33,6 +44,11 @@
     const target=params.get("url")||"data:text/html,<h1>RiftBrowser</h1>";
     const wisp=params.get("wisp")||"";
     const status=document.querySelector("#statusText");
+    const statusBar=document.querySelector("#status");
+    const tracePanel=document.querySelector("#tracePanel");
+    const liveTrace=document.querySelector("#liveTrace");
+    const copyLive=document.querySelector("#copyLive");
+    const jumpLive=document.querySelector("#jumpLive");
     const errorBox=document.querySelector("#error");
     const errorScroll=document.querySelector("#errorScroll");
     const errorText=document.querySelector("#errorText");
@@ -46,16 +62,22 @@
     let phase="Host preflight";
     let lastDiagnosticText="";
     const elapsed=()=>((performance.now()-bootStarted)/1000).toFixed(1);
+    const syncLiveTrace=()=>{
+      liveTrace.textContent=bootTrace.length?bootTrace.join("\n"):"Waiting for Gecko bootstrap…";
+      requestAnimationFrame(()=>{liveTrace.scrollTop=liveTrace.scrollHeight;liveTrace.scrollLeft=0;});
+    };
     const trace=(message)=>{
       const line=`[${elapsed()}s] ${message}`;
       bootTrace.push(line);
-      if(bootTrace.length>48)bootTrace.shift();
+      if(bootTrace.length>96)bootTrace.shift();
+      syncLiveTrace();
       console.info("[RiftBrowser Gecko]",line);
       return line;
     };
     const mark=(next,detail="")=>{
       phase=next;
       status.textContent=detail?`${next} · ${detail}`:next;
+      statusBar.scrollTop=statusBar.scrollHeight;
       trace(detail?`${next}: ${detail}`:next);
       tell("phase",{phase,detail,elapsedSeconds:Number(elapsed())});
     };
@@ -70,22 +92,24 @@
       else if(line.includes("READY cmd="))mark("Gecko READY");
       if(kind==="stderr")console.warn("[Gecko]",line);else console.log("[Gecko]",line);
     };
-    const copyDiagnostic=async()=>{
-      const text=lastDiagnosticText||errorText.textContent||"";
+
+    async function copyText(text,button,resetLabel){
       if(!text)return;
       try{
         await navigator.clipboard.writeText(text);
-        copyTrace.textContent="Copied";
+        button.textContent="Copied";
       }catch{
         const area=document.createElement("textarea");
         area.value=text;area.setAttribute("readonly","");area.style.position="fixed";area.style.opacity="0";
         document.body.append(area);area.select();
-        try{document.execCommand("copy");copyTrace.textContent="Copied";}catch{copyTrace.textContent="Select trace";}
+        try{document.execCommand("copy");button.textContent="Copied";}catch{button.textContent="Select text";}
         area.remove();
       }
-      setTimeout(()=>{copyTrace.textContent="Copy trace";},1400);
-    };
-    copyTrace.onclick=copyDiagnostic;
+      setTimeout(()=>{button.textContent=resetLabel;},1400);
+    }
+    copyLive.onclick=()=>copyText(bootTrace.join("\n"),copyLive,"Copy live");
+    jumpLive.onclick=()=>{liveTrace.scrollTop=liveTrace.scrollHeight;};
+    copyTrace.onclick=()=>copyText(lastDiagnosticText||errorText.textContent||"",copyTrace,"Copy trace");
     jumpTrace.onclick=()=>{errorScroll.scrollTop=errorScroll.scrollHeight;};
 
     const fail=error=>{
@@ -107,9 +131,6 @@
       const nativeJSPI=typeof WebAssembly.Suspending==="function"&&typeof WebAssembly.promising==="function";
       if(nativeJSPI)return {nativeJSPI:true,softwareFallback:false};
 
-      // firefox-wasm v0.0.1 manually wires JSPI only for its GPU present/yield path.
-      // RiftOS boots Gecko in software-composited mode on iOS. These shims restore
-      // the synchronous pthread behavior required by that path; they are NOT JSPI.
       const SuspendingFallback=function RiftSoftwareSuspendingFallback(fn){return fn;};
       const promisingFallback=fn=>(...args)=>{
         try{return Promise.resolve(fn(...args));}
@@ -142,9 +163,6 @@
 
       const env={
         GECKO_NOWASMJIT:"1",
-        // v0.0.1 normally mounts its profile through WasmFS native OPFS. Safari is
-        // currently hanging during startup, so isolate engine boot from profile
-        // persistence first. Upstream explicitly provides this diagnostic escape.
         GECKO_SKIP_OPFS:"1"
       };
       if(env.GECKO_GPU)throw new Error("Safari software JSPI compatibility cannot be used with Gecko GPU mode.");
@@ -177,10 +195,12 @@
         const safeTarget=String(target).replace(/[<>&"']/g,"");
         const start=`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta name="viewport" content="width=device-width"><style>body{font:16px system-ui;padding:24px;line-height:1.45}code{word-break:break-all}</style><h1>Gecko engine ready</h1><p>RiftBrowser successfully booted Firefox Gecko inside RiftOS.</p><p>Safari diagnostic mode currently uses an ephemeral Gecko profile. RiftOS storage is unaffected.</p><p>Configure a Wisp endpoint to browse external HTTPS sites.</p><p>Requested: <code>${safeTarget}</code></p>`)}`;
         mark("Engine ready","Wisp required for external sites");
+        tracePanel.classList.add("hidden");
         await gecko.load(start);
         tell("loaded",{url:start,engineReady:true,wispRequired:true,requested:target});
       }else{
         mark("Loading page",target);
+        tracePanel.classList.add("hidden");
         await gecko.load(target);
         status.textContent=target;
         tell("loaded",{url:target,engineReady:true});
