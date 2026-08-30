@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+trap 'status=$?; echo "RiftWebKit wrapper failed at line ${LINENO}: ${BASH_COMMAND} (exit ${status})" >&2' ERR
+
 if [ "$#" -ne 1 ]; then
   echo "usage: $0 <WebkitWasm helper checkout>" >&2
   exit 2
@@ -26,8 +28,16 @@ command -v emcmake >/dev/null
 command -v ninja >/dev/null
 emcc --version | head -1
 
-ICU_DATA="$SYSROOT/share/icu/77.1/icudt77l.dat"
-test -s "$ICU_DATA"
+# ICU's archive data location is install-layout dependent. The pinned helper
+# currently installs it below lib/icu, while some ICU layouts use share/icu.
+# Discover the archive from the sysroot rather than assuming either layout.
+ICU_DATA="$(find "$SYSROOT" -type f -name 'icudt*.dat' -print -quit)"
+if [ -z "$ICU_DATA" ] || [ ! -s "$ICU_DATA" ]; then
+  echo "RiftWebKit ICU archive was not found below $SYSROOT." >&2
+  find "$SYSROOT" -maxdepth 5 -type f \( -name 'icudt*' -o -path '*/icu/*' \) -print >&2 || true
+  exit 4
+fi
+echo "RiftWebKit ICU archive: $ICU_DATA"
 
 # Minimal runtime font tree. The sysroot conf.d entries are install-root
 # symlinks, so stage real files for Emscripten's --embed-file packager.
