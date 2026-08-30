@@ -29,7 +29,6 @@
 #include <pal/SessionID.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/ProcessPrivilege.h>
-#include <wtf/RunLoop.h>
 #include <wtf/text/WTFString.h>
 
 WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
@@ -38,6 +37,7 @@ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_BEGIN
 #include <skia/core/SkSurface.h>
 WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -118,7 +118,7 @@ void sendMouseMove(double x, double y)
     WebCore::PlatformMouseEvent event(
         { x, y }, { x, y }, WebCore::MouseButton::None,
         WebCore::PlatformEvent::Type::MouseMoved, 0, { },
-        MonotonicTime::now(), 0, WebCore::SyntheticClickType::NoTap);
+        WTF::MonotonicTime::now(), 0, WebCore::SyntheticClickType::NoTap);
     gEngine->frame->eventHandler().mouseMoved(event);
 }
 
@@ -129,7 +129,7 @@ void sendMouseButton(bool down, double x, double y)
     WebCore::PlatformMouseEvent event(
         { x, y }, { x, y }, WebCore::MouseButton::Left,
         down ? WebCore::PlatformEvent::Type::MousePressed : WebCore::PlatformEvent::Type::MouseReleased,
-        1, { }, MonotonicTime::now(), 0, WebCore::SyntheticClickType::NoTap);
+        1, { }, WTF::MonotonicTime::now(), 0, WebCore::SyntheticClickType::NoTap);
     if (down)
         gEngine->frame->eventHandler().handleMousePressEvent(event);
     else
@@ -163,8 +163,7 @@ EMSCRIPTEN_KEEPALIVE int rift_pointer(int type, double x, double y)
     else
         return 0;
 
-    // Let synchronous WebCore work settle, then expose the visual result.
-    WTF::RunLoop::mainSingleton().cycle();
+    // WebCore's press/release dispatch is synchronous for this local page.
     pushFrame();
     return 1;
 }
@@ -219,7 +218,7 @@ int main()
     const auto html = std::span(
         reinterpret_cast<const uint8_t*>(kProbeHTML), std::strlen(kProbeHTML));
     documentLoader->writer().setMIMEType("text/html"_s);
-    documentLoader->writer().begin(WebCore::URL());
+    documentLoader->writer().begin({ });
     documentLoader->writer().addData(WebCore::SharedBuffer::create(html));
     documentLoader->writer().end();
 
