@@ -27,6 +27,7 @@ function validManifest(manifest){return /^riftwebkit(?:-|$)/.test(String(manifes
 function manifestRequiresWisp(manifest=state.manifest){return manifest?.requiresWisp===true||manifest?.requiresWispForArbitraryNetworking===true;}
 function transportReady(manifest=state.manifest){return !manifestRequiresWisp(manifest)||!!configuredWisp();}
 function browsingReady(manifest=state.manifest){return state.available&&manifest?.networking===true&&manifest?.guestJavaScript===true&&transportReady(manifest);}
+function prefersDirectGPU(manifest=state.manifest){return manifest?.id==="riftwebkit-mobile"&&manifest?.threaded===false&&manifest?.gpuCapable===true;}
 
 async function probe({force=false}={}){
   if(state.checking)return state.checking;
@@ -55,7 +56,10 @@ async function probe({force=false}={}){
 function frameURL(target,{wisp=configuredWisp()}={}){
   const url=new URL(HOST_FILE.href);
   url.searchParams.set("embed","1");
-  url.searchParams.set("gpu","0");
+  // The full single-threaded mobile build owns #screen's WebGL2 context directly.
+  // This avoids the CPU raster -> JS byte copy -> putImageData path. The pinned
+  // helper has its own automatic GPU failure/loss fallback back to ?gpu=0.
+  url.searchParams.set("gpu",prefersDirectGPU()?"1":"0");
   const normalized=String(target||"").trim();
   const needsWisp=manifestRequiresWisp();
   const canNavigate=!needsWisp||!!wisp;
@@ -70,6 +74,7 @@ function info(){
   const requiresWisp=manifestRequiresWisp(manifest);
   const transport=transportReady(manifest);
   const ready=browsingReady(manifest);
+  const directGPU=prefersDirectGPU(manifest);
   return {
     id:ENGINE_ID,
     name:"RiftWebKit Mobile",
@@ -96,6 +101,8 @@ function info(){
     guestJavaScript:manifest?.guestJavaScript===true,
     persistence:manifest?.persistence===true,
     threaded:manifest?.threaded===true,
+    directGPU,
+    presentation:directGPU?"gpu-implicit-webgl2":"raster-2d",
     viewport:manifest?.viewport||{width:390,height:844},
     source:"theogbob/WebkitWasm pinned Emscripten WebCore/JSC port"
   };
