@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v31-riftfirewall";
+const CACHE="riftos-shell-v32-riftbrowser-warm-runtime";
 // Keep the expensive WebKit payload independent from fast-moving RiftOS shell
 // revisions. Bump this only when the published mobile engine build changes.
 const ENGINE_CACHE="riftwebkit-engine-c6126db7";
@@ -14,6 +14,7 @@ const CORE=[
   "./src/riftbrowser-engines.js",
   "./src/riftbrowser-kernel.js",
   "./src/riftbrowser-ui.js",
+  "./src/riftbrowser-ui-runtime.js",
   "./src/riftbrowser-ui.css",
   "./src/riftos.js",
   "./src/riftapps.js",
@@ -44,13 +45,6 @@ async function webKitHostResponse(request,url){
     html=html.replace("</head>",`<style id="${marker}">#bibfreeze{display:none!important}html body #screenwrap{overflow:hidden!important}html body #screen{display:block!important;width:100%!important;height:auto!important;max-width:100%!important;aspect-ratio:390/844!important}</style></head>`);
   }
 
-  // The helper's compatibility host imports a 13+ MB Binaryen compiler before
-  // it will append embedder.js. That is useful for guest WebAssembly shimming on
-  // complex external sites, but it is wasted work while RiftBrowser has no Wisp
-  // transport and can only run the local diagnostic page. In fastboot mode we
-  // replace only that import with an already-resolved null module. The helper's
-  // existing wasmShimReady logic then disables the guest-WASM shim and boots
-  // WebCore immediately. Real Wisp browsing never receives this rewrite.
   if(url.searchParams.get("fastboot")==="1"){
     const binaryenImport='import("./vendor/binaryen.js").then((m) => { binaryen = m.default; }),';
     const binaryenSkip='Promise.resolve().then(() => { binaryen = null; }),';
@@ -107,10 +101,6 @@ self.addEventListener("fetch",event=>{
     })());return;
   }
 
-  // The WASM/JS/vendor payload is immutable for this engine build and very
-  // large. Cache-first avoids re-fetching/revalidating it after ordinary shell
-  // updates. The manifest + host HTML remain network-first so runtime fixes can
-  // ship instantly without rebuilding WebKit.
   if(isEngineHeavy){
     event.respondWith((async()=>{
       const cache=await caches.open(ENGINE_CACHE);
