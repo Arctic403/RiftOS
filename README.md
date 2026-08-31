@@ -19,13 +19,13 @@ RiftKernel
  |            |             |
 RiftFS    RiftWorkspace   RiftBrowser
   |            |             |
- OPFS       JSON API      Engine Adapter
+ OPFS       JSON API      RiftWebKit
   |                          |
- IndexedDB                 Gecko WASM
+ IndexedDB            WebCore + JSC + Skia
  compatibility                |
- mirror                    canvas
+ mirror                      WASM
                               |
-                         Wisp transport
+                         canvas + Wisp
 ```
 
 RiftKernel is **not the iOS kernel**. It is a user-space OS runtime implemented in JavaScript on top of WebKit capabilities. Apple still controls device-level privileges and signing for native executable code.
@@ -42,66 +42,52 @@ The stable RiftOS boundary is:
 - Web Workers and web-platform capabilities when available
 - RiftApps and RiftDev
 
-RiftOS core and RiftWorkspace **MUST NOT require WebAssembly or native iOS code to boot**.
+RiftOS core and RiftWorkspace **MUST NOT require the RiftWebKit WASM browser engine to boot**.
 
 ## RiftWorkspace
 
 `src/riftworkspace-web.js` exposes the unsigned workspace boundary through `window.RiftWorkspace` and `window.RiftWorkspaceJSON`.
 
-```text
-RiftApp / AI bridge
-        |
-RiftWorkspace JSON API
-        |
-      RiftFS
-        |
-       OPFS
-```
-
 The workspace supports list/stat/read/write/mkdir/remove/move, snapshots, patch preview/apply, history and rollback. Guest browser pages do not receive direct RiftWorkspace or OPFS capabilities.
 
 ## RiftBrowser
 
-RiftBrowser is currently an **experimental engine browser**, not a stable browser product.
+RiftBrowser is now a **WebKit-only browser path**.
 
 ```text
 RiftKernel.browser
        |
-RiftBrowser Engine Adapter
+RiftWebKit Mobile host
        |
-Gecko compiled to WebAssembly
+WebCore + JavaScriptCore + Skia
        |
-     canvas
+ WebAssembly canvas
        |
 Wisp WebSocket transport
 ```
 
-The primary unsigned browser experiment is the MPL-2.0 `HeyPuter/firefox-wasm` `gecko.js` engine. Gecko is downloaded/staged during Pages deployment and lazy-loaded only when RiftBrowser is opened.
+The engine port is pinned to `theogbob/WebkitWasm` and the exact WebKit/Emscripten commits recorded by the RiftWebKit workflows. The proven `riftwebkit-poc-v1` artifact is the compile/runtime safety baseline. The full `riftwebkit-mobile-v1` build adds real URL loading, guest JavaScript, networking, cookies/storage and persistence while remaining single-threaded for the initial iPhone target.
 
-The old CORS fetch/sanitize/`srcdoc` browser transport has been removed. If Gecko is unavailable, RiftBrowser reports that no rendering engine is available and can hand the URL to the host browser; it does not pretend a CORS document fetch is a browser engine.
+The old Gecko WASM route and the signed native browser backend are retired. The old CORS fetch/sanitize/`srcdoc` transport also remains removed.
 
-Arbitrary external networking from Gecko requires a configured Wisp endpoint. Browser-engine failure must not prevent RiftKernel, RiftFS, OPFS, RiftWorkspace or the rest of RiftOS from working.
-
-## Optional native capability host
-
-`native/ios/` remains optional for future capabilities such as a signed `WKWebView` browser surface or native filesystem integration.
-
-Native Swift/ARM execution on a physical iPhone still requires Apple-authorized signing. The unsigned RiftKernel web runtime does not.
+Arbitrary external networking from the nested WebCore engine uses a configured Wisp endpoint. Browser-engine failure must not prevent RiftKernel, RiftFS, OPFS, RiftWorkspace or the rest of RiftOS from working.
 
 ## GitHub Actions
 
-`.github/workflows/riftos-pages.yml` is the primary product workflow. It validates the JS-first kernel/workspace architecture, stages the pinned Gecko WASM release, deploys the generated RiftOS artifact, and verifies the live engine manifest.
+`.github/workflows/riftos-pages.yml` validates and deploys the WebKit-only RiftOS runtime.
 
-`.github/workflows/riftos-native-ios.yml` remains optional/manual-only.
+`.github/workflows/riftwebkit-poc.yml` preserves the proven WebCore/JSC/Skia survival build.
+
+`.github/workflows/riftwebkit-mobile.yml` builds the full single-threaded mobile RiftWebKit engine package and publishes it for Pages to consume.
 
 ## Architecture rules
 
-1. RiftKernel and RiftWorkspace boot without WASM or native iOS code.
-2. Gecko WASM is an optional, replaceable RiftBrowser service.
-3. RiftBrowser does not contain a fake CORS/iframe browser backend.
+1. RiftKernel and RiftWorkspace boot without the browser WASM engine.
+2. RiftBrowser has one engine ID: `riftwebkit`.
+3. RiftBrowser does not contain Gecko, a signed native browser fallback, or a fake CORS/iframe browser backend.
 4. Guest pages never receive raw RiftFS/OPFS workspace capability.
-5. Wisp is transport for the guest engine, not the RiftKernel.
-6. Native WebKit remains an optional signed capability adapter, not the definition of RiftOS.
+5. Wisp is transport for the guest engine, not RiftKernel authority.
+6. Heavy engine artifacts load lazily.
 
 See:
 
