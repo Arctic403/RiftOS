@@ -5,12 +5,8 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - '.github/workflows/riftos-native-ios.yml'
-      - '.github/workflows/riftgecko-mobile.yml'
       - '.github/workflows/riftwebkit-poc.yml'
-      - 'native/ios/**'
-      - 'engines/gecko/riftgecko-mobile-profile.py'
-      - 'engines/gecko/RIFTGECKO_MOBILE.md'
+      - '.github/workflows/riftwebkit-mobile.yml'
       - 'engines/webkit-poc/riftwebkit-probe.cpp'
       - 'engines/webkit-poc/riftwebkit-embedder.cmake'
       - 'engines/webkit-poc/build-riftwebkit.sh'
@@ -23,7 +19,7 @@ permissions:
 
 jobs:
   site:
-    name: Validate unsigned RiftKernel/WebKit runtime
+    name: Validate unsigned RiftKernel/RiftWebKit runtime
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -62,14 +58,14 @@ jobs:
           grep -F 'navigator.storage?.getDirectory' src/riftcore.js
           grep -F 'mode:"local-sandbox"' src/riftworkspace-web.js
           grep -F 'window.RiftWorkspaceJSON' src/riftworkspace-web.js
-          grep -F 'RiftOS core and RiftWorkspace MUST NOT require WebAssembly, Gecko, or native iOS code to boot.' docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md
+          grep -F 'RiftOS core and RiftWorkspace MUST NOT require the RiftWebKit WASM engine to boot.' docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md
           grep -F 'RiftOS core MUST NOT require WebAssembly to boot.' docs/RIFTBROWSER_ARCHITECTURE.md
-          grep -F 'ENGINE_ID="wasm-gecko"' src/riftbrowser-engines.js
+          grep -F 'ENGINE_ID="riftwebkit"' src/riftbrowser-engines.js
           grep -F 'engine-manifest.json' src/riftbrowser-engines.js
           grep -F 'stableBrowser:false' src/riftbrowser-kernel.js
-          grep -F 'BACKENDS=["auto","wasm-gecko","native-webkit"]' src/riftbrowser-kernel.js
+          grep -F 'BACKENDS=["riftwebkit"]' src/riftbrowser-kernel.js
           grep -F 'mode:"unavailable"' src/riftbrowser-kernel.js
-          grep -F 'Cross-Origin-Embedder-Policy' sw.js
+          grep -F '/engines/webkit/' sw.js
           grep -F 'workspaceJSON' src/riftruntime.js
           grep -F 'riftkernel-webkit' src/riftruntime.js
           grep -F 'appSigningRequiredForKernel:false' src/riftruntime.js
@@ -81,8 +77,8 @@ jobs:
           grep -F 'RiftKernel first' docs/TRUE_OS_ARCHITECTURE.md
           grep -F 'Unsigned WebKit Runtime Validation' docs/UNSIGNED_WEBKIT_RUNTIME.md
 
-          if grep -R -n -E 'The production runtime is \*\*RiftOS Native\*\*|native-first custom iOS browser' README.md docs index.html; then
-            echo 'Legacy native-first architecture wording is still present.' >&2
+          if grep -n -E 'wasm-gecko|native-webkit|Gecko WASM' src/riftbrowser-engines.js src/riftbrowser-kernel.js src/riftbrowser-ui.js; then
+            echo 'Dead-end Gecko/native RiftBrowser backend references remain.' >&2
             exit 1
           fi
 
@@ -146,110 +142,44 @@ jobs:
             echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Fetch preferred Gecko WASM engine package
+      - name: Fetch RiftWebKit engine package
         env:
-          RIFTGECKO_RELEASE_URL: https://github.com/Arctic403/RiftOS/releases/download/riftgecko-mobile-v1/riftgecko-mobile-v1.tar.gz
-          UPSTREAM_RELEASE_URL: https://github.com/HeyPuter/firefox-wasm/releases/download/v0.0.1/gecko.js-v0.0.1.tar.gz
-          GECKO_LICENSE_URL: https://raw.githubusercontent.com/HeyPuter/firefox-wasm/master/LICENSE
-        run: |
-          set -euxo pipefail
-          rm -rf /tmp/gecko-package /tmp/gecko-stage /tmp/gecko.tar.gz
-          mkdir -p /tmp/gecko-package /tmp/gecko-stage/vendor
-
-          engine_source='HeyPuter/firefox-wasm'
-          engine_release='v0.0.1'
-          mobile=false
-          if curl -fL --retry 2 --retry-delay 1 "$RIFTGECKO_RELEASE_URL" -o /tmp/gecko.tar.gz; then
-            engine_source='Arctic403/RiftOS RiftGecko Mobile'
-            engine_release='riftgecko-mobile-v1'
-            mobile=true
-            echo 'Using RiftGecko Mobile release.'
-          else
-            echo 'RiftGecko Mobile release not available yet; using pinned upstream v0.0.1.'
-            rm -f /tmp/gecko.tar.gz
-            curl -fL --retry 3 --retry-delay 2 "$UPSTREAM_RELEASE_URL" -o /tmp/gecko.tar.gz
-          fi
-
-          tar -xzf /tmp/gecko.tar.gz -C /tmp/gecko-package
-          gecko_js=$(find /tmp/gecko-package -type f -path '*/dist/gecko.js' | head -n1)
-          gecko_wasm=$(find /tmp/gecko-package -type f -name 'gecko.wasm.zst' | head -n1)
-          test -n "$gecko_js" && test -s "$gecko_js"
-          test -n "$gecko_wasm" && test -s "$gecko_wasm"
-
-          cp "$gecko_js" /tmp/gecko-stage/vendor/gecko.js
-          cp "$gecko_wasm" /tmp/gecko-stage/vendor/gecko.wasm.zst
-
-          packaged_license=$(find /tmp/gecko-package -type f -name LICENSE | head -n1 || true)
-          if [ -n "$packaged_license" ] && [ -s "$packaged_license" ]; then
-            cp "$packaged_license" /tmp/gecko-stage/LICENSE.txt
-          else
-            curl -fL --retry 3 "$GECKO_LICENSE_URL" -o /tmp/gecko-stage/LICENSE.txt
-          fi
-          grep -F 'Mozilla Public License Version 2.0' /tmp/gecko-stage/LICENSE.txt
-
-          packaged_profile=$(find /tmp/gecko-package -type f -name RIFTGECKO_MOBILE_PROFILE.json | head -n1 || true)
-          if [ -n "$packaged_profile" ] && [ -s "$packaged_profile" ]; then
-            cp "$packaged_profile" /tmp/gecko-stage/RIFTGECKO_MOBILE_PROFILE.json
-          fi
-
-          python3 - "$engine_source" "$engine_release" "$mobile" <<'PY'
-          import json, sys
-          source, release, mobile = sys.argv[1], sys.argv[2], sys.argv[3] == 'true'
-          manifest = {
-              'id': 'wasm-gecko',
-              'name': 'RiftGecko Mobile' if mobile else 'Gecko WASM',
-              'source': source,
-              'release': release,
-              'license': 'MPL-2.0',
-              'lazy': True,
-              'servedArtifacts': ['gecko.js', 'gecko.wasm.zst'],
-              'greData': 'inlined into gecko.js release bundle',
-              'requiresCrossOriginIsolation': True,
-              'requiresWispForArbitraryNetworking': True,
-              'mobileProfile': mobile,
-          }
-          if mobile:
-              manifest.update({
-                  'upstream': 'HeyPuter/firefox-wasm@eadcb5fa828d7e8b54ae2df13b6b3208f6553944',
-                  'initialMemoryMiB': 256,
-                  'maximumMemoryMiB': 1024,
-                  'stackMiB': 16,
-                  'pthreadPoolSize': 4,
-                  'manualGpuJSPI': False,
-              })
-          with open('/tmp/gecko-stage/engine-manifest.json', 'w', encoding='utf-8') as f:
-              json.dump(manifest, f, indent=2)
-              f.write('\n')
-          PY
-
-          du -sh /tmp/gecko-stage
-          cat /tmp/gecko-stage/engine-manifest.json
-
-      - name: Fetch optional RiftWebKit Safari probe package
-        env:
-          RIFTWEBKIT_RELEASE_URL: https://github.com/Arctic403/RiftOS/releases/download/riftwebkit-poc-v1/riftwebkit-poc-v1.tar.gz
+          RIFTWEBKIT_MOBILE_URL: https://github.com/Arctic403/RiftOS/releases/download/riftwebkit-mobile-v1/riftwebkit-mobile-v1.tar.gz
+          RIFTWEBKIT_PROOF_URL: https://github.com/Arctic403/RiftOS/releases/download/riftwebkit-poc-v1/riftwebkit-poc-v1.tar.gz
         run: |
           set -euxo pipefail
           rm -rf /tmp/riftwebkit-package /tmp/riftwebkit-stage /tmp/riftwebkit.tar.gz
           mkdir -p /tmp/riftwebkit-package /tmp/riftwebkit-stage
-          cp engines/webkit-poc/engine-manifest.json /tmp/riftwebkit-stage/engine-manifest.json
 
-          if curl -fL --retry 2 --retry-delay 1 "$RIFTWEBKIT_RELEASE_URL" -o /tmp/riftwebkit.tar.gz; then
+          if curl -fL --retry 2 --retry-delay 1 "$RIFTWEBKIT_MOBILE_URL" -o /tmp/riftwebkit.tar.gz; then
+            echo 'Using full RiftWebKit Mobile release.'
             tar -xzf /tmp/riftwebkit.tar.gz -C /tmp/riftwebkit-package
             packaged_manifest=$(find /tmp/riftwebkit-package -type f -name engine-manifest.json | head -n1)
             test -n "$packaged_manifest" && test -s "$packaged_manifest"
             package_root=$(dirname "$packaged_manifest")
-            rm -rf /tmp/riftwebkit-stage
-            mkdir -p /tmp/riftwebkit-stage
             cp -a "$package_root/." /tmp/riftwebkit-stage/
+            test -s /tmp/riftwebkit-stage/index.html
+            test -s /tmp/riftwebkit-stage/engine/embedder.js
+            test -s /tmp/riftwebkit-stage/engine/embedder.wasm
+            grep -F '"id": "riftwebkit-mobile"' /tmp/riftwebkit-stage/engine-manifest.json
+          else
+            echo 'Full mobile release is not published yet; using the proven RiftWebKit proof artifact.'
+            rm -rf /tmp/riftwebkit-package /tmp/riftwebkit-stage /tmp/riftwebkit.tar.gz
+            mkdir -p /tmp/riftwebkit-package /tmp/riftwebkit-stage
+            curl -fL --retry 3 --retry-delay 2 "$RIFTWEBKIT_PROOF_URL" -o /tmp/riftwebkit.tar.gz
+            tar -xzf /tmp/riftwebkit.tar.gz -C /tmp/riftwebkit-package
+            packaged_manifest=$(find /tmp/riftwebkit-package -type f -name engine-manifest.json | head -n1)
+            test -n "$packaged_manifest" && test -s "$packaged_manifest"
+            package_root=$(dirname "$packaged_manifest")
+            cp -a "$package_root/." /tmp/riftwebkit-stage/
+            cp engines/webkit-poc/index.html /tmp/riftwebkit-stage/index.html
             test -s /tmp/riftwebkit-stage/runtime/riftwebkit.js
             test -s /tmp/riftwebkit-stage/runtime/riftwebkit.wasm
-            grep -F '"available": true' /tmp/riftwebkit-stage/engine-manifest.json
-            echo 'Using RiftWebKit Safari probe release.'
-          else
-            echo 'RiftWebKit Safari probe release not available yet; deploying pending probe host only.'
+            grep -F '"id": "riftwebkit-poc"' /tmp/riftwebkit-stage/engine-manifest.json
           fi
 
+          test -s /tmp/riftwebkit-stage/index.html
+          test -s /tmp/riftwebkit-stage/engine-manifest.json
           cat /tmp/riftwebkit-stage/engine-manifest.json
           du -sh /tmp/riftwebkit-stage
 
@@ -257,15 +187,12 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf _site
-          mkdir -p _site/src _site/apps/riftdev _site/engines/gecko _site/engines/webkit-poc
+          mkdir -p _site/src _site/apps/riftdev _site/engines/webkit
 
           cp index.html styles.css sw.js manifest.webmanifest _site/
           cp -a src/. _site/src/
           cp -a apps/riftdev/. _site/apps/riftdev/
-          cp engines/gecko/index.html _site/engines/gecko/index.html
-          cp -a /tmp/gecko-stage/. _site/engines/gecko/
-          cp engines/webkit-poc/index.html _site/engines/webkit-poc/index.html
-          cp -a /tmp/riftwebkit-stage/. _site/engines/webkit-poc/
+          cp -a /tmp/riftwebkit-stage/. _site/engines/webkit/
 
           test -s _site/src/riftcore.js
           test -s _site/src/riftworkspace-web.js
@@ -276,23 +203,13 @@ jobs:
           test -s _site/src/riftbrowser-ui.css
           test -s _site/apps/riftdev/index.html
           test -s _site/apps/riftdev/riftos-overlay.js
-          test -s _site/engines/gecko/index.html
-          test -s _site/engines/gecko/vendor/gecko.js
-          test -s _site/engines/gecko/vendor/gecko.wasm.zst
-          test -s _site/engines/gecko/engine-manifest.json
-          test -s _site/engines/gecko/LICENSE.txt
-          test -s _site/engines/webkit-poc/index.html
-          test -s _site/engines/webkit-poc/engine-manifest.json
-          grep -F '"id": "riftwebkit-poc"' _site/engines/webkit-poc/engine-manifest.json
-          if grep -Fq '"available": true' _site/engines/webkit-poc/engine-manifest.json; then
-            test -s _site/engines/webkit-poc/runtime/riftwebkit.js
-            test -s _site/engines/webkit-poc/runtime/riftwebkit.wasm
-          fi
+          test -s _site/engines/webkit/index.html
+          test -s _site/engines/webkit/engine-manifest.json
+          grep -E '"id": "riftwebkit-(mobile|poc)"' _site/engines/webkit/engine-manifest.json
           grep -F 'riftos-overlay.js?v=3' _site/apps/riftdev/index.html
 
-          echo "RiftKernel/WebKit payload with lazy Gecko and optional RiftWebKit probe:"
+          echo 'RiftKernel payload with one RiftWebKit browser engine:'
           du -sh _site
-
           payload_bytes=$(du -sb _site | cut -f1)
           max_bytes=$((768 * 1024 * 1024))
           if [ "$payload_bytes" -gt "$max_bytes" ]; then
@@ -311,19 +228,15 @@ jobs:
         run: |
           set -euo pipefail
           legacy_id=""
-
           for _ in $(seq 1 8); do
-            legacy_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=20" \
-              --jq '.workflow_runs[] | select(.name == "pages build and deployment") | .id' | head -n1 || true)
+            legacy_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=20" --jq '.workflow_runs[] | select(.name == "pages build and deployment") | .id' | head -n1 || true)
             if [ -n "$legacy_id" ]; then break; fi
             sleep 2
           done
-
           if [ -z "$legacy_id" ]; then
-            echo "No legacy branch Pages deployment detected; generated artifact can deploy now."
+            echo 'No legacy branch Pages deployment detected; generated artifact can deploy now.'
             exit 0
           fi
-
           echo "Waiting for legacy Pages deployment $legacy_id before entering the github-pages environment."
           for _ in $(seq 1 120); do
             status=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$legacy_id" --jq '.status')
@@ -334,7 +247,6 @@ jobs:
             fi
             sleep 2
           done
-
           echo "Timed out waiting for legacy Pages deployment $legacy_id" >&2
           exit 1
 
@@ -360,12 +272,10 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Verify deployed engine manifests
+      - name: Verify deployed RiftWebKit manifest
         run: |
           set -euxo pipefail
           base='${{ steps.deployment.outputs.page_url }}'
-          curl -fL --retry 12 --retry-delay 2 --retry-all-errors "${base}engines/gecko/engine-manifest.json" -o /tmp/live-engine-manifest.json
-          grep -F '"id": "wasm-gecko"' /tmp/live-engine-manifest.json
-          grep -E '"release": "(v0\.0\.1|riftgecko-mobile-v1)"' /tmp/live-engine-manifest.json
-          curl -fL --retry 12 --retry-delay 2 --retry-all-errors "${base}engines/webkit-poc/engine-manifest.json" -o /tmp/live-riftwebkit-manifest.json
-          grep -F '"id": "riftwebkit-poc"' /tmp/live-riftwebkit-manifest.json
+          curl -fL --retry 12 --retry-delay 2 --retry-all-errors "${base}engines/webkit/engine-manifest.json" -o /tmp/live-riftwebkit-manifest.json
+          grep -E '"id": "riftwebkit-(mobile|poc)"' /tmp/live-riftwebkit-manifest.json
+          grep -F '"available": true' /tmp/live-riftwebkit-manifest.json
