@@ -2,7 +2,7 @@
 
 RiftWorkspace is the unsigned RiftKernel workspace boundary. It runs inside the same Apple WebKit host as RiftOS and stores its local sandbox through RiftFS, which uses OPFS when available and IndexedDB as the compatibility fallback.
 
-The workspace does **not** depend on `WKWebView`, Safari controller APIs, a signed iOS executable, WebAssembly, Gecko, or direct access to the iPhone filesystem.
+The workspace does **not** depend on a signed iOS executable, the RiftWebKit WASM browser engine, or direct access to the iPhone filesystem.
 
 ## Runtime path
 
@@ -37,7 +37,7 @@ Default directories:
 
 ## Public workspace API
 
-`window.RiftWorkspace` is available in the unsigned WebKit runtime and keeps the same high-level contract as the optional native workspace:
+`window.RiftWorkspace` is available in the unsigned WebKit runtime and exposes:
 
 - `info()`
 - `list(path, options)`
@@ -52,8 +52,6 @@ Default directories:
 - `history()`
 - `rollback(historyId)`
 - `snapshot(path, options)`
-
-When the optional native host is present, the compatibility facade may route native workspace operations through `RiftNative`. In the unsigned runtime the same API is backed entirely by RiftFS/OPFS.
 
 ## JSON bridge
 
@@ -71,23 +69,11 @@ Example request:
 }
 ```
 
-Example response:
-
-```json
-{
-  "id": "req-1",
-  "ok": true,
-  "result": "...file contents..."
-}
-```
-
-The bridge also accepts same-origin `postMessage` requests using `type: "riftworkspace:request"`. Cross-origin pages do not receive workspace access merely because they are displayed by a browser engine.
+The bridge also accepts same-origin `postMessage` requests using `type: "riftworkspace:request"`. Cross-origin pages do not receive workspace access merely because they are displayed by RiftBrowser.
 
 ## Patch contract
 
-The web workspace implements the existing Rift AI patch contract rather than inventing a second format.
-
-Supported versions are 1 and 2. Supported actions are `write`, `delete`, and `move`; `rename` is normalized to `move`. Version 2 is required for move/rename.
+The web workspace implements the existing Rift AI patch contract. Supported versions are 1 and 2. Supported actions are `write`, `delete`, and `move`; `rename` is normalized to `move`. Version 2 is required for move/rename.
 
 The patch engine validates paths, overlapping operations, destination conflicts, optional `base_sha256` guards, and the 500-change limit before applying changes. Applied patches save rollback state under `.rift/history`.
 
@@ -95,21 +81,19 @@ The patch engine validates paths, overlapping operations, destination conflicts,
 
 RiftBrowser and RiftWorkspace are intentionally separate capabilities.
 
-The current unsigned RiftBrowser experiment runs Gecko compiled to WebAssembly inside the WebKit-hosted RiftOS environment. That changes how guest webpages are rendered, but it does **not** grant those webpages direct workspace authority.
+The active browser path is RiftWebKit: WebCore/JSC/Skia compiled to WebAssembly and hosted inside RiftOS. That changes how guest webpages are rendered, but it does **not** grant those webpages workspace authority.
 
 ```text
 RiftKernel
   |-- RiftWorkspace -> RiftFS -> OPFS
   |
-  `-- RiftBrowser -> Gecko WASM -> guest web content
+  `-- RiftBrowser -> RiftWebKit WASM -> guest web content
 ```
 
 Guest pages may only interact with workspace data through an explicit, brokered JSON interface that RiftKernel chooses to expose. They never receive raw OPFS handles or unrestricted `window.RiftWorkspace` access.
 
-This separation is the key design for future ChatGPT/workspace integration: the browser can host the AI surface while RiftKernel remains the trusted filesystem and patch authority.
-
 ## Architecture rule
 
-> RiftOS core and RiftWorkspace MUST NOT require WebAssembly, Gecko, or native iOS code to boot.
+> RiftOS core and RiftWorkspace MUST NOT require the RiftWebKit WASM engine to boot.
 
-WebAssembly and the optional native host may add capabilities, but neither is a dependency of the local workspace.
+The engine is a lazy browser service, not a dependency of the local workspace.
