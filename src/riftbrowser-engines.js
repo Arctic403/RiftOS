@@ -3,6 +3,9 @@ const ENGINE_ROOT=new URL("../engines/webkit/",import.meta.url);
 const MANIFEST_FILE=new URL("engine-manifest.json",ENGINE_ROOT);
 const HOST_FILE=new URL("index.html",ENGINE_ROOT);
 const WISP_KEY="riftos.browser.wisp.v2";
+// MercuryWorkshop's public demo endpoint is throttled and is only our bring-up
+// transport. A user-configured/self-hosted endpoint always overrides it.
+const DEFAULT_WISP="wss://wisp.mercurywork.shop/";
 
 const state={checked:false,artifactReady:false,available:false,browsingReady:false,checking:null,error:null,checkedAt:0,manifest:null};
 
@@ -17,11 +20,13 @@ function normalizeWisp(value=""){
     return url.href;
   }catch(error){throw new Error(`Invalid Wisp endpoint: ${error.message}`);}
 }
-function configuredWisp(){try{return normalizeWisp(localStorage.getItem(WISP_KEY)||"");}catch{return "";}}
+function storedWisp(){try{return normalizeWisp(localStorage.getItem(WISP_KEY)||"");}catch{return "";}}
+function configuredWisp(){return storedWisp()||DEFAULT_WISP;}
+function usingDefaultWisp(){return !storedWisp();}
 function setWisp(value=""){
   const next=normalizeWisp(value);
-  if(next)localStorage.setItem(WISP_KEY,next);else localStorage.removeItem(WISP_KEY);
-  return next;
+  if(next&&next!==DEFAULT_WISP)localStorage.setItem(WISP_KEY,next);else localStorage.removeItem(WISP_KEY);
+  return configuredWisp();
 }
 function validManifest(manifest){return /^riftwebkit(?:-|$)/.test(String(manifest?.id||""));}
 function manifestRequiresWisp(manifest=state.manifest){return manifest?.requiresWisp===true||manifest?.requiresWispForArbitraryNetworking===true;}
@@ -56,24 +61,24 @@ async function probe({force=false}={}){
 function frameURL(target,{wisp=configuredWisp()}={}){
   const url=new URL(HOST_FILE.href);
   url.searchParams.set("embed","1");
-  // The full single-threaded mobile build owns #screen's WebGL2 context directly.
-  // This avoids the CPU raster -> JS byte copy -> putImageData path. The pinned
-  // helper has its own automatic GPU failure/loss fallback back to ?gpu=0.
   url.searchParams.set("gpu",prefersDirectGPU()?"1":"0");
   const normalized=String(target||"").trim();
   const needsWisp=manifestRequiresWisp();
   const canNavigate=!needsWisp||!!wisp;
+
   if(normalized&&canNavigate)url.searchParams.set("url",normalized);
-  else if(normalized&&!canNavigate){
-    // No internet transport exists yet, so optimize this local WebCore/JSC
-    // diagnostic boot. The host skips the 13+ MB Binaryen compiler import and
-    // OPFS profile restore; both return automatically when a real Wisp endpoint
-    // is configured for external browsing.
-    url.searchParams.set("demo","interactive");
+  else if(normalized&&!canNavigate)url.searchParams.set("demo","interactive");
+
+  if(wisp)url.searchParams.set("wisp",wisp);
+
+  // Keep the official throttled demo transport on the fast startup path while
+  // we prove real HTTPS navigation. This skips the 13+ MB Binaryen guest-WASM
+  // compiler and profile restore. A custom/self-hosted Wisp restores the full
+  // compatibility/persistence boot automatically.
+  if(usingDefaultWisp()){
     url.searchParams.set("fastboot","1");
     url.searchParams.set("persist","0");
   }
-  if(wisp)url.searchParams.set("wisp",wisp);
   return url.href;
 }
 function info(){
@@ -83,6 +88,7 @@ function info(){
   const transport=transportReady(manifest);
   const ready=browsingReady(manifest);
   const directGPU=prefersDirectGPU(manifest);
+  const defaultWisp=usingDefaultWisp();
   return {
     id:ENGINE_ID,
     name:"RiftWebKit Mobile",
@@ -101,6 +107,8 @@ function info(){
     host:HOST_FILE.href,
     probe:MANIFEST_FILE.href,
     wisp,
+    wispMode:defaultWisp?"mercury-demo":"custom",
+    wispDemo:defaultWisp,
     requiresWebAssembly:true,
     requiresSharedArrayBuffer:manifest?.requiresSharedArrayBuffer===true,
     requiresCrossOriginIsolation:manifest?.requiresCrossOriginIsolation===true,
@@ -110,12 +118,12 @@ function info(){
     persistence:manifest?.persistence===true,
     threaded:manifest?.threaded===true,
     directGPU,
-    localFastBoot:state.available&&requiresWisp&&!wisp,
+    localFastBoot:defaultWisp,
     presentation:directGPU?"gpu-implicit-webgl2":"raster-2d",
     viewport:manifest?.viewport||{width:390,height:844},
     source:"theogbob/WebkitWasm pinned Emscripten WebCore/JSC port"
   };
 }
 
-window.RiftBrowserEngines=Object.freeze({primary:ENGINE_ID,probe,info,frameURL,configuredWisp,setWisp});
+window.RiftBrowserEngines=Object.freeze({primary:ENGINE_ID,probe,info,frameURL,configuredWisp,setWisp,DEFAULT_WISP});
 console.info("[RiftBrowser] RiftWebKit-only engine registry ready",info());
