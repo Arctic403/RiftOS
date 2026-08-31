@@ -11,3 +11,20 @@
 .browser-capability{margin:16px 0;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.04)}.browser-capability strong,.browser-capability span{display:block}.browser-capability span{margin-top:5px;opacity:.72;font-size:12px}
 .browser-block-actions{display:flex;gap:8px;flex-wrap:wrap}.browser-blocked{min-height:100%;padding:28px 20px;background:#111722;color:#eef4ff}.browser-warning{font-size:28px;font-weight:900}.browser-logo{width:52px;height:52px;border-radius:13px;display:grid;place-items:center;background:#fff;color:#0b0d12;font-size:28px;font-weight:900}
 @media(max-width:520px){.kbrowser-tabs{padding-top:4px}.kbrowser-tab{min-width:92px;max-width:145px}.kbrowser-bar{gap:4px}.kbrowser-icon{padding-inline:9px}.kbrowser-go{padding-inline:10px}.kbrowser-meta{font-size:10px}}
+
+/* RiftBrowser immersive mode: when the browser window exists, it owns the
+   RiftOS viewport. iOS's system status/home-safe areas remain respected, but
+   the RiftOS status bar, dock, window margins, and title row stop consuming
+   browser pixels. The existing close button floats above the tab strip. */
+#os:has(.window[data-app="browser-kernel"]){grid-template-rows:minmax(0,1fr)}
+#os:has(.window[data-app="browser-kernel"])>.statusbar,
+#os:has(.window[data-app="browser-kernel"])>.dock{display:none!important}
+#os:has(.window[data-app="browser-kernel"])>.content{grid-row:1;height:100dvh;min-height:0}
+#os:has(.window[data-app="browser-kernel"]) .stage{inset:var(--safe-top) 0 var(--safe-bottom) 0!important}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]{inset:0!important;border:0!important;border-radius:0!important;grid-template-rows:0 minmax(0,1fr)!important;box-shadow:none!important;background:#0b0d12}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-bar{position:absolute;top:4px;right:4px;z-index:90;height:auto;padding:0;border:0;background:transparent;pointer-events:none}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-bar>div{display:none!important}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"] .window-close{pointer-events:auto;width:34px;height:34px;font-size:20px;background:#171d25e8;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-body{padding:0!important;overflow:hidden!important}
+#os:has(.window[data-app="browser-kernel"]) .kbrowser-tabs{min-height:42px;padding-right:47px}
+#os:has(.window[data-app="browser-kernel"]) .kbrowser-meta{min-height:26px;padding-top:3px;padding-bottom:3px}
