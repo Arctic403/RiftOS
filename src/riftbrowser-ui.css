@@ -12,19 +12,78 @@
 .browser-block-actions{display:flex;gap:8px;flex-wrap:wrap}.browser-blocked{min-height:100%;padding:28px 20px;background:#111722;color:#eef4ff}.browser-warning{font-size:28px;font-weight:900}.browser-logo{width:52px;height:52px;border-radius:13px;display:grid;place-items:center;background:#fff;color:#0b0d12;font-size:28px;font-weight:900}
 @media(max-width:520px){.kbrowser-tabs{padding-top:4px}.kbrowser-tab{min-width:92px;max-width:145px}.kbrowser-bar{gap:4px}.kbrowser-icon{padding-inline:9px}.kbrowser-go{padding-inline:10px}.kbrowser-meta{font-size:10px}}
 
-/* RiftBrowser immersive mode: when the browser window exists, it owns the
-   RiftOS viewport. iOS's system status/home-safe areas remain respected, but
-   the RiftOS status bar, dock, window margins, and title row stop consuming
-   browser pixels. The existing close button floats above the tab strip. */
-#os:has(.window[data-app="browser-kernel"]){grid-template-rows:minmax(0,1fr)}
-#os:has(.window[data-app="browser-kernel"])>.statusbar,
-#os:has(.window[data-app="browser-kernel"])>.dock{display:none!important}
-#os:has(.window[data-app="browser-kernel"])>.content{grid-row:1;height:100dvh;min-height:0}
-#os:has(.window[data-app="browser-kernel"]) .stage{inset:var(--safe-top) 0 var(--safe-bottom) 0!important}
-#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]{inset:0!important;border:0!important;border-radius:0!important;grid-template-rows:0 minmax(0,1fr)!important;box-shadow:none!important;background:#0b0d12}
-#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-bar{position:absolute;top:4px;right:4px;z-index:90;height:auto;padding:0;border:0;background:transparent;pointer-events:none}
+/* True RiftOS fullscreen host. RiftDev proves this pattern: the PWA is only
+   the outer shell, so a RiftOS app can own the entire PWA viewport by lifting
+   its host above the desktop/window-manager layers. The browser keeps the
+   existing stage/window DOM for lifecycle compatibility, but stage itself is
+   viewport-fixed like RiftDev's body-level host. */
+html:has(.window[data-app="browser-kernel"]),
+html:has(.window[data-app="browser-kernel"]) body{overflow:hidden!important;overscroll-behavior:none!important}
+#os:has(.window[data-app="browser-kernel"]) .stage{
+  position:fixed!important;
+  inset:0!important;
+  z-index:2147483000!important;
+  width:100vw!important;
+  height:100dvh!important;
+  min-height:100dvh!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  background:#0b0d12!important;
+  overflow:hidden!important;
+}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]{
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  grid-template-rows:0 minmax(0,1fr)!important;
+  box-shadow:none!important;
+  background:#0b0d12!important;
+  overflow:hidden!important;
+}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-bar{
+  position:absolute!important;
+  top:max(7px,var(--safe-top))!important;
+  right:max(7px,env(safe-area-inset-right,0px))!important;
+  z-index:2147483002!important;
+  height:auto!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  pointer-events:none!important;
+}
 #os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-bar>div{display:none!important}
-#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"] .window-close{pointer-events:auto;width:34px;height:34px;font-size:20px;background:#171d25e8;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
-#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-body{padding:0!important;overflow:hidden!important}
-#os:has(.window[data-app="browser-kernel"]) .kbrowser-tabs{min-height:42px;padding-right:47px}
-#os:has(.window[data-app="browser-kernel"]) .kbrowser-meta{min-height:26px;padding-top:3px;padding-bottom:3px}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"] .window-close{
+  pointer-events:auto!important;
+  width:34px!important;
+  height:34px!important;
+  border-radius:50%!important;
+  font-size:20px!important;
+  background:rgba(7,11,16,.82)!important;
+  border:1px solid rgba(255,255,255,.22)!important;
+  backdrop-filter:blur(12px)!important;
+  -webkit-backdrop-filter:blur(12px)!important;
+}
+#os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-body{
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+}
+#os:has(.window[data-app="browser-kernel"]) .kbrowser{height:100dvh!important;min-height:100dvh!important}
+#os:has(.window[data-app="browser-kernel"]) .kbrowser-tabs{
+  min-height:42px!important;
+  padding-top:max(6px,var(--safe-top))!important;
+  padding-right:50px!important;
+}
+#os:has(.window[data-app="browser-kernel"]) .kbrowser-surface{padding-bottom:var(--safe-bottom)}
+@media(max-width:520px){
+  #os:has(.window[data-app="browser-kernel"]) .kbrowser-tabs{min-height:calc(38px + var(--safe-top))!important}
+  #os:has(.window[data-app="browser-kernel"]) .kbrowser-meta{min-height:22px!important;padding:2px 6px!important;font-size:9px!important}
+  #os:has(.window[data-app="browser-kernel"]) .kbrowser-meta button{min-height:22px!important;padding:2px 6px!important;font-size:9px!important}
+}
