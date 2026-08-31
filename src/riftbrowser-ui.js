@@ -4,6 +4,7 @@ if(!browser)throw new Error("RiftBrowser UI adapter requires RiftKernel.browser"
 
 const $=selector=>document.querySelector(selector);
 const escapeHTML=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));
+const FIREWALL_HOST_SCRIPT=new URL("./riftbrowser-firewall-host.js",import.meta.url).href;
 let browserProcess=null;
 let browserWindow=null;
 let engineFrame=null;
@@ -105,7 +106,7 @@ function renderStart(){
 
 function showStatusPanel(){
   const info=browser.info();
-  window.alert?.(`RiftWebKit + RiftFirewall\n\n${JSON.stringify({engine:info.engine,firewall:info.firewall,wispMode:info.engine?.wispMode},null,2)}`);
+  window.alert?.(`RiftWebKit + RiftFirewall\n\n${JSON.stringify({engine:info.engine,firewall:info.firewall,wispMode:info.engine?.wispMode,transportFirewall:firewallTransportReady},null,2)}`);
 }
 
 function firewallPanelMarkup(){
@@ -242,17 +243,34 @@ function installMobileBridge(frame){
   canvas.addEventListener("touchcancel",finish,{passive:false});
   return true;
 }
+function installTransportFirewall(frame){
+  let doc,win;try{doc=frame.contentDocument;win=frame.contentWindow;}catch{return false;}
+  if(!doc||!win)return false;
+  if(win.__riftFirewallTransport?.active){firewallTransportReady=true;return true;}
+  if(!doc.getElementById("riftFirewallHostBridge")){
+    const script=doc.createElement("script");script.id="riftFirewallHostBridge";script.src=FIREWALL_HOST_SCRIPT;script.async=false;
+    script.addEventListener("error",()=>console.error("[RiftBrowser] RiftFirewall host bridge failed to load"));
+    doc.head.append(script);
+  }
+  return !!win.__riftFirewallTransport?.active;
+}
 
-function armFrameBridge(frame){
+function armFrameBridge(frame,target=""){
   clearInterval(frameBridgeTimer);
   let tries=0;
   const tick=()=>{
     tries++;
-    if(installMobileBridge(frame)){
-      const Module=moduleFor(frame);
-      if(Module&&(typeof Module._bib_load_url==="function"||typeof Module._rift_pointer==="function")){clearInterval(frameBridgeTimer);frameBridgeTimer=0;}
+    const touchReady=installMobileBridge(frame);
+    const firewallReady=installTransportFirewall(frame);
+    const Module=moduleFor(frame);
+    if(firewallReady&&Module&&typeof Module.ccall==="function"&&typeof Module._bib_load_url==="function"){
+      if(target&&frame.dataset.riftLoadedTarget!==target){
+        try{Module.ccall("bib_load_url",null,["string"],[target]);frame.dataset.riftLoadedTarget=target;engineTarget=target;}
+        catch(error){console.warn("[RiftBrowser] protected initial WebKit navigation failed",error);}
+      }
+      if(touchReady){clearInterval(frameBridgeTimer);frameBridgeTimer=0;return;}
     }
-    if(tries>240){clearInterval(frameBridgeTimer);frameBridgeTimer=0;}
+    if(tries>480){clearInterval(frameBridgeTimer);frameBridgeTimer=0;}
   };
   tick();frameBridgeTimer=setInterval(tick,250);
 }
@@ -261,8 +279,9 @@ function createEngineFrame(result){
   const surface=browserWindow?.querySelector("#kbSurface");if(!surface)return null;
   surface.innerHTML='<iframe class="kbrowser-engine-frame" title="RiftWebKit mobile engine" allow="clipboard-read; clipboard-write; autoplay; fullscreen"></iframe>';
   engineFrame=surface.querySelector("iframe");engineBuild=String(result.engine?.manifest?.build||result.engine?.manifest?.sourceCommit||"proof");engineTarget=result.url;firewallTransportReady=false;
-  engineFrame.addEventListener("load",()=>armFrameBridge(engineFrame));
-  engineFrame.src=result.src;
+  const bootURL=new URL(result.src);bootURL.searchParams.delete("url");bootURL.searchParams.set("demo","interactive");
+  engineFrame.addEventListener("load",()=>armFrameBridge(engineFrame,result.url));
+  engineFrame.src=bootURL.href;
   return engineFrame;
 }
 
@@ -270,12 +289,12 @@ function navigateEngine(result){
   const build=String(result.engine?.manifest?.build||result.engine?.manifest?.sourceCommit||"proof");
   if(!engineFrame||!engineFrame.isConnected||engineBuild!==build)return createEngineFrame(result);
   const Module=moduleFor(engineFrame);
-  if(result.browsingReady&&Module&&typeof Module.ccall==="function"&&typeof Module._bib_load_url==="function"){
-    try{Module.ccall("bib_load_url",null,["string"],[result.url]);engineTarget=result.url;armFrameBridge(engineFrame);return engineFrame;}
-    catch(error){console.warn("[RiftBrowser] in-place WebKit navigation failed; restarting surface",error);}
+  let protectedTransport=false;try{protectedTransport=!!engineFrame.contentWindow?.__riftFirewallTransport?.active;}catch{}
+  if(result.browsingReady&&protectedTransport&&Module&&typeof Module.ccall==="function"&&typeof Module._bib_load_url==="function"){
+    try{Module.ccall("bib_load_url",null,["string"],[result.url]);engineTarget=result.url;engineFrame.dataset.riftLoadedTarget=result.url;armFrameBridge(engineFrame);return engineFrame;}
+    catch(error){console.warn("[RiftBrowser] in-place WebKit navigation failed; waiting for protected surface",error);}
   }
-  if(engineTarget!==result.url){engineTarget=result.url;engineFrame.src=result.src;}
-  return engineFrame;
+  engineTarget=result.url;armFrameBridge(engineFrame,result.url);return engineFrame;
 }
 
 function showError(error){
