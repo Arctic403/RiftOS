@@ -20,6 +20,7 @@
 #include "LocalFrame.h"
 #include "LocalFrameInlines.h"
 #include "LocalFrameView.h"
+#include "MediaPlayer.h"
 #include "Page.h"
 #include "PageConfiguration.h"
 #include "PlatformMouseEvent.h"
@@ -47,6 +48,16 @@ WTF_IGNORE_WARNINGS_IN_THIRD_PARTY_CODE_END
 #include <span>
 
 using namespace WTF::StringLiterals;
+
+// The pinned Emscripten WebKit patch always asks the embedder to register its
+// optional BIB media engine. This proof deliberately excludes media, so satisfy
+// that port hook without registering an engine or pulling in the helper's media,
+// networking, host-Audio, and pthread bridge.
+namespace BIB {
+void registerBibMediaEngine(WebCore::MediaEngineRegistrar)
+{
+}
+} // namespace BIB
 
 namespace {
 constexpr int kWidth = 390;
