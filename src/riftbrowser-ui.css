@@ -69,6 +69,7 @@ html:has(.window[data-app="browser-kernel"]) body{overflow:hidden!important;over
   -webkit-backdrop-filter:blur(12px)!important;
 }
 #os:has(.window[data-app="browser-kernel"]) .window[data-app="browser-kernel"]>.window-body{
+  grid-row:2!important;
   width:100%!important;
   height:100%!important;
   min-height:0!important;
