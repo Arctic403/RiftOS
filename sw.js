@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v29-riftbrowser-true-fullscreen";
+const CACHE="riftos-shell-v30-riftbrowser-fullscreen-body-fix";
 // Keep the expensive WebKit payload independent from fast-moving RiftOS shell
 // revisions. Bump this only when the published mobile engine build changes.
 const ENGINE_CACHE="riftwebkit-engine-c6126db7";
