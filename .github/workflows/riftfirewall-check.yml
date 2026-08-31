@@ -10,6 +10,7 @@ on:
       - 'src/riftbrowser-engines.js'
       - 'src/riftbrowser-kernel.js'
       - 'src/riftbrowser-ui.js'
+      - 'src/riftbrowser-ui-runtime.js'
       - 'src/riftbrowser-ui.css'
       - 'index.html'
       - 'sw.js'
@@ -32,6 +33,7 @@ jobs:
           node --check src/riftbrowser-engines.js
           node --check src/riftbrowser-kernel.js
           node --check src/riftbrowser-ui.js
+          node --check src/riftbrowser-ui-runtime.js
           node --check sw.js
       - name: Validate firewall wiring
         run: |
@@ -39,10 +41,12 @@ jobs:
           grep -F './src/riftbrowser-firewall.js' index.html
           grep -F './src/riftbrowser-firewall.js' sw.js
           grep -F './src/riftbrowser-firewall-host.js' sw.js
+          grep -F './src/riftbrowser-ui-runtime.js' sw.js
+          grep -F 'import "./riftbrowser-ui-runtime.js"' src/riftbrowser-ui.js
           grep -F 'evaluateURL' src/riftbrowser-kernel.js
           grep -F 'runtimePolicy' src/riftbrowser-kernel.js
-          grep -F 'FIREWALL_HOST_SCRIPT' src/riftbrowser-ui.js
-          grep -F 'installTransportFirewall' src/riftbrowser-ui.js
+          grep -F 'FIREWALL_HOST_SCRIPT' src/riftbrowser-ui-runtime.js
+          grep -F 'installTransportFirewall' src/riftbrowser-ui-runtime.js
           grep -F 'window.__riftFirewallTransport' src/riftbrowser-firewall-host.js
           grep -F 'WispWebSocket' src/riftbrowser-firewall-host.js
           grep -F 'networkEnabled:true' src/riftbrowser-firewall.js
