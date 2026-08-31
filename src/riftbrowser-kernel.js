@@ -2,6 +2,7 @@ const core=window.RiftOSCore;
 if(!core?.kernel)throw new Error("RiftBrowser kernel service requires RiftOSCore");
 
 const engines=window.RiftBrowserEngines||null;
+const firewall=window.RiftBrowserFirewall||null;
 const DEFAULT_HOME="https://chatgpt.com";
 const STATE_KEY="riftos.browser.state.v6";
 const MIGRATION_KEYS=["riftos.browser.state.v5","riftos.browser.state.v4","riftos.browser.state.v3","riftos.browser.state.v2","riftos.browser.state.v1"];
@@ -27,6 +28,8 @@ class RiftBrowserKernelService extends EventTarget{
     this.tabs=[];
     this.activeTabId=null;
     this.restore();
+    firewall?.addEventListener?.("blocked",event=>this.emit("firewall-blocked",event.detail));
+    firewall?.addEventListener?.("change",()=>this.emit("firewall",this.firewallSummary()));
     queueMicrotask(()=>this.refreshEngines().catch(()=>{}));
   }
 
@@ -49,6 +52,21 @@ class RiftBrowserKernelService extends EventTarget{
 
   persist(){localStorage.setItem(STATE_KEY,JSON.stringify({backend:"riftwebkit",activeTabId:this.activeTabId,tabs:this.tabs}));}
   engineInfo(){return engines?.info?.()||{id:"riftwebkit",name:"RiftWebKit Mobile",available:false,browsingReady:false,checked:true,error:"RiftWebKit engine registry unavailable"};}
+  firewallSettings(){return firewall?.settings?.()||{enabled:false,networkEnabled:true,blockHosts:[],allowHosts:[]};}
+  firewallSummary(){return firewall?.summary?.()||{enabled:false,networkEnabled:true,recentBlocks:[]};}
+  setFirewall(patch={}){
+    if(!firewall?.update)throw new Error("RiftFirewall service unavailable");
+    const next=firewall.update(patch);this.emit("firewall",firewall.summary());return next;
+  }
+  resetFirewall(){
+    if(!firewall?.reset)throw new Error("RiftFirewall service unavailable");
+    const next=firewall.reset();this.emit("firewall",firewall.summary());return next;
+  }
+  noteFirewallBlock(detail={}){return firewall?.record?.(detail)||detail;}
+  async clearBrowserSiteData(){
+    const cleared=await firewall?.clearGuestProfile?.();
+    this.emit("firewall",this.firewallSummary());return !!cleared;
+  }
 
   async refreshEngines(force=false){
     if(engines?.probe)await engines.probe({force});
@@ -66,7 +84,7 @@ class RiftBrowserKernelService extends EventTarget{
     const engine=this.engineInfo();
     return {
       preferred:"riftwebkit",active:this.activeBackend,experimental:true,stableBrowser:false,webkitOnly:true,
-      wisp:engines?.configuredWisp?.()||"",
+      wisp:engines?.configuredWisp?.()||"",firewall:this.firewallSummary(),
       backends:[{
         id:"riftwebkit",name:"RiftWebKit Mobile",available:engine.available===true,browsingReady:engine.browsingReady===true,
         fullWeb:engine.browsingReady===true,experimental:true,requiresWisp:!!engine.requiresWisp,requiresWasm:true,details:engine
@@ -120,12 +138,20 @@ class RiftBrowserKernelService extends EventTarget{
     if(tab.title==="New Tab"){try{tab.title=new URL(target).hostname||"New Tab";}catch{}}
     this.persist();
 
+    const verdict=firewall?.evaluateURL?.(target)||{allow:true,reason:"firewall-unavailable"};
+    if(!verdict.allow){
+      const blocked=firewall?.record?.({url:target,host:verdict.host,port:verdict.port,reason:verdict.reason})||verdict;
+      const result={mode:"firewall-blocked",backend:"riftfirewall",url:target,reason:verdict.reason,firewall:blocked};
+      const detail={tab:clone(tab),result};this.emit("render",detail);this.emit("tabs",this.listTabs());return detail;
+    }
+
     const backend=await this.resolveBackend();
     this.emit("loading",{tab:clone(tab),backend});
     let result;
     if(backend==="riftwebkit"){
       const engine=this.engineInfo();
-      result={mode:"riftwebkit",backend:"riftwebkit",url:target,src:engines.frameURL(target),engine,browsingReady:engine.browsingReady===true};
+      const firewallPolicy=firewall?.runtimePolicy?.(target)||null;
+      result={mode:"riftwebkit",backend:"riftwebkit",url:target,src:engines.frameURL(target,{firewall:firewallPolicy}),engine,browsingReady:engine.browsingReady===true,firewall:firewallPolicy};
     }else result={mode:"unavailable",backend:"unavailable",url:target,reason:this.engineInfo().error||"RiftWebKit rendering engine is unavailable"};
 
     tab.updated=Date.now();this.persist();
@@ -159,7 +185,7 @@ class RiftBrowserKernelService extends EventTarget{
     const rows=[];for(const tab of this.tabs)for(const url of tab.history)rows.push({tabId:tab.id,url,title:tab.title,updated:tab.updated});
     return rows.sort((a,b)=>b.updated-a.updated).slice(0,limit);
   }
-  info(){return {home:DEFAULT_HOME,activeTab:this.activeTab()?clone(this.activeTab()):null,tabs:this.listTabs(),bookmarks:this.bookmarks(),engine:this.engineInfo(),...this.backendStatus()};}
+  info(){return {home:DEFAULT_HOME,activeTab:this.activeTab()?clone(this.activeTab()):null,tabs:this.listTabs(),bookmarks:this.bookmarks(),engine:this.engineInfo(),firewall:this.firewallSummary(),...this.backendStatus()};}
   emit(type,detail){this.dispatchEvent(new CustomEvent(type,{detail}));}
 }
 
