@@ -24,10 +24,13 @@ function setWisp(value=""){
   return next;
 }
 function validManifest(manifest){return /^riftwebkit(?:-|$)/.test(String(manifest?.id||""));}
+function manifestRequiresWisp(manifest=state.manifest){return manifest?.requiresWisp===true||manifest?.requiresWispForArbitraryNetworking===true;}
+function transportReady(manifest=state.manifest){return !manifestRequiresWisp(manifest)||!!configuredWisp();}
+function browsingReady(manifest=state.manifest){return state.available&&manifest?.networking===true&&manifest?.guestJavaScript===true&&transportReady(manifest);}
 
 async function probe({force=false}={}){
   if(state.checking)return state.checking;
-  if(state.checked&&!force)return {...state};
+  if(state.checked&&!force)return {...state,browsingReady:browsingReady()};
   state.checking=(async()=>{
     try{
       const response=await fetch(MANIFEST_FILE,{cache:"no-store",headers:{Accept:"application/json"}});
@@ -37,14 +40,14 @@ async function probe({force=false}={}){
       state.manifest=manifest;
       state.artifactReady=manifest.available===true;
       state.available=state.artifactReady&&typeof WebAssembly==="object";
-      state.browsingReady=state.available&&manifest.networking===true&&manifest.guestJavaScript===true;
+      state.browsingReady=browsingReady(manifest);
       state.error=state.available?null:"RiftWebKit WASM artifact is not available in this deployment";
     }catch(error){
       state.manifest=null;state.artifactReady=false;state.available=false;state.browsingReady=false;
       state.error=error?.message||String(error);
     }
     state.checked=true;state.checkedAt=Date.now();state.checking=null;
-    return {...state};
+    return {...state,browsingReady:browsingReady()};
   })();
   return state.checking;
 }
@@ -54,12 +57,19 @@ function frameURL(target,{wisp=configuredWisp()}={}){
   url.searchParams.set("embed","1");
   url.searchParams.set("gpu","0");
   const normalized=String(target||"").trim();
-  if(normalized)url.searchParams.set("url",normalized);
+  const needsWisp=manifestRequiresWisp();
+  const canNavigate=!needsWisp||!!wisp;
+  if(normalized&&canNavigate)url.searchParams.set("url",normalized);
+  else if(normalized&&!canNavigate)url.searchParams.set("demo","interactive");
   if(wisp)url.searchParams.set("wisp",wisp);
   return url.href;
 }
 function info(){
   const manifest=state.manifest;
+  const wisp=configuredWisp();
+  const requiresWisp=manifestRequiresWisp(manifest);
+  const transport=transportReady(manifest);
+  const ready=browsingReady(manifest);
   return {
     id:ENGINE_ID,
     name:"RiftWebKit Mobile",
@@ -68,18 +78,20 @@ function info(){
     experimental:true,
     available:state.available,
     artifactReady:state.artifactReady,
-    browsingReady:state.browsingReady,
+    browsingReady:ready,
+    transportReady:transport,
+    transportError:state.available&&requiresWisp&&!wisp?"RiftWebKit is running locally, but internet navigation needs a secure Wisp endpoint.":null,
     checked:state.checked,
     checkedAt:state.checkedAt,
     error:state.error,
     manifest,
     host:HOST_FILE.href,
     probe:MANIFEST_FILE.href,
-    wisp:configuredWisp(),
+    wisp,
     requiresWebAssembly:true,
     requiresSharedArrayBuffer:manifest?.requiresSharedArrayBuffer===true,
     requiresCrossOriginIsolation:manifest?.requiresCrossOriginIsolation===true,
-    requiresWisp:manifest?.requiresWisp===true||manifest?.requiresWispForArbitraryNetworking===true,
+    requiresWisp,
     networking:manifest?.networking===true,
     guestJavaScript:manifest?.guestJavaScript===true,
     persistence:manifest?.persistence===true,
