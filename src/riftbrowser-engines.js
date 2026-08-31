@@ -64,7 +64,15 @@ function frameURL(target,{wisp=configuredWisp()}={}){
   const needsWisp=manifestRequiresWisp();
   const canNavigate=!needsWisp||!!wisp;
   if(normalized&&canNavigate)url.searchParams.set("url",normalized);
-  else if(normalized&&!canNavigate)url.searchParams.set("demo","interactive");
+  else if(normalized&&!canNavigate){
+    // No internet transport exists yet, so optimize this local WebCore/JSC
+    // diagnostic boot. The host skips the 13+ MB Binaryen compiler import and
+    // OPFS profile restore; both return automatically when a real Wisp endpoint
+    // is configured for external browsing.
+    url.searchParams.set("demo","interactive");
+    url.searchParams.set("fastboot","1");
+    url.searchParams.set("persist","0");
+  }
   if(wisp)url.searchParams.set("wisp",wisp);
   return url.href;
 }
@@ -102,6 +110,7 @@ function info(){
     persistence:manifest?.persistence===true,
     threaded:manifest?.threaded===true,
     directGPU,
+    localFastBoot:state.available&&requiresWisp&&!wisp,
     presentation:directGPU?"gpu-implicit-webgl2":"raster-2d",
     viewport:manifest?.viewport||{width:390,height:844},
     source:"theogbob/WebkitWasm pinned Emscripten WebCore/JSC port"
