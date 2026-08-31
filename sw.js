@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v30-riftbrowser-fullscreen-body-fix";
+const CACHE="riftos-shell-v31-riftfirewall";
 // Keep the expensive WebKit payload independent from fast-moving RiftOS shell
 // revisions. Bump this only when the published mobile engine build changes.
 const ENGINE_CACHE="riftwebkit-engine-c6126db7";
@@ -9,6 +9,8 @@ const CORE=[
   "./src/riftcore.js",
   "./src/riftworkspace-web.js",
   "./src/riftruntime.js",
+  "./src/riftbrowser-firewall.js",
+  "./src/riftbrowser-firewall-host.js",
   "./src/riftbrowser-engines.js",
   "./src/riftbrowser-kernel.js",
   "./src/riftbrowser-ui.js",
