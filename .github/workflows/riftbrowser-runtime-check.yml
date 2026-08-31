@@ -1,0 +1,33 @@
+name: Validate RiftBrowser Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/riftbrowser-ui.js'
+      - 'src/riftbrowser-ui-runtime.js'
+      - 'src/riftbrowser-firewall-host.js'
+      - 'sw.js'
+      - '.github/workflows/riftbrowser-runtime-check.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate optimized browser runtime
+        run: |
+          set -euxo pipefail
+          node --check src/riftbrowser-ui.js
+          node --check src/riftbrowser-ui-runtime.js
+          node --check src/riftbrowser-firewall-host.js
+          node --check sw.js
+          grep -F 'import "./riftbrowser-ui-runtime.js"' src/riftbrowser-ui.js
+          grep -F 'WARM_ENGINE_MS=60_000' src/riftbrowser-ui-runtime.js
+          grep -F 'for(const selector of [".kbrowser-tabs",".kbrowser-bar",".kbrowser-meta"])' src/riftbrowser-ui-runtime.js
+          grep -F 'firstNetworkByte' src/riftbrowser-ui-runtime.js
+          grep -F 'firstNewFrame' src/riftbrowser-ui-runtime.js
+          grep -F 'window.RiftBrowserPerf' src/riftbrowser-ui-runtime.js
+          grep -F './src/riftbrowser-ui-runtime.js' sw.js
