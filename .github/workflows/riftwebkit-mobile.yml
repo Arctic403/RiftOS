@@ -1,0 +1,368 @@
+name: Build RiftWebKit Mobile
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/riftwebkit-mobile.yml'
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: riftwebkit-mobile-v1
+  cancel-in-progress: true
+
+env:
+  HELPER_REPO: theogbob/WebkitWasm
+  HELPER_COMMIT: cbdc40b3ca68f45fff8de61fd843f81a55026178
+  WEBKIT_COMMIT: aec9d2ad958e716ab4bca4bf03007e6edac7323f
+  EMSDK_VERSION: '6.0.0'
+  RELEASE_TAG: riftwebkit-mobile-v1
+
+jobs:
+  build:
+    name: Build single-threaded RiftWebKit mobile engine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout RiftOS
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Checkout pinned WebKit-WASM port helper
+        uses: actions/checkout@v4
+        with:
+          repository: theogbob/WebkitWasm
+          ref: cbdc40b3ca68f45fff8de61fd843f81a55026178
+          path: _riftwebkit-src
+          fetch-depth: 1
+
+      - name: Free runner disk
+        run: |
+          set -euxo pipefail
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          sudo apt-get clean || true
+          docker system prune -af || true
+          df -h /
+
+      - name: Install host prerequisites
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git curl tar xz-utils unzip \
+            python3 ripgrep ca-certificates fonts-dejavu-core zstd gperf ccache
+          command -v gperf
+          command -v ccache
+          cmake --version | head -1
+          ninja --version
+          python3 --version
+
+      - name: Validate pinned helper source
+        run: |
+          set -euxo pipefail
+          test "$(git -C _riftwebkit-src rev-parse HEAD)" = "$HELPER_COMMIT"
+          grep -F 'BIB_PTHREAD="${BIB_PTHREAD:-0}"' _riftwebkit-src/tools/build-webcore.sh
+          grep -F 'WEBKIT_PIN="aec9d2ad958e716ab4bca4bf03007e6edac7323f"' _riftwebkit-src/tools/bootstrap.sh
+          grep -F 'EMSDK_VERSION="6.0.0"' _riftwebkit-src/tools/bootstrap.sh
+          test -s _riftwebkit-src/src/embedder/main.cpp
+          test -s _riftwebkit-src/src/embedder/embedder.cmake
+          test -s _riftwebkit-src/web/browser.html
+          grep -F 'bib_load_url' _riftwebkit-src/src/embedder/main.cpp
+          grep -F 'setScriptEnabled(interactive)' _riftwebkit-src/src/embedder/main.cpp
+
+      - name: Apply dependency bootstrap fix
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('_riftwebkit-src/tools/build-deps/webcore-deps.sh')
+          text = path.read_text(encoding='utf-8')
+          old = '    -DFT_DISABLE_BROTLI=OFF -DFT_REQUIRE_BROTLI=ON \\\n'
+          new = '    -DFT_DISABLE_BROTLI=ON \\\n'
+          if text.count(old) != 1:
+              raise SystemExit('Pinned helper FreeType/Brotli stanza changed unexpectedly')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          grep -F -- '-DFT_DISABLE_BROTLI=ON' _riftwebkit-src/tools/build-deps/webcore-deps.sh
+
+      - name: Prepare resumable cache directories
+        run: |
+          set -euxo pipefail
+          mkdir -p \
+            _riftwebkit-src/third_party/emsdk \
+            _riftwebkit-src/third_party/wasm-sysroot \
+            _riftwebkit-src/third_party/build-deps \
+            .ccache-riftwebkit
+
+      - name: Restore resumable bootstrap cache
+        id: bootstrap-cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _riftwebkit-src/third_party/emsdk
+            _riftwebkit-src/third_party/wasm-sysroot
+            _riftwebkit-src/third_party/build-deps
+          key: riftwebkit-bootstrap-${{ runner.os }}-${{ env.HELPER_COMMIT }}-${{ env.EMSDK_VERSION }}-${{ hashFiles('_riftwebkit-src/tools/bootstrap.sh', '_riftwebkit-src/tools/build-deps/*.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            riftwebkit-bootstrap-${{ runner.os }}-${{ env.HELPER_COMMIT }}-${{ env.EMSDK_VERSION }}-${{ hashFiles('_riftwebkit-src/tools/bootstrap.sh', '_riftwebkit-src/tools/build-deps/*.sh') }}-
+
+      - name: Add build swap headroom
+        run: |
+          set -euxo pipefail
+          if ! swapon --show 2>/dev/null | grep -q .; then
+            sudo fallocate -l 12G /swapfile || true
+            if [ -f /swapfile ]; then
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile || true
+            fi
+          fi
+          free -h
+          df -h /
+
+      - name: Bootstrap pinned WebKit Emscripten port
+        working-directory: _riftwebkit-src
+        run: |
+          set -euxo pipefail
+          bash tools/bootstrap.sh
+          test "$(git -C third_party/WebKit rev-parse HEAD)" = "$WEBKIT_COMMIT"
+          test -s third_party/emsdk/emsdk_env.sh
+          test -d third_party/wasm-sysroot
+          du -sh third_party
+
+      - name: Save resumable bootstrap cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            _riftwebkit-src/third_party/emsdk
+            _riftwebkit-src/third_party/wasm-sysroot
+            _riftwebkit-src/third_party/build-deps
+          key: ${{ steps.bootstrap-cache.outputs.cache-primary-key }}
+
+      - name: Prepare full mobile WebKit port
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          options = Path('_riftwebkit-src/third_party/WebKit/Source/cmake/OptionsEmscripten.cmake')
+          text = options.read_text(encoding='utf-8')
+          old = '''    else ()
+                  message(FATAL_ERROR "Sysroot FreeType lacks brotli/WOFF2 — rerun tools/build-deps/webcore-deps.sh (freetype section)")
+              endif ()'''
+          new = '''    else ()
+                  message(WARNING "RiftWebKit Mobile: sysroot FreeType lacks Brotli/WOFF2; continuing without downloadable WOFF/WOFF2 fonts")
+                  SET_AND_EXPOSE_TO_BUILD(HAVE_WOFF_SUPPORT OFF)
+              endif ()'''
+          if text.count(old) != 1:
+              raise SystemExit('Pinned OptionsEmscripten WOFF2 requirement changed unexpectedly')
+          options.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          main = Path('_riftwebkit-src/src/embedder/main.cpp')
+          text = main.read_text(encoding='utf-8')
+          if text.count('static constexpr int kWidth = 800;') != 1:
+              raise SystemExit('Pinned embedder width changed unexpectedly')
+          if text.count('static constexpr int kHeight = 600;') != 1:
+              raise SystemExit('Pinned embedder height changed unexpectedly')
+          text = text.replace('static constexpr int kWidth = 800;', 'static constexpr int kWidth = 390;', 1)
+          text = text.replace('static constexpr int kHeight = 600;', 'static constexpr int kHeight = 844;', 1)
+          main.write_text(text, encoding='utf-8')
+          PY
+          grep -F 'RiftWebKit Mobile: sysroot FreeType lacks Brotli/WOFF2' _riftwebkit-src/third_party/WebKit/Source/cmake/OptionsEmscripten.cmake
+          grep -F 'static constexpr int kWidth = 390;' _riftwebkit-src/src/embedder/main.cpp
+          grep -F 'static constexpr int kHeight = 844;' _riftwebkit-src/src/embedder/main.cpp
+
+      - name: Verify Emscripten toolchain
+        working-directory: _riftwebkit-src
+        run: |
+          set -euxo pipefail
+          expected_emsdk_version="$EMSDK_VERSION"
+          source third_party/emsdk/emsdk_env.sh >/dev/null 2>&1
+          command -v emcc
+          command -v em++
+          emcc --version | head -1
+          emcc --version | grep -F "$expected_emsdk_version"
+
+      - name: Restore RiftWebKit compiler cache
+        id: compile-cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache-riftwebkit
+          key: riftwebkit-ccache-${{ runner.os }}-${{ env.WEBKIT_COMMIT }}-${{ env.EMSDK_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            riftwebkit-ccache-${{ runner.os }}-${{ env.WEBKIT_COMMIT }}-${{ env.EMSDK_VERSION }}-
+
+      - name: Build full RiftWebKit mobile engine
+        env:
+          BIB_PTHREAD: '0'
+          BIB_JOBS: '4'
+          CCACHE_DIR: ${{ github.workspace }}/.ccache-riftwebkit
+          CCACHE_MAXSIZE: 3G
+          CCACHE_COMPRESS: '1'
+          CCACHE_COMPILERCHECK: content
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          set -euxo pipefail
+          ccache --max-size "$CCACHE_MAXSIZE"
+          ccache --zero-stats
+          bash _riftwebkit-src/tools/build-webcore.sh
+          test -s _riftwebkit-src/build/webcore/bin/embedder.js
+          test -s _riftwebkit-src/build/webcore/bin/embedder.wasm
+          test -s _riftwebkit-src/build/webcore/bin/bib-build-config.js
+
+      - name: Show RiftWebKit compiler cache stats
+        if: always()
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache-riftwebkit
+        run: |
+          ccache --show-stats || true
+          du -sh .ccache-riftwebkit 2>/dev/null || true
+
+      - name: Save RiftWebKit compiler cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache-riftwebkit
+          key: ${{ steps.compile-cache.outputs.cache-primary-key }}
+
+      - name: Show build diagnostics on failure
+        if: failure()
+        run: |
+          echo '=== WebCore configure tail ==='
+          tail -n 180 _riftwebkit-src/build/webcore-configure.log 2>/dev/null || true
+          tail -n 180 _riftwebkit-src/build/webcore-reconfigure.log 2>/dev/null || true
+          echo '=== ninja errors ==='
+          grep -n 'error:' _riftwebkit-src/build/webcore-ninja.log 2>/dev/null | tail -n 120 || true
+          echo '=== ninja tail ==='
+          tail -n 240 _riftwebkit-src/build/webcore-ninja.log 2>/dev/null || true
+          echo '=== resources ==='
+          free -h || true
+          df -h / || true
+
+      - name: Package RiftWebKit Mobile
+        run: |
+          set -euxo pipefail
+          rm -rf stage
+          mkdir -p stage/riftwebkit-mobile/engine stage/riftwebkit-mobile/vendor
+
+          cp _riftwebkit-src/web/browser.html stage/riftwebkit-mobile/index.html
+          cp _riftwebkit-src/web/vendor/wisp-client.js stage/riftwebkit-mobile/vendor/wisp-client.js
+          cp _riftwebkit-src/web/vendor/binaryen.js stage/riftwebkit-mobile/vendor/binaryen.js
+          cp _riftwebkit-src/web/wasm-polyfill.js stage/riftwebkit-mobile/wasm-polyfill.js
+          cp _riftwebkit-src/web/media-stub.js stage/riftwebkit-mobile/media-stub.js
+          cp _riftwebkit-src/build/webcore/bin/embedder.js stage/riftwebkit-mobile/engine/embedder.js
+          cp _riftwebkit-src/build/webcore/bin/embedder.wasm stage/riftwebkit-mobile/engine/embedder.wasm
+          cp _riftwebkit-src/build/webcore/bin/bib-build-config.js stage/riftwebkit-mobile/engine/bib-build-config.js
+          cp _riftwebkit-src/LICENSING.md stage/riftwebkit-mobile/LICENSING.md
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('stage/riftwebkit-mobile/index.html')
+          text = path.read_text(encoding='utf-8')
+          if '<meta charset="utf-8">' not in text:
+              raise SystemExit('Pinned browser host meta charset changed unexpectedly')
+          text = text.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">', 1)
+          if text.count('<canvas id="screen" width="800" height="600" tabindex="0"></canvas>') != 1:
+              raise SystemExit('Pinned browser canvas dimensions changed unexpectedly')
+          text = text.replace('<canvas id="screen" width="800" height="600" tabindex="0"></canvas>', '<canvas id="screen" width="390" height="844" tabindex="0"></canvas>', 1)
+          text = text.replace('<title>BrowserInBrowser — WebKit-in-wasm canvas</title>', '<title>RiftWebKit Mobile</title>', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          wasm_bytes=$(stat -c '%s' stage/riftwebkit-mobile/engine/embedder.wasm)
+          js_bytes=$(stat -c '%s' stage/riftwebkit-mobile/engine/embedder.js)
+          wasm_sha=$(sha256sum stage/riftwebkit-mobile/engine/embedder.wasm | cut -d' ' -f1)
+          js_sha=$(sha256sum stage/riftwebkit-mobile/engine/embedder.js | cut -d' ' -f1)
+
+          python3 - "$wasm_bytes" "$js_bytes" "$wasm_sha" "$js_sha" "$GITHUB_SHA" <<'PY'
+          import json, sys
+          wasm_bytes, js_bytes = map(int, sys.argv[1:3])
+          wasm_sha, js_sha, build = sys.argv[3:6]
+          manifest = {
+              'id': 'riftwebkit-mobile',
+              'name': 'RiftWebKit Mobile',
+              'available': True,
+              'build': build,
+              'mode': 'single-threaded-mobile',
+              'sourceCommit': 'cbdc40b3ca68f45fff8de61fd843f81a55026178',
+              'webkitCommit': 'aec9d2ad958e716ab4bca4bf03007e6edac7323f',
+              'emscripten': '6.0.0',
+              'requiresWebAssembly': True,
+              'requiresSharedArrayBuffer': False,
+              'requiresCrossOriginIsolation': False,
+              'requiresWisp': True,
+              'threaded': False,
+              'guestJavaScript': True,
+              'networking': True,
+              'persistence': True,
+              'cookies': True,
+              'storage': True,
+              'gpuCapable': True,
+              'defaultGPU': False,
+              'viewport': {'width': 390, 'height': 844},
+              'wasmBytes': wasm_bytes,
+              'wasmMiB': round(wasm_bytes / 1048576, 1),
+              'jsBytes': js_bytes,
+              'sha256': {'embedder.wasm': wasm_sha, 'embedder.js': js_sha},
+              'purpose': 'RiftOS iPhone WebCore/JSC browser engine with real HTTPS navigation over Wisp'
+          }
+          with open('stage/riftwebkit-mobile/engine-manifest.json', 'w', encoding='utf-8') as f:
+              json.dump(manifest, f, indent=2)
+              f.write('\n')
+          PY
+
+          test -s stage/riftwebkit-mobile/index.html
+          test -s stage/riftwebkit-mobile/engine/embedder.js
+          test -s stage/riftwebkit-mobile/engine/embedder.wasm
+          test -s stage/riftwebkit-mobile/vendor/wisp-client.js
+          test -s stage/riftwebkit-mobile/vendor/binaryen.js
+          grep -F '"id": "riftwebkit-mobile"' stage/riftwebkit-mobile/engine-manifest.json
+          grep -F '"networking": true' stage/riftwebkit-mobile/engine-manifest.json
+          grep -F '"guestJavaScript": true' stage/riftwebkit-mobile/engine-manifest.json
+          tar -C stage -czf "$RELEASE_TAG.tar.gz" riftwebkit-mobile
+          sha256sum "$RELEASE_TAG.tar.gz" > "$RELEASE_TAG.tar.gz.sha256"
+          ls -lh "$RELEASE_TAG.tar.gz" "$RELEASE_TAG.tar.gz.sha256"
+
+      - name: Upload RiftWebKit Mobile artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: riftwebkit-mobile-v1
+          path: |
+            stage/riftwebkit-mobile
+            riftwebkit-mobile-v1.tar.gz
+            riftwebkit-mobile-v1.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish or replace RiftWebKit Mobile release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$RELEASE_TAG.tar.gz" "$RELEASE_TAG.tar.gz.sha256" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$RELEASE_TAG.tar.gz" "$RELEASE_TAG.tar.gz.sha256" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title 'RiftWebKit Mobile v1' \
+              --notes 'Pinned single-threaded WebCore + JavaScriptCore + Skia WASM browser engine for RiftOS on iPhone.'
+          fi
+
+      - name: Deploy RiftOS with full RiftWebKit Mobile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run riftos-pages.yml --repo "$GITHUB_REPOSITORY" --ref main
