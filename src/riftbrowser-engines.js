@@ -58,7 +58,7 @@ async function probe({force=false}={}){
   return state.checking;
 }
 
-function frameURL(target,{wisp=configuredWisp()}={}){
+function frameURL(target,{wisp=configuredWisp(),firewall=null}={}){
   const url=new URL(HOST_FILE.href);
   url.searchParams.set("embed","1");
   url.searchParams.set("gpu",prefersDirectGPU()?"1":"0");
@@ -70,6 +70,10 @@ function frameURL(target,{wisp=configuredWisp()}={}){
   else if(normalized&&!canNavigate)url.searchParams.set("demo","interactive");
 
   if(wisp)url.searchParams.set("wisp",wisp);
+  if(firewall&&typeof firewall==="object"){
+    url.searchParams.set("fw",JSON.stringify(firewall));
+    if(firewall.blockTrackers===false)url.searchParams.set("noblock","1");
+  }
 
   // Keep the official throttled demo transport on the fast startup path while
   // we prove real HTTPS navigation. This skips the 13+ MB Binaryen guest-WASM
