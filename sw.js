@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v23-riftwebkit-mobile";
+const CACHE="riftos-shell-v24-riftwebkit-runtime-diagnostics";
 const CORE=[
   "./",
   "./index.html",
@@ -71,7 +71,7 @@ self.addEventListener("fetch",event=>{
     event.respondWith((async()=>{
       const cache=await caches.open(CACHE);
       try{
-        const response=await networkIsolated(request);
+        const response=await networkIsolated(request,{cache:"no-cache"});
         if(response.ok)await cache.put(request,response.clone());
         return response;
       }catch{
