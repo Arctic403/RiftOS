@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v27-riftwebkit-fastboot";
+const CACHE="riftos-shell-v28-riftbrowser-immersive";
 // Keep the expensive WebKit payload independent from fast-moving RiftOS shell
 // revisions. Bump this only when the published mobile engine build changes.
 const ENGINE_CACHE="riftwebkit-engine-c6126db7";
@@ -39,7 +39,7 @@ async function webKitHostResponse(request,url){
   let html=await raw.text();
   const marker="riftos-embedded-webkit-style";
   if(!html.includes(marker)&&html.includes("</head>")){
-    html=html.replace("</head>",`<style id="${marker}">#bibfreeze{display:none!important}</style></head>`);
+    html=html.replace("</head>",`<style id="${marker}">#bibfreeze{display:none!important}html body #screenwrap{overflow:hidden!important}html body #screen{display:block!important;width:100%!important;height:auto!important;max-width:100%!important;aspect-ratio:390/844!important}</style></head>`);
   }
 
   // The helper's compatibility host imports a 13+ MB Binaryen compiler before
