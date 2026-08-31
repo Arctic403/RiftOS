@@ -6,7 +6,8 @@ const $=selector=>document.querySelector(selector);
 const escapeHTML=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));
 const FIREWALL_HOST_SCRIPT=new URL("./riftbrowser-firewall-host.js",import.meta.url).href;
 const WARM_ENGINE_MS=60_000;
-const PERF_POLL_MS=150;
+const PREWARM_DELAY_MS=2_000;
+const PERF_POLL_MS=100;
 const PERF_TIMEOUT_MS=45_000;
 
 let browserProcess=null;
@@ -17,10 +18,13 @@ let engineTarget="";
 let frameBridgeTimer=0;
 let perfPollTimer=0;
 let warmReleaseTimer=0;
+let prewarmTimer=0;
+let prewarmStarted=false;
+let prewarmReady=false;
 let firewallTransportReady=false;
 let browserVisible=false;
 
-const perfState={seq:0,current:null,recent:[],lastWarmResume:null};
+const perfState={seq:0,current:null,recent:[],lastWarmResume:null,lastPrewarm:null};
 function perfNow(){return performance.now();}
 function beginPerf(target,{warm=false,reason="navigate"}={}){
   const metric={id:++perfState.seq,target:String(target||""),reason,warm,startedAt:Date.now(),t0:perfNow(),marks:{request:0},bytes0:0,frames0:null};
@@ -33,15 +37,21 @@ function perfMark(name,extra={}){
   Object.assign(metric,extra);
   console.info(`[RiftBrowser perf] ${name} +${metric.marks[name]}ms`,metric.target||"");
 }
+function frameCounter(win){
+  try{
+    const value=Number(win?.__bib?.frames??win?.bib?.frames);
+    return Number.isFinite(value)?value:null;
+  }catch{return null;}
+}
 function perfSnapshot(){
   const clean=metric=>metric?{id:metric.id,target:metric.target,reason:metric.reason,warm:metric.warm,startedAt:metric.startedAt,marks:{...metric.marks}}:null;
-  return {warmEngineMs:WARM_ENGINE_MS,warmAlive:!!(engineFrame?.isConnected&&!browserVisible),lastWarmResume:perfState.lastWarmResume,current:clean(perfState.current),recent:perfState.recent.slice(0,8).map(clean)};
+  return {warmEngineMs:WARM_ENGINE_MS,prewarmDelayMs:PREWARM_DELAY_MS,warmAlive:!!(engineFrame?.isConnected&&!browserVisible),prewarmStarted,prewarmReady,lastPrewarm:perfState.lastPrewarm,lastWarmResume:perfState.lastWarmResume,current:clean(perfState.current),recent:perfState.recent.slice(0,8).map(clean)};
 }
 function stopPerfPoll(){clearInterval(perfPollTimer);perfPollTimer=0;}
 function startPerfPoll(frame,metric=perfState.current){
   stopPerfPoll();if(!frame||!metric)return;
   let win;try{win=frame.contentWindow;}catch{return;}
-  try{metric.bytes0=Number(win?.__bibWispBytes||0);const f=Number(win?.bib?.frames);metric.frames0=Number.isFinite(f)?f:null;}catch{}
+  try{metric.bytes0=Number(win?.__bibWispBytes||0);metric.frames0=frameCounter(win);}catch{}
   const deadline=perfNow()+PERF_TIMEOUT_MS;
   perfPollTimer=setInterval(()=>{
     if(!engineFrame||frame!==engineFrame||!frame.isConnected||perfState.current!==metric||perfNow()>deadline){stopPerfPoll();return;}
@@ -49,8 +59,8 @@ function startPerfPoll(frame,metric=perfState.current){
       const w=frame.contentWindow;
       const bytes=Number(w?.__bibWispBytes||0);
       if(bytes>metric.bytes0)perfMark("firstNetworkByte");
-      const frames=Number(w?.bib?.frames);
-      if(metric.frames0!==null&&Number.isFinite(frames)&&frames>metric.frames0)perfMark("firstNewFrame");
+      const frames=frameCounter(w);
+      if(metric.frames0!==null&&frames!==null&&frames>metric.frames0)perfMark("firstNewFrame");
       if(metric.marks.firstNetworkByte!==undefined&&metric.marks.firstNewFrame!==undefined)stopPerfPoll();
     }catch{}
   },PERF_POLL_MS);
@@ -60,7 +70,7 @@ function setStatus(value){const el=$("#statusText");if(el)el.textContent=value;}
 function killBrowserProcess(){if(browserProcess){core.kernel.kill(browserProcess.pid);browserProcess=null;}}
 function flushEngineState(){try{const Module=moduleFor(engineFrame);if(Module?._bib_persist_now)Module._bib_persist_now();}catch{}}
 function discardEngineFrame(){
-  clearInterval(frameBridgeTimer);frameBridgeTimer=0;stopPerfPoll();firewallTransportReady=false;
+  clearInterval(frameBridgeTimer);frameBridgeTimer=0;stopPerfPoll();firewallTransportReady=false;prewarmReady=false;
   try{engineFrame?.remove();}catch{}
   engineFrame=null;engineBuild="";engineTarget="";
 }
@@ -85,7 +95,7 @@ function createWindow(){
   const stage=$("#stage"),workspace=$("#workspace"),template=$("#windowTemplate");
   if(!stage||!workspace||!template)throw new Error("RiftOS browser window host is unavailable");
   clearTimeout(warmReleaseTimer);warmReleaseTimer=0;
-  if(browserWindow&&!browserWindow.isConnected){browserWindow=null;engineFrame=null;engineBuild="";engineTarget="";firewallTransportReady=false;}
+  if(browserWindow&&!browserWindow.isConnected){browserWindow=null;engineFrame=null;engineBuild="";engineTarget="";firewallTransportReady=false;prewarmReady=false;}
   const existing=stage.querySelector('[data-app="browser-kernel"]');
   const reused=!!(browserWindow?.isConnected&&existing&&existing.contains(browserWindow));
   killBrowserProcess();workspace.classList.add("hidden");stage.classList.remove("hidden");browserVisible=true;
@@ -97,9 +107,9 @@ function createWindow(){
     win.querySelector(".window-close").onclick=()=>closeWebBrowser();
     stage.append(win);browserWindow=win.querySelector(".window-body");
   }else{
-    perfState.lastWarmResume=Date.now();beginPerf(browser.activeTab()?.url||engineTarget,{warm:true,reason:"warm-resume"});perfMark("warmResume");
+    perfState.lastWarmResume=Date.now();beginPerf(browser.activeTab()?.url||engineTarget,{warm:true,reason:prewarmReady?"prewarm-resume":"warm-resume"});perfMark(prewarmReady?"prewarmResume":"warmResume");
   }
-  browserProcess=core.kernel.launchProcess("browser","RiftBrowser",{kind:"riftwebkit-browser",warm:reused});
+  browserProcess=core.kernel.launchProcess("browser","RiftBrowser",{kind:"riftwebkit-browser",warm:reused,prewarmed:prewarmReady});
   document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="browser"));
   setStatus(reused?"RiftBrowser · warm":"RiftBrowser");
   return {body:browserWindow,reused};
@@ -165,11 +175,24 @@ function installMobileBridge(frame){
   const finish=event=>{if(!gesture)return;event.preventDefault();const touch=event.changedTouches?.[0]||gesture.lastTouch;if(!gesture.moved&&touch)tapEngine(frame,canvas,touch);gesture=null;};canvas.addEventListener("touchend",finish,{passive:false});canvas.addEventListener("touchcancel",finish,{passive:false});return true;
 }
 function installTransportFirewall(frame){let doc,win;try{doc=frame.contentDocument;win=frame.contentWindow;}catch{return false;}if(!doc||!win)return false;if(win.__riftFirewallTransport?.active){if(!firewallTransportReady){firewallTransportReady=true;perfMark("firewallReady");}return true;}if(!doc.getElementById("riftFirewallHostBridge")){const script=doc.createElement("script");script.id="riftFirewallHostBridge";script.src=FIREWALL_HOST_SCRIPT;script.async=false;script.addEventListener("error",()=>console.error("[RiftBrowser] RiftFirewall host bridge failed to load"));doc.head.append(script);}return false;}
-function dispatchProtectedNavigation(frame,target){const Module=moduleFor(frame);if(!target||!Module||typeof Module.ccall!=="function"||typeof Module._bib_load_url!=="function")return false;try{perfMark("navigationDispatch");startPerfPoll(frame);Module.ccall("bib_load_url",null,["string"],[target]);frame.dataset.riftLoadedTarget=target;engineTarget=target;return true;}catch(error){console.warn("[RiftBrowser] protected WebKit navigation failed",error);return false;}}
+function dispatchProtectedNavigation(frame,target){const Module=moduleFor(frame);if(!target||!Module||typeof Module.ccall!=="function"||typeof Module._bib_load_url!=="function")return false;try{perfMark("navigationDispatch");startPerfPoll(frame);Module.ccall("bib_load_url",null,["string"],[target]);frame.dataset.riftLoadedTarget=target;engineTarget=target;prewarmReady=false;return true;}catch(error){console.warn("[RiftBrowser] protected WebKit navigation failed",error);return false;}}
 function armFrameBridge(frame,target=""){
   clearInterval(frameBridgeTimer);let tries=0;
-  const tick=()=>{tries++;const touchReady=installMobileBridge(frame),firewallReady=installTransportFirewall(frame),Module=moduleFor(frame);if(Module&&typeof Module._bib_load_url==="function")perfMark("engineApiReady");if(firewallReady&&Module&&typeof Module.ccall==="function"&&typeof Module._bib_load_url==="function"){if(target&&frame.dataset.riftLoadedTarget!==target)dispatchProtectedNavigation(frame,target);if(touchReady){clearInterval(frameBridgeTimer);frameBridgeTimer=0;return;}}if(tries>480){clearInterval(frameBridgeTimer);frameBridgeTimer=0;}};
-  tick();frameBridgeTimer=setInterval(tick,250);
+  const tick=()=>{
+    tries++;let win=null;try{win=frame.contentWindow;}catch{}
+    if(win?.__bib)perfMark("hostRuntimeReady");
+    const Module=moduleFor(frame);if(Module)perfMark("moduleObjectReady");
+    const touchReady=installMobileBridge(frame),firewallReady=installTransportFirewall(frame);
+    if(win?.__bib?.ready===true)perfMark("webkitRuntimeReady");
+    if(Module&&typeof Module._bib_load_url==="function")perfMark("engineApiReady");
+    if(firewallReady&&Module&&typeof Module.ccall==="function"&&typeof Module._bib_load_url==="function"){
+      if(target&&frame.dataset.riftLoadedTarget!==target)dispatchProtectedNavigation(frame,target);
+      if(!target&&!browserVisible){prewarmReady=true;perfState.lastPrewarm=Date.now();perfMark("prewarmReady");}
+      if(touchReady){clearInterval(frameBridgeTimer);frameBridgeTimer=0;return;}
+    }
+    if(tries>480){clearInterval(frameBridgeTimer);frameBridgeTimer=0;}
+  };
+  tick();frameBridgeTimer=setInterval(tick,100);
 }
 function createEngineFrame(result){
   const surface=browserWindow?.querySelector("#kbSurface");if(!surface)return null;surface.innerHTML='<iframe class="kbrowser-engine-frame" title="RiftWebKit mobile engine" allow="clipboard-read; clipboard-write; autoplay; fullscreen"></iframe>';
@@ -182,6 +205,33 @@ function navigateEngine(result){
   if(result.browsingReady&&protectedTransport&&Module&&typeof Module.ccall==="function"&&typeof Module._bib_load_url==="function"){dispatchProtectedNavigation(engineFrame,result.url);armFrameBridge(engineFrame);return engineFrame;}engineTarget=result.url;armFrameBridge(engineFrame,result.url);return engineFrame;
 }
 
+async function idlePrewarm(){
+  if(prewarmStarted||browserVisible||engineFrame?.isConnected)return false;
+  const stage=$("#stage"),workspace=$("#workspace"),template=$("#windowTemplate");if(!stage||!workspace||!template)return false;
+  prewarmStarted=true;beginPerf("local://riftwebkit-prewarm",{warm:false,reason:"idle-prewarm"});
+  try{
+    const {reused}=createWindow();
+    if(!browser.activeTab())browser.createTab("https://chatgpt.com");
+    syncChrome({reset:!browserWindow.querySelector(".kbrowser")});renderStart();
+    // Hide the host again in the same task: the user never sees the prewarm UI.
+    killBrowserProcess();browserVisible=false;stage.classList.add("hidden");workspace.classList.remove("hidden");
+    document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="home"));
+    await browser.refreshEngines();
+    if(browserVisible||engineFrame?.isConnected)return !!engineFrame?.isConnected;
+    const engine=browser.info().engine,adapter=window.RiftBrowserEngines;
+    if(!engine?.available||!adapter?.frameURL)throw new Error("RiftWebKit prewarm host unavailable");
+    const src=adapter.frameURL("",{firewall:browser.firewallSettings?.()||null});
+    createEngineFrame({engine,src,url:"",browsingReady:engine.browsingReady});
+    scheduleWarmRelease();
+    return true;
+  }catch(error){console.warn("[RiftBrowser] idle prewarm skipped",error);hardReleaseBrowserHost();return false;}
+}
+function scheduleIdlePrewarm(){
+  clearTimeout(prewarmTimer);if(prewarmStarted||browserVisible||engineFrame?.isConnected)return;
+  const run=()=>{prewarmTimer=0;if(typeof requestIdleCallback==="function")requestIdleCallback(()=>idlePrewarm(),{timeout:1500});else idlePrewarm();};
+  prewarmTimer=setTimeout(run,PREWARM_DELAY_MS);
+}
+
 function showError(error){const surface=browserWindow?.querySelector("#kbSurface");if(surface)surface.innerHTML=`<section class="browser-blocked"><div class="browser-warning">!</div><h2>RiftWebKit error</h2><p>${escapeHTML(error?.message||error)}</p></section>`;}
 function renderResult(detail){
   if(!browserWindow)return;syncChrome();const surface=browserWindow.querySelector("#kbSurface"),state=browserWindow.querySelector("#kbState"),ready=browserWindow.querySelector("#kbReady"),result=detail?.result||{};if(state)state.textContent=result.backend||"unknown";if(ready&&result.engine)ready.textContent=result.browsingReady?"WebKit web engine ready":"WebKit proof/runtime ready";
@@ -189,8 +239,9 @@ function renderResult(detail){
 }
 
 async function openBrowser(initial="https://chatgpt.com",{newTab=false}={}){
+  clearTimeout(prewarmTimer);prewarmTimer=0;
   const {reused}=createWindow();if(!browser.activeTab())browser.createTab(initial);syncChrome({reset:!browserWindow.querySelector(".kbrowser")});if(!engineFrame?.isConnected)renderStart();await browser.refreshEngines();
-  if(reused&&engineFrame?.isConnected&&!newTab){syncChrome();const ready=browserWindow?.querySelector("#kbReady");if(ready)ready.textContent="WebKit warm · ready";return {warm:true,tab:browser.activeTab(),performance:perfSnapshot()};}
+  if(reused&&engineFrame?.isConnected&&!newTab&&engineTarget){syncChrome();const ready=browserWindow?.querySelector("#kbReady");if(ready)ready.textContent="WebKit warm · ready";return {warm:true,tab:browser.activeTab(),performance:perfSnapshot()};}
   const target=newTab?initial:(browser.activeTab()?.url||initial);return browser.open(target,{newTab});
 }
 
@@ -202,9 +253,9 @@ window.addEventListener("pagehide",()=>hardReleaseBrowserHost());
 document.addEventListener("click",event=>{const target=event.target.closest?.("[data-open]");if(!target)return;if(target.dataset.open==="browser"){event.preventDefault();event.stopImmediatePropagation();openBrowser().catch(showError);return;}if(browserVisible)closeWebBrowser();},true);
 document.addEventListener("submit",event=>{
   const form=event.target;if(!form.matches?.("form.shell-line"))return;const input=form.querySelector("input"),raw=input?.value?.trim()||"",parts=raw.split(/\s+/),cmd=(parts.shift()||"").toLowerCase();if(!["browser","browserctl"].includes(cmd))return;event.preventDefault();event.stopImmediatePropagation();if(input)input.value="";const out=form.closest(".shell")?.querySelector(".shell-output"),print=value=>{if(out){out.textContent+=String(value??"")+"\n";out.scrollTop=out.scrollHeight;}};print(`rift$ ${raw}`);
-  (async()=>{if(cmd==="browser"){await openBrowser(parts.join(" ")||"https://chatgpt.com");print("[browser] riftwebkit");return;}const sub=(parts.shift()||"status").toLowerCase();if(sub==="status")return print(JSON.stringify(browser.info(),null,2));if(sub==="perf")return print(JSON.stringify(perfSnapshot(),null,2));if(sub==="tabs")return print(browser.listTabs().map(tab=>`${tab.id===browser.activeTab()?.id?"*":" "} ${tab.id} ${tab.url}`).join("\n")||"(no tabs)");if(sub==="probe")return print(JSON.stringify(await browser.refreshEngines(true),null,2));if(sub==="wisp")return print(`wisp=${browser.setWisp(parts.join(" "))||"(unset)"}`);if(sub==="firewall"){const action=(parts.shift()||"status").toLowerCase();if(action==="status")return print(JSON.stringify(browser.firewallSummary(),null,2));if(action==="on")return print(JSON.stringify(browser.setFirewall({enabled:true,networkEnabled:true}),null,2));if(action==="off")return print(JSON.stringify(browser.setFirewall({enabled:false}),null,2));if(action==="kill")return print(JSON.stringify(browser.setFirewall({enabled:true,networkEnabled:false}),null,2));if(action==="resume")return print(JSON.stringify(browser.setFirewall({enabled:true,networkEnabled:true}),null,2));if(action==="reset")return print(JSON.stringify(browser.resetFirewall(),null,2));return print("usage: browserctl firewall [status|on|off|kill|resume|reset]");}if(sub==="clear-data")return print(`siteDataCleared=${await browser.clearBrowserSiteData()}`);if(sub==="new")return openBrowser(parts.join(" ")||"https://chatgpt.com",{newTab:true});if(sub==="back")return browser.back();if(sub==="forward")return browser.forward();if(sub==="reload")return browser.reload();if(sub==="bookmark")return print(JSON.stringify(browser.bookmark(parts.join(" ")||undefined),null,2));if(sub==="bookmarks")return print(JSON.stringify(browser.bookmarks(),null,2));if(sub==="close")return print(browser.closeTab(parts[0]||browser.activeTab()?.id));print("usage: browserctl [status|perf|tabs|probe|wisp <wss://.../>|firewall ...|clear-data|new [url]|back|forward|reload|bookmark [url]|bookmarks|close [tabId]]");})().catch(error=>print(`browser error: ${error.message}`));
+  (async()=>{if(cmd==="browser"){await openBrowser(parts.join(" ")||"https://chatgpt.com");print("[browser] riftwebkit");return;}const sub=(parts.shift()||"status").toLowerCase();if(sub==="status")return print(JSON.stringify(browser.info(),null,2));if(sub==="perf")return print(JSON.stringify(perfSnapshot(),null,2));if(sub==="prewarm")return print(JSON.stringify({started:await idlePrewarm(),performance:perfSnapshot()},null,2));if(sub==="tabs")return print(browser.listTabs().map(tab=>`${tab.id===browser.activeTab()?.id?"*":" "} ${tab.id} ${tab.url}`).join("\n")||"(no tabs)");if(sub==="probe")return print(JSON.stringify(await browser.refreshEngines(true),null,2));if(sub==="wisp")return print(`wisp=${browser.setWisp(parts.join(" "))||"(unset)"}`);if(sub==="firewall"){const action=(parts.shift()||"status").toLowerCase();if(action==="status")return print(JSON.stringify(browser.firewallSummary(),null,2));if(action==="on")return print(JSON.stringify(browser.setFirewall({enabled:true,networkEnabled:true}),null,2));if(action==="off")return print(JSON.stringify(browser.setFirewall({enabled:false}),null,2));if(action==="kill")return print(JSON.stringify(browser.setFirewall({enabled:true,networkEnabled:false}),null,2));if(action==="resume")return print(JSON.stringify(browser.setFirewall({enabled:true,networkEnabled:true}),null,2));if(action==="reset")return print(JSON.stringify(browser.resetFirewall(),null,2));return print("usage: browserctl firewall [status|on|off|kill|resume|reset]");}if(sub==="clear-data")return print(`siteDataCleared=${await browser.clearBrowserSiteData()}`);if(sub==="new")return openBrowser(parts.join(" ")||"https://chatgpt.com",{newTab:true});if(sub==="back")return browser.back();if(sub==="forward")return browser.forward();if(sub==="reload")return browser.reload();if(sub==="bookmark")return print(JSON.stringify(browser.bookmark(parts.join(" ")||undefined),null,2));if(sub==="bookmarks")return print(JSON.stringify(browser.bookmarks(),null,2));if(sub==="close")return print(browser.closeTab(parts[0]||browser.activeTab()?.id));print("usage: browserctl [status|perf|prewarm|tabs|probe|wisp <wss://.../>|firewall ...|clear-data|new [url]|back|forward|reload|bookmark [url]|bookmarks|close [tabId]]");})().catch(error=>print(`browser error: ${error.message}`));
 },true);
 
-window.RiftBrowserPerf=Object.freeze({snapshot:perfSnapshot,release:()=>hardReleaseBrowserHost()});window.RiftBrowserUI=Object.freeze({open:openBrowser,close:closeWebBrowser,firewall:showFirewallPanel,performance:perfSnapshot});
+window.RiftBrowserPerf=Object.freeze({snapshot:perfSnapshot,release:()=>hardReleaseBrowserHost(),prewarm:idlePrewarm});window.RiftBrowserUI=Object.freeze({open:openBrowser,close:closeWebBrowser,firewall:showFirewallPanel,performance:perfSnapshot,prewarm:idlePrewarm});
 function labelBrowserLauncher(){document.querySelectorAll('[data-open="browser"] small').forEach(node=>{node.textContent="RiftWebKit mobile browser";});}
-window.addEventListener("riftos:launcher-ready",labelBrowserLauncher);window.addEventListener("riftos:trueos-ready",labelBrowserLauncher);queueMicrotask(labelBrowserLauncher);
+window.addEventListener("riftos:launcher-ready",()=>{labelBrowserLauncher();scheduleIdlePrewarm();});window.addEventListener("riftos:trueos-ready",()=>{labelBrowserLauncher();scheduleIdlePrewarm();});queueMicrotask(()=>{labelBrowserLauncher();scheduleIdlePrewarm();});
