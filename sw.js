@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v22-gecko-engine-lab";
+const CACHE="riftos-shell-v23-riftwebkit-mobile";
 const CORE=[
   "./",
   "./index.html",
@@ -52,7 +52,7 @@ self.addEventListener("fetch",event=>{
 
   const isCore=coreURLs.has(url.href);
   const isRiftDev=url.pathname.includes("/apps/riftdev/");
-  const isBrowserEngine=url.pathname.includes("/engines/gecko/");
+  const isBrowserEngine=url.pathname.includes("/engines/webkit/");
 
   if(isCore){
     event.respondWith((async()=>{
@@ -76,7 +76,7 @@ self.addEventListener("fetch",event=>{
         return response;
       }catch{
         const cached=await cache.match(request);
-        return cached?isolateResponse(cached):new Response(isBrowserEngine?"RiftBrowser engine artifact unavailable":"Offline RiftDev asset unavailable",{status:503});
+        return cached?isolateResponse(cached):new Response(isBrowserEngine?"RiftWebKit engine artifact unavailable":"Offline RiftDev asset unavailable",{status:503});
       }
     })());return;
   }
