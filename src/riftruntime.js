@@ -4,9 +4,7 @@ if(!core?.kernel)throw new Error("RiftRuntime requires RiftOSCore");
 const baseKernelInfo=core.kernel.info.bind(core.kernel);
 
 function deliveryMode(){
-  if(location.protocol==="riftos:")return "native-bundle";
   if(window.matchMedia?.("(display-mode: standalone)")?.matches)return "home-screen-web-app";
-  if(document.referrer.startsWith("android-app://"))return "home-screen-web-app";
   return "browser-tab";
 }
 
@@ -21,48 +19,40 @@ function runtimeCapabilities(){
     webShare:!!navigator.share,
     notifications:"Notification" in window,
     clipboard:!!navigator.clipboard,
-    nativeBridge:!!core.native?.connected
+    riftWebKit:!!window.RiftBrowserEngines
   };
 }
 
 async function info(){
   const base=await baseKernelInfo();
-  const nativeBridge=!!core.native?.connected;
   return {
     ...base,
-    mode:nativeBridge?"riftkernel-webkit+native-capabilities":"riftkernel-webkit",
-    host:nativeBridge?"Apple WebKit + optional RiftNative bridge":"Apple WebKit",
+    mode:"riftkernel-webkit",
+    host:"Apple WebKit",
     delivery:deliveryMode(),
     appSigningRequiredForKernel:false,
-    nativeExecutableSigningRequired:nativeBridge,
+    nativeExecutableSigningRequired:false,
+    browserEngine:"riftwebkit",
     runtimeCapabilities:runtimeCapabilities()
   };
 }
 
-// Runtime identity belongs to RiftKernel, not to the delivery mechanism.
-// A Home Screen web app is how unsigned RiftOS is launched; it is not a
-// separate or reduced kernel mode.
 core.kernel.info=info;
 
 window.RiftRuntime=Object.freeze({
   info,
   deliveryMode,
   capabilities:runtimeCapabilities,
-  get nativeBridge(){return !!core.native?.connected;},
-  get unsignedKernel(){return !core.native?.connected;}
+  get unsignedKernel(){return true;}
 });
 
 document.documentElement.dataset.riftRuntime="webkit";
 document.documentElement.dataset.riftDelivery=deliveryMode();
 
-// Remove old presentation-only wording without pretending native-only
-// capabilities exist. This observer can disappear when the desktop settings
-// view is next refactored; the authoritative identity is core.kernel.info().
 const relabelLegacyMode=()=>{
-  if(core.native?.connected)return;
   for(const node of document.querySelectorAll(".trueos-chip,.trueos-card small,.trueos-head small")){
     if(node.textContent?.includes("PWA MODE"))node.textContent=node.textContent.replace("PWA MODE","WEBKIT HOST");
-    if(node.textContent?.includes("PWA preview"))node.textContent=node.textContent.replace("PWA preview","Web transport · WebKit host");
+    if(node.textContent?.includes("PWA preview"))node.textContent=node.textContent.replace("PWA preview","RiftKernel · WebKit host");
     if(node.textContent?.includes("web-pwa"))node.textContent=node.textContent.replace("web-pwa","riftkernel-webkit");
   }
 };
