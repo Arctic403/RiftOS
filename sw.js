@@ -1,4 +1,7 @@
-const CACHE="riftos-shell-v24-riftwebkit-runtime-diagnostics";
+const CACHE="riftos-shell-v25-riftwebkit-gpu";
+// Keep the expensive WebKit payload independent from fast-moving RiftOS shell
+// revisions. Bump this only when the published mobile engine build changes.
+const ENGINE_CACHE="riftwebkit-engine-c6126db7";
 const CORE=[
   "./",
   "./index.html",
@@ -42,7 +45,7 @@ self.addEventListener("install",event=>event.waitUntil((async()=>{
 })()));
 
 self.addEventListener("activate",event=>event.waitUntil(
-  caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())
+  caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE&&key!==ENGINE_CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())
 ));
 
 self.addEventListener("fetch",event=>{
@@ -53,6 +56,12 @@ self.addEventListener("fetch",event=>{
   const isCore=coreURLs.has(url.href);
   const isRiftDev=url.pathname.includes("/apps/riftdev/");
   const isBrowserEngine=url.pathname.includes("/engines/webkit/");
+  const isEngineHeavy=isBrowserEngine&&(
+    url.pathname.includes("/engines/webkit/engine/")||
+    url.pathname.includes("/engines/webkit/vendor/")||
+    url.pathname.endsWith("/engines/webkit/wasm-polyfill.js")||
+    url.pathname.endsWith("/engines/webkit/media-stub.js")
+  );
 
   if(isCore){
     event.respondWith((async()=>{
@@ -63,6 +72,25 @@ self.addEventListener("fetch",event=>{
       }catch{
         const cached=await caches.match(request);
         return cached?isolateResponse(cached):new Response("Offline RiftKernel asset unavailable",{status:503});
+      }
+    })());return;
+  }
+
+  // The WASM/JS/vendor payload is immutable for this engine build and very
+  // large. Cache-first avoids re-fetching/revalidating it after ordinary shell
+  // updates. The manifest + host HTML remain network-first so runtime fixes can
+  // ship instantly without rebuilding WebKit.
+  if(isEngineHeavy){
+    event.respondWith((async()=>{
+      const cache=await caches.open(ENGINE_CACHE);
+      const cached=await cache.match(request);
+      if(cached)return isolateResponse(cached);
+      try{
+        const response=await networkIsolated(request,{cache:"default"});
+        if(response.ok)await cache.put(request,response.clone());
+        return response;
+      }catch{
+        return new Response("RiftWebKit engine asset unavailable",{status:503});
       }
     })());return;
   }
