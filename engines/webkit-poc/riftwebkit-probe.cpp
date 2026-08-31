@@ -18,6 +18,7 @@
 #include "GraphicsContextSkia.h"
 #include "HandleUserInputEventResult.h"
 #include "LocalFrame.h"
+#include "LocalFrameInlines.h"
 #include "LocalFrameView.h"
 #include "Page.h"
 #include "PageConfiguration.h"
