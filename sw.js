@@ -1,4 +1,4 @@
-const CACHE="riftos-shell-v26-riftwebkit-embedded-host";
+const CACHE="riftos-shell-v27-riftwebkit-fastboot";
 // Keep the expensive WebKit payload independent from fast-moving RiftOS shell
 // revisions. Bump this only when the published mobile engine build changes.
 const ENGINE_CACHE="riftwebkit-engine-c6126db7";
@@ -41,6 +41,20 @@ async function webKitHostResponse(request,url){
   if(!html.includes(marker)&&html.includes("</head>")){
     html=html.replace("</head>",`<style id="${marker}">#bibfreeze{display:none!important}</style></head>`);
   }
+
+  // The helper's compatibility host imports a 13+ MB Binaryen compiler before
+  // it will append embedder.js. That is useful for guest WebAssembly shimming on
+  // complex external sites, but it is wasted work while RiftBrowser has no Wisp
+  // transport and can only run the local diagnostic page. In fastboot mode we
+  // replace only that import with an already-resolved null module. The helper's
+  // existing wasmShimReady logic then disables the guest-WASM shim and boots
+  // WebCore immediately. Real Wisp browsing never receives this rewrite.
+  if(url.searchParams.get("fastboot")==="1"){
+    const binaryenImport='import("./vendor/binaryen.js").then((m) => { binaryen = m.default; }),';
+    const binaryenSkip='Promise.resolve().then(() => { binaryen = null; }),';
+    if(html.includes(binaryenImport))html=html.replace(binaryenImport,binaryenSkip);
+  }
+
   const headers=new Headers(raw.headers);
   headers.delete("content-length");
   headers.set("content-type","text/html; charset=utf-8");
