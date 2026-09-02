@@ -4,11 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="theme-color" content="#0a0d12">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RiftOS">
   <title>RiftOS</title>
-  <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./src/riftbrowser-ui.css">
 </head>
@@ -16,7 +12,7 @@
   <div id="boot" class="boot">
     <div class="boot-mark">R</div>
     <div class="boot-title">RiftOS</div>
-    <div class="boot-sub">RiftKernel / WebKit Runtime</div>
+    <div class="boot-sub">RiftKernel / Android Native Runtime</div>
     <div class="boot-bar"><i></i></div>
   </div>
 
@@ -31,9 +27,9 @@
       <section id="workspace" class="workspace">
         <div class="hero">
           <div>
-            <span class="eyebrow">RIFTKERNEL / WEBKIT HOST</span>
+            <span class="eyebrow">RIFTKERNEL / ANDROID HOST</span>
             <h1>Your pocket computer.</h1>
-            <p>One kernel. OPFS filesystem. Apple WebKit host. No signed RiftOS app required.</p>
+            <p>Android-native RiftFS. Secure WebView host. Storage Access Framework mounts.</p>
           </div>
           <button class="pill" data-open="terminal">Open RiftShell</button>
         </div>
@@ -65,17 +61,6 @@
     </article>
   </template>
 
-  <script type="module" src="./src/riftcore.js"></script>
-  <script type="module" src="./src/riftworkspace-web.js"></script>
-  <script type="module" src="./src/riftruntime.js"></script>
-  <script type="module" src="./src/riftbrowser-firewall.js"></script>
-  <script type="module" src="./src/riftbrowser-engines.js"></script>
-  <script type="module" src="./src/riftbrowser-kernel.js"></script>
-  <script type="module" src="./src/riftapps.js"></script>
-  <script type="module" src="./src/riftapps-files.js"></script>
-  <script type="module" src="./src/riftgit.js"></script>
-  <script type="module" src="./src/riftdev-host.js"></script>
-  <script type="module" src="./src/riftos.js"></script>
-  <script type="module" src="./src/riftbrowser-ui.js"></script>
+  <script type="module" src="./src/riftandroid-entry.js"></script>
 </body>
 </html>
