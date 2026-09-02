@@ -50,4 +50,5 @@ tasks.named("preBuild").configure {
 
 dependencies {
     implementation("androidx.webkit:webkit:1.16.0")
+    implementation("androidx.documentfile:documentfile:1.1.0")
 }
