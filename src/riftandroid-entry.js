@@ -10,3 +10,4 @@ await import("./riftgit.js");
 await import("./riftdev-host.js");
 await import("./riftdesktop-android.js");
 await import("./riftos.js");
+await import("./riftdesktop-android-compat.js");
