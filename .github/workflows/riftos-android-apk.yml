@@ -51,7 +51,7 @@ jobs:
         working-directory: android
         run: gradle --stacktrace :app:assembleRelease
 
-      - name: Align and dual-sign APK for Android 8+
+      - name: Align and sign APK for Android 8+
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
@@ -74,14 +74,14 @@ jobs:
 
           "$BUILD_TOOLS/zipalign" -c -v 4 "$FINAL"
 
-      - name: Verify APK package and signatures
+      - name: Verify APK package and Android 8 signature
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           FINAL="$GITHUB_WORKSPACE/RiftOS-Android-debug.apk"
 
           VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$FINAL")"
           printf '%s\n' "$VERIFY_OUTPUT"
-          printf '%s\n' "$VERIFY_OUTPUT" | grep -Fq "Verified using v1 scheme (JAR signing): true"
+          # Android 8.0 / API 26 supports APK Signature Scheme v2. v1 is diagnostic only.
           printf '%s\n' "$VERIFY_OUTPUT" | grep -Fq "Verified using v2 scheme (APK Signature Scheme v2): true"
 
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$FINAL")"
