@@ -18,9 +18,9 @@ permissions:
 
 jobs:
   apk:
-    name: Build debug APK
+    name: Build + Android 8 install test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,43 +37,90 @@ jobs:
       - name: Install Android platform
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Restore stable RiftOS debug signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: riftos-android-debug-signing-v1
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
 
-      - name: Build RiftOS debug APK
-        working-directory: android
-        run: gradle --stacktrace :app:assembleDebug
-
-      - name: Verify APK signature
+      - name: Restore stable RiftOS alpha signing key
         run: |
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
-          "$APKSIGNER" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk
+          base64 --decode android/riftos-debug.keystore.b64 > "$RUNNER_TEMP/riftos-debug.keystore"
+          keytool -list -keystore "$RUNNER_TEMP/riftos-debug.keystore" -storepass android -alias riftosdebug >/dev/null
 
-      - name: Upload APK artifact
+      - name: Build unsigned RiftOS alpha APK
+        working-directory: android
+        run: gradle --stacktrace :app:assembleRelease
+
+      - name: Align and dual-sign APK for Android 8+
+        run: |
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          ALIGNED="$RUNNER_TEMP/RiftOS-Android-aligned.apk"
+          FINAL="$GITHUB_WORKSPACE/RiftOS-Android-debug.apk"
+
+          test -f "$UNSIGNED"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$RUNNER_TEMP/riftos-debug.keystore" \
+            --ks-key-alias riftosdebug \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled false \
+            --v4-signing-enabled false \
+            --out "$FINAL" \
+            "$ALIGNED"
+
+          "$BUILD_TOOLS/zipalign" -c -v 4 "$FINAL"
+
+      - name: Verify APK package and signatures
+        run: |
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          FINAL="$GITHUB_WORKSPACE/RiftOS-Android-debug.apk"
+
+          VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$FINAL")"
+          printf '%s\n' "$VERIFY_OUTPUT"
+          printf '%s\n' "$VERIFY_OUTPUT" | grep -Fq "Verified using v1 scheme (JAR signing): true"
+          printf '%s\n' "$VERIFY_OUTPUT" | grep -Fq "Verified using v2 scheme (APK Signature Scheme v2): true"
+
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging "$FINAL")"
+          printf '%s\n' "$BADGING" | grep -E "package:|sdkVersion:|targetSdkVersion:"
+          printf '%s\n' "$BADGING" | grep -Fq "sdkVersion:'26'"
+          printf '%s\n' "$BADGING" | grep -Fq "package: name='com.riftos.app'"
+
+      - name: Prove install + launch on Android 8.0 / API 26
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 26
+          target: google_apis
+          arch: x86_64
+          profile: pixel
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            adb install -r "$GITHUB_WORKSPACE/RiftOS-Android-debug.apk"
+            adb shell pm path com.riftos.app | grep -F "package:"
+            adb shell am start -W -n com.riftos.app/.MainActivity
+            sleep 3
+            adb shell pidof com.riftos.app
+
+      - name: Upload verified APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: RiftOS-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: RiftOS-Android-debug.apk
           if-no-files-found: error
 
-      - name: Publish stable latest APK download
+      - name: Publish verified stable latest APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk RiftOS-Android-debug.apk
           if gh release view android-latest >/dev/null 2>&1; then
             gh release upload android-latest RiftOS-Android-debug.apk --clobber
           else
             gh release create android-latest RiftOS-Android-debug.apk \
               --target "$GITHUB_SHA" \
               --title "RiftOS Android — Latest Debug" \
-              --notes "Automatically updated from the android-apk branch."
+              --notes "Verified on Android 8.0 / API 26 before publishing."
           fi
