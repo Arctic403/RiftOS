@@ -8,6 +8,7 @@ await import("./riftapps.js");
 await import("./riftapps-files.js");
 await import("./riftgit.js");
 await import("./riftdev-host.js");
+await import("./riftdesktop-window-host.js");
 await import("./riftos.js");
 await import("./riftdesktop-android.js");
 await import("./riftdesktop-android-compat.js");
