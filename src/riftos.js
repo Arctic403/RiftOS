@@ -14,26 +14,80 @@ const $=selector=>document.querySelector(selector);
 const escapeHTML=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));
 const fmtBytes=value=>{const n=Number(value||0);if(n<1024)return `${n} B`;if(n<1024**2)return `${(n/1024).toFixed(1)} KB`;if(n<1024**3)return `${(n/1024**2).toFixed(1)} MB`;return `${(n/1024**3).toFixed(2)} GB`;};
 const stage=$("#stage"),workspace=$("#workspace");
-let activeProcess=null;
+const windows=new Map();
+let windowSerial=0;
 
 function setStatus(value){const el=$("#statusText");if(el)el.textContent=value;}
 function tick(){const clock=$("#clock");if(clock)clock.textContent=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});}
 setInterval(tick,1000);tick();
 
-function stopActiveProcess(){if(activeProcess){core.kernel.kill(activeProcess.pid);activeProcess=null;}}
-function closeWindow(){
-  stopActiveProcess();
-  stage.innerHTML="";stage.classList.add("hidden");workspace.classList.remove("hidden");
-  document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="home"));
-  setStatus("Ready");
+function desktopMode(){return document.documentElement.classList.contains("rift-desktop-mode");}
+function recordFor(target){
+  if(!target)return null;
+  if(typeof target==="string")return windows.get(target)||null;
+  const win=target.closest?.(".window")||target;
+  for(const record of windows.values())if(record.win===win)return record;
+  return null;
+}
+function visibleRecords(){return [...windows.values()].filter(record=>!record.win.classList.contains("rift-minimized"));}
+function syncShellState(){
+  const visible=visibleRecords();
+  stage.classList.toggle("hidden",windows.size===0);
+  if(desktopMode())workspace.classList.remove("hidden");
+  else workspace.classList.toggle("hidden",visible.length>0);
+  document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="home"&&visible.length===0));
+  if(!visible.length)setStatus("Ready");
+}
+function focusWindow(target){
+  const record=recordFor(target);if(!record)return false;
+  record.win.classList.remove("rift-minimized");
+  stage.classList.remove("hidden");
+  if(!desktopMode())workspace.classList.add("hidden");
+  record.lastFocus=Date.now();
+  setStatus(record.title);
+  window.dispatchEvent(new CustomEvent("riftos:window-activate",{detail:{id:record.id,window:record.win,pid:record.process?.pid}}));
+  return true;
+}
+function closeWindow(target){
+  const record=recordFor(target);if(!record)return false;
+  try{if(record.process?.pid)core.kernel.kill(record.process.pid);}catch(_){}
+  windows.delete(record.id);
+  record.win.remove();
+  window.dispatchEvent(new CustomEvent("riftos:window-close",{detail:{id:record.id,pid:record.process?.pid}}));
+  syncShellState();
+  const next=[...windows.values()].filter(item=>!item.win.classList.contains("rift-minimized")).sort((a,b)=>(b.lastFocus||0)-(a.lastFocus||0))[0];
+  if(next)focusWindow(next.id);
+  return true;
+}
+function showDesktop(){
+  for(const record of windows.values())record.win.classList.add("rift-minimized");
+  workspace.classList.remove("hidden");
+  stage.classList.remove("hidden");
+  window.dispatchEvent(new Event("riftos:show-desktop"));
+  syncShellState();
 }
 function openWindow(id,title,kicker="RIFT APP"){
-  stopActiveProcess();workspace.classList.add("hidden");stage.classList.remove("hidden");stage.innerHTML="";
+  const existing=windows.get(id);
+  if(existing){
+    existing.title=title;
+    existing.win.querySelector(".window-title").textContent=title;
+    existing.win.querySelector(".window-kicker").textContent=kicker;
+    const body=existing.win.querySelector(".window-body");body.innerHTML="";
+    focusWindow(id);
+    return body;
+  }
   const template=$("#windowTemplate");if(!template)throw new Error("RiftOS window template is missing");
-  const win=template.content.firstElementChild.cloneNode(true);win.dataset.app=id;
-  win.querySelector(".window-title").textContent=title;win.querySelector(".window-kicker").textContent=kicker;win.querySelector(".window-close").onclick=closeWindow;
-  stage.append(win);activeProcess=core.kernel.launchProcess(id,title,{kind:"ui"});
-  document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open===id));setStatus(title);
+  const win=template.content.firstElementChild.cloneNode(true);
+  win.dataset.app=id;win.dataset.windowId=`${id}-${++windowSerial}`;
+  win.querySelector(".window-title").textContent=title;
+  win.querySelector(".window-kicker").textContent=kicker;
+  const process=core.kernel.launchProcess(id,title,{kind:"ui"});
+  const record={id,title,win,process,lastFocus:Date.now()};
+  windows.set(id,record);
+  win.querySelector(".window-close").onclick=()=>closeWindow(win);
+  stage.classList.remove("hidden");stage.append(win);
+  syncShellState();focusWindow(id);
+  window.dispatchEvent(new CustomEvent("riftos:window-open",{detail:{id,window:win,pid:process?.pid,title}}));
   return win.querySelector(".window-body");
 }
 function appGrid(){
@@ -77,8 +131,8 @@ async function openEditor(path="/home/scratch.txt"){
 }
 
 async function openTasks(){
-  await core.ready;const body=openWindow("tasks","Tasks","RIFTKERNEL PROCESS TABLE");
-  const render=()=>{const rows=core.processes.list();body.innerHTML=`<div class="trueos-head"><div><strong>RiftKernel processes</strong><small>Uptime ${core.kernel.uptime()}s</small></div><span class="trueos-chip ok">${rows.length} RUNNING</span></div><table class="trueos-table"><thead><tr><th>PID</th><th>Process</th><th>Kind</th><th></th></tr></thead><tbody>${rows.map(process=>`<tr><td>${process.pid}</td><td>${escapeHTML(process.name)}</td><td>${escapeHTML(process.kind||process.appId)}</td><td>${process.protected?"system":`<button class="trueos-btn" data-kill="${process.pid}">Kill</button>`}</td></tr>`).join("")}</tbody></table>`;body.querySelectorAll("[data-kill]").forEach(button=>button.onclick=()=>{core.kernel.kill(button.dataset.kill);render();});};render();
+  await core.ready;const body=openWindow("tasks","Task Manager","RIFTKERNEL PROCESS TABLE");
+  const render=()=>{const rows=core.processes.list();body.innerHTML=`<div class="trueos-head"><div><strong>RiftKernel processes</strong><small>Uptime ${core.kernel.uptime()}s</small></div><span class="trueos-chip ok">${rows.length} RUNNING</span></div><table class="trueos-table"><thead><tr><th>PID</th><th>Process</th><th>Kind</th><th></th></tr></thead><tbody>${rows.map(process=>`<tr><td>${process.pid}</td><td>${escapeHTML(process.name)}</td><td>${escapeHTML(process.kind||process.appId)}</td><td>${process.protected?"system":`<button class="trueos-btn" data-kill="${process.pid}">End task</button>`}</td></tr>`).join("")}</tbody></table>`;body.querySelectorAll("[data-kill]").forEach(button=>button.onclick=()=>{const pid=Number(button.dataset.kill);const record=[...windows.values()].find(item=>Number(item.process?.pid)===pid);if(record)closeWindow(record.win);else core.kernel.kill(pid);render();});};render();
 }
 
 async function openSettings(){
@@ -95,7 +149,7 @@ async function openSettings(){
 
 async function openBrowser(){
   const body=openWindow("browser","RiftBrowser","ANDROID SYSTEM WEBVIEW");
-  body.innerHTML=`<div class="trueos-head"><div><strong>RiftBrowser</strong><small>Native Android browser activity</small></div><span class="trueos-chip ok">ANDROID WEBVIEW</span></div><div class="trueos-toolbar"><input id="browserUrl" class="trueos-input" value="https://chatgpt.com" autocomplete="off" inputmode="url"><button class="trueos-btn primary" id="browserGo">Open</button></div><div class="trueos-card trueos-muted">Pages open in RiftOS's native Android browser activity, with Android downloads, file pickers, media and system back navigation.</div>`;
+  body.innerHTML=`<div class="trueos-head"><div><strong>RiftBrowser</strong><small>Native Android browser activity</small></div><span class="trueos-chip ok">ANDROID WEBVIEW</span></div><div class="trueos-toolbar"><input id="browserUrl" class="trueos-input" value="https://chatgpt.com" autocomplete="off" inputmode="url"><button class="trueos-btn primary" id="browserGo">Open</button></div><div class="trueos-card trueos-muted">Pages open in RiftOS's native Android browser activity. This RiftBrowser launcher window stays open on the desktop while the native browser activity is in use.</div>`;
   const input=body.querySelector("#browserUrl");const go=()=>core.native.call("browser.open",{url:input.value.trim()||"https://chatgpt.com"}).catch(error=>alert(error.message));
   body.querySelector("#browserGo").onclick=go;input.addEventListener("keydown",event=>{if(event.key==="Enter")go();});
 }
@@ -147,7 +201,7 @@ async function openTerminal(){
 }
 
 async function openApp(id){
-  if(id==="home")return closeWindow();
+  if(id==="home")return showDesktop();
   if(id==="files")return openFiles("/");
   if(id==="terminal")return openTerminal();
   if(id==="browser")return openBrowser();
@@ -158,14 +212,28 @@ async function openApp(id){
   if(window.RiftApps?.open)return window.RiftApps.open(id);
 }
 
-document.addEventListener("click",event=>{const button=event.target.closest("[data-open]");if(!button)return;event.preventDefault();openApp(button.dataset.open).catch(error=>{console.error(error);setStatus(error.message);});});
-window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,closeWindow,setStatus});
+document.addEventListener("click",event=>{
+  const button=event.target.closest("[data-open]");if(!button)return;
+  event.preventDefault();const id=button.dataset.open;
+  if(id!=="home"&&focusWindow(id))return;
+  openApp(id).catch(error=>{console.error(error);setStatus(error.message);});
+});
+
+window.RiftOSWindowManager=Object.freeze({
+  list:()=>[...windows.values()].map(record=>({id:record.id,title:record.title,pid:record.process?.pid,minimized:record.win.classList.contains("rift-minimized"),window:record.win})),
+  get:id=>windows.get(id)||null,
+  focus:focusWindow,
+  close:closeWindow,
+  showDesktop,
+  sync:syncShellState
+});
+window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,closeWindow,showDesktop,setStatus});
 
 (async()=>{
   try{
     await core.ready;appGrid();
     const boot=$("#boot"),os=$("#os");
-    setTimeout(()=>{boot?.classList.add("hidden");os?.classList.remove("hidden");setStatus("Ready");},220);
+    setTimeout(()=>{boot?.classList.add("hidden");os?.classList.remove("hidden");syncShellState();setStatus("Ready");},220);
   }catch(error){
     const boot=$("#boot");if(boot)boot.innerHTML=`<div class="boot-title">RiftOS boot failed</div><pre>${escapeHTML(error.stack||error.message)}</pre>`;
   }
