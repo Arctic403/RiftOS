@@ -82,7 +82,7 @@ class RiftBrowserActivity : Activity() {
             allowContentAccess = false
             allowFileAccessFromFileURLs = false
             allowUniversalAccessFromFileURLs = false
-            geolocationEnabled = false
+            setGeolocationEnabled(false)
             safeBrowsingEnabled = true
             builtInZoomControls = false
             displayZoomControls = false
@@ -121,8 +121,6 @@ class RiftBrowserActivity : Activity() {
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
-                // Camera/microphone/screen-capture stay denied until RiftBrowser has a native,
-                // origin-aware permission prompt instead of silently inheriting page requests.
                 request.deny()
             }
 
@@ -150,7 +148,6 @@ class RiftBrowserActivity : Activity() {
             }
 
             override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler, error: SslError?) {
-                // Never offer a "continue anyway" path for broken TLS certificates.
                 handler.cancel()
             }
 
@@ -160,7 +157,6 @@ class RiftBrowserActivity : Activity() {
             }
 
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                // Keep a renderer crash/OOM from taking the whole RiftOS process with it.
                 runOnUiThread { if (!isFinishing && !isDestroyed) recreate() }
                 return true
             }
@@ -188,7 +184,7 @@ class RiftBrowserActivity : Activity() {
             if (value.isBlank()) return
             value = when {
                 value.startsWith("https://", ignoreCase = true) -> value
-                value.startsWith("http://", ignoreCase = true) -> "https://${value.substringAfter("://")}" // upgrade typed cleartext URLs
+                value.startsWith("http://", ignoreCase = true) -> "https://${value.substringAfter("://")}" 
                 value.contains('.') && !value.contains(' ') -> "https://$value"
                 else -> "https://www.google.com/search?q=" + URLEncoder.encode(value, "UTF-8")
             }
