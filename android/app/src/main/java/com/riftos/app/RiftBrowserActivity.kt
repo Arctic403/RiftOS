@@ -31,7 +31,7 @@ class RiftBrowserActivity : Activity() {
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val back = Button(this).apply { text = "‹" }
         val forward = Button(this).apply { text = "›" }
-        address = EditText(this).apply { singleLine = true; setSelectAllOnFocus(false); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        address = EditText(this).apply { setSingleLine(true); setSelectAllOnFocus(false); layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
         val go = Button(this).apply { text = "Go" }
         bar.addView(back); bar.addView(forward); bar.addView(address); bar.addView(go)
         webView = WebView(this)
