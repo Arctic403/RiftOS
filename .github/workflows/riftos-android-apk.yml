@@ -14,7 +14,7 @@ on:
       - '.github/workflows/riftos-android-apk.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   apk:
@@ -46,9 +46,23 @@ jobs:
         working-directory: android
         run: gradle --stacktrace :app:assembleDebug
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: RiftOS-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish stable latest APK download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk RiftOS-Android-debug.apk
+          if gh release view android-latest >/dev/null 2>&1; then
+            gh release upload android-latest RiftOS-Android-debug.apk --clobber
+          else
+            gh release create android-latest RiftOS-Android-debug.apk \
+              --target "$GITHUB_SHA" \
+              --title "RiftOS Android — Latest Debug" \
+              --notes "Automatically updated from the android-apk branch."
+          fi
