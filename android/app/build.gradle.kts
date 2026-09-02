@@ -39,8 +39,30 @@ val syncRiftOsWebAssets by tasks.registering(Copy::class) {
         exclude("**/*sw.js")
         exclude("**/pwa-ios.js")
         exclude("**/pwa-ios.css")
+        exclude("**/pwa-icon-*.png")
     }
     into(layout.buildDirectory.dir("generated/riftosAssets/www"))
+
+    doLast {
+        val riftDevIndex = layout.buildDirectory
+            .file("generated/riftosAssets/www/apps/riftdev/index.html")
+            .get().asFile
+        if (riftDevIndex.exists()) {
+            val webOnlyTokens = listOf(
+                "mobile-web-app-capable",
+                "apple-mobile-web-app",
+                "rel=\"manifest\"",
+                "apple-touch-icon",
+                "pwa-ios.css",
+                "pwa-ios.js"
+            )
+            val cleaned = riftDevIndex.readLines()
+                .filterNot { line -> webOnlyTokens.any { token -> line.contains(token) } }
+                .joinToString("\n")
+                .replace("SafariSafe-v12-Folders-20260820", "AndroidNative-v12-Folders-20260902")
+            riftDevIndex.writeText(cleaned + "\n")
+        }
+    }
 }
 
 tasks.named("preBuild").configure {
