@@ -25,7 +25,7 @@ android {
         }
     }
 
-    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/riftosAssets"))
+    sourceSets["main"].assets.srcDir("build/generated/riftosAssets")
 }
 
 val syncRiftOsWebAssets by tasks.registering(Copy::class) {
