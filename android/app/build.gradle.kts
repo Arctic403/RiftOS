@@ -14,6 +14,16 @@ android {
         versionName = "0.1.0-android-alpha"
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // Keep Android 8-era Samsung package installers happy while retaining modern APK signing.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = false
+            enableV4Signing = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
