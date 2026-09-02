@@ -1,0 +1,128 @@
+:root{
+  --rift-taskbar-height:72px;
+  --rift-desktop-gap:10px;
+}
+
+.rift-desktop-controls{
+  display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;padding:0 8px
+}
+.rift-desktop-controls button{
+  border:1px solid #27303d;background:#11161d;color:#8995a6;border-radius:999px;padding:5px 9px;font-size:10px;line-height:1
+}
+.rift-desktop-controls button.active{border-color:#3f6e5f;background:#14251f;color:#78f6c7}
+.rift-desktop-controls span{font-size:8px;letter-spacing:.12em;color:#738092;white-space:nowrap}
+.rift-desktop-brand{display:none}
+
+#riftVirtualCursor{
+  position:fixed;left:-7px;top:-5px;width:18px;height:24px;z-index:10000;pointer-events:none;opacity:0;transform:translate3d(50vw,50vh,0);transition:opacity .12s ease
+}
+#riftVirtualCursor.visible{opacity:1}
+#riftVirtualCursor::before{
+  content:"";position:absolute;left:2px;top:2px;width:12px;height:18px;background:#f7fbff;clip-path:polygon(0 0,100% 62%,59% 65%,79% 100%,59% 100%,42% 68%,12% 95%);filter:drop-shadow(0 1px 2px #000)
+}
+#riftVirtualCursor i{position:absolute;left:0;top:0;width:18px;height:18px;border:1px solid #78f6c755;border-radius:50%;transform:translate(-4px,-4px)}
+
+#riftTouchpad{
+  position:fixed;right:12px;bottom:calc(82px + env(safe-area-inset-bottom,0px));width:min(330px,58vw);height:min(245px,34vh);z-index:9990;display:none;grid-template-rows:minmax(0,1fr) 42px;border:1px solid #35404d;border-radius:20px;overflow:hidden;background:#0b0f14e8;box-shadow:0 18px 60px #000a;backdrop-filter:blur(18px);touch-action:none;user-select:none
+}
+#riftTouchpad.visible{display:grid}
+.rift-touchpad-surface{position:relative;touch-action:none;background:linear-gradient(145deg,#111820dd,#0a0d12dd)}
+.rift-touchpad-surface span{position:absolute;inset:0;display:grid;place-items:center;color:#ffffff20;font-size:10px;letter-spacing:.25em;pointer-events:none}
+.rift-touchpad-buttons{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #27303d}
+.rift-touchpad-buttons button{border:0;background:#11161d;color:#8995a6;font-size:10px}
+.rift-touchpad-buttons button+button{border-left:1px solid #27303d}
+
+.rift-window-actions{display:flex;align-items:center;gap:6px}
+.rift-window-actions button{width:32px;height:32px;border:1px solid #27303d;border-radius:50%;background:#171d25;color:#cbd6df;font-size:16px;display:grid;place-items:center;padding:0}
+.rift-window-actions .window-close{font-size:21px}
+.rift-window-resizer{display:none;position:absolute;right:0;bottom:0;width:24px;height:24px;z-index:8;cursor:nwse-resize;touch-action:none}
+.rift-window-resizer::after{content:"";position:absolute;right:5px;bottom:5px;width:9px;height:9px;border-right:2px solid #78f6c780;border-bottom:2px solid #78f6c780}
+.window.rift-minimized{display:none!important}
+.stage.rift-stage-minimized{pointer-events:none!important;background:transparent!important}
+
+.dock-btn.rift-running{position:relative}
+.dock-btn.rift-running::after{content:"";position:absolute;bottom:-1px;width:4px;height:4px;border-radius:50%;background:#8995a6}
+.dock-btn.rift-running-active::after{width:14px;border-radius:999px;background:#78f6c7}
+
+@media(min-width:700px){
+  .rift-desktop-controls{gap:8px}
+  .rift-desktop-controls button{padding:6px 10px}
+}
+
+.rift-desktop-mode body{
+  background:#080a0e
+}
+.rift-desktop-mode .os{
+  grid-template-rows:calc(42px + var(--safe-top)) minmax(0,1fr) calc(58px + var(--safe-bottom));
+  background:
+    radial-gradient(circle at 76% 20%,#163029 0,transparent 27%),
+    radial-gradient(circle at 18% 80%,#131d2b 0,transparent 30%),
+    linear-gradient(145deg,#080b10,#0a0f14 58%,#07100d)
+}
+.rift-desktop-mode .statusbar{
+  background:#080b10c7;backdrop-filter:blur(18px);border-bottom-color:#ffffff12
+}
+.rift-desktop-mode .content{overflow:hidden}
+.rift-desktop-mode .workspace{
+  position:absolute;inset:0;max-width:none;width:100%;margin:0;overflow:hidden;padding:18px 18px 90px
+}
+.rift-desktop-mode .workspace.hidden{display:block!important}
+.rift-desktop-mode .hero{display:none}
+.rift-desktop-mode .rift-desktop-brand{
+  display:flex;position:absolute;right:24px;bottom:24px;flex-direction:column;align-items:flex-end;pointer-events:none;opacity:.28
+}
+.rift-desktop-mode .rift-desktop-brand strong{font-size:34px;letter-spacing:-.05em}
+.rift-desktop-mode .rift-desktop-brand span{font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:#78f6c7}
+.rift-desktop-mode .app-grid{
+  display:grid;grid-template-columns:repeat(2,86px);grid-auto-rows:92px;gap:12px;margin:0;width:max-content;align-content:start
+}
+.rift-desktop-mode .app-card{
+  width:86px;height:92px;min-height:0;padding:8px 5px;border-color:transparent;background:transparent;border-radius:14px;align-items:center;justify-content:start;text-align:center;gap:5px;overflow:hidden
+}
+.rift-desktop-mode .app-card:hover,.rift-desktop-mode .app-card:focus-visible{background:#ffffff0b;border-color:#ffffff13;outline:none}
+.rift-desktop-mode .app-card .app-icon{
+  width:46px;height:46px;display:grid;place-items:center;border:1px solid #304038;border-radius:14px;background:linear-gradient(145deg,#15221e,#0e1419);font-size:19px;box-shadow:0 10px 24px #0007
+}
+.rift-desktop-mode .app-card strong{display:block;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600}
+.rift-desktop-mode .app-card br,.rift-desktop-mode .app-card small{display:none}
+.rift-desktop-mode .stage{
+  position:absolute;inset:0;z-index:20;background:transparent;pointer-events:none;overflow:hidden
+}
+.rift-desktop-mode .stage.hidden{display:block!important;pointer-events:none}
+.rift-desktop-mode .stage:has(.window:not(.rift-minimized)){pointer-events:auto}
+.rift-desktop-mode .window.rift-desktop-window{
+  inset:auto;min-width:320px;min-height:240px;border-radius:16px;grid-template-rows:44px minmax(0,1fr);box-shadow:0 24px 70px #000c,0 0 0 1px #ffffff08;transition:box-shadow .12s ease,opacity .12s ease
+}
+.rift-desktop-mode .window.rift-desktop-window.rift-focused{box-shadow:0 28px 85px #000d,0 0 0 1px #78f6c72e}
+.rift-desktop-mode .window-bar{height:44px;padding:0 10px 0 13px;cursor:default;touch-action:none;user-select:none;background:#11161de8;backdrop-filter:blur(14px)}
+.rift-desktop-mode.rift-hardware-mouse .window-bar{cursor:move}
+.rift-desktop-mode .window-kicker{display:none}
+.rift-desktop-mode .window-bar strong{font-size:12px;margin:0}
+.rift-desktop-mode .rift-window-actions button{width:28px;height:28px;font-size:13px}
+.rift-desktop-mode .rift-window-actions .window-close{font-size:18px}
+.rift-desktop-mode .rift-window-resizer{display:block}
+.rift-desktop-mode .window-body{padding:12px;overflow:auto}
+.rift-desktop-mode .dock{
+  grid-template-columns:repeat(5,minmax(58px,74px));justify-content:center;gap:4px;padding:5px 10px var(--safe-bottom);background:#090c11df;backdrop-filter:blur(24px);border-top-color:#ffffff12
+}
+.rift-desktop-mode .dock-btn{font-size:16px;border-radius:10px;padding:3px 8px}
+.rift-desktop-mode .dock-btn:hover,.rift-desktop-mode .dock-btn:focus-visible{background:#ffffff0b;outline:none}
+.rift-desktop-mode .dock-btn span{font-size:8px}
+.rift-desktop-mode .shell,.rift-desktop-mode .trueos-editor,.rift-desktop-mode .browser{height:100%}
+
+@media(max-width:699px){
+  .rift-desktop-controls span{display:none}
+  .rift-desktop-controls{padding:0 3px;gap:4px}
+  .rift-desktop-controls button{font-size:9px;padding:5px 7px}
+  .rift-desktop-mode .workspace{padding:12px 10px 80px}
+  .rift-desktop-mode .app-grid{grid-template-columns:repeat(2,76px);grid-auto-rows:82px;gap:8px}
+  .rift-desktop-mode .app-card{width:76px;height:82px}
+  .rift-desktop-mode .app-card .app-icon{width:42px;height:42px}
+  .rift-desktop-mode .window.rift-desktop-window{min-width:280px;min-height:220px}
+  #riftTouchpad{width:min(330px,72vw);height:min(230px,31vh);right:8px;bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+}
+
+@media(pointer:fine){
+  .rift-window-actions button,.dock-btn,.app-card{cursor:pointer}
+  .rift-window-resizer{cursor:nwse-resize}
+}
