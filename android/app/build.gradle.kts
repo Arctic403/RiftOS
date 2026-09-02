@@ -10,13 +10,12 @@ android {
         applicationId = "com.riftos.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-        versionName = "0.1.0-android-alpha"
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
+        versionName = "0.2.0-android-native-alpha"
     }
 
     signingConfigs {
         getByName("debug") {
-            // Keep Android 8-era Samsung package installers happy while retaining modern APK signing.
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = false
@@ -30,9 +29,7 @@ android {
     }
 
     buildTypes {
-        getByName("release") {
-            isMinifyEnabled = false
-        }
+        getByName("release") { isMinifyEnabled = false }
     }
 
     sourceSets["main"].assets.srcDir("build/generated/riftosAssets")
@@ -43,41 +40,37 @@ val syncRiftOsWebAssets by tasks.registering(Copy::class) {
         include("index.html")
         include("styles.css")
         include("src/**")
-        include("apps/**")
-        include("engines/**")
+        include("apps/riftdev/index.html")
+        include("apps/riftdev/style.css")
+        include("apps/riftdev/riftdev-android-storage.js")
+        include("apps/riftdev/riftdev-android.js")
+        include("apps/riftdev/ide-v11.js")
+        include("apps/riftdev/ai-handoff.js")
+        include("apps/riftdev/local-test-android.js")
+        include("apps/riftdev/riftos-overlay.js")
+        exclude("src/riftbrowser-*")
         exclude("**/manifest.webmanifest")
         exclude("**/*sw.js")
-        exclude("**/pwa-ios.js")
-        exclude("**/pwa-ios.css")
-        exclude("**/pwa-icon-*.png")
+        exclude("**/pwa-*")
     }
     into(layout.buildDirectory.dir("generated/riftosAssets/www"))
 
     doLast {
-        val riftDevIndex = layout.buildDirectory
-            .file("generated/riftosAssets/www/apps/riftdev/index.html")
-            .get().asFile
-        if (riftDevIndex.exists()) {
-            val webOnlyTokens = listOf(
-                "mobile-web-app-capable",
-                "apple-mobile-web-app",
-                "rel=\"manifest\"",
-                "apple-touch-icon",
-                "pwa-ios.css",
-                "pwa-ios.js"
-            )
-            val cleaned = riftDevIndex.readLines()
-                .filterNot { line -> webOnlyTokens.any { token -> line.contains(token) } }
-                .joinToString("\n")
-                .replace("SafariSafe-v12-Folders-20260820", "AndroidNative-v12-Folders-20260902")
-            riftDevIndex.writeText(cleaned + "\n")
+        val androidEditor = layout.buildDirectory.file("generated/riftosAssets/www/apps/riftdev/riftdev-android.js").get().asFile
+        if (androidEditor.exists()) {
+            val cleaned = androidEditor.readText()
+                .replace("indexedDB.open(", "RiftDevAndroidDB.open(")
+                .replace("window.indexedDB", "window.RiftDevAndroidDB")
+                .replace("SafariSafe-v12-Folders-20260820", "AndroidNative-v13-Samsung-20260902")
+                .replace("MobileWorkspaceDB_SafariSafe_v4", "RiftDevAndroidNativeDB_v1")
+                .replace("Safari/WebKit", "Android/System WebView")
+                .replace("Safari", "Android")
+            androidEditor.writeText(cleaned)
         }
     }
 }
 
-tasks.named("preBuild").configure {
-    dependsOn(syncRiftOsWebAssets)
-}
+tasks.named("preBuild").configure { dependsOn(syncRiftOsWebAssets) }
 
 dependencies {
     implementation("androidx.webkit:webkit:1.16.0")

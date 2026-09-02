@@ -2,24 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no,interactive-widget=resizes-content">
   <meta name="theme-color" content="#0a0d12">
+  <meta name="color-scheme" content="dark">
   <title>RiftOS</title>
   <link rel="stylesheet" href="./styles.css">
-  <link rel="stylesheet" href="./src/riftbrowser-ui.css">
 </head>
 <body>
   <div id="boot" class="boot">
     <div class="boot-mark">R</div>
     <div class="boot-title">RiftOS</div>
-    <div class="boot-sub">RiftKernel / Android Native Runtime</div>
+    <div class="boot-sub">RiftKernel / Samsung Android Native Runtime</div>
     <div class="boot-bar"><i></i></div>
   </div>
 
   <main id="os" class="os hidden" aria-label="RiftOS desktop">
     <header class="statusbar">
       <strong>RiftOS</strong>
-      <span id="statusText">Booting RiftKernel</span>
+      <span id="statusText">Booting Android RiftKernel</span>
       <time id="clock"></time>
     </header>
 
@@ -27,15 +27,14 @@
       <section id="workspace" class="workspace">
         <div class="hero">
           <div>
-            <span class="eyebrow">RIFTKERNEL / ANDROID HOST</span>
+            <span class="eyebrow">RIFTKERNEL / SAMSUNG ANDROID</span>
             <h1>Your pocket computer.</h1>
-            <p>Android-native RiftFS. Secure WebView host. Storage Access Framework mounts.</p>
+            <p>Android-native RiftFS, Storage Access Framework mounts, native browser, native preview and Android system services.</p>
           </div>
           <button class="pill" data-open="terminal">Open RiftShell</button>
         </div>
         <div class="app-grid" id="appGrid"></div>
       </section>
-
       <section id="stage" class="stage hidden" aria-live="polite"></section>
     </section>
 
@@ -51,10 +50,7 @@
   <template id="windowTemplate">
     <article class="window">
       <header class="window-bar">
-        <div>
-          <small class="window-kicker"></small>
-          <strong class="window-title"></strong>
-        </div>
+        <div><small class="window-kicker"></small><strong class="window-title"></strong></div>
         <button class="window-close" aria-label="Close">×</button>
       </header>
       <div class="window-body"></div>

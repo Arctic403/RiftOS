@@ -8,13 +8,25 @@
         android:allowBackup="true"
         android:hardwareAccelerated="true"
         android:label="RiftOS"
+        android:resizeableActivity="true"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:theme="@style/Theme.RiftOS"
         android:usesCleartextTraffic="false">
+        <activity
+            android:name=".RiftPreviewActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".RiftBrowserActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|uiMode"
             android:exported="true"
+            android:resizeableActivity="true"
             android:screenOrientation="unspecified"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

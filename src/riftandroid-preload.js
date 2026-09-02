@@ -1,31 +1,21 @@
-const androidHost=globalThis.RiftAndroid;
-const isAndroid=!!androidHost?.postMessage;
+const host=globalThis.RiftAndroid;
+if(!host?.postMessage)throw new Error("RiftOS Android requires the RiftAndroid WebMessage host.");
 
-Object.defineProperty(globalThis,"RiftPlatform",{
-  value:Object.freeze({kind:isAndroid?"android":"web",android:isAndroid,native:isAndroid}),
-  configurable:false,
-  enumerable:true,
-  writable:false
+const transport=Object.freeze({
+  postMessage(payload){
+    const raw=typeof payload==="string"?payload:JSON.stringify(payload);
+    host.postMessage(raw);
+  }
 });
 
-if(isAndroid){
-  const webkit=globalThis.webkit||{};
-  const handlers=webkit.messageHandlers||{};
-  handlers.riftNative={
-    postMessage(payload){
-      const raw=typeof payload==="string"?payload:JSON.stringify(payload);
-      androidHost.postMessage(raw);
-    }
-  };
-  webkit.messageHandlers=handlers;
-  globalThis.webkit=webkit;
+Object.defineProperty(globalThis,"RiftPlatform",{
+  value:Object.freeze({kind:"android",android:true,native:true,samsung:true,delivery:"apk"}),
+  configurable:false,enumerable:true,writable:false
+});
+Object.defineProperty(globalThis,"RiftNativeTransport",{
+  value:transport,configurable:false,enumerable:false,writable:false
+});
 
-  if(navigator.serviceWorker){
-    navigator.serviceWorker.getRegistrations?.().then(rows=>rows.forEach(row=>row.unregister())).catch(()=>{});
-    try{
-      navigator.serviceWorker.register=async()=>({scope:location.origin+"/",active:null,waiting:null,installing:null});
-    }catch{}
-  }
-
-  document.documentElement.dataset.riftPlatform="android";
-}
+document.documentElement.dataset.riftPlatform="android";
+document.documentElement.dataset.riftDelivery="apk";
+console.info("[RiftAndroid] direct native transport online");

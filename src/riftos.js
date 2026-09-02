@@ -2,24 +2,17 @@ const core=window.RiftOSCore;
 if(!core)throw new Error("RiftOSCore must load before RiftOS desktop");
 
 const BUILTIN_APPS=[
-  {id:"files",name:"Files",icon:"▣",desc:"RiftFS + mounted Files"},
-  {id:"terminal",name:"RiftShell",icon:">_",desc:"Kernel command shell"},
-  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"Apple WebKit browser"},
-  {id:"editor",name:"Editor",icon:"{}",desc:"RiftFS text editor"},
+  {id:"files",name:"Files",icon:"▣",desc:"Android RiftFS + SAF mounts"},
+  {id:"terminal",name:"RiftShell",icon:">_",desc:"RiftKernel command shell"},
+  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"Android System WebView browser"},
+  {id:"editor",name:"Editor",icon:"{}",desc:"Native-backed RiftFS editor"},
   {id:"tasks",name:"Tasks",icon:"≡",desc:"RiftKernel processes"},
-  {id:"settings",name:"Settings",icon:"⚙",desc:"System + capabilities"}
+  {id:"settings",name:"Settings",icon:"⚙",desc:"Samsung / Android system"}
 ];
 
 const $=selector=>document.querySelector(selector);
 const escapeHTML=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));
-const fmtBytes=value=>{
-  const n=Number(value||0);
-  if(n<1024)return `${n} B`;
-  if(n<1024**2)return `${(n/1024).toFixed(1)} KB`;
-  if(n<1024**3)return `${(n/1024**2).toFixed(1)} MB`;
-  return `${(n/1024**3).toFixed(2)} GB`;
-};
-
+const fmtBytes=value=>{const n=Number(value||0);if(n<1024)return `${n} B`;if(n<1024**2)return `${(n/1024).toFixed(1)} KB`;if(n<1024**3)return `${(n/1024**2).toFixed(1)} MB`;return `${(n/1024**3).toFixed(2)} GB`;};
 const stage=$("#stage"),workspace=$("#workspace");
 let activeProcess=null;
 
@@ -29,8 +22,10 @@ setInterval(tick,1000);tick();
 
 function stopActiveProcess(){if(activeProcess){core.kernel.kill(activeProcess.pid);activeProcess=null;}}
 function closeWindow(){
-  stopActiveProcess();stage.innerHTML="";stage.classList.add("hidden");workspace.classList.remove("hidden");
-  document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="home"));setStatus("Ready");
+  stopActiveProcess();
+  stage.innerHTML="";stage.classList.add("hidden");workspace.classList.remove("hidden");
+  document.querySelectorAll(".dock-btn").forEach(btn=>btn.classList.toggle("active",btn.dataset.open==="home"));
+  setStatus("Ready");
 }
 function openWindow(id,title,kicker="RIFT APP"){
   stopActiveProcess();workspace.classList.add("hidden");stage.classList.remove("hidden");stage.innerHTML="";
@@ -58,26 +53,26 @@ function topLevelEntries(rows,path="/"){
 }
 
 async function openFiles(path="/"){
-  await core.ready;path=core.path.normalize(path);const body=openWindow("files","Files","RIFTFS");
+  await core.ready;path=core.path.normalize(path);const body=openWindow("files","Files","ANDROID RIFTFS");
   let rows=[];try{rows=await core.fs.list(path,{recursive:true});}catch(error){body.innerHTML=`<p><strong>Cannot open ${escapeHTML(path)}</strong></p><pre class="shell-output">${escapeHTML(error.message)}</pre>`;return;}
   const entries=topLevelEntries(rows,path),storage=await core.fs.estimate(),parent=path==="/"?null:core.path.parent(path);
-  body.innerHTML=`<div class="trueos-head"><div><strong>${escapeHTML(path)}</strong><small>${escapeHTML(storage.backend)} · ${fmtBytes(storage.usage)} used</small></div><span class="trueos-chip ${core.fs.opfsReady?"ok":"warn"}">${core.fs.opfsReady?"OPFS":"COMPAT"}</span></div>
-  <div class="trueos-toolbar">${parent!==null?`<button class="trueos-btn" id="fsUp">↑ Up</button>`:""}<button class="trueos-btn primary" id="fsNewFile">New file</button><button class="trueos-btn" id="fsNewFolder">New folder</button>${core.native.connected&&path==="/mounts"?`<button class="trueos-btn" id="fsMountNative">Mount iOS folder</button>`:""}<button class="trueos-btn" id="fsSync">Sync mirror</button></div>
+  body.innerHTML=`<div class="trueos-head"><div><strong>${escapeHTML(path)}</strong><small>${escapeHTML(storage.backend||"Android internal storage")} · ${fmtBytes(storage.usage)} used</small></div><span class="trueos-chip ok">ANDROID</span></div>
+  <div class="trueos-toolbar">${parent!==null?`<button class="trueos-btn" id="fsUp">↑ Up</button>`:""}<button class="trueos-btn primary" id="fsNewFile">New file</button><button class="trueos-btn" id="fsNewFolder">New folder</button>${path==="/mounts"?`<button class="trueos-btn" id="fsMountNative">Mount Android folder</button>`:""}<button class="trueos-btn" id="fsRefresh">Refresh</button></div>
   <div class="trueos-files">${entries.length?entries.map(entry=>{const folder=entry.kind==="directory"||entry.kind==="mount";return `<button class="trueos-file" data-path="${escapeHTML(entry.path)}" data-kind="${escapeHTML(entry.kind)}"><span>${folder?"▸":"·"} ${escapeHTML(core.path.basename(entry.path)||entry.path)}</span><small>${folder?escapeHTML(entry.backend||entry.kind):fmtBytes(entry.size)}</small></button>`;}).join(""):`<div class="trueos-card trueos-muted">Empty directory.</div>`}</div>`;
   body.querySelector("#fsUp")?.addEventListener("click",()=>openFiles(parent));
   body.querySelectorAll("[data-path]").forEach(button=>button.onclick=()=>["directory","mount"].includes(button.dataset.kind)?openFiles(button.dataset.path):openEditor(button.dataset.path));
   body.querySelector("#fsNewFile").onclick=()=>{const name=prompt("File name","untitled.txt");if(name)openEditor(core.path.join(path,name));};
   body.querySelector("#fsNewFolder").onclick=async()=>{const name=prompt("Folder name","New Folder");if(!name)return;await core.fs.mkdir(core.path.join(path,name));openFiles(path);};
-  body.querySelector("#fsSync").onclick=async()=>{setStatus("Syncing RiftFS");const result=await core.fs.syncLegacy();setStatus(`RiftFS synced · ${result.copiedToOPFS+result.copiedToLegacy} change(s)`);setTimeout(()=>openFiles(path),300);};
+  body.querySelector("#fsRefresh").onclick=()=>openFiles(path);
   body.querySelector("#fsMountNative")?.addEventListener("click",async()=>{try{await core.fs.mountNativeDirectory();openFiles("/mounts");}catch(error){alert(error.message);}});
 }
 
 async function openEditor(path="/home/scratch.txt"){
-  await core.ready;path=core.path.normalize(path);const file=await core.fs.get(path),body=openWindow("editor","Editor","RIFTFS EDITOR");
-  if(file?.kind==="directory"){openFiles(path);return;}
-  body.innerHTML=`<div class="trueos-editor"><div class="trueos-head"><div><strong>${escapeHTML(path)}</strong><small>${escapeHTML(file?.backend||(core.fs.opfsReady?"opfs":"indexeddb"))}</small></div><button class="trueos-btn" id="editorFiles">Files</button><button class="trueos-btn primary" id="editorSave">Save</button></div><textarea spellcheck="false" autocomplete="off"></textarea></div>`;
+  await core.ready;path=core.path.normalize(path);const file=await core.fs.get(path),body=openWindow("editor","Editor","ANDROID RIFTFS EDITOR");
+  if(file?.kind==="directory"||file?.kind==="mount"){openFiles(path);return;}
+  body.innerHTML=`<div class="trueos-editor"><div class="trueos-head"><div><strong>${escapeHTML(path)}</strong><small>${escapeHTML(file?.backend||"android-internal")}</small></div><button class="trueos-btn" id="editorFiles">Files</button><button class="trueos-btn primary" id="editorSave">Save</button></div><textarea spellcheck="false" autocomplete="off"></textarea></div>`;
   const textarea=body.querySelector("textarea");textarea.value=file?.content||"";textarea.addEventListener("input",()=>setStatus("Editor · unsaved"));
-  body.querySelector("#editorSave").onclick=async()=>{await core.fs.write(path,textarea.value);setStatus("Saved");setTimeout(()=>setStatus("Editor"),800);};
+  body.querySelector("#editorSave").onclick=async()=>{await core.fs.writeText(path,textarea.value);setStatus("Saved");setTimeout(()=>setStatus("Editor"),800);};
   body.querySelector("#editorFiles").onclick=()=>openFiles(core.path.parent(path));setTimeout(()=>textarea.focus(),40);
 }
 
@@ -87,14 +82,22 @@ async function openTasks(){
 }
 
 async function openSettings(){
-  await core.ready;const body=openWindow("settings","Settings","TRUE OS SYSTEM"),info=await core.kernel.info(),caps=info.native,browser=core.kernel.browser?.backendStatus?.();
-  body.innerHTML=`<div class="trueos-head"><div><strong>RiftOS ${escapeHTML(info.version)}</strong><small>${escapeHTML(info.mode)} · uptime ${info.uptime}s</small></div><span class="trueos-chip ${caps.nativeHost?"ok":"warn"}">${caps.nativeHost?"NATIVE HOST":"PWA MODE"}</span></div>
-  <div class="trueos-grid"><div class="trueos-card"><strong>RiftFS</strong><small>${escapeHTML(info.storage.backend)}<br>${fmtBytes(info.storage.usage)} / ${info.storage.quota?fmtBytes(info.storage.quota):"browser managed"}</small></div><div class="trueos-card"><strong>RiftBrowser</strong><small>${escapeHTML(browser?.active||"unavailable")}<br>${caps.nativeHost?"Apple WebKit · desktop default":"PWA preview"}</small></div><div class="trueos-card"><strong>Kernel</strong><small>${info.processes} process(es)<br>${info.apps} registered app(s)<br>${info.mounts} mount(s)</small></div></div>
-  <div class="trueos-toolbar"><button class="trueos-btn" id="settingsPersist">Persist storage</button>${caps.nativeHost?`<button class="trueos-btn" id="settingsMount">Mount Files folder</button>`:""}<button class="trueos-btn" id="settingsMounts">Mount table</button><button class="trueos-btn" id="settingsPermissions">Capabilities</button></div><pre class="trueos-code" id="settingsOutput">True OS Core is active.</pre>`;
-  const out=body.querySelector("#settingsOutput");body.querySelector("#settingsPersist").onclick=async()=>{out.textContent=(await core.fs.persist())?"Persistent browser storage granted/already active.":"Persistent storage was not granted.";};
+  await core.ready;const body=openWindow("settings","Settings","ANDROID SYSTEM"),info=await core.kernel.info(),device=await core.native.call("device.info",{});
+  body.innerHTML=`<div class="trueos-head"><div><strong>RiftOS ${escapeHTML(info.version)}</strong><small>${escapeHTML(info.mode)} · ${escapeHTML(device.manufacturer||"Android")} ${escapeHTML(device.model||"")}</small></div><span class="trueos-chip ok">ANDROID NATIVE</span></div>
+  <div class="trueos-grid"><div class="trueos-card"><strong>RiftFS</strong><small>${escapeHTML(info.storage.backend)}<br>${fmtBytes(info.storage.usage)} / ${fmtBytes(info.storage.quota)}</small></div><div class="trueos-card"><strong>Android</strong><small>${escapeHTML(device.androidRelease||"")} · API ${escapeHTML(device.sdk||"")}<br>${escapeHTML(device.device||"")}</small></div><div class="trueos-card"><strong>Kernel</strong><small>${info.processes} process(es)<br>${info.apps} app(s)<br>${info.mounts} mount(s)</small></div></div>
+  <div class="trueos-toolbar"><button class="trueos-btn" id="settingsMount">Mount Android folder</button><button class="trueos-btn" id="settingsNotify">Notification permission</button><button class="trueos-btn" id="settingsMounts">Mount table</button><button class="trueos-btn" id="settingsPermissions">Capabilities</button></div><pre class="trueos-code" id="settingsOutput">Samsung / Android native host is active.</pre>`;
+  const out=body.querySelector("#settingsOutput");
+  body.querySelector("#settingsMount").onclick=async()=>{try{const mount=await core.fs.mountNativeDirectory();out.textContent=`Mounted ${mount.path}`;}catch(error){out.textContent=error.message;}};
+  body.querySelector("#settingsNotify").onclick=async()=>{try{out.textContent=JSON.stringify(await core.native.call("notifications.request",{}),null,2);}catch(error){out.textContent=error.message;}};
   body.querySelector("#settingsMounts").onclick=()=>{out.textContent=core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n");};
   body.querySelector("#settingsPermissions").onclick=()=>{out.textContent=core.permissions.describe().join("\n");};
-  body.querySelector("#settingsMount")?.addEventListener("click",async()=>{try{const mount=await core.fs.mountNativeDirectory();out.textContent=`Mounted ${mount.path}`;}catch(error){out.textContent=error.message;}});
+}
+
+async function openBrowser(){
+  const body=openWindow("browser","RiftBrowser","ANDROID SYSTEM WEBVIEW");
+  body.innerHTML=`<div class="trueos-head"><div><strong>RiftBrowser</strong><small>Native Android browser activity</small></div><span class="trueos-chip ok">ANDROID WEBVIEW</span></div><div class="trueos-toolbar"><input id="browserUrl" class="trueos-input" value="https://chatgpt.com" autocomplete="off" inputmode="url"><button class="trueos-btn primary" id="browserGo">Open</button></div><div class="trueos-card trueos-muted">Pages open in RiftOS's native Android browser activity, with Android downloads, file pickers, media and system back navigation.</div>`;
+  const input=body.querySelector("#browserUrl");const go=()=>core.native.call("browser.open",{url:input.value.trim()||"https://chatgpt.com"}).catch(error=>alert(error.message));
+  body.querySelector("#browserGo").onclick=go;input.addEventListener("keydown",event=>{if(event.key==="Enter")go();});
 }
 
 function tokenize(raw){const out=[];String(raw||"").replace(/"([^"]*)"|'([^']*)'|([^\s]+)/g,(_,a,b,c)=>{out.push(a??b??c);return "";});return out;}
@@ -102,63 +105,68 @@ function resolvePath(cwd,value){if(!value)return cwd;return core.path.normalize(
 async function runShell(raw,print,state){
   const args=tokenize(raw),cmd=(args.shift()||"").toLowerCase();if(!cmd)return;
   if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print);}
-  if(cmd==="help")return print(`RiftShell / True OS Core\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  ls [path]  cat <file>  write <file> <text>  mkdir <dir>  rm <path>\nsyncfs  open <app>  browser [url]  workspace [info|ls|history|rollback]  clear  uptime  version\ngit help`);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  ls [path]  cat <file>  write <file> <text>  mkdir <dir>  rm <path>\nopen <app>  browser [url]  workspace [info|ls|history|rollback]  clear  uptime  version\ngit help`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}
-  if(cmd==="df"){const storage=await core.fs.estimate();return print(`${storage.backend}\nused ${fmtBytes(storage.usage)}\nquota ${storage.quota?fmtBytes(storage.quota):"browser managed"}`);}
+  if(cmd==="df"){const storage=await core.fs.estimate();return print(`${storage.backend}\nused ${fmtBytes(storage.usage)}\nquota ${fmtBytes(storage.quota)}\nfree ${fmtBytes(storage.free)}`);}
   if(cmd==="ps")return print(core.processes.list().map(p=>`${p.pid}\t${p.state}\t${p.kind||p.appId}\t${p.name}`).join("\n"));
   if(cmd==="kill")return print(core.kernel.kill(args[0])?`terminated ${args[0]}`:`cannot terminate ${args[0]||"(missing pid)"}`);
   if(cmd==="apps"){const built=[...core.kernel.apps.values()].map(app=>`${app.id}\t${app.name}`),installed=await window.RiftApps?.list?.()||[];return print([...built,...installed.map(app=>`${app.id}\t${app.manifest?.name||app.id}\tinstalled`)].join("\n"));}
   if(cmd==="permissions")return print(core.permissions.describe().join("\n"));
   if(cmd==="native")return print(JSON.stringify(core.native.capabilities(),null,2));
-  if(cmd==="browser"){const url=args.join(" ").trim()||"https://chatgpt.com";await core.kernel.browser.open(url);return print(`opened RiftBrowser · ${url}`);}
+  if(cmd==="browser"){const url=args.join(" ").trim()||"https://chatgpt.com";await core.native.call("browser.open",{url});return print(`opened Android RiftBrowser · ${url}`);}
   if(cmd==="workspace"){
-    if(!core.native.connected)return print("RiftWorkspace requires the native iOS host.");
-    const sub=(args.shift()||"info").toLowerCase();if(sub==="info")return print(JSON.stringify(await window.RiftWorkspace.info(),null,2));
-    if(sub==="ls")return print((await window.RiftWorkspace.list(args[0]||"",{recursive:false})).map(row=>`${row.kind==="directory"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");
-    if(sub==="history")return print(JSON.stringify(await window.RiftWorkspace.history(),null,2));if(sub==="rollback")return print(JSON.stringify(await window.RiftWorkspace.rollback(args[0]||null),null,2));
+    const ws=window.RiftWorkspace;if(!ws?.available)return print("RiftWorkspace unavailable");
+    const sub=(args.shift()||"info").toLowerCase();if(sub==="info")return print(JSON.stringify(await ws.info(),null,2));
+    if(sub==="ls")return print((await ws.list(args[0]||"",{recursive:false})).map(row=>`${row.kind==="directory"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");
+    if(sub==="history")return print(JSON.stringify(await ws.history(),null,2));if(sub==="rollback")return print(JSON.stringify(await ws.rollback(args[0]||null),null,2));
     return print("usage: workspace [info|ls [path]|history|rollback [historyId]]");
   }
-  if(cmd==="pwd")return print(state.cwd);if(cmd==="cd"){state.cwd=resolvePath(state.cwd,args[0]||"/home");return print(state.cwd);}
-  if(cmd==="ls"){const path=resolvePath(state.cwd,args[0]||state.cwd),rows=await core.fs.list(path,{recursive:true}),entries=topLevelEntries(rows,path);return print(entries.map(entry=>`${entry.kind==="directory"||entry.kind==="mount"?"d":"-"}\t${core.path.basename(entry.path)||entry.path}`).join("\n")||"(empty)");}
-  if(cmd==="cat"){if(!args[0])return print("usage: cat <file>");const path=resolvePath(state.cwd,args[0]),file=await core.fs.get(path);return print(file?.kind==="file"?file.content:`file not found: ${path}`);}
-  if(cmd==="write"){if(!args[0])return print("usage: write <file> <text>");const path=resolvePath(state.cwd,args.shift());await core.fs.write(path,args.join(" "));return print(`written ${path}`);}
-  if(cmd==="mkdir"){if(!args[0])return print("usage: mkdir <dir>");const path=resolvePath(state.cwd,args[0]);await core.fs.mkdir(path);return print(`created ${path}`);}
-  if(cmd==="rm"){if(!args[0])return print("usage: rm <path>");const path=resolvePath(state.cwd,args[0]);await core.fs.remove(path);return print(`removed ${path}`);}
-  if(cmd==="syncfs"){const result=await core.fs.syncLegacy();return print(`RiftFS synchronized · OPFS ${result.copiedToOPFS} / legacy ${result.copiedToLegacy}`);}
-  if(cmd==="uptime")return print(`${core.kernel.uptime()}s`);if(cmd==="version")return print(`RiftOS ${core.kernel.version} / RiftKernel True OS Core`);if(cmd==="clear")return print(null,{clear:true});
-  if(cmd==="open"){const id=(args[0]||"").toLowerCase();if(!id)return print("usage: open <app>");print(`opening ${id}...`);setTimeout(()=>launch(id),50);return;}
-  throw new Error(`command not found: ${cmd}`);
-}
-function openTerminal(){
-  const body=openWindow("terminal","RiftShell","RIFTKERNEL SHELL");body.innerHTML=`<div class="shell"><div class="shell-output">RiftShell 1.0 / True OS Core\nType 'help' for commands.\n\n</div><form class="shell-line"><b>rift$</b><input autocomplete="off" autocapitalize="off" spellcheck="false" autofocus></form></div>`;
-  const form=body.querySelector("form"),input=form.querySelector("input"),out=body.querySelector(".shell-output"),state={cwd:"/home"};
-  const print=(text,options={})=>{if(options.clear){out.textContent="";return;}if(text==null)return;out.textContent+=String(text)+"\n";out.scrollTop=out.scrollHeight;};
-  form.onsubmit=async event=>{event.preventDefault();const raw=input.value.trim();input.value="";if(!raw)return;print(`rift$ ${raw}`);try{await core.ready;await runShell(raw,print,state);}catch(error){print(`rift: ${error?.message||error}`);}};setTimeout(()=>input.focus(),80);
+  if(cmd==="pwd")return print(state.cwd);
+  if(cmd==="cd"){const next=resolvePath(state.cwd,args[0]||"/home");const stat=await core.fs.stat(next);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error(`not a directory: ${next}`);state.cwd=next;return print(state.cwd);}
+  if(cmd==="ls"){const path=resolvePath(state.cwd,args[0]||state.cwd),rows=await core.fs.list(path,{recursive:false});return print(rows.map(row=>`${row.kind==="directory"||row.kind==="mount"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");}
+  if(cmd==="cat"){const path=resolvePath(state.cwd,args[0]);const text=await core.fs.readText(path);if(text==null)throw new Error(`file not found: ${path}`);return print(text);}
+  if(cmd==="write"){const path=resolvePath(state.cwd,args.shift());await core.fs.writeText(path,args.join(" "));return print(`wrote ${path}`);}
+  if(cmd==="mkdir"){const path=resolvePath(state.cwd,args[0]);await core.fs.mkdir(path);return print(`created ${path}`);}
+  if(cmd==="rm"){const path=resolvePath(state.cwd,args[0]);await core.fs.remove(path);return print(`removed ${path}`);}
+  if(cmd==="open"){const app=args[0]||"home";document.querySelector(`[data-open="${CSS.escape(app)}"]`)?.click();return print(`opened ${app}`);}
+  if(cmd==="clear")return {clear:true};
+  if(cmd==="uptime")return print(`${core.kernel.uptime()}s`);
+  if(cmd==="version")return print(core.version);
+  throw new Error(`unknown command: ${cmd}`);
 }
 
-async function launch(id){
-  try{
-    if(id==="home"){closeWindow();return;}if(id==="files")return openFiles("/");if(id==="terminal")return openTerminal();
-    if(id==="browser"){if(window.RiftBrowserUI?.open)return window.RiftBrowserUI.open();return core.kernel.browser.open();}
-    if(id==="editor")return openEditor();if(id==="tasks")return openTasks();if(id==="settings")return openSettings();
-    if(id==="riftdev"){closeWindow();return window.RiftDev?.open?.();}if(id==="rift-apps"){closeWindow();return window.RiftApps?.openManager?.();}
-    if(await window.RiftApps?.get?.(id)){closeWindow();return window.RiftApps.launch(id);}throw new Error(`Unknown app: ${id}`);
-  }catch(error){console.error("[RiftOS] app launch failed",id,error);const body=openWindow("error","App Error","RIFTKERNEL");body.innerHTML=`<p><strong>${escapeHTML(id)} failed to open.</strong></p><pre class="shell-output">${escapeHTML(error?.stack||error?.message||error)}</pre><button class="action" id="errorHome">Return Home</button>`;body.querySelector("#errorHome").onclick=closeWindow;}
+async function openTerminal(){
+  await core.ready;const body=openWindow("terminal","RiftShell","ANDROID NATIVE SHELL"),state={cwd:"/home"};
+  body.innerHTML=`<div class="shell"><pre class="shell-output" id="shellOutput">RiftShell ${escapeHTML(core.version)}\nAndroid-native RiftFS ready. Type help.</pre><form id="shellForm" class="shell-form"><span id="shellPrompt">/home $</span><input id="shellInput" autocomplete="off" autocapitalize="none" spellcheck="false"></form></div>`;
+  const out=body.querySelector("#shellOutput"),form=body.querySelector("#shellForm"),input=body.querySelector("#shellInput"),promptEl=body.querySelector("#shellPrompt");
+  const print=value=>{out.textContent+=(out.textContent?"\n":"")+String(value??"");out.scrollTop=out.scrollHeight;};
+  form.onsubmit=async event=>{event.preventDefault();const raw=input.value;input.value="";if(!raw.trim())return;print(`${state.cwd} $ ${raw}`);try{const result=await runShell(raw,print,state);if(result?.clear)out.textContent="";}catch(error){print(`error: ${error.message}`);}promptEl.textContent=`${state.cwd} $`;};
+  setTimeout(()=>input.focus(),60);
 }
 
-document.addEventListener("click",event=>{const button=event.target.closest("[data-open]");if(button)launch(button.dataset.open);});
-window.addEventListener("keydown",event=>{if(event.key==="Escape"&&!document.documentElement.classList.contains("riftdev-active"))closeWindow();});
-
-function injectTrueOSStyles(){
-  if($("#trueOSStyles"))return;const style=document.createElement("style");style.id="trueOSStyles";style.textContent=`.trueos-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}.trueos-head>div{flex:1;min-width:160px}.trueos-head strong{display:block}.trueos-head small,.trueos-muted{color:#95a3b5}.trueos-chip{border:1px solid #344154;border-radius:999px;padding:5px 8px;font:700 11px system-ui}.trueos-chip.ok{color:#8ce0ae}.trueos-chip.warn{color:#f2ce78}.trueos-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}.trueos-card{border:1px solid #293544;border-radius:12px;background:#0d131b;padding:11px}.trueos-card strong{display:block;margin-bottom:5px}.trueos-card small{color:#94a1b2}.trueos-files{display:flex;flex-direction:column;border:1px solid #293544;border-radius:12px;overflow:hidden}.trueos-file{display:flex;align-items:center;gap:8px;border:0;border-bottom:1px solid #222d3a;background:#0c1219;color:#eef4fb;padding:11px;text-align:left;font:inherit}.trueos-file:last-child{border-bottom:0}.trueos-file span{flex:1;overflow-wrap:anywhere}.trueos-file small{color:#94a1b2}.trueos-toolbar{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0}.trueos-btn{border:1px solid #354255;background:#172130;color:#f4f7fb;border-radius:9px;padding:8px 10px;font:700 12px system-ui}.trueos-btn.primary{background:#eef4fb;color:#0a1119}.trueos-editor{display:flex;flex-direction:column;height:min(70dvh,650px);gap:8px}.trueos-editor textarea{flex:1;min-height:300px;resize:none;border:1px solid #293544;border-radius:10px;background:#070b10;color:#edf3fa;padding:12px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.trueos-table{width:100%;border-collapse:collapse}.trueos-table th,.trueos-table td{text-align:left;padding:8px;border-bottom:1px solid #25303d;font-size:12px}.trueos-table th{color:#93a2b5}.trueos-code{padding:10px;border:1px solid #293544;border-radius:10px;background:#070b10;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}`;document.head.append(style);
+async function openApp(id){
+  if(id==="home")return closeWindow();
+  if(id==="files")return openFiles("/");
+  if(id==="terminal")return openTerminal();
+  if(id==="browser")return openBrowser();
+  if(id==="editor")return openEditor();
+  if(id==="tasks")return openTasks();
+  if(id==="settings")return openSettings();
+  if(id==="riftdev"&&window.RiftDev?.open)return window.RiftDev.open();
+  if(window.RiftApps?.open)return window.RiftApps.open(id);
 }
 
-window.RiftDesktop=Object.freeze({launch,openWindow,closeWindow,setStatus,refreshLauncher:appGrid});
+document.addEventListener("click",event=>{const button=event.target.closest("[data-open]");if(!button)return;event.preventDefault();openApp(button.dataset.open).catch(error=>{console.error(error);setStatus(error.message);});});
+window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,closeWindow,setStatus});
 
 (async()=>{
-  appGrid();injectTrueOSStyles();
-  try{await core.ready;document.documentElement.dataset.riftKernel="trueos";if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(error=>console.warn("[RiftOS] service worker",error));const info=await core.kernel.info();console.info("[TrueOS] booted",info);window.dispatchEvent(new CustomEvent("riftos:trueos-ready",{detail:info}));setTimeout(()=>{$("#boot")?.remove();$("#os")?.classList.remove("hidden");},450);}
-  catch(error){const sub=$(".boot-sub");if(sub)sub.textContent=`Boot failed: ${error.message}`;}
+  try{
+    await core.ready;appGrid();
+    const boot=$("#boot"),os=$("#os");
+    setTimeout(()=>{boot?.classList.add("hidden");os?.classList.remove("hidden");setStatus("Ready");},220);
+  }catch(error){
+    const boot=$("#boot");if(boot)boot.innerHTML=`<div class="boot-title">RiftOS boot failed</div><pre>${escapeHTML(error.stack||error.message)}</pre>`;
+  }
 })();

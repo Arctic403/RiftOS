@@ -8,7 +8,6 @@ on:
       - 'android/**'
       - 'src/**'
       - 'apps/**'
-      - 'engines/**'
       - 'index.html'
       - 'styles.css'
       - '.github/workflows/riftos-android-apk.yml'
@@ -18,7 +17,7 @@ permissions:
 
 jobs:
   apk:
-    name: Build + publish Android APK
+    name: Build + publish Samsung Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -42,51 +41,70 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Restore stable RiftOS alpha signing key
+      - name: Restore RiftOS signing identity
+        env:
+          RIFTOS_KEYSTORE_B64: ${{ secrets.RIFTOS_KEYSTORE_B64 }}
+          RIFTOS_KEYSTORE_PASSWORD: ${{ secrets.RIFTOS_KEYSTORE_PASSWORD }}
+          RIFTOS_KEY_ALIAS: ${{ secrets.RIFTOS_KEY_ALIAS }}
+          RIFTOS_KEY_PASSWORD: ${{ secrets.RIFTOS_KEY_PASSWORD }}
         run: |
-          base64 --decode android/riftos-debug.keystore.b64 > "$RUNNER_TEMP/riftos-debug.keystore"
-          keytool -list -keystore "$RUNNER_TEMP/riftos-debug.keystore" -storepass android -alias riftosdebug >/dev/null
+          if [ -n "${RIFTOS_KEYSTORE_B64:-}" ]; then
+            printf '%s' "$RIFTOS_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/riftos-release.keystore"
+            echo "RIFT_SIGN_STORE=$RUNNER_TEMP/riftos-release.keystore" >> "$GITHUB_ENV"
+            echo "RIFT_SIGN_STORE_PASS=${RIFTOS_KEYSTORE_PASSWORD}" >> "$GITHUB_ENV"
+            echo "RIFT_SIGN_ALIAS=${RIFTOS_KEY_ALIAS}" >> "$GITHUB_ENV"
+            echo "RIFT_SIGN_KEY_PASS=${RIFTOS_KEY_PASSWORD}" >> "$GITHUB_ENV"
+            echo "RIFT_SIGN_MODE=production-secret" >> "$GITHUB_ENV"
+          else
+            base64 --decode android/riftos-debug.keystore.b64 > "$RUNNER_TEMP/riftos-alpha.keystore"
+            echo "RIFT_SIGN_STORE=$RUNNER_TEMP/riftos-alpha.keystore" >> "$GITHUB_ENV"
+            echo "RIFT_SIGN_STORE_PASS=android" >> "$GITHUB_ENV"
+            echo "RIFT_SIGN_ALIAS=riftosdebug" >> "$GITHUB_ENV"
+            echo "RIFT_SIGN_KEY_PASS=android" >> "$GITHUB_ENV"
+            echo "RIFT_SIGN_MODE=alpha-fallback" >> "$GITHUB_ENV"
+          fi
 
-      - name: Build unsigned RiftOS alpha APK
+      - name: Build unsigned RiftOS Android APK
         working-directory: android
         run: gradle --stacktrace :app:assembleRelease
 
-      - name: Align and sign APK for Android 8+
+      - name: Align and sign Android 8+
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
           ALIGNED="$RUNNER_TEMP/RiftOS-Android-aligned.apk"
           FINAL="$GITHUB_WORKSPACE/RiftOS-Android-debug.apk"
-
           test -f "$UNSIGNED"
           "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
           "$BUILD_TOOLS/apksigner" sign \
-            --ks "$RUNNER_TEMP/riftos-debug.keystore" \
-            --ks-key-alias riftosdebug \
-            --ks-pass pass:android \
-            --key-pass pass:android \
+            --ks "$RIFT_SIGN_STORE" \
+            --ks-key-alias "$RIFT_SIGN_ALIAS" \
+            --ks-pass "pass:$RIFT_SIGN_STORE_PASS" \
+            --key-pass "pass:$RIFT_SIGN_KEY_PASS" \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled false \
             --v4-signing-enabled false \
-            --out "$FINAL" \
-            "$ALIGNED"
-
+            --out "$FINAL" "$ALIGNED"
           "$BUILD_TOOLS/zipalign" -c -v 4 "$FINAL"
 
-      - name: Verify APK package and Android 8 signature
+      - name: Verify Samsung-native APK
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           FINAL="$GITHUB_WORKSPACE/RiftOS-Android-debug.apk"
-
           VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$FINAL")"
           printf '%s\n' "$VERIFY_OUTPUT"
           printf '%s\n' "$VERIFY_OUTPUT" | grep -Fq "Verified using v2 scheme (APK Signature Scheme v2): true"
-
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$FINAL")"
           printf '%s\n' "$BADGING" | grep -E "package:|sdkVersion:|targetSdkVersion:"
           printf '%s\n' "$BADGING" | grep -Fq "sdkVersion:'26'"
           printf '%s\n' "$BADGING" | grep -Fq "package: name='com.riftos.app'"
+          unzip -p "$FINAL" assets/www/index.html | grep -Fq "SAMSUNG ANDROID"
+          if unzip -l "$FINAL" | grep -Eqi 'pwa-ios|app-safari|manifest\.webmanifest|local-test-sw'; then
+            echo "Web/iOS-only assets leaked into Android APK" >&2
+            exit 1
+          fi
+          echo "Signing mode: $RIFT_SIGN_MODE"
 
       - name: Upload verified APK artifact
         uses: actions/upload-artifact@v4
@@ -105,7 +123,7 @@ jobs:
             gh release create android-latest RiftOS-Android-debug.apk \
               --target "$GITHUB_SHA" \
               --title "RiftOS Android — Latest Debug" \
-              --notes "Built, aligned, package-checked, and v2-signature-verified for Android 8.0 / API 26+."
+              --notes "Samsung/Android-native RiftOS alpha. Android 8.0 / API 26+."
           fi
 
       - name: Optional install + launch smoke test on Android 8.0 / API 26
@@ -120,7 +138,6 @@ jobs:
           emulator-boot-timeout: 600
           script: |
             adb install -r "$GITHUB_WORKSPACE/RiftOS-Android-debug.apk"
-            adb shell pm path com.riftos.app | grep -F "package:"
             adb shell am start -W -n com.riftos.app/.MainActivity
             sleep 3
             adb shell pidof com.riftos.app
