@@ -1,0 +1,14 @@
+await import("./riftandroid-preload.js");
+await import("./riftcore.js");
+await import("./riftandroid-platform.js");
+await import("./riftworkspace-web.js");
+await import("./riftruntime.js");
+await import("./riftbrowser-firewall.js");
+await import("./riftbrowser-engines.js");
+await import("./riftbrowser-kernel.js");
+await import("./riftapps.js");
+await import("./riftapps-files.js");
+await import("./riftgit.js");
+await import("./riftdev-host.js");
+await import("./riftos.js");
+await import("./riftbrowser-ui.js");
