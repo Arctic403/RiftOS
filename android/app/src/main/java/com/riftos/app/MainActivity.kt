@@ -2,6 +2,7 @@ package com.riftos.app
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.WebChromeClient
@@ -44,7 +45,8 @@ class MainActivity : Activity() {
             mediaPlaybackRequiresUserGesture = false
             userAgentString = "$userAgentString RiftOS-Android/0.1"
         }
-        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+        val debuggingEnabled = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        WebView.setWebContentsDebuggingEnabled(debuggingEnabled)
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClientCompat() {
             override fun shouldInterceptRequest(
@@ -84,7 +86,7 @@ class MainActivity : Activity() {
             setOf(APP_ORIGIN)
         ) { _, message, sourceOrigin, isMainFrame, _ ->
             if (isMainFrame && sourceOrigin.toString().startsWith(APP_ORIGIN)) {
-                dispatcher.handleAsync(message.data)
+                message.data?.let { dispatcher.handleAsync(it) }
             }
         }
 
