@@ -34,14 +34,19 @@ style.textContent=`
 document.head.append(style);
 
 function keepDesktopAlive(){
+  // These guards are important: this function is called by a MutationObserver.
+  // Re-writing an already-correct observed attribute can retrigger the observer
+  // forever on Android WebView and starve timers (including the boot transition).
   if(!root.classList.contains('rift-desktop-mode'))root.classList.add('rift-desktop-mode');
-  root.dataset.riftDesktop='desktop';
-  document.querySelector('#workspace')?.classList.remove('hidden');
+  if(root.dataset.riftDesktop!=='desktop')root.dataset.riftDesktop='desktop';
+  const workspace=document.querySelector('#workspace');
+  if(workspace?.classList.contains('hidden'))workspace.classList.remove('hidden');
 }
 
 // Anything that previously tried to switch back to the old single-screen/mobile shell
-// is corrected immediately. This also protects old Android/WebView builds.
-new MutationObserver(keepDesktopAlive).observe(root,{attributes:true,attributeFilter:['class','data-rift-desktop']});
+// is corrected only when it actually changes. This also protects old Android/WebView builds.
+const desktopObserver=new MutationObserver(()=>keepDesktopAlive());
+desktopObserver.observe(root,{attributes:true,attributeFilter:['class','data-rift-desktop']});
 
 for(const eventName of ['riftos:launcher-ready','riftos:window-open','riftos:window-activate','riftos:window-close','riftos:show-desktop']){
   window.addEventListener(eventName,keepDesktopAlive);
