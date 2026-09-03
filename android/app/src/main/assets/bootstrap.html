@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>RiftOS Android Host</title>
+  <style>
+    html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif;background:#090b10;color:#f4f7fb}body{padding:24px;box-sizing:border-box}.card{max-width:760px;margin:0 auto;background:#121722;border:1px solid #293142;border-radius:18px;padding:22px}h1{margin-top:0}pre{white-space:pre-wrap;background:#080b10;padding:14px;border-radius:12px;overflow:auto}.ok{color:#77e5a4}.muted{color:#99a6b8}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>RiftOS Native Host</h1>
+    <p class="muted">Android RiftHost v1 is booting.</p>
+    <div id="status">Connecting to native bridge…</div>
+    <pre id="output"></pre>
+  </main>
+<script>
+(() => {
+  const parse = value => {
+    try { return JSON.parse(value); }
+    catch { return { ok:false, error:'Invalid native response' }; }
+  };
+
+  const native = window.RiftNative;
+  window.RiftHost = {
+    available: !!native,
+    device: () => Promise.resolve(parse(native.deviceInfo())),
+    listDir: path => Promise.resolve(parse(native.listDir(path))),
+    mkdir: path => Promise.resolve(parse(native.mkdir(path))),
+    readFileBase64: path => Promise.resolve(parse(native.readFileBase64(path))),
+    writeFileBase64: (path, data) => Promise.resolve(parse(native.writeFileBase64(path, data))),
+    remove: (path, recursive=false) => Promise.resolve(parse(native.remove(path, recursive))),
+    runBundledProcess: (executable, args=[]) => Promise.resolve(parse(native.runBundledProcess(executable, JSON.stringify(args))))
+  };
+
+  const status = document.getElementById('status');
+  const output = document.getElementById('output');
+  if (!native) {
+    status.textContent = 'Native bridge unavailable.';
+    output.textContent = 'This page must run inside the RiftOS Android APK.';
+    return;
+  }
+
+  Promise.all([RiftHost.device(), RiftHost.listDir('/')]).then(([device, root]) => {
+    const ok = device.ok && root.ok;
+    status.className = ok ? 'ok' : '';
+    status.textContent = ok ? 'RiftHost online' : 'RiftHost reported an error';
+    output.textContent = JSON.stringify({ device, riftfs: root }, null, 2);
+  });
+})();
+</script>
+</body>
+</html>
