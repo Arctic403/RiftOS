@@ -1,7 +1,6 @@
 package com.riftos.app
 
 import android.app.ActivityManager
-import android.content.Context
 import android.os.Build
 import android.os.StatFs
 import android.util.Base64
@@ -9,15 +8,23 @@ import android.webkit.JavascriptInterface
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
+import kotlin.math.max
+import kotlin.math.min
 
-class RiftHostBridge(private val context: Context) {
+class RiftHostBridge(private val activity: MainActivity) {
+    private val context = activity.applicationContext
     private val riftRoot = File(context.filesDir, "riftfs")
-    private val binRoot = File(context.filesDir, "riftbin")
+    private val nativeRoot = File(context.applicationInfo.nativeLibraryDir)
+    private val modelProcess = AtomicReference<Process?>(null)
+    private val modelLog = StringBuilder()
 
     init {
         riftRoot.mkdirs()
-        binRoot.mkdirs()
-        listOf("system", "home", "tmp", "apps").forEach { File(riftRoot, it).mkdirs() }
+        listOf("system", "home", "tmp", "apps", "models", "projects").forEach {
+            File(riftRoot, it).mkdirs()
+        }
     }
 
     private fun resolveRiftPath(path: String): File {
@@ -30,14 +37,25 @@ class RiftHostBridge(private val context: Context) {
         return candidate
     }
 
+    private fun bundledExecutable(name: String): File {
+        val fileName = when (name) {
+            "llama-server" -> "libllamaserver.so"
+            "codex" -> "libcodex.so"
+            else -> error("Unknown bundled executable")
+        }
+        return File(nativeRoot, fileName)
+    }
+
     private fun errorJson(t: Throwable): String = JSONObject()
         .put("ok", false)
         .put("error", t.message ?: t.javaClass.simpleName)
         .toString()
 
+    private fun isArm64(): Boolean = Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
+
     @JavascriptInterface
     fun deviceInfo(): String = try {
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val activityManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as ActivityManager
         val mem = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
         val stat = StatFs(context.filesDir.absolutePath)
         JSONObject()
@@ -47,11 +65,147 @@ class RiftHostBridge(private val context: Context) {
             .put("model", Build.MODEL)
             .put("manufacturer", Build.MANUFACTURER)
             .put("architecture", Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")
+            .put("abis", JSONArray(Build.SUPPORTED_ABIS.toList()))
             .put("cpuCores", Runtime.getRuntime().availableProcessors())
             .put("memoryTotalBytes", mem.totalMem)
             .put("memoryAvailableBytes", mem.availMem)
             .put("storageTotalBytes", stat.totalBytes)
             .put("storageAvailableBytes", stat.availableBytes)
+            .toString()
+    } catch (t: Throwable) { errorJson(t) }
+
+    @JavascriptInterface
+    fun localAiInfo(): String = try {
+        val llama = bundledExecutable("llama-server")
+        val codex = bundledExecutable("codex")
+        JSONObject()
+            .put("ok", true)
+            .put("llamaServerAvailable", llama.isFile)
+            .put("codexAvailable", isArm64() && codex.isFile)
+            .put("codexReason", if (isArm64()) null else "Codex upstream has no ARMv7/32-bit release")
+            .put("endpoint", "http://127.0.0.1:11434/v1")
+            .put("modelAlias", "rift-local")
+            .put("running", modelProcess.get()?.isAlive == true)
+            .toString()
+    } catch (t: Throwable) { errorJson(t) }
+
+    @JavascriptInterface
+    fun pickModel(): String = try {
+        activity.chooseGgufModel()
+        JSONObject().put("ok", true).toString()
+    } catch (t: Throwable) { errorJson(t) }
+
+    @JavascriptInterface
+    fun startLocalModel(modelPath: String, contextSize: Int, threads: Int): String = try {
+        val existing = modelProcess.get()
+        if (existing?.isAlive == true) {
+            return JSONObject().put("ok", true).put("alreadyRunning", true).toString()
+        }
+
+        val model = resolveRiftPath(modelPath)
+        require(model.isFile) { "Model does not exist: $modelPath" }
+        require(model.extension.equals("gguf", ignoreCase = true)) { "Model must be a GGUF file" }
+
+        val server = bundledExecutable("llama-server")
+        require(server.isFile) { "llama-server is not bundled for this ABI" }
+
+        val safeContext = min(max(contextSize, 512), if (isArm64()) 16384 else 4096)
+        val safeThreads = min(max(threads, 1), max(Runtime.getRuntime().availableProcessors(), 1))
+        val command = listOf(
+            server.absolutePath,
+            "--model", model.absolutePath,
+            "--alias", "rift-local",
+            "--host", "127.0.0.1",
+            "--port", "11434",
+            "--ctx-size", safeContext.toString(),
+            "--threads", safeThreads.toString()
+        )
+
+        modelLog.setLength(0)
+        val process = ProcessBuilder(command)
+            .directory(File(riftRoot, "models"))
+            .redirectErrorStream(true)
+            .start()
+        modelProcess.set(process)
+
+        thread(name = "rift-llama-log", isDaemon = true) {
+            process.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    synchronized(modelLog) {
+                        modelLog.append(line).append('\n')
+                        if (modelLog.length > 64 * 1024) modelLog.delete(0, modelLog.length - 64 * 1024)
+                    }
+                }
+            }
+        }
+
+        JSONObject()
+            .put("ok", true)
+            .put("pid", if (Build.VERSION.SDK_INT >= 26) process.pid() else -1)
+            .put("endpoint", "http://127.0.0.1:11434/v1")
+            .put("model", "rift-local")
+            .put("contextSize", safeContext)
+            .put("threads", safeThreads)
+            .toString()
+    } catch (t: Throwable) { errorJson(t) }
+
+    @JavascriptInterface
+    fun stopLocalModel(): String = try {
+        val process = modelProcess.getAndSet(null)
+        process?.destroy()
+        JSONObject().put("ok", true).toString()
+    } catch (t: Throwable) { errorJson(t) }
+
+    @JavascriptInterface
+    fun localModelLog(): String = try {
+        val text = synchronized(modelLog) { modelLog.toString() }
+        JSONObject().put("ok", true).put("log", text).toString()
+    } catch (t: Throwable) { errorJson(t) }
+
+    @JavascriptInterface
+    fun runCodex(prompt: String, cwd: String): String = try {
+        require(isArm64()) { "Codex upstream does not currently ship a 32-bit ARM binary" }
+        require(modelProcess.get()?.isAlive == true) { "Start the local model first" }
+        require(prompt.isNotBlank()) { "Prompt is empty" }
+
+        val codex = bundledExecutable("codex")
+        require(codex.isFile) { "Codex is not bundled in this APK" }
+        val workDir = resolveRiftPath(cwd.ifBlank { "/projects" })
+        require(workDir.isDirectory) { "Working directory does not exist" }
+
+        val command = listOf(
+            codex.absolutePath,
+            "exec",
+            "--oss",
+            "--local-provider", "ollama",
+            "--model", "rift-local",
+            prompt
+        )
+        val builder = ProcessBuilder(command)
+            .directory(workDir)
+            .redirectErrorStream(false)
+        builder.environment().apply {
+            put("CODEX_OSS_BASE_URL", "http://127.0.0.1:11434/v1")
+            put("HOME", File(riftRoot, "home").absolutePath)
+            put("SHELL", "/system/bin/sh")
+            put("PATH", "/system/bin:/system/xbin")
+            put("TERM", "xterm-256color")
+        }
+
+        val process = builder.start()
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+        val outThread = thread { process.inputStream.bufferedReader().use { stdout.append(it.readText()) } }
+        val errThread = thread { process.errorStream.bufferedReader().use { stderr.append(it.readText()) } }
+        val exitCode = process.waitFor()
+        outThread.join()
+        errThread.join()
+
+        JSONObject()
+            .put("ok", exitCode == 0)
+            .put("exitCode", exitCode)
+            .put("stdout", stdout.toString())
+            .put("stderr", stderr.toString())
             .toString()
     } catch (t: Throwable) { errorJson(t) }
 
@@ -103,29 +257,5 @@ class RiftHostBridge(private val context: Context) {
         val removed = if (recursive && file.isDirectory) file.deleteRecursively() else file.delete()
         require(removed || !file.exists()) { "Could not remove path" }
         JSONObject().put("ok", true).toString()
-    } catch (t: Throwable) { errorJson(t) }
-
-    @JavascriptInterface
-    fun runBundledProcess(executable: String, argsJson: String): String = try {
-        val executableFile = File(binRoot, executable.removePrefix("/")).canonicalFile
-        val root = binRoot.canonicalFile
-        require(executableFile.path.startsWith(root.path + File.separator)) { "Executable escapes Rift bin" }
-        require(executableFile.isFile && executableFile.canExecute()) { "Bundled executable not available" }
-
-        val argsArray = JSONArray(argsJson)
-        val command = mutableListOf(executableFile.absolutePath)
-        for (i in 0 until argsArray.length()) command += argsArray.getString(i)
-
-        val process = ProcessBuilder(command)
-            .directory(riftRoot)
-            .redirectErrorStream(false)
-            .start()
-        val exitCode = process.waitFor()
-        JSONObject()
-            .put("ok", true)
-            .put("exitCode", exitCode)
-            .put("stdout", process.inputStream.bufferedReader().readText())
-            .put("stderr", process.errorStream.bufferedReader().readText())
-            .toString()
     } catch (t: Throwable) { errorJson(t) }
 }
