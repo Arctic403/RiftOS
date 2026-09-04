@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/android-rifthost-v1
+      - feature/android-local-codex-v1
     paths:
       - "android/**"
       - ".github/workflows/riftos-android.yml"
@@ -36,8 +37,22 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android platform
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Android SDK and NDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+
+      - name: Prepare ARM64 + ARMv7 local AI runtime
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+        run: bash scripts/prepare-native-runtime.sh
+
+      - name: Verify packaged native executables
+        run: |
+          test -s app/src/main/jniLibs/arm64-v8a/libllamaserver.so
+          test -s app/src/main/jniLibs/armeabi-v7a/libllamaserver.so
+          test -s app/src/main/jniLibs/arm64-v8a/libcodex.so
+          file app/src/main/jniLibs/arm64-v8a/libllamaserver.so
+          file app/src/main/jniLibs/armeabi-v7a/libllamaserver.so
+          file app/src/main/jniLibs/arm64-v8a/libcodex.so
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -47,9 +62,16 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
+      - name: Verify APK contains both llama runtimes and ARM64 Codex
+        run: |
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | tee /tmp/apk.txt
+          grep -q 'lib/arm64-v8a/libllamaserver.so' /tmp/apk.txt
+          grep -q 'lib/armeabi-v7a/libllamaserver.so' /tmp/apk.txt
+          grep -q 'lib/arm64-v8a/libcodex.so' /tmp/apk.txt
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: RiftOS-Android-debug
+          name: RiftOS-Android-local-codex-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
