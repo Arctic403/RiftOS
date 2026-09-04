@@ -5,15 +5,31 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>RiftOS Android Host</title>
   <style>
-    html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif;background:#090b10;color:#f4f7fb}body{padding:24px;box-sizing:border-box}.card{max-width:760px;margin:0 auto;background:#121722;border:1px solid #293142;border-radius:18px;padding:22px}h1{margin-top:0}pre{white-space:pre-wrap;background:#080b10;padding:14px;border-radius:12px;overflow:auto}.ok{color:#77e5a4}.muted{color:#99a6b8}
+    html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif;background:#090b10;color:#f4f7fb}body{padding:20px;box-sizing:border-box}.card{max-width:820px;margin:0 auto;background:#121722;border:1px solid #293142;border-radius:18px;padding:22px}h1{margin-top:0}.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}button,input,textarea{font:inherit}button{border:1px solid #3b465c;background:#1b2433;color:#fff;border-radius:10px;padding:10px 14px}input,textarea{box-sizing:border-box;width:100%;background:#080b10;color:#fff;border:1px solid #30394a;border-radius:10px;padding:10px}textarea{min-height:100px}pre{white-space:pre-wrap;background:#080b10;padding:14px;border-radius:12px;overflow:auto;max-height:320px}.ok{color:#77e5a4}.warn{color:#ffd37a}.muted{color:#99a6b8}.section{border-top:1px solid #293142;margin-top:18px;padding-top:14px}
   </style>
 </head>
 <body>
   <main class="card">
     <h1>RiftOS Native Host</h1>
-    <p class="muted">Android RiftHost v1 is booting.</p>
+    <p class="muted">Android local-compute bootstrap. Inference stays on this device.</p>
     <div id="status">Connecting to native bridge…</div>
     <pre id="output"></pre>
+
+    <section class="section">
+      <h2>Local model</h2>
+      <div class="row"><button id="pick">Choose GGUF</button><button id="start">Start model</button><button id="stop">Stop model</button></div>
+      <input id="modelPath" value="/models/model.gguf" aria-label="Model path" />
+      <p class="muted">ARMv7/32-bit is supported by the llama.cpp runtime; use a model small enough for the device RAM.</p>
+    </section>
+
+    <section class="section">
+      <h2>Codex local</h2>
+      <input id="cwd" value="/projects" aria-label="Working directory" />
+      <textarea id="prompt" placeholder="Describe the coding task…"></textarea>
+      <div class="row"><button id="codex">Run Codex against local model</button></div>
+      <p id="codexNote" class="muted"></p>
+      <pre id="codexOutput"></pre>
+    </section>
   </main>
 <script>
 (() => {
@@ -21,33 +37,72 @@
     try { return JSON.parse(value); }
     catch { return { ok:false, error:'Invalid native response' }; }
   };
-
   const native = window.RiftNative;
+  if (!native) {
+    document.getElementById('status').textContent = 'Native bridge unavailable.';
+    return;
+  }
+
   window.RiftHost = {
-    available: !!native,
-    device: () => Promise.resolve(parse(native.deviceInfo())),
-    listDir: path => Promise.resolve(parse(native.listDir(path))),
-    mkdir: path => Promise.resolve(parse(native.mkdir(path))),
-    readFileBase64: path => Promise.resolve(parse(native.readFileBase64(path))),
-    writeFileBase64: (path, data) => Promise.resolve(parse(native.writeFileBase64(path, data))),
-    remove: (path, recursive=false) => Promise.resolve(parse(native.remove(path, recursive))),
-    runBundledProcess: (executable, args=[]) => Promise.resolve(parse(native.runBundledProcess(executable, JSON.stringify(args))))
+    device: () => parse(native.deviceInfo()),
+    ai: () => parse(native.localAiInfo()),
+    listDir: path => parse(native.listDir(path)),
+    mkdir: path => parse(native.mkdir(path)),
+    pickModel: () => parse(native.pickModel()),
+    startModel: (path, ctx=2048, threads=4) => parse(native.startLocalModel(path, ctx, threads)),
+    stopModel: () => parse(native.stopLocalModel()),
+    modelLog: () => parse(native.localModelLog()),
+    codex: (prompt, cwd='/projects') => parse(native.runCodex(prompt, cwd)),
+    readFileBase64: path => parse(native.readFileBase64(path)),
+    writeFileBase64: (path, data) => parse(native.writeFileBase64(path, data)),
+    remove: (path, recursive=false) => parse(native.remove(path, recursive))
+  };
+
+  window.RiftNativeEvents = {
+    modelImported(payloadJson) {
+      const result = parse(payloadJson);
+      if (result.ok) document.getElementById('modelPath').value = result.path;
+      document.getElementById('output').textContent = JSON.stringify(result, null, 2);
+    }
   };
 
   const status = document.getElementById('status');
   const output = document.getElementById('output');
-  if (!native) {
-    status.textContent = 'Native bridge unavailable.';
-    output.textContent = 'This page must run inside the RiftOS Android APK.';
-    return;
-  }
+  const codexNote = document.getElementById('codexNote');
+  const codexOutput = document.getElementById('codexOutput');
 
-  Promise.all([RiftHost.device(), RiftHost.listDir('/')]).then(([device, root]) => {
-    const ok = device.ok && root.ok;
-    status.className = ok ? 'ok' : '';
-    status.textContent = ok ? 'RiftHost online' : 'RiftHost reported an error';
-    output.textContent = JSON.stringify({ device, riftfs: root }, null, 2);
-  });
+  const refresh = () => {
+    const device = RiftHost.device();
+    const ai = RiftHost.ai();
+    const root = RiftHost.listDir('/');
+    status.className = device.ok && root.ok ? 'ok' : 'warn';
+    status.textContent = device.ok ? `RiftHost online · ${device.architecture}` : 'RiftHost error';
+    codexNote.textContent = ai.codexAvailable
+      ? 'Codex ARM64 runtime is bundled and points at the local llama.cpp endpoint.'
+      : (ai.codexReason || 'Codex runtime unavailable on this build.');
+    output.textContent = JSON.stringify({ device, localAI: ai, riftfs: root }, null, 2);
+  };
+
+  document.getElementById('pick').onclick = () => RiftHost.pickModel();
+  document.getElementById('start').onclick = () => {
+    const info = RiftHost.device();
+    const path = document.getElementById('modelPath').value;
+    const ctx = info.architecture === 'armeabi-v7a' ? 1024 : 2048;
+    const threads = Math.max(1, Math.min(info.cpuCores || 2, 6));
+    const result = RiftHost.startModel(path, ctx, threads);
+    output.textContent = JSON.stringify(result, null, 2);
+    setTimeout(refresh, 500);
+  };
+  document.getElementById('stop').onclick = () => { output.textContent = JSON.stringify(RiftHost.stopModel(), null, 2); refresh(); };
+  document.getElementById('codex').onclick = () => {
+    codexOutput.textContent = 'Running…';
+    setTimeout(() => {
+      const result = RiftHost.codex(document.getElementById('prompt').value, document.getElementById('cwd').value);
+      codexOutput.textContent = result.stdout || result.stderr || result.error || JSON.stringify(result, null, 2);
+    }, 0);
+  };
+
+  refresh();
 })();
 </script>
 </body>
