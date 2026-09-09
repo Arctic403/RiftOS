@@ -22,35 +22,39 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - Settings app with privacy-limited System Dump export and Android Save As picker.
 - RiftDev Android editor backed by RiftWorkspace through `RiftDevAndroidDB` compatibility plumbing.
 - RiftRT v1 worker/iframe/WASM application runtime.
-- **Rift Bridge** registered as a RiftOS system app for AI-tool pairing, permissions and recent tool activity.
+- **Rift Bridge** registered as a RiftOS system app for local MCP tools, permissions, optional remote pairing and recent tool activity.
 
 ### RiftBrowser
 
 - Native Android System WebView hosted inside the RiftOS browser window.
 - RiftOS-owned browser chrome and desktop window state.
 - ChatGPT/OpenAI authentication handling, cookies and file chooser support.
-- RiftBrowser no longer injects a filesystem bridge, prompt wrapper, DOM parser or Agent runtime into `chatgpt.com`.
-- ChatGPT web content is treated as ordinary web content; it has no direct native Rift filesystem capability.
+- Exact-origin `rift-mcp-app-v1` compatibility adapter on ChatGPT Web.
+- Adapter performs in-process MCP `initialize`, `tools/list` and `tools/call` through `RiftMcpServer`.
+- Live MCP tool manifest is supplied to ChatGPT conversation context; strict `<rift_call>...</rift_call>` envelopes are validated and routed to the local MCP server.
+- ChatGPT never receives direct `RiftSandbox`, `RiftSandboxFS` or general `RiftNativeDispatcher` access.
+- The removed Agent V1/V2/V3 protocol remains inactive and is not used as fallback.
 
-### Rift Bridge
+### Rift Bridge / Tool Host
 
-- Outbound-only WSS device connection to a remote adapter.
+- `RiftToolHost` is the canonical device-side capability registry for every AI adapter.
+- `RiftMcpServer` is an in-process MCP JSON-RPC server with no listening socket.
 - App-private tool scope remains `filesDir/riftfs/browser-sandbox`.
 - Device-side read/write permission gates are authoritative.
-- Read tools: `info`, `stat`, `list`, `readText`.
-- Write tools: `writeText`, `mkdir`, `remove`, `move`.
-- Pairing key encrypted with Android Keystore.
-- Reconnect support for network/process interruptions.
-- Recent tool activity log records tool, target/path, outcome and time without storing file contents.
-- Remote MCP relay exposes first-class ChatGPT tools while RiftOS keeps MCP outside the internal capability API.
+- Canonical read tools: `rift_info`, `rift_stat`, `rift_list`, `rift_read_text`.
+- Canonical write tools: `rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`.
+- Write tools are disabled by default.
+- Recent activity log records canonical tool, target/path, outcome and time without storing file contents.
+- Existing remote MCP relay remains optional and now delegates execution to the same Tool Host instead of owning a parallel permission implementation.
+- Remote pairing key remains encrypted with Android Keystore and the device connection remains outbound-only WSS.
 
 ### Diagnostics/build
 
 - Privacy-limited JSON system dump.
 - User-selected dump destination.
 - GitHub Actions build/sign/verify/publish pipeline.
-- APK verification fails if the removed ChatGPT DOM Agent asset reappears and requires the Rift Bridge system module instead.
-- Separate CI syntax/package check for the remote Rift Bridge MCP relay.
+- APK verification requires the Rift MCP App asset and rejects the removed ChatGPT DOM Agent asset or V3 protocol marker.
+- Separate CI syntax/package check for the optional remote Rift Bridge MCP relay.
 - No emulator smoke test or compatibility matrix in normal CI.
 - CI guard against `libllamaserver.so` reappearing.
 
@@ -65,19 +69,19 @@ The following are not active RiftOS Android architecture:
 - Gecko WASM browser experiments,
 - Android emulator CI matrix/smoke tests,
 - PWA/service-worker/iOS-only assets in the Android APK,
-- Rift Agent V1/V2/V3 prompt wrappers, model-visible markers and DOM tool-block parsing,
-- direct `RiftSandbox` WebMessage access from `chatgpt.com`.
+- Rift Agent V1/V2/V3 fenced `rift-tool` protocol and response-node tracking,
+- direct `RiftSandbox` / `RiftSandboxFS` WebMessage access from `chatgpt.com`.
 
 Some historical source history may mention those experiments. They are not current runtime claims.
 
 ## Known limitations
 
-- ChatGPT requires a reachable remote MCP/custom-app endpoint; the phone itself does not accept inbound internet connections.
-- The alpha relay uses a pairing-key URL and is single-device; OAuth/multi-user routing is future work.
+- On ChatGPT plans without supported custom MCP registration, RiftBrowser compatibility mode necessarily depends on the ChatGPT composer and semantic rendered-message attributes. ChatGPT UI changes can break that browser-facing adapter without weakening the local capability boundary.
+- The optional alpha remote relay still uses a pairing-key URL and is single-device; OAuth/multi-user routing is future work.
 - Write tools are locally disabled by default until the user explicitly enables them in Rift Bridge.
 - Embedded identity providers may independently reject Android WebView login.
 - Native Kotlin/DEX cannot be arbitrarily hot-swapped; APK rebuild is required.
 
 ## Planned
 
-See `ROADMAP.md`, especially Rift Bridge deployment/hardening, RiftScript Studio, developer overlays, live inspection/testing, Development Snapshot export and capability-gated expansion of the tool registry.
+See `ROADMAP.md`, especially Rift Bridge hardening, browser compatibility resilience, secure-tunnel adapters, RiftScript Studio, developer overlays, live inspection/testing, Development Snapshot export and capability-gated expansion of the tool registry.

@@ -15,7 +15,7 @@ function ensureLauncherCard(){
   const button=document.createElement("button");
   button.className="app-card";
   button.dataset.riftSystemApp="bridge";
-  button.innerHTML='<span class="app-icon">↔</span><span><strong>Rift Bridge</strong><br><small>AI tools, pairing, permissions & activity</small></span>';
+  button.innerHTML='<span class="app-icon">↔</span><span><strong>Rift Bridge</strong><br><small>Local MCP tools, browser app, permissions & activity</small></span>';
   button.onclick=open;
   grid.append(button);
 }

@@ -29,8 +29,11 @@ import kotlin.math.roundToInt
 
 /**
  * Native browser surface hosted inside MainActivity and positioned over a RiftOS
- * desktop window. RiftBrowser is now a normal browser surface: it does not inject
- * agents, tool prompts, or native filesystem bridges into chatgpt.com.
+ * desktop window.
+ *
+ * Ordinary sites receive no Rift native API. On the exact ChatGPT Web origin,
+ * RiftBrowser installs the Rift MCP App compatibility adapter, which can talk only
+ * to the in-process MCP server and therefore remains behind RiftToolHost policy.
  */
 class RiftBrowserWindow(
     private val activity: Activity,
@@ -54,6 +57,7 @@ class RiftBrowserWindow(
     }
 
     private val webView = WebView(activity)
+    private val mcpApp = RiftBrowserMcpAppBridge(activity, webView)
     private var popupWebView: WebView? = null
     private var requestedVisible = false
     private var hasBounds = false
@@ -62,6 +66,7 @@ class RiftBrowserWindow(
     init {
         CookieManager.getInstance().setAcceptCookie(true)
         configureMainWebView(webView)
+        mcpApp.install()
         installChromeClient()
         installWebViewClient()
         installDownloads()
@@ -157,6 +162,7 @@ class RiftBrowserWindow(
         .put("canGoBack", webView.canGoBack())
         .put("canGoForward", webView.canGoForward())
         .put("progress", webView.progress)
+        .put("riftMcpApp", mcpApp.state())
 
     fun close(): Boolean {
         if (destroyed) return true
@@ -178,6 +184,7 @@ class RiftBrowserWindow(
         destroyed = true
         requestedVisible = false
         destroyPopup()
+        runCatching { mcpApp.destroy() }
         runCatching { host.removeView(webView) }
         runCatching { webView.stopLoading() }
         runCatching { webView.loadUrl("about:blank") }
@@ -327,6 +334,7 @@ class RiftBrowserWindow(
 
             override fun onPageFinished(view: WebView, url: String) {
                 CookieManager.getInstance().flush()
+                mcpApp.ensureInjected(url)
                 emitState()
                 super.onPageFinished(view, url)
             }

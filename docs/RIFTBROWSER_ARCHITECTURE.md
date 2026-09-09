@@ -38,22 +38,23 @@ This keeps RiftBrowser aligned with Files, Settings, RiftDev and RiftRT windows.
 
 ## ChatGPT behavior
 
-ChatGPT receives only normal browser compatibility behavior:
+ChatGPT gets normal browser compatibility plus the **Rift MCP App compatibility adapter** on the exact `https://chatgpt.com` and `https://www.chatgpt.com` main-frame origins.
 
-- persistent WebView cookies,
-- authentication-flow handling for ChatGPT/OpenAI and common identity-provider hosts,
-- same-tab handling for auth popups,
-- file chooser/download support provided by the browser host.
+The adapter receives no filesystem object and no general native dispatcher. Its only native surface is `RiftMcpNative`, an exact-origin WebMessage endpoint that accepts MCP JSON-RPC and terminates at the in-process `RiftMcpServer` / `RiftToolHost` policy boundary.
 
-RiftBrowser does **not** inject `RiftSandboxFS`, a prompt wrapper, a DOM response parser or an Agent runtime into `chatgpt.com`. No guest page receives direct Rift filesystem access.
+At startup it performs `initialize` and `tools/list`, then publishes the live manifest to ChatGPT conversation context. A strict `<rift_call>...</rift_call>` envelope is translated to `tools/call`, and the structured result is fed back into the conversation.
+
+Because ChatGPT plans without custom MCP registration do not expose a supported local tool API, this compatibility layer still depends on the ChatGPT composer and semantic rendered-message attributes. That dependency is isolated to `riftbrowser-mcp-app.js`; it does not own permissions, filesystem execution or audit.
+
+RiftBrowser does **not** inject `RiftSandboxFS`, expose the sandbox directly, reuse the old fenced `rift-tool` protocol, or revive Agent V1/V2/V3.
 
 Identity providers may still reject embedded WebView authentication independently.
 
 ## AI tool integration
 
-First-class AI tools are handled by the separate **Rift Bridge** system app. Rift Bridge owns device-side pairing, read/write grants, audit logging and the outbound connection to external adapters such as the MCP relay.
+`RiftToolHost` is the single device-side authority for both browser compatibility and remote MCP adapters. It owns canonical schemas, read/write grants, sandbox routing and audit logging.
 
-This keeps ChatGPT DOM structure completely outside the Rift tool execution path.
+Write tools are disabled by default. The ChatGPT page cannot override device policy.
 
 ## Removed browser paths
 
@@ -61,7 +62,8 @@ The following are historical and not current Android backends:
 
 - full-screen `RiftBrowserActivity`,
 - ChatGPT DOM Rift Agent V1/V2/V3,
-- exact-origin `RiftSandbox` WebMessage bridge injected into `chatgpt.com`,
+- exact-origin `RiftSandbox` / `RiftSandboxFS` filesystem bridge,
+- fenced `rift-tool` packets and V3 response-node tracking,
 - WebKit-WASM/Wisp RiftBrowser,
 - Gecko WASM experiments,
 - CORS fetch/sanitize/iframe browser emulation.

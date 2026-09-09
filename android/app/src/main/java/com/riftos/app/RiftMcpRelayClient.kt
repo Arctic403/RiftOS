@@ -14,30 +14,28 @@ import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /**
- * Rift Bridge device adapter.
+ * Remote Rift Bridge adapter.
  *
- * The phone owns the capability boundary. Remote adapters (currently MCP) can
- * request only tools exposed here, and every call is checked against local
- * read/write policy before it reaches the app-private sandbox.
+ * This class owns only relay transport/configuration. All capability schemas,
+ * permissions, audit and sandbox dispatch live in RiftToolHost and are shared
+ * with the local RiftBrowser MCP App compatibility adapter.
  */
-class RiftMcpRelayClient(context: Context) {
+class RiftMcpRelayClient(
+    context: Context,
+    private val toolHost: RiftToolHost
+) {
     companion object {
         private const val PREFS = "rift-bridge"
         private const val PREF_DEVICE_URL = "deviceUrl"
         private const val PREF_ENABLED = "enabled"
-        private const val PREF_ALLOW_READ = "allowRead"
-        private const val PREF_ALLOW_WRITE = "allowWrite"
-        private const val PREF_AUDIT = "audit"
         private const val SECRET_PAIRING_KEY = "rift.bridge.pairingKey"
         private const val PROTOCOL = "rift-bridge-device-v1"
         private const val RECONNECT_MS = 3000L
-        private const val MAX_AUDIT = 100
     }
 
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val secrets = RiftSecretStore(appContext)
-    private val sandbox = RiftBrowserSandbox(appContext)
     private val handler = Handler(Looper.getMainLooper())
     private val http = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
@@ -77,9 +75,9 @@ class RiftMcpRelayClient(context: Context) {
             prefs.edit().putBoolean(PREF_ENABLED, desired).apply()
         }
         if (args.has("allowRead") || args.has("allowWrite")) {
-            setAccess(
-                args.optBoolean("allowRead", allowRead()),
-                args.optBoolean("allowWrite", allowWrite())
+            toolHost.setAccess(
+                args.optBoolean("allowRead", access().optBoolean("sandboxRead", true)),
+                args.optBoolean("allowWrite", access().optBoolean("sandboxWrite", false))
             )
         }
 
@@ -93,13 +91,7 @@ class RiftMcpRelayClient(context: Context) {
         return status()
     }
 
-    fun setAccess(read: Boolean, write: Boolean): JSONObject {
-        prefs.edit()
-            .putBoolean(PREF_ALLOW_READ, read)
-            .putBoolean(PREF_ALLOW_WRITE, write)
-            .apply()
-        return access()
-    }
+    fun setAccess(read: Boolean, write: Boolean): JSONObject = toolHost.setAccess(read, write)
 
     fun connect(): JSONObject {
         require(configured()) { "Rift Bridge relay is not fully configured" }
@@ -127,22 +119,9 @@ class RiftMcpRelayClient(context: Context) {
         return "https://${root.removePrefix("wss://")}/mcp/$key"
     }
 
-    fun access(): JSONObject = JSONObject()
-        .put("sandboxRead", allowRead())
-        .put("sandboxWrite", allowWrite())
-        .put("scope", "riftfs/browser-sandbox")
-        .put("readTools", JSONArray(listOf("info", "stat", "list", "readText")))
-        .put("writeTools", JSONArray(listOf("writeText", "mkdir", "remove", "move")))
-
-    fun audit(): JSONArray {
-        val raw = prefs.getString(PREF_AUDIT, "[]") ?: "[]"
-        return runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
-    }
-
-    fun clearAudit(): Boolean {
-        prefs.edit().putString(PREF_AUDIT, "[]").apply()
-        return true
-    }
+    fun access(): JSONObject = toolHost.access()
+    fun audit(): JSONArray = toolHost.audit()
+    fun clearAudit(): Boolean = toolHost.clearAudit()
 
     fun status(): JSONObject = JSONObject()
         .put("enabled", desired)
@@ -156,12 +135,12 @@ class RiftMcpRelayClient(context: Context) {
         .put("protocol", PROTOCOL)
         .put("access", access())
         .put("auditEntries", audit().length())
+        .put("toolCount", toolHost.tools().length())
 
     fun shutdown() {
         desired = false
         handler.removeCallbacks(reconnect)
         closeSocket("App shutdown")
-        sandbox.shutdown()
         http.dispatcher.executorService.shutdown()
         http.connectionPool.evictAll()
     }
@@ -169,8 +148,6 @@ class RiftMcpRelayClient(context: Context) {
     private fun configured(): Boolean = deviceUrl().isNotBlank() && !pairingKey().isNullOrBlank()
     private fun deviceUrl(): String = prefs.getString(PREF_DEVICE_URL, "")?.trim().orEmpty()
     private fun pairingKey(): String? = secrets.get(SECRET_PAIRING_KEY)?.trim()?.takeIf { it.isNotBlank() }
-    private fun allowRead(): Boolean = prefs.getBoolean(PREF_ALLOW_READ, true)
-    private fun allowWrite(): Boolean = prefs.getBoolean(PREF_ALLOW_WRITE, false)
 
     private fun openSocket() {
         val base = deviceUrl()
@@ -191,7 +168,7 @@ class RiftMcpRelayClient(context: Context) {
                     JSONObject()
                         .put("type", "device_ready")
                         .put("protocol", PROTOCOL)
-                        .put("sandbox", "riftfs/browser-sandbox")
+                        .put("sandbox", RiftToolHost.SCOPE)
                         .put("access", access())
                         .toString()
                 )
@@ -231,102 +208,22 @@ class RiftMcpRelayClient(context: Context) {
         current?.close(1000, reason.take(120))
     }
 
-    private fun isAllowed(name: String): Boolean = when (name) {
-        "info", "stat", "list", "readText" -> allowRead()
-        "writeText", "mkdir", "remove", "move" -> allowWrite()
-        else -> false
-    }
-
-    private fun methodFor(name: String): String? = when (name) {
-        "info" -> "sandbox.info"
-        "stat" -> "fs.stat"
-        "list" -> "fs.list"
-        "readText" -> "fs.readText"
-        "writeText" -> "fs.writeText"
-        "mkdir" -> "fs.mkdir"
-        "remove" -> "fs.remove"
-        "move" -> "fs.move"
-        else -> null
-    }
-
     private fun handleToolCall(webSocket: WebSocket, message: JSONObject) {
         val id = message.optString("id")
         val name = message.optString("name")
         if (id.isBlank() || name.isBlank()) return
         val args = message.optJSONObject("args") ?: JSONObject()
-        val method = methodFor(name)
-        if (method == null) {
-            val error = "Unsupported Rift Bridge tool: $name"
-            recordAudit(name, args, false, error)
-            sendToolError(webSocket, id, error)
-            return
-        }
-        if (!isAllowed(name)) {
-            val error = if (name in setOf("writeText", "mkdir", "remove", "move")) {
-                "Rift Bridge sandbox write access is disabled on this device"
-            } else {
-                "Rift Bridge sandbox read access is disabled on this device"
-            }
-            recordAudit(name, args, false, error)
-            sendToolError(webSocket, id, error)
-            return
-        }
-
-        val request = JSONObject()
-            .put("id", id)
-            .put("method", method)
-            .put("args", args)
-
-        sandbox.handleAsync(request.toString()) { raw ->
-            val response = runCatching { JSONObject(raw) }.getOrNull()
+        toolHost.callAsync(name, args) { result ->
             val output = JSONObject()
                 .put("type", "tool_result")
                 .put("id", id)
-            if (response?.optBoolean("ok", false) == true) {
-                output.put("ok", true)
-                output.put("value", response.opt("value") ?: JSONObject.NULL)
-                recordAudit(name, args, true, null)
+                .put("ok", result.optBoolean("ok", false))
+            if (result.optBoolean("ok", false)) {
+                output.put("value", result.opt("value") ?: JSONObject.NULL)
             } else {
-                val error = response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Rift sandbox call failed"
-                output.put("ok", false)
-                output.put("error", error)
-                recordAudit(name, args, false, error)
+                output.put("error", result.optString("error", "Rift tool failed"))
             }
             webSocket.send(output.toString())
         }
-    }
-
-    private fun sendToolError(webSocket: WebSocket, id: String, error: String) {
-        webSocket.send(
-            JSONObject()
-                .put("type", "tool_result")
-                .put("id", id)
-                .put("ok", false)
-                .put("error", error)
-                .toString()
-        )
-    }
-
-    @Synchronized
-    private fun recordAudit(name: String, args: JSONObject, ok: Boolean, error: String?) {
-        val current = audit()
-        val next = JSONArray()
-        val start = (current.length() - (MAX_AUDIT - 1)).coerceAtLeast(0)
-        for (index in start until current.length()) next.put(current.opt(index))
-        next.put(
-            JSONObject()
-                .put("at", System.currentTimeMillis())
-                .put("tool", name)
-                .put("target", auditTarget(name, args))
-                .put("ok", ok)
-                .put("error", error ?: JSONObject.NULL)
-        )
-        prefs.edit().putString(PREF_AUDIT, next.toString()).apply()
-    }
-
-    private fun auditTarget(name: String, args: JSONObject): String = when (name) {
-        "move" -> "${args.optString("from")} -> ${args.optString("to")}".take(300)
-        "info" -> "sandbox"
-        else -> args.optString("path").take(300)
     }
 }

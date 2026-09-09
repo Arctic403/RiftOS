@@ -58,7 +58,7 @@ class RiftMcpBridgeActivity : Activity() {
             textSize = 26f
         })
         content.addView(TextView(this).apply {
-            text = "First-class AI tool bridge for RiftOS. The phone remains the capability authority; remote adapters can reach only the app-private Rift sandbox and only the permissions enabled below."
+            text = "Local MCP tools for RiftOS. RiftBrowser uses the in-process MCP App compatibility adapter on ChatGPT Web; the remote relay below is optional for accounts that can register a real custom MCP app. Device permissions and audit apply to both paths."
             textSize = 14f
             setPadding(0, 12, 0, 20)
         })
@@ -67,7 +67,7 @@ class RiftMcpBridgeActivity : Activity() {
             hint = "wss://your-relay.example/device"
             setSingleLine(true)
         }
-        content.addView(label("Remote adapter WebSocket"))
+        content.addView(label("Optional remote adapter WebSocket"))
         content.addView(urlInput, matchWidth())
 
         keyInput = EditText(this).apply {
@@ -75,7 +75,7 @@ class RiftMcpBridgeActivity : Activity() {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
-        content.addView(label("Pairing key"))
+        content.addView(label("Remote pairing key"))
         content.addView(keyInput, matchWidth())
 
         content.addView(Button(this).apply {
@@ -83,7 +83,7 @@ class RiftMcpBridgeActivity : Activity() {
             setOnClickListener { keyInput.setText(generatePairingKey()) }
         }, matchWidth())
 
-        content.addView(label("Capabilities"))
+        content.addView(label("Shared device capabilities"))
         readToggle = CheckBox(this).apply {
             text = "Allow sandbox read tools (info, stat, list, readText)"
         }
@@ -94,12 +94,12 @@ class RiftMcpBridgeActivity : Activity() {
         content.addView(writeToggle, matchWidth())
 
         content.addView(Button(this).apply {
-            text = "Save + Connect"
+            text = "Save permissions + Connect remote adapter"
             setOnClickListener { saveAndConnect() }
         }, matchWidth())
 
         content.addView(Button(this).apply {
-            text = "Disconnect"
+            text = "Disconnect remote adapter"
             setOnClickListener {
                 runCatching { relay.disconnect() }
                 refresh()
@@ -113,7 +113,7 @@ class RiftMcpBridgeActivity : Activity() {
         content.addView(endpointView)
 
         content.addView(Button(this).apply {
-            text = "Copy ChatGPT MCP endpoint"
+            text = "Copy remote ChatGPT MCP endpoint"
             setOnClickListener {
                 relay.appEndpoint()?.let { endpoint ->
                     (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
@@ -182,17 +182,19 @@ class RiftMcpBridgeActivity : Activity() {
             accessLoaded = true
         }
         endpointView.text = relay.appEndpoint()?.let {
-            "ChatGPT MCP endpoint:\n$it\n\nTreat this URL like a secret while the alpha uses a pairing key in the path."
-        } ?: "ChatGPT MCP endpoint appears after a relay URL and pairing key are configured."
+            "Optional remote ChatGPT MCP endpoint:\n$it\n\nRiftBrowser MCP App mode does not need this endpoint. Treat this URL like a secret while the alpha uses a pairing key in the path."
+        } ?: "RiftBrowser MCP App: built in and local.\nRemote MCP endpoint appears only after an optional relay URL and pairing key are configured."
         statusView.text = buildString {
-            append("State: ").append(status.optString("state", "off"))
-            append("\nConnected: ").append(status.optBoolean("connected", false))
-            append("\nConfigured: ").append(status.optBoolean("configured", false))
-            append("\nSandbox: ").append(access.optString("scope", "riftfs/browser-sandbox"))
+            append("RiftBrowser MCP App: available · ").append(status.optInt("toolCount", 0)).append(" tools")
+            append("\nLocal transport: in-process MCP JSON-RPC")
+            append("\nRemote adapter state: ").append(status.optString("state", "off"))
+            append("\nRemote connected: ").append(status.optBoolean("connected", false))
+            append("\nRemote configured: ").append(status.optBoolean("configured", false))
+            append("\nSandbox: ").append(access.optString("scope", RiftToolHost.SCOPE))
             append("\nRead tools: ").append(if (access.optBoolean("sandboxRead", true)) "allowed" else "blocked")
             append("\nWrite tools: ").append(if (access.optBoolean("sandboxWrite", false)) "allowed" else "blocked")
-            status.optString("lastError").takeIf { it.isNotBlank() }?.let { append("\nLast error: ").append(it) }
-            append("\nProtocol: ").append(status.optString("protocol"))
+            status.optString("lastError").takeIf { it.isNotBlank() }?.let { append("\nRemote last error: ").append(it) }
+            append("\nRemote protocol: ").append(status.optString("protocol"))
         }
         auditView.text = formatAudit(relay.audit())
     }
