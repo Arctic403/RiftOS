@@ -17,6 +17,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 import androidx.webkit.WebViewCompat
@@ -36,7 +38,9 @@ class MainActivity : Activity() {
         private const val START_URL = "$APP_ORIGIN/assets/www/index.html"
     }
 
+    private lateinit var rootView: FrameLayout
     private lateinit var webView: WebView
+    private lateinit var browserWindow: RiftBrowserWindow
     private lateinit var dispatcher: RiftNativeDispatcher
     private lateinit var systemDump: RiftSystemDump
     private val kernelExecutor = Executors.newSingleThreadExecutor()
@@ -54,9 +58,20 @@ class MainActivity : Activity() {
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
+        rootView = FrameLayout(this)
         webView = WebView(this)
         systemDump = RiftSystemDump(this)
-        setContentView(webView)
+        rootView.addView(
+            webView,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        )
+        setContentView(rootView)
+        browserWindow = RiftBrowserWindow(
+            activity = this,
+            host = rootView,
+            launchFileChooser = ::launchFileChooser,
+            stateSink = ::sendBrowserWindowState
+        )
         CookieManager.getInstance().setAcceptCookie(true)
 
         webView.settings.apply {
@@ -82,21 +97,8 @@ class MainActivity : Activity() {
                 filePathCallback: ValueCallback<Array<Uri>>?,
                 fileChooserParams: FileChooserParams?
             ): Boolean {
-                fileChooserCallback?.onReceiveValue(null)
-                fileChooserCallback = filePathCallback
-                return try {
-                    val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "*/*"
-                    }
-                    if (fileChooserParams?.mode == FileChooserParams.MODE_OPEN_MULTIPLE) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    startActivityForResult(intent, FILE_CHOOSER_REQUEST)
-                    true
-                } catch (_: Exception) {
-                    fileChooserCallback?.onReceiveValue(null)
-                    fileChooserCallback = null
-                    false
-                }
+                val callback = filePathCallback ?: return false
+                return launchFileChooser(callback, fileChooserParams)
             }
         }
 
@@ -161,11 +163,73 @@ class MainActivity : Activity() {
 
     private fun handleKernelRequest(raw: String): Boolean {
         val message = runCatching { JSONObject(raw) }.getOrNull() ?: return false
-        if (message.optString("method") != "system.dump.save") return false
+        val method = message.optString("method")
         val requestId = message.optString("id")
-        if (requestId.isBlank()) return true
-        openSystemDumpPicker(requestId)
+        val args = message.optJSONObject("args") ?: JSONObject()
+        if (requestId.isBlank()) return method == "system.dump.save" || method.startsWith("browser.window.")
+
+        when (method) {
+            "system.dump.save" -> openSystemDumpPicker(requestId)
+            "browser.window.open" -> runBrowserCommand(requestId) { browserWindow.open(args.optString("url", "https://chatgpt.com")) }
+            "browser.window.navigate" -> runBrowserCommand(requestId) { browserWindow.navigate(args.optString("url", "https://chatgpt.com")) }
+            "browser.window.back" -> runBrowserCommand(requestId) { browserWindow.back() }
+            "browser.window.forward" -> runBrowserCommand(requestId) { browserWindow.forward() }
+            "browser.window.reload" -> runBrowserCommand(requestId) { browserWindow.reload() }
+            "browser.window.bounds" -> runBrowserCommand(requestId) { browserWindow.setBounds(args) }
+            "browser.window.visible" -> runBrowserCommand(requestId) { browserWindow.setVisible(args.optBoolean("visible", true)) }
+            "browser.window.state" -> runBrowserCommand(requestId) { browserWindow.state() }
+            "browser.window.close" -> runBrowserCommand(requestId) { JSONObject().put("closed", browserWindow.close()) }
+            else -> return false
+        }
         return true
+    }
+
+    private fun runBrowserCommand(requestId: String, command: () -> Any?) {
+        runOnUiThread {
+            try {
+                sendNativeResult(requestId, true, command(), null)
+            } catch (error: Throwable) {
+                sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
+            }
+        }
+    }
+
+    private fun sendBrowserWindowState(state: JSONObject) {
+        val script = "window.RiftBrowserNative?.__state(${state});"
+        runOnUiThread {
+            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+        }
+    }
+
+    fun openDesktopBrowser(rawUrl: String) {
+        val urlJs = JSONObject.quote(rawUrl.ifBlank { "https://chatgpt.com" })
+        val script = "window.RiftDesktop?.openBrowser($urlJs);"
+        runOnUiThread {
+            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+        }
+    }
+
+    private fun launchFileChooser(
+        callback: ValueCallback<Array<Uri>>,
+        params: WebChromeClient.FileChooserParams?
+    ): Boolean {
+        fileChooserCallback?.onReceiveValue(null)
+        fileChooserCallback = callback
+        return try {
+            val intent = params?.createIntent() ?: Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            }
+            if (params?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            startActivityForResult(intent, FILE_CHOOSER_REQUEST)
+            true
+        } catch (_: Exception) {
+            fileChooserCallback?.onReceiveValue(null)
+            fileChooserCallback = null
+            false
+        }
     }
 
     private fun openSystemDumpPicker(requestId: String) {
@@ -285,8 +349,17 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onResume() { super.onResume(); if (::webView.isInitialized) webView.onResume() }
-    override fun onPause() { if (::webView.isInitialized) webView.onPause(); super.onPause() }
+    override fun onResume() {
+        super.onResume()
+        if (::webView.isInitialized) webView.onResume()
+        if (::browserWindow.isInitialized) browserWindow.onResume()
+    }
+
+    override fun onPause() {
+        if (::browserWindow.isInitialized) browserWindow.onPause()
+        if (::webView.isInitialized) webView.onPause()
+        super.onPause()
+    }
 
     override fun onSaveInstanceState(outState: Bundle) {
         webView.saveState(outState)
@@ -295,6 +368,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         if (::dispatcher.isInitialized) dispatcher.shutdown()
+        if (::browserWindow.isInitialized) browserWindow.destroy()
         kernelExecutor.shutdownNow()
         fileChooserCallback?.onReceiveValue(null)
         fileChooserCallback = null

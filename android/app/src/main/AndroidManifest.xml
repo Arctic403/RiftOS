@@ -18,11 +18,6 @@
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize" />
         <activity
-            android:name=".RiftBrowserActivity"
-            android:exported="false"
-            android:resizeableActivity="true"
-            android:windowSoftInputMode="adjustResize" />
-        <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|uiMode"
             android:exported="true"

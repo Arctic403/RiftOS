@@ -4,7 +4,7 @@ if(!core)throw new Error("RiftOSCore must load before RiftOS desktop");
 const BUILTIN_APPS=[
   {id:"files",name:"Files",icon:"▣",desc:"Android RiftFS + SAF mounts"},
   {id:"terminal",name:"RiftShell",icon:">_",desc:"RiftKernel command shell"},
-  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"Android System WebView browser"},
+  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"In-desktop Android WebView browser"},
   {id:"editor",name:"Editor",icon:"{}",desc:"Native-backed RiftFS editor"},
   {id:"tasks",name:"Tasks",icon:"≡",desc:"RiftKernel processes"},
   {id:"settings",name:"Settings",icon:"⚙",desc:"Samsung / Android system"}
@@ -16,6 +16,14 @@ const fmtBytes=value=>{const n=Number(value||0);if(n<1024)return `${n} B`;if(n<1
 const stage=$("#stage"),workspace=$("#workspace");
 const windows=new Map();
 let windowSerial=0;
+const browserNativeListeners=new Set();
+globalThis.RiftBrowserNative=Object.freeze({
+  __state(state){
+    const next=state&&typeof state==="object"?state:{};
+    for(const listener of [...browserNativeListeners]){try{listener(next);}catch(_){}}
+  }
+});
+const filesNavigation={history:["/"],index:0};
 
 function setStatus(value){const el=$("#statusText");if(el)el.textContent=value;}
 function tick(){const clock=$("#clock");if(clock)clock.textContent=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});}
@@ -106,19 +114,77 @@ function topLevelEntries(rows,path="/"){
   return [...map.values()].sort((a,b)=>(a.kind==="directory"||a.kind==="mount"?-1:1)-(b.kind==="directory"||b.kind==="mount"?-1:1)||a.path.localeCompare(b.path));
 }
 
-async function openFiles(path="/"){
-  await core.ready;path=core.path.normalize(path);const body=openWindow("files","Files","ANDROID RIFTFS");
-  let rows=[];try{rows=await core.fs.list(path,{recursive:true});}catch(error){body.innerHTML=`<p><strong>Cannot open ${escapeHTML(path)}</strong></p><pre class="shell-output">${escapeHTML(error.message)}</pre>`;return;}
+async function openFiles(path="/",options={}){
+  await core.ready;
+  path=core.path.normalize(path);
+  if(options.record!==false){
+    const current=filesNavigation.history[filesNavigation.index];
+    if(current!==path){
+      filesNavigation.history=filesNavigation.history.slice(0,filesNavigation.index+1);
+      filesNavigation.history.push(path);
+      filesNavigation.index=filesNavigation.history.length-1;
+    }
+  }
+  const body=openWindow("files","Files","ANDROID RIFTFS");
+  body.classList.add("rift-files-window-body");
+  let rows=[];
+  const mountRoot=path.startsWith("/mounts/")&&path.split("/").filter(Boolean).length===2;
+  try{rows=await core.fs.list(path,{recursive:mountRoot});}
+  catch(error){body.innerHTML=`<div class="rift-explorer-error"><strong>Cannot open ${escapeHTML(path)}</strong><pre>${escapeHTML(error.message)}</pre></div>`;return;}
   const entries=topLevelEntries(rows,path),storage=await core.fs.estimate(),parent=path==="/"?null:core.path.parent(path);
-  body.innerHTML=`<div class="trueos-head"><div><strong>${escapeHTML(path)}</strong><small>${escapeHTML(storage.backend||"Android internal storage")} · ${fmtBytes(storage.usage)} used</small></div><span class="trueos-chip ok">ANDROID</span></div>
-  <div class="trueos-toolbar">${parent!==null?`<button class="trueos-btn" id="fsUp">↑ Up</button>`:""}<button class="trueos-btn primary" id="fsNewFile">New file</button><button class="trueos-btn" id="fsNewFolder">New folder</button>${path==="/mounts"?`<button class="trueos-btn" id="fsMountNative">Mount Android folder</button>`:""}<button class="trueos-btn" id="fsRefresh">Refresh</button></div>
-  <div class="trueos-files">${entries.length?entries.map(entry=>{const folder=entry.kind==="directory"||entry.kind==="mount";return `<button class="trueos-file" data-path="${escapeHTML(entry.path)}" data-kind="${escapeHTML(entry.kind)}"><span>${folder?"▸":"·"} ${escapeHTML(core.path.basename(entry.path)||entry.path)}</span><small>${folder?escapeHTML(entry.backend||entry.kind):fmtBytes(entry.size)}</small></button>`;}).join(""):`<div class="trueos-card trueos-muted">Empty directory.</div>`}</div>`;
-  body.querySelector("#fsUp")?.addEventListener("click",()=>openFiles(parent));
-  body.querySelectorAll("[data-path]").forEach(button=>button.onclick=()=>["directory","mount"].includes(button.dataset.kind)?openFiles(button.dataset.path):openEditor(button.dataset.path));
+  const roots=[
+    ["/home","⌂","Home"],["/documents","▤","Documents"],["/downloads","⇩","Downloads"],
+    ["/workspace","◇","Workspace"],["/apps","▦","Apps"],["/mounts","⛓","Android mounts"]
+  ];
+  const pathParts=path==="/"?[]:path.split("/").filter(Boolean);
+  const crumbs=[`<button data-crumb="/">RiftFS</button>`];
+  let walk="";
+  for(const part of pathParts){walk+=`/${part}`;crumbs.push(`<span>›</span><button data-crumb="${escapeHTML(walk)}">${escapeHTML(part)}</button>`);}
+  const canBack=filesNavigation.index>0,canForward=filesNavigation.index<filesNavigation.history.length-1;
+  body.innerHTML=`<div class="rift-explorer">
+    <div class="rift-explorer-commandbar">
+      <div class="rift-explorer-navbuttons">
+        <button id="fsBack" title="Back" ${canBack?"":"disabled"}>←</button>
+        <button id="fsForward" title="Forward" ${canForward?"":"disabled"}>→</button>
+        <button id="fsUp" title="Up" ${parent===null?"disabled":""}>↑</button>
+        <button id="fsRefresh" title="Refresh">↻</button>
+      </div>
+      <div class="rift-explorer-address" id="fsAddress">${crumbs.join("")}</div>
+      <button class="rift-explorer-new primary" id="fsNewFile">＋ File</button>
+      <button class="rift-explorer-new" id="fsNewFolder">＋ Folder</button>
+    </div>
+    <div class="rift-explorer-main">
+      <aside class="rift-explorer-sidebar">
+        <strong>Quick access</strong>
+        ${roots.map(([target,icon,label])=>`<button data-place="${target}" class="${path===target?"active":""}"><span>${icon}</span>${label}</button>`).join("")}
+        <div class="rift-explorer-sidebar-sep"></div>
+        <button id="fsMountNative"><span>＋</span>Mount Android folder</button>
+      </aside>
+      <section class="rift-explorer-content">
+        <div class="rift-explorer-columns"><span>Name</span><span>Type</span><span>Size</span></div>
+        <div class="rift-explorer-list">${entries.length?entries.map(entry=>{
+          const folder=entry.kind==="directory"||entry.kind==="mount";
+          const name=core.path.basename(entry.path)||entry.path;
+          const icon=entry.kind==="mount"?"⛓":folder?"▰":"▤";
+          const type=entry.kind==="mount"?"Android mount":folder?"Folder":((name.split(".").pop()||"file").toUpperCase()+" file");
+          return `<button class="rift-explorer-item" data-path="${escapeHTML(entry.path)}" data-kind="${escapeHTML(entry.kind)}"><span class="rift-explorer-name"><i>${icon}</i><b>${escapeHTML(name)}</b></span><span>${escapeHTML(type)}</span><span>${folder?"—":fmtBytes(entry.size)}</span></button>`;
+        }).join(""):`<div class="rift-explorer-empty"><span>□</span><strong>This folder is empty</strong><small>Create a file or folder to get started.</small></div>`}</div>
+      </section>
+    </div>
+    <footer class="rift-explorer-status"><span>${entries.length} item${entries.length===1?"":"s"}</span><span>${escapeHTML(storage.backend||"Android internal storage")} · ${fmtBytes(storage.usage)} used · ${fmtBytes(storage.free)} free</span></footer>
+  </div>`;
+  body.querySelector("#fsBack").onclick=()=>{if(filesNavigation.index>0){filesNavigation.index--;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
+  body.querySelector("#fsForward").onclick=()=>{if(filesNavigation.index<filesNavigation.history.length-1){filesNavigation.index++;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
+  body.querySelector("#fsUp").onclick=()=>parent!==null&&openFiles(parent);
+  body.querySelector("#fsRefresh").onclick=()=>openFiles(path,{record:false});
+  body.querySelectorAll("[data-crumb]").forEach(button=>button.onclick=()=>openFiles(button.dataset.crumb));
+  body.querySelectorAll("[data-place]").forEach(button=>button.onclick=()=>openFiles(button.dataset.place));
+  body.querySelectorAll("[data-path]").forEach(button=>{
+    button.onclick=()=>["directory","mount"].includes(button.dataset.kind)?openFiles(button.dataset.path):openEditor(button.dataset.path);
+  });
   body.querySelector("#fsNewFile").onclick=()=>{const name=prompt("File name","untitled.txt");if(name)openEditor(core.path.join(path,name));};
-  body.querySelector("#fsNewFolder").onclick=async()=>{const name=prompt("Folder name","New Folder");if(!name)return;await core.fs.mkdir(core.path.join(path,name));openFiles(path);};
-  body.querySelector("#fsRefresh").onclick=()=>openFiles(path);
-  body.querySelector("#fsMountNative")?.addEventListener("click",async()=>{try{await core.fs.mountNativeDirectory();openFiles("/mounts");}catch(error){alert(error.message);}});
+  body.querySelector("#fsNewFolder").onclick=async()=>{const name=prompt("Folder name","New Folder");if(!name)return;await core.fs.mkdir(core.path.join(path,name));openFiles(path,{record:false});};
+  body.querySelector("#fsMountNative").onclick=async()=>{try{await core.fs.mountNativeDirectory();openFiles("/mounts");}catch(error){alert(error.message);}};
 }
 
 async function openEditor(path="/home/scratch.txt"){
@@ -136,22 +202,75 @@ async function openTasks(){
 }
 
 async function openSettings(){
-  await core.ready;const body=openWindow("settings","Settings","ANDROID SYSTEM"),info=await core.kernel.info(),device=await core.native.call("device.info",{});
-  body.innerHTML=`<div class="trueos-head"><div><strong>RiftOS ${escapeHTML(info.version)}</strong><small>${escapeHTML(info.mode)} · ${escapeHTML(device.manufacturer||"Android")} ${escapeHTML(device.model||"")}</small></div><span class="trueos-chip ok">ANDROID NATIVE</span></div>
-  <div class="trueos-grid"><div class="trueos-card"><strong>RiftFS</strong><small>${escapeHTML(info.storage.backend)}<br>${fmtBytes(info.storage.usage)} / ${fmtBytes(info.storage.quota)}</small></div><div class="trueos-card"><strong>Android</strong><small>${escapeHTML(device.androidRelease||"")} · API ${escapeHTML(device.sdk||"")}<br>${escapeHTML(device.device||"")}</small></div><div class="trueos-card"><strong>Kernel</strong><small>${info.processes} process(es)<br>${info.apps} app(s)<br>${info.mounts} mount(s)</small></div></div>
-  <div class="trueos-toolbar"><button class="trueos-btn" id="settingsMount">Mount Android folder</button><button class="trueos-btn" id="settingsNotify">Notification permission</button><button class="trueos-btn" id="settingsMounts">Mount table</button><button class="trueos-btn" id="settingsPermissions">Capabilities</button></div><pre class="trueos-code" id="settingsOutput">Samsung / Android native host is active.</pre>`;
+  await core.ready;
+  const body=openWindow("settings","Settings","ANDROID SYSTEM"),info=await core.kernel.info(),device=await core.native.call("device.info",{});
+  body.classList.add("rift-settings-window-body");
+  body.innerHTML=`<div class="rift-settings-shell">
+    <aside class="rift-settings-nav"><strong>Settings</strong><button class="active" data-settings-view="system">System</button><button data-settings-view="storage">Storage</button><button data-settings-view="diagnostics">Diagnostics</button></aside>
+    <section class="rift-settings-page">
+      <div class="trueos-head"><div><strong>RiftOS ${escapeHTML(info.version)}</strong><small>${escapeHTML(info.mode)} · ${escapeHTML(device.manufacturer||"Android")} ${escapeHTML(device.model||"")}</small></div><span class="trueos-chip ok">ANDROID NATIVE</span></div>
+      <div class="trueos-grid"><div class="trueos-card"><strong>RiftFS</strong><small>${escapeHTML(info.storage.backend)}<br>${fmtBytes(info.storage.usage)} / ${fmtBytes(info.storage.quota)}</small></div><div class="trueos-card"><strong>Android</strong><small>${escapeHTML(device.androidRelease||"")} · API ${escapeHTML(device.sdk||"")}<br>${escapeHTML(device.device||"")}</small></div><div class="trueos-card"><strong>Kernel</strong><small>${info.processes} process(es)<br>${info.apps} app(s)<br>${info.mounts} mount(s)</small></div></div>
+      <div class="rift-settings-group"><div><strong>System diagnostics</strong><small>Create a privacy-limited RiftOS system dump and choose exactly where it is saved.</small></div><button class="trueos-btn primary" id="settingsDump">Save system dump…</button></div>
+      <div class="rift-settings-group"><div><strong>Android files</strong><small>Mount a folder through Android's Storage Access Framework.</small></div><button class="trueos-btn" id="settingsMount">Mount folder…</button></div>
+      <div class="rift-settings-actions"><button class="trueos-btn" id="settingsNotify">Notification permission</button><button class="trueos-btn" id="settingsMounts">Mount table</button><button class="trueos-btn" id="settingsPermissions">Capabilities</button></div>
+      <pre class="trueos-code" id="settingsOutput">Samsung / Android native host is active.</pre>
+    </section>
+  </div>`;
   const out=body.querySelector("#settingsOutput");
+  body.querySelectorAll("[data-settings-view]").forEach(button=>button.onclick=async()=>{
+    body.querySelectorAll("[data-settings-view]").forEach(item=>item.classList.toggle("active",item===button));
+    if(button.dataset.settingsView==="diagnostics"){body.querySelector("#settingsDump")?.closest(".rift-settings-group")?.scrollIntoView({behavior:"smooth",block:"center"});return;}
+    if(button.dataset.settingsView==="storage"){try{out.textContent=JSON.stringify(await core.fs.estimate(),null,2);}catch(error){out.textContent=error.message;}return;}
+    body.querySelector(".rift-settings-page")?.scrollTo({top:0,behavior:"smooth"});
+  });
+  body.querySelector("#settingsDump").onclick=async()=>{try{out.textContent="Opening Android Save As…";const result=await core.native.call("system.dump.save",{});out.textContent=result?.cancelled?"System dump save cancelled.":`System dump saved as ${result?.name||"selected file"} (${fmtBytes(result?.bytes||0)}).`;}catch(error){out.textContent=error.message;}};
   body.querySelector("#settingsMount").onclick=async()=>{try{const mount=await core.fs.mountNativeDirectory();out.textContent=`Mounted ${mount.path}`;}catch(error){out.textContent=error.message;}};
   body.querySelector("#settingsNotify").onclick=async()=>{try{out.textContent=JSON.stringify(await core.native.call("notifications.request",{}),null,2);}catch(error){out.textContent=error.message;}};
   body.querySelector("#settingsMounts").onclick=()=>{out.textContent=core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n");};
   body.querySelector("#settingsPermissions").onclick=()=>{out.textContent=core.permissions.describe().join("\n");};
 }
 
-async function openBrowser(){
-  const body=openWindow("browser","RiftBrowser","ANDROID SYSTEM WEBVIEW");
-  body.innerHTML=`<div class="trueos-head"><div><strong>RiftBrowser</strong><small>Native Android browser activity</small></div><span class="trueos-chip ok">ANDROID WEBVIEW</span></div><div class="trueos-toolbar"><input id="browserUrl" class="trueos-input" value="https://chatgpt.com" autocomplete="off" inputmode="url"><button class="trueos-btn primary" id="browserGo">Open</button></div><div class="trueos-card trueos-muted">Pages open in RiftOS's native Android browser activity. This RiftBrowser launcher window stays open on the desktop while the native browser activity is in use.</div>`;
-  const input=body.querySelector("#browserUrl");const go=()=>core.native.call("browser.open",{url:input.value.trim()||"https://chatgpt.com"}).catch(error=>alert(error.message));
-  body.querySelector("#browserGo").onclick=go;input.addEventListener("keydown",event=>{if(event.key==="Enter")go();});
+async function openBrowser(startUrl="https://chatgpt.com"){
+  await core.ready;
+  const body=openWindow("browser","RiftBrowser","ANDROID WEBVIEW WINDOW");
+  body.classList.add("rift-browser-window-body");
+  const win=body.closest(".window");
+  const url=String(startUrl||"https://chatgpt.com").trim()||"https://chatgpt.com";
+  body.innerHTML=`<div class="rift-browser-window">
+    <div class="rift-browser-windowbar">
+      <button id="browserBack" title="Back" disabled>←</button><button id="browserForward" title="Forward" disabled>→</button><button id="browserReload" title="Reload">↻</button>
+      <input id="browserUrl" value="${escapeHTML(url)}" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url">
+      <button class="primary" id="browserGo">Go</button>
+    </div>
+    <div class="rift-browser-meta"><span id="browserState">Android WebView</span><span>ChatGPT sandbox enabled on chatgpt.com</span></div>
+    <div class="rift-browser-native-surface" id="riftBrowserNativeSurface"><div><span>◎</span><strong>RiftBrowser</strong><small>Native WebView appears here while this window is focused.</small></div></div>
+  </div>`;
+  const surface=body.querySelector("#riftBrowserNativeSurface"),input=body.querySelector("#browserUrl"),stateEl=body.querySelector("#browserState"),back=body.querySelector("#browserBack"),forward=body.querySelector("#browserForward");
+  let closed=false,lastBounds="",syncTimer=0;
+  const updateState=state=>{if(closed||!document.contains(body))return;if(state.url&&document.activeElement!==input)input.value=state.url;back.disabled=!state.canGoBack;forward.disabled=!state.canGoForward;stateEl.textContent=state.crashed?"WebView renderer restarted":state.progress<100?`Loading ${state.progress||0}%`:(state.title||"Android WebView");};
+  browserNativeListeners.add(updateState);
+  const native=async(method,args={})=>core.native.call(`browser.window.${method}`,args);
+  const visible=()=>document.contains(surface)&&!win.classList.contains("rift-minimized")&&win.classList.contains("rift-focused")&&!document.querySelector("#riftStartMenu.open");
+  const syncBounds=force=>{
+    clearTimeout(syncTimer);
+    syncTimer=setTimeout(async()=>{
+      if(closed||!document.contains(surface))return;
+      const rect=surface.getBoundingClientRect(),show=visible()&&rect.width>4&&rect.height>4;
+      const key=[Math.round(rect.left),Math.round(rect.top),Math.round(rect.width),Math.round(rect.height),show].join(":");
+      if(force||key!==lastBounds){lastBounds=key;try{if(show)await native("bounds",{left:rect.left,top:rect.top,width:rect.width,height:rect.height,dpr:window.devicePixelRatio||1});await native("visible",{visible:show});}catch(_){}}
+    },35);
+  };
+  const navigate=async()=>{try{await native("navigate",{url:input.value.trim()||"https://chatgpt.com"});}catch(error){stateEl.textContent=error.message;}};
+  body.querySelector("#browserGo").onclick=navigate;input.addEventListener("keydown",event=>{if(event.key==="Enter")navigate();});
+  back.onclick=()=>native("back").catch(()=>{});forward.onclick=()=>native("forward").catch(()=>{});body.querySelector("#browserReload").onclick=()=>native("reload").catch(()=>{});
+  const resizeObserver=new ResizeObserver(()=>syncBounds(false));resizeObserver.observe(surface);resizeObserver.observe(win);
+  const windowObserver=new MutationObserver(()=>syncBounds(false));windowObserver.observe(win,{attributes:true,attributeFilter:["class","style"]});
+  const startMenu=document.querySelector("#riftStartMenu"),startObserver=startMenu?new MutationObserver(()=>syncBounds(true)):null;if(startMenu)startObserver.observe(startMenu,{attributes:true,attributeFilter:["class"]});
+  const activation=()=>syncBounds(true);window.addEventListener("riftos:window-activate",activation);window.addEventListener("resize",activation);
+  const closeHandler=event=>{if(event.detail?.id!=="browser")return;closed=true;clearTimeout(syncTimer);browserNativeListeners.delete(updateState);resizeObserver.disconnect();windowObserver.disconnect();startObserver?.disconnect();window.removeEventListener("riftos:window-activate",activation);window.removeEventListener("resize",activation);window.removeEventListener("riftos:window-close",closeHandler);native("close").catch(()=>{});};
+  window.addEventListener("riftos:window-close",closeHandler);
+  requestAnimationFrame(()=>{syncBounds(true);native("open",{url}).then(updateState).catch(error=>{stateEl.textContent=error.message;});});
+  return true;
 }
 
 function tokenize(raw){const out=[];String(raw||"").replace(/"([^"]*)"|'([^']*)'|([^\s]+)/g,(_,a,b,c)=>{out.push(a??b??c);return "";});return out;}
@@ -169,7 +288,7 @@ async function runShell(raw,print,state){
   if(cmd==="apps"){const built=[...core.kernel.apps.values()].map(app=>`${app.id}\t${app.name}`),installed=await window.RiftApps?.list?.()||[];return print([...built,...installed.map(app=>`${app.id}\t${app.manifest?.name||app.id}\tinstalled`)].join("\n"));}
   if(cmd==="permissions")return print(core.permissions.describe().join("\n"));
   if(cmd==="native")return print(JSON.stringify(core.native.capabilities(),null,2));
-  if(cmd==="browser"){const url=args.join(" ").trim()||"https://chatgpt.com";await core.native.call("browser.open",{url});return print(`opened Android RiftBrowser · ${url}`);}
+  if(cmd==="browser"){const url=args.join(" ").trim()||"https://chatgpt.com";await openBrowser(url);return print(`opened RiftBrowser window · ${url}`);}
   if(cmd==="workspace"){
     const ws=window.RiftWorkspace;if(!ws?.available)return print("RiftWorkspace unavailable");
     const sub=(args.shift()||"info").toLowerCase();if(sub==="info")return print(JSON.stringify(await ws.info(),null,2));

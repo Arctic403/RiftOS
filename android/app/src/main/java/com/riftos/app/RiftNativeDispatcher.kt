@@ -239,7 +239,10 @@ class RiftNativeDispatcher(
     private fun openIntent(rawUrl:String):Boolean{val uri=Uri.parse(rawUrl);require(uri.scheme in setOf("https","http","mailto","tel","geo")){"Blocked intent scheme"};activity.runOnUiThread{activity.startActivity(Intent(Intent.ACTION_VIEW,uri))};return true}
     private fun openBrowser(rawUrl:String):Boolean{
         var url=rawUrl.trim();if(url.isBlank())url="https://chatgpt.com";if(!url.startsWith("http://")&&!url.startsWith("https://"))url="https://$url"
-        val finalUrl=url;activity.runOnUiThread{activity.startActivity(Intent(activity,RiftBrowserActivity::class.java).putExtra(RiftBrowserActivity.EXTRA_URL,finalUrl))};return true
+        val finalUrl=url
+        val main=activity as? MainActivity ?: throw IllegalStateException("RiftBrowser requires the RiftOS desktop host")
+        main.openDesktopBrowser(finalUrl)
+        return true
     }
     private fun openPreview(root:String,entry:String):Boolean{
         normalizeSegments(root);normalizeSegments(entry)

@@ -19,7 +19,7 @@ const api=Object.freeze({
   }),
   share:(text,title="Share from RiftOS")=>core.native.call("share.text",{text:String(text??""),title}),
   open:url=>core.native.call("intent.open",{url:String(url)}),
-  browser:url=>core.native.call("browser.open",{url:String(url||"https://chatgpt.com")}),
+  browser:url=>globalThis.RiftDesktop?.openBrowser?.(String(url||"https://chatgpt.com"))??core.native.call("browser.window.open",{url:String(url||"https://chatgpt.com")}),
   preview:(root="",entry="index.html")=>core.native.call("preview.open",{root:String(root||""),entry:String(entry||"index.html")}),
   notify:(title,body="")=>core.native.call("notifications.show",{title:String(title||"RiftOS"),body:String(body||"")}),
   requestNotifications:()=>core.native.call("notifications.request",{}),

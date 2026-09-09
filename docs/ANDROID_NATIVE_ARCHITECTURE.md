@@ -15,7 +15,7 @@ RiftFS lives in `filesDir/riftfs`. External user folders mount through Android S
 - Android Keystore encrypted secrets
 - Clipboard, share sheet, vibration and notifications
 - Android notification permission request
-- Native `RiftBrowserActivity` backed by Android System WebView
+- Native `RiftBrowserWindow` WebView surface hosted inside the RiftOS desktop window manager
 - Native `RiftPreviewActivity` that serves RiftDev workspace files directly without a service worker
 - Android system file chooser for `<input type=file>`
 - Android DownloadManager for normal HTTP(S) downloads
@@ -29,7 +29,7 @@ Local Test opens `RiftPreviewActivity` directly against the native workspace. No
 
 ## Browser
 
-The Android branch uses Android System WebView as its native RiftBrowser backend. The old WebKit-WASM/Wisp browser pipeline belongs to the web/iPhone line and is intentionally not packaged by the Android APK.
+The Android branch uses Android System WebView as its native RiftBrowser backend. The WebView is hosted inside `MainActivity` and positioned over the RiftOS browser window content area, so RiftOS owns the title bar, taskbar, move/resize/minimize/maximize behavior while Android owns page rendering, ChatGPT login, downloads, and the sandbox bridge. The old standalone full-screen browser Activity is not part of this build. The old WebKit-WASM/Wisp browser pipeline belongs to the web/iPhone line and is intentionally not packaged by the Android APK.
 
 ## Signing
 
