@@ -23,18 +23,18 @@ filesDir + SAF       apps/windows
                      |
              RiftBrowserWindow
                      |
-            Android System WebView
-
-External AI protocol
-        |
-    remote adapter
-        |
-   Rift Bridge app
-        |
-  device capability policy
-        |
-riftfs/browser-sandbox
+        Android System WebView (current)
+                     |
+       ChatGPT exact-origin MCP adapter
+                     |
+             RiftMcpServer
+                     |
+             RiftToolHost
+                     |
+           riftfs/tool-sandbox
 ```
+
+The AI-tool path above is local to the RiftOS application process. There is no active remote relay, WSS pairing connection or public Rift MCP endpoint.
 
 ## Kernel boundary
 
@@ -48,11 +48,13 @@ The active Android RiftFS root is `filesDir/riftfs`. Standard internal directori
 
 User-selected external directories are mounted through Android Storage Access Framework. Canonical path checks prevent RiftFS path traversal.
 
+Rift MCP tools use a separate app-private `riftfs/tool-sandbox`. Existing alpha `browser-sandbox` data is migrated forward once and is not the active logical namespace.
+
 ## Desktop
 
-RiftDesktop is the single window manager for built-ins and RiftRT apps. Files, Settings, RiftBrowser and Rift Bridge participate in the RiftOS application model.
+RiftDesktop is the single window manager for built-ins and RiftRT apps. Files, Settings, RiftBrowser and Rift MCP participate in the RiftOS application model.
 
-The browser's native WebView is a content plane inside a RiftOS-managed window, not a second desktop or full-screen browser Activity.
+The browser's native renderer is a content plane inside a RiftOS-managed window, not a second desktop or full-screen browser Activity. Android System WebView is the current compatibility renderer; RiftEngine/Servo is the target renderer after hardware validation.
 
 ## Workspace and RiftDev
 
@@ -64,16 +66,24 @@ RiftDev's Android build rewrites its legacy IndexedDB calls to the `RiftDevAndro
 
 RiftRT v1 adds worker, iframe and WebAssembly applications without creating a second kernel/window manager. Native ARM64 remains a packaged/future plugin direction; arbitrary downloaded ELF execution is not enabled.
 
-## Browser and bridge security
+## Browser and MCP security
 
-Normal guest pages, including `chatgpt.com`, do not receive RiftFS or RiftWorkspace authority. RiftBrowser does not inject an agent or filesystem bridge into guest content.
+Normal guest pages do not receive RiftFS, RiftWorkspace or `RiftNativeDispatcher` authority.
 
-Rift Bridge owns a separate app-private `riftfs/browser-sandbox` tool scope. Remote adapters can call only the fixed bridge tool registry and only when the device-side read/write grants permit the operation.
+The ChatGPT compatibility layer is exact-origin and can send only MCP JSON-RPC to the in-process `RiftMcpServer`. `RiftToolHost` validates tool names, applies local read/write grants, records bounded audit metadata and dispatches into `RiftToolSandbox`.
 
-## Historical web/iOS work
+The browser compatibility layer may depend on ChatGPT composer/rendered-message structure, but that dependency does not own or weaken the device capability boundary.
 
-Earlier RiftOS research used OPFS, service workers and a WebKit-WASM/Wisp browser path. The removed ChatGPT DOM Agent is also historical. None of those are active Android APK architecture.
+## Removed architectures
+
+The following are historical only:
+
+- ChatGPT DOM Agent V1/V2/V3,
+- remote Rift MCP relay / WSS device pairing,
+- WebKit-WASM/Wisp browser path,
+- Gecko WASM experiments,
+- local LLM runtime.
 
 ## Architecture rule
 
-> Android owns device privilege; RiftKernel owns RiftOS authority. Native services are brokered capabilities, and no guest page or normal app receives unrestricted Android access.
+> Android owns device privilege; RiftKernel owns RiftOS authority. Local MCP is a capability adapter over RiftToolHost, and no guest page or normal app receives unrestricted Android access.

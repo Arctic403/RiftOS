@@ -3,16 +3,11 @@ package com.riftos.app
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * Small in-process MCP JSON-RPC server backed by RiftToolHost.
- *
- * It intentionally has no listening socket. Adapters feed JSON-RPC requests into
- * it in memory, which keeps the tool implementation local and transport-agnostic.
- */
+/** Small in-process MCP JSON-RPC server backed by RiftToolHost. */
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.7.0-rift-mcp-app-alpha"
+        private const val SERVER_VERSION = "0.8.0-rift-local-mcp-alpha"
     }
 
     fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) {
@@ -63,19 +58,16 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
 
     private fun initializeResult(): JSONObject = JSONObject()
         .put("protocolVersion", PROTOCOL_VERSION)
-        .put(
-            "capabilities",
-            JSONObject().put("tools", JSONObject().put("listChanged", false))
-        )
+        .put("capabilities", JSONObject().put("tools", JSONObject().put("listChanged", false)))
         .put(
             "serverInfo",
             JSONObject()
-                .put("name", "rift-bridge-local")
+                .put("name", "rift-local-mcp")
                 .put("version", SERVER_VERSION)
         )
         .put(
             "instructions",
-            "RiftOS device tools. Device-side permissions and audit are authoritative."
+            "Local RiftOS tools. Device-side permissions and audit are authoritative; there is no remote relay."
         )
 
     private fun success(id: Any, result: Any): JSONObject = JSONObject()

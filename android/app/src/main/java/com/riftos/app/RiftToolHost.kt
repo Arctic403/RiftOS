@@ -4,31 +4,33 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * Canonical device-side Rift capability registry.
- *
- * Every adapter (remote MCP, RiftBrowser MCP App compatibility, future tunnels)
- * routes through this host so permissions, audit, schemas and sandbox scope stay
- * identical regardless of transport.
- */
+/** Canonical device-side capability registry for the local Rift MCP server. */
 class RiftToolHost(context: Context) {
     companion object {
-        private const val PREFS = "rift-bridge"
+        private const val PREFS = "rift-mcp-tools"
+        private const val LEGACY_PREFS = "rift-bridge"
         private const val PREF_ALLOW_READ = "allowRead"
         private const val PREF_ALLOW_WRITE = "allowWrite"
         private const val PREF_AUDIT = "audit"
+        private const val PREF_MIGRATED = "legacyStateMigrated"
         private const val MAX_AUDIT = 100
-        const val SCOPE = "riftfs/browser-sandbox"
+        const val SCOPE = "riftfs/tool-sandbox"
     }
 
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val sandbox = RiftBridgeSandbox(appContext)
+    private val sandbox: RiftToolSandbox
+
+    init {
+        migrateLegacyState()
+        sandbox = RiftToolSandbox(appContext)
+    }
 
     fun access(): JSONObject = JSONObject()
         .put("sandboxRead", allowRead())
         .put("sandboxWrite", allowWrite())
         .put("scope", SCOPE)
+        .put("localOnly", true)
         .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move")))
 
@@ -41,18 +43,15 @@ class RiftToolHost(context: Context) {
     }
 
     fun tools(): JSONArray = JSONArray()
-        .put(tool("rift_info", "Inspect the Rift Bridge sandbox and its storage limits.", objectSchema()))
+        .put(tool("rift_info", "Inspect the local Rift MCP sandbox and storage limits.", objectSchema()))
         .put(tool(
             "rift_stat",
-            "Get metadata for one file or directory in the Rift sandbox.",
-            objectSchema(
-                JSONObject().put("path", stringProperty("Sandbox-relative path.")),
-                listOf("path")
-            )
+            "Get metadata for one file or directory in the Rift MCP sandbox.",
+            objectSchema(JSONObject().put("path", stringProperty("Sandbox-relative path.")), listOf("path"))
         ))
         .put(tool(
             "rift_list",
-            "List files and directories in the Rift sandbox.",
+            "List files and directories in the Rift MCP sandbox.",
             objectSchema(
                 JSONObject()
                     .put("path", stringProperty("Sandbox-relative directory path. Empty means sandbox root."))
@@ -61,15 +60,12 @@ class RiftToolHost(context: Context) {
         ))
         .put(tool(
             "rift_read_text",
-            "Read a UTF-8 text file from the Rift sandbox.",
-            objectSchema(
-                JSONObject().put("path", stringProperty("Sandbox-relative file path.")),
-                listOf("path")
-            )
+            "Read a UTF-8 text file from the Rift MCP sandbox.",
+            objectSchema(JSONObject().put("path", stringProperty("Sandbox-relative file path.")), listOf("path"))
         ))
         .put(tool(
             "rift_write_text",
-            "Create or replace a UTF-8 text file in the Rift sandbox. Device write permission must be enabled.",
+            "Create or replace a UTF-8 text file in the Rift MCP sandbox. Local write permission must be enabled.",
             objectSchema(
                 JSONObject()
                     .put("path", stringProperty("Sandbox-relative file path."))
@@ -79,23 +75,17 @@ class RiftToolHost(context: Context) {
         ))
         .put(tool(
             "rift_mkdir",
-            "Create a directory in the Rift sandbox. Device write permission must be enabled.",
-            objectSchema(
-                JSONObject().put("path", stringProperty("Sandbox-relative directory path.")),
-                listOf("path")
-            )
+            "Create a directory in the Rift MCP sandbox. Local write permission must be enabled.",
+            objectSchema(JSONObject().put("path", stringProperty("Sandbox-relative directory path.")), listOf("path"))
         ))
         .put(tool(
             "rift_remove",
-            "Remove a file or directory in the Rift sandbox. Device write permission must be enabled.",
-            objectSchema(
-                JSONObject().put("path", stringProperty("Sandbox-relative path to remove.")),
-                listOf("path")
-            )
+            "Remove a file or directory in the Rift MCP sandbox. Local write permission must be enabled.",
+            objectSchema(JSONObject().put("path", stringProperty("Sandbox-relative path to remove.")), listOf("path"))
         ))
         .put(tool(
             "rift_move",
-            "Move or rename a file or directory in the Rift sandbox. Device write permission must be enabled.",
+            "Move or rename a file or directory in the Rift MCP sandbox. Local write permission must be enabled.",
             objectSchema(
                 JSONObject()
                     .put("from", stringProperty("Sandbox-relative source path."))
@@ -116,9 +106,9 @@ class RiftToolHost(context: Context) {
         }
         if (!isAllowed(name)) {
             val error = if (isWriteTool(name)) {
-                "Rift Bridge sandbox write access is disabled on this device"
+                "Rift MCP write access is disabled on this device. Enable it in Rift MCP settings."
             } else {
-                "Rift Bridge sandbox read access is disabled on this device"
+                "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
             }
             recordAudit(name, args, false, error)
             reply(JSONObject().put("ok", false).put("name", name).put("error", error))
@@ -142,8 +132,7 @@ class RiftToolHost(context: Context) {
                         .put("value", response.opt("value") ?: JSONObject.NULL)
                 )
             } else {
-                val error = response?.optString("error")?.takeIf { it.isNotBlank() }
-                    ?: "Rift sandbox call failed"
+                val error = response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Rift sandbox call failed"
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", error))
             }
@@ -162,6 +151,24 @@ class RiftToolHost(context: Context) {
 
     fun shutdown() {
         sandbox.shutdown()
+    }
+
+    private fun migrateLegacyState() {
+        if (prefs.getBoolean(PREF_MIGRATED, false)) return
+        val legacy = appContext.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE)
+        val edit = prefs.edit()
+        if (!prefs.contains(PREF_ALLOW_READ) && legacy.contains(PREF_ALLOW_READ)) {
+            edit.putBoolean(PREF_ALLOW_READ, legacy.getBoolean(PREF_ALLOW_READ, true))
+        }
+        if (!prefs.contains(PREF_ALLOW_WRITE) && legacy.contains(PREF_ALLOW_WRITE)) {
+            edit.putBoolean(PREF_ALLOW_WRITE, legacy.getBoolean(PREF_ALLOW_WRITE, false))
+        }
+        if (!prefs.contains(PREF_AUDIT) && legacy.contains(PREF_AUDIT)) {
+            edit.putString(PREF_AUDIT, legacy.getString(PREF_AUDIT, "[]"))
+        }
+        edit.putBoolean(PREF_MIGRATED, true).apply()
+        legacy.edit().clear().apply()
+        runCatching { RiftSecretStore(appContext).remove("rift.bridge.pairingKey") }
     }
 
     private fun allowRead(): Boolean = prefs.getBoolean(PREF_ALLOW_READ, true)

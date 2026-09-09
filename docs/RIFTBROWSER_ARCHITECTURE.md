@@ -2,7 +2,7 @@
 
 ## Current decision
 
-RiftBrowser on Android uses **Android System WebView as a native content surface inside a RiftOS desktop window**.
+RiftBrowser on Android currently uses **Android System WebView as a compatibility content surface inside a RiftOS desktop window** while RiftEngine/Servo is developed as the long-term renderer.
 
 ```text
 RiftDesktop browser window
@@ -13,18 +13,14 @@ RiftOS title/address/taskbar chrome
         |
    RiftBrowserWindow
         |
- Android System WebView
-        |
-      guest page
+ Android System WebView (current compatibility renderer)
 ```
 
-RiftOS owns window state and browser chrome. Android owns page rendering, cookies, downloads, file selection and WebView lifecycle.
+RiftOS owns window state and browser chrome. Android currently owns page rendering, cookies, downloads, file selection and WebView lifecycle.
 
 ## Window behavior
 
 The browser is not a full-screen Activity. `src/riftos.js` creates the browser window and synchronizes its content rectangle/visibility with `RiftBrowserWindow` through native bridge methods including open, navigate, back, forward, reload, bounds, visible, state and close.
-
-This keeps RiftBrowser aligned with Files, Settings, RiftDev and RiftRT windows.
 
 ## Security defaults
 
@@ -36,36 +32,47 @@ This keeps RiftBrowser aligned with Files, Settings, RiftDev and RiftRT windows.
 - arbitrary Android file/content access is not exposed,
 - external `mailto`, `tel` and `geo` schemes are handed to Android.
 
-## ChatGPT behavior
+## ChatGPT + local MCP
 
-ChatGPT gets normal browser compatibility plus the **Rift MCP App compatibility adapter** on the exact `https://chatgpt.com` and `https://www.chatgpt.com` main-frame origins.
+On exact ChatGPT HTTPS origins, RiftBrowser installs `riftbrowser-mcp-app.js` plus an exact-origin `RiftMcpNative` WebMessage channel. The page-facing layer can send only MCP JSON-RPC to the local `RiftMcpServer`; it does not receive a filesystem object or the general Android dispatcher.
 
-The adapter receives no filesystem object and no general native dispatcher. Its only native surface is `RiftMcpNative`, an exact-origin WebMessage endpoint that accepts MCP JSON-RPC and terminates at the in-process `RiftMcpServer` / `RiftToolHost` policy boundary.
+```text
+ChatGPT Web
+    |
+riftbrowser-mcp-app.js
+    |
+RiftMcpNative WebMessage
+    |
+RiftBrowserMcpAppBridge
+    |
+RiftMcpServer
+    |
+RiftToolHost
+    |
+RiftToolSandbox
+```
 
-At startup it performs `initialize` and `tools/list`, then publishes the live manifest to ChatGPT conversation context. A strict `<rift_call>...</rift_call>` envelope is translated to `tools/call`, and the structured result is fed back into the conversation.
+`RiftToolHost` owns local read/write permissions and audit. There is no remote relay or pairing dependency.
 
-Because ChatGPT plans without custom MCP registration do not expose a supported local tool API, this compatibility layer still depends on the ChatGPT composer and semantic rendered-message attributes. That dependency is isolated to `riftbrowser-mcp-app.js`; it does not own permissions, filesystem execution or audit.
+Because some ChatGPT plans do not expose a supported local custom-MCP registration path, the browser compatibility asset still observes the composer and semantic assistant-message elements. This is isolated to the page adapter and is not the tool security boundary.
 
-RiftBrowser does **not** inject `RiftSandboxFS`, expose the sandbox directly, reuse the old fenced `rift-tool` protocol, or revive Agent V1/V2/V3.
+## Streaming performance rule
 
-Identity providers may still reject embedded WebView authentication independently.
+The compatibility layer must never scan the complete chat on every token/DOM mutation. It uses mutation-scoped message tracking, delayed batching, serialized calls and a compact one-shot tool manifest per conversation route. CI rejects the removed whole-chat scanner.
 
-## AI tool integration
+## Renderer migration
 
-`RiftToolHost` is the single device-side authority for both browser compatibility and remote MCP adapters. It owns canonical schemas, read/write grants, sandbox routing and audit logging.
+Android System WebView is no longer the design target. RiftEngine/Servo is the preferred future renderer. The MCP/tool host is renderer-independent; a renderer swap must not change tool schemas, grants, audit or sandbox behavior.
 
-Write tools are disabled by default. The ChatGPT page cannot override device policy.
+See `RIFTBROWSER_ENGINE_MIGRATION.md`.
 
 ## Removed browser paths
 
-The following are historical and not current Android backends:
+Historical only:
 
 - full-screen `RiftBrowserActivity`,
-- ChatGPT DOM Rift Agent V1/V2/V3,
-- exact-origin `RiftSandbox` / `RiftSandboxFS` filesystem bridge,
-- fenced `rift-tool` packets and V3 response-node tracking,
-- WebKit-WASM/Wisp RiftBrowser,
+- ChatGPT DOM Agent V1/V2/V3,
+- direct `RiftSandbox`/`RiftSandboxFS` guest-page access,
+- WebKit-WASM/Wisp browser,
 - Gecko WASM experiments,
 - CORS fetch/sanitize/iframe browser emulation.
-
-There is one active Android browser renderer: Android System WebView.

@@ -12,21 +12,16 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.RiftOS"
         android:usesCleartextTraffic="false">
-        <provider
-            android:name=".RiftMcpInitProvider"
-            android:authorities="${applicationId}.rift-bridge-init"
-            android:exported="false"
-            android:initOrder="100" />
         <activity
-            android:name=".RiftMcpBridgeActivity"
+            android:name=".RiftMcpActivity"
             android:exported="true"
-            android:label="Rift Bridge"
+            android:label="Rift MCP"
             android:resizeableActivity="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="riftos" android:host="bridge" />
+                <data android:scheme="riftos" android:host="mcp" />
             </intent-filter>
         </activity>
         <activity

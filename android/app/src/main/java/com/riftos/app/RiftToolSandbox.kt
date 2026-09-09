@@ -7,23 +7,17 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
 
-/**
- * App-private filesystem capability owned by Rift Bridge.
- *
- * The physical directory name remains browser-sandbox for compatibility with
- * existing alpha installs, but RiftBrowser no longer owns or exposes it.
- */
-class RiftBridgeSandbox(context: Context) {
+/** App-private filesystem capability owned by the local Rift MCP tool host. */
+class RiftToolSandbox(context: Context) {
     companion object {
-        private const val MAX_BRIDGE_BYTES = 8 * 1024 * 1024
+        private const val MAX_TOOL_BYTES = 8 * 1024 * 1024
         private const val MAX_LIST_ENTRIES = 5000
+        private const val ROOT_NAME = "tool-sandbox"
+        private const val LEGACY_ROOT_NAME = "browser-sandbox"
     }
 
     private val executor = Executors.newSingleThreadExecutor()
-    private val root = File(context.filesDir, "riftfs/browser-sandbox").apply {
-        mkdirs()
-        listOf("workspace", "uploads", "downloads").forEach { File(this, it).mkdirs() }
-    }
+    private val root = prepareRoot(context.applicationContext)
 
     fun handleAsync(raw: String, reply: (String) -> Unit) {
         executor.execute {
@@ -32,8 +26,8 @@ class RiftBridgeSandbox(context: Context) {
                 val request = JSONObject(raw)
                 val requestId = request.optString("id")
                 val method = request.optString("method")
-                require(requestId.isNotBlank()) { "Missing bridge request id" }
-                require(method.isNotBlank()) { "Missing bridge method" }
+                require(requestId.isNotBlank()) { "Missing tool request id" }
+                require(method.isNotBlank()) { "Missing tool method" }
                 val args = request.optJSONObject("args") ?: JSONObject()
                 JSONObject()
                     .put("id", requestId)
@@ -53,6 +47,27 @@ class RiftBridgeSandbox(context: Context) {
         executor.shutdownNow()
     }
 
+    private fun prepareRoot(context: Context): File {
+        val riftFs = File(context.filesDir, "riftfs").apply { mkdirs() }
+        val target = File(riftFs, ROOT_NAME)
+        val legacy = File(riftFs, LEGACY_ROOT_NAME)
+
+        if (!target.exists() && legacy.exists()) {
+            val moved = runCatching { legacy.renameTo(target) }.getOrDefault(false)
+            if (!moved) {
+                runCatching {
+                    target.mkdirs()
+                    legacy.copyRecursively(target, overwrite = false)
+                    legacy.deleteRecursively()
+                }
+            }
+        }
+
+        target.mkdirs()
+        listOf("workspace", "uploads", "downloads").forEach { File(target, it).mkdirs() }
+        return target
+    }
+
     private fun dispatch(method: String, args: JSONObject): Any? = when (method) {
         "sandbox.info" -> info()
         "fs.stat" -> stat(args.optString("path"))
@@ -62,7 +77,7 @@ class RiftBridgeSandbox(context: Context) {
         "fs.mkdir" -> mkdir(args.getString("path"))
         "fs.remove" -> remove(args.getString("path"))
         "fs.move" -> move(args.getString("from"), args.getString("to"), args.optBoolean("overwrite", false))
-        else -> throw IllegalArgumentException("Unsupported Rift Bridge sandbox method: $method")
+        else -> throw IllegalArgumentException("Unsupported Rift tool sandbox method: $method")
     }
 
     private fun normalizeSegments(path: String): List<String> {
@@ -80,7 +95,7 @@ class RiftBridgeSandbox(context: Context) {
         val rootCanonical = root.canonicalFile
         val target = file.canonicalFile
         require(target == rootCanonical || target.path.startsWith(rootCanonical.path + File.separator)) {
-            "Path escaped Rift Bridge sandbox"
+            "Path escaped Rift MCP sandbox"
         }
         return target
     }
@@ -128,13 +143,13 @@ class RiftBridgeSandbox(context: Context) {
     private fun readText(path: String): String {
         val file = sandboxFile(path)
         require(file.isFile) { "File not found: $path" }
-        require(file.length() <= MAX_BRIDGE_BYTES) { "File is too large for Rift Bridge" }
+        require(file.length() <= MAX_TOOL_BYTES) { "File is too large for Rift MCP" }
         return file.readText(Charsets.UTF_8)
     }
 
     private fun writeText(path: String, text: String): JSONObject {
         val bytes = text.toByteArray(Charsets.UTF_8)
-        require(bytes.size <= MAX_BRIDGE_BYTES) { "Text payload is too large for Rift Bridge" }
+        require(bytes.size <= MAX_TOOL_BYTES) { "Text payload is too large for Rift MCP" }
         val file = sandboxFile(path)
         require(file != root) { "Sandbox root is not a file" }
         file.parentFile?.mkdirs()
@@ -174,10 +189,10 @@ class RiftBridgeSandbox(context: Context) {
     private fun info(): JSONObject {
         val stats = StatFs(root.absolutePath)
         return JSONObject()
-            .put("root", "riftfs/browser-sandbox")
-            .put("owner", "Rift Bridge")
+            .put("root", "riftfs/$ROOT_NAME")
+            .put("owner", "Rift MCP")
             .put("writable", true)
-            .put("maxBridgeBytes", MAX_BRIDGE_BYTES)
+            .put("maxToolBytes", MAX_TOOL_BYTES)
             .put("freeBytes", stats.availableBytes)
             .put("totalBytes", stats.totalBytes)
             .put("capabilities", JSONArray(listOf(

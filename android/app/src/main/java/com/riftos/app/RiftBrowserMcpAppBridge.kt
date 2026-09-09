@@ -8,12 +8,11 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 
 /**
- * RiftBrowser compatibility adapter for ChatGPT Web plans that cannot register
- * a custom MCP app directly.
+ * Exact-origin ChatGPT Web compatibility adapter for the local Rift MCP server.
  *
- * The page never receives a filesystem/native dispatcher object. It can only send
- * MCP JSON-RPC to the in-process RiftMcpServer, which still enforces RiftToolHost
- * permissions and audit. Injection is restricted to the ChatGPT main-frame origin.
+ * The page never receives a filesystem or general native-dispatcher object. It can
+ * only send MCP JSON-RPC to RiftMcpServer; RiftToolHost remains the capability and
+ * audit authority. This class is a page/native message bridge, not a remote relay.
  */
 class RiftBrowserMcpAppBridge(
     private val activity: Activity,
@@ -26,7 +25,7 @@ class RiftBrowserMcpAppBridge(
     }
 
     private val toolHost = RiftMcpRuntime.toolHost(activity)
-    private val server = RiftMcpServer(toolHost)
+    private val server = RiftMcpRuntime.server(activity)
     private val script = activity.assets.open("riftbrowser-mcp-app.js").bufferedReader().use { it.readText() }
     private var installed = false
     private var documentStartInstalled = false
@@ -81,6 +80,7 @@ class RiftBrowserMcpAppBridge(
         .put("mode", "rift-mcp-app-v1")
         .put("origin", "chatgpt.com")
         .put("transport", "in-process MCP JSON-RPC")
+        .put("remoteRelay", false)
         .put("tools", toolHost.tools().length())
         .put("access", toolHost.access())
 
@@ -94,10 +94,7 @@ class RiftBrowserMcpAppBridge(
         val payload = response.toString()
         webView.post {
             if (activity.isFinishing) return@post
-            webView.evaluateJavascript(
-                "window.RiftMcpAppNative?.__receive($payload);",
-                null
-            )
+            webView.evaluateJavascript("window.RiftMcpAppNative?.__receive($payload);", null)
         }
     }
 

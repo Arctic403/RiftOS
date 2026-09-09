@@ -21,6 +21,8 @@ RiftFS lives in `filesDir/riftfs`. Android initializes `home`, `apps`, `system`,
 
 External user folders mount through Storage Access Framework with persisted URI permissions. RiftWorkspace maps its common JSON API onto the native `/workspace` tree.
 
+Local MCP tool data lives in `filesDir/riftfs/tool-sandbox`. On first use, existing alpha data under the historical `browser-sandbox` directory is moved/copy-migrated into the new tool-sandbox directory.
+
 ## Native services
 
 - RiftFS and SAF mounts,
@@ -32,7 +34,10 @@ External user folders mount through Storage Access Framework with persisted URI 
 - preview Activity for RiftDev workspace files,
 - privacy-limited System Dump + Save As picker,
 - `RiftBrowserWindow` native WebView content plane,
-- Rift Bridge outbound WSS runtime and local capability policy.
+- local-only `RiftMcpServer` + `RiftToolHost`,
+- `RiftMcpActivity` for local read/write grants and audit.
+
+There is no remote MCP relay runtime, WSS device client, pairing provider or public endpoint in the active APK architecture.
 
 ## Desktop browser host
 
@@ -40,19 +45,33 @@ External user folders mount through Storage Access Framework with persisted URI 
 
 The obsolete standalone `RiftBrowserActivity` is not part of the current source/build.
 
-RiftBrowser does not install a guest-page filesystem listener or inject tool code into `chatgpt.com`.
+On exact ChatGPT Web origins, `RiftBrowserMcpAppBridge` exposes only MCP JSON-RPC messaging to the in-process local server. It does not expose a filesystem JavaScript API or the wider native dispatcher.
 
-## Rift Bridge
+## Local Rift MCP
 
-Rift Bridge owns the app-private `filesDir/riftfs/browser-sandbox` tool scope. It opens an outbound WSS connection to a remote adapter and checks every tool request against local read/write grants before dispatching to `RiftBrowserSandbox`.
+```text
+ChatGPT Web compatibility asset
+        |
+ exact-origin WebMessage
+        |
+RiftBrowserMcpAppBridge
+        |
+   RiftMcpServer
+        |
+   RiftToolHost
+        |
+ RiftToolSandbox
+```
 
-The bridge cannot reach secrets, SAF mounts, arbitrary Android storage or the wider RiftFS. Pairing keys are stored through Android Keystore-backed `RiftSecretStore`, and a bounded audit log records tool/path/outcome without file contents.
+`RiftToolHost` owns tool schemas, local read/write grants and the bounded audit log. `RiftToolSandbox` enforces canonical-path containment and payload/listing limits.
+
+Read access defaults on. Write access defaults off. The `Rift MCP` system app is the only current settings surface for those grants.
 
 ## System Dump
 
 Settings invokes `system.dump.save`. Android generates a JSON diagnostic snapshot and opens `ACTION_CREATE_DOCUMENT`, allowing the user to choose the provider, folder and filename.
 
-The dump includes app/build, Android/WebView, memory/heap/storage and aggregate RiftFS/sandbox metrics. It excludes file names/content, secrets, account data, Android IDs and installed-app lists.
+The dump includes app/build, Android/WebView, memory/heap/storage and aggregate RiftFS metrics. It excludes file names/content, secrets, account data, Android IDs and installed-app lists.
 
 ## RiftDev
 
@@ -64,4 +83,4 @@ Local Test uses the native preview path rather than a service worker.
 
 `.github/workflows/riftos-android-apk.yml` builds on `android-apk` and `main`, signs/verifies the APK and publishes `android-latest`.
 
-Production signing may use repository secrets; otherwise the stable alpha key is used for updateable development installs. Emulator CI has been removed.
+CI also rejects removed remote MCP bridge source/runtime, the removed DOM Agent, the expensive whole-chat MCP scanner and removed local-AI binaries.

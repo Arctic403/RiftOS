@@ -1,105 +1,123 @@
-# RiftOS ChatGPT App / MCP Architecture
+# RiftOS Local MCP Architecture
 
 ## Goal
 
-Replace the DOM-scraped Rift Agent protocol with first-class model tools while
-keeping RiftOS itself independent of MCP.
+Provide ChatGPT Web with structured Rift tools while keeping tool execution, permissions, audit and storage local to RiftOS.
 
-RiftOS owns the capability model. MCP is one adapter.
+The active architecture has no remote Rift relay:
 
 ```text
-ChatGPT custom app
+ChatGPT Web
        |
-       | MCP over HTTPS
+       | Rift MCP compatibility context/result
        v
-Rift MCP Relay
+riftbrowser-mcp-app.js
        |
-       | paired WSS, outbound from phone
+       | exact-origin WebMessage
        v
-Rift MCP Device Client
+RiftBrowserMcpAppBridge
+       |
+       | in-process MCP JSON-RPC
+       v
+RiftMcpServer
        |
        v
-RiftBrowserSandbox
+RiftToolHost
        |
        v
-filesDir/riftfs/browser-sandbox
+RiftToolSandbox
+       |
+       v
+filesDir/riftfs/tool-sandbox
 ```
 
-## Why this exists
+## MCP server
 
-The legacy Rift Agent wraps user text with `[RIFT_AGENT_V3 ...]`, waits for a
-Markdown `rift-tool` block, scrapes ChatGPT's rendered DOM, executes the tool,
-and injects results back as another chat message. That works as a fallback but
-is coupled to ChatGPT UI structure.
+`RiftMcpServer` is a small in-process JSON-RPC server. It has no HTTP listener, WebSocket listener or public endpoint. The current methods are:
 
-The MCP adapter makes tools part of the ChatGPT tool catalog. The model receives
-structured tool definitions and arguments, and the relay returns structured
-results without Markdown parsing or hidden tool-result messages.
+- `initialize`
+- `ping`
+- `tools/list`
+- `tools/call`
 
-## Android boundary
+The browser adapter obtains tool definitions through `tools/list`; schemas are not duplicated in the page asset.
 
-`RiftMcpRelayClient` intentionally creates its own `RiftBrowserSandbox` instance.
-Both instances resolve to the same app-private root, but the relay never gets a
-reference to `RiftNativeDispatcher` or its broader capabilities.
+## Tool host
 
-Allowed relay methods:
+`RiftToolHost` is the canonical capability authority. It owns:
 
-- `sandbox.info`
-- `fs.stat`
-- `fs.list`
-- `fs.readText`
-- `fs.writeText`
-- `fs.mkdir`
-- `fs.remove`
-- `fs.move`
+- tool names and JSON schemas,
+- canonical mapping to sandbox operations,
+- local read/write grants,
+- bounded audit metadata,
+- dispatch into `RiftToolSandbox`.
 
-Not exposed:
+Current tools:
 
-- SAF/external mounts
-- clipboard
-- Android intents
-- notifications
-- device information beyond sandbox info
-- secrets
-- full RiftFS
-- shell/native execution
+```text
+rift_info
+rift_stat
+rift_list
+rift_read_text
+rift_write_text
+rift_mkdir
+rift_remove
+rift_move
+```
 
-## Pairing
+Read defaults enabled. Write defaults disabled. Grants are changed through the local **Rift MCP** system app.
 
-The alpha uses one base64url pairing key. Android stores it through
-`RiftSecretStore` (Android Keystore backed). The phone only makes a `wss://`
-outbound connection. The same key is embedded in the private MCP endpoint path
-for developer-mode setup.
+## Sandbox
 
-This path-secret mechanism is an alpha convenience, not the final auth design.
-A production/multi-user relay should use OAuth and per-device authorization.
+The logical sandbox is `riftfs/tool-sandbox` with standard `workspace`, `uploads` and `downloads` directories.
 
-## Runtime lifecycle
+The first local-MCP build migrates existing alpha data from the historical `riftfs/browser-sandbox` directory. That old directory name is migration input only, not the active namespace.
 
-`RiftMcpInitProvider` starts with the RiftOS process and restores the saved relay
-configuration. If MCP is enabled, it reconnects automatically. `RiftMcpRuntime`
-keeps a single process-wide client.
+`RiftToolSandbox` enforces canonical-path containment, an 8 MiB tool payload/file limit and a 5000-entry listing limit.
 
-`RiftMcpBridgeActivity` provides the current setup UI and can:
+## Browser compatibility boundary
 
-- set the WSS relay URL;
-- generate/replace the pairing key;
-- connect or disconnect;
-- show connection state;
-- copy the corresponding ChatGPT MCP endpoint.
+On ChatGPT plans without official custom MCP registration, `riftbrowser-mcp-app.js` provides a browser compatibility adapter. It:
 
-## Fallback
+1. calls MCP `initialize` and `tools/list` locally;
+2. injects a compact tool manifest once per conversation route;
+3. asks the model for one strict `<rift_call>...</rift_call>` envelope when a tool is required;
+4. validates the call against the live manifest;
+5. performs local `tools/call`;
+6. returns `[RIFT_MCP_RESULT_V1]` through the normal ChatGPT composer.
 
-`riftbrowser-chatgpt-agent.js` remains available during migration. It should be
-treated as a compatibility adapter, not the long-term primary tool transport.
-Once the MCP path is proven in normal RiftOS use, the DOM agent can default to
-off and eventually move to a diagnostics-only fallback.
+The page never gets a general native object or direct sandbox API.
 
-## Next hardening
+## Performance rule
 
-1. OAuth / per-device authorization at the relay.
-2. Multi-device routing instead of one-device replacement.
-3. Explicit user approval policy for destructive tools.
-4. Relay audit log containing tool names/status only, never file contents by default.
-5. Optional read-only tool profile.
-6. Remove the model-visible Rift Agent bootstrap from normal operation.
+Streaming responses generate many DOM mutations. The compatibility asset therefore processes only touched message nodes through a small delayed queue. It must not rescan all historical messages on every mutation. CI rejects the removed full-chat scanner.
+
+## Removed remote architecture
+
+The following have been deleted from the active source/build:
+
+- `services/rift-mcp-relay`,
+- `.github/workflows/rift-mcp-relay.yml`,
+- `RiftMcpRelayClient`,
+- `RiftMcpInitProvider`,
+- `RiftMcpBridgeActivity`,
+- `riftbridge-system.js`,
+- WSS device protocol/pairing configuration,
+- pairing-key MCP endpoint URLs.
+
+Legacy read/write/audit preferences are migrated into `rift-mcp-tools`, then the old preference file and pairing key are cleared.
+
+## Security boundary
+
+Not exposed to MCP tools:
+
+- SAF/external mounts,
+- clipboard,
+- Android intents,
+- notifications,
+- secrets,
+- general `RiftNativeDispatcher`,
+- full RiftFS,
+- shell/native execution.
+
+MCP is a protocol adapter over `RiftToolHost`; it is not the internal RiftOS kernel API.

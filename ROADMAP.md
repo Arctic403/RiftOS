@@ -2,34 +2,32 @@
 
 This roadmap describes intended work, not shipped capability. Current implementation status is tracked in `docs/PROJECT_STATUS.md`.
 
-## Now: stabilize Rift Bridge + Android desktop
+## Now: local MCP + browser stability
 
 - Keep `main` authoritative and use `android-apk` for staged validation when useful.
-- Harden RiftBrowser native-surface move/resize/focus behavior across phones, tablets and DeX.
-- Make **Rift Bridge** the only supported ChatGPT/tool integration path.
-- Keep the device as the capability authority: remote adapters must not bypass local read/write grants or the audit surface.
-- Deploy and validate the remote MCP relay against ChatGPT custom apps, then remove any remaining historical Agent-only documentation.
+- Keep **Rift MCP** local-only: no remote relay, WSS pairing client, public MCP endpoint or process-start network service.
+- Keep `RiftToolHost` as the single capability authority for MCP permissions, audit and tool dispatch.
+- Preserve the optimized ChatGPT compatibility path: mutation-scoped processing, compact one-shot tool context and serialized tool calls.
+- Harden RiftBrowser move/resize/focus and long-chat behavior across phones, tablets and DeX.
+- Continue RiftEngine/Servo integration behind a hardware compatibility gate; Android System WebView remains the compatibility backend until that gate passes.
 - Add focused on-device diagnostics and exported test results rather than emulator-heavy CI.
-- Continue reducing legacy web/iOS-only code from Android packaging.
 
-## Rift Bridge expansion
+## Local Rift MCP expansion
 
-Rift Bridge is a RiftOS system app and capability router. MCP is an external adapter, not the RiftOS kernel API.
-
-Current sandbox tool family:
+Current tool family:
 
 ```text
-info
-stat
-list
-readText
-writeText
-mkdir
-remove
-move
+rift_info
+rift_stat
+rift_list
+rift_read_text
+rift_write_text
+rift_mkdir
+rift_remove
+rift_move
 ```
 
-Planned capability families can be added behind explicit device-side grants:
+Planned capability families may be added behind explicit local grants:
 
 ```text
 fs.*
@@ -44,7 +42,20 @@ tests.*
 snapshot.*
 ```
 
-High-impact operations should require explicit developer-mode capability grants. Normal apps and arbitrary webpages must not receive Rift Bridge privileges.
+High-impact operations should require explicit developer-mode capability grants. Normal apps and arbitrary webpages must not receive Rift MCP privileges. MCP remains a protocol surface over `RiftToolHost`; it is not the RiftOS kernel API.
+
+## RiftEngine
+
+Move RiftBrowser toward a lightweight Rust-native engine based on Servo:
+
+1. define a renderer-neutral `RiftBrowserEngine` boundary;
+2. integrate RiftEngine/Servo on supported Android versions;
+3. validate ChatGPT login/cookies/streaming and long-chat memory behavior;
+4. port the exact-origin MCP compatibility adapter;
+5. verify file chooser/download/navigation/window resizing;
+6. keep WebView only as a compatibility backend until RiftEngine is proven.
+
+See `docs/RIFTBROWSER_ENGINE_MIGRATION.md`.
 
 ## Next: RiftScript Studio
 
@@ -78,7 +89,7 @@ RiftScript Studio
    -> signed artifact
 ```
 
-The Android SDK/Gradle toolchain should remain outside the installed phone app to avoid recreating the large on-device build/runtime bloat that RiftOS intentionally removed.
+The Android SDK/Gradle toolchain should remain outside the installed phone app to avoid recreating large on-device build/runtime bloat.
 
 ## Longer term
 
@@ -87,14 +98,14 @@ The Android SDK/Gradle toolchain should remain outside the installed phone app t
 - crash/session diagnostics export,
 - controlled native plugin packaging compiled into RiftOS,
 - more complete tablet/desktop multi-window ergonomics,
-- optional remote build integration with explicit user action,
-- OAuth/multi-device authentication for Rift Bridge relay deployments.
+- optional official MCP/tunnel adapter only if it can reuse `RiftToolHost` without changing the local capability model.
 
 ## Non-goals
 
 - bundling a full Android SDK/emulator into RiftOS,
 - arbitrary downloaded native ELF execution,
 - giving normal webpages unrestricted Android or RiftFS access,
-- injecting first-class tool behavior into `chatgpt.com` by scraping or modifying its DOM,
+- restoring the removed DOM Agent V1/V2/V3 protocol,
+- restoring the removed remote Rift MCP relay/WSS pairing architecture,
 - making MCP the internal RiftOS capability API,
 - reintroducing the removed local LLM runtime on low-memory Android devices.

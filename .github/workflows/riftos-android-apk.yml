@@ -30,6 +30,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Reject removed remote MCP bridge source
+        shell: bash
+        run: |
+          test ! -e services/rift-mcp-relay
+          test ! -e .github/workflows/rift-mcp-relay.yml
+          test ! -e src/riftbridge-system.js
+          test ! -e android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt
+          test ! -e android/app/src/main/java/com/riftos/app/RiftMcpBridgeActivity.kt
+          test ! -e android/app/src/main/java/com/riftos/app/RiftMcpInitProvider.kt
+          test ! -e android/app/src/main/java/com/riftos/app/RiftBridgeSandbox.kt
+
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -115,7 +126,7 @@ jobs:
           printf '%s\n' "$BADGING" | grep -Fq "package: name='com.riftos.app'"
           unzip -p "$FINAL" assets/www/index.html | grep -Fq "SAMSUNG ANDROID"
           unzip -p "$FINAL" assets/www/src/riftandroid-platform.js | grep -Fq "system.dump.save"
-          unzip -p "$FINAL" assets/www/src/riftbridge-system.js | grep -Fq "[RiftBridge] system app registered"
+          unzip -p "$FINAL" assets/www/src/riftmcp-system.js | grep -Fq "[RiftMcp] local system app registered"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "[RIFT_MCP_APP_V1]"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "<rift_call>"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "PERF_GUARD"
@@ -131,7 +142,12 @@ jobs:
             echo "Whole-chat MCP mutation scanner leaked back into RiftBrowser" >&2
             exit 1
           fi
-          if unzip -p "$FINAL" classes.dex | strings | grep -Fq "RiftBrowserActivity"; then
+          DEX_STRINGS="$(unzip -p "$FINAL" classes.dex | strings)"
+          if printf '%s\n' "$DEX_STRINGS" | grep -Eq 'RiftMcpRelayClient|RiftMcpBridgeActivity|RiftMcpInitProvider|rift-bridge-device-v1|wss://your-relay'; then
+            echo "Removed remote MCP bridge runtime leaked back into Android APK" >&2
+            exit 1
+          fi
+          if printf '%s\n' "$DEX_STRINGS" | grep -Fq "RiftBrowserActivity"; then
             echo "Obsolete full-screen RiftBrowserActivity leaked back into Android APK" >&2
             exit 1
           fi

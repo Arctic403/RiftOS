@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Some ChatGPT plans do not expose custom MCP app registration. RiftBrowser therefore provides a compatibility adapter at the browser boundary while keeping the device-side implementation standards-based MCP.
+Some ChatGPT plans do not expose custom MCP app registration. RiftBrowser therefore provides a compatibility adapter at the browser boundary while the device-side implementation remains normal in-process MCP JSON-RPC.
 
 ```text
 ChatGPT Web
@@ -25,12 +25,14 @@ RiftMcpServer
 RiftToolHost
     |
     v
-RiftBridgeSandbox
+RiftToolSandbox
 ```
+
+There is no remote relay, WSS connection, pairing key or public MCP endpoint in this path.
 
 ## Protocol
 
-At page startup, the browser adapter performs MCP `initialize` and `tools/list`. The returned tool schemas are the source of truth for the context shown to ChatGPT.
+At page startup, the browser adapter performs MCP `initialize` and `tools/list`. The returned tool schemas are the source of truth for the compact context shown to ChatGPT.
 
 When a tool is required, ChatGPT is instructed to emit exactly one envelope:
 
@@ -46,21 +48,23 @@ This protocol deliberately does not reuse any Agent V1/V2/V3 marker or fenced `r
 
 The adapter:
 
-- is injected only into the ChatGPT main-frame HTTPS origins;
+- is injected only into ChatGPT main-frame HTTPS origins;
 - never exposes a filesystem JavaScript API;
 - never exposes `RiftNativeDispatcher`;
 - limits automatic calls to 24 per minute in one page;
 - deduplicates completed call envelopes;
 - serializes calls so tool-result continuations cannot race;
 - shows a `Rift MCP` badge with the current local tool count;
-- lets the badge disable compatibility behavior for the current tab.
+- lets the badge disable compatibility behavior for the current tab;
+- injects the compact tool manifest once per conversation route;
+- processes only mutation-touched messages instead of rescanning the whole conversation while tokens stream.
 
-Because ChatGPT Web has no supported local-tool registration API on these plans, this compatibility layer must observe the ChatGPT composer and rendered assistant messages. That browser-facing dependency is isolated in one JavaScript asset. It is not part of the device capability boundary and does not own tool execution.
+Because ChatGPT Web has no supported local-tool registration hook on these plans, this compatibility layer still observes the composer and semantic assistant-message elements. That browser-facing dependency is isolated in one JavaScript asset. It is not part of the device capability boundary and does not own tool execution.
 
 ## Permissions
 
-Read and write policy comes exclusively from `RiftToolHost` and is shared with the remote MCP adapter. Write tools remain disabled by default. A browser request cannot bypass those settings.
+Read/write policy comes exclusively from `RiftToolHost` and is configured in the local **Rift MCP** system app. Read defaults on. Write defaults off. A browser request cannot bypass those settings.
 
 ## Failure behavior
 
-If ChatGPT changes its composer or semantic message attributes, compatibility mode can stop detecting calls, but the local MCP server, sandbox and permissions remain intact. The badge reports bridge/tool-list failures instead of silently granting broader access.
+If ChatGPT changes its composer or semantic message attributes, compatibility mode can stop detecting calls. The local MCP server, sandbox and permissions remain intact. The badge reports local MCP/tool-list failures instead of granting broader access.

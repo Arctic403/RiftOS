@@ -2,10 +2,10 @@ package com.riftos.app
 
 import android.content.Context
 
-/** Process-wide Rift tool host plus transport adapters. */
+/** Process-wide local Rift MCP runtime. No remote transport is started here. */
 object RiftMcpRuntime {
     @Volatile private var host: RiftToolHost? = null
-    @Volatile private var client: RiftMcpRelayClient? = null
+    @Volatile private var server: RiftMcpServer? = null
 
     fun toolHost(context: Context): RiftToolHost {
         host?.let { return it }
@@ -14,13 +14,10 @@ object RiftMcpRuntime {
         }
     }
 
-    fun get(context: Context): RiftMcpRelayClient {
-        client?.let { return it }
+    fun server(context: Context): RiftMcpServer {
+        server?.let { return it }
         return synchronized(this) {
-            client ?: RiftMcpRelayClient(
-                context.applicationContext,
-                toolHost(context)
-            ).also { client = it }
+            server ?: RiftMcpServer(toolHost(context)).also { server = it }
         }
     }
 }
