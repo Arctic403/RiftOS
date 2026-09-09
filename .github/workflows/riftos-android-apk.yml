@@ -23,7 +23,7 @@ jobs:
   apk:
     name: Build + publish Samsung Android APK
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,10 +57,12 @@ jobs:
           if git diff --name-only "$BEFORE" "$GITHUB_SHA" -- \
             android/app/src/main/java \
             android/app/src/main/AndroidManifest.xml \
+            android/app/src/main/res \
             android/app/build.gradle.kts \
             android/build.gradle.kts \
             android/settings.gradle.kts \
             android/gradle.properties \
+            android/scripts \
             .github/workflows/riftos-android-apk.yml | grep -q .; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -84,8 +86,15 @@ jobs:
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
           echo "$SDK_ROOT/emulator" >> "$GITHUB_PATH"
 
-      - name: Ensure Android platform + build tools
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Ensure Android platform + build tools + NDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" "ndk;29.0.13113456"
+          NDK_ROOT="$ANDROID_HOME/ndk/29.0.13113456"
+          test -f "$NDK_ROOT/build/cmake/android.toolchain.cmake"
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          cmake --version | head -1
 
       - name: Set up cached Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -93,6 +102,17 @@ jobs:
           gradle-version: '9.5.0'
           cache-read-only: false
           cache-cleanup: on-success
+
+      - name: Build bundled local gpt-oss runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          chmod +x android/scripts/prepare-gpt-oss-runtime.sh
+          bash android/scripts/prepare-gpt-oss-runtime.sh
+          python3 android/scripts/patch-local-ai-dispatcher.py
+          test -s android/app/src/main/jniLibs/arm64-v8a/libllamaserver.so
+          test -s android/app/src/main/jniLibs/x86_64/libllamaserver.so
+          grep -F '"ai.local.info" -> localAi.info()' android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt
 
       - name: Restore Android 8 emulator cache
         if: steps.native-change.outputs.changed == 'true'
@@ -151,7 +171,7 @@ jobs:
             --out "$FINAL" "$ALIGNED"
           "$BUILD_TOOLS/zipalign" -c -v 4 "$FINAL"
 
-      - name: Verify Samsung-native APK
+      - name: Verify Samsung-native APK + local gpt-oss runtime
         run: |
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           FINAL="$GITHUB_WORKSPACE/RiftOS-Android-debug.apk"
@@ -163,6 +183,9 @@ jobs:
           printf '%s\n' "$BADGING" | grep -Fq "sdkVersion:'26'"
           printf '%s\n' "$BADGING" | grep -Fq "package: name='com.riftos.app'"
           unzip -p "$FINAL" assets/www/index.html | grep -Fq "SAMSUNG ANDROID"
+          unzip -p "$FINAL" assets/www/src/riftandroid-platform.js | grep -Fq "RiftLocalAI"
+          unzip -l "$FINAL" | grep -Fq "lib/arm64-v8a/libllamaserver.so"
+          unzip -l "$FINAL" | grep -Fq "lib/x86_64/libllamaserver.so"
           if unzip -l "$FINAL" | grep -Eqi 'pwa-ios|app-safari|manifest\.webmanifest|local-test-sw'; then
             echo "Web/iOS-only assets leaked into Android APK" >&2
             exit 1
@@ -186,7 +209,7 @@ jobs:
             gh release create android-latest RiftOS-Android-debug.apk \
               --target "$GITHUB_SHA" \
               --title "RiftOS Android — Latest Debug" \
-              --notes "Samsung/Android-native RiftOS alpha. Android 8.0 / API 26+."
+              --notes "Samsung/Android-native RiftOS alpha with local gpt-oss runtime. Android 8.0 / API 26+."
           fi
 
       - name: Optional install + launch smoke test on Android 8.0 / API 26
