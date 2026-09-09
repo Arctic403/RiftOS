@@ -2,7 +2,7 @@
 'use strict';
 if (location.origin !== 'https://chatgpt.com') return;
 if (globalThis.RiftSandboxAgent?.version) return;
-const VERSION = '3.1.0';
+const VERSION = '3.2.0';
 const MAX_ROUNDS = 12;
 const MAX_CALLS_PER_ROUND = 8;
 const MAX_QUEUED_TASKS = 8;
@@ -55,6 +55,9 @@ activeTask: '',
 pendingTasks: [],
 responseFloor: 0,
 processedAssistantNodes: new WeakSet(),
+seenUserNodes: new WeakSet(),
+lastUserDraft: '',
+lastUserDraftAt: 0,
 status: 'Off'
 };
 function fs() {
@@ -84,11 +87,22 @@ if (!node) return;
 node.setAttribute('data-rift-agent-task', String(text || ''));
 node.classList.add('rift-agent-task-message');
 }
+function normalizeText(text) {
+return String(text || '').replace(/\s+/g, ' ').trim();
+}
+function isProtocolText(text) {
+const value = String(text || '').trim();
+return value.startsWith('[RIFT_AGENT_V3') ||
+value.startsWith('[RIFT_TOOL_RESULTS_V3]') ||
+value.startsWith('[RIFTOS_SANDBOX_AGENT_V') ||
+value.startsWith('[RIFTOS_TOOL_RESULTS_V');
+}
 async function decorateNewUserMessage(beforeCount, options = {}) {
 for (let i = 0; i < 60; i += 1) {
 const nodes = userNodes();
 if (nodes.length > beforeCount) {
 const last = nodes[nodes.length - 1];
+state.seenUserNodes.add(last);
 if (options.hidden) hideMessage(last);
 else if (options.visibleText != null) maskTaskMessage(last, options.visibleText);
 return last;
@@ -104,12 +118,11 @@ document.querySelector('[data-testid="composer"] [contenteditable="true"]') ||
 document.querySelector('[aria-label="Chat with ChatGPT"][contenteditable="true"]');
 }
 function findSendButton() {
-const selectors = [
+for (const selector of [
 '#composer-submit-button:not([disabled])',
 'button[data-testid="send-button"]:not([disabled])',
 'button[aria-label="Send prompt"]:not([disabled])'
-];
-for (const selector of selectors) {
+]) {
 const button = document.querySelector(selector);
 if (button) return button;
 }
@@ -132,8 +145,7 @@ composer.focus();
 if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
 const proto = composer instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
 const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-if (setter) setter.call(composer, text);
-else composer.value = text;
+if (setter) setter.call(composer, text); else composer.value = text;
 composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
 composer.dispatchEvent(new Event('change', { bubbles: true }));
 return;
@@ -222,10 +234,9 @@ const panel = document.createElement('div');
 panel.id = 'rift-agent-panel';
 panel.style.cssText = [
 'position:fixed','left:10px','bottom:10px','z-index:2147483647',
-'display:flex','align-items:center','gap:8px','padding:6px 8px',
-'border-radius:12px','background:rgba(12,16,24,.92)','color:#fff',
-'font:12px system-ui,sans-serif','box-shadow:0 4px 20px rgba(0,0,0,.35)',
-'backdrop-filter:blur(10px)'
+'display:flex','align-items:center','gap:8px','padding:6px 8px','border-radius:12px',
+'background:rgba(12,16,24,.92)','color:#fff','font:12px system-ui,sans-serif',
+'box-shadow:0 4px 20px rgba(0,0,0,.35)','backdrop-filter:blur(10px)'
 ].join(';');
 const toggle = document.createElement('button');
 toggle.id = 'rift-agent-toggle';
@@ -235,7 +246,7 @@ toggle.addEventListener('click', () => setEnabled(!state.enabled));
 const status = document.createElement('span');
 status.id = 'rift-agent-status';
 status.textContent = state.status;
-status.style.cssText = 'max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.82';
+status.style.cssText = 'max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.82';
 panel.append(toggle, status);
 document.documentElement.appendChild(panel);
 refreshToggle();
@@ -249,9 +260,7 @@ return [
 `TASK: ${task}`
 ].join('\n');
 }
-function compactProtocol(task) {
-return `[RIFT_AGENT_V3 fs1]\n${task}`;
-}
+function compactProtocol(task) { return `[RIFT_AGENT_V3 fs1]\n${task}`; }
 async function beginAgentTask(task) {
 if (state.busy) return false;
 state.busy = true;
@@ -293,9 +302,7 @@ return true;
 function validateToolPacket(packet) {
 if (!packet || typeof packet !== 'object' || Array.isArray(packet)) return { invalid: 'Tool packet must be a JSON object' };
 if (!Array.isArray(packet.calls)) return { invalid: 'Tool packet must contain calls[]' };
-if (packet.calls.length < 1 || packet.calls.length > MAX_CALLS_PER_ROUND) {
-return { invalid: `Tool packet must contain 1-${MAX_CALLS_PER_ROUND} calls` };
-}
+if (packet.calls.length < 1 || packet.calls.length > MAX_CALLS_PER_ROUND) return { invalid: `Tool packet must contain 1-${MAX_CALLS_PER_ROUND} calls` };
 const ids = new Set();
 for (const call of packet.calls) {
 if (!call || typeof call !== 'object' || Array.isArray(call)) return { invalid: 'Each tool call must be an object' };
@@ -321,8 +328,7 @@ return null;
 }
 }
 function parseToolPacket(node, text) {
-const blocks = Array.from(node?.querySelectorAll?.('pre code, code') || []);
-for (const block of blocks) {
+for (const block of Array.from(node?.querySelectorAll?.('pre code, code') || [])) {
 const packet = parseJsonPacket(block.textContent || '');
 if (packet) return packet;
 }
@@ -337,13 +343,7 @@ const source = String(text ?? '');
 const start = Math.max(0, Number(offset) || 0);
 const size = Math.max(1, Math.min(DEFAULT_READ_CHARS, Number(limit) || DEFAULT_READ_CHARS));
 const slice = source.slice(start, start + size);
-return {
-text: slice,
-offset: start,
-nextOffset: start + slice.length,
-totalChars: source.length,
-truncated: start + slice.length < source.length
-};
+return { text: slice, offset: start, nextOffset: start + slice.length, totalChars: source.length, truncated: start + slice.length < source.length };
 }
 async function executeCall(call) {
 const id = String(call.id ?? '');
@@ -353,43 +353,22 @@ const api = fs();
 try {
 let value;
 switch (name) {
-case 'info':
-value = await api.info();
-break;
-case 'stat':
-value = await api.stat(String(args.path || ''));
-break;
+case 'info': value = await api.info(); break;
+case 'stat': value = await api.stat(String(args.path || '')); break;
 case 'list': {
 const entries = await api.list(String(args.path || ''), { recursive: Boolean(args.recursive) });
 const offset = Math.max(0, Number(args.offset) || 0);
 const limit = Math.max(1, Math.min(DEFAULT_LIST_ENTRIES, Number(args.limit) || DEFAULT_LIST_ENTRIES));
 const items = Array.isArray(entries) ? entries.slice(offset, offset + limit) : [];
-value = {
-items,
-offset,
-nextOffset: offset + items.length,
-totalEntries: Array.isArray(entries) ? entries.length : 0,
-truncated: Array.isArray(entries) && offset + items.length < entries.length
-};
+value = { items, offset, nextOffset: offset + items.length, totalEntries: Array.isArray(entries) ? entries.length : 0, truncated: Array.isArray(entries) && offset + items.length < entries.length };
 break;
 }
-case 'readText':
-value = clipTextResult(await api.readText(String(args.path || '')), args.offset, args.limit);
-break;
-case 'writeText':
-value = await api.writeText(String(args.path || ''), String(args.text ?? ''));
-break;
-case 'mkdir':
-value = await api.mkdir(String(args.path || ''));
-break;
-case 'remove':
-value = await api.remove(String(args.path || ''));
-break;
-case 'move':
-value = await api.move(String(args.from || ''), String(args.to || ''), { overwrite: Boolean(args.overwrite) });
-break;
-default:
-throw new Error(`Unsupported agent tool: ${name}`);
+case 'readText': value = clipTextResult(await api.readText(String(args.path || '')), args.offset, args.limit); break;
+case 'writeText': value = await api.writeText(String(args.path || ''), String(args.text ?? '')); break;
+case 'mkdir': value = await api.mkdir(String(args.path || '')); break;
+case 'remove': value = await api.remove(String(args.path || '')); break;
+case 'move': value = await api.move(String(args.from || ''), String(args.to || ''), { overwrite: Boolean(args.overwrite) }); break;
+default: throw new Error(`Unsupported agent tool: ${name}`);
 }
 return { id, name, ok: true, value };
 } catch (error) {
@@ -468,12 +447,23 @@ await sleep(160);
 function isSendEvent(event) {
 const clickButton = event.type === 'click' && event.target?.closest?.('#composer-submit-button,button[data-testid="send-button"],button[aria-label="Send prompt"]');
 const enterSend = event.type === 'keydown' && event.key === 'Enter' && !event.shiftKey && !event.isComposing && isComposerTarget(event.target);
-return Boolean(clickButton || enterSend);
+const composer = findComposer();
+const submitSend = event.type === 'submit' && composer && event.target?.contains?.(composer);
+return Boolean(clickButton || enterSend || submitSend);
+}
+function rememberDraft(event) {
+if (!state.enabled || state.internalSend || !isComposerTarget(event.target)) return;
+const text = composerText().trim();
+if (!text || isProtocolText(text)) return;
+state.lastUserDraft = text;
+state.lastUserDraftAt = now();
 }
 function interceptUserSend(event) {
 if (!state.enabled || state.internalSend || !isSendEvent(event)) return;
 const task = composerText().trim();
-if (!task) return;
+if (!task || isProtocolText(task)) return;
+state.lastUserDraft = task;
+state.lastUserDraftAt = now();
 event.preventDefault();
 event.stopImmediatePropagation();
 if (state.busy || state.processing) {
@@ -484,6 +474,31 @@ return;
 }
 beginAgentTask(task);
 }
+function seedSeenUsers() {
+for (const node of userNodes()) state.seenUserNodes.add(node);
+}
+function adoptEscapedUserTurns() {
+const nodes = userNodes();
+for (const node of nodes) {
+if (state.seenUserNodes.has(node)) continue;
+state.seenUserNodes.add(node);
+if (!state.enabled || state.internalSend || state.busy || state.processing) continue;
+const text = (node.innerText || node.textContent || '').trim();
+if (!text || isProtocolText(text)) continue;
+const freshDraft = state.lastUserDraft && now() - state.lastUserDraftAt <= 10000;
+if (!freshDraft || normalizeText(text) !== normalizeText(state.lastUserDraft)) continue;
+state.busy = true;
+state.processing = false;
+state.rounds = 0;
+state.taskId = newTaskId();
+state.activeTask = text;
+state.responseFloor = assistantNodes().length;
+maskTaskMessage(node, text);
+setStatus('Recovered send…');
+state.lastUserDraft = '';
+state.lastUserDraftAt = 0;
+}
+}
 let lastConversation = conversationKey();
 const navigationObserver = new MutationObserver(() => {
 const key = conversationKey();
@@ -491,12 +506,20 @@ if (key !== lastConversation) {
 lastConversation = key;
 resetActiveTask();
 state.pendingTasks.length = 0;
+state.lastUserDraft = '';
+state.lastUserDraftAt = 0;
+state.seenUserNodes = new WeakSet();
+seedSeenUsers();
 setStatus(readyStatus());
 }
 installUi();
+adoptEscapedUserTurns();
 });
+seedSeenUsers();
+document.addEventListener('input', rememberDraft, true);
 document.addEventListener('click', interceptUserSend, true);
 document.addEventListener('keydown', interceptUserSend, true);
+document.addEventListener('submit', interceptUserSend, true);
 navigationObserver.observe(document.documentElement, { childList: true, subtree: true });
 installUi();
 watchResponses();
