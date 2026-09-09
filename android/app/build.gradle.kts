@@ -11,7 +11,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.5.2-rift-agent-v3.2-alpha"
+        versionName = "0.5.3-rift-agent-v3.3-alpha"
     }
 
     signingConfigs {
