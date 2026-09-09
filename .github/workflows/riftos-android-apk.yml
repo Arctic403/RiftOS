@@ -118,12 +118,17 @@ jobs:
           unzip -p "$FINAL" assets/www/src/riftbridge-system.js | grep -Fq "[RiftBridge] system app registered"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "[RIFT_MCP_APP_V1]"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "<rift_call>"
+          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "PERF_GUARD"
           if unzip -l "$FINAL" | grep -Fq "assets/riftbrowser-chatgpt-agent.js"; then
             echo "Removed ChatGPT DOM Rift Agent leaked back into Android APK" >&2
             exit 1
           fi
           if unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "RIFT_AGENT_V3"; then
             echo "Removed Agent V3 protocol leaked into Rift MCP App compatibility asset" >&2
+            exit 1
+          fi
+          if unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "function scanAssistantMessages"; then
+            echo "Whole-chat MCP mutation scanner leaked back into RiftBrowser" >&2
             exit 1
           fi
           if unzip -p "$FINAL" classes.dex | strings | grep -Fq "RiftBrowserActivity"; then
