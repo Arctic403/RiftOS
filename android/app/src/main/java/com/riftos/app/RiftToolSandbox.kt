@@ -55,11 +55,11 @@ class RiftToolSandbox(context: Context) {
         if (!target.exists() && legacy.exists()) {
             val moved = runCatching { legacy.renameTo(target) }.getOrDefault(false)
             if (!moved) {
-                runCatching {
+                val copied = runCatching {
                     target.mkdirs()
                     legacy.copyRecursively(target, overwrite = false)
-                    legacy.deleteRecursively()
-                }
+                }.getOrDefault(false)
+                if (copied) runCatching { legacy.deleteRecursively() }
             }
         }
 
