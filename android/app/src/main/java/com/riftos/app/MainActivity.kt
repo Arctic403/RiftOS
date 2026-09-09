@@ -11,7 +11,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.webkit.CookieManager
-import android.webkit.MimeTypeMap
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -25,20 +24,25 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLConnection
+import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     companion object {
         private const val PICK_TREE_REQUEST = 7001
         private const val FILE_CHOOSER_REQUEST = 7002
         private const val NOTIFICATION_REQUEST = 7003
+        private const val SYSTEM_DUMP_REQUEST = 7004
         private const val APP_ORIGIN = "https://appassets.androidplatform.net"
         private const val START_URL = "$APP_ORIGIN/assets/www/index.html"
     }
 
     private lateinit var webView: WebView
     private lateinit var dispatcher: RiftNativeDispatcher
+    private lateinit var systemDump: RiftSystemDump
+    private val kernelExecutor = Executors.newSingleThreadExecutor()
     private var pendingTreeRequestId: String? = null
     private var pendingNotificationRequestId: String? = null
+    private var pendingSystemDumpRequestId: String? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,6 +55,7 @@ class MainActivity : Activity() {
             .build()
 
         webView = WebView(this)
+        systemDump = RiftSystemDump(this)
         setContentView(webView)
         CookieManager.getInstance().setAcceptCookie(true)
 
@@ -64,7 +69,7 @@ class MainActivity : Activity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
-            userAgentString = "$userAgentString RiftOS-Android/0.2"
+            userAgentString = "$userAgentString RiftOS-Android/0.3"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
         }
 
@@ -145,11 +150,44 @@ class MainActivity : Activity() {
             setOf(APP_ORIGIN)
         ) { _, message, sourceOrigin, isMainFrame, _ ->
             if (isMainFrame && sourceOrigin.toString().startsWith(APP_ORIGIN)) {
-                message.data?.let { dispatcher.handleAsync(it) }
+                message.data?.let { raw ->
+                    if (!handleKernelRequest(raw)) dispatcher.handleAsync(raw)
+                }
             }
         }
 
         if (savedInstanceState == null) webView.loadUrl(START_URL) else webView.restoreState(savedInstanceState)
+    }
+
+    private fun handleKernelRequest(raw: String): Boolean {
+        val message = runCatching { JSONObject(raw) }.getOrNull() ?: return false
+        if (message.optString("method") != "system.dump.save") return false
+        val requestId = message.optString("id")
+        if (requestId.isBlank()) return true
+        openSystemDumpPicker(requestId)
+        return true
+    }
+
+    private fun openSystemDumpPicker(requestId: String) {
+        runOnUiThread {
+            if (pendingSystemDumpRequestId != null) {
+                sendNativeResult(requestId, false, null, "A system dump save is already open")
+                return@runOnUiThread
+            }
+            pendingSystemDumpRequestId = requestId
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/json"
+                putExtra(Intent.EXTRA_TITLE, systemDump.defaultFileName())
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            try {
+                startActivityForResult(intent, SYSTEM_DUMP_REQUEST)
+            } catch (error: Exception) {
+                pendingSystemDumpRequestId = null
+                sendNativeResult(requestId, false, null, error.message ?: "Could not open system dump picker")
+            }
+        }
     }
 
     private fun openDirectoryPicker(requestId: String) {
@@ -195,6 +233,27 @@ class MainActivity : Activity() {
                 fileChooserCallback = null
                 callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
             }
+            SYSTEM_DUMP_REQUEST -> {
+                val requestId = pendingSystemDumpRequestId ?: return
+                pendingSystemDumpRequestId = null
+                val uri = data?.data
+                if (resultCode != RESULT_OK || uri == null) {
+                    sendNativeResult(
+                        requestId,
+                        true,
+                        JSONObject().put("saved", false).put("cancelled", true),
+                        null
+                    )
+                    return
+                }
+                kernelExecutor.execute {
+                    try {
+                        sendNativeResult(requestId, true, systemDump.save(uri), null)
+                    } catch (error: Throwable) {
+                        sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
+                    }
+                }
+            }
         }
     }
 
@@ -236,8 +295,10 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         if (::dispatcher.isInitialized) dispatcher.shutdown()
+        kernelExecutor.shutdownNow()
         fileChooserCallback?.onReceiveValue(null)
         fileChooserCallback = null
+        pendingSystemDumpRequestId = null
         if (::webView.isInitialized) {
             webView.stopLoading(); webView.loadUrl("about:blank"); webView.removeAllViews(); webView.destroy()
         }

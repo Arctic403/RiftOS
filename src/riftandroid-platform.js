@@ -3,8 +3,15 @@ if(!core?.native?.connected)throw new Error("RiftAndroid platform requires the n
 
 await core.ready;
 
+const system=Object.freeze({
+  info:()=>core.native.call("system.info",{}),
+  storage:()=>core.native.call("system.storage",{}),
+  saveDump:()=>core.native.call("system.dump.save",{})
+});
+
 const api=Object.freeze({
   info:()=>core.native.call("device.info",{}),
+  system,
   vibrate:(milliseconds=40)=>core.native.call("device.vibrate",{milliseconds}),
   clipboard:Object.freeze({
     read:()=>core.native.call("clipboard.read",{}),
@@ -24,6 +31,7 @@ const api=Object.freeze({
 });
 
 globalThis.RiftAndroidAPI=api;
+globalThis.RiftKernel=system;
 
 // Called by MainActivity before it exits. RiftDev and RiftOS windows consume Back first.
 globalThis.RiftAndroidBack=()=>{
@@ -41,4 +49,4 @@ globalThis.RiftAndroidBack=()=>{
 
 window.addEventListener("pageshow",()=>document.documentElement.dataset.riftActivity="resumed");
 window.addEventListener("pagehide",()=>document.documentElement.dataset.riftActivity="paused");
-console.info("[RiftAndroid] Samsung/Android platform services online");
+console.info("[RiftAndroid] Samsung/Android platform services + system dump online");
