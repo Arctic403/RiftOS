@@ -1,10 +1,10 @@
 # RiftRT v1
 
-RiftRT is the RiftOS desktop application runtime. Android remains the kernel/driver host; RiftOS owns windows, processes, input, permissions and RiftFS.
+RiftRT is the active RiftOS desktop application runtime. Android remains the kernel/driver host; RiftOS owns app/process records, windows, brokered capabilities and RiftFS namespace.
 
 ## Package model
 
-RiftRT extends the existing `rift-app-v1` `.rift` JSON package. Existing packages remain compatible. A package opts into RiftRT by including `riftrt.json` in `files`.
+RiftRT extends the existing `rift-app-v1` `.rift` JSON package. Existing iframe packages remain compatible. A package opts into RiftRT by including `riftrt.json` in `files`.
 
 ```json
 {
@@ -18,52 +18,27 @@ RiftRT extends the existing `rift-app-v1` `.rift` JSON package. Existing package
 
 Supported v1 engines:
 
-- `iframe` — legacy `.rift` HTML application, now hosted in a RiftDesktop window.
+- `iframe` — legacy `.rift` HTML application hosted in a RiftDesktop window.
 - `worker-js` — isolated Worker application using a host-owned canvas surface and RiftRT APIs.
 - `wasm-base64` — WebAssembly module stored as base64 text and loaded through the Rift ABI.
-- `native-arm64` — reserved packaged-plugin route. Arbitrary downloaded ELF execution is intentionally not enabled.
+- `native-arm64` — reserved direction for modules compiled/packaged with RiftOS; arbitrary downloaded native ELF execution is not enabled.
 
 ## Worker ABI
 
-Worker apps receive a frozen global `Rift` object:
+Worker apps receive a frozen `Rift` object with logging, window title, host-owned surface, resize/input callbacks, local app storage and capability-gated filesystem/clipboard operations.
 
-- `Rift.log(...values)`
-- `Rift.window.setTitle(title)`
-- `Rift.surface.frame(commands)`
-- `Rift.surface.onResize(handler)`
-- `Rift.input.on(handler)`
-- `Rift.storage.get/set/remove`
-- `Rift.fs.readText/writeText/list` (capability gated)
-- `Rift.clipboard.readText/writeText` (capability gated)
-
-Canvas frame commands currently support `clear`, `rect`, `line`, and `text`. The host owns the canvas so the app does not need its own browser/window stack.
+Canvas frame commands currently include `clear`, `rect`, `line` and `text`.
 
 ## WASM ABI
 
-A `wasm-base64` app may export:
+A `wasm-base64` app may export `rift_init`, `rift_tick`, `rift_resize`, pointer/key/wheel handlers, memory and frame JSON accessors. Host imports expose width, height and simple logging.
 
-- `rift_init(width, height)`
-- `rift_tick(time_ms)`
-- `rift_resize(width, height)`
-- `rift_pointer(kind, x, y, button, buttons)`
-- `rift_key(key_code, down)`
-- `rift_wheel(dx, dy)`
-- `memory`
-- `rift_frame()` -> pointer to UTF-8 JSON command array
-- `rift_frame_len()` -> byte length
-
-The host imports:
-
-- `env.rift_width()`
-- `env.rift_height()`
-- `env.rift_log_i32(value)`
-
-`rift_frame` JSON uses the same canvas command format as Worker apps.
+The WASM path uses the same host-owned surface command format as Worker apps.
 
 ## Desktop integration
 
-RiftRT extends the existing RiftOS window manager instead of creating a second desktop. Runtime applications therefore participate in RiftOS taskbar state, minimize/maximize, focus, Alt-Tab, Show Desktop and RiftKernel process management.
+RiftRT uses the existing RiftOS window manager. Runtime apps participate in taskbar state, focus, move/resize, minimize/maximize, Alt-Tab/show-desktop behavior and RiftKernel process management.
 
-## Native ARM64 direction
+## Security direction
 
-Modern Android does not provide a safe general-purpose route for executing arbitrary downloaded native ELF binaries from writable app storage. RiftRT's native route therefore targets native modules compiled and packaged with RiftOS (or a future approved plugin packaging mechanism). This keeps the fast path compatible with Android security rules while preserving a stable Rift window/input/RiftFS ABI.
+Modern Android does not provide a safe general-purpose route for running arbitrary downloaded ELF binaries from writable app storage. Native acceleration therefore targets code compiled and packaged with RiftOS or a future explicitly trusted plugin mechanism.

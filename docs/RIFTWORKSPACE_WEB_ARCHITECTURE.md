@@ -1,99 +1,50 @@
-# RiftWorkspace Web Architecture
+# RiftWorkspace Architecture
 
-RiftWorkspace is the unsigned RiftKernel workspace boundary. It runs inside the same Apple WebKit host as RiftOS and stores its local sandbox through RiftFS, which uses OPFS when available and IndexedDB as the compatibility fallback.
+> Historical filename retained for existing links. The active runtime described here is Android, not the previous Web/OPFS deployment.
 
-The workspace does **not** depend on a signed iOS executable, the RiftWebKit WASM browser engine, or direct access to the iPhone filesystem.
+RiftWorkspace is the controlled project/workspace boundary between RiftOS apps and RiftFS.
 
-## Runtime path
-
-```text
-RiftOS Home Screen web app
-        |
-     RiftKernel
-        |
-  RiftWorkspace JSON API
-        |
-      RiftFS
-        |
-       OPFS
-```
-
-The local sandbox is physically rooted inside RiftFS at `/workspace`, but callers see a workspace-relative root `/`.
-
-Default directories:
+## Android runtime path
 
 ```text
-/
-├── projects/
-├── downloads/
-├── documents/
-├── patches/
-└── .rift/
-    ├── history/
-    └── rolled-back/
+RiftOS app / RiftDev
+      |
+RiftWorkspace API / JSON bridge
+      |
+riftworkspace-android-adapter.js
+      |
+RiftAndroid fs.* native calls
+      |
+filesDir/riftfs/workspace
 ```
 
-`.rift` is reserved for kernel-managed patch history and rollback data.
+`src/riftworkspace-web.js` remains the common high-level workspace contract; `src/riftworkspace-android-adapter.js` redirects storage to native RiftFS on Android.
 
-## Public workspace API
+## Public operations
 
-`window.RiftWorkspace` is available in the unsigned WebKit runtime and exposes:
+The workspace supports controlled list/stat/read/write/mkdir/remove/move operations plus snapshot, patch preview/apply, history and rollback surfaces used by RiftDev and project tooling.
 
-- `info()`
-- `list(path, options)`
-- `stat(path)`
-- `readText(path)` / `readJSON(path)`
-- `writeText(path, text)` / `writeJSON(path, value)`
-- `mkdir(path)`
-- `remove(path)`
-- `move(path, newPath)`
-- `previewPatch(patch)`
-- `applyPatch(patch)`
-- `history()`
-- `rollback(historyId)`
-- `snapshot(path, options)`
+Path normalization prevents escaping the workspace/RiftFS boundary.
 
-## JSON bridge
+## RiftDev compatibility
 
-`window.RiftWorkspaceJSON.invoke(request)` provides a JSON-safe RPC surface for RiftOS apps and AI handoff code.
+The Android APK packages `riftdev-android.js`. During asset generation its legacy IndexedDB calls are redirected to `RiftDevAndroidDB`, a compatibility facade backed by RiftWorkspace. This lets older editor code keep transaction-style calls without making IndexedDB the Android source of truth.
 
-Example request:
+## Browser separation
 
-```json
-{
-  "id": "req-1",
-  "method": "workspace.readText",
-  "args": {
-    "path": "projects/RiftOS/src/riftcore.js"
-  }
-}
-```
-
-The bridge also accepts same-origin `postMessage` requests using `type: "riftworkspace:request"`. Cross-origin pages do not receive workspace access merely because they are displayed by RiftBrowser.
-
-## Patch contract
-
-The web workspace implements the existing Rift AI patch contract. Supported versions are 1 and 2. Supported actions are `write`, `delete`, and `move`; `rename` is normalized to `move`. Version 2 is required for move/rename.
-
-The patch engine validates paths, overlapping operations, destination conflicts, optional `base_sha256` guards, and the 500-change limit before applying changes. Applied patches save rollback state under `.rift/history`.
-
-## Browser boundary
-
-RiftBrowser and RiftWorkspace are intentionally separate capabilities.
-
-The active browser path is RiftWebKit: WebCore/JSC/Skia compiled to WebAssembly and hosted inside RiftOS. That changes how guest webpages are rendered, but it does **not** grant those webpages workspace authority.
+RiftWorkspace and RiftBrowser are separate capabilities:
 
 ```text
 RiftKernel
-  |-- RiftWorkspace -> RiftFS -> OPFS
+  |-- RiftWorkspace -> RiftFS/native storage
   |
-  `-- RiftBrowser -> RiftWebKit WASM -> guest web content
+  `-- RiftBrowser -> Android System WebView -> guest web content
 ```
 
-Guest pages may only interact with workspace data through an explicit, brokered JSON interface that RiftKernel chooses to expose. They never receive raw OPFS handles or unrestricted `window.RiftWorkspace` access.
+Normal guest webpages never receive `RiftWorkspace` or unrestricted RiftFS authority.
 
-## Architecture rule
+ChatGPT receives only the separate `browser-sandbox` filesystem, not the main RiftWorkspace tree.
 
-> RiftOS core and RiftWorkspace MUST NOT require the RiftWebKit WASM engine to boot.
+## Historical web mode
 
-The engine is a lazy browser service, not a dependency of the local workspace.
+Earlier RiftOS web/iOS experiments backed RiftWorkspace with OPFS/IndexedDB. That design explains the common API naming but is not the current Android persistence path.

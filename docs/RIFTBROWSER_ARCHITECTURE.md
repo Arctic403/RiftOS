@@ -1,116 +1,67 @@
 # RiftBrowser Architecture
 
-## Decision
+## Current decision
 
-RiftBrowser is a **WebKit-only browser service owned by RiftKernel**. The Gecko WASM experiment and the signed native WebKit browser backend are retired from the active architecture.
-
-The stable OS boundary remains RiftKernel + RiftFS/OPFS + RiftWorkspace. The browser engine is lazy-loaded and may fail without preventing the rest of RiftOS from booting.
-
-## Current unsigned path
+RiftBrowser on Android uses **Android System WebView as a native content surface inside a RiftOS desktop window**.
 
 ```text
-iPhone / iPad
-     |
-Apple WebKit host
-     |
-RiftOS Home Screen runtime
-     |
-RiftKernel
-     |
-RiftKernel.browser
-     |
-RiftWebKit Mobile host
-     |
-WebCore + JavaScriptCore + Skia -> WebAssembly
-     |
-canvas surface + Wisp networking
+RiftDesktop browser window
+        |
+RiftOS title/address/taskbar chrome
+        |
+ browser.window.* native bridge
+        |
+   RiftBrowserWindow
+        |
+ Android System WebView
+        |
+      guest page
 ```
 
-The engine port is pinned to `theogbob/WebkitWasm` commit `cbdc40b3ca68f45fff8de61fd843f81a55026178`, WebKit commit `aec9d2ad958e716ab4bca4bf03007e6edac7323f`, and Emscripten 6.0.0.
+RiftOS owns window state and browser chrome. Android owns page rendering, cookies, downloads, file selection and WebView lifecycle.
 
-## Kernel separation
+## Window behavior
 
-RiftOS core MUST NOT require WebAssembly to boot.
+The browser is not a full-screen Activity. `src/riftos.js` creates the browser window and synchronizes its content rectangle/visibility with `RiftBrowserWindow` through native bridge methods including open, navigate, back, forward, reload, bounds, visible, state and close.
 
-`src/riftbrowser-engines.js` probes and loads RiftWebKit only when RiftBrowser is used. The service worker does not pre-cache the engine as part of the mandatory shell; engine files are cached lazily after first use.
+This keeps RiftBrowser aligned with Files, Settings, RiftDev and RiftRT windows.
 
-If the engine crashes, runs out of memory, or is unavailable, RiftKernel, RiftFS, OPFS, RiftWorkspace and the rest of RiftOS remain usable.
+## Security defaults
 
-## One engine, no fallback backends
+- JavaScript and DOM storage are enabled for normal web compatibility.
+- mixed content remains blocked,
+- Safe Browsing is enabled where supported,
+- SSL errors are cancelled,
+- camera/microphone/geolocation are not automatically granted,
+- arbitrary Android file/content access is not exposed,
+- external `mailto`, `tel` and `geo` schemes are handed to Android.
 
-The only selectable RiftBrowser engine ID is:
+## ChatGPT behavior
 
-- `riftwebkit` — WebCore/JSC/Skia compiled to WebAssembly.
+ChatGPT receives additional browser integration:
 
-`unavailable` is a runtime state, not a second backend.
+- persistent WebView cookies,
+- authentication-flow handling for ChatGPT/OpenAI and common identity-provider hosts,
+- same-tab handling for auth popups,
+- exact-origin RiftSandbox WebMessage bridge,
+- injected `RiftSandboxFS`,
+- optional Rift Agent adapter.
 
-There is no Gecko backend, no signed native browser backend, and no CORS-fetch/HTML-sanitizer/`srcdoc` fallback. A fake document fetch must never masquerade as a browser engine.
+Identity providers may still reject embedded WebView authentication independently.
 
-## Engine milestones
+## Rift Agent
 
-The proven `riftwebkit-poc-v1` artifact validates single-threaded WebCore layout/paint, JSC initialization, Skia raster output, linear memory and iPhone touch reaching WebCore.
+Rift Agent is browser-side orchestration, not a native OpenAI tool registration. While enabled it intercepts the user's ChatGPT send action, adds a sandbox tool contract, parses rendered assistant code blocks, executes only the fixed local tool allowlist and posts tool results back into the same chat.
 
-The full `riftwebkit-mobile-v1` artifact uses the pinned helper embedder in `BIB_PTHREAD=0` mode and adds the pieces needed for real browsing:
+Agent-internal task wrappers, tool-call turns and tool-result turns are masked/hidden in the WebView UI so the visible conversation remains readable.
 
-- real `http(s)` navigation through `bib_load_url`
-- guest JavaScript through JavaScriptCore CLoop
-- CSS/images/resource loading
-- cookies and browser storage adapters
-- Wisp-backed TCP transport for external HTTPS
-- engine persistence
-- host canvas rendering
-- mobile touch/tap/drag-to-scroll bridging in RiftOS
+## Removed browser paths
 
-Pages always serves one logical engine root at `/engines/webkit/`. Before the full mobile artifact exists, the proven proof artifact may occupy that slot; after the mobile release is published it replaces the proof automatically.
+The following are historical and not current Android backends:
 
-## Mobile host behavior
+- full-screen `RiftBrowserActivity`,
+- WebKit-WASM/Wisp RiftBrowser,
+- Gecko WASM experiments,
+- CORS fetch/sanitize/iframe browser emulation.
 
-RiftOS owns the browser chrome and address bar. The embedded engine host is stripped to the canvas surface at runtime. On iPhone, RiftBrowser converts touch gestures into the WebCore input APIs exposed by the embedder:
-
-- tap -> WebCore mouse press/release compatibility path
-- finger drag -> WebCore wheel scrolling path
-- address entry -> native iOS software keyboard in the RiftOS chrome
-
-The initial mobile engine viewport is 390x844. Dynamic viewport resizing and guest text-field IME bridging can be added without reintroducing a second browser backend.
-
-## Networking
-
-The nested WebCore engine cannot open raw iOS sockets. Its curl/SOCKFS network path is carried through a Wisp WebSocket transport. The user-configured endpoint is stored by RiftBrowser and passed only to the WebKit engine host.
-
-Wisp is transport only. It is not a kernel, filesystem or workspace capability.
-
-## Storage and security boundary
-
-RiftOS workspace data remains under RiftFS/OPFS. RiftWebKit keeps guest browser state separately.
-
-```text
-RiftKernel
-  |-- RiftWorkspace -> RiftFS -> OPFS
-  |
-  `-- RiftBrowser
-       `-- RiftWebKit WASM
-            `-- guest browser state
-```
-
-Guest web content never receives raw RiftKernel, RiftWorkspace or OPFS handles.
-
-## State ownership
-
-RiftKernel owns browser product state:
-
-- tab identities
-- active tab
-- logical navigation history
-- bookmarks
-- configured Wisp endpoint
-
-RiftWebKit owns page execution/rendering and guest browser state.
-
-## Rules
-
-1. RiftKernel and RiftWorkspace boot without the RiftWebKit engine.
-2. RiftBrowser has one engine path: `riftwebkit`.
-3. Do not restore Gecko or a signed native browser fallback.
-4. Do not reintroduce CORS document fetching, HTML sanitization or `srcdoc` as a browser backend.
-5. Untrusted guest pages never gain direct RiftFS/OPFS workspace capability access.
-6. Heavy engine artifacts load lazily and are not part of mandatory OS boot.
+There is one active Android browser renderer: Android System WebView.

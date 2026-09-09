@@ -1,121 +1,67 @@
-# RiftOS True OS Architecture
+# RiftOS Architecture
 
 ## Decision
 
-RiftOS is **RiftKernel first**, not native-app first and not browser-engine first.
-
-The primary iPhone/iPad runtime is RiftKernel executing inside Apple WebKit. Safari/Home Screen web-app delivery does not require RiftOS to provide a separately signed native executable because RiftKernel is web content hosted by Apple's signed browser process.
-
-This does **not** mean RiftOS replaces or bypasses the iOS kernel. Native executable code and native device privileges remain controlled by iOS and Apple's code-signing rules.
+RiftOS is a **user-space OS environment hosted by Android**. RiftKernel is the authority for RiftOS apps, windows, services, capabilities and RiftFS namespace; Android/Linux remains the real device kernel and authority for processes, permissions, storage providers, networking and hardware.
 
 ```text
-iPhone / iPad
-    |
-Apple WebKit
-    |
-Home Screen web app / browser delivery
-    |
-RiftOS shell
-    |
-RiftKernel
- |             |              |
-RiftFS     RiftWorkspace    RiftBrowser
-  |             |              |
- OPFS        JSON API       RiftWebKit WASM
-  |                            |
- IndexedDB                WebCore/JSC/Skia
- compatibility                  |
- mirror                     canvas + Wisp
+Android / Linux kernel
+        |
+ Android application sandbox
+        |
+     MainActivity
+        |
+ RiftOS shell WebView
+        |
+     RiftKernel
+   /      |        \
+RiftFS  RiftRT   RiftDesktop
+  |                  |
+filesDir + SAF       apps/windows
+                     |
+                 RiftBrowser
+                     |
+             RiftBrowserWindow
+                     |
+            Android System WebView
 ```
 
-## 1. One kernel
+## Kernel boundary
 
-`src/riftcore.js` owns process lifecycle, app registration, permissions, mounts, system information and RiftFS.
+`src/riftcore.js` provides the RiftOS process/app/service model. Android-native operations are brokered through `RiftAndroid` rather than exposed directly to every app.
 
-No delivery mechanism or browser engine is allowed to become a second kernel. Running from a Home Screen icon or loading RiftWebKit changes available services, not RiftKernel authority.
+RiftKernel does not claim Android kernel privileges and does not bypass Android permission or app-sandbox rules.
 
-## 2. Runtime vs delivery
+## Storage
 
-`src/riftruntime.js` normalizes the unsigned runtime identity:
+The active Android RiftFS root is `filesDir/riftfs`. Standard internal directories include `home`, `apps`, `system`, `workspace`, `downloads` and `documents`.
 
-```text
-mode = riftkernel-webkit
-host = Apple WebKit
-delivery = home-screen-web-app | browser-tab
-appSigningRequiredForKernel = false
-```
+User-selected external directories are mounted through Android Storage Access Framework. Canonical path checks prevent RiftFS path traversal.
 
-PWA/web-app technology is a delivery and lifecycle mechanism, not the OS architecture.
+## Desktop
 
-## 3. RiftFS is OPFS-first
+RiftDesktop is the single window manager for built-ins and RiftRT apps. Files, Settings and RiftBrowser participate in the same focus/taskbar/minimize/maximize model.
 
-RiftFS uses Origin Private File System when `navigator.storage.getDirectory()` is available. IndexedDB remains a compatibility mirror and migration store.
+The browser's native WebView is a content plane inside a RiftOS-managed window, not a second desktop or full-screen activity.
 
-OPFS is origin-private. RiftOS can create, enumerate, read and write its own files/directories without claiming access to arbitrary iPhone files.
+## Workspace and RiftDev
 
-## 4. RiftWorkspace is the JSON sandbox boundary
+RiftWorkspace uses RiftFS on Android. `src/riftworkspace-web.js` supplies the common workspace contract while `src/riftworkspace-android-adapter.js` binds it to native storage.
 
-`src/riftworkspace-web.js` exposes controlled workspace operations over RiftFS/OPFS. The workspace is independent of the browser engine and must continue working even if RiftWebKit fails or is never loaded.
+RiftDev's Android build rewrites its legacy IndexedDB calls to the `RiftDevAndroidDB` compatibility facade backed by RiftWorkspace.
 
-## 5. WebKit host primitives
+## RiftRT
 
-RiftKernel may use standards exposed by WebKit, including OPFS, Web Workers, Service Workers, Cache Storage, IndexedDB, Web Share, notifications and WebAssembly when available.
+RiftRT v1 adds worker, iframe and WebAssembly applications without creating a second kernel/window manager. Native ARM64 remains a packaged/future plugin direction; arbitrary downloaded ELF execution is not enabled.
 
-Feature detection is mandatory. A host capability being unavailable must degrade only the service that depends on it.
+## Browser security
 
-## 6. Processes and apps
+Normal guest pages do not receive RiftFS or RiftWorkspace authority. ChatGPT receives only the separately rooted `riftfs/browser-sandbox` bridge, only on exact `https://chatgpt.com`, and the model-facing agent exposes a fixed tool allowlist.
 
-Built-ins, RiftDev sessions and installed RiftApps receive RiftKernel process records. Protected kernel/system processes remain controlled by the process table.
+## Historical web/iOS work
 
-RiftApps use brokered capabilities and RiftFS paths instead of receiving native iOS privileges.
-
-## 7. RiftBrowser is one optional engine service
-
-`src/riftbrowser-kernel.js` installs `RiftKernel.browser`. The only active browser engine is RiftWebKit: WebCore, JavaScriptCore and Skia compiled to WebAssembly.
-
-```text
-RiftKernel.browser
-       |
-RiftWebKit Mobile
-       |
-WebCore + JSC + Skia WASM
-       |
-canvas + Wisp networking
-```
-
-The engine is lazy-loaded. RiftOS core MUST NOT require WebAssembly to boot.
-
-The Gecko experiment, signed native browser host and legacy CORS transport are not active backends and must not be reintroduced as fallbacks.
-
-Guest pages rendered by RiftWebKit do not receive direct RiftWorkspace, RiftFS or OPFS capabilities.
-
-## 8. Networking
-
-Browser JavaScript cannot expose arbitrary raw TCP sockets to the nested WebCore engine. RiftBrowser therefore uses a Wisp WebSocket endpoint for arbitrary guest HTTP/HTTPS networking.
-
-Wisp is browser transport only. It does not become a kernel, filesystem or workspace authority.
-
-## 9. Offline boot
-
-`sw.js` caches the RiftOS shell and kernel modules. RiftWebKit engine assets are cached lazily after first use and are not part of mandatory boot.
-
-## 10. CI boundaries
-
-The primary workflow is `.github/workflows/riftos-pages.yml`. It validates JavaScript syntax, OPFS-first storage, the RiftWorkspace JSON boundary, WebKit-only browser wiring, removal of fake browser transports, and live Pages deployment of the RiftWebKit manifest.
-
-`riftwebkit-poc.yml` keeps the known-good proof build. `riftwebkit-mobile.yml` builds the full mobile engine.
-
-## 11. Non-goals
-
-RiftOS does not:
-
-- bypass iOS code signing
-- replace the iOS kernel
-- obtain arbitrary device filesystem access from a web page
-- give guest pages direct RiftWorkspace/OPFS authority
-- treat a CORS fetch or sanitized iframe as a browser engine
-- require RiftWebKit/WASM for kernel boot
+Earlier RiftOS research used OPFS, service workers and a WebKit-WASM/Wisp browser path. That work is historical and is not the active Android APK architecture.
 
 ## Architecture rule
 
-> **RiftKernel and RiftWorkspace must boot independently of RiftWebKit. RiftBrowser has one browser-engine path, and that path remains a replaceable service rather than OS authority.**
+> Android owns device privilege; RiftKernel owns RiftOS authority. Native services are brokered capabilities, and no guest page or normal app receives unrestricted Android access.

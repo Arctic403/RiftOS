@@ -1,5 +1,7 @@
 # Folder Manager Patch v12
 
+> Historical web-editor patch note. The active Android build redirects the editor storage API through `RiftDevAndroidDB` to RiftWorkspace/RiftFS; IndexedDB is not the Android source of truth.
+
 - Added persistent real folders in IndexedDB (`folders` store, schema v2).
 - Added **+ New Folder**.
 - Added **Import Folder** using relative paths where the browser supports directory picking.

@@ -1,36 +1,64 @@
 # RiftOS Android Native Architecture
 
-`android-apk` is an Android-only RiftOS distribution. It does not emulate an Apple host and it does not use OPFS, IndexedDB, PWA manifests, service workers, or Safari-specific runtime shims for RiftOS storage.
+The active RiftOS distribution is a native Android APK targeting Android 8.0 / API 26+.
 
 ## Runtime stack
 
-RiftOS HTML/JS UI → RiftKernel Android API → `RiftNativeTransport` → `RiftAndroid` WebMessage → Kotlin → Android APIs.
+```text
+RiftOS HTML/JS shell
+    -> RiftKernel / RiftDesktop
+    -> RiftNativeTransport
+    -> exact-origin RiftAndroid WebMessage
+    -> MainActivity / RiftNativeDispatcher
+    -> Android APIs
+```
 
-RiftFS lives in `filesDir/riftfs`. External user folders mount through Android Storage Access Framework and persisted URI permissions. RiftWorkspace is implemented on top of the native RiftFS `/workspace` directory, so JSON patches, history, rollback, RiftDev, and GitHub workspace operations all share one Android-backed filesystem.
+`MainActivity` hosts the RiftOS shell WebView through `WebViewAssetLoader` and owns the native browser content surface and system-document pickers.
+
+## Storage
+
+RiftFS lives in `filesDir/riftfs`. Android initializes `home`, `apps`, `system`, `workspace`, `downloads` and `documents`.
+
+External user folders mount through Storage Access Framework with persisted URI permissions. RiftWorkspace maps its common JSON API onto the native `/workspace` tree.
 
 ## Native services
 
-- Android internal RiftFS
-- Storage Access Framework mounts
-- Android Keystore encrypted secrets
-- Clipboard, share sheet, vibration and notifications
-- Android notification permission request
-- Native `RiftBrowserWindow` WebView surface hosted inside the RiftOS desktop window manager
-- Native `RiftPreviewActivity` that serves RiftDev workspace files directly without a service worker
-- Android system file chooser for `<input type=file>`
-- Android DownloadManager for normal HTTP(S) downloads
-- Android Back integration, lifecycle pause/resume and Samsung/DeX-resizable activities
+- RiftFS and SAF mounts,
+- Android Keystore encrypted secrets,
+- clipboard/share/vibration/notifications,
+- notification permission request,
+- Android file chooser,
+- DownloadManager,
+- preview Activity for RiftDev workspace files,
+- privacy-limited System Dump + Save As picker,
+- `RiftBrowserWindow` native WebView content plane.
+
+## Desktop browser host
+
+`RiftBrowserWindow` is created inside `MainActivity`. RiftDesktop sends window bounds/visibility/navigation commands through the native bridge. Android positions the WebView over the browser content rectangle while RiftOS retains title bar, address bar, move/resize, minimize/maximize, focus and taskbar behavior.
+
+The obsolete standalone `RiftBrowserActivity` is not part of the current source/build.
+
+## ChatGPT sandbox
+
+The browser installs a `RiftSandbox` WebMessage listener only for exact `https://chatgpt.com` main-frame messages. `RiftSandboxFS` is rooted at `filesDir/riftfs/browser-sandbox`; it cannot access secrets, SAF mounts, arbitrary Android storage or other apps.
+
+Rift Agent is an injected browser adapter layered on that sandbox. It does not widen native filesystem authority.
+
+## System Dump
+
+Settings invokes `system.dump.save`. Android generates a JSON diagnostic snapshot and opens `ACTION_CREATE_DOCUMENT`, allowing the user to choose the provider, folder and filename.
+
+The dump includes app/build, Android/WebView, memory/heap/storage and aggregate RiftFS/sandbox metrics. It excludes file names/content, secrets, account data, Android IDs and installed-app lists.
 
 ## RiftDev
 
-The active Android editor is `apps/riftdev/riftdev-android.js`. Its legacy IndexedDB-shaped storage calls are redirected at build time to `RiftDevAndroidDB`, a request/transaction compatibility facade backed by `RiftWorkspace`, not browser storage. GitHub PAT persistence is mirrored to the Android Keystore and removed from RiftDev localStorage when its page is left.
+The active Android editor is `apps/riftdev/riftdev-android.js`. During APK asset generation, legacy IndexedDB calls are rewritten to `RiftDevAndroidDB`, which stores through RiftWorkspace.
 
-Local Test opens `RiftPreviewActivity` directly against the native workspace. No Cache API or service worker is required.
+Local Test uses the native preview path rather than a service worker.
 
-## Browser
+## Build/signing
 
-The Android branch uses Android System WebView as its native RiftBrowser backend. The WebView is hosted inside `MainActivity` and positioned over the RiftOS browser window content area, so RiftOS owns the title bar, taskbar, move/resize/minimize/maximize behavior while Android owns page rendering, ChatGPT login, downloads, and the sandbox bridge. The old standalone full-screen browser Activity is not part of this build. The old WebKit-WASM/Wisp browser pipeline belongs to the web/iPhone line and is intentionally not packaged by the Android APK.
+`.github/workflows/riftos-android-apk.yml` builds on `android-apk` and `main`, signs/verifies the APK and publishes `android-latest`.
 
-## Signing
-
-GitHub Actions supports production signing through `RIFTOS_KEYSTORE_B64`, `RIFTOS_KEYSTORE_PASSWORD`, `RIFTOS_KEY_ALIAS`, and `RIFTOS_KEY_PASSWORD` secrets. Until those secrets are configured, CI falls back to the stable alpha key so test installs can update in place.
+Production signing may use repository secrets; otherwise the stable alpha key is used for updateable development installs. Emulator CI has been removed.

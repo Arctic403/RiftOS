@@ -1,43 +1,72 @@
-# RiftBrowser ChatGPT sandbox
+# RiftBrowser ChatGPT Sandbox and Rift Agent
 
-RiftBrowser can open `https://chatgpt.com` with a persistent Android WebView profile and a private RiftOS filesystem bridge.
+RiftBrowser can open `https://chatgpt.com` using the Android System WebView content surface hosted inside the RiftOS browser window.
 
-## Security boundary
+## Sandbox boundary
 
-The bridge is installed only for the exact `https://chatgpt.com` origin and only accepts messages from the main frame. Authentication pages such as `auth.openai.com`, Google, Microsoft, and Apple can receive the cookie/popup behavior needed for sign-in, but they never receive the sandbox object.
+The native bridge is installed only for exact `https://chatgpt.com` and only accepts main-frame messages. Authentication hosts may receive normal cookie/navigation behavior but never receive the sandbox bridge.
 
-The sandbox root is app-private storage at `riftfs/browser-sandbox`. Browser code cannot use this bridge to read RiftOS secrets, SAF mounts, arbitrary Android files, or other apps. Path traversal is rejected after canonicalization.
+Sandbox root:
 
-Default folders:
-
-- `workspace/`
-- `uploads/`
-- `downloads/`
-
-Bridge transfers are capped at 8 MiB per file/message to protect the WebView process on lower-memory phones.
-
-## JavaScript API
-
-When `chatgpt.com` is loaded, RiftBrowser injects `globalThis.RiftSandboxFS`:
-
-```js
-await RiftSandboxFS.info();
-await RiftSandboxFS.list("workspace", { recursive: true });
-await RiftSandboxFS.writeText("workspace/notes.txt", "hello");
-const text = await RiftSandboxFS.readText("workspace/notes.txt");
-await RiftSandboxFS.writeBase64("workspace/image.png", base64Data);
-await RiftSandboxFS.move("workspace/a.txt", "workspace/b.txt", { overwrite: true });
-await RiftSandboxFS.remove("workspace/b.txt");
+```text
+filesDir/riftfs/browser-sandbox/
+  workspace/
+  uploads/
+  downloads/
 ```
 
-Supported operations: stat, list, read/write UTF-8 text, read/write Base64 binary, mkdir, move, and remove.
+Canonical path checks prevent traversal. The sandbox cannot use this bridge to read RiftOS secrets, SAF mounts, arbitrary Android files or other apps. Bridge file/payload operations are capped at 8 MiB.
 
-## Login behavior
+## Page JavaScript API
 
-RiftBrowser enables third-party cookies only while the main page is in the ChatGPT/OpenAI authentication flow (including common Google, Microsoft, and Apple login hosts) and converts user-initiated auth popups into same-tab navigation. Other sites keep third-party cookies disabled.
+`globalThis.RiftSandboxFS` provides:
 
-Some identity providers can independently reject embedded Android WebViews. If a provider blocks embedded sign-in, that is an upstream provider restriction rather than a RiftSandbox permission issue.
+- `info()`
+- `stat(path)`
+- `list(path, {recursive})`
+- `readText(path)` / `writeText(path,text)`
+- `readBase64(path)` / `writeBase64(path,data)`
+- `mkdir(path)`
+- `remove(path)`
+- `move(from,to,{overwrite})`
+
+## Rift Agent v2
+
+Rift Agent is an opt-in browser adapter shown by the `Rift Agent ON/OFF` control on ChatGPT.
+
+When ON:
+
+1. normal user sends are intercepted,
+2. RiftBrowser supplies a compact sandbox tool contract to the conversation,
+3. ChatGPT may return a `rift-tool` JSON code block,
+4. the adapter reads rendered DOM code blocks directly instead of depending on literal Markdown backticks,
+5. only approved tool names are executed against `RiftSandboxFS`,
+6. results are posted back into the same conversation,
+7. ChatGPT continues until it returns a normal answer or the 12-round limit is reached.
+
+Model-facing tools are intentionally narrower than the raw JavaScript API:
+
+- `info`
+- `stat`
+- `list`
+- `readText`
+- `writeText`
+- `mkdir`
+- `remove`
+- `move`
+
+Binary Base64 operations are not exposed through the model-facing agent to avoid large chat payloads. There is no shell/process execution tool.
+
+## Clean conversation UI
+
+The protocol still exists inside the conversation because this is a browser adapter, but RiftBrowser masks the long agent wrapper so the user's visible message shows only the original task. Assistant tool-call turns and generated tool-result user turns are hidden from the visible ChatGPT page.
+
+The ON state is persisted in the ChatGPT WebView profile so navigation/reload keeps the adapter enabled until the user turns it OFF.
+
+## Security token
+
+Each agent task receives a random token. Tool packets must return that exact token before execution. This prevents stale or unrelated tool-looking content from being executed accidentally; it is not a complete defense against every possible prompt-injection scenario, so file contents are treated as untrusted data and the tool allowlist remains narrow.
 
 ## Important limitation
 
-Exposing `RiftSandboxFS` makes the sandbox available to JavaScript running on `chatgpt.com`; it does not automatically make the ChatGPT model invoke the API as a native tool. A later RiftBrowser integration can add explicit file attachment/tool UI on top of this bridge without widening the Android filesystem boundary.
+Rift Agent is **not native ChatGPT MCP/tool registration**. ChatGPT Web is being orchestrated by RiftBrowser through user/assistant conversation turns. DOM selectors and rendered-message structure may change and require maintenance.
