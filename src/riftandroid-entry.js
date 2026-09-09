@@ -1,0 +1,15 @@
+await import("./riftandroid-preload.js");
+await import("./riftcore.js");
+await import("./riftandroid-platform.js");
+await import("./riftworkspace-web.js");
+await import("./riftworkspace-android-adapter.js");
+await import("./riftruntime.js");
+await import("./riftapps.js");
+await import("./riftapps-files.js");
+await import("./riftgit.js");
+await import("./riftdev-host.js");
+await import("./riftdesktop-window-host.js");
+await import("./riftos.js");
+await import("./riftdesktop-android.js");
+await import("./riftrt.js");
+await import("./riftdesktop-android-compat.js");
