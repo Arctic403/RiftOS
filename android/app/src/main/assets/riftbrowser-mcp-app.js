@@ -3,23 +3,29 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1';
+  const VERSION = 'rift-mcp-app-v1.1-perf';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
   const CALL_CLOSE = '</rift_call>';
-  const MAX_CONTEXT_CHARS = 14000;
+  const MAX_CONTEXT_CHARS = 5000;
   const MAX_CALLS_PER_MINUTE = 24;
+  const PROCESS_DELAY_MS = 180;
 
   const pending = new Map();
   const processedCalls = new Set();
   const recentCallTimes = [];
+  const touchedAssistantMessages = new Set();
+  const touchedUserMessages = new Set();
   let requestCounter = 0;
   let tools = [];
   let enabled = true;
   let suppressDecoration = false;
   let callQueue = Promise.resolve();
   let badge = null;
+  let processTimer = 0;
+  let routeKey = location.pathname + location.search;
+  let contextSentForRoute = false;
 
   function now() { return Date.now(); }
 
@@ -61,19 +67,41 @@
     }
   });
 
+  function compactSchema(schema) {
+    const properties = schema && schema.properties && typeof schema.properties === 'object' ? schema.properties : {};
+    const out = {};
+    for (const [name, spec] of Object.entries(properties)) {
+      out[name] = spec && typeof spec === 'object' && spec.type ? spec.type : 'any';
+    }
+    return {
+      args: out,
+      required: Array.isArray(schema && schema.required) ? schema.required : []
+    };
+  }
+
   function toolManifest() {
     const compact = tools.map((tool) => ({
       name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema || { type: 'object' }
+      ...compactSchema(tool.inputSchema || {})
     }));
     return JSON.stringify(compact).slice(0, MAX_CONTEXT_CHARS);
   }
 
   function contextBlock() {
-    return `${CONTEXT_MARKER}\nRiftBrowser has a local MCP tool host. Available tools: ${toolManifest()}\n` +
-      `When a Rift tool is needed, reply with ONLY one ${CALL_OPEN}{"call_id":"unique-id","name":"tool_name","args":{}}${CALL_CLOSE} envelope and no markdown fence or extra prose. ` +
-      `Wait for a ${RESULT_MARKER} message before continuing. Never claim a Rift tool succeeded without that result. Use only listed tools.`;
+    return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}\n` +
+      `When a Rift tool is needed, reply with ONLY one ${CALL_OPEN}{"call_id":"unique-id","name":"tool_name","args":{}}${CALL_CLOSE} envelope and no extra prose. ` +
+      `Wait for ${RESULT_MARKER} before continuing. Never claim success without that result.`;
+  }
+
+  function refreshRouteState() {
+    const next = location.pathname + location.search;
+    if (next === routeKey) return;
+    if (contextSentForRoute && (routeKey === '/' || routeKey.startsWith('/?')) && next.startsWith('/c/')) {
+      routeKey = next;
+      return;
+    }
+    routeKey = next;
+    contextSentForRoute = false;
   }
 
   function isVisible(element) {
@@ -123,11 +151,7 @@
     if ('value' in element) setNativeValue(element, value);
     else element.textContent = value;
     try {
-      element.dispatchEvent(new InputEvent('input', {
-        bubbles: true,
-        inputType: 'insertText',
-        data: value
-      }));
+      element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
     } catch (_) {
       element.dispatchEvent(new Event('input', { bubbles: true }));
     }
@@ -150,12 +174,14 @@
   }
 
   function decorateOutgoingPrompt() {
-    if (!enabled || suppressDecoration || tools.length === 0) return;
+    refreshRouteState();
+    if (!enabled || suppressDecoration || tools.length === 0 || contextSentForRoute) return;
     const composer = findComposer();
     if (!composer) return;
     const text = readComposer(composer).trim();
     if (!text || text.includes(CONTEXT_MARKER) || text.startsWith(RESULT_MARKER)) return;
     writeComposer(composer, `${text}\n\n${contextBlock()}`);
+    contextSentForRoute = true;
   }
 
   async function waitForSendButton(timeoutMs) {
@@ -169,7 +195,7 @@
   }
 
   async function submitToolResult(payload) {
-    const message = `${RESULT_MARKER}\n${JSON.stringify(payload)}\nContinue the answer using this result. If another Rift tool is required, emit exactly one ${CALL_OPEN}...${CALL_CLOSE} envelope.`;
+    const message = `${RESULT_MARKER}\n${JSON.stringify(payload)}\nContinue using this result. If another Rift tool is required, emit exactly one ${CALL_OPEN}...${CALL_CLOSE} envelope.`;
     const composer = findComposer();
     if (!composer) throw new Error('ChatGPT composer unavailable');
     suppressDecoration = true;
@@ -255,37 +281,75 @@
     return calls;
   }
 
-  function scanAssistantMessages() {
-    if (!enabled || tools.length === 0) return;
-    const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
-    for (const message of messages) {
-      const text = String(message.innerText || message.textContent || '');
-      if (!text.includes(CALL_OPEN) || !text.includes(CALL_CLOSE)) continue;
-      for (const packet of extractCalls(text)) {
-        callQueue = callQueue.then(() => executeCall(packet)).catch(() => setBadge('error'));
-      }
+  function scanAssistantMessage(message) {
+    if (!enabled || tools.length === 0 || !(message instanceof Element)) return;
+    const text = String(message.innerText || message.textContent || '');
+    if (!text.includes(CALL_OPEN) || !text.includes(CALL_CLOSE)) return;
+    for (const packet of extractCalls(text)) {
+      callQueue = callQueue.then(() => executeCall(packet)).catch(() => setBadge('error'));
     }
   }
 
-  function compactInjectedUserMessages() {
-    const messages = document.querySelectorAll('[data-message-author-role="user"]');
-    for (const message of messages) {
-      const content = message.querySelector('.whitespace-pre-wrap');
-      if (!content || content.childElementCount > 0) continue;
-      const text = String(content.textContent || '');
-      if (text.includes(CONTEXT_MARKER)) {
-        content.textContent = text.split(`\n\n${CONTEXT_MARKER}`)[0];
-      } else if (text.startsWith(RESULT_MARKER)) {
-        let label = '↔ Rift tool result';
-        try {
-          const line = text.split('\n')[1];
-          const parsed = JSON.parse(line || '{}');
-          if (parsed.name) label += ` · ${parsed.name}`;
-          label += parsed.ok === false ? ' · blocked/error' : ' · ok';
-        } catch (_) {}
-        content.textContent = label;
-      }
+  function compactInjectedUserMessage(message) {
+    if (!(message instanceof Element)) return;
+    const content = message.querySelector('.whitespace-pre-wrap');
+    if (!content || content.childElementCount > 0) return;
+    const text = String(content.textContent || '');
+    if (text.includes(CONTEXT_MARKER)) {
+      content.textContent = text.split(`\n\n${CONTEXT_MARKER}`)[0];
+    } else if (text.startsWith(RESULT_MARKER)) {
+      let label = '↔ Rift tool result';
+      try {
+        const line = text.split('\n')[1];
+        const parsed = JSON.parse(line || '{}');
+        if (parsed.name) label += ` · ${parsed.name}`;
+        label += parsed.ok === false ? ' · blocked/error' : ' · ok';
+      } catch (_) {}
+      content.textContent = label;
     }
+  }
+
+  function collectMessage(container, role, targetSet) {
+    if (!(container instanceof Element)) return;
+    if (container.matches(`[data-message-author-role="${role}"]`)) targetSet.add(container);
+    const closest = container.closest(`[data-message-author-role="${role}"]`);
+    if (closest) targetSet.add(closest);
+    for (const nested of container.querySelectorAll(`[data-message-author-role="${role}"]`)) targetSet.add(nested);
+  }
+
+  function collectMutation(mutation) {
+    const base = mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+    if (base) {
+      collectMessage(base, 'assistant', touchedAssistantMessages);
+      collectMessage(base, 'user', touchedUserMessages);
+    }
+    for (const node of mutation.addedNodes || []) {
+      if (!(node instanceof Element)) continue;
+      collectMessage(node, 'assistant', touchedAssistantMessages);
+      collectMessage(node, 'user', touchedUserMessages);
+    }
+  }
+
+  function flushTouchedMessages() {
+    processTimer = 0;
+    const assistant = Array.from(touchedAssistantMessages);
+    const users = Array.from(touchedUserMessages);
+    touchedAssistantMessages.clear();
+    touchedUserMessages.clear();
+    for (const message of assistant) scanAssistantMessage(message);
+    for (const message of users) compactInjectedUserMessage(message);
+  }
+
+  function scheduleTouchedMessages() {
+    if (processTimer) return;
+    processTimer = setTimeout(flushTouchedMessages, PROCESS_DELAY_MS);
+  }
+
+  function scanRecentMessagesOnce() {
+    const assistant = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const users = document.querySelectorAll('[data-message-author-role="user"]');
+    for (let i = Math.max(0, assistant.length - 4); i < assistant.length; i++) scanAssistantMessage(assistant[i]);
+    for (let i = Math.max(0, users.length - 4); i < users.length; i++) compactInjectedUserMessage(users[i]);
   }
 
   function ensureBadge() {
@@ -334,14 +398,15 @@
       if (event.target === composer || composer.contains(event.target)) decorateOutgoingPrompt();
     }, true);
 
-    const observer = new MutationObserver(() => {
-      scanAssistantMessages();
-      compactInjectedUserMessages();
-      ensureBadge();
+    // PERF_GUARD: mutations only enqueue the message elements they actually touched.
+    // Never query every chat message for every streaming token.
+    const observer = new MutationObserver((mutations) => {
+      refreshRouteState();
+      for (const mutation of mutations) collectMutation(mutation);
+      if (touchedAssistantMessages.size || touchedUserMessages.size) scheduleTouchedMessages();
     });
     observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-    scanAssistantMessages();
-    compactInjectedUserMessages();
+    scanRecentMessagesOnce();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
