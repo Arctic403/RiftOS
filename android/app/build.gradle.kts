@@ -11,7 +11,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.3.0-riftbrowser-sandbox-alpha"
+        versionName = "0.4.0-riftos-android-alpha"
     }
 
     signingConfigs {
