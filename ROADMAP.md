@@ -4,9 +4,10 @@ This roadmap describes intended work, not shipped capability. Current implementa
 
 ## Now: stabilize the Android desktop
 
-- Keep `main` and `android-apk` aligned through tested promotions.
+- Keep `main` authoritative and use `android-apk` for staged validation when useful.
 - Harden RiftBrowser native-surface move/resize/focus behavior across phones, tablets and DeX.
-- Harden Rift Agent against ChatGPT DOM changes without widening its exact-origin sandbox.
+- Harden **Rift Agent v3 Persistent Tool Runtime** against ChatGPT DOM changes without widening its exact-origin sandbox.
+- Exercise automatic rebootstrap/recovery paths for long conversations and ChatGPT UI changes while keeping normal task overhead tiny.
 - Add focused on-device diagnostics and exported test results rather than emulator-heavy CI.
 - Continue reducing legacy web/iOS-only code from Android packaging.
 
@@ -30,9 +31,11 @@ Planned surfaces:
 
 Native Kotlin/manifest/Gradle source may be edited/staged/exported in RiftScript, but compiled Android code still requires a new APK build before it can become active.
 
-## Agent expansion
+## Persistent Agent expansion
 
-Keep the ChatGPT bridge capability-gated. Possible future RiftScript-only tools:
+Rift Agent v3 establishes the custom persistent-tool runtime: one compact bootstrap per ChatGPT conversation, tiny normal-turn marker, browser-enforced validation, hidden result plumbing and no model-visible session token. Keep that architecture custom rather than converting RiftOS to MCP.
+
+Possible future RiftScript-only tool families:
 
 ```text
 fs.*
@@ -47,7 +50,7 @@ tests.*
 snapshot.*
 ```
 
-High-impact operations should require explicit developer-mode capability grants. Normal apps and arbitrary webpages must not receive RiftScript privileges.
+High-impact operations should require explicit developer-mode capability grants. Normal apps and arbitrary webpages must not receive RiftScript privileges. Internal nonces/task IDs should remain browser-side rather than being exposed in model prompts.
 
 ## Build handoff
 
@@ -70,12 +73,14 @@ The Android SDK/Gradle toolchain should remain outside the installed phone app t
 - crash/session diagnostics export,
 - controlled native plugin packaging compiled into RiftOS,
 - more complete tablet/desktop multi-window ergonomics,
-- optional remote build integration with explicit user action.
+- optional remote build integration with explicit user action,
+- broader Rift Agent capability sets only after capability and audit surfaces exist.
 
 ## Non-goals
 
 - bundling a full Android SDK/emulator into RiftOS,
 - arbitrary downloaded native ELF execution,
 - giving normal webpages unrestricted Android or RiftFS access,
-- treating the ChatGPT browser adapter as native OpenAI MCP integration,
+- converting the ChatGPT browser adapter into native OpenAI MCP integration,
+- adding a separate OpenAI API requirement for Rift Agent,
 - reintroducing the removed local LLM runtime on low-memory Android devices.

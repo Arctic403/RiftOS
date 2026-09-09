@@ -25,7 +25,7 @@ Android filesDir     +-- Files / Settings / RiftDev / apps
                          |
                   Android System WebView
                          |
-              ChatGPT sandbox + Rift Agent
+              ChatGPT sandbox + Rift Agent v3
 ```
 
 ### Core runtime
@@ -53,7 +53,9 @@ riftfs/browser-sandbox/
   downloads/
 ```
 
-When **Rift Agent** is enabled, RiftBrowser automatically wraps user tasks with the sandbox tool contract, detects rendered ChatGPT tool blocks in the DOM, executes approved sandbox operations locally and feeds results back into the same conversation. Internal protocol/tool-result turns are visually hidden; the bridge remains browser-side and is **not native ChatGPT MCP/tool registration**.
+When **Rift Agent v3** is enabled, RiftBrowser behaves like a persistent custom tool runtime without becoming MCP. The first task in each ChatGPT conversation carries a compact one-time filesystem-tool bootstrap; later tasks carry only a tiny `RIFT_AGENT_V3 fs1` marker. ChatGPT tool blocks are detected from rendered DOM code blocks, approved sandbox operations execute locally, and hidden result turns continue the same conversation automatically.
+
+V3 removes model-visible UUID security tokens. Replay limits, tool allowlisting, call validation, round limits, exact-origin checks and sandbox path enforcement are handled by RiftBrowser/native code instead. Rift Agent makes **no separate OpenAI API calls**; it rides the existing ChatGPT Web session.
 
 ## Files and Settings
 
@@ -65,20 +67,14 @@ Settings includes **System diagnostics → Save system dump…**. The dump is pr
 
 The APK workflow is `.github/workflows/riftos-android-apk.yml` and runs on `android-apk` and `main`.
 
-It:
-
-1. builds the release APK with Java 17 / Gradle,
-2. aligns and signs it,
-3. verifies API 26+, package/signature and Android-only assets,
-4. rejects removed local-AI binaries and obsolete browser Activity leakage,
-5. uploads the APK artifact and updates the `android-latest` release.
+It builds, aligns, signs and verifies the APK; checks API 26+, package/signature and Android-only assets; rejects removed local-AI binaries and obsolete browser Activity leakage; verifies Rift Agent v3 is packaged; uploads the artifact; and updates the `android-latest` release.
 
 The previous emulator matrix/smoke-test pipeline has been removed. Device diagnostics are handled by the in-app system dump instead.
 
 ## Branches
 
-- **`main`** — authoritative project source after validated Android changes are promoted.
-- **`android-apk`** — Android staging/validation branch used to prove APK changes before promotion to `main`.
+- **`main`** — authoritative project source.
+- **`android-apk`** — Android staging/validation branch when a staged promotion is useful.
 
 ## Documentation
 
@@ -86,7 +82,7 @@ The previous emulator matrix/smoke-test pipeline has been removed. Device diagno
 - [`docs/TRUE_OS_ARCHITECTURE.md`](docs/TRUE_OS_ARCHITECTURE.md) — current RiftKernel/Android boundary.
 - [`docs/ANDROID_NATIVE_ARCHITECTURE.md`](docs/ANDROID_NATIVE_ARCHITECTURE.md) — Android host and native services.
 - [`docs/RIFTBROWSER_ARCHITECTURE.md`](docs/RIFTBROWSER_ARCHITECTURE.md) — current windowed System WebView browser.
-- [`docs/RIFTBROWSER_CHATGPT_SANDBOX.md`](docs/RIFTBROWSER_CHATGPT_SANDBOX.md) — ChatGPT sandbox and Rift Agent.
+- [`docs/RIFTBROWSER_CHATGPT_SANDBOX.md`](docs/RIFTBROWSER_CHATGPT_SANDBOX.md) — ChatGPT sandbox and Rift Agent v3.
 - [`docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md`](docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md) — current workspace boundary (historical filename retained).
 - [`docs/RIFTRT-v1.md`](docs/RIFTRT-v1.md) — application runtime ABI.
 - [`ROADMAP.md`](ROADMAP.md) — planned RiftScript/developer-platform work.
