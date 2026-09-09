@@ -11,7 +11,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.5.3-rift-agent-v3.3-alpha"
+        versionName = "0.6.0-rift-mcp-bridge-alpha"
     }
 
     signingConfigs {
@@ -75,4 +75,5 @@ tasks.named("preBuild").configure { dependsOn(syncRiftOsWebAssets) }
 dependencies {
     implementation("androidx.webkit:webkit:1.16.0")
     implementation("androidx.documentfile:documentfile:1.1.0")
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
 }
