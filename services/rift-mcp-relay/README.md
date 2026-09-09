@@ -1,19 +1,17 @@
-# RiftOS MCP Relay
+# Rift Bridge MCP Relay
 
-This service is the remote MCP adapter for the app-private RiftBrowser sandbox.
-ChatGPT connects to the MCP endpoint; RiftOS keeps an outbound WebSocket open to
-`/device`; tool calls are forwarded to the phone and results are returned to the
-MCP client.
+This service is the first remote adapter for the Rift Bridge system app. ChatGPT connects to the MCP endpoint; RiftOS keeps an outbound WebSocket open to `/device`; tool calls are forwarded to the phone and results are returned to the MCP client.
+
+RiftOS itself is not MCP internally. MCP is only the external adapter protocol.
 
 ## Security model
 
 - The Android side exposes only `riftfs/browser-sandbox`.
-- No SAF mounts, Android intents, clipboard, secrets, or wider RiftFS APIs are exposed.
+- Device-side Rift Bridge read/write grants are authoritative.
+- No SAF mounts, Android intents, clipboard, secrets, notifications or wider RiftFS APIs are exposed.
 - The phone initiates the WSS connection; no inbound port is opened on Android.
 - A 24-128 character base64url pairing key gates both the MCP path and device socket.
-- The key-in-URL design is intentionally an alpha/developer-mode mechanism. Use a
-  private HTTPS deployment, rotate the key if it is exposed, and add OAuth before
-  treating the relay as multi-user infrastructure.
+- The pairing-key-in-URL design is an alpha/developer-mode mechanism. Use a private HTTPS deployment, rotate the key if exposed, and add OAuth before treating the relay as multi-user infrastructure.
 
 ## Run
 
@@ -24,8 +22,7 @@ npm install
 npm start
 ```
 
-Expose the service behind HTTPS/WSS. If the public host is
-`https://rift.example`, configure Android with:
+Expose the service behind HTTPS/WSS. If the public host is `https://rift.example`, configure Rift Bridge with:
 
 ```text
 wss://rift.example/device
@@ -37,8 +34,7 @@ and configure the ChatGPT custom app MCP endpoint as:
 https://rift.example/mcp/<same-pairing-key>
 ```
 
-The Android **Rift MCP Bridge** activity can generate a pairing key and shows the
-exact ChatGPT endpoint after configuration.
+The **Rift Bridge** system app can generate a pairing key, shows the exact ChatGPT endpoint, controls read/write grants and displays recent tool activity.
 
 ## Exposed tools
 
@@ -51,5 +47,4 @@ exact ChatGPT endpoint after configuration.
 - `rift_remove`
 - `rift_move`
 
-The relay is deliberately single-device for the alpha. A newer device connection
-replaces the previous one.
+The relay is deliberately single-device for the alpha. A newer device connection replaces the previous one.

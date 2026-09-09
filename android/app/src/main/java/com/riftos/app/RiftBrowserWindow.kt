@@ -22,8 +22,6 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
-import androidx.webkit.WebViewCompat
-import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.net.URLConnection
@@ -31,8 +29,8 @@ import kotlin.math.roundToInt
 
 /**
  * Native browser surface hosted inside MainActivity and positioned over a RiftOS
- * desktop window. The RiftOS HTML shell owns chrome/window management while this
- * class owns only the secure Android WebView content plane.
+ * desktop window. RiftBrowser is now a normal browser surface: it does not inject
+ * agents, tool prompts, or native filesystem bridges into chatgpt.com.
  */
 class RiftBrowserWindow(
     private val activity: Activity,
@@ -41,8 +39,6 @@ class RiftBrowserWindow(
     private val stateSink: (JSONObject) -> Unit
 ) {
     companion object {
-        private const val CHATGPT_ORIGIN = "https://chatgpt.com"
-        private const val CHATGPT_AGENT_ASSET = "riftbrowser-chatgpt-agent.js"
         private val EXTERNAL_SCHEMES = setOf("mailto", "tel", "geo")
         private val AUTH_FLOW_HOSTS = setOf(
             "chatgpt.com",
@@ -55,57 +51,8 @@ class RiftBrowserWindow(
             "login.live.com",
             "appleid.apple.com"
         )
-
-        private val SANDBOX_BOOTSTRAP = """
-            (() => {
-              if (location.origin !== "https://chatgpt.com") return;
-              if (globalThis.RiftSandboxFS || !globalThis.RiftSandbox || typeof globalThis.RiftSandbox.postMessage !== "function") return;
-              const pending = new Map();
-              let sequence = 0;
-              globalThis.RiftSandbox.onmessage = event => {
-                let message;
-                try { message = JSON.parse(event.data); } catch (_) { return; }
-                const request = pending.get(message.id);
-                if (!request) return;
-                pending.delete(message.id);
-                if (message.ok) request.resolve(message.value);
-                else request.reject(new Error(message.error || "Rift sandbox request failed"));
-              };
-              const call = (method, args = {}) => new Promise((resolve, reject) => {
-                const id = "rift-sandbox-" + Date.now() + "-" + (++sequence);
-                pending.set(id, { resolve, reject });
-                globalThis.RiftSandbox.postMessage(JSON.stringify({ id, method, args }));
-              });
-              const api = Object.freeze({
-                info: () => call("sandbox.info"),
-                stat: path => call("fs.stat", { path: String(path || "") }),
-                list: (path = "", options = {}) => call("fs.list", { path: String(path || ""), recursive: Boolean(options.recursive) }),
-                readText: path => call("fs.readText", { path: String(path || "") }),
-                writeText: (path, text) => call("fs.writeText", { path: String(path || ""), text: String(text ?? "") }),
-                readBase64: path => call("fs.readBase64", { path: String(path || "") }),
-                writeBase64: (path, data) => call("fs.writeBase64", { path: String(path || ""), data: String(data || "") }),
-                mkdir: path => call("fs.mkdir", { path: String(path || "") }),
-                remove: path => call("fs.remove", { path: String(path || "") }),
-                move: (from, to, options = {}) => call("fs.move", {
-                  from: String(from || ""),
-                  to: String(to || ""),
-                  overwrite: Boolean(options.overwrite)
-                })
-              });
-              Object.defineProperty(globalThis, "RiftSandboxFS", {
-                value: api, configurable: false, enumerable: false, writable: false
-              });
-              console.info("[RiftBrowser] in-window sandbox bridge ready");
-            })();
-        """.trimIndent()
     }
 
-    private val sandbox = RiftBrowserSandbox(activity)
-    private val chatGptAgentScript: String by lazy {
-        runCatching {
-            activity.assets.open(CHATGPT_AGENT_ASSET).bufferedReader(Charsets.UTF_8).use { it.readText() }
-        }.getOrDefault("")
-    }
     private val webView = WebView(activity)
     private var popupWebView: WebView? = null
     private var requestedVisible = false
@@ -115,7 +62,6 @@ class RiftBrowserWindow(
     init {
         CookieManager.getInstance().setAcceptCookie(true)
         configureMainWebView(webView)
-        installSandboxBridge()
         installChromeClient()
         installWebViewClient()
         installDownloads()
@@ -191,7 +137,8 @@ class RiftBrowserWindow(
         val safeTop = top.coerceAtMost((hostHeight - 1).coerceAtLeast(0))
         val safeWidth = width.coerceAtMost((hostWidth - safeLeft).coerceAtLeast(1))
         val safeHeight = height.coerceAtMost((hostHeight - safeTop).coerceAtLeast(1))
-        val params = (webView.layoutParams as? FrameLayout.LayoutParams) ?: FrameLayout.LayoutParams(safeWidth, safeHeight)
+        val params = (webView.layoutParams as? FrameLayout.LayoutParams)
+            ?: FrameLayout.LayoutParams(safeWidth, safeHeight)
         params.width = safeWidth
         params.height = safeHeight
         params.leftMargin = safeLeft
@@ -231,7 +178,6 @@ class RiftBrowserWindow(
         destroyed = true
         requestedVisible = false
         destroyPopup()
-        sandbox.shutdown()
         runCatching { host.removeView(webView) }
         runCatching { webView.stopLoading() }
         runCatching { webView.loadUrl("about:blank") }
@@ -335,7 +281,10 @@ class RiftBrowserWindow(
                 request.deny()
             }
 
-            override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: GeolocationPermissions.Callback?) {
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?,
+                callback: GeolocationPermissions.Callback?
+            ) {
                 callback?.invoke(origin, false, false)
             }
 
@@ -377,13 +326,6 @@ class RiftBrowserWindow(
             }
 
             override fun onPageFinished(view: WebView, url: String) {
-                if (isChatGptPage(url)) {
-                    view.evaluateJavascript(SANDBOX_BOOTSTRAP) {
-                        if (chatGptAgentScript.isNotBlank() && isChatGptPage(view.url)) {
-                            view.evaluateJavascript(chatGptAgentScript, null)
-                        }
-                    }
-                }
                 CookieManager.getInstance().flush()
                 emitState()
                 super.onPageFinished(view, url)
@@ -408,33 +350,20 @@ class RiftBrowserWindow(
             val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return@setDownloadListener
             if (uri.scheme?.lowercase() != "https") return@setDownloadListener
             val guessed = android.webkit.URLUtil.guessFileName(url, disposition, mime)
-            val safeName = guessed.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180).ifBlank { "download" }
+            val safeName = guessed.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                .take(180)
+                .ifBlank { "download" }
             val request = DownloadManager.Request(uri).apply {
                 setMimeType(mime ?: URLConnection.guessContentTypeFromName(safeName) ?: "application/octet-stream")
                 addRequestHeader("User-Agent", userAgent)
-                CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }?.let { addRequestHeader("Cookie", it) }
+                CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }?.let {
+                    addRequestHeader("Cookie", it)
+                }
                 setTitle(safeName)
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, safeName)
             }
             (activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-        }
-    }
-
-    private fun installSandboxBridge() {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
-        WebViewCompat.addWebMessageListener(
-            webView,
-            "RiftSandbox",
-            setOf(CHATGPT_ORIGIN)
-        ) { _, message, sourceOrigin, isMainFrame, replyProxy ->
-            if (!isMainFrame || sourceOrigin.toString() != CHATGPT_ORIGIN) return@addWebMessageListener
-            val raw = message.data ?: return@addWebMessageListener
-            sandbox.handleAsync(raw) { response ->
-                activity.runOnUiThread {
-                    if (!activity.isFinishing && !activity.isDestroyed) replyProxy.postMessage(response)
-                }
-            }
         }
     }
 
@@ -447,16 +376,13 @@ class RiftBrowserWindow(
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, isAuthFlowUrl(url))
     }
 
-    private fun isChatGptPage(url: String?): Boolean {
-        val uri = runCatching { Uri.parse(url.orEmpty()) }.getOrNull() ?: return false
-        return uri.scheme.equals("https", ignoreCase = true) && uri.host.equals("chatgpt.com", ignoreCase = true)
-    }
-
     private fun isAuthFlowUrl(url: String?): Boolean {
         val uri = runCatching { Uri.parse(url.orEmpty()) }.getOrNull() ?: return false
         if (!uri.scheme.equals("https", ignoreCase = true)) return false
         val hostName = uri.host?.lowercase() ?: return false
-        return hostName in AUTH_FLOW_HOSTS || hostName.endsWith(".chatgpt.com") || hostName.endsWith(".openai.com")
+        return hostName in AUTH_FLOW_HOSTS ||
+            hostName.endsWith(".chatgpt.com") ||
+            hostName.endsWith(".openai.com")
     }
 
     private fun redirectPopupToMain(uri: Uri): Boolean {

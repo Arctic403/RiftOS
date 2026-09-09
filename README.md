@@ -17,15 +17,26 @@ Android 8+ / Samsung / DeX
    /      |       \
 RiftFS  RiftRT  RiftDesktop
   |                 |
-Android filesDir     +-- Files / Settings / RiftDev / apps
+Android filesDir     +-- Files / Settings / RiftDev / Rift Bridge / apps
 + SAF mounts         |
                     RiftBrowser window chrome
                          |
                   native RiftBrowserWindow
                          |
                   Android System WebView
-                         |
-              ChatGPT sandbox + Rift Agent v3
+
+ChatGPT custom app
+        |
+        | MCP / HTTPS
+        v
+Remote Rift Bridge adapter
+        |
+        | paired WSS
+        v
+Rift Bridge system app
+        |
+        v
+riftfs/browser-sandbox
 ```
 
 ### Core runtime
@@ -37,6 +48,7 @@ Android filesDir     +-- Files / Settings / RiftDev / apps
 - **RiftDesktop**: draggable/resizable/minimizable/maximizable desktop windows and taskbar.
 - **RiftRT v1**: worker/iframe/WASM application runtime integrated with RiftDesktop.
 - **RiftDev**: Android editor using a RiftWorkspace-backed IndexedDB compatibility facade.
+- **Rift Bridge**: system app for AI-tool pairing, capability grants and recent tool activity.
 
 ## RiftBrowser
 
@@ -44,7 +56,13 @@ RiftBrowser is a normal RiftOS desktop window. RiftOS owns its title bar, addres
 
 There is **no active full-screen RiftBrowser Activity** and no active custom WebKit-WASM browser engine in the Android APK.
 
-For `https://chatgpt.com`, RiftBrowser exposes an exact-origin, app-private filesystem sandbox rooted at:
+RiftBrowser treats `chatgpt.com` like ordinary web content. It does **not** inject a tool prompt, filesystem bridge, response parser or Agent runtime into the page.
+
+## Rift Bridge
+
+Rift Bridge is the supported first-class AI-tool path. The phone opens an outbound WSS connection to a remote adapter, and the device remains the capability authority.
+
+Current scope:
 
 ```text
 riftfs/browser-sandbox/
@@ -53,9 +71,9 @@ riftfs/browser-sandbox/
   downloads/
 ```
 
-When **Rift Agent v3** is enabled, RiftBrowser behaves like a persistent custom tool runtime without becoming MCP. The first task in each ChatGPT conversation carries a compact one-time filesystem-tool bootstrap; later tasks carry only a tiny `RIFT_AGENT_V3 fs1` marker. ChatGPT tool blocks are detected from rendered DOM code blocks, approved sandbox operations execute locally, and hidden result turns continue the same conversation automatically.
+Read tools are enabled by default; write tools require explicit local enablement. Pairing keys are stored with Android Keystore, and a bounded local activity log records tool/path/outcome without storing file contents.
 
-V3 removes model-visible UUID security tokens. Replay limits, tool allowlisting, call validation, round limits, exact-origin checks and sandbox path enforcement are handled by RiftBrowser/native code instead. Rift Agent makes **no separate OpenAI API calls**; it rides the existing ChatGPT Web session.
+The first remote adapter is `services/rift-mcp-relay`, which exposes Rift Bridge tools as first-class MCP tools to ChatGPT custom apps. MCP is an adapter protocol, not the internal RiftOS capability API.
 
 ## Files and Settings
 
@@ -67,7 +85,7 @@ Settings includes **System diagnostics → Save system dump…**. The dump is pr
 
 The APK workflow is `.github/workflows/riftos-android-apk.yml` and runs on `android-apk` and `main`.
 
-It builds, aligns, signs and verifies the APK; checks API 26+, package/signature and Android-only assets; rejects removed local-AI binaries and obsolete browser Activity leakage; verifies Rift Agent v3 is packaged; uploads the artifact; and updates the `android-latest` release.
+It builds, aligns, signs and verifies the APK; checks API 26+, package/signature and Android-only assets; rejects removed local-AI binaries, obsolete browser Activity leakage and the removed ChatGPT DOM Agent asset; verifies the Rift Bridge system module; uploads the artifact; and updates the `android-latest` release.
 
 The previous emulator matrix/smoke-test pipeline has been removed. Device diagnostics are handled by the in-app system dump instead.
 
@@ -82,9 +100,9 @@ The previous emulator matrix/smoke-test pipeline has been removed. Device diagno
 - [`docs/TRUE_OS_ARCHITECTURE.md`](docs/TRUE_OS_ARCHITECTURE.md) — current RiftKernel/Android boundary.
 - [`docs/ANDROID_NATIVE_ARCHITECTURE.md`](docs/ANDROID_NATIVE_ARCHITECTURE.md) — Android host and native services.
 - [`docs/RIFTBROWSER_ARCHITECTURE.md`](docs/RIFTBROWSER_ARCHITECTURE.md) — current windowed System WebView browser.
-- [`docs/RIFTBROWSER_CHATGPT_SANDBOX.md`](docs/RIFTBROWSER_CHATGPT_SANDBOX.md) — ChatGPT sandbox and Rift Agent v3.
+- [`docs/RIFT_BRIDGE_ARCHITECTURE.md`](docs/RIFT_BRIDGE_ARCHITECTURE.md) — AI-tool bridge, permissions, audit and external adapters.
 - [`docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md`](docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md) — current workspace boundary (historical filename retained).
 - [`docs/RIFTRT-v1.md`](docs/RIFTRT-v1.md) — application runtime ABI.
 - [`ROADMAP.md`](ROADMAP.md) — planned RiftScript/developer-platform work.
 
-Earlier iPhone/WebKit-WASM work is retained only as historical context where explicitly labeled. It is not the active Android runtime.
+Earlier browser-agent and iPhone/WebKit-WASM work is retained only in source history. It is not the active Android runtime.

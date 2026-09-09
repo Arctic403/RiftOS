@@ -38,28 +38,30 @@ This keeps RiftBrowser aligned with Files, Settings, RiftDev and RiftRT windows.
 
 ## ChatGPT behavior
 
-ChatGPT receives additional browser integration:
+ChatGPT receives only normal browser compatibility behavior:
 
 - persistent WebView cookies,
 - authentication-flow handling for ChatGPT/OpenAI and common identity-provider hosts,
 - same-tab handling for auth popups,
-- exact-origin RiftSandbox WebMessage bridge,
-- injected `RiftSandboxFS`,
-- optional Rift Agent adapter.
+- file chooser/download support provided by the browser host.
+
+RiftBrowser does **not** inject `RiftSandboxFS`, a prompt wrapper, a DOM response parser or an Agent runtime into `chatgpt.com`. No guest page receives direct Rift filesystem access.
 
 Identity providers may still reject embedded WebView authentication independently.
 
-## Rift Agent
+## AI tool integration
 
-Rift Agent is browser-side orchestration, not a native OpenAI tool registration. While enabled it intercepts the user's ChatGPT send action, adds a sandbox tool contract, parses rendered assistant code blocks, executes only the fixed local tool allowlist and posts tool results back into the same chat.
+First-class AI tools are handled by the separate **Rift Bridge** system app. Rift Bridge owns device-side pairing, read/write grants, audit logging and the outbound connection to external adapters such as the MCP relay.
 
-Agent-internal task wrappers, tool-call turns and tool-result turns are masked/hidden in the WebView UI so the visible conversation remains readable.
+This keeps ChatGPT DOM structure completely outside the Rift tool execution path.
 
 ## Removed browser paths
 
 The following are historical and not current Android backends:
 
 - full-screen `RiftBrowserActivity`,
+- ChatGPT DOM Rift Agent V1/V2/V3,
+- exact-origin `RiftSandbox` WebMessage bridge injected into `chatgpt.com`,
 - WebKit-WASM/Wisp RiftBrowser,
 - Gecko WASM experiments,
 - CORS fetch/sanitize/iframe browser emulation.

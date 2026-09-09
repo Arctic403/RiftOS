@@ -24,6 +24,16 @@ filesDir + SAF       apps/windows
              RiftBrowserWindow
                      |
             Android System WebView
+
+External AI protocol
+        |
+    remote adapter
+        |
+   Rift Bridge app
+        |
+  device capability policy
+        |
+riftfs/browser-sandbox
 ```
 
 ## Kernel boundary
@@ -40,9 +50,9 @@ User-selected external directories are mounted through Android Storage Access Fr
 
 ## Desktop
 
-RiftDesktop is the single window manager for built-ins and RiftRT apps. Files, Settings and RiftBrowser participate in the same focus/taskbar/minimize/maximize model.
+RiftDesktop is the single window manager for built-ins and RiftRT apps. Files, Settings, RiftBrowser and Rift Bridge participate in the RiftOS application model.
 
-The browser's native WebView is a content plane inside a RiftOS-managed window, not a second desktop or full-screen activity.
+The browser's native WebView is a content plane inside a RiftOS-managed window, not a second desktop or full-screen browser Activity.
 
 ## Workspace and RiftDev
 
@@ -54,13 +64,15 @@ RiftDev's Android build rewrites its legacy IndexedDB calls to the `RiftDevAndro
 
 RiftRT v1 adds worker, iframe and WebAssembly applications without creating a second kernel/window manager. Native ARM64 remains a packaged/future plugin direction; arbitrary downloaded ELF execution is not enabled.
 
-## Browser security
+## Browser and bridge security
 
-Normal guest pages do not receive RiftFS or RiftWorkspace authority. ChatGPT receives only the separately rooted `riftfs/browser-sandbox` bridge, only on exact `https://chatgpt.com`, and the model-facing agent exposes a fixed tool allowlist.
+Normal guest pages, including `chatgpt.com`, do not receive RiftFS or RiftWorkspace authority. RiftBrowser does not inject an agent or filesystem bridge into guest content.
+
+Rift Bridge owns a separate app-private `riftfs/browser-sandbox` tool scope. Remote adapters can call only the fixed bridge tool registry and only when the device-side read/write grants permit the operation.
 
 ## Historical web/iOS work
 
-Earlier RiftOS research used OPFS, service workers and a WebKit-WASM/Wisp browser path. That work is historical and is not the active Android APK architecture.
+Earlier RiftOS research used OPFS, service workers and a WebKit-WASM/Wisp browser path. The removed ChatGPT DOM Agent is also historical. None of those are active Android APK architecture.
 
 ## Architecture rule
 

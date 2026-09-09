@@ -33,13 +33,13 @@ function rejectPending(message) {
 
 function callDevice(name, args = {}) {
   if (!deviceSocket || deviceSocket.readyState !== WebSocket.OPEN) {
-    return Promise.reject(new Error('RiftOS device is not connected to the relay'));
+    return Promise.reject(new Error('Rift Bridge device is not connected to the relay'));
   }
   const id = randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new Error(`Rift tool ${name} timed out`));
+      reject(new Error(`Rift Bridge tool ${name} timed out`));
     }, CALL_TIMEOUT_MS);
     pending.set(id, { resolve, reject, timer });
     deviceSocket.send(JSON.stringify({ type: 'tool_call', id, name, args }));
@@ -54,7 +54,7 @@ function textResult(value) {
 function errorResult(error) {
   return {
     isError: true,
-    content: [{ type: 'text', text: String(error?.message || error || 'Unknown Rift tool error') }]
+    content: [{ type: 'text', text: String(error?.message || error || 'Unknown Rift Bridge tool error') }]
   };
 }
 
@@ -68,14 +68,14 @@ async function run(name, args = {}) {
 
 const mcpHandler = createMcpHandler(() => {
   const server = new McpServer(
-    { name: 'riftos-sandbox', version: '0.1.0' },
+    { name: 'rift-bridge', version: '0.2.0' },
     {
-      instructions: 'Operate only on the paired RiftOS app-private sandbox. Paths are sandbox-relative. Prefer read operations before writes and never invent filesystem results.'
+      instructions: 'Use the paired Rift Bridge device tools. Paths are relative to the device-owned app-private sandbox. Device permissions are authoritative; never invent filesystem results.'
     }
   );
 
   server.registerTool('rift_info', {
-    description: 'Inspect the paired RiftOS sandbox capabilities and storage information.',
+    description: 'Inspect the paired Rift Bridge sandbox capabilities and storage information.',
     inputSchema: z.object({}),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   }, async () => run('info'));
@@ -96,13 +96,13 @@ const mcpHandler = createMcpHandler(() => {
   }, async ({ path, recursive }) => run('list', { path, recursive }));
 
   server.registerTool('rift_read_text', {
-    description: 'Read a UTF-8 text file from the RiftOS sandbox.',
+    description: 'Read a UTF-8 text file from the Rift Bridge sandbox.',
     inputSchema: z.object({ path: z.string().min(1).describe('Sandbox-relative file path.') }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   }, async ({ path }) => run('readText', { path }));
 
   server.registerTool('rift_write_text', {
-    description: 'Create or replace a UTF-8 text file inside the RiftOS sandbox.',
+    description: 'Create or replace a UTF-8 text file inside the Rift Bridge sandbox.',
     inputSchema: z.object({
       path: z.string().min(1).describe('Sandbox-relative file path.'),
       text: z.string().describe('Complete UTF-8 file contents to write.')
@@ -111,7 +111,7 @@ const mcpHandler = createMcpHandler(() => {
   }, async ({ path, text }) => run('writeText', { path, text }));
 
   server.registerTool('rift_mkdir', {
-    description: 'Create a directory inside the RiftOS sandbox, including missing parent directories.',
+    description: 'Create a directory inside the Rift Bridge sandbox, including missing parent directories.',
     inputSchema: z.object({ path: z.string().min(1).describe('Sandbox-relative directory path.') }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   }, async ({ path }) => run('mkdir', { path }));
@@ -140,10 +140,10 @@ const wsServer = new WebSocketServer({ noServer: true });
 
 wsServer.on('connection', socket => {
   if (deviceSocket && deviceSocket.readyState === WebSocket.OPEN) {
-    deviceSocket.close(4001, 'Replaced by a newer RiftOS device connection');
+    deviceSocket.close(4001, 'Replaced by a newer Rift Bridge device connection');
   }
   deviceSocket = socket;
-  socket.send(JSON.stringify({ type: 'relay_ready', protocol: 'rift-mcp-device-v1' }));
+  socket.send(JSON.stringify({ type: 'relay_ready', protocol: 'rift-bridge-device-v1' }));
 
   socket.on('message', data => {
     let message;
@@ -154,17 +154,17 @@ wsServer.on('connection', socket => {
     pending.delete(message.id);
     clearTimeout(entry.timer);
     if (message.ok) entry.resolve(message.value ?? null);
-    else entry.reject(new Error(String(message.error || 'RiftOS tool call failed')));
+    else entry.reject(new Error(String(message.error || 'Rift Bridge tool call failed')));
   });
 
   socket.on('close', () => {
     if (deviceSocket === socket) deviceSocket = null;
-    rejectPending('RiftOS device disconnected from the relay');
+    rejectPending('Rift Bridge device disconnected from the relay');
   });
 
   socket.on('error', () => {
     if (deviceSocket === socket) deviceSocket = null;
-    rejectPending('RiftOS device relay connection failed');
+    rejectPending('Rift Bridge device relay connection failed');
   });
 });
 
@@ -172,7 +172,7 @@ const httpServer = createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, deviceConnected: deviceSocket?.readyState === WebSocket.OPEN }));
+    res.end(JSON.stringify({ ok: true, bridgeConnected: deviceSocket?.readyState === WebSocket.OPEN }));
     return;
   }
   if (url.pathname === `/mcp/${PAIRING_KEY}`) {
@@ -195,12 +195,12 @@ httpServer.on('upgrade', (req, socket, head) => {
 });
 
 httpServer.listen(PORT, HOST, () => {
-  console.error(`[rift-mcp-relay] listening on ${HOST}:${PORT}`);
-  console.error('[rift-mcp-relay] MCP endpoint is /mcp/<pairing-key>; device websocket is /device?key=<pairing-key>');
+  console.error(`[rift-bridge-relay] listening on ${HOST}:${PORT}`);
+  console.error('[rift-bridge-relay] MCP endpoint is /mcp/<pairing-key>; device websocket is /device?key=<pairing-key>');
 });
 
 function shutdown() {
-  rejectPending('Rift MCP relay is shutting down');
+  rejectPending('Rift Bridge relay is shutting down');
   if (deviceSocket?.readyState === WebSocket.OPEN) deviceSocket.close(1001, 'Server shutdown');
   wsServer.close();
   httpServer.close(() => process.exit(0));

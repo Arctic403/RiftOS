@@ -115,11 +115,9 @@ jobs:
           printf '%s\n' "$BADGING" | grep -Fq "package: name='com.riftos.app'"
           unzip -p "$FINAL" assets/www/index.html | grep -Fq "SAMSUNG ANDROID"
           unzip -p "$FINAL" assets/www/src/riftandroid-platform.js | grep -Fq "system.dump.save"
-          AGENT="$(unzip -p "$FINAL" assets/riftbrowser-chatgpt-agent.js)"
-          printf '%s\n' "$AGENT" | grep -Fq "RIFT_AGENT_V3"
-          printf '%s\n' "$AGENT" | grep -Fq "Persistent Tool Runtime" || true
-          if printf '%s\n' "$AGENT" | grep -Fq "token="; then
-            echo "Legacy model-visible Rift Agent token protocol leaked into V3 asset" >&2
+          unzip -p "$FINAL" assets/www/src/riftbridge-system.js | grep -Fq "[RiftBridge] system app registered"
+          if unzip -l "$FINAL" | grep -Fq "assets/riftbrowser-chatgpt-agent.js"; then
+            echo "Removed ChatGPT DOM Rift Agent leaked back into Android APK" >&2
             exit 1
           fi
           if unzip -p "$FINAL" classes.dex | strings | grep -Fq "RiftBrowserActivity"; then

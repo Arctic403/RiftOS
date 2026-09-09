@@ -31,7 +31,8 @@ External user folders mount through Storage Access Framework with persisted URI 
 - DownloadManager,
 - preview Activity for RiftDev workspace files,
 - privacy-limited System Dump + Save As picker,
-- `RiftBrowserWindow` native WebView content plane.
+- `RiftBrowserWindow` native WebView content plane,
+- Rift Bridge outbound WSS runtime and local capability policy.
 
 ## Desktop browser host
 
@@ -39,11 +40,13 @@ External user folders mount through Storage Access Framework with persisted URI 
 
 The obsolete standalone `RiftBrowserActivity` is not part of the current source/build.
 
-## ChatGPT sandbox
+RiftBrowser does not install a guest-page filesystem listener or inject tool code into `chatgpt.com`.
 
-The browser installs a `RiftSandbox` WebMessage listener only for exact `https://chatgpt.com` main-frame messages. `RiftSandboxFS` is rooted at `filesDir/riftfs/browser-sandbox`; it cannot access secrets, SAF mounts, arbitrary Android storage or other apps.
+## Rift Bridge
 
-Rift Agent is an injected browser adapter layered on that sandbox. It does not widen native filesystem authority.
+Rift Bridge owns the app-private `filesDir/riftfs/browser-sandbox` tool scope. It opens an outbound WSS connection to a remote adapter and checks every tool request against local read/write grants before dispatching to `RiftBrowserSandbox`.
+
+The bridge cannot reach secrets, SAF mounts, arbitrary Android storage or the wider RiftFS. Pairing keys are stored through Android Keystore-backed `RiftSecretStore`, and a bounded audit log records tool/path/outcome without file contents.
 
 ## System Dump
 
