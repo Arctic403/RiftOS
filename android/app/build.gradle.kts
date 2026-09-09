@@ -11,7 +11,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.3.0-android-local-gpt-oss-alpha"
+        versionName = "0.2.0-android-native-alpha"
     }
 
     signingConfigs {
@@ -30,12 +30,6 @@ android {
 
     buildTypes {
         getByName("release") { isMinifyEnabled = false }
-    }
-
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
     }
 
     sourceSets["main"].assets.srcDir("build/generated/riftosAssets")
