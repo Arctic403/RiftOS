@@ -35,6 +35,7 @@ class RiftBrowserActivity : Activity() {
         const val EXTRA_URL = "url"
         private const val FILE_CHOOSER_REQUEST = 7101
         private const val CHATGPT_ORIGIN = "https://chatgpt.com"
+        private const val CHATGPT_AGENT_ASSET = "riftbrowser-chatgpt-agent.js"
         private val EXTERNAL_SCHEMES = setOf("mailto", "tel", "geo")
         private val AUTH_FLOW_HOSTS = setOf(
             "chatgpt.com",
@@ -103,6 +104,11 @@ class RiftBrowserActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var address: EditText
     private lateinit var sandbox: RiftBrowserSandbox
+    private val chatGptAgentScript: String by lazy {
+        runCatching {
+            assets.open(CHATGPT_AGENT_ASSET).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }.getOrDefault("")
+    }
     private var chooser: ValueCallback<Array<Uri>>? = null
     private var popupWebView: WebView? = null
 
@@ -251,7 +257,13 @@ class RiftBrowserActivity : Activity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 address.setText(url)
-                if (isChatGptPage(url)) view.evaluateJavascript(SANDBOX_BOOTSTRAP, null)
+                if (isChatGptPage(url)) {
+                    view.evaluateJavascript(SANDBOX_BOOTSTRAP) {
+                        if (chatGptAgentScript.isNotBlank() && isChatGptPage(view.url)) {
+                            view.evaluateJavascript(chatGptAgentScript, null)
+                        }
+                    }
+                }
                 CookieManager.getInstance().flush()
                 super.onPageFinished(view, url)
             }
