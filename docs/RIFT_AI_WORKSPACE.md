@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Rift AI is the visible HTML workspace for AI-assisted project work inside RiftOS. It does **not** call the OpenAI API or any other model API. The only model transport is the authenticated `chatgpt.com` page already hosted by RiftBrowser.
+Rift AI is the visible HTML workspace for AI-assisted project work inside RiftOS. The only model transport is the authenticated `chatgpt.com` page already hosted by RiftBrowser. Rift AI has no OpenAI API endpoint, API-key flow, bearer-token model request, alternate model client, remote MCP relay or second AI WebView.
 
-The design separates the user interface from the model transport:
+The visible workspace and the model transport are deliberately separate:
 
 ```text
 RiftOS shell WebView
@@ -15,9 +15,9 @@ RiftOS shell WebView
        |-- live structured logs
        `-- local changes / diff / accept / revert
 
-hidden native RiftBrowser WebView
+native RiftBrowser WebView
   |
-  `-- authenticated ChatGPT Web
+  `-- authenticated ChatGPT Web (INVISIBLE while AI transport is active)
        |
        `-- riftbrowser-mcp-app.js
             |
@@ -26,27 +26,44 @@ hidden native RiftBrowser WebView
                  `-- RiftMcpServer -> RiftToolHost -> RiftToolSandbox
 ```
 
-There is one ChatGPT WebView. Rift AI does not create a second browser renderer. In normal AI mode that existing ChatGPT WebView stays laid out and alive but Android marks it `INVISIBLE`, allowing the ChatGPT composer, streaming response DOM and local MCP loop to keep working while RiftOS HTML remains the only visible interface.
+There is one ChatGPT WebView. During an AI task it remains attached and fully laid out, but Android marks it `INVISIBLE`. The composer, response stream and MCP loop therefore continue running while the RiftOS shell remains the only visible AI interface.
 
 ## ChatGPT Web-only invariant
 
-Rift AI has no model endpoint or credential path. Active source must not contain an OpenAI API URL, API-key field, bearer-token model request or alternate model transport. CI checks the packaged Rift AI module for this invariant.
+Rift AI never talks to a model endpoint directly. Task submission, tool-result continuations and assistant responses all pass through the normal authenticated ChatGPT Web page.
 
-The **Show ChatGPT** action only reveals the same authenticated WebView for sign-in, account state or debugging. Closing that browser window returns an active AI session to hidden transport mode rather than destroying the WebView.
+**Show ChatGPT** reveals that same WebView for sign-in, account state or debugging. It is not a second transport. If the user closes the visible browser while a task is still active, RiftBrowser returns the same WebView to invisible transport mode. Once the task reaches a terminal state and the WebView is not being shown manually, the hidden renderer is released to `GONE` instead of being kept alive indefinitely.
+
+CI checks the active and packaged Rift AI/browser sources for model-API endpoint/key patterns and rejects the discarded second-WebView design.
 
 ## Session flow
 
 Starting a task:
 
-1. creates a local Rift AI session under app-private storage;
-2. builds a compact project tree for `tool-sandbox/workspace`;
-3. opens a fresh `https://chatgpt.com/` conversation in the existing hidden RiftBrowser WebView;
-4. submits the user's task plus compact project context and the live MCP tool manifest;
-5. mirrors assistant output into the Rift AI HTML pane;
-6. records structured transport/tool events locally;
-7. journals every MCP mutation before it changes a project path.
+1. creates a persistent Rift AI session under app-private storage;
+2. refuses to start if the previous task is still running;
+3. refuses to start if the previous session still has unreviewed changes;
+4. builds a compact recursive project tree for `tool-sandbox/workspace`;
+5. opens a fresh `https://chatgpt.com/` conversation in the existing RiftBrowser WebView;
+6. waits for local MCP initialization and a usable ChatGPT composer before submitting anything;
+7. submits the task plus compact project context and the live MCP tool manifest;
+8. mirrors cleaned assistant output and structured transport/tool events into RiftOS;
+9. tracks only Rift-AI-owned MCP mutations in the local working-tree journal;
+10. ends in review, stopped or error state and releases hidden transport rendering when appropriate.
 
-The project tree is context, not a project dump. ChatGPT is instructed to use `rift_list` and `rift_read_text` selectively, so large projects do not need to be copied into the prompt.
+The project tree is context, not a project dump. ChatGPT uses the ordinary `rift_list`, `rift_stat` and `rift_read_text` tools to inspect only the paths required for the task.
+
+## Session-scoped MCP writes
+
+Rift AI does not trust the model to identify an AI session. The browser compatibility adapter owns the current session ID internally. After parsing a model-produced `<rift_call>`, the adapter adds:
+
+```text
+_meta["riftos/aiSessionId"]
+```
+
+to the local MCP `tools/call` request. The session ID is not part of the model-visible tool schema and is not taken from model output.
+
+`RiftMcpServer` passes that internal metadata to `RiftToolHost`. `RiftAiJournal` accepts tool events and mutation snapshots only when the ID matches the currently active Rift AI transport session. Normal MCP calls made from an ordinary visible ChatGPT conversation remain valid, but they are not folded into an old Rift AI rollback session.
 
 ## Working-tree journal
 
@@ -61,28 +78,40 @@ filesDir/rift-ai/sessions/<session-id>/
   originals/
 ```
 
-This directory is outside `filesDir/riftfs/tool-sandbox`, so MCP tools cannot rewrite their own rollback history.
+This directory is outside `filesDir/riftfs/tool-sandbox`, so ChatGPT cannot rewrite its own rollback history through MCP.
 
-Before `rift_write_text`, `rift_mkdir`, `rift_remove` or `rift_move`, `RiftToolHost` asks the journal to lazily snapshot the affected path. Reads are logged but do not create snapshots. Only changed targets are copied; the full project is never cloned for a normal session.
+Before an AI-scoped `rift_write_text`, `rift_mkdir`, `rift_remove` or `rift_move`, `RiftToolHost` asks the journal to lazily snapshot the affected path. Reads are logged but do not create rollback copies. An existing ancestor snapshot suppresses redundant descendant copies; if a parent is captured after an earlier child change, the earlier child snapshot is retained so revert still reconstructs the pre-session baseline.
 
-A snapshot failure blocks the mutation rather than allowing an unreviewable edit. Snapshot size is bounded. Diff generation is text-oriented and bounded; large/binary files are reported without forcing a large text diff.
+A snapshot failure blocks the mutation rather than allowing an unreviewable edit. Snapshot size is bounded. Text diff generation is also bounded, and large/binary files are reported without forcing their contents into a huge diff.
 
-## Review
+## Review and lifecycle locking
 
-The Changes panel exposes the local working tree. Selecting a changed path requests a unified-style diff from Android. The current checkpoint supports session-wide:
+The Changes panel is a local Git-style working-tree view. Changed text files report additions/deletions and expose a bounded unified-style diff.
 
-- **Accept all** — discard rollback snapshots and keep current project files as the new baseline;
-- **Revert all** — restore captured originals and remove paths that did not exist before the session mutation.
+Current review actions are session-wide:
 
-The journal is persistent across process restarts because session metadata, event logs and originals are stored on disk.
+- **Accept all** keeps the current project files and discards rollback snapshots.
+- **Revert all** restores captured originals and removes paths that did not exist before the AI mutation.
+
+Accept and Revert are blocked while ChatGPT transport is still active. This prevents the review baseline from being cleared while a later tool call could still mutate the project. A new task is also blocked until the current task is terminal and any pending changes have been accepted or reverted.
+
+Session metadata, event logs, latest assistant output and rollback originals persist across Android process restarts. Because a killed process cannot preserve a live ChatGPT transport, startup converts any persisted `transportActive=true` session to `interrupted`/inactive while preserving its pending changes for review.
+
+## Completion detection
+
+The ChatGPT Web adapter tracks the active AI transport lifecycle independently from the persistent session record. It does not mark a task complete merely because a session exists.
+
+A terminal completion is emitted only after assistant output has been observed, the response has stabilized, ChatGPT is no longer showing its stop control, no local tool round-trip is active, and any tool-result continuation has produced a subsequent assistant update. Stop requests remain in a stopping state until active tool work has drained.
+
+Terminal phases are `complete`, `stopped` and `error`. Android records the terminal state and can release the invisible ChatGPT WebView while retaining the session for review.
 
 ## Logs and assistant output
 
-The ChatGPT compatibility asset emits exact-origin `rift/ai/event` messages over the existing `RiftMcpNative` WebMessage channel. Android accepts this method as telemetry only; it is not forwarded to MCP.
+The ChatGPT compatibility asset emits exact-origin `rift/ai/event` messages over the existing `RiftMcpNative` WebMessage channel. Android accepts that method as local telemetry only; it is not forwarded as an MCP method.
 
-Assistant streaming text is stored as the latest output snapshot instead of appending every token to the event log. Tool start/finish events come from `RiftToolHost`, which records tool name, target and status without writing file contents into the log.
+Assistant streaming text is stored as the latest output snapshot instead of appending every token to `events.jsonl`. `RiftToolHost` records tool name, target, phase and status without storing file contents in the activity log.
 
-The Rift AI HTML workspace polls these local state files through `ai.*` native commands. Normal polling reads state/events frequently, while project-tree and change scans run less often to keep the shell lightweight.
+The Rift AI HTML workspace polls lightweight state/events. Project-tree and Changes scans refresh on relevant mutation/review/session events or explicit Refresh, rather than rescanning the project continuously.
 
 ## Native commands
 
@@ -102,4 +131,4 @@ ai.hideWeb
 ai.stop
 ```
 
-These commands are local MainActivity capabilities. They do not expose a remote listener and are not MCP tools available to ChatGPT.
+These are local `MainActivity` capabilities for the trusted RiftOS shell. They are not MCP tools exposed to ChatGPT and they do not create a remote listener.

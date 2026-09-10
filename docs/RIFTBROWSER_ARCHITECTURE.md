@@ -60,7 +60,7 @@ Because some ChatGPT plans do not expose a supported local custom-MCP registrati
 
 Rift AI can use the existing ChatGPT WebView as a transport without making the chat the visible workflow. `ai.start` switches `RiftBrowserWindow` into transport-only mode: the same WebView remains attached, laid out and running but is Android-`INVISIBLE`. This preserves composer layout, streaming DOM and MCP automation while the RiftOS shell shows `src/riftai-workspace.js`.
 
-No second browser renderer is created for Rift AI. **Show ChatGPT** reveals the same WebView; closing the visible browser during an active AI session returns it to invisible transport mode.
+No second browser renderer is created for Rift AI. **Show ChatGPT** reveals the same WebView; closing the visible browser while `transportActive` is true returns it to invisible transport mode. Persistent session/review state does not keep the renderer alive by itself: complete/stopped/error releases an invisible transport WebView to `GONE`. AI-owned MCP calls carry a native-injected session ID in local request `_meta`, so ordinary visible-chat MCP use is not mixed into an old AI journal.
 
 ## Streaming performance rule
 

@@ -82,7 +82,9 @@ The browser compatibility layer may depend on ChatGPT composer/rendered-message 
 
 Rift AI is a trusted RiftOS shell application, not a guest webpage. It displays project metadata, assistant output, logs and local diffs by calling local `ai.*` native capabilities. It never receives or stores a model API key because the model transport is exclusively the authenticated ChatGPT Web page in RiftBrowser.
 
-Rollback originals are stored under `filesDir/rift-ai`, outside `riftfs/tool-sandbox`. ChatGPT can mutate only through the fixed MCP tool registry and cannot modify the journal that is used to review/revert those mutations.
+Rollback originals are stored under `filesDir/rift-ai`, outside `riftfs/tool-sandbox`. ChatGPT can mutate only through the fixed MCP tool registry and cannot modify the journal that is used to review/revert those mutations. RiftBrowser privately tags only active Rift AI `tools/call` requests with a native-created session ID, preventing unrelated visible-chat MCP writes from being attributed to a persistent AI review session.
+
+Review state and transport state are separate. A completed/stopped/error/interrupted session may remain available for diff review while its hidden ChatGPT renderer is no longer running. A process restart converts stale active transport state to `interrupted` while retaining rollback data. Accept/revert are locked while transport is active, and a new task cannot replace pending unreviewed changes.
 
 ## Removed architectures
 

@@ -11,7 +11,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.9.0-rift-ai-web-workspace-alpha"
+        versionName = "0.9.1-rift-ai-web-workspace-alpha"
     }
 
     signingConfigs {

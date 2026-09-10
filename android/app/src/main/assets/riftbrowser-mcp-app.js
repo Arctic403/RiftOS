@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.1-perf';
+  const VERSION = 'rift-mcp-app-v1.2-ai-session';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -29,18 +29,82 @@
   let processTimer = 0;
   let routeKey = location.pathname + location.search;
   let contextSentForRoute = false;
+  let activeAiSessionId = '';
+  let aiTaskActive = false;
+  let aiStopRequested = false;
+  let activeToolRoundTrips = 0;
+  let assistantSeen = false;
+  let lastAssistantUpdateAt = 0;
+  let lastToolResultAt = 0;
+  let continuationRequired = false;
+  let completionTimer = 0;
 
   function now() { return Date.now(); }
 
   function sendAiEvent(type, message, data) {
     try {
       if (!window.RiftMcpNative || typeof window.RiftMcpNative.postMessage !== 'function') return;
+      const payload = data && typeof data === 'object' ? { ...data } : {};
+      if (activeAiSessionId && !payload.sessionId) payload.sessionId = activeAiSessionId;
       window.RiftMcpNative.postMessage(JSON.stringify({
         jsonrpc: '2.0',
         method: 'rift/ai/event',
-        params: { type: String(type || 'transport'), message: String(message || '').slice(0, 1000), data: data && typeof data === 'object' ? data : {} }
+        params: { type: String(type || 'transport'), message: String(message || '').slice(0, 1000), data: payload }
       }));
     } catch (_) {}
+  }
+
+  function sendAiPhase(phase, message, type = 'transport', data = {}) {
+    sendAiEvent(type, message, { ...data, phase, sessionId: activeAiSessionId || data.sessionId || '' });
+  }
+
+  function clearCompletionTimer() {
+    if (completionTimer) clearTimeout(completionTimer);
+    completionTimer = 0;
+  }
+
+  function stopButtonVisible() {
+    const stop = document.querySelector('[data-testid="stop-button"],button[aria-label*="Stop" i]');
+    return stop instanceof Element && isVisible(stop) && !stop.disabled;
+  }
+
+  function finishAiTask(phase, message, type = 'transport') {
+    if (!aiTaskActive && phase !== 'error') return;
+    const sessionId = activeAiSessionId;
+    clearCompletionTimer();
+    sendAiEvent(type, message, { phase, sessionId });
+    aiTaskActive = false;
+    aiStopRequested = false;
+    activeToolRoundTrips = 0;
+    continuationRequired = false;
+    activeAiSessionId = '';
+  }
+
+  function scheduleCompletionCheck(delayMs = 1300) {
+    if (!aiTaskActive) return;
+    clearCompletionTimer();
+    completionTimer = setTimeout(() => {
+      completionTimer = 0;
+      if (!aiTaskActive) return;
+      if (activeToolRoundTrips > 0 || stopButtonVisible()) {
+        scheduleCompletionCheck(900);
+        return;
+      }
+      if (aiStopRequested) {
+        finishAiTask('stopped', 'ChatGPT Web task stopped');
+        return;
+      }
+      if (!assistantSeen || continuationRequired) {
+        scheduleCompletionCheck(900);
+        return;
+      }
+      const stableFor = now() - lastAssistantUpdateAt;
+      if (stableFor < 1800 || (lastToolResultAt && now() - lastToolResultAt < 2200)) {
+        scheduleCompletionCheck(900);
+        return;
+      }
+      finishAiTask('complete', 'ChatGPT Web task complete');
+    }, delayMs);
   }
 
   function postRpc(method, params) {
@@ -229,22 +293,43 @@
   }
 
   async function submitAiTask(payload) {
+    const sessionId = String(payload && payload.sessionId || '').trim();
     const task = String(payload && payload.task || '').trim();
     const projectContext = String(payload && payload.projectContext || '').trim();
-    if (!task) { sendAiEvent('error', 'Rift AI task is empty'); return false; }
-    sendAiEvent('transport', 'Waiting for local MCP manifest');
+    if (!sessionId) { sendAiEvent('error', 'Rift AI session id is missing', { phase: 'error' }); return false; }
+    if (aiTaskActive) { sendAiEvent('error', 'A Rift AI task is already active', { phase: 'error', sessionId }); return false; }
+
+    activeAiSessionId = sessionId;
+    aiTaskActive = true;
+    aiStopRequested = false;
+    activeToolRoundTrips = 0;
+    assistantSeen = false;
+    lastAssistantUpdateAt = 0;
+    lastToolResultAt = 0;
+    continuationRequired = false;
+    clearCompletionTimer();
+
+    if (!task) { finishAiTask('error', 'Rift AI task is empty', 'error'); return false; }
+    sendAiPhase('waiting', 'Waiting for local MCP manifest');
     if (!await waitForMcpReady(12000)) {
-      sendAiEvent('error', 'Local Rift MCP did not initialize; task was not submitted');
+      finishAiTask('error', 'Local Rift MCP did not initialize; task was not submitted', 'error');
       return false;
     }
-    sendAiEvent('transport', 'Waiting for ChatGPT Web composer');
+    sendAiPhase('waiting', 'Waiting for ChatGPT Web composer');
     const composer = await waitForComposer(20000);
-    if (!composer) { sendAiEvent('error', 'ChatGPT Web composer unavailable. Open Web view to sign in or inspect the page.'); return false; }
+    if (!composer) {
+      finishAiTask('error', 'ChatGPT Web composer unavailable. Open Web view to sign in or inspect the page.', 'error');
+      return false;
+    }
     refreshRouteState();
     let message = task;
-    if (projectContext) message += `\n\n${projectContext}`;
+    if (projectContext) message += `
+
+${projectContext}`;
     if (tools.length && !contextSentForRoute) {
-      message += `\n\n${contextBlock()}`;
+      message += `
+
+${contextBlock()}`;
       contextSentForRoute = true;
     }
     suppressDecoration = true;
@@ -252,19 +337,25 @@
     const button = await waitForSendButton(12000);
     if (!button) {
       suppressDecoration = false;
-      sendAiEvent('error', 'ChatGPT Web send button unavailable');
+      finishAiTask('error', 'ChatGPT Web send button unavailable', 'error');
       return false;
     }
     button.click();
-    sendAiEvent('transport', 'Task submitted to ChatGPT Web');
+    sendAiPhase('submitted', 'Task submitted to ChatGPT Web');
+    sendAiPhase('running', 'ChatGPT Web is working');
     setTimeout(() => { suppressDecoration = false; }, 800);
+    scheduleCompletionCheck(1800);
     return true;
   }
 
   function stopAiTask() {
+    if (!aiTaskActive) return false;
+    aiStopRequested = true;
     const stop = document.querySelector('[data-testid="stop-button"],button[aria-label*="Stop" i]');
-    if (stop instanceof HTMLElement && !stop.disabled) { stop.click(); sendAiEvent('transport', 'Stop requested'); return true; }
-    return false;
+    if (stop instanceof HTMLElement && !stop.disabled) stop.click();
+    sendAiPhase('stopping', 'Stop requested');
+    scheduleCompletionCheck(500);
+    return true;
   }
 
   async function submitToolResult(payload) {
@@ -315,9 +406,14 @@
       await submitToolResult({ call_id: call.call_id, name: call.name, ok: false, error: 'Rift MCP browser rate limit reached' });
       return;
     }
+
+    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
+    if (aiSessionId) activeToolRoundTrips += 1;
     setBadge('busy');
     try {
-      const result = await postRpc('tools/call', { name: call.name, arguments: call.args });
+      const params = { name: call.name, arguments: call.args };
+      if (aiSessionId) params._meta = { 'riftos/aiSessionId': aiSessionId };
+      const result = await postRpc('tools/call', params);
       const structured = result.structuredContent || {};
       const ok = !result.isError && structured.ok !== false;
       await submitToolResult({
@@ -327,15 +423,33 @@
         result: structured.value !== undefined ? structured.value : null,
         error: structured.error || null
       });
+      if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
+        lastToolResultAt = now();
+        continuationRequired = true;
+        sendAiPhase('running', `${call.name} result returned to ChatGPT Web`, 'transport', { tool: call.name });
+      }
       setBadge(ok ? 'ready' : 'error');
     } catch (error) {
-      await submitToolResult({
-        call_id: call.call_id,
-        name: call.name,
-        ok: false,
-        error: String(error.message || error)
-      });
+      try {
+        await submitToolResult({
+          call_id: call.call_id,
+          name: call.name,
+          ok: false,
+          error: String(error.message || error)
+        });
+        if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
+          lastToolResultAt = now();
+          continuationRequired = true;
+        }
+      } catch (submitError) {
+        if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
+          finishAiTask('error', `Could not return ${call.name} result to ChatGPT Web: ${String(submitError && submitError.message || submitError)}`, 'error');
+        }
+      }
       setBadge('error');
+    } finally {
+      if (aiSessionId) activeToolRoundTrips = Math.max(0, activeToolRoundTrips - 1);
+      if (aiTaskActive) scheduleCompletionCheck(900);
     }
   }
 
@@ -369,18 +483,30 @@
   function scanAssistantMessage(message) {
     if (!enabled || !(message instanceof Element)) return;
     const text = String(message.innerText || message.textContent || '');
+    const calls = tools.length && text.includes(CALL_OPEN) && text.includes(CALL_CLOSE) ? extractCalls(text) : [];
     const visibleText = stripToolEnvelopes(text);
     if (visibleText && lastAssistantText.get(message) !== visibleText) {
       lastAssistantText.set(message, visibleText);
+      if (aiTaskActive) {
+        assistantSeen = true;
+        lastAssistantUpdateAt = now();
+        if (continuationRequired && lastAssistantUpdateAt >= lastToolResultAt) continuationRequired = false;
+      }
       sendAiEvent('assistant', 'Assistant output updated', {
         messageId: String(message.getAttribute('data-message-id') || message.id || ''),
         text: visibleText.slice(0, 180000)
       });
     }
-    if (tools.length === 0 || !text.includes(CALL_OPEN) || !text.includes(CALL_CLOSE)) return;
-    for (const packet of extractCalls(text)) {
-      callQueue = callQueue.then(() => executeCall(packet)).catch(() => setBadge('error'));
+    if (calls.length) {
+      for (const packet of calls) {
+        callQueue = callQueue.then(() => executeCall(packet)).catch((error) => {
+          setBadge('error');
+          if (aiTaskActive) finishAiTask('error', `Rift tool pipeline failed: ${String(error && error.message || error)}`, 'error');
+        });
+      }
+      return;
     }
+    if (aiTaskActive && visibleText) scheduleCompletionCheck();
   }
 
   function compactInjectedUserMessage(message) {
@@ -509,9 +635,14 @@
   }
 
   window.RiftMcpAppControl = Object.freeze({
-    submitTask: submitAiTask,
+    submitTask: (payload) => submitAiTask(payload).catch((error) => {
+      const message = `ChatGPT Web task failed: ${String(error && error.message || error)}`;
+      if (aiTaskActive) finishAiTask('error', message, 'error');
+      else sendAiEvent('error', message, { phase: 'error' });
+      return false;
+    }),
     stop: stopAiTask,
-    state: () => ({ version: VERSION, enabled, tools: tools.length, route: routeKey })
+    state: () => ({ version: VERSION, enabled, tools: tools.length, route: routeKey, aiTaskActive })
   });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });

@@ -71,7 +71,9 @@ Read access defaults on. Write access defaults off. The `Rift MCP` system app is
 
 `MainActivity` brokers local `ai.*` shell commands for session state, event polling, project-tree metadata, diffs, accept/revert and ChatGPT-Web visibility. `RiftAiJournal` stores persistent rollback/event state in `filesDir/rift-ai`. That directory is deliberately outside the MCP sandbox.
 
-`RiftBrowserWindow` has a transport-only mode used by Rift AI. The existing ChatGPT WebView remains laid out and `INVISIBLE`; no extra AI WebView, model HTTP client, API key or public listener is introduced.
+`RiftBrowserWindow` has a transport-only mode used by Rift AI. While `transportActive` is true, the existing ChatGPT WebView remains fully laid out and Android-`INVISIBLE`; no extra AI WebView, model HTTP client, API key or public listener is introduced. Terminal complete/stopped/error state releases the invisible renderer unless the user explicitly revealed ChatGPT. On a new process, `RiftAiJournal` recovers any persisted active-transport marker as `interrupted` because the old WebView execution context no longer exists.
+
+RiftBrowser injects a native-created AI session ID into local MCP request `_meta`; `RiftMcpServer`/`RiftToolHost` use it only to scope journal/audit events to the active Rift AI task. It is not a model-supplied capability and does not expand MCP access.
 
 ## System Dump
 

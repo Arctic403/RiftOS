@@ -33,9 +33,11 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - `ai.start` opens a fresh ChatGPT Web conversation and submits the task with compact project-tree context plus the live local MCP manifest.
 - Assistant streaming output is mirrored into the HTML workspace; `<rift_call>` / result chatter remains transport detail rather than the primary live UI.
 - Local structured logs include session, transport and MCP tool start/finish events without file contents.
-- `RiftAiJournal` lazily snapshots only paths touched by mutating MCP tools and stores rollback data outside the MCP sandbox.
-- Changes view supports unified-style text diff plus session-wide Accept all / Revert all.
-- Session metadata, logs, latest assistant output and rollback originals persist on disk.
+- RiftBrowser injects an internal AI session ID into MCP `_meta` after parsing model tool calls; only calls matching the active Rift AI transport session are journaled.
+- `RiftAiJournal` lazily snapshots only paths touched by those AI-scoped mutating MCP tools and stores rollback data outside the MCP sandbox. Ordinary visible-chat MCP writes are not attached to an old AI session.
+- Changes view reports additions/deletions and supports bounded unified-style text diff plus session-wide Accept all / Revert all. Accept/revert are blocked while transport is active, and a new task is blocked until prior changes are reviewed.
+- Session metadata distinguishes persistent review state from active ChatGPT transport; terminal complete/stopped/error events release an invisible transport WebView while keeping review data on disk.
+- Session metadata, logs, latest assistant output and rollback originals persist on disk. On process restart, a previously active transport is recovered as `interrupted`/inactive so stale runtime state cannot block future work; any pending changes remain reviewable.
 - Active source contains no OpenAI API endpoint/key flow or alternate model transport.
 
 ### RiftBrowser
@@ -70,7 +72,7 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - User-selected dump destination.
 - GitHub Actions build/sign/verify/publish pipeline.
 - APK verification requires the Rift MCP App asset and local `riftmcp-system.js` module.
-- CI rejects the removed DOM Agent, Agent V3 marker, whole-chat mutation scanner, remote relay/client/provider/Activity and `libllamaserver.so`; it also verifies the shell Rift AI module and rejects model-API endpoint/key patterns in that module.
+- CI rejects the removed DOM Agent, Agent V3 marker, whole-chat mutation scanner, remote relay/client/provider/Activity and `libllamaserver.so`; it verifies the shell Rift AI module, internal `riftos/aiSessionId` threading and rejects model-API endpoint/key patterns across the active Rift AI/browser transport sources.
 - No emulator smoke test or compatibility matrix in normal CI.
 
 ## Removed / inactive
@@ -95,10 +97,11 @@ Historical Git commits may mention those experiments. They are not current runti
 
 ## Known limitations
 
-- On ChatGPT plans without supported custom MCP registration, RiftBrowser compatibility mode necessarily depends on the ChatGPT composer and semantic rendered-message attributes. ChatGPT UI changes can break that browser-facing adapter without weakening the local capability boundary.
+- RiftBrowser compatibility mode depends on the ChatGPT composer, stop control and semantic rendered-message attributes. ChatGPT UI changes can break task submission/tool continuation/completion detection without weakening the local capability boundary.
 - Write tools are locally disabled by default until explicitly enabled in Rift MCP.
 - Android System WebView remains memory-heavy on long ChatGPT conversations; RiftEngine/Servo migration is planned but not yet shipped.
 - Embedded identity providers may independently reject Android WebView login.
+- Current review controls are session-wide rather than per-file/per-hunk, and text diff generation is deliberately bounded.
 - Native Kotlin/DEX cannot be arbitrarily hot-swapped; APK rebuild is required.
 
 ## Planned

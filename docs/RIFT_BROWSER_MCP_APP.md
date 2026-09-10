@@ -63,9 +63,11 @@ Because ChatGPT Web has no supported local-tool registration hook on these plans
 
 ## Rift AI transport mode
 
-`riftbrowser-mcp-app.js` also supports the local Rift AI HTML cockpit. Native code can call `window.RiftMcpAppControl.submitTask(...)` in the hidden ChatGPT WebView. The adapter writes the task to the normal ChatGPT composer, appends compact project/tool context, and clicks the normal ChatGPT Web send control. There is no API request path.
+`riftbrowser-mcp-app.js` also supports the local Rift AI HTML cockpit. Native code calls `window.RiftMcpAppControl.submitTask(...)` in the hidden ChatGPT WebView with a native-created session ID, task and compact project context. The adapter waits for MCP readiness and the normal ChatGPT composer, writes the task/context, and clicks the normal ChatGPT Web send control. There is no model API request path.
 
-The adapter mirrors cleaned assistant text and transport status back to Android as exact-origin `rift/ai/event` messages over `RiftMcpNative`. Tool envelopes are stripped from the mirrored assistant pane; the actual tool loop still occurs in ChatGPT Web and MCP results still return through the composer.
+The model never supplies the AI session ID. When the adapter parses a model `<rift_call>` during an active Rift AI task, it privately adds `_meta["riftos/aiSessionId"]` to the local MCP `tools/call`. This makes working-tree journaling specific to the AI task without changing the model-visible tool schema. Calls made outside the active Rift AI task are untagged.
+
+The adapter mirrors cleaned assistant text and transport lifecycle back to Android as exact-origin `rift/ai/event` messages over `RiftMcpNative`. Tool envelopes are stripped from the mirrored assistant pane; the actual tool loop still occurs in ChatGPT Web and MCP results still return through the composer. Completion is reported only after output stabilizes, the stop control is gone, active tool round-trips have drained and any tool-result continuation has produced another assistant update. Stop requests likewise wait for active tool work to drain before the session becomes reviewable.
 
 ## Permissions
 

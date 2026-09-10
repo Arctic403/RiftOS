@@ -7,7 +7,7 @@ import org.json.JSONObject
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.8.0-rift-local-mcp-alpha"
+        private const val SERVER_VERSION = "0.9.1-rift-ai-web-workspace-alpha"
     }
 
     fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) {
@@ -31,7 +31,11 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
             return
         }
         val args = params.optJSONObject("arguments") ?: JSONObject()
-        toolHost.callAsync(name, args) { call ->
+        val aiSessionId = params.optJSONObject("_meta")
+            ?.optString("riftos/aiSessionId")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        toolHost.callAsync(name, args, aiSessionId) { call ->
             val ok = call.optBoolean("ok", false)
             val structured = JSONObject().put("ok", ok)
             if (ok) structured.put("value", call.opt("value") ?: JSONObject.NULL)

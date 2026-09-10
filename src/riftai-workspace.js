@@ -3,7 +3,7 @@ if(!core)throw new Error("Rift AI requires RiftOSCore");
 
 const APP_ID="riftai";
 const APP_NAME="Rift AI";
-const POLL_MS=550;
+const POLL_MS=750;
 let controller=null;
 
 const esc=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));
@@ -91,20 +91,39 @@ async function open(){
   </div>`;
 
   controller?.stop?.();
-  let stopped=false,lastSeq=0,polling=false;
+  let stopped=false,lastSeq=0,polling=false,projectDirty=true,changesDirty=true,lastTransportActive=false,lastChangeCount=0;
   controller={stop(){stopped=true;}};
   const $=sel=>body.querySelector(sel);
   const status=$("#riftAiStatus"),tree=$("#riftAiTree"),output=$("#riftAiOutput"),logs=$("#riftAiLogs"),changes=$("#riftAiChanges"),changeCount=$("#riftAiChangeCount"),session=$("#riftAiSession");
+  const runButton=$("#riftAiRun"),stopButton=$("#riftAiStop"),acceptButton=$("#riftAiAccept"),revertButton=$("#riftAiRevert");
+  const WRITE_TOOLS=new Set(["rift_write_text","rift_mkdir","rift_remove","rift_move"]);
+
+  function updateControls(){
+    runButton.disabled=lastTransportActive||lastChangeCount>0;
+    stopButton.disabled=!lastTransportActive;
+    acceptButton.disabled=lastTransportActive||lastChangeCount===0;
+    revertButton.disabled=lastTransportActive||lastChangeCount===0;
+    runButton.title=lastChangeCount>0&&!lastTransportActive?"Accept or revert the current changes before starting another task":"";
+  }
 
   async function refreshTree(){
-    try{tree.innerHTML=renderTree(await native("tree",{path:"workspace"}));}catch(error){tree.innerHTML=`<div class="rift-ai-empty error">${esc(error.message)}</div>`;}
+    try{tree.innerHTML=renderTree(await native("tree",{path:"workspace"}));projectDirty=false;}catch(error){tree.innerHTML=`<div class="rift-ai-empty error">${esc(error.message)}</div>`;}
   }
   async function refreshState(){
     try{
       const state=await native("state");
-      if(state?.active&&state.session){session.textContent=state.session.id||"Active session";}
+      lastTransportActive=Boolean(state?.transportActive);
+      const stateStatus=String(state?.status||"idle");
+      if(state?.active&&state.session){
+        session.textContent=`${state.session.id||"Active session"} · ${stateStatus}`;
+        status.textContent=lastTransportActive?"Running through ChatGPT Web":stateStatus==="review"?"Ready for review":stateStatus==="accepted"?"Changes accepted":stateStatus==="reverted"?"Changes reverted":stateStatus==="error"?"Task ended with an error":stateStatus==="stopped"?"Task stopped":stateStatus==="interrupted"?"Previous task was interrupted":"Ready";
+      }else{
+        session.textContent="No active session";
+        status.textContent="Ready";
+      }
       const latest=state?.latestAssistant;
       if(latest&&latest.text){output.textContent=latest.text;output.classList.add("has-output");}
+      updateControls();
     }catch(_){}
   }
   async function refreshEvents(){
@@ -116,6 +135,12 @@ async function open(){
         logs.insertAdjacentHTML("beforeend",rows.map(eventLine).join(""));
         while(logs.children.length>300)logs.firstElementChild?.remove();
         logs.scrollTop=logs.scrollHeight;
+        for(const event of rows){
+          const data=event?.data&&typeof event.data==="object"?event.data:{};
+          if(event?.type==="tool"&&data.phase==="finish"&&WRITE_TOOLS.has(String(data.tool||""))){projectDirty=true;changesDirty=true;}
+          if(event?.type==="review"){projectDirty=true;changesDirty=true;}
+          if(event?.type==="session"){projectDirty=true;changesDirty=true;}
+        }
       }
       lastSeq=Number(result?.lastSeq||lastSeq);
     }catch(_){}
@@ -124,21 +149,23 @@ async function open(){
     try{
       const rows=await native("changes");
       changes.innerHTML=renderChanges(rows);
+      lastChangeCount=rows.length;
       changeCount.textContent=`${rows.length} file${rows.length===1?"":"s"}`;
       changes.querySelectorAll("[data-diff-path]").forEach(button=>button.onclick=()=>showDiff(button.dataset.diffPath));
+      changesDirty=false;
+      updateControls();
     }catch(error){changes.innerHTML=`<div class="rift-ai-empty error">${esc(error.message)}</div>`;}
   }
-  let pollTick=0;
-  async function refreshAll(){await Promise.all([refreshTree(),refreshState(),refreshEvents(),refreshChanges()]);}
+  async function refreshAll(){projectDirty=true;changesDirty=true;await Promise.all([refreshTree(),refreshState(),refreshEvents(),refreshChanges()]);}
   async function poll(){
     if(stopped||polling||!document.contains(body))return;
     polling=true;
     try{
-      pollTick+=1;
-      const work=[refreshState(),refreshEvents()];
-      if(pollTick%2===0)work.push(refreshChanges());
-      if(pollTick%6===0)work.push(refreshTree());
-      await Promise.all(work);
+      await Promise.all([refreshState(),refreshEvents()]);
+      const work=[];
+      if(changesDirty)work.push(refreshChanges());
+      if(projectDirty)work.push(refreshTree());
+      if(work.length)await Promise.all(work);
     }finally{polling=false;if(!stopped&&document.contains(body))setTimeout(poll,POLL_MS);}
   }
   async function showDiff(path){
@@ -155,7 +182,7 @@ async function open(){
     status.textContent="Starting hidden ChatGPT Web session…";
     output.textContent="Waiting for ChatGPT Web…";output.classList.remove("has-output");
     logs.innerHTML='<div class="rift-ai-empty">Starting session…</div>';lastSeq=0;
-    try{const result=await native("start",{task});session.textContent=result?.session?.session?.id||result?.session?.id||"Active session";status.textContent="Running through ChatGPT Web";await refreshAll();}
+    try{const result=await native("start",{task});session.textContent=result?.session?.session?.id||result?.session?.id||"Active session";lastTransportActive=true;projectDirty=true;changesDirty=true;status.textContent="Running through ChatGPT Web";updateControls();await refreshAll();}
     catch(error){status.textContent=error.message;}
   };
   $("#riftAiStop").onclick=async()=>{try{await native("stop");status.textContent="Stop requested";}catch(error){status.textContent=error.message;}};
@@ -167,8 +194,8 @@ async function open(){
       await globalThis.RiftDesktop?.openBrowser?.(url);
     }catch(error){status.textContent=error.message;}
   };
-  $("#riftAiAccept").onclick=async()=>{try{const result=await native("accept");status.textContent=`Accepted ${result?.changes||0} change(s)`;await refreshAll();}catch(error){status.textContent=error.message;}};
-  $("#riftAiRevert").onclick=async()=>{try{const result=await native("revert");status.textContent=`Reverted ${result?.changes||0} change(s)`;await refreshAll();}catch(error){status.textContent=error.message;}};
+  $("#riftAiAccept").onclick=async()=>{try{const result=await native("accept");status.textContent=`Accepted ${result?.changes||0} change(s)`;projectDirty=true;changesDirty=true;await refreshAll();}catch(error){status.textContent=error.message;}};
+  $("#riftAiRevert").onclick=async()=>{try{const result=await native("revert");status.textContent=`Reverted ${result?.changes||0} change(s)`;projectDirty=true;changesDirty=true;await refreshAll();}catch(error){status.textContent=error.message;}};
   $("#riftAiDiffClose").onclick=()=>$("#riftAiDiffPanel").classList.add("hidden");
 
   try{await native("hideWeb");}catch(_){}

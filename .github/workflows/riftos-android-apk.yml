@@ -47,10 +47,23 @@ jobs:
           test -f src/riftai-workspace.js
           test -f android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
           test ! -e src/rift-ai-workspace.html
+          test ! -e android/app/src/main/java/com/riftos/app/RiftAiWorkspaceActivity.kt
           grep -Fq "[RiftAI] ChatGPT Web workspace registered" src/riftai-workspace.js
           grep -Fq "RiftMcpAppControl" android/app/src/main/assets/riftbrowser-mcp-app.js
-          if grep -Eqi 'api\.openai\.com|OPENAI_API_KEY|Authorization:[[:space:]]*Bearer' src/riftai-workspace.js; then
-            echo "Direct model API path leaked into Rift AI workspace" >&2
+          grep -Fq "riftos/aiSessionId" android/app/src/main/assets/riftbrowser-mcp-app.js
+          grep -Fq "riftos/aiSessionId" android/app/src/main/java/com/riftos/app/RiftMcpServer.kt
+          grep -Fq "transportActive" android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
+          grep -Fq "Review the current Rift AI changes" android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
+          AI_SOURCES=(
+            src/riftai-workspace.js
+            android/app/src/main/assets/riftbrowser-mcp-app.js
+            android/app/src/main/java/com/riftos/app/MainActivity.kt
+            android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
+            android/app/src/main/java/com/riftos/app/RiftBrowserWindow.kt
+            android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt
+          )
+          if grep -Eqi 'api\.openai\.com|OPENAI_API_KEY|Authorization:[[:space:]]*Bearer' "${AI_SOURCES[@]}"; then
+            echo "Direct model API path leaked into Rift AI / ChatGPT Web transport source" >&2
             exit 1
           fi
 
@@ -145,6 +158,7 @@ jobs:
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "[RIFT_MCP_APP_V1]"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "<rift_call>"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "PERF_GUARD"
+          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "riftos/aiSessionId"
           if unzip -l "$FINAL" | grep -Fq "assets/riftbrowser-chatgpt-agent.js"; then
             echo "Removed ChatGPT DOM Rift Agent leaked back into Android APK" >&2
             exit 1
@@ -161,8 +175,8 @@ jobs:
             echo "Discarded second-WebView Rift AI HTML asset leaked into APK" >&2
             exit 1
           fi
-          if unzip -p "$FINAL" assets/www/src/riftai-workspace.js | grep -Eqi 'api\.openai\.com|OPENAI_API_KEY|Authorization:[[:space:]]*Bearer'; then
-            echo "Direct model API path leaked into packaged Rift AI workspace" >&2
+          if { unzip -p "$FINAL" assets/www/src/riftai-workspace.js; unzip -p "$FINAL" assets/riftbrowser-mcp-app.js; } | grep -Eqi 'api\.openai\.com|OPENAI_API_KEY|Authorization:[[:space:]]*Bearer'; then
+            echo "Direct model API path leaked into packaged Rift AI / ChatGPT Web transport" >&2
             exit 1
           fi
           DEX_STRINGS="$(unzip -p "$FINAL" classes.dex | strings)"

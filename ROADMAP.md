@@ -8,10 +8,10 @@ This roadmap describes intended work, not shipped capability. Current implementa
 - Keep **Rift MCP** local-only: no remote relay, WSS pairing client, public MCP endpoint or process-start network service.
 - Keep `RiftToolHost` as the single capability authority for MCP permissions, audit and tool dispatch.
 - Preserve the optimized ChatGPT compatibility path: mutation-scoped processing, compact one-shot tool context and serialized tool calls.
-- Stabilize the shell-rendered **Rift AI** cockpit: hidden ChatGPT Web transport, selective project context, live logs and persistent working-tree review.
+- Maintain the shipped shell-rendered **Rift AI** cockpit: hidden ChatGPT Web transport, selective project context, live logs, session-scoped mutation journaling and persistent working-tree review.
 - Keep the model path ChatGPT-Web-only; do not add an OpenAI API key/endpoint path to Rift AI.
 - Harden RiftBrowser move/resize/focus and long-chat behavior across phones, tablets and DeX.
-- Continue RiftEngine/Servo integration behind a hardware compatibility gate; Android System WebView remains the compatibility backend until that gate passes.
+- Implement the RiftEngine/Servo migration behind a hardware compatibility gate; Android System WebView remains the current compatibility renderer until that gate passes.
 - Add focused on-device diagnostics and exported test results rather than emulator-heavy CI.
 
 ## Local Rift MCP expansion
@@ -48,7 +48,7 @@ High-impact operations should require explicit developer-mode capability grants.
 
 ## Rift AI project intelligence
 
-Current checkpoint: compact recursive project tree, selective existing MCP reads, persistent mutation journal, unified-style diff, Accept all and Revert all.
+Implemented foundation: compact recursive project tree, selective existing MCP reads, internally session-scoped mutation journal, bounded unified-style diff, additions/deletions, Accept all and Revert all. Review actions are locked while transport is active, and a new task cannot discard unreviewed state.
 
 Next improvements should stay lightweight:
 

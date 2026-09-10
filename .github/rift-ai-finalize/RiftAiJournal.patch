@@ -1,0 +1,322 @@
+diff --git a/android/app/src/main/java/com/riftos/app/RiftAiJournal.kt b/android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
+index c99c171..8c1468d 100644
+--- a/android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
++++ b/android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
+@@ -33,8 +33,22 @@ class RiftAiJournal(context: Context) {
+     private val sessionsRoot = File(root, "sessions").apply { mkdirs() }
+     private val toolRoot = File(appContext.filesDir, "riftfs/tool-sandbox").apply { mkdirs() }
+ 
++    init {
++        recoverInterruptedSession()
++    }
++
+     @Synchronized
+     fun beginSession(task: String): JSONObject {
++        require(task.isNotBlank()) { "Rift AI task is empty" }
++        activeSessionId()?.let { previousId ->
++            if (transportActiveFor(previousId)) {
++                throw IllegalStateException("The current Rift AI task is still running. Stop it before starting another task.")
++            }
++            if (changesForSession(previousId).length() > 0) {
++                throw IllegalStateException("Review the current Rift AI changes before starting another task. Accept or revert them first.")
++            }
++        }
++
+         val id = "ai-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
+         val dir = sessionDir(id).apply { mkdirs() }
+         File(dir, "originals").mkdirs()
+@@ -47,12 +61,15 @@ class RiftAiJournal(context: Context) {
+                 .put("startedAt", System.currentTimeMillis())
+                 .put("updatedAt", System.currentTimeMillis())
+                 .put("nextSeq", 1L)
++                .put("status", "starting")
++                .put("transportActive", true)
++                .put("reviewState", "pending")
+         )
+         File(dir, "events.jsonl").writeText("", Charsets.UTF_8)
+         File(dir, "assistant.json").delete()
+         prefs.edit().putString(PREF_ACTIVE_SESSION, id).apply()
+         pruneOldSessions(id)
+-        recordEvent("session", "AI session started", JSONObject().put("id", id))
++        recordEvent("session", "AI session started", JSONObject().put("phase", "starting"))
+         return state()
+     }
+ 
+@@ -62,13 +79,18 @@ class RiftAiJournal(context: Context) {
+         if (id == null) {
+             return JSONObject()
+                 .put("active", false)
++                .put("transportActive", false)
++                .put("status", "idle")
+                 .put("localOnly", true)
+                 .put("transport", "ChatGPT Web")
+                 .put("scope", RiftToolHost.SCOPE)
+         }
+-        val meta = readObject(File(sessionDir(id), "meta.json")) ?: JSONObject().put("id", id)
++        val meta = sessionMeta(id) ?: JSONObject().put("id", id)
+         return JSONObject()
+             .put("active", true)
++            .put("transportActive", meta.optBoolean("transportActive", false))
++            .put("status", meta.optString("status", "review"))
++            .put("reviewState", meta.optString("reviewState", "pending"))
+             .put("localOnly", true)
+             .put("transport", "ChatGPT Web")
+             .put("scope", RiftToolHost.SCOPE)
+@@ -76,6 +98,18 @@ class RiftAiJournal(context: Context) {
+             .put("latestAssistant", readObject(File(sessionDir(id), "assistant.json")) ?: JSONObject.NULL)
+     }
+ 
++    @Synchronized
++    fun transportActive(): Boolean = activeSessionId()?.let(::transportActiveFor) == true
++
++    @Synchronized
++    fun abortSession(sessionId: String, reason: String): JSONObject {
++        val id = activeSessionId()
++        if (id != sessionId) return state()
++        updateSessionState(id, "error", false)
++        recordEvent("error", reason.take(1000), JSONObject().put("phase", "error"))
++        return state()
++    }
++
+     @Synchronized
+     fun compactProjectContext(path: String = "workspace"): String {
+         val rows = projectTree(path)
+@@ -127,21 +161,23 @@ class RiftAiJournal(context: Context) {
+     }
+ 
+     @Synchronized
+-    fun captureForTool(name: String, args: JSONObject) {
+-        if (activeSessionId() == null) return
++    fun captureForTool(sessionId: String?, name: String, args: JSONObject) {
++        val id = trackedSession(sessionId) ?: return
+         when (name) {
+-            "rift_write_text", "rift_mkdir", "rift_remove" -> capturePath(args.optString("path"))
++            "rift_write_text", "rift_mkdir", "rift_remove" -> capturePath(id, args.optString("path"))
+             "rift_move" -> {
+-                capturePath(args.optString("from"))
+-                capturePath(args.optString("to"))
++                capturePath(id, args.optString("from"))
++                capturePath(id, args.optString("to"))
+             }
+         }
+     }
+ 
+     @Synchronized
+-    fun recordTool(name: String, args: JSONObject, phase: String, ok: Boolean? = null, error: String? = null) {
+-        if (activeSessionId() == null) return
++    fun recordTool(sessionId: String?, name: String, args: JSONObject, phase: String, ok: Boolean? = null, error: String? = null) {
++        val id = trackedSession(sessionId) ?: return
++        if (phase == "start") updateSessionState(id, "running", true)
+         val data = JSONObject()
++            .put("sessionId", id)
+             .put("tool", name)
+             .put("target", toolTarget(name, args))
+             .put("phase", phase)
+@@ -157,11 +193,23 @@ class RiftAiJournal(context: Context) {
+ 
+     @Synchronized
+     fun ingestBrowserEvent(event: JSONObject) {
+-        if (activeSessionId() == null) return
++        val id = activeSessionId() ?: return
+         val type = event.optString("type", "transport")
++        val data = event.optJSONObject("data") ?: JSONObject()
++        val eventSessionId = data.optString("sessionId").trim()
++        if (eventSessionId.isNotBlank() && eventSessionId != id) return
++        if (eventSessionId.isBlank() && !transportActiveFor(id)) return
++
++        val phase = data.optString("phase").trim().lowercase()
++        when {
++            type == "error" || phase == "error" -> updateSessionState(id, "error", false)
++            phase in setOf("opening", "waiting", "submitted", "running") -> updateSessionState(id, "running", true)
++            phase == "complete" -> updateSessionState(id, "review", false)
++            phase == "stopped" -> updateSessionState(id, "stopped", false)
++        }
++
+         if (type == "assistant") {
+-            val id = activeSessionId() ?: return
+-            val data = event.optJSONObject("data") ?: JSONObject()
++            if (sessionMeta(id)?.optString("status") == "starting") updateSessionState(id, "running", true)
+             writeJson(
+                 File(sessionDir(id), "assistant.json"),
+                 JSONObject()
+@@ -172,7 +220,6 @@ class RiftAiJournal(context: Context) {
+             touchMeta(id)
+             return
+         }
+-        val data = event.optJSONObject("data") ?: JSONObject()
+         val message = event.optString("message").ifBlank { type }
+         recordEvent(type, message, data)
+     }
+@@ -201,14 +248,7 @@ class RiftAiJournal(context: Context) {
+     @Synchronized
+     fun changes(): JSONArray {
+         val id = activeSessionId() ?: return JSONArray()
+-        val snapshots = snapshots(id)
+-        val out = JSONArray()
+-        for (index in 0 until snapshots.length()) {
+-            val snapshot = snapshots.optJSONObject(index) ?: continue
+-            val change = changeForSnapshot(id, snapshot) ?: continue
+-            out.put(change)
+-        }
+-        return out
++        return changesForSession(id)
+     }
+ 
+     @Synchronized
+@@ -251,36 +291,39 @@ class RiftAiJournal(context: Context) {
+     @Synchronized
+     fun acceptAll(): JSONObject {
+         val id = activeSessionId() ?: return JSONObject().put("accepted", true).put("changes", 0)
+-        val count = changes().length()
++        require(!transportActiveFor(id)) { "The Rift AI task is still running. Stop it or wait for completion before accepting changes." }
++        val count = changesForSession(id).length()
+         File(sessionDir(id), "originals").deleteRecursively()
+         File(sessionDir(id), "originals").mkdirs()
+         writeJson(File(sessionDir(id), "snapshots.json"), JSONArray())
+-        recordEvent("review", "Accepted $count change${if (count == 1) "" else "s"}", JSONObject().put("changes", count))
++        updateSessionState(id, "accepted", false, "accepted")
++        recordEvent("review", "Accepted $count change${if (count == 1) "" else "s"}", JSONObject().put("changes", count).put("phase", "accepted"))
+         return JSONObject().put("accepted", true).put("changes", count)
+     }
+ 
+     @Synchronized
+     fun revertAll(): JSONObject {
+         val id = activeSessionId() ?: return JSONObject().put("reverted", true).put("changes", 0)
++        require(!transportActiveFor(id)) { "The Rift AI task is still running. Stop it or wait for completion before reverting changes." }
+         val snapshots = snapshots(id)
+         val list = mutableListOf<JSONObject>()
+         for (index in 0 until snapshots.length()) snapshots.optJSONObject(index)?.let(list::add)
+-        val count = changes().length()
++        val count = changesForSession(id).length()
+         list.sortedBy { normalizePath(it.optString("path")).count { ch -> ch == '/' } }.forEach { snapshot ->
+             restoreSnapshot(id, snapshot)
+         }
+         File(sessionDir(id), "originals").deleteRecursively()
+         File(sessionDir(id), "originals").mkdirs()
+         writeJson(File(sessionDir(id), "snapshots.json"), JSONArray())
+-        recordEvent("review", "Reverted $count change${if (count == 1) "" else "s"}", JSONObject().put("changes", count))
++        updateSessionState(id, "reverted", false, "reverted")
++        recordEvent("review", "Reverted $count change${if (count == 1) "" else "s"}", JSONObject().put("changes", count).put("phase", "reverted"))
+         return JSONObject().put("reverted", true).put("changes", count)
+     }
+ 
+-    private fun capturePath(rawPath: String) {
+-        val id = activeSessionId() ?: return
++    private fun capturePath(id: String, rawPath: String) {
+         val path = normalizePath(rawPath)
+         require(path.isNotBlank()) { "Rift AI cannot snapshot the sandbox root" }
+-        if (findSnapshot(id, path) != null) return
++        if (findSnapshot(id, path) != null || hasSnapshotAncestor(id, path)) return
+ 
+         val source = sandboxFile(path)
+         val snapshot = JSONObject()
+@@ -301,7 +344,7 @@ class RiftAiJournal(context: Context) {
+                 require(bytes <= MAX_SNAPSHOT_BYTES) { "Rift AI rollback snapshot exceeds ${MAX_SNAPSHOT_BYTES} bytes: $path" }
+                 snapshot.put("kind", "directory")
+                 val dest = originalFile(id, snapshot)
+-                source.copyRecursively(dest, overwrite = true)
++                check(source.copyRecursively(dest, overwrite = true)) { "Could not create Rift AI rollback snapshot: $path" }
+             }
+             else -> snapshot.put("kind", "missing")
+         }
+@@ -326,7 +369,7 @@ class RiftAiJournal(context: Context) {
+             }
+             "directory" -> {
+                 target.parentFile?.mkdirs()
+-                originalFile(id, snapshot).copyRecursively(target, overwrite = true)
++                check(originalFile(id, snapshot).copyRecursively(target, overwrite = true)) { "Could not restore Rift AI directory snapshot: $path" }
+             }
+         }
+     }
+@@ -367,6 +410,17 @@ class RiftAiJournal(context: Context) {
+                 if (!looksBinary(bytes)) result.put("deletions", splitLines(bytes.toString(Charsets.UTF_8)).size)
+                 else result.put("binary", true)
+             }
++        } else if (originalKind == "file" && currentKind == "file") {
++            val original = originalFile(id, snapshot)
++            if (original.length() <= MAX_DIFF_FILE_BYTES && current.length() <= MAX_DIFF_FILE_BYTES) {
++                val before = original.readBytes()
++                val after = current.readBytes()
++                if (!looksBinary(before) && !looksBinary(after)) {
++                    val stats = buildTextDiff(path, before.toString(Charsets.UTF_8), after.toString(Charsets.UTF_8))
++                    result.put("additions", stats.optInt("additions", 0))
++                    result.put("deletions", stats.optInt("deletions", 0))
++                } else result.put("binary", true)
++            } else result.put("binary", true)
+         }
+         return result
+     }
+@@ -465,12 +519,13 @@ class RiftAiJournal(context: Context) {
+         val metaFile = File(dir, "meta.json")
+         val meta = readObject(metaFile) ?: JSONObject().put("id", id).put("nextSeq", 1L)
+         val seq = meta.optLong("nextSeq", 1L)
++        val eventData = runCatching { JSONObject(data.toString()) }.getOrElse { JSONObject() }.put("sessionId", id)
+         val event = JSONObject()
+             .put("seq", seq)
+             .put("at", System.currentTimeMillis())
+             .put("type", type.take(80))
+             .put("message", message.take(1000))
+-            .put("data", data)
++            .put("data", eventData)
+         val eventsFile = File(dir, "events.jsonl")
+         eventsFile.appendText(event.toString() + "\n", Charsets.UTF_8)
+         trimEvents(eventsFile)
+@@ -498,6 +553,58 @@ class RiftAiJournal(context: Context) {
+             ?.forEach { runCatching { it.deleteRecursively() } }
+     }
+ 
++    private fun recoverInterruptedSession() {
++        val id = activeSessionId() ?: return
++        if (!transportActiveFor(id)) return
++        updateSessionState(id, "interrupted", false)
++        recordEvent(
++            "transport",
++            "Previous ChatGPT Web task was interrupted when RiftOS stopped",
++            JSONObject().put("phase", "interrupted")
++        )
++    }
++
++    private fun changesForSession(id: String): JSONArray {
++        val items = snapshots(id)
++        val out = JSONArray()
++        for (index in 0 until items.length()) {
++            val snapshot = items.optJSONObject(index) ?: continue
++            changeForSnapshot(id, snapshot)?.let(out::put)
++        }
++        return out
++    }
++
++    private fun sessionMeta(id: String): JSONObject? = readObject(File(sessionDir(id), "meta.json"))
++
++    private fun transportActiveFor(id: String): Boolean = sessionMeta(id)?.optBoolean("transportActive", false) == true
++
++    private fun trackedSession(sessionId: String?): String? {
++        val requested = sessionId?.trim().orEmpty()
++        if (requested.isBlank()) return null
++        val active = activeSessionId() ?: return null
++        if (requested != active || !transportActiveFor(active)) return null
++        return active
++    }
++
++    private fun updateSessionState(id: String, status: String, transportActive: Boolean, reviewState: String? = null) {
++        val file = File(sessionDir(id), "meta.json")
++        val meta = readObject(file) ?: JSONObject().put("id", id).put("nextSeq", 1L)
++        meta.put("status", status)
++            .put("transportActive", transportActive)
++            .put("updatedAt", System.currentTimeMillis())
++        if (reviewState != null) meta.put("reviewState", reviewState)
++        writeJson(file, meta)
++    }
++
++    private fun hasSnapshotAncestor(id: String, path: String): Boolean {
++        val items = snapshots(id)
++        for (index in 0 until items.length()) {
++            val candidate = normalizePath(items.optJSONObject(index)?.optString("path").orEmpty())
++            if (candidate.isNotBlank() && path.startsWith("$candidate/")) return true
++        }
++        return false
++    }
++
+     private fun activeSessionId(): String? = prefs.getString(PREF_ACTIVE_SESSION, null)?.takeIf { it.isNotBlank() && sessionDir(it).isDirectory }
+     private fun sessionDir(id: String): File = File(sessionsRoot, id.replace(Regex("[^A-Za-z0-9._-]"), "_"))
+     private fun snapshots(id: String): JSONArray = readArray(File(sessionDir(id), "snapshots.json")) ?: JSONArray()

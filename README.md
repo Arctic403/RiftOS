@@ -66,9 +66,11 @@ RiftBrowser is planned to migrate from Android System WebView to RiftEngine/Serv
 
 Rift AI is a local HTML cockpit rendered by the existing RiftOS shell. It does not create another WebView and it does not call a model API. The existing authenticated ChatGPT WebView becomes an invisible transport while an AI task runs. Assistant output, structured logs, project tree and local diffs are shown by RiftOS instead of exposing the tool-call conversation as the normal live view.
 
-Each AI task starts a fresh ChatGPT Web conversation with a compact project tree for `tool-sandbox/workspace`. ChatGPT then reads only the files it needs through the existing Rift MCP tools. Mutating tools are journaled before execution by `RiftAiJournal`, enabling persistent **Changes**, unified-style diff, **Accept all** and **Revert all** without cloning the whole project. Rollback data lives under `filesDir/rift-ai`, outside the MCP-visible sandbox.
+Each AI task starts a fresh ChatGPT Web conversation with a compact project tree for `tool-sandbox/workspace`. ChatGPT then reads only the files it needs through the existing Rift MCP tools. RiftBrowser internally tags AI-owned `tools/call` requests with an unexposed session ID, so `RiftAiJournal` snapshots only mutations belonging to the active Rift AI task; ordinary visible-chat MCP calls do not get absorbed into an old AI review session.
 
-The **Show ChatGPT** control reveals the same WebView for sign-in or debugging; it is not a second transport. See `docs/RIFT_AI_WORKSPACE.md`.
+The persistent **Changes** view provides additions/deletions, bounded unified-style text diffs, **Accept all** and **Revert all** without cloning the whole project. Accept/revert are locked while ChatGPT transport is active, and a new task cannot replace a session with unreviewed changes. Rollback data lives under `filesDir/rift-ai`, outside the MCP-visible sandbox.
+
+The **Show ChatGPT** control reveals the same WebView for sign-in or debugging; it is not a second transport. When an invisible task reaches complete/stopped/error state, the hidden renderer is released instead of being kept alive by the persistent session record. See `docs/RIFT_AI_WORKSPACE.md`.
 
 ## Local Rift MCP
 
@@ -113,7 +115,7 @@ Settings includes **System diagnostics → Save system dump…**. The dump is pr
 
 The APK workflow is `.github/workflows/riftos-android-apk.yml` and runs on `android-apk` and `main`.
 
-It builds, aligns, signs and verifies the APK; checks API 26+, package/signature and Android-only assets; verifies the local Rift MCP module; rejects the removed DOM Agent, whole-chat streaming scanner, remote MCP relay/client/provider/Activity and removed local-AI binaries; uploads the artifact; and updates the `android-latest` release.
+It builds, aligns, signs and verifies the APK; checks API 26+, package/signature and Android-only assets; verifies the local Rift MCP/Rift AI modules and AI-session metadata path; rejects model-API/key paths, the discarded second-AI-WebView design, the removed DOM Agent, whole-chat streaming scanner, remote MCP relay/client/provider/Activity and removed local-AI binaries; uploads the artifact; and updates the `android-latest` release.
 
 ## Branches
 

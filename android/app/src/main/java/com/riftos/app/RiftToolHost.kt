@@ -95,13 +95,13 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             )
         ))
 
-    fun callAsync(rawName: String, args: JSONObject, reply: (JSONObject) -> Unit) {
+    fun callAsync(rawName: String, args: JSONObject, aiSessionId: String? = null, reply: (JSONObject) -> Unit) {
         val name = canonicalName(rawName)
         val method = methodFor(name)
         if (method == null) {
             val error = "Unsupported Rift tool: $rawName"
             recordAudit(rawName.take(120), args, false, error)
-            aiJournal.recordTool(rawName.take(120), args, "finish", false, error)
+            aiJournal.recordTool(aiSessionId, rawName.take(120), args, "finish", false, error)
             reply(JSONObject().put("ok", false).put("name", rawName).put("error", error))
             return
         }
@@ -112,23 +112,23 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                 "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
             }
             recordAudit(name, args, false, error)
-            aiJournal.recordTool(name, args, "finish", false, error)
+            aiJournal.recordTool(aiSessionId, name, args, "finish", false, error)
             reply(JSONObject().put("ok", false).put("name", name).put("error", error))
             return
         }
 
         if (isWriteTool(name)) {
             try {
-                aiJournal.captureForTool(name, args)
+                aiJournal.captureForTool(aiSessionId, name, args)
             } catch (error: Throwable) {
                 val message = error.message ?: "Rift AI rollback snapshot failed"
                 recordAudit(name, args, false, message)
-                aiJournal.recordTool(name, args, "finish", false, message)
+                aiJournal.recordTool(aiSessionId, name, args, "finish", false, message)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", message))
                 return
             }
         }
-        aiJournal.recordTool(name, args, "start")
+        aiJournal.recordTool(aiSessionId, name, args, "start")
 
         val requestId = "tool-${System.currentTimeMillis()}-${System.nanoTime()}"
         val request = JSONObject()
@@ -140,7 +140,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             val response = runCatching { JSONObject(raw) }.getOrNull()
             if (response?.optBoolean("ok", false) == true) {
                 recordAudit(name, args, true, null)
-                aiJournal.recordTool(name, args, "finish", true, null)
+                aiJournal.recordTool(aiSessionId, name, args, "finish", true, null)
                 reply(
                     JSONObject()
                         .put("ok", true)
@@ -150,7 +150,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             } else {
                 val error = response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Rift sandbox call failed"
                 recordAudit(name, args, false, error)
-                aiJournal.recordTool(name, args, "finish", false, error)
+                aiJournal.recordTool(aiSessionId, name, args, "finish", false, error)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", error))
             }
         }

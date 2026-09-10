@@ -77,9 +77,11 @@ The first local-MCP build migrates existing alpha data from the historical `rift
 
 ## Rift AI working-tree journal
 
-When a Rift AI session is active, `RiftToolHost` integrates with `RiftAiJournal`. Before each mutating tool (`rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`) the journal captures the original affected path. A capture failure blocks the mutation. Read/list/stat calls are logged but do not create rollback copies.
+Rift AI journaling is session-scoped, not a global side effect of MCP. The model emits the same ordinary `<rift_call>` envelope as normal. While a Rift AI task is active, the browser adapter privately adds `_meta["riftos/aiSessionId"]` to the resulting local `tools/call`. `RiftMcpServer` passes that value to `RiftToolHost`, and `RiftAiJournal` tracks the call only when it matches the current active transport session. The session ID is not a model argument or tool-schema field.
 
-Journal state is stored under `filesDir/rift-ai`, outside the MCP-visible `tool-sandbox`. The shell can inspect changes, request a bounded unified-style text diff, accept the current files as a new baseline or revert the captured mutations. This review layer does not add MCP authority and is not visible as a ChatGPT tool.
+Before each matching mutating tool (`rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`) the journal captures the original affected path. A capture failure blocks the mutation. Matching reads/list/stat calls are logged but do not create rollback copies. Normal MCP calls outside the active Rift AI transport remain fully usable and are not added to the AI rollback set.
+
+Journal state is stored under `filesDir/rift-ai`, outside the MCP-visible `tool-sandbox`. The shell can inspect additions/deletions, request a bounded unified-style text diff, accept the current files as a new baseline or revert the captured mutations. Accept/revert are rejected while transport is active, and a new AI session cannot replace unreviewed changes. This review layer does not add MCP authority and is not visible as a ChatGPT tool.
 
 ## Browser compatibility boundary
 
