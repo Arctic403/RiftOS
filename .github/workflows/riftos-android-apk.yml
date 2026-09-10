@@ -217,14 +217,22 @@ jobs:
           if-no-files-found: error
 
       - name: Publish stable latest APK download
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          RELEASE_NOTES="Samsung/Android-native RiftOS alpha. Android 8.0 / API 26+. Built from main at ${GITHUB_SHA}."
           if gh release view android-latest >/dev/null 2>&1; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/android-latest" \
+              -f sha="$GITHUB_SHA" \
+              -F force=true >/dev/null
             gh release upload android-latest RiftOS-Android-debug.apk --clobber
+            gh release edit android-latest \
+              --title "RiftOS Android — Latest Debug" \
+              --notes "$RELEASE_NOTES"
           else
             gh release create android-latest RiftOS-Android-debug.apk \
               --target "$GITHUB_SHA" \
               --title "RiftOS Android — Latest Debug" \
-              --notes "Samsung/Android-native RiftOS alpha. Android 8.0 / API 26+."
+              --notes "$RELEASE_NOTES"
           fi
