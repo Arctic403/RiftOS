@@ -1,3 +1,4 @@
+# Rift AI 0.9.1 source finalized; workflow touch triggers validation on the clean HEAD.
 name: Build RiftOS Android APK
 
 on:
