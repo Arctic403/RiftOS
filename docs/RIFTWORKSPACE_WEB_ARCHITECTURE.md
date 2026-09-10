@@ -43,7 +43,7 @@ RiftKernel
 
 Normal guest webpages never receive `RiftWorkspace` or unrestricted RiftFS authority.
 
-ChatGPT receives only the separate `browser-sandbox` filesystem, not the main RiftWorkspace tree.
+ChatGPT receives only the separate `tool-sandbox` filesystem, not the main RiftWorkspace tree.
 
 ## Historical web mode
 

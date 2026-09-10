@@ -19,6 +19,10 @@ RiftFS  RiftRT   RiftDesktop
   |                  |
 filesDir + SAF       apps/windows
                      |
+                 Rift AI HTML
+                     |
+            hidden ChatGPT Web
+                     |
                  RiftBrowser
                      |
              RiftBrowserWindow
@@ -52,7 +56,7 @@ Rift MCP tools use a separate app-private `riftfs/tool-sandbox`. Existing alpha 
 
 ## Desktop
 
-RiftDesktop is the single window manager for built-ins and RiftRT apps. Files, Settings, RiftBrowser and Rift MCP participate in the RiftOS application model.
+RiftDesktop is the single window manager for built-ins and RiftRT apps. Files, Settings, RiftBrowser, Rift AI and Rift MCP participate in the RiftOS application model.
 
 The browser's native renderer is a content plane inside a RiftOS-managed window, not a second desktop or full-screen browser Activity. Android System WebView is the current compatibility renderer; RiftEngine/Servo is the target renderer after hardware validation.
 
@@ -73,6 +77,12 @@ Normal guest pages do not receive RiftFS, RiftWorkspace or `RiftNativeDispatcher
 The ChatGPT compatibility layer is exact-origin and can send only MCP JSON-RPC to the in-process `RiftMcpServer`. `RiftToolHost` validates tool names, applies local read/write grants, records bounded audit metadata and dispatches into `RiftToolSandbox`.
 
 The browser compatibility layer may depend on ChatGPT composer/rendered-message structure, but that dependency does not own or weaken the device capability boundary.
+
+## Rift AI boundary
+
+Rift AI is a trusted RiftOS shell application, not a guest webpage. It displays project metadata, assistant output, logs and local diffs by calling local `ai.*` native capabilities. It never receives or stores a model API key because the model transport is exclusively the authenticated ChatGPT Web page in RiftBrowser.
+
+Rollback originals are stored under `filesDir/rift-ai`, outside `riftfs/tool-sandbox`. ChatGPT can mutate only through the fixed MCP tool registry and cannot modify the journal that is used to review/revert those mutations.
 
 ## Removed architectures
 

@@ -54,3 +54,7 @@ RiftToolHost
 ```
 
 The MCP/tool host is renderer-independent. Moving browser engines must not change the Rift capability boundary.
+
+## Rift AI compatibility
+
+A future renderer must preserve Rift AI transport-only mode: the authenticated ChatGPT page must be able to stay alive and stream while RiftOS shell HTML is the visible workspace. The renderer migration must not introduce a model API path or a second model transport.

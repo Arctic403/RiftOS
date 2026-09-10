@@ -61,6 +61,12 @@ The adapter:
 
 Because ChatGPT Web has no supported local-tool registration hook on these plans, this compatibility layer still observes the composer and semantic assistant-message elements. That browser-facing dependency is isolated in one JavaScript asset. It is not part of the device capability boundary and does not own tool execution.
 
+## Rift AI transport mode
+
+`riftbrowser-mcp-app.js` also supports the local Rift AI HTML cockpit. Native code can call `window.RiftMcpAppControl.submitTask(...)` in the hidden ChatGPT WebView. The adapter writes the task to the normal ChatGPT composer, appends compact project/tool context, and clicks the normal ChatGPT Web send control. There is no API request path.
+
+The adapter mirrors cleaned assistant text and transport status back to Android as exact-origin `rift/ai/event` messages over `RiftMcpNative`. Tool envelopes are stripped from the mirrored assistant pane; the actual tool loop still occurs in ChatGPT Web and MCP results still return through the composer.
+
 ## Permissions
 
 Read/write policy comes exclusively from `RiftToolHost` and is configured in the local **Rift MCP** system app. Read defaults on. Write defaults off. A browser request cannot bypass those settings.

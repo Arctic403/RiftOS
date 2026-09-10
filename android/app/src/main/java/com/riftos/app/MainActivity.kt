@@ -70,7 +70,8 @@ class MainActivity : Activity() {
             activity = this,
             host = rootView,
             launchFileChooser = ::launchFileChooser,
-            stateSink = ::sendBrowserWindowState
+            stateSink = ::sendBrowserWindowState,
+            aiEventSink = ::handleAiTransportEvent
         )
         CookieManager.getInstance().setAcceptCookie(true)
 
@@ -166,7 +167,7 @@ class MainActivity : Activity() {
         val method = message.optString("method")
         val requestId = message.optString("id")
         val args = message.optJSONObject("args") ?: JSONObject()
-        if (requestId.isBlank()) return method == "system.dump.save" || method.startsWith("browser.window.")
+        if (requestId.isBlank()) return method == "system.dump.save" || method.startsWith("browser.window.") || method.startsWith("ai.")
 
         when (method) {
             "system.dump.save" -> openSystemDumpPicker(requestId)
@@ -179,6 +180,17 @@ class MainActivity : Activity() {
             "browser.window.visible" -> runBrowserCommand(requestId) { browserWindow.setVisible(args.optBoolean("visible", true)) }
             "browser.window.state" -> runBrowserCommand(requestId) { browserWindow.state() }
             "browser.window.close" -> runBrowserCommand(requestId) { JSONObject().put("closed", browserWindow.close()) }
+            "ai.start" -> startAiSession(requestId, args.optString("task"))
+            "ai.state" -> runKernelCommand(requestId) { RiftMcpRuntime.aiJournal(this).state() }
+            "ai.events" -> runKernelCommand(requestId) { RiftMcpRuntime.aiJournal(this).events(args.optLong("afterSeq", 0L)) }
+            "ai.tree" -> runKernelCommand(requestId) { RiftMcpRuntime.aiJournal(this).projectTree(args.optString("path", "workspace")) }
+            "ai.changes" -> runKernelCommand(requestId) { RiftMcpRuntime.aiJournal(this).changes() }
+            "ai.diff" -> runKernelCommand(requestId) { RiftMcpRuntime.aiJournal(this).diff(args.getString("path")) }
+            "ai.accept" -> runKernelCommand(requestId) { RiftMcpRuntime.aiJournal(this).acceptAll() }
+            "ai.revert" -> runKernelCommand(requestId) { RiftMcpRuntime.aiJournal(this).revertAll() }
+            "ai.showWeb" -> runBrowserCommand(requestId) { browserWindow.revealAiTransport() }
+            "ai.hideWeb" -> runBrowserCommand(requestId) { browserWindow.hideAiTransport() }
+            "ai.stop" -> runBrowserCommand(requestId) { browserWindow.stopAiTask() }
             else -> return false
         }
         return true
@@ -191,6 +203,51 @@ class MainActivity : Activity() {
             } catch (error: Throwable) {
                 sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
             }
+        }
+    }
+
+    private fun runKernelCommand(requestId: String, command: () -> Any?) {
+        kernelExecutor.execute {
+            try {
+                sendNativeResult(requestId, true, command(), null)
+            } catch (error: Throwable) {
+                sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
+            }
+        }
+    }
+
+    private fun startAiSession(requestId: String, task: String) {
+        if (task.isBlank()) {
+            sendNativeResult(requestId, false, null, "Rift AI task is empty")
+            return
+        }
+        kernelExecutor.execute {
+            try {
+                val journal = RiftMcpRuntime.aiJournal(this)
+                val session = journal.beginSession(task)
+                val projectContext = journal.compactProjectContext("workspace")
+                runOnUiThread {
+                    try {
+                        val transport = browserWindow.startAiTask(task, projectContext)
+                        sendNativeResult(
+                            requestId,
+                            true,
+                            JSONObject().put("session", session).put("transport", transport),
+                            null
+                        )
+                    } catch (error: Throwable) {
+                        sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
+                    }
+                }
+            } catch (error: Throwable) {
+                sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
+            }
+        }
+    }
+
+    private fun handleAiTransportEvent(event: JSONObject) {
+        kernelExecutor.execute {
+            runCatching { RiftMcpRuntime.aiJournal(this).ingestBrowserEvent(event) }
         }
     }
 

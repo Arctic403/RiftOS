@@ -75,6 +75,12 @@ The first local-MCP build migrates existing alpha data from the historical `rift
 
 `RiftToolSandbox` enforces canonical-path containment, an 8 MiB tool payload/file limit and a 5000-entry listing limit.
 
+## Rift AI working-tree journal
+
+When a Rift AI session is active, `RiftToolHost` integrates with `RiftAiJournal`. Before each mutating tool (`rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`) the journal captures the original affected path. A capture failure blocks the mutation. Read/list/stat calls are logged but do not create rollback copies.
+
+Journal state is stored under `filesDir/rift-ai`, outside the MCP-visible `tool-sandbox`. The shell can inspect changes, request a bounded unified-style text diff, accept the current files as a new baseline or revert the captured mutations. This review layer does not add MCP authority and is not visible as a ChatGPT tool.
+
 ## Browser compatibility boundary
 
 On ChatGPT plans without official custom MCP registration, `riftbrowser-mcp-app.js` provides a browser compatibility adapter. It:

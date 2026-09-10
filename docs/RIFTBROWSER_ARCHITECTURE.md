@@ -56,6 +56,12 @@ RiftToolSandbox
 
 Because some ChatGPT plans do not expose a supported local custom-MCP registration path, the browser compatibility asset still observes the composer and semantic assistant-message elements. This is isolated to the page adapter and is not the tool security boundary.
 
+## Hidden ChatGPT transport mode
+
+Rift AI can use the existing ChatGPT WebView as a transport without making the chat the visible workflow. `ai.start` switches `RiftBrowserWindow` into transport-only mode: the same WebView remains attached, laid out and running but is Android-`INVISIBLE`. This preserves composer layout, streaming DOM and MCP automation while the RiftOS shell shows `src/riftai-workspace.js`.
+
+No second browser renderer is created for Rift AI. **Show ChatGPT** reveals the same WebView; closing the visible browser during an active AI session returns it to invisible transport mode.
+
 ## Streaming performance rule
 
 The compatibility layer must never scan the complete chat on every token/DOM mutation. It uses mutation-scoped message tracking, delayed batching, serialized calls and a compact one-shot tool manifest per conversation route. CI rejects the removed whole-chat scanner.

@@ -341,6 +341,7 @@ document.addEventListener("click",event=>{
 window.RiftOSWindowManager=Object.freeze({
   list:()=>[...windows.values()].map(record=>({id:record.id,title:record.title,pid:record.process?.pid,minimized:record.win.classList.contains("rift-minimized"),window:record.win})),
   get:id=>windows.get(id)||null,
+  open:(id,title,kicker="RIFT APP")=>openWindow(String(id),String(title),String(kicker)),
   focus:focusWindow,
   close:closeWindow,
   showDesktop,

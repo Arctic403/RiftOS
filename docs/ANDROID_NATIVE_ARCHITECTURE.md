@@ -67,6 +67,12 @@ RiftBrowserMcpAppBridge
 
 Read access defaults on. Write access defaults off. The `Rift MCP` system app is the only current settings surface for those grants.
 
+## Rift AI native support
+
+`MainActivity` brokers local `ai.*` shell commands for session state, event polling, project-tree metadata, diffs, accept/revert and ChatGPT-Web visibility. `RiftAiJournal` stores persistent rollback/event state in `filesDir/rift-ai`. That directory is deliberately outside the MCP sandbox.
+
+`RiftBrowserWindow` has a transport-only mode used by Rift AI. The existing ChatGPT WebView remains laid out and `INVISIBLE`; no extra AI WebView, model HTTP client, API key or public listener is introduced.
+
 ## System Dump
 
 Settings invokes `system.dump.save`. Android generates a JSON diagnostic snapshot and opens `ACTION_CREATE_DOCUMENT`, allowing the user to choose the provider, folder and filename.

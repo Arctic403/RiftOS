@@ -23,6 +23,20 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - RiftDev Android editor backed by RiftWorkspace through `RiftDevAndroidDB` compatibility plumbing.
 - RiftRT v1 worker/iframe/WASM application runtime.
 - **Rift MCP** registered as a RiftOS system app for local tool permissions and recent tool activity.
+- **Rift AI** registered as a RiftOS HTML system app for project tree, assistant output, live logs and staged change review.
+
+### Rift AI Workspace
+
+- Visible AI UI is rendered by the existing RiftOS shell; no second AI WebView is created.
+- The only model transport is authenticated ChatGPT Web in the existing `RiftBrowserWindow` WebView.
+- AI mode keeps that WebView laid out and alive but Android-`INVISIBLE`; **Show ChatGPT** reveals the same page for sign-in/debugging.
+- `ai.start` opens a fresh ChatGPT Web conversation and submits the task with compact project-tree context plus the live local MCP manifest.
+- Assistant streaming output is mirrored into the HTML workspace; `<rift_call>` / result chatter remains transport detail rather than the primary live UI.
+- Local structured logs include session, transport and MCP tool start/finish events without file contents.
+- `RiftAiJournal` lazily snapshots only paths touched by mutating MCP tools and stores rollback data outside the MCP sandbox.
+- Changes view supports unified-style text diff plus session-wide Accept all / Revert all.
+- Session metadata, logs, latest assistant output and rollback originals persist on disk.
+- Active source contains no OpenAI API endpoint/key flow or alternate model transport.
 
 ### RiftBrowser
 
@@ -56,7 +70,7 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - User-selected dump destination.
 - GitHub Actions build/sign/verify/publish pipeline.
 - APK verification requires the Rift MCP App asset and local `riftmcp-system.js` module.
-- CI rejects the removed DOM Agent, Agent V3 marker, whole-chat mutation scanner, remote relay/client/provider/Activity and `libllamaserver.so`.
+- CI rejects the removed DOM Agent, Agent V3 marker, whole-chat mutation scanner, remote relay/client/provider/Activity and `libllamaserver.so`; it also verifies the shell Rift AI module and rejects model-API endpoint/key patterns in that module.
 - No emulator smoke test or compatibility matrix in normal CI.
 
 ## Removed / inactive
@@ -89,4 +103,4 @@ Historical Git commits may mention those experiments. They are not current runti
 
 ## Planned
 
-See `ROADMAP.md`, especially RiftEngine/Servo integration, browser compatibility resilience, RiftScript Studio, developer overlays, live inspection/testing, Development Snapshot export and capability-gated expansion of the local tool registry.
+See `ROADMAP.md`, especially Rift AI working-tree refinement, project search/patch tooling, RiftEngine/Servo integration, RiftScript Studio and capability-gated expansion of the local tool registry.

@@ -2,12 +2,14 @@
 
 This roadmap describes intended work, not shipped capability. Current implementation status is tracked in `docs/PROJECT_STATUS.md`.
 
-## Now: local MCP + browser stability
+## Now: Rift AI workspace + local MCP + browser stability
 
 - Keep `main` authoritative and use `android-apk` for staged validation when useful.
 - Keep **Rift MCP** local-only: no remote relay, WSS pairing client, public MCP endpoint or process-start network service.
 - Keep `RiftToolHost` as the single capability authority for MCP permissions, audit and tool dispatch.
 - Preserve the optimized ChatGPT compatibility path: mutation-scoped processing, compact one-shot tool context and serialized tool calls.
+- Stabilize the shell-rendered **Rift AI** cockpit: hidden ChatGPT Web transport, selective project context, live logs and persistent working-tree review.
+- Keep the model path ChatGPT-Web-only; do not add an OpenAI API key/endpoint path to Rift AI.
 - Harden RiftBrowser move/resize/focus and long-chat behavior across phones, tablets and DeX.
 - Continue RiftEngine/Servo integration behind a hardware compatibility gate; Android System WebView remains the compatibility backend until that gate passes.
 - Add focused on-device diagnostics and exported test results rather than emulator-heavy CI.
@@ -43,6 +45,21 @@ snapshot.*
 ```
 
 High-impact operations should require explicit developer-mode capability grants. Normal apps and arbitrary webpages must not receive Rift MCP privileges. MCP remains a protocol surface over `RiftToolHost`; it is not the RiftOS kernel API.
+
+## Rift AI project intelligence
+
+Current checkpoint: compact recursive project tree, selective existing MCP reads, persistent mutation journal, unified-style diff, Accept all and Revert all.
+
+Next improvements should stay lightweight:
+
+- `rift_search_text` for fast project-wide symbol/text lookup without reading every file;
+- `rift_read_many` with strict aggregate byte caps;
+- `rift_apply_patch` for diff-sized edits instead of whole-file rewrites;
+- ignored-directory rules (`.git`, build output, dependency caches) in project metadata;
+- per-file/hunk accept/revert on top of the current session-wide baseline;
+- changed-files summaries that do not hash the full project continuously.
+
+The project should never be injected wholesale into ChatGPT. Tree metadata guides the model; file contents are fetched only when needed.
 
 ## RiftEngine
 
@@ -98,7 +115,7 @@ The Android SDK/Gradle toolchain should remain outside the installed phone app t
 - crash/session diagnostics export,
 - controlled native plugin packaging compiled into RiftOS,
 - more complete tablet/desktop multi-window ergonomics,
-- optional official MCP/tunnel adapter only if it can reuse `RiftToolHost` without changing the local capability model.
+- richer local project intelligence while preserving the ChatGPT-Web-only model path.
 
 ## Non-goals
 
@@ -107,5 +124,6 @@ The Android SDK/Gradle toolchain should remain outside the installed phone app t
 - giving normal webpages unrestricted Android or RiftFS access,
 - restoring the removed DOM Agent V1/V2/V3 protocol,
 - restoring the removed remote Rift MCP relay/WSS pairing architecture,
+- adding a direct model API/key path to Rift AI,
 - making MCP the internal RiftOS capability API,
 - reintroducing the removed local LLM runtime on low-memory Android devices.

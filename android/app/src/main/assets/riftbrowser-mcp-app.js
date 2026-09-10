@@ -17,8 +17,11 @@
   const recentCallTimes = [];
   const touchedAssistantMessages = new Set();
   const touchedUserMessages = new Set();
+  const lastAssistantText = new WeakMap();
   let requestCounter = 0;
   let tools = [];
+  let mcpReady = false;
+  let bootComplete = false;
   let enabled = true;
   let suppressDecoration = false;
   let callQueue = Promise.resolve();
@@ -28,6 +31,17 @@
   let contextSentForRoute = false;
 
   function now() { return Date.now(); }
+
+  function sendAiEvent(type, message, data) {
+    try {
+      if (!window.RiftMcpNative || typeof window.RiftMcpNative.postMessage !== 'function') return;
+      window.RiftMcpNative.postMessage(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'rift/ai/event',
+        params: { type: String(type || 'transport'), message: String(message || '').slice(0, 1000), data: data && typeof data === 'object' ? data : {} }
+      }));
+    } catch (_) {}
+  }
 
   function postRpc(method, params) {
     return new Promise((resolve, reject) => {
@@ -194,6 +208,65 @@
     return null;
   }
 
+  async function waitForComposer(timeoutMs) {
+    const deadline = now() + timeoutMs;
+    while (now() < deadline) {
+      const composer = findComposer();
+      if (composer) return composer;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return null;
+  }
+
+  async function waitForMcpReady(timeoutMs) {
+    const deadline = now() + timeoutMs;
+    while (now() < deadline) {
+      if (mcpReady) return true;
+      if (bootComplete && !mcpReady) return false;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    return mcpReady;
+  }
+
+  async function submitAiTask(payload) {
+    const task = String(payload && payload.task || '').trim();
+    const projectContext = String(payload && payload.projectContext || '').trim();
+    if (!task) { sendAiEvent('error', 'Rift AI task is empty'); return false; }
+    sendAiEvent('transport', 'Waiting for local MCP manifest');
+    if (!await waitForMcpReady(12000)) {
+      sendAiEvent('error', 'Local Rift MCP did not initialize; task was not submitted');
+      return false;
+    }
+    sendAiEvent('transport', 'Waiting for ChatGPT Web composer');
+    const composer = await waitForComposer(20000);
+    if (!composer) { sendAiEvent('error', 'ChatGPT Web composer unavailable. Open Web view to sign in or inspect the page.'); return false; }
+    refreshRouteState();
+    let message = task;
+    if (projectContext) message += `\n\n${projectContext}`;
+    if (tools.length && !contextSentForRoute) {
+      message += `\n\n${contextBlock()}`;
+      contextSentForRoute = true;
+    }
+    suppressDecoration = true;
+    writeComposer(composer, message);
+    const button = await waitForSendButton(12000);
+    if (!button) {
+      suppressDecoration = false;
+      sendAiEvent('error', 'ChatGPT Web send button unavailable');
+      return false;
+    }
+    button.click();
+    sendAiEvent('transport', 'Task submitted to ChatGPT Web');
+    setTimeout(() => { suppressDecoration = false; }, 800);
+    return true;
+  }
+
+  function stopAiTask() {
+    const stop = document.querySelector('[data-testid="stop-button"],button[aria-label*="Stop" i]');
+    if (stop instanceof HTMLElement && !stop.disabled) { stop.click(); sendAiEvent('transport', 'Stop requested'); return true; }
+    return false;
+  }
+
   async function submitToolResult(payload) {
     const message = `${RESULT_MARKER}\n${JSON.stringify(payload)}\nContinue using this result. If another Rift tool is required, emit exactly one ${CALL_OPEN}...${CALL_CLOSE} envelope.`;
     const composer = findComposer();
@@ -281,10 +354,30 @@
     return calls;
   }
 
+  function stripToolEnvelopes(text) {
+    let out = String(text || '');
+    while (true) {
+      const start = out.indexOf(CALL_OPEN);
+      if (start < 0) break;
+      const end = out.indexOf(CALL_CLOSE, start + CALL_OPEN.length);
+      if (end < 0) { out = out.slice(0, start); break; }
+      out = out.slice(0, start) + out.slice(end + CALL_CLOSE.length);
+    }
+    return out.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   function scanAssistantMessage(message) {
-    if (!enabled || tools.length === 0 || !(message instanceof Element)) return;
+    if (!enabled || !(message instanceof Element)) return;
     const text = String(message.innerText || message.textContent || '');
-    if (!text.includes(CALL_OPEN) || !text.includes(CALL_CLOSE)) return;
+    const visibleText = stripToolEnvelopes(text);
+    if (visibleText && lastAssistantText.get(message) !== visibleText) {
+      lastAssistantText.set(message, visibleText);
+      sendAiEvent('assistant', 'Assistant output updated', {
+        messageId: String(message.getAttribute('data-message-id') || message.id || ''),
+        text: visibleText.slice(0, 180000)
+      });
+    }
+    if (tools.length === 0 || !text.includes(CALL_OPEN) || !text.includes(CALL_CLOSE)) return;
     for (const packet of extractCalls(text)) {
       callQueue = callQueue.then(() => executeCall(packet)).catch(() => setBadge('error'));
     }
@@ -380,10 +473,16 @@
       await postRpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'riftbrowser-mcp-app', version: VERSION } });
       const result = await postRpc('tools/list', {});
       tools = Array.isArray(result.tools) ? result.tools : [];
-      setBadge('ready');
-    } catch (_) {
+      mcpReady = tools.length > 0;
+      bootComplete = true;
+      setBadge(mcpReady ? 'ready' : 'error');
+      sendAiEvent(mcpReady ? 'transport' : 'error', mcpReady ? `Rift MCP ready · ${tools.length} local tools` : 'Rift MCP returned no tools');
+    } catch (error) {
       tools = [];
+      mcpReady = false;
+      bootComplete = true;
       setBadge('error');
+      sendAiEvent('error', `Rift MCP initialization failed: ${String(error && error.message || error)}`);
     }
 
     document.addEventListener('click', (event) => {
@@ -408,6 +507,12 @@
     observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
     scanRecentMessagesOnce();
   }
+
+  window.RiftMcpAppControl = Object.freeze({
+    submitTask: submitAiTask,
+    stop: stopAiTask,
+    state: () => ({ version: VERSION, enabled, tools: tools.length, route: routeKey })
+  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();

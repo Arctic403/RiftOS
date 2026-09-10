@@ -17,9 +17,11 @@ Android 8+ / Samsung / DeX
    /      |       \
 RiftFS  RiftRT  RiftDesktop
   |                 |
-Android filesDir     +-- Files / Settings / RiftDev / Rift MCP / apps
+Android filesDir     +-- Files / Settings / RiftDev / Rift AI / Rift MCP / apps
 + SAF mounts         |
-                    RiftBrowser window chrome
+                    Rift AI HTML workspace
+                         |
+               hidden ChatGPT Web transport
                          |
                   native RiftBrowserWindow
                          |
@@ -47,6 +49,7 @@ There is **no remote Rift MCP relay** in the active architecture. No WSS device 
 - **RiftDesktop**: draggable/resizable/minimizable/maximizable desktop windows and taskbar.
 - **RiftRT v1**: worker/iframe/WASM application runtime integrated with RiftDesktop.
 - **RiftDev**: Android editor using a RiftWorkspace-backed IndexedDB compatibility facade.
+- **Rift AI**: shell-rendered project/assistant/log/diff workspace backed only by hidden authenticated ChatGPT Web.
 - **Rift MCP**: local system app for MCP tool permissions and recent tool activity.
 
 ## RiftBrowser
@@ -58,6 +61,14 @@ On ChatGPT Web, RiftBrowser installs the exact-origin `rift-mcp-app-v1` compatib
 The compatibility asset is performance-gated: it must not rescan the complete conversation on every streaming DOM mutation, and it injects a compact manifest once per conversation route rather than on every message.
 
 RiftBrowser is planned to migrate from Android System WebView to RiftEngine/Servo after the compatibility gate in `docs/RIFTBROWSER_ENGINE_MIGRATION.md` passes on real hardware.
+
+## Rift AI Workspace
+
+Rift AI is a local HTML cockpit rendered by the existing RiftOS shell. It does not create another WebView and it does not call a model API. The existing authenticated ChatGPT WebView becomes an invisible transport while an AI task runs. Assistant output, structured logs, project tree and local diffs are shown by RiftOS instead of exposing the tool-call conversation as the normal live view.
+
+Each AI task starts a fresh ChatGPT Web conversation with a compact project tree for `tool-sandbox/workspace`. ChatGPT then reads only the files it needs through the existing Rift MCP tools. Mutating tools are journaled before execution by `RiftAiJournal`, enabling persistent **Changes**, unified-style diff, **Accept all** and **Revert all** without cloning the whole project. Rollback data lives under `filesDir/rift-ai`, outside the MCP-visible sandbox.
+
+The **Show ChatGPT** control reveals the same WebView for sign-in or debugging; it is not a second transport. See `docs/RIFT_AI_WORKSPACE.md`.
 
 ## Local Rift MCP
 
@@ -117,6 +128,7 @@ It builds, aligns, signs and verifies the APK; checks API 26+, package/signature
 - [`docs/RIFTBROWSER_ARCHITECTURE.md`](docs/RIFTBROWSER_ARCHITECTURE.md) — current browser host and MCP compatibility boundary.
 - [`docs/RIFTBROWSER_ENGINE_MIGRATION.md`](docs/RIFTBROWSER_ENGINE_MIGRATION.md) — RiftEngine/Servo migration gate.
 - [`docs/RIFT_MCP_APP_ARCHITECTURE.md`](docs/RIFT_MCP_APP_ARCHITECTURE.md) — canonical local MCP architecture.
+- [`docs/RIFT_AI_WORKSPACE.md`](docs/RIFT_AI_WORKSPACE.md) — HTML AI cockpit, hidden ChatGPT Web transport, logs and working-tree journal.
 - [`docs/RIFT_BROWSER_MCP_APP.md`](docs/RIFT_BROWSER_MCP_APP.md) — ChatGPT Web compatibility protocol.
 - [`docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md`](docs/RIFTWORKSPACE_WEB_ARCHITECTURE.md) — workspace boundary.
 - [`docs/RIFTRT-v1.md`](docs/RIFTRT-v1.md) — application runtime ABI.
