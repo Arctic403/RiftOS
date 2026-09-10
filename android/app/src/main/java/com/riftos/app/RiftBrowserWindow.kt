@@ -22,6 +22,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.net.URLConnection
@@ -64,6 +65,9 @@ class RiftBrowserWindow(
     private var hasBounds = false
     private var aiTransportOnly = false
     private var pendingAiTask: JSONObject? = null
+    private var targetDiscoveryActive = false
+    private var pendingAiTargetsReply: ((JSONObject?, Throwable?) -> Unit)? = null
+    private var pendingTargetSearch = false
     private var currentAiSessionId: String? = null
     private var destroyed = false
 
@@ -134,10 +138,44 @@ class RiftBrowserWindow(
         return state()
     }
 
-    fun startAiTask(task: String, projectContext: String, sessionId: String): JSONObject {
+    fun listAiTargets(reply: (JSONObject?, Throwable?) -> Unit) {
+        ensureAlive()
+        pendingAiTargetsReply?.invoke(null, IllegalStateException("ChatGPT target refresh was superseded"))
+        pendingAiTargetsReply = reply
+        targetDiscoveryActive = true
+        requestedVisible = false
+        ensureTransportLayout()
+        webView.visibility = View.INVISIBLE
+        val currentUrl = webView.url
+        if (isChatGptUrl(currentUrl)) {
+            mcpApp.ensureInjected(currentUrl)
+            webView.postDelayed({ dispatchAiTargets() }, 140L)
+        } else {
+            updateCookiePolicy("https://chatgpt.com/")
+            webView.loadUrl("https://chatgpt.com/")
+        }
+        emitState()
+    }
+
+    fun openAiTargetSearch(): JSONObject {
+        ensureAlive()
+        pendingTargetSearch = true
+        val currentUrl = webView.url
+        if (isChatGptUrl(currentUrl)) {
+            mcpApp.ensureInjected(currentUrl)
+            webView.postDelayed({ dispatchTargetSearch() }, 180L)
+        } else {
+            updateCookiePolicy("https://chatgpt.com/")
+            webView.loadUrl("https://chatgpt.com/")
+        }
+        return state().put("searchRequested", true)
+    }
+
+    fun startAiTask(task: String, projectContext: String, sessionId: String, targetSpec: JSONObject?): JSONObject {
         ensureAlive()
         require(task.isNotBlank()) { "Rift AI task is empty" }
         require(sessionId.isNotBlank()) { "Rift AI session id is empty" }
+        val target = resolveAiTarget(targetSpec)
         currentAiSessionId = sessionId
         aiTransportOnly = true
         requestedVisible = false
@@ -146,16 +184,32 @@ class RiftBrowserWindow(
             .put("sessionId", sessionId)
             .put("task", task.take(40_000))
             .put("projectContext", projectContext.take(8_000))
+            .put("target", target)
         applyVisibility()
+        val targetKind = target.optString("kind", "new")
+        val targetLabel = target.optString("label", "ChatGPT")
         handleBridgeAiEvent(
             JSONObject()
                 .put("type", "transport")
-                .put("message", "Opening fresh ChatGPT Web session")
-                .put("data", JSONObject().put("sessionId", sessionId).put("phase", "opening"))
+                .put("message", when (targetKind) {
+                    "chat", "project-chat" -> "Opening ChatGPT conversation · $targetLabel"
+                    "project" -> "Opening ChatGPT project · $targetLabel"
+                    "current" -> "Using current ChatGPT Web page"
+                    else -> "Opening new ChatGPT Web chat"
+                }.take(500))
+                .put("data", JSONObject().put("sessionId", sessionId).put("phase", "opening").put("targetKind", targetKind))
         )
-        webView.loadUrl("https://chatgpt.com/")
+        val targetUrl = target.getString("url")
+        val sameTarget = isChatGptUrl(webView.url) && normalizedTargetUrl(webView.url.orEmpty()) == targetUrl
+        if ((target.optString("mode") == "current" && isChatGptUrl(webView.url)) || sameTarget) {
+            mcpApp.ensureInjected(webView.url)
+            webView.postDelayed({ dispatchPendingAiTask() }, 180L)
+        } else {
+            updateCookiePolicy(targetUrl)
+            webView.loadUrl(targetUrl)
+        }
         emitState()
-        return state().put("queued", true).put("sessionId", sessionId)
+        return state().put("queued", true).put("sessionId", sessionId).put("targetKind", targetKind)
     }
 
     fun revealAiTransport(): JSONObject {
@@ -170,7 +224,7 @@ class RiftBrowserWindow(
     fun hideAiTransport(): JSONObject {
         ensureAlive()
         requestedVisible = false
-        val keepTransport = pendingAiTask != null || RiftMcpRuntime.aiJournal(activity).transportActive()
+        val keepTransport = pendingAiTask != null || targetDiscoveryActive || RiftMcpRuntime.aiJournal(activity).transportActive()
         aiTransportOnly = keepTransport
         if (keepTransport) {
             ensureTransportLayout()
@@ -236,12 +290,13 @@ class RiftBrowserWindow(
         .put("canGoForward", webView.canGoForward())
         .put("progress", webView.progress)
         .put("aiTransportOnly", aiTransportOnly)
+        .put("targetDiscoveryActive", targetDiscoveryActive)
         .put("riftMcpApp", mcpApp.state())
 
     fun close(): Boolean {
         if (destroyed) return true
         requestedVisible = false
-        val keepTransport = pendingAiTask != null || runCatching { RiftMcpRuntime.aiJournal(activity).transportActive() }.getOrDefault(false)
+        val keepTransport = pendingAiTask != null || targetDiscoveryActive || runCatching { RiftMcpRuntime.aiJournal(activity).transportActive() }.getOrDefault(false)
         if (keepTransport) {
             aiTransportOnly = true
             ensureTransportLayout()
@@ -265,6 +320,9 @@ class RiftBrowserWindow(
         if (destroyed) return
         destroyed = true
         requestedVisible = false
+        pendingAiTargetsReply?.invoke(null, IllegalStateException("RiftBrowser window was destroyed"))
+        pendingAiTargetsReply = null
+        targetDiscoveryActive = false
         destroyPopup()
         runCatching { mcpApp.destroy() }
         runCatching { host.removeView(webView) }
@@ -279,7 +337,7 @@ class RiftBrowserWindow(
     }
 
     private fun applyVisibility() {
-        if (aiTransportOnly) {
+        if (aiTransportOnly || targetDiscoveryActive) {
             ensureTransportLayout()
             webView.visibility = View.INVISIBLE
             return
@@ -321,6 +379,87 @@ class RiftBrowserWindow(
                 webView.postDelayed({ dispatchPendingAiTask(attempt + 1) }, 250L)
             }
         }
+    }
+
+    private fun dispatchAiTargets(attempt: Int = 0) {
+        if (pendingAiTargetsReply == null) return
+        if (attempt > 32) {
+            finishAiTargetDiscovery(null, IllegalStateException("ChatGPT Web targets did not become ready"))
+            return
+        }
+        val script = """(()=>{try{const control=window.RiftMcpAppControl;if(!control||typeof control.targets!=='function')return '';return JSON.stringify(control.targets());}catch(error){return '';}})()"""
+        webView.evaluateJavascript(script) { raw ->
+            val decoded = decodeJavascriptString(raw)
+            val result = decoded?.let { runCatching { JSONObject(it) }.getOrNull() }
+            if (result != null) {
+                finishAiTargetDiscovery(result, null)
+            } else {
+                webView.postDelayed({ dispatchAiTargets(attempt + 1) }, 180L)
+            }
+        }
+    }
+
+    private fun finishAiTargetDiscovery(result: JSONObject?, error: Throwable?) {
+        val reply = pendingAiTargetsReply
+        pendingAiTargetsReply = null
+        targetDiscoveryActive = false
+        if (!aiTransportOnly && !requestedVisible) webView.visibility = View.GONE else applyVisibility()
+        emitState()
+        reply?.invoke(result, error)
+    }
+
+    private fun dispatchTargetSearch(attempt: Int = 0) {
+        if (!pendingTargetSearch) return
+        if (attempt > 24) {
+            pendingTargetSearch = false
+            return
+        }
+        val script = "Boolean(window.RiftMcpAppControl?.openTargetSearch?.())"
+        webView.evaluateJavascript(script) { raw ->
+            if (raw == "true") pendingTargetSearch = false
+            else webView.postDelayed({ dispatchTargetSearch(attempt + 1) }, 220L)
+        }
+    }
+
+    private fun decodeJavascriptString(raw: String?): String? {
+        val value = raw?.takeIf { it.isNotBlank() && it != "null" } ?: return null
+        if (!value.startsWith('"')) return value
+        return runCatching { JSONArray("[$value]").getString(0) }.getOrNull()
+    }
+
+    private fun resolveAiTarget(raw: JSONObject?): JSONObject {
+        val requestedMode = raw?.optString("mode")?.trim()?.lowercase().orEmpty()
+        val mode = if (requestedMode in setOf("new", "current", "url")) requestedMode else "new"
+        val requestedKind = raw?.optString("kind")?.trim()?.lowercase().orEmpty()
+        val kind = if (requestedKind in setOf("new", "current", "chat", "project", "project-chat")) requestedKind else if (mode == "new") "new" else "current"
+        val label = raw?.optString("label")?.trim()?.take(160).orEmpty()
+        val rawCurrentUrl = webView.url
+        val currentUrl = if (isChatGptUrl(rawCurrentUrl)) normalizedTargetUrl(rawCurrentUrl.orEmpty()) else null
+        val url = when (mode) {
+            "current" -> currentUrl ?: "https://chatgpt.com/"
+            "url" -> normalizedTargetUrl(raw?.optString("url").orEmpty())
+            else -> "https://chatgpt.com/"
+        }
+        return JSONObject()
+            .put("mode", mode)
+            .put("kind", kind)
+            .put("label", label.ifBlank { if (kind == "project") "Project" else if (kind == "new") "New chat" else "ChatGPT" })
+            .put("url", url)
+    }
+
+    private fun normalizedTargetUrl(raw: String): String {
+        val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: throw IllegalArgumentException("Invalid ChatGPT target URL")
+        val hostName = uri.host?.lowercase() ?: throw IllegalArgumentException("ChatGPT target URL has no host")
+        require(uri.scheme.equals("https", ignoreCase = true) && (hostName == "chatgpt.com" || hostName == "www.chatgpt.com")) {
+            "Rift AI targets must stay on ChatGPT Web"
+        }
+        return uri.buildUpon().fragment(null).build().toString()
+    }
+
+    private fun isChatGptUrl(url: String?): Boolean {
+        val uri = runCatching { Uri.parse(url.orEmpty()) }.getOrNull() ?: return false
+        val hostName = uri.host?.lowercase() ?: return false
+        return uri.scheme.equals("https", ignoreCase = true) && (hostName == "chatgpt.com" || hostName == "www.chatgpt.com")
     }
 
     private fun configureMainWebView(view: WebView) {
@@ -457,6 +596,12 @@ class RiftBrowserWindow(
             override fun onPageFinished(view: WebView, url: String) {
                 CookieManager.getInstance().flush()
                 mcpApp.ensureInjected(url)
+                if (pendingAiTargetsReply != null && isChatGptUrl(url)) {
+                    view.postDelayed({ dispatchAiTargets() }, 140L)
+                }
+                if (pendingTargetSearch && isChatGptUrl(url)) {
+                    view.postDelayed({ dispatchTargetSearch() }, 220L)
+                }
                 if (aiTransportOnly && url.startsWith("https://chatgpt.com")) {
                     view.postDelayed({ dispatchPendingAiTask() }, 180L)
                 }
@@ -471,6 +616,8 @@ class RiftBrowserWindow(
 
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
                 requestedVisible = false
+                finishAiTargetDiscovery(null, IllegalStateException("ChatGPT Web renderer exited"))
+                pendingTargetSearch = false
                 webView.visibility = View.GONE
                 handleBridgeAiEvent(
                     JSONObject()

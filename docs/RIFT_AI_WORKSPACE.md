@@ -36,6 +36,20 @@ Rift AI never talks to a model endpoint directly. Task submission, tool-result c
 
 CI checks the active and packaged Rift AI/browser sources for model-API endpoint/key patterns and rejects the discarded second-WebView design.
 
+## Chat target picker
+
+Rift AI chooses where a task runs before starting the local review session. The picker supports:
+
+- **New chat** — loads `https://chatgpt.com/` and starts a clean conversation.
+- **Current** — uses the ChatGPT page already open in RiftBrowser.
+- **Chat** — navigates to an existing conversation discovered from the currently rendered ChatGPT Web DOM.
+- **Project** — navigates to a discovered ChatGPT Project and starts a new chat in that project.
+- **Project chat** — continues a discovered existing conversation inside a project.
+
+Target discovery is intentionally browser-native: `riftbrowser-mcp-app.js` inspects same-origin ChatGPT links already present in the rendered page and returns a bounded, ephemeral list to the RiftOS shell. RiftOS does not call an undocumented/private ChatGPT backend endpoint to enumerate account history. Chat titles and conversation/project URLs are routing data only and are not persisted in `RiftAiJournal`.
+
+ChatGPT can virtualize or omit older destinations from the sidebar DOM. **Browse all…** therefore reveals the same authenticated ChatGPT WebView and asks ChatGPT's own search control to open. The user can select any older chat/project there, return to Rift AI, refresh targets, and choose **Current**. This preserves the ChatGPT-Web-only model/identity boundary instead of cloning ChatGPT account history into RiftOS.
+
 ## Session flow
 
 Starting a task:
@@ -44,7 +58,7 @@ Starting a task:
 2. refuses to start if the previous task is still running;
 3. refuses to start if the previous session still has unreviewed changes;
 4. builds a compact recursive project tree for `tool-sandbox/workspace`;
-5. opens a fresh `https://chatgpt.com/` conversation in the existing RiftBrowser WebView;
+5. resolves and validates the selected ChatGPT Web target, rejecting any target outside `https://chatgpt.com` / `https://www.chatgpt.com`;
 6. waits for local MCP initialization and a usable ChatGPT composer before submitting anything;
 7. submits the task plus compact project context and the live MCP tool manifest;
 8. mirrors cleaned assistant output and structured transport/tool events into RiftOS;
@@ -119,6 +133,8 @@ The shell-facing command surface is:
 
 ```text
 ai.start
+ai.targets
+ai.targetSearch
 ai.state
 ai.events
 ai.tree

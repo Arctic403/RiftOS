@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.2-ai-session';
+  const VERSION = 'rift-mcp-app-v1.3-chat-targets';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -11,6 +11,7 @@
   const MAX_CONTEXT_CHARS = 5000;
   const MAX_CALLS_PER_MINUTE = 24;
   const PROCESS_DELAY_MS = 180;
+  const MAX_CHAT_TARGETS = 180;
 
   const pending = new Map();
   const processedCalls = new Set();
@@ -182,6 +183,120 @@
     contextSentForRoute = false;
   }
 
+  function normalizedChatGptTargetUrl(raw) {
+    try {
+      const url = new URL(String(raw || ''), location.href);
+      const host = url.hostname.toLowerCase();
+      if (url.protocol !== 'https:' || (host !== 'chatgpt.com' && host !== 'www.chatgpt.com')) return null;
+      url.hash = '';
+      return url;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function hasProjectContext(url, anchor) {
+    const route = `${url.pathname}${url.search}`.toLowerCase();
+    if (route.includes('g-p-') || route.includes('/project') || url.searchParams.has('project')) return true;
+    if (!(anchor instanceof Element)) return false;
+    return Boolean(anchor.closest('[data-testid*="project"],[aria-label*="Project"],[aria-label*="project"]'));
+  }
+
+  function classifyChatTarget(url, anchor) {
+    if (!url) return '';
+    const isChat = /\/c\/[^/?#]+/.test(url.pathname);
+    const isProject = hasProjectContext(url, anchor);
+    if (isChat && isProject) return 'project-chat';
+    if (isChat) return 'chat';
+    if (isProject) return 'project';
+    return '';
+  }
+
+  function chatTargetLabel(anchor, kind, url) {
+    const candidates = anchor instanceof Element ? [
+      anchor.getAttribute('aria-label'),
+      anchor.getAttribute('title'),
+      anchor.innerText,
+      anchor.textContent
+    ] : [];
+    for (const candidate of candidates) {
+      const label = String(candidate || '').replace(/\s+/g, ' ').trim();
+      if (label && label.toLowerCase() !== 'more' && label.toLowerCase() !== 'options') return label.slice(0, 140);
+    }
+    const tail = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '').replace(/[-_]+/g, ' ').trim();
+    if (tail && !/^c$/i.test(tail)) return tail.slice(0, 140);
+    return kind === 'project' ? 'Project' : kind === 'project-chat' ? 'Project chat' : 'Chat';
+  }
+
+  function collectChatTargets() {
+    refreshRouteState();
+    const byUrl = new Map();
+    for (const anchor of document.querySelectorAll('a[href]')) {
+      const url = normalizedChatGptTargetUrl(anchor.getAttribute('href'));
+      if (!url) continue;
+      const kind = classifyChatTarget(url, anchor);
+      if (!kind) continue;
+      const href = url.toString();
+      const label = chatTargetLabel(anchor, kind, url);
+      if (kind === 'project' && /^(new|create)\s+project$/i.test(label)) continue;
+      if (!byUrl.has(href)) {
+        byUrl.set(href, {
+          mode: 'url',
+          kind,
+          label,
+          url: href
+        });
+      }
+      if (byUrl.size >= MAX_CHAT_TARGETS) break;
+    }
+
+    const currentUrl = normalizedChatGptTargetUrl(location.href);
+    let current = null;
+    if (currentUrl) {
+      const currentHref = currentUrl.toString();
+      const known = byUrl.get(currentHref);
+      const kind = known?.kind || classifyChatTarget(currentUrl, null) || 'current';
+      const title = String(document.title || '').replace(/\s*[|\-–—]\s*ChatGPT\s*$/i, '').trim();
+      current = {
+        mode: 'current',
+        kind,
+        label: known?.label || title || 'Current ChatGPT page',
+        url: currentHref
+      };
+    }
+
+    return {
+      version: 1,
+      route: routeKey,
+      current,
+      targets: Array.from(byUrl.values())
+    };
+  }
+
+  function openTargetSearch() {
+    let best = null;
+    let bestScore = 0;
+    for (const element of document.querySelectorAll('button,a,[role="button"]')) {
+      if (!(element instanceof Element) || !isVisible(element)) continue;
+      const testId = String(element.getAttribute('data-testid') || '').toLowerCase();
+      const aria = String(element.getAttribute('aria-label') || '').toLowerCase();
+      const title = String(element.getAttribute('title') || '').toLowerCase();
+      const text = String(element.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      let score = 0;
+      if (testId.includes('search')) score += 100;
+      if (aria === 'search' || aria.includes('search chats')) score += 90;
+      else if (aria.includes('search')) score += 65;
+      if (title.includes('search')) score += 45;
+      if (text === 'search') score += 60;
+      if (score > bestScore) { best = element; bestScore = score; }
+    }
+    if (best instanceof HTMLElement) {
+      best.click();
+      return true;
+    }
+    return false;
+  }
+
   function isVisible(element) {
     if (!(element instanceof Element)) return false;
     const rect = element.getBoundingClientRect();
@@ -292,10 +407,40 @@
     return mcpReady;
   }
 
+  async function prepareProjectTarget(target) {
+    if (!target || target.kind !== 'project' || findComposer()) return;
+    const deadline = now() + 5000;
+    while (now() < deadline && !findComposer()) {
+      const root = document.querySelector('main');
+      const candidates = root ? Array.from(root.querySelectorAll('button,a,[role="button"]')) : [];
+      let best = null;
+      let bestScore = 0;
+      for (const element of candidates) {
+        if (!isVisible(element)) continue;
+        const testId = String(element.getAttribute('data-testid') || '').toLowerCase();
+        const aria = String(element.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const text = String(element.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        let score = 0;
+        if (testId.includes('new-chat')) score += 100;
+        if (aria === 'new chat' || text === 'new chat') score += 90;
+        if (aria.includes('start chat') || text.includes('start chat')) score += 75;
+        if (aria === 'chat' || text === 'chat') score += 40;
+        if (score > bestScore) { best = element; bestScore = score; }
+      }
+      if (best instanceof HTMLElement && bestScore > 0) {
+        best.click();
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
+  }
+
   async function submitAiTask(payload) {
     const sessionId = String(payload && payload.sessionId || '').trim();
     const task = String(payload && payload.task || '').trim();
     const projectContext = String(payload && payload.projectContext || '').trim();
+    const target = payload && payload.target && typeof payload.target === 'object' ? payload.target : {};
     if (!sessionId) { sendAiEvent('error', 'Rift AI session id is missing', { phase: 'error' }); return false; }
     if (aiTaskActive) { sendAiEvent('error', 'A Rift AI task is already active', { phase: 'error', sessionId }); return false; }
 
@@ -314,6 +459,10 @@
     if (!await waitForMcpReady(12000)) {
       finishAiTask('error', 'Local Rift MCP did not initialize; task was not submitted', 'error');
       return false;
+    }
+    if (target.kind === 'project') {
+      sendAiPhase('waiting', `Preparing project chat${target.label ? ` · ${String(target.label).slice(0, 120)}` : ''}`);
+      await prepareProjectTarget(target);
     }
     sendAiPhase('waiting', 'Waiting for ChatGPT Web composer');
     const composer = await waitForComposer(20000);
@@ -641,6 +790,8 @@ ${contextBlock()}`;
       else sendAiEvent('error', message, { phase: 'error' });
       return false;
     }),
+    targets: collectChatTargets,
+    openTargetSearch,
     stop: stopAiTask,
     state: () => ({ version: VERSION, enabled, tools: tools.length, route: routeKey, aiTaskActive })
   });

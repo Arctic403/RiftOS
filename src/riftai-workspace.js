@@ -79,6 +79,10 @@ async function open(){
       <textarea id="riftAiTask" placeholder="Describe what you want ChatGPT Web to do with the project…" spellcheck="true"></textarea>
       <div><button class="action" id="riftAiRun">Run with ChatGPT Web</button><button class="secondary" id="riftAiStop">Stop</button><span id="riftAiStatus">Ready</span></div>
     </section>
+    <section class="rift-ai-targetbar">
+      <label><span>Chat target</span><select id="riftAiTarget"><option value="new">New chat</option></select><small id="riftAiTargetHint">Start a clean ChatGPT Web conversation.</small></label>
+      <div><button class="secondary" id="riftAiTargetRefresh">Refresh</button><button class="secondary" id="riftAiBrowseTargets">Browse all…</button></div>
+    </section>
     <div class="rift-ai-grid">
       <aside class="rift-ai-panel rift-ai-project"><header><b>Project</b><small>tool-sandbox/workspace</small></header><div id="riftAiTree" class="rift-ai-tree"><div class="rift-ai-empty">Loading…</div></div></aside>
       <main class="rift-ai-panel rift-ai-output"><header><b>AI Output</b><small id="riftAiSession">No active session</small></header><article id="riftAiOutput"><div class="rift-ai-empty">Run a task to start a fresh hidden ChatGPT Web session.</div></article></main>
@@ -96,7 +100,53 @@ async function open(){
   const $=sel=>body.querySelector(sel);
   const status=$("#riftAiStatus"),tree=$("#riftAiTree"),output=$("#riftAiOutput"),logs=$("#riftAiLogs"),changes=$("#riftAiChanges"),changeCount=$("#riftAiChangeCount"),session=$("#riftAiSession");
   const runButton=$("#riftAiRun"),stopButton=$("#riftAiStop"),acceptButton=$("#riftAiAccept"),revertButton=$("#riftAiRevert");
+  const targetSelect=$("#riftAiTarget"),targetHint=$("#riftAiTargetHint");
+  let targetRegistry=new Map([["new",{mode:"new",kind:"new",label:"New chat",url:"https://chatgpt.com/"}]]);
   const WRITE_TOOLS=new Set(["rift_write_text","rift_mkdir","rift_remove","rift_move"]);
+
+  function describeTarget(target){
+    if(!target||target.kind==="new")return "Start a clean ChatGPT Web conversation.";
+    if(target.kind==="project")return "Start a new chat inside this ChatGPT Project.";
+    if(target.kind==="project-chat")return "Continue this existing chat inside its ChatGPT Project.";
+    if(target.kind==="chat")return "Continue this existing ChatGPT conversation.";
+    return "Use whatever ChatGPT page is currently open in RiftBrowser.";
+  }
+
+  function addTargetOption(group,target,key){
+    const option=document.createElement("option");
+    option.value=key;
+    option.textContent=target.kind==="project"?`${target.label} · new project chat`:target.label;
+    group.append(option);
+    targetRegistry.set(key,target);
+  }
+
+  function renderTargets(result){
+    const previous=targetSelect.value||"new";
+    targetRegistry=new Map([["new",{mode:"new",kind:"new",label:"New chat",url:"https://chatgpt.com/"}]]);
+    targetSelect.innerHTML="";
+    const newOption=document.createElement("option");newOption.value="new";newOption.textContent="New chat";targetSelect.append(newOption);
+    const current=result?.current&&typeof result.current==="object"?result.current:null;
+    if(current){const option=document.createElement("option");option.value="current";option.textContent=`Current · ${current.label||"ChatGPT page"}`;targetSelect.append(option);targetRegistry.set("current",current);}
+    const rows=Array.isArray(result?.targets)?result.targets:[];
+    const groups=new Map();
+    const groupLabel={chat:"Chats",project:"Projects", "project-chat":"Project chats"};
+    for(const kind of ["chat","project","project-chat"]){const group=document.createElement("optgroup");group.label=groupLabel[kind];groups.set(kind,group);}
+    let index=0;
+    for(const row of rows){
+      if(!row||!groups.has(row.kind)||!row.url)continue;
+      const key=`target-${index++}`;
+      addTargetOption(groups.get(row.kind),row,key);
+    }
+    for(const group of groups.values())if(group.children.length)targetSelect.append(group);
+    if(targetRegistry.has(previous))targetSelect.value=previous;else targetSelect.value="new";
+    targetHint.textContent=describeTarget(targetRegistry.get(targetSelect.value));
+  }
+
+  async function refreshTargets(){
+    targetHint.textContent="Reading destinations from authenticated ChatGPT Web…";
+    try{renderTargets(await native("targets"));}
+    catch(error){targetHint.textContent=`Could not read ChatGPT targets: ${error.message}`;}
+  }
 
   function updateControls(){
     runButton.disabled=lastTransportActive||lastChangeCount>0;
@@ -179,14 +229,26 @@ async function open(){
 
   $("#riftAiRun").onclick=async()=>{
     const task=$("#riftAiTask").value.trim();if(!task){status.textContent="Enter a task first";return;}
+    const target=targetRegistry.get(targetSelect.value)||targetRegistry.get("new");
     status.textContent="Starting hidden ChatGPT Web session…";
     output.textContent="Waiting for ChatGPT Web…";output.classList.remove("has-output");
     logs.innerHTML='<div class="rift-ai-empty">Starting session…</div>';lastSeq=0;
-    try{const result=await native("start",{task});session.textContent=result?.session?.session?.id||result?.session?.id||"Active session";lastTransportActive=true;projectDirty=true;changesDirty=true;status.textContent="Running through ChatGPT Web";updateControls();await refreshAll();}
+    try{const result=await native("start",{task,target});session.textContent=result?.session?.session?.id||result?.session?.id||"Active session";lastTransportActive=true;projectDirty=true;changesDirty=true;status.textContent=`Running in ${target?.label||"ChatGPT Web"}`;updateControls();await refreshAll();}
     catch(error){status.textContent=error.message;}
   };
   $("#riftAiStop").onclick=async()=>{try{await native("stop");status.textContent="Stop requested";}catch(error){status.textContent=error.message;}};
-  $("#riftAiRefresh").onclick=refreshAll;
+  $("#riftAiRefresh").onclick=async()=>{await Promise.all([refreshAll(),refreshTargets()]);};
+  $("#riftAiTargetRefresh").onclick=refreshTargets;
+  targetSelect.onchange=()=>{targetHint.textContent=describeTarget(targetRegistry.get(targetSelect.value));};
+  $("#riftAiBrowseTargets").onclick=async()=>{
+    try{
+      const state=await native("showWeb");
+      const url=state?.url||"https://chatgpt.com";
+      await globalThis.RiftDesktop?.openBrowser?.(url);
+      setTimeout(()=>native("targetSearch").catch(()=>{}),350);
+      status.textContent="Browse ChatGPT, choose a chat/project, then return and Refresh targets.";
+    }catch(error){status.textContent=error.message;}
+  };
   $("#riftAiShowWeb").onclick=async()=>{
     try{
       const state=await native("showWeb");
@@ -199,7 +261,7 @@ async function open(){
   $("#riftAiDiffClose").onclick=()=>$("#riftAiDiffPanel").classList.add("hidden");
 
   try{await native("hideWeb");}catch(_){}
-  await refreshAll();
+  await Promise.all([refreshAll(),refreshTargets()]);
   poll();
   return true;
 }

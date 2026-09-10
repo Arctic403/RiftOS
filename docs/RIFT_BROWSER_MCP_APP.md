@@ -69,6 +69,8 @@ The model never supplies the AI session ID. When the adapter parses a model `<ri
 
 The adapter mirrors cleaned assistant text and transport lifecycle back to Android as exact-origin `rift/ai/event` messages over `RiftMcpNative`. Tool envelopes are stripped from the mirrored assistant pane; the actual tool loop still occurs in ChatGPT Web and MCP results still return through the composer. Completion is reported only after output stabilizes, the stop control is gone, active tool round-trips have drained and any tool-result continuation has produced another assistant update. Stop requests likewise wait for active tool work to drain before the session becomes reviewable.
 
+For Rift AI chat routing, the adapter also exposes a read-only `targets()` control that inspects same-origin ChatGPT links already rendered in the page and classifies chats, projects and project chats. It does not call ChatGPT account/backend APIs. `openTargetSearch()` only activates ChatGPT Web's own visible search control; older-history selection therefore remains inside the authenticated ChatGPT interface. Native code validates every selected URL back to exact HTTPS ChatGPT origins before navigation.
+
 ## Permissions
 
 Read/write policy comes exclusively from `RiftToolHost` and is configured in the local **Rift MCP** system app. Read defaults on. Write defaults off. A browser request cannot bypass those settings.

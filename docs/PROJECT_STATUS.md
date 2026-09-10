@@ -30,7 +30,8 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - Visible AI UI is rendered by the existing RiftOS shell; no second AI WebView is created.
 - The only model transport is authenticated ChatGPT Web in the existing `RiftBrowserWindow` WebView.
 - AI mode keeps that WebView laid out and alive but Android-`INVISIBLE`; **Show ChatGPT** reveals the same page for sign-in/debugging.
-- `ai.start` opens a fresh ChatGPT Web conversation and submits the task with compact project-tree context plus the live local MCP manifest.
+- Rift AI has a Chat Target picker for new chat, current page, DOM-discovered existing chat, Project/new project chat, and existing project chat. **Browse all…** delegates older-history lookup to ChatGPT Web's own search UI; target discovery does not call a private ChatGPT backend API.
+- `ai.start` routes the task into the selected ChatGPT Web target and submits compact project-tree context plus the live local MCP manifest.
 - Assistant streaming output is mirrored into the HTML workspace; `<rift_call>` / result chatter remains transport detail rather than the primary live UI.
 - Local structured logs include session, transport and MCP tool start/finish events without file contents.
 - RiftBrowser injects an internal AI session ID into MCP `_meta` after parsing model tool calls; only calls matching the active Rift AI transport session are journaled.
@@ -39,6 +40,7 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - Session metadata distinguishes persistent review state from active ChatGPT transport; terminal complete/stopped/error events release an invisible transport WebView while keeping review data on disk.
 - Session metadata, logs, latest assistant output and rollback originals persist on disk. On process restart, a previously active transport is recovered as `interrupted`/inactive so stale runtime state cannot block future work; any pending changes remain reviewable.
 - Active source contains no OpenAI API endpoint/key flow or alternate model transport.
+- Chat target titles/URLs are transient UI routing data and are not persisted in `RiftAiJournal`.
 
 ### RiftBrowser
 
