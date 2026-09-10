@@ -1,4 +1,3 @@
-# Rift AI 0.9.1 source finalized; workflow touch triggers validation on the clean HEAD.
 name: Build RiftOS Android APK
 
 on:
@@ -41,6 +40,9 @@ jobs:
           test ! -e android/app/src/main/java/com/riftos/app/RiftMcpBridgeActivity.kt
           test ! -e android/app/src/main/java/com/riftos/app/RiftMcpInitProvider.kt
           test ! -e android/app/src/main/java/com/riftos/app/RiftBridgeSandbox.kt
+          test ! -e .github/rift-ai-chat-targets
+          test ! -e .github/workflows/finalize-rift-ai-chat-targets.yml
+          test ! -e .github/workflows/finalize-rift-ai-chat-targets-v2.yml
 
       - name: Validate ChatGPT Web-only Rift AI source
         shell: bash
@@ -53,6 +55,11 @@ jobs:
           grep -Fq "RiftMcpAppControl" android/app/src/main/assets/riftbrowser-mcp-app.js
           grep -Fq "riftos/aiSessionId" android/app/src/main/assets/riftbrowser-mcp-app.js
           grep -Fq "riftos/aiSessionId" android/app/src/main/java/com/riftos/app/RiftMcpServer.kt
+          grep -Fq "collectChatTargets" android/app/src/main/assets/riftbrowser-mcp-app.js
+          grep -Fq "openTargetSearch" android/app/src/main/assets/riftbrowser-mcp-app.js
+          grep -Fq '"ai.targets"' android/app/src/main/java/com/riftos/app/MainActivity.kt
+          grep -Fq "Rift AI targets must stay on ChatGPT Web" android/app/src/main/java/com/riftos/app/RiftBrowserWindow.kt
+          grep -Fq "Chat target" src/riftai-workspace.js
           grep -Fq "transportActive" android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
           grep -Fq "Review the current Rift AI changes" android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
           AI_SOURCES=(
@@ -156,7 +163,10 @@ jobs:
           unzip -p "$FINAL" assets/www/src/riftmcp-system.js | grep -Fq "[RiftMcp] local system app registered"
           unzip -p "$FINAL" assets/www/src/riftai-workspace.js | grep -Fq "[RiftAI] ChatGPT Web workspace registered"
           unzip -p "$FINAL" assets/www/src/riftai-workspace.js | grep -Fq "ChatGPT Web"
+          unzip -p "$FINAL" assets/www/src/riftai-workspace.js | grep -Fq "Chat target"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "[RIFT_MCP_APP_V1]"
+          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "collectChatTargets"
+          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "openTargetSearch"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "<rift_call>"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "PERF_GUARD"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "riftos/aiSessionId"
