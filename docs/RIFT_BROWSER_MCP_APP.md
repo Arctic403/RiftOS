@@ -82,3 +82,9 @@ Read/write policy comes exclusively from `RiftToolHost` and is configured in the
 ## Failure behavior
 
 If ChatGPT changes its composer or semantic message attributes, compatibility mode can stop detecting calls. The local MCP server, sandbox and permissions remain intact. The badge reports local MCP/tool-list failures instead of granting broader access.
+
+## Autonomous tool loop v2
+
+RiftBrowser treats each AI task as a correlated local state machine rather than a one-shot DOM scrape. After a model tool envelope is accepted, the adapter executes the local MCP call, injects a result carrying a unique `result_id`, waits until that exact result appears as a ChatGPT user-message turn, and only then accepts a newly-created assistant message as the continuation. Mutations to older assistant DOM nodes, thinking UI changes, and stale historical tool envelopes cannot complete the round trip.
+
+Malformed JSON envelopes, duplicate/misused call IDs, and tool validation failures are returned to ChatGPT Web as recoverable `RIFT_MCP_RESULT_V1` messages with instructions to correct the call and retry with a new `call_id`; the user does not need to resend the task or type `continue`. `rift_workspace_exec` operations use canonical flat objects such as `{"op":"stat","path":"workspace/project"}`. The native host defensively normalizes the unambiguous shorthand `{"stat":{"path":"workspace/project"}}` *before* write-permission classification, AI journaling, audit logging, and sandbox execution.

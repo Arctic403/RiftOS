@@ -14,6 +14,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         private const val PREF_AUDIT = "audit"
         private const val PREF_MIGRATED = "legacyStateMigrated"
         private const val MAX_AUDIT = 100
+        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy")
         const val SCOPE = "riftfs/workspace"
     }
 
@@ -121,8 +122,8 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                             .put("type", "array")
                             .put("minItems", 1)
                             .put("maxItems", 192)
-                            .put("description", "Ordered local workspace operations. Each item has op plus the fields required by that operation.")
-                            .put("items", JSONObject().put("type", "object"))
+                            .put("description", "Ordered local workspace operations. Canonical form is flat JSON: {\"op\":\"stat\",\"path\":\"workspace/project\"}. Do not nest the operation name.")
+                            .put("items", workspaceOperationSchema())
                     )
                     .put("finish", booleanProperty("Set true only when this mutating batch is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session."))
                     .put("dryRun", booleanProperty("Execute and validate read/content-edit operations transactionally, then restore mutations instead of committing. Structural mkdir/remove/move/copy operations are rejected in dry-run mode."))
@@ -144,8 +145,18 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             return
         }
 
-        val mutatingRequest = requiresWrite(name, args)
-        if (!isAllowed(name, args)) {
+        val normalizedArgs = try {
+            normalizeToolArgs(name, args)
+        } catch (error: Throwable) {
+            val message = error.message ?: "Invalid Rift tool arguments"
+            recordAudit(name, args, false, message)
+            aiJournal.recordTool(aiSessionId, name, args, "finish", false, message)
+            reply(JSONObject().put("ok", false).put("name", name).put("error", message))
+            return
+        }
+
+        val mutatingRequest = requiresWrite(name, normalizedArgs)
+        if (!isAllowed(name, normalizedArgs)) {
             val error = when {
                 name == "rift_workspace_exec" && !allowRead() ->
                     "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
@@ -154,36 +165,36 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                 else ->
                     "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
             }
-            recordAudit(name, args, false, error)
-            aiJournal.recordTool(aiSessionId, name, args, "finish", false, error)
+            recordAudit(name, normalizedArgs, false, error)
+            aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", false, error)
             reply(JSONObject().put("ok", false).put("name", name).put("error", error))
             return
         }
 
         if (mutatingRequest) {
             try {
-                aiJournal.captureForTool(aiSessionId, name, args)
+                aiJournal.captureForTool(aiSessionId, name, normalizedArgs)
             } catch (error: Throwable) {
                 val message = error.message ?: "Rift AI rollback snapshot failed"
-                recordAudit(name, args, false, message)
-                aiJournal.recordTool(aiSessionId, name, args, "finish", false, message)
+                recordAudit(name, normalizedArgs, false, message)
+                aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", false, message)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", message))
                 return
             }
         }
-        aiJournal.recordTool(aiSessionId, name, args, "start")
+        aiJournal.recordTool(aiSessionId, name, normalizedArgs, "start")
 
         val requestId = "tool-${System.currentTimeMillis()}-${System.nanoTime()}"
         val request = JSONObject()
             .put("id", requestId)
             .put("method", method)
-            .put("args", args)
+            .put("args", normalizedArgs)
 
         sandbox.handleAsync(request.toString()) { raw ->
             val response = runCatching { JSONObject(raw) }.getOrNull()
             if (response?.optBoolean("ok", false) == true) {
-                recordAudit(name, args, true, null)
-                aiJournal.recordTool(aiSessionId, name, args, "finish", true, null)
+                recordAudit(name, normalizedArgs, true, null)
+                aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", true, null)
                 reply(
                     JSONObject()
                         .put("ok", true)
@@ -192,8 +203,8 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                 )
             } else {
                 val error = response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Rift sandbox call failed"
-                recordAudit(name, args, false, error)
-                aiJournal.recordTool(aiSessionId, name, args, "finish", false, error)
+                recordAudit(name, normalizedArgs, false, error)
+                aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", false, error)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", error))
             }
         }
@@ -233,6 +244,51 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
 
     private fun allowRead(): Boolean = prefs.getBoolean(PREF_ALLOW_READ, true)
     private fun allowWrite(): Boolean = prefs.getBoolean(PREF_ALLOW_WRITE, false)
+
+    private fun normalizeToolArgs(name: String, args: JSONObject): JSONObject =
+        if (name == "rift_workspace_exec") normalizeWorkspaceExecArgs(args) else JSONObject(args.toString())
+
+    /**
+     * Canonical Code Mode operations are flat objects: {"op":"stat","path":"workspace/..."}.
+     * For resilience we also accept the unambiguous legacy/model shorthand
+     * {"stat":{"path":"workspace/..."}} and normalize it before permission checks,
+     * journaling, audit, or sandbox execution. This prevents shorthand writes from
+     * bypassing write classification.
+     */
+    private fun normalizeWorkspaceExecArgs(args: JSONObject): JSONObject {
+        val out = JSONObject(args.toString())
+        val operations = out.optJSONArray("operations") ?: return out
+        val normalized = JSONArray()
+        for (index in 0 until operations.length()) {
+            val operation = operations.optJSONObject(index)
+            if (operation == null || operation.optString("op").isNotBlank()) {
+                normalized.put(operations.opt(index))
+                continue
+            }
+            val keys = mutableListOf<String>()
+            val iterator = operation.keys()
+            while (iterator.hasNext()) {
+                val key = iterator.next()
+                if (key != "id") keys += key
+            }
+            if (keys.size != 1) {
+                normalized.put(operation)
+                continue
+            }
+            val key = keys.single()
+            val op = key.trim().lowercase()
+            val nested = operation.optJSONObject(key)
+            if (op !in WORKSPACE_OPS || nested == null) {
+                normalized.put(operation)
+                continue
+            }
+            val row = JSONObject(nested.toString()).put("op", op)
+            if (operation.has("id") && !row.has("id")) row.put("id", operation.opt("id"))
+            normalized.put(row)
+        }
+        out.put("operations", normalized)
+        return out
+    }
 
     private fun canonicalName(raw: String): String = when (raw.trim()) {
         "info", "rift_info" -> "rift_info"
@@ -313,6 +369,42 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put("name", name)
         .put("description", description)
         .put("inputSchema", inputSchema)
+
+    private fun workspaceOperationSchema(): JSONObject = JSONObject()
+        .put("type", "object")
+        .put("description", "Flat Rift Code Mode operation object. Example: {\"op\":\"stat\",\"path\":\"workspace/project\"}.")
+        .put("properties", JSONObject()
+            .put("op", JSONObject()
+                .put("type", "string")
+                .put("enum", JSONArray(WORKSPACE_OPS.sorted())))
+            .put("id", stringProperty("Optional caller label for this operation result."))
+            .put("path", stringProperty("Workspace path used by path-based operations."))
+            .put("query", stringProperty("Search/symbol query where applicable."))
+            .put("symbol", stringProperty("Identifier for reference/symbol reads."))
+            .put("kind", stringProperty("Optional symbol kind filter."))
+            .put("startLine", JSONObject().put("type", "integer"))
+            .put("endLine", JSONObject().put("type", "integer"))
+            .put("line", JSONObject().put("type", "integer"))
+            .put("limit", JSONObject().put("type", "integer"))
+            .put("maxChars", JSONObject().put("type", "integer"))
+            .put("maxMatches", JSONObject().put("type", "integer"))
+            .put("recursive", booleanProperty("Recursively list descendants."))
+            .put("caseSensitive", booleanProperty("Use case-sensitive text matching."))
+            .put("text", stringProperty("Replacement or complete file text."))
+            .put("find", stringProperty("Literal text to find."))
+            .put("replace", stringProperty("Replacement text."))
+            .put("all", booleanProperty("Replace all matching occurrences."))
+            .put("expectedCount", JSONObject().put("type", "integer"))
+            .put("expectedHash", stringProperty("Expected full-file SHA-256 guard."))
+            .put("expectedText", stringProperty("Expected exact selected text guard."))
+            .put("expectedRangeHash", stringProperty("Expected selected-range SHA-256 guard."))
+            .put("edits", JSONObject().put("type", "array"))
+            .put("hunks", JSONObject().put("type", "array"))
+            .put("from", stringProperty("Source workspace path."))
+            .put("to", stringProperty("Destination workspace path."))
+            .put("overwrite", booleanProperty("Replace an existing destination when true.")))
+        .put("required", JSONArray(listOf("op")))
+        .put("additionalProperties", true)
 
     private fun objectSchema(properties: JSONObject = JSONObject(), required: List<String> = emptyList()): JSONObject {
         val schema = JSONObject()

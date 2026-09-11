@@ -32,6 +32,7 @@ class RiftToolSandbox(context: Context) {
         private const val LEGACY_ROOT_NAME = "tool-sandbox"
         private const val OLDER_LEGACY_ROOT_NAME = "browser-sandbox"
         private const val WORKSPACE_ROOT = "workspace"
+        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy")
     }
 
     private val appContext = context.applicationContext
@@ -460,6 +461,24 @@ class RiftToolSandbox(context: Context) {
      * protected by a lazy copy-on-write rollback transaction: if any operation fails,
      * every mutation performed by this batch is restored before an error is returned.
      */
+    private fun normalizeWorkspaceOperation(operation: JSONObject): JSONObject {
+        if (operation.optString("op").isNotBlank()) return operation
+        val keys = mutableListOf<String>()
+        val iterator = operation.keys()
+        while (iterator.hasNext()) {
+            val key = iterator.next()
+            if (key != "id") keys += key
+        }
+        if (keys.size != 1) return operation
+        val key = keys.single()
+        val op = key.trim().lowercase()
+        val nested = operation.optJSONObject(key) ?: return operation
+        if (op !in WORKSPACE_OPS) return operation
+        return JSONObject(nested.toString()).put("op", op).also { row ->
+            if (operation.has("id") && !row.has("id")) row.put("id", operation.opt("id"))
+        }
+    }
+
     private fun workspaceExec(args: JSONObject): JSONObject {
         val operations = args.optJSONArray("operations") ?: throw IllegalArgumentException("operations array is required")
         require(operations.length() in 1..MAX_WORKSPACE_OPS) {
@@ -483,10 +502,13 @@ class RiftToolSandbox(context: Context) {
         try {
             for (index in 0 until operations.length()) {
                 currentIndex = index
-                val operation = operations.optJSONObject(index)
+                val rawOperation = operations.optJSONObject(index)
                     ?: throw IllegalArgumentException("Operation $index must be an object")
+                val operation = normalizeWorkspaceOperation(rawOperation)
                 currentOp = operation.optString("op").trim().lowercase()
-                require(currentOp.isNotBlank()) { "Operation $index is missing op" }
+                require(currentOp.isNotBlank()) {
+                    "Operation $index is missing op. Use flat JSON such as {\"op\":\"stat\",\"path\":\"workspace/project\"}."
+                }
                 if (dryRun && currentOp in setOf("mkdir", "remove", "move", "rename", "copy")) {
                     throw IllegalArgumentException("dryRun supports reads and content edits only; structural operation '$currentOp' is not allowed")
                 }

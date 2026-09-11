@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.6-project-intelligence';
+  const VERSION = 'rift-mcp-app-v1.7-autonomous-tool-loop';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -11,6 +11,8 @@
   const MAX_CONTEXT_CHARS = 5000;
   const MAX_CALLS_PER_MINUTE = 24;
   const PROCESS_DELAY_MS = 180;
+  const RESULT_ACK_TIMEOUT_MS = 12000;
+  const INCOMPLETE_CALL_GRACE_MS = 1400;
   const MAX_CHAT_TARGETS = 180;
 
   const pending = new Map();
@@ -20,6 +22,8 @@
   const touchedUserMessages = new Set();
   const lastAssistantText = new WeakMap();
   const historicalAssistantMessages = new WeakSet();
+  const protocolIssueFingerprints = new WeakMap();
+  const incompleteCallTimers = new WeakMap();
   let requestCounter = 0;
   let tools = [];
   let mcpReady = false;
@@ -41,6 +45,12 @@
   let continuationRequired = false;
   let completionTimer = 0;
   let toolExecutionArmed = false;
+  let toolLoopState = 'idle';
+  let continuationBaseline = new WeakSet();
+  let continuationBaselineKeys = new Set();
+  let pendingResultId = '';
+  let resultCounter = 0;
+  let recoveryAttempt = 0;
 
   function now() { return Date.now(); }
 
@@ -75,13 +85,50 @@
     if (!aiTaskActive && phase !== 'error') return;
     const sessionId = activeAiSessionId;
     clearCompletionTimer();
-    sendAiEvent(type, message, { phase, sessionId });
+    sendAiEvent(type, message, { phase, sessionId, toolLoopState });
     aiTaskActive = false;
     aiStopRequested = false;
     activeToolRoundTrips = 0;
     continuationRequired = false;
     activeAiSessionId = '';
     toolExecutionArmed = false;
+    toolLoopState = 'idle';
+    continuationBaseline = new WeakSet();
+    continuationBaselineKeys = new Set();
+    pendingResultId = '';
+    recoveryAttempt = 0;
+  }
+
+  function toolLoopBusy() {
+    return toolLoopState === 'executing-tool' ||
+      toolLoopState === 'delivering-result' ||
+      toolLoopState === 'waiting-result-ack' ||
+      toolLoopState === 'waiting-continuation';
+  }
+
+  function assistantMessageKey(message) {
+    if (!(message instanceof Element)) return '';
+    return String(message.getAttribute('data-message-id') || message.id || '').trim();
+  }
+
+  function markContinuationBaseline() {
+    continuationBaseline = new WeakSet();
+    continuationBaselineKeys = new Set();
+    for (const message of document.querySelectorAll('[data-message-author-role="assistant"]')) {
+      continuationBaseline.add(message);
+      const key = assistantMessageKey(message);
+      if (key) continuationBaselineKeys.add(key);
+    }
+  }
+
+  function isContinuationBaseline(message) {
+    if (continuationBaseline.has(message)) return true;
+    const key = assistantMessageKey(message);
+    return Boolean(key && continuationBaselineKeys.has(key));
+  }
+
+  function resultIdForPayload() {
+    return `result-${now()}-${++resultCounter}`;
   }
 
   function scheduleCompletionCheck(delayMs = 1300) {
@@ -98,7 +145,7 @@
         finishAiTask('stopped', 'ChatGPT Web task stopped');
         return;
       }
-      if (!assistantSeen || continuationRequired) {
+      if (!assistantSeen || continuationRequired || toolLoopBusy()) {
         scheduleCompletionCheck(900);
         return;
       }
@@ -172,7 +219,8 @@
   function codeModeGuide() {
     if (!tools.some((tool) => tool.name === 'rift_workspace_exec')) return '';
     return `\nRift Code Mode + Project Intelligence v1: prefer rift_workspace_exec so project inspection and edits run locally in one model-visible round trip. ` +
-      `Args: {"operations":[...],"finish":false,"dryRun":false,"expectedSnapshot":"optional","snapshotPath":"workspace/project","returnSnapshot":false}. Operations: ` +
+      `Args: {"operations":[...],"finish":false,"dryRun":false,"expectedSnapshot":"optional","snapshotPath":"workspace/project","returnSnapshot":false}. ` +
+      `IMPORTANT: every operation is a FLAT object whose first field is "op". Example: {"op":"stat","path":"workspace/RiftOS-main"}; never nest it as {"stat":{"path":"..."}}. Operations: ` +
       `project{path?,limit?}, snapshot{path?}, stat{path}, list{path?,recursive?,limit?}, search{path?,query,caseSensitive?,maxMatches?}, ` +
       `symbols{path?,query?,kind?,limit?}, references{path?,symbol,limit?}, read/read_range{path,startLine?,endLine?,maxChars?}, ` +
       `read_symbol{path,symbol,line?,maxChars?}, write{path,text}, replace{path,find,replace,all?,expectedCount?}, ` +
@@ -183,13 +231,15 @@
       `Project-intelligence scans locally ignore common dependency/build/cache directories and cap returned data. Symbol indexes are incrementally refreshed when workspace files change. ` +
       `Use dryRun:true to validate read/content-edit batches without committing (structural mkdir/remove/move/copy ops are intentionally excluded). Scope expectedSnapshot with snapshotPath so unrelated sibling projects do not invalidate an edit. ` +
       `Every batch is transactional: if any operation fails, all mutations are rolled back. The AI can access only workspace/. ` +
+      `Tool/protocol errors are returned automatically: correct them and retry with a NEW call_id without asking the user to continue. ` +
       `If a mutating batch fully completes the task, set finish:true. RiftOS still returns one correlated ${RESULT_MARKER} confirmation; after an ok final result, briefly confirm completion.`;
   }
 
   function contextBlock() {
     return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}${codeModeGuide()}\n` +
       `When a Rift tool is needed, reply with ONLY one ${CALL_OPEN}{"call_id":"unique-id","name":"tool_name","args":{}}${CALL_CLOSE} envelope and no extra prose. ` +
-      `Wait for ${RESULT_MARKER} before continuing. Never claim success without that result.`;
+      `Wait for ${RESULT_MARKER} before continuing. If the returned result is an error, fix the call and retry automatically with a NEW call_id when a tool is still required; never ask the user to resend or type continue. ` +
+      `Never claim success without a successful result.`;
   }
 
   function refreshRouteState() {
@@ -484,6 +534,11 @@
     lastAssistantUpdateAt = 0;
     lastToolResultAt = 0;
     continuationRequired = false;
+    toolLoopState = 'waiting-assistant';
+    continuationBaseline = new WeakSet();
+    continuationBaselineKeys = new Set();
+    pendingResultId = '';
+    recoveryAttempt = 0;
     clearCompletionTimer();
 
     if (!task) { finishAiTask('error', 'Rift AI task is empty', 'error'); return false; }
@@ -541,15 +596,87 @@ ${contextBlock()}`;
     return true;
   }
 
+  function readResultPayloadFromMessage(message) {
+    if (!(message instanceof Element)) return null;
+    const text = String(message.innerText || message.textContent || '');
+    if (!text.includes(RESULT_MARKER)) return null;
+    const markerAt = text.indexOf(RESULT_MARKER);
+    const tail = text.slice(markerAt + RESULT_MARKER.length).replace(/^\s+/, '');
+    const line = tail.split('\n')[0];
+    try {
+      const parsed = JSON.parse(line || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function markInjectedResultMessage(message) {
+    const parsed = readResultPayloadFromMessage(message);
+    const resultId = String(parsed && parsed.result_id || '').trim();
+    if (resultId && message instanceof HTMLElement) message.dataset.riftResultId = resultId;
+    return resultId;
+  }
+
+  async function waitForResultAck(resultId, timeoutMs = RESULT_ACK_TIMEOUT_MS) {
+    const deadline = now() + timeoutMs;
+    while (now() < deadline) {
+      for (const message of document.querySelectorAll('[data-message-author-role="user"]')) {
+        if (!(message instanceof Element)) continue;
+        const known = message instanceof HTMLElement ? String(message.dataset.riftResultId || '') : '';
+        if (known === resultId) return true;
+        if (markInjectedResultMessage(message) === resultId) return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    return false;
+  }
+
+  function scanForContinuation() {
+    const assistant = document.querySelectorAll('[data-message-author-role="assistant"]');
+    for (let i = Math.max(0, assistant.length - 6); i < assistant.length; i++) {
+      const message = assistant[i];
+      if (!isContinuationBaseline(message)) scanAssistantMessage(message);
+    }
+  }
+
   async function submitToolResult(payload, expectedSessionId = '') {
     if (expectedSessionId && (!aiTaskActive || activeAiSessionId !== expectedSessionId)) {
       throw new Error(`Stale Rift result ignored for inactive session ${expectedSessionId}`);
     }
-    const finalInstruction = payload && payload.final === true && payload.ok === true
+    const resultId = resultIdForPayload();
+    const resultPayload = { ...(payload && typeof payload === 'object' ? payload : {}), result_id: resultId };
+    const manageSession = Boolean(expectedSessionId && aiTaskActive && activeAiSessionId === expectedSessionId);
+    if (resultPayload.ok === false) {
+      recoveryAttempt += 1;
+      resultPayload.retryable = true;
+      resultPayload.recovery_attempt = recoveryAttempt;
+    } else if (resultPayload.ok === true) {
+      recoveryAttempt = 0;
+    }
+    const finalInstruction = resultPayload.final === true && resultPayload.ok === true
       ? `The requested final batch is confirmed. Do not call another Rift tool unless the result itself shows unfinished work; briefly confirm completion.`
-      : `Continue using this result. If another Rift tool is required, emit exactly one ${CALL_OPEN}...${CALL_CLOSE} envelope.`;
-    const message = `${RESULT_MARKER}\n${JSON.stringify(payload)}\n${finalInstruction}`;
-    const composer = findComposer();
+      : resultPayload.ok === false
+        ? `The Rift tool/protocol call failed. Correct the error and retry automatically with a NEW call_id if the task still requires a tool. Do not ask the user to resend the task or type continue.`
+        : `Continue using this result immediately. If another Rift tool is required, emit exactly one ${CALL_OPEN}...${CALL_CLOSE} envelope with a NEW call_id. Do not wait for the user.`;
+    const message = `${RESULT_MARKER}\n${JSON.stringify(resultPayload)}\n${finalInstruction}`;
+
+    if (manageSession) {
+      markContinuationBaseline();
+      lastToolResultAt = now();
+      continuationRequired = true;
+      assistantSeen = false;
+      pendingResultId = resultId;
+      toolLoopState = 'delivering-result';
+      sendAiPhase('running', 'Returning Rift result to ChatGPT Web', 'transport', {
+        resultId,
+        callId: resultPayload.call_id || null,
+        tool: resultPayload.name || null,
+        ok: resultPayload.ok !== false
+      });
+    }
+
+    const composer = await waitForComposer(12000);
     if (!composer) throw new Error('ChatGPT composer unavailable');
     suppressDecoration = true;
     writeComposer(composer, message);
@@ -558,8 +685,27 @@ ${contextBlock()}`;
       suppressDecoration = false;
       throw new Error('ChatGPT send button unavailable');
     }
+    if (manageSession) toolLoopState = 'waiting-result-ack';
     button.click();
     setTimeout(() => { suppressDecoration = false; }, 800);
+
+    if (manageSession) {
+      const acknowledged = await waitForResultAck(resultId);
+      if (!acknowledged) throw new Error(`ChatGPT Web did not acknowledge Rift result ${resultId}`);
+      if (!aiTaskActive || activeAiSessionId !== expectedSessionId) {
+        throw new Error(`Stale Rift result ignored for inactive session ${expectedSessionId}`);
+      }
+      pendingResultId = '';
+      toolLoopState = 'waiting-continuation';
+      sendAiPhase('running', 'Rift result delivered · waiting for ChatGPT continuation', 'transport', {
+        resultId,
+        callId: resultPayload.call_id || null,
+        tool: resultPayload.name || null,
+        ok: resultPayload.ok !== false
+      });
+      queueMicrotask(scanForContinuation);
+    }
+    return resultId;
   }
 
   function rateLimitAllowsCall() {
@@ -571,25 +717,46 @@ ${contextBlock()}`;
   }
 
   function normalizeCall(packet) {
-    if (!packet || typeof packet !== 'object') throw new Error('Tool call must be an object');
+    if (!packet || typeof packet !== 'object' || Array.isArray(packet)) throw new Error('Tool call must be a JSON object');
     const callId = String(packet.call_id || '').trim();
     const name = String(packet.name || '').trim();
-    const args = packet.args && typeof packet.args === 'object' && !Array.isArray(packet.args) ? packet.args : {};
+    if ('args' in packet && (!packet.args || typeof packet.args !== 'object' || Array.isArray(packet.args))) {
+      throw new Error('Tool call args must be a JSON object');
+    }
+    const args = packet.args && typeof packet.args === 'object' ? packet.args : {};
     if (!callId || callId.length > 160) throw new Error('Invalid call_id');
     if (!tools.some((tool) => tool.name === name)) throw new Error(`Unknown Rift tool: ${name}`);
     return { call_id: callId, name, args };
   }
 
+  async function returnProtocolError(error, packet = null, aiSessionId = '') {
+    const message = String(error && error.message || error || 'Invalid Rift tool call');
+    const callId = packet && typeof packet === 'object' ? String(packet.call_id || '').trim() : '';
+    const name = packet && typeof packet === 'object' ? String(packet.name || '').trim() : '';
+    if (aiSessionId && aiTaskActive && activeAiSessionId === aiSessionId) toolLoopState = 'delivering-result';
+    await submitToolResult({
+      call_id: callId || null,
+      name: name || null,
+      session_id: aiSessionId || null,
+      ok: false,
+      final: false,
+      error_code: 'CALL_VALIDATION_ERROR',
+      error: message
+    }, aiSessionId);
+  }
+
   async function executeCall(packet) {
+    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
     let call;
     try {
       call = normalizeCall(packet);
     } catch (error) {
-      await submitToolResult({ ok: false, error: String(error.message || error) });
+      await returnProtocolError(error, packet, aiSessionId);
       return;
     }
 
-    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
+    if (!toolExecutionArmed) return;
+
     const scope = aiSessionId || routeKey;
     const callKey = `${scope}:${call.call_id}`;
     const signature = `${call.name}:${JSON.stringify(call.args)}`;
@@ -597,20 +764,35 @@ ${contextBlock()}`;
     if (previousSignature) {
       if (previousSignature !== signature) {
         await submitToolResult({
-          call_id: call.call_id, name: call.name, ok: false,
-          error: 'Duplicate Rift call_id was reused with different arguments; choose a new call_id.'
+          call_id: call.call_id,
+          name: call.name,
+          session_id: aiSessionId || null,
+          ok: false,
+          final: false,
+          error_code: 'DUPLICATE_CALL_ID',
+          error: 'Duplicate Rift call_id was reused with different arguments; retry with a new call_id.'
         }, aiSessionId);
       }
       return;
     }
-    processedCalls.set(callKey, signature);
 
-    if (!toolExecutionArmed) return;
     if (!rateLimitAllowsCall()) {
-      await submitToolResult({ call_id: call.call_id, name: call.name, ok: false, error: 'Rift MCP browser rate limit reached' }, aiSessionId);
+      processedCalls.set(callKey, signature);
+      await submitToolResult({
+        call_id: call.call_id,
+        name: call.name,
+        session_id: aiSessionId || null,
+        ok: false,
+        final: false,
+        error_code: 'RATE_LIMIT',
+        error: 'Rift MCP browser rate limit reached; consolidate work into a larger rift_workspace_exec batch.'
+      }, aiSessionId);
       return;
     }
 
+    // Only mark a model call processed after it has actually been accepted for execution.
+    processedCalls.set(callKey, signature);
+    if (aiSessionId && aiTaskActive && activeAiSessionId === aiSessionId) toolLoopState = 'executing-tool';
     if (aiSessionId) activeToolRoundTrips += 1;
     setBadge('busy');
     try {
@@ -645,10 +827,11 @@ ${contextBlock()}`;
       }, aiSessionId);
 
       if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
-        lastToolResultAt = now();
-        continuationRequired = true;
-        sendAiPhase('running', `${call.name} confirmed locally and result returned to ChatGPT Web`, 'transport', {
-          tool: call.name, callId: call.call_id, final: Boolean(ok && requestedFinal), mutationCount
+        sendAiPhase('running', `${call.name} completed locally · ChatGPT continuation requested`, 'transport', {
+          tool: call.name,
+          callId: call.call_id,
+          final: Boolean(ok && requestedFinal),
+          mutationCount
         });
       }
       setBadge(ok ? 'ready' : 'error');
@@ -658,6 +841,13 @@ ${contextBlock()}`;
         sendAiEvent('transport', message, { phase: 'stale-result', sessionId: aiSessionId, callId: call.call_id });
         return;
       }
+      if (message.startsWith('ChatGPT Web did not acknowledge Rift result') || message === 'ChatGPT composer unavailable' || message === 'ChatGPT send button unavailable') {
+        if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
+          finishAiTask('error', `Could not deliver ${call.name} result to ChatGPT Web: ${message}`, 'error');
+        }
+        setBadge('error');
+        return;
+      }
       try {
         await submitToolResult({
           call_id: call.call_id,
@@ -665,12 +855,9 @@ ${contextBlock()}`;
           session_id: aiSessionId || null,
           ok: false,
           final: false,
+          error_code: 'TOOL_TRANSPORT_ERROR',
           error: message
         }, aiSessionId);
-        if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
-          lastToolResultAt = now();
-          continuationRequired = true;
-        }
       } catch (submitError) {
         if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
           finishAiTask('error', `Could not return ${call.name} result to ChatGPT Web: ${String(submitError && submitError.message || submitError)}`, 'error');
@@ -683,19 +870,32 @@ ${contextBlock()}`;
     }
   }
 
-  function extractCalls(text) {
+  function parseCallEnvelopes(text) {
     const calls = [];
+    const errors = [];
+    let incomplete = false;
     let cursor = 0;
     while (true) {
       const start = text.indexOf(CALL_OPEN, cursor);
       if (start < 0) break;
       const end = text.indexOf(CALL_CLOSE, start + CALL_OPEN.length);
-      if (end < 0) break;
+      if (end < 0) {
+        incomplete = true;
+        break;
+      }
       const raw = text.slice(start + CALL_OPEN.length, end).trim();
-      try { calls.push(JSON.parse(raw)); } catch (_) {}
+      if (!raw) {
+        errors.push('Rift call envelope contained no JSON object');
+      } else {
+        try {
+          calls.push(JSON.parse(raw));
+        } catch (error) {
+          errors.push(`Malformed Rift call JSON: ${String(error && error.message || error)}`);
+        }
+      }
       cursor = end + CALL_CLOSE.length;
     }
-    return calls;
+    return { calls, errors, incomplete };
   }
 
   function stripToolEnvelopes(text) {
@@ -710,40 +910,107 @@ ${contextBlock()}`;
     return out.replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  function queueProtocolRecovery(message, errorText) {
+    if (!(message instanceof Element)) return;
+    const fingerprint = `${String(errorText)}\n${String(message.innerText || message.textContent || '')}`;
+    if (protocolIssueFingerprints.get(message) === fingerprint) return;
+    protocolIssueFingerprints.set(message, fingerprint);
+    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
+    if (aiSessionId) toolLoopState = 'delivering-result';
+    callQueue = callQueue.then(() => submitToolResult({
+      call_id: null,
+      name: null,
+      session_id: aiSessionId || null,
+      ok: false,
+      final: false,
+      error_code: 'CALL_PARSE_ERROR',
+      error: String(errorText)
+    }, aiSessionId)).catch((error) => {
+      setBadge('error');
+      if (aiTaskActive) finishAiTask('error', `Rift tool recovery failed: ${String(error && error.message || error)}`, 'error');
+    });
+  }
+
+  function scheduleIncompleteCallCheck(message, text) {
+    const previous = incompleteCallTimers.get(message);
+    if (previous && previous.text === text) return;
+    if (previous && previous.timer) clearTimeout(previous.timer);
+    const timer = setTimeout(() => {
+      incompleteCallTimers.delete(message);
+      if (!(message instanceof Element) || !message.isConnected) return;
+      const currentText = String(message.innerText || message.textContent || '');
+      if (currentText !== text) {
+        scanAssistantMessage(message);
+        return;
+      }
+      const parsed = parseCallEnvelopes(currentText);
+      if (parsed.incomplete && !stopButtonVisible()) {
+        queueProtocolRecovery(message, 'Rift call envelope was not closed with </rift_call>. Return exactly one complete tool envelope.');
+      }
+    }, INCOMPLETE_CALL_GRACE_MS);
+    incompleteCallTimers.set(message, { text, timer });
+  }
+
   function scanAssistantMessage(message) {
     if (!enabled || !(message instanceof Element)) return;
     const text = String(message.innerText || message.textContent || '');
     const assistantMessages = document.querySelectorAll('[data-message-author-role="assistant"]');
     const isLatestAssistant = assistantMessages.length > 0 && assistantMessages[assistantMessages.length - 1] === message;
     const isHistorical = historicalAssistantMessages.has(message);
-    const calls = toolExecutionArmed && isLatestAssistant && !isHistorical && tools.length && text.includes(CALL_OPEN) && text.includes(CALL_CLOSE) ? extractCalls(text) : [];
+
+    if (aiTaskActive && toolLoopState === 'waiting-continuation') {
+      if (isContinuationBaseline(message)) return;
+      continuationRequired = false;
+      toolLoopState = 'waiting-assistant';
+      lastAssistantUpdateAt = now();
+      sendAiPhase('running', 'ChatGPT continuation received', 'transport');
+    } else if (aiTaskActive && (toolLoopState === 'executing-tool' || toolLoopState === 'delivering-result' || toolLoopState === 'waiting-result-ack')) {
+      return;
+    }
+
+    const mayExecute = toolExecutionArmed && isLatestAssistant && !isHistorical && tools.length > 0;
+    const parsed = mayExecute && text.includes(CALL_OPEN) ? parseCallEnvelopes(text) : { calls: [], errors: [], incomplete: false };
+
+    if (mayExecute && parsed.errors.length) {
+      queueProtocolRecovery(message, parsed.errors.join('; '));
+      return;
+    }
+    if (mayExecute && parsed.incomplete) {
+      scheduleIncompleteCallCheck(message, text);
+      return;
+    }
+    if (mayExecute && parsed.calls.length > 1) {
+      queueProtocolRecovery(message, 'Only one <rift_call> envelope is allowed per assistant turn. Consolidate work into one rift_workspace_exec batch or issue calls sequentially.');
+      return;
+    }
+    if (mayExecute && parsed.calls.length === 1) {
+      if (aiTaskActive) toolLoopState = 'executing-tool';
+      const packet = parsed.calls[0];
+      callQueue = callQueue.then(() => executeCall(packet)).catch((error) => {
+        setBadge('error');
+        if (aiTaskActive) finishAiTask('error', `Rift tool pipeline failed: ${String(error && error.message || error)}`, 'error');
+      });
+      return;
+    }
+
     const visibleText = stripToolEnvelopes(text);
     if (visibleText && lastAssistantText.get(message) !== visibleText) {
       lastAssistantText.set(message, visibleText);
       if (aiTaskActive) {
         assistantSeen = true;
         lastAssistantUpdateAt = now();
-        if (continuationRequired && lastAssistantUpdateAt >= lastToolResultAt) continuationRequired = false;
       }
       sendAiEvent('assistant', 'Assistant output updated', {
         messageId: String(message.getAttribute('data-message-id') || message.id || ''),
         text: visibleText.slice(0, 180000)
       });
     }
-    if (calls.length) {
-      for (const packet of calls) {
-        callQueue = callQueue.then(() => executeCall(packet)).catch((error) => {
-          setBadge('error');
-          if (aiTaskActive) finishAiTask('error', `Rift tool pipeline failed: ${String(error && error.message || error)}`, 'error');
-        });
-      }
-      return;
-    }
     if (aiTaskActive && visibleText) scheduleCompletionCheck();
   }
 
   function compactInjectedUserMessage(message) {
     if (!(message instanceof Element)) return;
+    markInjectedResultMessage(message);
     const content = message.querySelector('.whitespace-pre-wrap');
     if (!content || content.childElementCount > 0) return;
     const text = String(content.textContent || '');
@@ -877,7 +1144,7 @@ ${contextBlock()}`;
     targets: collectChatTargets,
     openTargetSearch,
     stop: stopAiTask,
-    state: () => ({ version: VERSION, enabled, tools: tools.length, route: routeKey, aiTaskActive })
+    state: () => ({ version: VERSION, enabled, tools: tools.length, route: routeKey, aiTaskActive, toolLoopState, pendingResultId })
   });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });

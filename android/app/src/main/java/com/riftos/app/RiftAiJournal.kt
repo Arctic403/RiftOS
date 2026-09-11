@@ -224,7 +224,7 @@ class RiftAiJournal(context: Context) {
         if (!error.isNullOrBlank()) data.put("error", error.take(500))
         val message = when (phase) {
             "start" -> "$name · ${toolTarget(name, args)}"
-            "finish" -> if (ok == true) "$name completed" else "$name failed"
+            "finish" -> if (ok == true) "$name completed locally" else "$name failed locally"
             else -> name
         }
         recordEvent("tool", message, data)

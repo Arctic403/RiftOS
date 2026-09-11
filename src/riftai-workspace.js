@@ -61,6 +61,7 @@ function eventLine(event){
   const data=event.data&&typeof event.data==="object"?event.data:{};
   let detail="";
   if(type==="tool"&&data.target)detail=` · ${data.target}`;
+  if(type==="tool"&&data.phase==="finish"&&data.ok===true)detail+=` · waiting for ChatGPT`;
   return `<div class="rift-ai-log-line ${esc(type)}"><time>${fmtTime(event.at)}</time><span>${esc(type)}</span><p>${esc(event.message||type)}${esc(detail)}</p></div>`;
 }
 
