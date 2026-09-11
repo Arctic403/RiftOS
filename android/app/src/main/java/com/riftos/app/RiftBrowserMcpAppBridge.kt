@@ -16,8 +16,7 @@ import org.json.JSONObject
  */
 class RiftBrowserMcpAppBridge(
     private val activity: Activity,
-    private val webView: WebView,
-    private val aiEventSink: (JSONObject) -> Unit
+    private val webView: WebView
 ) {
     companion object {
         private const val BRIDGE_NAME = "RiftMcpNative"
@@ -59,10 +58,6 @@ class RiftBrowserMcpAppBridge(
                         .put("id", JSONObject.NULL)
                         .put("error", JSONObject().put("code", -32700).put("message", "Invalid Rift MCP JSON"))
                 )
-                return@addWebMessageListener
-            }
-            if (request.optString("method") == "rift/ai/event") {
-                aiEventSink(request.optJSONObject("params") ?: JSONObject())
                 return@addWebMessageListener
             }
             server.handleAsync(request, ::deliver)
