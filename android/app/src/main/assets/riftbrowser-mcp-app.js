@@ -15,6 +15,8 @@
   const RESULT_ACK_TIMEOUT_MS = 12000;
   const INCOMPLETE_CALL_GRACE_MS = 1400;
   const MAX_CHAT_TARGETS = 180;
+  // Safety mode: keep MCP tools available but disable ChatGPT composer automation.
+  const WEB_COMPOSER_BRIDGE_ENABLED = false;
 
   const pending = new Map();
   const processedCalls = new Map();
