@@ -20,6 +20,7 @@ class RiftBrowserMcpAppBridge(
 ) {
     companion object {
         private const val BRIDGE_NAME = "RiftMcpNative"
+        private const val ENABLE_WEB_CHAT_ADAPTER = false
         private const val MAX_MESSAGE_BYTES = 9 * 1024 * 1024
         private val CHATGPT_ORIGINS = setOf("https://chatgpt.com", "https://www.chatgpt.com")
     }
@@ -63,7 +64,7 @@ class RiftBrowserMcpAppBridge(
             server.handleAsync(request, ::deliver)
         }
 
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        if (ENABLE_WEB_CHAT_ADAPTER && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, script, CHATGPT_ORIGINS)
             documentStartInstalled = true
         }
@@ -71,13 +72,14 @@ class RiftBrowserMcpAppBridge(
     }
 
     fun ensureInjected(url: String?) {
-        if (!installed || documentStartInstalled || !isChatGptUrl(url)) return
+        if (!ENABLE_WEB_CHAT_ADAPTER || !installed || documentStartInstalled || !isChatGptUrl(url)) return
         webView.evaluateJavascript(script, null)
     }
 
     fun state(): JSONObject = JSONObject()
         .put("installed", installed)
-        .put("mode", "rift-mcp-app-v2")
+        .put("mode", "native-mcp-only")
+        .put("webChatAdapter", ENABLE_WEB_CHAT_ADAPTER)
         .put("origin", "chatgpt.com")
         .put("transport", "in-process MCP JSON-RPC")
         .put("remoteRelay", false)
