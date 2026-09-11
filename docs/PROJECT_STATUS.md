@@ -39,6 +39,7 @@ There is no Rift AI workspace app in the active architecture. ChatGPT Web is the
 - RiftRT v1 worker/iframe/WASM application runtime.
 - Rift MCP system app for local read/write permissions and recent tool activity.
 - RiftBrowser native Android System WebView host.
+- Workspace Live sandboxed local HTML surface with live workspace events, compact diffs and revision-guarded manual saves.
 
 ### RiftBrowser
 
@@ -49,6 +50,15 @@ There is no Rift AI workspace app in the active architecture. ChatGPT Web is the
 - No hidden Rift AI task runner, target picker, session controller or AI event channel.
 - ChatGPT receives no unrestricted filesystem JavaScript object or general native dispatcher.
 - Browser file/content access is disabled at the WebView settings layer.
+
+### Workspace Live
+
+- Packaged local HTML UI; no localhost TCP server or cloud file service.
+- Sandboxed iframe omits `allow-same-origin` and receives only a narrow workspace RPC.
+- Recursive native watcher is scoped to `filesDir/riftfs/workspace`.
+- MCP, RiftFS, git/process and manual edits appear in the live activity feed.
+- Open files refresh automatically when clean; unsaved local edits trigger a conflict warning instead of being overwritten.
+- Manual saves use SHA-256 revision checks to prevent stale clobbers.
 
 ### Local Rift MCP
 

@@ -5,6 +5,7 @@ const BUILTIN_APPS=[
   {id:"files",name:"Files",icon:"▣",desc:"Android RiftFS + SAF mounts"},
   {id:"terminal",name:"RiftShell",icon:">_",desc:"RiftKernel command shell"},
   {id:"browser",name:"RiftBrowser",icon:"◎",desc:"In-desktop Android WebView browser"},
+  {id:"workspace-live",name:"Workspace Live",icon:"◈",desc:"Watch ChatGPT + local edits live"},
   {id:"editor",name:"Editor",icon:"{}",desc:"Native-backed RiftFS editor"},
   {id:"tasks",name:"Tasks",icon:"≡",desc:"RiftKernel processes"},
   {id:"settings",name:"Settings",icon:"⚙",desc:"Samsung / Android system"}
@@ -439,11 +440,26 @@ async function openTerminal(){
   setTimeout(()=>input.focus(),60);
 }
 
+async function openWorkspaceLive(){
+  await core.ready;
+  const body=openWindow("workspace-live","Workspace Live","LOCAL HTML / MCP WORKSPACE");
+  if(!window.RiftWorkspaceLiveHost?.mount)throw new Error("Workspace Live host is unavailable");
+  const mounted=window.RiftWorkspaceLiveHost.mount(body);
+  const closeHandler=event=>{
+    if(event.detail?.id!=="workspace-live")return;
+    window.removeEventListener("riftos:window-close",closeHandler);
+    mounted.destroy();
+  };
+  window.addEventListener("riftos:window-close",closeHandler);
+  return true;
+}
+
 async function openApp(id){
   if(id==="home")return showDesktop();
   if(id==="files")return openFiles("/");
   if(id==="terminal")return openTerminal();
   if(id==="browser")return openBrowser();
+  if(id==="workspace-live")return openWorkspaceLive();
   if(id==="editor")return openEditor();
   if(id==="tasks")return openTasks();
   if(id==="settings")return openSettings();
@@ -467,7 +483,7 @@ window.RiftOSWindowManager=Object.freeze({
   showDesktop,
   sync:syncShellState
 });
-window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,closeWindow,showDesktop,setStatus});
+window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,openWorkspaceLive,closeWindow,showDesktop,setStatus});
 
 (async()=>{
   try{

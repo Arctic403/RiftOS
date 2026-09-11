@@ -54,6 +54,7 @@ val syncRiftOsWebAssets by tasks.registering(Copy::class) {
         include("index.html")
         include("styles.css")
         include("src/**")
+        include("workspace-live/**")
         include("apps/riftdev/index.html")
         include("apps/riftdev/style.css")
         include("apps/riftdev/riftdev-android-storage.js")

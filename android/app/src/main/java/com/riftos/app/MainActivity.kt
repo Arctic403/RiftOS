@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     private lateinit var browserWindow: RiftBrowserWindow
     private lateinit var dispatcher: RiftNativeDispatcher
     private lateinit var systemDump: RiftSystemDump
+    private lateinit var workspaceWatcher: RiftWorkspaceWatcher
     private val kernelExecutor = Executors.newSingleThreadExecutor()
     private var pendingTreeRequestId: String? = null
     private var pendingNotificationRequestId: String? = null
@@ -61,6 +62,7 @@ class MainActivity : Activity() {
         rootView = FrameLayout(this)
         webView = WebView(this)
         systemDump = RiftSystemDump(this)
+        workspaceWatcher = RiftWorkspaceWatcher(this, ::sendWorkspaceEvent)
         rootView.addView(
             webView,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -179,9 +181,20 @@ class MainActivity : Activity() {
             "browser.window.visible" -> runBrowserCommand(requestId) { browserWindow.setVisible(args.optBoolean("visible", true)) }
             "browser.window.state" -> runBrowserCommand(requestId) { browserWindow.state() }
             "browser.window.close" -> runBrowserCommand(requestId) { JSONObject().put("closed", browserWindow.close()) }
+            "workspace.watch.start" -> runKernelCommand(requestId) { workspaceWatcher.start() }
+            "workspace.watch.stop" -> runKernelCommand(requestId) { workspaceWatcher.stop() }
+            "workspace.watch.state" -> runKernelCommand(requestId) { workspaceWatcher.state() }
             else -> return false
         }
         return true
+    }
+
+    private fun runKernelCommand(requestId: String, command: () -> Any?) {
+        try {
+            sendNativeResult(requestId, true, command(), null)
+        } catch (error: Throwable) {
+            sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
+        }
     }
 
     private fun runBrowserCommand(requestId: String, command: () -> Any?) {
@@ -191,6 +204,13 @@ class MainActivity : Activity() {
             } catch (error: Throwable) {
                 sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
             }
+        }
+    }
+
+    private fun sendWorkspaceEvent(event: JSONObject) {
+        val script = "window.RiftWorkspaceNative?.__event(${event});"
+        runOnUiThread {
+            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
         }
     }
 
@@ -367,6 +387,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (::workspaceWatcher.isInitialized) workspaceWatcher.shutdown()
         if (::dispatcher.isInitialized) dispatcher.shutdown()
         if (::browserWindow.isInitialized) browserWindow.destroy()
         kernelExecutor.shutdownNow()

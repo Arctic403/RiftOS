@@ -33,7 +33,7 @@ const startMenu=document.createElement('section');
 startMenu.id='riftStartMenu';
 startMenu.setAttribute('aria-label','Start menu');
 startMenu.innerHTML=`<div class="rift-start-head"><strong>RiftOS</strong><span>Apps</span></div><div class="rift-start-grid">
-<button data-open="files"><b>▣</b><span>Files</span></button><button data-open="terminal"><b>&gt;_</b><span>RiftShell</span></button><button data-open="browser"><b>◎</b><span>RiftBrowser</span></button><button data-open="editor"><b>{}</b><span>Editor</span></button><button data-open="tasks"><b>≡</b><span>Task Manager</span></button><button data-open="settings"><b>⚙</b><span>Settings</span></button></div>`;
+<button data-open="files"><b>▣</b><span>Files</span></button><button data-open="workspace-live"><b>◈</b><span>Workspace Live</span></button><button data-open="terminal"><b>&gt;_</b><span>RiftShell</span></button><button data-open="browser"><b>◎</b><span>RiftBrowser</span></button><button data-open="editor"><b>{}</b><span>Editor</span></button><button data-open="tasks"><b>≡</b><span>Task Manager</span></button><button data-open="settings"><b>⚙</b><span>Settings</span></button></div>`;
 os.append(startMenu);
 
 const cursor=document.createElement('div');

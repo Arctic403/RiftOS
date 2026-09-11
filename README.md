@@ -17,7 +17,7 @@ Android 8+ / Samsung / DeX
    /      |       \
 RiftFS  RiftRT  RiftDesktop
   |                 |
-Android filesDir     +-- Files / Settings / RiftDev / Rift MCP / apps
+Android filesDir     +-- Files / Settings / RiftDev / Rift MCP / Workspace Live / apps
 + SAF mounts         |
                     RiftBrowser
                          |
@@ -50,6 +50,7 @@ The foundation is intentionally simple: the user talks to ChatGPT in RiftBrowser
 - **RiftRT v1**: worker/iframe/WASM application runtime integrated with RiftDesktop.
 - **RiftDev**: Android editor using the canonical workspace.
 - **RiftBrowser**: native Android System WebView host used for normal browsing and ChatGPT Web.
+- **Workspace Live**: sandboxed local HTML workspace surface that watches the canonical workspace and shows MCP/local edits as they happen.
 - **Rift MCP**: local system app for MCP tool permissions and recent tool activity.
 
 ## RiftBrowser + ChatGPT Web
@@ -94,6 +95,10 @@ Read tools are enabled by default. Write tools remain disabled by default until 
 Code Mode supports project snapshots, bounded listing/search, symbol and reference lookup, surgical range/symbol reads, guarded text patches, multi-hunk edits, transactional multi-file mutations, scoped snapshot guards, dry-run validation and local ZIP archive creation. The workspace sandbox rejects path traversal and cannot address RiftOS system roots, SAF mounts or arbitrary Android storage.
 
 Tool Protocol V2 uses strict JSON request/call IDs and correlated result packets. Legacy `<rift_call>` envelopes remain supported for compatibility.
+
+## Workspace Live
+
+Workspace Live is a local HTML app packaged inside RiftOS. It runs in a sandboxed iframe with a narrow `postMessage` RPC to the trusted shell, watches only `filesDir/riftfs/workspace`, and refreshes open files/diffs when MCP or other local writers change them. It does not create a localhost listener and does not give the HTML page a general Android or filesystem bridge.
 
 ## Workspace boundary
 

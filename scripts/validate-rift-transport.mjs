@@ -8,6 +8,10 @@ const host = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolHost
 const sandbox = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt', 'utf8');
 const entry = readFileSync('src/riftandroid-entry.js', 'utf8');
 const mcpSystem = readFileSync('src/riftmcp-system.js', 'utf8');
+const workspaceHost = readFileSync('src/riftworkspace-live-host.js', 'utf8');
+const workspacePage = readFileSync('workspace-live/index.html', 'utf8');
+const workspaceWatcher = readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt', 'utf8');
+const gradle = readFileSync('android/app/build.gradle.kts', 'utf8');
 
 const checks = [
   ['Rift AI workspace app is removed', !existsSync('src/riftai-workspace.js') && !entry.includes('riftai-workspace')],
@@ -22,7 +26,12 @@ const checks = [
   ['outgoing messages are acknowledged', adapter.includes('waitForOutgoingAcceptance')],
   ['legacy protocol remains available', adapter.includes('<rift_call>')],
   ['archive is classified as a write', host.includes('"archive"')],
-  ['archive is locally implemented', sandbox.includes('private fun createArchive')]
+  ['archive is locally implemented', sandbox.includes('private fun createArchive')],
+  ['Workspace Live HTML is sandboxed', workspaceHost.includes('sandbox=\"allow-scripts\"') && !workspaceHost.includes('allow-same-origin')],
+  ['Workspace Live uses narrow postMessage RPC', workspaceHost.includes('riftworkspace-live-v1') && workspaceHost.includes('Unsupported live workspace method')],
+  ['native workspace watcher is workspace-scoped', workspaceWatcher.includes('riftfs/workspace') && workspaceWatcher.includes('isInsideRoot')],
+  ['workspace watcher is exposed only through shell kernel requests', main.includes('\"workspace.watch.start\"') && main.includes('RiftWorkspaceNative?.__event')],
+  ['Workspace Live assets are packaged', gradle.includes('include(\"workspace-live/**\")') && workspacePage.includes('Rift Workspace')]
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

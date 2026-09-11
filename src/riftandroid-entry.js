@@ -3,6 +3,7 @@ await import("./riftcore.js");
 await import("./riftandroid-platform.js");
 await import("./riftworkspace-web.js");
 await import("./riftworkspace-android-adapter.js");
+await import("./riftworkspace-live-host.js");
 await import("./riftruntime.js");
 await import("./riftapps.js");
 await import("./riftapps-files.js");
