@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.5-workspace-ack';
+  const VERSION = 'rift-mcp-app-v1.6-project-intelligence';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -171,16 +171,19 @@
 
   function codeModeGuide() {
     if (!tools.some((tool) => tool.name === 'rift_workspace_exec')) return '';
-    return `\nRift Code Mode: for project work prefer rift_workspace_exec so many filesystem operations run locally in one model-visible round trip. ` +
-      `Args: {"operations":[...],"finish":false}. Operations: ` +
-      `project{path?,limit?}, stat{path}, list{path?,recursive?,limit?}, search{path?,query,caseSensitive?,maxMatches?}, ` +
-      `read{path,startLine?,endLine?,maxChars?}, write{path,text}, replace{path,find,replace,all?,expectedCount?}, ` +
-      `patch{path,edits:[{find,replace,all?,expectedCount?}]}, ` +
-      `mkdir{path}, remove{path}, move{from,to,overwrite?}, rename{from,to,overwrite?}, copy{from,to,overwrite?}. Paths are under workspace/. ` +
-      `The batch is local and transactional: if any operation fails, all mutations from that batch are rolled back. ` +
-      `The AI can access only workspace/; RiftOS system, downloads, documents, mounts, and other roots are outside this capability. ` +
-      `If a mutating batch fully completes the task, set finish:true. RiftOS will still return one correlated ${RESULT_MARKER} confirmation; after an ok final result, briefly confirm completion and do not call another tool unless the result shows unfinished work. ` +
-      `Use search/list/read only when reasoning needs source; do mechanical multi-file edits inside one batch whenever possible.`;
+    return `\nRift Code Mode + Project Intelligence v1: prefer rift_workspace_exec so project inspection and edits run locally in one model-visible round trip. ` +
+      `Args: {"operations":[...],"finish":false,"dryRun":false,"expectedSnapshot":"optional","snapshotPath":"workspace/project","returnSnapshot":false}. Operations: ` +
+      `project{path?,limit?}, snapshot{path?}, stat{path}, list{path?,recursive?,limit?}, search{path?,query,caseSensitive?,maxMatches?}, ` +
+      `symbols{path?,query?,kind?,limit?}, references{path?,symbol,limit?}, read/read_range{path,startLine?,endLine?,maxChars?}, ` +
+      `read_symbol{path,symbol,line?,maxChars?}, write{path,text}, replace{path,find,replace,all?,expectedCount?}, ` +
+      `patch{path,edits:[{find,replace,all?,expectedCount?}]}, patch_range{path,startLine,endLine,text,expectedHash?,expectedText?,expectedRangeHash?}, ` +
+      `apply_hunks{path,expectedHash?,hunks:[{startLine,endLine,text,expectedText?,expectedRangeHash?}]}, mkdir{path}, remove{path}, ` +
+      `move{from,to,overwrite?}, rename{from,to,overwrite?}, copy{from,to,overwrite?}. Paths are under workspace/. ` +
+      `For large codebases, search symbols/references first, read only the exact symbol/range needed, then patch exact ranges/hunks using returned sha256/rangeSha256 guards instead of resending old source. ` +
+      `Project-intelligence scans locally ignore common dependency/build/cache directories and cap returned data. Symbol indexes are incrementally refreshed when workspace files change. ` +
+      `Use dryRun:true to validate read/content-edit batches without committing (structural mkdir/remove/move/copy ops are intentionally excluded). Scope expectedSnapshot with snapshotPath so unrelated sibling projects do not invalidate an edit. ` +
+      `Every batch is transactional: if any operation fails, all mutations are rolled back. The AI can access only workspace/. ` +
+      `If a mutating batch fully completes the task, set finish:true. RiftOS still returns one correlated ${RESULT_MARKER} confirmation; after an ok final result, briefly confirm completion.`;
   }
 
   function contextBlock() {
@@ -629,7 +632,7 @@ ${contextBlock()}`;
       const ok = !result.isError && structured.ok !== false;
       const value = structured.value !== undefined ? structured.value : null;
       const mutationCount = Array.isArray(value && value.mutationTargets) ? value.mutationTargets.length : 0;
-      const requestedFinal = Boolean(call.name === 'rift_workspace_exec' && call.args && call.args.finish === true && mutationCount > 0);
+      const requestedFinal = Boolean(call.name === 'rift_workspace_exec' && call.args && call.args.finish === true && call.args.dryRun !== true && value && value.committed !== false && mutationCount > 0);
 
       await submitToolResult({
         call_id: call.call_id,

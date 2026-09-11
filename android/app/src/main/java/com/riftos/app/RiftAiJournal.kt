@@ -122,8 +122,8 @@ class RiftAiJournal(context: Context) {
             append("Project root: ").append(path).append('\n')
             append("The full project is locally reachable through rift_workspace_exec (Rift Code Mode). ")
             append("Prefer one batched workspace call over many small tool calls. Only return source text to ChatGPT when reasoning needs it.\n")
-            append("Code Mode operations: project, stat, list, search, read, write, replace, patch, mkdir, remove, move, rename, copy. ")
-            append("Batches execute locally and roll back all batch mutations if any operation fails.\n")
+            append("Project Intelligence v1 operations: project, snapshot, stat, list, search, symbols, references, read/read_range, read_symbol, write, replace, patch, patch_range, apply_hunks, mkdir, remove, move, rename, copy. ")
+            append("Use symbol/reference lookup and surgical reads/patches for large codebases. Batches execute locally, support dryRun/expectedSnapshot safety, and roll back all mutations if any operation fails.\n")
             append("Top-level entries")
             if (children.size > 120) append(" (first 120 of ").append(children.size).append(')')
             append(":\n")
@@ -189,7 +189,7 @@ class RiftAiJournal(context: Context) {
         for (index in 0 until operations.length()) {
             val operation = operations.optJSONObject(index) ?: continue
             when (operation.optString("op").trim().lowercase()) {
-                "write", "replace", "patch", "mkdir", "remove" -> capturePath(id, mutationPath(operation.optString("path")))
+                "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove" -> capturePath(id, mutationPath(operation.optString("path")))
                 "move", "rename" -> {
                     capturePath(id, mutationPath(operation.optString("from")))
                     capturePath(id, mutationPath(operation.optString("to")))
@@ -205,7 +205,7 @@ class RiftAiJournal(context: Context) {
         val operations = args.optJSONArray("operations") ?: return false
         for (index in 0 until operations.length()) {
             val op = operations.optJSONObject(index)?.optString("op")?.trim()?.lowercase().orEmpty()
-            if (op in setOf("write", "replace", "patch", "mkdir", "remove", "move", "rename", "copy")) return true
+            if (op in setOf("write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy")) return true
         }
         return false
     }

@@ -45,10 +45,10 @@ class RiftMcpActivity : Activity() {
 
         content.addView(label("Local tool permissions"))
         readToggle = CheckBox(this).apply {
-            text = "Allow read tools (info, stat, list, readText)"
+            text = "Allow read tools (info, stat, list, readText, Code Mode project intelligence)"
         }
         writeToggle = CheckBox(this).apply {
-            text = "Allow write tools (writeText, mkdir, remove, move)"
+            text = "Allow write tools (writeText, mkdir, remove, move, copy, Code Mode surgical edits)"
         }
         content.addView(readToggle, matchWidth())
         content.addView(writeToggle, matchWidth())

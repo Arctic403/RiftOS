@@ -49,14 +49,13 @@ High-impact operations should require explicit developer-mode capability grants.
 
 ## Rift AI project intelligence
 
-Implemented foundation: compact `RIFT_PROJECT_V2` project descriptor, full workspace reachability through `rift_workspace_exec` (Rift Code Mode), local project/list/search/ranged-read operations, transactional batched write/replace/patch/mkdir/remove/move, internally session-scoped mutation journal, bounded unified-style diff, additions/deletions, Accept all and Revert all. Review actions are locked while transport is active, and a new task cannot discard unreviewed state.
+Implemented foundation: compact `RIFT_PROJECT_V2` project descriptor, full workspace reachability through `rift_workspace_exec` (Rift Code Mode), Project Intelligence v1 snapshots, incremental symbol indexing, reference lookup, exact symbol/ranged reads, SHA-256 guarded range/hunk patching, built-in dependency/build/cache ignore rules, dry-run validation, compact changed-file summaries, transactional batched write/replace/patch/mkdir/remove/move, internally session-scoped mutation journal, bounded unified-style diff, additions/deletions, Accept all and Revert all. Review actions are locked while transport is active, and a new task cannot discard unreviewed state.
 
 Next improvements should stay lightweight:
 
-- persistent local symbol/import/reference indexing so Code Mode `search` can avoid rescanning large trees;
-- ignored-directory rules (`.git`, build output, dependency caches) for local search/indexing;
+- persist the current incremental in-memory symbol/reference index across process restarts and extend it with import/dependency graph edges;
 - per-file/hunk accept/revert on top of the current session-wide baseline;
-- changed-files summaries that do not hash the full project continuously.
+- richer semantic import/dependency edges without turning RiftOS into a heavyweight language-server host.
 
 The project should never be injected wholesale into ChatGPT. RiftOS exposes full project reachability through the local executor; only bounded search/read results needed for reasoning cross the existing ChatGPT Web transport.
 

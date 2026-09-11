@@ -34,6 +34,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put("workspaceOnly", true)
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
+        .put("projectIntelligence", "v1")
         .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_workspace_exec")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy")))
         .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
@@ -111,7 +112,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         ))
         .put(tool(
             "rift_workspace_exec",
-            "Rift Code Mode: execute many project operations locally in one model-visible call. Supports project, stat, list, search, read, write, replace, patch, mkdir, remove, move/rename, and copy under workspace/. The batch is transactional: if any operation fails, its mutations are rolled back. Read permission is always required; write permission is required only when the batch mutates files.",
+            "Rift Code Mode + Project Intelligence v1: execute many workspace operations locally in one model-visible call. Supports snapshots, incremental symbol search, reference lookup, surgical symbol/range reads, exact/range/hunk patches, dry-run validation, and transactional multi-file edits under workspace/. Read permission is always required; write permission is required only when the batch mutates files.",
             objectSchema(
                 JSONObject()
                     .put(
@@ -123,7 +124,11 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                             .put("description", "Ordered local workspace operations. Each item has op plus the fields required by that operation.")
                             .put("items", JSONObject().put("type", "object"))
                     )
-                    .put("finish", booleanProperty("Set true only when this mutating batch is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session.")),
+                    .put("finish", booleanProperty("Set true only when this mutating batch is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session."))
+                    .put("dryRun", booleanProperty("Execute and validate read/content-edit operations transactionally, then restore mutations instead of committing. Structural mkdir/remove/move/copy operations are rejected in dry-run mode."))
+                    .put("expectedSnapshot", stringProperty("Optional project/workspace snapshot id. Reject the batch if that snapshot scope changed."))
+                    .put("snapshotPath", stringProperty("Optional workspace path used for expectedSnapshot/returnSnapshot. Defaults to workspace/."))
+                    .put("returnSnapshot", booleanProperty("Return a fresh scoped snapshot after the batch. Disabled by default to avoid rescanning large projects.")),
                 listOf("operations")
             )
         ))
@@ -265,7 +270,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         val operations = args.optJSONArray("operations") ?: return false
         for (index in 0 until operations.length()) {
             val op = operations.optJSONObject(index)?.optString("op")?.trim()?.lowercase().orEmpty()
-            if (op in setOf("write", "replace", "patch", "mkdir", "remove", "move", "rename", "copy")) return true
+            if (op in setOf("write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy")) return true
         }
         return false
     }
