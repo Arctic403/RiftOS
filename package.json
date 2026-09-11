@@ -1,0 +1,10 @@
+{
+  "name": "riftos",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:transport": "node --check android/app/src/main/assets/riftbrowser-mcp-app.js && node scripts/validate-rift-transport.mjs",
+    "check:riftdev": "npm --prefix apps/riftdev run check",
+    "check": "npm run check:transport && npm run check:riftdev"
+  }
+}

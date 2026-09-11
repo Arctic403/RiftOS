@@ -7,7 +7,7 @@ import org.json.JSONObject
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.13.0-autonomous-tool-loop-v2"
+        private const val SERVER_VERSION = "0.14.0-json-transport-v2"
     }
 
     fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) {

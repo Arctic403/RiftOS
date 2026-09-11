@@ -1,6 +1,6 @@
 # RiftBrowser MCP App Compatibility
 
-`rift-mcp-app-v1` lets RiftBrowser teach ChatGPT Web about the local Rift tool manifest while keeping tool execution inside RiftOS.
+`rift-mcp-app-v2` lets RiftBrowser teach ChatGPT Web about the local Rift tool manifest while keeping tool execution inside RiftOS.
 
 ## Purpose
 
@@ -34,15 +34,15 @@ There is no remote relay, WSS connection, pairing key or public MCP endpoint in 
 
 At page startup, the browser adapter performs MCP `initialize` and `tools/list`. The returned tool schemas are the source of truth for the compact context shown to ChatGPT. When `rift_workspace_exec` is present, the adapter also supplies the bounded Rift Code Mode operation contract so the model can collapse many project operations into one local batch.
 
-When a tool is required, ChatGPT is instructed to emit exactly one envelope. For project work it should prefer Code Mode:
+When a tool is required, ChatGPT is instructed to emit one strict JSON request. For project work it should prefer one Code Mode call containing many local operations:
 
-```text
-<rift_call>{"call_id":"unique-id","name":"rift_workspace_exec","args":{"operations":[{"op":"search","path":"workspace","query":"RiftKernel"},{"op":"read","path":"workspace/src/riftcore.js","startLine":1,"endLine":220}]}}</rift_call>
+```json
+{"protocol":"rift-tools-v2","request_id":"request-1","calls":[{"id":"call-1","tool":"rift_workspace_exec","arguments":{"operations":[{"op":"search","path":"workspace","query":"RiftKernel"},{"op":"read_range","path":"workspace/src/riftcore.js","startLine":1,"endLine":220}]}}]}
 ```
 
-Legacy single-operation tools remain available for compatibility and very small tasks.
+V2 accepts up to eight sequential calls and returns one correlated JSON result packet. Cross-call execution is intentionally not atomic, so related project edits should be consolidated into one transactional `rift_workspace_exec` call. Legacy `<rift_call>` envelopes and single-operation tools remain available for compatibility.
 
-The browser adapter validates the call against the live manifest and invokes MCP `tools/call`. Every result is returned as a structured `[RIFT_MCP_RESULT_V1]` continuation message, including `finish:true` batches. The adapter requires the native response to echo the same model `call_id` and, for Rift AI tasks, the same private session ID before accepting it. A successful final batch therefore cannot leave ChatGPT waiting for a result that only RiftOS saw.
+The browser adapter validates calls against the live manifest and invokes MCP `tools/call`. V2 results return together as a correlated `[RIFT_TOOL_RESULT_V2]` continuation; legacy calls still receive `[RIFT_MCP_RESULT_V1]`. The adapter requires native responses to echo the same call ID and, for Rift AI tasks, the same private session ID before accepting them.
 
 This protocol deliberately does not reuse any Agent V1/V2/V3 marker or fenced `rift-tool` packet.
 
@@ -67,7 +67,7 @@ Code Mode remains declarative: the adapter does not `eval` model-produced JavaSc
 
 ## Rift AI transport mode
 
-`riftbrowser-mcp-app.js` also supports the local Rift AI HTML cockpit. Native code calls `window.RiftMcpAppControl.submitTask(...)` in the hidden ChatGPT WebView with a native-created session ID, task and compact project context. The adapter waits for MCP readiness and the normal ChatGPT composer, writes the task/context, and clicks the normal ChatGPT Web send control. There is no model API request path.
+`riftbrowser-mcp-app.js` also supports the local Rift AI HTML cockpit. Native code hands work to synchronous `window.RiftMcpAppControl.queueTask(...)` with a native-created session ID, task and compact project context. The page-owned async pump waits for MCP/composer readiness, retries rejected clicks, and reports `submitted` only after ChatGPT accepts the outgoing message. There is no model API request path.
 
 The model never supplies the AI session ID. When the adapter parses a model `<rift_call>` during an active Rift AI task, it privately adds `_meta["riftos/aiSessionId"]` plus `_meta["riftos/callId"]` to the local MCP `tools/call`. The server echoes both values in its private result metadata; the browser rejects mismatches or stale-session results. This makes working-tree journaling and result delivery specific to the active call without changing the model-visible tool schema.
 

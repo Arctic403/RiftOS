@@ -5,9 +5,12 @@ import android.os.StatFs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.BufferedOutputStream
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /** App-private filesystem capability owned by the local Rift MCP tool host. */
 class RiftToolSandbox(context: Context) {
@@ -29,10 +32,12 @@ class RiftToolSandbox(context: Context) {
         private const val MAX_INDEX_FILE_BYTES = 2L * 1024L * 1024L
         private const val MAX_HUNKS = 128
         private const val MAX_SNAPSHOT_FILES = 50_000
+        private const val MAX_ARCHIVE_ENTRIES = 50_000
+        private const val MAX_ARCHIVE_SOURCE_BYTES = 256L * 1024L * 1024L
         private const val LEGACY_ROOT_NAME = "tool-sandbox"
         private const val OLDER_LEGACY_ROOT_NAME = "browser-sandbox"
         private const val WORKSPACE_ROOT = "workspace"
-        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy")
+        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive")
     }
 
     private val appContext = context.applicationContext
@@ -540,7 +545,7 @@ class RiftToolSandbox(context: Context) {
                 require(currentOp.isNotBlank()) {
                     "Operation $index is missing op. Use flat JSON such as {\"op\":\"stat\",\"path\":\"workspace/project\"}."
                 }
-                if (dryRun && currentOp in setOf("mkdir", "remove", "move", "rename", "copy")) {
+                if (dryRun && currentOp in setOf("mkdir", "remove", "move", "rename", "copy", "archive")) {
                     throw IllegalArgumentException("dryRun supports reads and content edits only; structural operation '$currentOp' is not allowed")
                 }
 
@@ -683,7 +688,64 @@ class RiftToolSandbox(context: Context) {
             workspaceMutationPath(args.getString("to")),
             args.optBoolean("overwrite", false)
         )
+        "archive" -> createArchive(
+            workspacePath(args.getString("from")),
+            workspaceMutationPath(args.getString("to")),
+            args.optBoolean("overwrite", false)
+        )
         else -> throw IllegalArgumentException("Unsupported Rift Code Mode operation: $op")
+    }
+
+    private fun createArchive(from: String, to: String, overwrite: Boolean): JSONObject {
+        val source = sandboxFile(from)
+        val destination = sandboxFile(to)
+        require(source.exists()) { "Archive source not found: $from" }
+        require(to.lowercase().endsWith(".zip")) { "Archive destination must end with .zip" }
+        require(source.canonicalFile != destination.canonicalFile) { "Archive source and destination are identical" }
+        if (source.isDirectory) {
+            require(!destination.canonicalPath.startsWith(source.canonicalPath + File.separator)) {
+                "Archive destination cannot be inside its source directory"
+            }
+        }
+        if (destination.exists()) require(overwrite) { "Destination already exists: $to" }
+        destination.parentFile?.mkdirs()
+        val temporary = File(destination.parentFile, ".${destination.name}.${UUID.randomUUID()}.tmp")
+        var entries = 0
+        var sourceBytes = 0L
+        try {
+            ZipOutputStream(BufferedOutputStream(temporary.outputStream())).use { zip ->
+                fun add(node: File, entryName: String) {
+                    require(isInsideRoot(node)) { "Archive entry escaped Rift MCP sandbox" }
+                    entries += 1
+                    require(entries <= MAX_ARCHIVE_ENTRIES) { "Archive exceeds $MAX_ARCHIVE_ENTRIES entries" }
+                    if (node.isDirectory) {
+                        val directoryName = entryName.trimEnd('/') + "/"
+                        zip.putNextEntry(ZipEntry(directoryName))
+                        zip.closeEntry()
+                        node.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { child ->
+                            add(child, "$directoryName${child.name}")
+                        }
+                    } else {
+                        sourceBytes += node.length()
+                        require(sourceBytes <= MAX_ARCHIVE_SOURCE_BYTES) { "Archive source exceeds 256 MiB" }
+                        zip.putNextEntry(ZipEntry(entryName))
+                        node.inputStream().buffered().use { input -> input.copyTo(zip, 256 * 1024) }
+                        zip.closeEntry()
+                    }
+                }
+                add(source, source.name)
+            }
+            if (destination.exists()) {
+                val removed = if (destination.isDirectory) destination.deleteRecursively() else destination.delete()
+                require(removed) { "Could not replace archive destination: $to" }
+            }
+            if (!temporary.renameTo(destination)) temporary.copyTo(destination, overwrite = true).also { temporary.delete() }
+            invalidateIndex(to)
+            return (stat(to) ?: JSONObject()).put("entries", entries).put("sourceBytes", sourceBytes)
+        } catch (error: Throwable) {
+            temporary.delete()
+            throw error
+        }
     }
 
     private fun projectOverview(path: String, requestedLimit: Int): JSONObject {
@@ -1132,7 +1194,7 @@ class RiftToolSandbox(context: Context) {
                 transaction.capture(workspaceMutationPath(args.getString("from")))
                 transaction.capture(workspaceMutationPath(args.getString("to")))
             }
-            "copy" -> transaction.capture(workspaceMutationPath(args.getString("to")))
+            "copy", "archive" -> transaction.capture(workspaceMutationPath(args.getString("to")))
         }
     }
 
@@ -1319,4 +1381,3 @@ class RiftToolSandbox(context: Context) {
             )))
     }
 }
-

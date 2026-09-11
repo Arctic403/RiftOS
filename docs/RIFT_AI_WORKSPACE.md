@@ -17,7 +17,7 @@ RiftOS shell WebView
 
 native RiftBrowser WebView
   |
-  `-- authenticated ChatGPT Web (INVISIBLE while AI transport is active)
+  `-- authenticated ChatGPT Web (rendered behind the shell during transport)
        |
        `-- riftbrowser-mcp-app.js
             |
@@ -26,13 +26,13 @@ native RiftBrowser WebView
                  `-- RiftMcpServer -> RiftToolHost -> RiftToolSandbox
 ```
 
-There is one ChatGPT WebView. During an AI task it remains attached and fully laid out, but Android marks it `INVISIBLE`. The composer, response stream and MCP loop therefore continue running while the RiftOS shell remains the only visible AI interface.
+There is one ChatGPT WebView. RiftBrowser warms it during startup and keeps it attached, fully laid out and Android-`VISIBLE`, but places it behind the trusted RiftOS shell whenever it is transport-only. This prevents WebView from throttling the timers, DOM observers and composer state used by the MCP loop while the shell remains the only user-facing AI interface.
 
 ## ChatGPT Web-only invariant
 
 Rift AI never talks to a model endpoint directly. Task submission, tool-result continuations and assistant responses all pass through the normal authenticated ChatGPT Web page.
 
-**Show ChatGPT** reveals that same WebView for sign-in, account state or debugging. It is not a second transport. If the user closes the visible browser while a task is still active, RiftBrowser returns the same WebView to invisible transport mode. Once the task reaches a terminal state and the WebView is not being shown manually, the hidden renderer is released to `GONE` instead of being kept alive indefinitely.
+**Show ChatGPT** brings that same WebView to the front for sign-in, account state or debugging. It is not a second transport. Closing it parks the same rendered WebView behind the shell again, so MCP stays warm for the next task.
 
 CI checks the active and packaged Rift AI/browser sources for model-API endpoint/key patterns and rejects the discarded second-WebView design.
 
@@ -59,7 +59,7 @@ Starting a task:
 3. refuses to start if the previous session still has unreviewed changes;
 4. builds a compact top-level `RIFT_PROJECT_V2` descriptor for `RiftFS/workspace` without recursively dumping a large project;
 5. resolves and validates the selected ChatGPT Web target, rejecting any target outside `https://chatgpt.com` / `https://www.chatgpt.com`;
-6. waits for local MCP initialization and a usable ChatGPT composer before submitting anything;
+6. queues the task into the page-owned transport pump, waits for MCP/composer readiness, and retries a rejected click without duplicating an accepted message;
 7. submits the task plus compact project context, the live MCP tool manifest and the Rift Code Mode operation contract;
 8. mirrors cleaned assistant output and structured transport/tool events into RiftOS;
 9. tracks only Rift-AI-owned MCP mutations in the local working-tree journal;
@@ -67,7 +67,7 @@ Starting a task:
 
 The canonical AI project root is the same user-owned `filesDir/riftfs/workspace` used by Files and RiftDev. It starts empty on a fresh install and is not populated with RiftOS housekeeping directories; workspace history is stored under `riftfs/system/riftworkspace` outside MCP scope.
 
-The project descriptor is capability context, not a project dump. The full `workspace/` remains reachable through `rift_workspace_exec`. ChatGPT can combine `project`, `stat`, `list`, `search`, `read`, `write`, `replace`, `patch`, `mkdir`, `remove`, `move`, `rename` and `copy` operations into one model-visible tool call. All operations execute locally in `RiftToolSandbox`; its logical `workspace/` is mapped directly onto the same canonical `filesDir/riftfs/workspace` tree used by Files and RiftDev. Only the bounded batch result is returned to ChatGPT Web.
+The project descriptor is capability context, not a project dump. The full `workspace/` remains reachable through `rift_workspace_exec`. ChatGPT searches and reads only the symbols/ranges it needs, then sends guarded JSON patches or local file operations. Create, edit, copy, move, rename, remove and `archive` all execute inside `RiftToolSandbox`; only bounded results and diffs return through ChatGPT Web.
 
 A Code Mode batch is transactionally protected inside the sandbox. Mutating paths are copied lazily into an app-cache rollback set immediately before their first batch mutation. If any operation fails, all mutations made by that batch are restored before the error reaches ChatGPT. Successful AI-scoped mutations remain covered by the persistent `RiftAiJournal` review baseline until the user accepts or reverts the session.
 

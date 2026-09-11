@@ -82,7 +82,7 @@ class RiftBrowserMcpAppBridge(
 
     fun state(): JSONObject = JSONObject()
         .put("installed", installed)
-        .put("mode", "rift-mcp-app-v1")
+        .put("mode", "rift-mcp-app-v2")
         .put("origin", "chatgpt.com")
         .put("transport", "in-process MCP JSON-RPC")
         .put("remoteRelay", false)

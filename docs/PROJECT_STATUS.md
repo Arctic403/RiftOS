@@ -29,7 +29,7 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 
 - Visible AI UI is rendered by the existing RiftOS shell; no second AI WebView is created.
 - The only model transport is authenticated ChatGPT Web in the existing `RiftBrowserWindow` WebView.
-- AI mode keeps that WebView laid out and alive but Android-`INVISIBLE`; **Show ChatGPT** reveals the same page for sign-in/debugging.
+- RiftBrowser warms that WebView at startup and keeps it rendered behind the shell during AI transport; **Show ChatGPT** brings the same page forward for sign-in/debugging.
 - Rift AI has a Chat Target picker for new chat, current page, DOM-discovered existing chat, Project/new project chat, and existing project chat. **Browse all…** delegates older-history lookup to ChatGPT Web's own search UI; target discovery does not call a private ChatGPT backend API.
 - `ai.start` routes the task into the selected ChatGPT Web target and submits a compact `RIFT_PROJECT_V2` top-level project descriptor plus the live local MCP manifest; it does not recursively inject large project trees.
 - Assistant streaming output is mirrored into the HTML workspace; `<rift_call>` / result chatter remains transport detail rather than the primary live UI.
@@ -49,7 +49,7 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - ChatGPT/OpenAI authentication handling, cookies and file chooser support.
 - Exact-origin `rift-mcp-app-v1` compatibility adapter on ChatGPT Web.
 - Adapter performs in-process MCP `initialize`, `tools/list` and `tools/call` through `RiftMcpServer`.
-- Live compact MCP tool manifest and Rift Code Mode contract are supplied once per conversation route; strict `<rift_call>...</rift_call>` envelopes are validated and routed locally.
+- Live compact MCP tool manifest and Rift Code Mode contract are supplied once per conversation route; strict `rift-tools-v2` JSON packets are validated and routed locally, with legacy `<rift_call>` compatibility.
 - Streaming DOM work is mutation-scoped and batched; the removed whole-chat scanner is guarded against in CI.
 - ChatGPT never receives direct `RiftSandbox`, `RiftSandboxFS` or general `RiftNativeDispatcher` access.
 - Agent V1/V2/V3 remains removed and is not used as fallback.
@@ -63,7 +63,7 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 - Local read/write permission gates are authoritative.
 - Read tools: `rift_info`, `rift_stat`, `rift_list`, `rift_read_text`, plus read-only `rift_workspace_exec` batches.
 - Write tools: `rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`; `rift_workspace_exec` additionally requires write permission only when its batch contains `write`, `replace`, `patch`, `mkdir`, `remove`, or `move`.
-- `rift_workspace_exec` (Rift Code Mode) can run up to 192 ordered project operations locally in one model-visible call: `project`, `stat`, `list`, `search`, `read`, `write`, `replace`, `patch`, `mkdir`, `remove`, `move`.
+- `rift_workspace_exec` (Rift Code Mode) can run up to 192 ordered local project operations, including surgical reads/patches, create/copy/move/rename/delete and bounded ZIP `archive` creation.
 - Code Mode batches are transactionally rolled back on any operation failure before the error is returned to ChatGPT Web; successful changes remain under the normal Rift AI review journal.
 - A mutating `rift_workspace_exec` batch may set `finish:true`; RiftBrowser still returns the correlated result to ChatGPT Web and completes the active transport only after the final assistant continuation.
 - Read is enabled by default; write remains disabled by default until enabled in Rift MCP settings.

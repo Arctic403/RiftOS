@@ -14,7 +14,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         private const val PREF_AUDIT = "audit"
         private const val PREF_MIGRATED = "legacyStateMigrated"
         private const val MAX_AUDIT = 100
-        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy")
+        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive")
         const val SCOPE = "riftfs/workspace"
     }
 
@@ -342,7 +342,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         val operations = args.optJSONArray("operations") ?: return false
         for (index in 0 until operations.length()) {
             val op = operations.optJSONObject(index)?.optString("op")?.trim()?.lowercase().orEmpty()
-            if (op in setOf("write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy")) return true
+            if (op in setOf("write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive")) return true
         }
         return false
     }

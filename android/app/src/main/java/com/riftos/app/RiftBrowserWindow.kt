@@ -81,10 +81,21 @@ class RiftBrowserWindow(
         installWebViewClient()
         installDownloads()
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, true)
-        webView.visibility = View.GONE
+        // The ChatGPT compatibility transport must remain a rendered VISIBLE view.
+        // Android/WebView may throttle timers, DOM observers and compositor work for
+        // GONE/INVISIBLE views, which used to make tasks progress only after the user
+        // opened RiftBrowser. Park it behind the RiftOS shell instead.
+        webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, false)
+        webView.visibility = View.VISIBLE
         webView.setBackgroundColor(0xff0a0d12.toInt())
         host.addView(webView, FrameLayout.LayoutParams(1, 1))
+        parkTransportBehindShell()
+        webView.post {
+            if (!destroyed && webView.url.isNullOrBlank()) {
+                updateCookiePolicy("https://chatgpt.com/")
+                webView.loadUrl("https://chatgpt.com/")
+            }
+        }
     }
 
     fun open(rawUrl: String?): JSONObject {
@@ -147,7 +158,7 @@ class RiftBrowserWindow(
         targetDiscoveryActive = true
         requestedVisible = false
         ensureTransportLayout()
-        webView.visibility = View.INVISIBLE
+        parkTransportBehindShell()
         val currentUrl = webView.url
         if (isChatGptUrl(currentUrl)) {
             mcpApp.ensureInjected(currentUrl)
@@ -234,7 +245,7 @@ class RiftBrowserWindow(
             ensureTransportLayout()
             applyVisibility()
         } else {
-            webView.visibility = View.GONE
+            parkTransportBehindShell()
         }
         emitState()
         return state()
@@ -289,7 +300,8 @@ class RiftBrowserWindow(
 
     fun state(): JSONObject = JSONObject()
         .put("open", !destroyed)
-        .put("visible", webView.visibility == View.VISIBLE)
+        .put("visible", requestedVisible && hasBounds && !aiTransportOnly && !targetDiscoveryActive)
+        .put("transportWarm", webView.visibility == View.VISIBLE && isChatGptUrl(webView.url))
         .put("url", webView.url ?: "")
         .put("title", webView.title ?: "RiftBrowser")
         .put("canGoBack", webView.canGoBack())
@@ -306,10 +318,10 @@ class RiftBrowserWindow(
         if (keepTransport) {
             aiTransportOnly = true
             ensureTransportLayout()
-            webView.visibility = View.INVISIBLE
+            parkTransportBehindShell()
         } else {
             aiTransportOnly = false
-            webView.visibility = View.GONE
+            parkTransportBehindShell()
         }
         return true
     }
@@ -347,12 +359,31 @@ class RiftBrowserWindow(
 
     private fun applyVisibility() {
         if (aiTransportOnly || targetDiscoveryActive) {
-            ensureTransportLayout()
-            webView.visibility = View.INVISIBLE
+            parkTransportBehindShell()
             return
         }
-        webView.visibility = if (requestedVisible && hasBounds) View.VISIBLE else View.GONE
-        if (webView.visibility == View.VISIBLE) webView.bringToFront()
+        if (requestedVisible && hasBounds) {
+            webView.visibility = View.VISIBLE
+            webView.isClickable = true
+            webView.isFocusable = true
+            webView.isFocusableInTouchMode = true
+            webView.bringToFront()
+        } else {
+            parkTransportBehindShell()
+        }
+    }
+
+    private fun parkTransportBehindShell() {
+        ensureTransportLayout()
+        webView.visibility = View.VISIBLE
+        webView.isClickable = false
+        webView.isFocusable = false
+        webView.isFocusableInTouchMode = false
+        if (host.indexOfChild(webView) != 0) {
+            val params = webView.layoutParams
+            host.removeView(webView)
+            host.addView(webView, 0, params)
+        }
     }
 
     private fun ensureTransportLayout() {
@@ -387,16 +418,17 @@ class RiftBrowserWindow(
 
         val generation = aiTaskDispatchGeneration
         val payloadJs = payload.toString()
-        val script = """(()=>{if(!window.RiftMcpAppControl||typeof window.RiftMcpAppControl.submitTask!=='function')return 'missing';window.RiftMcpAppControl.submitTask($payloadJs);return 'started';})()"""
+        val script = """(()=>{try{const control=window.RiftMcpAppControl;if(!control||typeof control.queueTask!=='function')return 'missing';return JSON.stringify(control.queueTask($payloadJs));}catch(error){return JSON.stringify({accepted:false,error:String(error&&error.message||error)});}})()"""
         aiTaskDispatchInFlight = true
         webView.evaluateJavascript(script) { result ->
             if (generation != aiTaskDispatchGeneration || currentAiSessionId != sessionId) {
                 return@evaluateJavascript
             }
             aiTaskDispatchInFlight = false
-            if (result?.contains("started") == true) {
-                if (pendingAiTask?.optString("sessionId") == sessionId) pendingAiTask = null
-            } else {
+            val accepted = decodeJavascriptString(result)
+                ?.let { runCatching { JSONObject(it) }.getOrNull() }
+                ?.optBoolean("accepted", false) == true
+            if (!accepted) {
                 webView.postDelayed({ dispatchPendingAiTask(attempt + 1) }, 250L)
             }
         }
@@ -424,7 +456,7 @@ class RiftBrowserWindow(
         val reply = pendingAiTargetsReply
         pendingAiTargetsReply = null
         targetDiscoveryActive = false
-        if (!aiTransportOnly && !requestedVisible) webView.visibility = View.GONE else applyVisibility()
+        applyVisibility()
         emitState()
         reply?.invoke(result, error)
     }
@@ -682,8 +714,13 @@ class RiftBrowserWindow(
         aiEventSink(event)
 
         val phase = data.optString("phase").trim().lowercase()
-        val terminal = event.optString("type") == "error" || phase in setOf("complete", "stopped", "error")
         val effectiveSessionId = data.optString("sessionId").trim()
+        if (phase == "submitted" && effectiveSessionId.isNotBlank() && effectiveSessionId == current) {
+            pendingAiTask = null
+            aiTaskDispatchGeneration += 1L
+            aiTaskDispatchInFlight = false
+        }
+        val terminal = event.optString("type") == "error" || phase in setOf("complete", "stopped", "error")
         if (terminal && (current.isNullOrBlank() || effectiveSessionId.isBlank() || effectiveSessionId == current)) {
             pendingAiTask = null
             aiTaskDispatchGeneration += 1L
@@ -692,7 +729,7 @@ class RiftBrowserWindow(
             if (aiTransportOnly) {
                 aiTransportOnly = false
                 requestedVisible = false
-                webView.visibility = View.GONE
+                parkTransportBehindShell()
                 emitState()
             }
         }
