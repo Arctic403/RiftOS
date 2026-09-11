@@ -38,7 +38,7 @@ filesDir + SAF       apps/windows
             riftfs/workspace
 ```
 
-The AI-tool path above is local to the RiftOS application process. There is no active remote relay, WSS pairing connection or public Rift MCP endpoint.
+Tool execution remains local to the RiftOS application process. An optional outbound WSS client can transport MCP JSON-RPC through a public relay without granting the relay direct filesystem access.
 
 ## Kernel boundary
 
@@ -74,7 +74,7 @@ RiftRT v1 adds worker, iframe and WebAssembly applications without creating a se
 
 Normal guest pages do not receive RiftFS, RiftWorkspace or `RiftNativeDispatcher` authority.
 
-The ChatGPT compatibility layer is exact-origin and can send only MCP JSON-RPC to the in-process `RiftMcpServer`. `RiftToolHost` validates tool names, applies local read/write grants, records bounded audit metadata and dispatches into `RiftToolSandbox`.
+The ChatGPT compatibility layer is exact-origin and can send only MCP JSON-RPC to the in-process `RiftMcpServer`. The optional relay transport reaches that same server over an authenticated outbound WSS connection. `RiftToolHost` validates tool names, applies local read/write grants, records bounded audit metadata and dispatches into `RiftToolSandbox`.
 
 The browser compatibility layer may depend on ChatGPT composer/rendered-message structure, but that dependency does not own or weaken the device capability boundary.
 
@@ -91,7 +91,6 @@ Review state and transport state are separate. A completed/stopped/error/interru
 The following are historical only:
 
 - ChatGPT DOM Agent V1/V2/V3,
-- remote Rift MCP relay / WSS device pairing,
 - WebKit-WASM/Wisp browser path,
 - Gecko WASM experiments,
 - local LLM runtime.

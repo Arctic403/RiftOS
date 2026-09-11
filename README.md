@@ -38,7 +38,7 @@ Android filesDir     +-- Files / Settings / RiftDev / Rift MCP / Workspace Live 
                  riftfs/workspace
 ```
 
-There is **no Rift AI workspace app**, no direct model API integration, no remote Rift MCP relay, no pairing key, no public MCP endpoint, and no separate local-model runtime in the active architecture.
+There is **no Rift AI workspace app**, no direct model API integration and no separate local-model runtime. The APK includes an optional, disabled-by-default outbound WSS client for a user-configured Rift MCP relay; tool execution and permissions remain on-device.
 
 The foundation is intentionally simple: the user talks to ChatGPT in RiftBrowser; the ChatGPT Web compatibility adapter can make structured local MCP calls; RiftOS executes those calls on-device inside the workspace sandbox and returns bounded results.
 
@@ -63,9 +63,9 @@ On the exact ChatGPT Web origin, RiftBrowser installs the Rift MCP compatibility
 
 This path does not use the OpenAI API. ChatGPT Web still makes its normal network requests as a web application, but RiftOS does not make separately billed model API calls for the local MCP workflow.
 
-## Local Rift MCP
+## Rift MCP
 
-The active tool path is entirely local inside the RiftOS process:
+Tool execution is entirely local inside the RiftOS process. Requests can arrive through the existing RiftBrowser compatibility bridge or the optional authenticated relay client:
 
 ```text
 ChatGPT Web
@@ -93,6 +93,8 @@ riftfs/
 ```
 
 Read tools are enabled by default. Write tools remain disabled by default until enabled in the **Rift MCP** system app. `rift_workspace_exec` is read-gated for inspection and additionally write-gated only when a batch contains mutations.
+
+The relay client accepts only `wss://` endpoints, stores its bearer token with Android Keystore encryption, reconnects with bounded backoff and exposes no listening socket. It remains inactive until configured by the user in the Rift MCP system app.
 
 Code Mode supports project snapshots, bounded listing/search, symbol and reference lookup, surgical range/symbol reads, guarded text patches, multi-hunk edits, transactional multi-file mutations, scoped snapshot guards, dry-run validation and local ZIP archive creation. The workspace sandbox rejects path traversal and cannot address RiftOS system roots, SAF mounts or arbitrary Android storage.
 
@@ -124,11 +126,11 @@ The private/source RiftOS repository is intentionally Actions-free. Android buil
 
 The builder:
 
-- validates source policy and the local transport checks;
-- rejects the removed Rift AI workspace app and remote MCP relay paths;
+- validates the source snapshot;
+- rejects the removed Rift AI workspace app while allowing the reviewed outbound relay client;
 - builds the Android release APK;
 - aligns, signs and verifies Android 8+ compatibility;
-- verifies the packaged ChatGPT Web/MCP transport and workspace tooling;
+- verifies the packaged MCP transports and workspace tooling;
 - returns successful artifacts or private failure diagnostics to RiftOS releases.
 
 ## Branches
@@ -149,4 +151,4 @@ The builder:
 - [`docs/RIFTRT-v1.md`](docs/RIFTRT-v1.md) — application runtime ABI.
 - [`ROADMAP.md`](ROADMAP.md) — planned developer-platform work.
 
-Earlier Rift AI workspace, DOM Agent, remote MCP relay and WebKit/WASM experiments are retained only in Git history or explicitly historical notes. They are not active runtime paths.
+Earlier Rift AI workspace, DOM Agent and WebKit/WASM experiments are retained only in Git history or explicitly historical notes. The current relay client is a new transport over the existing native MCP authority, not a restoration of those removed tool implementations.

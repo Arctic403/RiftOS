@@ -60,7 +60,7 @@ There is no Rift AI workspace app in the active architecture. ChatGPT Web is the
 - Open files refresh automatically when clean; unsaved local edits trigger a conflict warning instead of being overwritten.
 - Manual saves use SHA-256 revision checks to prevent stale clobbers.
 
-### Local Rift MCP
+### Rift MCP
 
 - `RiftToolHost` is the canonical device-side capability registry.
 - `RiftMcpServer` is an in-process MCP JSON-RPC server with no listening socket.
@@ -69,7 +69,8 @@ There is no Rift AI workspace app in the active architecture. ChatGPT Web is the
 - `rift_workspace_exec` supports bounded project inspection, symbol/reference lookup, surgical reads, guarded patches, transactional multi-file edits and local archive creation.
 - Strict `rift-tools-v2` JSON packets are supported with request/call correlation.
 - Legacy `<rift_call>` envelopes remain available for compatibility.
-- No remote relay, WSS client, pairing key, public MCP endpoint or process-start relay provider is active.
+- Optional outbound-only WSS relay client, disabled until the user supplies a secure endpoint and pairing token.
+- Relay credentials are encrypted through Android Keystore; the relay receives no filesystem authority.
 
 ## Removed / inactive
 
@@ -80,7 +81,6 @@ The following are not active RiftOS Android architecture:
 - hidden ChatGPT task/target/session orchestration in `RiftBrowserWindow`,
 - Rift AI event channel in the MCP bridge,
 - remote `services/rift-mcp-relay`,
-- remote `RiftMcpRelayClient`,
 - `RiftMcpInitProvider`,
 - `RiftMcpBridgeActivity`,
 - `riftbridge-system.js`,
@@ -99,11 +99,11 @@ Current builder policy:
 
 - rejects the removed Rift AI workspace source;
 - runs the repository source checks before Gradle;
-- rejects removed remote MCP/model API paths;
+- builds the optional native MCP relay transport without adding a model API path;
 - builds, aligns, signs and verifies the APK;
 - verifies Android 8+ package/signature requirements;
 - verifies the packaged ChatGPT Web/MCP adapter and local workspace tooling;
-- rejects reintroduction of removed AI/relay assets.
+- rejects reintroduction of removed AI assets.
 
 ## Known limitations
 

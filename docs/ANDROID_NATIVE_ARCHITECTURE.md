@@ -34,10 +34,11 @@ The canonical project workspace lives at `filesDir/riftfs/workspace` and is shar
 - preview Activity for RiftDev workspace files,
 - privacy-limited System Dump + Save As picker,
 - `RiftBrowserWindow` native WebView content plane,
-- local-only `RiftMcpServer` + `RiftToolHost`,
-- `RiftMcpActivity` for local read/write grants and audit.
+- local `RiftMcpServer` + `RiftToolHost`,
+- optional outbound `RiftMcpRelayClient`,
+- `RiftMcpActivity` for local grants, audit and relay configuration.
 
-There is no remote MCP relay runtime, WSS device client, pairing provider or public endpoint in the active APK architecture.
+The APK never opens an MCP listening socket. When explicitly enabled, its WSS client authenticates to the configured public relay and forwards MCP JSON-RPC into the same local server.
 
 ## Desktop browser host
 
@@ -47,7 +48,7 @@ The obsolete standalone `RiftBrowserActivity` is not part of the current source/
 
 On exact ChatGPT Web origins, `RiftBrowserMcpAppBridge` exposes only MCP JSON-RPC messaging to the in-process local server. It does not expose a filesystem JavaScript API or the wider native dispatcher.
 
-## Local Rift MCP
+## Rift MCP
 
 ```text
 ChatGPT Web compatibility asset
@@ -64,6 +65,8 @@ RiftBrowserMcpAppBridge
 ```
 
 `RiftToolHost` owns tool schemas, local read/write grants and the bounded audit log. `RiftToolSandbox` enforces canonical-path containment and payload/listing limits.
+
+`RiftMcpRelayClient` is transport-only. It stores its bearer token using Android Keystore, requires TLS (`wss://`) and reconnects with bounded backoff. The existing exact-origin WebMessage route remains available as a fallback during migration.
 
 Read access defaults on. Write access defaults off. The `Rift MCP` system app is the only current settings surface for those grants.
 
@@ -89,4 +92,4 @@ Local Test uses the native preview path rather than a service worker.
 
 `.github/workflows/riftos-android-apk.yml` builds on `android-apk` and `main`, signs/verifies the APK and publishes `android-latest`.
 
-CI also rejects removed remote MCP bridge source/runtime, the removed DOM Agent, the expensive whole-chat MCP scanner and removed local-AI binaries.
+CI builds the native relay transport and continues to reject the removed DOM Agent, expensive whole-chat MCP scanner and removed local-AI binaries.

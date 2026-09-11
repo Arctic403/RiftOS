@@ -2,10 +2,14 @@ package com.riftos.app
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -14,18 +18,32 @@ import org.json.JSONObject
 import java.text.DateFormat
 import java.util.Date
 
-/** Native local-only settings surface launched from the RiftOS Rift MCP system app. */
+/** Native MCP permissions and relay settings surface. */
 class RiftMcpActivity : Activity() {
     private lateinit var host: RiftToolHost
+    private lateinit var relay: RiftMcpRelayClient
+    private lateinit var relaySettings: RiftRelaySettings
     private lateinit var readToggle: CheckBox
     private lateinit var writeToggle: CheckBox
+    private lateinit var relayToggle: CheckBox
+    private lateinit var endpointInput: EditText
+    private lateinit var tokenInput: EditText
     private lateinit var statusView: TextView
     private lateinit var auditView: TextView
+    private val refreshHandler = Handler(Looper.getMainLooper())
+    private val refreshTask = object : Runnable {
+        override fun run() {
+            refreshStatus()
+            refreshHandler.postDelayed(this, 1_000L)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         title = "Rift MCP"
         host = RiftMcpRuntime.toolHost(this)
+        relay = RiftMcpRuntime.relayClient(this)
+        relaySettings = RiftRelaySettings(this)
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -38,7 +56,7 @@ class RiftMcpActivity : Activity() {
             textSize = 26f
         })
         content.addView(TextView(this).apply {
-            text = "Local MCP tools for RiftBrowser. Tool execution, permissions and activity stay on this device. No remote relay, pairing key, WebSocket service or public endpoint is used."
+            text = "RiftOS executes MCP tools locally inside the workspace sandbox. An optional secure outbound relay lets ChatGPT call the same native tools without browser composer automation."
             textSize = 14f
             setPadding(0, 12, 0, 20)
         })
@@ -57,6 +75,53 @@ class RiftMcpActivity : Activity() {
             text = "Apply permissions"
             setOnClickListener {
                 host.setAccess(readToggle.isChecked, writeToggle.isChecked)
+                refresh()
+            }
+        }, matchWidth())
+
+        content.addView(label("ChatGPT relay"))
+        relayToggle = CheckBox(this).apply {
+            text = "Enable secure outbound relay"
+        }
+        endpointInput = EditText(this).apply {
+            hint = "wss://your-relay.example/device"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            isSingleLine = true
+        }
+        tokenInput = EditText(this).apply {
+            hint = "Pairing token (leave blank to keep saved token)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            isSingleLine = true
+        }
+        content.addView(relayToggle, matchWidth())
+        content.addView(endpointInput, matchWidth())
+        content.addView(tokenInput, matchWidth())
+        content.addView(Button(this).apply {
+            text = "Save and connect"
+            setOnClickListener {
+                try {
+                    relaySettings.save(relayToggle.isChecked, endpointInput.text.toString(), tokenInput.text.toString())
+                    tokenInput.text.clear()
+                    relay.reload()
+                    refresh()
+                } catch (error: IllegalArgumentException) {
+                    statusView.text = error.message ?: "Invalid relay settings"
+                }
+            }
+        }, matchWidth())
+        content.addView(Button(this).apply {
+            text = "Reconnect now"
+            setOnClickListener {
+                relay.reload()
+                refreshStatus()
+            }
+        }, matchWidth())
+        content.addView(Button(this).apply {
+            text = "Forget pairing token"
+            setOnClickListener {
+                relaySettings.clearToken()
+                relay.disconnect()
+                loadRelaySettings()
                 refresh()
             }
         }, matchWidth())
@@ -89,23 +154,51 @@ class RiftMcpActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        refreshHandler.removeCallbacks(refreshTask)
+        refreshHandler.post(refreshTask)
+    }
+
+    override fun onPause() {
+        refreshHandler.removeCallbacks(refreshTask)
+        super.onPause()
     }
 
     private fun refresh() {
         val access = host.access()
         readToggle.isChecked = access.optBoolean("sandboxRead", true)
         writeToggle.isChecked = access.optBoolean("sandboxWrite", false)
+        loadRelaySettings()
+        refreshStatus()
+        auditView.text = formatAudit(host.audit())
+    }
+
+    private fun loadRelaySettings() {
+        val config = relaySettings.load()
+        relayToggle.isChecked = config.enabled
+        if (endpointInput.text.toString() != config.endpoint) endpointInput.setText(config.endpoint)
+        tokenInput.hint = if (config.token.isNullOrBlank()) {
+            "Pairing token"
+        } else {
+            "Pairing token saved securely (leave blank to keep it)"
+        }
+    }
+
+    private fun refreshStatus() {
+        if (!::statusView.isInitialized) return
+        val access = host.access()
+        val relayStatus = relay.status()
         statusView.text = buildString {
-            append("Mode: local-only in-process MCP")
+            append("Mode: native MCP with optional relay")
             append("\nTools: ").append(host.tools().length())
             append("\nWorkspace: ").append(access.optString("workspaceScope", "riftfs/workspace"))
             append("\nScope: workspace only")
             append("\nRead tools: ").append(if (access.optBoolean("sandboxRead", true)) "allowed" else "blocked")
             append("\nWrite tools: ").append(if (access.optBoolean("sandboxWrite", false)) "allowed" else "blocked")
-            append("\nRemote relay: none")
-            append("\nPairing: none")
+            append("\nRelay: ").append(relayStatus.optString("state", "unknown"))
+            append("\nRelay detail: ").append(relayStatus.optString("detail", ""))
+            append("\nDevice ID: ").append(relayStatus.optString("deviceId", ""))
+            append("\nPairing token: ").append(if (relayStatus.optBoolean("configured", false)) "saved" else "not configured")
         }
-        auditView.text = formatAudit(host.audit())
     }
 
     private fun formatAudit(audit: JSONArray): String {

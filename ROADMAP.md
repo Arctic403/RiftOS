@@ -2,10 +2,11 @@
 
 This roadmap describes intended work, not shipped capability. Current implementation status is tracked in `docs/PROJECT_STATUS.md`.
 
-## Now: Rift AI workspace + local MCP + browser stability
+## Now: native MCP connection + browser stability
 
 - Keep `main` authoritative and use `android-apk` for staged validation when useful.
-- Keep **Rift MCP** local-only: no remote relay, WSS pairing client, public MCP endpoint or process-start network service.
+- Keep MCP execution local while adding an authenticated outbound WSS transport to a public MCP relay.
+- Preserve the ChatGPT Web compatibility adapter until native plugin calls pass end-to-end testing.
 - Keep `RiftToolHost` as the single capability authority for MCP permissions, audit and tool dispatch.
 - Preserve the optimized ChatGPT compatibility path: mutation-scoped processing, compact one-shot tool context and serialized tool calls.
 - Maintain the shipped shell-rendered **Rift AI** cockpit: hidden ChatGPT Web transport, selective project context, live logs, session-scoped mutation journaling and persistent working-tree review.
@@ -121,7 +122,6 @@ The Android SDK/Gradle toolchain should remain outside the installed phone app t
 - arbitrary downloaded native ELF execution,
 - giving normal webpages unrestricted Android or RiftFS access,
 - restoring the removed DOM Agent V1/V2/V3 protocol,
-- restoring the removed remote Rift MCP relay/WSS pairing architecture,
 - adding a direct model API/key path to Rift AI,
 - making MCP the internal RiftOS capability API,
 - reintroducing the removed local LLM runtime on low-memory Android devices.

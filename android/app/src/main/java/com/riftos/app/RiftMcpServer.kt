@@ -7,7 +7,7 @@ import org.json.JSONObject
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.14.0-json-transport-v2"
+        private const val SERVER_VERSION = "0.15.0-relay-transport"
     }
 
     fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) {
@@ -79,7 +79,7 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         )
         .put(
             "instructions",
-            "Local RiftOS workspace tools with Project Intelligence v1. All filesystem capabilities are hard-scoped to workspace/. Prefer rift_workspace_exec for local symbol/reference lookup, surgical reads/patches, dry-run validation and transactional multi-file work. Device-side permissions and audit are authoritative; there is no remote relay or direct model API."
+            "RiftOS workspace tools with Project Intelligence v1. All filesystem capabilities are hard-scoped to workspace/. Prefer rift_workspace_exec for local symbol/reference lookup, surgical reads/patches, dry-run validation and transactional multi-file work. Device-side permissions and audit remain authoritative across local and relay transports; there is no direct model API."
         )
 
     private fun success(id: Any, result: Any): JSONObject = JSONObject()

@@ -1,10 +1,10 @@
-# RiftOS Local MCP Architecture
+# RiftOS MCP Architecture
 
 ## Goal
 
 Provide ChatGPT Web with structured Rift tools while keeping tool execution, permissions, audit and storage local to RiftOS.
 
-The active architecture has no remote Rift relay:
+The native server has a local browser compatibility transport and an optional secure relay transport:
 
 ```text
 ChatGPT Web
@@ -33,7 +33,7 @@ filesDir/riftfs/workspace
 
 ## MCP server
 
-`RiftMcpServer` is a small in-process JSON-RPC server. It has no HTTP listener, WebSocket listener or public endpoint. The current methods are:
+`RiftMcpServer` is a small in-process JSON-RPC server. It has no listening socket or public endpoint. The current methods are:
 
 - `initialize`
 - `ping`
@@ -120,18 +120,11 @@ The page never gets a general native object or direct sandbox API.
 
 Streaming responses generate many DOM mutations. The compatibility asset therefore processes only touched message nodes through a small delayed queue. It must not rescan all historical messages on every mutation. CI rejects the removed full-chat scanner.
 
-## Removed remote architecture
+## Secure relay transport
 
-The following have been deleted from the active source/build:
+`RiftMcpRelayClient` is an optional outbound-only WSS transport. It is disabled by default, accepts only TLS endpoints, stores its bearer token through `RiftSecretStore`, reconnects with bounded backoff and passes received JSON-RPC to the existing `RiftMcpServer`. It does not implement tools or bypass `RiftToolHost` permissions.
 
-- `services/rift-mcp-relay`,
-- `.github/workflows/rift-mcp-relay.yml`,
-- `RiftMcpRelayClient`,
-- `RiftMcpInitProvider`,
-- `RiftMcpBridgeActivity`,
-- `riftbridge-system.js`,
-- WSS device protocol/pairing configuration,
-- pairing-key MCP endpoint URLs.
+The public relay service is deployed separately. Its contract is documented in `RIFT_MCP_RELAY_PROTOCOL.md`.
 
 Legacy read/write/audit preferences are migrated into `rift-mcp-tools`, then the old preference file and pairing key are cleared.
 

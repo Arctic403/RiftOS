@@ -11,7 +11,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.10.1-raw-chat"
+        versionName = "0.11.0-relay-client"
     }
 
     signingConfigs {
@@ -40,6 +40,8 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftToolHost.kt",
         "src/main/java/com/riftos/app/RiftMcpServer.kt",
         "src/main/java/com/riftos/app/RiftMcpActivity.kt",
+        "src/main/java/com/riftos/app/RiftMcpRelayClient.kt",
+        "src/main/java/com/riftos/app/RiftRelaySettings.kt",
         "src/main/java/com/riftos/app/RiftBrowserEngine.kt",
         "src/main/java/com/riftos/app/AndroidWebViewBrowserEngine.kt",
         "src/main/java/com/riftos/app/RiftBrowserWindow.kt"
@@ -96,4 +98,5 @@ tasks.named("preBuild").configure {
 dependencies {
     implementation("androidx.webkit:webkit:1.16.0")
     implementation("androidx.documentfile:documentfile:1.1.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

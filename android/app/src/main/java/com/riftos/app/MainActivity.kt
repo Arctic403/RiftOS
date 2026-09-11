@@ -144,6 +144,9 @@ class MainActivity : Activity() {
             notificationPermissionRequester = ::requestNotificationPermission
         )
 
+        // The relay is outbound-only and starts only after the user enables and configures it.
+        RiftMcpRuntime.relayClient(this).start()
+
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             error("Android System WebView is too old for RiftOS native messaging. Update Android System WebView.")
         }

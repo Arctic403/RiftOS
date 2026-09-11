@@ -28,7 +28,7 @@ RiftToolHost
 RiftToolSandbox
 ```
 
-There is no remote relay, WSS connection, pairing key or public MCP endpoint in this path.
+This browser path remains a compatibility fallback. The optional native relay transport is separate and does not expose additional JavaScript authority to the page.
 
 ## Protocol
 
