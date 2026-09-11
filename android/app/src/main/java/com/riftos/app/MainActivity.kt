@@ -184,6 +184,9 @@ class MainActivity : Activity() {
             "workspace.watch.start" -> runKernelCommand(requestId) { workspaceWatcher.start() }
             "workspace.watch.stop" -> runKernelCommand(requestId) { workspaceWatcher.stop() }
             "workspace.watch.state" -> runKernelCommand(requestId) { workspaceWatcher.state() }
+            "workspace.live.state.set" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.update(args.optJSONObject("state") ?: JSONObject()) }
+            "workspace.live.state.get" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.snapshot() }
+            "workspace.live.state.clear" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.clear() }
             else -> return false
         }
         return true

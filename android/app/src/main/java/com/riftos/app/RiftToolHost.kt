@@ -36,7 +36,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v1")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_workspace_exec")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_view_state", "rift_workspace_exec")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy")))
         .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
 
@@ -68,6 +68,11 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             "rift_read_text",
             "Read a UTF-8 text file under workspace/.",
             objectSchema(JSONObject().put("path", stringProperty("Path under workspace/.")), listOf("path"))
+        ))
+        .put(tool(
+            "rift_view_state",
+            "Read the live Workspace Live editor/view state: active file, cursor, selected text, visible line range, visible excerpt, revision, dirty state, and conflict state. Use this before editing when the user refers to what they are looking at or selected.",
+            objectSchema()
         ))
         .put(tool(
             "rift_write_text",
@@ -307,6 +312,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "stat", "rift_stat" -> "rift_stat"
         "list", "rift_list" -> "rift_list"
         "readText", "rift_read_text" -> "rift_read_text"
+        "viewState", "rift_view_state" -> "rift_view_state"
         "writeText", "rift_write_text" -> "rift_write_text"
         "mkdir", "rift_mkdir" -> "rift_mkdir"
         "remove", "rift_remove" -> "rift_remove"
@@ -323,6 +329,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "rift_stat" -> "fs.stat"
         "rift_list" -> "fs.list"
         "rift_read_text" -> "fs.readText"
+        "rift_view_state" -> "workspace.viewState"
         "rift_write_text" -> "fs.writeText"
         "rift_mkdir" -> "fs.mkdir"
         "rift_remove" -> "fs.remove"
@@ -378,6 +385,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "rift_move", "rift_copy" -> "${args.optString("from")} -> ${args.optString("to")}".take(300)
         "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
         "rift_info" -> "sandbox"
+        "rift_view_state" -> "workspace live view"
         else -> args.optString("path").take(300)
     }
 

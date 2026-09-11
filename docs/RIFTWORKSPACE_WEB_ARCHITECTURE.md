@@ -7,7 +7,7 @@ RiftWorkspace is the controlled project/workspace boundary between RiftOS apps, 
 ```text
 RiftOS app / RiftDev / Workspace Live
       |
-RiftWorkspace API / scoped HTML RPC
+RiftWorkspace API / raw workspace HTML RPC
       |
 riftworkspace-android-adapter.js
       |
@@ -30,14 +30,14 @@ RiftOS now ships a local HTML workspace at `workspace-live/index.html`. It is re
                     |                 |
               ChatGPT Web       trusted shell host
                                       |
-                              narrow postMessage RPC
+                           raw workspace-only postMessage RPC
                                       |
                            sandboxed local HTML page
 ```
 
-The local page does **not** receive `RiftAndroid`, `RiftWorkspace`, the MCP bridge, or a generic filesystem object. The parent host accepts a small workspace-only RPC surface and validates/normalizes every path through the existing workspace boundary.
+The local page receives a raw workspace capability surface for the canonical `riftfs/workspace` tree: list/stat/read/write/create/remove/move/copy plus patch, snapshot, history and rollback operations. It still does **not** receive unrestricted `RiftAndroid`, the MCP bridge, SAF mounts, or Android/system filesystem roots. Every path is normalized through the existing workspace boundary.
 
-The iframe is created with `sandbox="allow-scripts"` and intentionally omits `allow-same-origin`. That gives the HTML app an opaque origin even though its files are packaged locally.
+The iframe is created with `sandbox="allow-scripts allow-modals"` and intentionally omits `allow-same-origin`. Classic-script loading is used so the opaque-origin sandbox can boot reliably; ES-module loading is intentionally avoided here because it can fail CORS checks for a sandboxed opaque origin.
 
 ## Live filesystem observation
 
@@ -57,6 +57,13 @@ Workspace Live uses SHA-256 revision checks when manually saving an open file. I
 The workspace supports controlled list/stat/read/write/mkdir/remove/move/copy operations plus snapshot, patch preview/apply, history and rollback surfaces used by RiftDev and project tooling.
 
 Path normalization prevents escaping the workspace/RiftFS boundary.
+
+
+## Shared editor/view state
+
+Workspace Live publishes a small process-local view state containing the active file, cursor, selection, visible line range/excerpt, current revision, dirty flag and conflict flag. The local MCP server exposes this through the read-only `rift_view_state` tool.
+
+This is the bridge between the human editor and ChatGPT: the HTML page is the real workspace/editor surface, while MCP can ask what the user is currently looking at before performing surgical filesystem operations against the same `riftfs/workspace` tree.
 
 ## MCP separation
 
