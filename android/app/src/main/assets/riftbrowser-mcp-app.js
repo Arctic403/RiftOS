@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.7-autonomous-tool-loop';
+  const VERSION = 'rift-mcp-app-v1.7.1-completion-guard';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -146,7 +146,7 @@
         finishAiTask('stopped', 'ChatGPT Web task stopped');
         return;
       }
-      if (!assistantSeen || continuationRequired || toolLoopBusy()) {
+      if (!assistantSeen || continuationRequired || toolLoopBusy() || !latestAssistantHasCompletableOutput()) {
         scheduleCompletionCheck(900);
         return;
       }
@@ -933,6 +933,43 @@ ${contextBlock()}`;
     return out.replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  function hasToolProtocolSignal(text) {
+    const raw = String(text || '');
+    if (raw.includes(CALL_OPEN)) return true;
+    const trimmed = raw.trimEnd();
+    for (let length = Math.min(CALL_OPEN.length - 1, trimmed.length); length > 0; length -= 1) {
+      if (trimmed.endsWith(CALL_OPEN.slice(0, length))) return true;
+    }
+    return false;
+  }
+
+  function isTransientAssistantStatus(text) {
+    const normalized = String(text || '')
+      .replace(/[\u2026.]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    if (!normalized) return false;
+    return normalized === 'thinking' ||
+      normalized === 'working' ||
+      normalized === 'reasoning' ||
+      normalized === 'generating' ||
+      normalized === 'searching' ||
+      normalized === 'browsing' ||
+      normalized === 'analyzing' ||
+      normalized === 'analysing';
+  }
+
+  function latestAssistantHasCompletableOutput() {
+    const assistant = document.querySelectorAll('[data-message-author-role="assistant"]');
+    if (!assistant.length) return false;
+    const message = assistant[assistant.length - 1];
+    const raw = String(message.innerText || message.textContent || '');
+    if (hasToolProtocolSignal(raw)) return false;
+    const visible = stripToolEnvelopes(raw);
+    return Boolean(visible) && !isTransientAssistantStatus(visible);
+  }
+
   function queueProtocolRecovery(message, errorText) {
     if (!(message instanceof Element)) return;
     const fingerprint = `${String(errorText)}\n${String(message.innerText || message.textContent || '')}`;
@@ -977,9 +1014,14 @@ ${contextBlock()}`;
   function scanAssistantMessage(message) {
     if (!enabled || !(message instanceof Element)) return;
     const text = String(message.innerText || message.textContent || '');
+    const visibleText = stripToolEnvelopes(text);
+    const protocolSignal = hasToolProtocolSignal(text);
+    const meaningfulAssistantContent = protocolSignal || (Boolean(visibleText) && !isTransientAssistantStatus(visibleText));
     const assistantMessages = document.querySelectorAll('[data-message-author-role="assistant"]');
     const isLatestAssistant = assistantMessages.length > 0 && assistantMessages[assistantMessages.length - 1] === message;
     const isHistorical = historicalAssistantMessages.has(message);
+
+    if (!meaningfulAssistantContent) return;
 
     if (aiTaskActive && toolLoopState === 'waiting-continuation') {
       if (isContinuationBaseline(message)) return;
@@ -1016,7 +1058,6 @@ ${contextBlock()}`;
       return;
     }
 
-    const visibleText = stripToolEnvelopes(text);
     if (visibleText && lastAssistantText.get(message) !== visibleText) {
       lastAssistantText.set(message, visibleText);
       if (aiTaskActive) {
