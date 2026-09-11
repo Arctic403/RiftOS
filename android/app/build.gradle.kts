@@ -39,7 +39,10 @@ val verifyRiftOsAndroidSources by tasks.registering {
     val required = listOf(
         "src/main/java/com/riftos/app/RiftToolHost.kt",
         "src/main/java/com/riftos/app/RiftMcpServer.kt",
-        "src/main/java/com/riftos/app/RiftMcpActivity.kt"
+        "src/main/java/com/riftos/app/RiftMcpActivity.kt",
+        "src/main/java/com/riftos/app/RiftBrowserEngine.kt",
+        "src/main/java/com/riftos/app/AndroidWebViewBrowserEngine.kt",
+        "src/main/java/com/riftos/app/RiftBrowserWindow.kt"
     )
     doLast {
         val missing = required.filter { !file(it).exists() }

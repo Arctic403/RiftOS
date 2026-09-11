@@ -19,9 +19,11 @@ RiftFS  RiftRT  RiftDesktop
   |                 |
 Android filesDir     +-- Files / Settings / RiftDev / Rift MCP / Workspace Live / apps
 + SAF mounts         |
-                    RiftBrowser
+                    RiftBrowser window
                          |
-                 Android System WebView
+                 RiftBrowserEngine
+                         |
+          Android System WebView backend
                          |
                      ChatGPT Web
                          |
@@ -49,13 +51,13 @@ The foundation is intentionally simple: the user talks to ChatGPT in RiftBrowser
 - **RiftDesktop**: draggable/resizable/minimizable/maximizable desktop windows and taskbar.
 - **RiftRT v1**: worker/iframe/WASM application runtime integrated with RiftDesktop.
 - **RiftDev**: Android editor using the canonical workspace.
-- **RiftBrowser**: native Android System WebView host used for normal browsing and ChatGPT Web.
+- **RiftBrowser**: RiftOS-owned browser/window lifecycle with Android System WebView as the current compatibility renderer.
 - **Workspace Live**: sandboxed local HTML workspace surface that watches the canonical workspace and shows MCP/local edits as they happen.
 - **Rift MCP**: local system app for MCP tool permissions and recent tool activity.
 
 ## RiftBrowser + ChatGPT Web
 
-RiftBrowser is a normal RiftOS desktop window. RiftOS owns its title bar, address bar, taskbar entry, focus, move/resize/minimize/maximize state; Android owns the System WebView content surface positioned inside that window.
+RiftBrowser is a normal RiftOS desktop window. RiftOS owns its title bar, address bar, taskbar entry, focus, move/resize/minimize/maximize state **and the native renderer surface lifecycle**. The renderer sits behind `RiftBrowserEngine`; Android System WebView is only the current compatibility backend. Hidden/minimized browser surfaces are `GONE`—they are never resized to the full host or parked behind the shell.
 
 On the exact ChatGPT Web origin, RiftBrowser installs the Rift MCP compatibility adapter. The page does **not** receive a general filesystem JavaScript object or unrestricted native dispatcher. It can only send structured MCP JSON-RPC through `RiftBrowserMcpAppBridge`, and `RiftToolHost` remains the device-side capability, permission and audit authority.
 

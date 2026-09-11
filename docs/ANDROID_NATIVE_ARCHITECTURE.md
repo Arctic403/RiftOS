@@ -67,13 +67,11 @@ RiftBrowserMcpAppBridge
 
 Read access defaults on. Write access defaults off. The `Rift MCP` system app is the only current settings surface for those grants.
 
-## Rift AI native support
+## RiftBrowser engine ownership
 
-`MainActivity` brokers local `ai.*` shell commands for session state, event polling, project-tree metadata, diffs, accept/revert and ChatGPT-Web visibility. `RiftAiJournal` stores persistent rollback/event state in `filesDir/rift-ai`. That directory is deliberately outside the MCP sandbox.
+`RiftBrowserWindow` owns a dedicated native renderer container. The renderer is created behind the `RiftBrowserEngine` contract; `AndroidWebViewBrowserEngine` is the current compatibility backend. Browser minimize/unfocus never keeps a full-host native WebView visible behind the shell: the renderer container becomes Android `GONE` while the engine/session remains allocated.
 
-`RiftBrowserWindow` has a transport-only mode used by Rift AI. While `transportActive` is true, the existing ChatGPT WebView remains fully laid out and Android-`INVISIBLE`; no extra AI WebView, model HTTP client, API key or public listener is introduced. Terminal complete/stopped/error state releases the invisible renderer unless the user explicitly revealed ChatGPT. On a new process, `RiftAiJournal` recovers any persisted active-transport marker as `interrupted` because the old WebView execution context no longer exists.
-
-RiftBrowser injects a native-created AI session ID into local MCP request `_meta`; `RiftMcpServer`/`RiftToolHost` use it only to scope journal/audit events to the active Rift AI task. It is not a model-supplied capability and does not expand MCP access.
+The WebView backend owns WebView-specific cookies, downloads, popup/auth handling, navigation callbacks and exact-origin MCP injection. This keeps `RiftBrowserWindow` responsible only for RiftOS window geometry/visibility/lifecycle and makes a future renderer swap possible without changing the desktop window contract.
 
 ## System Dump
 

@@ -1,50 +1,27 @@
 # RiftBrowser Engine Migration
 
-RiftBrowser is moving away from making Android System WebView the long-term browser engine.
+RiftBrowser no longer treats Android System WebView as the browser architecture. RiftOS owns browser chrome, window lifecycle and a dedicated renderer surface; rendering is behind `RiftBrowserEngine`.
 
-## Immediate performance guard
+## Current backend
 
-The ChatGPT Plus MCP compatibility layer must never rescan the complete conversation on every streaming DOM mutation. It uses mutation-scoped message tracking, a small delayed work queue, and a one-shot compact tool manifest per conversation route.
+`AndroidWebViewBrowserEngine` is the compatibility backend because it currently satisfies ChatGPT Web, cookies/auth, file chooser/downloads and the exact-origin MCP bridge on the existing Android floor.
 
-This is a stop-gap while the browser engine changes. It protects RiftOS from work caused by the compatibility adapter; it does not make Chromium WebView lightweight.
+The backend is **never parked as a full-host visible view**. When the RiftBrowser window is not the active visible window, its owned native surface is removed from layout (`View.GONE`) while the engine object remains alive.
 
-## Target: RiftEngine on Servo
+## Target renderers
 
-The preferred experimental engine base is Servo, forked/integrated as **RiftEngine** rather than attempting to author HTML, CSS, JavaScript, networking, cookies, TLS, accessibility, and media engines from scratch.
-
-Reasons:
-
-- Rust-native browser engine intended for embedding.
-- Android builds are available upstream.
-- The embedder API supports per-webview rendering contexts, navigation, request interception, user scripts, and asynchronous JavaScript evaluation.
-- RiftOS can own the browser chrome, lifecycle, permissions, memory policy, MCP adapter, and engine configuration.
-
-## Compatibility gate
-
-Servo/RiftEngine must not replace the current renderer until all of these pass on real hardware:
-
-1. ChatGPT sign-in and persistent cookies.
-2. ChatGPT conversation rendering and streaming.
-3. Long-chat scrolling/input without RiftOS shell starvation.
-4. Rift MCP App context injection and structured call/result round trips.
-5. File chooser/download behavior needed by RiftBrowser.
-6. Back/forward/reload and desktop resize behavior.
-7. Memory-pressure recovery.
-
-## Android floor
-
-Current RiftOS supports API 26. Current Servo Android support is newer than that floor, so the migration needs an explicit compatibility policy. Until that is resolved, System WebView remains a compatibility backend rather than the design target.
-
-## Architecture
+A future engine can replace the compatibility backend without changing RiftDesktop or MCP. Candidates include a RiftEngine/Servo embedder or another embeddable engine with sufficient ChatGPT compatibility.
 
 ```text
 RiftDesktop
     |
-RiftBrowser chrome
+RiftBrowser chrome/window
     |
-RiftBrowserEngine interface
-    |-- RiftEngine / Servo   (target)
-    `-- Android WebView      (compatibility backend)
+RiftBrowserWindow
+    |
+RiftBrowserEngine
+    |-- AndroidWebViewBrowserEngine (compatibility)
+    `-- future RiftEngine/other backend
 
 Rift MCP App
     |
@@ -53,8 +30,23 @@ RiftMcpServer
 RiftToolHost
 ```
 
-The MCP/tool host is renderer-independent. Moving browser engines must not change the Rift capability boundary.
+## Compatibility gate
 
-## Rift AI compatibility
+Do not replace the current backend until the candidate passes on real hardware:
 
-A future renderer must preserve Rift AI transport-only mode: the authenticated ChatGPT page must be able to stay alive and stream while RiftOS shell HTML is the visible workspace. The renderer migration must not introduce a model API path or a second model transport.
+1. ChatGPT sign-in and persistent cookies.
+2. Conversation rendering and streaming.
+3. Long-chat scrolling/input without shell starvation.
+4. Exact-origin MCP call/result round trips.
+5. File chooser/download behavior.
+6. Back/forward/reload and desktop resize/minimize/restore.
+7. No renderer surface escape outside the RiftBrowser window.
+8. Memory-pressure recovery.
+
+## Android floor
+
+RiftOS currently supports API 26. Any replacement engine must either support that floor or come with an explicit platform-policy change.
+
+## Invariant
+
+Renderer migration must not weaken the local capability boundary. Tool schemas, grants, audit, sandbox containment and the ChatGPT exact-origin boundary remain independent of the renderer choice.

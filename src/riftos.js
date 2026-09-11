@@ -4,7 +4,7 @@ if(!core)throw new Error("RiftOSCore must load before RiftOS desktop");
 const BUILTIN_APPS=[
   {id:"files",name:"Files",icon:"▣",desc:"Android RiftFS + SAF mounts"},
   {id:"terminal",name:"RiftShell",icon:">_",desc:"RiftKernel command shell"},
-  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"In-desktop Android WebView browser"},
+  {id:"browser",name:"RiftBrowser",icon:"◎",desc:"RiftOS-owned browser · WebView compatibility renderer"},
   {id:"workspace-live",name:"Workspace Live",icon:"◈",desc:"Watch ChatGPT + local edits live"},
   {id:"editor",name:"Editor",icon:"{}",desc:"Native-backed RiftFS editor"},
   {id:"tasks",name:"Tasks",icon:"≡",desc:"RiftKernel processes"},
@@ -353,7 +353,7 @@ async function openSettings(){
 
 async function openBrowser(startUrl="https://chatgpt.com"){
   await core.ready;
-  const body=openWindow("browser","RiftBrowser","ANDROID WEBVIEW WINDOW");
+  const body=openWindow("browser","RiftBrowser","RIFT BROWSER WINDOW");
   body.classList.add("rift-browser-window-body");
   const win=body.closest(".window");
   const url=String(startUrl||"https://chatgpt.com").trim()||"https://chatgpt.com";
@@ -363,23 +363,27 @@ async function openBrowser(startUrl="https://chatgpt.com"){
       <input id="browserUrl" value="${escapeHTML(url)}" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url">
       <button class="primary" id="browserGo">Go</button>
     </div>
-    <div class="rift-browser-meta"><span id="browserState">Android WebView</span><span>ChatGPT sandbox enabled on chatgpt.com</span></div>
-    <div class="rift-browser-native-surface" id="riftBrowserNativeSurface"><div><span>◎</span><strong>RiftBrowser</strong><small>Native WebView appears here while this window is focused.</small></div></div>
+    <div class="rift-browser-meta"><span id="browserState">RiftBrowser Engine</span><span>WebView compatibility backend · ChatGPT MCP isolated</span></div>
+    <div class="rift-browser-native-surface" id="riftBrowserNativeSurface"><div><span>◎</span><strong>RiftBrowser</strong><small>Renderer is owned and clipped by this RiftOS window.</small></div></div>
   </div>`;
   const surface=body.querySelector("#riftBrowserNativeSurface"),input=body.querySelector("#browserUrl"),stateEl=body.querySelector("#browserState"),back=body.querySelector("#browserBack"),forward=body.querySelector("#browserForward");
   let closed=false,lastBounds="",syncTimer=0;
-  const updateState=state=>{if(closed||!document.contains(body))return;if(state.url&&document.activeElement!==input)input.value=state.url;back.disabled=!state.canGoBack;forward.disabled=!state.canGoForward;stateEl.textContent=state.crashed?"WebView renderer restarted":state.progress<100?`Loading ${state.progress||0}%`:(state.title||"Android WebView");};
+  const updateState=state=>{if(closed||!document.contains(body))return;if(state.url&&document.activeElement!==input)input.value=state.url;back.disabled=!state.canGoBack;forward.disabled=!state.canGoForward;stateEl.textContent=state.crashed?"Renderer restarted":state.progress<100?`Loading ${state.progress||0}%`:(state.title||"RiftBrowser");};
   browserNativeListeners.add(updateState);
   const native=async(method,args={})=>core.native.call(`browser.window.${method}`,args);
   const visible=()=>document.contains(surface)&&!win.classList.contains("rift-minimized")&&win.classList.contains("rift-focused")&&!document.querySelector("#riftStartMenu.open");
   const syncBounds=force=>{
     clearTimeout(syncTimer);
+    if(closed||!document.contains(surface))return;
+    const immediateRect=surface.getBoundingClientRect(),immediateShow=visible()&&immediateRect.width>4&&immediateRect.height>4;
+    if(!immediateShow){lastBounds="";native("visible",{visible:false}).catch(()=>{});return;}
     syncTimer=setTimeout(async()=>{
       if(closed||!document.contains(surface))return;
       const rect=surface.getBoundingClientRect(),show=visible()&&rect.width>4&&rect.height>4;
+      if(!show){lastBounds="";try{await native("visible",{visible:false});}catch(_){}return;}
       const key=[Math.round(rect.left),Math.round(rect.top),Math.round(rect.width),Math.round(rect.height),show].join(":");
-      if(force||key!==lastBounds){lastBounds=key;try{if(show)await native("bounds",{left:rect.left,top:rect.top,width:rect.width,height:rect.height,dpr:window.devicePixelRatio||1});await native("visible",{visible:show});}catch(_){}}
-    },35);
+      if(force||key!==lastBounds){lastBounds=key;try{await native("bounds",{left:rect.left,top:rect.top,width:rect.width,height:rect.height,dpr:window.devicePixelRatio||1});await native("visible",{visible:true});}catch(_){}}
+    },24);
   };
   const navigate=async()=>{try{await native("navigate",{url:input.value.trim()||"https://chatgpt.com"});}catch(error){stateEl.textContent=error.message;}};
   body.querySelector("#browserGo").onclick=navigate;input.addEventListener("keydown",event=>{if(event.key==="Enter")navigate();});
@@ -387,8 +391,11 @@ async function openBrowser(startUrl="https://chatgpt.com"){
   const resizeObserver=new ResizeObserver(()=>syncBounds(false));resizeObserver.observe(surface);resizeObserver.observe(win);
   const windowObserver=new MutationObserver(()=>syncBounds(false));windowObserver.observe(win,{attributes:true,attributeFilter:["class","style"]});
   const startMenu=document.querySelector("#riftStartMenu"),startObserver=startMenu?new MutationObserver(()=>syncBounds(true)):null;if(startMenu)startObserver.observe(startMenu,{attributes:true,attributeFilter:["class"]});
-  const activation=()=>syncBounds(true);window.addEventListener("riftos:window-activate",activation);window.addEventListener("resize",activation);
-  const closeHandler=event=>{if(event.detail?.id!=="browser")return;closed=true;clearTimeout(syncTimer);browserNativeListeners.delete(updateState);resizeObserver.disconnect();windowObserver.disconnect();startObserver?.disconnect();window.removeEventListener("riftos:window-activate",activation);window.removeEventListener("resize",activation);window.removeEventListener("riftos:window-close",closeHandler);native("close").catch(()=>{});};
+  const activation=()=>syncBounds(true);
+  const visibilityHandler=event=>{if(event.detail?.id!=="browser")return;if(event.detail.visible===false){clearTimeout(syncTimer);lastBounds="";native("visible",{visible:false}).catch(()=>{});}else syncBounds(true);};
+  const showDesktopHandler=()=>{clearTimeout(syncTimer);lastBounds="";native("visible",{visible:false}).catch(()=>{});};
+  window.addEventListener("riftos:window-activate",activation);window.addEventListener("riftos:window-visibility",visibilityHandler);window.addEventListener("riftos:show-desktop",showDesktopHandler);window.addEventListener("resize",activation);
+  const closeHandler=event=>{if(event.detail?.id!=="browser")return;closed=true;clearTimeout(syncTimer);native("visible",{visible:false}).catch(()=>{});browserNativeListeners.delete(updateState);resizeObserver.disconnect();windowObserver.disconnect();startObserver?.disconnect();window.removeEventListener("riftos:window-activate",activation);window.removeEventListener("riftos:window-visibility",visibilityHandler);window.removeEventListener("riftos:show-desktop",showDesktopHandler);window.removeEventListener("resize",activation);window.removeEventListener("riftos:window-close",closeHandler);native("close").catch(()=>{});};
   window.addEventListener("riftos:window-close",closeHandler);
   requestAnimationFrame(()=>{syncBounds(true);native("open",{url}).then(updateState).catch(error=>{stateEl.textContent=error.message;});});
   return true;

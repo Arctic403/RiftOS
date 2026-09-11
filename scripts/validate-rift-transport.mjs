@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 
 const browser = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowserWindow.kt', 'utf8');
+const engine = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowserEngine.kt', 'utf8');
+const webViewEngine = readFileSync('android/app/src/main/java/com/riftos/app/AndroidWebViewBrowserEngine.kt', 'utf8');
+const desktop = readFileSync('src/riftdesktop-android.js', 'utf8');
 const adapter = readFileSync('android/app/src/main/assets/riftbrowser-mcp-app.js', 'utf8');
 const bridge = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt', 'utf8');
 const main = readFileSync('android/app/src/main/java/com/riftos/app/MainActivity.kt', 'utf8');
@@ -19,8 +22,12 @@ const checks = [
   ['browser has no Rift AI task orchestration', !browser.includes('startAiTask') && !browser.includes('aiTransportOnly') && !browser.includes('control.queueTask')],
   ['MCP bridge has no Rift AI event channel', !bridge.includes('rift/ai/event')],
   ['MCP launcher identifies ChatGPT Web tooling', mcpSystem.includes('ChatGPT Web tools')],
-  ['browser installs exact-origin MCP bridge', browser.includes('RiftBrowserMcpAppBridge(activity, webView)')],
-  ['browser never enables file/content access', browser.includes('allowFileAccess = false') && browser.includes('allowContentAccess = false')],
+  ['RiftBrowser owns a renderer interface', engine.includes('interface RiftBrowserEngine') && browser.includes('private val engine: RiftBrowserEngine')],
+  ['WebView backend installs exact-origin MCP bridge', webViewEngine.includes('RiftBrowserMcpAppBridge(activity, webView)')],
+  ['WebView backend never enables file/content access', webViewEngine.includes('allowFileAccess = false') && webViewEngine.includes('allowContentAccess = false')],
+  ['hidden browser surface is actually removed from layout', browser.includes('surfaceHost.visibility = View.GONE') && !browser.includes('parkBehindShell')],
+  ['browser renderer is clipped to an owned surface container', browser.includes('surfaceHost.addView') && browser.includes('clipChildren = true') && browser.includes('surfaceHost.bringToFront()')],
+  ['desktop emits immediate browser visibility lifecycle', desktop.includes('riftos:window-visibility') && desktop.includes("announceVisibility(win,false,'minimize')")],
   ['JSON protocol V2 is declared', adapter.includes("const PROTOCOL_V2 = 'rift-tools-v2'")],
   ['V2 results are correlated', adapter.includes('RIFT_TOOL_RESULT_V2') && adapter.includes('request_id')],
   ['outgoing messages are acknowledged', adapter.includes('waitForOutgoingAcceptance')],

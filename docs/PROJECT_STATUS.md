@@ -38,12 +38,12 @@ There is no Rift AI workspace app in the active architecture. ChatGPT Web is the
 - RiftDev Android editor backed by the canonical workspace.
 - RiftRT v1 worker/iframe/WASM application runtime.
 - Rift MCP system app for local read/write permissions and recent tool activity.
-- RiftBrowser native Android System WebView host.
+- RiftBrowser-owned renderer surface with a swappable `RiftBrowserEngine` backend.
 - Workspace Live sandboxed local HTML surface with live workspace events, compact diffs and revision-guarded manual saves.
 
 ### RiftBrowser
 
-- Native Android System WebView hosted inside the RiftOS browser window.
+- RiftOS-owned browser surface/container; Android System WebView is the current `RiftBrowserEngine` compatibility backend.
 - RiftOS-owned browser chrome and desktop window state.
 - ChatGPT/OpenAI authentication handling, cookies and file chooser support.
 - Exact-origin ChatGPT Web compatibility adapter.
