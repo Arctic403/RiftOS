@@ -11,7 +11,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.10.0-json-transport-v2"
+        versionName = "0.10.1-raw-chat"
     }
 
     signingConfigs {

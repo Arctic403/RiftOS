@@ -3,14 +3,13 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v2.0.0-always-ready-json';
-  const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
-  const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
-  const PROTOCOL_V2 = 'rift-tools-v2';
-  const RESULT_MARKER_V2 = '[RIFT_TOOL_RESULT_V2]';
-  const CALL_OPEN = '<rift_call>';
-  const CALL_CLOSE = '</rift_call>';
+  const VERSION = 'rift-mcp-app-v2.1.0-raw-chat';
+  const CONTEXT_MARKER = '[RIFT_MCP_RAW_V1]';
+  const RESULT_MARKER = '[RIFT_RESULT]';
+  const CALL_OPEN = '[RIFT_CALL]';
+  const CALL_CLOSE = '[RIFT_END]';
   const MAX_CONTEXT_CHARS = 5000;
+  const MAX_RESULT_CHARS = 48000;
   const MAX_CALLS_PER_MINUTE = 24;
   const PROCESS_DELAY_MS = 180;
   const RESULT_ACK_TIMEOUT_MS = 12000;
@@ -19,7 +18,6 @@
 
   const pending = new Map();
   const processedCalls = new Map();
-  const processedRequests = new Map();
   const recentCallTimes = [];
   const touchedAssistantMessages = new Set();
   const touchedUserMessages = new Set();
@@ -224,38 +222,34 @@
   }
 
   function toolManifest() {
-    const compact = tools.map((tool) => ({
-      name: tool.name,
-      ...compactSchema(tool.inputSchema || {})
-    }));
-    return JSON.stringify(compact).slice(0, MAX_CONTEXT_CHARS);
+    const lines = tools.map((tool) => {
+      const schema = compactSchema(tool.inputSchema || {});
+      const args = Object.entries(schema.args).map(([name, type]) => `${name}:${type}${schema.required.includes(name) ? '*' : ''}`).join(', ');
+      return `- ${tool.name}${args ? ` (${args})` : ''}`;
+    });
+    return lines.join('\n').slice(0, MAX_CONTEXT_CHARS);
   }
 
   function codeModeGuide() {
     if (!tools.some((tool) => tool.name === 'rift_workspace_exec')) return '';
     return `\nRift Code Mode + Project Intelligence v1: prefer rift_workspace_exec so project inspection and edits run locally in one model-visible round trip. ` +
-      `Args: {"operations":[...],"finish":false,"dryRun":false,"expectedSnapshot":"optional","snapshotPath":"workspace/project","returnSnapshot":false}. ` +
-      `IMPORTANT: every operation is a FLAT object whose first field is "op". Example: {"op":"stat","path":"workspace/RiftOS-main"}; never nest it as {"stat":{"path":"..."}}. Operations: ` +
-      `project{path?,limit?}, snapshot{path?}, stat{path}, list{path?,recursive?,limit?}, search{path?,query,caseSensitive?,maxMatches?}, ` +
-      `symbols{path?,query?,kind?,limit?}, references{path?,symbol,limit?}, read/read_range{path,startLine?,endLine?,maxChars?}, ` +
-      `read_symbol{path,symbol,line?,maxChars?}, write{path,text}, replace{path,find,replace,all?,expectedCount?}, ` +
-      `patch{path,edits:[{find,replace,all?,expectedCount?}]}, patch_range{path,startLine,endLine,text,expectedHash?,expectedText?,expectedRangeHash?}, ` +
-      `apply_hunks{path,expectedHash?,hunks:[{startLine,endLine,text,expectedText?,expectedRangeHash?}]}, mkdir{path}, remove{path}, ` +
-      `move{from,to,overwrite?}, rename{from,to,overwrite?}, copy{from,to,overwrite?}, archive{from,to,overwrite?}. Paths are under workspace/. ` +
-      `For large codebases, search symbols/references first, read only the exact symbol/range needed, then patch exact ranges/hunks using returned sha256/rangeSha256 guards instead of resending old source. ` +
-      `Project-intelligence scans locally ignore common dependency/build/cache directories and cap returned data. Symbol indexes are incrementally refreshed when workspace files change. ` +
-      `Use dryRun:true to validate read/content-edit batches without committing (structural mkdir/remove/move/copy/archive ops are intentionally excluded). Scope expectedSnapshot with snapshotPath so unrelated sibling projects do not invalidate an edit. ` +
+      `Use one [RIFT_CALL] block. First line: call <unique-call-id> rift_workspace_exec. Add arguments with set <path> <value>. ` +
+      `Nested values use dotted paths and numeric array indexes, for example: set operations.0.op list ; set operations.0.path workspace/RiftOS-main ; set operations.0.recursive true. ` +
+      `For multiline text use a heredoc: set operations.1.text <<RIFT_TEXT, then the exact text, then a line containing only RIFT_TEXT. ` +
+      `Operations: project, snapshot, stat, list, search, symbols, references, read, read_range, read_symbol, write, replace, patch, patch_range, apply_hunks, mkdir, remove, move, rename, copy, archive. ` +
+      `For nested patch edits use paths such as operations.0.edits.0.find and operations.0.edits.0.replace. For hunks use operations.0.hunks.0.startLine and operations.0.hunks.0.text. ` +
+      `For large codebases, search symbols/references first, read only the exact symbol/range needed, then patch exact ranges/hunks using returned hashes instead of resending old source. ` +
       `Every batch is transactional: if any operation fails, all mutations are rolled back. The AI can access only workspace/. ` +
-      `Tool/protocol errors are returned automatically: correct them and retry with new request/call ids without asking the user to continue. ` +
-      `If a mutating batch fully completes the task, set finish:true. RiftOS still returns one correlated ${RESULT_MARKER_V2} confirmation; after an ok final result, briefly confirm completion.`;
+      `Set finish true only when a mutating batch fully completes the task.`;
   }
 
   function contextBlock() {
-    return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}${codeModeGuide()}\n` +
-      `Use Rift Tool Protocol V2. When a tool is needed, reply with ONLY JSON and no prose: {"protocol":"${PROTOCOL_V2}","request_id":"unique-id","calls":[{"id":"unique-call-id","tool":"rift_workspace_exec","arguments":{"operations":[]}}]}. ` +
-      `Prefer one rift_workspace_exec call containing many local operations; this lets RiftOS pull only needed files/ranges and apply guarded edits without pushing whole projects through chat. Up to 8 independent calls are accepted but are sequential and not cross-call atomic. ` +
-      `Wait for ${RESULT_MARKER_V2} before continuing. Legacy ${CALL_OPEN} JSON envelopes remain accepted. If the returned result is an error, fix the call and retry automatically with new ids when a tool is still required; never ask the user to resend or type continue. ` +
-      `Never claim success without a successful result.`;
+    return `${CONTEXT_MARKER}\nLocal Rift MCP tools:\n${toolManifest()}${codeModeGuide()}\n` +
+      `When a local tool is needed, output exactly one raw Rift command block and no prose around it:\n` +
+      `${CALL_OPEN}\ncall unique-call-id tool_name\nset argName value\n${CALL_CLOSE}\n` +
+      `Values may be unquoted single tokens or quoted strings. Booleans and numbers are typed automatically. Use dotted paths for nested objects/arrays and heredocs for multiline strings. ` +
+      `Prefer one rift_workspace_exec call containing all related local operations. Wait for ${RESULT_MARKER} before continuing. ` +
+      `If a Rift call fails, correct it and retry automatically with a new call id when another tool is still required. Never claim success without a successful result.`;
   }
 
   function refreshRouteState() {
@@ -698,17 +692,26 @@ ${contextBlock()}`;
   function readResultPayloadFromMessage(message) {
     if (!(message instanceof Element)) return null;
     const text = String(message.innerText || message.textContent || '');
-    const marker = text.includes(RESULT_MARKER_V2) ? RESULT_MARKER_V2 : text.includes(RESULT_MARKER) ? RESULT_MARKER : '';
-    if (!marker) return null;
-    const markerAt = text.indexOf(marker);
-    const tail = text.slice(markerAt + marker.length).replace(/^\s+/, '');
-    const line = tail.split('\n')[0];
-    try {
-      const parsed = JSON.parse(line || '{}');
-      return parsed && typeof parsed === 'object' ? parsed : null;
-    } catch (_) {
-      return null;
+    const markerAt = text.indexOf(RESULT_MARKER);
+    if (markerAt < 0) return null;
+    const tail = text.slice(markerAt + RESULT_MARKER.length).replace(/^\s+/, '');
+    const out = {};
+    for (const line of tail.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed === 'result:') continue;
+      const match = trimmed.match(/^([a-z_]+):\s*(.*)$/i);
+      if (!match) break;
+      const key = match[1].toLowerCase();
+      const value = match[2].trim();
+      if (key === 'result_id') out.result_id = value;
+      else if (key === 'call_id') out.call_id = value;
+      else if (key === 'tool') out.name = value;
+      else if (key === 'status') out.ok = value.toLowerCase() === 'ok';
+      else if (key === 'final') out.final = value.toLowerCase() === 'true';
+      else if (key === 'error_code') out.error_code = value;
+      else if (key === 'error') out.error = value;
     }
+    return Object.keys(out).length ? out : null;
   }
 
   function markInjectedResultMessage(message) {
@@ -779,6 +782,57 @@ ${contextBlock()}`;
     }
   }
 
+  function formatRawValue(value, depth = 0) {
+    const pad = '  '.repeat(depth);
+    if (value === null || value === undefined) return 'null';
+    if (typeof value === 'string') {
+      if (!value.includes('\n')) return value;
+      return `|\n${value.split('\n').map((line) => `${pad}  ${line}`).join('\n')}`;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+      if (!value.length) return '[]';
+      return value.map((item) => {
+        const rendered = formatRawValue(item, depth + 1);
+        const lines = rendered.split('\n');
+        return `${pad}- ${lines[0]}${lines.length > 1 ? `\n${lines.slice(1).map((line) => `${pad}  ${line}`).join('\n')}` : ''}`;
+      }).join('\n');
+    }
+    if (typeof value === 'object') {
+      const entries = Object.entries(value);
+      if (!entries.length) return '{}';
+      return entries.map(([key, item]) => {
+        const rendered = formatRawValue(item, depth + 1);
+        if (!rendered.includes('\n') && (item === null || typeof item !== 'object')) return `${pad}${key}: ${rendered}`;
+        return `${pad}${key}:\n${rendered}`;
+      }).join('\n');
+    }
+    return String(value);
+  }
+
+  function rawResultMessage(resultPayload) {
+    const header = [
+      RESULT_MARKER,
+      `result_id: ${resultPayload.result_id || ''}`,
+      `call_id: ${resultPayload.call_id || ''}`,
+      `tool: ${resultPayload.name || ''}`,
+      `status: ${resultPayload.ok === false ? 'error' : 'ok'}`,
+      `final: ${resultPayload.final === true ? 'true' : 'false'}`
+    ];
+    if (resultPayload.error_code) header.push(`error_code: ${resultPayload.error_code}`);
+    if (resultPayload.error) header.push(`error: ${String(resultPayload.error).replace(/\s+/g, ' ').slice(0, 1200)}`);
+    let body = resultPayload.result === undefined || resultPayload.result === null ? 'null' : formatRawValue(resultPayload.result);
+    let truncated = false;
+    if (body.length > MAX_RESULT_CHARS) {
+      body = body.slice(0, MAX_RESULT_CHARS);
+      truncated = true;
+    }
+    header.push('result:');
+    header.push(body);
+    if (truncated) header.push('... [Rift result truncated; request a narrower range or continue with another targeted read]');
+    return header.join('\n');
+  }
+
   async function submitToolResult(payload, expectedSessionId = '') {
     if (expectedSessionId && (!aiTaskActive || activeAiSessionId !== expectedSessionId)) {
       throw new Error(`Stale Rift result ignored for inactive session ${expectedSessionId}`);
@@ -793,15 +847,12 @@ ${contextBlock()}`;
     } else if (resultPayload.ok === true) {
       recoveryAttempt = 0;
     }
-    const v2 = resultPayload.protocol === PROTOCOL_V2;
     const finalInstruction = resultPayload.final === true && resultPayload.ok === true
-      ? `The requested final batch is confirmed. Do not call another Rift tool unless the result itself shows unfinished work; briefly confirm completion.`
+      ? `The requested final batch is confirmed. Briefly confirm completion unless the result itself shows unfinished work.`
       : resultPayload.ok === false
-        ? `The Rift tool/protocol call failed. Correct it and retry automatically with new request/call ids if the task still requires a tool. Do not ask the user to resend or type continue.`
-        : v2
-          ? `Continue immediately. If another tool is required, return one ${PROTOCOL_V2} JSON object with new request/call ids. Do not wait for the user.`
-          : `Continue using this result immediately. If another Rift tool is required, emit exactly one ${CALL_OPEN}...${CALL_CLOSE} envelope with a NEW call_id. Do not wait for the user.`;
-    const message = `${v2 ? RESULT_MARKER_V2 : RESULT_MARKER}\n${JSON.stringify(resultPayload)}\n${finalInstruction}`;
+        ? `The Rift call failed. Correct the raw Rift command and retry automatically with a new call id if the task still requires a tool. Do not ask the user to resend or type continue.`
+        : `Continue immediately using this result. If another tool is required, return one new ${CALL_OPEN}...${CALL_CLOSE} block with a new call id. Do not wait for the user.`;
+    const message = `${rawResultMessage(resultPayload)}\n${finalInstruction}`;
 
     if (manageSession) {
       markContinuationBaseline();
@@ -833,9 +884,6 @@ ${contextBlock()}`;
     if (manageSession) {
       const acknowledged = await waitForResultAck(resultId);
       if (!acknowledged) {
-        // ChatGPT Web can render the continuation without exposing a stable DOM ACK.
-        // Do not collapse the Rift session on an observer miss; keep transport alive
-        // and let the normal continuation scanner resolve the next state.
         sendAiPhase('running', 'Rift result sent · ACK observer uncertain, continuing recovery', 'transport', {
           resultId,
           ackSource: 'recovery-timeout'
@@ -880,12 +928,12 @@ ${contextBlock()}`;
   }
 
   function normalizeCall(packet) {
-    if (!packet || typeof packet !== 'object' || Array.isArray(packet)) throw new Error('Tool call must be a JSON object');
+    if (!packet || typeof packet !== 'object' || Array.isArray(packet)) throw new Error('Rift call must be a command object');
     const callId = String(packet.call_id || packet.id || '').trim();
     const name = String(packet.name || packet.tool || '').trim();
     const suppliedArgs = Object.prototype.hasOwnProperty.call(packet, 'arguments') ? packet.arguments : packet.args;
     if (suppliedArgs !== undefined && (!suppliedArgs || typeof suppliedArgs !== 'object' || Array.isArray(suppliedArgs))) {
-      throw new Error('Tool call args must be a JSON object');
+      throw new Error('Rift call arguments are invalid');
     }
     const args = suppliedArgs && typeof suppliedArgs === 'object' ? suppliedArgs : {};
     if (!callId || callId.length > 160) throw new Error('Invalid call_id');
@@ -978,97 +1026,131 @@ ${contextBlock()}`;
     if (aiTaskActive) scheduleCompletionCheck(900);
   }
 
-  async function executeV2Packet(packet) {
-    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
-    const requestId = String(packet && packet.request_id || '').trim();
-    const calls = Array.isArray(packet && packet.calls) ? packet.calls : [];
-    if (!requestId || requestId.length > 160) throw new Error('Rift Tool Protocol V2 requires a valid request_id');
-    if (calls.length < 1 || calls.length > 8) throw new Error('Rift Tool Protocol V2 accepts 1..8 calls');
-    const requestKey = `${aiSessionId || routeKey}:${requestId}`;
-    const requestSignature = JSON.stringify(calls);
-    const previousRequest = processedRequests.get(requestKey);
-    if (previousRequest === requestSignature) return;
-    if (previousRequest) throw new Error('Duplicate V2 request_id was reused with different calls; retry with a new request_id');
-    processedRequests.set(requestKey, requestSignature);
-    const results = [];
-    const ids = new Set();
-    for (const raw of calls) {
-      const id = String(raw && (raw.id || raw.call_id) || '').trim();
-      if (!id || ids.has(id)) throw new Error('Every V2 call requires a unique id');
-      ids.add(id);
-      const result = await performCall(raw, aiSessionId);
-      if (result.skip) {
-        results.push({ call_id: id, name: String(raw.tool || raw.name || ''), ok: false, final: false, error_code: 'DUPLICATE_CALL_ID', error: 'Call id was already processed; use a new call id.' });
-        break;
+  function splitRawTokens(line) {
+    const tokens = [];
+    let token = '';
+    let quote = '';
+    let escaping = false;
+    for (const ch of String(line || '')) {
+      if (escaping) { token += ch; escaping = false; continue; }
+      if (ch === '\\') { escaping = true; continue; }
+      if (quote) {
+        if (ch === quote) quote = '';
+        else token += ch;
+        continue;
       }
-      results.push(result);
-      if (result.ok === false) break;
+      if (ch === '"' || ch === "'") { quote = ch; continue; }
+      if (/\s/.test(ch)) {
+        if (token) { tokens.push(token); token = ''; }
+        continue;
+      }
+      token += ch;
     }
-    const ok = results.length === calls.length && results.every((result) => result.ok !== false);
-    const final = ok && results[results.length - 1]?.final === true;
-    await submitToolResult({ protocol: PROTOCOL_V2, request_id: requestId, session_id: aiSessionId || null, ok, final, results }, aiSessionId);
-    setBadge(ok ? 'ready' : 'error');
-    if (aiTaskActive) scheduleCompletionCheck(900);
+    if (escaping) token += '\\';
+    if (quote) throw new Error('Unclosed quote in Rift command');
+    if (token) tokens.push(token);
+    return tokens;
   }
 
-  function parseCallEnvelopes(text) {
+  function parseRawScalar(value) {
+    const text = String(value ?? '');
+    if (/^(true|false)$/i.test(text)) return text.toLowerCase() === 'true';
+    if (/^null$/i.test(text)) return null;
+    if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) return Number(text);
+    return text;
+  }
+
+  function setRawPath(root, path, value) {
+    const parts = String(path || '').split('.').filter(Boolean);
+    if (!parts.length) throw new Error('set requires a dotted argument path');
+    let cursor = root;
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i];
+      const isIndex = /^\d+$/.test(part);
+      const last = i === parts.length - 1;
+      if (Array.isArray(cursor)) {
+        if (!isIndex) throw new Error(`Expected numeric array index at ${part}`);
+        const index = Number(part);
+        if (last) { cursor[index] = value; return; }
+        const nextIsIndex = /^\d+$/.test(parts[i + 1]);
+        if (!cursor[index] || typeof cursor[index] !== 'object') cursor[index] = nextIsIndex ? [] : {};
+        cursor = cursor[index];
+      } else {
+        if (last) { cursor[part] = value; return; }
+        const nextIsIndex = /^\d+$/.test(parts[i + 1]);
+        if (!cursor[part] || typeof cursor[part] !== 'object') cursor[part] = nextIsIndex ? [] : {};
+        cursor = cursor[part];
+      }
+    }
+  }
+
+  function parseRawCallBlock(rawBlock) {
+    const lines = String(rawBlock || '').replace(/\r\n?/g, '\n').split('\n');
+    let callId = '';
+    let name = '';
+    const args = {};
+    for (let i = 0; i < lines.length; i += 1) {
+      const rawLine = lines[i];
+      const trimmed = rawLine.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const tokens = splitRawTokens(trimmed);
+      const command = String(tokens.shift() || '').toLowerCase();
+      if (command === 'call') {
+        if (callId || name) throw new Error('Rift command block may contain only one call line');
+        callId = String(tokens.shift() || '').trim();
+        name = String(tokens.shift() || '').trim();
+        if (!callId || !name || tokens.length) throw new Error('call syntax is: call <unique-call-id> <tool-name>');
+        continue;
+      }
+      if (command !== 'set') throw new Error(`Unknown Rift command: ${command || trimmed}`);
+      const path = String(tokens.shift() || '').trim();
+      if (!path) throw new Error('set syntax is: set <path> <value>');
+      let valueText = tokens.join(' ');
+      if (valueText.startsWith('<<')) {
+        const delimiter = valueText.slice(2).trim();
+        if (!delimiter || /\s/.test(delimiter)) throw new Error('Heredoc delimiter must be one non-space token');
+        const body = [];
+        let closed = false;
+        for (i += 1; i < lines.length; i += 1) {
+          if (lines[i] === delimiter) { closed = true; break; }
+          body.push(lines[i]);
+        }
+        if (!closed) return { incomplete: true };
+        setRawPath(args, path, body.join('\n'));
+      } else {
+        setRawPath(args, path, parseRawScalar(valueText));
+      }
+    }
+    if (!callId || !name) throw new Error('Rift command block requires one call line');
+    return { packet: { call_id: callId, name, args }, incomplete: false };
+  }
+
+  function parseRawCallEnvelopes(text) {
     const calls = [];
     const errors = [];
     let incomplete = false;
     let cursor = 0;
+    const raw = String(text || '');
     while (true) {
-      const start = text.indexOf(CALL_OPEN, cursor);
+      const start = raw.indexOf(CALL_OPEN, cursor);
       if (start < 0) break;
-      const end = text.indexOf(CALL_CLOSE, start + CALL_OPEN.length);
-      if (end < 0) {
-        incomplete = true;
-        break;
-      }
-      const raw = text.slice(start + CALL_OPEN.length, end).trim();
-      if (!raw) {
-        errors.push('Rift call envelope contained no JSON object');
-      } else {
-        try {
-          calls.push(JSON.parse(raw));
-        } catch (error) {
-          errors.push(`Malformed Rift call JSON: ${String(error && error.message || error)}`);
-        }
+      const end = raw.indexOf(CALL_CLOSE, start + CALL_OPEN.length);
+      if (end < 0) { incomplete = true; break; }
+      const body = raw.slice(start + CALL_OPEN.length, end).trim();
+      try {
+        const parsed = parseRawCallBlock(body);
+        if (parsed.incomplete) incomplete = true;
+        else calls.push(parsed.packet);
+      } catch (error) {
+        errors.push(String(error && error.message || error));
       }
       cursor = end + CALL_CLOSE.length;
     }
     return { calls, errors, incomplete };
   }
 
-  function parseV2Packet(text) {
-    const raw = String(text || '');
-    if (!raw.includes(PROTOCOL_V2)) return { packet: null, errors: [], incomplete: false };
-    const candidates = [];
-    for (const match of raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) candidates.push(String(match[1] || '').trim());
-    const first = raw.indexOf('{');
-    const last = raw.lastIndexOf('}');
-    if (first >= 0 && last > first) candidates.push(raw.slice(first, last + 1).trim());
-    const errors = [];
-    for (const candidate of candidates) {
-      try {
-        const packet = JSON.parse(candidate);
-        if (packet && packet.protocol === PROTOCOL_V2) return { packet, errors: [], incomplete: false };
-      } catch (error) {
-        errors.push(`Malformed ${PROTOCOL_V2} JSON: ${String(error && error.message || error)}`);
-      }
-    }
-    return {
-      packet: null,
-      errors: errors.length ? [errors[errors.length - 1]] : [`${PROTOCOL_V2} marker found without a JSON object`],
-      incomplete: stopButtonVisible() || last < first
-    };
-  }
-
   function stripToolEnvelopes(text) {
     let out = String(text || '');
-    if (out.includes(PROTOCOL_V2)) {
-      const parsed = parseV2Packet(out);
-      if (parsed.packet) return '';
-    }
     while (true) {
       const start = out.indexOf(CALL_OPEN);
       if (start < 0) break;
@@ -1076,8 +1158,6 @@ ${contextBlock()}`;
       if (end < 0) { out = out.slice(0, start); break; }
       out = out.slice(0, start) + out.slice(end + CALL_CLOSE.length);
     }
-    // Streaming can expose "<r", "<ri", "<rif", etc. before the complete
-    // protocol tag exists. Hide only a trailing prefix of <rift_call>.
     for (let length = Math.min(CALL_OPEN.length - 1, out.length); length > 0; length -= 1) {
       if (out.endsWith(CALL_OPEN.slice(0, length))) {
         out = out.slice(0, -length);
@@ -1089,7 +1169,6 @@ ${contextBlock()}`;
 
   function hasToolProtocolSignal(text) {
     const raw = String(text || '');
-    if (raw.includes(PROTOCOL_V2)) return true;
     if (raw.includes(CALL_OPEN)) return true;
     const trimmed = raw.trimEnd();
     for (let length = Math.min(CALL_OPEN.length - 1, trimmed.length); length > 0; length -= 1) {
@@ -1132,9 +1211,7 @@ ${contextBlock()}`;
     protocolIssueFingerprints.set(message, fingerprint);
     const aiSessionId = aiTaskActive ? activeAiSessionId : '';
     if (aiSessionId) toolLoopState = 'delivering-result';
-    const v2 = String(message.innerText || message.textContent || '').includes(PROTOCOL_V2);
     callQueue = callQueue.then(() => submitToolResult({
-      ...(v2 ? { protocol: PROTOCOL_V2, request_id: null } : {}),
       call_id: null,
       name: null,
       session_id: aiSessionId || null,
@@ -1160,12 +1237,9 @@ ${contextBlock()}`;
         scanAssistantMessage(message);
         return;
       }
-      const v2 = parseV2Packet(currentText);
-      const parsed = parseCallEnvelopes(currentText);
-      if (v2.incomplete && !stopButtonVisible()) {
-        queueProtocolRecovery(message, `${PROTOCOL_V2} JSON was incomplete. Return one complete JSON object.`);
-      } else if (parsed.incomplete && !stopButtonVisible()) {
-        queueProtocolRecovery(message, 'Rift call envelope was not closed with </rift_call>. Return exactly one complete tool envelope.');
+      const parsed = parseRawCallEnvelopes(currentText);
+      if (parsed.incomplete && !stopButtonVisible()) {
+        queueProtocolRecovery(message, `Rift command block was incomplete. Return one complete ${CALL_OPEN}...${CALL_CLOSE} block.`);
       }
     }, INCOMPLETE_CALL_GRACE_MS);
     incompleteCallTimers.set(message, { text, timer });
@@ -1209,24 +1283,7 @@ ${contextBlock()}`;
     }
 
     const mayExecute = toolExecutionArmed && isLatestAssistant && !isHistorical && tools.length > 0;
-    const v2 = mayExecute ? parseV2Packet(text) : { packet: null, errors: [], incomplete: false };
-    const parsed = mayExecute && !v2.packet && text.includes(CALL_OPEN) ? parseCallEnvelopes(text) : { calls: [], errors: [], incomplete: false };
-
-    if (mayExecute && v2.incomplete) {
-      scheduleIncompleteCallCheck(message, text);
-      return;
-    }
-    if (mayExecute && v2.errors.length) {
-      queueProtocolRecovery(message, v2.errors.join('; '));
-      return;
-    }
-    if (mayExecute && v2.packet) {
-      if (aiTaskActive) toolLoopState = 'executing-tool';
-      callQueue = callQueue.then(() => executeV2Packet(v2.packet)).catch((error) => {
-        queueProtocolRecovery(message, String(error && error.message || error));
-      });
-      return;
-    }
+    const parsed = mayExecute && text.includes(CALL_OPEN) ? parseRawCallEnvelopes(text) : { calls: [], errors: [], incomplete: false };
 
     if (mayExecute && parsed.errors.length) {
       queueProtocolRecovery(message, parsed.errors.join('; '));
@@ -1237,7 +1294,7 @@ ${contextBlock()}`;
       return;
     }
     if (mayExecute && parsed.calls.length > 1) {
-      queueProtocolRecovery(message, 'Only one <rift_call> envelope is allowed per assistant turn. Consolidate work into one rift_workspace_exec batch or issue calls sequentially.');
+      queueProtocolRecovery(message, `Only one ${CALL_OPEN} block is allowed per assistant turn. Consolidate work into one rift_workspace_exec batch or issue calls sequentially.`);
       return;
     }
     if (mayExecute && parsed.calls.length === 1) {
@@ -1272,14 +1329,11 @@ ${contextBlock()}`;
     const text = String(content.textContent || '');
     if (text.includes(CONTEXT_MARKER)) {
       content.textContent = text.split(`\n\n${CONTEXT_MARKER}`)[0];
-    } else if (text.startsWith(RESULT_MARKER) || text.startsWith(RESULT_MARKER_V2)) {
+    } else if (text.startsWith(RESULT_MARKER)) {
       let label = '↔ Rift tool result';
-      try {
-        const line = text.split('\n')[1];
-        const parsed = JSON.parse(line || '{}');
-        if (parsed.name) label += ` · ${parsed.name}`;
-        label += parsed.ok === false ? ' · blocked/error' : ' · ok';
-      } catch (_) {}
+      const parsed = readResultPayloadFromMessage(message);
+      if (parsed && parsed.name) label += ` · ${parsed.name}`;
+      label += parsed && parsed.ok === false ? ' · blocked/error' : ' · ok';
       content.textContent = label;
     }
   }
