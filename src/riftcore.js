@@ -252,7 +252,6 @@ class RiftFS extends EventTarget{
       return [...this.mounts.values()].map(m=>({path:m.path,kind:"mount",size:0,modified:0,backend:"android-saf",mountId:m.mountId})).sort((a,b)=>a.path.localeCompare(b.path));
     }
     const target=this.route(path);
-    if(target.mount&&!target.relative&&recursive===false)return [];
     const rows=await this.native.call("fs.list",{mountId:target.mountId,path:target.relative,recursive});
     const mapped=(Array.isArray(rows)?rows:[]).map(row=>({...row,path:joinPath(path,row.path||row.name||""),backend:target.backend}));
     if(path==="/"){
