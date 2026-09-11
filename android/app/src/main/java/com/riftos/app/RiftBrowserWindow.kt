@@ -65,6 +65,8 @@ class RiftBrowserWindow(
     private var hasBounds = false
     private var aiTransportOnly = false
     private var pendingAiTask: JSONObject? = null
+    private var aiTaskDispatchInFlight = false
+    private var aiTaskDispatchGeneration = 0L
     private var targetDiscoveryActive = false
     private var pendingAiTargetsReply: ((JSONObject?, Throwable?) -> Unit)? = null
     private var pendingTargetSearch = false
@@ -176,6 +178,8 @@ class RiftBrowserWindow(
         require(task.isNotBlank()) { "Rift AI task is empty" }
         require(sessionId.isNotBlank()) { "Rift AI session id is empty" }
         val target = resolveAiTarget(targetSpec)
+        aiTaskDispatchGeneration += 1L
+        aiTaskDispatchInFlight = false
         currentAiSessionId = sessionId
         aiTransportOnly = true
         requestedVisible = false
@@ -241,6 +245,8 @@ class RiftBrowserWindow(
         val sessionId = currentAiSessionId
         val hadPendingTask = pendingAiTask != null
         pendingAiTask = null
+        aiTaskDispatchGeneration += 1L
+        aiTaskDispatchInFlight = false
         if (!sessionId.isNullOrBlank()) {
             webView.evaluateJavascript("Boolean(window.RiftMcpAppControl?.stop?.())") { result ->
                 if (result != "true") {
@@ -320,6 +326,9 @@ class RiftBrowserWindow(
         if (destroyed) return
         destroyed = true
         requestedVisible = false
+        pendingAiTask = null
+        aiTaskDispatchGeneration += 1L
+        aiTaskDispatchInFlight = false
         pendingAiTargetsReply?.invoke(null, IllegalStateException("RiftBrowser window was destroyed"))
         pendingAiTargetsReply = null
         targetDiscoveryActive = false
@@ -359,22 +368,34 @@ class RiftBrowserWindow(
 
     private fun dispatchPendingAiTask(attempt: Int = 0) {
         val payload = pendingAiTask ?: return
+        if (aiTaskDispatchInFlight) return
+
+        val sessionId = payload.optString("sessionId").trim()
+        if (sessionId.isBlank() || sessionId != currentAiSessionId) return
         if (attempt > 40) {
-            val sessionId = currentAiSessionId
             pendingAiTask = null
+            aiTaskDispatchGeneration += 1L
+            aiTaskDispatchInFlight = false
             handleBridgeAiEvent(
                 JSONObject()
                     .put("type", "error")
                     .put("message", "ChatGPT Web transport did not become ready")
-                    .put("data", JSONObject().put("sessionId", sessionId ?: "").put("phase", "error"))
+                    .put("data", JSONObject().put("sessionId", sessionId).put("phase", "error"))
             )
             return
         }
+
+        val generation = aiTaskDispatchGeneration
         val payloadJs = payload.toString()
         val script = """(()=>{if(!window.RiftMcpAppControl||typeof window.RiftMcpAppControl.submitTask!=='function')return 'missing';window.RiftMcpAppControl.submitTask($payloadJs);return 'started';})()"""
+        aiTaskDispatchInFlight = true
         webView.evaluateJavascript(script) { result ->
+            if (generation != aiTaskDispatchGeneration || currentAiSessionId != sessionId) {
+                return@evaluateJavascript
+            }
+            aiTaskDispatchInFlight = false
             if (result?.contains("started") == true) {
-                pendingAiTask = null
+                if (pendingAiTask?.optString("sessionId") == sessionId) pendingAiTask = null
             } else {
                 webView.postDelayed({ dispatchPendingAiTask(attempt + 1) }, 250L)
             }
@@ -665,6 +686,8 @@ class RiftBrowserWindow(
         val effectiveSessionId = data.optString("sessionId").trim()
         if (terminal && (current.isNullOrBlank() || effectiveSessionId.isBlank() || effectiveSessionId == current)) {
             pendingAiTask = null
+            aiTaskDispatchGeneration += 1L
+            aiTaskDispatchInFlight = false
             currentAiSessionId = null
             if (aiTransportOnly) {
                 aiTransportOnly = false

@@ -524,7 +524,14 @@
     const projectContext = String(payload && payload.projectContext || '').trim();
     const target = payload && payload.target && typeof payload.target === 'object' ? payload.target : {};
     if (!sessionId) { sendAiEvent('error', 'Rift AI session id is missing', { phase: 'error' }); return false; }
-    if (aiTaskActive) { sendAiEvent('error', 'A Rift AI task is already active', { phase: 'error', sessionId }); return false; }
+    if (aiTaskActive) {
+      if (sessionId === activeAiSessionId) {
+        sendAiEvent('transport', 'Duplicate Rift AI task dispatch ignored', { phase: 'duplicate-submit', sessionId });
+        return true;
+      }
+      sendAiEvent('error', 'A Rift AI task is already active', { phase: 'error', sessionId });
+      return false;
+    }
 
     activeAiSessionId = sessionId;
     aiTaskActive = true;
