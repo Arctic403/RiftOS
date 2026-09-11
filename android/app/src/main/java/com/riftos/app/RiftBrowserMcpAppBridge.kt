@@ -8,7 +8,7 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 
 /**
- * Local Rift MCP runtime adapter. No ChatGPT Web injection.
+ * Exact-origin ChatGPT Web compatibility adapter for the local Rift MCP server.
  *
  * The page never receives a filesystem or general native-dispatcher object. It can
  * only send MCP JSON-RPC to RiftMcpServer; RiftToolHost remains the capability and
@@ -26,6 +26,7 @@ class RiftBrowserMcpAppBridge(
 
     private val toolHost = RiftMcpRuntime.toolHost(activity)
     private val server = RiftMcpRuntime.server(activity)
+    private val script = activity.assets.open("riftbrowser-mcp-app.js").bufferedReader().use { it.readText() }
     private var installed = false
     private var documentStartInstalled = false
 
@@ -62,15 +63,16 @@ class RiftBrowserMcpAppBridge(
             server.handleAsync(request, ::deliver)
         }
 
-        // Tool runtime stays local. No ChatGPT Web page injection.
-        // AI clients should connect through a real MCP transport.
-        documentStartInstalled = false
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(webView, script, CHATGPT_ORIGINS)
+            documentStartInstalled = true
+        }
         installed = true
     }
 
     fun ensureInjected(url: String?) {
-        // Disabled: Rift is no longer driving a web chat session.
-        // MCP remains available through the local runtime.
+        if (!installed || documentStartInstalled || !isChatGptUrl(url)) return
+        webView.evaluateJavascript(script, null)
     }
 
     fun state(): JSONObject = JSONObject()
