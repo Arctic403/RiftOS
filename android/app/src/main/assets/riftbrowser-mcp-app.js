@@ -566,6 +566,10 @@
   }
 
   async function submitAiTask(payload) {
+    if (!WEB_COMPOSER_BRIDGE_ENABLED) {
+      sendAiEvent('transport', 'ChatGPT Web composer bridge disabled. MCP tools remain available through Rift runtime.', { phase: 'mouth-disabled' });
+      return false;
+    }
     const sessionId = String(payload && payload.sessionId || '').trim();
     const task = String(payload && payload.task || '').trim();
     const projectContext = String(payload && payload.projectContext || '').trim();
