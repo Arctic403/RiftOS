@@ -1085,7 +1085,13 @@ ${contextBlock()}`;
     for (const match of raw.matchAll(/```(?:json)?\\s*([\\s\\S]*?)```/gi)) {
       candidates.push(String(match[1] || '').trim());
     }
-    const extracted = extractBalancedJsonObject(raw, raw.indexOf(PROTOCOL_V2));
+    const protocolIndex = raw.indexOf(PROTOCOL_V2);
+    // The protocol field is inside the envelope, so the opening brace may be
+    // before the protocol string. Searching after the marker can incorrectly
+    // start extraction inside the nested calls array and produce false
+    // malformed/incomplete JSON under streamed messages.
+    const envelopeStart = raw.lastIndexOf('{', protocolIndex);
+    const extracted = extractBalancedJsonObject(raw, envelopeStart >= 0 ? envelopeStart : protocolIndex);
     if (extracted.json) candidates.push(extracted.json);
     const errors = [];
     for (const candidate of candidates) {
