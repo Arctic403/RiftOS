@@ -166,7 +166,6 @@ class RiftToolSandbox(context: Context) {
         "workspace.exec" -> workspaceExec(args)
         "workspace.audit" -> audit(args.optString("path"))
         "workspace.scan" -> scan(args.optString("path"), args.optString("mode", "all"))
-        "workspace.viewState" -> RiftWorkspaceLiveState.snapshot()
         else -> throw IllegalArgumentException("Unsupported Rift tool sandbox method: $method")
     }
 

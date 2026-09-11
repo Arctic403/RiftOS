@@ -20,7 +20,6 @@
     <section class="layout">
       <aside class="browser-pane">
         <div class="pathbar"><button id="upBtn" type="button">↑</button><span id="pathLabel">/</span></div>
-        <div class="fs-actions"><button id="newFileBtn" type="button">+ File</button><button id="newFolderBtn" type="button">+ Folder</button></div>
         <input id="filterInput" class="filter" placeholder="Filter this folder" autocomplete="off">
         <div id="fileList" class="file-list"></div>
       </aside>
@@ -28,7 +27,7 @@
       <section class="editor-pane">
         <div class="editor-head">
           <div><strong id="fileName">Select a file</strong><small id="revision">No file open</small></div>
-          <div class="editor-actions"><label><input id="followLive" type="checkbox" checked> Follow live</label><button id="renameBtn" type="button" disabled>Rename</button><button id="deleteBtn" type="button" disabled>Delete</button><button id="saveBtn" type="button" disabled>Save</button></div>
+          <div class="editor-actions"><label><input id="followLive" type="checkbox" checked> Follow live</label><button id="saveBtn" type="button" disabled>Save</button></div>
         </div>
         <div id="conflict" class="conflict hidden"></div>
         <textarea id="editor" spellcheck="false" disabled placeholder="Choose a text file from the workspace."></textarea>
@@ -44,6 +43,6 @@
       </aside>
     </section>
   </main>
-  <script defer src="./app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

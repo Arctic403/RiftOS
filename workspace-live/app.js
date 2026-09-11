@@ -4,7 +4,7 @@ const pending=new Map();
 const state={cwd:"",rows:[],selected:"",revision:"",baseline:"",dirty:false,conflict:false,events:[]};
 
 const $=selector=>document.querySelector(selector);
-const fileList=$("#fileList"),pathLabel=$("#pathLabel"),filterInput=$("#filterInput"),editor=$("#editor"),fileName=$("#fileName"),revision=$("#revision"),saveBtn=$("#saveBtn"),renameBtn=$("#renameBtn"),deleteBtn=$("#deleteBtn"),followLive=$("#followLive"),activityLog=$("#activityLog"),diffOutput=$("#diffOutput"),diffMeta=$("#diffMeta"),conflict=$("#conflict"),liveDot=$("#liveDot"),liveText=$("#liveText");
+const fileList=$("#fileList"),pathLabel=$("#pathLabel"),filterInput=$("#filterInput"),editor=$("#editor"),fileName=$("#fileName"),revision=$("#revision"),saveBtn=$("#saveBtn"),followLive=$("#followLive"),activityLog=$("#activityLog"),diffOutput=$("#diffOutput"),diffMeta=$("#diffMeta"),conflict=$("#conflict"),liveDot=$("#liveDot"),liveText=$("#liveText");
 
 function rpc(method,args={}){
   const id=`rw-${Date.now()}-${++requestSeq}`;
@@ -17,49 +17,17 @@ function rpc(method,args={}){
 function fmtBytes(value){const n=Number(value||0);if(n<1024)return `${n} B`;if(n<1024**2)return `${(n/1024).toFixed(1)} KB`;return `${(n/1024**2).toFixed(1)} MB`;}
 function parentPath(path){const parts=String(path||"").split("/").filter(Boolean);parts.pop();return parts.join("/");}
 function leaf(path){return String(path||"").split("/").filter(Boolean).pop()||"workspace";}
-function joinPath(base,name){return [String(base||"").replace(/^\/+|\/+$/g,""),String(name||"").replace(/^\/+|\/+$/g,"")].filter(Boolean).join("/");}
-function setLive(on,text=on?"Live":"Disconnected"){liveDot.classList.toggle("on",on);liveText.textContent=text;liveText.classList.toggle("status-error",!on&&text!=="Connecting");}
+function eventTouchesDirectory(path,dir){const parent=parentPath(path);return parent===dir||path===dir||(!dir&&!path.includes("/"));}
+function setLive(on,text=on?"Live":"Disconnected"){liveDot.classList.toggle("on",on);liveText.textContent=text;}
 function setConflict(message=""){state.conflict=!!message;conflict.classList.toggle("hidden",!message);conflict.textContent=message;}
 function setRevision(hash="",extra=""){state.revision=hash||"";revision.textContent=hash?`${hash.slice(0,12)}${extra?` · ${extra}`:""}`:(extra||"No revision");}
-function escapeHTML(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));}
-function escapeAttr(value){return escapeHTML(value);}
-
-let statePublishTimer=0;
-function editorViewState(){
-  const text=String(editor.value||"");
-  const start=Math.max(0,editor.selectionStart||0),end=Math.max(start,editor.selectionEnd||start);
-  const before=text.slice(0,start),selected=text.slice(start,end);
-  const cursorLine=before.split("\n").length;
-  const lineHeight=17;
-  const firstVisibleLine=Math.max(1,Math.floor((editor.scrollTop||0)/lineHeight)+1);
-  const visibleLineCount=Math.max(1,Math.ceil((editor.clientHeight||340)/lineHeight)+2);
-  const lastVisibleLine=firstVisibleLine+visibleLineCount-1;
-  const lines=text.split("\n");
-  const excerptStart=Math.max(0,firstVisibleLine-3);
-  const excerptEnd=Math.min(lines.length,lastVisibleLine+2);
-  return {
-    activeFile:state.selected||null,
-    cwd:state.cwd,
-    revision:state.revision||null,
-    dirty:state.dirty,
-    conflict:state.conflict,
-    cursor:{offset:start,line:cursorLine},
-    selection:{start,end,text:selected.slice(0,12000)},
-    visible:{startLine:firstVisibleLine,endLine:lastVisibleLine,excerpt:lines.slice(excerptStart,excerptEnd).join("\n").slice(0,24000)},
-    at:Date.now()
-  };
-}
-function publishState(){
-  clearTimeout(statePublishTimer);
-  statePublishTimer=setTimeout(()=>parent.postMessage({channel:CHANNEL,kind:"state",state:editorViewState()},"*"),70);
-}
 
 async function loadDirectory(path=state.cwd){
   state.cwd=String(path||"").replace(/^\/+|\/+$/g,"");
   pathLabel.textContent=`/${state.cwd}`.replace(/\/$/,"")||"/";
   const rows=await rpc("list",{path:state.cwd});
   state.rows=Array.isArray(rows)?rows:[];
-  renderFiles();publishState();
+  renderFiles();
 }
 function renderFiles(){
   const needle=filterInput.value.trim().toLowerCase();
@@ -67,9 +35,11 @@ function renderFiles(){
   if(!rows.length){fileList.innerHTML='<div class="empty">This folder is empty.</div>';return;}
   fileList.innerHTML=rows.map(row=>{
     const name=row.name||leaf(row.path),dir=row.kind==="directory";
-    return `<button class="file-row ${row.path===state.selected?"selected":""}" data-path="${escapeAttr(row.path)}" data-kind="${escapeAttr(row.kind)}"><span>${dir?"▸":"·"}</span><b>${escapeHTML(name)}</b><small>${dir?"DIR":fmtBytes(row.size)}</small></button>`;
+    return `<button class="file-row ${row.path===state.selected?"selected":""}" data-path="${escapeAttr(row.path)}" data-kind="${row.kind}"><span>${dir?"▸":"·"}</span><b>${escapeHTML(name)}</b><small>${dir?"DIR":fmtBytes(row.size)}</small></button>`;
   }).join("");
 }
+function escapeHTML(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));}
+function escapeAttr(value){return escapeHTML(value);}
 
 async function openFile(path,{external=false}={}){
   const result=await rpc("read",{path});
@@ -79,18 +49,12 @@ async function openFile(path,{external=false}={}){
   editor.value=state.baseline;
   editor.disabled=false;
   state.dirty=false;
-  saveBtn.disabled=true;renameBtn.disabled=false;deleteBtn.disabled=false;
+  saveBtn.disabled=true;
   fileName.textContent=path;
   setRevision(result.sha256,`${fmtBytes(result.size)} · ${new Date(result.modified||Date.now()).toLocaleTimeString()}`);
   setConflict("");
-  renderFiles();publishState();
+  renderFiles();
   if(external&&previous!==state.baseline)renderDiff(previous,state.baseline,path);
-}
-
-function clearOpenFile(){
-  state.selected="";state.baseline="";state.revision="";state.dirty=false;state.conflict=false;
-  editor.value="";editor.disabled=true;fileName.textContent="Select a file";setRevision("","No file open");setConflict("");
-  saveBtn.disabled=true;renameBtn.disabled=true;deleteBtn.disabled=true;renderFiles();publishState();
 }
 
 function renderDiff(before,after,path){
@@ -113,33 +77,11 @@ async function save(){
   saveBtn.disabled=true;
   try{
     const result=await rpc("write",{path:state.selected,text:editor.value,expectedSha256:state.revision||null});
-    const before=state.baseline;state.baseline=editor.value;state.dirty=false;setRevision(result.sha256,`${fmtBytes(result.size)} · saved`);setConflict("");renderDiff(before,state.baseline,state.selected);publishState();
+    const before=state.baseline;state.baseline=editor.value;state.dirty=false;setRevision(result.sha256,`${fmtBytes(result.size)} · saved`);setConflict("");renderDiff(before,state.baseline,state.selected);
   }catch(error){
-    setConflict(`Save blocked: ${error.message}. Reload or copy your changes before retrying.`);saveBtn.disabled=false;publishState();
+    setConflict(`Save blocked: ${error.message}. Reload or copy your changes before retrying.`);
+    saveBtn.disabled=false;
   }
-}
-
-async function createFile(){
-  const name=prompt("New file name");if(!name)return;
-  const path=joinPath(state.cwd,name);
-  await rpc("write",{path,text:""});
-  await loadDirectory(state.cwd);await openFile(path);
-}
-async function createFolder(){
-  const name=prompt("New folder name");if(!name)return;
-  await rpc("mkdir",{path:joinPath(state.cwd,name)});await loadDirectory(state.cwd);
-}
-async function renameSelected(){
-  if(!state.selected)return;
-  const name=prompt("Rename to",leaf(state.selected));if(!name||name===leaf(state.selected))return;
-  const next=joinPath(parentPath(state.selected),name);
-  await rpc("move",{path:state.selected,newPath:next});
-  state.selected=next;await loadDirectory(parentPath(next));await openFile(next);
-}
-async function deleteSelected(){
-  if(!state.selected)return;
-  if(!confirm(`Delete ${state.selected}?`))return;
-  const old=state.selected;await rpc("remove",{path:old});clearOpenFile();await loadDirectory(parentPath(old));
 }
 
 function addActivity(event){
@@ -153,7 +95,7 @@ async function handleNativeEvent(event){
   clearTimeout(refreshTimer);
   refreshTimer=setTimeout(()=>loadDirectory(state.cwd).catch(()=>{}),120);
   if(!state.selected||event.directory||event.path!==state.selected)return;
-  if(state.dirty){setConflict(`External change detected in ${state.selected} while you have unsaved edits.`);publishState();return;}
+  if(state.dirty){setConflict(`External change detected in ${state.selected} while you have unsaved edits.`);return;}
   if(!followLive.checked)return;
   clearTimeout(selectedReloadTimer);
   selectedReloadTimer=setTimeout(()=>openFile(state.selected,{external:true}).catch(error=>setConflict(error.message)),180);
@@ -172,20 +114,11 @@ fileList.addEventListener("click",event=>{const row=event.target.closest("[data-
 filterInput.addEventListener("input",renderFiles);
 $("#upBtn").onclick=()=>loadDirectory(parentPath(state.cwd)).catch(showError);
 $("#refreshBtn").onclick=()=>loadDirectory(state.cwd).catch(showError);
-$("#newFileBtn").onclick=()=>createFile().catch(showError);
-$("#newFolderBtn").onclick=()=>createFolder().catch(showError);
-saveBtn.onclick=()=>save();
-renameBtn.onclick=()=>renameSelected().catch(showError);
-deleteBtn.onclick=()=>deleteSelected().catch(showError);
+$("#saveBtn").onclick=()=>save();
 $("#clearActivity").onclick=()=>{state.events=[];activityLog.innerHTML='<div class="empty">Activity cleared.</div>';};
-editor.addEventListener("input",()=>{state.dirty=editor.value!==state.baseline;saveBtn.disabled=!state.dirty;if(state.dirty)setRevision(state.revision,"unsaved edits");publishState();});
-editor.addEventListener("scroll",publishState,{passive:true});
-editor.addEventListener("select",publishState);
-editor.addEventListener("keyup",publishState);
-editor.addEventListener("pointerup",publishState);
+editor.addEventListener("input",()=>{state.dirty=editor.value!==state.baseline;saveBtn.disabled=!state.dirty;if(state.dirty)setRevision(state.revision,"unsaved edits");});
 editor.addEventListener("keydown",event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="s"){event.preventDefault();save();}});
-function showError(error){setLive(false,error.message||String(error));}
+function showError(error){setLive(false,error.message);liveText.classList.add("status-error");}
 
 parent.postMessage({channel:CHANNEL,kind:"ready"},"*");
 rpc("info").then(info=>{setLive(!!info?.watch?.active,"Live");return loadDirectory("");}).catch(showError);
-publishState();
