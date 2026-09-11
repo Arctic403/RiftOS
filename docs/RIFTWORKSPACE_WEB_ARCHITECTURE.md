@@ -85,3 +85,11 @@ Workspace Live is a separate local HTML capability. It does not broaden the Chat
 ## Why no localhost server
 
 The HTML UI is packaged with RiftOS and communicates through the existing WebView/native boundary, so no TCP listener, LAN port, remote service, API key, or cloud file service is required. The result behaves like a local Files.com-style control surface while keeping the workspace private to RiftOS.
+
+## MCP page control
+
+Workspace Live also exposes a local-page-only control plane through `rift_live_page`. The MCP host sends a request through `RiftWorkspaceLiveController` to the mounted Workspace Live iframe, waits for a correlated response, and returns the result to ChatGPT Web.
+
+Supported operations include compact DOM snapshots, CSS queries, bounded raw HTML, click/focus/type/value/selection/scroll/key actions, and JavaScript evaluation inside the sandboxed Workspace Live page. The page remains `sandbox="allow-scripts allow-modals"`; the control broker never hands the ChatGPT origin a WebView, Android object, or general native bridge.
+
+Read-only page inspection requires MCP read permission. Page-mutating operations, including JavaScript evaluation, require MCP write permission. JavaScript evaluation is intentionally powerful inside Workspace Live and can use the page's existing raw workspace RPC, but that RPC remains rooted at `riftfs/workspace`.

@@ -5,6 +5,7 @@ if(!core?.native?.connected||!workspace?.available)throw new Error("Rift Workspa
 const CHANNEL="riftworkspace-live-v1";
 const nativeListeners=new Set();
 let watcherState={active:false};
+let activeSurface=null;
 
 globalThis.RiftWorkspaceNative=Object.freeze({
   __event(event){
@@ -59,6 +60,8 @@ function mount(container){
   const frame=container.querySelector("iframe");
   let destroyed=false;
   const send=message=>{if(!destroyed&&frame.contentWindow)frame.contentWindow.postMessage({channel:CHANNEL,...message},"*");};
+  const surface={sendControl(request){if(destroyed)return false;send({kind:"control",request});return true;}};
+  activeSurface=surface;
   const onNativeEvent=event=>send({kind:"event",event});
   nativeListeners.add(onNativeEvent);
 
@@ -67,6 +70,10 @@ function mount(container){
     const message=event.data;if(!message||message.channel!==CHANNEL)return;
     if(message.kind==="ready"){send({kind:"connected",watch:watcherState});return;}
     if(message.kind==="state"){core.native.call("workspace.live.state.set",{state:message.state||{}}).catch(()=>{});return;}
+    if(message.kind==="controlResult"){
+      core.native.call("workspace.live.control.result",{response:message.response||{}}).catch(error=>console.warn("[RiftWorkspaceLive] control result delivery failed",error));
+      return;
+    }
     if(message.kind!=="request"||!message.id)return;
     try{send({kind:"response",id:message.id,ok:true,value:await invoke(message.method,message.args||{})});}
     catch(error){send({kind:"response",id:message.id,ok:false,error:error?.message||String(error)});}
@@ -75,10 +82,16 @@ function mount(container){
   core.native.call("workspace.watch.start",{}).then(state=>{if(destroyed){core.native.call("workspace.watch.stop",{}).catch(()=>{});return;}watcherState=state||{active:true};send({kind:"connected",watch:watcherState});}).catch(error=>{if(!destroyed)send({kind:"response",id:"watch-start",ok:false,error:error.message});});
 
   const destroy=()=>{
-    if(destroyed)return;destroyed=true;nativeListeners.delete(onNativeEvent);window.removeEventListener("message",onMessage);core.native.call("workspace.watch.stop",{}).catch(()=>{});core.native.call("workspace.live.state.clear",{}).catch(()=>{});frame.src="about:blank";
+    if(destroyed)return;destroyed=true;if(activeSurface===surface)activeSurface=null;nativeListeners.delete(onNativeEvent);window.removeEventListener("message",onMessage);core.native.call("workspace.watch.stop",{}).catch(()=>{});core.native.call("workspace.live.state.clear",{}).catch(()=>{});frame.src="about:blank";
   };
   return {destroy,frame};
 }
 
-window.RiftWorkspaceLiveHost=Object.freeze({mount,invoke,get watch(){return {...watcherState};}});
-console.info("[RiftWorkspaceLive] raw workspace HTML bridge ready");
+window.RiftWorkspaceLiveHost=Object.freeze({
+  mount,
+  invoke,
+  __mcpControl(request){return !!activeSurface?.sendControl(request);},
+  get connected(){return !!activeSurface;},
+  get watch(){return {...watcherState};}
+});
+console.info("[RiftWorkspaceLive] raw workspace HTML bridge + MCP page control ready");

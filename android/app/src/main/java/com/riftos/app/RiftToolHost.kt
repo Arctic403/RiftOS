@@ -36,9 +36,9 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v1")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_view_state", "rift_workspace_exec")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_view_state", "rift_live_page", "rift_workspace_exec")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy")))
-        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
+        .put("conditionalWriteTools", JSONArray(listOf("rift_live_page", "rift_workspace_exec")))
 
     fun setAccess(read: Boolean, write: Boolean): JSONObject {
         prefs.edit()
@@ -73,6 +73,33 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             "rift_view_state",
             "Read the live Workspace Live editor/view state: active file, cursor, selected text, visible line range, visible excerpt, revision, dirty state, and conflict state. Use this before editing when the user refers to what they are looking at or selected.",
             objectSchema()
+        ))
+        .put(tool(
+            "rift_live_page",
+            "Inspect and control the currently open Workspace Live HTML page in real time. Supports compact DOM snapshots, CSS queries, click/focus/type/value/selection/scroll/key actions, full page HTML reads, and JavaScript evaluation inside the sandboxed Workspace Live iframe. This controls only the local Workspace Live page, never arbitrary web origins.",
+            objectSchema(
+                JSONObject()
+                    .put("op", JSONObject()
+                        .put("type", "string")
+                        .put("enum", JSONArray(listOf("snapshot", "query", "html", "click", "focus", "type", "setValue", "select", "scroll", "key", "eval"))))
+                    .put("selector", stringProperty("Optional CSS selector for the target element."))
+                    .put("ref", stringProperty("Optional element ref returned by snapshot/query."))
+                    .put("text", stringProperty("Text for type/setValue operations."))
+                    .put("start", JSONObject().put("type", "integer"))
+                    .put("end", JSONObject().put("type", "integer"))
+                    .put("x", JSONObject().put("type", "number"))
+                    .put("y", JSONObject().put("type", "number"))
+                    .put("key", stringProperty("Keyboard key, for example Enter or s."))
+                    .put("code", stringProperty("Optional KeyboardEvent code."))
+                    .put("ctrl", booleanProperty("Set ctrlKey on key events."))
+                    .put("alt", booleanProperty("Set altKey on key events."))
+                    .put("shift", booleanProperty("Set shiftKey on key events."))
+                    .put("meta", booleanProperty("Set metaKey on key events."))
+                    .put("script", stringProperty("JavaScript to evaluate inside Workspace Live. Async expressions/promises are awaited."))
+                    .put("limit", JSONObject().put("type", "integer"))
+                    .put("maxChars", JSONObject().put("type", "integer")),
+                listOf("op")
+            )
         ))
         .put(tool(
             "rift_write_text",
@@ -201,6 +228,21 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         }
         aiJournal.recordTool(aiSessionId, name, normalizedArgs, "start")
 
+        if (name == "rift_live_page") {
+            RiftWorkspaceLiveController.callAsync(normalizedArgs) { call ->
+                val ok = call.optBoolean("ok", false)
+                val error = if (ok) null else call.optString("error", "Workspace Live page control failed")
+                recordAudit(name, normalizedArgs, ok, error)
+                aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", ok, error)
+                if (ok) {
+                    reply(JSONObject().put("ok", true).put("name", name).put("value", call.opt("value") ?: JSONObject.NULL))
+                } else {
+                    reply(JSONObject().put("ok", false).put("name", name).put("error", error ?: "Workspace Live page control failed"))
+                }
+            }
+            return
+        }
+
         val requestId = "tool-${System.currentTimeMillis()}-${System.nanoTime()}"
         val request = JSONObject()
             .put("id", requestId)
@@ -313,6 +355,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "list", "rift_list" -> "rift_list"
         "readText", "rift_read_text" -> "rift_read_text"
         "viewState", "rift_view_state" -> "rift_view_state"
+        "livePage", "rift_live_page" -> "rift_live_page"
         "writeText", "rift_write_text" -> "rift_write_text"
         "mkdir", "rift_mkdir" -> "rift_mkdir"
         "remove", "rift_remove" -> "rift_remove"
@@ -330,6 +373,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "rift_list" -> "fs.list"
         "rift_read_text" -> "fs.readText"
         "rift_view_state" -> "workspace.viewState"
+        "rift_live_page" -> "workspace.livePage"
         "rift_write_text" -> "fs.writeText"
         "rift_mkdir" -> "fs.mkdir"
         "rift_remove" -> "fs.remove"
@@ -354,11 +398,16 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         return false
     }
 
+    private fun livePageMutates(args: JSONObject): Boolean =
+        args.optString("op").trim() !in setOf("snapshot", "query", "html")
+
     private fun requiresWrite(name: String, args: JSONObject): Boolean =
-        isWriteTool(name) || (name == "rift_workspace_exec" && workspaceBatchMutates(args))
+        isWriteTool(name) ||
+            (name == "rift_live_page" && livePageMutates(args)) ||
+            (name == "rift_workspace_exec" && workspaceBatchMutates(args))
 
     private fun isAllowed(name: String, args: JSONObject): Boolean = when {
-        name == "rift_workspace_exec" -> allowRead() && (!requiresWrite(name, args) || allowWrite())
+        name == "rift_workspace_exec" || name == "rift_live_page" -> allowRead() && (!requiresWrite(name, args) || allowWrite())
         isWriteTool(name) -> allowWrite()
         methodFor(name) != null -> allowRead()
         else -> false
@@ -386,6 +435,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
         "rift_info" -> "sandbox"
         "rift_view_state" -> "workspace live view"
+        "rift_live_page" -> "workspace live page · ${args.optString("op").take(80)}"
         else -> args.optString("path").take(300)
     }
 

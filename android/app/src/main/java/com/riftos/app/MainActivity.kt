@@ -143,6 +143,7 @@ class MainActivity : Activity() {
             directoryPicker = ::openDirectoryPicker,
             notificationPermissionRequester = ::requestNotificationPermission
         )
+        RiftWorkspaceLiveController.attach(::dispatchWorkspaceLiveControl)
 
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             error("Android System WebView is too old for RiftOS native messaging. Update Android System WebView.")
@@ -187,6 +188,9 @@ class MainActivity : Activity() {
             "workspace.live.state.set" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.update(args.optJSONObject("state") ?: JSONObject()) }
             "workspace.live.state.get" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.snapshot() }
             "workspace.live.state.clear" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.clear() }
+            "workspace.live.control.result" -> runKernelCommand(requestId) {
+                RiftWorkspaceLiveController.complete(args.optJSONObject("response") ?: JSONObject())
+            }
             else -> return false
         }
         return true
@@ -207,6 +211,18 @@ class MainActivity : Activity() {
             } catch (error: Throwable) {
                 sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
             }
+        }
+    }
+
+    private fun dispatchWorkspaceLiveControl(request: JSONObject, accepted: (Boolean) -> Unit) {
+        val payload = request.toString()
+        val script = "Boolean(window.RiftWorkspaceLiveHost?.__mcpControl($payload))"
+        runOnUiThread {
+            if (isFinishing || !::webView.isInitialized) {
+                accepted(false)
+                return@runOnUiThread
+            }
+            webView.evaluateJavascript(script) { raw -> accepted(raw == "true") }
         }
     }
 
@@ -390,6 +406,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        RiftWorkspaceLiveController.detach()
         if (::workspaceWatcher.isInitialized) workspaceWatcher.shutdown()
         if (::dispatcher.isInitialized) dispatcher.shutdown()
         if (::browserWindow.isInitialized) browserWindow.destroy()

@@ -93,6 +93,7 @@ riftfs/
 ```
 
 Read tools are enabled by default. Write tools remain disabled by default until enabled in the **Rift MCP** system app. `rift_workspace_exec` is read-gated for inspection and additionally write-gated only when a batch contains mutations.
+Workspace Live can also be inspected and controlled through `rift_live_page` while its local HTML surface is open. Snapshot/query/html operations are read-gated; UI mutation and page-side JavaScript evaluation are write-gated. This control surface is bound only to Workspace Live, not arbitrary internet pages.
 
 Code Mode supports project snapshots, bounded listing/search, symbol and reference lookup, surgical range/symbol reads, guarded text patches, multi-hunk edits, transactional multi-file mutations, scoped snapshot guards, dry-run validation and local ZIP archive creation. The workspace sandbox rejects path traversal and cannot address RiftOS system roots, SAF mounts or arbitrary Android storage.
 

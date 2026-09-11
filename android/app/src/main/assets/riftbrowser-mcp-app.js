@@ -250,8 +250,16 @@
       `If a mutating batch fully completes the task, set finish:true. RiftOS still returns one correlated ${RESULT_MARKER_V2} confirmation; after an ok final result, briefly confirm completion.`;
   }
 
+  function livePageGuide() {
+    if (!tools.some((tool) => tool.name === 'rift_live_page')) return '';
+    return `\nWorkspace Live page control: rift_live_page gives direct real-time control of the currently open local Workspace Live HTML surface. ` +
+      `Use op:"snapshot" first for compact element refs and editor state, then click/focus/type/setValue/select/scroll/key with ref or selector. ` +
+      `Use op:"query" for CSS inspection, op:"html" for bounded raw HTML, and op:"eval" only when a DOM/UI task cannot be expressed by the structured operations. ` +
+      `The tool controls only Workspace Live; it does not grant page control over arbitrary internet origins. Page-mutating operations require Rift MCP write permission.`;
+  }
+
   function contextBlock() {
-    return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}${codeModeGuide()}\n` +
+    return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}${codeModeGuide()}${livePageGuide()}\n` +
       `Use Rift Tool Protocol V2. When a tool is needed, reply with ONLY JSON and no prose: {"protocol":"${PROTOCOL_V2}","request_id":"unique-id","calls":[{"id":"unique-call-id","tool":"rift_workspace_exec","arguments":{"operations":[]}}]}. ` +
       `Prefer one rift_workspace_exec call containing many local operations; this lets RiftOS pull only needed files/ranges and apply guarded edits without pushing whole projects through chat. Up to 8 independent calls are accepted but are sequential and not cross-call atomic. ` +
       `Wait for ${RESULT_MARKER_V2} before continuing. Legacy ${CALL_OPEN} JSON envelopes remain accepted. If the returned result is an error, fix the call and retry automatically with new ids when a tool is still required; never ask the user to resend or type continue. ` +

@@ -159,8 +159,142 @@ async function handleNativeEvent(event){
   selectedReloadTimer=setTimeout(()=>openFile(state.selected,{external:true}).catch(error=>setConflict(error.message)),180);
 }
 
+
+const controlRefs=new Map();
+let controlRefSeq=0;
+function isVisibleElement(element){
+  if(!(element instanceof Element))return false;
+  const style=getComputedStyle(element),rect=element.getBoundingClientRect();
+  return style.display!=="none"&&style.visibility!=="hidden"&&Number(style.opacity)!==0&&rect.width>0&&rect.height>0;
+}
+function controlRef(element){
+  for(const [ref,node] of controlRefs){if(node===element)return ref;}
+  const ref=`e${++controlRefSeq}`;controlRefs.set(ref,element);return ref;
+}
+function elementLabel(element){
+  return String(element.getAttribute("aria-label")||element.getAttribute("title")||element.getAttribute("placeholder")||element.innerText||element.textContent||"").replace(/\s+/g," ").trim().slice(0,320);
+}
+function describeElement(element){
+  if(!(element instanceof Element))return null;
+  const rect=element.getBoundingClientRect();
+  const out={
+    ref:controlRef(element),tag:element.tagName.toLowerCase(),id:element.id||null,
+    role:element.getAttribute("role")||null,label:elementLabel(element),
+    disabled:"disabled" in element?!!element.disabled:undefined,
+    visible:isVisibleElement(element),
+    rect:{x:Math.round(rect.x),y:Math.round(rect.y),width:Math.round(rect.width),height:Math.round(rect.height)}
+  };
+  if(element instanceof HTMLInputElement||element instanceof HTMLTextAreaElement||element instanceof HTMLSelectElement){out.value=String(element.value??"").slice(0,4000);}
+  if(element instanceof HTMLInputElement&&(element.type==="checkbox"||element.type==="radio"))out.checked=element.checked;
+  const path=element.getAttribute("data-path");if(path)out.path=path;
+  const kind=element.getAttribute("data-kind");if(kind)out.kind=kind;
+  return out;
+}
+function targetElement(args={}){
+  if(args.ref){const node=controlRefs.get(String(args.ref));if(node?.isConnected)return node;throw new Error(`Unknown or stale page ref: ${args.ref}`);}
+  if(args.selector){const node=document.querySelector(String(args.selector));if(node)return node;throw new Error(`No element matches selector: ${args.selector}`);}
+  const active=document.activeElement;if(active&&active!==document.body)return active;
+  throw new Error("Page action requires ref or selector");
+}
+function serializable(value,depth=0,seen=new WeakSet()){
+  if(value==null||typeof value==="string"||typeof value==="number"||typeof value==="boolean")return value??null;
+  if(typeof value==="bigint")return value.toString();
+  if(typeof value==="function")return `[Function ${value.name||"anonymous"}]`;
+  if(value instanceof Element)return describeElement(value);
+  if(value instanceof Event)return {type:value.type};
+  if(depth>=5)return String(value).slice(0,2000);
+  if(typeof value==="object"){
+    if(seen.has(value))return "[Circular]";seen.add(value);
+    if(Array.isArray(value))return value.slice(0,200).map(item=>serializable(item,depth+1,seen));
+    const out={};for(const key of Object.keys(value).slice(0,200)){try{out[key]=serializable(value[key],depth+1,seen);}catch{}}
+    return out;
+  }
+  return String(value);
+}
+function pageSnapshot(limit=180){
+  controlRefs.clear();controlRefSeq=0;
+  const selector='button,input,textarea,select,a,[role="button"],[role="textbox"],[tabindex],[data-path]';
+  const elements=[...document.querySelectorAll(selector)].filter(isVisibleElement).slice(0,Math.max(1,Math.min(Number(limit)||180,300))).map(describeElement);
+  return {
+    surface:"workspace-live",title:document.title,connected:liveText.textContent==="Live",
+    viewport:{width:innerWidth,height:innerHeight,scrollX,scrollY},
+    editor:editorViewState(),elements
+  };
+}
+function dispatchValueEvents(element){
+  element.dispatchEvent(new Event("input",{bubbles:true}));
+  element.dispatchEvent(new Event("change",{bubbles:true}));
+}
+async function handlePageControl(request={}){
+  const op=String(request.op||"").trim();
+  if(!op)throw new Error("Missing Workspace Live page operation");
+  if(op==="snapshot")return pageSnapshot(request.limit);
+  if(op==="html")return {html:document.documentElement.outerHTML.slice(0,Math.max(1,Math.min(Number(request.maxChars)||120000,240000)))};
+  if(op==="query"){
+    const selector=String(request.selector||"").trim();if(!selector)throw new Error("query requires selector");
+    const limit=Math.max(1,Math.min(Number(request.limit)||80,200));
+    return {selector,elements:[...document.querySelectorAll(selector)].slice(0,limit).map(describeElement)};
+  }
+  if(op==="eval"){
+    const script=String(request.script||"");if(!script)throw new Error("eval requires script");
+    const value=await eval(script);
+    return {value:serializable(value)};
+  }
+  if(op==="scroll"&&!request.ref&&!request.selector){
+    const x=Number(request.x)||0,y=Number(request.y)||0;window.scrollBy({left:x,top:y,behavior:"auto"});publishState();return {viewport:{scrollX,scrollY}};
+  }
+  const element=targetElement(request);
+  if(op==="click"){
+    element.scrollIntoView({block:"nearest",inline:"nearest"});element.click();await new Promise(resolve=>setTimeout(resolve,0));return {element:describeElement(element),state:editorViewState()};
+  }
+  if(op==="focus"){element.focus();return {element:describeElement(element)};}
+  if(op==="type"){
+    const text=String(request.text??"");element.focus();
+    if(element instanceof HTMLInputElement||element instanceof HTMLTextAreaElement){
+      const start=element.selectionStart??element.value.length,end=element.selectionEnd??start;element.setRangeText(text,start,end,"end");dispatchValueEvents(element);
+    }else if(element.isContentEditable){document.execCommand("insertText",false,text);element.dispatchEvent(new Event("input",{bubbles:true}));}
+    else throw new Error("Target does not accept typed text");
+    publishState();return {element:describeElement(element),state:editorViewState()};
+  }
+  if(op==="setValue"){
+    const text=String(request.text??"");element.focus();
+    if(element instanceof HTMLInputElement||element instanceof HTMLTextAreaElement||element instanceof HTMLSelectElement){element.value=text;dispatchValueEvents(element);}
+    else if(element.isContentEditable){element.textContent=text;element.dispatchEvent(new Event("input",{bubbles:true}));}
+    else throw new Error("Target does not have an editable value");
+    publishState();return {element:describeElement(element),state:editorViewState()};
+  }
+  if(op==="select"){
+    const start=Math.max(0,Number(request.start)||0),end=Math.max(start,Number(request.end??start)||start);element.focus();
+    if(element instanceof HTMLInputElement||element instanceof HTMLTextAreaElement){element.setSelectionRange(start,Math.min(end,element.value.length));}
+    else{const range=document.createRange();range.selectNodeContents(element);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);}
+    publishState();return {element:describeElement(element),state:editorViewState()};
+  }
+  if(op==="scroll"){
+    const x=Number(request.x)||0,y=Number(request.y)||0;
+    if(request.ref||request.selector){if(x||y)element.scrollBy({left:x,top:y,behavior:"auto"});else element.scrollIntoView({block:"center",inline:"nearest"});}
+    else window.scrollBy({left:x,top:y,behavior:"auto"});
+    publishState();return {viewport:{scrollX,scrollY},element:describeElement(element)};
+  }
+  if(op==="key"){
+    const init={key:String(request.key||""),code:String(request.code||""),ctrlKey:!!request.ctrl,altKey:!!request.alt,shiftKey:!!request.shift,metaKey:!!request.meta,bubbles:true,cancelable:true};
+    element.focus();element.dispatchEvent(new KeyboardEvent("keydown",init));element.dispatchEvent(new KeyboardEvent("keyup",init));await new Promise(resolve=>setTimeout(resolve,0));publishState();return {element:describeElement(element),state:editorViewState()};
+  }
+  throw new Error(`Unsupported Workspace Live page operation: ${op}`);
+}
+async function respondToPageControl(request){
+  const id=String(request?.id||"");if(!id)return;
+  try{parent.postMessage({channel:CHANNEL,kind:"controlResult",response:{id,ok:true,value:await handlePageControl(request)}} ,"*");}
+  catch(error){parent.postMessage({channel:CHANNEL,kind:"controlResult",response:{id,ok:false,error:error?.message||String(error)}} ,"*");}
+}
+
+globalThis.RiftWorkspaceLivePage=Object.freeze({
+  snapshot:pageSnapshot,query:selector=>[...document.querySelectorAll(selector)].map(describeElement),
+  rpc,openFile,loadDirectory,save,get state(){return serializable(state);},get view(){return editorViewState();}
+});
+
 window.addEventListener("message",event=>{
   const message=event.data;if(!message||message.channel!==CHANNEL)return;
+  if(message.kind==="control"&&message.request){respondToPageControl(message.request);return;}
   if(message.kind==="response"){
     const waiter=pending.get(message.id);if(!waiter)return;clearTimeout(waiter.timer);pending.delete(message.id);message.ok?waiter.resolve(message.value):waiter.reject(new Error(message.error||"Workspace RPC failed"));return;
   }
