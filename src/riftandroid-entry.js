@@ -12,6 +12,5 @@ await import("./riftdesktop-window-host.js");
 await import("./riftos.js");
 await import("./riftdesktop-android.js");
 await import("./riftmcp-system.js");
-await import("./riftai-workspace.js");
 await import("./riftrt.js");
 await import("./riftdesktop-android-compat.js");
