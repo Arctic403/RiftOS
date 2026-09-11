@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v3-native-mcp-only';
+  const VERSION = 'rift-mcp-app-v2.1.0-raw-chat';
   const CONTEXT_MARKER = '[RIFT_MCP_RAW_V1]';
   const RESULT_MARKER = '[RIFT_RESULT]';
   const CALL_OPEN = '[RIFT_CALL]';
@@ -15,9 +15,6 @@
   const RESULT_ACK_TIMEOUT_MS = 12000;
   const INCOMPLETE_CALL_GRACE_MS = 1400;
   const MAX_CHAT_TARGETS = 180;
-  // Safety mode: keep MCP tools available but disable ChatGPT composer automation.
-  const WEB_COMPOSER_BRIDGE_ENABLED = false;
-  const NATIVE_MCP_ONLY_MODE = true;
 
   const pending = new Map();
   const processedCalls = new Map();
@@ -569,10 +566,6 @@
   }
 
   async function submitAiTask(payload) {
-    if (!WEB_COMPOSER_BRIDGE_ENABLED) {
-      sendAiEvent('transport', 'ChatGPT Web composer bridge disabled. MCP tools remain available through Rift runtime.', { phase: 'mouth-disabled' });
-      return false;
-    }
     const sessionId = String(payload && payload.sessionId || '').trim();
     const task = String(payload && payload.task || '').trim();
     const projectContext = String(payload && payload.projectContext || '').trim();
