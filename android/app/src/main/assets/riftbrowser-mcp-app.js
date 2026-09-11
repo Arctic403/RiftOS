@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.7.1-completion-guard';
+  const VERSION = 'rift-mcp-app-v1.7.2-continuation-ack';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -629,6 +629,37 @@ ${contextBlock()}`;
     return resultId;
   }
 
+  function acknowledgeResultFromAssistantContinuation(message = null) {
+    if (!aiTaskActive || toolLoopState !== 'waiting-result-ack' || !pendingResultId) return false;
+
+    const assistantMessages = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const candidate = message instanceof Element
+      ? message
+      : (assistantMessages.length ? assistantMessages[assistantMessages.length - 1] : null);
+    if (!(candidate instanceof Element)) return false;
+
+    const isLatestAssistant = assistantMessages.length > 0 &&
+      assistantMessages[assistantMessages.length - 1] === candidate;
+    if (!isLatestAssistant || isContinuationBaseline(candidate)) return false;
+
+    const raw = String(candidate.innerText || candidate.textContent || '');
+    const visible = stripToolEnvelopes(raw);
+    const protocolSignal = hasToolProtocolSignal(raw);
+    const meaningful = protocolSignal || (Boolean(visible) && !isTransientAssistantStatus(visible));
+    if (!meaningful) return false;
+
+    const resultId = pendingResultId;
+    const firstAck = !acknowledgedResultIds.has(resultId);
+    acknowledgedResultIds.add(resultId);
+    if (firstAck) {
+      sendAiPhase('running', 'ChatGPT continuation acknowledged Rift result', 'transport', {
+        resultId,
+        ackSource: 'assistant-continuation'
+      });
+    }
+    return true;
+  }
+
   async function waitForResultAck(resultId, timeoutMs = RESULT_ACK_TIMEOUT_MS) {
     const deadline = now() + timeoutMs;
     while (now() < deadline) {
@@ -642,6 +673,7 @@ ${contextBlock()}`;
         }
         if (markInjectedResultMessage(message) === resultId) return true;
       }
+      if (pendingResultId === resultId && acknowledgeResultFromAssistantContinuation()) return true;
       await new Promise((resolve) => setTimeout(resolve, 80));
     }
     return false;
@@ -1029,7 +1061,10 @@ ${contextBlock()}`;
       toolLoopState = 'waiting-assistant';
       lastAssistantUpdateAt = now();
       sendAiPhase('running', 'ChatGPT continuation received', 'transport');
-    } else if (aiTaskActive && (toolLoopState === 'executing-tool' || toolLoopState === 'delivering-result' || toolLoopState === 'waiting-result-ack')) {
+    } else if (aiTaskActive && toolLoopState === 'waiting-result-ack') {
+      acknowledgeResultFromAssistantContinuation(message);
+      return;
+    } else if (aiTaskActive && (toolLoopState === 'executing-tool' || toolLoopState === 'delivering-result')) {
       return;
     }
 
