@@ -1086,11 +1086,22 @@ ${contextBlock()}`;
       candidates.push(String(match[1] || '').trim());
     }
     const protocolIndex = raw.indexOf(PROTOCOL_V2);
-    // The protocol field is inside the envelope, so the opening brace may be
-    // before the protocol string. Searching after the marker can incorrectly
-    // start extraction inside the nested calls array and produce false
-    // malformed/incomplete JSON under streamed messages.
-    const envelopeStart = raw.lastIndexOf('{', protocolIndex);
+    // The protocol field is inside the root envelope. Walk backwards through
+    // possible opening braces and only accept a balanced object containing the
+    // protocol field. Using the nearest brace is unsafe because nested
+    // arguments/calls objects may appear before the protocol is validated.
+    let envelopeStart = -1;
+    for (let i = protocolIndex; i >= 0; i -= 1) {
+      if (raw[i] !== '{') continue;
+      const candidate = extractBalancedJsonObject(raw, i);
+      if (!candidate.incomplete && candidate.json.includes(PROTOCOL_V2)) {
+        envelopeStart = i;
+        break;
+      }
+    }
+    if (envelopeStart < 0) {
+      envelopeStart = raw.indexOf('{', Math.max(0, protocolIndex - 4096));
+    }
     const extracted = extractBalancedJsonObject(raw, envelopeStart >= 0 ? envelopeStart : protocolIndex);
     if (extracted.json) candidates.push(extracted.json);
     const errors = [];
