@@ -52,7 +52,6 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         window.statusBarColor = 0xff0a0d12.toInt()
         window.navigationBarColor = 0xff0a0d12.toInt()
 
@@ -144,7 +143,6 @@ class MainActivity : Activity() {
             directoryPicker = ::openDirectoryPicker,
             notificationPermissionRequester = ::requestNotificationPermission
         )
-        RiftWorkspaceLiveController.attach(::dispatchWorkspaceLiveControl)
 
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             error("Android System WebView is too old for RiftOS native messaging. Update Android System WebView.")
@@ -183,51 +181,15 @@ class MainActivity : Activity() {
             "browser.window.visible" -> runBrowserCommand(requestId) { browserWindow.setVisible(args.optBoolean("visible", true)) }
             "browser.window.state" -> runBrowserCommand(requestId) { browserWindow.state() }
             "browser.window.close" -> runBrowserCommand(requestId) { JSONObject().put("closed", browserWindow.close()) }
-            "workspace.core.call" -> { runWorkspaceCoreCall(requestId, args); return true }
             "workspace.watch.start" -> runKernelCommand(requestId) { workspaceWatcher.start() }
             "workspace.watch.stop" -> runKernelCommand(requestId) { workspaceWatcher.stop() }
             "workspace.watch.state" -> runKernelCommand(requestId) { workspaceWatcher.state() }
             "workspace.live.state.set" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.update(args.optJSONObject("state") ?: JSONObject()) }
             "workspace.live.state.get" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.snapshot() }
             "workspace.live.state.clear" -> runKernelCommand(requestId) { RiftWorkspaceLiveState.clear() }
-            "workspace.live.control.result" -> runKernelCommand(requestId) {
-                RiftWorkspaceLiveController.complete(args.optJSONObject("response") ?: JSONObject())
-            }
             else -> return false
         }
         return true
-    }
-
-    /**
-     * Trusted-shell gateway into the same process-wide workspace core used by MCP.
-     * The core itself remains scoped to riftfs/workspace, so Workspace Live gains
-     * no access to Android files outside the workspace capability.
-     */
-    private fun runWorkspaceCoreCall(requestId: String, args: JSONObject) {
-        val method = args.optString("method").trim()
-        val allowed = setOf(
-            "sandbox.info", "fs.stat", "fs.list", "fs.readText", "fs.writeText",
-            "fs.mkdir", "fs.remove", "fs.move", "fs.copy", "workspace.exec",
-            "workspace.viewState"
-        )
-        if (method !in allowed) {
-            sendNativeResult(requestId, false, null, "Unsupported Workspace Core method: $method")
-            return
-        }
-        val innerId = "workspace-core-${System.currentTimeMillis()}-${System.nanoTime()}"
-        val request = JSONObject()
-            .put("id", innerId)
-            .put("method", method)
-            .put("args", args.optJSONObject("args") ?: JSONObject())
-        RiftMcpRuntime.workspaceCore(this).handleAsync(request.toString()) { raw ->
-            val response = runCatching { JSONObject(raw) }.getOrNull()
-            if (response?.optBoolean("ok", false) == true) {
-                sendNativeResult(requestId, true, response.opt("value") ?: JSONObject.NULL, null)
-            } else {
-                val error = response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Workspace Core call failed"
-                sendNativeResult(requestId, false, null, error)
-            }
-        }
     }
 
     private fun runKernelCommand(requestId: String, command: () -> Any?) {
@@ -245,18 +207,6 @@ class MainActivity : Activity() {
             } catch (error: Throwable) {
                 sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
             }
-        }
-    }
-
-    private fun dispatchWorkspaceLiveControl(request: JSONObject, accepted: (Boolean) -> Unit) {
-        val payload = request.toString()
-        val script = "Boolean(window.RiftWorkspaceLiveHost?.__mcpControl($payload))"
-        runOnUiThread {
-            if (isFinishing || !::webView.isInitialized) {
-                accepted(false)
-                return@runOnUiThread
-            }
-            webView.evaluateJavascript(script) { raw -> accepted(raw == "true") }
         }
     }
 
@@ -440,7 +390,6 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        RiftWorkspaceLiveController.detach()
         if (::workspaceWatcher.isInitialized) workspaceWatcher.shutdown()
         if (::dispatcher.isInitialized) dispatcher.shutdown()
         if (::browserWindow.isInitialized) browserWindow.destroy()

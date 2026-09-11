@@ -11,14 +11,12 @@ const bridge = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowse
 const main = readFileSync('android/app/src/main/java/com/riftos/app/MainActivity.kt', 'utf8');
 const host = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolHost.kt', 'utf8');
 const sandbox = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt', 'utf8');
-const runtime = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt', 'utf8');
 const entry = readFileSync('src/riftandroid-entry.js', 'utf8');
 const mcpSystem = readFileSync('src/riftmcp-system.js', 'utf8');
 const workspaceHost = readFileSync('src/riftworkspace-live-host.js', 'utf8');
 const workspacePage = readFileSync('workspace-live/index.html', 'utf8');
 const workspaceApp = readFileSync('workspace-live/app.js', 'utf8');
 const workspaceState = readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceLiveState.kt', 'utf8');
-const workspaceController = readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceLiveController.kt', 'utf8');
 const workspaceWatcher = readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt', 'utf8');
 const gradle = readFileSync('android/app/build.gradle.kts', 'utf8');
 
@@ -44,14 +42,8 @@ const checks = [
   ['Workspace Live HTML is sandboxed', workspaceHost.includes('sandbox=\"allow-scripts allow-modals\"') && !workspaceHost.includes('allow-same-origin')],
   ['Workspace Live opaque-origin script can execute', workspacePage.includes('<script defer src="./app.js"></script>') && !workspacePage.includes('type="module"')],
   ['Workspace Live exposes the raw workspace bridge', workspaceHost.includes('rawWorkspaceBridge:true') && workspaceHost.includes('case "remove"') && workspaceHost.includes('case "move"') && workspaceHost.includes('case "applyPatch"')],
-  ['Direct MCP and Workspace Live share one native workspace core', runtime.includes('fun workspaceCore(context: Context): RiftToolSandbox') && runtime.includes('RiftToolHost(context.applicationContext, aiJournal(context), workspaceCore(context))') && host.includes('private val sandbox: RiftToolSandbox')],
-  ['Workspace Live raw file RPC crosses the shared workspace core', main.includes('\"workspace.core.call\"') && main.includes('RiftMcpRuntime.workspaceCore(this).handleAsync') && workspaceHost.includes('core.native.call("workspace.core.call"') && workspaceHost.includes('workspaceCore:"shared-rift-tool-sandbox-v1"')],
-  ['Shared workspace core stays workspace-scoped', main.includes('Unsupported Workspace Core method') && sandbox.includes('Rift MCP is scoped to $WORKSPACE_ROOT/ only') && sandbox.includes('Rift Code Mode is scoped to $WORKSPACE_ROOT/')],
   ['Workspace Live publishes editor view state to native', workspaceApp.includes('kind:"state"') && main.includes('workspace.live.state.set') && workspaceState.includes('object RiftWorkspaceLiveState')],
   ['MCP exposes Workspace Live view state', host.includes('rift_view_state') && sandbox.includes('workspace.viewState')],
-  ['MCP exposes real-time Workspace Live page control', host.includes('rift_live_page') && host.includes('RiftWorkspaceLiveController.callAsync') && adapter.includes('Workspace Live page control')],
-  ['Workspace Live page control round-trips through native broker', workspaceController.includes('object RiftWorkspaceLiveController') && main.includes('workspace.live.control.result') && workspaceHost.includes('__mcpControl') && workspaceHost.includes('controlResult') && workspaceApp.includes('handlePageControl')],
-  ['Workspace Live page control remains local-page scoped', host.includes('controls only the local Workspace Live page') && workspaceHost.includes('activeSurface') && !workspaceHost.includes('allow-same-origin')],
   ['Workspace Live uses workspace-only postMessage RPC', workspaceHost.includes('riftworkspace-live-v1') && workspaceHost.includes('Unsupported live workspace method')],
   ['native workspace watcher is workspace-scoped', workspaceWatcher.includes('riftfs/workspace') && workspaceWatcher.includes('isInsideRoot')],
   ['workspace watcher is exposed only through shell kernel requests', main.includes('\"workspace.watch.start\"') && main.includes('RiftWorkspaceNative?.__event')],

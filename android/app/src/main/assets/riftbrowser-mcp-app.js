@@ -35,8 +35,6 @@
   let enabled = true;
   let suppressDecoration = false;
   let callQueue = Promise.resolve();
-  let lastProtocolFailureAt = 0;
-  let protocolFailureCount = 0;
   let badge = null;
   let processTimer = 0;
   let routeKey = location.pathname + location.search;
@@ -252,16 +250,8 @@
       `If a mutating batch fully completes the task, set finish:true. RiftOS still returns one correlated ${RESULT_MARKER_V2} confirmation; after an ok final result, briefly confirm completion.`;
   }
 
-  function livePageGuide() {
-    if (!tools.some((tool) => tool.name === 'rift_live_page')) return '';
-    return `\nWorkspace Live page control: rift_live_page gives direct real-time control of the currently open local Workspace Live HTML surface. ` +
-      `Use op:"snapshot" first for compact element refs and editor state, then click/focus/type/setValue/select/scroll/key with ref or selector. ` +
-      `Use op:"query" for CSS inspection, op:"html" for bounded raw HTML, and op:"eval" only when a DOM/UI task cannot be expressed by the structured operations. ` +
-      `The tool controls only Workspace Live; it does not grant page control over arbitrary internet origins. Page-mutating operations require Rift MCP write permission.`;
-  }
-
   function contextBlock() {
-    return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}${codeModeGuide()}${livePageGuide()}\n` +
+    return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}${codeModeGuide()}\n` +
       `Use Rift Tool Protocol V2. When a tool is needed, reply with ONLY JSON and no prose: {"protocol":"${PROTOCOL_V2}","request_id":"unique-id","calls":[{"id":"unique-call-id","tool":"rift_workspace_exec","arguments":{"operations":[]}}]}. ` +
       `Prefer one rift_workspace_exec call containing many local operations; this lets RiftOS pull only needed files/ranges and apply guarded edits without pushing whole projects through chat. Up to 8 independent calls are accepted but are sequential and not cross-call atomic. ` +
       `Wait for ${RESULT_MARKER_V2} before continuing. Legacy ${CALL_OPEN} JSON envelopes remain accepted. If the returned result is an error, fix the call and retry automatically with new ids when a tool is still required; never ask the user to resend or type continue. ` +
@@ -435,11 +425,9 @@
     else element.value = value;
   }
 
-  function writeComposer(element, value, options = {}) {
+  function writeComposer(element, value) {
     if (!element) return false;
-    // Automated Rift messages must not summon the mobile IME. Only an explicit
-    // user interaction should open the keyboard.
-    if (options.userGesture === true) element.focus({ preventScroll: true });
+    element.focus();
     if ('value' in element) setNativeValue(element, value);
     else element.textContent = value;
     try {
@@ -1051,59 +1039,14 @@ ${contextBlock()}`;
     return { calls, errors, incomplete };
   }
 
-  // Extract a complete JSON object instead of trusting the last brace in a
-  // streamed assistant message. Large tool calls can arrive in partial chunks.
-  function extractBalancedJsonObject(text, start) {
-    const raw = String(text || '');
-    const begin = raw.indexOf('{', Math.max(0, start || 0));
-    if (begin < 0) return { json: '', incomplete: false };
-    let depth = 0;
-    let quoted = false;
-    let escaped = false;
-    for (let i = begin; i < raw.length; i++) {
-      const ch = raw[i];
-      if (quoted) {
-        if (escaped) escaped = false;
-        else if (ch === '\\\\') escaped = true;
-        else if (ch === '"') quoted = false;
-        continue;
-      }
-      if (ch === '"') { quoted = true; continue; }
-      if (ch === '{') depth++;
-      else if (ch === '}') {
-        depth--;
-        if (depth === 0) return { json: raw.slice(begin, i + 1), incomplete: false };
-      }
-    }
-    return { json: raw.slice(begin), incomplete: true };
-  }
-
   function parseV2Packet(text) {
     const raw = String(text || '');
     if (!raw.includes(PROTOCOL_V2)) return { packet: null, errors: [], incomplete: false };
     const candidates = [];
-    for (const match of raw.matchAll(/```(?:json)?\\s*([\\s\\S]*?)```/gi)) {
-      candidates.push(String(match[1] || '').trim());
-    }
-    const protocolIndex = raw.indexOf(PROTOCOL_V2);
-    // The protocol field is inside the root envelope. Walk backwards through
-    // possible opening braces and only accept a balanced object containing the
-    // protocol field. Using the nearest brace is unsafe because nested
-    // arguments/calls objects may appear before the protocol is validated.
-    let envelopeStart = -1;
-    for (let i = protocolIndex; i >= 0; i -= 1) {
-      if (raw[i] !== '{') continue;
-      const candidate = extractBalancedJsonObject(raw, i);
-      if (!candidate.incomplete && candidate.json.includes(PROTOCOL_V2)) {
-        envelopeStart = i;
-        break;
-      }
-    }
-    if (envelopeStart < 0) {
-      envelopeStart = raw.indexOf('{', Math.max(0, protocolIndex - 4096));
-    }
-    const extracted = extractBalancedJsonObject(raw, envelopeStart >= 0 ? envelopeStart : protocolIndex);
-    if (extracted.json) candidates.push(extracted.json);
+    for (const match of raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) candidates.push(String(match[1] || '').trim());
+    const first = raw.indexOf('{');
+    const last = raw.lastIndexOf('}');
+    if (first >= 0 && last > first) candidates.push(raw.slice(first, last + 1).trim());
     const errors = [];
     for (const candidate of candidates) {
       try {
@@ -1116,7 +1059,7 @@ ${contextBlock()}`;
     return {
       packet: null,
       errors: errors.length ? [errors[errors.length - 1]] : [`${PROTOCOL_V2} marker found without a JSON object`],
-      incomplete: extracted.incomplete || stopButtonVisible()
+      incomplete: stopButtonVisible() || last < first
     };
   }
 
@@ -1184,16 +1127,6 @@ ${contextBlock()}`;
 
   function queueProtocolRecovery(message, errorText) {
     if (!(message instanceof Element)) return;
-    const nowMs = Date.now();
-    if (nowMs - lastProtocolFailureAt < 3000) protocolFailureCount += 1;
-    else protocolFailureCount = 1;
-    lastProtocolFailureAt = nowMs;
-    // Avoid hammering a corrupted stream. Repeated malformed frames are
-    // handled as one transport incident instead of a retry storm.
-    if (protocolFailureCount > 3) {
-      setBadge('error');
-      return;
-    }
     const fingerprint = `${String(errorText)}\n${String(message.innerText || message.textContent || '')}`;
     if (protocolIssueFingerprints.get(message) === fingerprint) return;
     protocolIssueFingerprints.set(message, fingerprint);
