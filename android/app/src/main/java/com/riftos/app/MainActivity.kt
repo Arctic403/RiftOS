@@ -182,6 +182,7 @@ class MainActivity : Activity() {
             "browser.window.visible" -> runBrowserCommand(requestId) { browserWindow.setVisible(args.optBoolean("visible", true)) }
             "browser.window.state" -> runBrowserCommand(requestId) { browserWindow.state() }
             "browser.window.close" -> runBrowserCommand(requestId) { JSONObject().put("closed", browserWindow.close()) }
+            "workspace.core.call" -> { runWorkspaceCoreCall(requestId, args); return true }
             "workspace.watch.start" -> runKernelCommand(requestId) { workspaceWatcher.start() }
             "workspace.watch.stop" -> runKernelCommand(requestId) { workspaceWatcher.stop() }
             "workspace.watch.state" -> runKernelCommand(requestId) { workspaceWatcher.state() }
@@ -194,6 +195,38 @@ class MainActivity : Activity() {
             else -> return false
         }
         return true
+    }
+
+    /**
+     * Trusted-shell gateway into the same process-wide workspace core used by MCP.
+     * The core itself remains scoped to riftfs/workspace, so Workspace Live gains
+     * no access to Android files outside the workspace capability.
+     */
+    private fun runWorkspaceCoreCall(requestId: String, args: JSONObject) {
+        val method = args.optString("method").trim()
+        val allowed = setOf(
+            "sandbox.info", "fs.stat", "fs.list", "fs.readText", "fs.writeText",
+            "fs.mkdir", "fs.remove", "fs.move", "fs.copy", "workspace.exec",
+            "workspace.viewState"
+        )
+        if (method !in allowed) {
+            sendNativeResult(requestId, false, null, "Unsupported Workspace Core method: $method")
+            return
+        }
+        val innerId = "workspace-core-${System.currentTimeMillis()}-${System.nanoTime()}"
+        val request = JSONObject()
+            .put("id", innerId)
+            .put("method", method)
+            .put("args", args.optJSONObject("args") ?: JSONObject())
+        RiftMcpRuntime.workspaceCore(this).handleAsync(request.toString()) { raw ->
+            val response = runCatching { JSONObject(raw) }.getOrNull()
+            if (response?.optBoolean("ok", false) == true) {
+                sendNativeResult(requestId, true, response.opt("value") ?: JSONObject.NULL, null)
+            } else {
+                val error = response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Workspace Core call failed"
+                sendNativeResult(requestId, false, null, error)
+            }
+        }
     }
 
     private fun runKernelCommand(requestId: String, command: () -> Any?) {

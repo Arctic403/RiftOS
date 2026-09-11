@@ -5,7 +5,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Canonical device-side capability registry for the local Rift MCP server. */
-class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
+class RiftToolHost(
+    context: Context,
+    private val aiJournal: RiftAiJournal,
+    private val sandbox: RiftToolSandbox
+) {
     companion object {
         private const val PREFS = "rift-mcp-tools"
         private const val LEGACY_PREFS = "rift-bridge"
@@ -20,11 +24,9 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
 
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val sandbox: RiftToolSandbox
 
     init {
         migrateLegacyState()
-        sandbox = RiftToolSandbox(appContext)
     }
 
     fun access(): JSONObject = JSONObject()
@@ -280,7 +282,8 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     fun shutdown() {
-        sandbox.shutdown()
+        // The workspace core is process-wide and shared with Workspace Live.
+        // It is intentionally not stopped when a single tool-host surface closes.
     }
 
     private fun migrateLegacyState() {

@@ -92,6 +92,25 @@ riftfs/
   workspace/        # the only MCP-visible filesystem root
 ```
 
+### Dual-path workspace control
+
+RiftOS deliberately keeps two ChatGPT control paths, but they now converge on one process-wide native Workspace Core:
+
+```text
+                   ChatGPT
+                  /       \
+                 /         \
+        Direct MCP        Page MCP
+           |                 |
+     filesystem/edit      UI/control
+           |                 |
+           +------ Shared Workspace Core ------+
+                              |
+                       riftfs/workspace
+```
+
+`rift_workspace_exec` remains the fast path for project inspection, surgical edits and transactional batches. `rift_live_page` is the visual path for inspecting and operating the live Workspace Live HTML surface. Workspace Live raw file RPC is forwarded through `workspace.core.call` into the **same `RiftToolSandbox` instance** used by Direct MCP, so both paths share workspace scoping, serialized mutation ordering, snapshots and transaction behavior rather than merely pointing at the same directory.
+
 Read tools are enabled by default. Write tools remain disabled by default until enabled in the **Rift MCP** system app. `rift_workspace_exec` is read-gated for inspection and additionally write-gated only when a batch contains mutations.
 Workspace Live can also be inspected and controlled through `rift_live_page` while its local HTML surface is open. Snapshot/query/html operations are read-gated; UI mutation and page-side JavaScript evaluation are write-gated. This control surface is bound only to Workspace Live, not arbitrary internet pages.
 
