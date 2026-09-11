@@ -35,6 +35,20 @@ android {
     sourceSets["main"].assets.srcDir("build/generated/riftosAssets")
 }
 
+val verifyRiftOsAndroidSources by tasks.registering {
+    val required = listOf(
+        "src/main/java/com/riftos/app/RiftToolHost.kt",
+        "src/main/java/com/riftos/app/RiftMcpServer.kt",
+        "src/main/java/com/riftos/app/RiftMcpActivity.kt"
+    )
+    doLast {
+        val missing = required.filter { !file(it).exists() }
+        if (missing.isNotEmpty()) {
+            throw GradleException("RiftOS Android source snapshot incomplete. Missing: ${missing.joinToString()}")
+        }
+    }
+}
+
 val syncRiftOsWebAssets by tasks.registering(Copy::class) {
     from(rootProject.projectDir.parentFile) {
         include("index.html")
@@ -70,7 +84,10 @@ val syncRiftOsWebAssets by tasks.registering(Copy::class) {
     }
 }
 
-tasks.named("preBuild").configure { dependsOn(syncRiftOsWebAssets) }
+tasks.named("preBuild").configure {
+    dependsOn(verifyRiftOsAndroidSources)
+    dependsOn(syncRiftOsWebAssets)
+}
 
 dependencies {
     implementation("androidx.webkit:webkit:1.16.0")
