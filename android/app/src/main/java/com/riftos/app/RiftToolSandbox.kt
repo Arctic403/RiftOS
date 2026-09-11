@@ -1319,3 +1319,6 @@ class RiftToolSandbox(context: Context) {
             )))
     }
 }
+
+}
+}
