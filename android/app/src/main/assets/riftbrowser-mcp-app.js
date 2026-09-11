@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.7.2-continuation-ack';
+  const VERSION = 'rift-mcp-app-v1.7.3-atomic-continuation';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -50,6 +50,8 @@
   let continuationBaseline = new WeakSet();
   let continuationBaselineKeys = new Set();
   let pendingResultId = '';
+  let consumedContinuationResultId = '';
+  let continuationWaitStartedAt = 0;
   let resultCounter = 0;
   let recoveryAttempt = 0;
 
@@ -97,6 +99,8 @@
     continuationBaseline = new WeakSet();
     continuationBaselineKeys = new Set();
     pendingResultId = '';
+    consumedContinuationResultId = '';
+    continuationWaitStartedAt = 0;
     recoveryAttempt = 0;
   }
 
@@ -144,6 +148,11 @@
       }
       if (aiStopRequested) {
         finishAiTask('stopped', 'ChatGPT Web task stopped');
+        return;
+      }
+      if (toolLoopState === 'waiting-continuation' && continuationRequired && continuationWaitStartedAt &&
+          now() - continuationWaitStartedAt >= 45000) {
+        finishAiTask('error', 'ChatGPT continuation was not observed after Rift result delivery', 'error');
         return;
       }
       if (!assistantSeen || continuationRequired || toolLoopBusy() || !latestAssistantHasCompletableOutput()) {
@@ -546,6 +555,8 @@
     continuationBaseline = new WeakSet();
     continuationBaselineKeys = new Set();
     pendingResultId = '';
+    consumedContinuationResultId = '';
+    continuationWaitStartedAt = 0;
     recoveryAttempt = 0;
     clearCompletionTimer();
 
@@ -714,6 +725,8 @@ ${contextBlock()}`;
       continuationRequired = true;
       assistantSeen = false;
       pendingResultId = resultId;
+      consumedContinuationResultId = '';
+      continuationWaitStartedAt = 0;
       toolLoopState = 'delivering-result';
       sendAiPhase('running', 'Returning Rift result to ChatGPT Web', 'transport', {
         resultId,
@@ -743,14 +756,27 @@ ${contextBlock()}`;
         throw new Error(`Stale Rift result ignored for inactive session ${expectedSessionId}`);
       }
       pendingResultId = '';
-      toolLoopState = 'waiting-continuation';
-      sendAiPhase('running', 'Rift result delivered · waiting for ChatGPT continuation', 'transport', {
-        resultId,
-        callId: resultPayload.call_id || null,
-        tool: resultPayload.name || null,
-        ok: resultPayload.ok !== false
-      });
-      queueMicrotask(scanForContinuation);
+      if (consumedContinuationResultId === resultId) {
+        consumedContinuationResultId = '';
+        continuationWaitStartedAt = 0;
+        sendAiPhase('running', 'Rift result delivered · ChatGPT continuation already received', 'transport', {
+          resultId,
+          callId: resultPayload.call_id || null,
+          tool: resultPayload.name || null,
+          ok: resultPayload.ok !== false,
+          ackSource: 'assistant-continuation'
+        });
+      } else {
+        toolLoopState = 'waiting-continuation';
+        continuationWaitStartedAt = now();
+        sendAiPhase('running', 'Rift result delivered · waiting for ChatGPT continuation', 'transport', {
+          resultId,
+          callId: resultPayload.call_id || null,
+          tool: resultPayload.name || null,
+          ok: resultPayload.ok !== false
+        });
+        queueMicrotask(scanForContinuation);
+      }
     }
     return resultId;
   }
@@ -1058,12 +1084,24 @@ ${contextBlock()}`;
     if (aiTaskActive && toolLoopState === 'waiting-continuation') {
       if (isContinuationBaseline(message)) return;
       continuationRequired = false;
+      continuationWaitStartedAt = 0;
       toolLoopState = 'waiting-assistant';
       lastAssistantUpdateAt = now();
       sendAiPhase('running', 'ChatGPT continuation received', 'transport');
     } else if (aiTaskActive && toolLoopState === 'waiting-result-ack') {
-      acknowledgeResultFromAssistantContinuation(message);
-      return;
+      const resultId = pendingResultId;
+      if (!acknowledgeResultFromAssistantContinuation(message)) return;
+      consumedContinuationResultId = resultId;
+      continuationRequired = false;
+      continuationWaitStartedAt = 0;
+      toolLoopState = 'waiting-assistant';
+      lastAssistantUpdateAt = now();
+      sendAiPhase('running', 'ChatGPT continuation received with Rift result acknowledgement', 'transport', {
+        resultId,
+        ackSource: 'assistant-continuation'
+      });
+      // Intentionally fall through: this exact assistant update must also be
+      // processed as a next tool call or final assistant response.
     } else if (aiTaskActive && (toolLoopState === 'executing-tool' || toolLoopState === 'delivering-result')) {
       return;
     }
