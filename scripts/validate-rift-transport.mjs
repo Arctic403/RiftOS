@@ -1,12 +1,16 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const browser = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowserWindow.kt', 'utf8');
 const adapter = readFileSync('android/app/src/main/assets/riftbrowser-mcp-app.js', 'utf8');
 const host = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolHost.kt', 'utf8');
 const sandbox = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt', 'utf8');
 const journal = readFileSync('android/app/src/main/java/com/riftos/app/RiftAiJournal.kt', 'utf8');
+const entry = readFileSync('src/riftandroid-entry.js', 'utf8');
+const mcpSystem = readFileSync('src/riftmcp-system.js', 'utf8');
 
 const checks = [
+  ['Rift AI workspace app is removed', !existsSync('src/riftai-workspace.js') && !entry.includes('riftai-workspace')],
+  ['MCP launcher identifies ChatGPT Web tooling', mcpSystem.includes('ChatGPT Web tools')],
   ['transport is parked behind the shell', browser.includes('parkTransportBehindShell()')],
   ['hidden transport is not made INVISIBLE', !/webView\.visibility\s*=\s*View\.INVISIBLE/.test(browser)],
   ['renderer priority is retained', browser.includes('RENDERER_PRIORITY_BOUND, false')],
