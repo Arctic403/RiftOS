@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.3-chat-targets';
+  const VERSION = 'rift-mcp-app-v1.4-code-mode';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -166,8 +166,21 @@
     return JSON.stringify(compact).slice(0, MAX_CONTEXT_CHARS);
   }
 
+  function codeModeGuide() {
+    if (!tools.some((tool) => tool.name === 'rift_workspace_exec')) return '';
+    return `\nRift Code Mode: for project work prefer rift_workspace_exec so many filesystem operations run locally in one model-visible round trip. ` +
+      `Args: {"operations":[...],"finish":false}. Operations: ` +
+      `project{path?,limit?}, stat{path}, list{path?,recursive?,limit?}, search{path?,query,caseSensitive?,maxMatches?}, ` +
+      `read{path,startLine?,endLine?,maxChars?}, write{path,text}, replace{path,find,replace,all?,expectedCount?}, ` +
+      `patch{path,edits:[{find,replace,all?,expectedCount?}]}, ` +
+      `mkdir{path}, remove{path}, move{from,to,overwrite?}. Paths are under workspace/. ` +
+      `The batch is local and transactional: if any operation fails, all mutations from that batch are rolled back. ` +
+      `If a successful mutating batch fully completes the task and you need no result for more reasoning, set finish:true; after emitting that call, do not continue or claim success—RiftOS will enter review only after local confirmation, while failures are returned normally. ` +
+      `Use search/list/read only when reasoning needs source; do mechanical multi-file edits inside one batch whenever possible.`;
+  }
+
   function contextBlock() {
-    return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}\n` +
+    return `${CONTEXT_MARKER}\nLocal Rift MCP tools: ${toolManifest()}${codeModeGuide()}\n` +
       `When a Rift tool is needed, reply with ONLY one ${CALL_OPEN}{"call_id":"unique-id","name":"tool_name","args":{}}${CALL_CLOSE} envelope and no extra prose. ` +
       `Wait for ${RESULT_MARKER} before continuing. Never claim success without that result.`;
   }
@@ -565,11 +578,23 @@ ${contextBlock()}`;
       const result = await postRpc('tools/call', params);
       const structured = result.structuredContent || {};
       const ok = !result.isError && structured.ok !== false;
+      const value = structured.value !== undefined ? structured.value : null;
+      const mutationCount = Array.isArray(value && value.mutationTargets) ? value.mutationTargets.length : 0;
+      const localFinal = Boolean(
+        ok && aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId &&
+        call.name === 'rift_workspace_exec' && call.args && call.args.finish === true && mutationCount > 0
+      );
+      if (localFinal) {
+        sendAiPhase('running', `Rift Code Mode final batch committed locally · ${mutationCount} target${mutationCount === 1 ? '' : 's'}`, 'transport', { tool: call.name, localFinal: true, mutationCount });
+        setBadge('ready');
+        finishAiTask('complete', 'Rift Code Mode task complete · ready for local review');
+        return;
+      }
       await submitToolResult({
         call_id: call.call_id,
         name: call.name,
         ok,
-        result: structured.value !== undefined ? structured.value : null,
+        result: value,
         error: structured.error || null
       });
       if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {

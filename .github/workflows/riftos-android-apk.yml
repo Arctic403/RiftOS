@@ -55,6 +55,12 @@ jobs:
           grep -Fq "RiftMcpAppControl" android/app/src/main/assets/riftbrowser-mcp-app.js
           grep -Fq "riftos/aiSessionId" android/app/src/main/assets/riftbrowser-mcp-app.js
           grep -Fq "riftos/aiSessionId" android/app/src/main/java/com/riftos/app/RiftMcpServer.kt
+          grep -Fq "rift_workspace_exec" android/app/src/main/java/com/riftos/app/RiftToolHost.kt
+          grep -Fq '"workspace.exec"' android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt
+          grep -Fq "RIFT_PROJECT_V2" android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
+          grep -Fq "Rift Code Mode" android/app/src/main/assets/riftbrowser-mcp-app.js
+          grep -Fq "localFinal" android/app/src/main/assets/riftbrowser-mcp-app.js
+          grep -Fq '"patch" -> patchText' android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt
           grep -Fq "collectChatTargets" android/app/src/main/assets/riftbrowser-mcp-app.js
           grep -Fq "openTargetSearch" android/app/src/main/assets/riftbrowser-mcp-app.js
           grep -Fq '"ai.targets"' android/app/src/main/java/com/riftos/app/MainActivity.kt
@@ -170,6 +176,12 @@ jobs:
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "<rift_call>"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "PERF_GUARD"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "riftos/aiSessionId"
+          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "Rift Code Mode"
+          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "localFinal"
+          unzip -p "$FINAL" assets/www/src/riftai-workspace.js | grep -Fq "LOCAL CODE MODE"
+          DEX_STRINGS_PRE="$(unzip -p "$FINAL" classes.dex | strings)"
+          printf '%s\n' "$DEX_STRINGS_PRE" | grep -Fq "rift_workspace_exec"
+          printf '%s\n' "$DEX_STRINGS_PRE" | grep -Fq "workspace.exec"
           if unzip -l "$FINAL" | grep -Fq "assets/riftbrowser-chatgpt-agent.js"; then
             echo "Removed ChatGPT DOM Rift Agent leaked back into Android APK" >&2
             exit 1

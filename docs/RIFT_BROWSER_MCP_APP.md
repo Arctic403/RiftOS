@@ -32,15 +32,17 @@ There is no remote relay, WSS connection, pairing key or public MCP endpoint in 
 
 ## Protocol
 
-At page startup, the browser adapter performs MCP `initialize` and `tools/list`. The returned tool schemas are the source of truth for the compact context shown to ChatGPT.
+At page startup, the browser adapter performs MCP `initialize` and `tools/list`. The returned tool schemas are the source of truth for the compact context shown to ChatGPT. When `rift_workspace_exec` is present, the adapter also supplies the bounded Rift Code Mode operation contract so the model can collapse many project operations into one local batch.
 
-When a tool is required, ChatGPT is instructed to emit exactly one envelope:
+When a tool is required, ChatGPT is instructed to emit exactly one envelope. For project work it should prefer Code Mode:
 
 ```text
-<rift_call>{"call_id":"unique-id","name":"rift_list","args":{"path":"workspace"}}</rift_call>
+<rift_call>{"call_id":"unique-id","name":"rift_workspace_exec","args":{"operations":[{"op":"search","path":"workspace","query":"RiftKernel"},{"op":"read","path":"workspace/src/riftcore.js","startLine":1,"endLine":220}]}}</rift_call>
 ```
 
-The browser adapter validates the call against the live manifest and invokes MCP `tools/call`. Tool results are returned as a structured `[RIFT_MCP_RESULT_V1]` continuation message.
+Legacy single-operation tools remain available for compatibility and very small tasks.
+
+The browser adapter validates the call against the live manifest and invokes MCP `tools/call`. Tool results are returned as a structured `[RIFT_MCP_RESULT_V1]` continuation message. The one exception is an active Rift AI `rift_workspace_exec` call with `finish:true`: after a successful mutating batch is confirmed locally, the adapter may complete the task directly and enter review without another ChatGPT turn.
 
 This protocol deliberately does not reuse any Agent V1/V2/V3 marker or fenced `rift-tool` packet.
 
@@ -56,10 +58,10 @@ The adapter:
 - serializes calls so tool-result continuations cannot race;
 - shows a `Rift MCP` badge with the current local tool count;
 - lets the badge disable compatibility behavior for the current tab;
-- injects the compact tool manifest once per conversation route;
+- injects the compact tool manifest plus Rift Code Mode guide once per conversation route;
 - processes only mutation-touched messages instead of rescanning the whole conversation while tokens stream.
 
-Because ChatGPT Web has no supported local-tool registration hook on these plans, this compatibility layer still observes the composer and semantic assistant-message elements. That browser-facing dependency is isolated in one JavaScript asset. It is not part of the device capability boundary and does not own tool execution.
+Code Mode remains declarative: the adapter does not `eval` model-produced JavaScript in the ChatGPT origin. Filesystem/search/edit execution stays behind `RiftToolHost` in the local sandbox. Because ChatGPT Web has no supported local-tool registration hook on these plans, this compatibility layer still observes the composer and semantic assistant-message elements. That browser-facing dependency is isolated in one JavaScript asset. It is not part of the device capability boundary and does not own tool execution.
 
 ## Rift AI transport mode
 

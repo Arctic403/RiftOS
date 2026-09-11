@@ -72,7 +72,7 @@ async function open(){
   body.classList.add("rift-ai-window-body");
   body.innerHTML=`<div class="rift-ai-workspace">
     <header class="rift-ai-head">
-      <div><span class="eyebrow">CHATGPT WEB ONLY</span><h2>Rift AI Workspace</h2><p>Local HTML cockpit · hidden authenticated ChatGPT Web transport · local MCP tools</p></div>
+      <div><span class="eyebrow">CHATGPT WEB · LOCAL CODE MODE</span><h2>Rift AI Workspace</h2><p>Local HTML cockpit · hidden authenticated ChatGPT Web transport · local MCP tools</p></div>
       <div class="rift-ai-head-actions"><button class="secondary" id="riftAiShowWeb">Show ChatGPT</button><button class="secondary" id="riftAiRefresh">Refresh</button></div>
     </header>
     <section class="rift-ai-compose">
@@ -187,7 +187,7 @@ async function open(){
         logs.scrollTop=logs.scrollHeight;
         for(const event of rows){
           const data=event?.data&&typeof event.data==="object"?event.data:{};
-          if(event?.type==="tool"&&data.phase==="finish"&&WRITE_TOOLS.has(String(data.tool||""))){projectDirty=true;changesDirty=true;}
+          if(event?.type==="tool"&&data.phase==="finish"&&(WRITE_TOOLS.has(String(data.tool||""))||data.mutating===true)){projectDirty=true;changesDirty=true;}
           if(event?.type==="review"){projectDirty=true;changesDirty=true;}
           if(event?.type==="session"){projectDirty=true;changesDirty=true;}
         }

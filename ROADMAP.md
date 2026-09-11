@@ -27,6 +27,7 @@ rift_write_text
 rift_mkdir
 rift_remove
 rift_move
+rift_workspace_exec
 ```
 
 Planned capability families may be added behind explicit local grants:
@@ -48,18 +49,16 @@ High-impact operations should require explicit developer-mode capability grants.
 
 ## Rift AI project intelligence
 
-Implemented foundation: compact recursive project tree, selective existing MCP reads, internally session-scoped mutation journal, bounded unified-style diff, additions/deletions, Accept all and Revert all. Review actions are locked while transport is active, and a new task cannot discard unreviewed state.
+Implemented foundation: compact `RIFT_PROJECT_V2` project descriptor, full workspace reachability through `rift_workspace_exec` (Rift Code Mode), local project/list/search/ranged-read operations, transactional batched write/replace/patch/mkdir/remove/move, internally session-scoped mutation journal, bounded unified-style diff, additions/deletions, Accept all and Revert all. Review actions are locked while transport is active, and a new task cannot discard unreviewed state.
 
 Next improvements should stay lightweight:
 
-- `rift_search_text` for fast project-wide symbol/text lookup without reading every file;
-- `rift_read_many` with strict aggregate byte caps;
-- `rift_apply_patch` for diff-sized edits instead of whole-file rewrites;
-- ignored-directory rules (`.git`, build output, dependency caches) in project metadata;
+- persistent local symbol/import/reference indexing so Code Mode `search` can avoid rescanning large trees;
+- ignored-directory rules (`.git`, build output, dependency caches) for local search/indexing;
 - per-file/hunk accept/revert on top of the current session-wide baseline;
 - changed-files summaries that do not hash the full project continuously.
 
-The project should never be injected wholesale into ChatGPT. Tree metadata guides the model; file contents are fetched only when needed.
+The project should never be injected wholesale into ChatGPT. RiftOS exposes full project reachability through the local executor; only bounded search/read results needed for reasoning cross the existing ChatGPT Web transport.
 
 ## RiftEngine
 

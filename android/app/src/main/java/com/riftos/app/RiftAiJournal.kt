@@ -112,22 +112,26 @@ class RiftAiJournal(context: Context) {
 
     @Synchronized
     fun compactProjectContext(path: String = "workspace"): String {
-        val rows = projectTree(path)
+        val base = sandboxFile(path)
+        val children = if (base.isDirectory) {
+            base.listFiles()?.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList()
+        } else emptyList()
         val text = buildString {
-            append("[RIFT_PROJECT_V1]\n")
+            append("[RIFT_PROJECT_V2]\n")
             append("Project root: ").append(path).append('\n')
-            append("Use the Rift MCP tools to inspect only the files needed for the task. Do not request the full project unless necessary.\n")
-            append("Project tree:\n")
-            for (index in 0 until rows.length()) {
-                val row = rows.optJSONObject(index) ?: continue
-                append(if (row.optString("kind") == "directory") "d " else "f ")
-                append(row.optString("path"))
-                if (row.optString("kind") == "file") append("  ").append(row.optLong("size")).append(" B")
+            append("The full project is locally reachable through rift_workspace_exec (Rift Code Mode). ")
+            append("Prefer one batched workspace call over many small tool calls. Only return source text to ChatGPT when reasoning needs it.\n")
+            append("Code Mode operations: project, stat, list, search, read, write, replace, patch, mkdir, remove, move. ")
+            append("Batches execute locally and roll back all batch mutations if any operation fails.\n")
+            append("Top-level entries")
+            if (children.size > 120) append(" (first 120 of ").append(children.size).append(')')
+            append(":\n")
+            for (child in children.take(120)) {
+                append(if (child.isDirectory) "d " else "f ")
+                append(relativeToolPath(child))
+                if (child.isFile) append("  ").append(child.length()).append(" B")
                 append('\n')
-                if (length >= MAX_PROJECT_CONTEXT_CHARS) {
-                    append("… tree truncated; use rift_list for more.\n")
-                    break
-                }
+                if (length >= MAX_PROJECT_CONTEXT_CHARS) break
             }
         }
         return text.take(MAX_PROJECT_CONTEXT_CHARS)
@@ -169,7 +173,38 @@ class RiftAiJournal(context: Context) {
                 capturePath(id, args.optString("from"))
                 capturePath(id, args.optString("to"))
             }
+            "rift_workspace_exec" -> captureWorkspaceBatch(id, args)
         }
+    }
+
+    private fun captureWorkspaceBatch(id: String, args: JSONObject) {
+        val operations = args.optJSONArray("operations") ?: return
+        fun mutationPath(raw: String): String {
+            val path = normalizePath(raw)
+            require(path.startsWith("workspace/")) { "Rift Code Mode mutations must target a path inside workspace/" }
+            return path
+        }
+        for (index in 0 until operations.length()) {
+            val operation = operations.optJSONObject(index) ?: continue
+            when (operation.optString("op").trim().lowercase()) {
+                "write", "replace", "patch", "mkdir", "remove" -> capturePath(id, mutationPath(operation.optString("path")))
+                "move" -> {
+                    capturePath(id, mutationPath(operation.optString("from")))
+                    capturePath(id, mutationPath(operation.optString("to")))
+                }
+            }
+        }
+    }
+
+    private fun toolMutates(name: String, args: JSONObject): Boolean {
+        if (name in setOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move")) return true
+        if (name != "rift_workspace_exec") return false
+        val operations = args.optJSONArray("operations") ?: return false
+        for (index in 0 until operations.length()) {
+            val op = operations.optJSONObject(index)?.optString("op")?.trim()?.lowercase().orEmpty()
+            if (op in setOf("write", "replace", "patch", "mkdir", "remove", "move")) return true
+        }
+        return false
     }
 
     @Synchronized
@@ -181,6 +216,7 @@ class RiftAiJournal(context: Context) {
             .put("tool", name)
             .put("target", toolTarget(name, args))
             .put("phase", phase)
+            .put("mutating", toolMutates(name, args))
         if (ok != null) data.put("ok", ok)
         if (!error.isNullOrBlank()) data.put("error", error.take(500))
         val message = when (phase) {
@@ -640,6 +676,7 @@ class RiftAiJournal(context: Context) {
 
     private fun toolTarget(name: String, args: JSONObject): String = when (name) {
         "rift_move" -> "${args.optString("from")} → ${args.optString("to")}".take(500)
+        "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
         "rift_info" -> "sandbox"
         else -> args.optString("path").take(500)
     }

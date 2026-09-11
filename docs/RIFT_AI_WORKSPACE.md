@@ -57,15 +57,19 @@ Starting a task:
 1. creates a persistent Rift AI session under app-private storage;
 2. refuses to start if the previous task is still running;
 3. refuses to start if the previous session still has unreviewed changes;
-4. builds a compact recursive project tree for `tool-sandbox/workspace`;
+4. builds a compact top-level `RIFT_PROJECT_V2` descriptor for `tool-sandbox/workspace` without recursively dumping a large project;
 5. resolves and validates the selected ChatGPT Web target, rejecting any target outside `https://chatgpt.com` / `https://www.chatgpt.com`;
 6. waits for local MCP initialization and a usable ChatGPT composer before submitting anything;
-7. submits the task plus compact project context and the live MCP tool manifest;
+7. submits the task plus compact project context, the live MCP tool manifest and the Rift Code Mode operation contract;
 8. mirrors cleaned assistant output and structured transport/tool events into RiftOS;
 9. tracks only Rift-AI-owned MCP mutations in the local working-tree journal;
 10. ends in review, stopped or error state and releases hidden transport rendering when appropriate.
 
-The project tree is context, not a project dump. ChatGPT uses the ordinary `rift_list`, `rift_stat` and `rift_read_text` tools to inspect only the paths required for the task.
+The project descriptor is capability context, not a project dump. The full `workspace/` remains reachable through `rift_workspace_exec`. ChatGPT can combine `project`, `stat`, `list`, `search`, `read`, `write`, `replace`, `patch`, `mkdir`, `remove` and `move` operations into one model-visible tool call. All operations execute locally in `RiftToolSandbox`; only the bounded batch result is returned to ChatGPT Web.
+
+A Code Mode batch is transactionally protected inside the sandbox. Mutating paths are copied lazily into an app-cache rollback set immediately before their first batch mutation. If any operation fails, all mutations made by that batch are restored before the error reaches ChatGPT. Successful AI-scoped mutations remain covered by the persistent `RiftAiJournal` review baseline until the user accepts or reverts the session.
+
+For tasks where the model already knows the exact final edits, `rift_workspace_exec` also supports `finish:true`. RiftBrowser honors it only after a successful AI-scoped mutating batch with confirmed mutation targets. That fast path ends hidden ChatGPT transport locally and moves directly to review instead of spending another model turn returning a success packet. Inspection batches, read-only tasks and failures continue through the normal result/continuation loop.
 
 ## Session-scoped MCP writes
 
@@ -94,7 +98,7 @@ filesDir/rift-ai/sessions/<session-id>/
 
 This directory is outside `filesDir/riftfs/tool-sandbox`, so ChatGPT cannot rewrite its own rollback history through MCP.
 
-Before an AI-scoped `rift_write_text`, `rift_mkdir`, `rift_remove` or `rift_move`, `RiftToolHost` asks the journal to lazily snapshot the affected path. Reads are logged but do not create rollback copies. An existing ancestor snapshot suppresses redundant descendant copies; if a parent is captured after an earlier child change, the earlier child snapshot is retained so revert still reconstructs the pre-session baseline.
+Before an AI-scoped `rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`, or mutating `rift_workspace_exec` batch, `RiftToolHost` asks the journal to lazily snapshot the affected path(s). Read-only Code Mode batches require only the read grant and do not create rollback copies; a batch containing `write`, `replace`, `patch`, `mkdir`, `remove`, or `move` additionally requires the local write grant. An existing ancestor snapshot suppresses redundant descendant copies; if a parent is captured after an earlier child change, the earlier child snapshot is retained so revert still reconstructs the pre-session baseline.
 
 A snapshot failure blocks the mutation rather than allowing an unreviewable edit. Snapshot size is bounded. Text diff generation is also bounded, and large/binary files are reported without forcing their contents into a huge diff.
 
