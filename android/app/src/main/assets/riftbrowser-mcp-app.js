@@ -751,7 +751,16 @@ ${contextBlock()}`;
 
     if (manageSession) {
       const acknowledged = await waitForResultAck(resultId);
-      if (!acknowledged) throw new Error(`ChatGPT Web did not acknowledge Rift result ${resultId}`);
+      if (!acknowledged) {
+        // ChatGPT Web can render the continuation without exposing a stable DOM ACK.
+        // Do not collapse the Rift session on an observer miss; keep transport alive
+        // and let the normal continuation scanner resolve the next state.
+        sendAiPhase('running', 'Rift result sent · ACK observer uncertain, continuing recovery', 'transport', {
+          resultId,
+          ackSource: 'recovery-timeout'
+        });
+        acknowledgedResultIds.add(resultId);
+      }
       if (!aiTaskActive || activeAiSessionId !== expectedSessionId) {
         throw new Error(`Stale Rift result ignored for inactive session ${expectedSessionId}`);
       }
