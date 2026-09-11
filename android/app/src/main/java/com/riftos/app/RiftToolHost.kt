@@ -114,7 +114,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put(tool(
             "rift_audit",
             "Run a local RiftOS project health audit. Scans workspace structure, source patterns, and runtime risk indicators without mutating files.",
-            objectSchema(JSONObject().put("path", stringProperty("Optional project path under workspace/."))))
+            objectSchema(JSONObject().put("path", stringProperty("Optional project path under workspace/.")))))
         .put(tool(
             "rift_scan",
             "Run a focused local project scan. Supported modes: security, runtime, architecture, all.",

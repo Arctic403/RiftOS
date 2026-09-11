@@ -193,8 +193,6 @@ class RiftToolSandbox(context: Context) {
         return result
     }
 
-    private fun relativePath(file: File): String = runCatching { file.relativeTo(workspaceRoot).path }.getOrDefault(file.path)
-
     private fun normalizeSegments(path: String): List<String> {
         val normalized = path.replace('\\', '/').trim('/')
         if (normalized.isBlank()) return emptyList()
