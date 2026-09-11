@@ -135,6 +135,29 @@ async function uniqueChildPath(directory,preferred){
   return candidate;
 }
 
+const MAX_RIFT_EDITOR_BYTES=2*1024*1024;
+const TEXT_EXTENSIONS=new Set(["txt","md","markdown","json","jsonl","js","mjs","cjs","ts","tsx","jsx","css","html","htm","xml","svg","csv","tsv","yaml","yml","toml","ini","conf","cfg","log","kt","kts","java","py","rs","go","c","cc","cpp","cxx","h","hpp","cs","sh","bash","zsh","fish","gradle","properties"]);
+function looksTextEntry(entry){
+  const mime=String(entry?.mime||entry?.mimeType||"").toLowerCase();
+  if(mime.startsWith("text/")||mime.includes("json")||mime.includes("xml")||mime.includes("javascript"))return true;
+  const name=core.path.basename(entry?.path||"");
+  const ext=(name.includes(".")?name.split(".").pop():"").toLowerCase();
+  return TEXT_EXTENSIONS.has(ext)||["readme","license","makefile","dockerfile"].includes(name.toLowerCase());
+}
+async function openFileEntry(entry){
+  if(!entry)return;
+  if(["directory","mount"].includes(entry.kind)){await openFiles(entry.path);return;}
+  const size=Number(entry.size||0);
+  if(entry.backend==="android-saf"&&(!looksTextEntry(entry)||size>MAX_RIFT_EDITOR_BYTES)){
+    await core.fs.openNative(entry.path);
+    setStatus("Files · opened with Android");
+    return;
+  }
+  if(size>MAX_RIFT_EDITOR_BYTES)throw new Error(`Rift Editor opens text files up to ${fmtBytes(MAX_RIFT_EDITOR_BYTES)}. Copy this file to an Android mount and use Open there, or use another app.`);
+  if(!looksTextEntry(entry))throw new Error("This file is not a supported text document. Files does not load binary data into the Rift Editor.");
+  await openEditor(entry.path);
+}
+
 async function openFiles(path="/",options={}){
   await core.ready;
   path=core.path.normalize(path);
@@ -149,8 +172,7 @@ async function openFiles(path="/",options={}){
   const body=openWindow("files","Files","ANDROID RIFTFS");
   body.classList.add("rift-files-window-body");
   let rows=[];
-  const mountRoot=path.startsWith("/mounts/")&&path.split("/").filter(Boolean).length===2;
-  try{rows=await core.fs.list(path,{recursive:mountRoot});}
+  try{rows=await core.fs.list(path,{recursive:false});}
   catch(error){body.innerHTML=`<div class="rift-explorer-error"><strong>Cannot open ${escapeHTML(path)}</strong><pre>${escapeHTML(error.message)}</pre></div>`;return;}
   const entries=topLevelEntries(rows,path),storage=await core.fs.estimate(),parent=path==="/"?null:core.path.parent(path);
   const byPath=new Map(entries.map(entry=>[entry.path,entry]));
@@ -223,7 +245,11 @@ async function openFiles(path="/",options={}){
     selectionStatus.textContent=has?`${picked.length} selected · ${entries.length} item${entries.length===1?"":"s"}`:`${entries.length} item${entries.length===1?"":"s"}`;
   }
   async function refresh(){await openFiles(path,{record:false});}
-  async function openEntry(entry){if(!entry)return;if(["directory","mount"].includes(entry.kind))await openFiles(entry.path);else await openEditor(entry.path);}
+  async function openEntry(entry){
+    if(!entry)return;
+    try{await openFileEntry(entry);}
+    catch(error){setStatus("Files");alert(`Open failed: ${error?.message||error}`);}
+  }
   async function runFileAction(label,work){
     try{setStatus(`Files · ${label}`);await work();setStatus(`Files · ${label} complete`);await refresh();}
     catch(error){setStatus("Files");alert(`${label} failed: ${error?.message||error}`);syncSelection();}
@@ -278,8 +304,12 @@ async function openFiles(path="/",options={}){
 }
 
 async function openEditor(path="/home/scratch.txt"){
-  await core.ready;path=core.path.normalize(path);const file=await core.fs.get(path),body=openWindow("editor","Editor","ANDROID RIFTFS EDITOR");
-  if(file?.kind==="directory"||file?.kind==="mount"){openFiles(path);return;}
+  await core.ready;path=core.path.normalize(path);
+  const meta=await core.fs.stat(path);
+  if(meta?.kind==="directory"||meta?.kind==="mount"){openFiles(path);return;}
+  if(meta&&Number(meta.size||0)>MAX_RIFT_EDITOR_BYTES)throw new Error(`Rift Editor opens text files up to ${fmtBytes(MAX_RIFT_EDITOR_BYTES)}.`);
+  if(meta&&!looksTextEntry(meta))throw new Error("Rift Editor only opens text documents.");
+  const file=await core.fs.get(path),body=openWindow("editor","Editor","ANDROID RIFTFS EDITOR");
   body.innerHTML=`<div class="trueos-editor"><div class="trueos-head"><div><strong>${escapeHTML(path)}</strong><small>${escapeHTML(file?.backend||"android-internal")}</small></div><button class="trueos-btn" id="editorFiles">Files</button><button class="trueos-btn primary" id="editorSave">Save</button></div><textarea spellcheck="false" autocomplete="off"></textarea></div>`;
   const textarea=body.querySelector("textarea");textarea.value=file?.content||"";textarea.addEventListener("input",()=>setStatus("Editor · unsaved"));
   body.querySelector("#editorSave").onclick=async()=>{await core.fs.writeText(path,textarea.value);setStatus("Saved");setTimeout(()=>setStatus("Editor"),800);};

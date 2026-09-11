@@ -52,6 +52,12 @@ class RiftNativeBridge extends EventTarget{
     this.timeout=30000;
     this.transport=globalThis.RiftNativeTransport||null;
   }
+  timeoutFor(method){
+    if(method==="files.pickDirectory")return 10*60*1000;
+    if(method==="fs.copy"||method==="fs.move"||method==="fs.remove")return 15*60*1000;
+    if(method==="fs.list"||method==="fs.readText"||method==="fs.writeText")return 2*60*1000;
+    return this.timeout;
+  }
   get connected(){return !!this.transport?.postMessage;}
   capabilities(){
     return {
@@ -77,10 +83,11 @@ class RiftNativeBridge extends EventTarget{
     if(!this.connected)return Promise.reject(new Error("RiftAndroid native transport is not connected."));
     const id=`ra-${Date.now()}-${++this.seq}`;
     return new Promise((resolve,reject)=>{
+      const timeout=this.timeoutFor(method);
       const timer=setTimeout(()=>{
         this.pending.delete(id);
-        reject(new Error(`RiftAndroid timeout: ${method}`));
-      },this.timeout);
+        reject(new Error(`RiftAndroid timeout after ${Math.round(timeout/1000)}s: ${method}`));
+      },timeout);
       this.pending.set(id,{resolve,reject,timer});
       try{this.transport.postMessage({id,method,args});}
       catch(error){clearTimeout(timer);this.pending.delete(id);reject(error);}
@@ -170,6 +177,11 @@ class RiftFS extends EventTarget{
     if(target.mount&&!target.relative)return {path:target.path,kind:"mount",size:0,modified:0,backend:"android-saf",mountId:target.mountId};
     const stat=await this.native.call("fs.stat",{mountId:target.mountId,path:target.relative});
     return stat?{...stat,path:target.path,backend:target.backend}:null;
+  }
+  async openNative(value){
+    const target=this.route(value);
+    if(!target.mount||!target.relative)throw new Error("Native open is available for files inside Android mounts only");
+    return this.native.call("files.open",{mountId:target.mountId,path:target.relative});
   }
   async get(value){
     const target=this.route(value);
