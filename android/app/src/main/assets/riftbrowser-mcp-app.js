@@ -35,6 +35,8 @@
   let enabled = true;
   let suppressDecoration = false;
   let callQueue = Promise.resolve();
+  let lastProtocolFailureAt = 0;
+  let protocolFailureCount = 0;
   let badge = null;
   let processTimer = 0;
   let routeKey = location.pathname + location.search;
@@ -433,9 +435,11 @@
     else element.value = value;
   }
 
-  function writeComposer(element, value) {
+  function writeComposer(element, value, options = {}) {
     if (!element) return false;
-    element.focus();
+    // Automated Rift messages must not summon the mobile IME. Only an explicit
+    // user interaction should open the keyboard.
+    if (options.userGesture === true) element.focus({ preventScroll: true });
     if ('value' in element) setNativeValue(element, value);
     else element.textContent = value;
     try {
@@ -1163,6 +1167,16 @@ ${contextBlock()}`;
 
   function queueProtocolRecovery(message, errorText) {
     if (!(message instanceof Element)) return;
+    const nowMs = Date.now();
+    if (nowMs - lastProtocolFailureAt < 3000) protocolFailureCount += 1;
+    else protocolFailureCount = 1;
+    lastProtocolFailureAt = nowMs;
+    // Avoid hammering a corrupted stream. Repeated malformed frames are
+    // handled as one transport incident instead of a retry storm.
+    if (protocolFailureCount > 3) {
+      setBadge('error');
+      return;
+    }
     const fingerprint = `${String(errorText)}\n${String(message.innerText || message.textContent || '')}`;
     if (protocolIssueFingerprints.get(message) === fingerprint) return;
     protocolIssueFingerprints.set(message, fingerprint);
