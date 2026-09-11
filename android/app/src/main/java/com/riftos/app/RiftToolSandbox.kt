@@ -165,7 +165,7 @@ class RiftToolSandbox(context: Context) {
     }
 
     private fun audit(path: String): JSONObject {
-        val root = workspacePath(path)
+        val root = sandboxFile(workspacePath(path))
         val result = JSONObject()
             .put("ok", true)
             .put("path", relativePath(root))
@@ -1320,5 +1320,3 @@ class RiftToolSandbox(context: Context) {
     }
 }
 
-}
-}
