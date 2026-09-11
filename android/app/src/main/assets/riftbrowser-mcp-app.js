@@ -1047,14 +1047,42 @@ ${contextBlock()}`;
     return { calls, errors, incomplete };
   }
 
+  // Extract a complete JSON object instead of trusting the last brace in a
+  // streamed assistant message. Large tool calls can arrive in partial chunks.
+  function extractBalancedJsonObject(text, start) {
+    const raw = String(text || '');
+    const begin = raw.indexOf('{', Math.max(0, start || 0));
+    if (begin < 0) return { json: '', incomplete: false };
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let i = begin; i < raw.length; i++) {
+      const ch = raw[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (ch === '\\\\') escaped = true;
+        else if (ch === '"') quoted = false;
+        continue;
+      }
+      if (ch === '"') { quoted = true; continue; }
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) return { json: raw.slice(begin, i + 1), incomplete: false };
+      }
+    }
+    return { json: raw.slice(begin), incomplete: true };
+  }
+
   function parseV2Packet(text) {
     const raw = String(text || '');
     if (!raw.includes(PROTOCOL_V2)) return { packet: null, errors: [], incomplete: false };
     const candidates = [];
-    for (const match of raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) candidates.push(String(match[1] || '').trim());
-    const first = raw.indexOf('{');
-    const last = raw.lastIndexOf('}');
-    if (first >= 0 && last > first) candidates.push(raw.slice(first, last + 1).trim());
+    for (const match of raw.matchAll(/```(?:json)?\\s*([\\s\\S]*?)```/gi)) {
+      candidates.push(String(match[1] || '').trim());
+    }
+    const extracted = extractBalancedJsonObject(raw, raw.indexOf(PROTOCOL_V2));
+    if (extracted.json) candidates.push(extracted.json);
     const errors = [];
     for (const candidate of candidates) {
       try {
@@ -1067,7 +1095,7 @@ ${contextBlock()}`;
     return {
       packet: null,
       errors: errors.length ? [errors[errors.length - 1]] : [`${PROTOCOL_V2} marker found without a JSON object`],
-      incomplete: stopButtonVisible() || last < first
+      incomplete: extracted.incomplete || stopButtonVisible()
     };
   }
 

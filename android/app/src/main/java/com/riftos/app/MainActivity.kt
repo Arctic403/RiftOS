@@ -52,6 +52,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         window.statusBarColor = 0xff0a0d12.toInt()
         window.navigationBarColor = 0xff0a0d12.toInt()
 
