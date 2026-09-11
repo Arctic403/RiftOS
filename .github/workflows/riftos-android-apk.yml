@@ -59,7 +59,9 @@ jobs:
           grep -Fq '"workspace.exec"' android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt
           grep -Fq "RIFT_PROJECT_V2" android/app/src/main/java/com/riftos/app/RiftAiJournal.kt
           grep -Fq "Rift Code Mode" android/app/src/main/assets/riftbrowser-mcp-app.js
-          grep -Fq "localFinal" android/app/src/main/assets/riftbrowser-mcp-app.js
+          grep -Fq "riftos/callId" android/app/src/main/assets/riftbrowser-mcp-app.js
+          grep -Fq "historicalAssistantMessages" android/app/src/main/assets/riftbrowser-mcp-app.js
+          grep -Fq "workspaceOnly" android/app/src/main/java/com/riftos/app/RiftToolHost.kt
           grep -Fq '"patch" -> patchText' android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt
           grep -Fq "prepareCanonicalWorkspace" android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt
           grep -Fq '"copy" -> copy(' android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt
@@ -186,7 +188,8 @@ jobs:
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "PERF_GUARD"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "riftos/aiSessionId"
           unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "Rift Code Mode"
-          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "localFinal"
+          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "riftos/callId"
+          unzip -p "$FINAL" assets/riftbrowser-mcp-app.js | grep -Fq "historicalAssistantMessages"
           unzip -p "$FINAL" assets/www/src/riftai-workspace.js | grep -Fq "LOCAL CODE MODE"
           unzip -p "$FINAL" assets/www/src/riftos.js | grep -Fq 'id="fsRename"'
           unzip -p "$FINAL" assets/www/src/riftos.js | grep -Fq 'id="fsPaste"'

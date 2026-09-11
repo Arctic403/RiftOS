@@ -42,7 +42,7 @@ When a tool is required, ChatGPT is instructed to emit exactly one envelope. For
 
 Legacy single-operation tools remain available for compatibility and very small tasks.
 
-The browser adapter validates the call against the live manifest and invokes MCP `tools/call`. Tool results are returned as a structured `[RIFT_MCP_RESULT_V1]` continuation message. The one exception is an active Rift AI `rift_workspace_exec` call with `finish:true`: after a successful mutating batch is confirmed locally, the adapter may complete the task directly and enter review without another ChatGPT turn.
+The browser adapter validates the call against the live manifest and invokes MCP `tools/call`. Every result is returned as a structured `[RIFT_MCP_RESULT_V1]` continuation message, including `finish:true` batches. The adapter requires the native response to echo the same model `call_id` and, for Rift AI tasks, the same private session ID before accepting it. A successful final batch therefore cannot leave ChatGPT waiting for a result that only RiftOS saw.
 
 This protocol deliberately does not reuse any Agent V1/V2/V3 marker or fenced `rift-tool` packet.
 
@@ -54,7 +54,9 @@ The adapter:
 - never exposes a filesystem JavaScript API;
 - never exposes `RiftNativeDispatcher`;
 - limits automatic calls to 24 per minute in one page;
-- deduplicates completed call envelopes;
+- deduplicates calls by scoped `call_id` and rejects conflicting reuse;
+- arms tool execution only after a new user/AI prompt and only accepts calls from the newest assistant message;
+- baselines already-rendered assistant messages so chat history can never replay old tool calls;
 - serializes calls so tool-result continuations cannot race;
 - shows a `Rift MCP` badge with the current local tool count;
 - lets the badge disable compatibility behavior for the current tab;
@@ -67,7 +69,7 @@ Code Mode remains declarative: the adapter does not `eval` model-produced JavaSc
 
 `riftbrowser-mcp-app.js` also supports the local Rift AI HTML cockpit. Native code calls `window.RiftMcpAppControl.submitTask(...)` in the hidden ChatGPT WebView with a native-created session ID, task and compact project context. The adapter waits for MCP readiness and the normal ChatGPT composer, writes the task/context, and clicks the normal ChatGPT Web send control. There is no model API request path.
 
-The model never supplies the AI session ID. When the adapter parses a model `<rift_call>` during an active Rift AI task, it privately adds `_meta["riftos/aiSessionId"]` to the local MCP `tools/call`. This makes working-tree journaling specific to the AI task without changing the model-visible tool schema. Calls made outside the active Rift AI task are untagged.
+The model never supplies the AI session ID. When the adapter parses a model `<rift_call>` during an active Rift AI task, it privately adds `_meta["riftos/aiSessionId"]` plus `_meta["riftos/callId"]` to the local MCP `tools/call`. The server echoes both values in its private result metadata; the browser rejects mismatches or stale-session results. This makes working-tree journaling and result delivery specific to the active call without changing the model-visible tool schema.
 
 The adapter mirrors cleaned assistant text and transport lifecycle back to Android as exact-origin `rift/ai/event` messages over `RiftMcpNative`. Tool envelopes are stripped from the mirrored assistant pane; the actual tool loop still occurs in ChatGPT Web and MCP results still return through the composer. Completion is reported only after output stabilizes, the stop control is gone, active tool round-trips have drained and any tool-result continuation has produced another assistant update. Stop requests likewise wait for active tool work to drain before the session becomes reviewable.
 

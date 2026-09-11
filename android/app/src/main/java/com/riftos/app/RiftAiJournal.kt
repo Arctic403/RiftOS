@@ -32,7 +32,6 @@ class RiftAiJournal(context: Context) {
     private val root = File(appContext.filesDir, "rift-ai").apply { mkdirs() }
     private val sessionsRoot = File(root, "sessions").apply { mkdirs() }
     private val riftFsRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }
-    private val toolRoot = File(riftFsRoot, "tool-sandbox").apply { mkdirs() }
     private val workspaceRoot = File(riftFsRoot, "workspace").apply { mkdirs() }
 
     init {
@@ -663,13 +662,12 @@ class RiftAiJournal(context: Context) {
     private fun sandboxFile(rawPath: String): File {
         val path = normalizePath(rawPath)
         val segments = if (path.isBlank()) emptyList() else path.split('/')
-        val workspaceScoped = segments.firstOrNull() == "workspace"
-        var file = if (workspaceScoped) workspaceRoot else toolRoot
-        val tail = if (workspaceScoped) segments.drop(1) else segments
-        tail.forEach { file = File(file, it) }
-        val allowedRoot = if (workspaceScoped) workspaceRoot.canonicalFile else toolRoot.canonicalFile
+        require(segments.isEmpty() || segments.first() == "workspace") { "Rift AI is scoped to workspace/ only" }
+        var file = workspaceRoot
+        segments.drop(if (segments.firstOrNull() == "workspace") 1 else 0).forEach { file = File(file, it) }
+        val allowedRoot = workspaceRoot.canonicalFile
         val target = file.canonicalFile
-        require(target == allowedRoot || target.path.startsWith(allowedRoot.path + File.separator)) { "Path escaped Rift MCP sandbox" }
+        require(target == allowedRoot || target.path.startsWith(allowedRoot.path + File.separator)) { "Path escaped Rift AI workspace" }
         return target
     }
 
@@ -682,12 +680,10 @@ class RiftAiJournal(context: Context) {
     private fun relativeToolPath(file: File): String {
         val target = file.canonicalFile
         val workspace = workspaceRoot.canonicalFile
+        require(target == workspace || target.path.startsWith(workspace.path + File.separator)) { "Path escaped Rift AI workspace" }
         if (target == workspace) return "workspace"
-        if (target.path.startsWith(workspace.path + File.separator)) {
-            val suffix = workspace.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/')
-            return "workspace/$suffix"
-        }
-        return toolRoot.canonicalFile.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/')
+        val suffix = workspace.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/')
+        return "workspace/$suffix"
     }
 
     private fun toolTarget(name: String, args: JSONObject): String = when (name) {

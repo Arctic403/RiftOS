@@ -7,7 +7,7 @@ import org.json.JSONObject
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.10.0-rift-code-mode-alpha"
+        private const val SERVER_VERSION = "0.11.0-rift-workspace-ack"
     }
 
     fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) {
@@ -31,10 +31,13 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
             return
         }
         val args = params.optJSONObject("arguments") ?: JSONObject()
-        val aiSessionId = params.optJSONObject("_meta")
-            ?.optString("riftos/aiSessionId")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+        val requestMeta = params.optJSONObject("_meta") ?: JSONObject()
+        val aiSessionId = requestMeta.optString("riftos/aiSessionId")
+            .trim()
+            .takeIf { it.isNotBlank() }
+        val modelCallId = requestMeta.optString("riftos/callId")
+            .trim()
+            .takeIf { it.isNotBlank() }
         toolHost.callAsync(name, args, aiSessionId) { call ->
             val ok = call.optBoolean("ok", false)
             val structured = JSONObject().put("ok", ok)
@@ -52,9 +55,14 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
                 call.optString("error", "Rift tool failed")
             }
 
+            val resultMeta = JSONObject()
+            if (aiSessionId != null) resultMeta.put("riftos/aiSessionId", aiSessionId)
+            if (modelCallId != null) resultMeta.put("riftos/callId", modelCallId)
+
             val result = JSONObject()
                 .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", text)))
                 .put("structuredContent", structured)
+                .put("_meta", resultMeta)
                 .put("isError", !ok)
             reply(success(id, result))
         }
@@ -71,7 +79,7 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         )
         .put(
             "instructions",
-            "Local RiftOS tools. Prefer rift_workspace_exec for project work: it batches workspace operations locally and transactionally. Device-side permissions and audit are authoritative; there is no remote relay or direct model API."
+            "Local RiftOS workspace tools. All filesystem capabilities are hard-scoped to workspace/. Prefer rift_workspace_exec for project work: it batches workspace operations locally and transactionally. Device-side permissions and audit are authoritative; there is no remote relay or direct model API."
         )
 
     private fun success(id: Any, result: Any): JSONObject = JSONObject()

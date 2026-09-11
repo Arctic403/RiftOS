@@ -28,7 +28,7 @@ RiftToolHost
 RiftToolSandbox
        |
        v
-filesDir/riftfs/tool-sandbox
+filesDir/riftfs/workspace
 ```
 
 ## MCP server
@@ -63,6 +63,7 @@ rift_write_text
 rift_mkdir
 rift_remove
 rift_move
+rift_copy
 rift_workspace_exec
 ```
 
@@ -70,11 +71,11 @@ Read defaults enabled. Write defaults disabled. `rift_workspace_exec` is always 
 
 ## Sandbox
 
-The logical sandbox is `riftfs/tool-sandbox` with standard `workspace`, `uploads` and `downloads` directories.
+The logical and physical MCP sandbox is the single canonical `riftfs/workspace` tree. A fresh workspace starts empty; RiftOS housekeeping and patch-history metadata are stored outside it. All filesystem tools, including the legacy one-operation tools, require paths under `workspace/`; an empty list path resolves to that root. RiftOS system roots, downloads, documents, SAF mounts and legacy transfer directories are outside the capability.
 
-The first local-MCP build migrates existing alpha data from the historical `riftfs/browser-sandbox` directory. That old directory name is migration input only, not the active namespace.
+Historical `tool-sandbox/workspace` and `browser-sandbox/workspace` directories are migration inputs only. Unique entries are merged forward into `riftfs/workspace`; the old roots are never addressable by MCP.
 
-`RiftToolSandbox` enforces canonical-path containment, an 8 MiB tool payload/file limit and a 5000-entry legacy listing limit. Rift Code Mode is further scoped to `workspace/`, caps each batch at 192 operations, bounds returned context, and skips oversized/binary files during local text search.
+`RiftToolSandbox` enforces canonical-path containment, an 8 MiB tool payload/file limit and bounded listings. Rift Code Mode caps each batch at 192 operations, bounds returned context, and skips oversized/binary files during local text search.
 
 
 ## Rift Code Mode
@@ -83,14 +84,14 @@ The first local-MCP build migrates existing alpha data from the historical `rift
 
 ```text
 project  stat  list  search  read
-write    replace  patch  mkdir  remove  move
+write    replace  patch  mkdir  remove  move  rename  copy
 ```
 
 This is intentionally not arbitrary JavaScript evaluated inside the `chatgpt.com` origin. The ChatGPT page receives only the declarative operation envelope; execution stays in the device-side sandbox. That avoids giving model-produced code access to ChatGPT DOM/session state while still collapsing many local filesystem actions into one ChatGPT↔Rift round trip.
 
 Mutating batches use a lazy copy-on-write transaction in app cache. Only paths actually touched by the batch are copied. If any operation fails, the batch restores its mutations before returning an error. On success, the resulting working-tree edits remain subject to the normal Rift AI session journal and Accept all / Revert all review flow.
 
-A model may set `finish:true` only on a mutating Code Mode batch that fully completes the current Rift AI task. After the local MCP result confirms success and at least one mutation target, the browser adapter can mark the transport complete locally and enter review without submitting a second result-continuation message to ChatGPT. Failed batches and non-final/read-only batches still return normal `[RIFT_MCP_RESULT_V1]` continuations.
+A model may set `finish:true` only on a mutating Code Mode batch that fully completes the current Rift AI task. Final batches are **not** silently swallowed: after local execution, RiftBrowser sends the correlated `[RIFT_MCP_RESULT_V1]` result back through ChatGPT Web. The result carries the model call ID plus the private AI session ID internally, and the task becomes reviewable only after the final assistant continuation completes. Failed, stale or mismatched results cannot terminate the active session as success.
 
 The upfront project handoff is `RIFT_PROJECT_V2`: a bounded top-level descriptor that states full workspace reachability instead of recursively serializing thousands of paths. The model can locally search/list/read only when it needs source context, while mechanical multi-file edits can remain within a single Code Mode batch.
 
@@ -100,7 +101,7 @@ Rift AI journaling is session-scoped, not a global side effect of MCP. The model
 
 Before each matching mutating tool (`rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`) and each mutating `rift_workspace_exec` batch, the journal captures the original affected path(s). A capture failure blocks the mutation. Matching reads/list/stat calls are logged but do not create rollback copies. Normal MCP calls outside the active Rift AI transport remain fully usable and are not added to the AI rollback set.
 
-Journal state is stored under `filesDir/rift-ai`, outside the MCP-visible `tool-sandbox`. The shell can inspect additions/deletions, request a bounded unified-style text diff, accept the current files as a new baseline or revert the captured mutations. Accept/revert are rejected while transport is active, and a new AI session cannot replace unreviewed changes. This review layer does not add MCP authority and is not visible as a ChatGPT tool.
+Journal state is stored under `filesDir/rift-ai`, outside the MCP-visible `riftfs/workspace`. The shell can inspect additions/deletions, request a bounded unified-style text diff, accept the current files as a new baseline or revert the captured mutations. Accept/revert are rejected while transport is active, and a new AI session cannot replace unreviewed changes. This review layer does not add MCP authority and is not visible as a ChatGPT tool.
 
 ## Browser compatibility boundary
 

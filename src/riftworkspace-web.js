@@ -2,9 +2,11 @@ const previousCore=window.RiftOSCore;
 if(!previousCore?.kernel||!previousCore?.fs)throw new Error("RiftWorkspace Web requires RiftOSCore");
 
 const WORKSPACE_ROOT="/workspace";
-const HISTORY_ROOT=`${WORKSPACE_ROOT}/.rift/history`;
-const ROLLED_BACK_ROOT=`${WORKSPACE_ROOT}/.rift/rolled-back`;
-const DEFAULT_DIRS=["projects","downloads","documents","patches",".rift/history",".rift/rolled-back"];
+const HISTORY_ROOT="/system/riftworkspace/history";
+const ROLLED_BACK_ROOT="/system/riftworkspace/rolled-back";
+const LEGACY_META_ROOT=`${WORKSPACE_ROOT}/.rift`;
+const LEGACY_SCAFFOLD_DIRS=["projects","downloads","documents","patches"];
+const LAYOUT_MIGRATION_MARKER="/system/riftworkspace/layout-v2-migrated";
 const MAX_PATCH_CHANGES=500;
 
 function clone(value){return value==null?value:JSON.parse(JSON.stringify(value));}
@@ -24,8 +26,39 @@ class RiftWorkspaceWeb extends EventTarget{
   async init(){
     await this.core.ready;
     await this.fs.mkdir(WORKSPACE_ROOT);
-    for(const path of DEFAULT_DIRS)await this.fs.mkdir(this.fullPath(path,{allowRoot:true}));
+    await this.migrateLegacyWorkspaceScaffold();
     return this;
+  }
+
+  async migrateLegacyWorkspaceScaffold(){
+    if(await this.fs.stat(LAYOUT_MIGRATION_MARKER).catch(()=>null))return;
+    const legacyMeta=await this.fs.stat(LEGACY_META_ROOT).catch(()=>null);
+    if(legacyMeta?.kind==="directory"){
+      const rows=await this.fs.list(LEGACY_META_ROOT,{recursive:true}).catch(()=>[]);
+      for(const row of rows.filter(item=>item.kind==="directory").sort((a,b)=>a.path.length-b.path.length)){
+        const suffix=row.path.slice(LEGACY_META_ROOT.length).replace(/^\/+/,"");
+        if(suffix)await this.fs.mkdir(`/system/riftworkspace/${suffix}`).catch(()=>{});
+      }
+      for(const row of rows.filter(item=>item.kind==="file")){
+        const suffix=row.path.slice(LEGACY_META_ROOT.length).replace(/^\/+/,"");
+        if(!suffix)continue;
+        const destination=`/system/riftworkspace/${suffix}`;
+        const exists=await this.fs.stat(destination).catch(()=>null);
+        if(!exists){
+          const content=await this.fs.readText(row.path).catch(()=>null);
+          if(content!=null)await this.fs.writeText(destination,String(content));
+        }
+      }
+      await this.fs.remove(LEGACY_META_ROOT).catch(()=>{});
+    }
+    for(const name of LEGACY_SCAFFOLD_DIRS){
+      const path=this.fullPath(name,{allowRoot:true});
+      const stat=await this.fs.stat(path).catch(()=>null);
+      if(stat?.kind!=="directory")continue;
+      const children=await this.fs.list(path,{recursive:false}).catch(()=>[]);
+      if(children.length===0)await this.fs.remove(path).catch(()=>{});
+    }
+    await this.fs.writeText(LAYOUT_MIGRATION_MARKER,"1").catch(()=>{});
   }
 
   normalize(path="",{allowRoot=true}={}){

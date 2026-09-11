@@ -23,15 +23,14 @@ class RiftToolSandbox(context: Context) {
         private const val MAX_WORKSPACE_SEARCH_FILE_BYTES = 2L * 1024L * 1024L
         private const val MAX_BATCH_ROLLBACK_BYTES = 64L * 1024L * 1024L
         private const val MAX_SEARCH_PREVIEW_CHARS = 320
-        private const val ROOT_NAME = "tool-sandbox"
-        private const val LEGACY_ROOT_NAME = "browser-sandbox"
+        private const val LEGACY_ROOT_NAME = "tool-sandbox"
+        private const val OLDER_LEGACY_ROOT_NAME = "browser-sandbox"
         private const val WORKSPACE_ROOT = "workspace"
     }
 
     private val appContext = context.applicationContext
     private val executor = Executors.newSingleThreadExecutor()
     private val riftFsRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }
-    private val root = prepareRoot(appContext)
     private val workspaceRoot = prepareCanonicalWorkspace()
     private val transactionRoot = File(appContext.cacheDir, "rift-workspace-transactions").apply {
         deleteRecursively()
@@ -66,39 +65,39 @@ class RiftToolSandbox(context: Context) {
         executor.shutdownNow()
     }
 
-    private fun prepareRoot(@Suppress("UNUSED_PARAMETER") context: Context): File {
-        val target = File(riftFsRoot, ROOT_NAME)
-        val legacy = File(riftFsRoot, LEGACY_ROOT_NAME)
-
-        if (!target.exists() && legacy.exists()) {
-            val moved = runCatching { legacy.renameTo(target) }.getOrDefault(false)
-            if (!moved) {
-                val copied = runCatching {
-                    target.mkdirs()
-                    legacy.copyRecursively(target, overwrite = false)
-                }.getOrDefault(false)
-                if (copied) runCatching { legacy.deleteRecursively() }
-            }
-        }
-
-        target.mkdirs()
-        listOf("uploads", "downloads").forEach { File(target, it).mkdirs() }
-        return target
-    }
-
     /**
-     * Code Mode's logical `workspace/` is the same canonical RiftFS workspace
-     * shown to the user in Files/RiftDev. Older builds kept a second copy under
-     * tool-sandbox/workspace; merge any unique legacy entries forward once.
+     * The AI-visible filesystem is exactly RiftFS workspace/. Legacy MCP roots are
+     * migration sources only and are never addressable by tools.
      */
     private fun prepareCanonicalWorkspace(): File {
         val canonical = File(riftFsRoot, WORKSPACE_ROOT).apply { mkdirs() }
-        val legacy = File(root, WORKSPACE_ROOT)
-        if (legacy.exists() && legacy.canonicalFile != canonical.canonicalFile) {
-            val merged = runCatching { mergeMissingTree(legacy, canonical); true }.getOrDefault(false)
-            if (merged) runCatching { legacy.deleteRecursively() }
+        listOf(LEGACY_ROOT_NAME, OLDER_LEGACY_ROOT_NAME).forEach { legacyName ->
+            val legacyRoot = File(riftFsRoot, legacyName)
+            val legacyWorkspace = File(legacyRoot, WORKSPACE_ROOT)
+            if (legacyWorkspace.exists() && legacyWorkspace.canonicalFile != canonical.canonicalFile) {
+                val merged = runCatching { mergeMissingTree(legacyWorkspace, canonical); true }.getOrDefault(false)
+                if (merged) runCatching { legacyWorkspace.deleteRecursively() }
+            }
         }
+        migrateLegacyWorkspaceScaffold(canonical)
         return canonical
+    }
+
+    private fun migrateLegacyWorkspaceScaffold(workspace: File) {
+        val systemRoot = File(riftFsRoot, "system/riftworkspace").apply { mkdirs() }
+        val marker = File(systemRoot, "layout-v2-migrated")
+        if (marker.exists()) return
+
+        val legacyMeta = File(workspace, ".rift")
+        if (legacyMeta.isDirectory) {
+            runCatching { mergeMissingTree(legacyMeta, systemRoot) }
+                .onSuccess { runCatching { legacyMeta.deleteRecursively() } }
+        }
+        listOf("projects", "downloads", "documents", "patches").forEach { name ->
+            val directory = File(workspace, name)
+            if (directory.isDirectory && directory.listFiles().isNullOrEmpty()) runCatching { directory.delete() }
+        }
+        runCatching { marker.writeText("1", Charsets.UTF_8) }
     }
 
     private fun mergeMissingTree(source: File, destination: File) {
@@ -117,14 +116,14 @@ class RiftToolSandbox(context: Context) {
 
     private fun dispatch(method: String, args: JSONObject): Any? = when (method) {
         "sandbox.info" -> info()
-        "fs.stat" -> stat(args.optString("path"))
-        "fs.list" -> list(args.optString("path"), args.optBoolean("recursive", false))
-        "fs.readText" -> readText(args.getString("path"))
-        "fs.writeText" -> writeText(args.getString("path"), args.optString("text"))
-        "fs.mkdir" -> mkdir(args.getString("path"))
-        "fs.remove" -> remove(args.getString("path"))
-        "fs.move" -> move(args.getString("from"), args.getString("to"), args.optBoolean("overwrite", false))
-        "fs.copy" -> copy(args.getString("from"), args.getString("to"), args.optBoolean("overwrite", false))
+        "fs.stat" -> stat(workspacePath(args.optString("path")))
+        "fs.list" -> list(workspacePath(args.optString("path")), args.optBoolean("recursive", false))
+        "fs.readText" -> readText(workspacePath(args.getString("path")))
+        "fs.writeText" -> writeText(workspaceMutationPath(args.getString("path")), args.optString("text"))
+        "fs.mkdir" -> mkdir(workspaceMutationPath(args.getString("path")))
+        "fs.remove" -> remove(workspaceMutationPath(args.getString("path")))
+        "fs.move" -> move(workspaceMutationPath(args.getString("from")), workspaceMutationPath(args.getString("to")), args.optBoolean("overwrite", false))
+        "fs.copy" -> copy(workspaceMutationPath(args.getString("from")), workspaceMutationPath(args.getString("to")), args.optBoolean("overwrite", false))
         "workspace.exec" -> workspaceExec(args)
         else -> throw IllegalArgumentException("Unsupported Rift tool sandbox method: $method")
     }
@@ -142,20 +141,20 @@ class RiftToolSandbox(context: Context) {
 
     private fun sandboxFile(path: String): File {
         val segments = normalizeSegments(path)
-        val workspaceScoped = segments.firstOrNull() == WORKSPACE_ROOT
-        var file = if (workspaceScoped) workspaceRoot else root
-        val tail = if (workspaceScoped) segments.drop(1) else segments
-        for (segment in tail) file = File(file, segment)
-        val allowedRoot = if (workspaceScoped) workspaceRoot.canonicalFile else root.canonicalFile
+        require(segments.isEmpty() || segments.first() == WORKSPACE_ROOT) {
+            "Rift MCP is scoped to $WORKSPACE_ROOT/ only"
+        }
+        var file = workspaceRoot
+        for (segment in segments.drop(if (segments.firstOrNull() == WORKSPACE_ROOT) 1 else 0)) file = File(file, segment)
         val target = file.canonicalFile
-        require(isInsideRoot(target, allowedRoot)) { "Path escaped Rift MCP sandbox" }
+        require(isInsideRoot(target)) { "Path escaped Rift MCP workspace" }
         return target
     }
 
-    private fun isInsideRoot(file: File, canonicalRoot: File? = null): Boolean {
+    private fun isInsideRoot(file: File): Boolean {
         val target = file.canonicalFile
-        val roots = if (canonicalRoot != null) listOf(canonicalRoot) else listOf(root.canonicalFile, workspaceRoot.canonicalFile)
-        return roots.any { allowed -> target == allowed || target.path.startsWith(allowed.path + File.separator) }
+        val allowed = workspaceRoot.canonicalFile
+        return target == allowed || target.path.startsWith(allowed.path + File.separator)
     }
 
     private fun workspacePath(raw: String?, defaultRoot: Boolean = true): String {
@@ -175,12 +174,10 @@ class RiftToolSandbox(context: Context) {
     private fun relativePath(file: File): String {
         val target = file.canonicalFile
         val workspace = workspaceRoot.canonicalFile
+        require(isInsideRoot(target)) { "Path escaped Rift MCP workspace" }
         if (target == workspace) return WORKSPACE_ROOT
-        if (target.path.startsWith(workspace.path + File.separator)) {
-            val suffix = workspace.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/')
-            return "$WORKSPACE_ROOT/$suffix"
-        }
-        return root.canonicalFile.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/')
+        val suffix = workspace.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/')
+        return "$WORKSPACE_ROOT/$suffix"
     }
 
     private fun stat(path: String): JSONObject? {
@@ -276,7 +273,7 @@ class RiftToolSandbox(context: Context) {
         val bytes = text.toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_TOOL_BYTES) { "Text payload is too large for Rift MCP" }
         val file = sandboxFile(path)
-        require(file != root) { "Sandbox root is not a file" }
+        require(file != workspaceRoot) { "Workspace root is not a file" }
         file.parentFile?.mkdirs()
         file.writeBytes(bytes)
         return stat(path)!!
@@ -362,15 +359,15 @@ class RiftToolSandbox(context: Context) {
     }
 
     private fun remove(path: String): Boolean {
-        require(normalizeSegments(path).isNotEmpty()) { "Cannot delete the sandbox root" }
+        require(normalizeSegments(path).isNotEmpty()) { "Cannot delete the workspace root" }
         val file = sandboxFile(path)
         if (!file.exists()) return true
         return if (file.isDirectory) file.deleteRecursively() else file.delete()
     }
 
     private fun move(from: String, to: String, overwrite: Boolean): JSONObject {
-        require(normalizeSegments(from).isNotEmpty()) { "Cannot move the sandbox root" }
-        require(normalizeSegments(to).isNotEmpty()) { "Destination cannot be the sandbox root" }
+        require(normalizeSegments(from).isNotEmpty()) { "Cannot move the workspace root" }
+        require(normalizeSegments(to).isNotEmpty()) { "Destination cannot be the workspace root" }
         val source = sandboxFile(from)
         val destination = sandboxFile(to)
         require(source.exists()) { "Source not found: $from" }
@@ -385,8 +382,8 @@ class RiftToolSandbox(context: Context) {
     }
 
     private fun copy(from: String, to: String, overwrite: Boolean): JSONObject {
-        require(normalizeSegments(from).isNotEmpty()) { "Cannot copy the sandbox root" }
-        require(normalizeSegments(to).isNotEmpty()) { "Destination cannot be the sandbox root" }
+        require(normalizeSegments(from).isNotEmpty()) { "Cannot copy the workspace root" }
+        require(normalizeSegments(to).isNotEmpty()) { "Destination cannot be the workspace root" }
         val source = sandboxFile(from)
         val destination = sandboxFile(to)
         require(source.exists()) { "Source not found: $from" }
@@ -726,10 +723,11 @@ class RiftToolSandbox(context: Context) {
         .joinToString("") { "%02x".format(it) }
 
     private fun info(): JSONObject {
-        val stats = StatFs(root.absolutePath)
+        val stats = StatFs(workspaceRoot.absolutePath)
         return JSONObject()
-            .put("root", "riftfs/$ROOT_NAME")
+            .put("root", "riftfs/$WORKSPACE_ROOT")
             .put("workspaceRoot", "riftfs/$WORKSPACE_ROOT")
+            .put("scope", "workspace-only")
             .put("owner", "Rift MCP")
             .put("writable", true)
             .put("maxToolBytes", MAX_TOOL_BYTES)

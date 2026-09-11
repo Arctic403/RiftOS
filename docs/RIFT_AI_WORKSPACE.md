@@ -65,11 +65,13 @@ Starting a task:
 9. tracks only Rift-AI-owned MCP mutations in the local working-tree journal;
 10. ends in review, stopped or error state and releases hidden transport rendering when appropriate.
 
+The canonical AI project root is the same user-owned `filesDir/riftfs/workspace` used by Files and RiftDev. It starts empty on a fresh install and is not populated with RiftOS housekeeping directories; workspace history is stored under `riftfs/system/riftworkspace` outside MCP scope.
+
 The project descriptor is capability context, not a project dump. The full `workspace/` remains reachable through `rift_workspace_exec`. ChatGPT can combine `project`, `stat`, `list`, `search`, `read`, `write`, `replace`, `patch`, `mkdir`, `remove`, `move`, `rename` and `copy` operations into one model-visible tool call. All operations execute locally in `RiftToolSandbox`; its logical `workspace/` is mapped directly onto the same canonical `filesDir/riftfs/workspace` tree used by Files and RiftDev. Only the bounded batch result is returned to ChatGPT Web.
 
 A Code Mode batch is transactionally protected inside the sandbox. Mutating paths are copied lazily into an app-cache rollback set immediately before their first batch mutation. If any operation fails, all mutations made by that batch are restored before the error reaches ChatGPT. Successful AI-scoped mutations remain covered by the persistent `RiftAiJournal` review baseline until the user accepts or reverts the session.
 
-For tasks where the model already knows the exact final edits, `rift_workspace_exec` also supports `finish:true`. RiftBrowser honors it only after a successful AI-scoped mutating batch with confirmed mutation targets. That fast path ends hidden ChatGPT transport locally and moves directly to review instead of spending another model turn returning a success packet. Inspection batches, read-only tasks and failures continue through the normal result/continuation loop.
+For tasks where the model already knows the exact final edits, `rift_workspace_exec` also supports `finish:true`. RiftBrowser still sends the confirmed `[RIFT_MCP_RESULT_V1]` packet back to ChatGPT Web, tagged internally with the matching model call ID and AI session ID. The hidden transport enters review only after that final continuation completes, preventing a successful local write from leaving ChatGPT waiting and preventing stale results from being mistaken for the current task.
 
 ## Session-scoped MCP writes
 
@@ -96,7 +98,7 @@ filesDir/rift-ai/sessions/<session-id>/
   originals/
 ```
 
-This directory is outside `filesDir/riftfs/tool-sandbox`, so ChatGPT cannot rewrite its own rollback history through MCP.
+This directory is outside the only MCP-visible root, `filesDir/riftfs/workspace`, so ChatGPT cannot rewrite its own rollback history through MCP.
 
 Before an AI-scoped `rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`, or mutating `rift_workspace_exec` batch, `RiftToolHost` asks the journal to lazily snapshot the affected path(s). Read-only Code Mode batches require only the read grant and do not create rollback copies; a batch containing `write`, `replace`, `patch`, `mkdir`, `remove`, or `move` additionally requires the local write grant. An existing ancestor snapshot suppresses redundant descendant copies; if a parent is captured after an earlier child change, the earlier child snapshot is retained so revert still reconstructs the pre-session baseline.
 

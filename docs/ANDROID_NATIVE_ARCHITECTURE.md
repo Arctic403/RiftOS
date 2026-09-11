@@ -21,7 +21,7 @@ RiftFS lives in `filesDir/riftfs`. Android initializes `home`, `apps`, `system`,
 
 External user folders mount through Storage Access Framework with persisted URI permissions. RiftWorkspace maps its common JSON API onto the native `/workspace` tree.
 
-The canonical project workspace lives at `filesDir/riftfs/workspace` and is shared by Files, RiftDev and Rift AI Code Mode. MCP transfer-only data lives in `filesDir/riftfs/tool-sandbox` (`uploads/` and `downloads/`). On first use, historical `browser-sandbox` data is migrated to `tool-sandbox`, and any legacy `tool-sandbox/workspace` entries are merged into the canonical workspace without overwriting newer user files.
+The canonical project workspace lives at `filesDir/riftfs/workspace` and is shared by Files, RiftDev and Rift AI Code Mode. It is also the **only** filesystem root exposed through MCP. Legacy `tool-sandbox/workspace` and `browser-sandbox/workspace` trees are migration input only; unique entries are merged into the canonical workspace without overwriting newer user files. No transfer, system, downloads, documents or SAF-mount root is MCP-addressable.
 
 ## Native services
 

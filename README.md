@@ -35,7 +35,7 @@ Android filesDir     +-- Files / Settings / RiftDev / Rift AI / Rift MCP / apps
                          |
                     RiftToolHost
                          |
-                  riftfs/tool-sandbox
+                    riftfs/workspace
 ```
 
 There is **no remote Rift MCP relay** in the active architecture. No WSS device client, pairing key, public MCP endpoint or process-start relay provider is required for the RiftBrowser local MCP path.
@@ -68,7 +68,9 @@ Rift AI is a local HTML cockpit rendered by the existing RiftOS shell. It does n
 
 Before each AI task, Rift AI can target a **new chat**, the **current ChatGPT page**, a DOM-discovered existing **chat**, a **Project** (which starts a new chat inside that project), or an existing **project chat**. **Browse all…** reveals the same authenticated ChatGPT WebView and opens ChatGPT's own search UI for destinations that are not currently loaded in the sidebar. No private ChatGPT backend API is used for target discovery, and discovered chat titles/URLs are kept ephemeral rather than written into the Rift AI journal.
 
-The selected conversation receives a compact `RIFT_PROJECT_V2` top-level descriptor for `RiftFS/workspace`, not a recursive project dump. Full project reachability is exposed through `rift_workspace_exec` (Rift Code Mode), which can combine local project/list/search/ranged-read and transactional write/replace/patch/mkdir/remove/move/rename/copy operations into one model-visible call. RiftBrowser internally tags AI-owned `tools/call` requests with an unexposed session ID, so `RiftAiJournal` snapshots only mutations belonging to the active Rift AI task; ordinary visible-chat MCP calls do not get absorbed into an old AI review session.
+`RiftFS/workspace` is intentionally user-owned and starts empty on a fresh install; RiftOS no longer seeds project/document/download/patch/history folders inside it. Workspace history metadata lives under `riftfs/system/riftworkspace`, outside AI scope.
+
+The selected conversation receives a compact `RIFT_PROJECT_V2` top-level descriptor for `RiftFS/workspace`, not a recursive project dump. Full project reachability is exposed through `rift_workspace_exec` (Rift Code Mode), which can combine local project/list/search/ranged-read and transactional write/replace/patch/mkdir/remove/move/rename/copy operations into one model-visible call. Every MCP filesystem path is hard-scoped to that one `workspace/` root; RiftOS system roots, downloads, documents, SAF mounts and other storage are not addressable through the AI capability. RiftBrowser privately correlates each AI-owned `tools/call` with both the native AI session ID and the model `call_id` before accepting a result.
 
 The persistent **Changes** view provides additions/deletions, bounded unified-style text diffs, **Accept all** and **Revert all** without cloning the whole project. Accept/revert are locked while ChatGPT transport is active, and a new task cannot replace a session with unreviewed changes. Rollback data lives under `filesDir/rift-ai`, outside the MCP-visible sandbox.
 
@@ -91,22 +93,19 @@ RiftMcpServer
     |
 RiftToolHost
     |
-riftfs/tool-sandbox
+riftfs/workspace
 ```
 
 Current tool scope:
 
 ```text
 riftfs/
-  workspace/        # canonical user + AI project tree
-  tool-sandbox/
-    uploads/
-    downloads/
+  workspace/        # the only MCP-visible filesystem root
 ```
 
-Read tools are enabled by default. Write tools remain disabled by default until enabled in the **Rift MCP** system app. `rift_workspace_exec` is read-gated for inspection and additionally write-gated only when a batch contains mutations. Code Mode executes up to 192 ordered workspace operations locally and rolls back the entire batch if any operation fails. A confirmed successful mutating batch can use `finish:true` to move Rift AI directly into local review without a redundant ChatGPT continuation turn. The local activity log records tool/path/outcome without storing file contents.
+Read tools are enabled by default. Write tools remain disabled by default until enabled in the **Rift MCP** system app. `rift_workspace_exec` is read-gated for inspection and additionally write-gated only when a batch contains mutations. Code Mode executes up to 192 ordered workspace operations locally and rolls back the entire batch if any operation fails. `finish:true` still returns one correlated `[RIFT_MCP_RESULT_V1]` confirmation to ChatGPT Web; the session completes only after that confirmation has produced the final assistant response. The local activity log records tool/path/outcome without storing file contents.
 
-Existing alpha data under the historical `riftfs/browser-sandbox` directory is migrated to `riftfs/tool-sandbox` on first use.
+Legacy `tool-sandbox/workspace` and `browser-sandbox/workspace` data are migration sources only. Unique project entries are merged into canonical `riftfs/workspace`; those legacy roots are never exposed as MCP paths.
 
 ## Files and Settings
 

@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v1.4-code-mode';
+  const VERSION = 'rift-mcp-app-v1.5-workspace-ack';
   const CONTEXT_MARKER = '[RIFT_MCP_APP_V1]';
   const RESULT_MARKER = '[RIFT_MCP_RESULT_V1]';
   const CALL_OPEN = '<rift_call>';
@@ -14,11 +14,12 @@
   const MAX_CHAT_TARGETS = 180;
 
   const pending = new Map();
-  const processedCalls = new Set();
+  const processedCalls = new Map();
   const recentCallTimes = [];
   const touchedAssistantMessages = new Set();
   const touchedUserMessages = new Set();
   const lastAssistantText = new WeakMap();
+  const historicalAssistantMessages = new WeakSet();
   let requestCounter = 0;
   let tools = [];
   let mcpReady = false;
@@ -39,6 +40,7 @@
   let lastToolResultAt = 0;
   let continuationRequired = false;
   let completionTimer = 0;
+  let toolExecutionArmed = false;
 
   function now() { return Date.now(); }
 
@@ -79,6 +81,7 @@
     activeToolRoundTrips = 0;
     continuationRequired = false;
     activeAiSessionId = '';
+    toolExecutionArmed = false;
   }
 
   function scheduleCompletionCheck(delayMs = 1300) {
@@ -175,7 +178,8 @@
       `patch{path,edits:[{find,replace,all?,expectedCount?}]}, ` +
       `mkdir{path}, remove{path}, move{from,to,overwrite?}, rename{from,to,overwrite?}, copy{from,to,overwrite?}. Paths are under workspace/. ` +
       `The batch is local and transactional: if any operation fails, all mutations from that batch are rolled back. ` +
-      `If a successful mutating batch fully completes the task and you need no result for more reasoning, set finish:true; after emitting that call, do not continue or claim success—RiftOS will enter review only after local confirmation, while failures are returned normally. ` +
+      `The AI can access only workspace/; RiftOS system, downloads, documents, mounts, and other roots are outside this capability. ` +
+      `If a mutating batch fully completes the task, set finish:true. RiftOS will still return one correlated ${RESULT_MARKER} confirmation; after an ok final result, briefly confirm completion and do not call another tool unless the result shows unfinished work. ` +
       `Use search/list/read only when reasoning needs source; do mechanical multi-file edits inside one batch whenever possible.`;
   }
 
@@ -194,6 +198,7 @@
     }
     routeKey = next;
     contextSentForRoute = false;
+    toolExecutionArmed = false;
   }
 
   function normalizedChatGptTargetUrl(raw) {
@@ -379,13 +384,24 @@
     return Array.from(document.querySelectorAll('button')).find(looksLikeSendButton) || null;
   }
 
+  function markHistoricalAssistantMessage(message) {
+    if (message instanceof Element) historicalAssistantMessages.add(message);
+  }
+
+  function rememberExistingToolCalls() {
+    for (const message of document.querySelectorAll('[data-message-author-role="assistant"]')) markHistoricalAssistantMessage(message);
+  }
+
   function decorateOutgoingPrompt() {
     refreshRouteState();
-    if (!enabled || suppressDecoration || tools.length === 0 || contextSentForRoute) return;
+    if (!enabled || suppressDecoration || tools.length === 0) return;
     const composer = findComposer();
     if (!composer) return;
     const text = readComposer(composer).trim();
-    if (!text || text.includes(CONTEXT_MARKER) || text.startsWith(RESULT_MARKER)) return;
+    if (!text || text.startsWith(RESULT_MARKER)) return;
+    rememberExistingToolCalls();
+    toolExecutionArmed = true;
+    if (text.includes(CONTEXT_MARKER) || contextSentForRoute) return;
     writeComposer(composer, `${text}\n\n${contextBlock()}`);
     contextSentForRoute = true;
   }
@@ -502,6 +518,8 @@ ${contextBlock()}`;
       finishAiTask('error', 'ChatGPT Web send button unavailable', 'error');
       return false;
     }
+    rememberExistingToolCalls();
+    toolExecutionArmed = true;
     button.click();
     sendAiPhase('submitted', 'Task submitted to ChatGPT Web');
     sendAiPhase('running', 'ChatGPT Web is working');
@@ -520,8 +538,14 @@ ${contextBlock()}`;
     return true;
   }
 
-  async function submitToolResult(payload) {
-    const message = `${RESULT_MARKER}\n${JSON.stringify(payload)}\nContinue using this result. If another Rift tool is required, emit exactly one ${CALL_OPEN}...${CALL_CLOSE} envelope.`;
+  async function submitToolResult(payload, expectedSessionId = '') {
+    if (expectedSessionId && (!aiTaskActive || activeAiSessionId !== expectedSessionId)) {
+      throw new Error(`Stale Rift result ignored for inactive session ${expectedSessionId}`);
+    }
+    const finalInstruction = payload && payload.final === true && payload.ok === true
+      ? `The requested final batch is confirmed. Do not call another Rift tool unless the result itself shows unfinished work; briefly confirm completion.`
+      : `Continue using this result. If another Rift tool is required, emit exactly one ${CALL_OPEN}...${CALL_CLOSE} envelope.`;
+    const message = `${RESULT_MARKER}\n${JSON.stringify(payload)}\n${finalInstruction}`;
     const composer = findComposer();
     if (!composer) throw new Error('ChatGPT composer unavailable');
     suppressDecoration = true;
@@ -561,56 +585,85 @@ ${contextBlock()}`;
       await submitToolResult({ ok: false, error: String(error.message || error) });
       return;
     }
-    const signature = `${call.call_id}:${call.name}:${JSON.stringify(call.args)}`;
-    if (processedCalls.has(signature)) return;
-    processedCalls.add(signature);
+
+    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
+    const scope = aiSessionId || routeKey;
+    const callKey = `${scope}:${call.call_id}`;
+    const signature = `${call.name}:${JSON.stringify(call.args)}`;
+    const previousSignature = processedCalls.get(callKey);
+    if (previousSignature) {
+      if (previousSignature !== signature) {
+        await submitToolResult({
+          call_id: call.call_id, name: call.name, ok: false,
+          error: 'Duplicate Rift call_id was reused with different arguments; choose a new call_id.'
+        }, aiSessionId);
+      }
+      return;
+    }
+    processedCalls.set(callKey, signature);
+
+    if (!toolExecutionArmed) return;
     if (!rateLimitAllowsCall()) {
-      await submitToolResult({ call_id: call.call_id, name: call.name, ok: false, error: 'Rift MCP browser rate limit reached' });
+      await submitToolResult({ call_id: call.call_id, name: call.name, ok: false, error: 'Rift MCP browser rate limit reached' }, aiSessionId);
       return;
     }
 
-    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
     if (aiSessionId) activeToolRoundTrips += 1;
     setBadge('busy');
     try {
-      const params = { name: call.name, arguments: call.args };
-      if (aiSessionId) params._meta = { 'riftos/aiSessionId': aiSessionId };
-      const result = await postRpc('tools/call', params);
+      const meta = { 'riftos/callId': call.call_id };
+      if (aiSessionId) meta['riftos/aiSessionId'] = aiSessionId;
+      const result = await postRpc('tools/call', { name: call.name, arguments: call.args, _meta: meta });
+      const resultMeta = result && result._meta && typeof result._meta === 'object' ? result._meta : {};
+      if (String(resultMeta['riftos/callId'] || '') !== call.call_id) {
+        throw new Error(`Rift MCP result correlation failed for ${call.call_id}`);
+      }
+      if (aiSessionId && String(resultMeta['riftos/aiSessionId'] || '') !== aiSessionId) {
+        throw new Error(`Rift MCP session correlation failed for ${call.call_id}`);
+      }
+      if (aiSessionId && (!aiTaskActive || activeAiSessionId !== aiSessionId)) {
+        throw new Error(`Stale Rift result ignored for inactive session ${aiSessionId}`);
+      }
+
       const structured = result.structuredContent || {};
       const ok = !result.isError && structured.ok !== false;
       const value = structured.value !== undefined ? structured.value : null;
       const mutationCount = Array.isArray(value && value.mutationTargets) ? value.mutationTargets.length : 0;
-      const localFinal = Boolean(
-        ok && aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId &&
-        call.name === 'rift_workspace_exec' && call.args && call.args.finish === true && mutationCount > 0
-      );
-      if (localFinal) {
-        sendAiPhase('running', `Rift Code Mode final batch committed locally · ${mutationCount} target${mutationCount === 1 ? '' : 's'}`, 'transport', { tool: call.name, localFinal: true, mutationCount });
-        setBadge('ready');
-        finishAiTask('complete', 'Rift Code Mode task complete · ready for local review');
-        return;
-      }
+      const requestedFinal = Boolean(call.name === 'rift_workspace_exec' && call.args && call.args.finish === true && mutationCount > 0);
+
       await submitToolResult({
         call_id: call.call_id,
         name: call.name,
+        session_id: aiSessionId || null,
         ok,
+        final: Boolean(ok && requestedFinal),
         result: value,
         error: structured.error || null
-      });
+      }, aiSessionId);
+
       if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
         lastToolResultAt = now();
         continuationRequired = true;
-        sendAiPhase('running', `${call.name} result returned to ChatGPT Web`, 'transport', { tool: call.name });
+        sendAiPhase('running', `${call.name} confirmed locally and result returned to ChatGPT Web`, 'transport', {
+          tool: call.name, callId: call.call_id, final: Boolean(ok && requestedFinal), mutationCount
+        });
       }
       setBadge(ok ? 'ready' : 'error');
     } catch (error) {
+      const message = String(error && error.message || error);
+      if (message.startsWith('Stale Rift result ignored')) {
+        sendAiEvent('transport', message, { phase: 'stale-result', sessionId: aiSessionId, callId: call.call_id });
+        return;
+      }
       try {
         await submitToolResult({
           call_id: call.call_id,
           name: call.name,
+          session_id: aiSessionId || null,
           ok: false,
-          error: String(error.message || error)
-        });
+          final: false,
+          error: message
+        }, aiSessionId);
         if (aiSessionId && aiTaskActive && aiSessionId === activeAiSessionId) {
           lastToolResultAt = now();
           continuationRequired = true;
@@ -657,7 +710,10 @@ ${contextBlock()}`;
   function scanAssistantMessage(message) {
     if (!enabled || !(message instanceof Element)) return;
     const text = String(message.innerText || message.textContent || '');
-    const calls = tools.length && text.includes(CALL_OPEN) && text.includes(CALL_CLOSE) ? extractCalls(text) : [];
+    const assistantMessages = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const isLatestAssistant = assistantMessages.length > 0 && assistantMessages[assistantMessages.length - 1] === message;
+    const isHistorical = historicalAssistantMessages.has(message);
+    const calls = toolExecutionArmed && isLatestAssistant && !isHistorical && tools.length && text.includes(CALL_OPEN) && text.includes(CALL_CLOSE) ? extractCalls(text) : [];
     const visibleText = stripToolEnvelopes(text);
     if (visibleText && lastAssistantText.get(message) !== visibleText) {
       lastAssistantText.set(message, visibleText);
@@ -741,8 +797,8 @@ ${contextBlock()}`;
   function scanRecentMessagesOnce() {
     const assistant = document.querySelectorAll('[data-message-author-role="assistant"]');
     const users = document.querySelectorAll('[data-message-author-role="user"]');
-    for (let i = Math.max(0, assistant.length - 4); i < assistant.length; i++) scanAssistantMessage(assistant[i]);
-    for (let i = Math.max(0, users.length - 4); i < users.length; i++) compactInjectedUserMessage(users[i]);
+    for (let i = Math.max(0, assistant.length - 8); i < assistant.length; i++) markHistoricalAssistantMessage(assistant[i]);
+    for (let i = Math.max(0, users.length - 8); i < users.length; i++) compactInjectedUserMessage(users[i]);
   }
 
   function ensureBadge() {

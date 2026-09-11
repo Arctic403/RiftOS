@@ -35,7 +35,7 @@ filesDir + SAF       apps/windows
                      |
              RiftToolHost
                      |
-           riftfs/tool-sandbox
+            riftfs/workspace
 ```
 
 The AI-tool path above is local to the RiftOS application process. There is no active remote relay, WSS pairing connection or public Rift MCP endpoint.
@@ -52,7 +52,7 @@ The active Android RiftFS root is `filesDir/riftfs`. Standard internal directori
 
 User-selected external directories are mounted through Android Storage Access Framework. Canonical path checks prevent RiftFS path traversal.
 
-Rift MCP tools use a separate app-private `riftfs/tool-sandbox`. Existing alpha `browser-sandbox` data is migrated forward once and is not the active logical namespace.
+Rift MCP filesystem tools are hard-scoped to the canonical app-private `riftfs/workspace` tree shared with Files and RiftDev. Legacy `tool-sandbox/workspace` and `browser-sandbox/workspace` trees are migration sources only and are never exposed as active namespaces.
 
 ## Desktop
 
@@ -82,7 +82,7 @@ The browser compatibility layer may depend on ChatGPT composer/rendered-message 
 
 Rift AI is a trusted RiftOS shell application, not a guest webpage. It displays project metadata, assistant output, logs and local diffs by calling local `ai.*` native capabilities. It never receives or stores a model API key because the model transport is exclusively the authenticated ChatGPT Web page in RiftBrowser.
 
-Rollback originals are stored under `filesDir/rift-ai`, outside `riftfs/tool-sandbox`. ChatGPT can mutate only through the fixed MCP tool registry and cannot modify the journal that is used to review/revert those mutations. RiftBrowser privately tags only active Rift AI `tools/call` requests with a native-created session ID, preventing unrelated visible-chat MCP writes from being attributed to a persistent AI review session.
+Rollback originals are stored under `filesDir/rift-ai`, outside the MCP-visible `riftfs/workspace`. ChatGPT can mutate only through the fixed MCP tool registry and cannot modify the journal that is used to review/revert those mutations. RiftBrowser privately tags only active Rift AI `tools/call` requests with a native-created session ID, preventing unrelated visible-chat MCP writes from being attributed to a persistent AI review session.
 
 Review state and transport state are separate. A completed/stopped/error/interrupted session may remain available for diff review while its hidden ChatGPT renderer is no longer running. A process restart converts stale active transport state to `interrupted` while retaining rollback data. Accept/revert are locked while transport is active, and a new task cannot replace pending unreviewed changes.
 

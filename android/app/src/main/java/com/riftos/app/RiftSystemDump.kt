@@ -57,7 +57,7 @@ class RiftSystemDump(private val context: Context) {
         val runtime = Runtime.getRuntime()
         val internalStats = StatFs(context.filesDir.absolutePath)
         val riftRoot = File(context.filesDir, "riftfs")
-        val toolSandbox = File(riftRoot, "tool-sandbox")
+        val workspaceSandbox = File(riftRoot, "workspace")
         val webViewPackage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WebView.getCurrentWebViewPackage()
         } else null
@@ -98,7 +98,7 @@ class RiftSystemDump(private val context: Context) {
                 .put("internalTotalBytes", internalStats.totalBytes)
                 .put("internalAvailableBytes", internalStats.availableBytes)
                 .put("riftFs", summarizeTree(riftRoot))
-                .put("toolSandbox", summarizeTree(toolSandbox)))
+                .put("workspaceSandbox", summarizeTree(workspaceSandbox)))
             .put("webView", JSONObject()
                 .put("package", webViewPackage?.packageName ?: "unknown")
                 .put("version", webViewPackage?.versionName ?: "unknown"))

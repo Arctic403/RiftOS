@@ -14,7 +14,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         private const val PREF_AUDIT = "audit"
         private const val PREF_MIGRATED = "legacyStateMigrated"
         private const val MAX_AUDIT = 100
-        const val SCOPE = "riftfs/tool-sandbox"
+        const val SCOPE = "riftfs/workspace"
     }
 
     private val appContext = context.applicationContext
@@ -31,7 +31,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put("sandboxWrite", allowWrite())
         .put("scope", SCOPE)
         .put("workspaceScope", "riftfs/workspace")
-        .put("transferScope", "riftfs/tool-sandbox")
+        .put("workspaceOnly", true)
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_workspace_exec")))
@@ -47,64 +47,64 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     fun tools(): JSONArray = JSONArray()
-        .put(tool("rift_info", "Inspect the local Rift MCP sandbox and storage limits.", objectSchema()))
+        .put(tool("rift_info", "Inspect the local Rift MCP workspace sandbox and storage limits.", objectSchema()))
         .put(tool(
             "rift_stat",
-            "Get metadata for one file or directory in the Rift MCP sandbox.",
-            objectSchema(JSONObject().put("path", stringProperty("Sandbox-relative path.")), listOf("path"))
+            "Get metadata for one file or directory under workspace/.",
+            objectSchema(JSONObject().put("path", stringProperty("Path under workspace/.")), listOf("path"))
         ))
         .put(tool(
             "rift_list",
-            "List files and directories in the Rift MCP sandbox.",
+            "List files and directories under workspace/.",
             objectSchema(
                 JSONObject()
-                    .put("path", stringProperty("Sandbox-relative directory path. Empty means sandbox root."))
+                    .put("path", stringProperty("Path under workspace/. Empty means workspace/."))
                     .put("recursive", booleanProperty("Recursively include descendants."))
             )
         ))
         .put(tool(
             "rift_read_text",
-            "Read a UTF-8 text file from the Rift MCP sandbox.",
-            objectSchema(JSONObject().put("path", stringProperty("Sandbox-relative file path.")), listOf("path"))
+            "Read a UTF-8 text file under workspace/.",
+            objectSchema(JSONObject().put("path", stringProperty("Path under workspace/.")), listOf("path"))
         ))
         .put(tool(
             "rift_write_text",
-            "Create or replace a UTF-8 text file in the Rift MCP sandbox. Local write permission must be enabled.",
+            "Create or replace a UTF-8 text file under workspace/. Local write permission must be enabled.",
             objectSchema(
                 JSONObject()
-                    .put("path", stringProperty("Sandbox-relative file path."))
+                    .put("path", stringProperty("Path under workspace/."))
                     .put("text", stringProperty("Complete UTF-8 file contents.")),
                 listOf("path", "text")
             )
         ))
         .put(tool(
             "rift_mkdir",
-            "Create a directory in the Rift MCP sandbox. Local write permission must be enabled.",
-            objectSchema(JSONObject().put("path", stringProperty("Sandbox-relative directory path.")), listOf("path"))
+            "Create a directory under workspace/. Local write permission must be enabled.",
+            objectSchema(JSONObject().put("path", stringProperty("Path under workspace/.")), listOf("path"))
         ))
         .put(tool(
             "rift_remove",
-            "Remove a file or directory in the Rift MCP sandbox. Local write permission must be enabled.",
+            "Remove a file or directory under workspace/. Local write permission must be enabled.",
             objectSchema(JSONObject().put("path", stringProperty("Sandbox-relative path to remove.")), listOf("path"))
         ))
         .put(tool(
             "rift_move",
-            "Move or rename a file or directory in the Rift MCP sandbox. Local write permission must be enabled.",
+            "Move or rename a file or directory under workspace/. Local write permission must be enabled.",
             objectSchema(
                 JSONObject()
-                    .put("from", stringProperty("Sandbox-relative source path."))
-                    .put("to", stringProperty("Sandbox-relative destination path."))
+                    .put("from", stringProperty("Source path under workspace/."))
+                    .put("to", stringProperty("Destination path under workspace/."))
                     .put("overwrite", booleanProperty("Replace an existing destination when true.")),
                 listOf("from", "to")
             )
         ))
         .put(tool(
             "rift_copy",
-            "Copy a file or directory in the Rift MCP sandbox. Local write permission must be enabled.",
+            "Copy a file or directory under workspace/. Local write permission must be enabled.",
             objectSchema(
                 JSONObject()
-                    .put("from", stringProperty("Sandbox-relative source path."))
-                    .put("to", stringProperty("Sandbox-relative destination path."))
+                    .put("from", stringProperty("Source path under workspace/."))
+                    .put("to", stringProperty("Destination path under workspace/."))
                     .put("overwrite", booleanProperty("Replace an existing destination when true.")),
                 listOf("from", "to")
             )
@@ -123,7 +123,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                             .put("description", "Ordered local workspace operations. Each item has op plus the fields required by that operation.")
                             .put("items", JSONObject().put("type", "object"))
                     )
-                    .put("finish", booleanProperty("Set true only when this successful mutating batch fully completes the Rift AI task. RiftBrowser may finish locally without a second ChatGPT continuation turn.")),
+                    .put("finish", booleanProperty("Set true only when this mutating batch is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session.")),
                 listOf("operations")
             )
         ))

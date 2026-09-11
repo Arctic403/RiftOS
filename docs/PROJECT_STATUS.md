@@ -58,14 +58,14 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 
 - `RiftToolHost` is the canonical device-side capability registry.
 - `RiftMcpServer` is an in-process MCP JSON-RPC server with no listening socket.
-- Local tool scope is `filesDir/riftfs/tool-sandbox`.
+- Local tool scope is exactly `filesDir/riftfs/workspace`; no other RiftFS or SAF root is MCP-addressable.
 - Existing alpha data is migrated from `filesDir/riftfs/browser-sandbox` on first use.
 - Local read/write permission gates are authoritative.
 - Read tools: `rift_info`, `rift_stat`, `rift_list`, `rift_read_text`, plus read-only `rift_workspace_exec` batches.
 - Write tools: `rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`; `rift_workspace_exec` additionally requires write permission only when its batch contains `write`, `replace`, `patch`, `mkdir`, `remove`, or `move`.
 - `rift_workspace_exec` (Rift Code Mode) can run up to 192 ordered project operations locally in one model-visible call: `project`, `stat`, `list`, `search`, `read`, `write`, `replace`, `patch`, `mkdir`, `remove`, `move`.
 - Code Mode batches are transactionally rolled back on any operation failure before the error is returned to ChatGPT Web; successful changes remain under the normal Rift AI review journal.
-- A successful mutating `rift_workspace_exec` batch may set `finish:true`; RiftBrowser then completes the active AI transport locally and enters review without a redundant ChatGPT result-continuation turn.
+- A mutating `rift_workspace_exec` batch may set `finish:true`; RiftBrowser still returns the correlated result to ChatGPT Web and completes the active transport only after the final assistant continuation.
 - Read is enabled by default; write remains disabled by default until enabled in Rift MCP settings.
 - Recent activity log records canonical tool, target/path, outcome and time without storing file contents.
 - No remote relay, WSS device client, pairing key, public MCP endpoint, process-start MCP provider or relay dependency is active.

@@ -43,7 +43,7 @@ RiftKernel
 
 Normal guest webpages never receive `RiftWorkspace` or unrestricted RiftFS authority.
 
-ChatGPT receives only the separate `tool-sandbox` filesystem, not the main RiftWorkspace tree.
+ChatGPT receives capability access only to the canonical `workspace/` tree. It has no MCP path to RiftOS system roots, downloads, documents, mounts, or workspace-history metadata.
 
 ## Historical web mode
 
