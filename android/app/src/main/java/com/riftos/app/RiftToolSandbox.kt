@@ -159,8 +159,41 @@ class RiftToolSandbox(context: Context) {
         "fs.move" -> move(workspaceMutationPath(args.getString("from")), workspaceMutationPath(args.getString("to")), args.optBoolean("overwrite", false))
         "fs.copy" -> copy(workspaceMutationPath(args.getString("from")), workspaceMutationPath(args.getString("to")), args.optBoolean("overwrite", false))
         "workspace.exec" -> workspaceExec(args)
+        "workspace.audit" -> audit(args.optString("path"))
+        "workspace.scan" -> scan(args.optString("path"), args.optString("mode", "all"))
         else -> throw IllegalArgumentException("Unsupported Rift tool sandbox method: $method")
     }
+
+    private fun audit(path: String): JSONObject {
+        val root = workspacePath(path)
+        val result = JSONObject()
+            .put("ok", true)
+            .put("path", relativePath(root))
+            .put("scanner", "rift-audit-v1")
+        val findings = JSONArray()
+        var files = 0
+        if (root.exists()) {
+            root.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    files++
+                    val name = file.name.lowercase()
+                    if (name.contains("secret") || name.contains("password") || name.contains("token")) {
+                        findings.put(JSONObject().put("severity", "medium").put("category", "security").put("file", relativePath(file)).put("issue", "sensitive-looking filename"))
+                    }
+                }
+            }
+        }
+        return result.put("filesScanned", files).put("findings", findings)
+    }
+
+    private fun scan(path: String, mode: String): JSONObject {
+        val result = audit(path)
+        result.put("mode", mode.lowercase())
+        result.put("scanVersion", "rift-scan-v1")
+        return result
+    }
+
+    private fun relativePath(file: File): String = runCatching { file.relativeTo(workspaceRoot).path }.getOrDefault(file.path)
 
     private fun normalizeSegments(path: String): List<String> {
         val normalized = path.replace('\\', '/').trim('/')

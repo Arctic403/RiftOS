@@ -112,6 +112,18 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             )
         ))
         .put(tool(
+            "rift_audit",
+            "Run a local RiftOS project health audit. Scans workspace structure, source patterns, and runtime risk indicators without mutating files.",
+            objectSchema(JSONObject().put("path", stringProperty("Optional project path under workspace/."))))
+        .put(tool(
+            "rift_scan",
+            "Run a focused local project scan. Supported modes: security, runtime, architecture, all.",
+            objectSchema(
+                JSONObject()
+                    .put("path", stringProperty("Optional project path under workspace/."))
+                    .put("mode", stringProperty("Scan mode: security, runtime, architecture, or all."))
+            )))
+        .put(tool(
             "rift_workspace_exec",
             "Rift Code Mode + Project Intelligence v1: execute many workspace operations locally in one model-visible call. Supports snapshots, incremental symbol search, reference lookup, surgical symbol/range reads, exact/range/hunk patches, dry-run validation, and transactional multi-file edits under workspace/. Read permission is always required; write permission is required only when the batch mutates files.",
             objectSchema(
@@ -301,6 +313,8 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "move", "rift_move" -> "rift_move"
         "copy", "rift_copy" -> "rift_copy"
         "workspaceExec", "rift_workspace_exec" -> "rift_workspace_exec"
+        "audit", "rift_audit" -> "rift_audit"
+        "scan", "rift_scan" -> "rift_scan"
         else -> raw.trim()
     }
 
@@ -315,6 +329,8 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "rift_move" -> "fs.move"
         "rift_copy" -> "fs.copy"
         "rift_workspace_exec" -> "workspace.exec"
+        "rift_audit" -> "workspace.audit"
+        "rift_scan" -> "workspace.scan"
         else -> null
     }
 
