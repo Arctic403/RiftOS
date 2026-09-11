@@ -70,8 +70,7 @@ class MainActivity : Activity() {
             activity = this,
             host = rootView,
             launchFileChooser = ::launchFileChooser,
-            stateSink = ::sendBrowserWindowState,
-            aiEventSink = {}
+            stateSink = ::sendBrowserWindowState
         )
         CookieManager.getInstance().setAcceptCookie(true)
 
