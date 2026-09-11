@@ -15,7 +15,7 @@ function ensureLauncherCard(){
   const button=document.createElement("button");
   button.className="app-card";
   button.dataset.riftSystemApp="mcp";
-  button.innerHTML='<span class="app-icon">↔</span><span><strong>Rift MCP</strong><br><small>Local AI tools, permissions & activity</small></span>';
+  button.innerHTML='<span class="app-icon">↔</span><span><strong>Rift MCP</strong><br><small>ChatGPT Web tools, permissions & activity</small></span>';
   button.onclick=open;
   grid.append(button);
 }
@@ -41,4 +41,4 @@ document.addEventListener("DOMContentLoaded",install);
 setTimeout(install,0);
 
 globalThis.RiftMcp=Object.freeze({open});
-console.info("[RiftMcp] local system app registered");
+console.info("[RiftMcp] local ChatGPT Web tools registered");
