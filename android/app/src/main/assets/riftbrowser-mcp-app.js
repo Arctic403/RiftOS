@@ -24,6 +24,7 @@
   const historicalAssistantMessages = new WeakSet();
   const protocolIssueFingerprints = new WeakMap();
   const incompleteCallTimers = new WeakMap();
+  const acknowledgedResultIds = new Set();
   let requestCounter = 0;
   let tools = [];
   let mcpReady = false;
@@ -621,17 +622,24 @@ ${contextBlock()}`;
   function markInjectedResultMessage(message) {
     const parsed = readResultPayloadFromMessage(message);
     const resultId = String(parsed && parsed.result_id || '').trim();
-    if (resultId && message instanceof HTMLElement) message.dataset.riftResultId = resultId;
+    if (resultId) {
+      acknowledgedResultIds.add(resultId);
+      if (message instanceof HTMLElement) message.dataset.riftResultId = resultId;
+    }
     return resultId;
   }
 
   async function waitForResultAck(resultId, timeoutMs = RESULT_ACK_TIMEOUT_MS) {
     const deadline = now() + timeoutMs;
     while (now() < deadline) {
+      if (acknowledgedResultIds.has(resultId)) return true;
       for (const message of document.querySelectorAll('[data-message-author-role="user"]')) {
         if (!(message instanceof Element)) continue;
         const known = message instanceof HTMLElement ? String(message.dataset.riftResultId || '') : '';
-        if (known === resultId) return true;
+        if (known === resultId) {
+          acknowledgedResultIds.add(resultId);
+          return true;
+        }
         if (markInjectedResultMessage(message) === resultId) return true;
       }
       await new Promise((resolve) => setTimeout(resolve, 80));
@@ -913,6 +921,14 @@ ${contextBlock()}`;
       const end = out.indexOf(CALL_CLOSE, start + CALL_OPEN.length);
       if (end < 0) { out = out.slice(0, start); break; }
       out = out.slice(0, start) + out.slice(end + CALL_CLOSE.length);
+    }
+    // Streaming can expose "<r", "<ri", "<rif", etc. before the complete
+    // protocol tag exists. Hide only a trailing prefix of <rift_call>.
+    for (let length = Math.min(CALL_OPEN.length - 1, out.length); length > 0; length -= 1) {
+      if (out.endsWith(CALL_OPEN.slice(0, length))) {
+        out = out.slice(0, -length);
+        break;
+      }
     }
     return out.replace(/\n{3,}/g, '\n\n').trim();
   }
