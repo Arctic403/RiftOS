@@ -84,7 +84,7 @@ async function open(){
       <div><button class="secondary" id="riftAiTargetRefresh">Refresh</button><button class="secondary" id="riftAiBrowseTargets">Browse all…</button></div>
     </section>
     <div class="rift-ai-grid">
-      <aside class="rift-ai-panel rift-ai-project"><header><b>Project</b><small>tool-sandbox/workspace</small></header><div id="riftAiTree" class="rift-ai-tree"><div class="rift-ai-empty">Loading…</div></div></aside>
+      <aside class="rift-ai-panel rift-ai-project"><header><b>Project</b><small>RiftFS/workspace</small></header><div id="riftAiTree" class="rift-ai-tree"><div class="rift-ai-empty">Loading…</div></div></aside>
       <main class="rift-ai-panel rift-ai-output"><header><b>AI Output</b><small id="riftAiSession">No active session</small></header><article id="riftAiOutput"><div class="rift-ai-empty">Run a task to start a fresh hidden ChatGPT Web session.</div></article></main>
       <aside class="rift-ai-side">
         <section class="rift-ai-panel rift-ai-logs"><header><b>Live Logs</b><small>local structured events</small></header><div id="riftAiLogs"><div class="rift-ai-empty">No events yet</div></div></section>
@@ -102,7 +102,7 @@ async function open(){
   const runButton=$("#riftAiRun"),stopButton=$("#riftAiStop"),acceptButton=$("#riftAiAccept"),revertButton=$("#riftAiRevert");
   const targetSelect=$("#riftAiTarget"),targetHint=$("#riftAiTargetHint");
   let targetRegistry=new Map([["new",{mode:"new",kind:"new",label:"New chat",url:"https://chatgpt.com/"}]]);
-  const WRITE_TOOLS=new Set(["rift_write_text","rift_mkdir","rift_remove","rift_move"]);
+  const WRITE_TOOLS=new Set(["rift_write_text","rift_mkdir","rift_remove","rift_move","rift_copy"]);
 
   function describeTarget(target){
     if(!target||target.kind==="new")return "Start a clean ChatGPT Web conversation.";

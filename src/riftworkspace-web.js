@@ -153,7 +153,24 @@ class RiftWorkspaceWeb extends EventTarget{
     }
   }
 
-  async move(path,newPath){
+  async copy(path,newPath,{overwrite=false}={}){
+    await this.ready;
+    const sourceRelative=this.assertEditable(path);
+    const destinationRelative=this.assertEditable(newPath);
+    if(sourceRelative===destinationRelative)throw new Error("Copy source and destination are identical");
+    if(destinationRelative.startsWith(sourceRelative+"/"))throw new Error("Cannot copy a directory inside itself");
+    const sourceFull=this.fullPath(sourceRelative),destinationFull=this.fullPath(destinationRelative);
+    if(!(await this.fs.stat(sourceFull)))throw new Error(`Workspace source does not exist: ${sourceRelative}`);
+    if(await this.fs.stat(destinationFull)){
+      if(!overwrite)throw new Error(`Workspace destination already exists: ${destinationRelative}`);
+    }
+    if(typeof this.fs.copy==="function")await this.fs.copy(sourceFull,destinationFull,{overwrite});
+    else await this.copyTree(sourceFull,destinationFull);
+    this.dispatchEvent(new CustomEvent("change",{detail:{type:"copy",path:sourceRelative,newPath:destinationRelative}}));
+    return {path:sourceRelative,newPath:destinationRelative};
+  }
+
+  async move(path,newPath,{overwrite=false}={}){
     await this.ready;
     const sourceRelative=this.assertEditable(path);
     const destinationRelative=this.assertEditable(newPath);
@@ -161,9 +178,11 @@ class RiftWorkspaceWeb extends EventTarget{
     if(destinationRelative.startsWith(sourceRelative+"/"))throw new Error("Cannot move a directory inside itself");
     const sourceFull=this.fullPath(sourceRelative),destinationFull=this.fullPath(destinationRelative);
     if(!(await this.fs.stat(sourceFull)))throw new Error(`Workspace source does not exist: ${sourceRelative}`);
-    if(await this.fs.stat(destinationFull))throw new Error(`Workspace destination already exists: ${destinationRelative}`);
-    await this.copyTree(sourceFull,destinationFull);
-    await this.fs.remove(sourceFull);
+    if(await this.fs.stat(destinationFull)){
+      if(!overwrite)throw new Error(`Workspace destination already exists: ${destinationRelative}`);
+    }
+    if(typeof this.fs.move==="function")await this.fs.move(sourceFull,destinationFull,{overwrite});
+    else {await this.copyTree(sourceFull,destinationFull);await this.fs.remove(sourceFull);}
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"move",path:sourceRelative,newPath:destinationRelative}}));
     return {path:sourceRelative,newPath:destinationRelative};
   }
@@ -374,7 +393,8 @@ const workspace=Object.freeze({
   writeJSON:(path,value)=>useNative()?nativeCall("workspace.writeText",{path,text:JSON.stringify(value,null,2)}):localWorkspace.writeJSON(path,value),
   mkdir:(path)=>useNative()?nativeCall("workspace.mkdir",{path}):localWorkspace.mkdir(path),
   remove:(path)=>useNative()?nativeCall("workspace.remove",{path}):localWorkspace.remove(path),
-  move:(path,newPath)=>useNative()?nativeCall("workspace.move",{path,newPath}):localWorkspace.move(path,newPath),
+  move:(path,newPath,options={})=>useNative()?nativeCall("workspace.move",{path,newPath,...options}):localWorkspace.move(path,newPath,options),
+  copy:(path,newPath,options={})=>useNative()?nativeCall("workspace.copy",{path,newPath,...options}):localWorkspace.copy(path,newPath,options),
   previewPatch:(patch)=>useNative()?nativeCall("workspace.previewPatch",{patch}):localWorkspace.previewPatch(patch),
   applyPatch:(patch)=>useNative()?nativeCall("workspace.applyPatch",{patch}):localWorkspace.applyPatch(patch),
   history:()=>useNative()?nativeCall("workspace.history",{}):localWorkspace.history(),
@@ -396,7 +416,8 @@ async function invoke(request={}){
     "workspace.writeJSON":()=>workspace.writeJSON(args.path,args.value),
     "workspace.mkdir":()=>workspace.mkdir(args.path),
     "workspace.remove":()=>workspace.remove(args.path),
-    "workspace.move":()=>workspace.move(args.path,args.newPath??args.new_path),
+    "workspace.move":()=>workspace.move(args.path,args.newPath??args.new_path,{overwrite:args.overwrite===true}),
+    "workspace.copy":()=>workspace.copy(args.path,args.newPath??args.new_path,{overwrite:args.overwrite===true}),
     "workspace.previewPatch":()=>workspace.previewPatch(args.patch??args.json),
     "workspace.applyPatch":()=>workspace.applyPatch(args.patch??args.json),
     "workspace.history":()=>workspace.history(),

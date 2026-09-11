@@ -6,7 +6,7 @@ let dbReadyPromise = null;
 const BUILD_ID = "SafariSafe-v12-Folders-20260820";
 const WORKSPACE_DB_NAME = "MobileWorkspaceDB_SafariSafe_v4";
 const WORKSPACE_DB_VERSION = 2;
-const APP_BUILD = "2026-08-20-folder-manager-v12";
+const APP_BUILD = "2026-09-10-riftfs-parity-v13";
 console.info("Mobile Workspace build:", APP_BUILD);
 let lastSearchIndex = 0;
 let selectedFolderPath = "";
@@ -20,6 +20,7 @@ let gitSyncStatusTimer = null;
 let gitSyncStatusRunId = 0;
 const GIT_SYNC_STATE_KEY = "gh_sync_state_v2";
 const workspaceHashCache = new Map();
+const riftDevClipboard = { mode: "copy", path: "", type: "file" };
 // #endregion
 
 // #region Helper Utilities
@@ -1504,6 +1505,11 @@ function bindUIEvents() {
         }
     });
 
+    bindClick("workspacePasteBtn", async function () {
+        try { await pasteWorkspaceClipboard(); }
+        catch (err) { alert("Paste failed: " + (err.message || err)); }
+    });
+
     bindClick("pushGitHubBtn", async function () {
         const tokenInput = document.getElementById("tokenInput");
         const repoSelect = document.getElementById("repoSelect");
@@ -1940,6 +1946,42 @@ function renderTree(node, container, currentFolderPath) {
                 deleteFile(item.fullPath);
             });
 
+            const rename = document.createElement("span");
+            rename.className = "delete-icon";
+            rename.title = "Rename File";
+            rename.textContent = "✎";
+            rename.addEventListener("click", async (e) => {
+                e.preventDefault(); e.stopPropagation();
+                await renameWorkspaceItem(item.fullPath, "file");
+            });
+
+            const copy = document.createElement("span");
+            copy.className = "delete-icon";
+            copy.title = "Copy File";
+            copy.textContent = "⧉";
+            copy.addEventListener("click", (e) => {
+                e.preventDefault(); e.stopPropagation();
+                setWorkspaceClipboard(item.fullPath, "file", "copy");
+            });
+
+            const cut = document.createElement("span");
+            cut.className = "delete-icon";
+            cut.title = "Cut File";
+            cut.textContent = "✂";
+            cut.addEventListener("click", (e) => {
+                e.preventDefault(); e.stopPropagation();
+                setWorkspaceClipboard(item.fullPath, "file", "cut");
+            });
+
+            const duplicate = document.createElement("span");
+            duplicate.className = "delete-icon";
+            duplicate.title = "Duplicate File";
+            duplicate.textContent = "＋";
+            duplicate.addEventListener("click", async (e) => {
+                e.preventDefault(); e.stopPropagation();
+                await duplicateWorkspaceItem(item.fullPath, "file");
+            });
+
             const move = document.createElement("span");
             move.className = "delete-icon";
             move.title = "Move File";
@@ -1949,9 +1991,7 @@ function renderTree(node, container, currentFolderPath) {
                 await promptMoveWorkspaceItem(item.fullPath, "file");
             });
 
-            actions.appendChild(split);
-            actions.appendChild(move);
-            actions.appendChild(del);
+            actions.append(split, rename, copy, cut, duplicate, move, del);
             row.appendChild(label);
             row.appendChild(actions);
             treeNode.appendChild(row);
@@ -1999,6 +2039,42 @@ function renderTree(node, container, currentFolderPath) {
             actions.style.gap = "4px";
             actions.style.alignItems = "center";
 
+            const rename = document.createElement("span");
+            rename.className = "delete-icon";
+            rename.title = "Rename Folder";
+            rename.textContent = "✎";
+            rename.addEventListener("click", async (e) => {
+                e.preventDefault(); e.stopPropagation();
+                await renameWorkspaceItem(folderPath, "folder");
+            });
+
+            const copy = document.createElement("span");
+            copy.className = "delete-icon";
+            copy.title = "Copy Folder";
+            copy.textContent = "⧉";
+            copy.addEventListener("click", (e) => {
+                e.preventDefault(); e.stopPropagation();
+                setWorkspaceClipboard(folderPath, "folder", "copy");
+            });
+
+            const cut = document.createElement("span");
+            cut.className = "delete-icon";
+            cut.title = "Cut Folder";
+            cut.textContent = "✂";
+            cut.addEventListener("click", (e) => {
+                e.preventDefault(); e.stopPropagation();
+                setWorkspaceClipboard(folderPath, "folder", "cut");
+            });
+
+            const duplicate = document.createElement("span");
+            duplicate.className = "delete-icon";
+            duplicate.title = "Duplicate Folder";
+            duplicate.textContent = "＋";
+            duplicate.addEventListener("click", async (e) => {
+                e.preventDefault(); e.stopPropagation();
+                await duplicateWorkspaceItem(folderPath, "folder");
+            });
+
             const move = document.createElement("span");
             move.className = "delete-icon";
             move.title = "Move Folder";
@@ -2018,7 +2094,7 @@ function renderTree(node, container, currentFolderPath) {
                 deleteFolder(folderPath);
             });
 
-            actions.append(move, del);
+            actions.append(rename, copy, cut, duplicate, move, del);
             row.appendChild(label);
             row.appendChild(actions);
             treeNode.appendChild(row);
@@ -2145,6 +2221,119 @@ async function ensureFolderPath(path) {
     }
 }
 
+function workspaceApi() {
+    const api = window.parent && window.parent.RiftWorkspace;
+    if (!api?.available) throw new Error("RiftWorkspace is unavailable.");
+    return api;
+}
+
+function setWorkspaceClipboard(path, type, mode = "copy") {
+    riftDevClipboard.path = normalizeWorkspacePath(path);
+    riftDevClipboard.type = type === "folder" ? "folder" : "file";
+    riftDevClipboard.mode = mode === "cut" ? "cut" : "copy";
+    const button = document.getElementById("workspacePasteBtn");
+    if (button) button.textContent = `📋 Paste ${riftDevClipboard.mode === "cut" ? "cut" : "copy"}`;
+}
+
+function duplicateWorkspaceName(name) {
+    const dot = name.lastIndexOf(".");
+    return dot > 0 ? `${name.slice(0, dot)} copy${name.slice(dot)}` : `${name} copy`;
+}
+
+async function uniqueWorkspacePath(parentPath, preferredName) {
+    const ws = workspaceApi();
+    const cleanParent = normalizeWorkspacePath(parentPath || "");
+    const preferred = normalizeWorkspacePath(preferredName).split("/").pop();
+    let candidate = cleanParent ? `${cleanParent}/${preferred}` : preferred;
+    if (!(await ws.stat(candidate).catch(() => null))) return candidate;
+    const dot = preferred.lastIndexOf(".");
+    const stem = dot > 0 ? preferred.slice(0, dot) : preferred;
+    const ext = dot > 0 ? preferred.slice(dot) : "";
+    let index = 2;
+    while (await ws.stat(candidate).catch(() => null)) {
+        const name = `${stem} (${index++})${ext}`;
+        candidate = cleanParent ? `${cleanParent}/${name}` : name;
+    }
+    return candidate;
+}
+
+async function duplicateWorkspaceItem(sourcePath, type = "file") {
+    const ws = workspaceApi();
+    sourcePath = normalizeWorkspacePath(sourcePath);
+    const slash = sourcePath.lastIndexOf("/");
+    const parentPath = slash >= 0 ? sourcePath.slice(0, slash) : "";
+    const baseName = slash >= 0 ? sourcePath.slice(slash + 1) : sourcePath;
+    const destination = await uniqueWorkspacePath(parentPath, duplicateWorkspaceName(baseName));
+    await ws.copy(sourcePath, destination);
+    workspaceHashCache.delete(destination);
+    if (type === "folder") expandFolderPath(parentPath);
+    await loadFiles();
+}
+
+async function renameWorkspaceItem(sourcePath, type = "file") {
+    const ws = workspaceApi();
+    sourcePath = normalizeWorkspacePath(sourcePath);
+    const slash = sourcePath.lastIndexOf("/");
+    const parentPath = slash >= 0 ? sourcePath.slice(0, slash) : "";
+    const baseName = slash >= 0 ? sourcePath.slice(slash + 1) : sourcePath;
+    const raw = prompt(`Rename ${type}:`, baseName);
+    if (raw === null) return;
+    const nextName = normalizeWorkspacePath(raw).split("/").pop();
+    if (!nextName || nextName === baseName) return;
+    const destination = parentPath ? `${parentPath}/${nextName}` : nextName;
+    if (await ws.stat(destination).catch(() => null)) return alert(`"${destination}" already exists.`);
+    await ws.move(sourcePath, destination);
+    workspaceHashCache.delete(sourcePath);
+    workspaceHashCache.delete(destination);
+    updateOpenPathAfterMove(sourcePath, destination, type === "folder");
+    if (type === "folder") {
+        if (selectedFolderPath === sourcePath || selectedFolderPath.startsWith(sourcePath + "/")) {
+            selectedFolderPath = destination + selectedFolderPath.slice(sourcePath.length);
+        }
+        for (const expandedPath of Array.from(expandedFolderPaths)) {
+            if (expandedPath === sourcePath || expandedPath.startsWith(sourcePath + "/")) {
+                expandedFolderPaths.delete(expandedPath);
+                expandedFolderPaths.add(destination + expandedPath.slice(sourcePath.length));
+            }
+        }
+    }
+    await loadFiles();
+}
+
+async function pasteWorkspaceClipboard() {
+    if (!riftDevClipboard.path) return alert("Copy or cut a file/folder first.");
+    const ws = workspaceApi();
+    const sourcePath = normalizeWorkspacePath(riftDevClipboard.path);
+    const source = await ws.stat(sourcePath).catch(() => null);
+    if (!source) {
+        riftDevClipboard.path = "";
+        return alert("The copied item no longer exists.");
+    }
+    const targetFolder = normalizeWorkspacePath(selectedFolderPath || "");
+    if (riftDevClipboard.type === "folder" && (targetFolder === sourcePath || targetFolder.startsWith(sourcePath + "/"))) {
+        return alert("A folder cannot be pasted inside itself.");
+    }
+    const baseName = sourcePath.split("/").pop();
+    let destination = targetFolder ? `${targetFolder}/${baseName}` : baseName;
+    if (riftDevClipboard.mode === "cut" && destination === sourcePath) return;
+    if (await ws.stat(destination).catch(() => null)) {
+        destination = await uniqueWorkspacePath(targetFolder, duplicateWorkspaceName(baseName));
+    }
+    if (riftDevClipboard.mode === "cut") {
+        await ws.move(sourcePath, destination);
+        updateOpenPathAfterMove(sourcePath, destination, riftDevClipboard.type === "folder");
+        riftDevClipboard.path = "";
+        const button = document.getElementById("workspacePasteBtn");
+        if (button) button.textContent = "📋 Paste";
+    } else {
+        await ws.copy(sourcePath, destination);
+    }
+    workspaceHashCache.delete(sourcePath);
+    workspaceHashCache.delete(destination);
+    expandFolderPath(targetFolder);
+    await loadFiles();
+}
+
 async function promptMoveWorkspaceItem(sourcePath, type) {
     const currentParent = sourcePath.includes("/") ? sourcePath.slice(0, sourcePath.lastIndexOf("/")) : "";
     const target = prompt(`Move ${type} into folder (leave blank for workspace root):`, currentParent);
@@ -2153,75 +2342,41 @@ async function promptMoveWorkspaceItem(sourcePath, type) {
 }
 
 async function moveWorkspaceItem(sourcePath, targetFolderPath, type = "file") {
+    const ws = workspaceApi();
     sourcePath = normalizeWorkspacePath(sourcePath);
     targetFolderPath = normalizeWorkspacePath(targetFolderPath || "");
     if (!sourcePath) return;
 
-    const baseName = sourcePath.split('/').pop();
+    const source = await ws.stat(sourcePath).catch(() => null);
+    if (!source) return alert(`That ${type} no longer exists.`);
+
+    const baseName = sourcePath.split("/").pop();
     const newPath = targetFolderPath ? `${targetFolderPath}/${baseName}` : baseName;
     if (sourcePath === newPath) return;
     if (type === "folder" && (targetFolderPath === sourcePath || targetFolderPath.startsWith(sourcePath + "/"))) {
         return alert("A folder cannot be moved inside itself or one of its own subfolders.");
     }
 
-    const [files, folders] = await Promise.all([getAllWorkspaceFiles(), getAllWorkspaceFolders()]);
-    const fileNames = new Set(files.map(f => f.name));
-    const folderNames = new Set(folders);
+    if (targetFolderPath) {
+        const targetFolder = await ws.stat(targetFolderPath).catch(() => null);
+        if (targetFolder && targetFolder.kind !== "directory") return alert(`"${targetFolderPath}" is not a folder.`);
+        if (!targetFolder) await ws.mkdir(targetFolderPath);
+    }
 
-    if (type === "file") {
-        const item = files.find(f => f.name === sourcePath);
-        if (!item) return alert("That file no longer exists.");
-        if (folderNames.has(newPath)) return alert(`Cannot move a file onto the existing folder "${newPath}".`);
-        if (fileNames.has(newPath) && !confirm(`"${newPath}" already exists. Replace it?`)) return;
-        if (targetFolderPath) await ensureFolderPath(targetFolderPath);
+    const existing = await ws.stat(newPath).catch(() => null);
+    let overwrite = false;
+    if (existing) {
+        if (existing.kind !== source.kind) return alert(`Cannot move ${type} onto an existing ${existing.kind}.`);
+        if (!confirm(`"${newPath}" already exists. Replace it?`)) return;
+        overwrite = true;
+    }
 
-        const database = await getDatabase();
-        await new Promise((resolve, reject) => {
-            const tx = database.transaction("files", "readwrite");
-            const store = tx.objectStore("files");
-            store.delete(sourcePath);
-            store.put({ name: newPath, content: item.content });
-            tx.oncomplete = resolve;
-            tx.onerror = () => reject(tx.error || new Error("Could not move file."));
-            tx.onabort = () => reject(tx.error || new Error("Move was aborted."));
-        });
-        workspaceHashCache.delete(sourcePath);
-        workspaceHashCache.delete(newPath);
-        updateOpenPathAfterMove(sourcePath, newPath, false);
-    } else {
-        const sourceExists = folderNames.has(sourcePath) || files.some(f => f.name.startsWith(sourcePath + "/"));
-        if (!sourceExists) return alert("That folder no longer exists.");
-        if (fileNames.has(newPath)) return alert(`Cannot move a folder onto the existing file "${newPath}".`);
-        if (folderNames.has(newPath) && !confirm(`"${newPath}" already exists. Merge into it?`)) return;
-        if (targetFolderPath) await ensureFolderPath(targetFolderPath);
+    await ws.move(sourcePath, newPath, { overwrite });
+    workspaceHashCache.delete(sourcePath);
+    workspaceHashCache.delete(newPath);
+    updateOpenPathAfterMove(sourcePath, newPath, type === "folder");
 
-        const movedFiles = files.filter(f => f.name.startsWith(sourcePath + "/"));
-        const movedFolders = folders.filter(f => f === sourcePath || f.startsWith(sourcePath + "/"));
-        const database = await getDatabase();
-        const stores = database.objectStoreNames.contains("folders") ? ["files", "folders"] : ["files"];
-        await new Promise((resolve, reject) => {
-            const tx = database.transaction(stores, "readwrite");
-            const fileStore = tx.objectStore("files");
-            const folderStore = stores.includes("folders") ? tx.objectStore("folders") : null;
-            movedFiles.forEach(item => {
-                const suffix = item.name.slice(sourcePath.length);
-                fileStore.delete(item.name);
-                fileStore.put({ name: newPath + suffix, content: item.content });
-            });
-            if (folderStore) {
-                movedFolders.forEach(path => {
-                    const suffix = path.slice(sourcePath.length);
-                    folderStore.delete(path);
-                    folderStore.put({ path: newPath + suffix });
-                });
-                folderStore.put({ path: newPath });
-            }
-            tx.oncomplete = resolve;
-            tx.onerror = () => reject(tx.error || new Error("Could not move folder."));
-            tx.onabort = () => reject(tx.error || new Error("Folder move was aborted."));
-        });
-        movedFiles.forEach(f => { workspaceHashCache.delete(f.name); workspaceHashCache.delete(newPath + f.name.slice(sourcePath.length)); });
-        updateOpenPathAfterMove(sourcePath, newPath, true);
+    if (type === "folder") {
         if (selectedFolderPath === sourcePath || selectedFolderPath.startsWith(sourcePath + "/")) {
             selectedFolderPath = newPath + selectedFolderPath.slice(sourcePath.length);
         }

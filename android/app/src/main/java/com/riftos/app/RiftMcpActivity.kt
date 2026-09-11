@@ -98,7 +98,8 @@ class RiftMcpActivity : Activity() {
         statusView.text = buildString {
             append("Mode: local-only in-process MCP")
             append("\nTools: ").append(host.tools().length())
-            append("\nSandbox: ").append(access.optString("scope", RiftToolHost.SCOPE))
+            append("\nWorkspace: ").append(access.optString("workspaceScope", "riftfs/workspace"))
+            append("\nTransfers: ").append(access.optString("transferScope", RiftToolHost.SCOPE))
             append("\nRead tools: ").append(if (access.optBoolean("sandboxRead", true)) "allowed" else "blocked")
             append("\nWrite tools: ").append(if (access.optBoolean("sandboxWrite", false)) "allowed" else "blocked")
             append("\nRemote relay: none")

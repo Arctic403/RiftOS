@@ -31,7 +31,9 @@ class RiftAiJournal(context: Context) {
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val root = File(appContext.filesDir, "rift-ai").apply { mkdirs() }
     private val sessionsRoot = File(root, "sessions").apply { mkdirs() }
-    private val toolRoot = File(appContext.filesDir, "riftfs/tool-sandbox").apply { mkdirs() }
+    private val riftFsRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }
+    private val toolRoot = File(riftFsRoot, "tool-sandbox").apply { mkdirs() }
+    private val workspaceRoot = File(riftFsRoot, "workspace").apply { mkdirs() }
 
     init {
         recoverInterruptedSession()
@@ -121,7 +123,7 @@ class RiftAiJournal(context: Context) {
             append("Project root: ").append(path).append('\n')
             append("The full project is locally reachable through rift_workspace_exec (Rift Code Mode). ")
             append("Prefer one batched workspace call over many small tool calls. Only return source text to ChatGPT when reasoning needs it.\n")
-            append("Code Mode operations: project, stat, list, search, read, write, replace, patch, mkdir, remove, move. ")
+            append("Code Mode operations: project, stat, list, search, read, write, replace, patch, mkdir, remove, move, rename, copy. ")
             append("Batches execute locally and roll back all batch mutations if any operation fails.\n")
             append("Top-level entries")
             if (children.size > 120) append(" (first 120 of ").append(children.size).append(')')
@@ -173,6 +175,7 @@ class RiftAiJournal(context: Context) {
                 capturePath(id, args.optString("from"))
                 capturePath(id, args.optString("to"))
             }
+            "rift_copy" -> capturePath(id, args.optString("to"))
             "rift_workspace_exec" -> captureWorkspaceBatch(id, args)
         }
     }
@@ -188,21 +191,22 @@ class RiftAiJournal(context: Context) {
             val operation = operations.optJSONObject(index) ?: continue
             when (operation.optString("op").trim().lowercase()) {
                 "write", "replace", "patch", "mkdir", "remove" -> capturePath(id, mutationPath(operation.optString("path")))
-                "move" -> {
+                "move", "rename" -> {
                     capturePath(id, mutationPath(operation.optString("from")))
                     capturePath(id, mutationPath(operation.optString("to")))
                 }
+                "copy" -> capturePath(id, mutationPath(operation.optString("to")))
             }
         }
     }
 
     private fun toolMutates(name: String, args: JSONObject): Boolean {
-        if (name in setOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move")) return true
+        if (name in setOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy")) return true
         if (name != "rift_workspace_exec") return false
         val operations = args.optJSONArray("operations") ?: return false
         for (index in 0 until operations.length()) {
             val op = operations.optJSONObject(index)?.optString("op")?.trim()?.lowercase().orEmpty()
-            if (op in setOf("write", "replace", "patch", "mkdir", "remove", "move")) return true
+            if (op in setOf("write", "replace", "patch", "mkdir", "remove", "move", "rename", "copy")) return true
         }
         return false
     }
@@ -658,11 +662,14 @@ class RiftAiJournal(context: Context) {
 
     private fun sandboxFile(rawPath: String): File {
         val path = normalizePath(rawPath)
-        var file = toolRoot
-        if (path.isNotBlank()) path.split('/').forEach { file = File(file, it) }
-        val rootCanonical = toolRoot.canonicalFile
+        val segments = if (path.isBlank()) emptyList() else path.split('/')
+        val workspaceScoped = segments.firstOrNull() == "workspace"
+        var file = if (workspaceScoped) workspaceRoot else toolRoot
+        val tail = if (workspaceScoped) segments.drop(1) else segments
+        tail.forEach { file = File(file, it) }
+        val allowedRoot = if (workspaceScoped) workspaceRoot.canonicalFile else toolRoot.canonicalFile
         val target = file.canonicalFile
-        require(target == rootCanonical || target.path.startsWith(rootCanonical.path + File.separator)) { "Path escaped Rift MCP sandbox" }
+        require(target == allowedRoot || target.path.startsWith(allowedRoot.path + File.separator)) { "Path escaped Rift MCP sandbox" }
         return target
     }
 
@@ -672,10 +679,19 @@ class RiftAiJournal(context: Context) {
         return parts.joinToString("/")
     }
 
-    private fun relativeToolPath(file: File): String = toolRoot.canonicalFile.toPath().relativize(file.canonicalFile.toPath()).toString().replace(File.separatorChar, '/')
+    private fun relativeToolPath(file: File): String {
+        val target = file.canonicalFile
+        val workspace = workspaceRoot.canonicalFile
+        if (target == workspace) return "workspace"
+        if (target.path.startsWith(workspace.path + File.separator)) {
+            val suffix = workspace.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/')
+            return "workspace/$suffix"
+        }
+        return toolRoot.canonicalFile.toPath().relativize(target.toPath()).toString().replace(File.separatorChar, '/')
+    }
 
     private fun toolTarget(name: String, args: JSONObject): String = when (name) {
-        "rift_move" -> "${args.optString("from")} → ${args.optString("to")}".take(500)
+        "rift_move", "rift_copy" -> "${args.optString("from")} → ${args.optString("to")}".take(500)
         "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
         "rift_info" -> "sandbox"
         else -> args.optString("path").take(500)

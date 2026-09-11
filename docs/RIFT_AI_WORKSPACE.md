@@ -57,7 +57,7 @@ Starting a task:
 1. creates a persistent Rift AI session under app-private storage;
 2. refuses to start if the previous task is still running;
 3. refuses to start if the previous session still has unreviewed changes;
-4. builds a compact top-level `RIFT_PROJECT_V2` descriptor for `tool-sandbox/workspace` without recursively dumping a large project;
+4. builds a compact top-level `RIFT_PROJECT_V2` descriptor for `RiftFS/workspace` without recursively dumping a large project;
 5. resolves and validates the selected ChatGPT Web target, rejecting any target outside `https://chatgpt.com` / `https://www.chatgpt.com`;
 6. waits for local MCP initialization and a usable ChatGPT composer before submitting anything;
 7. submits the task plus compact project context, the live MCP tool manifest and the Rift Code Mode operation contract;
@@ -65,7 +65,7 @@ Starting a task:
 9. tracks only Rift-AI-owned MCP mutations in the local working-tree journal;
 10. ends in review, stopped or error state and releases hidden transport rendering when appropriate.
 
-The project descriptor is capability context, not a project dump. The full `workspace/` remains reachable through `rift_workspace_exec`. ChatGPT can combine `project`, `stat`, `list`, `search`, `read`, `write`, `replace`, `patch`, `mkdir`, `remove` and `move` operations into one model-visible tool call. All operations execute locally in `RiftToolSandbox`; only the bounded batch result is returned to ChatGPT Web.
+The project descriptor is capability context, not a project dump. The full `workspace/` remains reachable through `rift_workspace_exec`. ChatGPT can combine `project`, `stat`, `list`, `search`, `read`, `write`, `replace`, `patch`, `mkdir`, `remove`, `move`, `rename` and `copy` operations into one model-visible tool call. All operations execute locally in `RiftToolSandbox`; its logical `workspace/` is mapped directly onto the same canonical `filesDir/riftfs/workspace` tree used by Files and RiftDev. Only the bounded batch result is returned to ChatGPT Web.
 
 A Code Mode batch is transactionally protected inside the sandbox. Mutating paths are copied lazily into an app-cache rollback set immediately before their first batch mutation. If any operation fails, all mutations made by that batch are restored before the error reaches ChatGPT. Successful AI-scoped mutations remain covered by the persistent `RiftAiJournal` review baseline until the user accepts or reverts the session.
 

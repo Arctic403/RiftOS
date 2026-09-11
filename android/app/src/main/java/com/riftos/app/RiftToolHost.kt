@@ -30,10 +30,12 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put("sandboxRead", allowRead())
         .put("sandboxWrite", allowWrite())
         .put("scope", SCOPE)
+        .put("workspaceScope", "riftfs/workspace")
+        .put("transferScope", "riftfs/tool-sandbox")
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_workspace_exec")))
-        .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move")))
+        .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy")))
         .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
 
     fun setAccess(read: Boolean, write: Boolean): JSONObject {
@@ -97,8 +99,19 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             )
         ))
         .put(tool(
+            "rift_copy",
+            "Copy a file or directory in the Rift MCP sandbox. Local write permission must be enabled.",
+            objectSchema(
+                JSONObject()
+                    .put("from", stringProperty("Sandbox-relative source path."))
+                    .put("to", stringProperty("Sandbox-relative destination path."))
+                    .put("overwrite", booleanProperty("Replace an existing destination when true.")),
+                listOf("from", "to")
+            )
+        ))
+        .put(tool(
             "rift_workspace_exec",
-            "Rift Code Mode: execute many project operations locally in one model-visible call. Supports project, stat, list, search, read, write, replace, patch, mkdir, remove, and move under workspace/. The batch is transactional: if any operation fails, its mutations are rolled back. Read permission is always required; write permission is required only when the batch mutates files.",
+            "Rift Code Mode: execute many project operations locally in one model-visible call. Supports project, stat, list, search, read, write, replace, patch, mkdir, remove, move/rename, and copy under workspace/. The batch is transactional: if any operation fails, its mutations are rolled back. Read permission is always required; write permission is required only when the batch mutates files.",
             objectSchema(
                 JSONObject()
                     .put(
@@ -225,6 +238,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "mkdir", "rift_mkdir" -> "rift_mkdir"
         "remove", "rift_remove" -> "rift_remove"
         "move", "rift_move" -> "rift_move"
+        "copy", "rift_copy" -> "rift_copy"
         "workspaceExec", "rift_workspace_exec" -> "rift_workspace_exec"
         else -> raw.trim()
     }
@@ -238,19 +252,20 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "rift_mkdir" -> "fs.mkdir"
         "rift_remove" -> "fs.remove"
         "rift_move" -> "fs.move"
+        "rift_copy" -> "fs.copy"
         "rift_workspace_exec" -> "workspace.exec"
         else -> null
     }
 
     private fun isWriteTool(name: String): Boolean = name in setOf(
-        "rift_write_text", "rift_mkdir", "rift_remove", "rift_move"
+        "rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy"
     )
 
     private fun workspaceBatchMutates(args: JSONObject): Boolean {
         val operations = args.optJSONArray("operations") ?: return false
         for (index in 0 until operations.length()) {
             val op = operations.optJSONObject(index)?.optString("op")?.trim()?.lowercase().orEmpty()
-            if (op in setOf("write", "replace", "patch", "mkdir", "remove", "move")) return true
+            if (op in setOf("write", "replace", "patch", "mkdir", "remove", "move", "rename", "copy")) return true
         }
         return false
     }
@@ -283,7 +298,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     private fun auditTarget(name: String, args: JSONObject): String = when (canonicalName(name)) {
-        "rift_move" -> "${args.optString("from")} -> ${args.optString("to")}".take(300)
+        "rift_move", "rift_copy" -> "${args.optString("from")} -> ${args.optString("to")}".take(300)
         "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
         "rift_info" -> "sandbox"
         else -> args.optString("path").take(300)

@@ -173,7 +173,7 @@
       `project{path?,limit?}, stat{path}, list{path?,recursive?,limit?}, search{path?,query,caseSensitive?,maxMatches?}, ` +
       `read{path,startLine?,endLine?,maxChars?}, write{path,text}, replace{path,find,replace,all?,expectedCount?}, ` +
       `patch{path,edits:[{find,replace,all?,expectedCount?}]}, ` +
-      `mkdir{path}, remove{path}, move{from,to,overwrite?}. Paths are under workspace/. ` +
+      `mkdir{path}, remove{path}, move{from,to,overwrite?}, rename{from,to,overwrite?}, copy{from,to,overwrite?}. Paths are under workspace/. ` +
       `The batch is local and transactional: if any operation fails, all mutations from that batch are rolled back. ` +
       `If a successful mutating batch fully completes the task and you need no result for more reasoning, set finish:true; after emitting that call, do not continue or claim success—RiftOS will enter review only after local confirmation, while failures are returned normally. ` +
       `Use search/list/read only when reasoning needs source; do mechanical multi-file edits inside one batch whenever possible.`;

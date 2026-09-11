@@ -24,6 +24,8 @@ globalThis.RiftBrowserNative=Object.freeze({
   }
 });
 const filesNavigation={history:["/"],index:0};
+const filesClipboard={mode:"copy",paths:[]};
+const protectedFileRoots=new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts"]);
 
 function setStatus(value){const el=$("#statusText");if(el)el.textContent=value;}
 function tick(){const clock=$("#clock");if(clock)clock.textContent=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});}
@@ -114,6 +116,25 @@ function topLevelEntries(rows,path="/"){
   return [...map.values()].sort((a,b)=>(a.kind==="directory"||a.kind==="mount"?-1:1)-(b.kind==="directory"||b.kind==="mount"?-1:1)||a.path.localeCompare(b.path));
 }
 
+function cleanLeafName(value){
+  const name=String(value||"").trim();
+  if(!name||name==="."||name===".."||/[\\/\0]/.test(name))throw new Error("Name cannot be empty or contain / or \\\\.");
+  return name;
+}
+function duplicateBaseName(name){
+  const dot=name.lastIndexOf(".");
+  if(dot>0)return `${name.slice(0,dot)} copy${name.slice(dot)}`;
+  return `${name} copy`;
+}
+async function uniqueChildPath(directory,preferred){
+  const clean=cleanLeafName(preferred);
+  let candidate=core.path.join(directory,clean),index=2;
+  if(!(await core.fs.stat(candidate)))return candidate;
+  const dot=clean.lastIndexOf("."),stem=dot>0?clean.slice(0,dot):clean,ext=dot>0?clean.slice(dot):"";
+  while(await core.fs.stat(candidate))candidate=core.path.join(directory,`${stem} (${index++})${ext}`);
+  return candidate;
+}
+
 async function openFiles(path="/",options={}){
   await core.ready;
   path=core.path.normalize(path);
@@ -132,6 +153,8 @@ async function openFiles(path="/",options={}){
   try{rows=await core.fs.list(path,{recursive:mountRoot});}
   catch(error){body.innerHTML=`<div class="rift-explorer-error"><strong>Cannot open ${escapeHTML(path)}</strong><pre>${escapeHTML(error.message)}</pre></div>`;return;}
   const entries=topLevelEntries(rows,path),storage=await core.fs.estimate(),parent=path==="/"?null:core.path.parent(path);
+  const byPath=new Map(entries.map(entry=>[entry.path,entry]));
+  const selected=new Set();
   const roots=[
     ["/home","⌂","Home"],["/documents","▤","Documents"],["/downloads","⇩","Downloads"],
     ["/workspace","◇","Workspace"],["/apps","▦","Apps"],["/mounts","⛓","Android mounts"]
@@ -141,6 +164,7 @@ async function openFiles(path="/",options={}){
   let walk="";
   for(const part of pathParts){walk+=`/${part}`;crumbs.push(`<span>›</span><button data-crumb="${escapeHTML(walk)}">${escapeHTML(part)}</button>`);}
   const canBack=filesNavigation.index>0,canForward=filesNavigation.index<filesNavigation.history.length-1;
+  const virtualMountsRoot=path==="/mounts";
   body.innerHTML=`<div class="rift-explorer">
     <div class="rift-explorer-commandbar">
       <div class="rift-explorer-navbuttons">
@@ -150,8 +174,19 @@ async function openFiles(path="/",options={}){
         <button id="fsRefresh" title="Refresh">↻</button>
       </div>
       <div class="rift-explorer-address" id="fsAddress">${crumbs.join("")}</div>
-      <button class="rift-explorer-new primary" id="fsNewFile">＋ File</button>
-      <button class="rift-explorer-new" id="fsNewFolder">＋ Folder</button>
+      <button class="rift-explorer-new primary" id="fsNewFile" ${virtualMountsRoot?"disabled":""}>＋ File</button>
+      <button class="rift-explorer-new" id="fsNewFolder" ${virtualMountsRoot?"disabled":""}>＋ Folder</button>
+    </div>
+    <div class="rift-explorer-actionbar">
+      <button id="fsOpen" disabled>Open</button>
+      <button id="fsRename" disabled>Rename</button>
+      <button id="fsCopy" disabled>Copy</button>
+      <button id="fsCut" disabled>Cut</button>
+      <button id="fsPaste" ${filesClipboard.paths.length&&!virtualMountsRoot?"":"disabled"}>Paste${filesClipboard.paths.length?` (${filesClipboard.paths.length})`:""}</button>
+      <button id="fsDuplicate" disabled>Duplicate</button>
+      <button id="fsMove" disabled>Move</button>
+      <button id="fsDelete" class="danger" disabled>Delete</button>
+      <button id="fsSelectAll" ${entries.length?"":"disabled"}>Select all</button>
     </div>
     <div class="rift-explorer-main">
       <aside class="rift-explorer-sidebar">
@@ -167,24 +202,79 @@ async function openFiles(path="/",options={}){
           const name=core.path.basename(entry.path)||entry.path;
           const icon=entry.kind==="mount"?"⛓":folder?"▰":"▤";
           const type=entry.kind==="mount"?"Android mount":folder?"Folder":((name.split(".").pop()||"file").toUpperCase()+" file");
-          return `<button class="rift-explorer-item" data-path="${escapeHTML(entry.path)}" data-kind="${escapeHTML(entry.kind)}"><span class="rift-explorer-name"><i>${icon}</i><b>${escapeHTML(name)}</b></span><span>${escapeHTML(type)}</span><span>${folder?"—":fmtBytes(entry.size)}</span></button>`;
+          return `<button class="rift-explorer-item" data-path="${escapeHTML(entry.path)}" data-kind="${escapeHTML(entry.kind)}" aria-pressed="false"><span class="rift-explorer-name"><i>${icon}</i><b>${escapeHTML(name)}</b></span><span>${escapeHTML(type)}</span><span>${folder?"—":fmtBytes(entry.size)}</span></button>`;
         }).join(""):`<div class="rift-explorer-empty"><span>□</span><strong>This folder is empty</strong><small>Create a file or folder to get started.</small></div>`}</div>
       </section>
     </div>
-    <footer class="rift-explorer-status"><span>${entries.length} item${entries.length===1?"":"s"}</span><span>${escapeHTML(storage.backend||"Android internal storage")} · ${fmtBytes(storage.usage)} used · ${fmtBytes(storage.free)} free</span></footer>
+    <footer class="rift-explorer-status"><span id="fsSelectionStatus">${entries.length} item${entries.length===1?"":"s"}</span><span>${escapeHTML(storage.backend||"Android internal storage")} · ${fmtBytes(storage.usage)} used · ${fmtBytes(storage.free)} free</span></footer>
   </div>`;
+
+  const itemButtons=[...body.querySelectorAll(".rift-explorer-item")];
+  const actionIds=["fsOpen","fsRename","fsCopy","fsCut","fsDuplicate","fsMove","fsDelete"];
+  const selectionStatus=body.querySelector("#fsSelectionStatus");
+  function chosen(){return [...selected].map(value=>byPath.get(value)).filter(Boolean);}
+  function syncSelection(){
+    for(const button of itemButtons){const active=selected.has(button.dataset.path);button.classList.toggle("selected",active);button.setAttribute("aria-pressed",active?"true":"false");}
+    const picked=chosen(),has=picked.length>0,hasMount=picked.some(entry=>entry.kind==="mount"),hasProtected=picked.some(entry=>protectedFileRoots.has(entry.path));
+    const one=picked.length===1;
+    for(const id of actionIds){const button=body.querySelector(`#${id}`);if(button)button.disabled=!has||hasMount||hasProtected;}
+    body.querySelector("#fsOpen").disabled=!one;
+    body.querySelector("#fsRename").disabled=!one||hasMount||hasProtected;
+    selectionStatus.textContent=has?`${picked.length} selected · ${entries.length} item${entries.length===1?"":"s"}`:`${entries.length} item${entries.length===1?"":"s"}`;
+  }
+  async function refresh(){await openFiles(path,{record:false});}
+  async function openEntry(entry){if(!entry)return;if(["directory","mount"].includes(entry.kind))await openFiles(entry.path);else await openEditor(entry.path);}
+  async function runFileAction(label,work){
+    try{setStatus(`Files · ${label}`);await work();setStatus(`Files · ${label} complete`);await refresh();}
+    catch(error){setStatus("Files");alert(`${label} failed: ${error?.message||error}`);syncSelection();}
+  }
+
   body.querySelector("#fsBack").onclick=()=>{if(filesNavigation.index>0){filesNavigation.index--;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
   body.querySelector("#fsForward").onclick=()=>{if(filesNavigation.index<filesNavigation.history.length-1){filesNavigation.index++;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
   body.querySelector("#fsUp").onclick=()=>parent!==null&&openFiles(parent);
-  body.querySelector("#fsRefresh").onclick=()=>openFiles(path,{record:false});
+  body.querySelector("#fsRefresh").onclick=()=>refresh();
   body.querySelectorAll("[data-crumb]").forEach(button=>button.onclick=()=>openFiles(button.dataset.crumb));
   body.querySelectorAll("[data-place]").forEach(button=>button.onclick=()=>openFiles(button.dataset.place));
-  body.querySelectorAll("[data-path]").forEach(button=>{
-    button.onclick=()=>["directory","mount"].includes(button.dataset.kind)?openFiles(button.dataset.path):openEditor(button.dataset.path);
+  for(const button of itemButtons){
+    button.onclick=event=>{
+      const target=button.dataset.path;
+      if(event.ctrlKey||event.metaKey||event.shiftKey){if(selected.has(target))selected.delete(target);else selected.add(target);}
+      else{selected.clear();selected.add(target);}
+      syncSelection();
+    };
+    button.ondblclick=()=>openEntry(byPath.get(button.dataset.path));
+  }
+  body.querySelector("#fsSelectAll").onclick=()=>{if(selected.size===entries.length)selected.clear();else entries.forEach(entry=>selected.add(entry.path));syncSelection();};
+  body.querySelector("#fsOpen").onclick=()=>openEntry(chosen()[0]);
+  body.querySelector("#fsNewFile").onclick=async()=>{
+    try{const name=prompt("File name","untitled.txt");if(!name)return;const target=core.path.join(path,cleanLeafName(name));if(await core.fs.stat(target))throw new Error("A file or folder with that name already exists.");await core.fs.createFile(target,"");await refresh();await openEditor(target);}
+    catch(error){alert(`Create file failed: ${error?.message||error}`);}
+  };
+  body.querySelector("#fsNewFolder").onclick=()=>runFileAction("Create folder",async()=>{const name=prompt("Folder name","New Folder");if(!name)throw new Error("Cancelled");const target=core.path.join(path,cleanLeafName(name));if(await core.fs.stat(target))throw new Error("A file or folder with that name already exists.");await core.fs.mkdir(target);});
+  body.querySelector("#fsRename").onclick=()=>runFileAction("Rename",async()=>{const entry=chosen()[0];if(!entry)return;const current=core.path.basename(entry.path),name=prompt("New name",current);if(!name||name===current)throw new Error("Cancelled");const destination=core.path.join(core.path.parent(entry.path),cleanLeafName(name));if(await core.fs.stat(destination))throw new Error("A file or folder with that name already exists.");await core.fs.rename(entry.path,destination);});
+  body.querySelector("#fsCopy").onclick=()=>{filesClipboard.mode="copy";filesClipboard.paths=chosen().map(entry=>entry.path);const paste=body.querySelector("#fsPaste");paste.disabled=!filesClipboard.paths.length||virtualMountsRoot;paste.textContent=`Paste${filesClipboard.paths.length?` (${filesClipboard.paths.length})`:""}`;setStatus(`Files · ${filesClipboard.paths.length} copied`);};
+  body.querySelector("#fsCut").onclick=()=>{filesClipboard.mode="cut";filesClipboard.paths=chosen().map(entry=>entry.path);const paste=body.querySelector("#fsPaste");paste.disabled=!filesClipboard.paths.length||virtualMountsRoot;paste.textContent=`Paste${filesClipboard.paths.length?` (${filesClipboard.paths.length})`:""}`;setStatus(`Files · ${filesClipboard.paths.length} cut`);};
+  body.querySelector("#fsPaste").onclick=()=>runFileAction(filesClipboard.mode==="cut"?"Move":"Paste",async()=>{
+    const pending=[...filesClipboard.paths];if(!pending.length)return;
+    const completed=[];
+    for(const source of pending){
+      if(!(await core.fs.stat(source)))continue;
+      let destination=core.path.join(path,core.path.basename(source));
+      if(filesClipboard.mode==="cut"&&core.path.parent(source)===path){completed.push(source);continue;}
+      if(await core.fs.stat(destination))destination=await uniqueChildPath(path,duplicateBaseName(core.path.basename(source)));
+      if(filesClipboard.mode==="cut")await core.fs.move(source,destination);else await core.fs.copy(source,destination);
+      completed.push(source);
+    }
+    if(filesClipboard.mode==="cut"){filesClipboard.paths=filesClipboard.paths.filter(source=>!completed.includes(source));if(!filesClipboard.paths.length)filesClipboard.mode="copy";}
   });
-  body.querySelector("#fsNewFile").onclick=()=>{const name=prompt("File name","untitled.txt");if(name)openEditor(core.path.join(path,name));};
-  body.querySelector("#fsNewFolder").onclick=async()=>{const name=prompt("Folder name","New Folder");if(!name)return;await core.fs.mkdir(core.path.join(path,name));openFiles(path,{record:false});};
+  body.querySelector("#fsDuplicate").onclick=()=>runFileAction("Duplicate",async()=>{for(const entry of chosen()){const destination=await uniqueChildPath(path,duplicateBaseName(core.path.basename(entry.path)));await core.fs.copy(entry.path,destination);}});
+  body.querySelector("#fsMove").onclick=()=>runFileAction("Move",async()=>{
+    const destinationRaw=prompt("Move selected items to folder",path);if(!destinationRaw)throw new Error("Cancelled");const destinationDir=core.path.normalize(destinationRaw);const stat=await core.fs.stat(destinationDir);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error("Destination folder does not exist.");
+    for(const entry of chosen()){let destination=core.path.join(destinationDir,core.path.basename(entry.path));if(await core.fs.stat(destination))destination=await uniqueChildPath(destinationDir,duplicateBaseName(core.path.basename(entry.path)));await core.fs.move(entry.path,destination);}
+  });
+  body.querySelector("#fsDelete").onclick=()=>runFileAction("Delete",async()=>{const picked=chosen();if(!picked.length)return;if(!confirm(`Delete ${picked.length} selected item${picked.length===1?"":"s"}? This cannot be undone.`))throw new Error("Cancelled");for(const entry of picked)await core.fs.remove(entry.path);});
   body.querySelector("#fsMountNative").onclick=async()=>{try{await core.fs.mountNativeDirectory();openFiles("/mounts");}catch(error){alert(error.message);}};
+  syncSelection();
 }
 
 async function openEditor(path="/home/scratch.txt"){

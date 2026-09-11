@@ -59,7 +59,7 @@ const workspace=Object.freeze({
   list:(path="",options={})=>local.list(path,options),
   stat:path=>local.stat(path),readText:path=>local.readText(path),readJSON:(path,fallback=null)=>local.readJSON(path,fallback),
   writeText:(path,text)=>local.writeText(path,text),writeJSON:(path,value)=>local.writeJSON(path,value),mkdir:path=>local.mkdir(path),
-  remove:path=>local.remove(path),move:(path,newPath)=>local.move(path,newPath),previewPatch:patch=>local.previewPatch(patch),
+  remove:path=>local.remove(path),move:(path,newPath,options={})=>local.move(path,newPath,options),copy:(path,newPath,options={})=>local.copy(path,newPath,options),previewPatch:patch=>local.previewPatch(patch),
   applyPatch:patch=>local.applyPatch(patch),history:()=>local.history(),rollback:id=>local.rollback(id),snapshot:(path="",options={})=>local.snapshot(path,options),
   copyFromMount,copyToMount
 });

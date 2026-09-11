@@ -1,5 +1,6 @@
 const CORE_VERSION = "2.0.0-android-native";
 const ROOT_MOUNT = "__riftfs__";
+const PROTECTED_RIFT_ROOTS = new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts"]);
 
 const SYSTEM_APPS = [
   {id:"system",name:"RiftKernel",trusted:true,permissions:["fs.read","fs.write","process.read","process.manage","system.settings","native.read","native.files"]},
@@ -201,12 +202,38 @@ class RiftFS extends EventTarget{
   }
   async remove(value){
     const target=this.route(value);
-    if(target.path==="/"||target.path==="/mounts")throw new Error("Cannot delete a filesystem root");
+    if(target.path==="/"||PROTECTED_RIFT_ROOTS.has(target.path))throw new Error("Cannot delete a RiftFS system root");
     if(target.mount&&!target.relative)throw new Error("Unmount the folder instead of deleting the mount root");
     await this.native.call("fs.remove",{mountId:target.mountId,path:target.relative,recursive:true});
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"remove",path:target.path}}));
     return true;
   }
+  async copy(fromValue,toValue,{overwrite=false}={}){
+    const source=this.route(fromValue),destination=this.route(toValue);
+    if(source.path==="/"||source.path==="/mounts"||source.mount&&!source.relative)throw new Error("Cannot copy a filesystem root or mount root");
+    if(destination.path==="/"||destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Cannot replace a filesystem root or mount root");
+    const stat=await this.native.call("fs.copy",{
+      fromMountId:source.mountId,from:source.relative,
+      toMountId:destination.mountId,to:destination.relative,overwrite:overwrite===true
+    });
+    const record={...stat,path:destination.path,backend:destination.backend};
+    this.dispatchEvent(new CustomEvent("change",{detail:{type:"copy",path:source.path,newPath:destination.path}}));
+    return record;
+  }
+  async move(fromValue,toValue,{overwrite=false}={}){
+    const source=this.route(fromValue),destination=this.route(toValue);
+    if(source.path==="/"||PROTECTED_RIFT_ROOTS.has(source.path)||source.mount&&!source.relative)throw new Error("Cannot move a RiftFS system root or mount root");
+    if(destination.path==="/"||destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Cannot replace a filesystem root or mount root");
+    const stat=await this.native.call("fs.move",{
+      fromMountId:source.mountId,from:source.relative,
+      toMountId:destination.mountId,to:destination.relative,overwrite:overwrite===true
+    });
+    const record={...stat,path:destination.path,backend:destination.backend};
+    this.dispatchEvent(new CustomEvent("change",{detail:{type:"move",path:source.path,newPath:destination.path}}));
+    return record;
+  }
+  rename(value,newValue,options={}){return this.move(value,newValue,options);}
+  createFile(value,text=""){return this.writeText(value,text);}
   async list(value="/",options={}){
     const path=normalizePath(value),recursive=options.recursive!==false;
     if(path==="/mounts"){

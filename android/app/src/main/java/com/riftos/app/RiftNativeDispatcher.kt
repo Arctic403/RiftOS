@@ -35,6 +35,7 @@ class RiftNativeDispatcher(
         mkdirs()
         listOf("home", "apps", "system", "workspace", "downloads", "documents").forEach { File(this, it).mkdirs() }
     }
+    private val protectedRiftRoots = setOf("home", "apps", "system", "workspace", "downloads", "documents")
 
     fun handleAsync(raw: String) {
         val message = runCatching { JSONObject(raw) }.getOrNull() ?: return
@@ -74,6 +75,16 @@ class RiftNativeDispatcher(
         "fs.writeText" -> writeText(args.getString("mountId"), args.optString("path"), args.optString("text"))
         "fs.mkdir" -> mkdir(args.getString("mountId"), args.optString("path"))
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
+        "fs.copy" -> copyNode(
+            args.getString("fromMountId"), args.optString("from"),
+            args.getString("toMountId"), args.optString("to"),
+            args.optBoolean("overwrite", false)
+        )
+        "fs.move" -> moveNode(
+            args.getString("fromMountId"), args.optString("from"),
+            args.getString("toMountId"), args.optString("to"),
+            args.optBoolean("overwrite", false)
+        )
         "fs.list" -> list(args.getString("mountId"), args.optString("path"), args.optBoolean("recursive", true))
         "settings.get" -> getSetting(args.getString("key"))
         "settings.set" -> setSetting(args.getString("key"), args.opt("value"))
@@ -193,9 +204,125 @@ class RiftNativeDispatcher(
         externalDirectory(mountId,path,true);return stat(mountId,path)!!
     }
     private fun remove(mountId: String, path: String): Boolean {
-        require(normalizeSegments(path).isNotEmpty()){ "Cannot delete a filesystem root" }
+        val segments = normalizeSegments(path)
+        require(segments.isNotEmpty()){ "Cannot delete a filesystem root" }
+        if (mountId == "__riftfs__" && segments.size == 1 && segments.first() in protectedRiftRoots) {
+            throw IllegalArgumentException("Cannot delete a RiftFS system root")
+        }
         if(mountId=="__riftfs__"){val file=internalFile(path);if(!file.exists())return true;return if(file.isDirectory)file.deleteRecursively()else file.delete()}
         return externalNode(mountId,path)?.delete() ?: true
+    }
+
+    private fun normalizedRelative(path: String): String = normalizeSegments(path).joinToString("/")
+
+    private fun childPath(parent: String, child: String): String =
+        listOf(normalizedRelative(parent), normalizedRelative(child)).filter { it.isNotBlank() }.joinToString("/")
+
+    private fun copyFileBytes(fromMountId: String, fromPath: String, toMountId: String, toPath: String) {
+        val input = if (fromMountId == "__riftfs__") {
+            val source = internalFile(fromPath)
+            require(source.isFile) { "File not found: $fromPath" }
+            source.inputStream()
+        } else {
+            val source = externalFile(fromMountId, fromPath, false)
+            activity.contentResolver.openInputStream(source.uri)
+                ?: throw IllegalStateException("Could not read $fromPath")
+        }
+        input.use { sourceStream ->
+            if (toMountId == "__riftfs__") {
+                val destination = internalFile(toPath)
+                destination.parentFile?.mkdirs()
+                destination.outputStream().use { output -> sourceStream.copyTo(output) }
+            } else {
+                val destination = externalFile(toMountId, toPath, true)
+                activity.contentResolver.openOutputStream(destination.uri, "wt")?.use { output ->
+                    sourceStream.copyTo(output)
+                } ?: throw IllegalStateException("Could not write $toPath")
+            }
+        }
+    }
+
+    private fun copyNode(
+        fromMountId: String, fromPathRaw: String,
+        toMountId: String, toPathRaw: String,
+        overwrite: Boolean
+    ): JSONObject {
+        val fromPath = normalizedRelative(fromPathRaw)
+        val toPath = normalizedRelative(toPathRaw)
+        require(fromPath.isNotBlank()) { "Cannot copy a filesystem root" }
+        require(toPath.isNotBlank()) { "Destination cannot be a filesystem root" }
+        if (fromMountId == toMountId) {
+            require(fromPath != toPath) { "Copy source and destination are identical" }
+            if (toPath.startsWith("$fromPath/")) throw IllegalArgumentException("Cannot copy a directory inside itself")
+        }
+        val source = stat(fromMountId, fromPath) ?: throw IllegalArgumentException("Source not found: $fromPath")
+        val existing = stat(toMountId, toPath)
+        if (existing != null) {
+            require(overwrite) { "Destination already exists: $toPath" }
+            require(remove(toMountId, toPath)) { "Could not replace destination: $toPath" }
+        }
+
+        try {
+            if (source.optString("kind") == "file") {
+                copyFileBytes(fromMountId, fromPath, toMountId, toPath)
+            } else {
+                mkdir(toMountId, toPath)
+                val children = list(fromMountId, fromPath, false)
+                for (index in 0 until children.length()) {
+                    val row = children.optJSONObject(index) ?: continue
+                    val relative = row.optString("path")
+                    if (relative.isBlank()) continue
+                    copyNode(
+                        fromMountId, childPath(fromPath, relative),
+                        toMountId, childPath(toPath, relative),
+                        overwrite = false
+                    )
+                }
+            }
+        } catch (error: Throwable) {
+            runCatching { remove(toMountId, toPath) }
+            throw error
+        }
+        return stat(toMountId, toPath) ?: throw IllegalStateException("Copied destination is missing: $toPath")
+    }
+
+    private fun moveNode(
+        fromMountId: String, fromPathRaw: String,
+        toMountId: String, toPathRaw: String,
+        overwrite: Boolean
+    ): JSONObject {
+        val fromPath = normalizedRelative(fromPathRaw)
+        val toPath = normalizedRelative(toPathRaw)
+        require(fromPath.isNotBlank()) { "Cannot move a filesystem root" }
+        require(toPath.isNotBlank()) { "Destination cannot be a filesystem root" }
+        if (fromMountId == "__riftfs__" && normalizeSegments(fromPath).size == 1 && normalizeSegments(fromPath).first() in protectedRiftRoots) {
+            throw IllegalArgumentException("Cannot move a RiftFS system root")
+        }
+        require(fromMountId != toMountId || fromPath != toPath) { "Move source and destination are identical" }
+        if (fromMountId == toMountId && toPath.startsWith("$fromPath/")) {
+            throw IllegalArgumentException("Cannot move a directory inside itself")
+        }
+
+        if (fromMountId == "__riftfs__" && toMountId == "__riftfs__") {
+            val source = internalFile(fromPath)
+            val destination = internalFile(toPath)
+            require(source.exists()) { "Source not found: $fromPath" }
+            if (destination.exists()) {
+                require(overwrite) { "Destination already exists: $toPath" }
+                require(if (destination.isDirectory) destination.deleteRecursively() else destination.delete()) {
+                    "Could not replace destination: $toPath"
+                }
+            }
+            destination.parentFile?.mkdirs()
+            if (source.renameTo(destination)) return stat(toMountId, toPath)!!
+        }
+
+        copyNode(fromMountId, fromPath, toMountId, toPath, overwrite)
+        if (!remove(fromMountId, fromPath)) {
+            runCatching { remove(toMountId, toPath) }
+            throw IllegalStateException("Copied $fromPath but could not remove the source; destination was rolled back")
+        }
+        return stat(toMountId, toPath) ?: throw IllegalStateException("Moved destination is missing: $toPath")
     }
     private fun list(mountId: String, path: String, recursive: Boolean): JSONArray {
         val out=JSONArray()

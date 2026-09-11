@@ -18,7 +18,7 @@ RiftOS currently ships as an Android APK targeting Android 8.0 / API 26+ with Sa
 ### Desktop and applications
 
 - RiftDesktop window manager with focus, move, resize, minimize, maximize and taskbar state.
-- Explorer-style Files app inside a normal RiftOS window.
+- Explorer-style Files app inside a normal RiftOS window with multi-select, create file/folder, rename, copy, cut/paste, duplicate, move and delete.
 - Settings app with privacy-limited System Dump export and Android Save As picker.
 - RiftDev Android editor backed by RiftWorkspace through `RiftDevAndroidDB` compatibility plumbing.
 - RiftRT v1 worker/iframe/WASM application runtime.
