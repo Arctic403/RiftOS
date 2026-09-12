@@ -198,7 +198,7 @@ class RiftToolSandbox(context: Context) {
         return RiftProjectExporter.export(
             root = root,
             rawCursor = args.optString("cursor"),
-            requestedPageBytes = args.optInt("maxBytes", 600 * 1024),
+            requestedPageBytes = args.optInt("maxBytes", 320 * 1024),
             expectedSnapshot = args.optString("expectedSnapshot")
         )
             .put("source", relativePath(root))
