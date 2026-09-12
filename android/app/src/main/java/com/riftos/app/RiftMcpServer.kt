@@ -41,7 +41,14 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         toolHost.callAsync(name, args, aiSessionId) { call ->
             val ok = call.optBoolean("ok", false)
             val structured = JSONObject().put("ok", ok)
-            if (ok) structured.put("value", call.opt("value") ?: JSONObject.NULL)
+            if (ok) {
+                val value = call.opt("value")
+                structured.put(
+                    "value",
+                    if (name == "rift_project_export" && value is JSONObject) exportSummary(value)
+                    else value ?: JSONObject.NULL
+                )
+            }
             else structured.put("error", call.optString("error", "Rift tool failed"))
 
             val text = if (ok) {
@@ -81,6 +88,18 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
             "instructions",
             "RiftOS workspace tools with Project Intelligence v1. All filesystem capabilities are hard-scoped to workspace/. Prefer rift_workspace_exec for local symbol/reference lookup, surgical reads/patches, dry-run validation and transactional multi-file work. Device-side permissions and audit remain authoritative across local and relay transports; there is no direct model API."
         )
+
+    private fun exportSummary(value: JSONObject): JSONObject = JSONObject()
+        .put("format", value.optString("format"))
+        .put("snapshotId", value.optString("snapshotId"))
+        .put("source", value.optString("source"))
+        .put("cursor", value.optString("cursor"))
+        .put("nextCursor", value.opt("nextCursor") ?: JSONObject.NULL)
+        .put("done", value.optBoolean("done"))
+        .put("fileCount", value.optInt("fileCount"))
+        .put("sourceBytes", value.optLong("sourceBytes"))
+        .put("returnedEntries", value.optInt("returnedEntries"))
+        .put("responseBytes", value.optInt("responseBytes"))
 
     private fun success(id: Any, result: Any): JSONObject = JSONObject()
         .put("jsonrpc", "2.0")
