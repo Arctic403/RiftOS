@@ -23,6 +23,7 @@ const gradle = readFileSync('android/app/build.gradle.kts', 'utf8');
 const shellStyles = readFileSync('styles.css', 'utf8');
 const mcpServer = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcpServer.kt', 'utf8');
 const relayWorker = readFileSync('relay/src/index.js', 'utf8');
+const riftGit = readFileSync('src/riftgit.js', 'utf8');
 
 const checks = [
   ['Rift AI workspace app is removed', !existsSync('src/riftai-workspace.js') && !entry.includes('riftai-workspace')],
@@ -75,6 +76,11 @@ const checks = [
   ['unzip has entry and expansion limits', dispatcher.includes('MAX_ARCHIVE_ENTRIES') && dispatcher.includes('MAX_EXTRACTED_BYTES')],
   ['workspace archive completes before returning', !sandbox.includes('RiftTransferJob("archive"') && sandbox.includes('"archive" -> createArchive(')],
   ['delete verifies the Android provider result', core.includes('if(removed!==true)throw new Error')],
+  ['RiftShell passes its current directory into RiftGit', filesUi.includes('window.RiftGit.run(args,print,{cwd:state.cwd})')],
+  ['RiftShell supports workspace navigation and full file actions', filesUi.includes('if(sub==="cd"){state.cwd="/workspace"') && filesUi.includes('if(cmd==="cp"||cmd==="mv")') && filesUi.includes('if(cmd==="zip")')],
+  ['RiftGit attaches existing home, workspace, or mounted folders', riftGit.includes('cmd==="init"||cmd==="attach"') && riftGit.includes('Project folder not found:') && riftGit.includes('context.cwd')],
+  ['RiftGit synchronizes complete binary-safe trees', riftGit.includes('core.fs.readBase64') && riftGit.includes('core.fs.writeBase64') && riftGit.includes('GitHub returned a truncated tree; sync stopped')],
+  ['native shell binary bridge is bounded', dispatcher.includes('MAX_BRIDGE_BINARY_BYTES') && dispatcher.includes('"fs.readBase64"') && dispatcher.includes('"fs.writeBase64"') && core.includes('async readBase64') && core.includes('async writeBase64')],
   ['file actions reject duplicate execution', filesUi.includes('if(fileActionBusy)return')],
   ['archive is locally implemented', sandbox.includes('private fun createArchive')],
   ['Workspace Live HTML is sandboxed', workspaceHost.includes('sandbox=\"allow-scripts\"') && !workspaceHost.includes('allow-same-origin')],

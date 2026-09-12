@@ -104,6 +104,12 @@ Tool Protocol V2 uses strict JSON request/call IDs and correlated result packets
 
 Workspace Live is a local HTML app packaged inside RiftOS. It runs in a sandboxed iframe with a narrow `postMessage` RPC to the trusted shell, watches only `filesDir/riftfs/workspace`, and refreshes open files/diffs when MCP or other local writers change them. It does not create a localhost listener and does not give the HTML page a general Android or filesystem bridge.
 
+## RiftShell and RiftGit
+
+RiftShell operates on the complete RiftFS namespace: `/home`, `/workspace`, `/downloads`, `/documents`, and directories mounted under `/mounts`. It supports normal relative navigation plus recursive copy, move, tree, ZIP, and unzip operations.
+
+RiftGit uses the shell's current directory. Existing projects can be attached in place with `git init owner/repo [branch]`; cloning accepts an optional destination. Pull and push synchronize the complete directory tree, including binary files, through atomic GitHub tree commits. Truncated or oversized transfers stop with an error instead of silently omitting files.
+
 ## Workspace boundary
 
 `RiftFS/workspace` is user-owned and starts empty on a fresh install. RiftDev, the Files app workspace view and the ChatGPT/MCP tool path resolve to the same canonical tree.

@@ -510,11 +510,19 @@ async function openBrowser(startUrl="https://chatgpt.com"){
 }
 
 function tokenize(raw){const out=[];String(raw||"").replace(/"([^"]*)"|'([^']*)'|([^\s]+)/g,(_,a,b,c)=>{out.push(a??b??c);return "";});return out;}
-function resolvePath(cwd,value){if(!value)return cwd;return core.path.normalize(String(value).startsWith("/")?value:core.path.join(cwd,value));}
+function resolvePath(cwd,value){
+  if(!value)return cwd;
+  let raw=String(value).trim().replace(/\\/g,"/");
+  if(raw==="~"||raw.startsWith("~/"))raw=`/home${raw.slice(1)}`;
+  if(!raw.startsWith("/"))raw=`${cwd}/${raw}`;
+  const parts=[];
+  for(const part of raw.split("/")){if(!part||part===".")continue;if(part===".."){parts.pop();continue;}parts.push(part);}
+  return "/"+parts.join("/");
+}
 async function runShell(raw,print,state){
   const args=tokenize(raw),cmd=(args.shift()||"").toLowerCase();if(!cmd)return;
-  if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print);}
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  ls [path]  cat <file>  write <file> <text>  mkdir <dir>  rm <path>\nopen <app>  browser [url]  workspace [info|ls|history|rollback]  clear  uptime  version\ngit help`);
+  if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print,{cwd:state.cwd});}
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback]\nls [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nopen <app>  browser [url]  clear  uptime  version\ngit help`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}
@@ -528,16 +536,25 @@ async function runShell(raw,print,state){
   if(cmd==="workspace"){
     const ws=window.RiftWorkspace;if(!ws?.available)return print("RiftWorkspace unavailable");
     const sub=(args.shift()||"info").toLowerCase();if(sub==="info")return print(JSON.stringify(await ws.info(),null,2));
+    if(sub==="cd"){state.cwd="/workspace";return print(state.cwd);}
     if(sub==="ls")return print((await ws.list(args[0]||"",{recursive:false})).map(row=>`${row.kind==="directory"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");
     if(sub==="history")return print(JSON.stringify(await ws.history(),null,2));if(sub==="rollback")return print(JSON.stringify(await ws.rollback(args[0]||null),null,2));
-    return print("usage: workspace [info|ls [path]|history|rollback [historyId]]");
+    return print("usage: workspace [cd|info|ls [path]|history|rollback [historyId]]");
   }
   if(cmd==="pwd")return print(state.cwd);
+  if(cmd==="home"){state.cwd="/home";return print(state.cwd);}
   if(cmd==="cd"){const next=resolvePath(state.cwd,args[0]||"/home");const stat=await core.fs.stat(next);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error(`not a directory: ${next}`);state.cwd=next;return print(state.cwd);}
   if(cmd==="ls"){const path=resolvePath(state.cwd,args[0]||state.cwd),rows=await core.fs.list(path,{recursive:false});return print(rows.map(row=>`${row.kind==="directory"||row.kind==="mount"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");}
+  if(cmd==="tree"){const path=resolvePath(state.cwd,args[0]||state.cwd),rows=await core.fs.list(path,{recursive:true});return print(rows.map(row=>`${row.kind==="directory"||row.kind==="mount"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");}
+  if(cmd==="stat"){const path=resolvePath(state.cwd,args[0]);const stat=await core.fs.stat(path);if(!stat)throw new Error(`path not found: ${path}`);return print(JSON.stringify(stat,null,2));}
   if(cmd==="cat"){const path=resolvePath(state.cwd,args[0]);const text=await core.fs.readText(path);if(text==null)throw new Error(`file not found: ${path}`);return print(text);}
+  if(cmd==="head"||cmd==="tail"){const path=resolvePath(state.cwd,args[0]),text=await core.fs.readText(path);if(text==null)throw new Error(`file not found: ${path}`);const lines=text.split("\n"),count=Math.max(1,Number(args[1])||10);return print((cmd==="head"?lines.slice(0,count):lines.slice(-count)).join("\n"));}
   if(cmd==="write"){const path=resolvePath(state.cwd,args.shift());await core.fs.writeText(path,args.join(" "));return print(`wrote ${path}`);}
+  if(cmd==="touch"){const path=resolvePath(state.cwd,args[0]);if(!await core.fs.stat(path))await core.fs.writeText(path,"");return print(`touched ${path}`);}
   if(cmd==="mkdir"){const path=resolvePath(state.cwd,args[0]);await core.fs.mkdir(path);return print(`created ${path}`);}
+  if(cmd==="cp"||cmd==="mv"){if(args.length<2)throw new Error(`usage: ${cmd} <from> <to>`);const from=resolvePath(state.cwd,args[0]),to=resolvePath(state.cwd,args[1]);await core.fs[cmd==="cp"?"copy":"move"](from,to,{overwrite:args.includes("--force")||args.includes("-f")});return print(`${cmd==="cp"?"copied":"moved"} ${from} -> ${to}`);}
+  if(cmd==="zip"){if(args.length<2)throw new Error("usage: zip <from> <archive.zip>");const from=resolvePath(state.cwd,args[0]),to=resolvePath(state.cwd,args[1]);await core.fs.zip(from,to);return print(`archived ${from} -> ${to}`);}
+  if(cmd==="unzip"){if(args.length<2)throw new Error("usage: unzip <archive.zip> <folder>");const from=resolvePath(state.cwd,args[0]),to=resolvePath(state.cwd,args[1]);await core.fs.unzip(from,to);return print(`extracted ${from} -> ${to}`);}
   if(cmd==="rm"){const path=resolvePath(state.cwd,args[0]);await core.fs.remove(path);return print(`removed ${path}`);}
   if(cmd==="open"){const app=args[0]||"home";document.querySelector(`[data-open="${CSS.escape(app)}"]`)?.click();return print(`opened ${app}`);}
   if(cmd==="clear")return {clear:true};

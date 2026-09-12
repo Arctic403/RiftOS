@@ -16,6 +16,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.DocumentsContract
+import android.util.Base64
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 import org.json.JSONObject
@@ -49,6 +50,7 @@ class RiftNativeDispatcher(
     }
     companion object {
         private const val MAX_BRIDGE_TEXT_BYTES = 4L * 1024L * 1024L
+        private const val MAX_BRIDGE_BINARY_BYTES = 48L * 1024L * 1024L
         private const val COPY_BUFFER_BYTES = 256 * 1024
         private const val MAX_ARCHIVE_ENTRIES = 50_000
         private const val MAX_EXTRACTED_BYTES = 2L * 1024L * 1024L * 1024L
@@ -131,6 +133,8 @@ class RiftNativeDispatcher(
         "fs.stat" -> stat(args.getString("mountId"), args.optString("path"))
         "fs.readText" -> readText(args.getString("mountId"), args.optString("path"))
         "fs.writeText" -> writeText(args.getString("mountId"), args.optString("path"), args.optString("text"))
+        "fs.readBase64" -> readBase64(args.getString("mountId"), args.optString("path"))
+        "fs.writeBase64" -> writeBase64(args.getString("mountId"), args.optString("path"), args.optString("base64"))
         "fs.mkdir" -> mkdir(args.getString("mountId"), args.optString("path"))
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
         "fs.zip" -> {
@@ -347,6 +351,35 @@ class RiftNativeDispatcher(
         val doc=externalFile(mountId,path,true)
         openExternalOutput(doc,path).bufferedWriter(Charsets.UTF_8).use{it.write(text)}
         return stat(mountId,path)!!
+    }
+    private fun readBase64(mountId: String, path: String): String {
+        val size = stat(mountId, path)?.optLong("size", -1L) ?: throw IllegalArgumentException("File not found: $path")
+        require(size in 0..MAX_BRIDGE_BINARY_BYTES) { "File is too large for Git sync ($size bytes)" }
+        val bytes = if (mountId == "__riftfs__") {
+            val file = internalFile(path)
+            require(file.isFile) { "File not found: $path" }
+            file.readBytes()
+        } else {
+            val doc = externalFile(mountId, path, false)
+            activity.contentResolver.openInputStream(doc.uri)?.use { it.readBytes() }
+                ?: throw IllegalStateException("Could not read $path")
+        }
+        require(bytes.size.toLong() <= MAX_BRIDGE_BINARY_BYTES) { "File is too large for Git sync (${bytes.size} bytes)" }
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }
+    private fun writeBase64(mountId: String, path: String, encoded: String): JSONObject {
+        val bytes = runCatching { Base64.decode(encoded, Base64.DEFAULT) }
+            .getOrElse { throw IllegalArgumentException("Invalid base64 content for $path") }
+        require(bytes.size.toLong() <= MAX_BRIDGE_BINARY_BYTES) { "File is too large for Git sync (${bytes.size} bytes)" }
+        if (mountId == "__riftfs__") {
+            val file = internalFile(path)
+            file.parentFile?.mkdirs()
+            file.writeBytes(bytes)
+        } else {
+            val doc = externalFile(mountId, path, true)
+            openExternalOutput(doc, path).use { it.write(bytes) }
+        }
+        return stat(mountId, path)!!
     }
     private fun mkdir(mountId: String, path: String): JSONObject {
         if(mountId=="__riftfs__"){val dir=internalFile(path);require((dir.exists()&&dir.isDirectory)||dir.mkdirs()){ "Could not create directory: $path" };return stat(mountId,path)!!}

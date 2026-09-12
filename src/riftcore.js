@@ -1,4 +1,4 @@
-const CORE_VERSION = "2.0.0-android-native";
+const CORE_VERSION = "2.1.0-android-native";
 const ROOT_MOUNT = "__riftfs__";
 const PROTECTED_RIFT_ROOTS = new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts"]);
 
@@ -63,7 +63,7 @@ class RiftNativeBridge extends EventTarget{
   timeoutFor(method){
     if(method==="files.pickDirectory")return 10*60*1000;
     if(method==="fs.copy"||method==="fs.move"||method==="fs.remove")return 15*60*1000;
-    if(method==="fs.list"||method==="fs.readText"||method==="fs.writeText")return 2*60*1000;
+    if(method==="fs.list"||method==="fs.readText"||method==="fs.writeText"||method==="fs.readBase64"||method==="fs.writeBase64")return 2*60*1000;
     return this.timeout;
   }
   get connected(){return !!this.transport?.postMessage;}
@@ -213,6 +213,11 @@ class RiftFS extends EventTarget{
     return {...stat,path:target.path,content:String(content??""),backend:target.backend};
   }
   async readText(value){return (await this.get(value))?.content??null;}
+  async readBase64(value){
+    const target=this.route(value);
+    if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Binary reads require a file path");
+    return this.native.call("fs.readBase64",{mountId:target.mountId,path:target.relative});
+  }
   async write(value,content){
     const target=this.route(value);
     if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Cannot write over a mount root");
@@ -223,6 +228,13 @@ class RiftFS extends EventTarget{
     return record;
   }
   writeText(value,content){return this.write(value,content);}
+  async writeBase64(value,base64){
+    const target=this.route(value);
+    if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Binary writes require a file path");
+    const stat=await this.native.call("fs.writeBase64",{mountId:target.mountId,path:target.relative,base64:String(base64||"")});
+    this.dispatchEvent(new CustomEvent("change",{detail:{type:"write",path:target.path}}));
+    return {...stat,path:target.path,backend:target.backend};
+  }
   async mkdir(value){
     const target=this.route(value);
     if(target.path==="/mounts")return {path:"/mounts",kind:"directory",backend:"android-virtual"};

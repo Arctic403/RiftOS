@@ -3,273 +3,148 @@ if(!core)throw new Error("RiftOSCore must load before RiftGit");
 
 const META_NAME=".riftgit.json";
 const CURRENT_PATH="/home/.riftgit-current";
-const MAX_FILE=512*1024;
-const MAX_TOTAL=8*1024*1024;
-const MAX_FILES=500;
-const TEXT_NAMES=new Set(["README","README.md","LICENSE","LICENSE.md","Makefile","Dockerfile","Gemfile","Procfile"]);
-const TEXT_EXT=new Set(["js","mjs","cjs","ts","tsx","jsx","json","html","htm","css","scss","sass","less","md","txt","xml","svg","yml","yaml","toml","ini","cfg","conf","env","sh","bash","zsh","py","rb","php","java","kt","kts","c","h","cc","cpp","cxx","hpp","hh","cs","go","rs","swift","sql","graphql","gql","vue","svelte","astro","properties","gradle"]);
+const MAX_FILE=48*1024*1024;
+const MAX_TOTAL=256*1024*1024;
+const MAX_FILES=10000;
 
 const fs={
   async get(path){await core.ready;return core.fs.get(path);},
-  async write(path,content){await core.ready;return core.fs.write(path,content);},
+  async stat(path){await core.ready;return core.fs.stat(path);},
+  async readBase64(path){await core.ready;return core.fs.readBase64(path);},
+  async writeBase64(path,base64){await core.ready;return core.fs.writeBase64(path,base64);},
+  async write(path,content){await core.ready;return core.fs.writeText(path,content);},
+  async mkdir(path){await core.ready;return core.fs.mkdir(path);},
   async remove(path){await core.ready;return core.fs.remove(path);},
+  async move(from,to,options={}){await core.ready;return core.fs.move(from,to,options);},
   async list(path="/"){await core.ready;return core.fs.list(path,{recursive:true});}
 };
 
 function token(){return sessionStorage.getItem("riftgit-token")||"";}
-function headers(extra={}){
-  const out={Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",...extra};
-  if(token())out.Authorization=`Bearer ${token()}`;
-  return out;
-}
+function headers(extra={}){const out={Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",...extra};if(token())out.Authorization=`Bearer ${token()}`;return out;}
 async function api(path,options={}){
   const response=await fetch(`https://api.github.com${path}`,{...options,headers:headers(options.headers||{})});
-  if(!response.ok){
-    let detail="";try{detail=(await response.json())?.message||"";}catch{}
-    throw new Error(`GitHub ${response.status}${detail?`: ${detail}`:""}`);
-  }
-  if(response.status===204)return null;
-  return response.json();
+  if(!response.ok){let detail="";try{detail=(await response.json())?.message||"";}catch{}throw new Error(`GitHub ${response.status}${detail?`: ${detail}`:""}`);}
+  return response.status===204?null:response.json();
 }
+function normalizePath(value="/"){
+  let raw=String(value||"/").trim().replace(/\\/g,"/");if(raw==="~"||raw.startsWith("~/"))raw=`/home${raw.slice(1)}`;
+  const parts=[];for(const part of raw.split("/")){if(!part||part===".")continue;if(part===".."){parts.pop();continue;}parts.push(part);}return "/"+parts.join("/");
+}
+function resolvePath(cwd,value){const raw=String(value||"");return normalizePath(raw.startsWith("/")||raw.startsWith("~")?raw:`${cwd||"/home"}/${raw}`);}
+function parentPath(path){const parts=normalizePath(path).split("/").filter(Boolean);parts.pop();return "/"+parts.join("/");}
+function basename(path){return normalizePath(path).split("/").filter(Boolean).pop()||"repo";}
 function parseRepo(value){
-  const clean=String(value||"").trim().replace(/\.git$/i,"");
-  const match=clean.match(/(?:https?:\/\/github\.com\/)?([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/i);
-  if(!match)throw new Error("Use owner/repo or https://github.com/owner/repo");
-  return {owner:match[1],repo:match[2],full:`${match[1]}/${match[2]}`};
+  const clean=String(value||"").trim().replace(/\.git$/i,"");const match=clean.match(/(?:https?:\/\/github\.com\/)?([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/i);
+  if(!match)throw new Error("Use owner/repo or https://github.com/owner/repo");return {owner:match[1],repo:match[2],full:`${match[1]}/${match[2]}`};
 }
-function rootFor(repo){return `/home/repos/${repo.owner}/${repo.repo}`;}
-function legacyRootFor(repo){return `/home/repos/${repo.repo}`;}
-function isText(path,size=0){
-  if(size>MAX_FILE)return false;
-  const name=path.split("/").pop()||"";
-  if(TEXT_NAMES.has(name))return true;
-  const ext=name.includes(".")?name.split(".").pop().toLowerCase():"";
-  return TEXT_EXT.has(ext);
+function defaultRoot(repo){return `/home/repos/${repo.owner}/${repo.repo}`;}
+function decodeBase64(content){const raw=atob(String(content||"").replace(/\s/g,"")),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);return bytes;}
+async function gitBlobSha(base64){
+  const bytes=decodeBase64(base64),prefix=new TextEncoder().encode(`blob ${bytes.length}\0`),input=new Uint8Array(prefix.length+bytes.length);input.set(prefix);input.set(bytes,prefix.length);
+  const digest=await crypto.subtle.digest("SHA-1",input);return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
 }
-function decodeBase64(content){
-  const raw=atob(String(content||"").replace(/\s/g,"")),bytes=new Uint8Array(raw.length);
-  for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
-  return new TextDecoder().decode(bytes);
-}
-function encodeBase64(text){
-  const bytes=new TextEncoder().encode(String(text));let binary="";
-  for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
-  return btoa(binary);
-}
-async function hash(text){
-  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(String(text)));
-  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
-}
-async function mapLimit(items,limit,fn){
-  let next=0;
-  await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{
-    while(next<items.length){const index=next++;await fn(items[index],index);}
-  }));
-}
-async function branchInfo(repo,branch){
-  return api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/branches/${encodeURIComponent(branch)}`);
-}
+async function mapLimit(items,limit,fn){let next=0;await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(next<items.length){const index=next++;await fn(items[index],index);}}));}
+async function branchInfo(repo,branch){return api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/branches/${encodeURIComponent(branch)}`);}
 async function treeFor(repo,branch){
   const result=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
-  if(result.truncated)throw new Error("Repository tree is too large for the current RiftGit workspace profile.");
-  return result.tree.filter(item=>item.type==="blob"&&isText(item.path,item.size||0));
+  if(result.truncated)throw new Error("GitHub returned a truncated tree; sync stopped so files are not silently omitted.");
+  const tree=result.tree.filter(item=>item.type==="blob"),total=tree.reduce((sum,item)=>sum+Number(item.size||0),0);
+  if(tree.length>MAX_FILES)throw new Error(`Repository has ${tree.length} files; RiftGit limit is ${MAX_FILES}. Nothing was changed.`);
+  if(total>MAX_TOTAL)throw new Error(`Repository is ${Math.ceil(total/1048576)} MB; RiftGit limit is ${MAX_TOTAL/1048576} MB. Nothing was changed.`);
+  const oversized=tree.find(item=>Number(item.size||0)>MAX_FILE);if(oversized)throw new Error(`${oversized.path} exceeds the ${MAX_FILE/1048576} MB per-file Git sync limit. Nothing was changed.`);return tree;
 }
-async function blobText(repo,sha){
-  const blob=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/blobs/${encodeURIComponent(sha)}`);
-  if(blob.encoding!=="base64")throw new Error("Unsupported GitHub blob encoding");
-  const text=decodeBase64(blob.content);
-  if(text.includes("\u0000"))throw new Error("binary");
-  return text;
+async function blobBase64(repo,sha){const blob=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/blobs/${encodeURIComponent(sha)}`);if(blob.encoding!=="base64")throw new Error("Unsupported GitHub blob encoding");return String(blob.content||"").replace(/\s/g,"");}
+async function findMeta(startPath){
+  let current=normalizePath(startPath||"/home");const startStat=await fs.stat(current).catch(()=>null);if(startStat?.kind==="file")current=parentPath(current);
+  while(true){const file=await fs.get(`${current}/${META_NAME}`).catch(()=>null);if(file?.content){const meta=JSON.parse(file.content);meta.root=current;return meta;}if(current==="/")break;current=parentPath(current);}return null;
 }
-async function findMetaRoot(repo){
-  for(const root of [rootFor(repo),legacyRootFor(repo)]){
-    const file=await fs.get(`${root}/${META_NAME}`);
-    if(file)return {root,file};
-  }
-  return null;
+async function loadMeta(cwd){
+  const nearby=await findMeta(cwd);if(nearby)return nearby;const current=await fs.get(CURRENT_PATH).catch(()=>null);
+  if(current?.content){const pointed=await findMeta(current.content);if(pointed)return pointed;throw new Error(`Saved repo path no longer exists: ${current.content}. Run "git init owner/repo branch" inside the project folder.`);}
+  throw new Error("No repo is attached here. cd into the project and run: git init owner/repo [branch]");
 }
-async function loadMeta(){
-  const current=await fs.get(CURRENT_PATH);
-  if(!current)throw new Error("No current repo. Run: git clone owner/repo");
-  const file=await fs.get(`${current.content}/${META_NAME}`);
-  if(!file)throw new Error("Current repository metadata is missing");
-  return JSON.parse(file.content);
-}
-async function saveMeta(meta){
-  await fs.write(`${meta.root}/${META_NAME}`,JSON.stringify(meta,null,2));
-  await fs.write(CURRENT_PATH,meta.root);
-}
+async function saveMeta(meta){meta.format="riftgit-v3";meta.root=normalizePath(meta.root);meta.updatedAt=Date.now();await fs.write(`${meta.root}/${META_NAME}`,JSON.stringify(meta,null,2));await fs.write(CURRENT_PATH,meta.root);}
+function ignoredRelative(path){return path===META_NAME||path===".git"||path.startsWith(".git/");}
 async function localFileMap(meta){
-  const rows=await fs.list(meta.root);
-  const map=new Map();
-  for(const row of rows){
-    if(row.kind!=="file"||row.path===`${meta.root}/${META_NAME}`)continue;
-    const rel=row.path.slice(meta.root.length+1);if(rel)map.set(rel,row);
-  }
-  return map;
+  const rows=await fs.list(meta.root),map=new Map();for(const row of rows){if(row.kind!=="file")continue;const rel=row.path.slice(meta.root.length).replace(/^\/+/,"");if(rel&&!ignoredRelative(rel))map.set(rel,row);}return map;
 }
+async function contentSha(meta,path){return gitBlobSha(await fs.readBase64(`${meta.root}/${path}`));}
 
-async function importBranch(meta,branch,print,{replace=true}={}){
-  const repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,branch);
-  let tree=await treeFor(repo,branch);
-  if(tree.length>MAX_FILES)tree=tree.slice(0,MAX_FILES);
-  let total=0;tree=tree.filter(item=>{total+=item.size||0;return total<=MAX_TOTAL;});
-  if(replace){
-    for(const path of Object.keys(meta.tracked||{}))await fs.remove(`${meta.root}/${path}`).catch(()=>{});
-  }
-  const tracked={};let done=0,skipped=0;
-  await mapLimit(tree,6,async item=>{
-    try{
-      const text=await blobText(repo,item.sha);
-      await fs.write(`${meta.root}/${item.path}`,text);
-      tracked[item.path]={blobSha:item.sha,baseHash:await hash(text)};
-    }catch{skipped++;}
-    done++;if(print&&(done%30===0||done===tree.length))print(`  ${done}/${tree.length} files`);
-  });
-  meta.branch=branch;meta.headSha=info.commit.sha;meta.tracked=tracked;meta.updatedAt=Date.now();
-  await saveMeta(meta);
-  return {imported:Object.keys(tracked).length,skipped,headSha:info.commit.sha};
+async function importBranch(meta,branch,print){
+  const repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,branch),tree=await treeFor(repo,branch),stage=`${parentPath(meta.root)}/.${basename(meta.root)}.riftgit-stage-${Date.now()}`;
+  await fs.remove(stage).catch(()=>{});await fs.mkdir(stage);const tracked={};let done=0;
+  try{
+    await mapLimit(tree,4,async item=>{const base64=await blobBase64(repo,item.sha);await fs.writeBase64(`${stage}/${item.path}`,base64);tracked[item.path]={blobSha:item.sha,size:Number(item.size||0),mode:item.mode||"100644"};done++;if(print&&(done%25===0||done===tree.length))print(`  ${done}/${tree.length} files`);});
+    const next={...meta,format:"riftgit-v3",branch,headSha:info.commit.sha,tracked,root:meta.root,updatedAt:Date.now()};await fs.write(`${stage}/${META_NAME}`,JSON.stringify(next,null,2));
+    if(await fs.stat(meta.root))await fs.remove(meta.root);await fs.move(stage,meta.root,{overwrite:false});await saveMeta(next);return {imported:tree.length,headSha:info.commit.sha};
+  }catch(error){await fs.remove(stage).catch(()=>{});throw error;}
 }
-
-async function clone(repoArg,branchArg,print){
-  const repo=parseRepo(repoArg),info=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}`),branch=branchArg||info.default_branch||"main";
-  const meta={format:"riftgit-v2",owner:repo.owner,repo:repo.repo,full:repo.full,branch,root:rootFor(repo),headSha:null,tracked:{},clonedAt:Date.now(),updatedAt:Date.now()};
-  print(`Cloning ${repo.full}#${branch} into ${meta.root}...`);
-  await core.fs.remove(meta.root).catch(()=>{});
-  await core.fs.mkdir(meta.root);
-  const result=await importBranch(meta,branch,print,{replace:true});
-  print(`Done. ${result.imported} text files imported${result.skipped?`, ${result.skipped} skipped`:""}.`);
+async function clone(repoArg,branchArg,pathArg,print,cwd){
+  const repo=parseRepo(repoArg),info=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}`),branch=branchArg||info.default_branch||"main",root=pathArg?resolvePath(cwd,pathArg):resolvePath(cwd,repo.repo);
+  if(await fs.stat(root))throw new Error(`Destination already exists: ${root}. cd into it and use git init ${repo.full} ${branch}`);
+  const meta={format:"riftgit-v3",owner:repo.owner,repo:repo.repo,full:repo.full,branch,root,headSha:null,tracked:{},clonedAt:Date.now()};print(`Cloning complete tree ${repo.full}#${branch} into ${root}...`);
+  const result=await importBranch(meta,branch,print);print(`Done. ${result.imported} files at ${result.headSha.slice(0,12)}.`);
 }
-
-async function status(print=()=>{},quiet=false){
-  const meta=await loadMeta(),local=await localFileMap(meta),modified=[],deleted=[],untracked=[];
-  for(const [path,base] of Object.entries(meta.tracked||{})){
-    const row=local.get(path);
-    if(!row){deleted.push(path);continue;}
-    const file=await fs.get(`${meta.root}/${path}`);
-    if(await hash(file?.content||"")!==base.baseHash)modified.push(path);
-    local.delete(path);
-  }
-  for(const path of local.keys())untracked.push(path);
-  if(!quiet){
-    print(`On ${meta.full} / ${meta.branch}`);
-    if(!modified.length&&!deleted.length&&!untracked.length)print("working tree clean");
-    modified.forEach(path=>print(` M ${path}`));deleted.forEach(path=>print(` D ${path}`));untracked.forEach(path=>print(`?? ${path}`));
-  }
-  return {meta,modified,deleted,untracked};
+async function attach(repoArg,branchArg,pathArg,print,cwd){
+  const repo=parseRepo(repoArg),root=resolvePath(cwd,pathArg||cwd),stat=await fs.stat(root);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error(`Project folder not found: ${root}`);
+  const info=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}`),branch=branchArg||info.default_branch||"main",branchState=await branchInfo(repo,branch),tree=await treeFor(repo,branch),tracked={};
+  tree.forEach(item=>tracked[item.path]={blobSha:item.sha,size:Number(item.size||0),mode:item.mode||"100644"});const meta={format:"riftgit-v3",owner:repo.owner,repo:repo.repo,full:repo.full,branch,root,headSha:branchState.commit.sha,tracked,attachedAt:Date.now()};
+  await saveMeta(meta);print(`Attached ${root}\nto ${repo.full}#${branch} at ${meta.headSha.slice(0,12)}.`);await status(print,false,root);
 }
-
-async function pull(print){
-  const state=await status(()=>{},true);
-  if(state.modified.length||state.deleted.length||state.untracked.length)throw new Error("Working tree has local changes. Commit/push or discard them before pulling.");
-  const meta=state.meta,repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,meta.branch);
-  if(info.commit.sha===meta.headSha){print("Already up to date.");return;}
-  print(`Pulling ${meta.full}#${meta.branch}...`);
-  const result=await importBranch(meta,meta.branch,print,{replace:true});
-  print(`Pull complete at ${result.headSha.slice(0,12)}.`);
+async function status(print=()=>{},quiet=false,cwd="/home"){
+  const meta=await loadMeta(cwd),local=await localFileMap(meta),modified=[],deleted=[],untracked=[];
+  for(const [path,base] of Object.entries(meta.tracked||{})){const row=local.get(path);if(!row){deleted.push(path);continue;}if(await contentSha(meta,path)!==base.blobSha)modified.push(path);local.delete(path);}for(const path of local.keys())untracked.push(path);
+  if(!quiet){print(`On ${meta.full} / ${meta.branch}\nroot ${meta.root}`);if(!modified.length&&!deleted.length&&!untracked.length)print("working tree clean");modified.forEach(path=>print(` M ${path}`));deleted.forEach(path=>print(` D ${path}`));untracked.forEach(path=>print(`?? ${path}`));}return {meta,modified,deleted,untracked};
 }
-
-async function createBlob(repo,text){
-  return api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/blobs`,{
-    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:encodeBase64(text),encoding:"base64"})
-  });
+async function pull(print,cwd){
+  const state=await status(()=>{},true,cwd);if(state.modified.length||state.deleted.length||state.untracked.length)throw new Error("Working tree has local changes. Push or discard them before pulling.");
+  const meta=state.meta,repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,meta.branch);if(info.commit.sha===meta.headSha){print("Already up to date.");return;}
+  print(`Pulling complete ${meta.full}#${meta.branch} tree...`);const result=await importBranch(meta,meta.branch,print);print(`Pull complete at ${result.headSha.slice(0,12)}.`);
 }
-async function atomicPush(message,print){
-  if(!token())throw new Error("Push needs GitHub auth. Run: git auth");
-  const state=await status(()=>{},true),{meta,modified,deleted,untracked}=state,changes=[...modified,...deleted,...untracked];
-  if(!changes.length){print("nothing to push");return;}
-  const repo={owner:meta.owner,repo:meta.repo},remote=await branchInfo(repo,meta.branch);
-  if(meta.headSha&&remote.commit.sha!==meta.headSha)throw new Error("Remote branch changed since the last clone/pull. Run: git pull");
-  const headCommit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits/${encodeURIComponent(remote.commit.sha)}`);
-  const treeEntries=[],newBlobShas=new Map();
-  print(`Creating one commit with ${changes.length} change(s)...`);
+async function createBlob(repo,base64){return api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/blobs`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:base64,encoding:"base64"})});}
+async function atomicPush(message,print,cwd){
+  if(!token())throw new Error("Push needs GitHub auth. Run: git auth");const state=await status(()=>{},true,cwd),{meta,modified,deleted,untracked}=state,changes=[...modified,...deleted,...untracked];if(!changes.length){print("nothing to push");return;}
+  if(changes.length>MAX_FILES)throw new Error(`Change set has ${changes.length} files; limit is ${MAX_FILES}.`);const repo={owner:meta.owner,repo:meta.repo},remote=await branchInfo(repo,meta.branch);
+  if(meta.headSha&&remote.commit.sha!==meta.headSha)throw new Error("Remote branch changed since the last clone/pull. Run: git pull");const headCommit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits/${encodeURIComponent(remote.commit.sha)}`);
+  const treeEntries=[],newBlobShas=new Map();let total=0,done=0;print(`Uploading ${changes.length} change(s) as one atomic commit...`);
   for(const path of [...modified,...untracked]){
-    const file=await fs.get(`${meta.root}/${path}`);if(!file)continue;
-    const blob=await createBlob(repo,file.content);newBlobShas.set(path,blob.sha);
-    treeEntries.push({path,mode:"100644",type:"blob",sha:blob.sha});
+    const row=await fs.stat(`${meta.root}/${path}`);total+=Number(row?.size||0);if(Number(row?.size||0)>MAX_FILE)throw new Error(`${path} exceeds the ${MAX_FILE/1048576} MB per-file limit.`);if(total>MAX_TOTAL)throw new Error(`Change set exceeds the ${MAX_TOTAL/1048576} MB sync limit.`);
+    const blob=await createBlob(repo,await fs.readBase64(`${meta.root}/${path}`));newBlobShas.set(path,blob.sha);treeEntries.push({path,mode:meta.tracked?.[path]?.mode||"100644",type:"blob",sha:blob.sha});done++;if(done%25===0||done===modified.length+untracked.length)print(`  ${done}/${modified.length+untracked.length} files uploaded`);
   }
   for(const path of deleted)treeEntries.push({path,mode:"100644",type:"blob",sha:null});
-  const tree=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/trees`,{
-    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_tree:headCommit.tree.sha,tree:treeEntries})
-  });
-  const commit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits`,{
-    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message||"RiftOS workspace update",tree:tree.sha,parents:[remote.commit.sha]})
-  });
-  await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/refs/heads/${meta.branch.split("/").map(encodeURIComponent).join("/")}`,{
-    method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({sha:commit.sha,force:false})
-  });
-  for(const path of deleted)delete meta.tracked[path];
-  for(const path of [...modified,...untracked]){
-    const file=await fs.get(`${meta.root}/${path}`);
-    meta.tracked[path]={blobSha:newBlobShas.get(path),baseHash:await hash(file?.content||"")};
-  }
-  meta.headSha=commit.sha;meta.updatedAt=Date.now();await saveMeta(meta);
-  print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
+  const tree=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/trees`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_tree:headCommit.tree.sha,tree:treeEntries})});
+  const commit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message||meta.pendingMessage||"RiftOS workspace update",tree:tree.sha,parents:[remote.commit.sha]})});
+  await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/refs/heads/${meta.branch.split("/").map(encodeURIComponent).join("/")}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({sha:commit.sha,force:false})});
+  for(const path of deleted)delete meta.tracked[path];for(const path of [...modified,...untracked])meta.tracked[path]={blobSha:newBlobShas.get(path),size:Number((await fs.stat(`${meta.root}/${path}`))?.size||0),mode:meta.tracked?.[path]?.mode||"100644"};
+  meta.headSha=commit.sha;delete meta.pendingMessage;await saveMeta(meta);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
 }
-
-async function use(repoArg,print){
-  const repo=parseRepo(repoArg),found=await findMetaRoot(repo);
-  if(!found)throw new Error(`Repo is not cloned in RiftFS: ${repo.full}`);
-  const meta=JSON.parse(found.file.content);meta.root=found.root;await saveMeta(meta);
-  print(`Current repo: ${meta.full}#${meta.branch}\n${meta.root}`);
+async function use(value,print,cwd){
+  let meta;if(String(value||"").startsWith("/")||String(value||"").startsWith("."))meta=await findMeta(resolvePath(cwd,value));else{const repo=parseRepo(value);for(const root of [defaultRoot(repo),`/home/repos/${repo.repo}`]){meta=await findMeta(root);if(meta)break;}}
+  if(!meta)throw new Error(`No attached RiftGit repository found for ${value}`);await saveMeta(meta);print(`Current repo: ${meta.full}#${meta.branch}\n${meta.root}`);
 }
-
-async function switchBranch(branch,print){
-  if(!branch)throw new Error("usage: git switch <branch>");
-  const state=await status(()=>{},true);
-  if(state.modified.length||state.deleted.length||state.untracked.length)throw new Error("Working tree has local changes. Push/discard them before switching branches.");
-  if(branch===state.meta.branch){print(`Already on ${branch}`);return;}
-  print(`Switching ${state.meta.full} to ${branch}...`);
-  const result=await importBranch(state.meta,branch,print,{replace:true});
-  print(`Now on ${branch} at ${result.headSha.slice(0,12)}.`);
+async function switchBranch(branch,print,cwd){
+  if(!branch)throw new Error("usage: git switch <branch>");const state=await status(()=>{},true,cwd);if(state.modified.length||state.deleted.length||state.untracked.length)throw new Error("Working tree has local changes. Push/discard them before switching branches.");
+  if(branch===state.meta.branch){print(`Already on ${branch}`);return;}print(`Switching ${state.meta.full} to ${branch}...`);const result=await importBranch(state.meta,branch,print);print(`Now on ${branch} at ${result.headSha.slice(0,12)}.`);
 }
+async function listBranches(print,cwd){const meta=await loadMeta(cwd),rows=await api(`/repos/${encodeURIComponent(meta.owner)}/${encodeURIComponent(meta.repo)}/branches?per_page=100`);rows.forEach(row=>print(`${row.name===meta.branch?"*":" "} ${row.name}`));}
 
-async function listBranches(print){
-  const meta=await loadMeta(),rows=await api(`/repos/${encodeURIComponent(meta.owner)}/${encodeURIComponent(meta.repo)}/branches?per_page=100`);
-  rows.forEach(row=>print(`${row.name===meta.branch?"*":" "} ${row.name}`));
-}
-
-async function run(args,print=console.log){
-  const cmd=(args.shift()||"help").toLowerCase();
-  if(cmd==="help")return print(`RiftGit / True OS
-git auth
-git logout
-git clone owner/repo [branch]
-git use owner/repo
-git repo
-git status
-git pull
-git push [commit message]
-git branches
-git switch <branch>
-
-Workspaces live in /home/repos/<owner>/<repo>.
-Push creates one atomic Git commit for the full RiftFS change set.`);
-  if(cmd==="auth"){
-    const value=prompt("GitHub token for this RiftOS session only. It is kept in sessionStorage:","");
-    if(!value)return print("auth cancelled");
-    sessionStorage.setItem("riftgit-token",value.trim());
-    const me=await api("/user");return print(`Authenticated as ${me.login}. Token is session-only.`);
-  }
+async function run(input,print=console.log,context={}){
+  const args=[...input];let cwd=normalizePath(context.cwd||"/home");if(args[0]==="-C"){if(!args[1])throw new Error("usage: git -C <folder> <command>");cwd=resolvePath(cwd,args[1]);args.splice(0,2);}const cmd=(args.shift()||"help").toLowerCase();
+  if(cmd==="help")return print(`RiftGit / full RiftFS sync\ngit auth | logout\ngit clone owner/repo [branch] [destination]\ngit init owner/repo [branch] [folder]   attach an existing folder\ngit use <folder|owner/repo>\ngit root | repo | status | pull\ngit commit -m <message>\ngit push [commit message]\ngit branches | switch <branch>\ngit -C <folder> <command>\n\nCommands use the shell's current directory. Repositories can live under /home, /workspace, or a mounted Android folder. Full directory trees and binary files are synchronized atomically.`);
+  if(cmd==="auth"){const value=prompt("GitHub token for this RiftOS session only:","");if(!value)return print("auth cancelled");sessionStorage.setItem("riftgit-token",value.trim());const me=await api("/user");return print(`Authenticated as ${me.login}. Token is session-only.`);}
   if(cmd==="logout"){sessionStorage.removeItem("riftgit-token");return print("GitHub session cleared.");}
-  if(cmd==="clone"){if(!args[0])throw new Error("usage: git clone owner/repo [branch]");return clone(args[0],args[1],print);}
-  if(cmd==="use"){if(!args[0])throw new Error("usage: git use owner/repo");return use(args[0],print);}
-  if(cmd==="repo"){const meta=await loadMeta();return print(`${meta.full}#${meta.branch}\n${meta.root}`);}
-  if(cmd==="status")return status(print);
-  if(cmd==="pull")return pull(print);
-  if(cmd==="push")return atomicPush(args.join(" "),print);
-  if(cmd==="branches"||cmd==="branch")return listBranches(print);
-  if(cmd==="switch"||cmd==="checkout")return switchBranch(args[0],print);
-  throw new Error(`unknown RiftGit command: ${cmd}`);
+  if(cmd==="clone"){if(!args[0])throw new Error("usage: git clone owner/repo [branch] [destination]");return clone(args[0],args[1],args[2],print,cwd);}
+  if(cmd==="init"||cmd==="attach"){if(!args[0])throw new Error("usage: git init owner/repo [branch] [folder]");return attach(args[0],args[1],args[2],print,cwd);}
+  if(cmd==="use"){if(!args[0])throw new Error("usage: git use <folder|owner/repo>");return use(args[0],print,cwd);}
+  if(cmd==="root"||cmd==="repo"){const meta=await loadMeta(cwd);return print(`${meta.full}#${meta.branch}\n${meta.root}`);}
+  if(cmd==="status")return status(print,false,args[0]?resolvePath(cwd,args[0]):cwd);if(cmd==="pull")return pull(print,cwd);
+  if(cmd==="add")return print("RiftGit tracks the complete attached folder automatically; use git status, then git commit -m <message> or git push <message>.");
+  if(cmd==="commit"){
+    const state=await status(()=>{},true,cwd),message=(args[0]==="-m"?args.slice(1):args).join(" ").trim();if(!message)throw new Error("usage: git commit -m <message>");if(!state.modified.length&&!state.deleted.length&&!state.untracked.length)return print("nothing to commit");
+    state.meta.pendingMessage=message;await saveMeta(state.meta);return print(`Commit message saved for ${state.modified.length+state.deleted.length+state.untracked.length} change(s). Run git push.`);
+  }
+  if(cmd==="push")return atomicPush(args.join(" "),print,cwd);if(cmd==="branches"||cmd==="branch")return listBranches(print,cwd);if(cmd==="switch"||cmd==="checkout")return switchBranch(args[0],print,cwd);throw new Error(`unknown RiftGit command: ${cmd}`);
 }
 
-window.RiftGit=Object.freeze({
-  run,
-  status:(print)=>status(print||console.log),
-  clone:(repo,branch,print)=>clone(repo,branch,print||console.log),
-  pull:(print)=>pull(print||console.log),
-  push:(message,print)=>atomicPush(message,print||console.log),
-  get token(){return token();}
-});
-
-console.info("[RiftGit] True OS filesystem bridge ready");
+window.RiftGit=Object.freeze({run,status:(print,cwd)=>status(print||console.log,false,cwd||"/home"),clone:(repo,branch,path,print,cwd)=>clone(repo,branch,path,print||console.log,cwd||"/home"),pull:(print,cwd)=>pull(print||console.log,cwd||"/home"),push:(message,print,cwd)=>atomicPush(message,print||console.log,cwd||"/home"),get token(){return token();}});
+console.info("[RiftGit] cwd-aware full-tree filesystem bridge ready");
