@@ -96,6 +96,7 @@ tasks.named("preBuild").configure {
 }
 
 dependencies {
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.webkit:webkit:1.16.0")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

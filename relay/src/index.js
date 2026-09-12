@@ -192,13 +192,13 @@ export class RiftRelayRoom {
   }
 
   webSocketClose(socket) {
-    if (this.socket !== socket) return;
+    if (socket !== this.socket) return;
     this.socket = null;
     this.failPending("RiftOS device disconnected");
   }
 
   webSocketError(socket) {
-    if (this.socket !== socket) return;
+    if (socket !== this.socket) return;
     this.socket = null;
     this.failPending("RiftOS device connection failed");
   }
