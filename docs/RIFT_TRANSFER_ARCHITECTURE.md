@@ -10,4 +10,6 @@ Rules:
 - Large operations must not block UI execution.
 - Copy and move operations share the same queue.
 - Transfer IDs are preserved for progress reporting.
-- Future work: chunk scheduling, cancellation, pause/resume.
+- Implemented foundation: transfer IDs, progress reporting and queued execution.
+
+Future work: chunk scheduling, cancellation, pause/resume.

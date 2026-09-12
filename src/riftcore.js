@@ -23,13 +23,20 @@ const CAPABILITIES = Object.freeze([
   "native.read","native.files","native.background"
 ]);
 
+const RIFT_CAPABILITY_REGISTRY = Object.freeze({
+  filesystem:["fs.read","fs.write"],
+  process:["process.read","process.manage"],
+  native:["native.read","native.files","native.background"],
+  system:["system.settings"]
+});
+
 function normalizePath(value="/"){
   const raw=String(value||"/").replace(/\\/g,"/");
   const parts=[];
   for(const part of raw.split("/")){
     if(!part||part===".") continue;
-    if(part==="..") parts.pop();
-    else parts.push(part);
+    if(part==="..") throw new Error("Path traversal is not allowed");
+    parts.push(part);
   }
   return "/"+parts.join("/");
 }

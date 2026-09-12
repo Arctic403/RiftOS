@@ -1,5 +1,6 @@
 export default {
   name: 'claude',
   compose: true,
-  requiresApproval: true
+  requiresApproval: true,
+  riftTools: true
 };

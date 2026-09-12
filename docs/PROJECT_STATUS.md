@@ -9,15 +9,16 @@ RiftOS ships as an Android APK targeting Android 8.0 / API 26+ with Samsung/DeX-
 ```text
 RiftOS shell
   -> RiftBrowser
-  -> ChatGPT Web
-  -> exact-origin Rift MCP bridge
-  -> in-process RiftMcpServer
+  -> AI client transports
+      -> MCP compatibility path
+      -> Browser injector adapters
+  -> RiftOS native capability layer
   -> RiftToolHost
   -> RiftToolSandbox
   -> riftfs/workspace
 ```
 
-There is no Rift AI workspace app in the active architecture. ChatGPT Web is the user/model surface; RiftOS provides local MCP capabilities underneath it.
+RiftOS provides a local capability layer consumed through independent AI transports. ChatGPT Web uses the MCP compatibility path. Other supported browser AI clients use isolated injector adapters that expose the same RiftOS capability model without sharing MCP transport state.
 
 ## Implemented
 

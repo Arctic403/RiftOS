@@ -109,7 +109,12 @@ class RiftBrowserMcpAppBridge(
     private fun isAllowedOrigin(origin: Uri): Boolean {
         if (!origin.scheme.equals("https", ignoreCase = true)) return false
         val host = origin.host?.lowercase() ?: return false
-        return host == "chatgpt.com" || host == "www.chatgpt.com"
+        return host == "chatgpt.com" || host == "www.chatgpt.com" ||
+            host == "github.com" || host == "www.github.com" ||
+            host == "copilot.microsoft.com" ||
+            host == "gemini.google.com" ||
+            host == "google.com" || host == "www.google.com" ||
+            host == "claude.ai" || host == "www.claude.ai"
     }
 
     private fun isChatGptUrl(url: String?): Boolean {

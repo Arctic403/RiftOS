@@ -224,6 +224,15 @@
     };
   }
 
+  function riftCapabilityManifest() {
+    return {
+      provider: 'RiftOS',
+      version: 'rift-tools-v1',
+      tools,
+      count: tools.length
+    };
+  }
+
   function toolManifest() {
     const lines = tools.map((tool) => {
       const schema = compactSchema(tool.inputSchema || {});
@@ -247,7 +256,8 @@
   }
 
   function contextBlock() {
-    return `${CONTEXT_MARKER}\nLocal Rift MCP tools:\n${toolManifest()}${codeModeGuide()}\n` +
+    const capabilities = JSON.stringify(riftCapabilityManifest());
+    return `${CONTEXT_MARKER}\nRiftOS capabilities: ${capabilities}\nLocal Rift MCP tools:\n${toolManifest()}${codeModeGuide()}\n` +
       `When a local tool is needed, output exactly one raw Rift command block and no prose around it:\n` +
       `${CALL_OPEN}\ncall unique-call-id tool_name\nset argName value\n${CALL_CLOSE}\n` +
       `Values may be unquoted single tokens or quoted strings. Booleans and numbers are typed automatically. Use dotted paths for nested objects/arrays and heredocs for multiline strings. ` +

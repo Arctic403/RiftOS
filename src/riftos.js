@@ -178,6 +178,9 @@ async function openFiles(path="/",options={}){
   const entries=topLevelEntries(rows,path),storage=await core.fs.estimate(),parent=path==="/"?null:core.path.parent(path);
   const byPath=new Map(entries.map(entry=>[entry.path,entry]));
   const selected=new Set();
+  let selectionBox=null;
+  let longPressTimer=0;
+  let pressStart=null;
   const roots=[
     ["/home","⌂","Home"],["/documents","▤","Documents"],["/downloads","⇩","Downloads"],
     ["/workspace","◇","Workspace"],["/apps","▦","Apps"],["/mounts","⛓","Android mounts"]
@@ -234,6 +237,17 @@ async function openFiles(path="/",options={}){
 
   const itemButtons=[...body.querySelectorAll(".rift-explorer-item")];
   const actionIds=["fsOpen","fsRename","fsCopy","fsCut","fsDuplicate","fsMove","fsDelete"];
+  function showFileMenu(entry,x,y){
+    document.querySelector('.rift-file-context-menu')?.remove();
+    const menu=document.createElement('div'); menu.className='rift-file-context-menu';
+    menu.innerHTML='<button data-action="open">Open</button><button data-action="copy">Copy</button><button data-action="cut">Move</button><button data-action="paste">Paste</button><button data-action="delete">Delete</button><button data-action="rename">Rename</button><button data-action="zip">Zip</button><button data-action="unzip">Unzip</button>';
+    menu.style.left=x+'px'; menu.style.top=y+'px'; document.body.appendChild(menu);
+    menu.onclick=async e=>{const action=e.target.dataset.action;if(!action)return;menu.remove(); if(action==='copy')body.querySelector('#fsCopy').click(); if(action==='cut')body.querySelector('#fsCut').click(); if(action==='delete')body.querySelector('#fsDelete').click(); if(action==='rename')body.querySelector('#fsRename').click();};
+  }
+  function startSelectionBox(x,y){
+    selectionBox=document.createElement('div'); selectionBox.className='rift-selection-box'; document.body.appendChild(selectionBox);
+    selectionBox.style.left=x+'px';selectionBox.style.top=y+'px';selectionBox.style.width='0px';selectionBox.style.height='0px';
+  }
   const selectionStatus=body.querySelector("#fsSelectionStatus");
   function chosen(){return [...selected].map(value=>byPath.get(value)).filter(Boolean);}
   function syncSelection(){
@@ -252,9 +266,19 @@ async function openFiles(path="/",options={}){
     catch(error){setStatus("Files");alert(`Open failed: ${error?.message||error}`);}
   }
   async function runFileAction(label,work){
-    try{setStatus(`Files · ${label}`);await work();setStatus(`Files · ${label} complete`);await refresh();}
+    try{
+      setStatus(`Files · ${label} queued`);
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      await work();
+      setStatus(`Files · ${label} complete`);
+      await refresh();
+    }
     catch(error){setStatus("Files");alert(`${label} failed: ${error?.message||error}`);syncSelection();}
   }
+  core.fs.transferQueue?.addEventListener?.("transfer",event=>{
+    const detail=event.detail||{};
+    setStatus(`Files · transfer ${detail.state||""}${detail.active?` (${detail.active})`:""}`);
+  });
 
   body.querySelector("#fsBack").onclick=()=>{if(filesNavigation.index>0){filesNavigation.index--;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
   body.querySelector("#fsForward").onclick=()=>{if(filesNavigation.index<filesNavigation.history.length-1){filesNavigation.index++;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
@@ -269,9 +293,14 @@ async function openFiles(path="/",options={}){
       else{selected.clear();selected.add(target);}
       syncSelection();
     };
+    button.oncontextmenu=event=>{event.preventDefault();selected.clear();selected.add(button.dataset.path);syncSelection();showFileMenu(byPath.get(button.dataset.path),event.clientX,event.clientY);};
+    button.onpointerdown=event=>{pressStart={x:event.clientX,y:event.clientY};longPressTimer=setTimeout(()=>showFileMenu(byPath.get(button.dataset.path),event.clientX,event.clientY),550);};
+    button.onpointerup=()=>clearTimeout(longPressTimer);
     button.ondblclick=()=>openEntry(byPath.get(button.dataset.path));
   }
   body.querySelector("#fsSelectAll").onclick=()=>{if(selected.size===entries.length)selected.clear();else entries.forEach(entry=>selected.add(entry.path));syncSelection();};
+  body.querySelector('.rift-explorer-list').onpointerdown=event=>{if(event.target.closest('.rift-explorer-item'))return; startSelectionBox(event.clientX,event.clientY);};
+  body.querySelector('.rift-explorer-list').onpointerup=()=>{selectionBox?.remove();selectionBox=null;};
   body.querySelector("#fsOpen").onclick=()=>openEntry(chosen()[0]);
   body.querySelector("#fsNewFile").onclick=async()=>{
     try{const name=prompt("File name","untitled.txt");if(!name)return;const target=core.path.join(path,cleanLeafName(name));if(await core.fs.stat(target))throw new Error("A file or folder with that name already exists.");await core.fs.createFile(target,"");await refresh();await openEditor(target);}

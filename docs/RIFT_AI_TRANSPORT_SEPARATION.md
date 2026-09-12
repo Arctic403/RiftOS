@@ -18,9 +18,12 @@ ChatGPT Web
 Other AI websites/browser integrations:
 
 Injected JS
+→ client adapter
 → riftbrowser-mcp-app.js
 → Android bridge
 → RiftOS native tools
+
+Supported adapters are isolated per client (for example Copilot, Gemini, Claude and Google surfaces) and share only RiftOS capabilities.
 
 ## Design rule
 
