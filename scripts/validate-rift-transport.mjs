@@ -25,6 +25,7 @@ const mcpServer = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcp
 const relayWorker = readFileSync('relay/src/index.js', 'utf8');
 const riftGit = readFileSync('src/riftgit.js', 'utf8');
 const shellBatch = readFileSync('src/riftshell-batch.js', 'utf8');
+const aiAdapterRegistry = readFileSync('android/app/src/main/assets/adapters/ai-adapter-registry.js', 'utf8');
 
 const checks = [
   ['Rift AI workspace app is removed', !existsSync('src/riftai-workspace.js') && !entry.includes('riftai-workspace')],
@@ -51,6 +52,9 @@ const checks = [
   ['raw parser supports nested paths and heredocs', adapter.includes('setRawPath') && adapter.includes('parseRawCallBlock') && adapter.includes('Heredoc delimiter')],
   ['raw results are bounded before composer injection', adapter.includes('MAX_RESULT_CHARS = 48000') && adapter.includes('Rift result truncated')],
   ['outgoing messages are acknowledged', adapter.includes('waitForOutgoingAcceptance')],
+  ['manual sends are accepted while the injector waits for a send control', adapter.includes('outgoingAccepted(baseline, composer, message)') && adapter.includes('while (now() < deadline && !button)') && adapter.includes('if (outgoingAccepted(baseline, composer, message)) return true;')],
+  ['shared injector uses per-site message and composer adapters', aiAdapterRegistry.includes("version: 'rift-ai-adapters-v2'") && adapter.includes('siteAdapter = window.RiftAIAdapters?.current?.()') && adapter.includes('listAssistantMessages()') && adapter.includes('listUserMessages()')],
+  ['supported AI adapters expose turn selectors', ['chatgpt', 'gemini', 'google', 'claude', 'copilot'].every(name => aiAdapterRegistry.includes(`${name}: Object.freeze`)) && aiAdapterRegistry.includes("assistant: ['model-response'")],
   ['MCP tool contract exposes hash, archive, and safe extract', host.includes('"rift_hash"') && host.includes('"rift_archive"') && host.includes('"rift_extract"') && host.includes('"fs.hash"') && host.includes('"fs.archive"') && host.includes('"fs.extract"')],
   ['archive and extract are classified as writes', host.includes('"rift_archive", "rift_extract"') && host.includes('"archive", "extract")) return true')],
   ['archive/extract participate in AI rollback journaling', journal.includes('"rift_copy", "rift_archive", "rift_extract"') && journal.includes('"copy", "archive", "extract"')],

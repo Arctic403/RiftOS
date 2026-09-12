@@ -8,7 +8,7 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 
 /**
- * Exact-origin ChatGPT Web compatibility adapter for the local Rift MCP server.
+ * Exact-origin browser-AI compatibility adapter for the local Rift MCP server.
  *
  * The page never receives a filesystem or general native-dispatcher object. It can
  * only send MCP JSON-RPC to RiftMcpServer; RiftToolHost remains the capability and
@@ -24,7 +24,8 @@ class RiftBrowserMcpAppBridge(
         private val AI_ORIGINS = setOf(
             "https://chatgpt.com", "https://www.chatgpt.com",
             "https://github.com", "https://copilot.microsoft.com",
-            "https://gemini.google.com", "https://claude.ai"
+            "https://gemini.google.com", "https://google.com", "https://www.google.com",
+            "https://claude.ai"
         )
     }
 
@@ -79,7 +80,7 @@ class RiftBrowserMcpAppBridge(
     }
 
     fun ensureInjected(url: String?) {
-        if (!installed || documentStartInstalled || !isChatGptUrl(url)) return
+        if (!installed || documentStartInstalled || !isAiUrl(url)) return
         webView.evaluateJavascript(script, null)
     }
 
@@ -117,7 +118,7 @@ class RiftBrowserMcpAppBridge(
             host == "claude.ai" || host == "www.claude.ai"
     }
 
-    private fun isChatGptUrl(url: String?): Boolean {
+    private fun isAiUrl(url: String?): Boolean {
         val uri = runCatching { Uri.parse(url.orEmpty()) }.getOrNull() ?: return false
         return isAllowedOrigin(uri)
     }

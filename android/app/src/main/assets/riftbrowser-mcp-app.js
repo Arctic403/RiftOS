@@ -3,7 +3,7 @@
   if (window.__RIFT_MCP_APP_V1__) return;
   window.__RIFT_MCP_APP_V1__ = true;
 
-  const VERSION = 'rift-mcp-app-v2.1.0-raw-chat';
+  const VERSION = 'rift-mcp-app-v2.2.0-multi-ai';
   const CONTEXT_MARKER = '[RIFT_MCP_RAW_V1]';
   const RESULT_MARKER = '[RIFT_RESULT]';
   const CALL_OPEN = '[RIFT_CALL]';
@@ -60,6 +60,12 @@
   // AI website adapters may prepare messages, but user approval is required before submission.
   let manualSendApprovalRequired = true;
   let pendingApprovedSubmission = null;
+  const siteAdapter = window.RiftAIAdapters?.current?.() || {
+    name: 'generic', label: 'AI chat', composer: ['textarea', '[contenteditable="true"]'],
+    send: ['button[aria-label*="Send" i]', 'button[type="submit"]'],
+    stop: ['button[aria-label^="Stop" i]'], assistant: ['[data-role="assistant"]'], user: ['[data-role="user"]']
+  };
+  const aiLabel = String(siteAdapter.label || siteAdapter.name || 'AI chat');
 
   function now() { return Date.now(); }
 
@@ -86,9 +92,35 @@
   }
 
   function stopButtonVisible() {
-    const stop = document.querySelector('[data-testid="stop-button"],button[aria-label*="Stop" i]');
+    const stop = queryFirst(siteAdapter.stop);
     return stop instanceof Element && isVisible(stop) && !stop.disabled;
   }
+
+  function selectorText(selectors) {
+    return Array.isArray(selectors) ? selectors.filter(Boolean).join(',') : String(selectors || '');
+  }
+
+  function queryAll(selectors, root = document) {
+    const query = selectorText(selectors);
+    if (!query || !root?.querySelectorAll) return [];
+    try {
+      const matches = Array.from(root.querySelectorAll(query));
+      return matches.filter((element) => !matches.some((other) => other !== element && other.contains(element)));
+    } catch (_) { return []; }
+  }
+
+  function queryFirst(selectors, root = document) {
+    for (const selector of Array.isArray(selectors) ? selectors : [selectors]) {
+      if (!selector) continue;
+      try {
+        for (const element of root.querySelectorAll(selector)) if (isVisible(element)) return element;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function listAssistantMessages() { return queryAll(siteAdapter.assistant); }
+  function listUserMessages() { return queryAll(siteAdapter.user); }
 
   function finishAiTask(phase, message, type = 'transport') {
     if (!aiTaskActive && phase !== 'error') return;
@@ -125,7 +157,7 @@
   function markContinuationBaseline() {
     continuationBaseline = new WeakSet();
     continuationBaselineKeys = new Set();
-    for (const message of document.querySelectorAll('[data-message-author-role="assistant"]')) {
+    for (const message of listAssistantMessages()) {
       continuationBaseline.add(message);
       const key = assistantMessageKey(message);
       if (key) continuationBaselineKeys.add(key);
@@ -153,12 +185,12 @@
         return;
       }
       if (aiStopRequested) {
-        finishAiTask('stopped', 'ChatGPT Web task stopped');
+        finishAiTask('stopped', `${aiLabel} task stopped`);
         return;
       }
       if (toolLoopState === 'waiting-continuation' && continuationRequired && continuationWaitStartedAt &&
           now() - continuationWaitStartedAt >= 45000) {
-        finishAiTask('error', 'ChatGPT continuation was not observed after Rift result delivery', 'error');
+        finishAiTask('error', `${aiLabel} continuation was not observed after Rift result delivery`, 'error');
         return;
       }
       if (!assistantSeen || continuationRequired || toolLoopBusy() || !latestAssistantHasCompletableOutput()) {
@@ -170,7 +202,7 @@
         scheduleCompletionCheck(900);
         return;
       }
-      finishAiTask('complete', 'ChatGPT Web task complete');
+      finishAiTask('complete', `${aiLabel} task complete`);
     }, delayMs);
   }
 
@@ -399,7 +431,7 @@
   }
 
   function findComposer() {
-    const preferred = document.querySelector('#prompt-textarea');
+    const preferred = queryFirst(siteAdapter.composer);
     if (preferred && isVisible(preferred)) return preferred;
     const candidates = Array.from(document.querySelectorAll('textarea,[contenteditable="true"]')).filter(isVisible);
     let best = null;
@@ -447,21 +479,24 @@
   }
 
   function snapshotUserMessages() {
-    return new Set(Array.from(document.querySelectorAll('[data-message-author-role="user"]')));
+    return new Set(listUserMessages());
+  }
+
+  function outgoingAccepted(baseline, composer, message) {
+    const signature = String(message || '').trim().slice(0, 160);
+    for (const row of listUserMessages()) {
+      if (baseline.has(row)) continue;
+      const text = String(row.innerText || row.textContent || '').trim();
+      if (!signature || (text && (text.includes(signature) || signature.includes(text.slice(0, 80))))) return true;
+    }
+    if (stopButtonVisible()) return true;
+    return !composer.isConnected || !readComposer(composer).trim();
   }
 
   async function waitForOutgoingAcceptance(baseline, composer, message, timeoutMs = 6000) {
     const deadline = now() + timeoutMs;
-    const signature = String(message || '').trim().slice(0, 160);
     while (now() < deadline) {
-      const users = document.querySelectorAll('[data-message-author-role="user"]');
-      for (const row of users) {
-        if (baseline.has(row)) continue;
-        const text = String(row.innerText || row.textContent || '').trim();
-        if (!signature || text.includes(signature) || signature.includes(text.slice(0, 80))) return true;
-      }
-      if (stopButtonVisible()) return true;
-      if (!readComposer(composer).trim()) return true;
+      if (outgoingAccepted(baseline, composer, message)) return true;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     return false;
@@ -476,21 +511,34 @@
     }
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const composer = await waitForComposer(timeoutMs);
-      if (!composer) throw new Error('ChatGPT composer unavailable');
+      if (!composer) throw new Error(`${aiLabel} composer unavailable`);
       const baseline = snapshotUserMessages();
       if (readComposer(composer).trim() !== String(message).trim()) writeComposer(composer, message);
-      const button = await waitForSendButton(timeoutMs);
-      if (!button) throw new Error('ChatGPT send button unavailable');
+      const deadline = now() + timeoutMs;
+      let button = null;
+      while (now() < deadline && !button) {
+        if (outgoingAccepted(baseline, composer, message)) return true;
+        button = findSendButton();
+        if (!button || button.disabled) {
+          button = null;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+      if (!button) {
+        if (outgoingAccepted(baseline, composer, message)) return true;
+        throw new Error(`${aiLabel} send button unavailable`);
+      }
       button.click();
       if (await waitForOutgoingAcceptance(baseline, composer, message)) return true;
-      sendAiPhase('waiting', `ChatGPT did not accept the message; retrying (${attempt + 2}/3)`);
+      sendAiPhase('waiting', `${aiLabel} did not accept the message; retrying (${attempt + 2}/3)`);
       await new Promise((resolve) => setTimeout(resolve, 350));
     }
-    throw new Error('ChatGPT Web did not acknowledge message submission');
+    throw new Error(`${aiLabel} did not acknowledge message submission`);
   }
 
   function looksLikeSendButton(button) {
     if (!(button instanceof Element) || !isVisible(button)) return false;
+    if (siteAdapter.send?.some((selector) => { try { return button.matches(selector); } catch (_) { return false; } })) return true;
     const testId = (button.getAttribute('data-testid') || '').toLowerCase();
     const label = (button.getAttribute('aria-label') || '').toLowerCase();
     if (testId === 'send-button' || testId.includes('send-button')) return true;
@@ -498,7 +546,7 @@
   }
 
   function findSendButton() {
-    const direct = document.querySelector('[data-testid="send-button"]');
+    const direct = queryFirst(siteAdapter.send);
     if (direct && looksLikeSendButton(direct)) return direct;
     return Array.from(document.querySelectorAll('button')).find(looksLikeSendButton) || null;
   }
@@ -508,7 +556,7 @@
   }
 
   function rememberExistingToolCalls() {
-    for (const message of document.querySelectorAll('[data-message-author-role="assistant"]')) markHistoricalAssistantMessage(message);
+    for (const message of listAssistantMessages()) markHistoricalAssistantMessage(message);
   }
 
   function decorateOutgoingPrompt() {
@@ -626,10 +674,10 @@
       sendAiPhase('waiting', `Preparing project chat${target.label ? ` · ${String(target.label).slice(0, 120)}` : ''}`);
       await prepareProjectTarget(target);
     }
-    sendAiPhase('waiting', 'Waiting for ChatGPT Web composer');
+    sendAiPhase('waiting', `Waiting for ${aiLabel} composer`);
     const composer = await waitForComposer(20000);
     if (!composer) {
-      finishAiTask('error', 'ChatGPT Web composer unavailable. Open Web view to sign in or inspect the page.', 'error');
+      finishAiTask('error', `${aiLabel} composer unavailable. Open Web view to sign in or inspect the page.`, 'error');
       return false;
     }
     refreshRouteState();
@@ -654,8 +702,8 @@ ${contextBlock()}`;
       finishAiTask('error', String(error && error.message || error), 'error');
       return false;
     }
-    sendAiPhase('submitted', 'Task submitted to ChatGPT Web');
-    sendAiPhase('running', 'ChatGPT Web is working');
+    sendAiPhase('submitted', `Task submitted to ${aiLabel}`);
+    sendAiPhase('running', `${aiLabel} is working`);
     setTimeout(() => { suppressDecoration = false; }, 800);
     scheduleCompletionCheck(1800);
     return true;
@@ -689,7 +737,7 @@ ${contextBlock()}`;
     try {
       await submitAiTask(payload);
     } catch (error) {
-      const message = `ChatGPT Web task failed: ${String(error && error.message || error)}`;
+      const message = `${aiLabel} task failed: ${String(error && error.message || error)}`;
       if (aiTaskActive) finishAiTask('error', message, 'error');
       else sendAiEvent('error', message, { phase: 'error', sessionId: String(payload && payload.sessionId || '') });
     } finally {
@@ -699,7 +747,6 @@ ${contextBlock()}`;
   }
 
   function approvePendingSend() {
-    manualSendApprovalRequired = false;
     if (!pendingApprovedSubmission) return false;
     const pending = pendingApprovedSubmission;
     pendingApprovedSubmission = null;
@@ -710,7 +757,7 @@ ${contextBlock()}`;
   function stopAiTask() {
     if (!aiTaskActive) return false;
     aiStopRequested = true;
-    const stop = document.querySelector('[data-testid="stop-button"],button[aria-label*="Stop" i]');
+    const stop = queryFirst(siteAdapter.stop);
     if (stop instanceof HTMLElement && !stop.disabled) stop.click();
     sendAiPhase('stopping', 'Stop requested');
     scheduleCompletionCheck(500);
@@ -755,14 +802,13 @@ ${contextBlock()}`;
   function acknowledgeResultFromAssistantContinuation(message = null) {
     if (!aiTaskActive || toolLoopState !== 'waiting-result-ack' || !pendingResultId) return false;
 
-    const assistantMessages = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const messages = listAssistantMessages();
     const candidate = message instanceof Element
       ? message
-      : (assistantMessages.length ? assistantMessages[assistantMessages.length - 1] : null);
+      : (messages.length ? messages[messages.length - 1] : null);
     if (!(candidate instanceof Element)) return false;
 
-    const isLatestAssistant = assistantMessages.length > 0 &&
-      assistantMessages[assistantMessages.length - 1] === candidate;
+    const isLatestAssistant = messages.length > 0 && messages[messages.length - 1] === candidate;
     if (!isLatestAssistant || isContinuationBaseline(candidate)) return false;
 
     const raw = String(candidate.innerText || candidate.textContent || '');
@@ -775,7 +821,7 @@ ${contextBlock()}`;
     const firstAck = !acknowledgedResultIds.has(resultId);
     acknowledgedResultIds.add(resultId);
     if (firstAck) {
-      sendAiPhase('running', 'ChatGPT continuation acknowledged Rift result', 'transport', {
+      sendAiPhase('running', `${aiLabel} continuation acknowledged Rift result`, 'transport', {
         resultId,
         ackSource: 'assistant-continuation'
       });
@@ -787,7 +833,7 @@ ${contextBlock()}`;
     const deadline = now() + timeoutMs;
     while (now() < deadline) {
       if (acknowledgedResultIds.has(resultId)) return true;
-      for (const message of document.querySelectorAll('[data-message-author-role="user"]')) {
+      for (const message of listUserMessages()) {
         if (!(message instanceof Element)) continue;
         const known = message instanceof HTMLElement ? String(message.dataset.riftResultId || '') : '';
         if (known === resultId) {
@@ -803,7 +849,7 @@ ${contextBlock()}`;
   }
 
   function scanForContinuation() {
-    const assistant = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const assistant = listAssistantMessages();
     for (let i = Math.max(0, assistant.length - 6); i < assistant.length; i++) {
       const message = assistant[i];
       if (!isContinuationBaseline(message)) scanAssistantMessage(message);
@@ -891,7 +937,7 @@ ${contextBlock()}`;
       consumedContinuationResultId = '';
       continuationWaitStartedAt = 0;
       toolLoopState = 'delivering-result';
-      sendAiPhase('running', 'Returning Rift result to ChatGPT Web', 'transport', {
+      sendAiPhase('running', `Returning Rift result to ${aiLabel}`, 'transport', {
         resultId,
         callId: resultPayload.call_id || null,
         tool: resultPayload.name || null,
@@ -925,7 +971,7 @@ ${contextBlock()}`;
       if (consumedContinuationResultId === resultId) {
         consumedContinuationResultId = '';
         continuationWaitStartedAt = 0;
-        sendAiPhase('running', 'Rift result delivered · ChatGPT continuation already received', 'transport', {
+        sendAiPhase('running', `Rift result delivered · ${aiLabel} continuation already received`, 'transport', {
           resultId,
           callId: resultPayload.call_id || null,
           tool: resultPayload.name || null,
@@ -935,7 +981,7 @@ ${contextBlock()}`;
       } else {
         toolLoopState = 'waiting-continuation';
         continuationWaitStartedAt = now();
-        sendAiPhase('running', 'Rift result delivered · waiting for ChatGPT continuation', 'transport', {
+        sendAiPhase('running', `Rift result delivered · waiting for ${aiLabel} continuation`, 'transport', {
           resultId,
           callId: resultPayload.call_id || null,
           tool: resultPayload.name || null,
@@ -1223,7 +1269,7 @@ ${contextBlock()}`;
   }
 
   function latestAssistantHasCompletableOutput() {
-    const assistant = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const assistant = listAssistantMessages();
     if (!assistant.length) return false;
     const message = assistant[assistant.length - 1];
     const raw = String(message.innerText || message.textContent || '');
@@ -1279,8 +1325,8 @@ ${contextBlock()}`;
     const visibleText = stripToolEnvelopes(text);
     const protocolSignal = hasToolProtocolSignal(text);
     const meaningfulAssistantContent = protocolSignal || (Boolean(visibleText) && !isTransientAssistantStatus(visibleText));
-    const assistantMessages = document.querySelectorAll('[data-message-author-role="assistant"]');
-    const isLatestAssistant = assistantMessages.length > 0 && assistantMessages[assistantMessages.length - 1] === message;
+    const messages = listAssistantMessages();
+    const isLatestAssistant = messages.length > 0 && messages[messages.length - 1] === message;
     const isHistorical = historicalAssistantMessages.has(message);
 
     if (!meaningfulAssistantContent) return;
@@ -1291,7 +1337,7 @@ ${contextBlock()}`;
       continuationWaitStartedAt = 0;
       toolLoopState = 'waiting-assistant';
       lastAssistantUpdateAt = now();
-      sendAiPhase('running', 'ChatGPT continuation received', 'transport');
+      sendAiPhase('running', `${aiLabel} continuation received`, 'transport');
     } else if (aiTaskActive && toolLoopState === 'waiting-result-ack') {
       const resultId = pendingResultId;
       if (!acknowledgeResultFromAssistantContinuation(message)) return;
@@ -1300,7 +1346,7 @@ ${contextBlock()}`;
       continuationWaitStartedAt = 0;
       toolLoopState = 'waiting-assistant';
       lastAssistantUpdateAt = now();
-      sendAiPhase('running', 'ChatGPT continuation received with Rift result acknowledgement', 'transport', {
+      sendAiPhase('running', `${aiLabel} continuation received with Rift result acknowledgement`, 'transport', {
         resultId,
         ackSource: 'assistant-continuation'
       });
@@ -1368,10 +1414,15 @@ ${contextBlock()}`;
 
   function collectMessage(container, role, targetSet) {
     if (!(container instanceof Element)) return;
-    if (container.matches(`[data-message-author-role="${role}"]`)) targetSet.add(container);
-    const closest = container.closest(`[data-message-author-role="${role}"]`);
-    if (closest) targetSet.add(closest);
-    for (const nested of container.querySelectorAll(`[data-message-author-role="${role}"]`)) targetSet.add(nested);
+    const selectors = role === 'assistant' ? siteAdapter.assistant : siteAdapter.user;
+    const query = selectorText(selectors);
+    if (!query) return;
+    try {
+      if (container.matches(query)) targetSet.add(container);
+      const closest = container.closest(query);
+      if (closest) targetSet.add(closest);
+      for (const nested of queryAll(selectors, container)) targetSet.add(nested);
+    } catch (_) {}
   }
 
   function collectMutation(mutation) {
@@ -1403,8 +1454,8 @@ ${contextBlock()}`;
   }
 
   function scanRecentMessagesOnce() {
-    const assistant = document.querySelectorAll('[data-message-author-role="assistant"]');
-    const users = document.querySelectorAll('[data-message-author-role="user"]');
+    const assistant = listAssistantMessages();
+    const users = listUserMessages();
     for (let i = Math.max(0, assistant.length - 8); i < assistant.length; i++) markHistoricalAssistantMessage(assistant[i]);
     for (let i = Math.max(0, users.length - 8); i < users.length; i++) compactInjectedUserMessage(users[i]);
   }
