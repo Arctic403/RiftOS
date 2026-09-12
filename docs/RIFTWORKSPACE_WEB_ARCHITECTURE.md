@@ -5,7 +5,7 @@ RiftWorkspace is the controlled project/workspace boundary between RiftOS apps, 
 ## Android runtime path
 
 ```text
-RiftOS app / RiftDev / Workspace Live
+RiftOS app / Workspace Live
       |
 RiftWorkspace API / scoped HTML RPC
       |
@@ -54,7 +54,7 @@ Workspace Live uses SHA-256 revision checks when manually saving an open file. I
 
 ## Public operations
 
-The workspace supports controlled list/stat/read/write/mkdir/remove/move/copy operations plus snapshot, patch preview/apply, history and rollback surfaces used by RiftDev and project tooling.
+The workspace supports controlled list/stat/read/write/mkdir/remove/move/copy operations plus snapshot, patch preview/apply, history and rollback surfaces used by project tooling.
 
 Path normalization prevents escaping the workspace/RiftFS boundary.
 

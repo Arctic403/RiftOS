@@ -33,12 +33,8 @@ const api=Object.freeze({
 globalThis.RiftAndroidAPI=api;
 globalThis.RiftKernel=system;
 
-// Called by MainActivity before it exits. RiftDev and RiftOS windows consume Back first.
+// Called by MainActivity before it exits. RiftOS windows consume Back first.
 globalThis.RiftAndroidBack=()=>{
-  if(document.documentElement.classList.contains("riftdev-active")&&globalThis.RiftDev?.close){
-    globalThis.RiftDev.close();
-    return true;
-  }
   const stage=document.querySelector("#stage");
   if(stage&&!stage.classList.contains("hidden")&&globalThis.RiftDesktop?.closeWindow){
     globalThis.RiftDesktop.closeWindow();

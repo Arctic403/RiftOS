@@ -347,10 +347,56 @@ class RiftNativeDispatcher(
             ?: throw IllegalStateException("Could not read $path")
     }
     private fun writeText(mountId: String, path: String, text: String): JSONObject {
-        if (mountId == "__riftfs__") { val file=internalFile(path); file.parentFile?.mkdirs(); file.writeText(text,Charsets.UTF_8); return stat(mountId,path)!! }
-        val doc=externalFile(mountId,path,true)
-        openExternalOutput(doc,path).bufferedWriter(Charsets.UTF_8).use{it.write(text)}
-        return stat(mountId,path)!!
+        require(text.length.toLong() <= MAX_BRIDGE_TEXT_BYTES) { "Text write exceeds the bridge limit" }
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        require(bytes.size.toLong() <= MAX_BRIDGE_TEXT_BYTES) { "Text write exceeds the 4 MiB UTF-8 limit" }
+        if (mountId == "__riftfs__") {
+            val file = internalFile(path)
+            require(!file.isDirectory) { "Not a file: $path" }
+            file.parentFile?.let { require(it.isDirectory || it.mkdirs()) { "Could not create parent: $path" } }
+            val temporary = File.createTempFile(".rift-write-", ".tmp", file.parentFile)
+            try {
+                temporary.outputStream().use { out -> out.write(bytes); out.fd.sync() }
+                java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } finally { temporary.delete() }
+            return stat(mountId, path)!!
+        }
+        // SAF has no atomic replace primitive. Stage first, retain the old document
+        // under a backup name, and restore it if the provider rejects the commit.
+        val parts = normalizeSegments(path)
+        require(parts.isNotEmpty()) { "Mount root is not a file" }
+        val parent = externalDirectory(mountId, parts.dropLast(1).joinToString("/"), true)
+        val name = parts.last()
+        val old = parent.findFile(name)
+        require(old == null || old.isFile) { "Not a file: $path" }
+        val suffix = java.util.UUID.randomUUID().toString()
+        val temporaryName = ".rift-write-$suffix"
+        val backupName = ".rift-backup-$suffix"
+        val staged = parent.createFile("application/octet-stream", temporaryName)
+            ?: throw IllegalStateException("Provider cannot stage text write")
+        var backedUp = false
+        var committed = false
+        try {
+            openExternalOutput(staged, path).use { it.write(bytes) }
+            val verified = activity.contentResolver.openInputStream(staged.uri)?.use { it.readBytes() }
+            require(verified != null && verified.contentEquals(bytes)) { "Staged text verification failed" }
+            if (old != null) {
+                require(old.renameTo(backupName)) { "Provider cannot safely replace text; original retained" }
+                backedUp = true
+            }
+            require(staged.renameTo(name) && staged.name == name) { "Provider could not commit staged text" }
+            committed = true
+        } catch (error: Throwable) {
+            if (backedUp && old != null) {
+                if (staged.name == name) require(staged.delete()) { "Recovery blocked; original retained as $backupName" }
+                if (!old.renameTo(name)) throw IllegalStateException("${error.message}; original retained as $backupName", error)
+            }
+            throw error
+        } finally {
+            if (!committed) runCatching { staged.delete() }
+        }
+        if (backedUp) old?.delete()
+        return stat(mountId, path)!!
     }
     private fun readBase64(mountId: String, path: String): String {
         val size = stat(mountId, path)?.optLong("size", -1L) ?: throw IllegalArgumentException("File not found: $path")
@@ -496,16 +542,28 @@ class RiftNativeDispatcher(
         val destinationExisted = destination != null
         if (destinationExisted) require(destination?.optString("kind") == "directory") {
             "Unzip destination is not a directory: $to"
-        } else mkdir(toMountId, to)
-        val input = if (fromMountId == "__riftfs__") internalFile(from).inputStream() else {
-            val file = externalFile(fromMountId, from, false)
-            activity.contentResolver.openInputStream(file.uri)
-                ?: throw IllegalStateException("Could not read archive: $from")
         }
         val created = mutableListOf<String>()
+        fun ensureTrackedDirectory(path: String) {
+            var current = ""
+            for (segment in normalizeSegments(path)) {
+                current = childPath(current, segment)
+                val existing = stat(toMountId, current)
+                if (existing == null) {
+                    created += current
+                    mkdir(toMountId, current)
+                } else require(existing.optString("kind") == "directory") { "Not a directory: $current" }
+            }
+        }
         var entries = 0
         var extractedBytes = 0L
         try {
+            ensureTrackedDirectory(to)
+            val input = if (fromMountId == "__riftfs__") internalFile(from).inputStream() else {
+                val file = externalFile(fromMountId, from, false)
+                activity.contentResolver.openInputStream(file.uri)
+                    ?: throw IllegalStateException("Could not read archive: $from")
+            }
             ZipInputStream(BufferedInputStream(input)).use { archive ->
                 var entry = archive.nextEntry
                 while (entry != null) {
@@ -516,20 +574,21 @@ class RiftNativeDispatcher(
                         val targetPath = childPath(to, safe)
                         val existing = stat(toMountId, targetPath)
                         if (entry.isDirectory) {
-                            if (existing == null) { mkdir(toMountId, targetPath); created += targetPath }
+                            if (existing == null) ensureTrackedDirectory(targetPath)
                             else require(existing.optString("kind") == "directory") {
                                 "Archive path conflicts with a file: $targetPath"
                             }
                             if (progress != null) progress.directories++
                         } else {
                             require(existing == null) { "Archive would overwrite an existing path: $targetPath" }
+                            ensureTrackedDirectory(parentRelative(targetPath))
+                            created += targetPath
                             val output = if (toMountId == "__riftfs__") {
                                 internalFile(targetPath).also { it.parentFile?.mkdirs() }.outputStream()
                             } else {
                                 val target = externalFile(toMountId, targetPath, true)
                                 openExternalOutput(target, targetPath)
                             }
-                            created += targetPath
                             output.use { out ->
                                 val buffer = ByteArray(COPY_BUFFER_BYTES)
                                 while (true) {
@@ -553,8 +612,11 @@ class RiftNativeDispatcher(
                 }
             }
         } catch (error: Throwable) {
-            created.asReversed().forEach { path -> runCatching { remove(toMountId, path) } }
-            if (!destinationExisted) runCatching { remove(toMountId, to) }
+            created.asReversed().forEach { path ->
+                runCatching { check(remove(toMountId, path)) { "Could not remove extracted path: $path" } }
+                    .exceptionOrNull()?.let { error.addSuppressed(it) }
+            }
+            if (error.suppressed.isNotEmpty()) throw IllegalStateException("${error.message}; extraction cleanup incomplete: ${error.suppressed.joinToString { it.message ?: it.toString() }}", error)
             throw error
         }
         return stat(toMountId, to) ?: throw IllegalStateException("Unzip destination is missing: $to")

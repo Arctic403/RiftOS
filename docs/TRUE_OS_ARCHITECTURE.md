@@ -52,7 +52,7 @@ The active Android RiftFS root is `filesDir/riftfs`. Standard internal directori
 
 User-selected external directories are mounted through Android Storage Access Framework. Canonical path checks prevent RiftFS path traversal.
 
-Rift MCP filesystem tools are hard-scoped to the canonical app-private `riftfs/workspace` tree shared with Files and RiftDev. Legacy `tool-sandbox/workspace` and `browser-sandbox/workspace` trees are migration sources only and are never exposed as active namespaces.
+Rift MCP filesystem tools are hard-scoped to the canonical app-private `riftfs/workspace` tree shared with Files and workspace tooling. Legacy `tool-sandbox/workspace` and `browser-sandbox/workspace` trees are migration sources only and are never exposed as active namespaces.
 
 ## Desktop
 
@@ -60,11 +60,10 @@ RiftDesktop is the single window manager for built-ins and RiftRT apps. Files, S
 
 The browser's native renderer is a content plane inside a RiftOS-managed window, not a second desktop or full-screen browser Activity. Android System WebView is the current compatibility renderer; RiftEngine/Servo is the target renderer after hardware validation.
 
-## Workspace and RiftDev
+## Workspace
 
 RiftWorkspace uses RiftFS on Android. `src/riftworkspace-web.js` supplies the common workspace contract while `src/riftworkspace-android-adapter.js` binds it to native storage.
 
-RiftDev's Android build rewrites its legacy IndexedDB calls to the `RiftDevAndroidDB` compatibility facade backed by RiftWorkspace.
 
 ## RiftRT
 

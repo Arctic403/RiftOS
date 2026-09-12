@@ -21,7 +21,7 @@ RiftFS lives in `filesDir/riftfs`. Android initializes `home`, `apps`, `system`,
 
 External user folders mount through Storage Access Framework with persisted URI permissions. RiftWorkspace maps its common JSON API onto the native `/workspace` tree.
 
-The canonical project workspace lives at `filesDir/riftfs/workspace` and is shared by Files, RiftDev and Rift AI Code Mode. It is also the **only** filesystem root exposed through MCP. Legacy `tool-sandbox/workspace` and `browser-sandbox/workspace` trees are migration input only; unique entries are merged into the canonical workspace without overwriting newer user files. No transfer, system, downloads, documents or SAF-mount root is MCP-addressable.
+The canonical project workspace lives at `filesDir/riftfs/workspace` and is shared by Files and workspace tooling. It is also the **only** filesystem root exposed through MCP. Legacy `tool-sandbox/workspace` and `browser-sandbox/workspace` trees are migration input only; unique entries are merged into the canonical workspace without overwriting newer user files. No transfer, system, downloads, documents or SAF-mount root is MCP-addressable.
 
 ## Native services
 
@@ -31,7 +31,7 @@ The canonical project workspace lives at `filesDir/riftfs/workspace` and is shar
 - notification permission request,
 - Android file chooser,
 - DownloadManager,
-- preview Activity for RiftDev workspace files,
+- preview Activity for workspace files,
 - privacy-limited System Dump + Save As picker,
 - `RiftBrowserWindow` native WebView content plane,
 - local `RiftMcpServer` + `RiftToolHost`,
@@ -82,14 +82,12 @@ Settings invokes `system.dump.save`. Android generates a JSON diagnostic snapsho
 
 The dump includes app/build, Android/WebView, memory/heap/storage and aggregate RiftFS metrics. It excludes file names/content, secrets, account data, Android IDs and installed-app lists.
 
-## RiftDev
+## Editor removal
 
-The active Android editor is `apps/riftdev/riftdev-android.js`. During APK asset generation, legacy IndexedDB calls are rewritten to `RiftDevAndroidDB`, which stores through RiftWorkspace.
-
-Local Test uses the native preview path rather than a service worker.
+RiftDev and its iframe, CDN assets, and credential cache have been removed. An in-house IDE is planned.
 
 ## Build/signing
 
-`.github/workflows/riftos-android-apk.yml` builds on `android-apk` and `main`, signs/verifies the APK and publishes `android-latest`.
+The separate `Arctic403/Riftos-builder` repository builds only through manual dispatch. Signing requires all four release secrets and rejects the exposed legacy certificate; there is no fallback signing key.
 
 CI builds the native relay transport and continues to reject the removed DOM Agent, expensive whole-chat MCP scanner and removed local-AI binaries.

@@ -39,7 +39,6 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - RiftDesktop window manager with focus, move, resize, minimize, maximize and taskbar state.
 - Explorer-style Files app with create, rename, copy, cut/paste, duplicate, move and delete.
 - Settings app with privacy-limited System Dump export and Android Save As picker.
-- RiftDev Android editor backed by the canonical workspace.
 - RiftRT v1 worker/iframe/WASM application runtime.
 - Rift MCP system app for local read/write permissions and recent tool activity.
 - RiftBrowser-owned renderer surface with a swappable `RiftBrowserEngine` backend.

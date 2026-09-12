@@ -16,6 +16,7 @@ const fs={
   async mkdir(path){await core.ready;return core.fs.mkdir(path);},
   async remove(path){await core.ready;return core.fs.remove(path);},
   async move(from,to,options={}){await core.ready;return core.fs.move(from,to,options);},
+  async copy(from,to,options={}){await core.ready;return core.fs.copy(from,to,options);},
   async list(path="/"){await core.ready;return core.fs.list(path,{recursive:true});}
 };
 
@@ -43,7 +44,13 @@ async function gitBlobSha(base64){
   const bytes=decodeBase64(base64),prefix=new TextEncoder().encode(`blob ${bytes.length}\0`),input=new Uint8Array(prefix.length+bytes.length);input.set(prefix);input.set(bytes,prefix.length);
   const digest=await crypto.subtle.digest("SHA-1",input);return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
 }
-async function mapLimit(items,limit,fn){let next=0;await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(next<items.length){const index=next++;await fn(items[index],index);}}));}
+async function mapLimit(items,limit,fn){
+  let next=0,failure;
+  await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{
+    while(!failure&&next<items.length){const index=next++;try{await fn(items[index],index);}catch(error){failure??=error;}}
+  }));
+  if(failure)throw failure;
+}
 async function branchInfo(repo,branch){return api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/branches/${encodeURIComponent(branch)}`);}
 async function treeFor(repo,branch){
   const result=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
@@ -70,14 +77,47 @@ async function localFileMap(meta){
 }
 async function contentSha(meta,path){return gitBlobSha(await fs.readBase64(`${meta.root}/${path}`));}
 
+async function verifyCopy(from,to){
+  const rows=await fs.list(from),copied=await fs.list(to);
+  if(rows.length!==copied.length)throw new Error(`Incomplete project copy: ${to}`);
+  for(const row of rows){
+    const path=to+row.path.slice(from.length),target=await fs.stat(path);
+    if(!target||target.kind!==row.kind)throw new Error(`Missing copied path: ${path}`);
+    if(row.kind==="file"&&await fs.readBase64(row.path)!==await fs.readBase64(path))throw new Error(`Copied content differs: ${path}`);
+  }
+}
+const importing=new Set();
 async function importBranch(meta,branch,print){
-  const repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,branch),tree=await treeFor(repo,branch),stage=`${parentPath(meta.root)}/.${basename(meta.root)}.riftgit-stage-${Date.now()}`;
-  await fs.remove(stage).catch(()=>{});await fs.mkdir(stage);const tracked={};let done=0;
+  if(importing.has(meta.root))throw new Error("A project replacement is already running");
+  importing.add(meta.root);
+  try{return await replaceBranch(meta,branch,print);}finally{importing.delete(meta.root);}
+}
+async function replaceBranch(meta,branch,print){
+  const repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,branch),tree=await treeFor(repo,info.commit.sha);
+  const suffix=`${Date.now()}-${crypto.randomUUID()}`,stage=`${parentPath(meta.root)}/.${basename(meta.root)}.riftgit-stage-${suffix}`,backup=stage+"-backup";
+  for(const item of tree)if(!item.path||item.path.startsWith("/")||item.path.includes("\\")||item.path.split("/").some(p=>!p||p==="."||p==="..")||ignoredRelative(item.path))throw new Error(`Unsafe repository path: ${item.path}`);
+  await fs.mkdir(stage);const tracked={};let done=0,replacing=false,backedUp=false;
   try{
     await mapLimit(tree,4,async item=>{const base64=await blobBase64(repo,item.sha);await fs.writeBase64(`${stage}/${item.path}`,base64);tracked[item.path]={blobSha:item.sha,size:Number(item.size||0),mode:item.mode||"100644"};done++;if(print&&(done%25===0||done===tree.length))print(`  ${done}/${tree.length} files`);});
     const next={...meta,format:"riftgit-v3",branch,headSha:info.commit.sha,tracked,root:meta.root,updatedAt:Date.now()};await fs.write(`${stage}/${META_NAME}`,JSON.stringify(next,null,2));
-    if(await fs.stat(meta.root))await fs.remove(meta.root);await fs.move(stage,meta.root,{overwrite:false});await saveMeta(next);return {imported:tree.length,headSha:info.commit.sha};
-  }catch(error){await fs.remove(stage).catch(()=>{});throw error;}
+    if(await fs.stat(meta.root)){
+      await fs.copy(meta.root,backup,{overwrite:false});await verifyCopy(meta.root,backup);backedUp=true;
+    }
+    replacing=true;
+    if(await fs.stat(meta.root))if(await fs.remove(meta.root)===false)throw new Error("Could not replace project");
+    await fs.copy(stage,meta.root,{overwrite:false});await verifyCopy(stage,meta.root);await saveMeta(next);
+  }catch(error){
+    if(replacing){
+      try{
+        if(await fs.stat(meta.root))if(await fs.remove(meta.root)===false)throw new Error("Could not clear incomplete replacement");
+        if(backedUp){await fs.copy(backup,meta.root,{overwrite:false});await verifyCopy(backup,meta.root);}
+      }catch(recovery){throw new Error(`${error.message}. Recovery failed: ${recovery.message}. Original backup: ${backup}; staged project: ${stage}. Both retained.`);}
+    }
+    // Keep the complete stage and backup for explicit recovery, even after successful restoration.
+    throw new Error(`${error.message}. Original project preserved; recovery files retained at ${stage}${backedUp?` and ${backup}`:""}.`);
+  }
+  await fs.remove(stage).catch(()=>{});if(backedUp)await fs.remove(backup).catch(()=>{});
+  return {imported:tree.length,headSha:info.commit.sha};
 }
 async function clone(repoArg,branchArg,pathArg,print,cwd){
   const repo=parseRepo(repoArg),info=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}`),branch=branchArg||info.default_branch||"main",root=pathArg?resolvePath(cwd,pathArg):resolvePath(cwd,repo.repo);

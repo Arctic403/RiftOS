@@ -20,6 +20,7 @@ const fs={
   async mkdir(path){directories.add(normalize(path));return this.stat(path);},
   async remove(path){path=normalize(path);files.delete(path);for(const key of [...files.keys()])if(key.startsWith(path+'/'))files.delete(key);for(const key of [...directories])if(key===path||key.startsWith(path+'/'))directories.delete(key);return true;},
   async move(from,to){from=normalize(from);to=normalize(to);for(const [key,value] of [...files])if(key===from||key.startsWith(from+'/')){files.delete(key);files.set(to+key.slice(from.length),value);}for(const key of [...directories])if(key===from||key.startsWith(from+'/')){directories.delete(key);directories.add(to+key.slice(from.length));}return this.stat(to);},
+  async copy(from,to){from=normalize(from);to=normalize(to);for(const [key,value] of [...files])if(key===from||key.startsWith(from+'/'))files.set(to+key.slice(from.length),value);for(const key of [...directories])if(key===from||key.startsWith(from+'/'))directories.add(to+key.slice(from.length));return this.stat(to);},
   async list(path){path=normalize(path);return [...files.keys()].filter(key=>key.startsWith(path+'/')).map(key=>({path:key,kind:'file',size:Buffer.from(files.get(key),'base64').length}));}
 };
 const remoteReadme=gitSha(files.get('/home/RiftOS-main/README.md'));
@@ -29,7 +30,8 @@ const fetch=async(url,options={})=>{
   const path=new URL(url).pathname,method=options.method||'GET';
   if(path==='/repos/Arctic403/RiftOS')return response({default_branch:'main'});
   if(path.endsWith('/branches/main'))return response({commit:{sha:remoteHead}});
-  if(path.endsWith('/git/trees/main'))return response({truncated:false,tree:[{path:'README.md',type:'blob',mode:'100644',size:7,sha:remoteReadme}]});
+  if(path.endsWith('/git/trees/main')||path.endsWith('/git/trees/head2'))return response({truncated:false,tree:[{path:'README.md',type:'blob',mode:'100644',size:7,sha:remoteReadme}]});
+  if(path.endsWith('/git/blobs/'+remoteReadme))return response({encoding:'base64',content:encode('RiftOS\n')});
   if(path.endsWith('/git/commits/head0'))return response({tree:{sha:'tree0'}});
   if(path.endsWith('/git/blobs')&&method==='POST')return response({sha:gitSha(JSON.parse(options.body).content)});
   if(path.endsWith('/git/trees')&&method==='POST'){pushedTree=JSON.parse(options.body);return response({sha:'tree1'});}
@@ -60,3 +62,24 @@ console.log('ok - existing /home project attaches by cwd');
 console.log('ok - nested binary folder content pushes atomically');
 console.log('ok - git -C resolves repositories outside current shell directory');
 console.log('ok - git sync completes an up-to-date batch in one command');
+remoteHead='head2';
+const original=new Map([...files].filter(([path])=>path.startsWith('/home/RiftOS-main/'))),copy=fs.copy;
+let failRestore=false;
+fs.copy=async(from,to)=>{
+  if(to==='/home/RiftOS-main'&&from.includes('.riftgit-stage-')&&(!from.endsWith('-backup')||failRestore)){
+    files.set(to+'/partial.txt',encode('partial'));throw new Error('injected copy failure');
+  }
+  return copy.call(fs,from,to);
+};
+await assert.rejects(()=>context.window.RiftGit.run(['pull'],print,{cwd:'/home/RiftOS-main'}),/Original project preserved/);
+assert.deepEqual(new Map([...files].filter(([path])=>path.startsWith('/home/RiftOS-main/'))),original);
+failRestore=true;
+await assert.rejects(()=>context.window.RiftGit.run(['pull'],print,{cwd:'/home/RiftOS-main'}),/Recovery failed.*Both retained/);
+for(const [path,content] of original){const relative=path.slice('/home/RiftOS-main'.length);assert([...files].some(([key,value])=>key.includes('-backup/')&&key.endsWith(relative)&&value===content));}
+fs.copy=copy;
+await fs.remove('/home/RiftOS-main');for(const [path,content] of original)await fs.writeBase64(path,content);
+await context.window.RiftGit.run(['pull'],print,{cwd:'/home/RiftOS-main'});
+assert.equal(files.get('/home/RiftOS-main/README.md'),encode('RiftOS\n'));
+assert(!files.has('/home/RiftOS-main/assets/icon.bin'));
+console.log('ok - failed replacement restores original; failed recovery retains verified backups');
+console.log('ok - successful pull installs the pinned tree');

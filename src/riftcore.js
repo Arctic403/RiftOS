@@ -8,7 +8,6 @@ const SYSTEM_APPS = [
   {id:"files",name:"Files",trusted:true,permissions:["fs.read","fs.write","native.files"]},
   {id:"editor",name:"Editor",trusted:true,permissions:["fs.read","fs.write"]},
   {id:"terminal",name:"RiftShell",trusted:true,permissions:["fs.read","fs.write","process.read","process.manage","system.settings","native.read","native.files"]},
-  {id:"riftdev",name:"RiftDev",trusted:true,permissions:["fs.read","fs.write","network","clipboard.read","clipboard.write","process.read","native.files"]},
   {id:"browser",name:"RiftBrowser",trusted:true,permissions:["network"]},
   {id:"workspace-live",name:"Workspace Live",trusted:true,permissions:["fs.read","fs.write"]},
   {id:"settings",name:"Settings",trusted:true,permissions:["system.settings","native.read","native.files"]},

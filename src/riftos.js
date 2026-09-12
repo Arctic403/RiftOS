@@ -603,7 +603,6 @@ async function openApp(id){
   if(id==="editor")return openEditor();
   if(id==="tasks")return openTasks();
   if(id==="settings")return openSettings();
-  if(id==="riftdev"&&window.RiftDev?.open)return window.RiftDev.open();
   if(window.RiftApps?.open)return window.RiftApps.open(id);
 }
 

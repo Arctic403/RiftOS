@@ -9,10 +9,11 @@ await import("./riftapps.js");
 await import("./riftapps-files.js");
 await import("./riftgit.js");
 await import("./riftshell-batch.js");
-await import("./riftdev-host.js");
 await import("./riftdesktop-window-host.js");
 await import("./riftos.js");
 await import("./riftdesktop-android.js");
 await import("./riftmcp-system.js");
 await import("./riftrt.js");
 await import("./riftdesktop-android-compat.js");
+// Remove the retired iframe editor's plaintext credential cache after upgrade.
+try{localStorage.removeItem("gh_token");}catch{}

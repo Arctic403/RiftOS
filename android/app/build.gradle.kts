@@ -54,20 +54,12 @@ val verifyRiftOsAndroidSources by tasks.registering {
     }
 }
 
-val syncRiftOsWebAssets by tasks.registering(Copy::class) {
+val syncRiftOsWebAssets by tasks.registering(Sync::class) {
     from(rootProject.projectDir.parentFile) {
         include("index.html")
         include("styles.css")
         include("src/**")
         include("workspace-live/**")
-        include("apps/riftdev/index.html")
-        include("apps/riftdev/style.css")
-        include("apps/riftdev/riftdev-android-storage.js")
-        include("apps/riftdev/riftdev-android.js")
-        include("apps/riftdev/ide-v11.js")
-        include("apps/riftdev/ai-handoff.js")
-        include("apps/riftdev/local-test-android.js")
-        include("apps/riftdev/riftos-overlay.js")
         exclude("src/riftbrowser-*")
         exclude("**/manifest.webmanifest")
         exclude("**/*sw.js")
@@ -75,19 +67,6 @@ val syncRiftOsWebAssets by tasks.registering(Copy::class) {
     }
     into(layout.buildDirectory.dir("generated/riftosAssets/www"))
 
-    doLast {
-        val androidEditor = layout.buildDirectory.file("generated/riftosAssets/www/apps/riftdev/riftdev-android.js").get().asFile
-        if (androidEditor.exists()) {
-            val cleaned = androidEditor.readText()
-                .replace("indexedDB.open(", "RiftDevAndroidDB.open(")
-                .replace("window.indexedDB", "window.RiftDevAndroidDB")
-                .replace("SafariSafe-v12-Folders-20260820", "AndroidNative-v13-Samsung-20260902")
-                .replace("MobileWorkspaceDB_SafariSafe_v4", "RiftDevAndroidNativeDB_v1")
-                .replace("Safari/WebKit", "Android/System WebView")
-                .replace("Safari", "Android")
-            androidEditor.writeText(cleaned)
-        }
-    }
 }
 
 tasks.named("preBuild").configure {

@@ -10,6 +10,5 @@ Large subsystem changes should be handled by subsystem ownership:
 - RiftNativeDispatcher: Android IO bridge
 - RiftWorkspace: project layer
 - RiftMCP: AI tooling layer
-- RiftDev: editor layer
 
 Each patch should identify the subsystem being changed and avoid cross-layer duplication.

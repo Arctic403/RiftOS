@@ -17,7 +17,7 @@ Android 8+ / Samsung / DeX
    /      |       \
 RiftFS  RiftRT  RiftDesktop
   |                 |
-Android filesDir     +-- Files / Settings / RiftDev / Rift MCP / Workspace Live / apps
+Android filesDir     +-- Files / Settings / Rift MCP / Workspace Live / apps
 + SAF mounts         |
                     RiftBrowser window
                          |
@@ -50,7 +50,6 @@ The foundation is intentionally simple: the user talks to ChatGPT in RiftBrowser
 - **SAF mounts**: user-selected external folders through Android Storage Access Framework.
 - **RiftDesktop**: draggable/resizable/minimizable/maximizable desktop windows and taskbar.
 - **RiftRT v1**: worker/iframe/WASM application runtime integrated with RiftDesktop.
-- **RiftDev**: Android editor using the canonical workspace.
 - **RiftBrowser**: RiftOS-owned browser/window lifecycle with Android System WebView as the current compatibility renderer.
 - **Workspace Live**: sandboxed local HTML workspace surface that watches the canonical workspace and shows MCP/local edits as they happen.
 - **Rift MCP**: local system app for MCP tool permissions and recent tool activity.
@@ -114,13 +113,13 @@ Multiple local shell operations can be submitted as one atomic command with `bat
 
 ## Workspace boundary
 
-`RiftFS/workspace` is user-owned and starts empty on a fresh install. RiftDev, the Files app workspace view and the ChatGPT/MCP tool path resolve to the same canonical tree.
+`RiftFS/workspace` is user-owned and starts empty on a fresh install. The Files app workspace view and the ChatGPT/MCP tool path resolve to the same canonical tree.
 
 The MCP capability is intentionally narrower than the rest of RiftOS. Other RiftFS roots, external SAF mounts, downloads and Android system storage are not reachable through MCP tools.
 
-## RiftDev
+## Editor removal
 
-RiftDev is the local Android development/editor surface. It works against the canonical workspace and does not need a separate AI orchestration app. ChatGPT can inspect or patch RiftDev projects through the browser MCP path when the user enables the required MCP permissions.
+RiftDev and its iframe, CDN assets, and credential cache have been removed. An in-house IDE is planned.
 
 ## Files and Settings
 

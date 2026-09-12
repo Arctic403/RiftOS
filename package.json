@@ -4,7 +4,6 @@
   "type": "module",
   "scripts": {
     "check:transport": "node --check android/app/src/main/assets/riftbrowser-mcp-app.js && node --check android/app/src/main/assets/adapters/ai-adapter-registry.js && node --check src/riftcore.js && node --check src/riftgit.js && node --check src/riftshell-batch.js && node --check src/riftos.js && node scripts/validate-rift-transport.mjs && node scripts/test-rift-ai-adapters.mjs && node scripts/test-rift-raw-protocol.mjs && node scripts/test-rift-shell-batch.mjs && node scripts/test-rift-shell-git.mjs",
-    "check:riftdev": "npm --prefix apps/riftdev run check",
-    "check": "npm run check:transport && npm run check:riftdev"
+    "check": "npm run check:transport"
   }
 }
