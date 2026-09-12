@@ -354,7 +354,7 @@ class MainActivity : Activity() {
     }
 
     private fun sendNativeProgress(value: JSONObject) {
-        val script = "window.RiftNative?.__progress(${value});"
+        val script = "window.RiftTransferUI?.__progress(${value});"
         runOnUiThread { if (!isFinishing) webView.evaluateJavascript(script, null) }
     }
 

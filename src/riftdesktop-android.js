@@ -55,12 +55,13 @@ const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
 const wm=()=>window.RiftOSWindowManager;
 const allWindows=()=>[...stage.querySelectorAll('.window.rift-desktop-window')];
 const autoDesktop=()=>innerWidth>=720||(innerWidth>innerHeight&&innerWidth>=600);
-const desktopEnabled=()=>desktopPreference==='on'||(desktopPreference==='auto'&&autoDesktop());
+// RiftDesktop is the permanent Android shell; saved legacy mobile preferences must not disable window controls.
+const desktopEnabled=()=>true;
 
 function updateClock(){const el=tray.querySelector('#riftTrayClock');if(!el)return;const now=new Date();el.innerHTML=`<b>${now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</b><small>${now.toLocaleDateString([],{month:'numeric',day:'numeric',year:'2-digit'})}</small>`;}
 setInterval(updateClock,1000);updateClock();
 
-function desktopBounds(){const rect=stage.getBoundingClientRect();return{width:rect.width||innerWidth,height:rect.height||innerHeight};}
+function desktopBounds(){const rect=stage.getBoundingClientRect();const viewport=window.visualViewport;const width=Math.max(0,Math.min(stage.clientWidth||rect.width||innerWidth,viewport?.width||Infinity));const height=Math.max(0,Math.min(stage.clientHeight||rect.height||innerHeight,viewport?.height||Infinity));return{width,height};}
 function defaultGeometry(win){const bounds=desktopBounds();const count=allWindows().indexOf(win);const width=clamp(Math.round(bounds.width*.68),MIN_W,Math.max(MIN_W,bounds.width-30));const height=clamp(Math.round(bounds.height*.72),MIN_H,Math.max(MIN_H,bounds.height-30));const offset=Math.max(0,count)*24;return{left:clamp(34+offset,4,Math.max(4,bounds.width-width-4)),top:clamp(30+offset,4,Math.max(4,bounds.height-height-4)),width,height};}
 function readGeometry(win){return defaultGeometry(win);}
 async function readStoredGeometry(win){
@@ -71,7 +72,7 @@ async function readStoredGeometry(win){
   }catch(_){ }
   return defaultGeometry(win);
 }
-function applyGeometry(win,g){const bounds=desktopBounds();const width=clamp(g.width,MIN_W,Math.max(MIN_W,bounds.width-8));const height=clamp(g.height,MIN_H,Math.max(MIN_H,bounds.height-8));const left=clamp(g.left,2,Math.max(2,bounds.width-width-2));const top=clamp(g.top,2,Math.max(2,bounds.height-height-2));Object.assign(win.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`,right:'auto',bottom:'auto',inset:'auto'});}
+function applyGeometry(win,g){const bounds=desktopBounds();const maxWidth=Math.max(0,bounds.width-8),maxHeight=Math.max(0,bounds.height-8);const minWidth=Math.min(MIN_W,maxWidth),minHeight=Math.min(MIN_H,maxHeight);const width=clamp(Number(g.width)||minWidth,minWidth,maxWidth);const height=clamp(Number(g.height)||minHeight,minHeight,maxHeight);const left=clamp(Number(g.left)||2,2,Math.max(2,bounds.width-width-2));const top=clamp(Number(g.top)||2,2,Math.max(2,bounds.height-height-2));Object.assign(win.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`,right:'auto',bottom:'auto',inset:'auto'});}
 function saveGeometry(win){if(!desktopEnabled()||win.classList.contains('rift-maximized'))return;const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();persistWindowGeometry(win.dataset.app,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}
 async function persistWindowGeometry(id,value){try{const current=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};await core?.fs?.writeJSON?.('/system/settings/desktop.json',{...current,windows:{...(current.windows||{}),[id]:value},updated:Date.now()});}catch(_){}}
 function maximizeForMobile(win){win.classList.remove('rift-maximized');Object.assign(win.style,{inset:'',left:'',top:'',width:'',height:'',right:'',bottom:''});}

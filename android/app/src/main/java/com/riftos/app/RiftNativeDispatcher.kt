@@ -39,7 +39,6 @@ class RiftNativeDispatcher(
     private val executor = Executors.newSingleThreadExecutor()
     // Long-running file transfers use their own worker so normal FS/UI RPCs stay responsive.
     private val transferExecutor = Executors.newSingleThreadExecutor()
-    private val transferService = RiftTransferRegistry.service
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val secrets = RiftSecretStore(activity)
     private val riftRoot = File(activity.filesDir, "riftfs").apply {
@@ -93,7 +92,7 @@ class RiftNativeDispatcher(
             "files.pickDirectory" -> { directoryPicker(id); return }
             "notifications.request" -> { notificationPermissionRequester(id); return }
         }
-        val worker = if (method == "fs.copy" || method == "fs.move") transferExecutor else executor
+        val worker = if (method in setOf("fs.copy", "fs.move", "fs.zip", "fs.unzip")) transferExecutor else executor
         worker.execute {
             try { resultSink(id, true, dispatch(method, args), null) }
             catch (error: Throwable) { resultSink(id, false, null, error.message ?: error.javaClass.simpleName) }
@@ -127,52 +126,48 @@ class RiftNativeDispatcher(
         "fs.mkdir" -> mkdir(args.getString("mountId"), args.optString("path"))
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
         "fs.zip" -> {
-            val job = RiftTransferJob("zip", args.optString("from"), args.optString("to"))
-            transferService.submit(job) {
-                val progress = TransferProgress(job.id, "zip")
-                emitTransfer(progress, "starting", args.optString("from"), true)
-                zip(args.getString("mountId"), args.optString("from"), args.optString("to"), progress)
-                emitTransfer(progress, "complete", args.optString("to"), true)
-            }
-            JSONObject().put("transferId", job.id).put("phase", job.phase)
+            val progress = TransferProgress(args.optString("transferId").ifBlank { UUID.randomUUID().toString() }, "zip")
+            emitTransfer(progress, "starting", args.optString("from"), true)
+            val result = zip(args.getString("mountId"), args.optString("from"), args.optString("to"), progress)
+            emitTransfer(progress, "complete", args.optString("to"), true)
+            result
         }
         "fs.unzip" -> {
-            val job = RiftTransferJob("unzip", args.optString("from"), args.optString("to"))
-            transferService.submit(job) {
-                val progress = TransferProgress(job.id, "unzip")
-                emitTransfer(progress, "starting", args.optString("from"), true)
-                unzip(args.getString("mountId"), args.optString("from"), args.optString("to"), progress)
-                emitTransfer(progress, "complete", args.optString("to"), true)
-            }
-            JSONObject().put("transferId", job.id).put("phase", job.phase)
+            val progress = TransferProgress(args.optString("transferId").ifBlank { UUID.randomUUID().toString() }, "unzip")
+            emitTransfer(progress, "starting", args.optString("from"), true)
+            val result = unzip(args.getString("mountId"), args.optString("from"), args.optString("to"), progress)
+            emitTransfer(progress, "complete", args.optString("to"), true)
+            result
         }
         "fs.copy" -> {
-            val job = RiftTransferJob("copy", args.optString("from"), args.optString("to"))
-            transferService.submit(job) {
-                val progress = TransferProgress(job.id, "copy")
-                val manifest = buildTransferManifest(args.getString("fromMountId"), args.optString("from"))
-                progress.totalFiles = manifest.files
-                progress.totalBytes = manifest.bytes
-                progress.totalDirectories = manifest.directories
-                emitTransfer(progress, "starting", args.optString("from"), true)
-                copyNode(args.getString("fromMountId"), args.optString("from"), args.getString("toMountId"), args.optString("to"), args.optBoolean("overwrite", false), progress)
-                emitTransfer(progress, "complete", args.optString("to"), true)
-            }
-            JSONObject().put("transferId", job.id).put("phase", job.phase)
+            val progress = TransferProgress(args.optString("transferId").ifBlank { UUID.randomUUID().toString() }, "copy")
+            val manifest = buildTransferManifest(args.getString("fromMountId"), args.optString("from"))
+            progress.totalFiles = manifest.files
+            progress.totalBytes = manifest.bytes
+            progress.totalDirectories = manifest.directories
+            emitTransfer(progress, "starting", args.optString("from"), true)
+            val result = copyNode(
+                args.getString("fromMountId"), args.optString("from"),
+                args.getString("toMountId"), args.optString("to"),
+                args.optBoolean("overwrite", false), progress
+            )
+            emitTransfer(progress, "complete", args.optString("to"), true)
+            result
         }
         "fs.move" -> {
-            val job = RiftTransferJob("move", args.optString("from"), args.optString("to"))
-            transferService.submit(job) {
-                val progress = TransferProgress(job.id, "move")
-                val manifest = buildTransferManifest(args.getString("fromMountId"), args.optString("from"))
-                progress.totalFiles = manifest.files
-                progress.totalBytes = manifest.bytes
-                progress.totalDirectories = manifest.directories
-                emitTransfer(progress, "starting", args.optString("from"), true)
-                moveNode(args.getString("fromMountId"), args.optString("from"), args.getString("toMountId"), args.optString("to"), args.optBoolean("overwrite", false), progress)
-                emitTransfer(progress, "complete", args.optString("to"), true)
-            }
-            JSONObject().put("transferId", job.id).put("phase", job.phase)
+            val progress = TransferProgress(args.optString("transferId").ifBlank { UUID.randomUUID().toString() }, "move")
+            val manifest = buildTransferManifest(args.getString("fromMountId"), args.optString("from"))
+            progress.totalFiles = manifest.files
+            progress.totalBytes = manifest.bytes
+            progress.totalDirectories = manifest.directories
+            emitTransfer(progress, "starting", args.optString("from"), true)
+            val result = moveNode(
+                args.getString("fromMountId"), args.optString("from"),
+                args.getString("toMountId"), args.optString("to"),
+                args.optBoolean("overwrite", false), progress
+            )
+            emitTransfer(progress, "complete", args.optString("to"), true)
+            result
         }
         "fs.list" -> list(args.getString("mountId"), args.optString("path"), args.optBoolean("recursive", false))
         "settings.get" -> getSetting(args.getString("key"))
