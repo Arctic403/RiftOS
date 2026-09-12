@@ -52,6 +52,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        RiftMcpRuntime.localWebSocket().start()
         window.statusBarColor = 0xff0a0d12.toInt()
         window.navigationBarColor = 0xff0a0d12.toInt()
 

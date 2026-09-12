@@ -8,6 +8,7 @@ object RiftMcpRuntime {
     @Volatile private var host: RiftToolHost? = null
     @Volatile private var server: RiftMcpServer? = null
     @Volatile private var relay: RiftMcpRelayClient? = null
+    @Volatile private var localWebSocket: RiftLocalWebSocket? = null
 
     fun aiJournal(context: Context): RiftAiJournal {
         journal?.let { return it }
@@ -36,4 +37,11 @@ object RiftMcpRuntime {
             relay ?: RiftMcpRelayClient(context.applicationContext, server(context)).also { relay = it }
         }
     }
+    fun localWebSocket(): RiftLocalWebSocket {
+        localWebSocket?.let { return it }
+        return synchronized(this) {
+            localWebSocket ?: RiftLocalWebSocket().also { localWebSocket = it }
+        }
+    }
+
 }
