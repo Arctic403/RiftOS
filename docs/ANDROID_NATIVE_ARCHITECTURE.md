@@ -90,4 +90,6 @@ RiftDev and its iframe, CDN assets, and credential cache have been removed. An i
 
 The separate `Arctic403/Riftos-builder` repository builds only through manual dispatch. Signing uses the configured release secrets when present, otherwise the bundled legacy debug identity. The fallback key is public and is unsuitable for trusted production updates.
 
+**Signing policy:** Moving to a private signing key is planned for a future release. Do not rotate or replace the signing key, remove the existing fallback, or require signing secrets until the project owner explicitly requests the change. Keep manual builds and the current signing behavior in place until then.
+
 CI builds the native relay transport and continues to reject the removed DOM Agent, expensive whole-chat MCP scanner and removed local-AI binaries.
