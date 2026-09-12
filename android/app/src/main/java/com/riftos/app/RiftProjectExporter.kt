@@ -59,6 +59,6 @@ object RiftProjectExporter {
                 digest.update(buffer, 0, read)
             }
         }
-        return digest.joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 }
