@@ -38,7 +38,7 @@ const checks = [
   ['desktop emits immediate browser visibility lifecycle', desktop.includes('riftos:window-visibility') && desktop.includes("announceVisibility(win,false,'minimize')")],
   ['desktop window controls stay enabled on Android', desktop.includes('const desktopEnabled=()=>true')],
   ['desktop geometry fits narrow viewports', desktop.includes('const minWidth=Math.min(MIN_W,maxWidth)') && desktop.includes('window.visualViewport')],
-  ['AndroidX Core dependency backs inset compatibility APIs', gradle.includes('androidx.core:core-ktx:1.19.0')],
+  ['AndroidX Core dependency backs inset APIs and compileSdk 36', gradle.includes('androidx.core:core-ktx:1.18.0') && gradle.includes('compileSdk = 36')],
   ['Android host consumes system bar and cutout insets', main.includes('WindowCompat.setDecorFitsSystemWindows(window, false)') && main.includes('WindowInsetsCompat.Type.displayCutout()') && main.includes('view.setPadding(safe.left, safe.top, safe.right, safe.bottom)')],
   ['web shell cannot exceed its host viewport', shellStyles.includes('.os{width:100%;max-width:100%;min-width:0;') && shellStyles.includes('.content{grid-row:2;position:relative;min-width:0;max-width:100%;')],
   ['native MCP coalesces identical retried tool calls', mcpServer.includes('private val inFlight') && mcpServer.includes('private val completed') && mcpServer.includes('completeRequest(key, response)')],
