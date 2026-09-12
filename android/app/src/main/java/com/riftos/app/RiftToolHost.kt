@@ -131,7 +131,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                     .put("path", stringProperty("Optional project path under workspace/."))
                     .put("cursor", stringProperty("Opaque nextCursor from the previous export page. Empty starts a new export."))
                     .put("expectedSnapshot", stringProperty("snapshotId from the first page. Reject continuation if any exported source changed."))
-                    .put("maxBytes", JSONObject().put("type", "integer").put("description", "Target response size in bytes; clamped to 64 KiB..700 KiB."))
+                    .put("maxBytes", JSONObject().put("type", "integer").put("description", "Target response size in bytes; clamped to 64 KiB..400 KiB to stay below the relay envelope limit."))
             )
         ))
         .put(tool(
