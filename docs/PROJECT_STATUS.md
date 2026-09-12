@@ -27,6 +27,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - RiftKernel JavaScript runtime hosted by `MainActivity`.
 - RiftShell 2.1 with cwd-aware paths across `/home`, `/workspace`, and Android mounts.
 - RiftGit existing-folder attachment, explicit clone destinations, and atomic binary-safe tree synchronization.
+- Atomic RiftShell command batches with guarded local backups, failure rollback, dry-run validation, and one-command Git synchronization.
 - Exact-origin `RiftAndroid` WebMessage bridge for the RiftOS shell.
 - App-private RiftFS at `filesDir/riftfs`.
 - SAF external-folder mounts with persisted permissions.

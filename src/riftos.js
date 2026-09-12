@@ -521,10 +521,16 @@ function resolvePath(cwd,value){
   for(const part of raw.split("/")){if(!part||part===".")continue;if(part===".."){parts.pop();continue;}parts.push(part);}
   return "/"+parts.join("/");
 }
-async function runShell(raw,print,state){
+async function runShell(raw,print,state,context={}){
+  const batchMatch=String(raw||"").trim().match(/^batch(?:\s+(--dry-run))?\s+([\s\S]+)$/i);
+  if(batchMatch){
+    if(context.inBatch)throw new Error("Nested batches are not supported");
+    if(!window.RiftShellBatch?.run)throw new Error("RiftShell batch runtime is not loaded");
+    return window.RiftShellBatch.run(batchMatch[2],{state,print,resolve:resolvePath,dryRun:!!batchMatch[1],execute:command=>runShell(command,print,state,{inBatch:true})});
+  }
   const args=tokenize(raw),cmd=(args.shift()||"").toLowerCase();if(!cmd)return;
   if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print,{cwd:state.cwd});}
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback]\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nopen <app>  browser [url]  clear  uptime  version\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback]\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}

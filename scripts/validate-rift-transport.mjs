@@ -24,6 +24,7 @@ const shellStyles = readFileSync('styles.css', 'utf8');
 const mcpServer = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcpServer.kt', 'utf8');
 const relayWorker = readFileSync('relay/src/index.js', 'utf8');
 const riftGit = readFileSync('src/riftgit.js', 'utf8');
+const shellBatch = readFileSync('src/riftshell-batch.js', 'utf8');
 
 const checks = [
   ['Rift AI workspace app is removed', !existsSync('src/riftai-workspace.js') && !entry.includes('riftai-workspace')],
@@ -80,8 +81,12 @@ const checks = [
   ['RiftShell supports workspace navigation and full file actions', filesUi.includes('if(sub==="cd"){state.cwd="/workspace"') && filesUi.includes('if(cmd==="cp"||cmd==="mv")') && filesUi.includes('if(cmd==="zip")')],
   ['RiftShell exposes RiftFS roots without leading slashes', filesUi.includes('const shellRootAliases=new Set') && filesUi.includes('raw=`/${raw}`') && filesUi.includes('state={cwd:"/"}')],
   ['RiftShell supports recursive ls', filesUi.includes('const recursive=args.some') && filesUi.includes('core.fs.list(path,{recursive})')],
+  ['RiftShell batch runtime is loaded before the shell', entry.includes('import("./riftshell-batch.js")') && filesUi.includes('window.RiftShellBatch.run')],
+  ['local shell batches backup and roll back mutations', shellBatch.includes('const backup=async target=>') && shellBatch.includes('const rollback=async()=>') && shellBatch.includes('All batch filesystem changes were rolled back')],
+  ['local shell batches reject non-reversible side effects', shellBatch.includes('const NON_REVERSIBLE=new Set') && shellBatch.includes('cannot run inside an atomic batch')],
   ['RiftGit attaches existing home, workspace, or mounted folders', riftGit.includes('cmd==="init"||cmd==="attach"') && riftGit.includes('Project folder not found:') && riftGit.includes('context.cwd')],
   ['RiftGit synchronizes complete binary-safe trees', riftGit.includes('core.fs.readBase64') && riftGit.includes('core.fs.writeBase64') && riftGit.includes('GitHub returned a truncated tree; sync stopped')],
+  ['RiftGit exposes one-command sync', riftGit.includes('async function sync(message,print,cwd)') && riftGit.includes('if(cmd==="sync")return sync')],
   ['native shell binary bridge is bounded', dispatcher.includes('MAX_BRIDGE_BINARY_BYTES') && dispatcher.includes('"fs.readBase64"') && dispatcher.includes('"fs.writeBase64"') && core.includes('async readBase64') && core.includes('async writeBase64')],
   ['file actions reject duplicate execution', filesUi.includes('if(fileActionBusy)return')],
   ['archive is locally implemented', sandbox.includes('private fun createArchive')],

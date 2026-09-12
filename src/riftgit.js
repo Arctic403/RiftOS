@@ -118,6 +118,15 @@ async function atomicPush(message,print,cwd){
   for(const path of deleted)delete meta.tracked[path];for(const path of [...modified,...untracked])meta.tracked[path]={blobSha:newBlobShas.get(path),size:Number((await fs.stat(`${meta.root}/${path}`))?.size||0),mode:meta.tracked?.[path]?.mode||"100644"};
   meta.headSha=commit.sha;delete meta.pendingMessage;await saveMeta(meta);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
 }
+async function sync(message,print,cwd){
+  const state=await status(()=>{},true,cwd),repo={owner:state.meta.owner,repo:state.meta.repo},remote=await branchInfo(repo,state.meta.branch),dirty=state.modified.length+state.deleted.length+state.untracked.length;
+  if(remote.commit.sha!==state.meta.headSha){
+    if(dirty)throw new Error("Remote and local files both changed. Pull or resolve the local changes before git sync.");
+    print(`Remote advanced to ${remote.commit.sha.slice(0,12)}; pulling first...`);return pull(print,cwd);
+  }
+  if(!dirty){print("Already synchronized.");return;}
+  return atomicPush(message,print,cwd);
+}
 async function use(value,print,cwd){
   let meta;if(String(value||"").startsWith("/")||String(value||"").startsWith("."))meta=await findMeta(resolvePath(cwd,value));else{const repo=parseRepo(value);for(const root of [defaultRoot(repo),`/home/repos/${repo.repo}`]){meta=await findMeta(root);if(meta)break;}}
   if(!meta)throw new Error(`No attached RiftGit repository found for ${value}`);await saveMeta(meta);print(`Current repo: ${meta.full}#${meta.branch}\n${meta.root}`);
@@ -130,7 +139,7 @@ async function listBranches(print,cwd){const meta=await loadMeta(cwd),rows=await
 
 async function run(input,print=console.log,context={}){
   const args=[...input];let cwd=normalizePath(context.cwd||"/home");if(args[0]==="-C"){if(!args[1])throw new Error("usage: git -C <folder> <command>");cwd=resolvePath(cwd,args[1]);args.splice(0,2);}const cmd=(args.shift()||"help").toLowerCase();
-  if(cmd==="help")return print(`RiftGit / full RiftFS sync\ngit auth | logout\ngit clone owner/repo [branch] [destination]\ngit init owner/repo [branch] [folder]   attach an existing folder\ngit use <folder|owner/repo>\ngit root | repo | status | pull\ngit commit -m <message>\ngit push [commit message]\ngit branches | switch <branch>\ngit -C <folder> <command>\n\nCommands use the shell's current directory. Repositories can live under /home, /workspace, or a mounted Android folder. Full directory trees and binary files are synchronized atomically.`);
+  if(cmd==="help")return print(`RiftGit / full RiftFS sync\ngit auth | logout\ngit clone owner/repo [branch] [destination]\ngit init owner/repo [branch] [folder]   attach an existing folder\ngit use <folder|owner/repo>\ngit root | repo | status | pull\ngit commit -m <message>\ngit push [commit message]\ngit sync [commit message]            pull or atomic push in one command\ngit branches | switch <branch>\ngit -C <folder> <command>\n\nCommands use the shell's current directory. Repositories can live under /home, /workspace, or a mounted Android folder. Full directory trees and binary files are synchronized atomically.`);
   if(cmd==="auth"){const value=prompt("GitHub token for this RiftOS session only:","");if(!value)return print("auth cancelled");sessionStorage.setItem("riftgit-token",value.trim());const me=await api("/user");return print(`Authenticated as ${me.login}. Token is session-only.`);}
   if(cmd==="logout"){sessionStorage.removeItem("riftgit-token");return print("GitHub session cleared.");}
   if(cmd==="clone"){if(!args[0])throw new Error("usage: git clone owner/repo [branch] [destination]");return clone(args[0],args[1],args[2],print,cwd);}
@@ -143,7 +152,7 @@ async function run(input,print=console.log,context={}){
     const state=await status(()=>{},true,cwd),message=(args[0]==="-m"?args.slice(1):args).join(" ").trim();if(!message)throw new Error("usage: git commit -m <message>");if(!state.modified.length&&!state.deleted.length&&!state.untracked.length)return print("nothing to commit");
     state.meta.pendingMessage=message;await saveMeta(state.meta);return print(`Commit message saved for ${state.modified.length+state.deleted.length+state.untracked.length} change(s). Run git push.`);
   }
-  if(cmd==="push")return atomicPush(args.join(" "),print,cwd);if(cmd==="branches"||cmd==="branch")return listBranches(print,cwd);if(cmd==="switch"||cmd==="checkout")return switchBranch(args[0],print,cwd);throw new Error(`unknown RiftGit command: ${cmd}`);
+  if(cmd==="push")return atomicPush(args.join(" "),print,cwd);if(cmd==="sync")return sync(args.join(" "),print,cwd);if(cmd==="branches"||cmd==="branch")return listBranches(print,cwd);if(cmd==="switch"||cmd==="checkout")return switchBranch(args[0],print,cwd);throw new Error(`unknown RiftGit command: ${cmd}`);
 }
 
 window.RiftGit=Object.freeze({run,status:(print,cwd)=>status(print||console.log,false,cwd||"/home"),clone:(repo,branch,path,print,cwd)=>clone(repo,branch,path,print||console.log,cwd||"/home"),pull:(print,cwd)=>pull(print||console.log,cwd||"/home"),push:(message,print,cwd)=>atomicPush(message,print||console.log,cwd||"/home"),get token(){return token();}});

@@ -110,6 +110,8 @@ RiftShell operates on the complete RiftFS namespace: `/home`, `/workspace`, `/do
 
 RiftGit uses the shell's current directory. Existing projects can be attached in place with `git init owner/repo [branch]`; cloning accepts an optional destination. Pull and push synchronize the complete directory tree, including binary files, through atomic GitHub tree commits. Truncated or oversized transfers stop with an error instead of silently omitting files.
 
+Multiple local shell operations can be submitted as one atomic command with `batch command ; command`. RiftShell snapshots every mutation target and restores the original files if any command fails. `batch --dry-run` validates the command list without changing files. Non-reversible actions are rejected inside local batches, while `git sync [message]` handles remote pull-or-push synchronization as one high-level Git operation.
+
 ## Workspace boundary
 
 `RiftFS/workspace` is user-owned and starts empty on a fresh install. RiftDev, the Files app workspace view and the ChatGPT/MCP tool path resolve to the same canonical tree.

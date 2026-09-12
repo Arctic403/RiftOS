@@ -8,6 +8,7 @@ await import("./riftruntime.js");
 await import("./riftapps.js");
 await import("./riftapps-files.js");
 await import("./riftgit.js");
+await import("./riftshell-batch.js");
 await import("./riftdev-host.js");
 await import("./riftdesktop-window-host.js");
 await import("./riftos.js");

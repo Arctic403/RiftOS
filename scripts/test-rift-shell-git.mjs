@@ -23,18 +23,18 @@ const fs={
   async list(path){path=normalize(path);return [...files.keys()].filter(key=>key.startsWith(path+'/')).map(key=>({path:key,kind:'file',size:Buffer.from(files.get(key),'base64').length}));}
 };
 const remoteReadme=gitSha(files.get('/home/RiftOS-main/README.md'));
-let pushedTree=null,pushedRef=null;
+let pushedTree=null,pushedRef=null,remoteHead='head0';
 const response=(body,status=200)=>({ok:status>=200&&status<300,status,json:async()=>body});
 const fetch=async(url,options={})=>{
   const path=new URL(url).pathname,method=options.method||'GET';
   if(path==='/repos/Arctic403/RiftOS')return response({default_branch:'main'});
-  if(path.endsWith('/branches/main'))return response({commit:{sha:'head0'}});
+  if(path.endsWith('/branches/main'))return response({commit:{sha:remoteHead}});
   if(path.endsWith('/git/trees/main'))return response({truncated:false,tree:[{path:'README.md',type:'blob',mode:'100644',size:7,sha:remoteReadme}]});
   if(path.endsWith('/git/commits/head0'))return response({tree:{sha:'tree0'}});
   if(path.endsWith('/git/blobs')&&method==='POST')return response({sha:gitSha(JSON.parse(options.body).content)});
   if(path.endsWith('/git/trees')&&method==='POST'){pushedTree=JSON.parse(options.body);return response({sha:'tree1'});}
   if(path.endsWith('/git/commits')&&method==='POST')return response({sha:'commit1'});
-  if(path.includes('/git/refs/heads/main')&&method==='PATCH'){pushedRef=JSON.parse(options.body);return response({object:{sha:'commit1'}});}
+  if(path.includes('/git/refs/heads/main')&&method==='PATCH'){pushedRef=JSON.parse(options.body);remoteHead=pushedRef.sha;return response({object:{sha:'commit1'}});}
   if(path==='/user')return response({login:'tester'});
   throw new Error(`unexpected fetch ${method} ${path}`);
 };
@@ -55,6 +55,8 @@ await context.window.RiftGit.run(['push'],print,{cwd:'/home/RiftOS-main'});
 assert(pushedTree.tree.some(entry=>entry.path==='assets/icon.bin'&&entry.sha===gitSha('AP8Q')));
 assert.deepEqual(pushedRef,{sha:'commit1',force:false});
 output.length=0;await context.window.RiftGit.run(['-C','/home/RiftOS-main','status'],print,{cwd:'/workspace'});assert(output.includes('working tree clean'));
+output.length=0;await context.window.RiftGit.run(['sync'],print,{cwd:'/home/RiftOS-main'});assert(output.includes('Already synchronized.'));
 console.log('ok - existing /home project attaches by cwd');
 console.log('ok - nested binary folder content pushes atomically');
 console.log('ok - git -C resolves repositories outside current shell directory');
+console.log('ok - git sync completes an up-to-date batch in one command');
