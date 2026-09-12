@@ -27,6 +27,7 @@ import java.util.concurrent.Executors
 class RiftNativeDispatcher(
     private val activity: Activity,
     private val resultSink: (String, Boolean, Any?, String?) -> Unit,
+    private val progressSink: (JSONObject) -> Unit,
     private val directoryPicker: (String) -> Unit,
     private val notificationPermissionRequester: (String) -> Unit
 ) {
@@ -43,6 +44,30 @@ class RiftNativeDispatcher(
     }
 
     private val protectedRiftRoots = setOf("home", "apps", "system", "workspace", "downloads", "documents")
+
+    private data class TransferProgress(
+        val id: String,
+        val operation: String,
+        var bytes: Long = 0L,
+        var files: Int = 0,
+        var directories: Int = 0,
+        var lastEmit: Long = 0L
+    )
+
+    private fun emitTransfer(progress: TransferProgress?, phase: String, currentPath: String, force: Boolean = false) {
+        if (progress == null || progress.id.isBlank()) return
+        val now = System.currentTimeMillis()
+        if (!force && now - progress.lastEmit < 100L) return
+        progress.lastEmit = now
+        progressSink(JSONObject()
+            .put("transferId", progress.id)
+            .put("operation", progress.operation)
+            .put("phase", phase)
+            .put("currentPath", currentPath)
+            .put("bytes", progress.bytes)
+            .put("files", progress.files)
+            .put("directories", progress.directories))
+    }
 
     fun handleAsync(raw: String) {
         val message = runCatching { JSONObject(raw) }.getOrNull() ?: return
@@ -83,16 +108,28 @@ class RiftNativeDispatcher(
         "fs.writeText" -> writeText(args.getString("mountId"), args.optString("path"), args.optString("text"))
         "fs.mkdir" -> mkdir(args.getString("mountId"), args.optString("path"))
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
-        "fs.copy" -> copyNode(
-            args.getString("fromMountId"), args.optString("from"),
-            args.getString("toMountId"), args.optString("to"),
-            args.optBoolean("overwrite", false)
-        )
-        "fs.move" -> moveNode(
-            args.getString("fromMountId"), args.optString("from"),
-            args.getString("toMountId"), args.optString("to"),
-            args.optBoolean("overwrite", false)
-        )
+        "fs.copy" -> {
+            val progress = TransferProgress(args.optString("transferId"), "copy")
+            emitTransfer(progress, "starting", args.optString("from"), true)
+            val result = copyNode(
+                args.getString("fromMountId"), args.optString("from"),
+                args.getString("toMountId"), args.optString("to"),
+                args.optBoolean("overwrite", false), progress
+            )
+            emitTransfer(progress, "complete", args.optString("to"), true)
+            result
+        }
+        "fs.move" -> {
+            val progress = TransferProgress(args.optString("transferId"), "move")
+            emitTransfer(progress, "starting", args.optString("from"), true)
+            val result = moveNode(
+                args.getString("fromMountId"), args.optString("from"),
+                args.getString("toMountId"), args.optString("to"),
+                args.optBoolean("overwrite", false), progress
+            )
+            emitTransfer(progress, "complete", args.optString("to"), true)
+            result
+        }
         "fs.list" -> list(args.getString("mountId"), args.optString("path"), args.optBoolean("recursive", false))
         "settings.get" -> getSetting(args.getString("key"))
         "settings.set" -> setSetting(args.getString("key"), args.opt("value"))
@@ -244,7 +281,11 @@ class RiftNativeDispatcher(
     private fun childPath(parent: String, child: String): String =
         listOf(normalizedRelative(parent), normalizedRelative(child)).filter { it.isNotBlank() }.joinToString("/")
 
-    private fun copyFileBytes(fromMountId: String, fromPath: String, toMountId: String, toPath: String) {
+    private fun copyFileBytes(
+        fromMountId: String, fromPath: String,
+        toMountId: String, toPath: String,
+        progress: TransferProgress?
+    ) {
         val input = if (fromMountId == "__riftfs__") {
             val source = internalFile(fromPath)
             require(source.isFile) { "File not found: $fromPath" }
@@ -255,15 +296,27 @@ class RiftNativeDispatcher(
                 ?: throw IllegalStateException("Could not read $fromPath")
         }
         input.use { sourceStream ->
+            fun streamTo(output: java.io.OutputStream) {
+                val buffer = ByteArray(COPY_BUFFER_BYTES)
+                while (true) {
+                    val count = sourceStream.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
+                    if (progress != null) progress.bytes += count
+                    emitTransfer(progress, "transferring", fromPath)
+                    // Do not monopolize the single native FS worker on large transfers.
+                    // Yielding keeps the UI/event bridge responsive while large folders copy.
+                    Thread.yield()
+                }
+            }
             if (toMountId == "__riftfs__") {
                 val destination = internalFile(toPath)
                 destination.parentFile?.mkdirs()
-                destination.outputStream().buffered(COPY_BUFFER_BYTES).use { output -> sourceStream.copyTo(output, COPY_BUFFER_BYTES) }
+                destination.outputStream().buffered(COPY_BUFFER_BYTES).use(::streamTo)
             } else {
                 val destination = externalFile(toMountId, toPath, true)
-                activity.contentResolver.openOutputStream(destination.uri, "wt")?.buffered(COPY_BUFFER_BYTES)?.use { output ->
-                    sourceStream.copyTo(output, COPY_BUFFER_BYTES)
-                } ?: throw IllegalStateException("Could not write $toPath")
+                activity.contentResolver.openOutputStream(destination.uri, "wt")?.buffered(COPY_BUFFER_BYTES)?.use(::streamTo)
+                    ?: throw IllegalStateException("Could not write $toPath")
             }
         }
     }
@@ -310,7 +363,8 @@ class RiftNativeDispatcher(
     private fun copyNode(
         fromMountId: String, fromPathRaw: String,
         toMountId: String, toPathRaw: String,
-        overwrite: Boolean
+        overwrite: Boolean,
+        progress: TransferProgress? = null
     ): JSONObject {
         val fromPath = normalizedRelative(fromPathRaw)
         val toPath = normalizedRelative(toPathRaw)
@@ -330,9 +384,13 @@ class RiftNativeDispatcher(
 
         try {
             if (source.optString("kind") == "file") {
-                copyFileBytes(fromMountId, fromPath, toMountId, toPath)
+                copyFileBytes(fromMountId, fromPath, toMountId, toPath, progress)
+                if (progress != null) progress.files++
+                emitTransfer(progress, "transferring", fromPath, true)
             } else {
                 mkdir(toMountId, toPath)
+                if (progress != null) progress.directories++
+                emitTransfer(progress, "transferring", fromPath)
                 val children = list(fromMountId, fromPath, false)
                 for (index in 0 until children.length()) {
                     val row = children.optJSONObject(index) ?: continue
@@ -341,8 +399,11 @@ class RiftNativeDispatcher(
                     copyNode(
                         fromMountId, childPath(fromPath, relative),
                         toMountId, childPath(toPath, relative),
-                        overwrite = false
+                        overwrite = false,
+                        progress = progress
                     )
+                    emitTransfer(progress, "queued", relative)
+                    Thread.yield()
                 }
             }
         } catch (error: Throwable) {
@@ -355,7 +416,8 @@ class RiftNativeDispatcher(
     private fun moveNode(
         fromMountId: String, fromPathRaw: String,
         toMountId: String, toPathRaw: String,
-        overwrite: Boolean
+        overwrite: Boolean,
+        progress: TransferProgress? = null
     ): JSONObject {
         val fromPath = normalizedRelative(fromPathRaw)
         val toPath = normalizedRelative(toPathRaw)
@@ -384,7 +446,8 @@ class RiftNativeDispatcher(
             if (source.renameTo(destination)) return stat(toMountId, toPath)!!
         }
 
-        copyNode(fromMountId, fromPath, toMountId, toPath, overwrite)
+        copyNode(fromMountId, fromPath, toMountId, toPath, overwrite, progress)
+        emitTransfer(progress, "source-removal", fromPath, true)
         if (!remove(fromMountId, fromPath)) {
             runCatching { remove(toMountId, toPath) }
             throw IllegalStateException("Copied $fromPath but could not remove the source; destination was rolled back")

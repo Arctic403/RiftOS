@@ -57,6 +57,9 @@
   let recoveryAttempt = 0;
   let queuedAiPayload = null;
   let taskPumpRunning = false;
+  // AI website adapters may prepare messages, but user approval is required before submission.
+  let manualSendApprovalRequired = true;
+  let pendingApprovedSubmission = null;
 
   function now() { return Date.now(); }
 
@@ -455,6 +458,11 @@
   }
 
   async function sendComposerMessage(message, timeoutMs = 12000) {
+    if (manualSendApprovalRequired) {
+      pendingApprovedSubmission = { message, timeoutMs };
+      sendAiEvent('waiting', 'Message prepared. Waiting for user send approval.', { phase: 'awaiting-user-send' });
+      return false;
+    }
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const composer = await waitForComposer(timeoutMs);
       if (!composer) throw new Error('ChatGPT composer unavailable');
@@ -677,6 +685,15 @@ ${contextBlock()}`;
       taskPumpRunning = false;
       if (queuedAiPayload) queueMicrotask(pumpAiTaskQueue);
     }
+  }
+
+  function approvePendingSend() {
+    manualSendApprovalRequired = false;
+    if (!pendingApprovedSubmission) return false;
+    const pending = pendingApprovedSubmission;
+    pendingApprovedSubmission = null;
+    sendComposerMessage(pending.message, pending.timeoutMs).catch((error) => sendAiEvent('error', String(error && error.message || error), { phase: 'send-error' }));
+    return true;
   }
 
   function stopAiTask() {
@@ -1450,7 +1467,9 @@ ${contextBlock()}`;
     targets: collectChatTargets,
     openTargetSearch,
     stop: stopAiTask,
-    state: () => ({ version: VERSION, enabled, ready: bootComplete && mcpReady, tools: tools.length, route: routeKey, aiTaskActive, queued: Boolean(queuedAiPayload), toolLoopState, pendingResultId })
+    approveSend: approvePendingSend,
+    setManualSendApproval: (value) => { manualSendApprovalRequired = Boolean(value); },
+    state: () => ({ version: VERSION, enabled, ready: bootComplete && mcpReady, tools: tools.length, route: routeKey, aiTaskActive, queued: Boolean(queuedAiPayload), toolLoopState, pendingResultId, manualSendApprovalRequired })
   });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });

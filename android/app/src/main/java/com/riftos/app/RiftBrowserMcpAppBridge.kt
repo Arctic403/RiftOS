@@ -21,12 +21,20 @@ class RiftBrowserMcpAppBridge(
     companion object {
         private const val BRIDGE_NAME = "RiftMcpNative"
         private const val MAX_MESSAGE_BYTES = 9 * 1024 * 1024
-        private val CHATGPT_ORIGINS = setOf("https://chatgpt.com", "https://www.chatgpt.com")
+        private val AI_ORIGINS = setOf(
+            "https://chatgpt.com", "https://www.chatgpt.com",
+            "https://github.com", "https://copilot.microsoft.com",
+            "https://gemini.google.com", "https://claude.ai"
+        )
     }
 
     private val toolHost = RiftMcpRuntime.toolHost(activity)
     private val server = RiftMcpRuntime.server(activity)
-    private val script = activity.assets.open("riftbrowser-mcp-app.js").bufferedReader().use { it.readText() }
+    private val script = buildString {
+        append(activity.assets.open("adapters/ai-adapter-registry.js").bufferedReader().use { it.readText() })
+        append("\n")
+        append(activity.assets.open("riftbrowser-mcp-app.js").bufferedReader().use { it.readText() })
+    }
     private var installed = false
     private var documentStartInstalled = false
 
@@ -38,7 +46,7 @@ class RiftBrowserMcpAppBridge(
         WebViewCompat.addWebMessageListener(
             webView,
             BRIDGE_NAME,
-            CHATGPT_ORIGINS
+            AI_ORIGINS
         ) { _, message, sourceOrigin, isMainFrame, _ ->
             if (!isMainFrame || !isAllowedOrigin(sourceOrigin)) return@addWebMessageListener
             val raw = message.data ?: return@addWebMessageListener
@@ -64,7 +72,7 @@ class RiftBrowserMcpAppBridge(
         }
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(webView, script, CHATGPT_ORIGINS)
+            WebViewCompat.addDocumentStartJavaScript(webView, script, AI_ORIGINS)
             documentStartInstalled = true
         }
         installed = true

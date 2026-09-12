@@ -59,7 +59,7 @@ The foundation is intentionally simple: the user talks to ChatGPT in RiftBrowser
 
 RiftBrowser is a normal RiftOS desktop window. RiftOS owns its title bar, address bar, taskbar entry, focus, move/resize/minimize/maximize state **and the native renderer surface lifecycle**. The renderer sits behind `RiftBrowserEngine`; Android System WebView is only the current compatibility backend. Hidden/minimized browser surfaces are `GONE`—they are never resized to the full host or parked behind the shell.
 
-On the exact ChatGPT Web origin, RiftBrowser installs the Rift MCP compatibility adapter. The page does **not** receive a general filesystem JavaScript object or unrestricted native dispatcher. It can only send structured MCP JSON-RPC through `RiftBrowserMcpAppBridge`, and `RiftToolHost` remains the device-side capability, permission and audit authority.
+On the exact ChatGPT Web origin, RiftBrowser installs the Rift MCP compatibility adapter. MCP transport and browser injector transport remain separate client paths into RiftOS capabilities. The page does **not** receive a general filesystem JavaScript object or unrestricted native dispatcher. It can only send structured MCP JSON-RPC through `RiftBrowserMcpAppBridge`, and `RiftToolHost` remains the device-side capability, permission and audit authority.
 
 This path does not use the OpenAI API. ChatGPT Web still makes its normal network requests as a web application, but RiftOS does not make separately billed model API calls for the local MCP workflow.
 

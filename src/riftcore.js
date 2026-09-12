@@ -103,6 +103,16 @@ class RiftNativeBridge extends EventTarget{
   }
 }
 
+class RiftTransferQueue extends EventTarget{
+  constructor(){super();this.queue=Promise.resolve();this.active=0;this.lastEvent=0;}
+  run(task){
+    const execute=async()=>{this.active++;this.lastEvent=Date.now();this.dispatchEvent(new CustomEvent("transfer",{detail:{active:this.active,state:"started"}}));try{return await task();}finally{this.active--;this.lastEvent=Date.now();this.dispatchEvent(new CustomEvent("transfer",{detail:{active:this.active,state:"finished"}}));}};
+    const result=this.queue.then(execute,execute);
+    this.queue=result.catch(()=>{});
+    return result;
+  }
+}
+
 class RiftFS extends EventTarget{
   constructor(native){
     super();
@@ -111,6 +121,7 @@ class RiftFS extends EventTarget{
     this.ready=false;
     this.opfsReady=false;
     this.nativeRootReady=false;
+    this.transferQueue=new RiftTransferQueue();
   }
   route(value){
     const path=normalizePath(value);
@@ -221,26 +232,28 @@ class RiftFS extends EventTarget{
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"remove",path:target.path}}));
     return true;
   }
-  async copy(fromValue,toValue,{overwrite=false}={}){
+  async copy(fromValue,toValue,{overwrite=false,transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);
     if(source.path==="/"||source.path==="/mounts"||source.mount&&!source.relative)throw new Error("Cannot copy a filesystem root or mount root");
     if(destination.path==="/"||destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Cannot replace a filesystem root or mount root");
-    const stat=await this.native.call("fs.copy",{
+    const stat=await this.transferQueue.run(()=>this.native.call("fs.copy",{
       fromMountId:source.mountId,from:source.relative,
-      toMountId:destination.mountId,to:destination.relative,overwrite:overwrite===true
-    });
+      toMountId:destination.mountId,to:destination.relative,overwrite:overwrite===true,
+      transferId:transferId||crypto.randomUUID?.()||`transfer-${Date.now()}`
+    }));
     const record={...stat,path:destination.path,backend:destination.backend};
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"copy",path:source.path,newPath:destination.path}}));
     return record;
   }
-  async move(fromValue,toValue,{overwrite=false}={}){
+  async move(fromValue,toValue,{overwrite=false,transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);
     if(source.path==="/"||PROTECTED_RIFT_ROOTS.has(source.path)||source.mount&&!source.relative)throw new Error("Cannot move a RiftFS system root or mount root");
     if(destination.path==="/"||destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Cannot replace a filesystem root or mount root");
-    const stat=await this.native.call("fs.move",{
+    const stat=await this.transferQueue.run(()=>this.native.call("fs.move",{
       fromMountId:source.mountId,from:source.relative,
-      toMountId:destination.mountId,to:destination.relative,overwrite:overwrite===true
-    });
+      toMountId:destination.mountId,to:destination.relative,overwrite:overwrite===true,
+      transferId:transferId||crypto.randomUUID?.()||`transfer-${Date.now()}`
+    }));
     const record={...stat,path:destination.path,backend:destination.backend};
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"move",path:source.path,newPath:destination.path}}));
     return record;

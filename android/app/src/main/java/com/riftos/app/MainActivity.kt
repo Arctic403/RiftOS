@@ -140,6 +140,7 @@ class MainActivity : Activity() {
         dispatcher = RiftNativeDispatcher(
             activity = this,
             resultSink = ::sendNativeResult,
+            progressSink = ::sendNativeProgress,
             directoryPicker = ::openDirectoryPicker,
             notificationPermissionRequester = ::requestNotificationPermission
         )
@@ -350,6 +351,11 @@ class MainActivity : Activity() {
         val requestId = pendingNotificationRequestId ?: return
         pendingNotificationRequestId = null
         dispatcher.completeNotificationPermission(requestId, grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
+    }
+
+    private fun sendNativeProgress(value: JSONObject) {
+        val script = "window.RiftNative?.__progress(${value});"
+        runOnUiThread { if (!isFinishing) webView.evaluateJavascript(script, null) }
     }
 
     private fun sendNativeResult(id: String, ok: Boolean, value: Any?, error: String?) {
