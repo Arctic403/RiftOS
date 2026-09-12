@@ -16,7 +16,7 @@ button{color:inherit}
 @keyframes boot{0%{transform:translateX(-110%)}100%{transform:translateX(330%)}}
 .os{height:100dvh;display:grid;grid-template-rows:calc(42px + var(--safe-top)) minmax(0,1fr) calc(72px + var(--safe-bottom));background:radial-gradient(circle at 80% 0,#13211d 0,transparent 34%),var(--bg)}
 .statusbar{grid-row:1;position:relative;z-index:40;padding:var(--safe-top) 16px 0;height:calc(42px + var(--safe-top));display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border-bottom:1px solid #ffffff0d;font-size:12px}
-.statusbar #statusText{color:var(--muted)}.statusbar time{text-align:right;font-variant-numeric:tabular-nums}
+.statusbar #statusText{color:var(--muted)}.statusbar time{text-align:right;font-variant-numeric:tabular-nums}.transfer-panel{position:absolute;left:50%;transform:translateX(-50%);top:calc(44px + var(--safe-top));max-width:70%;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:11px;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .content{grid-row:2;position:relative;min-height:0;overflow:hidden}.workspace{height:100%;min-height:0;overflow:auto;padding:18px 16px 100px}.hero{border:1px solid var(--line);background:linear-gradient(145deg,#121a19,#0d1016);border-radius:24px;padding:22px;min-height:190px;display:flex;flex-direction:column;justify-content:space-between}
 .eyebrow,.window-kicker{font-size:10px;letter-spacing:.16em;color:var(--accent);text-transform:uppercase}.hero h1{font-size:31px;letter-spacing:-.04em;margin:9px 0 3px}.hero p{margin:0;color:var(--muted)}
 .pill{align-self:flex-start;border:1px solid #3a5b50;background:#14251f;border-radius:999px;padding:11px 15px;margin-top:22px}

@@ -21,8 +21,23 @@ const browserNativeListeners=new Set();
 globalThis.RiftBrowserNative=Object.freeze({
   __state(state){
     const next=state&&typeof state==="object"?state:{};
-    for(const listener of [...browserNativeListeners]){try{listener(next);}catch(_){}}
+    for(const listener of [...browserNativeListeners]){try{listener(next);}catch(_){} }
   }
+});
+const transferListeners=new Set();
+function renderTransferState(value){
+  const panel=$("#transferPanel");
+  if(!panel)return;
+  const state=value||{};
+  const total=Number(state.totalBytes||0);
+  const current=Number(state.bytes||0);
+  const percent=total?Math.min(100,Math.round(current/total*100)):0;
+  panel.textContent=`${state.operation||"transfer"} ${state.phase||""} ${percent}% ${state.currentPath||""}`;
+  panel.classList.toggle("hidden",!state.transferId||state.phase==="complete"||state.phase==="failed");
+}
+globalThis.RiftTransferUI=Object.freeze({
+  onProgress(listener){ if(typeof listener==="function") transferListeners.add(listener); return ()=>transferListeners.delete(listener); },
+  __progress(value){ const next=value&&typeof value==="object"?value:{}; renderTransferState(next); for(const listener of [...transferListeners]){try{listener(next);}catch(_){}} }
 });
 const filesNavigation={history:["/"],index:0};
 const filesClipboard={mode:"copy",paths:[]};

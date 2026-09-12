@@ -13,7 +13,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /** App-private filesystem capability owned by the local Rift MCP tool host. */
-class RiftToolSandbox(context: Context) {
+class RiftToolSandbox(context: Context, private val transferService: RiftTransferService = RiftTransferRegistry.service) {
     companion object {
         private const val MAX_TOOL_BYTES = 8 * 1024 * 1024
         private const val MAX_LIST_ENTRIES = 5000
@@ -49,6 +49,8 @@ class RiftToolSandbox(context: Context) {
         mkdirs()
     }
     private val symbolIndex = LinkedHashMap<String, IndexedFile>()
+    private val pendingIndexInvalidations = LinkedHashSet<String>()
+    @Volatile private var batchInvalidationDepth = 0
     private val ignoredDirectoryNames = setOf(
         ".git", ".gradle", ".idea", ".next", ".cache", ".turbo", ".parcel-cache",
         "node_modules", "build", "dist", "out", "target", "vendor", "Pods",
@@ -461,7 +463,7 @@ class RiftToolSandbox(context: Context) {
         return removed
     }
 
-    private fun move(from: String, to: String, overwrite: Boolean): JSONObject {
+    private fun move(from: String, to: String, overwrite: Boolean): JSONObject = batchIndexInvalidations {
         require(normalizeSegments(from).isNotEmpty()) { "Cannot move the workspace root" }
         require(normalizeSegments(to).isNotEmpty()) { "Destination cannot be the workspace root" }
         val source = sandboxFile(from)
@@ -476,10 +478,10 @@ class RiftToolSandbox(context: Context) {
         require(source.renameTo(destination)) { "Could not move $from to $to" }
         invalidateIndex(from)
         invalidateIndex(to)
-        return stat(to)!!
+        return@batchIndexInvalidations stat(to)!!
     }
 
-    private fun copy(from: String, to: String, overwrite: Boolean): JSONObject {
+    private fun copy(from: String, to: String, overwrite: Boolean): JSONObject = batchIndexInvalidations {
         require(normalizeSegments(from).isNotEmpty()) { "Cannot copy the workspace root" }
         require(normalizeSegments(to).isNotEmpty()) { "Destination cannot be the workspace root" }
         val source = sandboxFile(from)
@@ -501,7 +503,7 @@ class RiftToolSandbox(context: Context) {
             source.copyTo(destination, overwrite = overwrite)
         }
         invalidateIndex(to)
-        return stat(to)!!
+        return@batchIndexInvalidations stat(to)!!
     }
 
     /**
@@ -708,11 +710,17 @@ class RiftToolSandbox(context: Context) {
             workspaceMutationPath(args.getString("to")),
             args.optBoolean("overwrite", false)
         )
-        "archive" -> createArchive(
-            workspacePath(args.getString("from")),
-            workspaceMutationPath(args.getString("to")),
-            args.optBoolean("overwrite", false)
-        )
+        "archive" -> {
+            val job = RiftTransferJob("archive", args.getString("from"), args.getString("to"))
+            transferService.submit(job) {
+                createArchive(
+                    workspacePath(args.getString("from")),
+                    workspaceMutationPath(args.getString("to")),
+                    args.optBoolean("overwrite", false)
+                )
+            }
+            JSONObject().put("transferId", job.id).put("phase", job.phase)
+        }
         else -> throw IllegalArgumentException("Unsupported Rift Code Mode operation: $op")
     }
 
@@ -760,7 +768,9 @@ class RiftToolSandbox(context: Context) {
                 require(removed) { "Could not replace archive destination: $to" }
             }
             if (!temporary.renameTo(destination)) temporary.copyTo(destination, overwrite = true).also { temporary.delete() }
-            invalidateIndex(to)
+            batchIndexInvalidations {
+                invalidateIndex(to)
+            }
             return (stat(to) ?: JSONObject()).put("entries", entries).put("sourceBytes", sourceBytes)
         } catch (error: Throwable) {
             temporary.delete()
@@ -1189,7 +1199,29 @@ class RiftToolSandbox(context: Context) {
     }
     private fun invalidateIndex(path: String) {
         val normalized = normalizedPath(path)
+        if (batchInvalidationDepth > 0) {
+            pendingIndexInvalidations.add(normalized)
+            return
+        }
         symbolIndex.keys.filter { it == normalized || it.startsWith("$normalized/") }.toList().forEach(symbolIndex::remove)
+    }
+
+    private fun flushIndexInvalidations() {
+        val pending = pendingIndexInvalidations.toList()
+        pendingIndexInvalidations.clear()
+        pending.forEach { path ->
+            symbolIndex.keys.filter { it == path || it.startsWith("$path/") }.toList().forEach(symbolIndex::remove)
+        }
+    }
+
+    private inline fun <T> batchIndexInvalidations(block: () -> T): T {
+        batchInvalidationDepth++
+        try {
+            return block()
+        } finally {
+            batchInvalidationDepth--
+            if (batchInvalidationDepth == 0) flushIndexInvalidations()
+        }
     }
     private fun lineDelta(before: String, after: String): Pair<Int, Int> {
         val a = before.replace("\r\n", "\n").replace('\r', '\n').split('\n')

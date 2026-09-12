@@ -467,8 +467,9 @@
     return false;
   }
 
-  async function sendComposerMessage(message, timeoutMs = 12000) {
-    if (manualSendApprovalRequired) {
+  async function sendComposerMessage(message, timeoutMs = 12000, options = {}) {
+    const requireApproval = options.requireApproval === true || (manualSendApprovalRequired && options.userFacing === true);
+    if (requireApproval) {
       pendingApprovedSubmission = { message, timeoutMs };
       sendAiEvent('waiting', 'Message prepared. Waiting for user send approval.', { phase: 'awaiting-user-send' });
       return false;
@@ -647,7 +648,7 @@ ${contextBlock()}`;
     rememberExistingToolCalls();
     toolExecutionArmed = true;
     try {
-      await sendComposerMessage(message);
+      await sendComposerMessage(message, 12000, { requireApproval: false });
     } catch (error) {
       suppressDecoration = false;
       finishAiTask('error', String(error && error.message || error), 'error');
