@@ -7,9 +7,9 @@ import java.security.MessageDigest
 
 /** Builds deterministic, paginated UTF-8 project snapshots for full AI audits. */
 object RiftProjectExporter {
-    private const val DEFAULT_PAGE_BYTES = 600 * 1024
+    private const val DEFAULT_PAGE_BYTES = 320 * 1024
     private const val MIN_PAGE_BYTES = 64 * 1024
-    private const val MAX_PAGE_BYTES = 700 * 1024
+    private const val MAX_PAGE_BYTES = 400 * 1024
     private const val MAX_CHUNK_BYTES = 96 * 1024
     private const val MAX_SOURCE_FILE_BYTES = 16L * 1024L * 1024L
     private const val MAX_SKIPPED_SAMPLE = 120
