@@ -166,6 +166,7 @@ class RiftToolSandbox(context: Context) {
         "workspace.exec" -> workspaceExec(args)
         "workspace.audit" -> audit(args.optString("path"))
         "workspace.scan" -> scan(args.optString("path"), args.optString("mode", "all"))
+        "workspace.exportProject" -> exportProject(args.optString("path"))
         else -> throw IllegalArgumentException("Unsupported Rift tool sandbox method: $method")
     }
 
@@ -189,6 +190,14 @@ class RiftToolSandbox(context: Context) {
             }
         }
         return result.put("filesScanned", files).put("findings", findings)
+    }
+
+    private fun exportProject(path: String): JSONObject {
+        val root = sandboxFile(workspacePath(path))
+        require(root.exists() && root.isDirectory) { "Export path must be a workspace directory" }
+        val out = File(appContext.cacheDir, "rift-project-export/RIFT_PROJECT_EXPORT.json.gz")
+        return RiftProjectExporter.export(root, out)
+            .put("source", relativePath(root))
     }
 
     private fun scan(path: String, mode: String): JSONObject {

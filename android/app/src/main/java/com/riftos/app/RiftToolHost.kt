@@ -124,6 +124,11 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                     .put("mode", stringProperty("Scan mode: security, runtime, architecture, or all."))
             )))
         .put(tool(
+            "rift_project_export",
+            "Create a compressed RIFT_PROJECT_EXPORT snapshot of a workspace project for full project audits. The export stays inside RiftOS workspace tooling.",
+            objectSchema(JSONObject().put("path", stringProperty("Optional project path under workspace/.")))
+        ))
+        .put(tool(
             "rift_workspace_exec",
             "Rift Code Mode + Project Intelligence v1: execute many workspace operations locally in one model-visible call. Supports snapshots, incremental symbol search, reference lookup, surgical symbol/range reads, exact/range/hunk patches, dry-run validation, and transactional multi-file edits under workspace/. Read permission is always required; write permission is required only when the batch mutates files.",
             objectSchema(
@@ -315,6 +320,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "workspaceExec", "rift_workspace_exec" -> "rift_workspace_exec"
         "audit", "rift_audit" -> "rift_audit"
         "scan", "rift_scan" -> "rift_scan"
+        "projectExport", "rift_project_export" -> "rift_project_export"
         else -> raw.trim()
     }
 
@@ -331,6 +337,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "rift_workspace_exec" -> "workspace.exec"
         "rift_audit" -> "workspace.audit"
         "rift_scan" -> "workspace.scan"
+        "rift_project_export" -> "workspace.exportProject"
         else -> null
     }
 
