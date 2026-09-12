@@ -166,7 +166,7 @@ class RiftToolSandbox(context: Context) {
         "workspace.exec" -> workspaceExec(args)
         "workspace.audit" -> audit(args.optString("path"))
         "workspace.scan" -> scan(args.optString("path"), args.optString("mode", "all"))
-        "workspace.exportProject" -> exportProject(args.optString("path"))
+        "workspace.exportProject" -> exportProject(args)
         else -> throw IllegalArgumentException("Unsupported Rift tool sandbox method: $method")
     }
 
@@ -192,11 +192,15 @@ class RiftToolSandbox(context: Context) {
         return result.put("filesScanned", files).put("findings", findings)
     }
 
-    private fun exportProject(path: String): JSONObject {
-        val root = sandboxFile(workspacePath(path))
+    private fun exportProject(args: JSONObject): JSONObject {
+        val root = sandboxFile(workspacePath(args.optString("path")))
         require(root.exists() && root.isDirectory) { "Export path must be a workspace directory" }
-        val out = File(appContext.cacheDir, "rift-project-export/RIFT_PROJECT_EXPORT.json.gz")
-        return RiftProjectExporter.export(root, out)
+        return RiftProjectExporter.export(
+            root = root,
+            rawCursor = args.optString("cursor"),
+            requestedPageBytes = args.optInt("maxBytes", 600 * 1024),
+            expectedSnapshot = args.optString("expectedSnapshot")
+        )
             .put("source", relativePath(root))
     }
 
@@ -535,6 +539,13 @@ class RiftToolSandbox(context: Context) {
         if (expectedSnapshot.isNotEmpty()) {
             val actual = projectSnapshot(snapshotPath).getString("id")
             require(actual == expectedSnapshot) { "Workspace snapshot changed at $snapshotPath; expected $expectedSnapshot but found $actual" }
+        }
+        val expectedExportSnapshot = args.optString("expectedExportSnapshot").trim()
+        if (expectedExportSnapshot.isNotEmpty()) {
+            val actual = RiftProjectExporter.snapshotId(sandboxFile(snapshotPath))
+            require(actual == expectedExportSnapshot) {
+                "Exported source changed at $snapshotPath; expected $expectedExportSnapshot but found $actual"
+            }
         }
 
         val transaction = BatchTransaction()
