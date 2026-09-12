@@ -252,16 +252,66 @@ async function openFiles(path="/",options={}){
 
   const itemButtons=[...body.querySelectorAll(".rift-explorer-item")];
   const actionIds=["fsOpen","fsRename","fsCopy","fsCut","fsDuplicate","fsMove","fsDelete"];
+  const destinationPicker={open:openDestinationPicker};
+  async function openDestinationPicker(startPath,suggestedName,folderOnly=false){
+    const start=core.path.parent(startPath);
+    return new Promise(async resolve=>{
+      const overlay=document.createElement("div");
+      overlay.className="rift-destination-picker";
+      let current=start;
+      let selected=current;
+      const render=async()=>{
+        const rows=await core.fs.list(current,false);
+        overlay.innerHTML=`<div class="rift-destination-dialog"><header>Select destination</header><div class="rift-destination-path"><button data-up>↑</button> ${escapeHTML(current)}</div><div class="rift-destination-list">${rows.filter(row=>row.kind==="directory"||row.kind==="mount").map(row=>`<button data-path="${escapeHTML(row.path)}">${escapeHTML(core.path.basename(row.path)||row.path)}</button>`).join("")||"<span>Empty folder</span>"}</div><input id="destinationName" value="${escapeHTML(suggestedName)}"><footer><button data-cancel>Cancel</button><button data-confirm>Confirm</button></footer></div>`;
+        overlay.querySelectorAll("[data-path]").forEach(button=>button.onclick=()=>{current=button.dataset.path;render();});
+        overlay.querySelector("[data-up]").onclick=()=>{const parent=core.path.parent(current);if(parent&&parent!==current){current=parent;render();}};
+        overlay.querySelector("[data-cancel]").onclick=()=>{overlay.remove();resolve(null);};
+        overlay.querySelector("[data-confirm]").onclick=async()=>{const name=overlay.querySelector("#destinationName").value.trim();if(!folderOnly&&!name)return;const target=folderOnly?current:core.path.join(current,name);if(await core.fs.stat(target)&&!folderOnly&&!confirm("Destination exists. Continue and overwrite/merge where supported?"))return;overlay.remove();resolve(target);};
+      };
+      document.body.appendChild(overlay);
+      await render();
+    });
+  }
+  async function chooseArchiveDestination(sourcePath,mode){
+    const base=core.path.basename(sourcePath).replace(/\.zip$/i,"");
+    const suggested=mode==="zip"?`${core.path.basename(sourcePath)}.zip`:base;
+    return openDestinationPicker(sourcePath,suggested);
+  }
   function showFileMenu(entry,x,y){
     document.querySelector('.rift-file-context-menu')?.remove();
     const menu=document.createElement('div'); menu.className='rift-file-context-menu';
     menu.innerHTML='<button data-action="open">Open</button><button data-action="copy">Copy</button><button data-action="cut">Move</button><button data-action="paste">Paste</button><button data-action="delete">Delete</button><button data-action="rename">Rename</button><button data-action="zip">Zip</button><button data-action="unzip">Unzip</button>';
     menu.style.left=x+'px'; menu.style.top=y+'px'; document.body.appendChild(menu);
-    menu.onclick=async e=>{const action=e.target.dataset.action;if(!action)return;menu.remove(); if(action==='copy')body.querySelector('#fsCopy').click(); if(action==='cut')body.querySelector('#fsCut').click(); if(action==='delete')body.querySelector('#fsDelete').click(); if(action==='rename')body.querySelector('#fsRename').click();};
+    menu.onclick=async e=>{const action=e.target.dataset.action;if(!action)return;menu.remove(); if(action==='copy')body.querySelector('#fsCopy').click(); if(action==='cut')body.querySelector('#fsCut').click(); if(action==='delete')body.querySelector('#fsDelete').click(); if(action==='rename')body.querySelector('#fsRename').click(); if(action==='zip')runFileAction("Zip",async()=>{const target=await chooseArchiveDestination(entry.path,"zip");if(!target)throw new Error("Cancelled");await core.fs.zip(entry.path,target);}); if(action==='unzip')runFileAction("Unzip",async()=>{const target=await chooseArchiveDestination(entry.path,"unzip");if(!target)throw new Error("Cancelled");await core.fs.unzip(entry.path,target);});};
   }
   function startSelectionBox(x,y){
-    selectionBox=document.createElement('div'); selectionBox.className='rift-selection-box'; document.body.appendChild(selectionBox);
-    selectionBox.style.left=x+'px';selectionBox.style.top=y+'px';selectionBox.style.width='0px';selectionBox.style.height='0px';
+    selectionBox=document.createElement('div');
+    selectionBox.className='rift-selection-box';
+    document.body.appendChild(selectionBox);
+    const origin={x,y};
+    const update=event=>{
+      const left=Math.min(origin.x,event.clientX), top=Math.min(origin.y,event.clientY);
+      const width=Math.abs(event.clientX-origin.x), height=Math.abs(event.clientY-origin.y);
+      selectionBox.style.left=left+'px';
+      selectionBox.style.top=top+'px';
+      selectionBox.style.width=width+'px';
+      selectionBox.style.height=height+'px';
+      const box={left,top,right:left+width,bottom:top+height};
+      for(const button of itemButtons){
+        const rect=button.getBoundingClientRect();
+        const hit=rect.right>=box.left&&rect.left<=box.right&&rect.bottom>=box.top&&rect.top<=box.bottom;
+        button.classList.toggle('selected',hit);
+        if(hit) selected.add(button.dataset.path); else selected.delete(button.dataset.path);
+      }
+      syncSelection();
+    };
+    const finish=()=>{
+      window.removeEventListener('pointermove',update);
+      selectionBox?.remove();
+      selectionBox=null;
+    };
+    window.addEventListener('pointermove',update);
+    window.addEventListener('pointerup',finish,{once:true});
   }
   const selectionStatus=body.querySelector("#fsSelectionStatus");
   function chosen(){return [...selected].map(value=>byPath.get(value)).filter(Boolean);}
@@ -314,8 +364,12 @@ async function openFiles(path="/",options={}){
     button.ondblclick=()=>openEntry(byPath.get(button.dataset.path));
   }
   body.querySelector("#fsSelectAll").onclick=()=>{if(selected.size===entries.length)selected.clear();else entries.forEach(entry=>selected.add(entry.path));syncSelection();};
-  body.querySelector('.rift-explorer-list').onpointerdown=event=>{if(event.target.closest('.rift-explorer-item'))return; startSelectionBox(event.clientX,event.clientY);};
-  body.querySelector('.rift-explorer-list').onpointerup=()=>{selectionBox?.remove();selectionBox=null;};
+  body.querySelector('.rift-explorer-list').onpointerdown=event=>{
+    if(event.target.closest('.rift-explorer-item'))return;
+    selected.clear();
+    syncSelection();
+    startSelectionBox(event.clientX,event.clientY);
+  };
   body.querySelector("#fsOpen").onclick=()=>openEntry(chosen()[0]);
   body.querySelector("#fsNewFile").onclick=async()=>{
     try{const name=prompt("File name","untitled.txt");if(!name)return;const target=core.path.join(path,cleanLeafName(name));if(await core.fs.stat(target))throw new Error("A file or folder with that name already exists.");await core.fs.createFile(target,"");await refresh();await openEditor(target);}
@@ -340,7 +394,7 @@ async function openFiles(path="/",options={}){
   });
   body.querySelector("#fsDuplicate").onclick=()=>runFileAction("Duplicate",async()=>{for(const entry of chosen()){const destination=await uniqueChildPath(path,duplicateBaseName(core.path.basename(entry.path)));await core.fs.copy(entry.path,destination);}});
   body.querySelector("#fsMove").onclick=()=>runFileAction("Move",async()=>{
-    const destinationRaw=prompt("Move selected items to folder",path);if(!destinationRaw)throw new Error("Cancelled");const destinationDir=core.path.normalize(destinationRaw);const stat=await core.fs.stat(destinationDir);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error("Destination folder does not exist.");
+    const destinationRaw=await openDestinationPicker(path,"",true);if(!destinationRaw)throw new Error("Cancelled");const destinationDir=core.path.normalize(destinationRaw);const stat=await core.fs.stat(destinationDir);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error("Destination folder does not exist.");
     for(const entry of chosen()){let destination=core.path.join(destinationDir,core.path.basename(entry.path));if(await core.fs.stat(destination))destination=await uniqueChildPath(destinationDir,duplicateBaseName(core.path.basename(entry.path)));await core.fs.move(entry.path,destination);}
   });
   body.querySelector("#fsDelete").onclick=()=>runFileAction("Delete",async()=>{const picked=chosen();if(!picked.length)return;if(!confirm(`Delete ${picked.length} selected item${picked.length===1?"":"s"}? This cannot be undone.`))throw new Error("Cancelled");for(const entry of picked)await core.fs.remove(entry.path);});
@@ -371,12 +425,13 @@ async function openSettings(){
   const body=openWindow("settings","Settings","ANDROID SYSTEM"),info=await core.kernel.info(),device=await core.native.call("device.info",{});
   body.classList.add("rift-settings-window-body");
   body.innerHTML=`<div class="rift-settings-shell">
-    <aside class="rift-settings-nav"><strong>Settings</strong><button class="active" data-settings-view="system">System</button><button data-settings-view="storage">Storage</button><button data-settings-view="diagnostics">Diagnostics</button></aside>
+    <aside class="rift-settings-nav"><strong>Settings</strong><button class="active" data-settings-view="system">System</button><button data-settings-view="personalization">Personalization</button><button data-settings-view="storage">Storage</button><button data-settings-view="diagnostics">Diagnostics</button></aside>
     <section class="rift-settings-page">
       <div class="trueos-head"><div><strong>RiftOS ${escapeHTML(info.version)}</strong><small>${escapeHTML(info.mode)} · ${escapeHTML(device.manufacturer||"Android")} ${escapeHTML(device.model||"")}</small></div><span class="trueos-chip ok">ANDROID NATIVE</span></div>
       <div class="trueos-grid"><div class="trueos-card"><strong>RiftFS</strong><small>${escapeHTML(info.storage.backend)}<br>${fmtBytes(info.storage.usage)} / ${fmtBytes(info.storage.quota)}</small></div><div class="trueos-card"><strong>Android</strong><small>${escapeHTML(device.androidRelease||"")} · API ${escapeHTML(device.sdk||"")}<br>${escapeHTML(device.device||"")}</small></div><div class="trueos-card"><strong>Kernel</strong><small>${info.processes} process(es)<br>${info.apps} app(s)<br>${info.mounts} mount(s)</small></div></div>
       <div class="rift-settings-group"><div><strong>System diagnostics</strong><small>Create a privacy-limited RiftOS system dump and choose exactly where it is saved.</small></div><button class="trueos-btn primary" id="settingsDump">Save system dump…</button></div>
       <div class="rift-settings-group"><div><strong>Android files</strong><small>Mount a folder through Android's Storage Access Framework.</small></div><button class="trueos-btn" id="settingsMount">Mount folder…</button></div>
+      <div class="rift-settings-group"><div><strong>Desktop personalization</strong><small>Change wallpaper and reset desktop layout.</small></div><div class="rift-settings-actions"><input class="trueos-btn" id="desktopWallpaperInput" type="text" placeholder="Wallpaper URL or value"><input class="trueos-btn" id="desktopWallpaperFile" type="file" accept="image/*"><button class="trueos-btn" id="desktopWallpaperApply">Apply wallpaper</button><button class="trueos-btn" id="desktopWallpaperClear">Clear wallpaper</button><button class="trueos-btn" id="desktopLayoutReset">Reset layout</button></div></div>
       <div class="rift-settings-actions"><button class="trueos-btn" id="settingsNotify">Notification permission</button><button class="trueos-btn" id="settingsMounts">Mount table</button><button class="trueos-btn" id="settingsPermissions">Capabilities</button></div>
       <pre class="trueos-code" id="settingsOutput">Samsung / Android native host is active.</pre>
     </section>
@@ -384,11 +439,16 @@ async function openSettings(){
   const out=body.querySelector("#settingsOutput");
   body.querySelectorAll("[data-settings-view]").forEach(button=>button.onclick=async()=>{
     body.querySelectorAll("[data-settings-view]").forEach(item=>item.classList.toggle("active",item===button));
+    if(button.dataset.settingsView==="personalization"){out.textContent="Desktop personalization controls are available below.";return;}
     if(button.dataset.settingsView==="diagnostics"){body.querySelector("#settingsDump")?.closest(".rift-settings-group")?.scrollIntoView({behavior:"smooth",block:"center"});return;}
     if(button.dataset.settingsView==="storage"){try{out.textContent=JSON.stringify(await core.fs.estimate(),null,2);}catch(error){out.textContent=error.message;}return;}
     body.querySelector(".rift-settings-page")?.scrollTo({top:0,behavior:"smooth"});
   });
   body.querySelector("#settingsDump").onclick=async()=>{try{out.textContent="Opening Android Save As…";const result=await core.native.call("system.dump.save",{});out.textContent=result?.cancelled?"System dump save cancelled.":`System dump saved as ${result?.name||"selected file"} (${fmtBytes(result?.bytes||0)}).`;}catch(error){out.textContent=error.message;}};
+  body.querySelector("#desktopWallpaperApply").onclick=()=>{window.RiftDesktop?.setWallpaper?.(body.querySelector("#desktopWallpaperInput")?.value||"");out.textContent="Wallpaper updated.";};
+  body.querySelector("#desktopWallpaperClear").onclick=()=>{window.RiftDesktop?.setWallpaper?.("");out.textContent="Wallpaper cleared.";};
+  body.querySelector("#desktopWallpaperFile").onchange=event=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{window.RiftDesktop?.setWallpaper?.(String(reader.result||""));out.textContent="Wallpaper loaded.";};reader.readAsDataURL(file);};
+  body.querySelector("#desktopLayoutReset").onclick=()=>{window.RiftDesktop?.resetLayout?.();out.textContent="Desktop layout reset.";};
   body.querySelector("#settingsMount").onclick=async()=>{try{const mount=await core.fs.mountNativeDirectory();out.textContent=`Mounted ${mount.path}`;}catch(error){out.textContent=error.message;}};
   body.querySelector("#settingsNotify").onclick=async()=>{try{out.textContent=JSON.stringify(await core.native.call("notifications.request",{}),null,2);}catch(error){out.textContent=error.message;}};
   body.querySelector("#settingsMounts").onclick=()=>{out.textContent=core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n");};

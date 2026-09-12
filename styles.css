@@ -151,5 +151,8 @@ button{color:inherit}
 
 
 /* Workspace Live — sandboxed local HTML surface over /workspace */
+.rift-selection-box{position:fixed;z-index:99998;border:1px solid #78f6c7;background:#78f6c722;pointer-events:none}
+.rift-explorer-item.selected{outline:1px solid #78f6c7;background:#16251f}
+
 .rift-workspace-live-window-body{padding:0!important;overflow:hidden!important;background:#070b0f!important}
 .rift-workspace-live-frame{display:block;width:100%;height:100%;min-height:0;border:0;background:#070b0f}

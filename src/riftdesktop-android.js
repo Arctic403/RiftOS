@@ -8,9 +8,19 @@ if(!os||!stage||!workspace||!dock||!statusbar)throw new Error('RiftDesktop requi
 
 const STATE_KEY='rift.desktop.mode';
 const GEOMETRY_KEY=app=>`rift.desktop.geometry.${app||'app'}`;
+const ICON_GEOMETRY_KEY='rift.desktop.icon.geometry';
+const WALLPAPER_KEY='rift.desktop.wallpaper';
 const MIN_W=300,MIN_H=220;
 const inputState={mouse:false,keyboard:false,virtualMouse:false};
-let desktopPreference=localStorage.getItem(STATE_KEY)||'auto';
+let desktopPreference='auto';
+let desktopWallpaper='';
+async function restoreDesktopSettings(){
+  try{
+    const data=await core?.fs?.readJSON?.('/system/settings/desktop.json',null);
+    if(data?.wallpaper!==undefined)desktopWallpaper=String(data.wallpaper||'');
+    if(data?.mode==='auto'||data?.mode==='on'||data?.mode==='off')desktopPreference=data.mode;
+  }catch(_){ }
+}
 let activeWindow=null,zCounter=100;
 let cursorX=Math.max(24,innerWidth*.5),cursorY=Math.max(24,innerHeight*.5);
 let lastTap={time:0,x:0,y:0};
@@ -52,11 +62,20 @@ setInterval(updateClock,1000);updateClock();
 
 function desktopBounds(){const rect=stage.getBoundingClientRect();return{width:rect.width||innerWidth,height:rect.height||innerHeight};}
 function defaultGeometry(win){const bounds=desktopBounds();const count=allWindows().indexOf(win);const width=clamp(Math.round(bounds.width*.68),MIN_W,Math.max(MIN_W,bounds.width-30));const height=clamp(Math.round(bounds.height*.72),MIN_H,Math.max(MIN_H,bounds.height-30));const offset=Math.max(0,count)*24;return{left:clamp(34+offset,4,Math.max(4,bounds.width-width-4)),top:clamp(30+offset,4,Math.max(4,bounds.height-height-4)),width,height};}
-function readGeometry(win){try{const saved=JSON.parse(localStorage.getItem(GEOMETRY_KEY(win.dataset.app))||'null');if(saved&&Number.isFinite(saved.left)&&Number.isFinite(saved.top)&&Number.isFinite(saved.width)&&Number.isFinite(saved.height))return saved;}catch(_){}return defaultGeometry(win);}
+function readGeometry(win){return defaultGeometry(win);}
+async function readStoredGeometry(win){
+  try{
+    const data=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};
+    const saved=data.windows?.[win.dataset.app];
+    if(saved&&Number.isFinite(saved.left)&&Number.isFinite(saved.top)&&Number.isFinite(saved.width)&&Number.isFinite(saved.height))return saved;
+  }catch(_){ }
+  return defaultGeometry(win);
+}
 function applyGeometry(win,g){const bounds=desktopBounds();const width=clamp(g.width,MIN_W,Math.max(MIN_W,bounds.width-8));const height=clamp(g.height,MIN_H,Math.max(MIN_H,bounds.height-8));const left=clamp(g.left,2,Math.max(2,bounds.width-width-2));const top=clamp(g.top,2,Math.max(2,bounds.height-height-2));Object.assign(win.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`,right:'auto',bottom:'auto',inset:'auto'});}
-function saveGeometry(win){if(!desktopEnabled()||win.classList.contains('rift-maximized'))return;const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();localStorage.setItem(GEOMETRY_KEY(win.dataset.app),JSON.stringify({left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height}));}
+function saveGeometry(win){if(!desktopEnabled()||win.classList.contains('rift-maximized'))return;const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();persistWindowGeometry(win.dataset.app,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}
+async function persistWindowGeometry(id,value){try{const current=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};await core?.fs?.writeJSON?.('/system/settings/desktop.json',{...current,windows:{...(current.windows||{}),[id]:value},updated:Date.now()});}catch(_){}}
 function maximizeForMobile(win){win.classList.remove('rift-maximized');Object.assign(win.style,{inset:'',left:'',top:'',width:'',height:'',right:'',bottom:''});}
-function restoreDesktopGeometry(win){if(!desktopEnabled())return;if(win.classList.contains('rift-maximized'))maximize(win,true);else applyGeometry(win,readGeometry(win));}
+async function restoreDesktopGeometry(win){if(!desktopEnabled())return;if(win.classList.contains('rift-maximized'))maximize(win,true);else applyGeometry(win,await readStoredGeometry(win));}
 
 function focusVisual(win,requestCore=true){if(!win||!document.contains(win))return;win.classList.remove('rift-minimized');activeWindow=win;zCounter+=1;win.style.zIndex=String(zCounter);allWindows().forEach(item=>item.classList.toggle('rift-focused',item===win));if(requestCore)wm()?.focus?.(win.dataset.app);syncTaskbar();}
 function nextVisible(except){return allWindows().filter(win=>win!==except&&!win.classList.contains('rift-minimized')).sort((a,b)=>(Number(b.style.zIndex)||0)-(Number(a.style.zIndex)||0))[0]||null;}
@@ -72,8 +91,50 @@ function upgradeWindow(win){if(!(win instanceof HTMLElement)||!win.classList.con
 
 function syncTaskbar(){const list=wm()?.list?.()||[];const byId=new Map(list.map(item=>[item.id,item]));dock.querySelectorAll('.dock-btn[data-open]').forEach(btn=>{if(btn.dataset.open==='home')return;const item=byId.get(btn.dataset.open);btn.classList.toggle('rift-running',!!item);btn.classList.toggle('rift-running-active',!!item&&item.window===activeWindow&&!item.minimized);});const pinned=new Set([...dock.querySelectorAll('.dock-btn[data-open]')].map(btn=>btn.dataset.open));taskbarOpen.innerHTML=list.filter(item=>!pinned.has(item.id)).map(item=>`<button type="button" class="rift-task-window${item.window===activeWindow&&!item.minimized?' active':''}" data-task-window="${item.id}"><span>${item.id==='editor'?'{}':item.id==='tasks'?'≡':'□'}</span><b>${item.title}</b></button>`).join('');stage.classList.toggle('rift-stage-active',list.some(item=>!item.minimized));}
 
+async function saveIconGeometry(card){
+  try{
+    const bounds=workspace.getBoundingClientRect();
+    const rect=card.getBoundingClientRect();
+    const key=card.dataset.open||card.textContent.trim();
+    const current=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};
+    const icons=current.icons||{};
+    icons[key]={left:clamp(rect.left-bounds.left,0,Math.max(0,bounds.width-90)),top:clamp(rect.top-bounds.top,0,Math.max(0,bounds.height-90))};
+    await persistDesktopSettings({icons});
+  }catch(_){ }
+}
+async function restoreIconGeometry(card){
+  try{
+    const data=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};
+    const saved=data.icons?.[card.dataset.open||card.textContent.trim()];
+    if(saved){card.style.position='absolute';card.style.left=`${Number(saved.left)||0}px`;card.style.top=`${Number(saved.top)||0}px`;}
+  }catch(_){ }
+}
+function applyWallpaper(){
+  document.documentElement.style.setProperty('--rift-desktop-wallpaper',desktopWallpaper||'');
+}
+function resetDesktopLayout(){
+  persistDesktopSetting('icons',{});
+  persistDesktopSetting('icons',{});
+  document.querySelectorAll('.app-card').forEach(card=>{
+    card.style.position='';
+    card.style.left='';
+    card.style.top='';
+  });
+}
+async function persistDesktopSettings(patch){
+  try{
+    const current=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};
+    await core?.fs?.writeJSON?.('/system/settings/desktop.json',{...current,...patch,updated:Date.now()});
+  }catch(_){ }
+}
+function persistDesktopSetting(key,value){persistDesktopSettings({[key]:value});}
+function setWallpaper(value=''){
+  desktopWallpaper=String(value||'');
+  persistDesktopSetting('wallpaper',desktopWallpaper);
+  applyWallpaper();
+}
 function applyDesktopMode(){const enabled=desktopEnabled();root.classList.toggle('rift-desktop-mode',enabled);root.dataset.riftDesktop=enabled?'desktop':'mobile';tray.querySelector('#riftDesktopToggle').classList.toggle('active',enabled);if(enabled){workspace.classList.remove('hidden');allWindows().forEach(win=>restoreDesktopGeometry(win));}else{startMenu.classList.remove('open');allWindows().forEach(maximizeForMobile);const visible=allWindows().filter(win=>!win.classList.contains('rift-minimized'));workspace.classList.toggle('hidden',visible.length>0);}syncTaskbar();}
-function cycleDesktopPreference(){desktopPreference=desktopPreference==='auto'?'on':desktopPreference==='on'?'off':'auto';localStorage.setItem(STATE_KEY,desktopPreference);applyDesktopMode();}
+function cycleDesktopPreference(){desktopPreference=desktopPreference==='auto'?'on':desktopPreference==='on'?'off':'auto';persistDesktopSetting('mode',desktopPreference);applyDesktopMode();}
 
 function moveCursor(x,y){cursorX=clamp(x,2,innerWidth-3);cursorY=clamp(y,2,innerHeight-3);cursor.style.transform=`translate3d(${cursorX}px,${cursorY}px,0)`;}
 function pointerTarget(){const oldOverlay=trackpad.style.pointerEvents,oldCursor=cursor.style.pointerEvents;trackpad.style.pointerEvents='none';cursor.style.pointerEvents='none';const target=document.elementFromPoint(cursorX,cursorY);trackpad.style.pointerEvents=oldOverlay;cursor.style.pointerEvents=oldCursor;return target;}
@@ -109,8 +170,42 @@ window.addEventListener('riftos:show-desktop',()=>{activeWindow=null;syncTaskbar
 window.addEventListener('pointerdown',event=>{if(event.pointerType==='mouse'){inputState.mouse=true;root.classList.add('rift-hardware-mouse');}},true);
 window.addEventListener('keydown',event=>{inputState.keyboard=true;root.classList.add('rift-hardware-keyboard');if(event.altKey&&event.key==='Tab'){event.preventDefault();const list=wm()?.list?.()||[];if(!list.length)return;const index=Math.max(0,list.findIndex(item=>item.window===activeWindow));const next=list[(index+(event.shiftKey?-1:1)+list.length)%list.length];restore(next.window);return;}if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='d'){event.preventDefault();cycleDesktopPreference();return;}if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='m'){event.preventDefault();setVirtualMouse(!inputState.virtualMouse);return;}if(event.key==='Escape'&&startMenu.classList.contains('open')){startMenu.classList.remove('open');return;}},true);
 window.addEventListener('resize',()=>{applyDesktopMode();allWindows().forEach(win=>{if(desktopEnabled()&&!win.classList.contains('rift-maximized')&&!win.classList.contains('rift-minimized')){const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();applyGeometry(win,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}});});
-window.addEventListener('riftos:launcher-ready',()=>{applyDesktopMode();document.querySelectorAll('.app-card').forEach(card=>card.setAttribute('draggable','false'));});
+window.addEventListener('riftos:launcher-ready',()=>{
+  applyDesktopMode();
+  document.querySelectorAll('.app-card').forEach(card=>{
+    restoreIconGeometry(card);
+    card.setAttribute('draggable','false');
+    card.dataset.desktopDragReady='1';
+    if(card.dataset.desktopDragBound)return;
+    card.dataset.desktopDragBound='1';
+    let drag=null;
+    card.addEventListener('pointerdown',event=>{
+      if(!desktopEnabled()||event.button===2)return;
+      const grid=card.parentElement;
+      if(!grid?.classList.contains('app-grid'))return;
+      const rect=card.getBoundingClientRect();
+      drag={x:event.clientX,y:event.clientY,left:rect.left-grid.getBoundingClientRect().left,top:rect.top-grid.getBoundingClientRect().top};
+      card.setPointerCapture?.(event.pointerId);
+      const move=e=>{
+        if(!drag)return;
+        if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<4)return;
+        grid.style.position='relative';
+        card.style.position='absolute';
+        card.style.left=Math.max(0,drag.left+e.clientX-drag.x)+'px';
+        card.style.top=Math.max(0,drag.top+e.clientY-drag.y)+'px';
+      };
+      const end=()=>{drag=null;saveIconGeometry(card);card.removeEventListener('pointermove',move);card.removeEventListener('pointerup',end);};
+      card.addEventListener('pointermove',move);
+      card.addEventListener('pointerup',end,{once:true});
+    });
+  });
+});
 
-applyDesktopMode();syncTaskbar();moveCursor(cursorX,cursorY);
+restoreDesktopSettings().then(()=>{
+  applyWallpaper();
+  applyDesktopMode();
+  syncTaskbar();
+  moveCursor(cursorX,cursorY);
+});
 const appApi=window.RiftDesktop||{};
-window.RiftDesktop=Object.freeze({...appApi,get mode(){return desktopEnabled()?'desktop':'mobile';},get input(){return{...inputState};},enable(){desktopPreference='on';localStorage.setItem(STATE_KEY,desktopPreference);applyDesktopMode();},disable(){desktopPreference='off';localStorage.setItem(STATE_KEY,desktopPreference);applyDesktopMode();},auto(){desktopPreference='auto';localStorage.setItem(STATE_KEY,desktopPreference);applyDesktopMode();},virtualMouse(enabled=true){setVirtualMouse(enabled);},restore(){restore(activeWindow);},minimize(){minimize(activeWindow);},maximize(){maximize(activeWindow);}});
+window.RiftDesktop=Object.freeze({...appApi,get mode(){return desktopEnabled()?'desktop':'mobile';},get input(){return{...inputState};},get wallpaper(){return desktopWallpaper;},enable(){desktopPreference='on';persistDesktopSetting('mode',desktopPreference);applyDesktopMode();},disable(){desktopPreference='off';persistDesktopSetting('mode',desktopPreference);applyDesktopMode();},auto(){desktopPreference='auto';persistDesktopSetting('mode',desktopPreference);applyDesktopMode();},setWallpaper(value){setWallpaper(value);},resetLayout(){resetDesktopLayout();},virtualMouse(enabled=true){setVirtualMouse(enabled);},restore(){restore(activeWindow);},minimize(){minimize(activeWindow);},maximize(){maximize(activeWindow);}});

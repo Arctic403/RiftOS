@@ -1,13 +1,13 @@
 :root{--rift-taskbar-height:52px}
 
 /* Windows-style RiftDesktop shell */
-.rift-desktop-mode .os{grid-template-rows:0 minmax(0,1fr) calc(var(--rift-taskbar-height) + var(--safe-bottom));background:radial-gradient(circle at 72% 22%,#1c4b65 0,transparent 28%),radial-gradient(circle at 32% 80%,#143d4d 0,transparent 34%),linear-gradient(145deg,#07141d,#0b2530 52%,#08161d)}
+.rift-desktop-mode .os{grid-template-rows:0 minmax(0,1fr) calc(var(--rift-taskbar-height) + var(--safe-bottom));background:var(--rift-desktop-background,radial-gradient(circle at 72% 22%,#1c4b65 0,transparent 28%),radial-gradient(circle at 32% 80%,#143d4d 0,transparent 34%),linear-gradient(145deg,#07141d,#0b2530 52%,#08161d));overflow:hidden}
 .rift-desktop-mode .statusbar{display:none}
 .rift-desktop-mode .content{grid-row:2;overflow:hidden}
 .rift-desktop-mode .workspace{position:absolute;inset:0;display:block!important;max-width:none;width:100%;margin:0;overflow:hidden;padding:18px 18px 78px}
 .rift-desktop-mode .hero{display:none}
 .rift-desktop-brand{display:none}.rift-desktop-mode .rift-desktop-brand{display:flex;position:absolute;right:24px;bottom:26px;flex-direction:column;align-items:flex-end;pointer-events:none;opacity:.2}.rift-desktop-mode .rift-desktop-brand strong{font-size:34px;letter-spacing:-.04em}.rift-desktop-mode .rift-desktop-brand span{font-size:9px;letter-spacing:.22em;text-transform:uppercase}
-.rift-desktop-mode .app-grid{display:grid;grid-template-columns:repeat(2,84px);grid-auto-rows:90px;gap:10px;margin:0;width:max-content;align-content:start}
+.rift-desktop-mode .app-grid{display:block;position:relative;min-height:100%;width:100%;margin:0}.rift-desktop-mode .app-grid .app-card{touch-action:none}
 .rift-desktop-mode .app-card{width:84px;height:90px;min-height:0;padding:7px 4px;border:1px solid transparent;background:transparent;border-radius:7px;align-items:center;justify-content:start;text-align:center;gap:6px;overflow:hidden}
 .rift-desktop-mode .app-card:hover,.rift-desktop-mode .app-card:focus-visible{background:#ffffff17;border-color:#ffffff24;outline:none}
 .rift-desktop-mode .app-card .app-icon{width:44px;height:44px;display:grid;place-items:center;border:1px solid #ffffff22;border-radius:10px;background:linear-gradient(145deg,#1c3340,#10242d);font-size:19px;box-shadow:0 8px 22px #0007}

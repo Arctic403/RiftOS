@@ -213,6 +213,14 @@ class RiftFS extends EventTarget{
     return {...stat,path:target.path,content:String(content??""),backend:target.backend};
   }
   async readText(value){return (await this.get(value))?.content??null;}
+  async zip(fromValue,toValue){
+    const source=this.route(fromValue),destination=this.route(toValue);
+    return this.native.call("fs.zip",{mountId:source.mountId,from:source.relative,to:destination.relative});
+  }
+  async unzip(fromValue,toValue){
+    const source=this.route(fromValue),destination=this.route(toValue);
+    return this.native.call("fs.unzip",{mountId:source.mountId,from:source.relative,to:destination.relative});
+  }
   async write(value,content){
     const target=this.route(value);
     if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Cannot write over a mount root");
@@ -238,6 +246,14 @@ class RiftFS extends EventTarget{
     await this.native.call("fs.remove",{mountId:target.mountId,path:target.relative,recursive:true});
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"remove",path:target.path}}));
     return true;
+  }
+  async zip(fromValue,toValue){
+    const source=this.route(fromValue),destination=this.route(toValue);
+    return this.native.call("fs.zip",{mountId:source.mountId,from:source.relative,to:destination.relative});
+  }
+  async unzip(fromValue,toValue){
+    const source=this.route(fromValue),destination=this.route(toValue);
+    return this.native.call("fs.unzip",{mountId:source.mountId,from:source.relative,to:destination.relative});
   }
   async copy(fromValue,toValue,{overwrite=false,transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);

@@ -22,7 +22,15 @@ import org.json.JSONObject
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.util.concurrent.Executors
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import java.util.zip.ZipInputStream
 
 class RiftNativeDispatcher(
     private val activity: Activity,
@@ -121,6 +129,26 @@ class RiftNativeDispatcher(
         "fs.writeText" -> writeText(args.getString("mountId"), args.optString("path"), args.optString("text"))
         "fs.mkdir" -> mkdir(args.getString("mountId"), args.optString("path"))
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
+        "fs.zip" -> {
+            val job = RiftTransferJob("zip", args.optString("from"), args.optString("to"))
+            transferService.submit(job) {
+                val progress = TransferProgress(job.id, "zip")
+                emitTransfer(progress, "starting", args.optString("from"), true)
+                zip(args.getString("mountId"), args.optString("from"), args.optString("to"), progress)
+                emitTransfer(progress, "complete", args.optString("to"), true)
+            }
+            JSONObject().put("transferId", job.id).put("phase", job.phase)
+        }
+        "fs.unzip" -> {
+            val job = RiftTransferJob("unzip", args.optString("from"), args.optString("to"))
+            transferService.submit(job) {
+                val progress = TransferProgress(job.id, "unzip")
+                emitTransfer(progress, "starting", args.optString("from"), true)
+                unzip(args.getString("mountId"), args.optString("from"), args.optString("to"), progress)
+                emitTransfer(progress, "complete", args.optString("to"), true)
+            }
+            JSONObject().put("transferId", job.id).put("phase", job.phase)
+        }
         "fs.copy" -> {
             val job = RiftTransferJob("copy", args.optString("from"), args.optString("to"))
             transferService.submit(job) {
@@ -293,6 +321,88 @@ class RiftNativeDispatcher(
         }
         if(mountId=="__riftfs__"){val file=internalFile(path);if(!file.exists())return true;return if(file.isDirectory)file.deleteRecursively()else file.delete()}
         return externalNode(mountId,path)?.delete() ?: true
+    }
+
+    private fun zip(mountId: String, from: String, to: String, progress: TransferProgress? = null): JSONObject {
+        val destination = if (mountId == "__riftfs__") internalFile(to) else externalFile(mountId, to, true)
+        destination.parentFile?.mkdirs()
+        val output = if (mountId == "__riftfs__") destination.outputStream() else activity.contentResolver.openOutputStream(destination.uri, "wt")
+            ?: throw IllegalStateException("Could not create archive")
+        output.buffered().use { stream ->
+            ZipOutputStream(stream).use { zip ->
+                if (mountId == "__riftfs__") {
+                    val source = internalFile(from)
+                    source.walkTopDown().filter { it.isFile }.forEach { file ->
+                        zip.putNextEntry(ZipEntry(if (source.isDirectory) file.relativeTo(source).path else file.name))
+                        file.inputStream().use { input ->
+                            val buffer = ByteArray(COPY_BUFFER_BYTES)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                zip.write(buffer, 0, count)
+                                progress?.bytes = (progress?.bytes ?: 0L) + count
+                                emitTransfer(progress, "compressing", file.path)
+                            }
+                        }
+                        progress?.files = (progress?.files ?: 0) + 1
+                        zip.closeEntry()
+                    }
+                } else {
+                    val source = externalFile(mountId, from, false)
+                    zip.putNextEntry(ZipEntry(source.name ?: leafName(from)))
+                    activity.contentResolver.openInputStream(source.uri)?.use { input ->
+                        val buffer = ByteArray(COPY_BUFFER_BYTES)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            zip.write(buffer, 0, count)
+                            progress?.bytes = (progress?.bytes ?: 0L) + count
+                            emitTransfer(progress, "compressing", from)
+                        }
+                    }
+                    progress?.files = (progress?.files ?: 0) + 1
+                    zip.closeEntry()
+                }
+            }
+        }
+        return stat(mountId, to)!!
+    }
+
+    private fun unzip(mountId: String, from: String, to: String, progress: TransferProgress? = null): JSONObject {
+        val input = if (mountId == "__riftfs__") internalFile(from).inputStream() else {
+            val source = externalFile(mountId, from, false)
+            activity.contentResolver.openInputStream(source.uri) ?: throw IllegalStateException("Could not read archive")
+        }
+        ZipInputStream(input.buffered()).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                val safe = normalizeSegments(entry.name).joinToString("/")
+                if (safe.isNotBlank()) {
+                    val targetPath = childPath(to, safe)
+                    val target = if (mountId == "__riftfs__") internalFile(targetPath) else externalFile(mountId, targetPath, true)
+                    if (entry.isDirectory) {
+                        if (mountId == "__riftfs__") target.mkdirs()
+                    } else {
+                        val output = if (mountId == "__riftfs__") target.outputStream() else activity.contentResolver.openOutputStream(target.uri, "wt")
+                            ?: throw IllegalStateException("Could not write extracted file")
+                        output.use { out ->
+                            val buffer = ByteArray(COPY_BUFFER_BYTES)
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                out.write(buffer, 0, count)
+                                progress?.bytes = (progress?.bytes ?: 0L) + count
+                                emitTransfer(progress, "extracting", targetPath)
+                            }
+                        }
+                        progress?.files = (progress?.files ?: 0) + 1
+                    }
+                }
+                zip.closeEntry()
+                entry = zip.nextEntry
+            }
+        }
+        return stat(mountId, to)!!
     }
 
     private fun normalizedRelative(path: String): String = normalizeSegments(path).joinToString("/")
