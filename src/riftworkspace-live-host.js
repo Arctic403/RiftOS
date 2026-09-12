@@ -3,6 +3,7 @@ const workspace=window.RiftWorkspace;
 if(!core?.native?.connected||!workspace?.available)throw new Error("Rift Workspace Live requires Android RiftWorkspace");
 
 const CHANNEL="riftworkspace-live-v1";
+const LIVE_EVENT_WINDOW_MS=90;
 const nativeListeners=new Set();
 let watcherState={active:false};
 
@@ -54,7 +55,26 @@ function mount(container){
   const frame=container.querySelector("iframe");
   let destroyed=false;
   const send=message=>{if(!destroyed&&frame.contentWindow)frame.contentWindow.postMessage({channel:CHANNEL,...message},"*");};
-  const onNativeEvent=event=>send({kind:"event",event});
+  let nativeEventTimer=0;
+  let nativeEventCount=0;
+  const pendingNativeEvents=new Map();
+  const flushNativeEvents=()=>{
+    clearTimeout(nativeEventTimer);nativeEventTimer=0;
+    if(destroyed||!pendingNativeEvents.size)return;
+    const events=[...pendingNativeEvents.values()];
+    pendingNativeEvents.clear();
+    const count=nativeEventCount;nativeEventCount=0;
+    send({kind:"event",event:{type:"batch",source:"workspace-watcher",count,at:Date.now(),paths:events.map(item=>item.path),events}});
+  };
+  const onNativeEvent=event=>{
+    const next=event&&typeof event==="object"?event:{};
+    const key=`${next.path||""}\u0000${next.directory?"d":"f"}`;
+    const previous=pendingNativeEvents.get(key);
+    pendingNativeEvents.set(key,{...next,occurrences:(previous?.occurrences||0)+1});
+    nativeEventCount++;
+    clearTimeout(nativeEventTimer);
+    nativeEventTimer=setTimeout(flushNativeEvents,LIVE_EVENT_WINDOW_MS);
+  };
   nativeListeners.add(onNativeEvent);
 
   const onMessage=async event=>{
@@ -69,7 +89,7 @@ function mount(container){
   core.native.call("workspace.watch.start",{}).then(state=>{if(destroyed){core.native.call("workspace.watch.stop",{}).catch(()=>{});return;}watcherState=state||{active:true};send({kind:"connected",watch:watcherState});}).catch(error=>{if(!destroyed)send({kind:"response",id:"watch-start",ok:false,error:error.message});});
 
   const destroy=()=>{
-    if(destroyed)return;destroyed=true;nativeListeners.delete(onNativeEvent);window.removeEventListener("message",onMessage);core.native.call("workspace.watch.stop",{}).catch(()=>{});frame.src="about:blank";
+    if(destroyed)return;destroyed=true;clearTimeout(nativeEventTimer);pendingNativeEvents.clear();nativeListeners.delete(onNativeEvent);window.removeEventListener("message",onMessage);core.native.call("workspace.watch.stop",{}).catch(()=>{});frame.src="about:blank";
   };
   return {destroy,frame};
 }
