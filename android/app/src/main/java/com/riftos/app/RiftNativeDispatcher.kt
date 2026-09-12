@@ -48,6 +48,8 @@ class RiftNativeDispatcher(
     companion object {
         private const val MAX_BRIDGE_TEXT_BYTES = 4L * 1024L * 1024L
         private const val COPY_BUFFER_BYTES = 256 * 1024
+        private const val MAX_ARCHIVE_ENTRIES = 50_000
+        private const val MAX_EXTRACTED_BYTES = 2L * 1024L * 1024L * 1024L
     }
 
     private val protectedRiftRoots = setOf("home", "apps", "system", "workspace", "downloads", "documents")
@@ -127,15 +129,25 @@ class RiftNativeDispatcher(
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
         "fs.zip" -> {
             val progress = TransferProgress(args.optString("transferId").ifBlank { UUID.randomUUID().toString() }, "zip")
+            val manifest = buildTransferManifest(args.getString("fromMountId"), args.optString("from"))
+            progress.totalFiles = manifest.files
+            progress.totalBytes = manifest.bytes
+            progress.totalDirectories = manifest.directories
             emitTransfer(progress, "starting", args.optString("from"), true)
-            val result = zip(args.getString("mountId"), args.optString("from"), args.optString("to"), progress)
+            val result = zip(
+                args.getString("fromMountId"), args.optString("from"),
+                args.getString("toMountId"), args.optString("to"), progress
+            )
             emitTransfer(progress, "complete", args.optString("to"), true)
             result
         }
         "fs.unzip" -> {
             val progress = TransferProgress(args.optString("transferId").ifBlank { UUID.randomUUID().toString() }, "unzip")
             emitTransfer(progress, "starting", args.optString("from"), true)
-            val result = unzip(args.getString("mountId"), args.optString("from"), args.optString("to"), progress)
+            val result = unzip(
+                args.getString("fromMountId"), args.optString("from"),
+                args.getString("toMountId"), args.optString("to"), progress
+            )
             emitTransfer(progress, "complete", args.optString("to"), true)
             result
         }
@@ -315,100 +327,163 @@ class RiftNativeDispatcher(
         return externalNode(mountId,path)?.delete() ?: true
     }
 
-    private fun zip(mountId: String, from: String, to: String, progress: TransferProgress? = null): JSONObject {
-        val output = if (mountId == "__riftfs__") {
-            val destination = internalFile(to)
-            destination.parentFile?.mkdirs()
-            destination.outputStream()
-        } else {
-            val destination = externalFile(mountId, to, true)
-            activity.contentResolver.openOutputStream(destination.uri, "wt")
-                ?: throw IllegalStateException("Could not create archive")
+    private fun zip(
+        fromMountId: String, fromRaw: String,
+        toMountId: String, toRaw: String,
+        progress: TransferProgress? = null
+    ): JSONObject {
+        val from = normalizedRelative(fromRaw)
+        val to = normalizedRelative(toRaw)
+        require(from.isNotBlank()) { "Archive source cannot be a filesystem root" }
+        require(to.isNotBlank()) { "Archive destination cannot be a filesystem root" }
+        val source = stat(fromMountId, from) ?: throw IllegalArgumentException("Archive source not found: $from")
+        if (fromMountId == toMountId) {
+            require(from != to) { "Archive source and destination are identical" }
+            if (source.optString("kind") == "directory") require(!to.startsWith("$from/")) {
+                "Archive destination cannot be inside its source directory"
+            }
         }
-        output.buffered().use { stream ->
-            ZipOutputStream(stream).use { zip ->
-                if (mountId == "__riftfs__") {
-                    val source = internalFile(from)
-                    source.walkTopDown().filter { it.isFile }.forEach { file ->
-                        zip.putNextEntry(ZipEntry(if (source.isDirectory) file.relativeTo(source).path else file.name))
-                        file.inputStream().use { input ->
-                            val buffer = ByteArray(COPY_BUFFER_BYTES)
-                            while (true) {
-                                val count = input.read(buffer)
-                                if (count < 0) break
-                                zip.write(buffer, 0, count)
-                                progress?.bytes = (progress?.bytes ?: 0L) + count
-                                emitTransfer(progress, "compressing", file.path)
-                            }
+        val output = if (toMountId == "__riftfs__") {
+            internalFile(to).also { it.parentFile?.mkdirs() }.outputStream()
+        } else {
+            val destination = externalFile(toMountId, to, true)
+            activity.contentResolver.openOutputStream(destination.uri, "wt")
+                ?: throw IllegalStateException("Could not create archive: $to")
+        }
+        try {
+            ZipOutputStream(BufferedOutputStream(output)).use { archive ->
+                fun add(current: String, entryName: String) {
+                    val node = stat(fromMountId, current)
+                        ?: throw IllegalStateException("Archive entry disappeared: $current")
+                    if (node.optString("kind") == "directory") {
+                        if (entryName.isNotBlank()) {
+                            archive.putNextEntry(ZipEntry(entryName.trimEnd('/') + "/"))
+                            archive.closeEntry()
                         }
-                        progress?.files = (progress?.files ?: 0) + 1
-                        zip.closeEntry()
+                        val children = list(fromMountId, current, false)
+                        for (index in 0 until children.length()) {
+                            val name = children.optJSONObject(index)?.optString("path").orEmpty()
+                            if (name.isBlank()) continue
+                            val childEntry = listOf(entryName.trim('/'), normalizedRelative(name))
+                                .filter { it.isNotBlank() }.joinToString("/")
+                            add(childPath(current, name), childEntry)
+                        }
+                        if (progress != null) progress.directories++
+                        emitTransfer(progress, "compressing", current)
+                        return
                     }
-                } else {
-                    val source = externalFile(mountId, from, false)
-                    zip.putNextEntry(ZipEntry(source.name ?: leafName(from)))
-                    activity.contentResolver.openInputStream(source.uri)?.use { input ->
+                    val input = if (fromMountId == "__riftfs__") internalFile(current).inputStream() else {
+                        val file = externalFile(fromMountId, current, false)
+                        activity.contentResolver.openInputStream(file.uri)
+                            ?: throw IllegalStateException("Could not read $current")
+                    }
+                    archive.putNextEntry(ZipEntry(entryName))
+                    input.use { stream ->
                         val buffer = ByteArray(COPY_BUFFER_BYTES)
                         while (true) {
-                            val count = input.read(buffer)
+                            val count = stream.read(buffer)
                             if (count < 0) break
-                            zip.write(buffer, 0, count)
-                            progress?.bytes = (progress?.bytes ?: 0L) + count
-                            emitTransfer(progress, "compressing", from)
+                            archive.write(buffer, 0, count)
+                            if (progress != null) progress.bytes += count
+                            emitTransfer(progress, "compressing", current)
                         }
                     }
-                    progress?.files = (progress?.files ?: 0) + 1
-                    zip.closeEntry()
+                    archive.closeEntry()
+                    if (progress != null) progress.files++
+                    emitTransfer(progress, "compressing", current, true)
                 }
+                if (source.optString("kind") == "directory") {
+                    val children = list(fromMountId, from, false)
+                    for (index in 0 until children.length()) {
+                        val name = children.optJSONObject(index)?.optString("path").orEmpty()
+                        if (name.isNotBlank()) add(childPath(from, name), normalizedRelative(name))
+                    }
+                } else add(from, leafName(from))
             }
+        } catch (error: Throwable) {
+            runCatching { remove(toMountId, to) }
+            throw error
         }
-        return stat(mountId, to)!!
+        return stat(toMountId, to) ?: throw IllegalStateException("Created archive is missing: $to")
     }
 
-    private fun unzip(mountId: String, from: String, to: String, progress: TransferProgress? = null): JSONObject {
-        val input = if (mountId == "__riftfs__") internalFile(from).inputStream() else {
-            val source = externalFile(mountId, from, false)
-            activity.contentResolver.openInputStream(source.uri) ?: throw IllegalStateException("Could not read archive")
+    private fun unzip(
+        fromMountId: String, fromRaw: String,
+        toMountId: String, toRaw: String,
+        progress: TransferProgress? = null
+    ): JSONObject {
+        val from = normalizedRelative(fromRaw)
+        val to = normalizedRelative(toRaw)
+        require(from.isNotBlank()) { "Archive source cannot be a filesystem root" }
+        val source = stat(fromMountId, from) ?: throw IllegalArgumentException("Archive source not found: $from")
+        require(source.optString("kind") == "file") { "Archive source must be a file" }
+        val destination = stat(toMountId, to)
+        val destinationExisted = destination != null
+        if (destinationExisted) require(destination?.optString("kind") == "directory") {
+            "Unzip destination is not a directory: $to"
+        } else mkdir(toMountId, to)
+        val input = if (fromMountId == "__riftfs__") internalFile(from).inputStream() else {
+            val file = externalFile(fromMountId, from, false)
+            activity.contentResolver.openInputStream(file.uri)
+                ?: throw IllegalStateException("Could not read archive: $from")
         }
-        ZipInputStream(input.buffered()).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                val safe = normalizeSegments(entry.name).joinToString("/")
-                if (safe.isNotBlank()) {
-                    val targetPath = childPath(to, safe)
-                    if (entry.isDirectory) {
-                        if (mountId == "__riftfs__") {
-                            internalFile(targetPath).mkdirs()
-                        } else {
-                            externalDirectory(mountId, targetPath, true)
-                        }
-                    } else {
-                        val output = if (mountId == "__riftfs__") {
-                            internalFile(targetPath).parentFile?.mkdirs()
-                            internalFile(targetPath).outputStream()
-                        } else {
-                            val target = externalFile(mountId, targetPath, true)
-                            activity.contentResolver.openOutputStream(target.uri, "wt")
-                                ?: throw IllegalStateException("Could not write extracted file")
-                        }
-                        output.use { out ->
-                            val buffer = ByteArray(COPY_BUFFER_BYTES)
-                            while (true) {
-                                val count = zip.read(buffer)
-                                if (count < 0) break
-                                out.write(buffer, 0, count)
-                                progress?.bytes = (progress?.bytes ?: 0L) + count
-                                emitTransfer(progress, "extracting", targetPath)
+        val created = mutableListOf<String>()
+        var entries = 0
+        var extractedBytes = 0L
+        try {
+            ZipInputStream(BufferedInputStream(input)).use { archive ->
+                var entry = archive.nextEntry
+                while (entry != null) {
+                    entries++
+                    require(entries <= MAX_ARCHIVE_ENTRIES) { "Archive contains too many entries" }
+                    val safe = normalizeSegments(entry.name).joinToString("/")
+                    if (safe.isNotBlank()) {
+                        val targetPath = childPath(to, safe)
+                        val existing = stat(toMountId, targetPath)
+                        if (entry.isDirectory) {
+                            if (existing == null) { mkdir(toMountId, targetPath); created += targetPath }
+                            else require(existing.optString("kind") == "directory") {
+                                "Archive path conflicts with a file: $targetPath"
                             }
+                            if (progress != null) progress.directories++
+                        } else {
+                            require(existing == null) { "Archive would overwrite an existing path: $targetPath" }
+                            val output = if (toMountId == "__riftfs__") {
+                                internalFile(targetPath).also { it.parentFile?.mkdirs() }.outputStream()
+                            } else {
+                                val target = externalFile(toMountId, targetPath, true)
+                                activity.contentResolver.openOutputStream(target.uri, "wt")
+                                    ?: throw IllegalStateException("Could not write extracted file: $targetPath")
+                            }
+                            created += targetPath
+                            output.use { out ->
+                                val buffer = ByteArray(COPY_BUFFER_BYTES)
+                                while (true) {
+                                    val count = archive.read(buffer)
+                                    if (count < 0) break
+                                    extractedBytes += count
+                                    require(extractedBytes <= MAX_EXTRACTED_BYTES) {
+                                        "Archive expands beyond the safety limit"
+                                    }
+                                    out.write(buffer, 0, count)
+                                    if (progress != null) progress.bytes += count
+                                    emitTransfer(progress, "extracting", targetPath)
+                                }
+                            }
+                            if (progress != null) progress.files++
+                            emitTransfer(progress, "extracting", targetPath, true)
                         }
-                        progress?.files = (progress?.files ?: 0) + 1
                     }
+                    archive.closeEntry()
+                    entry = archive.nextEntry
                 }
-                zip.closeEntry()
-                entry = zip.nextEntry
             }
+        } catch (error: Throwable) {
+            created.asReversed().forEach { path -> runCatching { remove(toMountId, path) } }
+            if (!destinationExisted) runCatching { remove(toMountId, to) }
+            throw error
         }
-        return stat(mountId, to)!!
+        return stat(toMountId, to) ?: throw IllegalStateException("Unzip destination is missing: $to")
     }
 
     private fun normalizedRelative(path: String): String = normalizeSegments(path).joinToString("/")

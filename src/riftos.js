@@ -330,7 +330,10 @@ async function openFiles(path="/",options={}){
     try{await openFileEntry(entry);}
     catch(error){setStatus("Files");alert(`Open failed: ${error?.message||error}`);}
   }
+  let fileActionBusy=false;
   async function runFileAction(label,work){
+    if(fileActionBusy)return;
+    fileActionBusy=true;
     try{
       setStatus(`Files · ${label} queued`);
       await new Promise(resolve=>requestAnimationFrame(resolve));
@@ -339,6 +342,7 @@ async function openFiles(path="/",options={}){
       await refresh();
     }
     catch(error){setStatus("Files");alert(`${label} failed: ${error?.message||error}`);syncSelection();}
+    finally{fileActionBusy=false;}
   }
   core.fs.transferQueue?.addEventListener?.("transfer",event=>{
     const detail=event.detail||{};

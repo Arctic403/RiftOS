@@ -24,7 +24,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
 
     init {
         migrateLegacyState()
-        sandbox = RiftToolSandbox(appContext, RiftTransferRegistry.service)
+        sandbox = RiftToolSandbox(appContext)
     }
 
     fun access(): JSONObject = JSONObject()

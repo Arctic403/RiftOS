@@ -213,14 +213,6 @@ class RiftFS extends EventTarget{
     return {...stat,path:target.path,content:String(content??""),backend:target.backend};
   }
   async readText(value){return (await this.get(value))?.content??null;}
-  async zip(fromValue,toValue){
-    const source=this.route(fromValue),destination=this.route(toValue);
-    return this.native.call("fs.zip",{mountId:source.mountId,from:source.relative,to:destination.relative});
-  }
-  async unzip(fromValue,toValue){
-    const source=this.route(fromValue),destination=this.route(toValue);
-    return this.native.call("fs.unzip",{mountId:source.mountId,from:source.relative,to:destination.relative});
-  }
   async write(value,content){
     const target=this.route(value);
     if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Cannot write over a mount root");
@@ -243,17 +235,32 @@ class RiftFS extends EventTarget{
     const target=this.route(value);
     if(target.path==="/"||PROTECTED_RIFT_ROOTS.has(target.path))throw new Error("Cannot delete a RiftFS system root");
     if(target.mount&&!target.relative)throw new Error("Unmount the folder instead of deleting the mount root");
-    await this.native.call("fs.remove",{mountId:target.mountId,path:target.relative,recursive:true});
+    const removed=await this.native.call("fs.remove",{mountId:target.mountId,path:target.relative,recursive:true});
+    if(removed!==true)throw new Error(`Android storage provider could not delete ${target.path}`);
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"remove",path:target.path}}));
     return true;
   }
-  async zip(fromValue,toValue){
+  async zip(fromValue,toValue,{transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);
-    return this.native.call("fs.zip",{mountId:source.mountId,from:source.relative,to:destination.relative});
+    if(source.path==="/"||source.path==="/mounts"||source.mount&&!source.relative)throw new Error("Cannot archive a filesystem root or mount root");
+    if(destination.path==="/"||destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Archive destination must be a file");
+    const stat=await this.transferQueue.run(()=>this.native.call("fs.zip",{
+      fromMountId:source.mountId,from:source.relative,toMountId:destination.mountId,to:destination.relative,
+      transferId:transferId||crypto.randomUUID?.()||`transfer-${Date.now()}`
+    }));
+    this.dispatchEvent(new CustomEvent("change",{detail:{type:"zip",path:source.path,newPath:destination.path}}));
+    return {...stat,path:destination.path,backend:destination.backend};
   }
-  async unzip(fromValue,toValue){
+  async unzip(fromValue,toValue,{transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);
-    return this.native.call("fs.unzip",{mountId:source.mountId,from:source.relative,to:destination.relative});
+    if(source.path==="/"||source.path==="/mounts"||source.mount&&!source.relative)throw new Error("Archive source must be a file");
+    if(destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Choose a folder inside the mounted filesystem");
+    const stat=await this.transferQueue.run(()=>this.native.call("fs.unzip",{
+      fromMountId:source.mountId,from:source.relative,toMountId:destination.mountId,to:destination.relative,
+      transferId:transferId||crypto.randomUUID?.()||`transfer-${Date.now()}`
+    }));
+    this.dispatchEvent(new CustomEvent("change",{detail:{type:"unzip",path:source.path,newPath:destination.path}}));
+    return {...stat,path:destination.path,backend:destination.backend};
   }
   async copy(fromValue,toValue,{overwrite=false,transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);

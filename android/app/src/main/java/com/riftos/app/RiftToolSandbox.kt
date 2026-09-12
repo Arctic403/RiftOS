@@ -13,7 +13,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /** App-private filesystem capability owned by the local Rift MCP tool host. */
-internal class RiftToolSandbox(context: Context, private val transferService: RiftTransferService = RiftTransferRegistry.service) {
+internal class RiftToolSandbox(context: Context) {
     companion object {
         private const val MAX_TOOL_BYTES = 8 * 1024 * 1024
         private const val MAX_LIST_ENTRIES = 5000
@@ -710,17 +710,11 @@ internal class RiftToolSandbox(context: Context, private val transferService: Ri
             workspaceMutationPath(args.getString("to")),
             args.optBoolean("overwrite", false)
         )
-        "archive" -> {
-            val job = RiftTransferJob("archive", args.getString("from"), args.getString("to"))
-            transferService.submit(job) {
-                createArchive(
-                    workspacePath(args.getString("from")),
-                    workspaceMutationPath(args.getString("to")),
-                    args.optBoolean("overwrite", false)
-                )
-            }
-            JSONObject().put("transferId", job.id).put("phase", job.phase)
-        }
+        "archive" -> createArchive(
+            workspacePath(args.getString("from")),
+            workspaceMutationPath(args.getString("to")),
+            args.optBoolean("overwrite", false)
+        )
         else -> throw IllegalArgumentException("Unsupported Rift Code Mode operation: $op")
     }
 

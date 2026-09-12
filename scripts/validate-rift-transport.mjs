@@ -9,6 +9,8 @@ const bridge = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowse
 const main = readFileSync('android/app/src/main/java/com/riftos/app/MainActivity.kt', 'utf8');
 const dispatcher = readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt', 'utf8');
 const core = readFileSync('src/riftcore.js', 'utf8');
+const workspaceAdapter = readFileSync('src/riftworkspace-android-adapter.js', 'utf8');
+const filesUi = readFileSync('src/riftos.js', 'utf8');
 const host = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolHost.kt', 'utf8');
 const sandbox = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt', 'utf8');
 const entry = readFileSync('src/riftandroid-entry.js', 'utf8');
@@ -43,6 +45,14 @@ const checks = [
   ['native move waits for source removal before resolving', dispatcher.includes('val result = moveNode(')],
   ['browser transfer IDs reach native progress', core.includes('transferId:transferId||') && dispatcher.includes('args.optString("transferId").ifBlank')],
   ['native progress targets the transfer UI', main.includes('window.RiftTransferUI?.__progress')],
+  ['mount import and export are binary-safe', !workspaceAdapter.includes('core.fs.readText') && workspaceAdapter.includes('core.fs.copy')],
+  ['mount moves use the native transfer engine', workspaceAdapter.includes('moveFromMount') && workspaceAdapter.includes('moveToMount') && workspaceAdapter.includes('core.fs.move')],
+  ['ZIP and unzip preserve both mount identities', core.includes('fromMountId:source.mountId') && core.includes('toMountId:destination.mountId') && dispatcher.includes('args.getString("toMountId")')],
+  ['ZIP and unzip have one core implementation each', (core.match(/async zip\(/g)||[]).length===1 && (core.match(/async unzip\(/g)||[]).length===1],
+  ['unzip has entry and expansion limits', dispatcher.includes('MAX_ARCHIVE_ENTRIES') && dispatcher.includes('MAX_EXTRACTED_BYTES')],
+  ['workspace archive completes before returning', !sandbox.includes('RiftTransferJob("archive"') && sandbox.includes('"archive" -> createArchive(')],
+  ['delete verifies the Android provider result', core.includes('if(removed!==true)throw new Error')],
+  ['file actions reject duplicate execution', filesUi.includes('if(fileActionBusy)return')],
   ['archive is locally implemented', sandbox.includes('private fun createArchive')],
   ['Workspace Live HTML is sandboxed', workspaceHost.includes('sandbox=\"allow-scripts\"') && !workspaceHost.includes('allow-same-origin')],
   ['Workspace Live uses narrow postMessage RPC', workspaceHost.includes('riftworkspace-live-v1') && workspaceHost.includes('Unsupported live workspace method')],
