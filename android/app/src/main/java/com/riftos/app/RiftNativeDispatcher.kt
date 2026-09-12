@@ -321,10 +321,15 @@ class RiftNativeDispatcher(
     }
 
     private fun zip(mountId: String, from: String, to: String, progress: TransferProgress? = null): JSONObject {
-        val destination = if (mountId == "__riftfs__") internalFile(to) else externalFile(mountId, to, true)
-        destination.parentFile?.mkdirs()
-        val output = if (mountId == "__riftfs__") destination.outputStream() else activity.contentResolver.openOutputStream(destination.uri, "wt")
-            ?: throw IllegalStateException("Could not create archive")
+        val output = if (mountId == "__riftfs__") {
+            val destination = internalFile(to)
+            destination.parentFile?.mkdirs()
+            destination.outputStream()
+        } else {
+            val destination = externalFile(mountId, to, true)
+            activity.contentResolver.openOutputStream(destination.uri, "wt")
+                ?: throw IllegalStateException("Could not create archive")
+        }
         output.buffered().use { stream ->
             ZipOutputStream(stream).use { zip ->
                 if (mountId == "__riftfs__") {
@@ -376,12 +381,21 @@ class RiftNativeDispatcher(
                 val safe = normalizeSegments(entry.name).joinToString("/")
                 if (safe.isNotBlank()) {
                     val targetPath = childPath(to, safe)
-                    val target = if (mountId == "__riftfs__") internalFile(targetPath) else externalFile(mountId, targetPath, true)
                     if (entry.isDirectory) {
-                        if (mountId == "__riftfs__") target.mkdirs()
+                        if (mountId == "__riftfs__") {
+                            internalFile(targetPath).mkdirs()
+                        } else {
+                            externalDirectory(mountId, targetPath, true)
+                        }
                     } else {
-                        val output = if (mountId == "__riftfs__") target.outputStream() else activity.contentResolver.openOutputStream(target.uri, "wt")
-                            ?: throw IllegalStateException("Could not write extracted file")
+                        val output = if (mountId == "__riftfs__") {
+                            internalFile(targetPath).parentFile?.mkdirs()
+                            internalFile(targetPath).outputStream()
+                        } else {
+                            val target = externalFile(mountId, targetPath, true)
+                            activity.contentResolver.openOutputStream(target.uri, "wt")
+                                ?: throw IllegalStateException("Could not write extracted file")
+                        }
                         output.use { out ->
                             val buffer = ByteArray(COPY_BUFFER_BYTES)
                             while (true) {
