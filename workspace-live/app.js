@@ -84,17 +84,22 @@ async function save(){
   }
 }
 
-function addActivity(event){
-  state.events.unshift(event);state.events=state.events.slice(0,120);
-  activityLog.innerHTML=state.events.map(item=>`<div class="activity-row"><time>${new Date(item.at||Date.now()).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})}</time><em>${escapeHTML(item.type||"change")}</em><span>${escapeHTML(item.path||"/")}</span></div>`).join("")||'<div class="empty">No events yet.</div>';
+function addActivities(events){
+  state.events=[...events].reverse().concat(state.events).slice(0,120);
+  activityLog.innerHTML=state.events.map(item=>`<div class="activity-row"><time>${new Date(item.at||Date.now()).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})}</time><em>${escapeHTML(item.type||"change")}${item.occurrences>1?` ×${item.occurrences}`:""}</em><span>${escapeHTML(item.path||"/")}</span></div>`).join("")||'<div class="empty">No events yet.</div>';
 }
 
 let refreshTimer=0,selectedReloadTimer=0;
 async function handleNativeEvent(event){
-  addActivity(event);
-  clearTimeout(refreshTimer);
-  refreshTimer=setTimeout(()=>loadDirectory(state.cwd).catch(()=>{}),120);
-  if(!state.selected||event.directory||event.path!==state.selected)return;
+  const events=event?.type==="batch"&&Array.isArray(event.events)?event.events:[event];
+  const changes=events.filter(item=>item&&typeof item==="object");
+  if(!changes.length)return;
+  addActivities(changes);
+  if(changes.some(item=>eventTouchesDirectory(String(item.path||""),state.cwd))){
+    clearTimeout(refreshTimer);
+    refreshTimer=setTimeout(()=>loadDirectory(state.cwd).catch(()=>{}),120);
+  }
+  if(!state.selected||!changes.some(item=>!item.directory&&item.path===state.selected))return;
   if(state.dirty){setConflict(`External change detected in ${state.selected} while you have unsaved edits.`);return;}
   if(!followLive.checked)return;
   clearTimeout(selectedReloadTimer);
