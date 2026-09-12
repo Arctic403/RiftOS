@@ -19,16 +19,11 @@ object RiftProjectExporter {
         "node_modules", "build", "dist", "out", "target", "vendor", "Pods",
         ".venv", "venv", "__pycache__", "coverage", ".pytest_cache", ".mypy_cache"
     )
-    private val sourceExtensions = setOf(
-        "kt", "kts", "java", "js", "mjs", "cjs", "ts", "tsx", "jsx", "css", "scss",
-        "html", "htm", "json", "json5", "yaml", "yml", "toml", "xml", "gradle",
-        "properties", "md", "txt", "c", "cc", "cpp", "cxx", "h", "hpp", "hxx",
-        "py", "rs", "go", "swift", "sh", "bash", "zsh", "ps1", "bat", "cmd", "sql",
-        "graphql", "gql", "proto", "cmake"
-    )
-    private val sourceNames = setOf(
-        "makefile", "dockerfile", "gemfile", "rakefile", "podfile", "procfile", "license",
-        "gradlew", ".gitignore", ".gitattributes", ".editorconfig", ".dockerignore"
+    private val binaryExtensions = setOf(
+        "png", "jpg", "jpeg", "gif", "webp", "ico", "pdf", "zip", "gz", "tgz", "7z", "rar",
+        "apk", "aab", "jar", "aar", "dex", "so", "dll", "exe", "bin", "class", "wasm",
+        "woff", "woff2", "ttf", "otf", "mp3", "wav", "ogg", "mp4", "mov", "avi", "sqlite",
+        "sqlite3", "db", "obj", "o", "a", "dylib", "blend", "fbx", "glb", "gltf"
     )
     private val secretNames = setOf(
         "local.properties", ".npmrc", ".pypirc", ".netrc", "credentials.json",
@@ -165,10 +160,10 @@ object RiftProjectExporter {
         val relative = root.toPath().relativize(file.toPath())
         if (relative.any { it.toString() in ignoredDirectories }) return "ignored-directory"
         val name = file.name.lowercase()
-        if (name.startsWith(".env") || name in secretNames || file.extension.lowercase() in secretExtensions) return "sensitive"
-        val isSource = file.extension.lowercase() in sourceExtensions || name in sourceNames
-        if (!isSource) return "non-source"
-        if (file.length() > MAX_SOURCE_FILE_BYTES) return "oversized-source"
+        val extension = file.extension.lowercase()
+        if (name.startsWith(".env") || name in secretNames || extension in secretExtensions) return "sensitive"
+        if (extension in binaryExtensions) return "binary"
+        if (file.length() > MAX_SOURCE_FILE_BYTES) return "oversized-text"
         if (looksBinary(file)) return "binary"
         return null
     }
