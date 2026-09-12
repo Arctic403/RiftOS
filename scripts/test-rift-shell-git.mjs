@@ -24,7 +24,7 @@ const fs={
   async list(path){path=normalize(path);return [...files.keys()].filter(key=>key.startsWith(path+'/')).map(key=>({path:key,kind:'file',size:Buffer.from(files.get(key),'base64').length}));}
 };
 const remoteReadme=gitSha(files.get('/home/RiftOS-main/README.md'));
-let pushedTree=null,pushedRef=null,remoteHead='head0';
+let pushedTree=null,pushedRef=null,remoteHead='head0',commitParent=null,afterBlob=null;
 const response=(body,status=200)=>({ok:status>=200&&status<300,status,json:async()=>body});
 const fetch=async(url,options={})=>{
   const path=new URL(url).pathname,method=options.method||'GET';
@@ -32,11 +32,18 @@ const fetch=async(url,options={})=>{
   if(path.endsWith('/branches/main'))return response({commit:{sha:remoteHead}});
   if(path.endsWith('/git/trees/main')||path.endsWith('/git/trees/head2'))return response({truncated:false,tree:[{path:'README.md',type:'blob',mode:'100644',size:7,sha:remoteReadme}]});
   if(path.endsWith('/git/blobs/'+remoteReadme))return response({encoding:'base64',content:encode('RiftOS\n')});
-  if(path.endsWith('/git/commits/head0'))return response({tree:{sha:'tree0'}});
-  if(path.endsWith('/git/blobs')&&method==='POST')return response({sha:gitSha(JSON.parse(options.body).content)});
+  if(path.endsWith('/git/commits/head0')||path.endsWith('/git/commits/head2'))return response({tree:{sha:'tree0'}});
+  if(path.endsWith('/git/blobs')&&method==='POST'){
+    const sha=gitSha(JSON.parse(options.body).content);
+    if(afterBlob)await afterBlob();
+    return response({sha});
+  }
   if(path.endsWith('/git/trees')&&method==='POST'){pushedTree=JSON.parse(options.body);return response({sha:'tree1'});}
-  if(path.endsWith('/git/commits')&&method==='POST')return response({sha:'commit1'});
-  if(path.includes('/git/refs/heads/main')&&method==='PATCH'){pushedRef=JSON.parse(options.body);remoteHead=pushedRef.sha;return response({object:{sha:'commit1'}});}
+  if(path.endsWith('/git/commits')&&method==='POST'){commitParent=JSON.parse(options.body).parents[0];return response({sha:'commit1'});}
+  if(path.includes('/git/refs/heads/main')&&method==='PATCH'){
+    if(commitParent!==remoteHead)return response({message:'Remote advanced; retry'},409);
+    pushedRef=JSON.parse(options.body);remoteHead=pushedRef.sha;return response({object:{sha:'commit1'}});
+  }
   if(path==='/user')return response({login:'tester'});
   throw new Error(`unexpected fetch ${method} ${path}`);
 };
@@ -83,3 +90,37 @@ assert.equal(files.get('/home/RiftOS-main/README.md'),encode('RiftOS\n'));
 assert(!files.has('/home/RiftOS-main/assets/icon.bin'));
 console.log('ok - failed replacement restores original; failed recovery retains verified backups');
 console.log('ok - successful pull installs the pinned tree');
+
+await fs.mkdir('/workspace/RiftOS-main');
+await fs.writeText('/workspace/RiftOS-main/README.md','RiftOS\n');
+await fs.writeBase64('/workspace/RiftOS-main/src/feature.bin','AP8Q');
+const workspace=context.window.RiftGit.workspace;
+output.length=0;
+await workspace(['status'],print);
+assert(output.some(line=>line.includes('root /workspace/RiftOS-main')));
+assert(output.includes('?? src/feature.bin'));
+sessionStorage.removeItem('riftgit-token');
+await assert.rejects(()=>workspace(['push','test'],print),/GitHub auth/);
+sessionStorage.setItem('riftgit-token','test-token');
+assert.equal(files.has('/workspace/RiftOS-main/.riftgit.json'),false);
+
+afterBlob=async()=>{await fs.writeText('/workspace/RiftOS-main/src/feature.bin','changed while uploading');afterBlob=null;};
+await assert.rejects(()=>workspace(['push','first attempt'],print),/Workspace changed during upload/);
+assert.equal(remoteHead,'head2');
+assert.equal(commitParent,'head0');
+afterBlob=async()=>{remoteHead='head3';afterBlob=null;};
+await assert.rejects(()=>workspace(['push','second attempt'],print),/Remote advanced/);
+assert.equal(remoteHead,'head3');
+remoteHead='head2';
+output.length=0;
+await context.window.RiftGit.run(['workspace','push','workspace','source','update'],print,{cwd:'/home'});
+assert(output.some(line=>line.includes('Publishing /workspace/RiftOS-main')));
+assert(pushedTree.tree.some(entry=>entry.path==='src/feature.bin'));
+assert.equal(pushedTree.base_tree,'tree0');
+assert.equal(commitParent,'head2');
+assert.deepEqual(pushedRef,{sha:'commit1',force:false});
+assert.equal(files.has('/workspace/RiftOS-main/.riftgit.json'),false);
+assert.equal(files.has('/home/.riftgit-current'),true);
+assert.equal(Buffer.from(files.get('/home/.riftgit-current'),'base64').toString(),'/home/RiftOS-main');
+console.log('ok - workspace status and push work without attaching or changing current repo');
+console.log('ok - no auth, local edits and remote races stop before publishing');

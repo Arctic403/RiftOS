@@ -6,6 +6,9 @@ const CURRENT_PATH="/home/.riftgit-current";
 const MAX_FILE=48*1024*1024;
 const MAX_TOTAL=256*1024*1024;
 const MAX_FILES=10000;
+const WORKSPACE_PROJECT="/workspace/RiftOS-main";
+const WORKSPACE_REPO={owner:"Arctic403",repo:"RiftOS",full:"Arctic403/RiftOS"};
+const WORKSPACE_BRANCH="main";
 
 const fs={
   async get(path){await core.ready;return core.fs.get(path);},
@@ -131,32 +134,66 @@ async function attach(repoArg,branchArg,pathArg,print,cwd){
   tree.forEach(item=>tracked[item.path]={blobSha:item.sha,size:Number(item.size||0),mode:item.mode||"100644"});const meta={format:"riftgit-v3",owner:repo.owner,repo:repo.repo,full:repo.full,branch,root,headSha:branchState.commit.sha,tracked,attachedAt:Date.now()};
   await saveMeta(meta);print(`Attached ${root}\nto ${repo.full}#${branch} at ${meta.headSha.slice(0,12)}.`);await status(print,false,root);
 }
-async function status(print=()=>{},quiet=false,cwd="/home"){
-  const meta=await loadMeta(cwd),local=await localFileMap(meta),modified=[],deleted=[],untracked=[];
+async function statusFor(meta,print=()=>{},quiet=false){
+  const local=await localFileMap(meta),modified=[],deleted=[],untracked=[];
   for(const [path,base] of Object.entries(meta.tracked||{})){const row=local.get(path);if(!row){deleted.push(path);continue;}if(await contentSha(meta,path)!==base.blobSha)modified.push(path);local.delete(path);}for(const path of local.keys())untracked.push(path);
   if(!quiet){print(`On ${meta.full} / ${meta.branch}\nroot ${meta.root}`);if(!modified.length&&!deleted.length&&!untracked.length)print("working tree clean");modified.forEach(path=>print(` M ${path}`));deleted.forEach(path=>print(` D ${path}`));untracked.forEach(path=>print(`?? ${path}`));}return {meta,modified,deleted,untracked};
 }
+async function status(print=()=>{},quiet=false,cwd="/home"){return statusFor(await loadMeta(cwd),print,quiet);}
 async function pull(print,cwd){
   const state=await status(()=>{},true,cwd);if(state.modified.length||state.deleted.length||state.untracked.length)throw new Error("Working tree has local changes. Push or discard them before pulling.");
   const meta=state.meta,repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,meta.branch);if(info.commit.sha===meta.headSha){print("Already up to date.");return;}
   print(`Pulling complete ${meta.full}#${meta.branch} tree...`);const result=await importBranch(meta,meta.branch,print);print(`Pull complete at ${result.headSha.slice(0,12)}.`);
 }
 async function createBlob(repo,base64){return api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/blobs`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:base64,encoding:"base64"})});}
-async function atomicPush(message,print,cwd){
-  if(!token())throw new Error("Push needs GitHub auth. Run: git auth");const state=await status(()=>{},true,cwd),{meta,modified,deleted,untracked}=state,changes=[...modified,...deleted,...untracked];if(!changes.length){print("nothing to push");return;}
+async function atomicPush(message,print,cwd,initialMeta=null){
+  if(!token())throw new Error("Push needs GitHub auth. Run: git auth");const state=initialMeta?await statusFor(initialMeta,()=>{},true):await status(()=>{},true,cwd),{meta,modified,deleted,untracked}=state,changes=[...modified,...deleted,...untracked];if(!changes.length){print("nothing to push");return;}
   if(changes.length>MAX_FILES)throw new Error(`Change set has ${changes.length} files; limit is ${MAX_FILES}.`);const repo={owner:meta.owner,repo:meta.repo},remote=await branchInfo(repo,meta.branch);
   if(meta.headSha&&remote.commit.sha!==meta.headSha)throw new Error("Remote branch changed since the last clone/pull. Run: git pull");const headCommit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits/${encodeURIComponent(remote.commit.sha)}`);
   const treeEntries=[],newBlobShas=new Map();let total=0,done=0;print(`Uploading ${changes.length} change(s) as one atomic commit...`);
   for(const path of [...modified,...untracked]){
     const row=await fs.stat(`${meta.root}/${path}`);total+=Number(row?.size||0);if(Number(row?.size||0)>MAX_FILE)throw new Error(`${path} exceeds the ${MAX_FILE/1048576} MB per-file limit.`);if(total>MAX_TOTAL)throw new Error(`Change set exceeds the ${MAX_TOTAL/1048576} MB sync limit.`);
-    const blob=await createBlob(repo,await fs.readBase64(`${meta.root}/${path}`));newBlobShas.set(path,blob.sha);treeEntries.push({path,mode:meta.tracked?.[path]?.mode||"100644",type:"blob",sha:blob.sha});done++;if(done%25===0||done===modified.length+untracked.length)print(`  ${done}/${modified.length+untracked.length} files uploaded`);
+    const base64=await fs.readBase64(`${meta.root}/${path}`),blob=await createBlob(repo,base64);
+    if(blob.sha!==await gitBlobSha(base64))throw new Error(`GitHub blob hash mismatch: ${path}`);
+    newBlobShas.set(path,blob.sha);treeEntries.push({path,mode:meta.tracked?.[path]?.mode||"100644",type:"blob",sha:blob.sha});done++;if(done%25===0||done===modified.length+untracked.length)print(`  ${done}/${modified.length+untracked.length} files uploaded`);
   }
   for(const path of deleted)treeEntries.push({path,mode:"100644",type:"blob",sha:null});
+  if(initialMeta){
+    const current=await statusFor(meta,()=>{},true);
+    for(const kind of ["modified","deleted","untracked"]){
+      if(current[kind].length!==state[kind].length||current[kind].some((path,index)=>path!==state[kind][index]))throw new Error("Workspace changed during upload. Nothing was committed; review and retry.");
+    }
+    for(const [path,sha] of newBlobShas)if(await contentSha(meta,path)!==sha)throw new Error(`Workspace changed during upload: ${path}. Nothing was committed; retry.`);
+  }
   const tree=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/trees`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_tree:headCommit.tree.sha,tree:treeEntries})});
   const commit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message||meta.pendingMessage||"RiftOS workspace update",tree:tree.sha,parents:[remote.commit.sha]})});
   await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/refs/heads/${meta.branch.split("/").map(encodeURIComponent).join("/")}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({sha:commit.sha,force:false})});
   for(const path of deleted)delete meta.tracked[path];for(const path of [...modified,...untracked])meta.tracked[path]={blobSha:newBlobShas.get(path),size:Number((await fs.stat(`${meta.root}/${path}`))?.size||0),mode:meta.tracked?.[path]?.mode||"100644"};
-  meta.headSha=commit.sha;delete meta.pendingMessage;await saveMeta(meta);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
+  meta.headSha=commit.sha;delete meta.pendingMessage;if(!initialMeta)await saveMeta(meta);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
+}
+async function workspaceState(){
+  const root=await fs.stat(WORKSPACE_PROJECT);
+  if(root?.kind!=="directory")throw new Error(`Workspace project folder not found: ${WORKSPACE_PROJECT}`);
+  const info=await branchInfo(WORKSPACE_REPO,WORKSPACE_BRANCH),tree=await treeFor(WORKSPACE_REPO,info.commit.sha),tracked={};
+  for(const item of tree)if(!ignoredRelative(item.path))tracked[item.path]={blobSha:item.sha,size:Number(item.size||0),mode:item.mode||"100644"};
+  return {format:"riftgit-v3",...WORKSPACE_REPO,branch:WORKSPACE_BRANCH,root:WORKSPACE_PROJECT,headSha:info.commit.sha,tracked};
+}
+let workspacePushRunning=false;
+async function workspaceCommand(args,print){
+  const command=(args.shift()||"status").toLowerCase();
+  if(!["status","push"].includes(command))throw new Error("usage: workspace [status|push [commit message]]");
+  if(command==="status"&&args.length)throw new Error("usage: workspace status");
+  if(command==="push"){
+    if(workspacePushRunning)throw new Error("A workspace push is already running");
+    if(!token())throw new Error("Push needs GitHub auth. Run: git auth");
+    workspacePushRunning=true;
+    try{
+      const meta=await workspaceState();
+      print(`Publishing ${meta.root} → ${meta.full}#${meta.branch} (remote ${meta.headSha.slice(0,12)})`);
+      return await atomicPush(args.join(" ").trim()||"Update RiftOS workspace",print,meta.root,meta);
+    }finally{workspacePushRunning=false;}
+  }
+  return statusFor(await workspaceState(),print,false);
 }
 async function sync(message,print,cwd){
   const state=await status(()=>{},true,cwd),repo={owner:state.meta.owner,repo:state.meta.repo},remote=await branchInfo(repo,state.meta.branch),dirty=state.modified.length+state.deleted.length+state.untracked.length;
@@ -179,7 +216,8 @@ async function listBranches(print,cwd){const meta=await loadMeta(cwd),rows=await
 
 async function run(input,print=console.log,context={}){
   const args=[...input];let cwd=normalizePath(context.cwd||"/home");if(args[0]==="-C"){if(!args[1])throw new Error("usage: git -C <folder> <command>");cwd=resolvePath(cwd,args[1]);args.splice(0,2);}const cmd=(args.shift()||"help").toLowerCase();
-  if(cmd==="help")return print(`RiftGit / full RiftFS sync\ngit auth | logout\ngit clone owner/repo [branch] [destination]\ngit init owner/repo [branch] [folder]   attach an existing folder\ngit use <folder|owner/repo>\ngit root | repo | status | pull\ngit commit -m <message>\ngit push [commit message]\ngit sync [commit message]            pull or atomic push in one command\ngit branches | switch <branch>\ngit -C <folder> <command>\n\nCommands use the shell's current directory. Repositories can live under /home, /workspace, or a mounted Android folder. Full directory trees and binary files are synchronized atomically.`);
+  if(cmd==="help")return print(`RiftGit / full RiftFS sync\ngit auth | logout\ngit workspace status                compare /workspace/RiftOS-main to Arctic403/RiftOS main\ngit workspace push [message]       publish workspace to main in one commit\ngit clone owner/repo [branch] [destination]\ngit init owner/repo [branch] [folder]   attach an existing folder\ngit use <folder|owner/repo>\ngit root | repo | status | pull\ngit commit -m <message>\ngit push [commit message]\ngit sync [commit message]            pull or atomic push in one command\ngit branches | switch <branch>\ngit -C <folder> <command>\n\nCommands use the shell's current directory. Repositories can live under /home, /workspace, or a mounted Android folder. Full directory trees and binary files are synchronized atomically.`);
+  if(cmd==="workspace")return workspaceCommand(args,print);
   if(cmd==="auth"){const value=prompt("GitHub token for this RiftOS session only:","");if(!value)return print("auth cancelled");sessionStorage.setItem("riftgit-token",value.trim());const me=await api("/user");return print(`Authenticated as ${me.login}. Token is session-only.`);}
   if(cmd==="logout"){sessionStorage.removeItem("riftgit-token");return print("GitHub session cleared.");}
   if(cmd==="clone"){if(!args[0])throw new Error("usage: git clone owner/repo [branch] [destination]");return clone(args[0],args[1],args[2],print,cwd);}
@@ -195,5 +233,5 @@ async function run(input,print=console.log,context={}){
   if(cmd==="push")return atomicPush(args.join(" "),print,cwd);if(cmd==="sync")return sync(args.join(" "),print,cwd);if(cmd==="branches"||cmd==="branch")return listBranches(print,cwd);if(cmd==="switch"||cmd==="checkout")return switchBranch(args[0],print,cwd);throw new Error(`unknown RiftGit command: ${cmd}`);
 }
 
-window.RiftGit=Object.freeze({run,status:(print,cwd)=>status(print||console.log,false,cwd||"/home"),clone:(repo,branch,path,print,cwd)=>clone(repo,branch,path,print||console.log,cwd||"/home"),pull:(print,cwd)=>pull(print||console.log,cwd||"/home"),push:(message,print,cwd)=>atomicPush(message,print||console.log,cwd||"/home"),get token(){return token();}});
+window.RiftGit=Object.freeze({run,status:(print,cwd)=>status(print||console.log,false,cwd||"/home"),clone:(repo,branch,path,print,cwd)=>clone(repo,branch,path,print||console.log,cwd||"/home"),pull:(print,cwd)=>pull(print||console.log,cwd||"/home"),push:(message,print,cwd)=>atomicPush(message,print||console.log,cwd||"/home"),workspace:(args,print)=>workspaceCommand([...args],print||console.log),get token(){return token();}});
 console.info("[RiftGit] cwd-aware full-tree filesystem bridge ready");

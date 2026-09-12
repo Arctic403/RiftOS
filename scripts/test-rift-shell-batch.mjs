@@ -32,7 +32,7 @@ await assert.rejects(()=>context.window.RiftShellBatch.run('write original.txt c
 console.log('ok - failed local batches restore files and directories');
 console.log('ok - successful and dry-run batch modes');
 console.log('ok - non-reversible commands are blocked and rolled back');
-for(const script of ['unknown thing','cp only-one','ls --bad','head original.txt nope','write /workspace x','git push','workspace rollback','write /mounts/card/file x']){
+for(const script of ['unknown thing','cp only-one','ls --bad','head original.txt nope','write /workspace x','git push','workspace rollback','workspace push publish','write /mounts/card/file x']){
   await assert.rejects(()=>context.window.RiftShellBatch.run(script,{state,execute,resolve,dryRun:true,print:()=>{}}));
 }
 allowed=false;

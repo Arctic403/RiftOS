@@ -25,7 +25,7 @@ function split(script){
 function mutationTargets(command,state,resolve){
   const args=tokenize(command),cmd=(args.shift()||"").toLowerCase();
   if(NON_REVERSIBLE.has(cmd))throw new Error(`${cmd} cannot run inside an atomic batch; run it separately`);
-  if(cmd==="workspace"&&(args[0]||"").toLowerCase()==="rollback")throw new Error("workspace rollback cannot run inside another atomic batch");
+  if(cmd==="workspace"&&["rollback","push"].includes((args[0]||"").toLowerCase()))throw new Error(`workspace ${args[0]} cannot run inside an atomic batch`);
   const path=value=>resolve(state.cwd,value);
   if(["write","touch","mkdir","rm"].includes(cmd))return args[0]?[path(args[0])]:[];
   if(cmd==="cp")return args[1]?[path(args[1])]:[];
