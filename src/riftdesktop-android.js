@@ -99,22 +99,32 @@ async function saveIconGeometry(card){
     const key=card.dataset.open||card.textContent.trim();
     const current=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};
     const icons=current.icons||{};
-    icons[key]={left:clamp(rect.left-bounds.left,0,Math.max(0,bounds.width-90)),top:clamp(rect.top-bounds.top,0,Math.max(0,bounds.height-90))};
+    icons[key]=clampIconGeometry(card,rect.left-bounds.left+workspace.scrollLeft,rect.top-bounds.top+workspace.scrollTop);
     await persistDesktopSettings({icons});
   }catch(_){ }
+}
+function clampIconGeometry(card,left,top){
+  const width=card.offsetWidth||84,height=card.offsetHeight||90;
+  return{left:clamp(Number(left)||0,0,Math.max(0,workspace.clientWidth-width)),top:clamp(Number(top)||0,0,Math.max(0,workspace.clientHeight-height))};
 }
 async function restoreIconGeometry(card){
   try{
     const data=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};
     const saved=data.icons?.[card.dataset.open||card.textContent.trim()];
-    if(saved){card.style.position='absolute';card.style.left=`${Number(saved.left)||0}px`;card.style.top=`${Number(saved.top)||0}px`;}
+    if(saved){const geometry=clampIconGeometry(card,saved.left,saved.top);card.style.position='absolute';card.style.left=`${geometry.left}px`;card.style.top=`${geometry.top}px`;}
   }catch(_){ }
+}
+function clampDesktopIcons(){
+  document.querySelectorAll('.app-grid .app-card').forEach(card=>{
+    if(card.style.position!=='absolute')return;
+    const geometry=clampIconGeometry(card,parseFloat(card.style.left),parseFloat(card.style.top));
+    card.style.left=`${geometry.left}px`;card.style.top=`${geometry.top}px`;
+  });
 }
 function applyWallpaper(){
   document.documentElement.style.setProperty('--rift-desktop-wallpaper',desktopWallpaper||'');
 }
 function resetDesktopLayout(){
-  persistDesktopSetting('icons',{});
   persistDesktopSetting('icons',{});
   document.querySelectorAll('.app-card').forEach(card=>{
     card.style.position='';
@@ -170,7 +180,7 @@ window.addEventListener('riftos:show-desktop',()=>{activeWindow=null;syncTaskbar
 
 window.addEventListener('pointerdown',event=>{if(event.pointerType==='mouse'){inputState.mouse=true;root.classList.add('rift-hardware-mouse');}},true);
 window.addEventListener('keydown',event=>{inputState.keyboard=true;root.classList.add('rift-hardware-keyboard');if(event.altKey&&event.key==='Tab'){event.preventDefault();const list=wm()?.list?.()||[];if(!list.length)return;const index=Math.max(0,list.findIndex(item=>item.window===activeWindow));const next=list[(index+(event.shiftKey?-1:1)+list.length)%list.length];restore(next.window);return;}if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='d'){event.preventDefault();cycleDesktopPreference();return;}if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='m'){event.preventDefault();setVirtualMouse(!inputState.virtualMouse);return;}if(event.key==='Escape'&&startMenu.classList.contains('open')){startMenu.classList.remove('open');return;}},true);
-window.addEventListener('resize',()=>{applyDesktopMode();allWindows().forEach(win=>{if(desktopEnabled()&&!win.classList.contains('rift-maximized')&&!win.classList.contains('rift-minimized')){const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();applyGeometry(win,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}});});
+window.addEventListener('resize',()=>{applyDesktopMode();clampDesktopIcons();allWindows().forEach(win=>{if(desktopEnabled()&&!win.classList.contains('rift-maximized')&&!win.classList.contains('rift-minimized')){const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();applyGeometry(win,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}});});
 window.addEventListener('riftos:launcher-ready',()=>{
   applyDesktopMode();
   document.querySelectorAll('.app-card').forEach(card=>{
