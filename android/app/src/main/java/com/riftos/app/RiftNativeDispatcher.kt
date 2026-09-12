@@ -22,15 +22,12 @@ import org.json.JSONObject
 import java.io.File
 import java.net.URLConnection
 import java.util.UUID
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 class RiftNativeDispatcher(
     private val activity: Activity,
