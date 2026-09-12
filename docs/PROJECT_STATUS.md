@@ -67,7 +67,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - `RiftMcpServer` is an in-process MCP JSON-RPC server with no listening socket.
 - Filesystem scope is exactly `filesDir/riftfs/workspace`.
 - Read/write permission gates are authoritative on-device.
-- `rift_workspace_exec` supports bounded project inspection, symbol/reference lookup, surgical reads, guarded patches, transactional multi-file edits and local archive creation.
+- `rift_workspace_exec` supports bounded project inspection, symbol/reference lookup, surgical reads, guarded patches, transactional multi-file edits, full file/tree hashing, atomic local archive creation and traversal-safe bounded ZIP extraction.
 - Strict `rift-tools-v2` JSON packets are supported with request/call correlation.
 - Legacy `<rift_call>` envelopes remain available for compatibility.
 - Optional outbound-only WSS relay client, disabled until the user supplies a secure endpoint and pairing token.

@@ -174,7 +174,7 @@ class RiftAiJournal(context: Context) {
                 capturePath(id, args.optString("from"))
                 capturePath(id, args.optString("to"))
             }
-            "rift_copy" -> capturePath(id, args.optString("to"))
+            "rift_copy", "rift_archive", "rift_extract" -> capturePath(id, args.optString("to"))
             "rift_workspace_exec" -> captureWorkspaceBatch(id, args)
         }
     }
@@ -194,18 +194,18 @@ class RiftAiJournal(context: Context) {
                     capturePath(id, mutationPath(operation.optString("from")))
                     capturePath(id, mutationPath(operation.optString("to")))
                 }
-                "copy", "archive" -> capturePath(id, mutationPath(operation.optString("to")))
+                "copy", "archive", "extract" -> capturePath(id, mutationPath(operation.optString("to")))
             }
         }
     }
 
     private fun toolMutates(name: String, args: JSONObject): Boolean {
-        if (name in setOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy")) return true
+        if (name in setOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")) return true
         if (name != "rift_workspace_exec") return false
         val operations = args.optJSONArray("operations") ?: return false
         for (index in 0 until operations.length()) {
             val op = operations.optJSONObject(index)?.optString("op")?.trim()?.lowercase().orEmpty()
-            if (op in setOf("write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive")) return true
+            if (op in setOf("write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")) return true
         }
         return false
     }
@@ -687,7 +687,7 @@ class RiftAiJournal(context: Context) {
     }
 
     private fun toolTarget(name: String, args: JSONObject): String = when (name) {
-        "rift_move", "rift_copy" -> "${args.optString("from")} → ${args.optString("to")}".take(500)
+        "rift_move", "rift_copy", "rift_archive", "rift_extract" -> "${args.optString("from")} → ${args.optString("to")}".take(500)
         "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
         "rift_info" -> "sandbox"
         else -> args.optString("path").take(500)

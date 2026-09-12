@@ -2,15 +2,63 @@ package com.riftos.app
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 
 /** Small in-process MCP JSON-RPC server backed by RiftToolHost. */
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.15.0-relay-transport"
+        private const val SERVER_VERSION = "0.16.0-local-idempotency"
+        private const val COMPLETED_TTL_MS = 2 * 60 * 1000L
+        private const val MAX_COMPLETED_REQUESTS = 128
     }
 
+    private data class CompletedRequest(val response: String, val expiresAt: Long)
+    private val requestLock = Any()
+    private val inFlight = mutableMapOf<String, MutableList<(JSONObject) -> Unit>>()
+    private val completed = LinkedHashMap<String, CompletedRequest>()
+
     fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) {
+        if (request.optString("method") != "tools/call") {
+            dispatch(request, reply)
+            return
+        }
+
+        // The HTTP relay may retry after losing a response. Coalesce identical JSON-RPC
+        // tool calls on-device so a local mutation is never executed twice.
+        val key = requestKey(request)
+        var cachedResponse: String? = null
+        var joinedInFlight = false
+        synchronized(requestLock) {
+            pruneCompletedLocked()
+            val cached = completed[key]
+            if (cached != null) {
+                cachedResponse = cached.response
+            } else {
+                val waiters = inFlight[key]
+                if (waiters != null) {
+                    waiters.add(reply)
+                    joinedInFlight = true
+                } else {
+                    inFlight[key] = mutableListOf(reply)
+                }
+            }
+        }
+        cachedResponse?.let {
+            reply(JSONObject(it))
+            return
+        }
+        if (joinedInFlight) return
+
+        try {
+            dispatch(request) { response -> completeRequest(key, response) }
+        } catch (failure: Throwable) {
+            val id = request.opt("id") ?: JSONObject.NULL
+            completeRequest(key, error(id, -32603, failure.message ?: "Local MCP execution failed"))
+        }
+    }
+
+    private fun dispatch(request: JSONObject, reply: (JSONObject) -> Unit) {
         val id = request.opt("id") ?: JSONObject.NULL
         val method = request.optString("method")
         val params = request.optJSONObject("params") ?: JSONObject()
@@ -22,6 +70,48 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
             "tools/call" -> handleToolCall(id, params, reply)
             else -> reply(error(id, -32601, "Method not found: $method"))
         }
+    }
+
+    private fun completeRequest(key: String, response: JSONObject) {
+        val serialized = response.toString()
+        val waiters = synchronized(requestLock) {
+            completed[key] = CompletedRequest(serialized, System.currentTimeMillis() + COMPLETED_TTL_MS)
+            while (completed.size > MAX_COMPLETED_REQUESTS) {
+                val oldest = completed.entries.iterator()
+                if (oldest.hasNext()) {
+                    oldest.next()
+                    oldest.remove()
+                }
+            }
+            inFlight.remove(key).orEmpty()
+        }
+        waiters.forEach { waiter -> runCatching { waiter(JSONObject(serialized)) } }
+    }
+
+    private fun pruneCompletedLocked() {
+        val now = System.currentTimeMillis()
+        val entries = completed.entries.iterator()
+        while (entries.hasNext()) {
+            if (entries.next().value.expiresAt <= now) entries.remove()
+        }
+    }
+
+    private fun requestKey(request: JSONObject): String {
+        val canonical = canonicalJson(request)
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun canonicalJson(value: Any?): String = when (value) {
+        null, JSONObject.NULL -> "null"
+        is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { key ->
+            "${JSONObject.quote(key)}:${canonicalJson(value.opt(key))}"
+        }
+        is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonicalJson(value.opt(it)) }
+        is String -> JSONObject.quote(value)
+        is Boolean, is Number -> value.toString()
+        else -> JSONObject.quote(value.toString())
     }
 
     private fun handleToolCall(id: Any, params: JSONObject, reply: (JSONObject) -> Unit) {

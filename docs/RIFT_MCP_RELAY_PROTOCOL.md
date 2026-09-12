@@ -47,4 +47,6 @@ Protocol-level failures use `mcp.error` with the same `requestId`. Relay keepali
 - Generate unpredictable request IDs and enforce request timeouts.
 - Limit messages to 1,000,000 UTF-16 characters on-device and apply tighter byte limits at the edge where practical.
 - Never interpret tool arguments in the relay. Forward complete MCP JSON-RPC objects unchanged.
+- Never persist MCP payloads or tool results in Durable Object storage; only socket and pending-response correlation live in memory.
+- Coalesce identical retried `tools/call` requests inside the on-device `RiftMcpServer`, including requests already in flight.
 - Keep `RiftToolHost` permissions and `RiftToolSandbox` as the final authority.

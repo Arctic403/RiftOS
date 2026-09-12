@@ -158,6 +158,7 @@ export class RiftRelayRoom {
   }
 
   webSocketMessage(socket, raw) {
+    if (socket !== this.socket) return;
     if (typeof raw !== "string" || raw.length > MAX_BODY_BYTES) {
       socket.close(1009, "Message too large");
       return;
@@ -191,12 +192,14 @@ export class RiftRelayRoom {
   }
 
   webSocketClose(socket) {
-    if (this.socket === socket) this.socket = null;
+    if (this.socket !== socket) return;
+    this.socket = null;
     this.failPending("RiftOS device disconnected");
   }
 
   webSocketError(socket) {
-    if (this.socket === socket) this.socket = null;
+    if (this.socket !== socket) return;
+    this.socket = null;
     this.failPending("RiftOS device connection failed");
   }
 

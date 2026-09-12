@@ -24,6 +24,8 @@ import java.net.URLConnection
 import java.util.UUID
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.IOException
+import java.io.OutputStream
 import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -104,7 +106,11 @@ class RiftNativeDispatcher(
     fun completeDirectoryPick(requestId: String, uri: Uri) {
         val mountId = "android-${UUID.randomUUID()}"
         val doc = DocumentFile.fromTreeUri(activity, uri)
-        val name = doc?.name?.takeIf { it.isNotBlank() } ?: "Android Files"
+        if (doc == null || !doc.isDirectory || !doc.canWrite()) {
+            resultSink(requestId, false, null, "Selected Android folder is not writable")
+            return
+        }
+        val name = doc.name?.takeIf { it.isNotBlank() } ?: "Android Files"
         val record = JSONObject().put("uri", uri.toString()).put("name", name).put("persistent", true)
         prefs.edit().putString("mount:$mountId", record.toString()).apply()
         resultSink(requestId, true, JSONObject().put("mountId", mountId).put("name", name).put("persistent", true).put("system", false), null)
@@ -163,6 +169,9 @@ class RiftNativeDispatcher(
                 args.getString("toMountId"), args.optString("to"),
                 args.optBoolean("overwrite", false), progress
             )
+            if (args.getString("fromMountId") != args.getString("toMountId")) {
+                verifyTransferComplete(manifest, progress, args.getString("fromMountId") == "__riftfs__")
+            }
             emitTransfer(progress, "complete", args.optString("to"), true)
             result
         }
@@ -178,6 +187,9 @@ class RiftNativeDispatcher(
                 args.getString("toMountId"), args.optString("to"),
                 args.optBoolean("overwrite", false), progress
             )
+            if (args.getString("fromMountId") != args.getString("toMountId")) {
+                verifyTransferComplete(manifest, progress, args.getString("fromMountId") == "__riftfs__")
+            }
             emitTransfer(progress, "complete", args.optString("to"), true)
             result
         }
@@ -250,7 +262,30 @@ class RiftNativeDispatcher(
         val found = parent.findFile(name)
         if (found != null) { require(found.isFile) { "$path is not a file" }; return found }
         require(create) { "File not found: $path" }
-        return parent.createFile("application/octet-stream", name) ?: throw IllegalStateException("Could not create $path")
+        val mime = URLConnection.guessContentTypeFromName(name) ?: "application/octet-stream"
+        val uri = DocumentsContract.createDocument(activity.contentResolver, parent.uri, mime, name)
+            ?: throw IllegalStateException("Android provider could not create $path")
+        val created = DocumentFile.fromSingleUri(activity, uri)
+            ?: throw IllegalStateException("Android provider returned an invalid file for $path")
+        if (created.name != name) {
+            runCatching { created.delete() }
+            throw IllegalStateException("Android provider changed file name '$name' to '${created.name}'")
+        }
+        return created
+    }
+
+    private fun openExternalOutput(file: DocumentFile, path: String): OutputStream {
+        var lastError: Throwable? = null
+        // Samsung and third-party SAF providers do not all support the same truncate mode.
+        for (mode in listOf("rwt", "wt", "w")) {
+            try {
+                val stream = activity.contentResolver.openOutputStream(file.uri, mode)
+                if (stream != null) return stream
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        throw IOException("Android provider could not open $path for writing", lastError)
     }
 
     private fun mountedDirectories(): JSONArray {
@@ -310,7 +345,7 @@ class RiftNativeDispatcher(
     private fun writeText(mountId: String, path: String, text: String): JSONObject {
         if (mountId == "__riftfs__") { val file=internalFile(path); file.parentFile?.mkdirs(); file.writeText(text,Charsets.UTF_8); return stat(mountId,path)!! }
         val doc=externalFile(mountId,path,true)
-        activity.contentResolver.openOutputStream(doc.uri,"wt")?.bufferedWriter(Charsets.UTF_8)?.use{it.write(text)} ?: throw IllegalStateException("Could not write $path")
+        openExternalOutput(doc,path).bufferedWriter(Charsets.UTF_8).use{it.write(text)}
         return stat(mountId,path)!!
     }
     private fun mkdir(mountId: String, path: String): JSONObject {
@@ -324,7 +359,15 @@ class RiftNativeDispatcher(
             throw IllegalArgumentException("Cannot delete a RiftFS system root")
         }
         if(mountId=="__riftfs__"){val file=internalFile(path);if(!file.exists())return true;return if(file.isDirectory)file.deleteRecursively()else file.delete()}
-        return externalNode(mountId,path)?.delete() ?: true
+        val node = externalNode(mountId, path) ?: return true
+        fun removeTree(current: DocumentFile): Boolean {
+            var removedChildren = true
+            if (current.isDirectory) {
+                current.listFiles().forEach { child -> if (!removeTree(child)) removedChildren = false }
+            }
+            return removedChildren && current.delete()
+        }
+        return removeTree(node)
     }
 
     private fun zip(
@@ -347,8 +390,7 @@ class RiftNativeDispatcher(
             internalFile(to).also { it.parentFile?.mkdirs() }.outputStream()
         } else {
             val destination = externalFile(toMountId, to, true)
-            activity.contentResolver.openOutputStream(destination.uri, "wt")
-                ?: throw IllegalStateException("Could not create archive: $to")
+            openExternalOutput(destination, to)
         }
         try {
             ZipOutputStream(BufferedOutputStream(output)).use { archive ->
@@ -452,8 +494,7 @@ class RiftNativeDispatcher(
                                 internalFile(targetPath).also { it.parentFile?.mkdirs() }.outputStream()
                             } else {
                                 val target = externalFile(toMountId, targetPath, true)
-                                activity.contentResolver.openOutputStream(target.uri, "wt")
-                                    ?: throw IllegalStateException("Could not write extracted file: $targetPath")
+                                openExternalOutput(target, targetPath)
                             }
                             created += targetPath
                             output.use { out ->
@@ -525,8 +566,7 @@ class RiftNativeDispatcher(
                 destination.outputStream().buffered(COPY_BUFFER_BYTES).use(::streamTo)
             } else {
                 val destination = externalFile(toMountId, toPath, true)
-                activity.contentResolver.openOutputStream(destination.uri, "wt")?.buffered(COPY_BUFFER_BYTES)?.use(::streamTo)
-                    ?: throw IllegalStateException("Could not write $toPath")
+                openExternalOutput(destination, toPath).buffered(COPY_BUFFER_BYTES).use(::streamTo)
             }
         }
     }
@@ -568,6 +608,18 @@ class RiftNativeDispatcher(
                 ?: return@runCatching null
             stat(toMountId, toPath)
         }.getOrNull()
+    }
+
+    private fun verifyTransferComplete(manifest: RiftTransferManifest, progress: TransferProgress, verifyBytes: Boolean) {
+        require(progress.files.toLong() == manifest.files) {
+            "Transfer incomplete: copied ${progress.files} of ${manifest.files} files"
+        }
+        require(progress.directories.toLong() == manifest.directories) {
+            "Transfer incomplete: created ${progress.directories} of ${manifest.directories} directories"
+        }
+        if (verifyBytes) require(progress.bytes == manifest.bytes) {
+            "Transfer incomplete: wrote ${progress.bytes} of ${manifest.bytes} bytes"
+        }
     }
 
     private fun buildTransferManifest(fromMountId: String, path: String): RiftTransferManifest {
@@ -616,7 +668,13 @@ class RiftNativeDispatcher(
 
         try {
             if (source.optString("kind") == "file") {
-                copyFileBytes(fromMountId, fromPath, toMountId, toPath, progress)
+                try {
+                    copyFileBytes(fromMountId, fromPath, toMountId, toPath, progress)
+                } catch (error: Throwable) {
+                    throw IOException("Copy failed at $fromPath -> $toPath: ${error.message ?: error.javaClass.simpleName}", error)
+                }
+                val copied = stat(toMountId, toPath)
+                require(copied?.optString("kind") == "file") { "Copied file is missing: $toPath" }
                 if (progress != null) progress.files++
                 emitTransfer(progress, "transferring", fromPath, true)
             } else {
@@ -692,7 +750,7 @@ class RiftNativeDispatcher(
         val out=JSONArray()
         if(mountId=="__riftfs__"){
             val base=internalFile(path);if(!base.exists())return out;require(base.isDirectory){"$path is not a directory"}
-            fun walk(dir:File,prefix:String){dir.listFiles()?.sortedBy{it.name.lowercase()}?.forEach{child->val relative=if(prefix.isBlank())child.name else "$prefix/${child.name}";out.put(JSONObject().put("path",relative).put("kind",if(child.isDirectory)"directory" else "file").put("size",if(child.isFile)child.length()else 0L).put("modified",child.lastModified()).put("mime",if(child.isFile) URLConnection.guessContentTypeFromName(child.name) ?: JSONObject.NULL else JSONObject.NULL));if(recursive&&child.isDirectory)walk(child,relative)}}
+            fun walk(dir:File,prefix:String){(dir.listFiles() ?: throw IllegalStateException("Could not list ${dir.path}")).sortedBy{it.name.lowercase()}.forEach{child->val relative=if(prefix.isBlank())child.name else "$prefix/${child.name}";out.put(JSONObject().put("path",relative).put("kind",if(child.isDirectory)"directory" else "file").put("size",if(child.isFile)child.length()else 0L).put("modified",child.lastModified()).put("mime",if(child.isFile) URLConnection.guessContentTypeFromName(child.name) ?: JSONObject.NULL else JSONObject.NULL));if(recursive&&child.isDirectory)walk(child,relative)}}
             walk(base,"");return out
         }
         val base=externalDirectory(mountId,path,false)

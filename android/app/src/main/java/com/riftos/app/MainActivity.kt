@@ -19,6 +19,9 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 import androidx.webkit.WebViewCompat
@@ -52,6 +55,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Target SDK 35+ is edge-to-edge by default. Own the insets explicitly so the
+        // WebView viewport never extends behind Samsung's side navigation bar/cutout.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = 0xff0a0d12.toInt()
         window.navigationBarColor = 0xff0a0d12.toInt()
 
@@ -59,8 +65,26 @@ class MainActivity : Activity() {
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
-        rootView = FrameLayout(this)
-        webView = WebView(this)
+        rootView = FrameLayout(this).apply {
+            clipChildren = true
+            clipToPadding = true
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) { view, windowInsets ->
+            val safe = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            if (view.paddingLeft != safe.left || view.paddingTop != safe.top ||
+                view.paddingRight != safe.right || view.paddingBottom != safe.bottom
+            ) {
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            }
+            windowInsets
+        }
+        webView = WebView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isVerticalScrollBarEnabled = false
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
+        }
         systemDump = RiftSystemDump(this)
         workspaceWatcher = RiftWorkspaceWatcher(this, ::sendWorkspaceEvent)
         rootView.addView(
@@ -68,6 +92,7 @@ class MainActivity : Activity() {
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         )
         setContentView(rootView)
+        ViewCompat.requestApplyInsets(rootView)
         browserWindow = RiftBrowserWindow(
             activity = this,
             host = rootView,

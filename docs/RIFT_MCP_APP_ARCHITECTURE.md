@@ -57,6 +57,7 @@ Current tools:
 ```text
 rift_info
 rift_stat
+rift_hash
 rift_list
 rift_read_text
 rift_write_text
@@ -64,6 +65,8 @@ rift_mkdir
 rift_remove
 rift_move
 rift_copy
+rift_archive
+rift_extract
 rift_audit
 rift_scan
 rift_project_export
@@ -86,8 +89,9 @@ Historical `tool-sandbox/workspace` and `browser-sandbox/workspace` directories 
 `rift_workspace_exec` is the large-project path. One model-visible MCP call carries an ordered declarative program that can perform many local operations:
 
 ```text
-project  stat  list  search  read
-write    replace  patch  mkdir  remove  move  rename  copy
+project  snapshot  stat  hash  list  search  symbols  references
+read  read_range  read_symbol  write  replace  patch  patch_range
+apply_hunks  mkdir  remove  move  rename  copy  archive  extract
 ```
 
 This is intentionally not arbitrary JavaScript evaluated inside the `chatgpt.com` origin. The ChatGPT page receives only the declarative operation envelope; execution stays in the device-side sandbox. That avoids giving model-produced code access to ChatGPT DOM/session state while still collapsing many local filesystem actions into one ChatGPT↔Rift round trip.
@@ -104,7 +108,7 @@ After the audit, the model returns complete ordinary files or guarded patches as
 
 Rift AI journaling is session-scoped, not a global side effect of MCP. The model emits the same ordinary `<rift_call>` envelope as normal. While a Rift AI task is active, the browser adapter privately adds `_meta["riftos/aiSessionId"]` to the resulting local `tools/call`. `RiftMcpServer` passes that value to `RiftToolHost`, and `RiftAiJournal` tracks the call only when it matches the current active transport session. The session ID is not a model argument or tool-schema field.
 
-Before each matching mutating tool (`rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`) and each mutating `rift_workspace_exec` batch, the journal captures the original affected path(s). A capture failure blocks the mutation. Matching reads/list/stat calls are logged but do not create rollback copies. Normal MCP calls outside the active Rift AI transport remain fully usable and are not added to the AI rollback set.
+Before each matching mutating tool (`rift_write_text`, `rift_mkdir`, `rift_remove`, `rift_move`, `rift_copy`, `rift_archive`, `rift_extract`) and each mutating `rift_workspace_exec` batch, the journal captures the original affected path(s). A capture failure blocks the mutation. Matching reads/list/stat calls are logged but do not create rollback copies. Normal MCP calls outside the active Rift AI transport remain fully usable and are not added to the AI rollback set.
 
 Journal state is stored under `filesDir/rift-ai`, outside the MCP-visible `riftfs/workspace`. The shell can inspect additions/deletions, request a bounded unified-style text diff, accept the current files as a new baseline or revert the captured mutations. Accept/revert are rejected while transport is active, and a new AI session cannot replace unreviewed changes. This review layer does not add MCP authority and is not visible as a ChatGPT tool.
 

@@ -4,12 +4,14 @@ import android.content.Context
 import android.os.StatFs
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /** App-private filesystem capability owned by the local Rift MCP tool host. */
@@ -34,10 +36,11 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_SNAPSHOT_FILES = 50_000
         private const val MAX_ARCHIVE_ENTRIES = 50_000
         private const val MAX_ARCHIVE_SOURCE_BYTES = 256L * 1024L * 1024L
+        private const val MAX_ARCHIVE_EXTRACTED_BYTES = 512L * 1024L * 1024L
         private const val LEGACY_ROOT_NAME = "tool-sandbox"
         private const val OLDER_LEGACY_ROOT_NAME = "browser-sandbox"
         private const val WORKSPACE_ROOT = "workspace"
-        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive")
+        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")
     }
 
     private val appContext = context.applicationContext
@@ -158,6 +161,7 @@ internal class RiftToolSandbox(context: Context) {
     private fun dispatch(method: String, args: JSONObject): Any? = when (method) {
         "sandbox.info" -> info()
         "fs.stat" -> stat(workspacePath(args.optString("path")))
+        "fs.hash" -> hashPath(workspacePath(args.getString("path")))
         "fs.list" -> list(workspacePath(args.optString("path")), args.optBoolean("recursive", false))
         "fs.readText" -> readText(workspacePath(args.getString("path")))
         "fs.writeText" -> writeText(workspaceMutationPath(args.getString("path")), args.optString("text"))
@@ -165,6 +169,8 @@ internal class RiftToolSandbox(context: Context) {
         "fs.remove" -> remove(workspaceMutationPath(args.getString("path")))
         "fs.move" -> move(workspaceMutationPath(args.getString("from")), workspaceMutationPath(args.getString("to")), args.optBoolean("overwrite", false))
         "fs.copy" -> copy(workspaceMutationPath(args.getString("from")), workspaceMutationPath(args.getString("to")), args.optBoolean("overwrite", false))
+        "fs.archive" -> createArchive(workspacePath(args.getString("from")), workspaceMutationPath(args.getString("to")), args.optBoolean("overwrite", false))
+        "fs.extract" -> extractArchive(workspacePath(args.getString("from")), workspaceMutationPath(args.getString("to")), args.optBoolean("overwrite", false))
         "workspace.exec" -> workspaceExec(args)
         "workspace.audit" -> audit(args.optString("path"))
         "workspace.scan" -> scan(args.optString("path"), args.optString("mode", "all"))
@@ -278,6 +284,64 @@ internal class RiftToolSandbox(context: Context) {
         return out
     }
 
+    private fun hashPath(path: String): JSONObject {
+        val target = sandboxFile(path)
+        require(target.exists()) { "Path not found: $path" }
+        if (target.isFile) {
+            return JSONObject()
+                .put("path", relativePath(target))
+                .put("kind", "file")
+                .put("size", target.length())
+                .put("sha256", fileSha256(target))
+        }
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update("RIFT_TREE_SHA256_V1\u0000".toByteArray(Charsets.UTF_8))
+        var entries = 0
+        var files = 0
+        var directories = 1
+        var bytes = 0L
+
+        fun update(value: String) = digest.update(value.toByteArray(Charsets.UTF_8))
+        fun visit(directory: File, prefix: String) {
+            val children = directory.listFiles()
+                ?: throw IllegalStateException("Could not read directory while hashing: ${relativePath(directory)}")
+            children.sortedBy { it.name }.forEach { child ->
+                require(isInsideRoot(child)) { "Hash traversal escaped Rift MCP sandbox" }
+                entries += 1
+                require(entries <= MAX_SNAPSHOT_FILES) { "Directory hash exceeds $MAX_SNAPSHOT_FILES entries" }
+                val relative = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+                if (child.isDirectory) {
+                    directories += 1
+                    update("D\u0000$relative\u0000")
+                    visit(child, relative)
+                } else {
+                    files += 1
+                    bytes += child.length()
+                    update("F\u0000$relative\u0000${child.length()}\u0000")
+                    child.inputStream().buffered().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            digest.update(buffer, 0, read)
+                        }
+                    }
+                    digest.update(0.toByte())
+                }
+            }
+        }
+        visit(target, "")
+        return JSONObject()
+            .put("path", relativePath(target))
+            .put("kind", "directory")
+            .put("entries", entries)
+            .put("files", files)
+            .put("directories", directories)
+            .put("bytes", bytes)
+            .put("sha256", digest.digest().joinToString("") { "%02x".format(it) })
+    }
+
     private fun list(path: String, recursive: Boolean): JSONArray = listLimited(path, recursive, MAX_LIST_ENTRIES)
 
     private fun listLimited(path: String, recursive: Boolean, requestedLimit: Int): JSONArray {
@@ -289,7 +353,9 @@ internal class RiftToolSandbox(context: Context) {
 
         fun walk(directory: File) {
             if (count >= limit) return
-            directory.listFiles()?.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))?.forEach { child ->
+            val children = directory.listFiles()
+                ?: throw IllegalStateException("Could not read directory: ${relativePath(directory)}")
+            children.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })).forEach { child ->
                 if (count >= limit) return@forEach
                 require(isInsideRoot(child)) { "Workspace entry escaped Rift MCP sandbox" }
                 count += 1
@@ -359,13 +425,26 @@ internal class RiftToolSandbox(context: Context) {
             .put("rangeSha256", sha256(selected))
     }
 
+    private fun writeBytesAtomic(file: File, bytes: ByteArray, label: String) {
+        val parent = file.parentFile ?: throw IllegalArgumentException("Destination has no parent: $label")
+        require(parent.exists() || parent.mkdirs()) { "Could not create destination parent: $label" }
+        val staged = File(parent, ".${file.name}.${UUID.randomUUID()}.writing")
+        try {
+            staged.writeBytes(bytes)
+            commitStaged(staged, file, label)
+        } catch (error: Throwable) {
+            deletePath(staged)
+            throw error
+        }
+    }
+
     private fun writeText(path: String, text: String): JSONObject {
         val bytes = text.toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_TOOL_BYTES) { "Text payload is too large for Rift MCP" }
         val file = sandboxFile(path)
         require(file != workspaceRoot) { "Workspace root is not a file" }
-        file.parentFile?.mkdirs()
-        file.writeBytes(bytes)
+        require(!file.exists() || file.isFile) { "Destination is a directory: $path" }
+        writeBytesAtomic(file, bytes, path)
         invalidateIndex(path)
         return stat(path)!!
     }
@@ -384,7 +463,7 @@ internal class RiftToolSandbox(context: Context) {
         val output = if (replaceAll) source.replace(find, replacement) else replaceFirstLiteral(source, find, replacement)
         val bytes = output.toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_TOOL_BYTES) { "Replacement result is too large for Rift MCP" }
-        file.writeBytes(bytes)
+        writeBytesAtomic(file, bytes, path)
         invalidateIndex(path)
         return JSONObject()
             .put("path", normalizedPath(path))
@@ -419,7 +498,7 @@ internal class RiftToolSandbox(context: Context) {
         }
         val bytes = current.toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_TOOL_BYTES) { "Patch result is too large for Rift MCP" }
-        file.writeBytes(bytes)
+        writeBytesAtomic(file, bytes, path)
         invalidateIndex(path)
         return JSONObject()
             .put("path", normalizedPath(path))
@@ -459,8 +538,9 @@ internal class RiftToolSandbox(context: Context) {
         val file = sandboxFile(path)
         if (!file.exists()) return true
         val removed = if (file.isDirectory) file.deleteRecursively() else file.delete()
-        if (removed) invalidateIndex(path)
-        return removed
+        require(removed && !file.exists()) { "Could not remove: $path" }
+        invalidateIndex(path)
+        return true
     }
 
     private fun move(from: String, to: String, overwrite: Boolean): JSONObject = batchIndexInvalidations {
@@ -469,13 +549,31 @@ internal class RiftToolSandbox(context: Context) {
         val source = sandboxFile(from)
         val destination = sandboxFile(to)
         require(source.exists()) { "Source not found: $from" }
-        if (destination.exists()) {
-            require(overwrite) { "Destination already exists: $to" }
-            val deleted = if (destination.isDirectory) destination.deleteRecursively() else destination.delete()
-            require(deleted) { "Could not replace destination: $to" }
+        require(source.canonicalFile != destination.canonicalFile) { "Move source and destination are identical" }
+        if (source.isDirectory) {
+            require(!destination.canonicalPath.startsWith(source.canonicalPath + File.separator)) { "Cannot move a directory inside itself" }
         }
-        destination.parentFile?.mkdirs()
-        require(source.renameTo(destination)) { "Could not move $from to $to" }
+        if (destination.exists()) require(overwrite) { "Destination already exists: $to" }
+        val parent = destination.parentFile ?: throw IllegalArgumentException("Destination has no parent: $to")
+        require(parent.exists() || parent.mkdirs()) { "Could not create destination parent: $to" }
+        val backup = File(parent, ".${destination.name}.${UUID.randomUUID()}.move-backup")
+        var backedUp = false
+        try {
+            if (destination.exists()) {
+                require(destination.renameTo(backup)) { "Could not stage existing destination: $to" }
+                backedUp = true
+            }
+            require(source.renameTo(destination)) { "Could not move $from to $to" }
+            if (backedUp) require(deletePath(backup)) { "Could not clear replaced destination backup: $to" }
+        } catch (error: Throwable) {
+            if (!source.exists() && destination.exists()) {
+                require(destination.renameTo(source)) { "Could not restore move source after failure: $from" }
+            }
+            if (backedUp && backup.exists()) {
+                require(backup.renameTo(destination)) { "Could not restore move destination after failure: $to" }
+            }
+            throw error
+        }
         invalidateIndex(from)
         invalidateIndex(to)
         return@batchIndexInvalidations stat(to)!!
@@ -491,16 +589,20 @@ internal class RiftToolSandbox(context: Context) {
         if (source.isDirectory) {
             require(!destination.canonicalPath.startsWith(source.canonicalPath + File.separator)) { "Cannot copy a directory inside itself" }
         }
-        if (destination.exists()) {
-            require(overwrite) { "Destination already exists: $to" }
-            val deleted = if (destination.isDirectory) destination.deleteRecursively() else destination.delete()
-            require(deleted) { "Could not replace destination: $to" }
-        }
-        destination.parentFile?.mkdirs()
-        if (source.isDirectory) {
-            require(source.copyRecursively(destination, overwrite = overwrite)) { "Could not copy $from to $to" }
-        } else {
-            source.copyTo(destination, overwrite = overwrite)
+        if (destination.exists()) require(overwrite) { "Destination already exists: $to" }
+        val parent = destination.parentFile ?: throw IllegalArgumentException("Destination has no parent: $to")
+        require(parent.exists() || parent.mkdirs()) { "Could not create destination parent: $to" }
+        val staged = File(parent, ".${destination.name}.${UUID.randomUUID()}.copying")
+        try {
+            if (source.isDirectory) {
+                require(source.copyRecursively(staged, overwrite = false)) { "Could not stage copy $from to $to" }
+            } else {
+                source.copyTo(staged, overwrite = false)
+            }
+            commitStaged(staged, destination, to)
+        } catch (error: Throwable) {
+            deletePath(staged)
+            throw error
         }
         invalidateIndex(to)
         return@batchIndexInvalidations stat(to)!!
@@ -567,7 +669,7 @@ internal class RiftToolSandbox(context: Context) {
                 require(currentOp.isNotBlank()) {
                     "Operation $index is missing op. Use flat JSON such as {\"op\":\"stat\",\"path\":\"workspace/project\"}."
                 }
-                if (dryRun && currentOp in setOf("mkdir", "remove", "move", "rename", "copy", "archive")) {
+                if (dryRun && currentOp in setOf("mkdir", "remove", "move", "rename", "copy", "archive", "extract")) {
                     throw IllegalArgumentException("dryRun supports reads and content edits only; structural operation '$currentOp' is not allowed")
                 }
 
@@ -655,6 +757,7 @@ internal class RiftToolSandbox(context: Context) {
             args.optInt("maxChars", 100_000)
         )
         "stat" -> stat(workspacePath(args.getString("path")))
+        "hash" -> hashPath(workspacePath(args.getString("path")))
         "list" -> listLimited(
             workspacePath(args.optString("path", WORKSPACE_ROOT)),
             args.optBoolean("recursive", false),
@@ -715,7 +818,42 @@ internal class RiftToolSandbox(context: Context) {
             workspaceMutationPath(args.getString("to")),
             args.optBoolean("overwrite", false)
         )
+        "extract" -> extractArchive(
+            workspacePath(args.getString("from")),
+            workspaceMutationPath(args.getString("to")),
+            args.optBoolean("overwrite", false)
+        )
         else -> throw IllegalArgumentException("Unsupported Rift Code Mode operation: $op")
+    }
+
+    private fun deletePath(file: File): Boolean =
+        !file.exists() || if (file.isDirectory) file.deleteRecursively() else file.delete()
+
+    private fun commitStaged(staged: File, destination: File, label: String) {
+        val parent = destination.parentFile ?: throw IllegalArgumentException("Destination has no parent: $label")
+        val backup = File(parent, ".${destination.name}.${UUID.randomUUID()}.backup")
+        var backedUp = false
+        try {
+            if (destination.exists()) {
+                require(destination.renameTo(backup)) { "Could not stage existing destination: $label" }
+                backedUp = true
+            }
+            if (!staged.renameTo(destination)) {
+                if (staged.isDirectory) {
+                    require(staged.copyRecursively(destination, overwrite = true)) { "Could not commit staged directory: $label" }
+                } else {
+                    staged.copyTo(destination, overwrite = true)
+                }
+                require(deletePath(staged)) { "Could not clear staging path: $label" }
+            }
+            if (backedUp) require(deletePath(backup)) { "Could not clear replaced destination backup: $label" }
+        } catch (error: Throwable) {
+            deletePath(destination)
+            if (backedUp && backup.exists()) {
+                require(backup.renameTo(destination)) { "Could not restore existing destination after failure: $label" }
+            }
+            throw error
+        }
     }
 
     private fun createArchive(from: String, to: String, overwrite: Boolean): JSONObject {
@@ -744,7 +882,9 @@ internal class RiftToolSandbox(context: Context) {
                         val directoryName = entryName.trimEnd('/') + "/"
                         zip.putNextEntry(ZipEntry(directoryName))
                         zip.closeEntry()
-                        node.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { child ->
+                        val children = node.listFiles()
+                            ?: throw IllegalStateException("Could not read archive source directory: ${relativePath(node)}")
+                        children.sortedBy { it.name.lowercase() }.forEach { child ->
                             add(child, "$directoryName${child.name}")
                         }
                     } else {
@@ -757,11 +897,7 @@ internal class RiftToolSandbox(context: Context) {
                 }
                 add(source, source.name)
             }
-            if (destination.exists()) {
-                val removed = if (destination.isDirectory) destination.deleteRecursively() else destination.delete()
-                require(removed) { "Could not replace archive destination: $to" }
-            }
-            if (!temporary.renameTo(destination)) temporary.copyTo(destination, overwrite = true).also { temporary.delete() }
+            commitStaged(temporary, destination, to)
             batchIndexInvalidations {
                 invalidateIndex(to)
             }
@@ -772,11 +908,86 @@ internal class RiftToolSandbox(context: Context) {
         }
     }
 
+    private fun extractArchive(from: String, to: String, overwrite: Boolean): JSONObject {
+        val source = sandboxFile(from)
+        val destination = sandboxFile(to)
+        require(source.isFile) { "ZIP archive not found: $from" }
+        require(from.lowercase().endsWith(".zip")) { "Archive source must end with .zip" }
+        require(destination.canonicalFile != workspaceRoot.canonicalFile) { "Cannot extract over the workspace root" }
+        if (destination.exists()) require(overwrite) { "Destination already exists: $to" }
+        val parent = destination.parentFile ?: throw IllegalArgumentException("Destination has no parent: $to")
+        require(parent.exists() || parent.mkdirs()) { "Could not create destination parent: $to" }
+        val temporary = File(parent, ".${destination.name}.${UUID.randomUUID()}.extracting")
+        require(temporary.mkdirs()) { "Could not prepare extraction directory: $to" }
+        var entries = 0
+        var extractedBytes = 0L
+        val seen = HashSet<String>()
+
+        try {
+            ZipInputStream(BufferedInputStream(source.inputStream())).use { zip ->
+                val buffer = ByteArray(256 * 1024)
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    entries += 1
+                    require(entries <= MAX_ARCHIVE_ENTRIES) { "Archive exceeds $MAX_ARCHIVE_ENTRIES entries" }
+                    val rawName = entry.name.replace('\\', '/')
+                    require(rawName.isNotBlank() && !rawName.startsWith('/') && !Regex("^[A-Za-z]:").containsMatchIn(rawName)) {
+                        "Archive contains an invalid absolute entry path"
+                    }
+                    val segments = normalizeSegments(rawName)
+                    require(segments.isNotEmpty()) { "Archive contains an empty entry path" }
+                    val normalized = segments.joinToString("/")
+                    require(seen.add(normalized)) { "Archive contains duplicate entry: $normalized" }
+                    val output = File(temporary, normalized).canonicalFile
+                    require(output == temporary.canonicalFile || output.path.startsWith(temporary.canonicalPath + File.separator)) {
+                        "Archive entry escaped destination: $normalized"
+                    }
+                    if (entry.isDirectory) {
+                        require((output.exists() && output.isDirectory) || output.mkdirs()) {
+                            "Could not create extracted directory: $normalized"
+                        }
+                    } else {
+                        val outputParent = output.parentFile
+                        require(outputParent != null && ((outputParent.exists() && outputParent.isDirectory) || outputParent.mkdirs())) {
+                            "Could not create parent for extracted file: $normalized"
+                        }
+                        require(!output.exists()) { "Archive entry conflicts with an existing path: $normalized" }
+                        BufferedOutputStream(output.outputStream()).use { sink ->
+                            while (true) {
+                                val read = zip.read(buffer)
+                                if (read <= 0) break
+                                require(extractedBytes + read <= MAX_ARCHIVE_EXTRACTED_BYTES) {
+                                    "Expanded archive exceeds ${MAX_ARCHIVE_EXTRACTED_BYTES / (1024 * 1024)} MiB"
+                                }
+                                sink.write(buffer, 0, read)
+                                extractedBytes += read
+                            }
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+
+            commitStaged(temporary, destination, to)
+            invalidateIndex(to)
+            return (stat(to) ?: JSONObject())
+                .put("entries", entries)
+                .put("extractedBytes", extractedBytes)
+        } catch (error: Throwable) {
+            deletePath(temporary)
+            throw error
+        } finally {
+            deletePath(temporary)
+        }
+    }
+
     private fun projectOverview(path: String, requestedLimit: Int): JSONObject {
         val base = sandboxFile(path)
         require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
         val limit = requestedLimit.coerceIn(1, 240)
-        val children = base.listFiles()?.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList()
+        val children = (base.listFiles()
+            ?: throw IllegalStateException("Could not read workspace directory: ${relativePath(base)}"))
+            .sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))
         val entries = JSONArray()
         children.take(limit).forEach { child ->
             require(isInsideRoot(child)) { "Workspace entry escaped Rift MCP sandbox" }
@@ -797,7 +1008,7 @@ internal class RiftToolSandbox(context: Context) {
             .put("directChildren", children.size)
             .put("entries", entries)
             .put("truncated", children.size > limit)
-            .put("operations", JSONArray(listOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy")))
+            .put("operations", JSONArray(listOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")))
     }
 
     private fun searchText(path: String, query: String, caseSensitive: Boolean, maxMatches: Int): JSONObject {
@@ -995,7 +1206,7 @@ internal class RiftToolSandbox(context: Context) {
         val edited = replaceLineRange(source, startLine, endLine, replacement, expectedText, expectedRangeHash)
         val bytes = edited.toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_TOOL_BYTES) { "Surgical patch result is too large" }
-        file.writeBytes(bytes)
+        writeBytesAtomic(file, bytes, path)
         invalidateIndex(path)
         return JSONObject()
             .put("path", normalizedPath(path))
@@ -1035,7 +1246,7 @@ internal class RiftToolSandbox(context: Context) {
         }
         val bytes = source.toByteArray(Charsets.UTF_8)
         require(bytes.size <= MAX_TOOL_BYTES) { "Hunk patch result is too large" }
-        file.writeBytes(bytes)
+        writeBytesAtomic(file, bytes, path)
         invalidateIndex(path)
         return JSONObject()
             .put("path", normalizedPath(path))
@@ -1240,7 +1451,7 @@ internal class RiftToolSandbox(context: Context) {
                 transaction.capture(workspaceMutationPath(args.getString("from")))
                 transaction.capture(workspaceMutationPath(args.getString("to")))
             }
-            "copy", "archive" -> transaction.capture(workspaceMutationPath(args.getString("to")))
+            "copy", "archive", "extract" -> transaction.capture(workspaceMutationPath(args.getString("to")))
         }
     }
 
@@ -1422,8 +1633,9 @@ internal class RiftToolSandbox(context: Context) {
                 .put("symbolIndex", "incremental-memory")
                 .put("ignoredDirectories", JSONArray(ignoredDirectoryNames.sorted())))
             .put("capabilities", JSONArray(listOf(
-                "stat", "list", "readText", "writeText", "mkdir", "remove", "move", "copy", "workspaceExec",
-                "snapshot", "symbols", "references", "readSymbol", "patchRange", "applyHunks"
+                "stat", "hash", "list", "readText", "writeText", "mkdir", "remove", "move", "copy", "archive", "extract", "workspaceExec",
+                "snapshot", "search", "symbols", "references", "readSymbol", "replace", "patch", "patchRange", "applyHunks",
+                "audit", "scan", "projectExport"
             )))
     }
 }

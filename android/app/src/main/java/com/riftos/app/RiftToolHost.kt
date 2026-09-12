@@ -14,7 +14,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         private const val PREF_AUDIT = "audit"
         private const val PREF_MIGRATED = "legacyStateMigrated"
         private const val MAX_AUDIT = 100
-        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive")
+        private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")
         const val SCOPE = "riftfs/workspace"
     }
 
@@ -36,8 +36,8 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v1")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_exec")))
-        .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_exec")))
+        .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")))
         .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
 
     fun setAccess(read: Boolean, write: Boolean): JSONObject {
@@ -53,6 +53,11 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put(tool(
             "rift_stat",
             "Get metadata for one file or directory under workspace/.",
+            objectSchema(JSONObject().put("path", stringProperty("Path under workspace/.")), listOf("path"))
+        ))
+        .put(tool(
+            "rift_hash",
+            "Compute a complete SHA-256 digest for a file or a deterministic digest for a directory tree under workspace/.",
             objectSchema(JSONObject().put("path", stringProperty("Path under workspace/.")), listOf("path"))
         ))
         .put(tool(
@@ -112,6 +117,28 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             )
         ))
         .put(tool(
+            "rift_archive",
+            "Create a ZIP archive from a file or directory under workspace/. Local write permission must be enabled.",
+            objectSchema(
+                JSONObject()
+                    .put("from", stringProperty("Source path under workspace/."))
+                    .put("to", stringProperty("Destination .zip path under workspace/."))
+                    .put("overwrite", booleanProperty("Replace an existing destination when true.")),
+                listOf("from", "to")
+            )
+        ))
+        .put(tool(
+            "rift_extract",
+            "Safely extract a ZIP archive into a directory under workspace/. Rejects traversal, duplicate entries, oversized archives, and partial commits.",
+            objectSchema(
+                JSONObject()
+                    .put("from", stringProperty("Source .zip path under workspace/."))
+                    .put("to", stringProperty("Destination directory under workspace/."))
+                    .put("overwrite", booleanProperty("Replace an existing destination when true.")),
+                listOf("from", "to")
+            )
+        ))
+        .put(tool(
             "rift_audit",
             "Run a local RiftOS project health audit. Scans workspace structure, source patterns, and runtime risk indicators without mutating files.",
             objectSchema(JSONObject().put("path", stringProperty("Optional project path under workspace/.")))))
@@ -149,7 +176,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                             .put("items", workspaceOperationSchema())
                     )
                     .put("finish", booleanProperty("Set true only when this mutating batch is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session."))
-                    .put("dryRun", booleanProperty("Execute and validate read/content-edit operations transactionally, then restore mutations instead of committing. Structural mkdir/remove/move/copy operations are rejected in dry-run mode."))
+                    .put("dryRun", booleanProperty("Execute and validate read/content-edit operations transactionally, then restore mutations instead of committing. Structural mkdir/remove/move/copy/archive/extract operations are rejected in dry-run mode."))
                     .put("expectedSnapshot", stringProperty("Optional project/workspace snapshot id. Reject the batch if that snapshot scope changed."))
                     .put("expectedExportSnapshot", stringProperty("Optional snapshotId from rift_project_export. Reject the entire batch if exported source changed after the audit."))
                     .put("snapshotPath", stringProperty("Optional workspace path used for expectedSnapshot/returnSnapshot. Defaults to workspace/."))
@@ -317,6 +344,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     private fun canonicalName(raw: String): String = when (raw.trim()) {
         "info", "rift_info" -> "rift_info"
         "stat", "rift_stat" -> "rift_stat"
+        "hash", "rift_hash" -> "rift_hash"
         "list", "rift_list" -> "rift_list"
         "readText", "rift_read_text" -> "rift_read_text"
         "writeText", "rift_write_text" -> "rift_write_text"
@@ -324,6 +352,8 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "remove", "rift_remove" -> "rift_remove"
         "move", "rift_move" -> "rift_move"
         "copy", "rift_copy" -> "rift_copy"
+        "archive", "rift_archive" -> "rift_archive"
+        "extract", "unzip", "rift_extract" -> "rift_extract"
         "workspaceExec", "rift_workspace_exec" -> "rift_workspace_exec"
         "audit", "rift_audit" -> "rift_audit"
         "scan", "rift_scan" -> "rift_scan"
@@ -334,6 +364,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     private fun methodFor(name: String): String? = when (name) {
         "rift_info" -> "sandbox.info"
         "rift_stat" -> "fs.stat"
+        "rift_hash" -> "fs.hash"
         "rift_list" -> "fs.list"
         "rift_read_text" -> "fs.readText"
         "rift_write_text" -> "fs.writeText"
@@ -341,6 +372,8 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         "rift_remove" -> "fs.remove"
         "rift_move" -> "fs.move"
         "rift_copy" -> "fs.copy"
+        "rift_archive" -> "fs.archive"
+        "rift_extract" -> "fs.extract"
         "rift_workspace_exec" -> "workspace.exec"
         "rift_audit" -> "workspace.audit"
         "rift_scan" -> "workspace.scan"
@@ -349,14 +382,14 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     private fun isWriteTool(name: String): Boolean = name in setOf(
-        "rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy"
+        "rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract"
     )
 
     private fun workspaceBatchMutates(args: JSONObject): Boolean {
         val operations = args.optJSONArray("operations") ?: return false
         for (index in 0 until operations.length()) {
             val op = operations.optJSONObject(index)?.optString("op")?.trim()?.lowercase().orEmpty()
-            if (op in setOf("write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive")) return true
+            if (op in setOf("write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")) return true
         }
         return false
     }
@@ -389,7 +422,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     private fun auditTarget(name: String, args: JSONObject): String = when (canonicalName(name)) {
-        "rift_move", "rift_copy" -> "${args.optString("from")} -> ${args.optString("to")}".take(300)
+        "rift_move", "rift_copy", "rift_archive", "rift_extract" -> "${args.optString("from")} -> ${args.optString("to")}".take(300)
         "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
         "rift_info" -> "sandbox"
         else -> args.optString("path").take(300)
