@@ -64,6 +64,9 @@ rift_mkdir
 rift_remove
 rift_move
 rift_copy
+rift_audit
+rift_scan
+rift_project_export
 rift_workspace_exec
 ```
 
@@ -93,7 +96,9 @@ Mutating batches use a lazy copy-on-write transaction in app cache. Only paths a
 
 A model may set `finish:true` only on a mutating Code Mode batch that fully completes the current Rift AI task. Final batches are **not** silently swallowed: after local execution, RiftBrowser sends the correlated `[RIFT_MCP_RESULT_V1]` result back through ChatGPT Web. The result carries the model call ID plus the private AI session ID internally, and the task becomes reviewable only after the final assistant continuation completes. Failed, stale or mismatched results cannot terminate the active session as success.
 
-The upfront project handoff is `RIFT_PROJECT_V2`: a bounded top-level descriptor that states full workspace reachability instead of recursively serializing thousands of paths. The model can locally search/list/read only when it needs source context, while mechanical multi-file edits can remain within a single Code Mode batch.
+The upfront project handoff is `RIFT_PROJECT_V2`: a bounded top-level descriptor that states full workspace reachability. For a complete offline audit, `rift_project_export` streams a deterministic `RIFT_PROJECT_EXPORT_V2` snapshot in pages capped below the relay limit. Each page contains UTF-8 source content, paths, full-file hashes and byte ranges. Callers continue with `nextCursor` and the first page's `snapshotId`; continuation fails if the project changes mid-export. Build outputs, binary assets and sensitive credential files are excluded, while large source files are split across pages.
+
+After the audit, the model returns complete ordinary files or guarded patches as operations in one `rift_workspace_exec` call. The device applies that batch under one copy-on-write transaction: every operation commits together, or every touched path is restored. This is a local atomic change set, not an automatic Git commit.
 
 ## Rift AI working-tree journal
 
