@@ -78,6 +78,8 @@ const checks = [
   ['delete verifies the Android provider result', core.includes('if(removed!==true)throw new Error')],
   ['RiftShell passes its current directory into RiftGit', filesUi.includes('window.RiftGit.run(args,print,{cwd:state.cwd})')],
   ['RiftShell supports workspace navigation and full file actions', filesUi.includes('if(sub==="cd"){state.cwd="/workspace"') && filesUi.includes('if(cmd==="cp"||cmd==="mv")') && filesUi.includes('if(cmd==="zip")')],
+  ['RiftShell exposes RiftFS roots without leading slashes', filesUi.includes('const shellRootAliases=new Set') && filesUi.includes('raw=`/${raw}`') && filesUi.includes('state={cwd:"/"}')],
+  ['RiftShell supports recursive ls', filesUi.includes('const recursive=args.some') && filesUi.includes('core.fs.list(path,{recursive})')],
   ['RiftGit attaches existing home, workspace, or mounted folders', riftGit.includes('cmd==="init"||cmd==="attach"') && riftGit.includes('Project folder not found:') && riftGit.includes('context.cwd')],
   ['RiftGit synchronizes complete binary-safe trees', riftGit.includes('core.fs.readBase64') && riftGit.includes('core.fs.writeBase64') && riftGit.includes('GitHub returned a truncated tree; sync stopped')],
   ['native shell binary bridge is bounded', dispatcher.includes('MAX_BRIDGE_BINARY_BYTES') && dispatcher.includes('"fs.readBase64"') && dispatcher.includes('"fs.writeBase64"') && core.includes('async readBase64') && core.includes('async writeBase64')],

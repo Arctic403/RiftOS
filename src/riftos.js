@@ -510,10 +510,12 @@ async function openBrowser(startUrl="https://chatgpt.com"){
 }
 
 function tokenize(raw){const out=[];String(raw||"").replace(/"([^"]*)"|'([^']*)'|([^\s]+)/g,(_,a,b,c)=>{out.push(a??b??c);return "";});return out;}
+const shellRootAliases=new Set(["home","workspace","downloads","documents","mounts","apps","system"]);
 function resolvePath(cwd,value){
   if(!value)return cwd;
   let raw=String(value).trim().replace(/\\/g,"/");
   if(raw==="~"||raw.startsWith("~/"))raw=`/home${raw.slice(1)}`;
+  if(!raw.startsWith("/")&&shellRootAliases.has(raw.split("/")[0].toLowerCase()))raw=`/${raw}`;
   if(!raw.startsWith("/"))raw=`${cwd}/${raw}`;
   const parts=[];
   for(const part of raw.split("/")){if(!part||part===".")continue;if(part===".."){parts.pop();continue;}parts.push(part);}
@@ -522,7 +524,7 @@ function resolvePath(cwd,value){
 async function runShell(raw,print,state){
   const args=tokenize(raw),cmd=(args.shift()||"").toLowerCase();if(!cmd)return;
   if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print,{cwd:state.cwd});}
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback]\nls [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nopen <app>  browser [url]  clear  uptime  version\ngit help`);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback]\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nopen <app>  browser [url]  clear  uptime  version\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}
@@ -544,7 +546,7 @@ async function runShell(raw,print,state){
   if(cmd==="pwd")return print(state.cwd);
   if(cmd==="home"){state.cwd="/home";return print(state.cwd);}
   if(cmd==="cd"){const next=resolvePath(state.cwd,args[0]||"/home");const stat=await core.fs.stat(next);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error(`not a directory: ${next}`);state.cwd=next;return print(state.cwd);}
-  if(cmd==="ls"){const path=resolvePath(state.cwd,args[0]||state.cwd),rows=await core.fs.list(path,{recursive:false});return print(rows.map(row=>`${row.kind==="directory"||row.kind==="mount"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");}
+  if(cmd==="ls"){const recursive=args.some(arg=>/^-[^-]*[Rr]/.test(arg)),target=args.find(arg=>!arg.startsWith("-")),path=resolvePath(state.cwd,target||state.cwd),rows=await core.fs.list(path,{recursive});return print(rows.map(row=>`${row.kind==="directory"||row.kind==="mount"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");}
   if(cmd==="tree"){const path=resolvePath(state.cwd,args[0]||state.cwd),rows=await core.fs.list(path,{recursive:true});return print(rows.map(row=>`${row.kind==="directory"||row.kind==="mount"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");}
   if(cmd==="stat"){const path=resolvePath(state.cwd,args[0]);const stat=await core.fs.stat(path);if(!stat)throw new Error(`path not found: ${path}`);return print(JSON.stringify(stat,null,2));}
   if(cmd==="cat"){const path=resolvePath(state.cwd,args[0]);const text=await core.fs.readText(path);if(text==null)throw new Error(`file not found: ${path}`);return print(text);}
@@ -564,8 +566,8 @@ async function runShell(raw,print,state){
 }
 
 async function openTerminal(){
-  await core.ready;const body=openWindow("terminal","RiftShell","ANDROID NATIVE SHELL"),state={cwd:"/home"};
-  body.innerHTML=`<div class="shell"><pre class="shell-output" id="shellOutput">RiftShell ${escapeHTML(core.version)}\nAndroid-native RiftFS ready. Type help.</pre><form id="shellForm" class="shell-form"><span id="shellPrompt">/home $</span><input id="shellInput" autocomplete="off" autocapitalize="none" spellcheck="false"></form></div>`;
+  await core.ready;const body=openWindow("terminal","RiftShell","ANDROID NATIVE SHELL"),state={cwd:"/"};
+  body.innerHTML=`<div class="shell"><pre class="shell-output" id="shellOutput">RiftShell ${escapeHTML(core.version)}\nAndroid-native RiftFS ready. Type help.</pre><form id="shellForm" class="shell-form"><span id="shellPrompt">/ $</span><input id="shellInput" autocomplete="off" autocapitalize="none" spellcheck="false"></form></div>`;
   const out=body.querySelector("#shellOutput"),form=body.querySelector("#shellForm"),input=body.querySelector("#shellInput"),promptEl=body.querySelector("#shellPrompt");
   const print=value=>{out.textContent+=(out.textContent?"\n":"")+String(value??"");out.scrollTop=out.scrollHeight;};
   form.onsubmit=async event=>{event.preventDefault();const raw=input.value;input.value="";if(!raw.trim())return;print(`${state.cwd} $ ${raw}`);try{const result=await runShell(raw,print,state);if(result?.clear)out.textContent="";}catch(error){print(`error: ${error.message}`);}promptEl.textContent=`${state.cwd} $`;};
