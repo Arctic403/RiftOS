@@ -36,7 +36,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v1")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_workspace_exec")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_exec")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy")))
         .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
 
@@ -125,8 +125,14 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
             )))
         .put(tool(
             "rift_project_export",
-            "Create a compressed RIFT_PROJECT_EXPORT snapshot of a workspace project for full project audits. The export stays inside RiftOS workspace tooling.",
-            objectSchema(JSONObject().put("path", stringProperty("Optional project path under workspace/.")))
+            "Stream a deterministic RIFT_PROJECT_EXPORT_V2 snapshot containing complete UTF-8 source code for offline full-project audits. Continue with nextCursor and the same snapshotId until done. Binary/build/secret files are excluded and large source files are split safely across pages.",
+            objectSchema(
+                JSONObject()
+                    .put("path", stringProperty("Optional project path under workspace/."))
+                    .put("cursor", stringProperty("Opaque nextCursor from the previous export page. Empty starts a new export."))
+                    .put("expectedSnapshot", stringProperty("snapshotId from the first page. Reject continuation if any exported source changed."))
+                    .put("maxBytes", JSONObject().put("type", "integer").put("description", "Target response size in bytes; clamped to 64 KiB..700 KiB."))
+            )
         ))
         .put(tool(
             "rift_workspace_exec",
@@ -145,6 +151,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
                     .put("finish", booleanProperty("Set true only when this mutating batch is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session."))
                     .put("dryRun", booleanProperty("Execute and validate read/content-edit operations transactionally, then restore mutations instead of committing. Structural mkdir/remove/move/copy operations are rejected in dry-run mode."))
                     .put("expectedSnapshot", stringProperty("Optional project/workspace snapshot id. Reject the batch if that snapshot scope changed."))
+                    .put("expectedExportSnapshot", stringProperty("Optional snapshotId from rift_project_export. Reject the entire batch if exported source changed after the audit."))
                     .put("snapshotPath", stringProperty("Optional workspace path used for expectedSnapshot/returnSnapshot. Defaults to workspace/."))
                     .put("returnSnapshot", booleanProperty("Return a fresh scoped snapshot after the batch. Disabled by default to avoid rescanning large projects.")),
                 listOf("operations")
