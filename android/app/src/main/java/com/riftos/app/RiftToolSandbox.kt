@@ -4,9 +4,8 @@ import android.content.Context
 import android.os.StatFs
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedOutputStream
 import java.io.File
-import java.security.MessageDigest
+importport java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
