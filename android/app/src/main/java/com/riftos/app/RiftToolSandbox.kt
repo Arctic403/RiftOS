@@ -5,15 +5,14 @@ import android.os.StatFs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.BufferedOutputStream
-import java.security.MessageDigest
+importport java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /** App-private filesystem capability owned by the local Rift MCP tool host. */
-class RiftToolSandbox(context: Context, private val transferService: RiftTransferService = RiftTransferRegistry.service) {
+internal class RiftToolSandbox(context: Context, private val transferService: RiftTransferService = RiftTransferRegistry.service) {
     companion object {
         private const val MAX_TOOL_BYTES = 8 * 1024 * 1024
         private const val MAX_LIST_ENTRIES = 5000
