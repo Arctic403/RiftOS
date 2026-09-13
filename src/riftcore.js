@@ -109,15 +109,6 @@ class RiftNativeBridge extends EventTarget{
   }
 }
 
-class RiftTransferQueue extends EventTarget{
-  constructor(){super();this.queue=Promise.resolve();this.active=0;this.lastEvent=0;}
-  run(task){
-    const execute=async()=>{this.active++;this.lastEvent=Date.now();this.dispatchEvent(new CustomEvent("transfer",{detail:{active:this.active,state:"started"}}));try{return await task();}finally{this.active--;this.lastEvent=Date.now();this.dispatchEvent(new CustomEvent("transfer",{detail:{active:this.active,state:"finished"}}));}};
-    const result=this.queue.then(execute,execute);
-    this.queue=result.catch(()=>{});
-    return result;
-  }
-}
 
 class RiftFS extends EventTarget{
   constructor(native){

@@ -174,6 +174,38 @@ async function openFileEntry(entry){
   await openEditor(entry.path);
 }
 
+function createVirtualListRenderer(options={}){
+  const rowHeight=Number(options.rowHeight||34);
+  const overscan=Number(options.overscan||8);
+  let rows=[];
+  let viewport=null;
+  let renderRow=()=>"";
+  const state={start:0,end:0};
+  function update(){
+    if(!viewport)return;
+    const top=viewport.scrollTop||0;
+    const height=viewport.clientHeight||0;
+    state.start=Math.max(0,Math.floor(top/rowHeight)-overscan);
+    state.end=Math.min(rows.length,Math.ceil((top+height)/rowHeight)+overscan);
+    const fragment=document.createDocumentFragment();
+    for(let i=state.start;i<state.end;i++){
+      const holder=document.createElement("div");
+      holder.innerHTML=renderRow(rows[i],i).trim();
+      fragment.appendChild(holder.firstElementChild);
+    }
+    const content=document.createElement("div");
+    content.style.height=`${rows.length*rowHeight}px`;
+    content.style.position="relative";
+    content.appendChild(fragment);
+    viewport.replaceChildren(content);
+  }
+  return {
+    mount(target,data,rowRenderer){viewport=target;rows=data||[];renderRow=rowRenderer||(()=>"");update();viewport.onscroll=update;},
+    setRows(data){rows=data||[];update();},
+    refresh:update
+  };
+}
+
 async function openFiles(path="/",options={}){
   await core.ready;
   path=core.path.normalize(path);
@@ -344,10 +376,6 @@ async function openFiles(path="/",options={}){
     catch(error){setStatus("Files");alert(`${label} failed: ${error?.message||error}`);syncSelection();}
     finally{fileActionBusy=false;}
   }
-  core.fs.transferQueue?.addEventListener?.("transfer",event=>{
-    const detail=event.detail||{};
-    setStatus(`Files · transfer ${detail.state||""}${detail.active?` (${detail.active})`:""}`);
-  });
 
   body.querySelector("#fsBack").onclick=()=>{if(filesNavigation.index>0){filesNavigation.index--;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
   body.querySelector("#fsForward").onclick=()=>{if(filesNavigation.index<filesNavigation.history.length-1){filesNavigation.index++;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};

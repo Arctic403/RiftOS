@@ -510,75 +510,6 @@
     return new Set(listUserMessages());
   }
 
-  function outgoingAccepted(baseline, composer, message) {
-    const signature = String(message || '').trim().slice(0, 160);
-    for (const row of listUserMessages()) {
-      if (baseline.has(row)) continue;
-      const text = String(row.innerText || row.textContent || '').trim();
-      if (!signature || (text && (text.includes(signature) || signature.includes(text.slice(0, 80))))) return true;
-    }
-    if (stopButtonVisible()) return true;
-    return !composer.isConnected || !readComposer(composer).trim();
-  }
-
-  async function waitForOutgoingAcceptance(baseline, composer, message, timeoutMs = 6000) {
-    const deadline = now() + timeoutMs;
-    while (now() < deadline) {
-      if (outgoingAccepted(baseline, composer, message)) return true;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    return false;
-  }
-
-  async function sendComposerMessage(message, timeoutMs = 12000, options = {}) {
-    const requireApproval = options.requireApproval === true || (manualSendApprovalRequired && options.userFacing === true);
-    if (requireApproval) {
-      pendingApprovedSubmission = { message, timeoutMs };
-      sendAiEvent('waiting', 'Message prepared. Waiting for user send approval.', { phase: 'awaiting-user-send' });
-      return false;
-    }
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const composer = await waitForComposer(timeoutMs);
-      if (!composer) throw new Error(`${aiLabel} composer unavailable`);
-      const baseline = snapshotUserMessages();
-      if (readComposer(composer).trim() !== String(message).trim()) writeComposer(composer, message);
-      const deadline = now() + timeoutMs;
-      let button = null;
-      while (now() < deadline && !button) {
-        if (outgoingAccepted(baseline, composer, message)) return true;
-        button = findSendButton();
-        if (!button || button.disabled) {
-          button = null;
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-      }
-      if (!button) {
-        if (outgoingAccepted(baseline, composer, message)) return true;
-        throw new Error(`${aiLabel} send button unavailable`);
-      }
-      button.click();
-      if (await waitForOutgoingAcceptance(baseline, composer, message)) return true;
-      sendAiPhase('waiting', `${aiLabel} did not accept the message; retrying (${attempt + 2}/3)`);
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    }
-    throw new Error(`${aiLabel} did not acknowledge message submission`);
-  }
-
-  function looksLikeSendButton(button) {
-    if (!(button instanceof Element) || !isVisible(button)) return false;
-    if (siteAdapter.send?.some((selector) => { try { return button.matches(selector); } catch (_) { return false; } })) return true;
-    const testId = (button.getAttribute('data-testid') || '').toLowerCase();
-    const label = (button.getAttribute('aria-label') || '').toLowerCase();
-    if (testId === 'send-button' || testId.includes('send-button')) return true;
-    return label === 'send' || label.includes('send message');
-  }
-
-  function findSendButton() {
-    const direct = queryFirst(siteAdapter.send);
-    if (direct && looksLikeSendButton(direct)) return direct;
-    return Array.from(document.querySelectorAll('button')).find(looksLikeSendButton) || null;
-  }
-
   function markHistoricalAssistantMessage(message) {
     if (message instanceof Element) historicalAssistantMessages.add(message);
   }
@@ -587,18 +518,14 @@
     for (const message of listAssistantMessages()) markHistoricalAssistantMessage(message);
   }
 
+  // Browser adapter is transport-only. It no longer modifies user messages or injects tool context into external AI composers.
   function decorateOutgoingPrompt() {
-    refreshRouteState();
-    if (!enabled || suppressDecoration || tools.length === 0) return;
-    const composer = findComposer();
-    if (!composer) return;
-    const text = readComposer(composer).trim();
-    if (!text || text.startsWith(RESULT_MARKER)) return;
-    rememberExistingToolCalls();
-    toolExecutionArmed = true;
-    if (text.includes(CONTEXT_MARKER) || contextSentForRoute) return;
-    writeComposer(composer, `${text}\n\n${contextBlock()}`);
-    contextSentForRoute = true;
+    return;
+  }
+  async function sendComposerMessage(message, timeoutMs = 12000, options = {}) {
+    pendingApprovedSubmission = { message, timeoutMs };
+    sendAiEvent('waiting', 'Draft prepared. Copy and paste into the AI website manually.', { phase: 'draft-ready', requiresUserAction: true });
+    return true;
   }
 
   async function waitForSendButton(timeoutMs) {
@@ -720,20 +647,13 @@ ${contextBlock()}`;
       contextSentForRoute = true;
     }
     suppressDecoration = true;
-    writeComposer(composer, message);
-    rememberExistingToolCalls();
-    toolExecutionArmed = true;
-    try {
-      await sendComposerMessage(message, 12000, { requireApproval: false });
-    } catch (error) {
-      suppressDecoration = false;
-      finishAiTask('error', String(error && error.message || error), 'error');
-      return false;
-    }
-    sendAiPhase('submitted', `Task submitted to ${aiLabel}`);
-    sendAiPhase('running', `${aiLabel} is working`);
+    pendingApprovedSubmission = { message, timeoutMs: 12000 };
+    sendAiPhase('submitted', 'Draft generated in RiftOS. User copy/paste required.', 'transport', {
+      requiresUserAction: true
+    });
     setTimeout(() => { suppressDecoration = false; }, 800);
     scheduleCompletionCheck(1800);
+    return true;
     return true;
   }
 
@@ -755,8 +675,6 @@ ${contextBlock()}`;
     queuedAiPayload = payload;
     queueMicrotask(pumpAiTaskQueue);
     return { accepted: true, state: 'queued' };
-  }
-
   async function pumpAiTaskQueue() {
     if (taskPumpRunning || !queuedAiPayload) return;
     taskPumpRunning = true;
