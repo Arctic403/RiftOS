@@ -69,7 +69,7 @@ const checks = [
   ['native copy waits for the destination before resolving', dispatcher.includes('val result = copyNode(') && !dispatcher.includes('transferService.submit(job)')],
   ['native move waits for source removal before resolving', dispatcher.includes('val result = moveNode(')],
   ['scheduled app notifications have a native implementation', dispatcher.includes('"notifications.schedule" -> scheduleNotification(') && dispatcher.includes('notificationScheduler.schedule')],
-  ['retired transfer job stack is absent', ['RiftTransferJob.kt','RiftTransferManager.kt','RiftTransferRegistry.kt','RiftTransferService.kt'].every(name => !existsSync(`android/app/src/main/java/com/riftos/app/${name}`)) && !dispatcher.includes('RiftTransferJob?'))],
+  ['retired transfer job stack is absent', ['RiftTransferJob.kt','RiftTransferManager.kt','RiftTransferRegistry.kt','RiftTransferService.kt'].every(name => !existsSync(`android/app/src/main/java/com/riftos/app/${name}`)) && !dispatcher.includes('RiftTransferJob?')],
   ['browser transfer IDs reach native progress', core.includes('transferId:transferId||') && dispatcher.includes('args.optString("transferId").ifBlank')],
   ['native progress targets the transfer UI', main.includes('window.RiftTransferUI?.__progress')],
   ['mount import and export are binary-safe', !workspaceAdapter.includes('core.fs.readText') && workspaceAdapter.includes('core.fs.copy')],

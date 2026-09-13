@@ -109,7 +109,7 @@ if (!workspaceRecordsHost.includes('riftworkspace-live-v2') || /case \"write\"|c
 
 // Manifest component wiring: every Activity declaration has source and every Activity source is declared.
 const manifest = read('android/app/src/main/AndroidManifest.xml');
-const manifestActivities = new Set([...manifest.matchAll(/<activity\b[\s\S]*?android:name="\.([^"]+)"[\s\S]*?<\/activity>|<activity\b[\s\S]*?android:name="\.([^"]+)"[^>]*\/>/g)].map(match => match[1] || match[2]).filter(Boolean));
+const manifestActivities = new Set([...manifest.matchAll(/<activity\b[^>]*\bandroid:name="\.([^"]+)"/g)].map(match => match[1]).filter(Boolean));
 for (const activity of manifestActivities) requireFile(`android/app/src/main/java/com/riftos/app/${activity}.kt`, 'AndroidManifest activity has no Kotlin source');
 const kotlinDir = 'android/app/src/main/java/com/riftos/app';
 const kotlinFiles = walk(kotlinDir).filter(file => file.endsWith('.kt'));

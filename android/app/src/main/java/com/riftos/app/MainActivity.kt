@@ -220,7 +220,6 @@ class MainActivity : Activity() {
             "browser.window.visible" -> runBrowserCommand(requestId) { browserWindow.setVisible(args.optBoolean("visible", true)) }
             "browser.window.state" -> runBrowserCommand(requestId) { browserWindow.state() }
             "browser.window.close" -> runBrowserCommand(requestId) { JSONObject().put("closed", browserWindow.close()) }
-            "workspace.watch.start" -> runKernelCommand(requestId) { workspaceWatcher.start() }
             "workspace.watch.state" -> runKernelCommand(requestId) { workspaceWatcher.state() }
             "workspace.records.query" -> runKernelCommand(requestId) { workspaceRecords.query(args) }
             "workspace.records.checkpoint" -> runKernelCommand(requestId) { workspaceRecords.checkpoint(args) }
