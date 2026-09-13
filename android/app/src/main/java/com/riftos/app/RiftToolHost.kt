@@ -41,7 +41,7 @@ class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null
         .put("workspaceOnly", true)
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
-        .put("projectIntelligence", "v1")
+        .put("projectIntelligence", "v2")
         .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")))
         .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
@@ -201,6 +201,8 @@ class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null
                     .put("includeDiff", booleanProperty("Include bounded git-style text diffs for changed text files and record entries."))
             )
         ))
+        // Keep the published rift_workspace_exec schema/description stable while Project Intelligence v2 evolves behind it.
+        // Changing this model-visible definition changes manifest().sha256 and can force cached MCP clients to rescan actions.
         .put(tool(
             "rift_workspace_exec",
             "Rift Code Mode + Project Intelligence v1: execute many workspace operations locally in one model-visible call. Supports snapshots, incremental symbol search, reference lookup, surgical symbol/range reads, exact/range/hunk patches, dry-run validation, and transactional multi-file edits under workspace/. Read permission is always required; write permission is required only when the batch mutates files.",

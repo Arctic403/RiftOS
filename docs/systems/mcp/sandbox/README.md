@@ -28,9 +28,11 @@ Mutating batches create a lazy `BatchTransaction`. Each affected path is capture
 
 ## Project intelligence
 
-The sandbox provides bounded text search plus an incremental in-memory symbol index. Index invalidations are batched around mutations. Symbol extraction supports the source languages recognized by `languageFor`; references and symbol reads are bounded.
+Project Intelligence v2 provides bounded text search plus a restart-persistent incremental symbol/dependency index stored in app-private RiftOS state outside the workspace. Index invalidations are batched around mutations and persisted after refresh/invalidation. Symbol extraction supports the source languages recognized by `languageFor`; dependency extraction covers common C/C++ includes, Kotlin/Java/C# imports, JavaScript/TypeScript imports and requires, Python imports, and Rust `use`/`mod` edges.
 
-Snapshots/hash guards allow callers to reject edits when the workspace changed after inspection.
+The existing `project` Code Mode operation also provides bounded focused views without adding MCP tools: `kind=graph` returns resolved/unresolved dependency edges, `kind=impact` combines symbol definitions/references, direct dependency/dependent files, nearby README ownership and likely tests, and `kind=validation` discovers repository check/test/build guidance. These views reuse the already-published `kind` and `query` operation fields, keeping the MCP tool manifest stable.
+
+Snapshots/hash guards allow callers to reject edits when the workspace changed after inspection. The persistent intelligence cache is advisory and self-validating by file size/mtime; workspace source remains authoritative.
 
 ## Critical invariants
 
@@ -38,15 +40,18 @@ Snapshots/hash guards allow callers to reject edits when the workspace changed a
 - Result and file/payload limits are enforced before large data escapes.
 - Mutating batch capture occurs before mutation.
 - Rollback failure is surfaced; never silently claim atomicity after a failed restore.
-- Symbol index invalidation follows every relevant mutation.
+- Symbol/dependency index invalidation follows every relevant mutation and stale persisted rows are discarded during refresh.
+- Project graph/impact output remains bounded; dependency resolution must never weaken workspace containment.
+- Project Intelligence cache state stays outside the user workspace and is never treated as source of truth.
 - Archive extraction must never permit `../`, absolute-path or oversized expansion attacks.
 
 ## Failure signatures
 
 - MCP cannot see path that Files can -> expected if outside workspace; otherwise path mapping/migration.
 - Batch partially changed files after error -> transaction capture/rollback defect.
-- Symbol/reference results stale -> invalidation/index refresh.
-- Large project call truncates -> bounded result behavior; use targeted reads/export instead of removing limits casually.
+- Symbol/reference/graph results stale -> invalidation/index refresh; a bad app-private cache must be safely rebuilt from workspace source.
+- Project graph shows unresolved edges -> inspect language/package alias resolution before assuming the dependency is missing.
+- Large project call truncates -> bounded result behavior; focus with `project kind=graph|impact query=...`, targeted reads or export instead of removing limits casually.
 - ZIP rejected -> inspect traversal/duplicate/size policy before loosening it.
 
 ## Fix map
@@ -55,4 +60,4 @@ Workspace operation semantics, atomicity, project search/indexing and path secur
 
 ## Validation
 
-Test path traversal rejection, atomic write replacement, failed-batch rollback, dry-run restoration, expected snapshot/hash rejection, archive traversal rejection, symbol invalidation after edits and bounded search/list behavior.
+Test path traversal rejection, atomic write replacement, failed-batch rollback, dry-run restoration, expected snapshot/hash rejection, archive traversal rejection, symbol/dependency invalidation after edits, persisted-index rebuild behavior, bounded graph/impact output and bounded search/list behavior.

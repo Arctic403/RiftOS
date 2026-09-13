@@ -32,6 +32,9 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_REFERENCE_RESULTS = 400
         private const val MAX_INDEX_FILES = 25_000
         private const val MAX_INDEX_FILE_BYTES = 2L * 1024L * 1024L
+        private const val MAX_GRAPH_EDGES = 600
+        private const val MAX_PERSISTED_INDEX_FILES = 4000
+        private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
         private const val MAX_HUNKS = 128
         private const val MAX_SNAPSHOT_FILES = 50_000
         private const val MAX_ARCHIVE_ENTRIES = 50_000
@@ -48,12 +51,15 @@ internal class RiftToolSandbox(context: Context) {
     private val riftFsRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }
     private val workspaceRoot = prepareCanonicalWorkspace()
     private val workspaceRecords = RiftWorkspaceRecords.get(appContext).also { it.start() }
+    private val projectIntelligenceCache = File(appContext.filesDir, "rift-project-intelligence-v2.json")
     private val transactionRoot = File(appContext.cacheDir, "rift-workspace-transactions").apply {
         deleteRecursively()
         mkdirs()
     }
     private val symbolIndex = LinkedHashMap<String, IndexedFile>()
     private val pendingIndexInvalidations = LinkedHashSet<String>()
+    private var persistentIndexLoaded = false
+    private var persistentIndexDirty = false
     @Volatile private var batchInvalidationDepth = 0
     private val ignoredDirectoryNames = setOf(
         ".git", ".gradle", ".idea", ".next", ".cache", ".turbo", ".parcel-cache",
@@ -76,10 +82,18 @@ internal class RiftToolSandbox(context: Context) {
         val signature: String
     )
 
+    private data class DependencyRecord(
+        val specifier: String,
+        val kind: String,
+        val line: Int
+    )
+
     private data class IndexedFile(
         val modified: Long,
         val size: Long,
-        val symbols: List<SymbolRecord>
+        val language: String,
+        val symbols: List<SymbolRecord>,
+        val dependencies: List<DependencyRecord>
     )
 
     fun handleAsync(raw: String, reply: (String) -> Unit) {
@@ -107,6 +121,7 @@ internal class RiftToolSandbox(context: Context) {
     }
 
     fun shutdown() {
+        runCatching { persistProjectIntelligence() }
         executor.shutdownNow()
     }
 
@@ -726,7 +741,7 @@ internal class RiftToolSandbox(context: Context) {
         }
         val response = JSONObject()
             .put("mode", "rift-code-mode-v1")
-            .put("projectIntelligence", "v1")
+            .put("projectIntelligence", "v2")
             .put("committed", !dryRun)
             .put("dryRun", dryRun)
             .put("operations", operations.length())
@@ -739,7 +754,12 @@ internal class RiftToolSandbox(context: Context) {
     }
 
     private fun executeWorkspaceOperation(op: String, args: JSONObject): Any? = when (op) {
-        "project" -> projectOverview(workspacePath(args.optString("path", WORKSPACE_ROOT)), args.optInt("limit", 120))
+        "project" -> projectOverview(
+            workspacePath(args.optString("path", WORKSPACE_ROOT)),
+            args.optInt("limit", 120),
+            args.optString("kind"),
+            args.optString("query")
+        )
         "snapshot" -> projectSnapshot(workspacePath(args.optString("path", WORKSPACE_ROOT)))
         "symbols" -> searchSymbols(
             workspacePath(args.optString("path", WORKSPACE_ROOT)),
@@ -989,10 +1009,16 @@ internal class RiftToolSandbox(context: Context) {
         }
     }
 
-    private fun projectOverview(path: String, requestedLimit: Int): JSONObject {
+    private fun projectOverview(path: String, requestedLimit: Int, requestedKind: String = "", query: String = ""): JSONObject {
         val base = sandboxFile(path)
         require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
         val limit = requestedLimit.coerceIn(1, 240)
+        val kind = requestedKind.trim().lowercase()
+        if (kind == "graph") return projectGraph(path, query, requestedLimit)
+        if (kind == "impact") return projectImpact(path, query, requestedLimit)
+        if (kind == "validation") return projectValidation(path, query)
+        val indexStats = refreshSymbolIndex(base)
+
         val children = (base.listFiles()
             ?: throw IllegalStateException("Could not read workspace directory: ${relativePath(base)}"))
             .sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))
@@ -1008,15 +1034,232 @@ internal class RiftToolSandbox(context: Context) {
                     .put("modified", child.lastModified())
             )
         }
+        val languageCounts = linkedMapOf<String, Int>()
+        var dependencyEdges = 0
+        symbolIndex.forEach { (indexedPath, indexed) ->
+            if (!isPathWithin(indexedPath, path)) return@forEach
+            languageCounts[indexed.language] = (languageCounts[indexed.language] ?: 0) + 1
+            dependencyEdges += indexed.dependencies.size
+        }
+        val languages = JSONObject()
+        languageCounts.toSortedMap().forEach { (language, count) -> languages.put(language, count) }
         return JSONObject()
             .put("root", normalizedPath(path))
             .put("localOnly", true)
             .put("codeMode", "rift-code-mode-v1")
-            .put("projectIntelligence", "v1")
+            .put("projectIntelligence", "v2")
             .put("directChildren", children.size)
             .put("entries", entries)
             .put("truncated", children.size > limit)
+            .put("intelligence", JSONObject()
+                .put("index", indexStats)
+                .put("languages", languages)
+                .put("dependencyEdges", dependencyEdges)
+                .put("views", JSONArray(listOf("graph", "impact", "validation")))
+                .put("viewUsage", "project kind=graph|impact|validation with query for focused analysis"))
             .put("operations", JSONArray(listOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")))
+    }
+
+    private fun projectGraph(path: String, query: String, requestedLimit: Int): JSONObject {
+        val base = sandboxFile(path)
+        val indexStats = refreshSymbolIndex(base)
+        val edgeLimit = requestedLimit.coerceIn(1, MAX_GRAPH_EDGES)
+        val q = query.trim().lowercase()
+        val indexed = symbolIndex.filterKeys { isPathWithin(it, path) }
+        val allPaths = indexed.keys.toSet()
+        val selected = indexed.filter { (sourcePath, file) ->
+            q.isEmpty() || sourcePath.lowercase().contains(q) || file.symbols.any { it.name.lowercase().contains(q) }
+        }
+        val edges = JSONArray()
+        var resolved = 0
+        var unresolved = 0
+        var total = 0
+        selected.forEach { (sourcePath, file) ->
+            file.dependencies.forEach { dependency ->
+                total += 1
+                val target = resolveDependency(path, sourcePath, dependency, allPaths)
+                if (target == null) unresolved += 1 else resolved += 1
+                if (edges.length() < edgeLimit) {
+                    edges.put(JSONObject()
+                        .put("source", sourcePath)
+                        .put("kind", dependency.kind)
+                        .put("specifier", dependency.specifier)
+                        .put("line", dependency.line)
+                        .put("target", target ?: JSONObject.NULL))
+                }
+            }
+        }
+        val files = JSONArray()
+        selected.keys.take(120).forEach { files.put(it) }
+        return JSONObject()
+            .put("root", normalizedPath(path))
+            .put("projectIntelligence", "v2")
+            .put("view", "graph")
+            .put("query", query)
+            .put("index", indexStats)
+            .put("filesIndexed", indexed.size)
+            .put("filesMatched", selected.size)
+            .put("matchedFiles", files)
+            .put("dependencyEdges", total)
+            .put("resolvedEdges", resolved)
+            .put("unresolvedEdges", unresolved)
+            .put("edges", edges)
+            .put("truncated", total > edgeLimit)
+    }
+
+    private fun projectImpact(path: String, query: String, requestedLimit: Int): JSONObject {
+        val needle = query.trim()
+        require(needle.isNotEmpty()) { "project impact view requires query" }
+        val base = sandboxFile(path)
+        val indexStats = refreshSymbolIndex(base)
+        val indexed = symbolIndex.filterKeys { isPathWithin(it, path) }
+        val allPaths = indexed.keys.toSet()
+        val identifier = needle.matches(Regex("[A-Za-z_$][A-Za-z0-9_$]*"))
+        val exactDefinitions = if (identifier) indexed.values.flatMap { file -> file.symbols.filter { it.name == needle } } else emptyList()
+        val fuzzyDefinitions = if (exactDefinitions.isEmpty() && identifier) indexed.values.flatMap { file -> file.symbols.filter { it.name.contains(needle, ignoreCase = true) } }.take(40) else exactDefinitions
+        val pathMatches = indexed.keys.filter { it.contains(needle, ignoreCase = true) }.take(40)
+        val targetPaths = linkedSetOf<String>()
+        fuzzyDefinitions.forEach { targetPaths += it.path }
+        pathMatches.forEach { targetPaths += it }
+        val definitions = JSONArray()
+        fuzzyDefinitions.take(requestedLimit.coerceIn(1, 120)).forEach { definitions.put(symbolJson(it)) }
+
+        val dependents = linkedSetOf<String>()
+        val dependencies = JSONArray()
+        indexed.forEach { (sourcePath, file) ->
+            file.dependencies.forEach { dependency ->
+                val target = resolveDependency(path, sourcePath, dependency, allPaths)
+                if (sourcePath in targetPaths && dependencies.length() < 160) {
+                    dependencies.put(JSONObject()
+                        .put("source", sourcePath)
+                        .put("specifier", dependency.specifier)
+                        .put("kind", dependency.kind)
+                        .put("target", target ?: JSONObject.NULL))
+                }
+                if (target != null && target in targetPaths) dependents += sourcePath
+            }
+        }
+
+        val references = if (identifier) findReferences(path, needle, requestedLimit.coerceIn(1, 200))
+            else JSONObject().put("references", JSONArray()).put("truncated", false)
+        val referenceRows = references.optJSONArray("references") ?: JSONArray()
+        val tests = linkedSetOf<String>()
+        dependents.filterTo(tests) { isTestPath(it) }
+        for (index in 0 until referenceRows.length()) {
+            val refPath = referenceRows.optJSONObject(index)?.optString("path").orEmpty()
+            if (refPath.isNotBlank() && isTestPath(refPath)) tests += refPath
+        }
+        val docs = linkedSetOf<String>()
+        targetPaths.forEach { target -> findOwningReadme(path, target)?.let { docs.add(it) } }
+
+        val dependentJson = JSONArray(); dependents.take(160).forEach { dependentJson.put(it) }
+        val targetJson = JSONArray(); targetPaths.take(80).forEach { targetJson.put(it) }
+        val testJson = JSONArray(); tests.take(80).forEach { testJson.put(it) }
+        val docJson = JSONArray(); docs.take(40).forEach { docJson.put(it) }
+        return JSONObject()
+            .put("root", normalizedPath(path))
+            .put("projectIntelligence", "v2")
+            .put("view", "impact")
+            .put("query", needle)
+            .put("index", indexStats)
+            .put("targets", targetJson)
+            .put("definitions", definitions)
+            .put("references", referenceRows)
+            .put("referencesTruncated", references.optBoolean("truncated", false))
+            .put("directDependencies", dependencies)
+            .put("directDependents", dependentJson)
+            .put("tests", testJson)
+            .put("documentation", docJson)
+            .put("validation", projectValidation(path, targetPaths.firstOrNull().orEmpty()))
+    }
+
+    private fun projectValidation(path: String, query: String): JSONObject {
+        val base = sandboxFile(path)
+        require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
+        val commands = JSONArray()
+        val packageJson = File(base, "package.json")
+        if (packageJson.isFile && packageJson.length() <= MAX_INDEX_FILE_BYTES) {
+            val pkg = runCatching { JSONObject(packageJson.readText(Charsets.UTF_8)) }.getOrNull()
+            val scripts = pkg?.optJSONObject("scripts")
+            listOf("check", "test", "lint", "build").forEach { name ->
+                if (scripts?.optString(name)?.isNotBlank() == true) {
+                    commands.put(JSONObject().put("command", "npm run $name").put("source", relativePath(packageJson)).put("scope", "local-source"))
+                }
+            }
+        }
+        val external = JSONArray()
+        if (File(base, "android").isDirectory || File(base, "build.gradle.kts").isFile || File(base, "build.gradle").isFile) {
+            external.put("Android/Gradle compile after source checks when the project build pipeline provides it")
+        }
+        if (File(base, "CMakeLists.txt").isFile) external.put("Run the configured CMake/native build and affected native tests")
+        val relevantTests = JSONArray()
+        val q = query.substringAfterLast('/').substringBeforeLast('.').lowercase()
+        if (q.isNotBlank()) {
+            base.walkTopDown().onEnter { directory -> directory == base || !isIgnoredDirectory(directory) }
+                .filter { it.isFile && isTestPath(relativePath(it)) && it.name.lowercase().contains(q) }
+                .take(60)
+                .forEach { relevantTests.put(relativePath(it)) }
+        }
+        return JSONObject()
+            .put("root", normalizedPath(path))
+            .put("projectIntelligence", "v2")
+            .put("view", "validation")
+            .put("query", query)
+            .put("commands", commands)
+            .put("relevantTests", relevantTests)
+            .put("externalChecks", external)
+    }
+
+    private fun findOwningReadme(projectPath: String, sourcePath: String): String? {
+        val projectRoot = sandboxFile(projectPath).canonicalFile
+        var cursor = sandboxFile(sourcePath).let { if (it.isDirectory) it else it.parentFile }?.canonicalFile
+        while (cursor != null && isInsideRoot(cursor)) {
+            val readme = File(cursor, "README.md")
+            if (readme.isFile) return relativePath(readme)
+            if (cursor == projectRoot) break
+            cursor = cursor.parentFile
+        }
+        return null
+    }
+
+    private fun isTestPath(path: String): Boolean {
+        val lower = path.lowercase()
+        return lower.contains("/test/") || lower.contains("/tests/") || lower.contains("__tests__") ||
+            lower.contains("test-") || lower.contains("_test.") || lower.contains(".test.") || lower.contains(".spec.")
+    }
+
+    private fun resolveDependency(projectPath: String, sourcePath: String, dependency: DependencyRecord, allPaths: Set<String>): String? {
+        val specifier = dependency.specifier.trim().replace('\\', '/')
+        if (specifier.isBlank()) return null
+        val sourceFile = sandboxFile(sourcePath)
+        val parent = sourceFile.parentFile ?: return null
+        fun existingCandidate(candidate: File): String? = runCatching { relativePath(candidate) }.getOrNull()?.takeIf { it in allPaths }
+        fun tryRelative(raw: String): String? {
+            val direct = File(parent, raw)
+            val candidates = listOf(
+                direct,
+                File("${direct.path}.kt"), File("${direct.path}.java"), File("${direct.path}.js"), File("${direct.path}.ts"),
+                File("${direct.path}.cpp"), File("${direct.path}.cc"), File("${direct.path}.c"), File("${direct.path}.h"), File("${direct.path}.hpp"), File("${direct.path}.py"),
+                File(direct, "index.js"), File(direct, "index.ts")
+            )
+            return candidates.firstNotNullOfOrNull(::existingCandidate)
+        }
+        if (specifier.startsWith(".")) tryRelative(specifier)?.let { return it }
+        if (dependency.kind == "include") {
+            tryRelative(specifier)?.let { return it }
+            allPaths.firstOrNull { it.endsWith("/$specifier") }?.let { return it }
+        }
+        if (dependency.kind == "python") {
+            val module = specifier.substringBefore(' ').replace('.', '/')
+            allPaths.firstOrNull { it.endsWith("/$module.py") || it.endsWith("/$module/__init__.py") }?.let { return it }
+        }
+        val tail = specifier.substringAfterLast('.').substringAfterLast('/').substringAfterLast(':').trim('*')
+        if (tail.isNotBlank()) {
+            symbolIndex.entries.firstOrNull { (candidatePath, indexed) ->
+                isPathWithin(candidatePath, projectPath) && indexed.symbols.any { it.name == tail }
+            }?.key?.let { return it }
+        }
+        return null
     }
 
     private fun searchText(path: String, query: String, caseSensitive: Boolean, maxMatches: Int): JSONObject {
@@ -1192,6 +1435,7 @@ internal class RiftToolSandbox(context: Context) {
         val file = sandboxFile(path)
         require(file.isFile) { "File not found: $path" }
         val indexed = indexFile(file) ?: throw IllegalArgumentException("File is not indexable text: $path")
+        if (persistentIndexDirty) persistProjectIntelligence()
         val matches = indexed.symbols.filter { it.name == symbolName }
         require(matches.isNotEmpty()) { "Symbol not found in $path: $symbolName" }
         val symbol = if (requestedLine > 0) {
@@ -1287,10 +1531,106 @@ internal class RiftToolSandbox(context: Context) {
         return lines.joinToString(newline) + if (hadFinalNewline) newline else ""
     }
 
+    private fun ensurePersistentIndexLoaded() {
+        if (persistentIndexLoaded) return
+        persistentIndexLoaded = true
+        if (!projectIntelligenceCache.isFile || projectIntelligenceCache.length() > MAX_PERSISTED_INDEX_BYTES) return
+        val root = runCatching { JSONObject(projectIntelligenceCache.readText(Charsets.UTF_8)) }.getOrNull() ?: return
+        if (root.optInt("version", 0) != 2) return
+        val files = root.optJSONArray("files") ?: return
+        for (index in 0 until files.length()) {
+            val row = files.optJSONObject(index) ?: continue
+            val path = row.optString("path").trim()
+            if (!path.startsWith("$WORKSPACE_ROOT/")) continue
+            val symbols = ArrayList<SymbolRecord>()
+            val symbolRows = row.optJSONArray("symbols") ?: JSONArray()
+            for (symbolIndex in 0 until symbolRows.length()) {
+                val symbol = symbolRows.optJSONObject(symbolIndex) ?: continue
+                val name = symbol.optString("name").trim()
+                if (name.isBlank()) continue
+                symbols += SymbolRecord(
+                    name,
+                    symbol.optString("kind"),
+                    path,
+                    symbol.optInt("line", 1),
+                    symbol.optInt("endLine", symbol.optInt("line", 1)),
+                    symbol.optString("signature")
+                )
+            }
+            val dependencies = ArrayList<DependencyRecord>()
+            val dependencyRows = row.optJSONArray("dependencies") ?: JSONArray()
+            for (dependencyIndex in 0 until dependencyRows.length()) {
+                val dependency = dependencyRows.optJSONObject(dependencyIndex) ?: continue
+                val specifier = dependency.optString("specifier").trim()
+                if (specifier.isBlank()) continue
+                dependencies += DependencyRecord(specifier, dependency.optString("kind"), dependency.optInt("line", 1))
+            }
+            symbolIndex[path] = IndexedFile(
+                row.optLong("modified"),
+                row.optLong("size"),
+                row.optString("language", "generic"),
+                symbols,
+                dependencies
+            )
+        }
+    }
+
+    private fun persistProjectIntelligence() {
+        if (!persistentIndexLoaded || !persistentIndexDirty) return
+        val files = JSONArray()
+        symbolIndex.entries.sortedBy { it.key }.take(MAX_PERSISTED_INDEX_FILES).forEach { (path, indexed) ->
+            val symbols = JSONArray()
+            indexed.symbols.forEach { symbol ->
+                symbols.put(JSONObject()
+                    .put("name", symbol.name)
+                    .put("kind", symbol.kind)
+                    .put("line", symbol.line)
+                    .put("endLine", symbol.endLine)
+                    .put("signature", symbol.signature))
+            }
+            val dependencies = JSONArray()
+            indexed.dependencies.forEach { dependency ->
+                dependencies.put(JSONObject()
+                    .put("specifier", dependency.specifier)
+                    .put("kind", dependency.kind)
+                    .put("line", dependency.line))
+            }
+            files.put(JSONObject()
+                .put("path", path)
+                .put("modified", indexed.modified)
+                .put("size", indexed.size)
+                .put("language", indexed.language)
+                .put("symbols", symbols)
+                .put("dependencies", dependencies))
+        }
+        val payload = JSONObject()
+            .put("version", 2)
+            .put("generatedAt", System.currentTimeMillis())
+            .put("files", files)
+            .toString()
+        val bytes = payload.toByteArray(Charsets.UTF_8)
+        if (bytes.size.toLong() > MAX_PERSISTED_INDEX_BYTES) {
+            runCatching { projectIntelligenceCache.delete() }
+            persistentIndexDirty = false
+            return
+        }
+        val parent = projectIntelligenceCache.parentFile ?: return
+        parent.mkdirs()
+        val temporary = File(parent, "${projectIntelligenceCache.name}.tmp-${UUID.randomUUID()}")
+        runCatching {
+            temporary.writeBytes(bytes)
+            if (projectIntelligenceCache.exists() && !projectIntelligenceCache.delete()) throw IllegalStateException("Could not replace project intelligence cache")
+            if (!temporary.renameTo(projectIntelligenceCache)) throw IllegalStateException("Could not commit project intelligence cache")
+            persistentIndexDirty = false
+        }.onFailure { temporary.delete() }
+    }
+
     private fun refreshSymbolIndex(base: File): JSONObject {
+        ensurePersistentIndexLoaded()
         var scanned = 0
         var reused = 0
         var skipped = 0
+        var removed = 0
         var truncated = false
         val seen = HashSet<String>()
         fun visit(file: File) {
@@ -1308,18 +1648,33 @@ internal class RiftToolSandbox(context: Context) {
         }.forEach(::visit)
         val prefix = relativePath(base).let { if (it == WORKSPACE_ROOT) "$WORKSPACE_ROOT/" else "$it/" }
         symbolIndex.keys.filter { key -> (base.isDirectory && key.startsWith(prefix) || base.isFile && key == relativePath(base)) && key !in seen }
-            .toList().forEach(symbolIndex::remove)
-        return JSONObject().put("indexed", scanned).put("reused", reused).put("skipped", skipped).put("cachedFiles", symbolIndex.size).put("truncated", truncated)
+            .toList().forEach { key -> symbolIndex.remove(key); removed += 1 }
+        if (scanned > 0 || removed > 0) {
+            persistentIndexDirty = true
+            persistProjectIntelligence()
+        }
+        return JSONObject()
+            .put("indexed", scanned)
+            .put("reused", reused)
+            .put("skipped", skipped)
+            .put("removed", removed)
+            .put("cachedFiles", symbolIndex.size)
+            .put("persistence", "app-private-v2")
+            .put("truncated", truncated)
     }
 
     private fun indexFile(file: File): IndexedFile? {
+        ensurePersistentIndexLoaded()
         if (!file.isFile || file.length() > MAX_INDEX_FILE_BYTES || isIgnoredFile(file) || !isTextFile(file)) return null
         val path = relativePath(file)
         val cached = symbolIndex[path]
         if (cached != null && cached.modified == file.lastModified() && cached.size == file.length()) return cached
         val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return null
+        val language = languageFor(file)
         val symbols = extractSymbols(file, text)
-        return IndexedFile(file.lastModified(), file.length(), symbols).also { symbolIndex[path] = it }
+        val dependencies = extractDependencies(file, text)
+        persistentIndexDirty = true
+        return IndexedFile(file.lastModified(), file.length(), language, symbols, dependencies).also { symbolIndex[path] = it }
     }
 
     private fun extractSymbols(file: File, text: String): List<SymbolRecord> {
@@ -1357,6 +1712,36 @@ internal class RiftToolSandbox(context: Context) {
             }
         }
         return out.distinctBy { "${it.path}:${it.line}:${it.name}:${it.kind}" }
+    }
+
+    private fun extractDependencies(file: File, text: String): List<DependencyRecord> {
+        val language = languageFor(file)
+        val out = ArrayList<DependencyRecord>()
+        fun add(specifier: String?, kind: String, line: Int) {
+            val value = specifier?.trim()?.trimEnd(';')?.trim().orEmpty()
+            if (value.isNotBlank() && value.length <= 500) out += DependencyRecord(value, kind, line)
+        }
+        text.replace("\r\n", "\n").replace('\r', '\n').split('\n').forEachIndexed { index, line ->
+            when (language) {
+                "cpp" -> Regex("^\\s*#\\s*include\\s*[<\"]([^>\"]+)[>\"]").find(line)?.let { add(it.groupValues[1], "include", index + 1) }
+                "kotlin", "java" -> Regex("^\\s*import\\s+([A-Za-z0-9_.*]+)").find(line)?.let { add(it.groupValues[1], "import", index + 1) }
+                "javascript" -> {
+                    Regex("\\bfrom\\s*[\"']([^\"']+)[\"']").find(line)?.let { add(it.groupValues[1], "import", index + 1) }
+                    Regex("^\\s*import\\s*[\"']([^\"']+)[\"']").find(line)?.let { add(it.groupValues[1], "import", index + 1) }
+                    Regex("\\b(?:require|import)\\s*\\(\\s*[\"']([^\"']+)[\"']").findAll(line).forEach { add(it.groupValues[1], "require", index + 1) }
+                }
+                "python" -> {
+                    Regex("^\\s*from\\s+([A-Za-z0-9_.]+)\\s+import\\b").find(line)?.let { add(it.groupValues[1], "python", index + 1) }
+                    Regex("^\\s*import\\s+([A-Za-z0-9_.]+)").find(line)?.let { add(it.groupValues[1], "python", index + 1) }
+                }
+                "rust" -> {
+                    Regex("^\\s*use\\s+([^;]+)").find(line)?.let { add(it.groupValues[1], "use", index + 1) }
+                    Regex("^\\s*mod\\s+([A-Za-z_][A-Za-z0-9_]*)").find(line)?.let { add(it.groupValues[1], "module", index + 1) }
+                }
+                "csharp" -> Regex("^\\s*using\\s+([A-Za-z0-9_.]+)").find(line)?.let { add(it.groupValues[1], "import", index + 1) }
+            }
+        }
+        return out.distinctBy { "${it.line}:${it.kind}:${it.specifier}" }
     }
 
     private fun symbolEndLine(lines: List<String>, startIndex: Int, language: String): Int {
@@ -1411,19 +1796,33 @@ internal class RiftToolSandbox(context: Context) {
         return candidate == normalizedRoot || candidate.startsWith("$normalizedRoot/")
     }
     private fun invalidateIndex(path: String) {
+        ensurePersistentIndexLoaded()
         val normalized = normalizedPath(path)
         if (batchInvalidationDepth > 0) {
             pendingIndexInvalidations.add(normalized)
             return
         }
-        symbolIndex.keys.filter { it == normalized || it.startsWith("$normalized/") }.toList().forEach(symbolIndex::remove)
+        val removed = symbolIndex.keys.filter { it == normalized || it.startsWith("$normalized/") }.toList()
+        removed.forEach(symbolIndex::remove)
+        if (removed.isNotEmpty()) {
+            persistentIndexDirty = true
+            persistProjectIntelligence()
+        }
     }
 
     private fun flushIndexInvalidations() {
+        ensurePersistentIndexLoaded()
         val pending = pendingIndexInvalidations.toList()
         pendingIndexInvalidations.clear()
+        var removedAny = false
         pending.forEach { path ->
-            symbolIndex.keys.filter { it == path || it.startsWith("$path/") }.toList().forEach(symbolIndex::remove)
+            val removed = symbolIndex.keys.filter { it == path || it.startsWith("$path/") }.toList()
+            removed.forEach(symbolIndex::remove)
+            if (removed.isNotEmpty()) removedAny = true
+        }
+        if (removedAny) {
+            persistentIndexDirty = true
+            persistProjectIntelligence()
         }
     }
 
@@ -1632,13 +2031,15 @@ internal class RiftToolSandbox(context: Context) {
             .put("totalBytes", stats.totalBytes)
             .put("codeMode", JSONObject()
                 .put("version", "rift-code-mode-v1")
-                .put("projectIntelligence", "v1")
+                .put("projectIntelligence", "v2")
                 .put("workspaceRoot", WORKSPACE_ROOT)
                 .put("maxOperations", MAX_WORKSPACE_OPS)
                 .put("maxResultBytes", MAX_WORKSPACE_RESULT_BYTES)
                 .put("transactional", true)
                 .put("dryRun", true)
-                .put("symbolIndex", "incremental-memory")
+                .put("symbolIndex", "persistent-incremental")
+                .put("dependencyGraph", true)
+                .put("projectViews", JSONArray(listOf("graph", "impact", "validation")))
                 .put("ignoredDirectories", JSONArray(ignoredDirectoryNames.sorted())))
             .put("capabilities", JSONArray(listOf(
                 "stat", "hash", "list", "readText", "writeText", "mkdir", "remove", "move", "copy", "archive", "extract", "workspaceExec",

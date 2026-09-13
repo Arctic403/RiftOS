@@ -26,7 +26,7 @@ tool name + args
   -> host result
 ```
 
-`rift_workspace_exec` accepts canonical flat operations and defensively normalizes an unambiguous legacy shorthand before permission classification and dispatch, preventing shorthand writes from bypassing write gating.
+`rift_workspace_exec` accepts canonical flat operations and defensively normalizes an unambiguous legacy shorthand before permission classification and dispatch, preventing shorthand writes from bypassing write gating. Project Intelligence v2 intentionally evolves behind this existing operation and its already-published `kind`/`query` fields. The legacy “Project Intelligence v1” phrase in the tool description is temporarily retained as manifest-compatibility text: changing a tool description changes `manifest().sha256` just like changing its name/schema, which can force cached MCP clients to rescan actions.
 
 ## Permission model
 
@@ -39,6 +39,7 @@ A bounded recent audit list records tool, target, success/failure and error meta
 ## Critical invariants
 
 - `tools()`, alias mapping, method mapping and permission classification must stay synchronized.
+- Treat model-visible names, descriptions and schemas as a versioned connector contract; internal intelligence upgrades should stay behind existing fields when possible.
 - Normalize before permission checks.
 - Never let a client-supplied alias change read/write classification.
 - The host is authoritative even if a browser/relay client claims a different schema.
