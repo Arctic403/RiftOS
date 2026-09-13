@@ -16,7 +16,7 @@ This roadmap describes intended work, not shipped capability. Current implementa
 
 ## Local Rift MCP expansion
 
-Current tool family (18 registered tools):
+Current tool family (17 registered tools):
 
 ```text
 rift_shell_exec
@@ -35,7 +35,6 @@ rift_extract
 rift_audit
 rift_scan
 rift_project_export
-rift_workspace_diff
 rift_workspace_exec
 ```
 
@@ -60,14 +59,12 @@ High-impact operations should require explicit developer-mode capability grants.
 
 ## MCP project intelligence
 
-Implemented foundation: compact `RIFT_PROJECT_V2` project descriptor, full workspace reachability through `rift_workspace_exec` (Rift Code Mode), Project Intelligence v2 snapshots, restart-persistent incremental symbol indexing, bounded import/include dependency graph edges, focused project graph and impact views, validation-plan discovery, reference lookup, exact symbol/ranged reads, SHA-256 guarded range/hunk patching, built-in dependency/build/cache ignore rules, dry-run validation, compact changed-file summaries and transactional batched write/replace/patch/mkdir/remove/move/archive/extract with rollback on batch failure.
-
-Project Intelligence v2 deliberately stays behind the existing `project` Code Mode operation. `kind=graph`, `kind=impact` and `kind=validation` reuse the already-published `kind`/`query` operation fields, so no parallel agent tool catalog or second task controller is required.
+Implemented foundation: compact `RIFT_PROJECT_V2` project descriptor, full workspace reachability through `rift_workspace_exec` (Rift Code Mode), Project Intelligence v1 snapshots, incremental symbol indexing, reference lookup, exact symbol/ranged reads, SHA-256 guarded range/hunk patching, built-in dependency/build/cache ignore rules, dry-run validation, compact changed-file summaries and transactional batched write/replace/patch/mkdir/remove/move/archive/extract with rollback on batch failure.
 
 Next improvements should stay lightweight:
 
-- richer language-aware semantic resolution for aliases, generated sources and package/module namespaces without turning RiftOS into a heavyweight language-server host;
-- use project impact output to select the smallest relevant local test/check set before external Android/native builds;
+- persist the current incremental in-memory symbol/reference index across process restarts and extend it with import/dependency graph edges;
+- richer semantic import/dependency edges without turning RiftOS into a heavyweight language-server host;
 - add deliberate source-control-oriented review surfaces only if they have a real caller/UI and tests, rather than reviving an unreachable hidden session journal.
 
 The project should never be injected wholesale into ChatGPT. RiftOS exposes full project reachability through the local executor; only bounded search/read results needed for reasoning cross the existing ChatGPT Web transport.

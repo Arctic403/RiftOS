@@ -96,10 +96,6 @@ read  read_range  read_symbol  write  replace  patch  patch_range
 apply_hunks  mkdir  remove  move  rename  copy  archive  extract
 ```
 
-Project Intelligence v2 is an internal expansion of that existing surface rather than a second MCP agent. `project` with no `kind` returns the bounded project overview plus language/dependency/index metadata; `kind=graph` returns focused dependency edges, `kind=impact` combines definitions/references/dependencies/dependents/docs/tests, and `kind=validation` discovers repository validation guidance. These views reuse the operation object's existing `kind` and `query` properties, so the MCP tool catalog does not need a parallel `rift_agent_*` family.
-
-The incremental symbol/dependency index is persisted in app-private RiftOS state outside `riftfs/workspace` and revalidated against workspace file size/mtime during refresh. It is an acceleration cache only; source files remain authoritative and stale rows are dropped/rebuilt.
-
 This is intentionally not arbitrary JavaScript evaluated inside the `chatgpt.com` origin. The ChatGPT page receives only the declarative operation envelope; execution stays in the device-side sandbox. That avoids giving model-produced code access to ChatGPT DOM/session state while still collapsing many local filesystem actions into one ChatGPT↔Rift round trip.
 
 Mutating batches use a lazy copy-on-write transaction in app cache. Only paths actually touched by the batch are copied. If any operation fails, the batch restores its mutations before returning an error. On success, the committed workspace state remains in place; there is no separate persistent AI-session review journal.
