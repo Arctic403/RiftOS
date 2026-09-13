@@ -21,14 +21,12 @@ tool name + args
   -> normalize arguments
   -> classify mutation (`requiresWrite`)
   -> check local grants
-  -> capture AI rollback state when needed
-  -> audit/journal start
   -> sandbox.handleAsync() OR RiftShellBridge.execute()
-  -> audit/journal finish
+  -> record bounded audit metadata
   -> host result
 ```
 
-`rift_workspace_exec` accepts canonical flat operations and defensively normalizes an unambiguous legacy shorthand before permission classification and journaling, preventing shorthand writes from bypassing write gating.
+`rift_workspace_exec` accepts canonical flat operations and defensively normalizes an unambiguous legacy shorthand before permission classification and dispatch, preventing shorthand writes from bypassing write gating.
 
 ## Permission model
 
@@ -54,9 +52,13 @@ A bounded recent audit list records tool, target, success/failure and error meta
 - Audit target wrong -> `auditTarget` mapping.
 - Shell tool says bridge unavailable -> runtime registration/`RiftShellBridge`, not sandbox.
 
+## Fix map
+
+Tool schemas, aliases, backend method mapping, permission classification, manifest generation and bounded host audit metadata belong in `RiftToolHost`. Workspace filesystem semantics and transactional rollback belong in `RiftToolSandbox`; MCP framing/idempotency belongs in `RiftMcpServer`; shell execution belongs in `RiftShellBridge`.
+
 ## Change checklist
 
-When adding a tool: add schema to `tools()`, canonical alias if needed, backend method mapping, read/write classification, audit target, journal behavior if mutating, tests/docs, then verify manifest count/hash through `rift_info`.
+When adding a tool: add its schema to `tools()`, canonical alias if needed, backend method mapping, read/write classification, audit target and tests/docs, then verify manifest count/hash through `rift_info`.
 
 ## Validation
 
