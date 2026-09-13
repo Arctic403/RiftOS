@@ -41,6 +41,7 @@ const checks = [
   ['desktop emits immediate browser visibility lifecycle', desktop.includes('riftos:window-visibility') && desktop.includes("announceVisibility(win,false,'minimize')")],
   ['Android desktop is permanent and has no retired mode switch', desktop.includes("get mode(){return 'desktop';}") && !desktop.includes('desktopPreference') && !desktop.includes('riftDesktopToggle') && !desktop.includes('rift.desktop.mode')],
   ['desktop geometry fits narrow viewports', desktop.includes('const minWidth=Math.min(MIN_W,maxWidth)') && desktop.includes('window.visualViewport')],
+  ['taskbar only retains pinned or running apps', desktop.includes("btn.classList.toggle('rift-taskbar-hidden',!pinned&&!item)") && desktop.includes('taskbarPins') && desktop.includes('pinTaskbar(id,pinned=true)')],
   ['AndroidX Core dependency backs inset APIs and compileSdk 36', gradle.includes('androidx.core:core-ktx:1.18.0') && gradle.includes('compileSdk = 36')],
   ['Android host consumes system bar and cutout insets', main.includes('WindowCompat.setDecorFitsSystemWindows(window, false)') && main.includes('WindowInsetsCompat.Type.displayCutout()') && main.includes('view.setPadding(safe.left, safe.top, safe.right, safe.bottom)')],
   ['web shell cannot exceed its host viewport', shellStyles.includes('.os{width:100%;max-width:100%;min-width:0;') && shellStyles.includes('.content{grid-row:2;position:relative;min-width:0;max-width:100%;')],

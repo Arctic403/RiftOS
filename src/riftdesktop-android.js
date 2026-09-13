@@ -9,10 +9,12 @@ if(!os||!stage||!workspace||!dock||!statusbar)throw new Error('RiftDesktop requi
 const MIN_W=300,MIN_H=220;
 const inputState={mouse:false,keyboard:false,virtualMouse:false};
 let desktopWallpaper='';
+let taskbarPins=new Set();
 async function restoreDesktopSettings(){
   try{
     const data=await core?.fs?.readJSON?.('/system/settings/desktop.json',null);
     if(data?.wallpaper!==undefined)desktopWallpaper=String(data.wallpaper||'');
+    if(Array.isArray(data?.taskbarPins))taskbarPins=new Set(data.taskbarPins.map(value=>String(value||'').trim()).filter(value=>value&&value!=='home'));
   }catch(_){ }
 }
 let activeWindow=null,zCounter=100;
@@ -79,7 +81,44 @@ function startResize(event,win){if(inputState.virtualMouse||win.classList.contai
 
 function upgradeWindow(win){if(!(win instanceof HTMLElement)||!win.classList.contains('window')||win.dataset.riftDesktopUpgraded)return;win.dataset.riftDesktopUpgraded='1';win.classList.add('rift-desktop-window');const bar=win.querySelector('.window-bar'),close=win.querySelector('.window-close');if(!bar||!close)return;const actions=document.createElement('div');actions.className='rift-window-actions';const min=document.createElement('button');min.type='button';min.className='rift-window-minimize';min.title='Minimize';min.textContent='—';const max=document.createElement('button');max.type='button';max.className='rift-window-maximize';max.title='Maximize';max.textContent='□';close.parentNode?.removeChild(close);actions.append(min,max,close);bar.append(actions);const resizer=document.createElement('div');resizer.className='rift-window-resizer';win.append(resizer);min.addEventListener('click',e=>{e.stopPropagation();minimize(win);});max.addEventListener('click',e=>{e.stopPropagation();maximize(win);});bar.addEventListener('dblclick',e=>{if(!e.target.closest('button'))maximize(win);});bar.addEventListener('pointerdown',e=>startDrag(e,win));resizer.addEventListener('pointerdown',e=>startResize(e,win));win.addEventListener('pointerdown',()=>{if(!inputState.virtualMouse)focusVisual(win);},{capture:true});restoreDesktopGeometry(win);focusVisual(win,false);}
 
-function syncTaskbar(){const list=wm()?.list?.()||[];const byId=new Map(list.map(item=>[item.id,item]));dock.querySelectorAll('.dock-btn[data-open]').forEach(btn=>{if(btn.dataset.open==='home')return;const item=byId.get(btn.dataset.open);btn.classList.toggle('rift-running',!!item);btn.classList.toggle('rift-running-active',!!item&&item.window===activeWindow&&!item.minimized);});const pinned=new Set([...dock.querySelectorAll('.dock-btn[data-open]')].map(btn=>btn.dataset.open));taskbarOpen.innerHTML=list.filter(item=>!pinned.has(item.id)).map(item=>`<button type="button" class="rift-task-window${item.window===activeWindow&&!item.minimized?' active':''}" data-task-window="${item.id}"><span>${item.id==='editor'?'{}':item.id==='tasks'?'≡':'□'}</span><b>${item.title}</b></button>`).join('');stage.classList.toggle('rift-stage-active',list.some(item=>!item.minimized));}
+function taskbarMeta(id,title=''){
+  const card=[...document.querySelectorAll('.app-card[data-open]')].find(node=>node.dataset.open===id);
+  const menu=[...startMenu.querySelectorAll('[data-open]')].find(node=>node.dataset.open===id);
+  const source=card||menu;
+  const icon=source?.querySelector('.app-icon,b')?.textContent?.trim()||(id==='editor'?'{}':id==='tasks'?'≡':'□');
+  const label=String(title||source?.querySelector('strong,span')?.textContent?.trim()||id);
+  return{icon,label};
+}
+function makeTaskbarWindowButton(id,title,item,pinned=false){
+  const meta=taskbarMeta(id,title),button=document.createElement('button');
+  button.type='button';
+  button.className=`rift-task-window${item?.window===activeWindow&&!item?.minimized?' active':''}${pinned?' pinned':''}`;
+  if(item)button.dataset.taskWindow=id;else button.dataset.open=id;
+  const icon=document.createElement('span'),label=document.createElement('b');
+  icon.textContent=meta.icon;label.textContent=meta.label;button.append(icon,label);return button;
+}
+function setTaskbarPinned(id,pinned=true){
+  const key=String(id||'').trim();if(!key||key==='home')return false;
+  if(pinned)taskbarPins.add(key);else taskbarPins.delete(key);
+  persistDesktopSetting('taskbarPins',[...taskbarPins]);syncTaskbar();return true;
+}
+function syncTaskbar(){
+  const list=wm()?.list?.()||[],byId=new Map(list.map(item=>[item.id,item])),represented=new Set();
+  dock.querySelectorAll('.dock-btn[data-open]').forEach(btn=>{
+    if(btn.dataset.open==='home')return;
+    const id=btn.dataset.open,item=byId.get(id),pinned=taskbarPins.has(id)||btn.dataset.pinned==='true';
+    btn.classList.toggle('rift-taskbar-hidden',!pinned&&!item);
+    btn.classList.toggle('rift-pinned',pinned);
+    btn.classList.toggle('rift-running',!!item);
+    btn.classList.toggle('rift-running-active',!!item&&item.window===activeWindow&&!item.minimized);
+    if(pinned||item)represented.add(id);
+  });
+  const buttons=[];
+  for(const id of taskbarPins){if(id==='home'||represented.has(id))continue;const item=byId.get(id);buttons.push(makeTaskbarWindowButton(id,item?.title||'',item,true));represented.add(id);}
+  for(const item of list)if(!represented.has(item.id))buttons.push(makeTaskbarWindowButton(item.id,item.title,item,false));
+  taskbarOpen.replaceChildren(...buttons);
+  stage.classList.toggle('rift-stage-active',list.some(item=>!item.minimized));
+}
 
 async function saveIconGeometry(card){
   try{
@@ -206,4 +245,4 @@ restoreDesktopSettings().then(()=>{
   moveCursor(cursorX,cursorY);
 });
 const appApi=window.RiftDesktop||{};
-window.RiftDesktop=Object.freeze({...appApi,get mode(){return 'desktop';},get input(){return{...inputState};},get wallpaper(){return desktopWallpaper;},setWallpaper(value){setWallpaper(value);},resetLayout(){resetDesktopLayout();},virtualMouse(enabled=true){setVirtualMouse(enabled);},restore(){restore(activeWindow);},minimize(){minimize(activeWindow);},maximize(){maximize(activeWindow);}});
+window.RiftDesktop=Object.freeze({...appApi,get mode(){return 'desktop';},get input(){return{...inputState};},get wallpaper(){return desktopWallpaper;},get taskbarPins(){return[...taskbarPins];},setWallpaper(value){setWallpaper(value);},pinTaskbar(id,pinned=true){return setTaskbarPinned(id,pinned);},resetLayout(){resetDesktopLayout();},virtualMouse(enabled=true){setVirtualMouse(enabled);},restore(){restore(activeWindow);},minimize(){minimize(activeWindow);},maximize(){maximize(activeWindow);}});

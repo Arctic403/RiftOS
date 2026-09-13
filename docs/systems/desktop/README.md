@@ -23,6 +23,8 @@ Native RiftBrowser content is special: the HTML window owns chrome/geometry whil
 - Window geometry is clamped to the actual stage/visual viewport; windows must not drift off the right/bottom edge.
 - Minimized windows are not considered visible/focused.
 - Focus updates z-order, visual focused state and taskbar state together.
+- The taskbar is demand-driven: Start/tray stay present, pinned apps persist, and unpinned apps appear only while their window is open (including minimized windows) and disappear after close.
+- Taskbar pins persist in `/system/settings/desktop.json` as `taskbarPins`; `RiftDesktop.pinTaskbar(id, pinned)` is the programmatic pin/unpin surface.
 - Browser minimize/show-desktop must announce visibility before leaving a native renderer onscreen.
 - Geometry persistence is keyed by app/window identity and must tolerate smaller future viewports.
 - Desktop mode remains usable on narrow Android screens; minimum width/height must never exceed available bounds.
@@ -44,7 +46,7 @@ Native browser surface mismatch -> browser window integration, not z-index hacks
 
 ## Validation
 
-Test phone portrait, landscape, narrow split-screen and DeX-sized windows. Open multiple windows; move/resize/maximize/minimize/restore; show desktop; reopen after viewport shrink; verify browser native surface tracks the HTML content rectangle.
+Test phone portrait, landscape, narrow split-screen and DeX-sized windows. With no pins and no open windows, verify only Start/tray remain. Open unpinned apps and verify they appear while open/minimized and disappear after close. Pin/unpin an app and verify the choice survives desktop reload. Open multiple windows; move/resize/maximize/minimize/restore; show desktop; reopen after viewport shrink; verify browser native surface tracks the HTML content rectangle.
 
 ## Safe extension points
 
