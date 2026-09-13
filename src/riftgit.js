@@ -26,7 +26,7 @@ const fs={
 function token(){return sessionStorage.getItem("riftgit-token")||"";}
 function headers(extra={}){const out={Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",...extra};if(token())out.Authorization=`Bearer ${token()}`;return out;}
 async function api(path,options={}){
-  const response=await fetch(`https://api.github.com${path}`,{...options,headers:headers(options.headers||{})});
+  const response=await fetch(`https://api.github.com${path}`,{...options,cache:"no-store",headers:headers(options.headers||{})});
   if(!response.ok){let detail="";try{detail=(await response.json())?.message||"";}catch{}throw new Error(`GitHub ${response.status}${detail?`: ${detail}`:""}`);}
   return response.status===204?null:response.json();
 }
@@ -195,7 +195,7 @@ async function atomicPush(message,print,cwd,initialMeta=null){
   const commit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message||meta.pendingMessage||"RiftOS workspace update",tree:tree.sha,parents:[remote.commit.sha]})});
   await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/refs/heads/${meta.branch.split("/").map(encodeURIComponent).join("/")}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({sha:commit.sha,force:false})});
   for(const path of deleted)delete meta.tracked[path];for(const path of [...modified,...untracked])meta.tracked[path]={blobSha:newBlobShas.get(path),size:Number((await fs.stat(`${meta.root}/${path}`))?.size||0),mode:meta.tracked?.[path]?.mode||"100644"};
-  meta.headSha=commit.sha;delete meta.pendingMessage;if(!initialMeta)await saveMeta(meta);await checkpointWorkspaceRecords(meta.root,"git:push",commit.sha);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
+  meta.headSha=commit.sha;delete meta.pendingMessage;await saveMeta(meta);await checkpointWorkspaceRecords(meta.root,"git:push",commit.sha);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
 }
 async function workspaceDiff(options={}){
   const meta=await workspaceState(),state=await statusFor(meta,()=>{},true);

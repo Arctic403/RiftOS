@@ -241,10 +241,10 @@ async function openFiles(path="/",options={}){
   body.innerHTML=`<div class="rift-explorer">
     <div class="rift-explorer-commandbar">
       <div class="rift-explorer-navbuttons">
-        <button id="fsBack" title="Back" ${canBack?"":"disabled"}>←</button>
-        <button id="fsForward" title="Forward" ${canForward?"":"disabled"}>→</button>
-        <button id="fsUp" title="Up" ${parent===null?"disabled":""}>↑</button>
-        <button id="fsRefresh" title="Refresh">↻</button>
+        <button id="fsBack" title="Back" aria-label="Back" ${canBack?"":"disabled"}>←</button>
+        <button id="fsForward" title="Forward" aria-label="Forward" ${canForward?"":"disabled"}>→</button>
+        <button id="fsUp" title="Up" aria-label="Up" ${parent===null?"disabled":""}>↑</button>
+        <button id="fsRefresh" title="Refresh" aria-label="Refresh">↻</button>
       </div>
       <div class="rift-explorer-address" id="fsAddress">${crumbs.join("")}</div>
       <button class="rift-explorer-new primary" id="fsNewFile" ${virtualMountsRoot?"disabled":""}>＋ File</button>
@@ -495,8 +495,8 @@ async function openBrowser(startUrl="https://chatgpt.com"){
   const url=String(startUrl||"https://chatgpt.com").trim()||"https://chatgpt.com";
   body.innerHTML=`<div class="rift-browser-window">
     <div class="rift-browser-windowbar">
-      <button id="browserBack" title="Back" disabled>←</button><button id="browserForward" title="Forward" disabled>→</button><button id="browserReload" title="Reload">↻</button>
-      <input id="browserUrl" value="${escapeHTML(url)}" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url">
+      <button id="browserBack" title="Back" aria-label="Browser Back" disabled>←</button><button id="browserForward" title="Forward" aria-label="Browser Forward" disabled>→</button><button id="browserReload" title="Reload" aria-label="Browser Reload">↻</button>
+      <input id="browserUrl" aria-label="Browser address" value="${escapeHTML(url)}" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url">
       <button class="primary" id="browserGo">Go</button>
     </div>
     <div class="rift-browser-meta"><span id="browserState">RiftBrowser Engine</span><span>WebView compatibility backend · ChatGPT MCP isolated</span></div>

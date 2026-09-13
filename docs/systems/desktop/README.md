@@ -26,13 +26,13 @@ Native RiftBrowser content is special: the HTML window owns chrome/geometry whil
 - The taskbar is demand-driven: Start/tray stay present, pinned apps persist, and unpinned apps appear only while their window is open (including minimized windows) and disappear after close.
 - Taskbar pins persist in `/system/settings/desktop.json` as `taskbarPins`; `RiftDesktop.pinTaskbar(id, pinned)` is the programmatic pin/unpin surface.
 - Browser minimize/show-desktop must announce visibility before leaving a native renderer onscreen.
-- Geometry persistence is keyed by app/window identity and must tolerate smaller future viewports.
+- Geometry persistence is keyed by app/window identity and must tolerate smaller future viewports. Maximize captures the exact current geometry in `riftRestoreGeometry`; Restore returns to that geometry rather than a newly computed default rectangle.
 - Desktop mode remains usable on narrow Android screens; minimum width/height must never exceed available bounds.
 
 ## Failure signatures
 
 - Whole desktop extends past screen -> `desktopBounds`, `applyGeometry`, CSS min-width/max-width or Android insets.
-- Window restores offscreen -> stored geometry clamp/restore.
+- Window restores offscreen or maximize/restore changes its size unexpectedly -> stored geometry clamp plus `riftRestoreGeometry` capture/restore.
 - Clicking one window highlights another -> focus/taskbar record divergence.
 - Browser renderer covers another window -> visibility/bounds event path to native browser host.
 - Virtual mouse clicks wrong target -> cursor coordinates, overlay pointer-events or `elementFromPoint` target resolution.

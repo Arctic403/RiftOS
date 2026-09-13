@@ -13,7 +13,7 @@ The Files app is RiftOS's Explorer-style UI over RiftFS. It provides navigation 
 
 ## Features
 
-Navigation/address path, list/details presentation, multi-select, selection rectangle/context menu, create file/folder, rename, copy, cut/paste, duplicate, move, delete, archive/extract, mount controls and opening text/previewable entries.
+Navigation/address path, list/details presentation, multi-select, selection rectangle/context menu, create file/folder, rename, copy, cut/paste, duplicate, move, delete, archive/extract, mount controls and opening text/previewable entries. Icon-only navigation controls expose explicit accessibility names so the fixed-scope `riftos-agent` can target Back/Forward/Up/Refresh semantically during device acceptance.
 
 `openFileEntry`/`openEntry` decide whether to navigate into a directory, open a text editor, or hand a file to native preview/open behavior.
 
