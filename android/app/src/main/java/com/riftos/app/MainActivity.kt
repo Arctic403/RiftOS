@@ -265,7 +265,19 @@ class MainActivity : Activity() {
         fileChooserCallback?.onReceiveValue(null)
         fileChooserCallback = callback
         return try {
-            val intent = params?.createIntent() ?: Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            // Android providers often report .rift JSON files as octet-stream or plain text.
+            // FileChooserParams.createIntent() may filter those out despite a wildcard in accept.
+            val needsUnfilteredPicker = params?.acceptTypes?.any { accept ->
+                accept.split(',').any { type ->
+                    val value = type.trim()
+                    value == "*/*" || value.equals(".rift", ignoreCase = true)
+                }
+            } == true
+            val intent = if (needsUnfilteredPicker) Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } else params?.createIntent() ?: Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "*/*"
             }
