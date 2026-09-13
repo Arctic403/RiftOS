@@ -33,6 +33,8 @@ const relayClient = readFileSync('android/app/src/main/java/com/riftos/app/RiftM
 const mcpRuntime = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt', 'utf8');
 const systemDump = readFileSync('android/app/src/main/java/com/riftos/app/RiftSystemDump.kt', 'utf8');
 const vortexBridge = readFileSync('android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt', 'utf8');
+const vortexAgent = readFileSync('android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt', 'utf8');
+const vortexAgentConfig = readFileSync('android/app/src/main/res/xml/vortex_agent_accessibility.xml', 'utf8');
 const androidManifest = readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
 
 const checks = [
@@ -64,6 +66,8 @@ const checks = [
   ['Vortex bridge uses explicit local Binder IPC with bounded artifacts', vortexBridge.includes('ComponentName(VORTEX_PACKAGE, VORTEX_SERVICE)') && vortexBridge.includes('DESCRIPTOR = "com.vortex3d.app.devbridge.v1"') && vortexBridge.includes('Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT') && vortexBridge.includes('REMOTE_CHUNK_BYTES = 192 * 1024') && vortexBridge.includes('MAX_IMAGE_BYTES = 512 * 1024') && vortexBridge.includes('uniqueDestination(root, name)') && !vortexBridge.includes('Socket(') && !vortexBridge.includes('http://') && !vortexBridge.includes('https://')],
   ['Vortex Binder client lifetime is process-owned rather than Activity-owned', mcpRuntime.includes('private var vortexBridge: RiftVortexBridgeClient?') && mcpRuntime.includes('fun vortexBridge(context: Context)') && dispatcher.includes('RiftMcpRuntime.vortexBridge(activity)') && !dispatcher.includes('vortexBridge.close()')],
   ['Vortex package visibility and native source inclusion are explicit', androidManifest.includes('<package android:name="com.vortex3d.app"') && gradle.includes('RiftVortexBridgeClient.kt')],
+  ['Vortex local agent is Android-package-scoped and user-granted', androidManifest.includes('RiftVortexAccessibilityService') && androidManifest.includes('android.permission.BIND_ACCESSIBILITY_SERVICE') && vortexAgentConfig.includes('android:packageNames="com.vortex3d.app"') && vortexAgentConfig.includes('android:canPerformGestures="true"') && vortexAgent.includes('TARGET_PACKAGE = "com.vortex3d.app"') && vortexAgent.includes('foreground package must be $TARGET_PACKAGE')],
+  ['Vortex local agent cannot become arbitrary app/root/ADB control', dispatcher.includes('"vortex.agent" -> RiftVortexLocalAgent.execute') && filesUi.includes('cmd==="vortex-agent"') && shellBatch.includes('"vortex-agent"') && vortexAgent.includes('getLaunchIntentForPackage(TARGET_PACKAGE)') && vortexAgent.includes('Password fields are not available') && !vortexAgent.includes('optString("package"') && !vortexAgent.includes('Runtime.getRuntime') && !vortexAgent.includes('ProcessBuilder') && !vortexAgent.includes('"adb"')],
   ['pulled Vortex evidence cannot pollute Project Intelligence', sandbox.includes('".vortex-bridge"') && vortexBridge.includes('workspace/.vortex-bridge/')],
   ['RiftShell result values survive the MCP tool-host wrapper', host.includes('.put("result", result.opt("result") ?: JSONObject.NULL)') && host.includes('.put("output", result.optString("output"))')],
   ['MCP image framing extracts Vortex preview once without changing the tool family', mcpServer.includes('sanitizeShellValue') && mcpServer.includes('.put("type", "image")') && mcpServer.includes('optJSONObject("_riftImage")') && !host.includes('rift_vortex')],

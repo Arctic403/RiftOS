@@ -587,6 +587,18 @@ async function runVortexShell(args,print,state){
   if(sub==="pull"){if(!args[0])throw new Error("usage: vortex pull <artifact-id> [filename]");return call({op:"pull_artifact",id:args[0],name:args[1]||""});}
   throw new Error(`unknown vortex command: ${sub}`);
 }
+async function runVortexAgentShell(args,print){
+  const sub=(args.shift()||"help").toLowerCase();
+  const call=async payload=>{const result=await core.native.call("vortex.agent",payload);print(JSON.stringify(result,null,2));return result;};
+  if(sub==="help")return print(`RiftOS Vortex local agent\nvortex-agent status\nvortex-agent open\nvortex-agent tree [limit]\nvortex-agent click <text|content-description|view-id>\nvortex-agent tap <x> <y>\nvortex-agent swipe <x1> <y1> <x2> <y2> [ms]\nvortex-agent type <target> <text>\nvortex-agent back`);
+  if(sub==="status"||sub==="open"||sub==="back")return call({op:sub});
+  if(sub==="tree")return call({op:"tree",limit:Math.max(1,Math.min(1024,Number(args[0])||256))});
+  if(sub==="click"){if(!args.length)throw new Error("usage: vortex-agent click <text|content-description|view-id>");return call({op:"click",target:args.join(" ")});}
+  if(sub==="tap"){if(args.length<2)throw new Error("usage: vortex-agent tap <x> <y>");const x=Number(args[0]),y=Number(args[1]);if(!Number.isFinite(x)||!Number.isFinite(y))throw new Error("tap coordinates must be finite numbers");return call({op:"tap",x,y});}
+  if(sub==="swipe"){if(args.length<4)throw new Error("usage: vortex-agent swipe <x1> <y1> <x2> <y2> [ms]");const values=args.slice(0,4).map(Number);if(values.some(value=>!Number.isFinite(value)))throw new Error("swipe coordinates must be finite numbers");const durationMs=args[4]===undefined?350:Number(args[4]);if(!Number.isFinite(durationMs))throw new Error("swipe duration must be numeric");return call({op:"swipe",x1:values[0],y1:values[1],x2:values[2],y2:values[3],durationMs});}
+  if(sub==="type"){if(args.length<2)throw new Error("usage: vortex-agent type <target> <text>");const target=args.shift();return call({op:"type",target,text:args.join(" ")});}
+  throw new Error(`unknown vortex-agent command: ${sub}`);
+}
 async function runShell(raw,print,state,context={}){
   const batchMatch=String(raw||"").trim().match(/^batch(?:\s+(--dry-run))?\s+([\s\S]+)$/i);
   if(batchMatch){
@@ -597,7 +609,8 @@ async function runShell(raw,print,state,context={}){
   const args=tokenize(raw),cmd=(args.shift()||"").toLowerCase();if(!cmd)return;
   if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print,{cwd:state.cwd});}
   if(cmd==="vortex")return runVortexShell(args,print,state);
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
+  if(cmd==="vortex-agent")return runVortexAgentShell(args,print);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}

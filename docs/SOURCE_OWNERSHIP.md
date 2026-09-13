@@ -65,6 +65,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt` | `docs/systems/mcp/sandbox/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTransferManifest.kt` | `docs/systems/transfers/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` | `docs/systems/vortex-bridge/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` | `docs/systems/vortex-agent/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt` | `docs/systems/workspace/live/README.md` |
 
