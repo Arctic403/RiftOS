@@ -30,7 +30,7 @@ Mutating batches create a lazy `BatchTransaction`. Each affected path is capture
 
 Project Intelligence v2 provides bounded text search plus a restart-persistent incremental symbol/dependency index stored in app-private RiftOS state outside the workspace. Index invalidations are batched around mutations and persisted after refresh/invalidation. Symbol extraction supports the source languages recognized by `languageFor`; dependency extraction covers common C/C++ includes, Kotlin/Java/C# imports, JavaScript/TypeScript imports and requires, Python imports, and Rust `use`/`mod` edges.
 
-The existing `project` Code Mode operation also provides bounded focused views without adding MCP tools: `kind=graph` returns resolved/unresolved dependency edges, `kind=impact` combines symbol definitions/references, direct dependency/dependent files, nearby README ownership and likely tests, and `kind=validation` discovers repository check/test/build guidance. These views reuse the already-published `kind` and `query` operation fields, keeping the MCP tool manifest stable.
+The existing `project` Code Mode operation also provides bounded focused views without adding MCP tools: `kind=graph` returns resolved/unresolved dependency edges, `kind=impact` combines symbol definitions/references, direct dependency/dependent files, nearby README ownership and likely tests, and `kind=validation` discovers repository check/test/build guidance. C/C++ include edges resolve only through filesystem/include-path evidence; system headers remain unresolved external edges rather than falling through to symbol-name guesses. Validation test discovery normalizes project-relative paths and ranks likely tests by filename/subsystem token affinity, including camel-case identifiers. These views reuse the already-published `kind` and `query` operation fields, keeping the MCP tool manifest stable.
 
 Snapshots/hash guards allow callers to reject edits when the workspace changed after inspection. The persistent intelligence cache is advisory and self-validating by file size/mtime; workspace source remains authoritative.
 
@@ -50,7 +50,7 @@ Snapshots/hash guards allow callers to reject edits when the workspace changed a
 - MCP cannot see path that Files can -> expected if outside workspace; otherwise path mapping/migration.
 - Batch partially changed files after error -> transaction capture/rollback defect.
 - Symbol/reference/graph results stale -> invalidation/index refresh; a bad app-private cache must be safely rebuilt from workspace source.
-- Project graph shows unresolved edges -> inspect language/package alias resolution before assuming the dependency is missing.
+- Project graph shows unresolved edges -> external/system dependencies are intentionally unresolved; for project-local misses inspect language/package alias and include-path resolution before assuming the dependency is missing.
 - Large project call truncates -> bounded result behavior; focus with `project kind=graph|impact query=...`, targeted reads or export instead of removing limits casually.
 - ZIP rejected -> inspect traversal/duplicate/size policy before loosening it.
 

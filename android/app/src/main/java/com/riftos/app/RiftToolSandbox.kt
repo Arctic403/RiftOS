@@ -1193,12 +1193,23 @@ internal class RiftToolSandbox(context: Context) {
         }
         if (File(base, "CMakeLists.txt").isFile) external.put("Run the configured CMake/native build and affected native tests")
         val relevantTests = JSONArray()
-        val q = query.substringAfterLast('/').substringBeforeLast('.').lowercase()
-        if (q.isNotBlank()) {
+        val projectRootPath = normalizedPath(path)
+        val normalizedQuery = normalizedPath(query)
+        val projectRelativeQuery = when {
+            normalizedQuery == projectRootPath -> ""
+            normalizedQuery.startsWith("$projectRootPath/") -> normalizedQuery.removePrefix("$projectRootPath/")
+            else -> normalizedQuery
+        }
+        val queryTokens = validationQueryTokens(projectRelativeQuery)
+        if (queryTokens.isNotEmpty()) {
             base.walkTopDown().onEnter { directory -> directory == base || !isIgnoredDirectory(directory) }
-                .filter { it.isFile && isTestPath(relativePath(it)) && it.name.lowercase().contains(q) }
+                .filter { it.isFile && isTestPath(relativePath(it)) }
+                .map { relativePath(it) }
+                .map { testPath -> testPath to validationTestAffinity(testPath, projectRelativeQuery, queryTokens) }
+                .filter { (_, score) -> score > 0 }
+                .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
                 .take(60)
-                .forEach { relevantTests.put(relativePath(it)) }
+                .forEach { (testPath, _) -> relevantTests.put(testPath) }
         }
         return JSONObject()
             .put("root", normalizedPath(path))
@@ -1228,6 +1239,31 @@ internal class RiftToolSandbox(context: Context) {
             lower.contains("test-") || lower.contains("_test.") || lower.contains(".test.") || lower.contains(".spec.")
     }
 
+    private fun validationQueryTokens(query: String): Set<String> {
+        val stopWords = setOf("workspace", "src", "source", "include", "includes", "android", "app", "main", "java", "cpp", "test", "tests", "vortex", "com")
+        val camelSplit = query.replace(Regex("([a-z0-9])([A-Z])"), "\$1_\$2")
+        return camelSplit.lowercase()
+            .split(Regex("[/._\\-]+"))
+            .asSequence()
+            .map { it.trim() }
+            .filter { token -> token.length >= 3 && token !in stopWords && token.all { it.isLetterOrDigit() } }
+            .toCollection(linkedSetOf())
+    }
+
+    private fun validationTestAffinity(testPath: String, projectRelativeQuery: String, queryTokens: Set<String>): Int {
+        val lowerPath = testPath.lowercase()
+        val testName = lowerPath.substringAfterLast('/').substringBeforeLast('.')
+        val queryName = projectRelativeQuery.lowercase().substringAfterLast('/').substringBeforeLast('.')
+        var score = 0
+        if (queryName.isNotBlank() && (testName.contains(queryName) || queryName.contains(testName))) score += 8
+        val pathSegments = lowerPath.split('/')
+        queryTokens.forEach { token ->
+            if (testName.contains(token)) score += 4
+            if (pathSegments.any { segment -> segment == token || segment.contains(token) }) score += 2
+        }
+        return score
+    }
+
     private fun resolveDependency(projectPath: String, sourcePath: String, dependency: DependencyRecord, allPaths: Set<String>): String? {
         val specifier = dependency.specifier.trim().replace('\\', '/')
         if (specifier.isBlank()) return null
@@ -1247,7 +1283,13 @@ internal class RiftToolSandbox(context: Context) {
         if (specifier.startsWith(".")) tryRelative(specifier)?.let { return it }
         if (dependency.kind == "include") {
             tryRelative(specifier)?.let { return it }
-            allPaths.firstOrNull { it.endsWith("/$specifier") }?.let { return it }
+            val suffixMatches = allPaths.filter { it.endsWith("/$specifier") }
+            if (suffixMatches.size == 1) return suffixMatches.first()
+            if (suffixMatches.size > 1) {
+                val includeMatches = suffixMatches.filter { it.contains("/include/") }
+                if (includeMatches.size == 1) return includeMatches.first()
+            }
+            return null
         }
         if (dependency.kind == "python") {
             val module = specifier.substringBefore(' ').replace('.', '/')
