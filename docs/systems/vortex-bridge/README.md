@@ -18,7 +18,8 @@ ChatGPT
 ## Source ownership
 
 - `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` — explicit Binder binding, protocol transaction, reconnect, screenshot attachment, bounded artifact chunking and artifact pull into RiftFS workspace.
-- `RiftNativeDispatcher.kt` — finite Android-native method mapping `vortex.bridge`.
+- `RiftMcpRuntime.kt` — process-wide owner of the Vortex Binder client so RiftOS Activity recreation cannot tear down a live Vortex job connection.
+- `RiftNativeDispatcher.kt` — finite Android-native method mapping `vortex.bridge`; it borrows the process-owned client and never closes it on Activity teardown.
 - `src/riftos.js` — user/model-facing `vortex` RiftShell command family.
 - `RiftToolHost.kt` — preserves the shell's structured return value so MCP can see bridge results.
 - `RiftMcpServer.kt` — attaches optional bounded Vortex preview data as MCP image content while keeping Base64 out of text/structured output.
@@ -51,7 +52,7 @@ The `vortex` command is deliberately **not supported inside `batch`**. Live app/
 
 The client binds with an explicit `ComponentName("com.vortex3d.app", "com.vortex3d.app.VortexDevBridgeService")` and Binder descriptor `com.vortex3d.app.devbridge.v1`. There is no implicit service discovery and no network transport. The Vortex service verifies the Binder caller UID maps to `com.riftos.app`.
 
-`RiftVortexBridgeClient` automatically reconnects once after Binder death. Binding is bounded to eight seconds. Vortex runtime operations can still fail cleanly if Vortex3D's `MainActivity` or renderer is not alive; opening the editor is intentionally a user-visible prerequisite rather than a hidden Activity launch.
+`RiftVortexBridgeClient` is owned by the process-wide `RiftMcpRuntime`, so normal RiftOS Activity/WebView recreation does not unbind Vortex between `vortex test` and `vortex job`. The explicit bind uses `BIND_AUTO_CREATE | BIND_IMPORTANT` to keep the debug Vortex process important while RiftOS is actively connected, and automatically reconnects once after Binder death. Binding is bounded to eight seconds. Vortex runtime operations can still fail cleanly if Vortex3D's `MainActivity` or renderer is not alive; opening the editor is intentionally a user-visible prerequisite rather than a hidden Activity launch.
 
 ## Evidence / image flow
 
@@ -73,6 +74,7 @@ Arbitrary evidence ZIPs/reports remain out-of-band until explicitly pulled. `vor
 `vortex status` cannot bind -> debug Vortex3D APK missing, wrong package/component, package visibility or Binder service packaging.
 status binds but activity/renderer false -> open Vortex3D or repair Vortex activity/renderer lifecycle.
 all `vortex` commands fail at native method -> RiftShell/native dispatcher/client wiring.
+validation job disappears/interrupted -> inspect Vortex process/session marker first; RiftOS keeps a process-wide important Binder bind, while Vortex journals job state for truthful restart diagnostics.
 validation fails -> inspect owning Vortex subsystem suite; bridge is only the transport/runner entry.
 semantic click misses -> inspect Vortex UI tag/content-description ownership.
 screenshot works in Vortex but no ChatGPT image -> artifact chunk/client `_riftImage` or MCP result framing.

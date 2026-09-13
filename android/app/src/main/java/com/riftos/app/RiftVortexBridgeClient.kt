@@ -89,7 +89,7 @@ class RiftVortexBridgeClient(context: Context) {
             latch = CountDownLatch(1)
             bindLatch = latch
             val intent = Intent().setComponent(ComponentName(VORTEX_PACKAGE, VORTEX_SERVICE))
-            bound = appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            bound = appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT)
             if (!bound) {
                 bindLatch = null
                 throw IllegalStateException("Vortex3D debug bridge is unavailable. Install the debug APK and open Vortex3D.")

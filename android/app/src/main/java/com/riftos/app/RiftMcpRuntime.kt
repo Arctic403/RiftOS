@@ -8,6 +8,7 @@ object RiftMcpRuntime {
     @Volatile private var server: RiftMcpServer? = null
     @Volatile private var relay: RiftMcpRelayClient? = null
     @Volatile private var shellBridge: RiftShellBridge? = null
+    @Volatile private var vortexBridge: RiftVortexBridgeClient? = null
 
     fun shellBridge(): RiftShellBridge? = shellBridge
 
@@ -34,6 +35,14 @@ object RiftMcpRuntime {
         relay?.let { return it }
         return synchronized(this) {
             relay ?: RiftMcpRelayClient(context.applicationContext, server(context)).also { relay = it }
+        }
+    }
+
+    /** Process-wide Vortex Binder client so Activity recreation cannot tear down a live dev session/job. */
+    fun vortexBridge(context: Context): RiftVortexBridgeClient {
+        vortexBridge?.let { return it }
+        return synchronized(this) {
+            vortexBridge ?: RiftVortexBridgeClient(context.applicationContext).also { vortexBridge = it }
         }
     }
 }

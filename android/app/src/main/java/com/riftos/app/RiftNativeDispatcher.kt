@@ -46,7 +46,7 @@ class RiftNativeDispatcher(
     private val notificationScheduler = Executors.newSingleThreadScheduledExecutor()
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val secrets = RiftSecretStore(activity)
-    private val vortexBridge = RiftVortexBridgeClient(activity)
+    private val vortexBridge = RiftMcpRuntime.vortexBridge(activity)
     private val riftRoot = File(activity.filesDir, "riftfs").apply {
         mkdirs()
         listOf("home", "apps", "system", "workspace", "downloads", "documents").forEach { File(this, it).mkdirs() }
@@ -128,7 +128,7 @@ class RiftNativeDispatcher(
         executor.shutdownNow()
         transferExecutor.shutdownNow()
         notificationScheduler.shutdownNow()
-        vortexBridge.close()
+        // Vortex bridge is process-owned by RiftMcpRuntime; Activity teardown must not unbind it.
     }
 
     private fun dispatch(method: String, args: JSONObject): Any? = when (method) {
