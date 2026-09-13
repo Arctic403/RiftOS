@@ -216,6 +216,7 @@ async function workspaceDiff(options={}){
 async function checkpointWorkspaceRecords(root,reason,headSha){
   const normalized=normalizePath(root);
   if(normalized!=="/workspace"&&!normalized.startsWith("/workspace/"))return;
+  if(typeof core?.native?.call!=="function")return;
   const gitRoot=normalized.slice("/workspace/".length);
   await core.native.call("workspace.records.checkpoint",{reason,gitRoot,gitHeadSha:headSha||""}).catch(()=>{});
 }

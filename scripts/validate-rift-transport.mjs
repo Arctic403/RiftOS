@@ -95,6 +95,7 @@ const checks = [
   ['RiftGit attaches existing home, workspace, or mounted folders', riftGit.includes('cmd==="init"||cmd==="attach"') && riftGit.includes('Project folder not found:') && riftGit.includes('context.cwd')],
   ['RiftGit synchronizes complete binary-safe trees', riftGit.includes('core.fs.readBase64') && riftGit.includes('core.fs.writeBase64') && riftGit.includes('GitHub returned a truncated tree; sync stopped')],
   ['RiftGit exposes one-command sync', riftGit.includes('async function sync(message,print,cwd)') && riftGit.includes('if(cmd==="sync")return sync')],
+  ['RiftGit workspace records checkpoint tolerates runtimes without the native records bridge', riftGit.includes('typeof core?.native?.call!=="function"') && riftGit.includes('workspace.records.checkpoint')],
   ['native shell binary bridge is bounded', dispatcher.includes('MAX_BRIDGE_BINARY_BYTES') && dispatcher.includes('"fs.readBase64"') && dispatcher.includes('"fs.writeBase64"') && core.includes('async readBase64') && core.includes('async writeBase64')],
   ['file actions reject duplicate execution', filesUi.includes('if(fileActionBusy)return')],
   ['archive is locally implemented', sandbox.includes('private fun createArchive')],
