@@ -48,6 +48,7 @@ const requiredDocs = [
   'docs/systems/relay-service/README.md',
   'docs/systems/build-validation/README.md',
   'docs/systems/vortex-agent/README.md',
+  'docs/systems/chat-handoff/README.md',
 ];
 
 const localIndexes = [

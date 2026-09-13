@@ -614,6 +614,29 @@ async function runVortexAgentShell(args,print){
   if(sub==="type"){if(args.length<2)throw new Error("usage: vortex-agent type <target> <text>");const target=args.shift();return call({op:"type",target,text:args.join(" ")});}
   throw new Error(`unknown vortex-agent command: ${sub}`);
 }
+async function runChatShell(args,print,state){
+  const sub=(args.shift()||"help").toLowerCase();
+  const call=async payload=>{const result=await core.native.call("chat.handoff",payload);print(JSON.stringify(result,null,2));return result;};
+  if(sub==="help")return print(`RiftOS chat handoff bundles\nchat handoff <payload.json> [name]\nchat export <payload.json> [name]\nchat list\nchat inspect <bundle.riftchat>\nchat resume <bundle.riftchat>\nchat transcript <bundle.riftchat> [offset-chars] [max-chars]`);
+  if(sub==="list")return call({op:"list"});
+  if(sub==="handoff"||sub==="export"){
+    if(!args[0])throw new Error(`usage: chat ${sub} <payload.json> [name]`);
+    const payloadPath=resolvePath(state.cwd,args.shift());
+    return call({op:"create",payloadPath,name:args.join(" ")});
+  }
+  if(sub==="inspect"||sub==="resume"){
+    if(!args[0])throw new Error(`usage: chat ${sub} <bundle.riftchat>`);
+    const path=resolvePath(state.cwd,args[0]);
+    return call({op:sub,path});
+  }
+  if(sub==="transcript"){
+    if(!args[0])throw new Error("usage: chat transcript <bundle.riftchat> [offset-chars] [max-chars]");
+    const path=resolvePath(state.cwd,args[0]);
+    const offsetChars=Math.max(0,Number(args[1])||0),maxChars=Math.max(1,Math.min(65536,Number(args[2])||32768));
+    return call({op:"transcript",path,offsetChars,maxChars});
+  }
+  throw new Error(`unknown chat command: ${sub}`);
+}
 async function runShell(raw,print,state,context={}){
   const batchMatch=String(raw||"").trim().match(/^batch(?:\s+(--dry-run))?\s+([\s\S]+)$/i);
   if(batchMatch){
@@ -625,7 +648,8 @@ async function runShell(raw,print,state,context={}){
   if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print,{cwd:state.cwd});}
   if(cmd==="vortex")return runVortexShell(args,print,state);
   if(cmd==="vortex-agent")return runVortexAgentShell(args,print);
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
+  if(cmd==="chat")return runChatShell(args,print,state);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\nchat help                         local .riftchat development-session handoffs\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}

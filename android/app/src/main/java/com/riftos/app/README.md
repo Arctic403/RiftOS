@@ -23,5 +23,6 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftSecretStore.kt` | [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |
 | `RiftVortexBridgeClient.kt` | [`vortex-bridge`](../../../../../../../../docs/systems/vortex-bridge/README.md) |
 | `RiftVortexLocalAgent.kt` | [`vortex-agent`](../../../../../../../../docs/systems/vortex-agent/README.md) |
+| `RiftChatHandoff.kt` | [`chat-handoff`](../../../../../../../../docs/systems/chat-handoff/README.md) |
 
 `docs/SOURCE_OWNERSHIP.md` is the machine-validated complete ownership ledger.

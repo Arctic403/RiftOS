@@ -66,6 +66,7 @@ class RiftNativeBridge extends EventTarget{
     if(method==="vortex.bridge")return 90*1000;
     if(method==="vortex.session")return 95*1000;
     if(method==="vortex.agent")return 15*1000;
+    if(method==="chat.handoff")return 55*1000;
     return this.timeout;
   }
   get connected(){return !!this.transport?.postMessage;}
@@ -88,6 +89,7 @@ class RiftNativeBridge extends EventTarget{
       jsonPatches:true,
       patchRollback:true,
       vortexDevBridge:true,
+      chatHandoff:true,
       vortexLocalAgent:true
     };
   }

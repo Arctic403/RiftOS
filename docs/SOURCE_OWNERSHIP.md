@@ -26,17 +26,17 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `src/riftandroid-preload.js` | `docs/systems/boot/README.md` |
 | `src/riftapps-files.js` | `docs/systems/apps/README.md` |
 | `src/riftapps.js` | `docs/systems/apps/README.md` |
-| `src/riftcore.js` | `docs/systems/kernel/README.md` + `docs/systems/riftfs/README.md` |
+| `src/riftcore.js` | `docs/systems/kernel/README.md` + `docs/systems/riftfs/README.md` + `docs/systems/chat-handoff/README.md` |
 | `src/riftdesktop-android-compat.js` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-android.css` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-android.js` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-window-host.js` | `docs/systems/desktop/README.md` |
 | `src/riftgit.js` | `docs/systems/git/README.md` |
 | `src/riftmcp-system.js` | `docs/systems/mcp/README.md` |
-| `src/riftos.js` | `docs/systems/shell-ui/README.md`, `docs/systems/boot/README.md`, `docs/systems/files-app/README.md`, `docs/systems/settings/README.md`, `docs/systems/shell/README.md`, `docs/systems/browser/README.md` |
+| `src/riftos.js` | `docs/systems/shell-ui/README.md`, `docs/systems/boot/README.md`, `docs/systems/files-app/README.md`, `docs/systems/settings/README.md`, `docs/systems/shell/README.md`, `docs/systems/browser/README.md`, `docs/systems/chat-handoff/README.md` |
 | `src/riftrt.js` | `docs/systems/riftrt/README.md` + `docs/systems/riftrt/engines/README.md` + engine-specific READMEs under `docs/systems/riftrt/engines/` |
 | `src/riftruntime.js` | `docs/systems/runtime-capabilities/README.md` |
-| `src/riftshell-batch.js` | `docs/systems/shell/README.md` |
+| `src/riftshell-batch.js` | `docs/systems/shell/README.md` + `docs/systems/chat-handoff/README.md` |
 | `src/riftworkspace-android-adapter.js` | `docs/systems/workspace/README.md` |
 | `src/riftworkspace-live-host.js` | `docs/systems/workspace/live/README.md` |
 | `src/riftworkspace-web.js` | `docs/systems/workspace/README.md` |
@@ -54,7 +54,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt` | `docs/systems/mcp/relay/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt` | `docs/systems/native-dispatcher/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt` | `docs/systems/native-dispatcher/README.md` + `docs/systems/chat-handoff/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftPreviewActivity.kt` | `docs/systems/preview/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftProjectExporter.kt` | `docs/systems/mcp/project-exporter/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRelaySettings.kt` | `docs/systems/mcp/relay/README.md` |
@@ -66,6 +66,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftTransferManifest.kt` | `docs/systems/transfers/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` | `docs/systems/vortex-bridge/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` | `docs/systems/vortex-agent/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftChatHandoff.kt` | `docs/systems/chat-handoff/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt` | `docs/systems/workspace/live/README.md` |
 
