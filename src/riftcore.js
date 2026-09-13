@@ -110,6 +110,24 @@ class RiftNativeBridge extends EventTarget{
 }
 
 
+class RiftTransferQueue{
+  constructor(){
+    this.tail=Promise.resolve();
+    this.pending=0;
+  }
+  run(task){
+    if(typeof task!=="function")return Promise.reject(new TypeError("RiftTransferQueue task must be a function"));
+    const execute=async()=>{
+      this.pending++;
+      try{return await task();}
+      finally{this.pending=Math.max(0,this.pending-1);}
+    };
+    const result=this.tail.then(execute,execute);
+    this.tail=result.then(()=>undefined,()=>undefined);
+    return result;
+  }
+}
+
 class RiftFS extends EventTarget{
   constructor(native){
     super();
