@@ -158,15 +158,18 @@ async function attach(repoArg,branchArg,pathArg,print,cwd){
   await saveMeta(meta);print(`Attached ${root}\nto ${repo.full}#${branch} at ${meta.headSha.slice(0,12)}.`);await status(print,false,root);
 }
 async function statusFor(meta,print=()=>{},quiet=false){
-  const local=await localFileMap(meta),modified=[],deleted=[],untracked=[];
+  const local=await localFileMap(meta),localManagedCount=local.size,modified=[],deleted=[],untracked=[];
   for(const [path,base] of Object.entries(meta.tracked||{})){const row=local.get(path);if(!row){deleted.push(path);continue;}if(await contentSha(meta,path)!==base.blobSha)modified.push(path);local.delete(path);}for(const path of local.keys())untracked.push(path);
-  if(!quiet){print(`On ${meta.full} / ${meta.branch}\nroot ${meta.root}`);if(!modified.length&&!deleted.length&&!untracked.length)print("working tree clean");modified.forEach(path=>print(` M ${path}`));deleted.forEach(path=>print(` D ${path}`));untracked.forEach(path=>print(`?? ${path}`));}return {meta,modified,deleted,untracked};
+  if(!quiet){print(`On ${meta.full} / ${meta.branch}\nroot ${meta.root}`);if(!modified.length&&!deleted.length&&!untracked.length)print("working tree clean");modified.forEach(path=>print(` M ${path}`));deleted.forEach(path=>print(` D ${path}`));untracked.forEach(path=>print(`?? ${path}`));}return {meta,modified,deleted,untracked,localManagedCount};
 }
 async function status(print=()=>{},quiet=false,cwd="/home"){return statusFor(await loadMeta(cwd),print,quiet);}
 async function pull(print,cwd){
-  const state=await status(()=>{},true,cwd);if(state.modified.length||state.deleted.length||state.untracked.length)throw new Error("Working tree has local changes. Push or discard them before pulling.");
-  const meta=state.meta,repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,meta.branch);if(info.commit.sha===meta.headSha){print("Already up to date.");return;}
-  print(`Pulling complete ${meta.full}#${meta.branch} tree...`);const result=await importBranch(meta,meta.branch,print);print(`Pull complete at ${result.headSha.slice(0,12)}.`);
+  const state=await status(()=>{},true,cwd),trackedCount=Object.keys(state.meta.tracked||{}).length;
+  const emptyCheckout=trackedCount>0&&state.localManagedCount===0&&state.modified.length===0&&state.untracked.length===0&&state.deleted.length===trackedCount;
+  if((state.modified.length||state.deleted.length||state.untracked.length)&&!emptyCheckout)throw new Error("Working tree has local changes. Push or discard them before pulling.");
+  const meta=state.meta,repo={owner:meta.owner,repo:meta.repo},info=await branchInfo(repo,meta.branch);if(info.commit.sha===meta.headSha&&!emptyCheckout){print("Already up to date.");return;}
+  if(emptyCheckout)print(`Local checkout is empty; restoring ${meta.full}#${meta.branch}...`);else print(`Pulling complete ${meta.full}#${meta.branch} tree...`);
+  const result=await importBranch(meta,meta.branch,print);print(`Pull complete at ${result.headSha.slice(0,12)}.`);
 }
 async function createBlob(repo,base64){return api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/blobs`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({content:base64,encoding:"base64"})});}
 async function atomicPush(message,print,cwd,initialMeta=null){

@@ -16,7 +16,7 @@ Primary commands/functions include clone, attach/init, status, pull, atomic push
 
 ## Pull model
 
-`treeFor()` fetches the remote branch/tree recursively, blobs are downloaded (bounded/concurrent through `mapLimit`), and `replaceBranch()` stages a replacement before swapping it into place. Pull must not destroy the existing project before the replacement is known complete.
+`treeFor()` fetches the remote branch/tree recursively, blobs are downloaded (bounded/concurrent through `mapLimit`), and `replaceBranch()` stages a replacement before swapping it into place. Pull must not destroy the existing project before the replacement is known complete. If an attached checkout contains no managed project files and every tracked file is therefore reported missing, `pull()` treats it as an empty checkout and safely repopulates it from the remote tree, even when the stored head SHA already matches the remote. Partial deletions, modified files, and untracked files still block pull.
 
 ## Push model
 
@@ -54,4 +54,4 @@ RiftFS read/write/copy semantics -> filesystem subsystem.
 
 ## Validation
 
-Run `scripts/test-rift-shell-git.mjs`. Test attach existing folder, clone explicit destination, clean status, text/binary push, remote-advanced conflict, local-changed-during-push conflict, failed pull staging, branch switch and sync.
+Run `scripts/test-rift-shell-git.mjs`. Test attach existing folder, clone explicit destination, clean status, empty-checkout repopulation, preservation of real local edits, text/binary push, remote-advanced conflict, local-changed-during-push conflict, failed pull staging, branch switch and sync.

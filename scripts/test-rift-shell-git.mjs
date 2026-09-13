@@ -30,7 +30,7 @@ const fetch=async(url,options={})=>{
   const path=new URL(url).pathname,method=options.method||'GET';
   if(path==='/repos/Arctic403/RiftOS')return response({default_branch:'main'});
   if(path.endsWith('/branches/main'))return response({commit:{sha:remoteHead}});
-  if(path.endsWith('/git/trees/main')||path.endsWith('/git/trees/head2'))return response({truncated:false,tree:[{path:'README.md',type:'blob',mode:'100644',size:7,sha:remoteReadme}]});
+  if(path.endsWith('/git/trees/main')||path.endsWith('/git/trees/head0')||path.endsWith('/git/trees/head2'))return response({truncated:false,tree:[{path:'README.md',type:'blob',mode:'100644',size:7,sha:remoteReadme}]});
   if(path.endsWith('/git/blobs/'+remoteReadme))return response({encoding:'base64',content:encode('RiftOS\n')});
   if(path.endsWith('/git/commits/head0')||path.endsWith('/git/commits/head2'))return response({tree:{sha:'tree0'}});
   if(path.endsWith('/git/blobs')&&method==='POST'){
@@ -57,6 +57,15 @@ const output=[];const print=value=>output.push(String(value));
 await context.window.RiftGit.run(['init','Arctic403/RiftOS','main'],print,{cwd:'/home/RiftOS-main'});
 assert(output.some(line=>line.includes('Attached /home/RiftOS-main')));
 output.length=0;await context.window.RiftGit.run(['status'],print,{cwd:'/home/RiftOS-main'});assert(output.includes('working tree clean'));
+await fs.remove('/home/RiftOS-main/README.md');
+output.length=0;await context.window.RiftGit.run(['pull'],print,{cwd:'/home/RiftOS-main'});
+assert(output.some(line=>line.includes('Local checkout is empty; restoring')));
+assert.equal(files.get('/home/RiftOS-main/README.md'),encode('RiftOS\n'));
+await fs.writeText('/home/RiftOS-main/README.md','local edit\n');
+await assert.rejects(()=>context.window.RiftGit.run(['pull'],print,{cwd:'/home/RiftOS-main'}),/Working tree has local changes/);
+await fs.writeText('/home/RiftOS-main/README.md','RiftOS\n');
+console.log('ok - pull repopulates an empty attached checkout even when remote HEAD is unchanged');
+console.log('ok - pull still protects real local modifications');
 await fs.writeBase64('/home/RiftOS-main/assets/icon.bin','AP8Q');
 output.length=0;await context.window.RiftGit.run(['status'],print,{cwd:'/home/RiftOS-main'});assert(output.includes('?? assets/icon.bin'));
 await context.window.RiftGit.run(['commit','-m','binary','folder','sync'],print,{cwd:'/home/RiftOS-main'});
