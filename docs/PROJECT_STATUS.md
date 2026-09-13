@@ -66,6 +66,13 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - Open files refresh automatically when clean; unsaved local edits trigger a conflict warning instead of being overwritten.
 - Workspace Records is observational; it does not own file-save/approval semantics or mutate project files.
 
+### Vortex3D local development bridge
+
+- Explicit local Binder IPC connects the trusted RiftShell `vortex` command family to a co-installed Vortex3D debug APK; there is no localhost/network listener.
+- The bridge reuses the existing `rift_shell_exec` MCP tool, so the model-visible tool catalog remains 18 tools.
+- Live status/catalog/state/UI/screenshot calls, asynchronous validation/VTXScript jobs, semantic UI clicks/touch replay, bounded screenshot image attachment and evidence pulls into `workspace/.vortex-bridge/` are supported by the source contract.
+- Vortex3D's own validation suites/VTXScript/capture runtime remain authoritative; RiftOS is transport/orchestration only.
+
 ### Rift MCP
 
 - `RiftToolHost` is the canonical device-side capability registry.

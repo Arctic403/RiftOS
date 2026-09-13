@@ -549,6 +549,44 @@ function resolvePath(cwd,value){
   for(const part of raw.split("/")){if(!part||part===".")continue;if(part===".."){parts.pop();continue;}parts.push(part);}
   return "/"+parts.join("/");
 }
+function vortexDisplay(value){
+  if(!value||typeof value!=="object")return value;
+  const copy=JSON.parse(JSON.stringify(value));
+  if(copy._riftImage){
+    copy._riftImage={attached:true,mimeType:copy._riftImage.mimeType||"image/jpeg",name:copy._riftImage.name||"vortex-preview.jpg",bytes:Number(copy._riftImage.bytes||0)};
+  }
+  return copy;
+}
+async function runVortexShell(args,print,state){
+  const sub=(args.shift()||"help").toLowerCase();
+  const call=async payload=>{
+    const result=await core.native.call("vortex.bridge",payload);
+    print(JSON.stringify(vortexDisplay(result),null,2));
+    return result;
+  };
+  if(sub==="help")return print(`Vortex3D live bridge\nvortex status\nvortex catalog\nvortex api\nvortex snapshot\nvortex ui-tree [limit]\nvortex screenshot [name]\nvortex click <tag-or-content-description>\nvortex touch <down|move|up|cancel|0..3> <x> <y>\nvortex test [all|system|case-id]\nvortex script <RiftFS-path> [--unsafe] [--live]\nvortex job <id> [--image]\nvortex pull <artifact-id> [filename]\nvortex cleanup`);
+  if(sub==="status"||sub==="catalog"||sub==="api"||sub==="snapshot"||sub==="cleanup")return call({op:sub});
+  if(sub==="ui-tree"||sub==="ui_tree")return call({op:"ui_tree",limit:Math.max(1,Math.min(1024,Number(args[0])||256))});
+  if(sub==="screenshot")return call({op:"screenshot",name:args[0]||"current",includeImage:true});
+  if(sub==="click"){if(!args[0])throw new Error("usage: vortex click <tag-or-content-description>");return call({op:"click",target:args.join(" ")});}
+  if(sub==="touch"){
+    if(args.length<3)throw new Error("usage: vortex touch <down|move|up|cancel|0..3> <x> <y>");
+    const actions={down:0,up:1,move:2,cancel:3},rawAction=String(args[0]).toLowerCase(),action=Object.prototype.hasOwnProperty.call(actions,rawAction)?actions[rawAction]:Number(rawAction);
+    if(!Number.isInteger(action)||action<0||action>3)throw new Error("touch action must be down/move/up/cancel or 0..3");
+    const x=Number(args[1]),y=Number(args[2]);if(!Number.isFinite(x)||!Number.isFinite(y))throw new Error("touch coordinates must be finite numbers");
+    return call({op:"touch",action,x,y});
+  }
+  if(sub==="test"||sub==="validate")return call({op:"validate",target:args[0]||"all"});
+  if(sub==="script"){
+    const unsafe=args.includes("--unsafe"),live=args.includes("--live"),pathArg=args.find(arg=>arg!=="--unsafe"&&arg!=="--live");
+    if(!pathArg)throw new Error("usage: vortex script <RiftFS-path> [--unsafe] [--live]");
+    const path=resolvePath(state.cwd,pathArg),source=await core.fs.readText(path);if(source==null)throw new Error(`script not found: ${path}`);
+    return call({op:"script",source,unsafe,live,name:(path.split("/").pop()||"riftos").replace(/\.[^.]+$/,'')});
+  }
+  if(sub==="job"){if(!args[0])throw new Error("usage: vortex job <id> [--image]");return call({op:"job",id:args[0],includeImage:args.includes("--image")});}
+  if(sub==="pull"){if(!args[0])throw new Error("usage: vortex pull <artifact-id> [filename]");return call({op:"pull_artifact",id:args[0],name:args[1]||""});}
+  throw new Error(`unknown vortex command: ${sub}`);
+}
 async function runShell(raw,print,state,context={}){
   const batchMatch=String(raw||"").trim().match(/^batch(?:\s+(--dry-run))?\s+([\s\S]+)$/i);
   if(batchMatch){
@@ -558,7 +596,8 @@ async function runShell(raw,print,state,context={}){
   }
   const args=tokenize(raw),cmd=(args.shift()||"").toLowerCase();if(!cmd)return;
   if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print,{cwd:state.cwd});}
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
+  if(cmd==="vortex")return runVortexShell(args,print,state);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}

@@ -17,7 +17,7 @@ Unlike normal MCP filesystem tools, RiftShell can operate on RiftOS roots such a
 
 ## Command flow
 
-The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relative to shell `cwd`. Filesystem commands call `RiftOSCore.fs`; Git commands delegate to RiftGit; `batch` delegates to `RiftShellBatch`.
+The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relative to shell `cwd`. Filesystem commands call `RiftOSCore.fs`; Git commands delegate to RiftGit; `batch` delegates to `RiftShellBatch`; the `vortex` command family delegates to the native `vortex.bridge` Binder client documented in `../vortex-bridge/README.md`.
 
 ## Atomic batch engine
 
@@ -34,6 +34,7 @@ The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relat
 - Rollback captures every mutation target that a supported batch command can touch.
 - Shell MCP bridge requires explicit local write permission and must not become raw Android shell access.
 - Git remote actions are handled by RiftGit's own high-level command semantics, not faked as locally reversible file operations.
+- Live `vortex` operations are explicitly listed as non-reversible and rejected by the atomic batch preflight; a running external app cannot truthfully participate in RiftFS rollback.
 
 ## Failure signatures
 

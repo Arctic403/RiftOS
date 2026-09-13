@@ -62,7 +62,7 @@ internal class RiftToolSandbox(context: Context) {
     private var persistentIndexDirty = false
     @Volatile private var batchInvalidationDepth = 0
     private val ignoredDirectoryNames = setOf(
-        ".git", ".gradle", ".idea", ".next", ".cache", ".turbo", ".parcel-cache",
+        ".git", ".gradle", ".idea", ".next", ".cache", ".turbo", ".parcel-cache", ".vortex-bridge",
         "node_modules", "build", "dist", "out", "target", "vendor", "Pods",
         ".venv", "venv", "__pycache__", "coverage", ".pytest_cache", ".mypy_cache"
     )

@@ -12,7 +12,7 @@ Call entry: `handleAsync(raw)` -> `dispatch(method,args)`.
 
 ## Responsibilities
 
-The dispatcher implements internal RiftFS and SAF-mounted file operations, stat/list/read/write/base64 IO, mkdir/remove, recursive copy/move, ZIP/unzip, transfer manifest/progress/verification, mount enumeration/unmounting, settings storage, device/storage info, clipboard, share, vibration, allowed Android intents, preview launch and notifications.
+The dispatcher implements internal RiftFS and SAF-mounted file operations, stat/list/read/write/base64 IO, mkdir/remove, recursive copy/move, ZIP/unzip, transfer manifest/progress/verification, mount enumeration/unmounting, settings storage, device/storage info, clipboard, share, vibration, allowed Android intents, preview launch and notifications. It also exposes the single Android-native `vortex.bridge` route to `RiftVortexBridgeClient`; Vortex protocol semantics remain owned by the dedicated bridge subsystem.
 
 Directory/notification picker completion enters from `MainActivity` through dedicated completion methods rather than pretending those asynchronous Android UI operations are synchronous dispatcher calls.
 
@@ -30,6 +30,7 @@ For copy/move, the dispatcher first resolves source/destination mount types. It 
 - SAF paths are resolved relative to an explicitly persisted mount.
 - External intents are limited to an allowed scheme set.
 - This dispatcher is available to the trusted RiftOS shell, not directly to guest web pages or MCP.
+- `vortex.bridge` uses explicit local Binder IPC through `RiftVortexBridgeClient`; do not replace it with a localhost/network listener or direct Vortex private-file access.
 - MCP has its own narrower `RiftToolSandbox`; do not expose this dispatcher as an MCP shortcut.
 
 ## Failure signatures

@@ -135,23 +135,24 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
             .takeIf { it.isNotBlank() }
         toolHost.callAsync(name, args) { call ->
             val ok = call.optBoolean("ok", false)
-            val structured = JSONObject().put("ok", ok)
-            if (ok) {
-                val value = call.opt("value")
-                structured.put(
-                    "value",
-                    if (name == "rift_project_export" && value is JSONObject) exportSummary(value)
-                    else value ?: JSONObject.NULL
-                )
+            val rawValue = if (ok) call.opt("value") else null
+            val image = if (name == "rift_shell_exec" && rawValue is JSONObject) {
+                rawValue.optJSONObject("result")?.optJSONObject("_riftImage")
+            } else null
+            val safeValue: Any? = when {
+                name == "rift_project_export" && rawValue is JSONObject -> exportSummary(rawValue)
+                name == "rift_shell_exec" && rawValue is JSONObject -> sanitizeShellValue(rawValue)
+                else -> rawValue ?: JSONObject.NULL
             }
+            val structured = JSONObject().put("ok", ok)
+            if (ok) structured.put("value", safeValue)
             else structured.put("error", call.optString("error", "Rift tool failed"))
 
             val text = if (ok) {
-                val value = call.opt("value")
-                when (value) {
+                when (safeValue) {
                     null, JSONObject.NULL -> "null"
-                    is JSONObject, is JSONArray -> value.toString()
-                    else -> value.toString()
+                    is JSONObject, is JSONArray -> safeValue.toString()
+                    else -> safeValue.toString()
                 }
             } else {
                 call.optString("error", "Rift tool failed")
@@ -159,14 +160,36 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
 
             val resultMeta = JSONObject()
             if (modelCallId != null) resultMeta.put("riftos/callId", modelCallId)
+            val content = JSONArray().put(JSONObject().put("type", "text").put("text", text))
+            if (ok && image != null) {
+                val data = image.optString("data")
+                if (data.isNotBlank()) {
+                    content.put(JSONObject()
+                        .put("type", "image")
+                        .put("data", data)
+                        .put("mimeType", image.optString("mimeType", "image/jpeg")))
+                }
+            }
 
             val result = JSONObject()
-                .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", text)))
+                .put("content", content)
                 .put("structuredContent", structured)
                 .put("_meta", resultMeta)
                 .put("isError", !ok)
             reply(success(id, result))
         }
+    }
+
+    private fun sanitizeShellValue(value: JSONObject): JSONObject {
+        val copy = JSONObject(value.toString())
+        val result = copy.optJSONObject("result") ?: return copy
+        val image = result.optJSONObject("_riftImage") ?: return copy
+        result.put("_riftImage", JSONObject()
+            .put("attached", true)
+            .put("mimeType", image.optString("mimeType", "image/jpeg"))
+            .put("name", image.optString("name", "vortex-preview.jpg"))
+            .put("bytes", image.optInt("bytes", 0)))
+        return copy
     }
 
     private fun initializeResult(): JSONObject {

@@ -247,7 +247,16 @@ class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null
                 val ok = result.optBoolean("ok", false)
                 val error = if (ok) null else result.optString("error", "RiftShell execution failed")
                 recordAudit(name, args, ok, error)
-                reply(result)
+                if (ok) {
+                    reply(JSONObject()
+                        .put("ok", true)
+                        .put("value", JSONObject()
+                            .put("output", result.optString("output"))
+                            .put("cwd", result.optString("cwd", "/"))
+                            .put("result", result.opt("result") ?: JSONObject.NULL)))
+                } else {
+                    reply(JSONObject().put("ok", false).put("error", error ?: "RiftShell execution failed"))
+                }
             } ?: run {
                 val error = "RiftShell bridge unavailable"
                 recordAudit(name, args, false, error)

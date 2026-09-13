@@ -46,6 +46,7 @@ class RiftNativeDispatcher(
     private val notificationScheduler = Executors.newSingleThreadScheduledExecutor()
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val secrets = RiftSecretStore(activity)
+    private val vortexBridge = RiftVortexBridgeClient(activity)
     private val riftRoot = File(activity.filesDir, "riftfs").apply {
         mkdirs()
         listOf("home", "apps", "system", "workspace", "downloads", "documents").forEach { File(this, it).mkdirs() }
@@ -127,6 +128,7 @@ class RiftNativeDispatcher(
         executor.shutdownNow()
         transferExecutor.shutdownNow()
         notificationScheduler.shutdownNow()
+        vortexBridge.close()
     }
 
     private fun dispatch(method: String, args: JSONObject): Any? = when (method) {
@@ -208,6 +210,7 @@ class RiftNativeDispatcher(
         "secrets.remove" -> secrets.remove(args.getString("key"))
         "system.storage" -> storageInfo()
         "system.info", "device.info" -> deviceInfo()
+        "vortex.bridge" -> vortexBridge.execute(args)
         "device.vibrate" -> vibrate(args.optLong("milliseconds", 40L))
         "clipboard.read", "clipboard.readText" -> clipboardRead()
         "clipboard.write", "clipboard.writeText" -> clipboardWrite(args.optString("text"))

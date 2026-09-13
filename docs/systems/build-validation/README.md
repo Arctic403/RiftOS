@@ -8,7 +8,7 @@ The build/validation layer catches source-contract regressions before the separa
 
 - root `package.json` — `npm run check` / `check:transport` command chain.
 - `scripts/validate-rift-wiring.mjs` — parses every active JS/MJS file and validates module imports, HTML/CSS assets, Android Activity registration/reachability, browser asset injection, relay entrypoints, package-script references, native caller/handler agreement and known removed runtime islands.
-- `scripts/validate-rift-transport.mjs` — architectural/source invariants.
+- `scripts/validate-rift-transport.mjs` — architectural/source invariants, including the explicit local Vortex3D Binder bridge, unchanged MCP tool family, bounded artifact/image flow and shell-result framing.
 - `scripts/validate-rift-docs.mjs` — required system READMEs and active-source ownership coverage.
 - `scripts/test-rift-ai-adapters.mjs` — AI selector registry tests.
 - `scripts/test-rift-raw-protocol.mjs` — raw call parser/nested arguments/result protocol tests.

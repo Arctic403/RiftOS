@@ -31,6 +31,8 @@ const shellBatch = readFileSync('src/riftshell-batch.js', 'utf8');
 const aiAdapterRegistry = readFileSync('android/app/src/main/assets/adapters/ai-adapter-registry.js', 'utf8');
 const relayClient = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt', 'utf8');
 const systemDump = readFileSync('android/app/src/main/java/com/riftos/app/RiftSystemDump.kt', 'utf8');
+const vortexBridge = readFileSync('android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt', 'utf8');
+const androidManifest = readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
 
 const checks = [
   ['desktop pins and running windows scroll independently of the clock', desktop.includes('taskbarScroll.append(taskbarOpen)') && desktopStyles.includes('flex:1 1 0;min-width:0;height:40px;overflow-x:auto') && desktopStyles.includes('rift-taskbar-tray{display:flex;align-items:center;gap:3px;flex:none')],
@@ -57,6 +59,12 @@ const checks = [
   ['native MCP coalesces identical retried tool calls', mcpServer.includes('private val inFlight') && mcpServer.includes('private val completed') && mcpServer.includes('completeRequest(key, response)')],
   ['MCP handshake reports the live manifest without claiming unsupported list-change notifications', mcpServer.includes('listChanged", false') && mcpServer.includes('toolHost.manifest()') && mcpServer.includes('riftos/toolCount') && mcpServer.includes('riftos/toolManifestHash')],
   ['built APK carries exact source/build provenance', gradle.includes('RIFT_SOURCE_SHA') && gradle.includes('RIFT_BUILD_RUN_ID') && gradle.includes('RIFT_BUILD_RUN_NUMBER') && gradle.includes('buildConfig = true') && sandbox.includes('BuildConfig.RIFT_SOURCE_SHA') && mcpServer.includes('riftos/sourceSha') && relayClient.includes('BuildConfig.RIFT_SOURCE_SHA') && systemDump.includes('BuildConfig.RIFT_SOURCE_SHA')],
+  ['Vortex dev bridge stays behind existing shell/native authority', filesUi.includes('cmd==="vortex"') && filesUi.includes('core.native.call("vortex.bridge"') && dispatcher.includes('"vortex.bridge" -> vortexBridge.execute(args)') && shellBatch.includes('"vortex"') && !host.includes('rift_vortex')],
+  ['Vortex bridge uses explicit local Binder IPC with bounded artifacts', vortexBridge.includes('ComponentName(VORTEX_PACKAGE, VORTEX_SERVICE)') && vortexBridge.includes('DESCRIPTOR = "com.vortex3d.app.devbridge.v1"') && vortexBridge.includes('bindService') && vortexBridge.includes('REMOTE_CHUNK_BYTES = 192 * 1024') && vortexBridge.includes('MAX_IMAGE_BYTES = 512 * 1024') && vortexBridge.includes('uniqueDestination(root, name)') && !vortexBridge.includes('Socket(') && !vortexBridge.includes('http://') && !vortexBridge.includes('https://')],
+  ['Vortex package visibility and native source inclusion are explicit', androidManifest.includes('<package android:name="com.vortex3d.app"') && gradle.includes('RiftVortexBridgeClient.kt') && dispatcher.includes('vortexBridge.close()')],
+  ['pulled Vortex evidence cannot pollute Project Intelligence', sandbox.includes('".vortex-bridge"') && vortexBridge.includes('workspace/.vortex-bridge/')],
+  ['RiftShell result values survive the MCP tool-host wrapper', host.includes('.put("result", result.opt("result") ?: JSONObject.NULL)') && host.includes('.put("output", result.optString("output"))')],
+  ['MCP image framing extracts Vortex preview once without changing the tool family', mcpServer.includes('sanitizeShellValue') && mcpServer.includes('.put("type", "image")') && mcpServer.includes('optJSONObject("_riftImage")') && !host.includes('rift_vortex')],
   ['rift_info exposes authoritative MCP manifest diagnostics through an already-stable tool', host.includes('mcpManifest') && host.includes('refreshClientActionsWhenCountDiffers') && host.includes('fun manifest(): JSONObject')],
   ['relay ignores stale socket close and response events', relayWorker.includes('if (socket !== this.socket) return;') && (relayWorker.match(/if \(socket !== this\.socket\) return;/g)||[]).length >= 3],
   ['relay never uses Durable Object payload storage', !relayWorker.includes('ctx.storage') && !relayWorker.includes('.storage.put') && !relayWorker.includes('.storage.get')],

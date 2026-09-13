@@ -26,7 +26,7 @@ Other methods dispatch immediately.
 
 ## Tool call framing
 
-`handleToolCall()` extracts `name`, JSON arguments and the private correlation metadata `riftos/callId`. It calls the tool host and wraps results into MCP `content`, `structuredContent`, `_meta`, and `isError` fields. Project-export responses are summarized in structured content so large raw source pages do not duplicate themselves unnecessarily.
+`handleToolCall()` extracts `name`, JSON arguments and the private correlation metadata `riftos/callId`. It calls the tool host and wraps results into MCP `content`, `structuredContent`, `_meta`, and `isError` fields. Project-export responses are summarized in structured content so large raw source pages do not duplicate themselves unnecessarily. A successful `rift_shell_exec` result may carry a private `_riftImage` produced by the Vortex local bridge; the server extracts its bounded Base64 once into MCP `content[type=image]` and replaces the structured/text copy with compact attachment metadata so the relay payload is not duplicated. This does not add or alter any MCP tool schema.
 
 ## Critical invariants
 

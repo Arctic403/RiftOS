@@ -1,7 +1,7 @@
 const core=window.RiftOSCore;
 if(!core)throw new Error("RiftOSCore must load before RiftShellBatch");
 
-const NON_REVERSIBLE=new Set(["git","gh","github","mount","umount","kill","open","browser","batch"]);
+const NON_REVERSIBLE=new Set(["git","gh","github","mount","umount","kill","open","browser","batch","vortex"]);
 const PROTECTED_ROOTS=new Set(["/","/home","/apps","/system","/workspace","/downloads","/documents","/mounts"]);
 
 function tokenize(raw){const out=[];String(raw||"").replace(/"([^"]*)"|'([^']*)'|([^\s]+)/g,(_,a,b,c)=>{out.push(a??b??c);return "";});return out;}

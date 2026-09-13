@@ -25,7 +25,7 @@ Related but separately documented: `RiftNativeDispatcher`, `RiftBrowserWindow`, 
 
 `src/riftandroid-platform.js` intentionally exports `globalThis.RiftAndroidAPI` as the shell-facing Android service facade, `globalThis.RiftKernel` as its system subset, and `globalThis.RiftAndroidBack` as the callback invoked by `MainActivity` before Android Back exits the host. These globals are public RiftOS shell surfaces even when no other repository module currently calls every method directly.
 
-`AndroidManifest.xml` owns APK component declarations and Android permissions for this host. `res/values/styles.xml` owns the native Activity/window theme and initial system-bar/window background. Keep these synchronized with the Activities/services actually present in source; do not solve missing-component or permission problems in JavaScript.
+`AndroidManifest.xml` owns APK component declarations, Android permissions and package-visibility queries for this host. The `com.vortex3d.app` query exists only so the explicit local development Binder client can resolve/bind the debug Vortex3D package; RiftOS does not declare the Vortex service itself. `res/values/styles.xml` owns the native Activity/window theme and initial system-bar/window background. Keep these synchronized with the Activities/services actually present in source; do not solve missing-component or permission problems in JavaScript.
 
 It also preserves WebView lifecycle/state across pause/resume/save-state and tears down native resources in `onDestroy`.
 
