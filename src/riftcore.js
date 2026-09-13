@@ -65,7 +65,7 @@ class RiftNativeBridge extends EventTarget{
     if(method==="fs.list"||method==="fs.readText"||method==="fs.writeText"||method==="fs.readBase64"||method==="fs.writeBase64")return 2*60*1000;
     if(method==="vortex.bridge")return 90*1000;
     if(method==="vortex.session")return 95*1000;
-    if(method==="vortex.agent")return 15*1000;
+    if(method==="vortex.agent"||method==="riftos.agent")return 15*1000;
     if(method==="chat.handoff")return 55*1000;
     return this.timeout;
   }
@@ -90,7 +90,8 @@ class RiftNativeBridge extends EventTarget{
       patchRollback:true,
       vortexDevBridge:true,
       chatHandoff:true,
-      vortexLocalAgent:true
+      vortexLocalAgent:true,
+      riftOsLocalAgent:true
     };
   }
   call(method,args={}){

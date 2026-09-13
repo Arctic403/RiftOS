@@ -16,24 +16,22 @@ import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/**
- * Vortex3D-only local Android UI agent.
- *
- * Launching uses Android's normal package launch intent and does not require Accessibility.
- * UI inspection/actions require the user-enabled AccessibilityService, which is package-filtered
- * by Android to com.vortex3d.app and re-checks the foreground package before every action.
- */
-object RiftVortexLocalAgent {
-    private const val TARGET_PACKAGE = "com.vortex3d.app"
-    private const val MAX_TREE_NODES = 1024
-    private const val MAX_TEXT_CHARS = 4096
-    private const val GESTURE_TIMEOUT_MS = 5_000L
-    private const val ACTIVATION_TIMEOUT_MS = 3_000L
-    private const val ACTIVATION_POLL_MS = 50L
+/** Fixed-scope local Android UI agents used only by trusted RiftShell commands. */
+private class RiftScopedLocalAgent(
+    private val targetPackage: String,
+    private val displayName: String
+) {
+    companion object {
+        private const val MAX_TREE_NODES = 1024
+        private const val MAX_TEXT_CHARS = 4096
+        private const val GESTURE_TIMEOUT_MS = 5_000L
+        private const val ACTIVATION_TIMEOUT_MS = 3_000L
+        private const val ACTIVATION_POLL_MS = 50L
+    }
 
     fun execute(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
-        require(op.isNotBlank()) { "vortex.agent op is required" }
+        require(op.isNotBlank()) { "$displayName agent op is required" }
         return when (op) {
             "status" -> status(context)
             "open" -> open(context)
@@ -43,38 +41,42 @@ object RiftVortexLocalAgent {
             "swipe" -> swipe(context, args)
             "type" -> type(context, args)
             "back" -> back(context)
-            else -> throw IllegalArgumentException("Unsupported Vortex local-agent operation: $op")
+            else -> throw IllegalArgumentException("Unsupported $displayName local-agent operation: $op")
         }
     }
 
+    fun ensureActive(context: Context) {
+        requireTargetServiceAndRoot(context)
+    }
+
     private fun status(context: Context): JSONObject {
-        val installed = runCatching { context.packageManager.getApplicationInfo(TARGET_PACKAGE, 0) }.isSuccess
+        val installed = runCatching { context.packageManager.getApplicationInfo(targetPackage, 0) }.isSuccess
         val service = RiftVortexAccessibilityService.current()
         val activePackage = service?.rootInActiveWindow?.packageName?.toString().orEmpty()
         return JSONObject()
-            .put("scope", TARGET_PACKAGE)
+            .put("scope", targetPackage)
             .put("installed", installed)
             .put("accessibility_connected", service != null)
             .put("active_package", activePackage)
-            .put("vortex_foreground", activePackage == TARGET_PACKAGE)
+            .put("target_foreground", activePackage == targetPackage)
             .put("launch_available", installed)
             .put("ui_actions_available", installed && service != null)
             .put("actions_auto_activate", installed && service != null)
     }
 
     private fun open(context: Context): JSONObject {
-        val launch = context.packageManager.getLaunchIntentForPackage(TARGET_PACKAGE)
-            ?: throw IllegalStateException("Vortex3D is not installed: $TARGET_PACKAGE")
+        val launch = context.packageManager.getLaunchIntentForPackage(targetPackage)
+            ?: throw IllegalStateException("$displayName is not installed: $targetPackage")
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         context.startActivity(launch)
         return JSONObject()
-            .put("scope", TARGET_PACKAGE)
+            .put("scope", targetPackage)
             .put("launched", true)
             .put("accessibility_connected", RiftVortexAccessibilityService.current() != null)
     }
 
     private fun tree(context: Context, args: JSONObject): JSONObject {
-        val root = requireVortexRoot(context)
+        val root = requireTargetRoot(context)
         val limit = args.optInt("limit", 256).coerceIn(1, MAX_TREE_NODES)
         val rows = JSONArray()
         val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
@@ -82,7 +84,7 @@ object RiftVortexLocalAgent {
         var total = 0
         while (queue.isNotEmpty()) {
             val (node, depth) = queue.removeFirst()
-            if (node.packageName?.toString() != TARGET_PACKAGE) continue
+            if (node.packageName?.toString() != targetPackage) continue
             total++
             if (rows.length() < limit) rows.put(nodeJson(node, depth))
             for (index in 0 until node.childCount) {
@@ -90,7 +92,7 @@ object RiftVortexLocalAgent {
             }
         }
         return JSONObject()
-            .put("scope", TARGET_PACKAGE)
+            .put("scope", targetPackage)
             .put("nodes", rows)
             .put("total_nodes", total)
             .put("truncated", total > limit)
@@ -98,36 +100,36 @@ object RiftVortexLocalAgent {
 
     private fun click(context: Context, args: JSONObject): JSONObject {
         val target = requiredTarget(args)
-        val node = findNode(requireVortexRoot(context), target)
-            ?: throw IllegalArgumentException("Vortex UI target not found: $target")
+        val node = findNode(requireTargetRoot(context), target)
+            ?: throw IllegalArgumentException("$displayName UI target not found: $target")
         rejectPassword(node)
         var actionNode: AccessibilityNodeInfo? = node
         while (actionNode != null && !actionNode.isClickable) {
             val parent = actionNode.parent
-            if (parent?.packageName?.toString() != TARGET_PACKAGE) break
+            if (parent?.packageName?.toString() != targetPackage) break
             actionNode = parent
         }
         val clicked = actionNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
-        if (!clicked) throw IllegalStateException("Vortex UI target is not clickable: $target")
+        if (!clicked) throw IllegalStateException("$displayName UI target is not clickable: $target")
         return JSONObject()
-            .put("scope", TARGET_PACKAGE)
+            .put("scope", targetPackage)
             .put("clicked", true)
             .put("target", target)
             .put("node", nodeJson(node, 0))
     }
 
     private fun tap(context: Context, args: JSONObject): JSONObject {
-        val service = requireVortexServiceAndRoot(context).first
+        val service = requireTargetServiceAndRoot(context).first
         val x = finite(args, "x")
         val y = finite(args, "y")
         requirePoint(service, x, y)
         val path = Path().apply { moveTo(x, y) }
         dispatchGesture(service, path, 80L)
-        return JSONObject().put("scope", TARGET_PACKAGE).put("tapped", true).put("x", x).put("y", y)
+        return JSONObject().put("scope", targetPackage).put("tapped", true).put("x", x).put("y", y)
     }
 
     private fun swipe(context: Context, args: JSONObject): JSONObject {
-        val service = requireVortexServiceAndRoot(context).first
+        val service = requireTargetServiceAndRoot(context).first
         val x1 = finite(args, "x1")
         val y1 = finite(args, "y1")
         val x2 = finite(args, "x2")
@@ -138,7 +140,7 @@ object RiftVortexLocalAgent {
         val path = Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
         dispatchGesture(service, path, duration)
         return JSONObject()
-            .put("scope", TARGET_PACKAGE)
+            .put("scope", targetPackage)
             .put("swiped", true)
             .put("x1", x1).put("y1", y1).put("x2", x2).put("y2", y2)
             .put("duration_ms", duration)
@@ -147,43 +149,38 @@ object RiftVortexLocalAgent {
     private fun type(context: Context, args: JSONObject): JSONObject {
         val target = requiredTarget(args)
         val text = args.optString("text")
-        require(text.length <= MAX_TEXT_CHARS) { "Vortex agent text exceeds $MAX_TEXT_CHARS characters" }
-        val node = findNode(requireVortexRoot(context), target)
-            ?: throw IllegalArgumentException("Vortex text target not found: $target")
+        require(text.length <= MAX_TEXT_CHARS) { "$displayName agent text exceeds $MAX_TEXT_CHARS characters" }
+        val node = findNode(requireTargetRoot(context), target)
+            ?: throw IllegalArgumentException("$displayName text target not found: $target")
         rejectPassword(node)
-        require(node.isEditable) { "Vortex target is not editable: $target" }
+        require(node.isEditable) { "$displayName target is not editable: $target" }
         val bundle = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
         val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)
-        if (!ok) throw IllegalStateException("Android rejected text input for Vortex target: $target")
-        return JSONObject().put("scope", TARGET_PACKAGE).put("typed", true).put("target", target).put("characters", text.length)
+        if (!ok) throw IllegalStateException("Android rejected text input for $displayName target: $target")
+        return JSONObject().put("scope", targetPackage).put("typed", true).put("target", target).put("characters", text.length)
     }
 
     private fun back(context: Context): JSONObject {
-        val (service, _) = requireVortexServiceAndRoot(context)
+        val (service, _) = requireTargetServiceAndRoot(context)
         val ok = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-        if (!ok) throw IllegalStateException("Android rejected Back while Vortex3D was foreground")
-        return JSONObject().put("scope", TARGET_PACKAGE).put("back", true)
+        if (!ok) throw IllegalStateException("Android rejected Back while $displayName was foreground")
+        return JSONObject().put("scope", targetPackage).put("back", true)
     }
 
-    /** Keep the one hard-coded Vortex target foreground for a native bridge session. */
-    internal fun ensureActiveForSession(context: Context) {
-        requireVortexServiceAndRoot(context)
-    }
+    private fun requireTargetRoot(context: Context): AccessibilityNodeInfo = requireTargetServiceAndRoot(context).second
 
-    private fun requireVortexRoot(context: Context): AccessibilityNodeInfo = requireVortexServiceAndRoot(context).second
-
-    private fun requireVortexServiceAndRoot(context: Context): Pair<RiftVortexAccessibilityService, AccessibilityNodeInfo> {
+    private fun requireTargetServiceAndRoot(context: Context): Pair<RiftVortexAccessibilityService, AccessibilityNodeInfo> {
         val service = RiftVortexAccessibilityService.current()
-            ?: throw IllegalStateException("RiftOS Vortex Agent accessibility service is not enabled")
+            ?: throw IllegalStateException("RiftOS Local UI Agent accessibility service is not enabled")
         val current = service.rootInActiveWindow
-        if (current?.packageName?.toString() == TARGET_PACKAGE) return service to current
+        if (current?.packageName?.toString() == targetPackage) return service to current
 
-        // MCP/ChatGPT can become foreground again between separate tool calls. Activate the one hard-coded
-        // target and finish the UI operation inside this same native call, then re-check the package before touch.
-        val launch = context.packageManager.getLaunchIntentForPackage(TARGET_PACKAGE)
-            ?: throw IllegalStateException("Vortex3D is not installed: $TARGET_PACKAGE")
+        // ChatGPT/RiftBrowser can retake foreground between separate MCP calls. Activate only this
+        // constructor-fixed target, then re-check the exact package before inspection or touch.
+        val launch = context.packageManager.getLaunchIntentForPackage(targetPackage)
+            ?: throw IllegalStateException("$displayName is not installed: $targetPackage")
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         context.startActivity(launch)
 
@@ -193,10 +190,10 @@ object RiftVortexLocalAgent {
             SystemClock.sleep(ACTIVATION_POLL_MS)
             val root = service.rootInActiveWindow
             lastPackage = root?.packageName?.toString().orEmpty()
-            if (lastPackage == TARGET_PACKAGE && root != null) return service to root
+            if (lastPackage == targetPackage && root != null) return service to root
         }
         throw IllegalStateException(
-            "Vortex Agent could not activate $TARGET_PACKAGE; last foreground package was ${lastPackage.ifBlank { "(none)" }}"
+            "$displayName agent could not activate $targetPackage; last foreground package was ${lastPackage.ifBlank { "(none)" }}"
         )
     }
 
@@ -205,7 +202,7 @@ object RiftVortexLocalAgent {
         queue.add(root)
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
-            if (node.packageName?.toString() != TARGET_PACKAGE) continue
+            if (node.packageName?.toString() != targetPackage) continue
             val text = if (node.isPassword) "" else node.text?.toString().orEmpty()
             val description = node.contentDescription?.toString().orEmpty()
             val viewId = node.viewIdResourceName.orEmpty()
@@ -233,7 +230,7 @@ object RiftVortexLocalAgent {
     }
 
     private fun rejectPassword(node: AccessibilityNodeInfo) {
-        require(!node.isPassword) { "Password fields are not available to the Vortex local agent" }
+        require(!node.isPassword) { "Password fields are not available to the local UI agent" }
     }
 
     private fun requiredTarget(args: JSONObject): String {
@@ -274,9 +271,36 @@ object RiftVortexLocalAgent {
                 latch.countDown()
             }
         }, null)
-        require(accepted) { "Android rejected the Vortex gesture" }
-        require(latch.await(GESTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) { "Timed out waiting for the Vortex gesture" }
-        require(completed && !cancelled) { "Vortex gesture was cancelled" }
+        require(accepted) { "Android rejected the $displayName gesture" }
+        require(latch.await(GESTURE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) { "Timed out waiting for the $displayName gesture" }
+        require(completed && !cancelled) { "$displayName gesture was cancelled" }
+    }
+}
+
+/** Vortex3D-only fixed local UI authority. */
+object RiftVortexLocalAgent {
+    private const val TARGET_PACKAGE = "com.vortex3d.app"
+    private val delegate = RiftScopedLocalAgent(TARGET_PACKAGE, "Vortex3D")
+
+    fun execute(context: Context, args: JSONObject): JSONObject {
+        val out = delegate.execute(context, args)
+        if (out.has("target_foreground")) out.put("vortex_foreground", out.optBoolean("target_foreground"))
+        return out
+    }
+
+    /** Keep the one hard-coded Vortex target foreground for a native bridge session. */
+    internal fun ensureActiveForSession(context: Context) = delegate.ensureActive(context)
+}
+
+/** RiftOS-self-only fixed local UI authority used for shell-driven UI acceptance testing. */
+object RiftOsLocalAgent {
+    private const val TARGET_PACKAGE = "com.riftos.app"
+    private val delegate = RiftScopedLocalAgent(TARGET_PACKAGE, "RiftOS")
+
+    fun execute(context: Context, args: JSONObject): JSONObject {
+        val out = delegate.execute(context, args)
+        if (out.has("target_foreground")) out.put("riftos_foreground", out.optBoolean("target_foreground"))
+        return out
     }
 }
 

@@ -1,14 +1,14 @@
-# RiftOS Vortex Local Agent
+# RiftOS Fixed-Scope Local UI Agents
 
 ## Purpose
 
-The Vortex local agent gives the trusted RiftOS shell hands on the real Vortex3D Android UI while keeping authority local to the phone. It is intentionally scoped to exactly `com.vortex3d.app`; there is no package argument, arbitrary-app mode, ADB path, root path, raw Android shell path, network listener or system-server hook.
+The local UI agent gives trusted RiftShell hands on two explicitly fixed Android UI scopes while keeping authority local to the phone. `vortex-agent` is hard-coded to exactly `com.vortex3d.app`; `riftos-agent` is hard-coded to exactly `com.riftos.app` for RiftOS self-acceptance testing. There is no package argument, arbitrary-app mode, ADB path, root path, raw Android shell path, network listener or system-server hook.
 
 The agent complements, rather than replaces, the Vortex Binder/VTXScript bridge. Use the local agent for Android UI behavior and real gestures; use `vortex ...`/VTXScript for engine/JNI semantics, deterministic state inspection and validation.
 
 ## Source ownership
 
-- `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` — launch helper, Vortex-only AccessibilityService registration, UI-tree inspection, semantic click/text, gestures and Back.
+- `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` — shared fixed-scope helper plus Vortex-only and RiftOS-self-only launch/UI-tree/semantic-click/text/gesture/Back authorities.
 - `android/app/src/main/res/xml/vortex_agent_accessibility.xml` — Android-enforced package filter and gesture/window-content capabilities.
 - `android/app/src/main/AndroidManifest.xml` — declares the Accessibility service behind `android.permission.BIND_ACCESSIBILITY_SERVICE`.
 - `RiftNativeDispatcher.kt` — finite `vortex.agent` native route.
@@ -18,7 +18,7 @@ The agent complements, rather than replaces, the Vortex Binder/VTXScript bridge.
 
 `vortex-agent open` uses Android's normal launch intent for the hard-coded package `com.vortex3d.app`. It works whenever Vortex3D is installed, even when the Accessibility service is disabled.
 
-All UI inspection and interaction requires the user to enable **RiftOS Vortex Agent** in Android Accessibility settings. Android's service metadata filters events to `com.vortex3d.app`. Because ChatGPT can regain foreground focus between MCP calls, each UI operation may bring the one hard-coded Vortex package forward inside that same local call, wait up to three seconds for its Accessibility root, and then re-check that the active root is exactly `com.vortex3d.app` before any inspection or action. Password nodes are never returned with text and cannot be clicked or edited by semantic actions.
+All UI inspection and interaction requires the user to enable **RiftOS Local UI Agent** in Android Accessibility settings. Android's service metadata filters events to exactly `com.vortex3d.app` and `com.riftos.app`. Because ChatGPT can regain foreground focus between MCP calls, each UI operation may bring only its command's constructor-fixed package forward inside that same local call, wait up to three seconds for its Accessibility root, and then re-check the exact package before any inspection or action. Password nodes are never returned with text and cannot be clicked or edited by semantic actions.
 
 The service does not request root, ADB, shell execution, screen-overlay authority, unrestricted package control or remote/network control. ChatGPT reaches it only through the already-existing `rift_shell_exec` -> trusted RiftShell path. The Vortex bridge may call the same hard-coded activation guard internally during `test-wait`/`script-wait`; this does not add package-selection authority or broaden the Accessibility scope.
 
@@ -33,12 +33,12 @@ The service does not request root, ADB, shell execution, screen-overlay authorit
 - `vortex-agent type <target> <text>` — ACTION_SET_TEXT on an exact editable, non-password Vortex node after same-call activation.
 - `vortex-agent back` — Android Back only after the agent has activated and verified Vortex in the same call.
 
-Live agent commands are non-reversible and are rejected by RiftShell atomic batches.
+The `riftos-agent` command mirrors the same `status`, `open`, `tree`, `click`, `tap`, `swipe`, `type`, and `back` verbs but is fixed to `com.riftos.app`; it exists specifically for live RiftOS UI/function acceptance testing. Live agent commands are non-reversible and are rejected by RiftShell atomic batches.
 
 ## Failure signatures
 
 - `open` says Vortex is not installed -> package `com.vortex3d.app` is absent or build/install failed.
-- `accessibility_connected=false` -> enable RiftOS Vortex Agent in Android Accessibility settings.
+- `accessibility_connected=false` -> enable **RiftOS Local UI Agent** in Android Accessibility settings.
 - action cannot activate Vortex -> package launch failed, Android denied the foreground transition, or Vortex did not expose an Accessibility root within the bounded activation timeout.
 - semantic target not found -> inspect `vortex-agent tree`; the view may lack text/content-description/resource id, in which case use a bounded coordinate gesture.
 - gesture rejected/cancelled -> Android accessibility service/lifecycle or invalid foreground transition.
