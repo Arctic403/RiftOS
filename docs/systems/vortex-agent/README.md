@@ -20,7 +20,7 @@ The agent complements, rather than replaces, the Vortex Binder/VTXScript bridge.
 
 All UI inspection and interaction requires the user to enable **RiftOS Vortex Agent** in Android Accessibility settings. Android's service metadata filters events to `com.vortex3d.app`. Because ChatGPT can regain foreground focus between MCP calls, each UI operation may bring the one hard-coded Vortex package forward inside that same local call, wait up to three seconds for its Accessibility root, and then re-check that the active root is exactly `com.vortex3d.app` before any inspection or action. Password nodes are never returned with text and cannot be clicked or edited by semantic actions.
 
-The service does not request root, ADB, shell execution, screen-overlay authority, unrestricted package control or remote/network control. ChatGPT reaches it only through the already-existing `rift_shell_exec` -> trusted RiftShell path.
+The service does not request root, ADB, shell execution, screen-overlay authority, unrestricted package control or remote/network control. ChatGPT reaches it only through the already-existing `rift_shell_exec` -> trusted RiftShell path. The Vortex bridge may call the same hard-coded activation guard internally during `test-wait`/`script-wait`; this does not add package-selection authority or broaden the Accessibility scope.
 
 ## Commands
 

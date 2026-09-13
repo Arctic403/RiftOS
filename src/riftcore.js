@@ -64,6 +64,7 @@ class RiftNativeBridge extends EventTarget{
     if(method==="fs.copy"||method==="fs.move"||method==="fs.remove")return 15*60*1000;
     if(method==="fs.list"||method==="fs.readText"||method==="fs.writeText"||method==="fs.readBase64"||method==="fs.writeBase64")return 2*60*1000;
     if(method==="vortex.bridge")return 90*1000;
+    if(method==="vortex.session")return 95*1000;
     if(method==="vortex.agent")return 15*1000;
     return this.timeout;
   }

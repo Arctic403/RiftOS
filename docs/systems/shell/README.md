@@ -25,7 +25,7 @@ The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relat
 
 ## MCP bridge
 
-`MainActivity` registers `RiftShellBridge` against the trusted RiftOS shell WebView. `RiftShellBridge.execute(command,cwd,reply)` invokes `window.RiftShellMcpNative.request(...)` there. The shell executes through the existing `RiftShellMcp` parser, then sends a one-way exact-origin `mcp.shell.result` message over `RiftAndroid`; native correlates the result back to the pending MCP call. The guest RiftBrowser/ChatGPT page never receives `RiftShellMcp` or shell authority. The bridge has a bounded timeout and still never exposes Android/Linux `/system/bin/sh`.
+`MainActivity` registers `RiftShellBridge` against the trusted RiftOS shell WebView. `RiftShellBridge.execute(command,cwd,reply)` invokes `window.RiftShellMcpNative.request(...)` there. The shell executes through the existing `RiftShellMcp` parser, then sends a one-way exact-origin `mcp.shell.result` message over `RiftAndroid`; native correlates the result back to the pending MCP call. The guest RiftBrowser/ChatGPT page never receives `RiftShellMcp` or shell authority. The bridge has a bounded timeout and still never exposes Android/Linux `/system/bin/sh`. Normal shell calls retain the 60-second envelope; the explicit `vortex test-wait` / `validate-wait` / `script-wait` foreground-session commands receive a separate 105-second envelope because their native Vortex session is bounded to 85 seconds.
 
 ## Critical invariants
 

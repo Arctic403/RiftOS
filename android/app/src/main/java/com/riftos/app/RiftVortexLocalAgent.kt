@@ -167,6 +167,11 @@ object RiftVortexLocalAgent {
         return JSONObject().put("scope", TARGET_PACKAGE).put("back", true)
     }
 
+    /** Keep the one hard-coded Vortex target foreground for a native bridge session. */
+    internal fun ensureActiveForSession(context: Context) {
+        requireVortexServiceAndRoot(context)
+    }
+
     private fun requireVortexRoot(context: Context): AccessibilityNodeInfo = requireVortexServiceAndRoot(context).second
 
     private fun requireVortexServiceAndRoot(context: Context): Pair<RiftVortexAccessibilityService, AccessibilityNodeInfo> {

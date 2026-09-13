@@ -564,7 +564,12 @@ async function runVortexShell(args,print,state){
     print(JSON.stringify(vortexDisplay(result),null,2));
     return result;
   };
-  if(sub==="help")return print(`Vortex3D live bridge\nvortex status\nvortex catalog\nvortex api\nvortex snapshot\nvortex ui-tree [limit]\nvortex screenshot [name]\nvortex click <tag-or-content-description>\nvortex touch <down|move|up|cancel|0..3> <x> <y>\nvortex test [all|system|case-id]\nvortex script <RiftFS-path> [--unsafe] [--live]\nvortex job <id> [--image]\nvortex pull <artifact-id> [filename]\nvortex cleanup`);
+  const session=async payload=>{
+    const result=await core.native.call("vortex.session",payload);
+    print(JSON.stringify(vortexDisplay(result),null,2));
+    return result;
+  };
+  if(sub==="help")return print(`Vortex3D live bridge\nvortex status\nvortex catalog\nvortex api\nvortex snapshot\nvortex ui-tree [limit]\nvortex screenshot [name]\nvortex click <tag-or-content-description>\nvortex touch <down|move|up|cancel|0..3> <x> <y>\nvortex test [all|system|case-id]\nvortex test-wait <system|case-id>\nvortex script <RiftFS-path> [--unsafe] [--live]\nvortex script-wait <RiftFS-path> [--unsafe] [--live]\nvortex job <id> [--image]\nvortex pull <artifact-id> [filename]\nvortex cleanup`);
   if(sub==="status"||sub==="catalog"||sub==="api"||sub==="snapshot"||sub==="cleanup")return call({op:sub});
   if(sub==="ui-tree"||sub==="ui_tree")return call({op:"ui_tree",limit:Math.max(1,Math.min(1024,Number(args[0])||256))});
   if(sub==="screenshot")return call({op:"screenshot",name:args[0]||"current",includeImage:true});
@@ -577,11 +582,21 @@ async function runVortexShell(args,print,state){
     return call({op:"touch",action,x,y});
   }
   if(sub==="test"||sub==="validate")return call({op:"validate",target:args[0]||"all"});
+  if(sub==="test-wait"||sub==="validate-wait"){
+    if(!args[0])throw new Error("usage: vortex test-wait <system|case-id>");
+    return session({kind:"validation",target:args[0],includeImage:true});
+  }
   if(sub==="script"){
     const unsafe=args.includes("--unsafe"),live=args.includes("--live"),pathArg=args.find(arg=>arg!=="--unsafe"&&arg!=="--live");
     if(!pathArg)throw new Error("usage: vortex script <RiftFS-path> [--unsafe] [--live]");
     const path=resolvePath(state.cwd,pathArg),source=await core.fs.readText(path);if(source==null)throw new Error(`script not found: ${path}`);
     return call({op:"script",source,unsafe,live,name:(path.split("/").pop()||"riftos").replace(/\.[^.]+$/,'')});
+  }
+  if(sub==="script-wait"){
+    const unsafe=args.includes("--unsafe"),live=args.includes("--live"),pathArg=args.find(arg=>arg!=="--unsafe"&&arg!=="--live");
+    if(!pathArg)throw new Error("usage: vortex script-wait <RiftFS-path> [--unsafe] [--live]");
+    const path=resolvePath(state.cwd,pathArg),source=await core.fs.readText(path);if(source==null)throw new Error(`script not found: ${path}`);
+    return session({kind:"script",source,unsafe,live,name:(path.split("/").pop()||"riftos").replace(/\.[^.]+$/,''),includeImage:true});
   }
   if(sub==="job"){if(!args[0])throw new Error("usage: vortex job <id> [--image]");return call({op:"job",id:args[0],includeImage:args.includes("--image")});}
   if(sub==="pull"){if(!args[0])throw new Error("usage: vortex pull <artifact-id> [filename]");return call({op:"pull_artifact",id:args[0],name:args[1]||""});}

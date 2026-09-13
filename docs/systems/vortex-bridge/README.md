@@ -19,7 +19,7 @@ ChatGPT
 
 - `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` — explicit Binder binding, protocol transaction, reconnect, screenshot attachment, bounded artifact chunking and artifact pull into RiftFS workspace.
 - `RiftMcpRuntime.kt` — process-wide owner of the Vortex Binder client so RiftOS Activity recreation cannot tear down a live Vortex job connection.
-- `RiftNativeDispatcher.kt` — finite Android-native method mapping `vortex.bridge`; it borrows the process-owned client and never closes it on Activity teardown.
+- `RiftNativeDispatcher.kt` — finite Android-native method mapping for `vortex.bridge` plus the bounded `vortex.session` foreground-session route; it borrows the process-owned client and never closes it on Activity teardown.
 - `src/riftos.js` — user/model-facing `vortex` RiftShell command family.
 - `RiftToolHost.kt` — preserves the shell's structured return value so MCP can see bridge results.
 - `RiftMcpServer.kt` — attaches optional bounded Vortex preview data as MCP image content while keeping Base64 out of text/structured output.
@@ -39,12 +39,14 @@ Vortex-side protocol/service ownership lives in Vortex3D `docs/DEV_BRIDGE.md`.
 `vortex click <exact-tag-or-content-description>`
 `vortex touch <down|move|up|cancel|0..3> <x> <y>`
 `vortex test [all|system|exact-case-id]`
+`vortex test-wait <system|exact-case-id>`
 `vortex script <RiftFS-path> [--unsafe] [--live]`
+`vortex script-wait <RiftFS-path> [--unsafe] [--live]`
 `vortex job <vtx-id> [--image]`
 `vortex pull <artifact-id> [filename]`
 `vortex cleanup`
 
-Validation/script commands return jobs immediately. Use `vortex job <id>` to poll. VTXScript saves/restores the current Vortex project by default; add `--live` only when the script should intentionally keep project mutations. `--unsafe` is a separate lifecycle-JNI gate. `--image` asks RiftOS to fetch the bounded JPEG preview and attach it to the existing MCP tool result. `vortex pull` streams an arbitrary evidence artifact into `workspace/.vortex-bridge/` in bounded chunks with an atomic final rename, SHA-256 and duplicate-safe local filename.
+Validation/script commands return jobs immediately. Use `vortex job <id>` to poll. For model-driven targeted work, `test-wait` and `script-wait` use one native foreground session: RiftOS activates the hard-coded Vortex package, waits for a live Activity/renderer, starts the bridge job, polls it on the native dispatcher thread, periodically reasserts only Vortex3D as foreground, and returns the terminal result before the MCP shell call completes. This prevents ChatGPT from reclaiming foreground between queue and poll on low-memory Android devices. `test-wait` intentionally requires a system or exact case rather than defaulting to the full screenshot-heavy suite; the foreground session is bounded to 85 seconds. VTXScript saves/restores the current Vortex project by default; add `--live` only when the script should intentionally keep project mutations. `--unsafe` is a separate lifecycle-JNI gate. Terminal foreground sessions automatically request any bounded JPEG preview, using the existing MCP image framing. `vortex pull` streams an arbitrary evidence artifact into `workspace/.vortex-bridge/` in bounded chunks with an atomic final rename, SHA-256 and duplicate-safe local filename.
 
 The `vortex` command is deliberately **not supported inside `batch`**. Live app/test operations cannot honestly participate in RiftShell filesystem rollback semantics, so the atomic batch preflight continues to reject them.
 

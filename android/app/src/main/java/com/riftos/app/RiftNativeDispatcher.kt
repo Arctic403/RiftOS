@@ -211,6 +211,7 @@ class RiftNativeDispatcher(
         "system.storage" -> storageInfo()
         "system.info", "device.info" -> deviceInfo()
         "vortex.bridge" -> vortexBridge.execute(args)
+        "vortex.session" -> vortexBridge.executeSession(args)
         "vortex.agent" -> RiftVortexLocalAgent.execute(activity.applicationContext, args)
         "device.vibrate" -> vibrate(args.optLong("milliseconds", 40L))
         "clipboard.read", "clipboard.readText" -> clipboardRead()

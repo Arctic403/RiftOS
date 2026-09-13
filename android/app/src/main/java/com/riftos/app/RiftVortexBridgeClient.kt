@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.Parcel
+import android.os.SystemClock
 import android.util.Base64
 import org.json.JSONObject
 import java.io.File
@@ -26,6 +27,10 @@ class RiftVortexBridgeClient(context: Context) {
         private const val REMOTE_CHUNK_BYTES = 192 * 1024
         private const val MAX_IMAGE_BYTES = 512 * 1024
         private const val MAX_PULL_BYTES = 128L * 1024L * 1024L
+        private const val SESSION_READY_TIMEOUT_MS = 12_000L
+        private const val SESSION_TIMEOUT_MS = 85_000L
+        private const val SESSION_POLL_MS = 150L
+        private const val SESSION_REASSERT_MS = 1_000L
     }
 
     private val appContext = context.applicationContext
@@ -65,6 +70,91 @@ class RiftVortexBridgeClient(context: Context) {
         args.remove("includeImage")
         val response = transactWithReconnect(args)
         if (includeImage && response.optBoolean("ok", false)) attachImageIfPresent(response)
+        return response
+    }
+
+    /**
+     * One-call foreground session used by RiftShell test-wait/script-wait.
+     * Vortex is activated before the job starts and periodically re-asserted while the native
+     * dispatcher waits, so ChatGPT does not regain foreground between queue and poll calls.
+     */
+    fun executeSession(rawArgs: JSONObject): JSONObject {
+        val args = JSONObject(rawArgs.toString())
+        val kind = args.optString("kind").trim().lowercase()
+        require(kind == "validation" || kind == "script") { "vortex.session kind must be validation or script" }
+        val startedAt = SystemClock.elapsedRealtime()
+        val deadline = startedAt + SESSION_TIMEOUT_MS
+
+        RiftVortexLocalAgent.ensureActiveForSession(appContext)
+        val ready = awaitSessionReady(deadline)
+        val processSession = ready.optJSONObject("value")?.optString("process_session").orEmpty()
+
+        val request = JSONObject(args.toString())
+        request.remove("kind")
+        request.remove("includeImage")
+        request.put("op", if (kind == "validation") "validate" else "script")
+        val queued = execute(request)
+        if (!queued.optBoolean("ok", false)) return annotateSession(queued, kind, "", processSession, startedAt, false)
+        val jobId = queued.optJSONObject("value")?.optString("id").orEmpty()
+        require(jobId.isNotBlank()) { "Vortex session did not return a job id" }
+
+        var last = queued
+        var lastReassert = SystemClock.elapsedRealtime()
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastReassert >= SESSION_REASSERT_MS) {
+                RiftVortexLocalAgent.ensureActiveForSession(appContext)
+                lastReassert = now
+            }
+            val poll = execute(JSONObject().put("op", "job").put("id", jobId))
+            last = poll
+            if (!poll.optBoolean("ok", false)) return annotateSession(poll, kind, jobId, processSession, startedAt, true)
+            val state = poll.optJSONObject("value")?.optString("state").orEmpty()
+            if (state != "queued" && state != "running") {
+                val terminal = if (state == "complete") {
+                    execute(JSONObject().put("op", "job").put("id", jobId).put("includeImage", true))
+                } else poll
+                return annotateSession(terminal, kind, jobId, processSession, startedAt, true)
+            }
+            Thread.sleep(SESSION_POLL_MS)
+        }
+
+        return annotateSession(last, kind, jobId, processSession, startedAt, false)
+            .put("ok", false)
+            .put("op", "session")
+            .put("error", "Vortex foreground session timed out after ${SESSION_TIMEOUT_MS / 1000}s; job remains $jobId")
+    }
+
+    private fun awaitSessionReady(deadline: Long): JSONObject {
+        val readyDeadline = minOf(deadline, SystemClock.elapsedRealtime() + SESSION_READY_TIMEOUT_MS)
+        var last: JSONObject? = null
+        while (SystemClock.elapsedRealtime() < readyDeadline) {
+            val status = transactWithReconnect(JSONObject().put("op", "status"))
+            last = status
+            val value = status.optJSONObject("value")
+            if (status.optBoolean("ok", false) && value?.optBoolean("activity_alive", false) == true && value.optBoolean("renderer_ready", false)) {
+                return status
+            }
+            Thread.sleep(SESSION_POLL_MS)
+        }
+        val value = last?.optJSONObject("value")
+        throw IllegalStateException(
+            "Vortex foreground session could not obtain a live renderer; activity_alive=${value?.optBoolean("activity_alive", false) ?: false}, renderer_ready=${value?.optBoolean("renderer_ready", false) ?: false}"
+        )
+    }
+
+    private fun annotateSession(response: JSONObject, kind: String, jobId: String, processSession: String, startedAt: Long, terminal: Boolean): JSONObject {
+        val value = response.optJSONObject("value")
+        val state = value?.optString("state").orEmpty()
+        response.put("rift_session", JSONObject()
+            .put("mode", "foreground_wait")
+            .put("scope", "com.vortex3d.app")
+            .put("kind", kind)
+            .put("job_id", jobId)
+            .put("process_session", processSession)
+            .put("terminal", terminal)
+            .put("state", state)
+            .put("elapsed_ms", SystemClock.elapsedRealtime() - startedAt))
         return response
     }
 
