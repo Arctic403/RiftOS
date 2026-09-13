@@ -18,6 +18,7 @@ const mcpSystem = readFileSync('src/riftmcp-system.js', 'utf8');
 const workspaceHost = readFileSync('src/riftworkspace-live-host.js', 'utf8');
 const workspacePage = readFileSync('workspace-live/index.html', 'utf8');
 const workspaceWatcher = readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt', 'utf8');
+const workspaceRecords = readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt', 'utf8');
 const gradle = readFileSync('android/app/build.gradle.kts', 'utf8');
 const shellStyles = readFileSync('styles.css', 'utf8');
 const mcpServer = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcpServer.kt', 'utf8');
@@ -62,6 +63,7 @@ const checks = [
   ['workspace capability reports include hash/archive/extract', sandbox.includes('"stat", "hash", "list"') && sandbox.includes('"copy", "archive", "extract"')],
   ['workspace delete fails closed', sandbox.includes('require(removed && !file.exists())')],
   ['workspace content writes are staged atomically', sandbox.includes('private fun writeBytesAtomic') && sandbox.includes('commitStaged(staged, file, label)')],
+  ['successful native staged writes never roll back on backup cleanup failure', sandbox.indexOf('if (backedUp && !runCatching { deletePath(backup) }') > sandbox.indexOf('} catch (error: Throwable) {', sandbox.indexOf('private fun commitStaged('))],
   ['workspace copy and archive stage before replacement', sandbox.includes('UUID.randomUUID()}.copying') && sandbox.includes('commitStaged(temporary, destination, to)')],
   ['workspace extraction rejects traversal and oversized archives', sandbox.includes('ZipInputStream(BufferedInputStream') && sandbox.includes('Archive entry escaped destination') && sandbox.includes('MAX_ARCHIVE_EXTRACTED_BYTES')],
   ['workspace directory reads fail instead of returning false-empty results', sandbox.includes('Could not read directory:') && sandbox.includes('Could not read archive source directory:')],
@@ -102,6 +104,8 @@ const checks = [
   ['Workspace Records HTML is sandboxed', workspaceHost.includes('sandbox=\"allow-scripts\"') && !workspaceHost.includes('allow-same-origin')],
   ['Workspace Records uses narrow postMessage RPC', workspaceHost.includes('riftworkspace-live-v2') && workspaceHost.includes('Unsupported workspace records method')],
   ['workspace recorder is persistent and workspace-scoped', workspaceWatcher.includes('riftfs/workspace') && workspaceWatcher.includes('records.observe') && main.includes('workspaceWatcher.start()')],
+  ['workspace records bound total MCP query output and report truncation', workspaceRecords.includes('MAX_QUERY_PAYLOAD_CHARS') && workspaceRecords.includes('payloadChars + size <= MAX_QUERY_PAYLOAD_CHARS') && workspaceRecords.includes('responseTruncated')],
+  ['unchanged workspace files are not repeatedly rehashed during reconciliation', workspaceRecords.includes('previous.size == file.length() && previous.modified == file.lastModified()) continue')],
   ['workspace record query/checkpoint stay behind trusted shell kernel requests', main.includes('\"workspace.records.query\"') && main.includes('\"workspace.records.checkpoint\"') && workspaceHost.includes('workspace.records.query')],
   ['MCP exposes read-only private workspace diff records', host.includes('\"rift_workspace_diff\"') && host.includes('\"workspace.diff\"') && sandbox.includes('\"workspace.diff\" -> workspaceRecords.query(args)')],
   ['Workspace Records assets are packaged', gradle.includes('include(\"workspace-live/**\")') && workspacePage.includes('Workspace Records')]

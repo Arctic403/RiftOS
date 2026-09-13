@@ -848,13 +848,19 @@ internal class RiftToolSandbox(context: Context) {
                 }
                 require(deletePath(staged)) { "Could not clear staging path: $label" }
             }
-            if (backedUp) require(deletePath(backup)) { "Could not clear replaced destination backup: $label" }
         } catch (error: Throwable) {
-            deletePath(destination)
+            // Only an install failure warrants rollback. Backup cleanup is intentionally
+            // outside this block: recursive deletion can fail after removing some files.
+            require(deletePath(destination)) { "Could not clear incomplete destination: $label; original backup retained at ${backup.path}" }
             if (backedUp && backup.exists()) {
                 require(backup.renameTo(destination)) { "Could not restore existing destination after failure: $label" }
             }
             throw error
+        }
+        // A failed cleanup must never delete the successfully installed destination.
+        // Keep any remaining backup for manual cleanup instead of treating it as rollback.
+        if (backedUp && !runCatching { deletePath(backup) }.getOrDefault(false)) {
+            android.util.Log.w("RiftToolSandbox", "Backup cleanup incomplete after committing $label; retained at ${backup.path}")
         }
     }
 

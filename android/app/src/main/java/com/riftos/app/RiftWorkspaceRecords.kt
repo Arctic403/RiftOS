@@ -31,6 +31,9 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         private const val MAX_DIFF_LINES = 420
         private const val MAX_RECORDS = 2_000
         private const val MAX_QUERY_RECORDS = 250
+        // Tool results are duplicated in MCP text and structured content, then JSON-escaped
+        // again by the relay. Keep the raw query far below its 1 MB WebSocket envelope.
+        private const val MAX_QUERY_PAYLOAD_CHARS = 96_000
         private const val EVENT_SETTLE_MS = 220L
         @Volatile private var instance: RiftWorkspaceRecords? = null
 
@@ -142,8 +145,12 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         val currentPaths = current.keys.toSet()
         var metadataDirty = false
         for ((path, file) in current) {
-            val next = snapshot(file)
             val previous = observed[path]
+            // Watch events capture ordinary edits. A periodic reconciliation should not
+            // rehash every byte of an unchanged multi-gigabyte workspace on each query.
+            if (previous != null && previous.kind == "file" &&
+                previous.size == file.length() && previous.modified == file.lastModified()) continue
+            val next = snapshot(file)
             if (previous == null || previous.sha256 != next.entry.sha256 || previous.kind != next.entry.kind) {
                 recordChange(path, previous, next, source)
             } else if (previous.modified != next.entry.modified || previous.size != next.entry.size) {
@@ -239,14 +246,18 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         val allPaths = (checkpoint.keys + observed.keys).toSortedSet()
         val changed = JSONArray()
         var changedCount = 0
-        var diffChars = 0
+        var payloadChars = 0
+        var omittedFiles = 0
         for (path in allPaths) {
             if (!matchesPrefix(path, prefix)) continue
             val before = checkpoint[path]
             val after = observed[path]
             if (sameEntry(before, after)) continue
             changedCount++
-            if (changed.length() >= 500) continue
+            if (changed.length() >= 500 || payloadChars >= MAX_QUERY_PAYLOAD_CHARS) {
+                omittedFiles++
+                continue
+            }
             val beforeText = before?.takeIf { it.textStored }?.let { readSnapshot(checkpointRoot, path) }
             val afterText = after?.takeIf { it.textStored }?.let { readSnapshot(observedRoot, path) }
             val row = JSONObject()
@@ -254,24 +265,42 @@ class RiftWorkspaceRecords private constructor(context: Context) {
                 .put("status", status(before, after))
                 .put("before", entryJson(before))
                 .put("after", entryJson(after))
-            if (includeDiff && diffChars < MAX_DIFF_CHARS * 4) {
-                val diff = buildDiff(path, beforeText, afterText, before, after)
-                row.put("diff", diff)
-                diffChars += diff.length
+            if (includeDiff && payloadChars < MAX_QUERY_PAYLOAD_CHARS - 512) {
+                row.put("diff", buildDiff(path, beforeText, afterText, before, after))
             }
-            changed.put(row)
+            if (payloadChars + row.toString().length > MAX_QUERY_PAYLOAD_CHARS && row.has("diff")) {
+                row.remove("diff")
+                row.put("diffOmitted", true)
+            }
+            val size = row.toString().length
+            if (payloadChars + size <= MAX_QUERY_PAYLOAD_CHARS) {
+                changed.put(row)
+                payloadChars += size
+            } else omittedFiles++
         }
 
         val records = JSONArray()
         val files = eventRoot.listFiles()?.filter { it.isFile && it.extension == "json" }?.sortedByDescending { it.name }.orEmpty()
         var matchingRecords = 0
+        var omittedRecords = 0
         for (file in files) {
             val row = runCatching { JSONObject(file.readText(Charsets.UTF_8)) }.getOrNull() ?: continue
             if (!matchesPrefix(row.optString("path"), prefix)) continue
             matchingRecords++
-            if (records.length() >= limit) continue
+            if (records.length() >= limit || payloadChars >= MAX_QUERY_PAYLOAD_CHARS) {
+                omittedRecords++
+                continue
+            }
             if (!includeDiff) row.remove("diff")
-            records.put(row)
+            if (payloadChars + row.toString().length > MAX_QUERY_PAYLOAD_CHARS && row.has("diff")) {
+                row.remove("diff")
+                row.put("diffOmitted", true)
+            }
+            val size = row.toString().length
+            if (payloadChars + size <= MAX_QUERY_PAYLOAD_CHARS) {
+                records.put(row)
+                payloadChars += size
+            } else omittedRecords++
         }
 
         return JSONObject()
@@ -282,6 +311,10 @@ class RiftWorkspaceRecords private constructor(context: Context) {
                 .put("changedFiles", changedCount)
                 .put("records", matchingRecords)
                 .put("returnedRecords", records.length())
+                .put("returnedFiles", changed.length())
+                .put("omittedFiles", omittedFiles)
+                .put("omittedRecords", omittedRecords)
+                .put("responseTruncated", omittedFiles > 0 || omittedRecords > 0)
                 .put("recordLimit", limit))
             .put("files", changed)
             .put("records", records)
