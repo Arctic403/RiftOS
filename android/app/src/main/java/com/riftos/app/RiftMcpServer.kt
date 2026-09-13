@@ -130,13 +130,10 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         }
         val args = params.optJSONObject("arguments") ?: JSONObject()
         val requestMeta = params.optJSONObject("_meta") ?: JSONObject()
-        val aiSessionId = requestMeta.optString("riftos/aiSessionId")
-            .trim()
-            .takeIf { it.isNotBlank() }
         val modelCallId = requestMeta.optString("riftos/callId")
             .trim()
             .takeIf { it.isNotBlank() }
-        toolHost.callAsync(name, args, aiSessionId) { call ->
+        toolHost.callAsync(name, args) { call ->
             val ok = call.optBoolean("ok", false)
             val structured = JSONObject().put("ok", ok)
             if (ok) {
@@ -161,7 +158,6 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
             }
 
             val resultMeta = JSONObject()
-            if (aiSessionId != null) resultMeta.put("riftos/aiSessionId", aiSessionId)
             if (modelCallId != null) resultMeta.put("riftos/callId", modelCallId)
 
             val result = JSONObject()

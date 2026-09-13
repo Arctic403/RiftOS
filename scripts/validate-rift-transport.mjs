@@ -12,7 +12,6 @@ const core = readFileSync('src/riftcore.js', 'utf8');
 const workspaceAdapter = readFileSync('src/riftworkspace-android-adapter.js', 'utf8');
 const filesUi = readFileSync('src/riftos.js', 'utf8');
 const host = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolHost.kt', 'utf8');
-const journal = readFileSync('android/app/src/main/java/com/riftos/app/RiftAiJournal.kt', 'utf8');
 const sandbox = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt', 'utf8');
 const entry = readFileSync('src/riftandroid-entry.js', 'utf8');
 const mcpSystem = readFileSync('src/riftmcp-system.js', 'utf8');
@@ -39,7 +38,7 @@ const checks = [
   ['hidden browser surface is actually removed from layout', browser.includes('surfaceHost.visibility = View.GONE') && !browser.includes('parkBehindShell')],
   ['browser renderer is clipped to an owned surface container', browser.includes('surfaceHost.addView') && browser.includes('clipChildren = true') && browser.includes('surfaceHost.bringToFront()')],
   ['desktop emits immediate browser visibility lifecycle', desktop.includes('riftos:window-visibility') && desktop.includes("announceVisibility(win,false,'minimize')")],
-  ['desktop window controls stay enabled on Android', desktop.includes('const desktopEnabled=()=>true')],
+  ['Android desktop is permanent and has no retired mode switch', desktop.includes("get mode(){return 'desktop';}") && !desktop.includes('desktopPreference') && !desktop.includes('riftDesktopToggle') && !desktop.includes('rift.desktop.mode')],
   ['desktop geometry fits narrow viewports', desktop.includes('const minWidth=Math.min(MIN_W,maxWidth)') && desktop.includes('window.visualViewport')],
   ['AndroidX Core dependency backs inset APIs and compileSdk 36', gradle.includes('androidx.core:core-ktx:1.18.0') && gradle.includes('compileSdk = 36')],
   ['Android host consumes system bar and cutout insets', main.includes('WindowCompat.setDecorFitsSystemWindows(window, false)') && main.includes('WindowInsetsCompat.Type.displayCutout()') && main.includes('view.setPadding(safe.left, safe.top, safe.right, safe.bottom)')],
@@ -54,12 +53,12 @@ const checks = [
   ['raw parser supports nested paths and heredocs', adapter.includes('setRawPath') && adapter.includes('parseRawCallBlock') && adapter.includes('Heredoc delimiter')],
   ['raw results are bounded before composer injection', adapter.includes('MAX_RESULT_CHARS = 48000') && adapter.includes('Rift result truncated')],
   ['external AI composers are not decorated on send', !adapter.includes('decorateOutgoingPrompt') && !adapter.includes("document.addEventListener('click', (event) =>") && !adapter.includes("document.addEventListener('keydown', (event) =>")],
-  ['AI task handoff requires explicit user copy/paste', adapter.includes('pendingApprovedSubmission = { message, timeoutMs }') && adapter.includes('Copy and paste into the AI website manually.') && adapter.includes('requiresUserAction: true')],
+  ['browser compatibility stages bounded results without auto-submit', adapter.includes('async function stageComposerMessage') && adapter.includes('writeComposer(composer') && !adapter.includes('RiftMcpAppControl') && !adapter.includes('pendingApprovedSubmission') && !adapter.includes('rift/ai/event')],
   ['shared injector uses per-site message and composer adapters', aiAdapterRegistry.includes("version: 'rift-ai-adapters-v2'") && adapter.includes('siteAdapter = window.RiftAIAdapters?.current?.()') && adapter.includes('listAssistantMessages()') && adapter.includes('listUserMessages()')],
   ['supported AI adapters expose turn selectors', ['chatgpt', 'gemini', 'google', 'claude', 'copilot'].every(name => aiAdapterRegistry.includes(`${name}: Object.freeze`)) && aiAdapterRegistry.includes("assistant: ['model-response'")],
   ['MCP tool contract exposes hash, archive, and safe extract', host.includes('"rift_hash"') && host.includes('"rift_archive"') && host.includes('"rift_extract"') && host.includes('"fs.hash"') && host.includes('"fs.archive"') && host.includes('"fs.extract"')],
   ['archive and extract are classified as writes', host.includes('"rift_archive", "rift_extract"') && host.includes('"archive", "extract")) return true')],
-  ['archive/extract participate in AI rollback journaling', journal.includes('"rift_copy", "rift_archive", "rift_extract"') && journal.includes('"copy", "archive", "extract"')],
+  ['retired Rift AI journal/session metadata is absent', !existsSync('android/app/src/main/java/com/riftos/app/RiftAiJournal.kt') && !host.includes('aiJournal') && !mcpServer.includes('riftos/aiSessionId')],
   ['workspace capability reports include hash/archive/extract', sandbox.includes('"stat", "hash", "list"') && sandbox.includes('"copy", "archive", "extract"')],
   ['workspace delete fails closed', sandbox.includes('require(removed && !file.exists())')],
   ['workspace content writes are staged atomically', sandbox.includes('private fun writeBytesAtomic') && sandbox.includes('commitStaged(staged, file, label)')],
@@ -69,6 +68,8 @@ const checks = [
   ['long transfers use the dedicated native worker', dispatcher.includes('method in setOf("fs.copy", "fs.move", "fs.zip", "fs.unzip")')],
   ['native copy waits for the destination before resolving', dispatcher.includes('val result = copyNode(') && !dispatcher.includes('transferService.submit(job)')],
   ['native move waits for source removal before resolving', dispatcher.includes('val result = moveNode(')],
+  ['scheduled app notifications have a native implementation', dispatcher.includes('"notifications.schedule" -> scheduleNotification(') && dispatcher.includes('notificationScheduler.schedule')],
+  ['retired transfer job stack is absent', ['RiftTransferJob.kt','RiftTransferManager.kt','RiftTransferRegistry.kt','RiftTransferService.kt'].every(name => !existsSync(`android/app/src/main/java/com/riftos/app/${name}`)) && !dispatcher.includes('RiftTransferJob?'))],
   ['browser transfer IDs reach native progress', core.includes('transferId:transferId||') && dispatcher.includes('args.optString("transferId").ifBlank')],
   ['native progress targets the transfer UI', main.includes('window.RiftTransferUI?.__progress')],
   ['mount import and export are binary-safe', !workspaceAdapter.includes('core.fs.readText') && workspaceAdapter.includes('core.fs.copy')],
@@ -83,6 +84,7 @@ const checks = [
   ['unzip has entry and expansion limits', dispatcher.includes('MAX_ARCHIVE_ENTRIES') && dispatcher.includes('MAX_EXTRACTED_BYTES')],
   ['workspace archive completes before returning', !sandbox.includes('RiftTransferJob("archive"') && sandbox.includes('"archive" -> createArchive(')],
   ['delete verifies the Android provider result', core.includes('if(removed!==true)throw new Error')],
+  ['RiftShell MCP bridge executes only through the trusted shell WebView', main.includes('shellBridge = RiftShellBridge(webView)') && main.includes('method == "mcp.shell.result"') && filesUi.includes('window.RiftShellMcpNative = Object.freeze') && !adapter.includes('RiftShellMcp')],
   ['RiftShell passes its current directory into RiftGit', filesUi.includes('window.RiftGit.run(args,print,{cwd:state.cwd})')],
   ['RiftShell supports workspace navigation and full file actions', filesUi.includes('if(sub==="cd"){state.cwd="/workspace"') && filesUi.includes('if(cmd==="cp"||cmd==="mv")') && filesUi.includes('if(cmd==="zip")')],
   ['RiftShell exposes RiftFS roots without leading slashes', filesUi.includes('const shellRootAliases=new Set') && filesUi.includes('raw=`/${raw}`') && filesUi.includes('state={cwd:"/"}')],
@@ -96,11 +98,12 @@ const checks = [
   ['native shell binary bridge is bounded', dispatcher.includes('MAX_BRIDGE_BINARY_BYTES') && dispatcher.includes('"fs.readBase64"') && dispatcher.includes('"fs.writeBase64"') && core.includes('async readBase64') && core.includes('async writeBase64')],
   ['file actions reject duplicate execution', filesUi.includes('if(fileActionBusy)return')],
   ['archive is locally implemented', sandbox.includes('private fun createArchive')],
-  ['Workspace Live HTML is sandboxed', workspaceHost.includes('sandbox=\"allow-scripts\"') && !workspaceHost.includes('allow-same-origin')],
-  ['Workspace Live uses narrow postMessage RPC', workspaceHost.includes('riftworkspace-live-v1') && workspaceHost.includes('Unsupported live workspace method')],
-  ['native workspace watcher is workspace-scoped', workspaceWatcher.includes('riftfs/workspace') && workspaceWatcher.includes('isInsideRoot')],
-  ['workspace watcher is exposed only through shell kernel requests', main.includes('\"workspace.watch.start\"') && main.includes('RiftWorkspaceNative?.__event')],
-  ['Workspace Live assets are packaged', gradle.includes('include(\"workspace-live/**\")') && workspacePage.includes('Rift Workspace')]
+  ['Workspace Records HTML is sandboxed', workspaceHost.includes('sandbox=\"allow-scripts\"') && !workspaceHost.includes('allow-same-origin')],
+  ['Workspace Records uses narrow postMessage RPC', workspaceHost.includes('riftworkspace-live-v2') && workspaceHost.includes('Unsupported workspace records method')],
+  ['workspace recorder is persistent and workspace-scoped', workspaceWatcher.includes('riftfs/workspace') && workspaceWatcher.includes('records.observe') && main.includes('workspaceWatcher.start()')],
+  ['workspace record query/checkpoint stay behind trusted shell kernel requests', main.includes('\"workspace.records.query\"') && main.includes('\"workspace.records.checkpoint\"') && workspaceHost.includes('workspace.records.query')],
+  ['MCP exposes read-only private workspace diff records', host.includes('\"rift_workspace_diff\"') && host.includes('\"workspace.diff\"') && sandbox.includes('\"workspace.diff\" -> workspaceRecords.query(args)')],
+  ['Workspace Records assets are packaged', gradle.includes('include(\"workspace-live/**\")') && workspacePage.includes('Workspace Records')]
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

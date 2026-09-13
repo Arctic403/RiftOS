@@ -17,7 +17,7 @@ Android 8+ / Samsung / DeX
    /      |       \
 RiftFS  RiftRT  RiftDesktop
   |                 |
-Android filesDir     +-- Files / Settings / Rift MCP / Workspace Live / apps
+Android filesDir     +-- Files / Settings / Rift MCP / Workspace Records / apps
 + SAF mounts         |
                     RiftBrowser window
                          |
@@ -51,7 +51,7 @@ The foundation is intentionally simple: the user talks to ChatGPT in RiftBrowser
 - **RiftDesktop**: draggable/resizable/minimizable/maximizable desktop windows and taskbar.
 - **RiftRT v1**: worker/iframe/WASM application runtime integrated with RiftDesktop.
 - **RiftBrowser**: RiftOS-owned browser/window lifecycle with Android System WebView as the current compatibility renderer.
-- **Workspace Live**: sandboxed local HTML workspace surface that watches the canonical workspace and shows MCP/local edits as they happen.
+- **Workspace Records**: private persistent local change history with affected-file tracking, local checkpoint diffs, and remote RiftGit comparison.
 - **Rift MCP**: local system app for MCP tool permissions and recent tool activity.
 
 ## RiftBrowser + ChatGPT Web
@@ -91,17 +91,19 @@ riftfs/
   workspace/        # the only MCP-visible filesystem root
 ```
 
-Read tools are enabled by default. Write tools remain disabled by default until enabled in the **Rift MCP** system app. `rift_workspace_exec` is read-gated for inspection and additionally write-gated only when a batch contains mutations.
+Read tools are enabled by default. Write tools remain disabled by default until enabled in the **Rift MCP** system app. `rift_workspace_diff` is a read-only view of private local workspace records/checkpoint diffs; `rift_workspace_exec` is read-gated for inspection and additionally write-gated only when a batch contains mutations.
 
 The relay client accepts only `wss://` endpoints, stores its bearer token with Android Keystore encryption, reconnects with bounded backoff and exposes no listening socket. It remains inactive until configured by the user in the Rift MCP system app.
 
 Code Mode supports project snapshots, bounded listing/search, symbol and reference lookup, surgical range/symbol reads, guarded text patches, multi-hunk edits, transactional multi-file mutations, scoped snapshot guards, dry-run validation, full file/tree hashing, atomic local ZIP creation and traversal-safe bounded ZIP extraction. The workspace sandbox rejects path traversal and cannot address RiftOS system roots, SAF mounts or arbitrary Android storage.
 
-Tool Protocol V2 uses strict JSON request/call IDs and correlated result packets. Legacy `<rift_call>` envelopes remain supported for compatibility.
+The ChatGPT compatibility transport uses bounded plain-text `[RIFT_CALL]` / `[RIFT_END]` command blocks and `[RIFT_RESULT]` continuations. JSON-RPC stays private between the browser adapter and native MCP server; older chat-facing JSON/XML-like envelopes are not part of the active protocol.
 
-## Workspace Live
+## Workspace Records
 
-Workspace Live is a local HTML app packaged inside RiftOS. It runs in a sandboxed iframe with a narrow `postMessage` RPC to the trusted shell, watches only `filesDir/riftfs/workspace`, and refreshes open files/diffs when MCP or other local writers change them. It does not create a localhost listener and does not give the HTML page a general Android or filesystem bridge.
+Workspace Records is a private local HTML dashboard packaged inside RiftOS. The sandboxed iframe has no direct workspace mutation API; it only receives bounded records/read/Git-diff data from the trusted shell host. The native `RiftWorkspaceWatcher` runs with the RiftOS shell, and `RiftWorkspaceRecords` persists writer-agnostic event history plus a separate local checkpoint under app-private storage outside `riftfs/workspace`.
+
+The Local tab shows all files changed since the current checkpoint. The Git tab uses RiftGit to compare `/workspace/RiftOS-main` against the current remote `Arctic403/RiftOS#main` tree. Successful workspace Git push/pull creates a new records checkpoint automatically. MCP can inspect the same private local checkpoint state through read-only `rift_workspace_diff`. There is no approve/deny/accept/reject layer.
 
 ## RiftShell and RiftGit
 
@@ -146,6 +148,8 @@ The builder:
 - **`android-apk`** — Android staging/validation branch when staged promotion is useful.
 
 ## Documentation
+
+Start with [`docs/README.md`](docs/README.md) for the complete system/subsystem maintenance map and [`docs/SOURCE_OWNERSHIP.md`](docs/SOURCE_OWNERSHIP.md) for the machine-validated file-to-owner ledger. Every active subsystem has its own README with purpose, boundaries, control flow, failure signatures, fix map and validation guidance.
 
 - [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) — implementation status.
 - [`docs/TRUE_OS_ARCHITECTURE.md`](docs/TRUE_OS_ARCHITECTURE.md) — current RiftKernel/Android boundary.

@@ -2,7 +2,6 @@ const root=document.documentElement;
 
 // RiftOS Android is a desktop shell. Apps are always children of that shell;
 // they never replace or hide the desktop itself.
-try{localStorage.setItem('rift.desktop.mode','on');}catch(_){}
 root.classList.add('rift-desktop-mode');
 root.dataset.riftDesktop='desktop';
 
@@ -28,8 +27,6 @@ style.textContent=`
   /* Minimize only hides the app window; it never hides the desktop. */
   .rift-desktop-mode .window.rift-minimized{display:none!important}
 
-  /* Android RiftOS no longer has a mobile/app-takeover mode. */
-  #riftDesktopToggle{display:none!important}
 `;
 document.head.append(style);
 
@@ -52,22 +49,6 @@ for(const eventName of ['riftos:launcher-ready','riftos:window-open','riftos:win
   window.addEventListener(eventName,keepDesktopAlive);
 }
 window.addEventListener('resize',keepDesktopAlive);
-
-// Retire the old desktop-mode toggle/shortcut; RiftDesktop itself is now the host.
-document.addEventListener('click',event=>{
-  if(event.target.closest?.('#riftDesktopToggle')){
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    keepDesktopAlive();
-  }
-},true);
-window.addEventListener('keydown',event=>{
-  if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='d'){
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    keepDesktopAlive();
-  }
-},true);
 
 keepDesktopAlive();
 

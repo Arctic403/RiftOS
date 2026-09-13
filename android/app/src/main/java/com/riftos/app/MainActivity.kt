@@ -44,8 +44,10 @@ class MainActivity : Activity() {
     private lateinit var rootView: FrameLayout
     private lateinit var webView: WebView
     private lateinit var browserWindow: RiftBrowserWindow
+    private lateinit var shellBridge: RiftShellBridge
     private lateinit var dispatcher: RiftNativeDispatcher
     private lateinit var systemDump: RiftSystemDump
+    private lateinit var workspaceRecords: RiftWorkspaceRecords
     private lateinit var workspaceWatcher: RiftWorkspaceWatcher
     private val kernelExecutor = Executors.newSingleThreadExecutor()
     private var pendingTreeRequestId: String? = null
@@ -86,7 +88,11 @@ class MainActivity : Activity() {
             overScrollMode = android.view.View.OVER_SCROLL_NEVER
         }
         systemDump = RiftSystemDump(this)
-        workspaceWatcher = RiftWorkspaceWatcher(this, ::sendWorkspaceEvent)
+        workspaceRecords = RiftWorkspaceRecords.get(this)
+        workspaceWatcher = RiftWorkspaceWatcher(this, ::sendWorkspaceEvent, workspaceRecords)
+        workspaceWatcher.start()
+        shellBridge = RiftShellBridge(webView)
+        RiftMcpRuntime.registerShellBridge(shellBridge)
         rootView.addView(
             webView,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -197,6 +203,10 @@ class MainActivity : Activity() {
         val method = message.optString("method")
         val requestId = message.optString("id")
         val args = message.optJSONObject("args") ?: JSONObject()
+        if (method == "mcp.shell.result") {
+            if (::shellBridge.isInitialized) shellBridge.receive(args.optJSONObject("result") ?: JSONObject())
+            return true
+        }
         if (requestId.isBlank()) return method == "system.dump.save" || method.startsWith("browser.window.")
 
         when (method) {
@@ -211,8 +221,9 @@ class MainActivity : Activity() {
             "browser.window.state" -> runBrowserCommand(requestId) { browserWindow.state() }
             "browser.window.close" -> runBrowserCommand(requestId) { JSONObject().put("closed", browserWindow.close()) }
             "workspace.watch.start" -> runKernelCommand(requestId) { workspaceWatcher.start() }
-            "workspace.watch.stop" -> runKernelCommand(requestId) { workspaceWatcher.stop() }
             "workspace.watch.state" -> runKernelCommand(requestId) { workspaceWatcher.state() }
+            "workspace.records.query" -> runKernelCommand(requestId) { workspaceRecords.query(args) }
+            "workspace.records.checkpoint" -> runKernelCommand(requestId) { workspaceRecords.checkpoint(args) }
             else -> return false
         }
         return true
@@ -434,6 +445,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         if (::workspaceWatcher.isInitialized) workspaceWatcher.shutdown()
+        if (::shellBridge.isInitialized) shellBridge.clear()
         if (::dispatcher.isInitialized) dispatcher.shutdown()
         if (::browserWindow.isInitialized) browserWindow.destroy()
         kernelExecutor.shutdownNow()

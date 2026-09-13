@@ -1,5 +1,7 @@
 # Rift MCP Relay
 
+For the full runtime ownership, failure map, invariants and repair guide, see [`../docs/systems/relay-service/README.md`](../docs/systems/relay-service/README.md).
+
 Single-device development relay for RiftOS. A Durable Object keeps the Android WebSocket and correlates ChatGPT Streamable HTTP requests without storing tool payloads.
 
 ## Required secrets

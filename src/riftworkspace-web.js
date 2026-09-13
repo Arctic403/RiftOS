@@ -410,52 +410,50 @@ class RiftWorkspaceWeb extends EventTarget{
 
 const localWorkspace=new RiftWorkspaceWeb(previousCore);
 
-function useNative(){return !!previousCore.native?.connected;}
-function nativeCall(method,args={}){return previousCore.native.call(method,args);}
-
 const workspace=Object.freeze({
   get available(){return true;},
   get local(){return localWorkspace;},
-  get mode(){return useNative()?"native-workspace":"local-sandbox";},
-  info:()=>useNative()?nativeCall("workspace.info",{}):localWorkspace.info(),
-  list:(path="",options={})=>useNative()?nativeCall("workspace.list",{path,recursive:options.recursive!==false,includeHidden:options.includeHidden===true}):localWorkspace.list(path,options),
-  stat:(path)=>useNative()?nativeCall("workspace.stat",{path}):localWorkspace.stat(path),
-  readText:(path)=>useNative()?nativeCall("workspace.readText",{path}):localWorkspace.readText(path),
-  readJSON:(path,fallback=null)=>useNative()?nativeCall("workspace.readText",{path}).then(text=>{try{return JSON.parse(text);}catch{return fallback;}}):localWorkspace.readJSON(path,fallback),
-  writeText:(path,text)=>useNative()?nativeCall("workspace.writeText",{path,text:String(text??"")}):localWorkspace.writeText(path,text),
-  writeJSON:(path,value)=>useNative()?nativeCall("workspace.writeText",{path,text:JSON.stringify(value,null,2)}):localWorkspace.writeJSON(path,value),
-  mkdir:(path)=>useNative()?nativeCall("workspace.mkdir",{path}):localWorkspace.mkdir(path),
-  remove:(path)=>useNative()?nativeCall("workspace.remove",{path}):localWorkspace.remove(path),
-  move:(path,newPath,options={})=>useNative()?nativeCall("workspace.move",{path,newPath,...options}):localWorkspace.move(path,newPath,options),
-  copy:(path,newPath,options={})=>useNative()?nativeCall("workspace.copy",{path,newPath,...options}):localWorkspace.copy(path,newPath,options),
-  previewPatch:(patch)=>useNative()?nativeCall("workspace.previewPatch",{patch}):localWorkspace.previewPatch(patch),
-  applyPatch:(patch)=>useNative()?nativeCall("workspace.applyPatch",{patch}):localWorkspace.applyPatch(patch),
-  history:()=>useNative()?nativeCall("workspace.history",{}):localWorkspace.history(),
-  rollback:(historyId=null)=>useNative()?nativeCall("workspace.rollback",historyId?{historyId}:{}):localWorkspace.rollback(historyId),
+  get mode(){return "local-sandbox";},
+  info:()=>localWorkspace.info(),
+  list:(path="",options={})=>localWorkspace.list(path,options),
+  stat:path=>localWorkspace.stat(path),
+  readText:path=>localWorkspace.readText(path),
+  readJSON:(path,fallback=null)=>localWorkspace.readJSON(path,fallback),
+  writeText:(path,text)=>localWorkspace.writeText(path,text),
+  writeJSON:(path,value)=>localWorkspace.writeJSON(path,value),
+  mkdir:path=>localWorkspace.mkdir(path),
+  remove:path=>localWorkspace.remove(path),
+  move:(path,newPath,options={})=>localWorkspace.move(path,newPath,options),
+  copy:(path,newPath,options={})=>localWorkspace.copy(path,newPath,options),
+  previewPatch:patch=>localWorkspace.previewPatch(patch),
+  applyPatch:patch=>localWorkspace.applyPatch(patch),
+  history:()=>localWorkspace.history(),
+  rollback:(historyId=null)=>localWorkspace.rollback(historyId),
   snapshot:(path="",options={})=>localWorkspace.snapshot(path,options),
-  copyFromMount:(mountId,path,destination)=>useNative()?nativeCall("workspace.copyFromMount",{mountId,path,destination}):Promise.reject(new Error("External Files mounts require the optional native host")),
-  copyToMount:(source,mountId,path)=>useNative()?nativeCall("workspace.copyToMount",{source,mountId,path}):Promise.reject(new Error("External Files mounts require the optional native host"))
+  copyFromMount:()=>Promise.reject(new Error("External Files mounts require the Android workspace adapter")),
+  copyToMount:()=>Promise.reject(new Error("External Files mounts require the Android workspace adapter"))
 });
 
 async function invoke(request={}){
   const id=request?.id??null,method=String(request?.method||""),args=isObject(request?.args)?request.args:{};
+  const activeWorkspace=window.RiftWorkspace||workspace;
   const methods={
-    "workspace.info":()=>workspace.info(),
-    "workspace.list":()=>workspace.list(args.path||"",args),
-    "workspace.stat":()=>workspace.stat(args.path||""),
-    "workspace.readText":()=>workspace.readText(args.path),
-    "workspace.readJSON":()=>workspace.readJSON(args.path,args.fallback??null),
-    "workspace.writeText":()=>workspace.writeText(args.path,args.text??""),
-    "workspace.writeJSON":()=>workspace.writeJSON(args.path,args.value),
-    "workspace.mkdir":()=>workspace.mkdir(args.path),
-    "workspace.remove":()=>workspace.remove(args.path),
-    "workspace.move":()=>workspace.move(args.path,args.newPath??args.new_path,{overwrite:args.overwrite===true}),
-    "workspace.copy":()=>workspace.copy(args.path,args.newPath??args.new_path,{overwrite:args.overwrite===true}),
-    "workspace.previewPatch":()=>workspace.previewPatch(args.patch??args.json),
-    "workspace.applyPatch":()=>workspace.applyPatch(args.patch??args.json),
-    "workspace.history":()=>workspace.history(),
-    "workspace.rollback":()=>workspace.rollback(args.historyId??null),
-    "workspace.snapshot":()=>workspace.snapshot(args.path||"",args)
+    "workspace.info":()=>activeWorkspace.info(),
+    "workspace.list":()=>activeWorkspace.list(args.path||"",args),
+    "workspace.stat":()=>activeWorkspace.stat(args.path||""),
+    "workspace.readText":()=>activeWorkspace.readText(args.path),
+    "workspace.readJSON":()=>activeWorkspace.readJSON(args.path,args.fallback??null),
+    "workspace.writeText":()=>activeWorkspace.writeText(args.path,args.text??""),
+    "workspace.writeJSON":()=>activeWorkspace.writeJSON(args.path,args.value),
+    "workspace.mkdir":()=>activeWorkspace.mkdir(args.path),
+    "workspace.remove":()=>activeWorkspace.remove(args.path),
+    "workspace.move":()=>activeWorkspace.move(args.path,args.newPath??args.new_path,{overwrite:args.overwrite===true}),
+    "workspace.copy":()=>activeWorkspace.copy(args.path,args.newPath??args.new_path,{overwrite:args.overwrite===true}),
+    "workspace.previewPatch":()=>activeWorkspace.previewPatch(args.patch??args.json),
+    "workspace.applyPatch":()=>activeWorkspace.applyPatch(args.patch??args.json),
+    "workspace.history":()=>activeWorkspace.history(),
+    "workspace.rollback":()=>activeWorkspace.rollback(args.historyId??null),
+    "workspace.snapshot":()=>activeWorkspace.snapshot(args.path||"",args)
   };
   if(!methods[method])return {id,ok:false,error:`Unsupported RiftWorkspace JSON method: ${method}`};
   try{return {id,ok:true,result:clone(await methods[method]())};}
@@ -473,4 +471,4 @@ window.addEventListener("message",event=>{
   invoke(event.data.request).then(response=>event.source?.postMessage({type:"riftworkspace:response",response},event.origin));
 });
 
-console.info("[RiftWorkspace] OPFS/IndexedDB sandbox + JSON patch bridge online",{root:WORKSPACE_ROOT,native:useNative()});
+console.info("[RiftWorkspace] OPFS/IndexedDB common layer + JSON patch bridge online",{root:WORKSPACE_ROOT,mode:"local-sandbox"});

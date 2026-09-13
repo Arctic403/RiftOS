@@ -79,6 +79,28 @@ async function localFileMap(meta){
   const rows=await fs.list(meta.root),map=new Map();for(const row of rows){if(row.kind!=="file")continue;const rel=row.path.slice(meta.root.length).replace(/^\/+/,"");if(rel&&!ignoredRelative(rel))map.set(rel,row);}return map;
 }
 async function contentSha(meta,path){return gitBlobSha(await fs.readBase64(`${meta.root}/${path}`));}
+function decodeTextBase64(base64){
+  const bytes=decodeBase64(base64);
+  if(bytes.slice(0,4096).some(byte=>byte===0))return null;
+  try{return new TextDecoder("utf-8",{fatal:true}).decode(bytes);}catch{return null;}
+}
+function gitStyleDiff(path,before,after,status){
+  if(before==null&&after==null)return `diff --git a/${path} b/${path}\nBinary file changed`;
+  const a=String(before??"").split("\n"),b=String(after??"").split("\n");
+  let prefix=0;while(prefix<a.length&&prefix<b.length&&a[prefix]===b[prefix])prefix++;
+  let suffix=0;while(suffix<a.length-prefix&&suffix<b.length-prefix&&a[a.length-1-suffix]===b[b.length-1-suffix])suffix++;
+  const removed=a.slice(prefix,a.length-suffix),added=b.slice(prefix,b.length-suffix),lines=[];
+  lines.push(`diff --git a/${path} b/${path}`);
+  lines.push(status==="added"?"--- /dev/null":`--- a/${path}`);
+  lines.push(status==="deleted"?"+++ /dev/null":`+++ b/${path}`);
+  lines.push(`@@ -${prefix+1},${removed.length} +${prefix+1},${added.length} @@`);
+  a.slice(Math.max(0,prefix-3),prefix).forEach(line=>lines.push(` ${line}`));
+  removed.slice(0,180).forEach(line=>lines.push(`-${line}`));
+  added.slice(0,180).forEach(line=>lines.push(`+${line}`));
+  const afterStart=b.length-suffix;b.slice(afterStart,afterStart+3).forEach(line=>lines.push(` ${line}`));
+  if(removed.length+added.length>360)lines.push(`... diff truncated (${removed.length} removed / ${added.length} added lines)`);
+  return lines.join("\n").slice(0,64000);
+}
 
 async function verifyCopy(from,to){
   const rows=await fs.list(from),copied=await fs.list(to);
@@ -120,6 +142,7 @@ async function replaceBranch(meta,branch,print){
     throw new Error(`${error.message}. Original project preserved; recovery files retained at ${stage}${backedUp?` and ${backup}`:""}.`);
   }
   await fs.remove(stage).catch(()=>{});if(backedUp)await fs.remove(backup).catch(()=>{});
+  await checkpointWorkspaceRecords(meta.root,"git:pull",info.commit.sha);
   return {imported:tree.length,headSha:info.commit.sha};
 }
 async function clone(repoArg,branchArg,pathArg,print,cwd){
@@ -169,8 +192,34 @@ async function atomicPush(message,print,cwd,initialMeta=null){
   const commit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message||meta.pendingMessage||"RiftOS workspace update",tree:tree.sha,parents:[remote.commit.sha]})});
   await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/refs/heads/${meta.branch.split("/").map(encodeURIComponent).join("/")}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({sha:commit.sha,force:false})});
   for(const path of deleted)delete meta.tracked[path];for(const path of [...modified,...untracked])meta.tracked[path]={blobSha:newBlobShas.get(path),size:Number((await fs.stat(`${meta.root}/${path}`))?.size||0),mode:meta.tracked?.[path]?.mode||"100644"};
-  meta.headSha=commit.sha;delete meta.pendingMessage;if(!initialMeta)await saveMeta(meta);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
+  meta.headSha=commit.sha;delete meta.pendingMessage;if(!initialMeta)await saveMeta(meta);await checkpointWorkspaceRecords(meta.root,"git:push",commit.sha);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
 }
+async function workspaceDiff(options={}){
+  const meta=await workspaceState(),state=await statusFor(meta,()=>{},true);
+  const paths=[...state.modified.map(path=>({path,status:"modified"})),...state.deleted.map(path=>({path,status:"deleted"})),...state.untracked.map(path=>({path,status:"added"}))];
+  const maxFiles=Math.max(1,Math.min(80,Number(options.maxFiles||40))),maxChars=Math.max(16000,Math.min(512000,Number(options.maxChars||240000)));
+  const rows=new Array(Math.min(paths.length,maxFiles));let used=0;
+  await mapLimit(paths.slice(0,maxFiles),3,async(item,index)=>{
+    const tracked=meta.tracked?.[item.path];
+    const before64=tracked?.blobSha?await blobBase64({owner:meta.owner,repo:meta.repo},tracked.blobSha):null;
+    const after64=item.status!=="deleted"?await fs.readBase64(`${meta.root}/${item.path}`):null;
+    const before=before64==null?"":decodeTextBase64(before64),after=after64==null?"":decodeTextBase64(after64);
+    const binary=(before64!=null&&before==null)||(after64!=null&&after==null);
+    let diff=binary?`diff --git a/${item.path} b/${item.path}\nBinary file changed`:gitStyleDiff(item.path,before,after,item.status);
+    if(used>=maxChars)diff="... diff omitted by response limit";else if(used+diff.length>maxChars)diff=diff.slice(0,maxChars-used)+"\n... diff truncated";
+    used+=diff.length;
+    rows[index]={path:item.path,status:item.status,binary,diff};
+  });
+  return {format:"riftgit-workspace-diff-v1",repo:meta.full,branch:meta.branch,headSha:meta.headSha,root:meta.root,summary:{modified:state.modified.length,deleted:state.deleted.length,untracked:state.untracked.length,total:paths.length,returned:rows.length,truncated:paths.length>rows.length},files:rows};
+}
+
+async function checkpointWorkspaceRecords(root,reason,headSha){
+  const normalized=normalizePath(root);
+  if(normalized!=="/workspace"&&!normalized.startsWith("/workspace/"))return;
+  const gitRoot=normalized.slice("/workspace/".length);
+  await core.native.call("workspace.records.checkpoint",{reason,gitRoot,gitHeadSha:headSha||""}).catch(()=>{});
+}
+
 async function workspaceState(){
   const root=await fs.stat(WORKSPACE_PROJECT);
   if(root?.kind!=="directory")throw new Error(`Workspace project folder not found: ${WORKSPACE_PROJECT}`);
@@ -233,5 +282,5 @@ async function run(input,print=console.log,context={}){
   if(cmd==="push")return atomicPush(args.join(" "),print,cwd);if(cmd==="sync")return sync(args.join(" "),print,cwd);if(cmd==="branches"||cmd==="branch")return listBranches(print,cwd);if(cmd==="switch"||cmd==="checkout")return switchBranch(args[0],print,cwd);throw new Error(`unknown RiftGit command: ${cmd}`);
 }
 
-window.RiftGit=Object.freeze({run,status:(print,cwd)=>status(print||console.log,false,cwd||"/home"),clone:(repo,branch,path,print,cwd)=>clone(repo,branch,path,print||console.log,cwd||"/home"),pull:(print,cwd)=>pull(print||console.log,cwd||"/home"),push:(message,print,cwd)=>atomicPush(message,print||console.log,cwd||"/home"),workspace:(args,print)=>workspaceCommand([...args],print||console.log),get token(){return token();}});
+window.RiftGit=Object.freeze({run,status:(print,cwd)=>status(print||console.log,false,cwd||"/home"),clone:(repo,branch,path,print,cwd)=>clone(repo,branch,path,print||console.log,cwd||"/home"),pull:(print,cwd)=>pull(print||console.log,cwd||"/home"),push:(message,print,cwd)=>atomicPush(message,print||console.log,cwd||"/home"),workspace:(args,print)=>workspaceCommand([...args],print||console.log),workspaceDiff,get token(){return token();}});
 console.info("[RiftGit] cwd-aware full-tree filesystem bridge ready");

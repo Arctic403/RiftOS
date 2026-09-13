@@ -6,19 +6,13 @@ const dock=document.querySelector('.dock');
 const statusbar=document.querySelector('.statusbar');
 if(!os||!stage||!workspace||!dock||!statusbar)throw new Error('RiftDesktop requires the RiftOS shell DOM');
 
-const STATE_KEY='rift.desktop.mode';
-const GEOMETRY_KEY=app=>`rift.desktop.geometry.${app||'app'}`;
-const ICON_GEOMETRY_KEY='rift.desktop.icon.geometry';
-const WALLPAPER_KEY='rift.desktop.wallpaper';
 const MIN_W=300,MIN_H=220;
 const inputState={mouse:false,keyboard:false,virtualMouse:false};
-let desktopPreference='auto';
 let desktopWallpaper='';
 async function restoreDesktopSettings(){
   try{
     const data=await core?.fs?.readJSON?.('/system/settings/desktop.json',null);
     if(data?.wallpaper!==undefined)desktopWallpaper=String(data.wallpaper||'');
-    if(data?.mode==='auto'||data?.mode==='on'||data?.mode==='off')desktopPreference=data.mode;
   }catch(_){ }
 }
 let activeWindow=null,zCounter=100;
@@ -36,14 +30,14 @@ const taskbarSpacer=document.createElement('div');
 taskbarSpacer.className='rift-taskbar-spacer';
 const tray=document.createElement('div');
 tray.className='rift-taskbar-tray';
-tray.innerHTML=`<button type="button" id="riftMouseToggle" title="Use the full screen as a touch trackpad">Mouse</button><button type="button" id="riftDesktopToggle" title="Desktop mode">Desktop</button><span class="rift-tray-clock" id="riftTrayClock"></span><button type="button" class="rift-show-desktop" id="riftShowDesktop" title="Show desktop" aria-label="Show desktop"></button>`;
+tray.innerHTML=`<button type="button" id="riftMouseToggle" title="Use the full screen as a touch trackpad">Mouse</button><span class="rift-tray-clock" id="riftTrayClock"></span><button type="button" class="rift-show-desktop" id="riftShowDesktop" title="Show desktop" aria-label="Show desktop"></button>`;
 dock.append(taskbarOpen,taskbarSpacer,tray);
 
 const startMenu=document.createElement('section');
 startMenu.id='riftStartMenu';
 startMenu.setAttribute('aria-label','Start menu');
 startMenu.innerHTML=`<div class="rift-start-head"><strong>RiftOS</strong><span>Apps</span></div><div class="rift-start-grid">
-<button data-open="files"><b>▣</b><span>Files</span></button><button data-open="workspace-live"><b>◈</b><span>Workspace Live</span></button><button data-open="terminal"><b>&gt;_</b><span>RiftShell</span></button><button data-open="browser"><b>◎</b><span>RiftBrowser</span></button><button data-open="editor"><b>{}</b><span>Editor</span></button><button data-open="tasks"><b>≡</b><span>Task Manager</span></button><button data-open="settings"><b>⚙</b><span>Settings</span></button></div>`;
+<button data-open="files"><b>▣</b><span>Files</span></button><button data-open="workspace-live"><b>◈</b><span>Workspace Records</span></button><button data-open="terminal"><b>&gt;_</b><span>RiftShell</span></button><button data-open="browser"><b>◎</b><span>RiftBrowser</span></button><button data-open="editor"><b>{}</b><span>Editor</span></button><button data-open="tasks"><b>≡</b><span>Task Manager</span></button><button data-open="settings"><b>⚙</b><span>Settings</span></button></div>`;
 os.append(startMenu);
 
 const cursor=document.createElement('div');
@@ -54,10 +48,6 @@ trackpad.id='riftTrackpadOverlay';trackpad.setAttribute('aria-label','Full-scree
 const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
 const wm=()=>window.RiftOSWindowManager;
 const allWindows=()=>[...stage.querySelectorAll('.window.rift-desktop-window')];
-const autoDesktop=()=>innerWidth>=720||(innerWidth>innerHeight&&innerWidth>=600);
-// RiftDesktop is the permanent Android shell; saved legacy mobile preferences must not disable window controls.
-const desktopEnabled=()=>true;
-
 function updateClock(){const el=tray.querySelector('#riftTrayClock');if(!el)return;const now=new Date();el.innerHTML=`<b>${now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</b><small>${now.toLocaleDateString([],{month:'numeric',day:'numeric',year:'2-digit'})}</small>`;}
 setInterval(updateClock,1000);updateClock();
 
@@ -73,22 +63,21 @@ async function readStoredGeometry(win){
   return defaultGeometry(win);
 }
 function applyGeometry(win,g){const bounds=desktopBounds();const maxWidth=Math.max(0,bounds.width-8),maxHeight=Math.max(0,bounds.height-8);const minWidth=Math.min(MIN_W,maxWidth),minHeight=Math.min(MIN_H,maxHeight);const width=clamp(Number(g.width)||minWidth,minWidth,maxWidth);const height=clamp(Number(g.height)||minHeight,minHeight,maxHeight);const left=clamp(Number(g.left)||2,2,Math.max(2,bounds.width-width-2));const top=clamp(Number(g.top)||2,2,Math.max(2,bounds.height-height-2));Object.assign(win.style,{left:`${left}px`,top:`${top}px`,width:`${width}px`,height:`${height}px`,right:'auto',bottom:'auto',inset:'auto'});}
-function saveGeometry(win){if(!desktopEnabled()||win.classList.contains('rift-maximized'))return;const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();persistWindowGeometry(win.dataset.app,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}
+function saveGeometry(win){if(win.classList.contains('rift-maximized'))return;const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();persistWindowGeometry(win.dataset.app,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}
 async function persistWindowGeometry(id,value){try{const current=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};await core?.fs?.writeJSON?.('/system/settings/desktop.json',{...current,windows:{...(current.windows||{}),[id]:value},updated:Date.now()});}catch(_){}}
-function maximizeForMobile(win){win.classList.remove('rift-maximized');Object.assign(win.style,{inset:'',left:'',top:'',width:'',height:'',right:'',bottom:''});}
-async function restoreDesktopGeometry(win){if(!desktopEnabled())return;if(win.classList.contains('rift-maximized'))maximize(win,true);else applyGeometry(win,await readStoredGeometry(win));}
+async function restoreDesktopGeometry(win){if(win.classList.contains('rift-maximized'))maximize(win,true);else applyGeometry(win,await readStoredGeometry(win));}
 
 function focusVisual(win,requestCore=true){if(!win||!document.contains(win))return;win.classList.remove('rift-minimized');activeWindow=win;zCounter+=1;win.style.zIndex=String(zCounter);allWindows().forEach(item=>item.classList.toggle('rift-focused',item===win));if(requestCore)wm()?.focus?.(win.dataset.app);syncTaskbar();}
 function nextVisible(except){return allWindows().filter(win=>win!==except&&!win.classList.contains('rift-minimized')).sort((a,b)=>(Number(b.style.zIndex)||0)-(Number(a.style.zIndex)||0))[0]||null;}
 function announceVisibility(win,visible,reason){if(!win)return;window.dispatchEvent(new CustomEvent('riftos:window-visibility',{detail:{id:win.dataset.app,window:win,visible:!!visible,reason}}));}
 function minimize(win){if(!win)return;announceVisibility(win,false,'minimize');win.classList.add('rift-minimized');win.classList.remove('rift-focused');if(activeWindow===win)activeWindow=null;const next=nextVisible(win);if(next)focusVisual(next);else workspace.classList.remove('hidden');syncTaskbar();}
-function restore(win){if(!win)return;win.classList.remove('rift-minimized');stage.classList.remove('hidden');if(!desktopEnabled())workspace.classList.add('hidden');restoreDesktopGeometry(win);focusVisual(win);announceVisibility(win,true,'restore');}
-function maximize(win,force=false){if(!win||!desktopEnabled())return;if(!force&&win.classList.contains('rift-maximized')){win.classList.remove('rift-maximized');applyGeometry(win,readGeometry(win));return;}if(!win.classList.contains('rift-maximized'))saveGeometry(win);win.classList.add('rift-maximized');Object.assign(win.style,{left:'0px',top:'0px',width:'100%',height:'100%',inset:'auto',right:'auto',bottom:'auto'});}
+function restore(win){if(!win)return;win.classList.remove('rift-minimized');stage.classList.remove('hidden');restoreDesktopGeometry(win);focusVisual(win);announceVisibility(win,true,'restore');}
+function maximize(win,force=false){if(!win)return;if(!force&&win.classList.contains('rift-maximized')){win.classList.remove('rift-maximized');applyGeometry(win,readGeometry(win));return;}if(!win.classList.contains('rift-maximized'))saveGeometry(win);win.classList.add('rift-maximized');Object.assign(win.style,{left:'0px',top:'0px',width:'100%',height:'100%',inset:'auto',right:'auto',bottom:'auto'});}
 
-function startDrag(event,win){if(!desktopEnabled()||inputState.virtualMouse||win.classList.contains('rift-maximized')||event.target.closest('button,input,textarea,select,a'))return;event.preventDefault();focusVisual(win);const stageRect=stage.getBoundingClientRect(),rect=win.getBoundingClientRect(),startX=event.clientX,startY=event.clientY,baseLeft=rect.left-stageRect.left,baseTop=rect.top-stageRect.top;event.currentTarget.setPointerCapture?.(event.pointerId);const move=e=>applyGeometry(win,{left:baseLeft+e.clientX-startX,top:baseTop+e.clientY-startY,width:rect.width,height:rect.height});const end=()=>{event.currentTarget.removeEventListener('pointermove',move);event.currentTarget.removeEventListener('pointerup',end);event.currentTarget.removeEventListener('pointercancel',end);saveGeometry(win);};event.currentTarget.addEventListener('pointermove',move);event.currentTarget.addEventListener('pointerup',end,{once:true});event.currentTarget.addEventListener('pointercancel',end,{once:true});}
-function startResize(event,win){if(!desktopEnabled()||inputState.virtualMouse||win.classList.contains('rift-maximized'))return;event.preventDefault();event.stopPropagation();focusVisual(win);const rect=win.getBoundingClientRect(),startX=event.clientX,startY=event.clientY;event.currentTarget.setPointerCapture?.(event.pointerId);const move=e=>applyGeometry(win,{left:parseFloat(win.style.left)||0,top:parseFloat(win.style.top)||0,width:rect.width+e.clientX-startX,height:rect.height+e.clientY-startY});const end=()=>{event.currentTarget.removeEventListener('pointermove',move);event.currentTarget.removeEventListener('pointerup',end);event.currentTarget.removeEventListener('pointercancel',end);saveGeometry(win);};event.currentTarget.addEventListener('pointermove',move);event.currentTarget.addEventListener('pointerup',end,{once:true});event.currentTarget.addEventListener('pointercancel',end,{once:true});}
+function startDrag(event,win){if(inputState.virtualMouse||win.classList.contains('rift-maximized')||event.target.closest('button,input,textarea,select,a'))return;event.preventDefault();focusVisual(win);const stageRect=stage.getBoundingClientRect(),rect=win.getBoundingClientRect(),startX=event.clientX,startY=event.clientY,baseLeft=rect.left-stageRect.left,baseTop=rect.top-stageRect.top;event.currentTarget.setPointerCapture?.(event.pointerId);const move=e=>applyGeometry(win,{left:baseLeft+e.clientX-startX,top:baseTop+e.clientY-startY,width:rect.width,height:rect.height});const end=()=>{event.currentTarget.removeEventListener('pointermove',move);event.currentTarget.removeEventListener('pointerup',end);event.currentTarget.removeEventListener('pointercancel',end);saveGeometry(win);};event.currentTarget.addEventListener('pointermove',move);event.currentTarget.addEventListener('pointerup',end,{once:true});event.currentTarget.addEventListener('pointercancel',end,{once:true});}
+function startResize(event,win){if(inputState.virtualMouse||win.classList.contains('rift-maximized'))return;event.preventDefault();event.stopPropagation();focusVisual(win);const rect=win.getBoundingClientRect(),startX=event.clientX,startY=event.clientY;event.currentTarget.setPointerCapture?.(event.pointerId);const move=e=>applyGeometry(win,{left:parseFloat(win.style.left)||0,top:parseFloat(win.style.top)||0,width:rect.width+e.clientX-startX,height:rect.height+e.clientY-startY});const end=()=>{event.currentTarget.removeEventListener('pointermove',move);event.currentTarget.removeEventListener('pointerup',end);event.currentTarget.removeEventListener('pointercancel',end);saveGeometry(win);};event.currentTarget.addEventListener('pointermove',move);event.currentTarget.addEventListener('pointerup',end,{once:true});event.currentTarget.addEventListener('pointercancel',end,{once:true});}
 
-function upgradeWindow(win){if(!(win instanceof HTMLElement)||!win.classList.contains('window')||win.dataset.riftDesktopUpgraded)return;win.dataset.riftDesktopUpgraded='1';win.classList.add('rift-desktop-window');const bar=win.querySelector('.window-bar'),close=win.querySelector('.window-close');if(!bar||!close)return;const actions=document.createElement('div');actions.className='rift-window-actions';const min=document.createElement('button');min.type='button';min.className='rift-window-minimize';min.title='Minimize';min.textContent='—';const max=document.createElement('button');max.type='button';max.className='rift-window-maximize';max.title='Maximize';max.textContent='□';close.parentNode?.removeChild(close);actions.append(min,max,close);bar.append(actions);const resizer=document.createElement('div');resizer.className='rift-window-resizer';win.append(resizer);min.addEventListener('click',e=>{e.stopPropagation();minimize(win);});max.addEventListener('click',e=>{e.stopPropagation();maximize(win);});bar.addEventListener('dblclick',e=>{if(!e.target.closest('button'))maximize(win);});bar.addEventListener('pointerdown',e=>startDrag(e,win));resizer.addEventListener('pointerdown',e=>startResize(e,win));win.addEventListener('pointerdown',()=>{if(!inputState.virtualMouse)focusVisual(win);},{capture:true});if(desktopEnabled())restoreDesktopGeometry(win);else maximizeForMobile(win);focusVisual(win,false);}
+function upgradeWindow(win){if(!(win instanceof HTMLElement)||!win.classList.contains('window')||win.dataset.riftDesktopUpgraded)return;win.dataset.riftDesktopUpgraded='1';win.classList.add('rift-desktop-window');const bar=win.querySelector('.window-bar'),close=win.querySelector('.window-close');if(!bar||!close)return;const actions=document.createElement('div');actions.className='rift-window-actions';const min=document.createElement('button');min.type='button';min.className='rift-window-minimize';min.title='Minimize';min.textContent='—';const max=document.createElement('button');max.type='button';max.className='rift-window-maximize';max.title='Maximize';max.textContent='□';close.parentNode?.removeChild(close);actions.append(min,max,close);bar.append(actions);const resizer=document.createElement('div');resizer.className='rift-window-resizer';win.append(resizer);min.addEventListener('click',e=>{e.stopPropagation();minimize(win);});max.addEventListener('click',e=>{e.stopPropagation();maximize(win);});bar.addEventListener('dblclick',e=>{if(!e.target.closest('button'))maximize(win);});bar.addEventListener('pointerdown',e=>startDrag(e,win));resizer.addEventListener('pointerdown',e=>startResize(e,win));win.addEventListener('pointerdown',()=>{if(!inputState.virtualMouse)focusVisual(win);},{capture:true});restoreDesktopGeometry(win);focusVisual(win,false);}
 
 function syncTaskbar(){const list=wm()?.list?.()||[];const byId=new Map(list.map(item=>[item.id,item]));dock.querySelectorAll('.dock-btn[data-open]').forEach(btn=>{if(btn.dataset.open==='home')return;const item=byId.get(btn.dataset.open);btn.classList.toggle('rift-running',!!item);btn.classList.toggle('rift-running-active',!!item&&item.window===activeWindow&&!item.minimized);});const pinned=new Set([...dock.querySelectorAll('.dock-btn[data-open]')].map(btn=>btn.dataset.open));taskbarOpen.innerHTML=list.filter(item=>!pinned.has(item.id)).map(item=>`<button type="button" class="rift-task-window${item.window===activeWindow&&!item.minimized?' active':''}" data-task-window="${item.id}"><span>${item.id==='editor'?'{}':item.id==='tasks'?'≡':'□'}</span><b>${item.title}</b></button>`).join('');stage.classList.toggle('rift-stage-active',list.some(item=>!item.minimized));}
 
@@ -144,8 +133,7 @@ function setWallpaper(value=''){
   persistDesktopSetting('wallpaper',desktopWallpaper);
   applyWallpaper();
 }
-function applyDesktopMode(){const enabled=desktopEnabled();root.classList.toggle('rift-desktop-mode',enabled);root.dataset.riftDesktop=enabled?'desktop':'mobile';tray.querySelector('#riftDesktopToggle').classList.toggle('active',enabled);if(enabled){workspace.classList.remove('hidden');allWindows().forEach(win=>restoreDesktopGeometry(win));}else{startMenu.classList.remove('open');allWindows().forEach(maximizeForMobile);const visible=allWindows().filter(win=>!win.classList.contains('rift-minimized'));workspace.classList.toggle('hidden',visible.length>0);}syncTaskbar();}
-function cycleDesktopPreference(){desktopPreference=desktopPreference==='auto'?'on':desktopPreference==='on'?'off':'auto';persistDesktopSetting('mode',desktopPreference);applyDesktopMode();}
+function applyDesktopMode(){root.classList.add('rift-desktop-mode');root.dataset.riftDesktop='desktop';workspace.classList.remove('hidden');allWindows().forEach(win=>restoreDesktopGeometry(win));syncTaskbar();}
 
 function moveCursor(x,y){cursorX=clamp(x,2,innerWidth-3);cursorY=clamp(y,2,innerHeight-3);cursor.style.transform=`translate3d(${cursorX}px,${cursorY}px,0)`;}
 function pointerTarget(){const oldOverlay=trackpad.style.pointerEvents,oldCursor=cursor.style.pointerEvents;trackpad.style.pointerEvents='none';cursor.style.pointerEvents='none';const target=document.elementFromPoint(cursorX,cursorY);trackpad.style.pointerEvents=oldOverlay;cursor.style.pointerEvents=oldCursor;return target;}
@@ -161,11 +149,10 @@ trackpad.addEventListener('pointermove',event=>{const prior=pointers.get(event.p
 function endTrackpadPointer(event){if(!gesture)return;pointers.delete(event.pointerId);if(pointers.size)return;clearTimeout(gesture.holdTimer);if(gesture.hold?.kind==='window'||gesture.hold?.kind==='resize')saveGeometry(gesture.hold.win);else if(gesture.hold?.kind==='mouse'){const target=gesture.hold.target,common={bubbles:true,cancelable:true,composed:true,clientX:cursorX,clientY:cursorY,button:0,buttons:0};try{target.dispatchEvent(new PointerEvent('pointerup',{...common,pointerType:'mouse',pointerId:1,isPrimary:true}));}catch(_){}target.dispatchEvent(new MouseEvent('mouseup',common));}else if(!gesture.moved){if(gesture.maxPointers>=2)dispatchVirtualClick(2);else{const now=Date.now(),isDouble=now-lastTap.time<340&&Math.hypot(cursorX-lastTap.x,cursorY-lastTap.y)<24;dispatchVirtualClick(0);if(isDouble)dispatchDoubleClick();lastTap={time:now,x:cursorX,y:cursorY};}}gesture=null;}
 trackpad.addEventListener('pointerup',endTrackpadPointer);trackpad.addEventListener('pointercancel',endTrackpadPointer);
 
-function toggleStart(){if(!desktopEnabled())return;startMenu.classList.toggle('open');}
-homeButton?.addEventListener('click',event=>{if(!desktopEnabled())return;event.preventDefault();event.stopImmediatePropagation();toggleStart();},true);
+function toggleStart(){startMenu.classList.toggle('open');}
+homeButton?.addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();toggleStart();},true);
 startMenu.addEventListener('click',event=>{if(event.target.closest('[data-open]'))startMenu.classList.remove('open');});
 workspace.addEventListener('pointerdown',event=>{if(!event.target.closest('.app-card'))startMenu.classList.remove('open');});
-tray.querySelector('#riftDesktopToggle').addEventListener('click',cycleDesktopPreference);
 tray.querySelector('#riftMouseToggle').addEventListener('click',()=>setVirtualMouse(!inputState.virtualMouse));
 tray.querySelector('#riftShowDesktop').addEventListener('click',()=>{startMenu.classList.remove('open');wm()?.showDesktop?.();activeWindow=null;syncTaskbar();});
 
@@ -179,8 +166,8 @@ window.addEventListener('riftos:window-close',()=>{if(activeWindow&&!document.co
 window.addEventListener('riftos:show-desktop',()=>{activeWindow=null;syncTaskbar();});
 
 window.addEventListener('pointerdown',event=>{if(event.pointerType==='mouse'){inputState.mouse=true;root.classList.add('rift-hardware-mouse');}},true);
-window.addEventListener('keydown',event=>{inputState.keyboard=true;root.classList.add('rift-hardware-keyboard');if(event.altKey&&event.key==='Tab'){event.preventDefault();const list=wm()?.list?.()||[];if(!list.length)return;const index=Math.max(0,list.findIndex(item=>item.window===activeWindow));const next=list[(index+(event.shiftKey?-1:1)+list.length)%list.length];restore(next.window);return;}if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='d'){event.preventDefault();cycleDesktopPreference();return;}if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='m'){event.preventDefault();setVirtualMouse(!inputState.virtualMouse);return;}if(event.key==='Escape'&&startMenu.classList.contains('open')){startMenu.classList.remove('open');return;}},true);
-window.addEventListener('resize',()=>{applyDesktopMode();clampDesktopIcons();allWindows().forEach(win=>{if(desktopEnabled()&&!win.classList.contains('rift-maximized')&&!win.classList.contains('rift-minimized')){const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();applyGeometry(win,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}});});
+window.addEventListener('keydown',event=>{inputState.keyboard=true;root.classList.add('rift-hardware-keyboard');if(event.altKey&&event.key==='Tab'){event.preventDefault();const list=wm()?.list?.()||[];if(!list.length)return;const index=Math.max(0,list.findIndex(item=>item.window===activeWindow));const next=list[(index+(event.shiftKey?-1:1)+list.length)%list.length];restore(next.window);return;}if(event.ctrlKey&&event.altKey&&event.key.toLowerCase()==='m'){event.preventDefault();setVirtualMouse(!inputState.virtualMouse);return;}if(event.key==='Escape'&&startMenu.classList.contains('open')){startMenu.classList.remove('open');return;}},true);
+window.addEventListener('resize',()=>{applyDesktopMode();clampDesktopIcons();allWindows().forEach(win=>{if(!win.classList.contains('rift-maximized')&&!win.classList.contains('rift-minimized')){const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();applyGeometry(win,{left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height});}});});
 window.addEventListener('riftos:launcher-ready',()=>{
   applyDesktopMode();
   document.querySelectorAll('.app-card').forEach(card=>{
@@ -191,7 +178,7 @@ window.addEventListener('riftos:launcher-ready',()=>{
     card.dataset.desktopDragBound='1';
     let drag=null;
     card.addEventListener('pointerdown',event=>{
-      if(!desktopEnabled()||event.button===2)return;
+      if(event.button===2)return;
       const grid=card.parentElement;
       if(!grid?.classList.contains('app-grid'))return;
       const rect=card.getBoundingClientRect();
@@ -219,4 +206,4 @@ restoreDesktopSettings().then(()=>{
   moveCursor(cursorX,cursorY);
 });
 const appApi=window.RiftDesktop||{};
-window.RiftDesktop=Object.freeze({...appApi,get mode(){return desktopEnabled()?'desktop':'mobile';},get input(){return{...inputState};},get wallpaper(){return desktopWallpaper;},enable(){desktopPreference='on';persistDesktopSetting('mode',desktopPreference);applyDesktopMode();},disable(){desktopPreference='off';persistDesktopSetting('mode',desktopPreference);applyDesktopMode();},auto(){desktopPreference='auto';persistDesktopSetting('mode',desktopPreference);applyDesktopMode();},setWallpaper(value){setWallpaper(value);},resetLayout(){resetDesktopLayout();},virtualMouse(enabled=true){setVirtualMouse(enabled);},restore(){restore(activeWindow);},minimize(){minimize(activeWindow);},maximize(){maximize(activeWindow);}});
+window.RiftDesktop=Object.freeze({...appApi,get mode(){return 'desktop';},get input(){return{...inputState};},get wallpaper(){return desktopWallpaper;},setWallpaper(value){setWallpaper(value);},resetLayout(){resetDesktopLayout();},virtualMouse(enabled=true){setVirtualMouse(enabled);},restore(){restore(activeWindow);},minimize(){minimize(activeWindow);},maximize(){maximize(activeWindow);}});

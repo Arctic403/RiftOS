@@ -1,129 +1,122 @@
-const CHANNEL="riftworkspace-live-v1";
+const CHANNEL="riftworkspace-live-v2";
 let requestSeq=0;
 const pending=new Map();
-const state={cwd:"",rows:[],selected:"",revision:"",baseline:"",dirty:false,conflict:false,events:[]};
+const state={local:null,git:null,view:"local",selectedPath:"",selectedRecord:null,lastDiff:""};
 
 const $=selector=>document.querySelector(selector);
-const fileList=$("#fileList"),pathLabel=$("#pathLabel"),filterInput=$("#filterInput"),editor=$("#editor"),fileName=$("#fileName"),revision=$("#revision"),saveBtn=$("#saveBtn"),followLive=$("#followLive"),activityLog=$("#activityLog"),diffOutput=$("#diffOutput"),diffMeta=$("#diffMeta"),conflict=$("#conflict"),liveDot=$("#liveDot"),liveText=$("#liveText");
+const liveDot=$("#liveDot"),liveText=$("#liveText"),checkpointText=$("#checkpointText"),localCount=$("#localCount"),recordCount=$("#recordCount"),gitCount=$("#gitCount"),gitHead=$("#gitHead"),filterInput=$("#filterInput"),localTab=$("#localTab"),gitTab=$("#gitTab"),changeList=$("#changeList"),recordList=$("#recordList"),diffTitle=$("#diffTitle"),diffMeta=$("#diffMeta"),diffOutput=$("#diffOutput"),copyDiffBtn=$("#copyDiffBtn"),affectedMeta=$("#affectedMeta"),statusText=$("#statusText");
 
 function rpc(method,args={}){
-  const id=`rw-${Date.now()}-${++requestSeq}`;
+  const id=`wr-${Date.now()}-${++requestSeq}`;
   return new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>{pending.delete(id);reject(new Error(`Workspace RPC timeout: ${method}`));},30000);
+    const timer=setTimeout(()=>{pending.delete(id);reject(new Error(`Workspace Records RPC timeout: ${method}`));},45000);
     pending.set(id,{resolve,reject,timer});
     parent.postMessage({channel:CHANNEL,kind:"request",id,method,args},"*");
   });
 }
-function fmtBytes(value){const n=Number(value||0);if(n<1024)return `${n} B`;if(n<1024**2)return `${(n/1024).toFixed(1)} KB`;return `${(n/1024**2).toFixed(1)} MB`;}
-function parentPath(path){const parts=String(path||"").split("/").filter(Boolean);parts.pop();return parts.join("/");}
-function leaf(path){return String(path||"").split("/").filter(Boolean).pop()||"workspace";}
-function eventTouchesDirectory(path,dir){const parent=parentPath(path);return parent===dir||path===dir||(!dir&&!path.includes("/"));}
-function setLive(on,text=on?"Live":"Disconnected"){liveDot.classList.toggle("on",on);liveText.textContent=text;}
-function setConflict(message=""){state.conflict=!!message;conflict.classList.toggle("hidden",!message);conflict.textContent=message;}
-function setRevision(hash="",extra=""){state.revision=hash||"";revision.textContent=hash?`${hash.slice(0,12)}${extra?` · ${extra}`:""}`:(extra||"No revision");}
-
-async function loadDirectory(path=state.cwd){
-  state.cwd=String(path||"").replace(/^\/+|\/+$/g,"");
-  pathLabel.textContent=`/${state.cwd}`.replace(/\/$/,"")||"/";
-  const rows=await rpc("list",{path:state.cwd});
-  state.rows=Array.isArray(rows)?rows:[];
-  renderFiles();
-}
-function renderFiles(){
-  const needle=filterInput.value.trim().toLowerCase();
-  const rows=state.rows.filter(row=>!needle||String(row.name||leaf(row.path)).toLowerCase().includes(needle));
-  if(!rows.length){fileList.innerHTML='<div class="empty">This folder is empty.</div>';return;}
-  fileList.innerHTML=rows.map(row=>{
-    const name=row.name||leaf(row.path),dir=row.kind==="directory";
-    return `<button class="file-row ${row.path===state.selected?"selected":""}" data-path="${escapeAttr(row.path)}" data-kind="${row.kind}"><span>${dir?"▸":"·"}</span><b>${escapeHTML(name)}</b><small>${dir?"DIR":fmtBytes(row.size)}</small></button>`;
-  }).join("");
-}
 function escapeHTML(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));}
-function escapeAttr(value){return escapeHTML(value);}
+function fmtTime(value){const n=Number(value||0);return n?new Date(n).toLocaleString():"—";}
+function shortSha(value){const text=String(value||"");return text?text.slice(0,12):"—";}
+function setLive(on,text=on?"Recording":"Disconnected"){liveDot.classList.toggle("on",!!on);liveText.textContent=text;}
+function setStatus(text,error=false){statusText.textContent=text;statusText.classList.toggle("error",!!error);}
+function statusBadge(status){return `<i class="status ${escapeHTML(status)}">${escapeHTML(status)}</i>`;}
 
-async function openFile(path,{external=false}={}){
-  const result=await rpc("read",{path});
-  const previous=state.baseline;
-  state.selected=path;
-  state.baseline=String(result.text??"");
-  editor.value=state.baseline;
-  editor.disabled=false;
-  state.dirty=false;
-  saveBtn.disabled=true;
-  fileName.textContent=path;
-  setRevision(result.sha256,`${fmtBytes(result.size)} · ${new Date(result.modified||Date.now()).toLocaleTimeString()}`);
-  setConflict("");
-  renderFiles();
-  if(external&&previous!==state.baseline)renderDiff(previous,state.baseline,path);
+function localFiles(){return Array.isArray(state.local?.files)?state.local.files:[];}
+function gitFiles(){return Array.isArray(state.git?.files)?state.git.files:[];}
+function visibleFiles(){return state.view==="git"?gitFiles():localFiles();}
+function findVisible(path){return visibleFiles().find(row=>row.path===path)||null;}
+
+function renderSummary(){
+  const summary=state.local?.summary||{},checkpoint=state.local?.checkpoint||{};
+  localCount.textContent=String(summary.changedFiles??0);
+  recordCount.textContent=String(summary.records??0);
+  checkpointText.textContent=`Checkpoint ${fmtTime(checkpoint.at)} · ${checkpoint.reason||"initial"}${checkpoint.gitHeadSha?` · ${shortSha(checkpoint.gitHeadSha)}`:""}`;
+  const gitSummary=state.git?.summary;
+  gitCount.textContent=gitSummary?String(gitSummary.total??0):state.git?.error?"!":"—";
+  gitHead.textContent=state.git?.headSha?`${state.git.repo||"Git"} · ${shortSha(state.git.headSha)}`:(state.git?.error||"remote comparison");
 }
 
-function renderDiff(before,after,path){
-  const a=String(before??"").split("\n"),b=String(after??"").split("\n");
-  let prefix=0;while(prefix<a.length&&prefix<b.length&&a[prefix]===b[prefix])prefix++;
-  let suffix=0;while(suffix<a.length-prefix&&suffix<b.length-prefix&&a[a.length-1-suffix]===b[b.length-1-suffix])suffix++;
-  const removed=a.slice(prefix,a.length-suffix),added=b.slice(prefix,b.length-suffix),start=prefix+1;
-  const lines=[];
-  const contextStart=Math.max(0,prefix-2);for(let i=contextStart;i<prefix;i++)lines.push(`  ${i+1} ${a[i]}`);
-  removed.slice(0,20).forEach((line,i)=>lines.push(`- ${start+i} ${line}`));
-  added.slice(0,20).forEach((line,i)=>lines.push(`+ ${start+i} ${line}`));
-  const afterStart=b.length-suffix;for(let i=afterStart;i<Math.min(b.length,afterStart+2);i++)lines.push(`  ${i+1} ${b[i]}`);
-  if(removed.length>20||added.length>20)lines.push(`… ${Math.max(0,removed.length-20)} more removed / ${Math.max(0,added.length-20)} more added lines`);
-  diffMeta.textContent=`${path} · line ${start}`;
-  diffOutput.textContent=lines.join("\n")||"Metadata changed; text content is unchanged.";
+function renderChanges(){
+  localTab.classList.toggle("active",state.view==="local");
+  gitTab.classList.toggle("active",state.view==="git");
+  affectedMeta.textContent=state.view==="git"?"Remote Git tree diff":"Local checkpoint diff";
+  const needle=filterInput.value.trim().toLowerCase();
+  const rows=visibleFiles().filter(row=>!needle||String(row.path||"").toLowerCase().includes(needle));
+  if(!rows.length){changeList.innerHTML=`<div class="empty">${state.view==="git"&&state.git?.error?escapeHTML(state.git.error):"No changed files in this view."}</div>`;return;}
+  changeList.innerHTML=rows.map(row=>`<button class="change-row ${row.path===state.selectedPath?"selected":""}" data-path="${escapeHTML(row.path)}">${statusBadge(row.status||"modified")}<b>${escapeHTML(row.path)}</b><small>${state.view==="git"?(row.binary?"binary":"git diff"):shortSha(row.after?.sha256||row.before?.sha256)}</small></button>`).join("");
 }
 
-async function save(){
-  if(!state.selected||!state.dirty)return;
-  saveBtn.disabled=true;
+function renderRecords(){
+  const rows=Array.isArray(state.local?.records)?state.local.records:[];
+  if(!rows.length){recordList.innerHTML='<div class="empty">No local changes recorded since this recorder was initialized.</div>';return;}
+  recordList.innerHTML=rows.map(row=>`<button class="record-row" data-record-id="${escapeHTML(row.id)}"><time>${escapeHTML(new Date(Number(row.at||Date.now())).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"}))}</time>${statusBadge(row.action||"change")}<b>${escapeHTML(row.path||"/")}</b><small>${escapeHTML(row.source||"local")}</small></button>`).join("");
+}
+
+function showDiff(row,{record=false}={}){
+  if(!row){state.lastDiff="";diffTitle.textContent="Select a changed file";diffMeta.textContent=state.view==="git"?"Remote Git tree diff":"Local checkpoint diff";diffOutput.textContent="No file selected.";copyDiffBtn.disabled=true;return;}
+  state.selectedPath=row.path||"";
+  state.selectedRecord=record?row:null;
+  state.lastDiff=String(row.diff||"No text diff is available for this change.");
+  diffTitle.textContent=row.path||"Workspace change";
+  diffMeta.textContent=record?`${row.action||"change"} · ${fmtTime(row.at)} · ${row.source||"local"}`:(state.view==="git"?`${row.status||"changed"} · Git remote baseline`:`${row.status||"changed"} · local checkpoint`);
+  diffOutput.textContent=state.lastDiff;
+  copyDiffBtn.disabled=!state.lastDiff;
+  renderChanges();
+}
+
+function selectPath(path){const row=findVisible(path);showDiff(row);}
+function selectRecord(id){const row=(state.local?.records||[]).find(item=>item.id===id);if(row)showDiff(row,{record:true});}
+
+async function refreshLocal({preserveSelection=true}={}){
+  const previous=preserveSelection?state.selectedPath:"";
+  state.local=await rpc("records",{limit:220,includeDiff:true});
+  renderSummary();renderRecords();renderChanges();
+  if(previous){const row=findVisible(previous);if(row)showDiff(row);}
+}
+async function refreshGit(){
+  try{state.git=await rpc("gitDiff",{maxFiles:60,maxChars:360000});}
+  catch(error){state.git={error:error.message,files:[],summary:{total:0}};}
+  renderSummary();if(state.view==="git")renderChanges();
+}
+async function refreshAll(){
+  setStatus("Refreshing local records…");
   try{
-    const result=await rpc("write",{path:state.selected,text:editor.value,expectedSha256:state.revision||null});
-    const before=state.baseline;state.baseline=editor.value;state.dirty=false;setRevision(result.sha256,`${fmtBytes(result.size)} · saved`);setConflict("");renderDiff(before,state.baseline,state.selected);
-  }catch(error){
-    setConflict(`Save blocked: ${error.message}. Reload or copy your changes before retrying.`);
-    saveBtn.disabled=false;
-  }
+    await refreshLocal();setStatus("Refreshing Git comparison…");await refreshGit();
+    setStatus(`Updated ${new Date().toLocaleTimeString()}`);
+  }catch(error){setStatus(error.message,true);throw error;}
 }
 
-function addActivities(events){
-  state.events=[...events].reverse().concat(state.events).slice(0,120);
-  activityLog.innerHTML=state.events.map(item=>`<div class="activity-row"><time>${new Date(item.at||Date.now()).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})}</time><em>${escapeHTML(item.type||"change")}${item.occurrences>1?` ×${item.occurrences}`:""}</em><span>${escapeHTML(item.path||"/")}</span></div>`).join("")||'<div class="empty">No events yet.</div>';
-}
-
-let refreshTimer=0,selectedReloadTimer=0;
-async function handleNativeEvent(event){
-  const events=event?.type==="batch"&&Array.isArray(event.events)?event.events:[event];
-  const changes=events.filter(item=>item&&typeof item==="object");
-  if(!changes.length)return;
-  addActivities(changes);
-  if(changes.some(item=>eventTouchesDirectory(String(item.path||""),state.cwd))){
-    clearTimeout(refreshTimer);
-    refreshTimer=setTimeout(()=>loadDirectory(state.cwd).catch(()=>{}),120);
-  }
-  if(!state.selected||!changes.some(item=>!item.directory&&item.path===state.selected))return;
-  if(state.dirty){setConflict(`External change detected in ${state.selected} while you have unsaved edits.`);return;}
-  if(!followLive.checked)return;
-  clearTimeout(selectedReloadTimer);
-  selectedReloadTimer=setTimeout(()=>openFile(state.selected,{external:true}).catch(error=>setConflict(error.message)),180);
+let eventRefreshTimer=0;
+function handleNativeEvent(){
+  clearTimeout(eventRefreshTimer);
+  eventRefreshTimer=setTimeout(()=>refreshLocal().catch(error=>setStatus(error.message,true)),350);
 }
 
 window.addEventListener("message",event=>{
   const message=event.data;if(!message||message.channel!==CHANNEL)return;
   if(message.kind==="response"){
-    const waiter=pending.get(message.id);if(!waiter)return;clearTimeout(waiter.timer);pending.delete(message.id);message.ok?waiter.resolve(message.value):waiter.reject(new Error(message.error||"Workspace RPC failed"));return;
+    const waiter=pending.get(message.id);if(!waiter)return;clearTimeout(waiter.timer);pending.delete(message.id);message.ok?waiter.resolve(message.value):waiter.reject(new Error(message.error||"Workspace Records RPC failed"));return;
   }
-  if(message.kind==="event"&&message.event)handleNativeEvent(message.event);
-  if(message.kind==="connected")setLive(true,"Live");
+  if(message.kind==="event"&&message.event){handleNativeEvent();return;}
+  if(message.kind==="connected"){setLive(!!message.watch?.active,message.watch?.active?"Recording":"Watcher offline");}
 });
 
-fileList.addEventListener("click",event=>{const row=event.target.closest("[data-path]");if(!row)return;row.dataset.kind==="directory"?loadDirectory(row.dataset.path).catch(showError):openFile(row.dataset.path).catch(showError);});
-filterInput.addEventListener("input",renderFiles);
-$("#upBtn").onclick=()=>loadDirectory(parentPath(state.cwd)).catch(showError);
-$("#refreshBtn").onclick=()=>loadDirectory(state.cwd).catch(showError);
-$("#saveBtn").onclick=()=>save();
-$("#clearActivity").onclick=()=>{state.events=[];activityLog.innerHTML='<div class="empty">Activity cleared.</div>';};
-editor.addEventListener("input",()=>{state.dirty=editor.value!==state.baseline;saveBtn.disabled=!state.dirty;if(state.dirty)setRevision(state.revision,"unsaved edits");});
-editor.addEventListener("keydown",event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="s"){event.preventDefault();save();}});
-function showError(error){setLive(false,error.message);liveText.classList.add("status-error");}
+changeList.addEventListener("click",event=>{const row=event.target.closest("[data-path]");if(row)selectPath(row.dataset.path);});
+recordList.addEventListener("click",event=>{const row=event.target.closest("[data-record-id]");if(row)selectRecord(row.dataset.recordId);});
+filterInput.addEventListener("input",renderChanges);
+localTab.onclick=()=>{state.view="local";state.selectedPath="";state.selectedRecord=null;renderChanges();showDiff(null);};
+gitTab.onclick=()=>{state.view="git";state.selectedPath="";state.selectedRecord=null;renderChanges();showDiff(null);};
+$("#refreshBtn").onclick=()=>refreshAll().catch(()=>{});
+$("#checkpointBtn").onclick=async()=>{
+  const button=$("#checkpointBtn");button.disabled=true;setStatus("Creating new local checkpoint…");
+  try{await rpc("checkpoint",{reason:"manual-workspace-records"});await refreshLocal({preserveSelection:false});setStatus("New local checkpoint created");}
+  catch(error){setStatus(error.message,true);}finally{button.disabled=false;}
+};
+copyDiffBtn.onclick=async()=>{
+  try{await navigator.clipboard.writeText(state.lastDiff);setStatus("Diff copied");}
+  catch{setStatus("Clipboard unavailable in sandbox; select and copy the diff manually",true);}
+};
 
 parent.postMessage({channel:CHANNEL,kind:"ready"},"*");
-rpc("info").then(info=>{setLive(!!info?.watch?.active,"Live");return loadDirectory("");}).catch(showError);
+rpc("info").then(info=>setLive(!!info?.watch?.active,info?.watch?.active?"Recording":"Watcher offline")).catch(error=>setStatus(error.message,true));
+refreshAll().catch(()=>{});

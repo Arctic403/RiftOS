@@ -1,4 +1,6 @@
-# Rift AI Patch Pipeline
+# AI-Assisted Patch Workflow
+
+The filename is historical. This document describes a development workflow over the active Rift MCP/workspace tools; it is **not** a Rift AI runtime subsystem, task controller or persistent journal.
 
 ## Goal
 A safe project modification flow for RiftOS AI-assisted development.

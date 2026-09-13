@@ -34,15 +34,24 @@ This browser path remains a compatibility fallback. The optional native relay tr
 
 At page startup, the browser adapter performs MCP `initialize` and `tools/list`. The returned tool schemas are the source of truth for the compact context shown to ChatGPT. When `rift_workspace_exec` is present, the adapter also supplies the bounded Rift Code Mode operation contract so the model can collapse many project operations into one local batch.
 
-When a tool is required, ChatGPT is instructed to emit one strict JSON request. For project work it should prefer one Code Mode call containing many local operations:
+When a tool is required, ChatGPT is instructed to emit one bounded raw command block. For project work it should prefer one Code Mode call containing many local operations:
 
-```json
-{"protocol":"rift-tools-v2","request_id":"request-1","calls":[{"id":"call-1","tool":"rift_workspace_exec","arguments":{"operations":[{"op":"search","path":"workspace","query":"RiftKernel"},{"op":"read_range","path":"workspace/src/riftcore.js","startLine":1,"endLine":220}]}}]}
+```text
+[RIFT_CALL]
+call call-1 rift_workspace_exec
+set operations.0.op search
+set operations.0.path workspace
+set operations.0.query RiftKernel
+set operations.1.op read_range
+set operations.1.path workspace/src/riftcore.js
+set operations.1.startLine 1
+set operations.1.endLine 220
+[RIFT_END]
 ```
 
-V2 accepts up to eight sequential calls and returns one correlated JSON result packet. Cross-call execution is intentionally not atomic, so related project edits should be consolidated into one transactional `rift_workspace_exec` call. Legacy `<rift_call>` envelopes and single-operation tools remain available for compatibility.
+`set` supports dotted object paths, numeric array indexes and heredocs for multiline source. Related edits should be consolidated into one transactional `rift_workspace_exec` call because one Code Mode batch provides the atomic mutation boundary.
 
-The browser adapter validates calls against the live manifest and invokes MCP `tools/call`. V2 results return together as a correlated `[RIFT_TOOL_RESULT_V2]` continuation; legacy calls still receive `[RIFT_MCP_RESULT_V1]`. The adapter requires native responses to echo the same call ID and, for Rift AI tasks, the same private session ID before accepting them.
+The browser adapter validates the parsed call against the live manifest and invokes native MCP `tools/call`. Native MCP carries the unique `riftos/callId` correlation value and the browser rejects a mismatched result. Results are formatted as bounded `[RIFT_RESULT]` text and staged into the visible composer; the adapter does not click Send.
 
 This protocol deliberately does not reuse any Agent V1/V2/V3 marker or fenced `rift-tool` packet.
 
@@ -65,15 +74,11 @@ The adapter:
 
 Code Mode remains declarative: the adapter does not `eval` model-produced JavaScript in the ChatGPT origin. Filesystem/search/edit execution stays behind `RiftToolHost` in the local sandbox. Because ChatGPT Web has no supported local-tool registration hook on these plans, this compatibility layer still observes the composer and semantic assistant-message elements. That browser-facing dependency is isolated in one JavaScript asset. It is not part of the device capability boundary and does not own tool execution.
 
-## Rift AI transport mode
+## Result delivery boundary
 
-`riftbrowser-mcp-app.js` also supports the local Rift AI HTML cockpit. Native code hands work to synchronous `window.RiftMcpAppControl.queueTask(...)` with a native-created session ID, task and compact project context. The page-owned async pump waits for MCP/composer readiness, retries rejected clicks, and reports `submitted` only after ChatGPT accepts the outgoing message. There is no model API request path.
+The browser compatibility asset has no hidden Rift AI task controller, target picker, session lifecycle, AI event channel or persistent mutation journal. Those retired paths are not part of current RiftOS.
 
-The model never supplies the AI session ID. When the adapter parses a model `<rift_call>` during an active Rift AI task, it privately adds `_meta["riftos/aiSessionId"]` plus `_meta["riftos/callId"]` to the local MCP `tools/call`. The server echoes both values in its private result metadata; the browser rejects mismatches or stale-session results. This makes working-tree journaling and result delivery specific to the active call without changing the model-visible tool schema.
-
-The adapter mirrors cleaned assistant text and transport lifecycle back to Android as exact-origin `rift/ai/event` messages over `RiftMcpNative`. Tool envelopes are stripped from the mirrored assistant pane; the actual tool loop still occurs in ChatGPT Web and MCP results still return through the composer. Completion is reported only after output stabilizes, the stop control is gone, active tool round-trips have drained and any tool-result continuation has produced another assistant update. Stop requests likewise wait for active tool work to drain before the session becomes reviewable.
-
-For Rift AI chat routing, the adapter also exposes a read-only `targets()` control that inspects same-origin ChatGPT links already rendered in the page and classifies chats, projects and project chats. It does not call ChatGPT account/backend APIs. `openTargetSearch()` only activates ChatGPT Web's own visible search control; older-history selection therefore remains inside the authenticated ChatGPT interface. Native code validates every selected URL back to exact HTTPS ChatGPT origins before navigation.
+When a tool finishes, the adapter formats one bounded `[RIFT_RESULT]` message and writes it into the currently visible AI-site composer. It deliberately does **not** click the site's send control. The user remains the explicit send boundary for browser-compatibility result continuations. The optional native MCP relay does not use this composer path at all.
 
 ## Permissions
 
@@ -87,4 +92,4 @@ If ChatGPT changes its composer or semantic message attributes, compatibility mo
 
 RiftBrowser treats each AI task as a correlated local state machine rather than a one-shot DOM scrape. After a model tool envelope is accepted, the adapter executes the local MCP call, injects a result carrying a unique `result_id`, waits until that exact result appears as a ChatGPT user-message turn, and only then accepts a newly-created assistant message as the continuation. Mutations to older assistant DOM nodes, thinking UI changes, and stale historical tool envelopes cannot complete the round trip.
 
-Malformed JSON envelopes, duplicate/misused call IDs, and tool validation failures are returned to ChatGPT Web as recoverable `RIFT_MCP_RESULT_V1` messages with instructions to correct the call and retry with a new `call_id`; the user does not need to resend the task or type `continue`. `rift_workspace_exec` operations use canonical flat objects such as `{"op":"stat","path":"workspace/project"}`. The native host defensively normalizes the unambiguous shorthand `{"stat":{"path":"workspace/project"}}` *before* write-permission classification, AI journaling, audit logging, and sandbox execution.
+Malformed raw command blocks, duplicate/misused call IDs, and tool validation failures are returned to ChatGPT Web as recoverable `[RIFT_RESULT]` messages with instructions to correct the call and retry with a new call ID; the user does not need to resend the task or type `continue`. Inside `rift_workspace_exec`, operations remain canonical flat objects such as `{"op":"stat","path":"workspace/project"}` after raw dotted-path parsing. The native host defensively normalizes the unambiguous shorthand `{"stat":{"path":"workspace/project"}}` *before* write-permission classification, AI journaling, audit logging, and sandbox execution.

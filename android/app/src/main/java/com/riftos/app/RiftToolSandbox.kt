@@ -47,6 +47,7 @@ internal class RiftToolSandbox(context: Context) {
     private val executor = Executors.newSingleThreadExecutor()
     private val riftFsRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }
     private val workspaceRoot = prepareCanonicalWorkspace()
+    private val workspaceRecords = RiftWorkspaceRecords.get(appContext).also { it.start() }
     private val transactionRoot = File(appContext.cacheDir, "rift-workspace-transactions").apply {
         deleteRecursively()
         mkdirs()
@@ -175,6 +176,7 @@ internal class RiftToolSandbox(context: Context) {
         "workspace.audit" -> audit(args.optString("path"))
         "workspace.scan" -> scan(args.optString("path"), args.optString("mode", "all"))
         "workspace.exportProject" -> exportProject(args)
+        "workspace.diff" -> workspaceRecords.query(args)
         else -> throw IllegalArgumentException("Unsupported Rift tool sandbox method: $method")
     }
 

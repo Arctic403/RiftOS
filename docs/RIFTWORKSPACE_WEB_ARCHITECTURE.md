@@ -1,13 +1,13 @@
 # RiftWorkspace Architecture
 
-RiftWorkspace is the controlled project/workspace boundary between RiftOS apps, ChatGPT Web MCP tools, and RiftFS.
+RiftWorkspace is the controlled project/workspace boundary between RiftOS apps, MCP tools, local filesystem writers, and RiftFS.
 
 ## Android runtime path
 
 ```text
-RiftOS app / Workspace Live
+RiftOS app / Workspace Records
       |
-RiftWorkspace API / scoped HTML RPC
+RiftWorkspace API / narrow records RPC
       |
 riftworkspace-android-adapter.js
       |
@@ -18,43 +18,58 @@ filesDir/riftfs/workspace
 
 `src/riftworkspace-web.js` remains the common high-level workspace contract; `src/riftworkspace-android-adapter.js` redirects storage to native RiftFS on Android.
 
-## Workspace Live HTML surface
+## Workspace Records surface
 
-RiftOS now ships a local HTML workspace at `workspace-live/index.html`. It is rendered inside the RiftOS desktop as a sandboxed iframe and watches the same `filesDir/riftfs/workspace` tree used by the MCP tool sandbox.
+The historical `workspace-live/` asset folder now ships the **Workspace Records** dashboard. It is rendered inside RiftOS as a sandboxed iframe and observes the same canonical `filesDir/riftfs/workspace` tree used by Files, RiftWorkspace and the MCP tool sandbox.
 
 ```text
-                 filesDir/riftfs/workspace
-                    ^                 ^
-                    |                 |
-             RiftToolSandbox      RiftWorkspace
-                    |                 |
-              ChatGPT Web       trusted shell host
-                                      |
-                              narrow postMessage RPC
-                                      |
-                           sandboxed local HTML page
+                    filesDir/riftfs/workspace
+                       ^            ^
+                       |            |
+                RiftToolSandbox  RiftWorkspace / Files / Git / shell
+                       |            |
+                       +-----+------+
+                             |
+                    RiftWorkspaceWatcher
+                             |
+                    RiftWorkspaceRecords
+                     /                 \
+         rift_workspace_diff       trusted shell host
+                                         |
+                                 narrow postMessage RPC
+                                         |
+                              sandboxed records dashboard
 ```
 
-The local page does **not** receive `RiftAndroid`, `RiftWorkspace`, the MCP bridge, or a generic filesystem object. The parent host accepts a small workspace-only RPC surface and validates/normalizes every path through the existing workspace boundary.
+The dashboard does **not** receive `RiftAndroid`, `RiftWorkspace`, MCP, RiftShell, or a generic filesystem object. Its parent host exposes records/info/read and Git-diff queries plus a records-only checkpoint action. It deliberately has no direct workspace write/remove/move/copy/mkdir RPC.
 
-The iframe is created with `sandbox="allow-scripts"` and intentionally omits `allow-same-origin`. That gives the HTML app an opaque origin even though its files are packaged locally.
+The iframe uses `sandbox="allow-scripts"` and intentionally omits `allow-same-origin`, giving it an opaque origin even though its assets are packaged locally.
 
-## Live filesystem observation
+## Persistent filesystem observation
 
-`RiftWorkspaceWatcher.kt` recursively observes only `filesDir/riftfs/workspace`. This catches changes regardless of which local component made them, including:
+`RiftWorkspaceWatcher.kt` recursively observes only `filesDir/riftfs/workspace` and starts with the RiftOS shell session. It catches changes regardless of which local component made them, including:
 
-- ChatGPT Web through `RiftToolSandbox`
-- RiftFS / Files / Editor writes
-- local git or process activity that changes files
-- manual edits made in Workspace Live
+- MCP through `RiftToolSandbox`;
+- RiftFS / Files / RiftWorkspace writes;
+- RiftGit operations;
+- RiftShell/process-backed local work;
+- other local writers inside the canonical workspace.
 
-Native events are delivered to the trusted RiftOS shell and then forwarded to the sandboxed HTML page. The page refreshes the affected file/folder and shows a live activity log plus a compact text diff.
+`RiftWorkspaceRecords.kt` persists records under app-private `filesDir/rift-workspace-records`, outside the project tree. It keeps rolling observed state for event-to-event history and a separate checkpoint state for the complete current local working diff. Text files within the recorder limit receive bounded git-style diffs; binary/oversized files are represented by hashes and metadata transitions.
 
-Workspace Live uses SHA-256 revision checks when manually saving an open file. If the file changed since it was loaded, the save is rejected instead of clobbering the newer version.
+Directory move/delete events trigger full reconciliation so descendant changes are not lost when Android can no longer stat the removed path as a directory.
 
-## Public operations
+## Local diff and Git diff are separate
 
-The workspace supports controlled list/stat/read/write/mkdir/remove/move/copy operations plus snapshot, patch preview/apply, history and rollback surfaces used by project tooling.
+The local records/checkpoint diff is private and network-independent. It is exposed to MCP through read-only `rift_workspace_diff` and to the dashboard through the trusted records host.
+
+The dashboard's Git tab uses `RiftGit.workspaceDiff()` to compare `/workspace/RiftOS-main` against the current remote `Arctic403/RiftOS#main` tree. Successful workspace Git push/pull creates a new records checkpoint tagged with the resulting Git head SHA.
+
+A manual **New checkpoint** only updates record-baseline metadata. It does not approve, reject, accept, deny, rollback, or alter workspace files.
+
+## Public workspace operations
+
+RiftWorkspace itself still supports controlled list/stat/read/write/mkdir/remove/move/copy plus snapshot and project patch/history surfaces used by other RiftOS tooling. Those mutation APIs are **not** exposed to the Workspace Records iframe.
 
 Path normalization prevents escaping the workspace/RiftFS boundary.
 
@@ -66,15 +81,11 @@ RiftWorkspace and RiftBrowser remain separate capabilities:
 RiftKernel
   |-- RiftWorkspace -> RiftFS/native storage
   |
-  `-- RiftBrowser -> Android System WebView -> guest web content
+  `-- RiftBrowser -> renderer -> guest web content
 ```
 
-Normal guest webpages never receive `RiftWorkspace` or unrestricted RiftFS authority.
-
-ChatGPT receives capability access only through the exact-origin MCP bridge and only to the canonical `workspace/` tree. It has no MCP path to RiftOS system roots, downloads, documents, mounts, or workspace-history metadata.
-
-Workspace Live is a separate local HTML capability. It does not broaden the ChatGPT origin's permissions.
+Normal guest webpages never receive RiftWorkspace or unrestricted RiftFS authority. MCP receives only its fixed capability registry and workspace-scoped paths. The records store itself is outside the ordinary workspace namespace and is readable only through the dedicated bounded `rift_workspace_diff` query.
 
 ## Why no localhost server
 
-The HTML UI is packaged with RiftOS and communicates through the existing WebView/native boundary, so no TCP listener, LAN port, remote service, API key, or cloud file service is required. The result behaves like a local Files.com-style control surface while keeping the workspace private to RiftOS.
+The records UI is packaged with RiftOS and communicates through the existing trusted-shell/iframe boundary, so it needs no TCP listener, LAN port, remote service, API key, or cloud file service. Persistent records remain app-private on the device.

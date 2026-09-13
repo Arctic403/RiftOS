@@ -1,4 +1,6 @@
-# Rift AI / RiftBrowser Transport Audit
+# Historical RiftBrowser Transport Audit
+
+This records problems found during the retired Rift AI task-orchestration era. The current browser compatibility asset no longer contains a Rift AI task controller, session/event channel or journal integration; current behavior is documented in `RIFT_BROWSER_MCP_APP.md`.
 
 ## Root causes found
 

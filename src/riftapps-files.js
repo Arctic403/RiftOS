@@ -43,9 +43,8 @@ async function savePackage(pkg, filename){
   const text = JSON.stringify(pkg, null, 2);
   const file = new File([text], name, { type: "application/json" });
 
-  // iPhone/iPad PWAs are most reliable through the native share sheet.
-  // "Save to Files" there gives the user a real .rift package they can
-  // later re-import. Desktop browsers use a normal download instead.
+  // Prefer the platform share sheet when it supports File objects so the
+  // user can save/share a real .rift package; otherwise fall back to download.
   try{
     if(navigator.share && navigator.canShare?.({ files: [file] })){
       await navigator.share({ files: [file], title: name });

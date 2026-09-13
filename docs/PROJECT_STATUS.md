@@ -42,7 +42,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - RiftRT v1 worker/iframe/WASM application runtime.
 - Rift MCP system app for local read/write permissions and recent tool activity.
 - RiftBrowser-owned renderer surface with a swappable `RiftBrowserEngine` backend.
-- Workspace Live sandboxed local HTML surface with live workspace events, compact diffs and revision-guarded manual saves.
+- Workspace Records private sandboxed dashboard with persistent writer-agnostic history, local checkpoint diffs and remote Git comparison.
 
 ### RiftBrowser
 
@@ -54,14 +54,17 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - ChatGPT receives no unrestricted filesystem JavaScript object or general native dispatcher.
 - Browser file/content access is disabled at the WebView settings layer.
 
-### Workspace Live
+### Workspace Records
 
-- Packaged local HTML UI; no localhost TCP server or cloud file service.
-- Sandboxed iframe omits `allow-same-origin` and receives only a narrow workspace RPC.
-- Recursive native watcher is scoped to `filesDir/riftfs/workspace`.
-- MCP, RiftFS, git/process and manual edits appear in the live activity feed.
+- Packaged local HTML records dashboard; no localhost TCP server or cloud file service.
+- Sandboxed iframe omits `allow-same-origin` and receives only a narrow read/records/Git RPC; it cannot directly write/remove/move/copy/mkdir workspace content.
+- Recursive native watcher starts with the RiftOS shell and is scoped to `filesDir/riftfs/workspace`.
+- `RiftWorkspaceRecords` persists event history and local checkpoint state outside the workspace tree.
+- Files, MCP, RiftWorkspace, RiftGit, shell/process and other local writers converge into the same record stream.
+- `rift_workspace_diff` exposes the local checkpoint diff/records read-only to MCP.
+- RiftGit provides the separate remote Git comparison and checkpoints records after successful workspace push/pull.
 - Open files refresh automatically when clean; unsaved local edits trigger a conflict warning instead of being overwritten.
-- Manual saves use SHA-256 revision checks to prevent stale clobbers.
+- Workspace Records is observational; it does not own file-save/approval semantics or mutate project files.
 
 ### Rift MCP
 
@@ -70,8 +73,8 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - Filesystem scope is exactly `filesDir/riftfs/workspace`.
 - Read/write permission gates are authoritative on-device.
 - `rift_workspace_exec` supports bounded project inspection, symbol/reference lookup, surgical reads, guarded patches, transactional multi-file edits, full file/tree hashing, atomic local archive creation and traversal-safe bounded ZIP extraction.
-- Strict `rift-tools-v2` JSON packets are supported with request/call correlation.
-- Legacy `<rift_call>` envelopes remain available for compatibility.
+- ChatGPT compatibility calls use bounded plain-text `[RIFT_CALL]` / `[RIFT_END]` blocks with unique call IDs and `[RIFT_RESULT]` continuations.
+- MCP JSON-RPC remains private to the trusted browser/native and relay transports; older chat-facing JSON/XML-like envelope formats are removed from the active protocol.
 - Optional outbound-only WSS relay client, disabled until the user supplies a secure endpoint and pairing token.
 - Relay credentials are encrypted through Android Keystore; the relay receives no filesystem authority.
 
@@ -79,7 +82,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 
 The following are not active RiftOS Android architecture:
 
-- Rift AI workspace app (`src/riftai-workspace.js`),
+- Rift AI workspace app (`src/riftai-workspace.js`), task controller and persistent AI-session journal (`RiftAiJournal.kt`),
 - native `ai.*` shell command surface,
 - hidden ChatGPT task/target/session orchestration in `RiftBrowserWindow`,
 - Rift AI event channel in the MCP bridge,
@@ -118,4 +121,4 @@ Current builder policy:
 
 ## Planned
 
-See `ROADMAP.md` for RiftEngine/Servo work, project tooling, RiftScript Studio and capability-gated expansion of the local tool registry.
+See [`../ROADMAP.md`](../ROADMAP.md) for RiftEngine/Servo work, project tooling, RiftScript Studio and capability-gated expansion of the local tool registry.

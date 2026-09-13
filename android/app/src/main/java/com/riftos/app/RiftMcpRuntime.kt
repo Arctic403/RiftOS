@@ -2,20 +2,12 @@ package com.riftos.app
 
 import android.content.Context
 
-/** Process-wide Rift MCP runtime and Rift AI working-tree journal. */
+/** Process-wide Rift MCP runtime. */
 object RiftMcpRuntime {
-    @Volatile private var journal: RiftAiJournal? = null
     @Volatile private var host: RiftToolHost? = null
     @Volatile private var server: RiftMcpServer? = null
     @Volatile private var relay: RiftMcpRelayClient? = null
     @Volatile private var shellBridge: RiftShellBridge? = null
-
-    fun aiJournal(context: Context): RiftAiJournal {
-        journal?.let { return it }
-        return synchronized(this) {
-            journal ?: RiftAiJournal(context.applicationContext).also { journal = it }
-        }
-    }
 
     fun shellBridge(): RiftShellBridge? = shellBridge
 
@@ -27,7 +19,7 @@ object RiftMcpRuntime {
     fun toolHost(context: Context): RiftToolHost {
         host?.let { return it }
         return synchronized(this) {
-            host ?: RiftToolHost(context.applicationContext, aiJournal(context), shellBridge).also { host = it }
+            host ?: RiftToolHost(context.applicationContext, shellBridge).also { host = it }
         }
     }
 

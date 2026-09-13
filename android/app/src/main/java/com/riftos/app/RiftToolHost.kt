@@ -6,7 +6,7 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 /** Canonical device-side capability registry for the local Rift MCP server. */
-class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initialShellBridge: RiftShellBridge? = null) {
+class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null) {
     companion object {
         private const val PREFS = "rift-mcp-tools"
         private const val LEGACY_PREFS = "rift-bridge"
@@ -42,7 +42,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v1")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_exec")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")))
         .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
 
@@ -192,6 +192,16 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
             )
         ))
         .put(tool(
+            "rift_workspace_diff",
+            "Read the persistent private workspace record store. Returns all files changed since the current local checkpoint plus bounded git-style text diffs and recent writer-agnostic records. This tool never mutates workspace files.",
+            objectSchema(
+                JSONObject()
+                    .put("path", stringProperty("Optional workspace-relative subtree to inspect. Empty means the entire workspace."))
+                    .put("limit", JSONObject().put("type", "integer").put("description", "Maximum recent record entries to return; clamped to 1..250."))
+                    .put("includeDiff", booleanProperty("Include bounded git-style text diffs for changed text files and record entries."))
+            )
+        ))
+        .put(tool(
             "rift_workspace_exec",
             "Rift Code Mode + Project Intelligence v1: execute many workspace operations locally in one model-visible call. Supports snapshots, incremental symbol search, reference lookup, surgical symbol/range reads, exact/range/hunk patches, dry-run validation, and transactional multi-file edits under workspace/. Read permission is always required; write permission is required only when the batch mutates files.",
             objectSchema(
@@ -215,35 +225,30 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
             )
         ))
 
-    fun callAsync(rawName: String, args: JSONObject, aiSessionId: String? = null, reply: (JSONObject) -> Unit) {
+    fun callAsync(rawName: String, args: JSONObject, reply: (JSONObject) -> Unit) {
         val name = canonicalName(rawName)
         val method = methodFor(name)
         if (name == "rift_shell_exec") {
             val command = args.optString("command").trim()
             if (command.isBlank()) {
                 recordAudit(name, args, false, "command required")
-                aiJournal.recordTool(aiSessionId, name, args, "finish", false, "command required")
                 reply(JSONObject().put("ok", false).put("error", "command required"))
                 return
             }
             if (!isAllowed(name, args)) {
                 val error = "Rift MCP shell access is disabled on this device. Enable write access in Rift MCP settings."
                 recordAudit(name, args, false, error)
-                aiJournal.recordTool(aiSessionId, name, args, "finish", false, error)
                 reply(JSONObject().put("ok", false).put("error", error))
                 return
             }
-            aiJournal.recordTool(aiSessionId, name, args, "start")
             shellBridge?.execute(command, args.optString("cwd", "/")) { result ->
                 val ok = result.optBoolean("ok", false)
                 val error = if (ok) null else result.optString("error", "RiftShell execution failed")
                 recordAudit(name, args, ok, error)
-                aiJournal.recordTool(aiSessionId, name, args, "finish", ok, error)
                 reply(result)
             } ?: run {
                 val error = "RiftShell bridge unavailable"
                 recordAudit(name, args, false, error)
-                aiJournal.recordTool(aiSessionId, name, args, "finish", false, error)
                 reply(JSONObject().put("ok", false).put("error", error))
             }
             return
@@ -251,7 +256,6 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
         if (method == null) {
             val error = "Unsupported Rift tool: $rawName"
             recordAudit(rawName.take(120), args, false, error)
-            aiJournal.recordTool(aiSessionId, rawName.take(120), args, "finish", false, error)
             reply(JSONObject().put("ok", false).put("name", rawName).put("error", error))
             return
         }
@@ -261,7 +265,6 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
         } catch (error: Throwable) {
             val message = error.message ?: "Invalid Rift tool arguments"
             recordAudit(name, args, false, message)
-            aiJournal.recordTool(aiSessionId, name, args, "finish", false, message)
             reply(JSONObject().put("ok", false).put("name", name).put("error", message))
             return
         }
@@ -277,23 +280,9 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
                     "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
             }
             recordAudit(name, normalizedArgs, false, error)
-            aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", false, error)
             reply(JSONObject().put("ok", false).put("name", name).put("error", error))
             return
         }
-
-        if (mutatingRequest) {
-            try {
-                aiJournal.captureForTool(aiSessionId, name, normalizedArgs)
-            } catch (error: Throwable) {
-                val message = error.message ?: "Rift AI rollback snapshot failed"
-                recordAudit(name, normalizedArgs, false, message)
-                aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", false, message)
-                reply(JSONObject().put("ok", false).put("name", name).put("error", message))
-                return
-            }
-        }
-        aiJournal.recordTool(aiSessionId, name, normalizedArgs, "start")
 
         val requestId = "tool-${System.currentTimeMillis()}-${System.nanoTime()}"
         val request = JSONObject()
@@ -305,7 +294,6 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
             val response = runCatching { JSONObject(raw) }.getOrNull()
             if (response?.optBoolean("ok", false) == true) {
                 recordAudit(name, normalizedArgs, true, null)
-                aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", true, null)
                 val value = response.opt("value") ?: JSONObject.NULL
                 if (name == "rift_info" && value is JSONObject) {
                     value.put("mcpManifest", manifest())
@@ -323,8 +311,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
             } else {
                 val error = response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Rift sandbox call failed"
                 recordAudit(name, normalizedArgs, false, error)
-                aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", false, error)
-                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                    reply(JSONObject().put("ok", false).put("name", name).put("error", error))
             }
         }
     }
@@ -427,6 +414,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
         "audit", "rift_audit" -> "rift_audit"
         "scan", "rift_scan" -> "rift_scan"
         "projectExport", "rift_project_export" -> "rift_project_export"
+        "workspaceDiff", "rift_workspace_diff" -> "rift_workspace_diff"
         else -> raw.trim()
     }
 
@@ -448,6 +436,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
         "rift_audit" -> "workspace.audit"
         "rift_scan" -> "workspace.scan"
         "rift_project_export" -> "workspace.exportProject"
+        "rift_workspace_diff" -> "workspace.diff"
         else -> null
     }
 
@@ -495,6 +484,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
     private fun auditTarget(name: String, args: JSONObject): String = when (canonicalName(name)) {
         "rift_move", "rift_copy", "rift_archive", "rift_extract" -> "${args.optString("from")} -> ${args.optString("to")}".take(300)
         "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
+        "rift_workspace_diff" -> args.optString("path").ifBlank { "workspace" }.take(300)
         "rift_info" -> "sandbox"
         else -> args.optString("path").take(300)
     }

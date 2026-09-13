@@ -15,7 +15,8 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class RiftWorkspaceWatcher(
     activity: MainActivity,
-    private val eventSink: (JSONObject) -> Unit
+    private val eventSink: (JSONObject) -> Unit,
+    private val records: RiftWorkspaceRecords = RiftWorkspaceRecords.get(activity)
 ) {
     companion object {
         private const val WATCH_MASK =
@@ -37,6 +38,7 @@ class RiftWorkspaceWatcher(
 
     @Synchronized
     fun start(): JSONObject {
+        records.start()
         if (!active) {
             active = true
             installTree(workspaceRoot)
@@ -103,6 +105,7 @@ class RiftWorkspaceWatcher(
     private fun emit(type: String, file: File, directory: Boolean) {
         if (!active && type != "watch-start") return
         val relative = relativePath(file)
+        if (type != "watch-start") records.observe(type, file, directory)
         eventSink(
             JSONObject()
                 .put("sequence", sequence.incrementAndGet())

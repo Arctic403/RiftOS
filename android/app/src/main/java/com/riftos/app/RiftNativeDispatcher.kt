@@ -28,6 +28,7 @@ import java.io.BufferedOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -42,6 +43,7 @@ class RiftNativeDispatcher(
     private val executor = Executors.newSingleThreadExecutor()
     // Long-running file transfers use their own worker so normal FS/UI RPCs stay responsive.
     private val transferExecutor = Executors.newSingleThreadExecutor()
+    private val notificationScheduler = Executors.newSingleThreadScheduledExecutor()
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val secrets = RiftSecretStore(activity)
     private val riftRoot = File(activity.filesDir, "riftfs").apply {
@@ -124,6 +126,7 @@ class RiftNativeDispatcher(
     fun shutdown() {
         executor.shutdownNow()
         transferExecutor.shutdownNow()
+        notificationScheduler.shutdownNow()
     }
 
     private fun dispatch(method: String, args: JSONObject): Any? = when (method) {
@@ -210,9 +213,9 @@ class RiftNativeDispatcher(
         "clipboard.write", "clipboard.writeText" -> clipboardWrite(args.optString("text"))
         "share.text" -> shareText(args.optString("text"), args.optString("title", "Share from RiftOS"))
         "intent.open" -> openIntent(args.getString("url"))
-        "browser.open" -> openBrowser(args.optString("url", "https://chatgpt.com"))
         "preview.open" -> openPreview(args.optString("root"), args.optString("entry", "index.html"))
         "notifications.show" -> showNotification(args.optString("title", "RiftOS"), args.optString("body"))
+        "notifications.schedule" -> scheduleNotification(args.optString("title", "RiftOS"), args.optString("body"), args.optLong("seconds", 1L))
         else -> throw IllegalArgumentException("Unsupported RiftAndroid method: $method")
     }
 
@@ -741,8 +744,7 @@ class RiftNativeDispatcher(
         fromMountId: String, fromPathRaw: String,
         toMountId: String, toPathRaw: String,
         overwrite: Boolean,
-        progress: TransferProgress? = null,
-        job: RiftTransferJob? = null
+        progress: TransferProgress? = null
     ): JSONObject {
         val fromPath = normalizedRelative(fromPathRaw)
         val toPath = normalizedRelative(toPathRaw)
@@ -752,7 +754,6 @@ class RiftNativeDispatcher(
             require(fromPath != toPath) { "Copy source and destination are identical" }
             if (toPath.startsWith("$fromPath/")) throw IllegalArgumentException("Cannot copy a directory inside itself")
         }
-        if (job?.isCancelled() == true) throw IllegalStateException("Transfer cancelled")
         val source = stat(fromMountId, fromPath) ?: throw IllegalArgumentException("Source not found: $fromPath")
         val existing = stat(toMountId, toPath)
         if (existing != null) {
@@ -785,12 +786,10 @@ class RiftNativeDispatcher(
                         fromMountId, childPath(fromPath, relative),
                         toMountId, childPath(toPath, relative),
                         overwrite = false,
-                        progress = progress,
-                        job = job
+                        progress = progress
                     )
                     emitTransfer(progress, "queued", relative)
-                    if (job?.isCancelled() == true) throw IllegalStateException("Transfer cancelled")
-                    Thread.yield()
+                                Thread.yield()
                 }
             }
         } catch (error: Throwable) {
@@ -833,7 +832,7 @@ class RiftNativeDispatcher(
             if (source.renameTo(destination)) return stat(toMountId, toPath)!!
         }
 
-        copyNode(fromMountId, fromPath, toMountId, toPath, overwrite, progress, null)
+        copyNode(fromMountId, fromPath, toMountId, toPath, overwrite, progress)
         emitTransfer(progress, "source-removal", fromPath, true)
         if (!remove(fromMountId, fromPath)) {
             runCatching { remove(toMountId, toPath) }
@@ -898,16 +897,15 @@ class RiftNativeDispatcher(
     private fun clipboardWrite(text:String):Boolean{(activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("RiftOS",text));return true}
     private fun shareText(text:String,title:String):Boolean{activity.runOnUiThread{activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,text)},title))};return true}
     private fun openIntent(rawUrl:String):Boolean{val uri=Uri.parse(rawUrl);require(uri.scheme in setOf("https","http","mailto","tel","geo")){"Blocked intent scheme"};activity.runOnUiThread{activity.startActivity(Intent(Intent.ACTION_VIEW,uri))};return true}
-    private fun openBrowser(rawUrl:String):Boolean{
-        var url=rawUrl.trim();if(url.isBlank())url="https://chatgpt.com";if(!url.startsWith("http://")&&!url.startsWith("https://"))url="https://$url"
-        val finalUrl=url
-        val main=activity as? MainActivity ?: throw IllegalStateException("RiftBrowser requires the RiftOS desktop host")
-        main.openDesktopBrowser(finalUrl)
-        return true
-    }
     private fun openPreview(root:String,entry:String):Boolean{
         normalizeSegments(root);normalizeSegments(entry)
         activity.runOnUiThread{activity.startActivity(Intent(activity,RiftPreviewActivity::class.java).putExtra(RiftPreviewActivity.EXTRA_ROOT,root).putExtra(RiftPreviewActivity.EXTRA_ENTRY,entry))};return true
+    }
+    private fun scheduleNotification(title:String,body:String,seconds:Long):JSONObject{
+        if(Build.VERSION.SDK_INT>=33&&activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return JSONObject().put("scheduled",false).put("reason","notification-permission-required")
+        val delay=seconds.coerceIn(1L,604800L)
+        notificationScheduler.schedule({runCatching{showNotification(title,body)}},delay,TimeUnit.SECONDS)
+        return JSONObject().put("scheduled",true).put("delaySeconds",delay)
     }
     private fun showNotification(title:String,body:String):JSONObject{
         if(Build.VERSION.SDK_INT>=33&&activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return JSONObject().put("shown",false).put("reason","notification-permission-required")

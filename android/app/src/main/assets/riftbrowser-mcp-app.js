@@ -12,84 +12,34 @@
   const MAX_RESULT_CHARS = 48000;
   const MAX_CALLS_PER_MINUTE = 24;
   const PROCESS_DELAY_MS = 180;
-  const RESULT_ACK_TIMEOUT_MS = 12000;
   const INCOMPLETE_CALL_GRACE_MS = 1400;
-  const MAX_CHAT_TARGETS = 180;
 
   const pending = new Map();
   const processedCalls = new Map();
   const recentCallTimes = [];
   const touchedAssistantMessages = new Set();
   const touchedUserMessages = new Set();
-  const lastAssistantText = new WeakMap();
   const historicalAssistantMessages = new WeakSet();
   const protocolIssueFingerprints = new WeakMap();
   const incompleteCallTimers = new WeakMap();
-  const acknowledgedResultIds = new Set();
   let requestCounter = 0;
   let tools = [];
   let mcpReady = false;
-  let bootComplete = false;
   let enabled = true;
-  let suppressDecoration = false;
   let callQueue = Promise.resolve();
   let badge = null;
   let processTimer = 0;
   let routeKey = location.pathname + location.search;
   let contextSentForRoute = false;
-  let activeAiSessionId = '';
-  let aiTaskActive = false;
-  let aiStopRequested = false;
-  let activeToolRoundTrips = 0;
-  let assistantSeen = false;
-  let lastAssistantUpdateAt = 0;
-  let lastToolResultAt = 0;
-  let continuationRequired = false;
-  let completionTimer = 0;
   let toolExecutionArmed = false;
-  let toolLoopState = 'idle';
-  let continuationBaseline = new WeakSet();
-  let continuationBaselineKeys = new Set();
-  let pendingResultId = '';
-  let consumedContinuationResultId = '';
-  let continuationWaitStartedAt = 0;
   let resultCounter = 0;
   let recoveryAttempt = 0;
-  let queuedAiPayload = null;
-  let taskPumpRunning = false;
-  // AI website adapters may prepare messages, but user approval is required before submission.
-  let manualSendApprovalRequired = true;
-  let pendingApprovedSubmission = null;
   const siteAdapter = window.RiftAIAdapters?.current?.() || {
     name: 'generic', label: 'AI chat', composer: ['textarea', '[contenteditable="true"]'],
     send: ['button[aria-label*="Send" i]', 'button[type="submit"]'],
     stop: ['button[aria-label^="Stop" i]'], assistant: ['[data-role="assistant"]'], user: ['[data-role="user"]']
   };
-  const aiLabel = String(siteAdapter.label || siteAdapter.name || 'AI chat');
-
   function now() { return Date.now(); }
-
-  function sendAiEvent(type, message, data) {
-    try {
-      if (!window.RiftMcpNative || typeof window.RiftMcpNative.postMessage !== 'function') return;
-      const payload = data && typeof data === 'object' ? { ...data } : {};
-      if (activeAiSessionId && !payload.sessionId) payload.sessionId = activeAiSessionId;
-      window.RiftMcpNative.postMessage(JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'rift/ai/event',
-        params: { type: String(type || 'transport'), message: String(message || '').slice(0, 1000), data: payload }
-      }));
-    } catch (_) {}
-  }
-
-  function sendAiPhase(phase, message, type = 'transport', data = {}) {
-    sendAiEvent(type, message, { ...data, phase, sessionId: activeAiSessionId || data.sessionId || '' });
-  }
-
-  function clearCompletionTimer() {
-    if (completionTimer) clearTimeout(completionTimer);
-    completionTimer = 0;
-  }
 
   function stopButtonVisible() {
     const stop = queryFirst(siteAdapter.stop);
@@ -122,88 +72,8 @@
   function listAssistantMessages() { return queryAll(siteAdapter.assistant); }
   function listUserMessages() { return queryAll(siteAdapter.user); }
 
-  function finishAiTask(phase, message, type = 'transport') {
-    if (!aiTaskActive && phase !== 'error') return;
-    const sessionId = activeAiSessionId;
-    clearCompletionTimer();
-    sendAiEvent(type, message, { phase, sessionId, toolLoopState });
-    aiTaskActive = false;
-    aiStopRequested = false;
-    activeToolRoundTrips = 0;
-    continuationRequired = false;
-    activeAiSessionId = '';
-    toolExecutionArmed = false;
-    toolLoopState = 'idle';
-    continuationBaseline = new WeakSet();
-    continuationBaselineKeys = new Set();
-    pendingResultId = '';
-    consumedContinuationResultId = '';
-    continuationWaitStartedAt = 0;
-    recoveryAttempt = 0;
-  }
-
-  function toolLoopBusy() {
-    return toolLoopState === 'executing-tool' ||
-      toolLoopState === 'delivering-result' ||
-      toolLoopState === 'waiting-result-ack' ||
-      toolLoopState === 'waiting-continuation';
-  }
-
-  function assistantMessageKey(message) {
-    if (!(message instanceof Element)) return '';
-    return String(message.getAttribute('data-message-id') || message.id || '').trim();
-  }
-
-  function markContinuationBaseline() {
-    continuationBaseline = new WeakSet();
-    continuationBaselineKeys = new Set();
-    for (const message of listAssistantMessages()) {
-      continuationBaseline.add(message);
-      const key = assistantMessageKey(message);
-      if (key) continuationBaselineKeys.add(key);
-    }
-  }
-
-  function isContinuationBaseline(message) {
-    if (continuationBaseline.has(message)) return true;
-    const key = assistantMessageKey(message);
-    return Boolean(key && continuationBaselineKeys.has(key));
-  }
-
   function resultIdForPayload() {
     return `result-${now()}-${++resultCounter}`;
-  }
-
-  function scheduleCompletionCheck(delayMs = 1300) {
-    if (!aiTaskActive) return;
-    clearCompletionTimer();
-    completionTimer = setTimeout(() => {
-      completionTimer = 0;
-      if (!aiTaskActive) return;
-      if (activeToolRoundTrips > 0 || stopButtonVisible()) {
-        scheduleCompletionCheck(900);
-        return;
-      }
-      if (aiStopRequested) {
-        finishAiTask('stopped', `${aiLabel} task stopped`);
-        return;
-      }
-      if (toolLoopState === 'waiting-continuation' && continuationRequired && continuationWaitStartedAt &&
-          now() - continuationWaitStartedAt >= 45000) {
-        finishAiTask('error', `${aiLabel} continuation was not observed after Rift result delivery`, 'error');
-        return;
-      }
-      if (!assistantSeen || continuationRequired || toolLoopBusy() || !latestAssistantHasCompletableOutput()) {
-        scheduleCompletionCheck(900);
-        return;
-      }
-      const stableFor = now() - lastAssistantUpdateAt;
-      if (stableFor < 1800 || (lastToolResultAt && now() - lastToolResultAt < 2200)) {
-        scheduleCompletionCheck(900);
-        return;
-      }
-      finishAiTask('complete', `${aiLabel} task complete`);
-    }, delayMs);
   }
 
   function postRpc(method, params) {
@@ -309,148 +179,6 @@
     toolExecutionArmed = false;
   }
 
-  function normalizedChatGptTargetUrl(raw) {
-    try {
-      const url = new URL(String(raw || ''), location.href);
-      const host = url.hostname.toLowerCase();
-      if (url.protocol !== 'https:' || (host !== 'chatgpt.com' && host !== 'www.chatgpt.com')) return null;
-      url.hash = '';
-      return url;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function hasProjectContext(url, anchor) {
-    const route = `${url.pathname}${url.search}`.toLowerCase();
-    if (route.includes('g-p-') || route.includes('/project') || url.searchParams.has('project')) return true;
-    if (!(anchor instanceof Element)) return false;
-    return Boolean(anchor.closest('[data-testid*="project"],[aria-label*="Project"],[aria-label*="project"]'));
-  }
-
-  function classifyChatTarget(url, anchor) {
-    if (!url) return '';
-    const isChat = /\/c\/[^/?#]+/.test(url.pathname);
-    const isProject = hasProjectContext(url, anchor);
-    if (isChat && isProject) return 'project-chat';
-    if (isChat) return 'chat';
-    if (isProject) return 'project';
-    return '';
-  }
-
-  function chatTargetLabel(anchor, kind, url) {
-    const candidates = anchor instanceof Element ? [
-      anchor.getAttribute('aria-label'),
-      anchor.getAttribute('title'),
-      anchor.innerText,
-      anchor.textContent
-    ] : [];
-    for (const candidate of candidates) {
-      const label = String(candidate || '').replace(/\s+/g, ' ').trim();
-      if (label && label.toLowerCase() !== 'more' && label.toLowerCase() !== 'options') return label.slice(0, 140);
-    }
-    const tail = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '').replace(/[-_]+/g, ' ').trim();
-    if (tail && !/^c$/i.test(tail)) return tail.slice(0, 140);
-    return kind === 'project' ? 'Project' : kind === 'project-chat' ? 'Project chat' : 'Chat';
-  }
-
-  function collectChatTargets() {
-    refreshRouteState();
-    const byUrl = new Map();
-    for (const anchor of document.querySelectorAll('a[href]')) {
-      const url = normalizedChatGptTargetUrl(anchor.getAttribute('href'));
-      if (!url) continue;
-      const kind = classifyChatTarget(url, anchor);
-      if (!kind) continue;
-      const href = url.toString();
-      const label = chatTargetLabel(anchor, kind, url);
-      if (kind === 'project' && /^(new|create)\s+project$/i.test(label)) continue;
-      if (!byUrl.has(href)) {
-        byUrl.set(href, {
-          mode: 'url',
-          kind,
-          label,
-          url: href
-        });
-      }
-      if (byUrl.size >= MAX_CHAT_TARGETS) break;
-    }
-
-    const currentUrl = normalizedChatGptTargetUrl(location.href);
-    let current = null;
-    if (currentUrl) {
-      const currentHref = currentUrl.toString();
-      const known = byUrl.get(currentHref);
-      const kind = known?.kind || classifyChatTarget(currentUrl, null) || 'current';
-      const title = String(document.title || '').replace(/\s*[|\-–—]\s*ChatGPT\s*$/i, '').trim();
-      current = {
-        mode: 'current',
-        kind,
-        label: known?.label || title || 'Current ChatGPT page',
-        url: currentHref
-      };
-    }
-
-    return {
-      version: 1,
-      route: routeKey,
-      current,
-      targets: Array.from(byUrl.values())
-    };
-  }
-
-  function openTargetSearch() {
-    let best = null;
-    let bestScore = 0;
-    for (const element of document.querySelectorAll('button,a,[role="button"]')) {
-      if (!(element instanceof Element) || !isVisible(element)) continue;
-      const testId = String(element.getAttribute('data-testid') || '').toLowerCase();
-      const aria = String(element.getAttribute('aria-label') || '').toLowerCase();
-      const title = String(element.getAttribute('title') || '').toLowerCase();
-      const text = String(element.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-      let score = 0;
-      if (testId.includes('search')) score += 100;
-      if (aria === 'search' || aria.includes('search chats')) score += 90;
-      else if (aria.includes('search')) score += 65;
-      if (title.includes('search')) score += 45;
-      if (text === 'search') score += 60;
-      if (score > bestScore) { best = element; bestScore = score; }
-    }
-    if (best instanceof HTMLElement) {
-      best.click();
-      return true;
-    }
-    return false;
-  }
-
-  window.RiftShellMcpNative = Object.freeze({
-    request(raw) {
-      try {
-        const payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        const command = String(payload?.command || '').trim();
-        const cwd = String(payload?.cwd || '/');
-        if (!command) throw new Error('Missing shell command');
-        if (!window.RiftShellMcp?.execute) throw new Error('Rift shell runtime unavailable');
-        Promise.resolve(window.RiftShellMcp.execute(command, cwd)).then((result) => {
-          window.RiftMcpShellNativeResult?.({ id: payload.id, ...(result || {}) });
-        }).catch((error) => {
-          window.RiftMcpShellNativeResult?.({ id: payload.id, ok: false, error: String(error.message || error) });
-        });
-      } catch (error) {
-        try { const payload = typeof raw === 'string' ? JSON.parse(raw) : raw; window.RiftMcpShellNativeResult?.({ id: payload?.id, ok: false, error: String(error.message || error) }); } catch (_) {}
-      }
-    }
-  });
-
-  window.RiftMcpShellNativeResult = function(result) {
-    try {
-      window.RiftMcpNative?.postMessage(JSON.stringify({
-        type: 'rift_shell_result',
-        result
-      }));
-    } catch (_) {}
-  };
-
   function isVisible(element) {
     if (!(element instanceof Element)) return false;
     const rect = element.getBoundingClientRect();
@@ -479,12 +207,6 @@
     return best;
   }
 
-  function readComposer(element) {
-    if (!element) return '';
-    if ('value' in element) return String(element.value || '');
-    return String(element.innerText || element.textContent || '');
-  }
-
   function setNativeValue(element, value) {
     const proto = Object.getPrototypeOf(element);
     const descriptor = proto && Object.getOwnPropertyDescriptor(proto, 'value');
@@ -506,10 +228,6 @@
     return true;
   }
 
-  function snapshotUserMessages() {
-    return new Set(listUserMessages());
-  }
-
   function markHistoricalAssistantMessage(message) {
     if (message instanceof Element) historicalAssistantMessages.add(message);
   }
@@ -518,192 +236,10 @@
     for (const message of listAssistantMessages()) markHistoricalAssistantMessage(message);
   }
 
-  async function sendComposerMessage(message, timeoutMs = 12000, options = {}) {
-    pendingApprovedSubmission = { message, timeoutMs };
-    sendAiEvent('waiting', 'Draft prepared. Copy and paste into the AI website manually.', { phase: 'draft-ready', requiresUserAction: true });
-    return true;
-  }
-
-  async function waitForSendButton(timeoutMs) {
-    const deadline = now() + timeoutMs;
-    while (now() < deadline) {
-      const button = findSendButton();
-      if (button && !button.disabled) return button;
-      await new Promise((resolve) => setTimeout(resolve, 120));
-    }
-    return null;
-  }
-
-  async function waitForComposer(timeoutMs) {
-    const deadline = now() + timeoutMs;
-    while (now() < deadline) {
-      const composer = findComposer();
-      if (composer) return composer;
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    }
-    return null;
-  }
-
-  async function waitForMcpReady(timeoutMs) {
-    const deadline = now() + timeoutMs;
-    while (now() < deadline) {
-      if (mcpReady) return true;
-      if (bootComplete && !mcpReady) return false;
-      await new Promise((resolve) => setTimeout(resolve, 120));
-    }
-    return mcpReady;
-  }
-
-  async function prepareProjectTarget(target) {
-    if (!target || target.kind !== 'project' || findComposer()) return;
-    const deadline = now() + 5000;
-    while (now() < deadline && !findComposer()) {
-      const root = document.querySelector('main');
-      const candidates = root ? Array.from(root.querySelectorAll('button,a,[role="button"]')) : [];
-      let best = null;
-      let bestScore = 0;
-      for (const element of candidates) {
-        if (!isVisible(element)) continue;
-        const testId = String(element.getAttribute('data-testid') || '').toLowerCase();
-        const aria = String(element.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().toLowerCase();
-        const text = String(element.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-        let score = 0;
-        if (testId.includes('new-chat')) score += 100;
-        if (aria === 'new chat' || text === 'new chat') score += 90;
-        if (aria.includes('start chat') || text.includes('start chat')) score += 75;
-        if (aria === 'chat' || text === 'chat') score += 40;
-        if (score > bestScore) { best = element; bestScore = score; }
-      }
-      if (best instanceof HTMLElement && bestScore > 0) {
-        best.click();
-        await new Promise((resolve) => setTimeout(resolve, 450));
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 180));
-    }
-  }
-
-  async function submitAiTask(payload) {
-    const sessionId = String(payload && payload.sessionId || '').trim();
-    const task = String(payload && payload.task || '').trim();
-    const projectContext = String(payload && payload.projectContext || '').trim();
-    const target = payload && payload.target && typeof payload.target === 'object' ? payload.target : {};
-    if (!sessionId) { sendAiEvent('error', 'Rift AI session id is missing', { phase: 'error' }); return false; }
-    if (aiTaskActive) {
-      if (sessionId === activeAiSessionId) {
-        sendAiEvent('transport', 'Duplicate Rift AI task dispatch ignored', { phase: 'duplicate-submit', sessionId });
-        return true;
-      }
-      sendAiEvent('error', 'A Rift AI task is already active', { phase: 'error', sessionId });
-      return false;
-    }
-
-    activeAiSessionId = sessionId;
-    aiTaskActive = true;
-    aiStopRequested = false;
-    activeToolRoundTrips = 0;
-    assistantSeen = false;
-    lastAssistantUpdateAt = 0;
-    lastToolResultAt = 0;
-    continuationRequired = false;
-    toolLoopState = 'waiting-assistant';
-    continuationBaseline = new WeakSet();
-    continuationBaselineKeys = new Set();
-    pendingResultId = '';
-    consumedContinuationResultId = '';
-    continuationWaitStartedAt = 0;
-    recoveryAttempt = 0;
-    clearCompletionTimer();
-
-    if (!task) { finishAiTask('error', 'Rift AI task is empty', 'error'); return false; }
-    sendAiPhase('waiting', 'Waiting for local MCP manifest');
-    if (!await waitForMcpReady(12000)) {
-      finishAiTask('error', 'Local Rift MCP did not initialize; task was not submitted', 'error');
-      return false;
-    }
-    if (target.kind === 'project') {
-      sendAiPhase('waiting', `Preparing project chat${target.label ? ` · ${String(target.label).slice(0, 120)}` : ''}`);
-      await prepareProjectTarget(target);
-    }
-    sendAiPhase('waiting', `Waiting for ${aiLabel} composer`);
-    const composer = await waitForComposer(20000);
-    if (!composer) {
-      finishAiTask('error', `${aiLabel} composer unavailable. Open Web view to sign in or inspect the page.`, 'error');
-      return false;
-    }
-    refreshRouteState();
-    let message = task;
-    if (projectContext) message += `
-
-${projectContext}`;
-    if (tools.length && !contextSentForRoute) {
-      message += `
-
-${contextBlock()}`;
-      contextSentForRoute = true;
-    }
-    suppressDecoration = true;
-    pendingApprovedSubmission = { message, timeoutMs: 12000 };
-    sendAiPhase('submitted', 'Draft generated in RiftOS. User copy/paste required.', 'transport', {
-      requiresUserAction: true
-    });
-    setTimeout(() => { suppressDecoration = false; }, 800);
-    scheduleCompletionCheck(1800);
-    return true;
-  }
-
-  function queueAiTask(payload) {
-    const sessionId = String(payload && payload.sessionId || '').trim();
-    if (!enabled) return { accepted: false, reason: 'disabled' };
-    if (!sessionId) return { accepted: false, reason: 'missing-session' };
-    if (aiTaskActive) {
-      return activeAiSessionId === sessionId
-        ? { accepted: true, duplicate: true, state: toolLoopState }
-        : { accepted: false, reason: 'busy', activeSessionId: activeAiSessionId };
-    }
-    if (queuedAiPayload) {
-      const queuedId = String(queuedAiPayload.sessionId || '').trim();
-      return queuedId === sessionId
-        ? { accepted: true, duplicate: true, state: 'queued' }
-        : { accepted: false, reason: 'busy', activeSessionId: queuedId };
-    }
-    queuedAiPayload = payload;
-    queueMicrotask(pumpAiTaskQueue);
-    return { accepted: true, state: 'queued' };
-  }
-
-  async function pumpAiTaskQueue() {
-    if (taskPumpRunning || !queuedAiPayload) return;
-    taskPumpRunning = true;
-    const payload = queuedAiPayload;
-    queuedAiPayload = null;
-    try {
-      await submitAiTask(payload);
-    } catch (error) {
-      const message = `${aiLabel} task failed: ${String(error && error.message || error)}`;
-      if (aiTaskActive) finishAiTask('error', message, 'error');
-      else sendAiEvent('error', message, { phase: 'error', sessionId: String(payload && payload.sessionId || '') });
-    } finally {
-      taskPumpRunning = false;
-      if (queuedAiPayload) queueMicrotask(pumpAiTaskQueue);
-    }
-  }
-
-  function approvePendingSend() {
-    if (!pendingApprovedSubmission) return false;
-    const pending = pendingApprovedSubmission;
-    pendingApprovedSubmission = null;
-    sendComposerMessage(pending.message, pending.timeoutMs).catch((error) => sendAiEvent('error', String(error && error.message || error), { phase: 'send-error' }));
-    return true;
-  }
-
-  function stopAiTask() {
-    if (!aiTaskActive) return false;
-    aiStopRequested = true;
-    const stop = queryFirst(siteAdapter.stop);
-    if (stop instanceof HTMLElement && !stop.disabled) stop.click();
-    sendAiPhase('stopping', 'Stop requested');
-    scheduleCompletionCheck(500);
+  async function stageComposerMessage(message) {
+    const composer = findComposer();
+    if (!composer) throw new Error('AI composer unavailable; open the web view before returning a Rift result');
+    if (!writeComposer(composer, String(message ?? ''))) throw new Error('Could not stage Rift result in the AI composer');
     return true;
   }
 
@@ -735,68 +271,8 @@ ${contextBlock()}`;
   function markInjectedResultMessage(message) {
     const parsed = readResultPayloadFromMessage(message);
     const resultId = String(parsed && parsed.result_id || '').trim();
-    if (resultId) {
-      acknowledgedResultIds.add(resultId);
-      if (message instanceof HTMLElement) message.dataset.riftResultId = resultId;
-    }
+    if (resultId && message instanceof HTMLElement) message.dataset.riftResultId = resultId;
     return resultId;
-  }
-
-  function acknowledgeResultFromAssistantContinuation(message = null) {
-    if (!aiTaskActive || toolLoopState !== 'waiting-result-ack' || !pendingResultId) return false;
-
-    const messages = listAssistantMessages();
-    const candidate = message instanceof Element
-      ? message
-      : (messages.length ? messages[messages.length - 1] : null);
-    if (!(candidate instanceof Element)) return false;
-
-    const isLatestAssistant = messages.length > 0 && messages[messages.length - 1] === candidate;
-    if (!isLatestAssistant || isContinuationBaseline(candidate)) return false;
-
-    const raw = String(candidate.innerText || candidate.textContent || '');
-    const visible = stripToolEnvelopes(raw);
-    const protocolSignal = hasToolProtocolSignal(raw);
-    const meaningful = protocolSignal || (Boolean(visible) && !isTransientAssistantStatus(visible));
-    if (!meaningful) return false;
-
-    const resultId = pendingResultId;
-    const firstAck = !acknowledgedResultIds.has(resultId);
-    acknowledgedResultIds.add(resultId);
-    if (firstAck) {
-      sendAiPhase('running', `${aiLabel} continuation acknowledged Rift result`, 'transport', {
-        resultId,
-        ackSource: 'assistant-continuation'
-      });
-    }
-    return true;
-  }
-
-  async function waitForResultAck(resultId, timeoutMs = RESULT_ACK_TIMEOUT_MS) {
-    const deadline = now() + timeoutMs;
-    while (now() < deadline) {
-      if (acknowledgedResultIds.has(resultId)) return true;
-      for (const message of listUserMessages()) {
-        if (!(message instanceof Element)) continue;
-        const known = message instanceof HTMLElement ? String(message.dataset.riftResultId || '') : '';
-        if (known === resultId) {
-          acknowledgedResultIds.add(resultId);
-          return true;
-        }
-        if (markInjectedResultMessage(message) === resultId) return true;
-      }
-      if (pendingResultId === resultId && acknowledgeResultFromAssistantContinuation()) return true;
-      await new Promise((resolve) => setTimeout(resolve, 80));
-    }
-    return false;
-  }
-
-  function scanForContinuation() {
-    const assistant = listAssistantMessages();
-    for (let i = Math.max(0, assistant.length - 6); i < assistant.length; i++) {
-      const message = assistant[i];
-      if (!isContinuationBaseline(message)) scanAssistantMessage(message);
-    }
   }
 
   function formatRawValue(value, depth = 0) {
@@ -850,13 +326,9 @@ ${contextBlock()}`;
     return header.join('\n');
   }
 
-  async function submitToolResult(payload, expectedSessionId = '') {
-    if (expectedSessionId && (!aiTaskActive || activeAiSessionId !== expectedSessionId)) {
-      throw new Error(`Stale Rift result ignored for inactive session ${expectedSessionId}`);
-    }
+  async function submitToolResult(payload) {
     const resultId = resultIdForPayload();
     const resultPayload = { ...(payload && typeof payload === 'object' ? payload : {}), result_id: resultId };
-    const manageSession = Boolean(expectedSessionId && aiTaskActive && activeAiSessionId === expectedSessionId);
     if (resultPayload.ok === false) {
       recoveryAttempt += 1;
       resultPayload.retryable = true;
@@ -865,77 +337,14 @@ ${contextBlock()}`;
       recoveryAttempt = 0;
     }
     const finalInstruction = resultPayload.final === true && resultPayload.ok === true
-      ? `The requested final batch is confirmed. Briefly confirm completion unless the result itself shows unfinished work.`
+      ? 'The requested final batch is confirmed. Briefly confirm completion unless the result itself shows unfinished work.'
       : resultPayload.ok === false
-        ? `The Rift call failed. Correct the raw Rift command and retry automatically with a new call id if the task still requires a tool. Do not ask the user to resend or type continue.`
-        : `Continue immediately using this result. If another tool is required, return one new ${CALL_OPEN}...${CALL_CLOSE} block with a new call id. Do not wait for the user.`;
+        ? 'The Rift call failed. Correct the raw Rift command and retry with a new call id if the task still requires a tool.'
+        : `Continue using this result. If another tool is required, return one new ${CALL_OPEN}...${CALL_CLOSE} block with a new call id.`;
     const message = `${rawResultMessage(resultPayload)}\n${finalInstruction}`;
-
-    if (manageSession) {
-      markContinuationBaseline();
-      lastToolResultAt = now();
-      continuationRequired = true;
-      assistantSeen = false;
-      pendingResultId = resultId;
-      consumedContinuationResultId = '';
-      continuationWaitStartedAt = 0;
-      toolLoopState = 'delivering-result';
-      sendAiPhase('running', `Returning Rift result to ${aiLabel}`, 'transport', {
-        resultId,
-        callId: resultPayload.call_id || null,
-        tool: resultPayload.name || null,
-        ok: resultPayload.ok !== false
-      });
-    }
-
-    suppressDecoration = true;
-    if (manageSession) toolLoopState = 'waiting-result-ack';
-    try {
-      await sendComposerMessage(message);
-    } catch (error) {
-      suppressDecoration = false;
-      throw error;
-    }
-    setTimeout(() => { suppressDecoration = false; }, 800);
-
-    if (manageSession) {
-      const acknowledged = await waitForResultAck(resultId);
-      if (!acknowledged) {
-        sendAiPhase('running', 'Rift result sent · ACK observer uncertain, continuing recovery', 'transport', {
-          resultId,
-          ackSource: 'recovery-timeout'
-        });
-        acknowledgedResultIds.add(resultId);
-      }
-      if (!aiTaskActive || activeAiSessionId !== expectedSessionId) {
-        throw new Error(`Stale Rift result ignored for inactive session ${expectedSessionId}`);
-      }
-      pendingResultId = '';
-      if (consumedContinuationResultId === resultId) {
-        consumedContinuationResultId = '';
-        continuationWaitStartedAt = 0;
-        sendAiPhase('running', `Rift result delivered · ${aiLabel} continuation already received`, 'transport', {
-          resultId,
-          callId: resultPayload.call_id || null,
-          tool: resultPayload.name || null,
-          ok: resultPayload.ok !== false,
-          ackSource: 'assistant-continuation'
-        });
-      } else {
-        toolLoopState = 'waiting-continuation';
-        continuationWaitStartedAt = now();
-        sendAiPhase('running', `Rift result delivered · waiting for ${aiLabel} continuation`, 'transport', {
-          resultId,
-          callId: resultPayload.call_id || null,
-          tool: resultPayload.name || null,
-          ok: resultPayload.ok !== false
-        });
-        queueMicrotask(scanForContinuation);
-      }
-    }
+    await stageComposerMessage(message);
     return resultId;
   }
-
   function rateLimitAllowsCall() {
     const cutoff = now() - 60000;
     while (recentCallTimes.length && recentCallTimes[0] < cutoff) recentCallTimes.shift();
@@ -958,7 +367,7 @@ ${contextBlock()}`;
     return { call_id: callId, name, args };
   }
 
-  async function performCall(packet, aiSessionId) {
+  async function performCall(packet) {
     let call;
     try {
       call = normalizeCall(packet);
@@ -974,75 +383,45 @@ ${contextBlock()}`;
     }
     if (!toolExecutionArmed) return { call_id: call.call_id, name: call.name, ok: false, final: false, error_code: 'NOT_ARMED', error: 'Rift tool execution is not armed for this chat turn' };
 
-    const scope = aiSessionId || routeKey;
-    const callKey = `${scope}:${call.call_id}`;
+    const callKey = `${routeKey}:${call.call_id}`;
     const signature = `${call.name}:${JSON.stringify(call.args)}`;
     const previousSignature = processedCalls.get(callKey);
     if (previousSignature) {
       if (previousSignature === signature) return { call_id: call.call_id, name: call.name, skip: true };
       return { call_id: call.call_id, name: call.name, ok: false, final: false, error_code: 'DUPLICATE_CALL_ID', error: 'Duplicate Rift call id was reused with different arguments; retry with a new id.' };
     }
-
     if (!rateLimitAllowsCall()) {
       processedCalls.set(callKey, signature);
       return { call_id: call.call_id, name: call.name, ok: false, final: false, error_code: 'RATE_LIMIT', error: 'Rift MCP browser rate limit reached; consolidate work into a larger rift_workspace_exec batch.' };
     }
 
-    // Only mark a model call processed after it has actually been accepted for execution.
     processedCalls.set(callKey, signature);
-    if (aiSessionId && aiTaskActive && activeAiSessionId === aiSessionId) toolLoopState = 'executing-tool';
-    if (aiSessionId) activeToolRoundTrips += 1;
     setBadge('busy');
     try {
-      const meta = { 'riftos/callId': call.call_id };
-      if (aiSessionId) meta['riftos/aiSessionId'] = aiSessionId;
-      const result = await postRpc('tools/call', { name: call.name, arguments: call.args, _meta: meta });
+      const result = await postRpc('tools/call', {
+        name: call.name,
+        arguments: call.args,
+        _meta: { 'riftos/callId': call.call_id }
+      });
       const resultMeta = result && result._meta && typeof result._meta === 'object' ? result._meta : {};
-      if (String(resultMeta['riftos/callId'] || '') !== call.call_id) {
-        throw new Error(`Rift MCP result correlation failed for ${call.call_id}`);
-      }
-      if (aiSessionId && String(resultMeta['riftos/aiSessionId'] || '') !== aiSessionId) {
-        throw new Error(`Rift MCP session correlation failed for ${call.call_id}`);
-      }
-      if (aiSessionId && (!aiTaskActive || activeAiSessionId !== aiSessionId)) {
-        throw new Error(`Stale Rift result ignored for inactive session ${aiSessionId}`);
-      }
-
+      if (String(resultMeta['riftos/callId'] || '') !== call.call_id) throw new Error(`Rift MCP result correlation failed for ${call.call_id}`);
       const structured = result.structuredContent || {};
       const ok = !result.isError && structured.ok !== false;
       const value = structured.value !== undefined ? structured.value : null;
       const mutationCount = Array.isArray(value && value.mutationTargets) ? value.mutationTargets.length : 0;
       const requestedFinal = Boolean(call.name === 'rift_workspace_exec' && call.args && call.args.finish === true && call.args.dryRun !== true && value && value.committed !== false && mutationCount > 0);
-
-      return {
-        call_id: call.call_id,
-        name: call.name,
-        ok,
-        final: Boolean(ok && requestedFinal),
-        result: value,
-        error: structured.error || null
-      };
+      return { call_id: call.call_id, name: call.name, ok, final: Boolean(ok && requestedFinal), result: value, error: structured.error || null };
     } catch (error) {
-      const message = String(error && error.message || error);
-      if (message.startsWith('Stale Rift result ignored')) {
-        sendAiEvent('transport', message, { phase: 'stale-result', sessionId: aiSessionId, callId: call.call_id });
-        throw error;
-      }
-      return { call_id: call.call_id, name: call.name, ok: false, final: false, error_code: 'TOOL_TRANSPORT_ERROR', error: message };
-    } finally {
-      if (aiSessionId) activeToolRoundTrips = Math.max(0, activeToolRoundTrips - 1);
+      return { call_id: call.call_id, name: call.name, ok: false, final: false, error_code: 'TOOL_TRANSPORT_ERROR', error: String(error && error.message || error) };
     }
   }
 
   async function executeCall(packet) {
-    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
-    const payload = await performCall(packet, aiSessionId);
+    const payload = await performCall(packet);
     if (payload.skip) return;
-    await submitToolResult({ ...payload, session_id: aiSessionId || null }, aiSessionId);
+    await submitToolResult(payload);
     setBadge(payload.ok === false ? 'error' : 'ready');
-    if (aiTaskActive) scheduleCompletionCheck(900);
   }
-
   function splitRawTokens(line) {
     const tokens = [];
     let token = '';
@@ -1226,22 +605,15 @@ ${contextBlock()}`;
     const fingerprint = `${String(errorText)}\n${String(message.innerText || message.textContent || '')}`;
     if (protocolIssueFingerprints.get(message) === fingerprint) return;
     protocolIssueFingerprints.set(message, fingerprint);
-    const aiSessionId = aiTaskActive ? activeAiSessionId : '';
-    if (aiSessionId) toolLoopState = 'delivering-result';
     callQueue = callQueue.then(() => submitToolResult({
       call_id: null,
       name: null,
-      session_id: aiSessionId || null,
       ok: false,
       final: false,
       error_code: 'CALL_PARSE_ERROR',
       error: String(errorText)
-    }, aiSessionId)).catch((error) => {
-      setBadge('error');
-      if (aiTaskActive) finishAiTask('error', `Rift tool recovery failed: ${String(error && error.message || error)}`, 'error');
-    });
+    })).catch(() => setBadge('error'));
   }
-
   function scheduleIncompleteCallCheck(message, text) {
     const previous = incompleteCallTimers.get(message);
     if (previous && previous.text === text) return;
@@ -1271,37 +643,10 @@ ${contextBlock()}`;
     const messages = listAssistantMessages();
     const isLatestAssistant = messages.length > 0 && messages[messages.length - 1] === message;
     const isHistorical = historicalAssistantMessages.has(message);
-
     if (!meaningfulAssistantContent) return;
-
-    if (aiTaskActive && toolLoopState === 'waiting-continuation') {
-      if (isContinuationBaseline(message)) return;
-      continuationRequired = false;
-      continuationWaitStartedAt = 0;
-      toolLoopState = 'waiting-assistant';
-      lastAssistantUpdateAt = now();
-      sendAiPhase('running', `${aiLabel} continuation received`, 'transport');
-    } else if (aiTaskActive && toolLoopState === 'waiting-result-ack') {
-      const resultId = pendingResultId;
-      if (!acknowledgeResultFromAssistantContinuation(message)) return;
-      consumedContinuationResultId = resultId;
-      continuationRequired = false;
-      continuationWaitStartedAt = 0;
-      toolLoopState = 'waiting-assistant';
-      lastAssistantUpdateAt = now();
-      sendAiPhase('running', `${aiLabel} continuation received with Rift result acknowledgement`, 'transport', {
-        resultId,
-        ackSource: 'assistant-continuation'
-      });
-      // Intentionally fall through: this exact assistant update must also be
-      // processed as a next tool call or final assistant response.
-    } else if (aiTaskActive && (toolLoopState === 'executing-tool' || toolLoopState === 'delivering-result')) {
-      return;
-    }
 
     const mayExecute = toolExecutionArmed && isLatestAssistant && !isHistorical && tools.length > 0;
     const parsed = mayExecute && text.includes(CALL_OPEN) ? parseRawCallEnvelopes(text) : { calls: [], errors: [], incomplete: false };
-
     if (mayExecute && parsed.errors.length) {
       queueProtocolRecovery(message, parsed.errors.join('; '));
       return;
@@ -1315,29 +660,10 @@ ${contextBlock()}`;
       return;
     }
     if (mayExecute && parsed.calls.length === 1) {
-      if (aiTaskActive) toolLoopState = 'executing-tool';
       const packet = parsed.calls[0];
-      callQueue = callQueue.then(() => executeCall(packet)).catch((error) => {
-        setBadge('error');
-        if (aiTaskActive) finishAiTask('error', `Rift tool pipeline failed: ${String(error && error.message || error)}`, 'error');
-      });
-      return;
+      callQueue = callQueue.then(() => executeCall(packet)).catch(() => setBadge('error'));
     }
-
-    if (visibleText && lastAssistantText.get(message) !== visibleText) {
-      lastAssistantText.set(message, visibleText);
-      if (aiTaskActive) {
-        assistantSeen = true;
-        lastAssistantUpdateAt = now();
-      }
-      sendAiEvent('assistant', 'Assistant output updated', {
-        messageId: String(message.getAttribute('data-message-id') || message.id || ''),
-        text: visibleText.slice(0, 180000)
-      });
-    }
-    if (aiTaskActive && visibleText) scheduleCompletionCheck();
   }
-
   function compactInjectedUserMessage(message) {
     if (!(message instanceof Element)) return;
     markInjectedResultMessage(message);
@@ -1432,15 +758,11 @@ ${contextBlock()}`;
       const result = await postRpc('tools/list', {});
       tools = Array.isArray(result.tools) ? result.tools : [];
       mcpReady = tools.length > 0;
-      bootComplete = true;
       setBadge(mcpReady ? 'ready' : 'error');
-      sendAiEvent(mcpReady ? 'transport' : 'error', mcpReady ? `Rift MCP ready · ${tools.length} local tools` : 'Rift MCP returned no tools');
     } catch (error) {
       tools = [];
       mcpReady = false;
-      bootComplete = true;
       setBadge('error');
-      sendAiEvent('error', `Rift MCP initialization failed: ${String(error && error.message || error)}`);
     }
 
 
@@ -1454,17 +776,6 @@ ${contextBlock()}`;
     observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
     scanRecentMessagesOnce();
   }
-
-  window.RiftMcpAppControl = Object.freeze({
-    queueTask: queueAiTask,
-    submitTask: queueAiTask,
-    targets: collectChatTargets,
-    openTargetSearch,
-    stop: stopAiTask,
-    approveSend: approvePendingSend,
-    setManualSendApproval: (value) => { manualSendApprovalRequired = Boolean(value); },
-    state: () => ({ version: VERSION, enabled, ready: bootComplete && mcpReady, tools: tools.length, route: routeKey, aiTaskActive, queued: Boolean(queuedAiPayload), toolLoopState, pendingResultId, manualSendApprovalRequired })
-  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();

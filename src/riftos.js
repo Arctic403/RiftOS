@@ -5,7 +5,7 @@ const BUILTIN_APPS=[
   {id:"files",name:"Files",icon:"▣",desc:"Android RiftFS + SAF mounts"},
   {id:"terminal",name:"RiftShell",icon:">_",desc:"RiftKernel command shell"},
   {id:"browser",name:"RiftBrowser",icon:"◎",desc:"RiftOS-owned browser · WebView compatibility renderer"},
-  {id:"workspace-live",name:"Workspace Live",icon:"◈",desc:"Watch ChatGPT + local edits live"},
+  {id:"workspace-live",name:"Workspace Records",icon:"◈",desc:"Private local change history + diffs"},
   {id:"editor",name:"Editor",icon:"{}",desc:"Native-backed RiftFS editor"},
   {id:"tasks",name:"Tasks",icon:"≡",desc:"RiftKernel processes"},
   {id:"settings",name:"Settings",icon:"⚙",desc:"Samsung / Android system"}
@@ -614,8 +614,8 @@ async function openTerminal(){
 
 async function openWorkspaceLive(){
   await core.ready;
-  const body=openWindow("workspace-live","Workspace Live","LOCAL HTML / MCP WORKSPACE");
-  if(!window.RiftWorkspaceLiveHost?.mount)throw new Error("Workspace Live host is unavailable");
+  const body=openWindow("workspace-live","Workspace Records","PRIVATE LOCAL WORKSPACE RECORDS");
+  if(!window.RiftWorkspaceLiveHost?.mount)throw new Error("Workspace Records host is unavailable");
   const mounted=window.RiftWorkspaceLiveHost.mount(body);
   const closeHandler=event=>{
     if(event.detail?.id!=="workspace-live")return;
@@ -667,10 +667,28 @@ window.RiftShellMcp = Object.freeze({
     }
   }
 });
-
-window.RiftMcpShellNativeResult = result => {
-  try { window.RiftShellMcpResultHandler?.(result); } catch (_) {}
-};
+window.RiftShellMcpNative = Object.freeze({
+  request(raw) {
+    let payload = null;
+    const send = result => {
+      try { globalThis.RiftNativeTransport?.postMessage({method:'mcp.shell.result',args:{result}}); }
+      catch (_) {}
+    };
+    try {
+      payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const id = String(payload?.id || '');
+      const command = String(payload?.command || '').trim();
+      const cwd = String(payload?.cwd || '/');
+      if (!id) throw new Error('Missing shell bridge id');
+      if (!command) throw new Error('Missing shell command');
+      Promise.resolve(window.RiftShellMcp.execute(command, cwd)).then(result => {
+        send({id,...(result && typeof result === 'object' ? result : {ok:true,result})});
+      }).catch(error => send({id,ok:false,error:String(error?.message || error)}));
+    } catch (error) {
+      send({id:String(payload?.id || ''),ok:false,error:String(error?.message || error)});
+    }
+  }
+});
 
 window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,openWorkspaceLive,closeWindow,showDesktop,setStatus});
 

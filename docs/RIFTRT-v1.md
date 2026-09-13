@@ -25,7 +25,7 @@ Supported v1 engines:
 
 ## Worker ABI
 
-Worker apps receive a frozen `Rift` object with logging, window title, host-owned surface, resize/input callbacks, local app storage and capability-gated filesystem/clipboard operations.
+Worker apps receive a frozen `Rift` object with logging, window title, host-owned surface, resize/input callbacks, local app storage and capability-gated filesystem/clipboard/share operations. Share is exposed as `Rift.share.text(text)` and requires the app's `share` capability.
 
 Canvas frame commands currently include `clear`, `rect`, `line` and `text`.
 

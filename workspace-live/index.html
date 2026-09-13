@@ -4,44 +4,59 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <title>Rift Workspace Live</title>
+  <title>Rift Workspace Records</title>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <main class="workspace-app">
+  <main class="records-app">
     <header class="topbar">
       <div>
-        <span class="eyebrow">LOCAL HTML / LIVE WORKSPACE</span>
-        <strong>Rift Workspace</strong>
+        <span class="eyebrow">PRIVATE LOCAL WORKSPACE</span>
+        <strong>Workspace Records</strong>
+        <small id="checkpointText">Loading checkpoint…</small>
       </div>
-      <div class="live-state"><i id="liveDot"></i><span id="liveText">Connecting</span><button id="refreshBtn" type="button">Refresh</button></div>
+      <div class="top-actions">
+        <span class="live-state"><i id="liveDot"></i><span id="liveText">Connecting</span></span>
+        <button id="checkpointBtn" type="button">New checkpoint</button>
+        <button id="refreshBtn" type="button">Refresh</button>
+      </div>
     </header>
 
+    <section class="summary-grid">
+      <article><span>Local changes</span><strong id="localCount">—</strong><small>since checkpoint</small></article>
+      <article><span>Recorded events</span><strong id="recordCount">—</strong><small>persistent local history</small></article>
+      <article><span>Git changes</span><strong id="gitCount">—</strong><small id="gitHead">remote comparison</small></article>
+      <article><span>Scope</span><strong>workspace/</strong><small>private RiftFS workspace</small></article>
+    </section>
+
     <section class="layout">
-      <aside class="browser-pane">
-        <div class="pathbar"><button id="upBtn" type="button">↑</button><span id="pathLabel">/</span></div>
-        <input id="filterInput" class="filter" placeholder="Filter this folder" autocomplete="off">
-        <div id="fileList" class="file-list"></div>
+      <aside class="changes-pane">
+        <header>
+          <div><strong>Affected files</strong><small id="affectedMeta">Local checkpoint diff</small></div>
+          <input id="filterInput" placeholder="Filter paths" autocomplete="off">
+        </header>
+        <div class="view-tabs"><button id="localTab" class="active" type="button">Local</button><button id="gitTab" type="button">Git</button></div>
+        <div id="changeList" class="change-list"><div class="empty">Loading changes…</div></div>
       </aside>
 
-      <section class="editor-pane">
-        <div class="editor-head">
-          <div><strong id="fileName">Select a file</strong><small id="revision">No file open</small></div>
-          <div class="editor-actions"><label><input id="followLive" type="checkbox" checked> Follow live</label><button id="saveBtn" type="button" disabled>Save</button></div>
-        </div>
-        <div id="conflict" class="conflict hidden"></div>
-        <textarea id="editor" spellcheck="false" disabled placeholder="Choose a text file from the workspace."></textarea>
-        <div class="diff-panel">
-          <header><strong>Last live change</strong><small id="diffMeta">Waiting for edits</small></header>
-          <pre id="diffOutput">No workspace changes observed yet.</pre>
-        </div>
+      <section class="diff-pane">
+        <header>
+          <div><strong id="diffTitle">Select a changed file</strong><small id="diffMeta">Local checkpoint diff</small></div>
+          <button id="copyDiffBtn" type="button" disabled>Copy diff</button>
+        </header>
+        <pre id="diffOutput">No file selected.</pre>
       </section>
 
-      <aside class="activity-pane">
-        <header><strong>Activity</strong><button id="clearActivity" type="button">Clear</button></header>
-        <div id="activityLog" class="activity-log"><div class="empty">MCP and local edits will appear here.</div></div>
+      <aside class="records-pane">
+        <header><div><strong>Record timeline</strong><small>all local writers</small></div></header>
+        <div id="recordList" class="record-list"><div class="empty">Loading records…</div></div>
       </aside>
     </section>
+
+    <footer class="footerbar">
+      <span>No approve/deny layer. Records are observational; workspace mutations happen through their owning systems.</span>
+      <span id="statusText">Starting…</span>
+    </footer>
   </main>
   <script type="module" src="./app.js"></script>
 </body>
