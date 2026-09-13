@@ -40,7 +40,7 @@ filesDir/riftfs/workspace
 - `tools/list`
 - `tools/call`
 
-The browser adapter obtains tool definitions through `tools/list`; schemas are not duplicated in the page asset.
+The browser adapter obtains tool definitions through `tools/list`; schemas are not duplicated in the page asset. The server fingerprints the live tool manifest into `serverInfo.version`, returns the manifest hash/count in MCP metadata, and advertises `tools.listChanged=true` so reconnecting clients can invalidate stale tool-schema caches after RiftOS gains or changes tools.
 
 ## Tool host
 
@@ -52,9 +52,10 @@ The browser adapter obtains tool definitions through `tools/list`; schemas are n
 - bounded audit metadata,
 - dispatch into `RiftToolSandbox`.
 
-Current tools:
+Current tools (17 total):
 
 ```text
+rift_shell_exec
 rift_info
 rift_stat
 rift_hash
@@ -148,6 +149,8 @@ Not exposed to MCP tools:
 - secrets,
 - general `RiftNativeDispatcher`,
 - full RiftFS,
-- shell/native execution.
+- raw Android/Linux shell execution.
+
+`rift_shell_exec` is intentionally narrower: it only dispatches commands through the existing RiftShell runtime and does not expose a raw Android shell.
 
 MCP is a protocol adapter over `RiftToolHost`; it is not the internal RiftOS kernel API.

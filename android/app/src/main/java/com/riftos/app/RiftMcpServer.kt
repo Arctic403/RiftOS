@@ -8,7 +8,7 @@ import java.security.MessageDigest
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.16.0-local-idempotency"
+        private const val SERVER_VERSION = "0.17.0-tool-manifest-refresh"
         private const val COMPLETED_TTL_MS = 2 * 60 * 1000L
         private const val MAX_COMPLETED_REQUESTS = 128
     }
@@ -66,7 +66,14 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         when (method) {
             "initialize" -> reply(success(id, initializeResult()))
             "ping" -> reply(success(id, JSONObject()))
-            "tools/list" -> reply(success(id, JSONObject().put("tools", toolHost.tools())))
+            "tools/list" -> {
+                val tools = toolHost.tools()
+                reply(success(id, JSONObject()
+                    .put("tools", tools)
+                    .put("_meta", JSONObject()
+                        .put("riftos/toolCount", tools.length())
+                        .put("riftos/toolManifestHash", toolManifestHash(tools)))))
+            }
             "tools/call" -> handleToolCall(id, params, reply)
             else -> reply(error(id, -32601, "Method not found: $method"))
         }
@@ -165,19 +172,31 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         }
     }
 
-    private fun initializeResult(): JSONObject = JSONObject()
-        .put("protocolVersion", PROTOCOL_VERSION)
-        .put("capabilities", JSONObject().put("tools", JSONObject().put("listChanged", false)))
-        .put(
-            "serverInfo",
-            JSONObject()
-                .put("name", "rift-local-mcp")
-                .put("version", SERVER_VERSION)
-        )
-        .put(
-            "instructions",
-            "RiftOS workspace tools with Project Intelligence v1. All filesystem capabilities are hard-scoped to workspace/. Prefer rift_workspace_exec for local symbol/reference lookup, surgical reads/patches, dry-run validation and transactional multi-file work. Device-side permissions and audit remain authoritative across local and relay transports; there is no direct model API."
-        )
+    private fun initializeResult(): JSONObject {
+        val tools = toolHost.tools()
+        val manifestHash = toolManifestHash(tools)
+        return JSONObject()
+            .put("protocolVersion", PROTOCOL_VERSION)
+            .put("capabilities", JSONObject().put("tools", JSONObject().put("listChanged", true)))
+            .put(
+                "serverInfo",
+                JSONObject()
+                    .put("name", "rift-local-mcp")
+                    .put("version", "$SERVER_VERSION-${manifestHash.take(12)}")
+            )
+            .put("_meta", JSONObject()
+                .put("riftos/toolCount", tools.length())
+                .put("riftos/toolManifestHash", manifestHash))
+            .put(
+                "instructions",
+                "RiftOS workspace tools with Project Intelligence v1. All filesystem capabilities are hard-scoped to workspace/. Prefer rift_workspace_exec for local symbol/reference lookup, surgical reads/patches, dry-run validation and transactional multi-file work. The server version is fingerprinted to the live tool manifest so reconnecting clients can invalidate stale tool-schema caches. Device-side permissions and audit remain authoritative across local and relay transports; there is no direct model API."
+            )
+    }
+
+    private fun toolManifestHash(tools: JSONArray = toolHost.tools()): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(tools.toString().toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 
     private fun exportSummary(value: JSONObject): JSONObject = JSONObject()
         .put("format", value.optString("format"))

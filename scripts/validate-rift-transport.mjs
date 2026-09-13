@@ -45,6 +45,7 @@ const checks = [
   ['Android host consumes system bar and cutout insets', main.includes('WindowCompat.setDecorFitsSystemWindows(window, false)') && main.includes('WindowInsetsCompat.Type.displayCutout()') && main.includes('view.setPadding(safe.left, safe.top, safe.right, safe.bottom)')],
   ['web shell cannot exceed its host viewport', shellStyles.includes('.os{width:100%;max-width:100%;min-width:0;') && shellStyles.includes('.content{grid-row:2;position:relative;min-width:0;max-width:100%;')],
   ['native MCP coalesces identical retried tool calls', mcpServer.includes('private val inFlight') && mcpServer.includes('private val completed') && mcpServer.includes('completeRequest(key, response)')],
+  ['MCP handshake fingerprints and refreshes the live tool manifest', mcpServer.includes('listChanged", true') && mcpServer.includes('toolManifestHash') && mcpServer.includes('riftos/toolCount') && mcpServer.includes('riftos/toolManifestHash')],
   ['relay ignores stale socket close and response events', relayWorker.includes('if (socket !== this.socket) return;') && (relayWorker.match(/if \(socket !== this\.socket\) return;/g)||[]).length >= 3],
   ['relay never uses Durable Object payload storage', !relayWorker.includes('ctx.storage') && !relayWorker.includes('.storage.put') && !relayWorker.includes('.storage.get')],
   ['raw chat protocol is declared', adapter.includes("const CALL_OPEN = '[RIFT_CALL]'") && adapter.includes("const RESULT_MARKER = '[RIFT_RESULT]'")],
