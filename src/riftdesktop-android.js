@@ -28,12 +28,23 @@ if(homeButton){homeButton.firstChild.textContent='⊞';const label=homeButton.qu
 
 const taskbarOpen=document.createElement('div');
 taskbarOpen.className='rift-taskbar-open';
-const taskbarSpacer=document.createElement('div');
-taskbarSpacer.className='rift-taskbar-spacer';
+const taskbarScroll=document.createElement('div');
+taskbarScroll.className='rift-taskbar-scroll';
+taskbarScroll.tabIndex=0;
+taskbarScroll.setAttribute('aria-label','Pinned apps and open windows; scroll horizontally for more');
+for(const button of dock.querySelectorAll('.dock-btn[data-open]:not([data-open="home"])'))taskbarScroll.append(button);
+taskbarScroll.append(taskbarOpen);
 const tray=document.createElement('div');
 tray.className='rift-taskbar-tray';
 tray.innerHTML=`<button type="button" id="riftMouseToggle" title="Use the full screen as a touch trackpad">Mouse</button><span class="rift-tray-clock" id="riftTrayClock"></span><button type="button" class="rift-show-desktop" id="riftShowDesktop" title="Show desktop" aria-label="Show desktop"></button>`;
-dock.append(taskbarOpen,taskbarSpacer,tray);
+dock.append(taskbarScroll,tray);
+taskbarScroll.addEventListener('wheel',event=>{
+  if(taskbarScroll.scrollWidth<=taskbarScroll.clientWidth)return;
+  if(Math.abs(event.deltaY)>Math.abs(event.deltaX)){
+    event.preventDefault();
+    taskbarScroll.scrollLeft+=event.deltaY;
+  }
+},{passive:false});
 
 const startMenu=document.createElement('section');
 startMenu.id='riftStartMenu';
@@ -69,7 +80,8 @@ function saveGeometry(win){if(win.classList.contains('rift-maximized'))return;co
 async function persistWindowGeometry(id,value){try{const current=await core?.fs?.readJSON?.('/system/settings/desktop.json',{})||{};await core?.fs?.writeJSON?.('/system/settings/desktop.json',{...current,windows:{...(current.windows||{}),[id]:value},updated:Date.now()});}catch(_){}}
 async function restoreDesktopGeometry(win){if(win.classList.contains('rift-maximized'))maximize(win,true);else applyGeometry(win,await readStoredGeometry(win));}
 
-function focusVisual(win,requestCore=true){if(!win||!document.contains(win))return;win.classList.remove('rift-minimized');activeWindow=win;zCounter+=1;win.style.zIndex=String(zCounter);allWindows().forEach(item=>item.classList.toggle('rift-focused',item===win));if(requestCore)wm()?.focus?.(win.dataset.app);syncTaskbar();}
+function revealActiveTask(){const active=taskbarScroll.querySelector('.rift-running-active,.rift-task-window.active');if(!active)return;const area=taskbarScroll.getBoundingClientRect(),item=active.getBoundingClientRect();if(item.right>area.right)taskbarScroll.scrollLeft+=item.right-area.right;else if(item.left<area.left)taskbarScroll.scrollLeft-=area.left-item.left;}
+function focusVisual(win,requestCore=true){if(!win||!document.contains(win))return;win.classList.remove('rift-minimized');activeWindow=win;zCounter+=1;win.style.zIndex=String(zCounter);allWindows().forEach(item=>item.classList.toggle('rift-focused',item===win));if(requestCore)wm()?.focus?.(win.dataset.app);syncTaskbar();revealActiveTask();}
 function nextVisible(except){return allWindows().filter(win=>win!==except&&!win.classList.contains('rift-minimized')).sort((a,b)=>(Number(b.style.zIndex)||0)-(Number(a.style.zIndex)||0))[0]||null;}
 function announceVisibility(win,visible,reason){if(!win)return;window.dispatchEvent(new CustomEvent('riftos:window-visibility',{detail:{id:win.dataset.app,window:win,visible:!!visible,reason}}));}
 function minimize(win){if(!win)return;announceVisibility(win,false,'minimize');win.classList.add('rift-minimized');win.classList.remove('rift-focused');if(activeWindow===win)activeWindow=null;const next=nextVisible(win);if(next)focusVisual(next);else workspace.classList.remove('hidden');syncTaskbar();}
@@ -179,7 +191,7 @@ function pointerTarget(){const oldOverlay=trackpad.style.pointerEvents,oldCursor
 function mouseInit(type,button=0,buttons=0,target=pointerTarget()){if(!target)return null;const common={bubbles:true,cancelable:true,composed:true,clientX:cursorX,clientY:cursorY,button,buttons};try{target.dispatchEvent(new PointerEvent(type.startsWith('pointer')?type:`pointer${type}`,{...common,pointerType:'mouse',pointerId:1,isPrimary:true}));}catch(_){}return target;}
 function dispatchVirtualClick(button=0){const target=pointerTarget();if(!target)return;const buttons=button===2?2:1;const common={bubbles:true,cancelable:true,composed:true,clientX:cursorX,clientY:cursorY,button,buttons};try{target.dispatchEvent(new PointerEvent('pointerdown',{...common,pointerType:'mouse',pointerId:1,isPrimary:true}));}catch(_){}target.dispatchEvent(new MouseEvent('mousedown',common));try{target.dispatchEvent(new PointerEvent('pointerup',{...common,buttons:0,pointerType:'mouse',pointerId:1,isPrimary:true}));}catch(_){}target.dispatchEvent(new MouseEvent('mouseup',{...common,buttons:0}));if(button===2)target.dispatchEvent(new MouseEvent('contextmenu',common));else{target.dispatchEvent(new MouseEvent('click',common));if(typeof target.focus==='function')try{target.focus({preventScroll:true});}catch(_){target.focus();}}}
 function dispatchDoubleClick(){const target=pointerTarget();if(target)target.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,composed:true,clientX:cursorX,clientY:cursorY,button:0,buttons:0,detail:2}));}
-function dispatchVirtualScroll(deltaY){const target=pointerTarget();if(!target)return;target.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,clientX:cursorX,clientY:cursorY,deltaY,deltaMode:WheelEvent.DOM_DELTA_PIXEL}));let node=target;while(node&&node!==document.body){if(node.scrollHeight>node.clientHeight){node.scrollTop+=deltaY;break;}node=node.parentElement;}}
+function dispatchVirtualScroll(deltaY){const target=pointerTarget();if(!target)return;const wheel=new WheelEvent('wheel',{bubbles:true,cancelable:true,clientX:cursorX,clientY:cursorY,deltaY,deltaMode:WheelEvent.DOM_DELTA_PIXEL});target.dispatchEvent(wheel);if(wheel.defaultPrevented)return;let node=target;while(node&&node!==document.body){if(node===taskbarScroll&&node.scrollWidth>node.clientWidth){node.scrollLeft+=deltaY;break;}if(node.scrollHeight>node.clientHeight){node.scrollTop+=deltaY;break;}node=node.parentElement;}}
 function setVirtualMouse(enabled){inputState.virtualMouse=Boolean(enabled);root.classList.toggle('rift-virtual-mouse',inputState.virtualMouse);tray.querySelector('#riftMouseToggle').classList.toggle('active',inputState.virtualMouse);trackpad.classList.toggle('active',inputState.virtualMouse);cursor.classList.toggle('visible',inputState.virtualMouse);if(inputState.virtualMouse)moveCursor(cursorX,cursorY);}
 
 function beginHold(){if(!gesture||gesture.maxPointers!==1||gesture.moved)return;const target=pointerTarget();if(!target)return;const win=target.closest?.('.window.rift-desktop-window');if(win&&target.closest('.window-bar')&&!target.closest('button')){const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();gesture.hold={kind:'window',win,left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height};focusVisual(win);return;}if(win&&target.closest('.rift-window-resizer')){const rect=win.getBoundingClientRect(),stageRect=stage.getBoundingClientRect();gesture.hold={kind:'resize',win,left:rect.left-stageRect.left,top:rect.top-stageRect.top,width:rect.width,height:rect.height};focusVisual(win);return;}gesture.hold={kind:'mouse',target};const common={bubbles:true,cancelable:true,composed:true,clientX:cursorX,clientY:cursorY,button:0,buttons:1};try{target.dispatchEvent(new PointerEvent('pointerdown',{...common,pointerType:'mouse',pointerId:1,isPrimary:true}));}catch(_){}target.dispatchEvent(new MouseEvent('mousedown',common));}

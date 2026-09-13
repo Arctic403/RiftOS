@@ -13,29 +13,32 @@
       <div>
         <span class="eyebrow">PRIVATE LOCAL WORKSPACE</span>
         <strong>Workspace Records</strong>
-        <small id="checkpointText">Loading checkpoint…</small>
+        <small id="checkpointText">Reading local workspace history…</small>
       </div>
       <div class="top-actions">
-        <span class="live-state"><i id="liveDot"></i><span id="liveText">Connecting</span></span>
-        <button id="checkpointBtn" type="button">New checkpoint</button>
+        <span class="live-state"><i id="liveDot"></i><span id="liveText">Checking local watcher</span></span>
         <button id="refreshBtn" type="button">Refresh</button>
       </div>
     </header>
 
     <section class="summary-grid">
-      <article><span>Local changes</span><strong id="localCount">—</strong><small>since checkpoint</small></article>
-      <article><span>Recorded events</span><strong id="recordCount">—</strong><small>persistent local history</small></article>
-      <article><span>Git changes</span><strong id="gitCount">—</strong><small id="gitHead">remote comparison</small></article>
+      <article><span>Recorded events</span><strong id="recordCount">—</strong><small>local history; survives Git sync</small></article>
+      <article><span>Changes since sync</span><strong id="localCount">—</strong><small>since last comparison baseline</small></article>
+      <article><span>Optional Git comparison</span><strong id="gitCount">—</strong><small id="gitHead">open Git tab to compare</small></article>
       <article><span>Scope</span><strong>workspace/</strong><small>private RiftFS workspace</small></article>
     </section>
 
     <section class="layout">
+      <aside class="records-pane">
+        <header><div><strong>Local activity</strong><small>recent writes in workspace/</small></div></header>
+        <div id="recordList" class="record-list"><div class="empty">Loading records…</div></div>
+      </aside>
       <aside class="changes-pane">
         <header>
           <div><strong>Affected files</strong><small id="affectedMeta">Local checkpoint diff</small></div>
           <input id="filterInput" placeholder="Filter paths" autocomplete="off">
         </header>
-        <div class="view-tabs"><button id="localTab" class="active" type="button">Local</button><button id="gitTab" type="button">Git</button></div>
+        <div class="view-tabs"><button id="localTab" class="active" type="button">Since sync</button><button id="gitTab" type="button">Compare Git (optional)</button></div>
         <div id="changeList" class="change-list"><div class="empty">Loading changes…</div></div>
       </aside>
 
@@ -47,14 +50,10 @@
         <pre id="diffOutput">No file selected.</pre>
       </section>
 
-      <aside class="records-pane">
-        <header><div><strong>Record timeline</strong><small>all local writers</small></div></header>
-        <div id="recordList" class="record-list"><div class="empty">Loading records…</div></div>
-      </aside>
     </section>
 
     <footer class="footerbar">
-      <span>No approve/deny layer. Records are observational; workspace mutations happen through their owning systems.</span>
+      <span>Recorded on this device from workspace/; no server connection needed. Git sync resets only the comparison baseline, not the activity history.</span>
       <span id="statusText">Starting…</span>
     </footer>
   </main>

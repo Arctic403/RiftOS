@@ -35,12 +35,10 @@ globalThis.RiftKernel=system;
 
 // Called by MainActivity before it exits. RiftOS windows consume Back first.
 globalThis.RiftAndroidBack=()=>{
-  const stage=document.querySelector("#stage");
-  if(stage&&!stage.classList.contains("hidden")&&globalThis.RiftDesktop?.closeWindow){
-    globalThis.RiftDesktop.closeWindow();
-    return true;
-  }
-  return false;
+  const manager=globalThis.RiftOSWindowManager;
+  const visible=manager?.list?.().filter(item=>!item.minimized)||[];
+  const focused=visible.find(item=>item.window?.classList.contains('rift-focused'))||visible.at(-1);
+  return focused?manager.close(focused.window)===true:false;
 };
 
 window.addEventListener("pageshow",()=>document.documentElement.dataset.riftActivity="resumed");

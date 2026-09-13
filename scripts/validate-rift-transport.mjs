@@ -4,6 +4,8 @@ const browser = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrows
 const engine = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowserEngine.kt', 'utf8');
 const webViewEngine = readFileSync('android/app/src/main/java/com/riftos/app/AndroidWebViewBrowserEngine.kt', 'utf8');
 const desktop = readFileSync('src/riftdesktop-android.js', 'utf8');
+const desktopStyles = readFileSync('src/riftdesktop-android.css', 'utf8');
+const androidPlatform = readFileSync('src/riftandroid-platform.js', 'utf8');
 const adapter = readFileSync('android/app/src/main/assets/riftbrowser-mcp-app.js', 'utf8');
 const bridge = readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt', 'utf8');
 const main = readFileSync('android/app/src/main/java/com/riftos/app/MainActivity.kt', 'utf8');
@@ -17,6 +19,7 @@ const entry = readFileSync('src/riftandroid-entry.js', 'utf8');
 const mcpSystem = readFileSync('src/riftmcp-system.js', 'utf8');
 const workspaceHost = readFileSync('src/riftworkspace-live-host.js', 'utf8');
 const workspacePage = readFileSync('workspace-live/index.html', 'utf8');
+const workspacePageScript = readFileSync('workspace-live/app.js', 'utf8');
 const workspaceWatcher = readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt', 'utf8');
 const workspaceRecords = readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt', 'utf8');
 const gradle = readFileSync('android/app/build.gradle.kts', 'utf8');
@@ -28,6 +31,10 @@ const shellBatch = readFileSync('src/riftshell-batch.js', 'utf8');
 const aiAdapterRegistry = readFileSync('android/app/src/main/assets/adapters/ai-adapter-registry.js', 'utf8');
 
 const checks = [
+  ['desktop pins and running windows scroll independently of the clock', desktop.includes('taskbarScroll.append(taskbarOpen)') && desktopStyles.includes('flex:1 1 0;min-width:0;height:40px;overflow-x:auto') && desktopStyles.includes('rift-taskbar-tray{display:flex;align-items:center;gap:3px;flex:none')],
+  ['Android Back closes the visible focused window through the window manager', androidPlatform.includes('manager.close(focused.window)===true') && androidPlatform.includes("rift-focused")],
+  ['Workspace Records leads with persistent local events and avoids automatic Git calls', workspacePage.indexOf('id="recordCount"') < workspacePage.indexOf('id="localCount"') && !workspacePage.includes('id="checkpointBtn"') && !workspacePage.includes('Reconnect') && !workspacePageScript.includes('await refreshGit();')],
+
   ['Rift AI workspace app is removed', !existsSync('src/riftai-workspace.js') && !entry.includes('riftai-workspace')],
   ['native Rift AI command surface is removed', !main.includes('"ai.') && !main.includes('RiftAiJournal')],
   ['browser has no Rift AI task orchestration', !browser.includes('startAiTask') && !browser.includes('aiTransportOnly') && !browser.includes('control.queueTask')],
