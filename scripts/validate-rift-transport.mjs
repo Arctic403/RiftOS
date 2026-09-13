@@ -29,6 +29,8 @@ const relayWorker = readFileSync('relay/src/index.js', 'utf8');
 const riftGit = readFileSync('src/riftgit.js', 'utf8');
 const shellBatch = readFileSync('src/riftshell-batch.js', 'utf8');
 const aiAdapterRegistry = readFileSync('android/app/src/main/assets/adapters/ai-adapter-registry.js', 'utf8');
+const relayClient = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt', 'utf8');
+const systemDump = readFileSync('android/app/src/main/java/com/riftos/app/RiftSystemDump.kt', 'utf8');
 
 const checks = [
   ['desktop pins and running windows scroll independently of the clock', desktop.includes('taskbarScroll.append(taskbarOpen)') && desktopStyles.includes('flex:1 1 0;min-width:0;height:40px;overflow-x:auto') && desktopStyles.includes('rift-taskbar-tray{display:flex;align-items:center;gap:3px;flex:none')],
@@ -54,6 +56,7 @@ const checks = [
   ['web shell cannot exceed its host viewport', shellStyles.includes('.os{width:100%;max-width:100%;min-width:0;') && shellStyles.includes('.content{grid-row:2;position:relative;min-width:0;max-width:100%;')],
   ['native MCP coalesces identical retried tool calls', mcpServer.includes('private val inFlight') && mcpServer.includes('private val completed') && mcpServer.includes('completeRequest(key, response)')],
   ['MCP handshake reports the live manifest without claiming unsupported list-change notifications', mcpServer.includes('listChanged", false') && mcpServer.includes('toolHost.manifest()') && mcpServer.includes('riftos/toolCount') && mcpServer.includes('riftos/toolManifestHash')],
+  ['built APK carries exact source/build provenance', gradle.includes('RIFT_SOURCE_SHA') && gradle.includes('RIFT_BUILD_RUN_ID') && gradle.includes('RIFT_BUILD_RUN_NUMBER') && gradle.includes('buildConfig = true') && sandbox.includes('BuildConfig.RIFT_SOURCE_SHA') && mcpServer.includes('riftos/sourceSha') && relayClient.includes('BuildConfig.RIFT_SOURCE_SHA') && systemDump.includes('BuildConfig.RIFT_SOURCE_SHA')],
   ['rift_info exposes authoritative MCP manifest diagnostics through an already-stable tool', host.includes('mcpManifest') && host.includes('refreshClientActionsWhenCountDiffers') && host.includes('fun manifest(): JSONObject')],
   ['relay ignores stale socket close and response events', relayWorker.includes('if (socket !== this.socket) return;') && (relayWorker.match(/if \(socket !== this\.socket\) return;/g)||[]).length >= 3],
   ['relay never uses Durable Object payload storage', !relayWorker.includes('ctx.storage') && !relayWorker.includes('.storage.put') && !relayWorker.includes('.storage.get')],
@@ -69,6 +72,10 @@ const checks = [
   ['archive and extract are classified as writes', host.includes('"rift_archive", "rift_extract"') && host.includes('"archive", "extract")) return true')],
   ['retired Rift AI journal/session metadata is absent', !existsSync('android/app/src/main/java/com/riftos/app/RiftAiJournal.kt') && !host.includes('aiJournal') && !mcpServer.includes('riftos/aiSessionId')],
   ['workspace capability reports include hash/archive/extract', sandbox.includes('"stat", "hash", "list"') && sandbox.includes('"copy", "archive", "extract"')],
+  ['Project Intelligence v2 stays behind the existing project operation', sandbox.includes('"projectIntelligence", "v2"') && sandbox.includes('kind == "graph"') && sandbox.includes('kind == "impact"') && sandbox.includes('kind == "validation"') && !host.includes('rift_agent_')],
+  ['Project Intelligence v2 persists bounded app-private indexes', sandbox.includes('rift-project-intelligence-v2.json') && sandbox.includes('MAX_PERSISTED_INDEX_FILES') && sandbox.includes('persistProjectIntelligence()') && sandbox.includes('persistence", "app-private-v2')],
+  ['Project Intelligence v2 extracts dependency graph edges', sandbox.includes('extractDependencies(file, text)') && sandbox.includes('resolveDependency(path, sourcePath, dependency, allPaths)') && sandbox.includes('dependencyEdges') && sandbox.includes('unresolvedEdges')],
+  ['MCP model guidance advertises v2 without adding a new tool family', mcpServer.includes('Project Intelligence v2 behind the existing stable tool surface') && adapter.includes('Project Intelligence v2') && !adapter.includes('rift_agent_')],
   ['workspace delete fails closed', sandbox.includes('require(removed && !file.exists())')],
   ['workspace content writes are staged atomically', sandbox.includes('private fun writeBytesAtomic') && sandbox.includes('commitStaged(staged, file, label)')],
   ['successful native staged writes never roll back on backup cleanup failure', sandbox.indexOf('if (backedUp && !runCatching { deletePath(backup) }') > sandbox.indexOf('} catch (error: Throwable) {', sandbox.indexOf('private fun commitStaged('))],

@@ -26,7 +26,7 @@ Gradle `verifyRiftOsAndroidSources` rejects incomplete native snapshots. `syncRi
 
 ## External builder boundary
 
-The RiftOS source repository intentionally has no automatic Actions build. The separate public builder is manually dispatched against an exact source commit, then compiles/alines/signs/verifies the APK according to project policy.
+The RiftOS source repository intentionally has no automatic Actions build. The separate public builder is manually dispatched against an exact source commit, then compiles/alines/signs/verifies the APK according to project policy. Gradle stamps the builder-provided `SOURCE_SHA`, `GITHUB_RUN_ID` and `GITHUB_RUN_NUMBER` into generated `BuildConfig`; these values are exposed by `rift_info`, MCP initialize metadata and the privacy-limited system dump so an installed APK can be traced back to the exact source/build that produced it.
 
 ## Signing inputs and policy
 

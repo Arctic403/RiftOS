@@ -183,10 +183,13 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
             )
             .put("_meta", JSONObject()
                 .put("riftos/toolCount", manifest.getInt("count"))
-                .put("riftos/toolManifestHash", manifestHash))
+                .put("riftos/toolManifestHash", manifestHash)
+                .put("riftos/sourceSha", BuildConfig.RIFT_SOURCE_SHA)
+                .put("riftos/buildRunId", BuildConfig.RIFT_BUILD_RUN_ID)
+                .put("riftos/buildRunNumber", BuildConfig.RIFT_BUILD_RUN_NUMBER))
             .put(
                 "instructions",
-                "RiftOS workspace tools with Project Intelligence v1. All filesystem capabilities are hard-scoped to workspace/. Prefer rift_workspace_exec for local symbol/reference lookup, surgical reads/patches, dry-run validation and transactional multi-file work. The live manifest hash/count are returned for diagnostics. The tool list is static for this server process; clients that cached an older action catalog must explicitly refresh/rescan their MCP app actions after a RiftOS upgrade. Device-side permissions and audit remain authoritative across local and relay transports; there is no direct model API."
+                "RiftOS workspace tools with Project Intelligence v2 behind the existing stable tool surface. All filesystem capabilities are hard-scoped to workspace/. Prefer rift_workspace_exec for local project graph/impact analysis, symbol/reference lookup, surgical reads/patches, dry-run validation and transactional multi-file work. The project operation accepts kind=graph, kind=impact or kind=validation with query for focused analysis. The live manifest hash/count are returned for diagnostics. The tool list is static for this server process; clients that cached an older action catalog must explicitly refresh/rescan their MCP app actions after a RiftOS upgrade. Device-side permissions and audit remain authoritative across local and relay transports; there is no direct model API."
             )
     }
 

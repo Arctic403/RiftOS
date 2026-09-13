@@ -12,7 +12,7 @@ The diagnostics subsystem creates a privacy-limited JSON snapshot useful for deb
 
 ## Included information
 
-`build()` collects app/build/runtime information, Android/WebView characteristics, process uptime, heap/memory/storage summaries and aggregate RiftFS tree metrics. Tree summarization intentionally aggregates counts/bytes rather than dumping user file content.
+`build()` collects app/build/runtime information, including the generated source SHA/build-run fingerprint, Android/WebView characteristics, process uptime, heap/memory/storage summaries and aggregate RiftFS tree metrics. Tree summarization intentionally aggregates counts/bytes rather than dumping user file content.
 
 ## Privacy boundary
 

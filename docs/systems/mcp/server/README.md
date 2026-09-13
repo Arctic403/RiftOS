@@ -22,7 +22,7 @@ There is no listening socket in this class.
 
 Other methods dispatch immediately.
 
-`tools/list` returns `toolHost.tools()` plus RiftOS manifest count/hash metadata. `initialize` returns protocol/server identity, capabilities and the same manifest metadata. The tool catalog is static for a running process, so `tools.listChanged` is false.
+`tools/list` returns `toolHost.tools()` plus RiftOS manifest count/hash metadata. `initialize` returns protocol/server identity, capabilities, the same manifest metadata and the generated source/build fingerprint (`sourceSha`, build run id/number). The tool catalog is static for a running process, so `tools.listChanged` is false.
 
 ## Tool call framing
 

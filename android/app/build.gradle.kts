@@ -6,12 +6,23 @@ android {
     namespace = "com.riftos.app"
     compileSdk = 36
 
+    val riftSourceSha = System.getenv("SOURCE_SHA")?.trim().orEmpty().ifBlank { "local" }
+    val riftBuildRunId = System.getenv("GITHUB_RUN_ID")?.trim().orEmpty().ifBlank { "local" }
+    val riftBuildRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.trim().orEmpty().ifBlank { "local" }
+
     defaultConfig {
         applicationId = "com.riftos.app"
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
         versionName = "0.11.0-relay-client"
+        buildConfigField("String", "RIFT_SOURCE_SHA", "\"$riftSourceSha\"")
+        buildConfigField("String", "RIFT_BUILD_RUN_ID", "\"$riftBuildRunId\"")
+        buildConfigField("String", "RIFT_BUILD_RUN_NUMBER", "\"$riftBuildRunNumber\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     signingConfigs {

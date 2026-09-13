@@ -146,11 +146,11 @@
 
   function codeModeGuide() {
     if (!tools.some((tool) => tool.name === 'rift_workspace_exec')) return '';
-    return `\nRift Code Mode + Project Intelligence v1: prefer rift_workspace_exec so project inspection and edits run locally in one model-visible round trip. ` +
+    return `\nRift Code Mode + Project Intelligence v2: prefer rift_workspace_exec so project inspection and edits run locally in one model-visible round trip. Use project with kind graph, impact, or validation plus query for focused local analysis. ` +
       `Use one [RIFT_CALL] block. First line: call <unique-call-id> rift_workspace_exec. Add arguments with set <path> <value>. ` +
       `Nested values use dotted paths and numeric array indexes, for example: set operations.0.op list ; set operations.0.path workspace/RiftOS-main ; set operations.0.recursive true. ` +
       `For multiline text use a heredoc: set operations.1.text <<RIFT_TEXT, then the exact text, then a line containing only RIFT_TEXT. ` +
-      `Operations: project, snapshot, stat, list, search, symbols, references, read, read_range, read_symbol, write, replace, patch, patch_range, apply_hunks, mkdir, remove, move, rename, copy, archive. ` +
+      `Operations: project, snapshot, stat, hash, list, search, symbols, references, read, read_range, read_symbol, write, replace, patch, patch_range, apply_hunks, mkdir, remove, move, rename, copy, archive, extract. ` +
       `For nested patch edits use paths such as operations.0.edits.0.find and operations.0.edits.0.replace. For hunks use operations.0.hunks.0.startLine and operations.0.hunks.0.text. ` +
       `For large codebases, search symbols/references first, read only the exact symbol/range needed, then patch exact ranges/hunks using returned hashes instead of resending old source. ` +
       `Every batch is transactional: if any operation fails, all mutations are rolled back. The AI can access only workspace/. ` +

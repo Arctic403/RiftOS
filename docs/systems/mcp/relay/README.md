@@ -23,7 +23,7 @@ RiftMcpRelayClient
   -> mcp.response / mcp.error
 ```
 
-The relay is disabled unless explicitly configured. It accepts secure `wss://` configuration and reconnects with bounded exponential backoff plus jitter. Socket identity checks ignore stale events from a replaced connection.
+The relay is disabled unless explicitly configured. It accepts secure `wss://` configuration and reconnects with bounded exponential backoff plus jitter. Socket identity checks ignore stale events from a replaced connection. `device.hello` also carries the generated app version plus source/build fingerprint (`sourceSha`, build run id) for transport diagnostics; these fields are informational and do not grant authority.
 
 ## Authority boundary
 
