@@ -5,7 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Canonical device-side capability registry for the local Rift MCP server. */
-class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
+class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initialShellBridge: RiftShellBridge? = null) {
     companion object {
         private const val PREFS = "rift-mcp-tools"
         private const val LEGACY_PREFS = "rift-bridge"
@@ -21,6 +21,11 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val sandbox: RiftToolSandbox
+    @Volatile private var shellBridge: RiftShellBridge? = initialShellBridge
+
+    fun setShellBridge(bridge: RiftShellBridge) {
+        shellBridge = bridge
+    }
 
     init {
         migrateLegacyState()
@@ -49,6 +54,13 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     fun tools(): JSONArray = JSONArray()
+        .put(tool(
+            "rift_shell_exec",
+            "Execute an existing RiftShell command through the RiftOS web runtime. Does not expose raw Android shell access.",
+            objectSchema(JSONObject()
+                .put("command", stringProperty("RiftShell command to execute."))
+                .put("cwd", stringProperty("Optional RiftShell working directory.")), listOf("command"))
+        ))
         .put(tool("rift_info", "Inspect the local Rift MCP workspace sandbox and storage limits.", objectSchema()))
         .put(tool(
             "rift_stat",
@@ -188,6 +200,36 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     fun callAsync(rawName: String, args: JSONObject, aiSessionId: String? = null, reply: (JSONObject) -> Unit) {
         val name = canonicalName(rawName)
         val method = methodFor(name)
+        if (name == "rift_shell_exec") {
+            val command = args.optString("command").trim()
+            if (command.isBlank()) {
+                recordAudit(name, args, false, "command required")
+                aiJournal.recordTool(aiSessionId, name, args, "finish", false, "command required")
+                reply(JSONObject().put("ok", false).put("error", "command required"))
+                return
+            }
+            if (!isAllowed(name, args)) {
+                val error = "Rift MCP shell access is disabled on this device. Enable write access in Rift MCP settings."
+                recordAudit(name, args, false, error)
+                aiJournal.recordTool(aiSessionId, name, args, "finish", false, error)
+                reply(JSONObject().put("ok", false).put("error", error))
+                return
+            }
+            aiJournal.recordTool(aiSessionId, name, args, "start")
+            shellBridge?.execute(command, args.optString("cwd", "/")) { result ->
+                val ok = result.optBoolean("ok", false)
+                val error = if (ok) null else result.optString("error", "RiftShell execution failed")
+                recordAudit(name, args, ok, error)
+                aiJournal.recordTool(aiSessionId, name, args, "finish", ok, error)
+                reply(result)
+            } ?: run {
+                val error = "RiftShell bridge unavailable"
+                recordAudit(name, args, false, error)
+                aiJournal.recordTool(aiSessionId, name, args, "finish", false, error)
+                reply(JSONObject().put("ok", false).put("error", error))
+            }
+            return
+        }
         if (method == null) {
             val error = "Unsupported Rift tool: $rawName"
             recordAudit(rawName.take(120), args, false, error)
@@ -342,6 +384,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     private fun canonicalName(raw: String): String = when (raw.trim()) {
+        "shell", "rift_shell_exec" -> "rift_shell_exec"
         "info", "rift_info" -> "rift_info"
         "stat", "rift_stat" -> "rift_stat"
         "hash", "rift_hash" -> "rift_hash"
@@ -362,6 +405,7 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     private fun methodFor(name: String): String? = when (name) {
+        "rift_shell_exec" -> "shell.exec"
         "rift_info" -> "sandbox.info"
         "rift_stat" -> "fs.stat"
         "rift_hash" -> "fs.hash"
@@ -395,10 +439,11 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal) {
     }
 
     private fun requiresWrite(name: String, args: JSONObject): Boolean =
-        isWriteTool(name) || (name == "rift_workspace_exec" && workspaceBatchMutates(args))
+        isWriteTool(name) || name == "rift_shell_exec" || (name == "rift_workspace_exec" && workspaceBatchMutates(args))
 
     private fun isAllowed(name: String, args: JSONObject): Boolean = when {
         name == "rift_workspace_exec" -> allowRead() && (!requiresWrite(name, args) || allowWrite())
+        name == "rift_shell_exec" -> allowRead() && allowWrite()
         isWriteTool(name) -> allowWrite()
         methodFor(name) != null -> allowRead()
         else -> false

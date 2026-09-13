@@ -29,6 +29,7 @@ class RiftBrowserMcpAppBridge(
         )
     }
 
+    private val shellBridge = RiftShellBridge(webView)
     private val toolHost = RiftMcpRuntime.toolHost(activity)
     private val server = RiftMcpRuntime.server(activity)
     private val script = buildString {
@@ -40,6 +41,7 @@ class RiftBrowserMcpAppBridge(
     private var documentStartInstalled = false
 
     fun install() {
+        RiftMcpRuntime.registerShellBridge(shellBridge)
         if (installed) return
         require(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             "Android System WebView is too old for Rift MCP App messaging"
@@ -67,6 +69,10 @@ class RiftBrowserMcpAppBridge(
                         .put("id", JSONObject.NULL)
                         .put("error", JSONObject().put("code", -32700).put("message", "Invalid Rift MCP JSON"))
                 )
+                return@addWebMessageListener
+            }
+            if (request.optString("type") == "rift_shell_result") {
+                RiftMcpRuntime.shellBridge()?.receive(request.optJSONObject("result") ?: JSONObject())
                 return@addWebMessageListener
             }
             server.handleAsync(request, ::deliver)

@@ -423,6 +423,34 @@
     return false;
   }
 
+  window.RiftShellMcpNative = Object.freeze({
+    request(raw) {
+      try {
+        const payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const command = String(payload?.command || '').trim();
+        const cwd = String(payload?.cwd || '/');
+        if (!command) throw new Error('Missing shell command');
+        if (!window.RiftShellMcp?.execute) throw new Error('Rift shell runtime unavailable');
+        Promise.resolve(window.RiftShellMcp.execute(command, cwd)).then((result) => {
+          window.RiftMcpShellNativeResult?.({ id: payload.id, ...(result || {}) });
+        }).catch((error) => {
+          window.RiftMcpShellNativeResult?.({ id: payload.id, ok: false, error: String(error.message || error) });
+        });
+      } catch (error) {
+        try { const payload = typeof raw === 'string' ? JSON.parse(raw) : raw; window.RiftMcpShellNativeResult?.({ id: payload?.id, ok: false, error: String(error.message || error) }); } catch (_) {}
+      }
+    }
+  });
+
+  window.RiftMcpShellNativeResult = function(result) {
+    try {
+      window.RiftMcpNative?.postMessage(JSON.stringify({
+        type: 'rift_shell_result',
+        result
+      }));
+    } catch (_) {}
+  };
+
   function isVisible(element) {
     if (!(element instanceof Element)) return false;
     const rect = element.getBoundingClientRect();

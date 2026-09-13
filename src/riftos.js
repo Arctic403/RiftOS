@@ -626,6 +626,24 @@ window.RiftOSWindowManager=Object.freeze({
   showDesktop,
   sync:syncShellState
 });
+window.RiftShellMcp = Object.freeze({
+  async execute(command, cwd = '/') {
+    const state = { cwd: String(cwd || '/') };
+    const output = [];
+    const print = value => output.push(String(value ?? ''));
+    try {
+      const result = await runShell(String(command || ''), print, state);
+      return { ok: true, output: output.join('\\n'), cwd: state.cwd, result: result ?? null };
+    } catch (error) {
+      return { ok: false, output: output.join('\\n'), cwd: state.cwd, error: error.message };
+    }
+  }
+});
+
+window.RiftMcpShellNativeResult = result => {
+  try { window.RiftShellMcpResultHandler?.(result); } catch (_) {}
+};
+
 window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,openWorkspaceLive,closeWindow,showDesktop,setStatus});
 
 (async()=>{

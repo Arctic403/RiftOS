@@ -242,7 +242,9 @@ async function installPackageObject(pkg){
   await refreshLauncher();return app;
 }
 async function installPackageFile(file){
-  if(!file)throw new Error("No package selected.");if(file.size>MAX_PACKAGE_BYTES)throw new Error(".rift package is larger than 8 MB.");
+  if(!file)throw new Error("No package selected.");
+  if(!String(file.name||"").toLowerCase().endsWith(".rift"))throw new Error("Selected file is not a .rift package.");
+  if(file.size>MAX_PACKAGE_BYTES)throw new Error(".rift package is larger than 8 MB.");
   let parsed;try{parsed=JSON.parse(await file.text());}catch{throw new Error(".rift v1 packages are JSON containers.");}
   return installPackageObject(parsed);
 }

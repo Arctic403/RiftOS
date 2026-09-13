@@ -8,6 +8,7 @@ object RiftMcpRuntime {
     @Volatile private var host: RiftToolHost? = null
     @Volatile private var server: RiftMcpServer? = null
     @Volatile private var relay: RiftMcpRelayClient? = null
+    @Volatile private var shellBridge: RiftShellBridge? = null
 
     fun aiJournal(context: Context): RiftAiJournal {
         journal?.let { return it }
@@ -16,10 +17,17 @@ object RiftMcpRuntime {
         }
     }
 
+    fun shellBridge(): RiftShellBridge? = shellBridge
+
+    fun registerShellBridge(bridge: RiftShellBridge) {
+        shellBridge = bridge
+        host?.setShellBridge(bridge)
+    }
+
     fun toolHost(context: Context): RiftToolHost {
         host?.let { return it }
         return synchronized(this) {
-            host ?: RiftToolHost(context.applicationContext, aiJournal(context)).also { host = it }
+            host ?: RiftToolHost(context.applicationContext, aiJournal(context), shellBridge).also { host = it }
         }
     }
 
