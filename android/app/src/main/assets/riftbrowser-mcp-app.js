@@ -518,10 +518,6 @@
     for (const message of listAssistantMessages()) markHistoricalAssistantMessage(message);
   }
 
-  // Browser adapter is transport-only. It no longer modifies user messages or injects tool context into external AI composers.
-  function decorateOutgoingPrompt() {
-    return;
-  }
   async function sendComposerMessage(message, timeoutMs = 12000, options = {}) {
     pendingApprovedSubmission = { message, timeoutMs };
     sendAiEvent('waiting', 'Draft prepared. Copy and paste into the AI website manually.', { phase: 'draft-ready', requiresUserAction: true });
@@ -654,7 +650,6 @@ ${contextBlock()}`;
     setTimeout(() => { suppressDecoration = false; }, 800);
     scheduleCompletionCheck(1800);
     return true;
-    return true;
   }
 
   function queueAiTask(payload) {
@@ -675,6 +670,8 @@ ${contextBlock()}`;
     queuedAiPayload = payload;
     queueMicrotask(pumpAiTaskQueue);
     return { accepted: true, state: 'queued' };
+  }
+
   async function pumpAiTaskQueue() {
     if (taskPumpRunning || !queuedAiPayload) return;
     taskPumpRunning = true;
@@ -1446,17 +1443,6 @@ ${contextBlock()}`;
       sendAiEvent('error', `Rift MCP initialization failed: ${String(error && error.message || error)}`);
     }
 
-    document.addEventListener('click', (event) => {
-      const button = event.target instanceof Element ? event.target.closest('button') : null;
-      if (button && looksLikeSendButton(button)) decorateOutgoingPrompt();
-    }, true);
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
-      const composer = findComposer();
-      if (!composer) return;
-      if (event.target === composer || composer.contains(event.target)) decorateOutgoingPrompt();
-    }, true);
 
     // PERF_GUARD: mutations only enqueue the message elements they actually touched.
     // Never query every chat message for every streaming token.
