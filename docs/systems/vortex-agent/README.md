@@ -18,7 +18,7 @@ The agent complements, rather than replaces, the Vortex Binder/VTXScript bridge.
 
 `vortex-agent open` uses Android's normal launch intent for the hard-coded package `com.vortex3d.app`. It works whenever Vortex3D is installed, even when the Accessibility service is disabled.
 
-All UI inspection and interaction requires the user to enable **RiftOS Vortex Agent** in Android Accessibility settings. Android's service metadata filters events to `com.vortex3d.app`, and every action additionally rejects any active root whose package is not exactly `com.vortex3d.app`. Password nodes are never returned with text and cannot be clicked or edited by semantic actions.
+All UI inspection and interaction requires the user to enable **RiftOS Vortex Agent** in Android Accessibility settings. Android's service metadata filters events to `com.vortex3d.app`. Because ChatGPT can regain foreground focus between MCP calls, each UI operation may bring the one hard-coded Vortex package forward inside that same local call, wait up to three seconds for its Accessibility root, and then re-check that the active root is exactly `com.vortex3d.app` before any inspection or action. Password nodes are never returned with text and cannot be clicked or edited by semantic actions.
 
 The service does not request root, ADB, shell execution, screen-overlay authority, unrestricted package control or remote/network control. ChatGPT reaches it only through the already-existing `rift_shell_exec` -> trusted RiftShell path.
 
@@ -26,12 +26,12 @@ The service does not request root, ADB, shell execution, screen-overlay authorit
 
 - `vortex-agent status` — installed/service/foreground/action readiness.
 - `vortex-agent open` — launch or bring Vortex3D forward using its normal Android package intent.
-- `vortex-agent tree [limit]` — bounded Vortex-only Accessibility tree.
-- `vortex-agent click <text|content-description|view-id>` — exact semantic match, with clickable-parent fallback inside Vortex only.
-- `vortex-agent tap <x> <y>` — real Android accessibility gesture within display bounds while Vortex is foreground.
-- `vortex-agent swipe <x1> <y1> <x2> <y2> [ms]` — bounded real gesture while Vortex is foreground.
-- `vortex-agent type <target> <text>` — ACTION_SET_TEXT on an exact editable, non-password Vortex node.
-- `vortex-agent back` — Android Back only when Vortex is currently foreground.
+- `vortex-agent tree [limit]` — bounded Vortex-only Accessibility tree; self-activates Vortex when another app regained foreground.
+- `vortex-agent click <text|content-description|view-id>` — exact semantic match, with clickable-parent fallback inside Vortex only; self-activates Vortex first when needed.
+- `vortex-agent tap <x> <y>` — real Android accessibility gesture within display bounds after same-call Vortex activation/package verification.
+- `vortex-agent swipe <x1> <y1> <x2> <y2> [ms]` — bounded real gesture after same-call Vortex activation/package verification.
+- `vortex-agent type <target> <text>` — ACTION_SET_TEXT on an exact editable, non-password Vortex node after same-call activation.
+- `vortex-agent back` — Android Back only after the agent has activated and verified Vortex in the same call.
 
 Live agent commands are non-reversible and are rejected by RiftShell atomic batches.
 
@@ -39,7 +39,7 @@ Live agent commands are non-reversible and are rejected by RiftShell atomic batc
 
 - `open` says Vortex is not installed -> package `com.vortex3d.app` is absent or build/install failed.
 - `accessibility_connected=false` -> enable RiftOS Vortex Agent in Android Accessibility settings.
-- action says foreground package must be Vortex -> Vortex is not the active accessibility window; run `vortex-agent open` and retry after it appears.
+- action cannot activate Vortex -> package launch failed, Android denied the foreground transition, or Vortex did not expose an Accessibility root within the bounded activation timeout.
 - semantic target not found -> inspect `vortex-agent tree`; the view may lack text/content-description/resource id, in which case use a bounded coordinate gesture.
 - gesture rejected/cancelled -> Android accessibility service/lifecycle or invalid foreground transition.
 - JNI/engine state is wrong after a successful UI gesture -> inspect the separate Vortex bridge/VTXScript/engine owner rather than widening agent authority.

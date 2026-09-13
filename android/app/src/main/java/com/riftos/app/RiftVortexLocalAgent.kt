@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
@@ -27,6 +28,8 @@ object RiftVortexLocalAgent {
     private const val MAX_TREE_NODES = 1024
     private const val MAX_TEXT_CHARS = 4096
     private const val GESTURE_TIMEOUT_MS = 5_000L
+    private const val ACTIVATION_TIMEOUT_MS = 3_000L
+    private const val ACTIVATION_POLL_MS = 50L
 
     fun execute(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
@@ -34,12 +37,12 @@ object RiftVortexLocalAgent {
         return when (op) {
             "status" -> status(context)
             "open" -> open(context)
-            "tree" -> tree(args)
-            "click" -> click(args)
-            "tap" -> tap(args)
-            "swipe" -> swipe(args)
-            "type" -> type(args)
-            "back" -> back()
+            "tree" -> tree(context, args)
+            "click" -> click(context, args)
+            "tap" -> tap(context, args)
+            "swipe" -> swipe(context, args)
+            "type" -> type(context, args)
+            "back" -> back(context)
             else -> throw IllegalArgumentException("Unsupported Vortex local-agent operation: $op")
         }
     }
@@ -55,7 +58,8 @@ object RiftVortexLocalAgent {
             .put("active_package", activePackage)
             .put("vortex_foreground", activePackage == TARGET_PACKAGE)
             .put("launch_available", installed)
-            .put("ui_actions_available", service != null && activePackage == TARGET_PACKAGE)
+            .put("ui_actions_available", installed && service != null)
+            .put("actions_auto_activate", installed && service != null)
     }
 
     private fun open(context: Context): JSONObject {
@@ -69,8 +73,8 @@ object RiftVortexLocalAgent {
             .put("accessibility_connected", RiftVortexAccessibilityService.current() != null)
     }
 
-    private fun tree(args: JSONObject): JSONObject {
-        val root = requireVortexRoot()
+    private fun tree(context: Context, args: JSONObject): JSONObject {
+        val root = requireVortexRoot(context)
         val limit = args.optInt("limit", 256).coerceIn(1, MAX_TREE_NODES)
         val rows = JSONArray()
         val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
@@ -92,9 +96,9 @@ object RiftVortexLocalAgent {
             .put("truncated", total > limit)
     }
 
-    private fun click(args: JSONObject): JSONObject {
+    private fun click(context: Context, args: JSONObject): JSONObject {
         val target = requiredTarget(args)
-        val node = findNode(requireVortexRoot(), target)
+        val node = findNode(requireVortexRoot(context), target)
             ?: throw IllegalArgumentException("Vortex UI target not found: $target")
         rejectPassword(node)
         var actionNode: AccessibilityNodeInfo? = node
@@ -112,8 +116,8 @@ object RiftVortexLocalAgent {
             .put("node", nodeJson(node, 0))
     }
 
-    private fun tap(args: JSONObject): JSONObject {
-        val service = requireVortexServiceAndRoot().first
+    private fun tap(context: Context, args: JSONObject): JSONObject {
+        val service = requireVortexServiceAndRoot(context).first
         val x = finite(args, "x")
         val y = finite(args, "y")
         requirePoint(service, x, y)
@@ -122,8 +126,8 @@ object RiftVortexLocalAgent {
         return JSONObject().put("scope", TARGET_PACKAGE).put("tapped", true).put("x", x).put("y", y)
     }
 
-    private fun swipe(args: JSONObject): JSONObject {
-        val service = requireVortexServiceAndRoot().first
+    private fun swipe(context: Context, args: JSONObject): JSONObject {
+        val service = requireVortexServiceAndRoot(context).first
         val x1 = finite(args, "x1")
         val y1 = finite(args, "y1")
         val x2 = finite(args, "x2")
@@ -140,11 +144,11 @@ object RiftVortexLocalAgent {
             .put("duration_ms", duration)
     }
 
-    private fun type(args: JSONObject): JSONObject {
+    private fun type(context: Context, args: JSONObject): JSONObject {
         val target = requiredTarget(args)
         val text = args.optString("text")
         require(text.length <= MAX_TEXT_CHARS) { "Vortex agent text exceeds $MAX_TEXT_CHARS characters" }
-        val node = findNode(requireVortexRoot(), target)
+        val node = findNode(requireVortexRoot(context), target)
             ?: throw IllegalArgumentException("Vortex text target not found: $target")
         rejectPassword(node)
         require(node.isEditable) { "Vortex target is not editable: $target" }
@@ -156,25 +160,39 @@ object RiftVortexLocalAgent {
         return JSONObject().put("scope", TARGET_PACKAGE).put("typed", true).put("target", target).put("characters", text.length)
     }
 
-    private fun back(): JSONObject {
-        val (service, _) = requireVortexServiceAndRoot()
+    private fun back(context: Context): JSONObject {
+        val (service, _) = requireVortexServiceAndRoot(context)
         val ok = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
         if (!ok) throw IllegalStateException("Android rejected Back while Vortex3D was foreground")
         return JSONObject().put("scope", TARGET_PACKAGE).put("back", true)
     }
 
-    private fun requireVortexRoot(): AccessibilityNodeInfo = requireVortexServiceAndRoot().second
+    private fun requireVortexRoot(context: Context): AccessibilityNodeInfo = requireVortexServiceAndRoot(context).second
 
-    private fun requireVortexServiceAndRoot(): Pair<RiftVortexAccessibilityService, AccessibilityNodeInfo> {
+    private fun requireVortexServiceAndRoot(context: Context): Pair<RiftVortexAccessibilityService, AccessibilityNodeInfo> {
         val service = RiftVortexAccessibilityService.current()
             ?: throw IllegalStateException("RiftOS Vortex Agent accessibility service is not enabled")
-        val root = service.rootInActiveWindow
-            ?: throw IllegalStateException("No active Android accessibility window is available")
-        val packageName = root.packageName?.toString().orEmpty()
-        require(packageName == TARGET_PACKAGE) {
-            "Vortex Agent refuses to control $packageName; foreground package must be $TARGET_PACKAGE"
+        val current = service.rootInActiveWindow
+        if (current?.packageName?.toString() == TARGET_PACKAGE) return service to current
+
+        // MCP/ChatGPT can become foreground again between separate tool calls. Activate the one hard-coded
+        // target and finish the UI operation inside this same native call, then re-check the package before touch.
+        val launch = context.packageManager.getLaunchIntentForPackage(TARGET_PACKAGE)
+            ?: throw IllegalStateException("Vortex3D is not installed: $TARGET_PACKAGE")
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        context.startActivity(launch)
+
+        val deadline = SystemClock.elapsedRealtime() + ACTIVATION_TIMEOUT_MS
+        var lastPackage = current?.packageName?.toString().orEmpty()
+        while (SystemClock.elapsedRealtime() < deadline) {
+            SystemClock.sleep(ACTIVATION_POLL_MS)
+            val root = service.rootInActiveWindow
+            lastPackage = root?.packageName?.toString().orEmpty()
+            if (lastPackage == TARGET_PACKAGE && root != null) return service to root
         }
-        return service to root
+        throw IllegalStateException(
+            "Vortex Agent could not activate $TARGET_PACKAGE; last foreground package was ${lastPackage.ifBlank { "(none)" }}"
+        )
     }
 
     private fun findNode(root: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
