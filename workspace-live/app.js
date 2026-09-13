@@ -1,19 +1,11 @@
-const CHANNEL="riftworkspace-live-v2";
-let requestSeq=0;
-const pending=new Map();
+export function mountWorkspaceRecords(root,invoke,subscribe){
+let destroyed=false;
 const state={local:null,git:null,view:"local",selectedPath:"",selectedRecord:null,lastDiff:""};
 
-const $=selector=>document.querySelector(selector);
+const $=selector=>root.querySelector(selector);
 const liveDot=$("#liveDot"),liveText=$("#liveText"),checkpointText=$("#checkpointText"),localCount=$("#localCount"),recordCount=$("#recordCount"),gitCount=$("#gitCount"),gitHead=$("#gitHead"),filterInput=$("#filterInput"),localTab=$("#localTab"),gitTab=$("#gitTab"),changeList=$("#changeList"),recordList=$("#recordList"),diffTitle=$("#diffTitle"),diffMeta=$("#diffMeta"),diffOutput=$("#diffOutput"),copyDiffBtn=$("#copyDiffBtn"),affectedMeta=$("#affectedMeta"),statusText=$("#statusText");
 
-function rpc(method,args={}){
-  const id=`wr-${Date.now()}-${++requestSeq}`;
-  return new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>{pending.delete(id);reject(new Error(`Workspace Records RPC timeout: ${method}`));},45000);
-    pending.set(id,{resolve,reject,timer});
-    parent.postMessage({channel:CHANNEL,kind:"request",id,method,args},"*");
-  });
-}
+const rpc=(method,args={})=>invoke(method,args);
 function escapeHTML(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));}
 function fmtTime(value){const n=Number(value||0);return n?new Date(n).toLocaleString():"—";}
 function shortSha(value){const text=String(value||"");return text?text.slice(0,12):"—";}
@@ -69,38 +61,34 @@ function selectRecord(id){const row=(state.local?.records||[]).find(item=>item.i
 
 async function refreshLocal({preserveSelection=true}={}){
   const previous=preserveSelection?state.selectedPath:"";
-  state.local=await rpc("records",{limit:220,includeDiff:true});
+  const result=await rpc("records",{limit:220,includeDiff:true});
+  if(destroyed)return;
+  state.local=result;
   renderSummary();renderRecords();renderChanges();
   if(previous){const row=findVisible(previous);if(row)showDiff(row);}
   else if(!state.selectedRecord&&state.local.records?.length)showDiff(state.local.records[0],{record:true});
 }
 async function refreshGit(){
-  try{state.git=await rpc("gitDiff",{maxFiles:60,maxChars:360000});}
-  catch(error){state.git={error:error.message,files:[],summary:{total:0}};}
+  try{const result=await rpc("gitDiff",{maxFiles:60,maxChars:360000});if(destroyed)return;state.git=result;}
+  catch(error){if(destroyed)return;state.git={error:error.message,files:[],summary:{total:0}};}
   renderSummary();if(state.view==="git")renderChanges();
 }
 async function refreshAll(){
   setStatus("Refreshing local records…");
   try{
     await refreshLocal();
+    if(destroyed)return;
     setStatus(`Updated ${new Date().toLocaleTimeString()}`);
-  }catch(error){setStatus(error.message,true);throw error;}
+  }catch(error){if(destroyed)return;setStatus(error.message,true);checkpointText.textContent=`Could not read local history: ${error.message}`;recordList.innerHTML='<div class="empty">Local records unavailable. Tap Refresh to retry.</div>';changeList.innerHTML='<div class="empty">Local records unavailable.</div>';throw error;}
 }
 
 let eventRefreshTimer=0;
 function handleNativeEvent(){
+  if(destroyed)return;
   clearTimeout(eventRefreshTimer);
   eventRefreshTimer=setTimeout(()=>refreshLocal().catch(error=>setStatus(error.message,true)),350);
 }
-
-window.addEventListener("message",event=>{
-  const message=event.data;if(!message||message.channel!==CHANNEL)return;
-  if(message.kind==="response"){
-    const waiter=pending.get(message.id);if(!waiter)return;clearTimeout(waiter.timer);pending.delete(message.id);message.ok?waiter.resolve(message.value):waiter.reject(new Error(message.error||"Workspace Records RPC failed"));return;
-  }
-  if(message.kind==="event"&&message.event){handleNativeEvent();return;}
-  if(message.kind==="connected"){setLive(!!message.watch?.active);}
-});
+const unsubscribe=subscribe(handleNativeEvent);
 
 changeList.addEventListener("click",event=>{const row=event.target.closest("[data-path]");if(row)selectPath(row.dataset.path);});
 recordList.addEventListener("click",event=>{const row=event.target.closest("[data-record-id]");if(row)selectRecord(row.dataset.recordId);});
@@ -110,9 +98,10 @@ gitTab.onclick=()=>{state.view="git";state.selectedPath="";state.selectedRecord=
 $("#refreshBtn").onclick=()=>refreshAll().catch(()=>{});
 copyDiffBtn.onclick=async()=>{
   try{await navigator.clipboard.writeText(state.lastDiff);setStatus("Diff copied");}
-  catch{setStatus("Clipboard unavailable in sandbox; select and copy the diff manually",true);}
+  catch{setStatus("Clipboard unavailable; select and copy the diff manually",true);}
 };
 
-parent.postMessage({channel:CHANNEL,kind:"ready"},"*");
-rpc("info").then(info=>setLive(!!info?.watch?.active)).catch(error=>setStatus(error.message,true));
+rpc("info").then(info=>{if(!destroyed)setLive(!!info?.watch?.active);}).catch(error=>{if(!destroyed){setLive(false);setStatus(error.message,true);}});
 refreshAll().catch(()=>{});
+return {destroy(){destroyed=true;clearTimeout(eventRefreshTimer);unsubscribe();}};
+}

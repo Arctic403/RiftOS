@@ -3,8 +3,6 @@ const workspace=window.RiftWorkspace;
 const git=window.RiftGit;
 if(!core?.native?.connected||!workspace?.available)throw new Error("Rift Workspace Records requires Android RiftWorkspace");
 
-const CHANNEL="riftworkspace-live-v2";
-const LIVE_EVENT_WINDOW_MS=120;
 const nativeListeners=new Set();
 let watcherState={active:false};
 
@@ -40,49 +38,41 @@ async function invoke(method,args={}){
   }
 }
 
+function subscribe(listener){nativeListeners.add(listener);return()=>nativeListeners.delete(listener);}
+
 function mount(container){
   if(!(container instanceof HTMLElement))throw new Error("Workspace Records mount requires an HTML container");
   container.classList.add("rift-workspace-live-window-body");
-  container.innerHTML='<iframe class="rift-workspace-live-frame" title="Rift Workspace Records" src="./workspace-live/index.html" sandbox="allow-scripts"></iframe>';
-  const frame=container.querySelector("iframe");
-  let destroyed=false;
-  const send=message=>{if(!destroyed&&frame.contentWindow)frame.contentWindow.postMessage({channel:CHANNEL,...message},"*");};
-  let nativeEventTimer=0,nativeEventCount=0;
-  const pendingNativeEvents=new Map();
-  const flushNativeEvents=()=>{
-    clearTimeout(nativeEventTimer);nativeEventTimer=0;
-    if(destroyed||!pendingNativeEvents.size)return;
-    const events=[...pendingNativeEvents.values()];pendingNativeEvents.clear();
-    const count=nativeEventCount;nativeEventCount=0;
-    send({kind:"event",event:{type:"batch",source:"workspace-watcher",count,at:Date.now(),paths:events.map(item=>item.path),events}});
-  };
-  const onNativeEvent=event=>{
-    const next=event&&typeof event==="object"?event:{};
-    const key=`${next.path||""}\u0000${next.directory?"d":"f"}`;
-    const previous=pendingNativeEvents.get(key);
-    pendingNativeEvents.set(key,{...next,occurrences:(previous?.occurrences||0)+1});
-    nativeEventCount++;
-    clearTimeout(nativeEventTimer);nativeEventTimer=setTimeout(flushNativeEvents,LIVE_EVENT_WINDOW_MS);
-  };
-  nativeListeners.add(onNativeEvent);
-
-  const onMessage=async event=>{
-    if(destroyed||event.source!==frame.contentWindow)return;
-    const message=event.data;if(!message||message.channel!==CHANNEL)return;
-    if(message.kind==="ready"){
-      core.native.call("workspace.watch.state",{}).then(state=>{watcherState=state||{active:false};send({kind:"connected",watch:watcherState});}).catch(()=>send({kind:"connected",watch:{active:false}}));
-      return;
+  const shadow=container.attachShadow({mode:"open"});
+  const stylesheet=document.createElement("link");
+  stylesheet.rel="stylesheet";
+  stylesheet.href=new URL("../workspace-live/style.css",import.meta.url).href;
+  const loading=document.createElement("div");
+  loading.className="rift-records-loading";
+  loading.textContent="Loading local Workspace Records…";
+  shadow.append(stylesheet,loading);
+  let destroyed=false,cleanup=null;
+  const destroy=()=>{if(destroyed)return;destroyed=true;cleanup?.();shadow.replaceChildren();};
+  (async()=>{
+    try{
+      const [response,view]=await Promise.all([
+        fetch(new URL("../workspace-live/index.html",import.meta.url)),
+        import("../workspace-live/app.js")
+      ]);
+      if(!response.ok)throw new Error(`Workspace Records template failed: ${response.status}`);
+      const template=new DOMParser().parseFromString(await response.text(),"text/html").querySelector(".records-app");
+      if(!template)throw new Error("Workspace Records template is missing");
+      if(destroyed)return;
+      shadow.append(document.importNode(template,true));
+      loading.remove();
+      cleanup=view.mountWorkspaceRecords(shadow,invoke,subscribe).destroy;
+    }catch(error){
+      if(destroyed)return;
+      loading.textContent=`Workspace Records could not start: ${error?.message||error}`;
+      console.error("[RiftWorkspaceRecords] mount failed",error);
     }
-    if(message.kind!=="request"||!message.id)return;
-    try{send({kind:"response",id:message.id,ok:true,value:await invoke(message.method,message.args||{})});}
-    catch(error){send({kind:"response",id:message.id,ok:false,error:error?.message||String(error)});}
-  };
-  window.addEventListener("message",onMessage);
-
-  const destroy=()=>{
-    if(destroyed)return;destroyed=true;clearTimeout(nativeEventTimer);pendingNativeEvents.clear();nativeListeners.delete(onNativeEvent);window.removeEventListener("message",onMessage);frame.src="about:blank";
-  };
-  return {destroy,frame};
+  })();
+  return {destroy,root:shadow};
 }
 
 window.RiftWorkspaceLiveHost=Object.freeze({mount,invoke,get watch(){return {...watcherState};}});

@@ -20,7 +20,7 @@ filesDir/riftfs/workspace
 
 ## Workspace Records surface
 
-The historical `workspace-live/` asset folder now ships the **Workspace Records** dashboard. It is rendered inside RiftOS as a sandboxed iframe and observes the same canonical `filesDir/riftfs/workspace` tree used by Files, RiftWorkspace and the MCP tool sandbox.
+The historical `workspace-live/` asset folder ships the **Workspace Records** dashboard. It is mounted as a trusted-shell component inside a shadow root and observes the same canonical `filesDir/riftfs/workspace` tree used by Files, RiftWorkspace and the MCP tool sandbox.
 
 ```text
                     filesDir/riftfs/workspace
@@ -36,14 +36,12 @@ The historical `workspace-live/` asset folder now ships the **Workspace Records*
                      /                 \
          rift_workspace_diff       trusted shell host
                                          |
-                                 narrow postMessage RPC
+                                 direct local records calls
                                          |
-                              sandboxed records dashboard
+                              trusted Records component
 ```
 
-The dashboard does **not** receive `RiftAndroid`, `RiftWorkspace`, MCP, RiftShell, or a generic filesystem object. Its parent host exposes records/info/read and Git-diff queries plus a records-only checkpoint action. It deliberately has no direct workspace write/remove/move/copy/mkdir RPC.
-
-The iframe uses `sandbox="allow-scripts"` and intentionally omits `allow-same-origin`, giving it an opaque origin even though its assets are packaged locally.
+The dashboard is trusted code in the main shell realm, not a guest page. `RiftWorkspaceLiveHost` mounts its packaged template and module directly, subscribes to local native watcher events, and calls the records/info/Git-diff APIs without a server or iframe messaging. The shadow root isolates its styles and element IDs, **not its authority**: dashboard code can access the same trusted globals as other RiftOS shell modules. Installed app and browser guest isolation remains separate.
 
 ## Persistent filesystem observation
 
@@ -65,11 +63,11 @@ The local records/checkpoint diff is private and network-independent. It is expo
 
 The dashboard's Git tab uses `RiftGit.workspaceDiff()` to compare `/workspace/RiftOS-main` against the current remote `Arctic403/RiftOS#main` tree. Successful workspace Git push/pull creates a new records checkpoint tagged with the resulting Git head SHA.
 
-A manual **New checkpoint** only updates record-baseline metadata. It does not approve, reject, accept, deny, rollback, or alter workspace files.
+The UI no longer offers a manual checkpoint button. A Git sync updates only the comparison baseline, never the persistent activity history.
 
 ## Public workspace operations
 
-RiftWorkspace itself still supports controlled list/stat/read/write/mkdir/remove/move/copy plus snapshot and project patch/history surfaces used by other RiftOS tooling. Those mutation APIs are **not** exposed to the Workspace Records iframe.
+RiftWorkspace still supports controlled list/stat/read/write/mkdir/remove/move/copy plus snapshot and project patch/history surfaces used by other trusted RiftOS tooling. The Records UI calls only observational APIs, but it is no longer an isolation boundary against other shell globals.
 
 Path normalization prevents escaping the workspace/RiftFS boundary.
 
@@ -88,4 +86,4 @@ Normal guest webpages never receive RiftWorkspace or unrestricted RiftFS authori
 
 ## Why no localhost server
 
-The records UI is packaged with RiftOS and communicates through the existing trusted-shell/iframe boundary, so it needs no TCP listener, LAN port, remote service, API key, or cloud file service. Persistent records remain app-private on the device.
+The records UI is packaged with RiftOS and executes in the trusted shell, so it needs no TCP listener, LAN port, remote service, API key, or cloud file service. Persistent records remain app-private on the device.

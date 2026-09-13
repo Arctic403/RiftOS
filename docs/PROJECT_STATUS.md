@@ -42,7 +42,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - RiftRT v1 worker/iframe/WASM application runtime.
 - Rift MCP system app for local read/write permissions and recent tool activity.
 - RiftBrowser-owned renderer surface with a swappable `RiftBrowserEngine` backend.
-- Workspace Records private sandboxed dashboard with persistent writer-agnostic history, local checkpoint diffs and remote Git comparison.
+- Workspace Records trusted-shell dashboard with persistent writer-agnostic history, local checkpoint diffs and optional remote Git comparison.
 
 ### RiftBrowser
 
@@ -57,7 +57,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 ### Workspace Records
 
 - Packaged local HTML records dashboard; no localhost TCP server or cloud file service.
-- Sandboxed iframe omits `allow-same-origin` and receives only a narrow read/records/Git RPC; it cannot directly write/remove/move/copy/mkdir workspace content.
+- Direct trusted-shell component mounts in a shadow root, reads local records via native calls, and makes the optional Git comparison only on demand. The shadow root separates styles, not shell privileges.
 - Recursive native watcher starts with the RiftOS shell and is scoped to `filesDir/riftfs/workspace`.
 - `RiftWorkspaceRecords` persists event history and local checkpoint state outside the workspace tree.
 - Files, MCP, RiftWorkspace, RiftGit, shell/process and other local writers converge into the same record stream.

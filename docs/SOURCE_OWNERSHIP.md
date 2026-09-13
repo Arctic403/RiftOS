@@ -97,6 +97,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `scripts/test-rift-ai-adapters.mjs` | `docs/systems/build-validation/README.md` + AI adapters |
 | `scripts/test-rift-app-import.mjs` | `docs/systems/build-validation/README.md` + apps |
 | `scripts/test-rift-raw-protocol.mjs` | `docs/systems/build-validation/README.md` + browser MCP compatibility |
+| `scripts/test-rift-workspace-records.mjs` | `docs/systems/build-validation/README.md` + workspace records |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
 | `scripts/validate-rift-wiring.mjs` | `docs/systems/build-validation/README.md` |

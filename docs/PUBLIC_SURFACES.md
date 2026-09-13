@@ -26,7 +26,7 @@ This inventory documents deliberate `Rift*` globals/bridge names. A zero-consume
 | `RiftShellMcpNative` | `riftos.js` | Trusted-shell native request shim used only by `RiftShellBridge`; returns `mcp.shell.result` over `RiftNativeTransport`. |
 | `RiftWorkspace` | `riftworkspace-web.js`, replaced by `riftworkspace-android-adapter.js` | Active workspace API. Android adapter is authoritative on Android. |
 | `RiftWorkspaceJSON` | `riftworkspace-web.js` | JSON-safe trusted compatibility/RPC facade; resolves the active `RiftWorkspace` at call time. |
-| `RiftWorkspaceLiveHost` | `riftworkspace-live-host.js` | Compatibility-named parent host for the sandboxed Workspace Records iframe. |
+| `RiftWorkspaceLiveHost` | `riftworkspace-live-host.js` | Compatibility-named trusted-shell host for the local Workspace Records component. |
 | `RiftWorkspaceNative` | `riftworkspace-live-host.js` | Trusted-shell callback surface receiving native workspace watcher events. |
 | `RiftRuntime` | `riftruntime.js` | Read-only runtime/capability report. |
 | `RiftRT` | `riftrt.js` | RiftRT launch/session/manager API. |
@@ -46,9 +46,9 @@ These names exist only on exact allowed HTTPS origins and are not equivalent to 
 
 The guest page must **not** contain `RiftAndroid`, `RiftShellMcp`, `RiftShellMcpNative`, RiftFS, RiftWorkspace or a general native dispatcher surface.
 
-## Sandboxed installed-app / Workspace Records surfaces
+## Sandboxed installed-app surfaces
 
-Installed `.rift` apps and Workspace Records do not receive the trusted globals above. They use narrow `postMessage`/injected `Rift` APIs whose method sets are cross-checked by `scripts/validate-rift-wiring.mjs`.
+Installed `.rift` apps do not receive the trusted globals above. They use narrow `postMessage`/injected `Rift` APIs whose method sets are cross-checked by `scripts/validate-rift-wiring.mjs`. Workspace Records is a trusted shell component with access to these globals; its shadow root isolates layout only.
 
 ## Change rule
 

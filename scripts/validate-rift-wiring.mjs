@@ -105,7 +105,7 @@ if (!workspaceWeb.includes('const activeWorkspace=window.RiftWorkspace||workspac
 if (!workspaceAdapter.includes('window.RiftWorkspace=workspace;')) failures.push('Android workspace adapter does not replace window.RiftWorkspace');
 const workspaceRecordsHost = read('src/riftworkspace-live-host.js');
 if (!workspaceRecordsHost.includes('./workspace-live/index.html')) failures.push('Workspace Records host does not reference workspace-live/index.html');
-if (!workspaceRecordsHost.includes('riftworkspace-live-v2') || /case \"write\"|case \"remove\"|case \"move\"|case \"copy\"|case \"mkdir\"/.test(workspaceRecordsHost)) failures.push('Workspace Records host regained a direct workspace mutation RPC');
+if (!workspaceRecordsHost.includes('attachShadow({mode:"open"})') || !workspaceRecordsHost.includes('mountWorkspaceRecords(shadow,invoke,subscribe)') || workspaceRecordsHost.includes('<iframe') || /case "write"|case "remove"|case "move"|case "copy"|case "mkdir"/.test(workspaceRecordsHost)) failures.push('Workspace Records trusted-shell mount or read-only UI contract regressed');
 
 // Manifest component wiring: every Activity declaration has source and every Activity source is declared.
 const manifest = read('android/app/src/main/AndroidManifest.xml');
