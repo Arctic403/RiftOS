@@ -40,7 +40,7 @@ filesDir/riftfs/workspace
 - `tools/list`
 - `tools/call`
 
-The browser adapter obtains tool definitions through `tools/list`; schemas are not duplicated in the page asset. The server fingerprints the live tool manifest into `serverInfo.version`, returns the manifest hash/count in MCP metadata, and advertises `tools.listChanged=true` so reconnecting clients can invalidate stale tool-schema caches after RiftOS gains or changes tools.
+The browser adapter obtains tool definitions through `tools/list`; schemas are not duplicated in the page asset. The server fingerprints the live tool manifest into `serverInfo.version` and returns the manifest hash/count in MCP metadata. The tool catalog is static for a running RiftOS process, so the server correctly advertises `tools.listChanged=false`. `rift_info` also returns the authoritative MCP manifest so a stale client scan can be diagnosed through a tool that has existed since the original connector. Remote clients may cache their own action catalog; after a RiftOS upgrade, refresh/rescan the client app actions when its exposed count differs from the device manifest count.
 
 ## Tool host
 

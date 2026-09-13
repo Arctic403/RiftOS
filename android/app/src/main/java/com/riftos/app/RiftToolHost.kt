@@ -3,6 +3,7 @@ package com.riftos.app
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 
 /** Canonical device-side capability registry for the local Rift MCP server. */
 class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initialShellBridge: RiftShellBridge? = null) {
@@ -51,6 +52,23 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
             .putBoolean(PREF_ALLOW_WRITE, write)
             .apply()
         return access()
+    }
+
+    fun manifest(): JSONObject {
+        val definitions = tools()
+        val names = JSONArray()
+        for (index in 0 until definitions.length()) {
+            val name = definitions.optJSONObject(index)?.optString("name")?.trim().orEmpty()
+            if (name.isNotBlank()) names.put(name)
+        }
+        val hash = MessageDigest.getInstance("SHA-256")
+            .digest(definitions.toString().toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return JSONObject()
+            .put("count", definitions.length())
+            .put("names", names)
+            .put("sha256", hash)
+            .put("scope", SCOPE)
     }
 
     fun tools(): JSONArray = JSONArray()
@@ -288,11 +306,19 @@ class RiftToolHost(context: Context, private val aiJournal: RiftAiJournal, initi
             if (response?.optBoolean("ok", false) == true) {
                 recordAudit(name, normalizedArgs, true, null)
                 aiJournal.recordTool(aiSessionId, name, normalizedArgs, "finish", true, null)
+                val value = response.opt("value") ?: JSONObject.NULL
+                if (name == "rift_info" && value is JSONObject) {
+                    value.put("mcpManifest", manifest())
+                    value.put("connectorRefresh", JSONObject()
+                        .put("toolListStaticForProcess", true)
+                        .put("refreshClientActionsWhenCountDiffers", true)
+                        .put("note", "If a client exposes fewer tools than mcpManifest.count, refresh/rescan that client's MCP app actions; reconnecting the relay alone does not replace a cached client action catalog."))
+                }
                 reply(
                     JSONObject()
                         .put("ok", true)
                         .put("name", name)
-                        .put("value", response.opt("value") ?: JSONObject.NULL)
+                        .put("value", value)
                 )
             } else {
                 val error = response?.optString("error")?.takeIf { it.isNotBlank() } ?: "Rift sandbox call failed"

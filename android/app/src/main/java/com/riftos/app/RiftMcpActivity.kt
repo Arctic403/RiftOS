@@ -110,12 +110,17 @@ class RiftMcpActivity : Activity() {
             }
         }, matchWidth())
         content.addView(Button(this).apply {
-            text = "Reconnect now"
+            text = "Reconnect relay now"
             setOnClickListener {
                 relay.reload()
                 refreshStatus()
             }
         }, matchWidth())
+        content.addView(TextView(this).apply {
+            text = "If ChatGPT shows fewer tools than the manifest count below, refresh/rescan the RiftOS app actions in ChatGPT. Reconnecting the relay only reconnects transport; it does not replace ChatGPT's cached action catalog."
+            textSize = 12f
+            setPadding(0, 8, 0, 8)
+        })
         content.addView(Button(this).apply {
             text = "Forget pairing token"
             setOnClickListener {
@@ -187,9 +192,11 @@ class RiftMcpActivity : Activity() {
         if (!::statusView.isInitialized) return
         val access = host.access()
         val relayStatus = relay.status()
+        val manifest = host.manifest()
         statusView.text = buildString {
             append("Mode: native MCP with optional relay")
-            append("\nTools: ").append(host.tools().length())
+            append("\nTools: ").append(manifest.optInt("count"))
+            append("\nManifest: ").append(manifest.optString("sha256").take(12))
             append("\nWorkspace: ").append(access.optString("workspaceScope", "riftfs/workspace"))
             append("\nScope: workspace only")
             append("\nRead tools: ").append(if (access.optBoolean("sandboxRead", true)) "allowed" else "blocked")
