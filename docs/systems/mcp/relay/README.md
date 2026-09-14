@@ -19,7 +19,7 @@ RiftMcpRelayClient
   -> outbound WSS /device with bearer token + device ID + protocol header
   -> relay.ready
   <- mcp.request envelopes
-  -> RiftMcpServer.handleAsync(payload)
+  -> RiftMcpServer.handleAsync(payload, requestId)
   -> mcp.response / mcp.error
 ```
 
@@ -27,7 +27,7 @@ The relay is disabled unless explicitly configured. It accepts secure `wss://` c
 
 ## Authority boundary
 
-The relay is transport-only. It cannot call RiftFS directly, cannot override tool grants and cannot widen MCP's workspace sandbox. All received MCP JSON-RPC is forwarded to the existing local server.
+The relay is transport-only. It cannot call RiftFS directly, cannot override tool grants and cannot widen MCP's workspace sandbox. All received MCP JSON-RPC is forwarded to the existing local server. The relay envelope `requestId` is also the only completed-response retry key supplied to the server: retrying the same envelope is idempotent, while a new envelope carrying the same tool call executes fresh.
 
 ## State
 

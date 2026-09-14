@@ -97,6 +97,8 @@ class RiftNativeDesktop(
     private val showDesktopButton = Button(activity)
     private val handler = Handler(Looper.getMainLooper())
     private val windows = LinkedHashMap<String, WindowRecord>()
+    private val showDesktopRestoreIds = LinkedHashSet<String>()
+    private var showDesktopRestoreActiveId: String? = null
     private var launcherApps = defaultApps()
     private val taskbarPins = LinkedHashSet<String>()
     private var runtimeReady = false
@@ -364,6 +366,7 @@ class RiftNativeDesktop(
     }
 
     private fun open(args: JSONObject): JSONObject {
+        clearShowDesktopRestore()
         val id = args.optString("id").trim()
         require(id.isNotBlank()) { "desktop window id is required" }
         val title = args.optString("title", id).trim().ifBlank { id }.take(96)
@@ -472,6 +475,7 @@ class RiftNativeDesktop(
     }
 
     private fun focus(id: String, reason: String): JSONObject {
+        clearShowDesktopRestore()
         val record = windows[id] ?: return stateObject(reason, sequence)
         record.minimized = false
         focusInternal(record)
@@ -491,6 +495,8 @@ class RiftNativeDesktop(
     }
 
     private fun close(id: String, reason: String): JSONObject {
+        showDesktopRestoreIds.remove(id)
+        if (showDesktopRestoreActiveId == id) showDesktopRestoreActiveId = null
         val record = windows.remove(id) ?: return stateObject(reason, sequence)
         removeWindowViews(record)
         if (activeId == id) {
@@ -504,6 +510,7 @@ class RiftNativeDesktop(
     }
 
     private fun minimize(id: String, reason: String): JSONObject {
+        clearShowDesktopRestore()
         val record = windows[id] ?: return stateObject(reason, sequence)
         record.minimized = true
         hideWindowChrome(record)
@@ -517,6 +524,7 @@ class RiftNativeDesktop(
     }
 
     private fun maximize(id: String, reason: String): JSONObject {
+        clearShowDesktopRestore()
         val record = windows[id] ?: return stateObject(reason, sequence)
         if (!record.maximized) record.restoreBounds = Rect(record.bounds)
         record.maximized = true
@@ -530,6 +538,7 @@ class RiftNativeDesktop(
     }
 
     private fun restore(id: String, reason: String): JSONObject {
+        clearShowDesktopRestore()
         val record = windows[id] ?: return stateObject(reason, sequence)
         record.minimized = false
         if (record.maximized) {
@@ -564,19 +573,49 @@ class RiftNativeDesktop(
         record.resizeHandle.contentDescription = "Resize ${record.title}"
     }
 
+    private fun clearShowDesktopRestore() {
+        showDesktopRestoreIds.clear()
+        showDesktopRestoreActiveId = null
+    }
+
     private fun showDesktop(): JSONObject {
-        windows.values.forEach {
-            it.minimized = true
-            hideWindowChrome(it)
+        val visible = windows.values.filter { !it.minimized }
+        if (visible.isNotEmpty()) {
+            showDesktopRestoreIds.clear()
+            visible.sortedBy { it.z }.forEach { record ->
+                showDesktopRestoreIds += record.id
+                record.minimized = true
+                hideWindowChrome(record)
+            }
+            showDesktopRestoreActiveId = activeId?.takeIf { it in showDesktopRestoreIds }
+            activeId = null
+            statusTitle.text = "Native desktop"
+            startMenu.visibility = View.GONE
+            syncTaskbar()
+            return publish("show-desktop")
         }
-        activeId = null
-        statusTitle.text = "Native desktop"
-        startMenu.visibility = View.GONE
+
+        val restore = showDesktopRestoreIds.mapNotNull { windows[it] }.filter { it.minimized }
+        if (restore.isNotEmpty()) {
+            restore.forEach { record ->
+                record.minimized = false
+                applyRecordLayout(record)
+            }
+            val preferred = showDesktopRestoreActiveId?.let { windows[it] }?.takeIf { it in restore }
+                ?: restore.maxByOrNull { it.z }
+            clearShowDesktopRestore()
+            if (preferred != null) focusInternal(preferred)
+            syncTaskbar()
+            return publish("show-desktop-restore")
+        }
+
+        clearShowDesktopRestore()
         syncTaskbar()
         return publish("show-desktop")
     }
 
     private fun resetLayout(): JSONObject {
+        clearShowDesktopRestore()
         var offset = 0
         windows.values.sortedBy { it.z }.forEach { record ->
             record.maximized = false

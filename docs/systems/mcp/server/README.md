@@ -18,7 +18,7 @@ There is no listening socket in this class.
 
 ## Request flow
 
-`handleAsync()` treats `tools/call` specially for idempotency. A canonical JSON representation is hashed into a request key. Identical in-flight tool calls share waiters; recently completed identical calls can return a cached response for a short TTL. This protects local mutations from duplicate execution if an HTTP/relay response is lost and retried.
+`handleAsync()` has two modes. Direct/local MCP calls dispatch immediately and always execute fresh, even when tool name and arguments are identical to a recent call. The remote relay uses the overload that supplies its transport `requestId`; only that path enables retry coalescing/completed-response replay. The retry key combines the relay request ID with a canonical hash of the JSON-RPC request, so a lost relay response can be retried without executing the same mutation twice while a genuinely new repeated command is never mistaken for a retry.
 
 Other methods dispatch immediately.
 
@@ -31,7 +31,7 @@ Other methods dispatch immediately.
 ## Critical invariants
 
 - The server never owns filesystem permission policy; the host does.
-- Duplicate retry coalescing must never merge non-identical canonical requests.
+- Duplicate retry coalescing is relay-scoped and must never merge non-identical canonical requests or distinct fresh invocations.
 - Client-provided tool names/arguments are not trusted until host validation.
 - Private call-correlation metadata is not part of model-visible tool schemas.
 - `tools/list` must be generated from the same host registry used for execution.
@@ -39,7 +39,8 @@ Other methods dispatch immediately.
 ## Failure signatures
 
 - `tools/list` count differs from host manifest in the same process -> server regression.
-- Duplicate mutation occurs after network retry -> idempotency key/cache path.
+- Duplicate mutation occurs after relay retry -> relay request-id/cache path.
+- Repeating the same successful tool call returns old live state -> local/direct call accidentally entered the completed retry cache.
 - Tool executed but MCP client sees malformed result -> result framing here.
 - Method-not-found for valid MCP method -> dispatch table.
 
@@ -49,4 +50,4 @@ Patch this class for MCP protocol framing, request correlation, idempotency or s
 
 ## Validation
 
-`validate-rift-transport.mjs` checks idempotency and manifest metadata. For mutation changes, simulate duplicate identical `tools/call` requests and verify one underlying mutation with multiple matching replies.
+`validate-rift-transport.mjs` checks relay-scoped retry idempotency and manifest metadata. For runtime validation, repeat an identical direct/local live command and verify it executes fresh, then retry one relay envelope with the same relay request ID and verify one underlying mutation with multiple matching replies.

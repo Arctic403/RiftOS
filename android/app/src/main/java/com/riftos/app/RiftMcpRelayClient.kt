@@ -182,7 +182,7 @@ class RiftMcpRelayClient(
             return
         }
         runCatching {
-            server.handleAsync(payload) { result ->
+            server.handleAsync(payload, requestId) { result ->
                 if (!isCurrent(webSocket)) return@handleAsync
                 webSocket.send(
                     JSONObject()

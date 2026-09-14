@@ -8,7 +8,7 @@ import java.security.MessageDigest
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.17.1-manifest-diagnostics"
+        private const val SERVER_VERSION = "0.17.2-relay-retry-idempotency"
         private const val COMPLETED_TTL_MS = 2 * 60 * 1000L
         private const val MAX_COMPLETED_REQUESTS = 128
     }
@@ -18,15 +18,18 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
     private val inFlight = mutableMapOf<String, MutableList<(JSONObject) -> Unit>>()
     private val completed = LinkedHashMap<String, CompletedRequest>()
 
-    fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) {
-        if (request.optString("method") != "tools/call") {
+    fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) = handleAsync(request, null, reply)
+
+    fun handleAsync(request: JSONObject, retryKey: String?, reply: (JSONObject) -> Unit) {
+        if (request.optString("method") != "tools/call" || retryKey.isNullOrBlank()) {
             dispatch(request, reply)
             return
         }
 
-        // The HTTP relay may retry after losing a response. Coalesce identical JSON-RPC
-        // tool calls on-device so a local mutation is never executed twice.
-        val key = requestKey(request)
+        // Only the remote relay supplies a stable transport retry key. Distinct local/model
+        // invocations must execute fresh even when tool name/arguments are identical; otherwise
+        // live reads and repeated shell commands can replay stale completed responses for the TTL.
+        val key = "${retryKey.trim()}:${requestKey(request)}"
         var cachedResponse: String? = null
         var joinedInFlight = false
         synchronized(requestLock) {
