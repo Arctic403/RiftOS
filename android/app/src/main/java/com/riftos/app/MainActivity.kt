@@ -28,7 +28,9 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLConnection
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
     companion object {
@@ -310,6 +312,28 @@ class MainActivity : Activity() {
         runOnUiThread {
             if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
         }
+    }
+
+    fun inspectActiveBrowser(request: JSONObject): JSONObject {
+        check(::browserWindow.isInitialized) { "RiftBrowser is not initialized" }
+        val latch = CountDownLatch(1)
+        var result: JSONObject? = null
+        var failure: Throwable? = null
+        runOnUiThread {
+            try {
+                browserWindow.inspect(request) { value, error ->
+                    result = value
+                    failure = error
+                    latch.countDown()
+                }
+            } catch (error: Throwable) {
+                failure = error
+                latch.countDown()
+            }
+        }
+        require(latch.await(5_000L, TimeUnit.MILLISECONDS)) { "Timed out waiting for RiftBrowser inspector" }
+        failure?.let { throw IllegalStateException(it.message ?: "RiftBrowser inspector failed", it) }
+        return result ?: throw IllegalStateException("RiftBrowser inspector returned no result")
     }
 
     private fun launchFileChooser(

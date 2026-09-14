@@ -637,6 +637,11 @@ object RiftOsLocalAgent {
         val op = args.optString("op").trim().lowercase()
         if (op == "devlab") return RiftDevLabLocalAgent.execute(args)
         if (op == "keyboard") return RiftOsKeyboardAgent.execute(context, args)
+        if (op == "browser-inspect") {
+            require(context is MainActivity) { "RiftBrowser inspector requires the active RiftOS activity" }
+            delegate.ensureActive(context)
+            return context.inspectActiveBrowser(args)
+        }
         if (op == "type-focused") return delegate.typeFocused(context, args.optString("text"))
         if (op == "back" && context is MainActivity) {
             delegate.ensureActive(context)

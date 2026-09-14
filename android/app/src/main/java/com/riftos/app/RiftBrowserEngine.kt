@@ -16,6 +16,7 @@ interface RiftBrowserEngine {
     fun goForward()
     fun reload()
     fun setDesktopMode(enabled: Boolean)
+    fun inspect(request: JSONObject, callback: (JSONObject?, Throwable?) -> Unit)
     fun state(): JSONObject
     fun onResume()
     fun onPause()

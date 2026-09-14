@@ -111,6 +111,11 @@ class RiftBrowserWindow(
         return state()
     }
 
+    fun inspect(request: JSONObject, callback: (JSONObject?, Throwable?) -> Unit) {
+        ensureAlive()
+        activeEngine().inspect(request, callback)
+    }
+
     fun newTab(rawUrl: String?): JSONObject {
         ensureAlive()
         createTabInternal(rawUrl, select = true, load = true)

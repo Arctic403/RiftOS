@@ -12,13 +12,19 @@ Parent contract: [`../README.md`](../README.md).
 
 ## Responsibilities
 
-The backend owns WebView creation/configuration, HTTPS navigation, back/forward/reload, cookies, popup/auth flows, file chooser delegation, downloads, page progress/title state, render-process failure detection, external scheme handoff, per-tab Desktop Site request identity and exact-origin installation of the browser MCP compatibility bridge.
+The backend owns WebView creation/configuration, HTTPS navigation, back/forward/reload, cookies, popup/auth flows, file chooser delegation, downloads, page progress/title state, render-process failure detection, external scheme handoff, per-tab Desktop Site request identity, the bounded temporary live-page inspector, and exact-origin installation of the browser MCP compatibility bridge.
 
 It also owns WebView security defaults: mixed content blocked, SSL errors cancelled, arbitrary file/content access disabled, Safe Browsing where supported, and permission requests denied unless a future explicit broker replaces that policy.
 
 Desktop Site mode captures the WebView's normal user agent and supported UA metadata at engine creation. When enabled, the engine uses a desktop Chromium/Windows UA, non-mobile Windows client hints plus the Desktop form factor where supported, wide/overview layout and hidden built-in zoom controls; the active URL is then reloaded in place without adding a duplicate navigation-history entry. Disabling restores the captured Android WebView identity. Popup/auth WebViews inherit the owning tab's current mode.
 
 User-initiated popups from an HTTPS page are rendered as a real child WebView inside the owning engine surface. The child remains connected through Android `WebViewTransport`, so OAuth providers can use normal `window.opener` / `window.close` behavior and shared WebView cookies. The popup is bounded to the RiftBrowser renderer plane, carries an explicit native close control, keeps SSL/permission/geolocation restrictions, upgrades plain HTTP to HTTPS, and is destroyed when the tab/engine is destroyed or Desktop Site mode changes. Popups are no longer redirected invisibly into the parent tab.
+
+## Live-page inspector
+
+The active HTTPS tab supports a temporary inspector used by the trusted `riftos-agent browser-inspect` shell family. It can enumerate visible structural metadata (tag, safe id/classes, role/type, bounds and computed layout properties), inspect/focus a safe selector, temporarily hide/show elements, replace non-form text, change a narrow safe attribute set, apply one whitelisted inline style property, toggle a visual outline, and reset all changes.
+
+The inspector deliberately does **not** expose `value`, `textContent`, `innerHTML`, cookies, storage, request/response headers, hidden credential text, arbitrary JavaScript, raw stylesheet injection, attribute/value selectors, `:has()` selector probing, or network-bearing CSS constructs. Mutations are tab-local and page-local: reload/navigation/Desktop Site changes destroy them automatically; `reset` restores the stored inline style/text/attribute state without reloading.
 
 ## What it does not own
 

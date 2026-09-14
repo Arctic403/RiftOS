@@ -6,7 +6,7 @@ The browser engine is the renderer abstraction behind RiftBrowser. `RiftBrowserE
 
 ## Source ownership
 
-- `RiftBrowserEngine.kt` — interface: `currentUrl`, `loadUrl`, back/forward capability/actions, `reload`, `state`, `onResume`, `onPause`, `destroy`.
+- `RiftBrowserEngine.kt` — interface: `currentUrl`, `loadUrl`, back/forward capability/actions, `reload`, bounded `inspect`, `state`, `onResume`, `onPause`, `destroy`.
 - `AndroidWebViewBrowserEngine.kt` — WebView implementation; concrete backend guide: [`android-webview/README.md`](android-webview/README.md).
 
 ## Current WebView responsibilities
@@ -17,7 +17,9 @@ It denies WebView permission requests by default and does not automatically gran
 
 ## State flow
 
-Engine `state()` exposes renderer-facing state consumed by `RiftBrowserWindow`/shell, including URL/navigation capability, title/progress and crash status. Page start/finish/history/progress callbacks trigger the supplied `stateChanged` callback.
+Engine `state()` exposes renderer-facing state consumed by `RiftBrowserWindow`/shell, including URL/navigation capability, title/progress, crash status and whether temporary inspector mutations are active. Page start/finish/history/progress callbacks trigger the supplied `stateChanged` callback.
+
+`inspect(request, callback)` is a renderer-neutral, bounded live-page maintenance surface. The current backend may return structural DOM metadata and apply temporary presentation/content changes, but it must not expose arbitrary JavaScript, form values, text/HTML dumps, cookies, storage, headers or network-capable style injection.
 
 ## Why this boundary exists
 

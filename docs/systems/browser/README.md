@@ -44,6 +44,14 @@ Desktop Site toggle
   -> current history entry reloads with the new request identity
   -> tab state preserves its own desktopMode flag while other tabs are unchanged
 
+Live inspector
+  -> `riftos-agent browser-inspect ...`
+  -> fixed RiftOS local-agent operation
+  -> MainActivity marshals the request to the active browser tab on the UI thread
+  -> RiftBrowserWindow targets only the active engine
+  -> engine returns structural metadata or applies bounded temporary DOM/layout mutations
+  -> reload/navigation/reset removes temporary changes
+
 Resize/focus/minimize
   -> JS syncBounds/visibility event
   -> browser.window.bounds/visible
@@ -61,6 +69,7 @@ The native host also keeps `browser.window.state` as an intentional diagnostic/q
 - Exactly one tab renderer may be visible/clickable at a time; inactive renderers are paused and `View.GONE` while preserving their navigation/session state.
 - Hidden/minimized/unfocused/show-desktop browser surfaces make every tab renderer `View.GONE`.
 - Browser guest content never receives general `RiftAndroid`/RiftFS authority.
+- The shell live inspector is active-tab-only, HTTPS-only, temporary, structural rather than content-dumping, and never becomes arbitrary JavaScript/DevTools authority.
 - Exact-origin MCP integration stays behind a separate WebMessage bridge.
 - Browser engine swap must not change MCP tool schemas or desktop window APIs.
 

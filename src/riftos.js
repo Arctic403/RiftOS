@@ -710,10 +710,32 @@ function parseDevLabAgentRequest(args,state){
 }
 async function runRiftOsAgentShell(args,print,state){
   const first=(args[0]||"help").toLowerCase();
-  if(first==="help")return print(`RiftOS self UI agent\nriftos-agent status\nriftos-agent open\nriftos-agent tree [limit]\nriftos-agent click <text|content-description|view-id>\nriftos-agent tap <x> <y>\nriftos-agent swipe <x1> <y1> <x2> <y2> [ms]\nriftos-agent type <target> <text>\nriftos-agent type-focused <text>\nriftos-agent keyboard status\nriftos-agent keyboard key <label>\nriftos-agent back\nriftos-agent devlab help`);
+  if(first==="help")return print(`RiftOS self UI agent\nriftos-agent status\nriftos-agent open\nriftos-agent tree [limit]\nriftos-agent click <text|content-description|view-id>\nriftos-agent tap <x> <y>\nriftos-agent swipe <x1> <y1> <x2> <y2> [ms]\nriftos-agent type <target> <text>\nriftos-agent type-focused <text>\nriftos-agent browser-inspect help\nriftos-agent keyboard status\nriftos-agent keyboard key <label>\nriftos-agent back\nriftos-agent devlab help`);
   if(first==="type-focused"){
     args.shift();if(!args.length)throw new Error("usage: riftos-agent type-focused <text>");
     const result=await core.native.call("riftos.agent",{op:"type-focused",text:args.join(" ")});print(JSON.stringify(result,null,2));return result;
+  }
+  if(first==="browser-inspect"){
+    args.shift();const action=(args.shift()||"help").toLowerCase();
+    if(action==="help")return print(`RiftBrowser live inspector (temporary, active tab only)\nriftos-agent browser-inspect status\nriftos-agent browser-inspect dom [selector] [limit]\nriftos-agent browser-inspect inspect <selector>\nriftos-agent browser-inspect focus <selector>\nriftos-agent browser-inspect hide <selector>\nriftos-agent browser-inspect show <selector>\nriftos-agent browser-inspect text <selector> <text>\nriftos-agent browser-inspect attr <selector> <class|title|aria-label|role|tabindex> <value>\nriftos-agent browser-inspect style <selector> <property> <value>\nriftos-agent browser-inspect outline <on|off>\nriftos-agent browser-inspect reset\nDOM output is structural only: no values, textContent, innerHTML, cookies, storage, headers, or arbitrary JavaScript.`);
+    const request={op:"browser-inspect",action};
+    if(["status","reset"].includes(action)){
+      const result=await core.native.call("riftos.agent",request);print(JSON.stringify(result,null,2));return result;
+    }
+    if(action==="outline"){
+      const value=(args.shift()||"").toLowerCase();if(!["on","off"].includes(value))throw new Error("usage: riftos-agent browser-inspect outline <on|off>");request.enabled=value==="on";
+    }else if(action==="dom"){
+      let limit=60;if(args.length&&/^\d+$/.test(args[args.length-1]))limit=Number(args.pop());request.selector=args.join(" ").trim()||"body *";request.limit=limit;
+    }else if(["inspect","focus","hide","show"].includes(action)){
+      request.selector=args.join(" ").trim();if(!request.selector)throw new Error(`usage: riftos-agent browser-inspect ${action} <selector>`);
+    }else if(action==="text"){
+      if(args.length<2)throw new Error("usage: riftos-agent browser-inspect text <selector> <text>");request.selector=args.shift();request.text=args.join(" ");
+    }else if(action==="attr"){
+      if(args.length<3)throw new Error("usage: riftos-agent browser-inspect attr <selector> <name> <value>");request.selector=args.shift();request.name=args.shift();request.value=args.join(" ");
+    }else if(action==="style"){
+      if(args.length<3)throw new Error("usage: riftos-agent browser-inspect style <selector> <property> <value>");request.selector=args.shift();request.property=args.shift();request.value=args.join(" ");
+    }else throw new Error(`unknown riftos-agent browser-inspect action: ${action}`);
+    const result=await core.native.call("riftos.agent",request);print(JSON.stringify(result,null,2));return result;
   }
   if(first==="keyboard"){
     args.shift();const action=(args.shift()||"help").toLowerCase();
