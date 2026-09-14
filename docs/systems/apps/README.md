@@ -64,6 +64,22 @@ Future R.O.P.E compiler outputs can replace the HTML-compatible payload with a c
 - Launcher entries are generated from the installed registry, not arbitrary package-provided Android intents.
 - Package execution goes through RiftRT and RiftDesktop lifecycle/process ownership.
 
+## Failure signatures
+
+- `.rift` imports but no installed tree appears under `C:/Programs/<id>` -> installer staging/promotion failed or package validation rejected the candidate.
+- an upgrade removes the previous program after a failed promotion -> rollback transaction regression.
+- uninstall leaves or deletes the wrong AppData -> program/AppData ownership mapping drifted.
+- launching an installed program creates an iframe or shell-DOM guest -> RiftApps/RiftRT execution boundary regressed.
+- package code can choose or write a system install root -> installer/native-host containment regression.
+
+## Fix map
+
+Package validation/install/update/uninstall/migration -> `src/riftapps.js`.
+Export/share UX -> `src/riftapps-files.js`.
+Installed-program execution/lifecycle -> `src/riftrt.js`.
+Android installed-program filesystem/capability boundary -> `RiftNativeAppHost.kt`.
+C:/D: path identity or root mapping -> RiftFS owners, not package code.
+
 ## Validation
 
 Run `scripts/test-rift-app-import.mjs`. Verify valid generic-MIME `.rift` files install beneath C:/Programs, invalid packages fail before promotion, upgrades preserve AppData, source contains no installed-app iframe path, and launching an installed program delegates to RiftRT.

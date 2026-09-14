@@ -34,6 +34,33 @@ A single `RiftNativeApp` WebMessage endpoint provides the bounded Rift API. Supp
 - Generic app filesystem grants cannot rewrite C: or another program's AppData; writes are restricted to approved D: user/project roots and the caller's own AppData.
 - The renderer is destroyed when the native program session closes.
 
+## Source ownership
+
+- `src/riftrt.js` — selects/launches `native-webview`, owns RiftRT process/session lifecycle and calls the bounded native app-runtime routes.
+- `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` — dedicated Android WebView, local package origin/asset serving, permission checks and bounded guest API.
+- `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` — native WindowRecord and content-view attachment/focus/geometry lifecycle.
+- `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt` — native C:/D: resolver used by app filesystem boundaries.
+
+## Failure signatures
+
+- program window exists but renderer is blank/missing -> app-runtime open/host construction/content attachment failed.
+- app appears inside shell DOM or an iframe -> native-webview boundary regressed.
+- local package assets 404 while install metadata exists -> fixed-origin asset resolver or package path validation drifted.
+- network works before a declared/granted `network` capability -> WebView default-deny regression.
+- app can write C:/Programs, C:/ProgramData, another app's AppData, or escape an approved D: root -> native filesystem containment regression.
+- closing/minimizing/restoring leaves the Android renderer visible or alive incorrectly -> `RiftNativeDesktop` content-view lifecycle mismatch.
+
+## Fix map
+
+Renderer creation, CSP/origin, asset interception, WebMessage API and app filesystem containment -> `RiftNativeAppHost.kt`.
+RiftRT route/lifecycle selection -> `src/riftrt.js`.
+Window/content attachment and z-order -> `RiftNativeDesktop.kt`.
+Drive mapping -> `RiftVolumePaths.kt` plus RiftFS contract; do not invent a second path map in the renderer.
+
+## Validation
+
+Install and launch a V1 package; verify the dedicated Android WebView is attached to the native WindowRecord and never the shell DOM. Exercise local asset loads, denied/granted network, own AppData read/write, approved D: roots, denied C:/system and foreign-AppData writes, clipboard/share/build-controller permissions, minimize/restore/focus/resize/close, and repeated launch/dispose without leaked renderer state.
+
 ## Future compiler ABI
 
 This engine is a compatibility target for V1. R.O.P.E's compiled Rift ABI may later target a native UI/WASM/packaged-plugin engine. That compiler work must not undo the installer, volume, permission or native-window contracts established here.

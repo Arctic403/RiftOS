@@ -58,6 +58,21 @@ Program-local state lives under D:/Users/Default/AppData/<id>. `build.local` rem
 - Native app messaging exposes fixed methods, bounded payloads and declared capabilities only.
 - The trusted shell WebView remains an internal compatibility plane for built-ins that have not yet migrated; it is not an installed-app host.
 
+## Failure signatures
+
+- installed app launches but no native content surface appears -> `app.runtime.open`, `RiftNativeAppHost`, or `RiftNativeDesktop.attachContent` path failed.
+- app content appears inside the trusted shell WebView/iframe -> retired execution model regressed.
+- window closes visually but the RiftRT process/session remains -> native close/process cleanup convergence broke.
+- app filesystem access reaches C: system roots or another app's AppData -> native-host containment/capability regression.
+- `build.local` claims compilation is available while the native executor is absent -> RiftBuild/RiftRT capability reporting drifted.
+
+## Fix map
+
+Engine parsing/session lifecycle and Worker/WASM/native-webview launch -> `src/riftrt.js`.
+Installed Android WebView surface and bounded guest bridge -> `RiftNativeAppHost.kt`.
+Window attachment/focus/geometry/close ownership -> `RiftNativeDesktop.kt`.
+Install/registry state -> `src/riftapps.js`; do not repair installer failures inside RiftRT.
+
 ## Validation
 
 Test install -> launch -> native surface, move/resize/minimize/maximize/restore, taskbar focus, app-initiated close, native close and process termination. Accessibility should see the app's dedicated Android WebView node inside the native window, not a shell iframe. Verify denied/granted filesystem and clipboard calls, package asset containment, network default-deny behavior and no arbitrary native method passthrough.

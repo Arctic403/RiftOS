@@ -63,6 +63,20 @@ SAF mounts remain under `/mounts/*`. Future removable/cloud volumes may receive 
 
 User-facing shell/Files/app surfaces may retain C:/D: display paths. Workspace-scoped internals such as MCP, Project Intelligence, Workspace Records and the in-house diff stay physically pinned to `/workspace`; they must not be rewritten to a second copy under D:. Higher-level consumers that accept user paths canonicalize before enforcing a workspace boundary instead of reimplementing drive parsing.
 
+## Failure signatures
+
+- `D:/Workspace/...` works in Files/Shell but fails in a higher-level tool -> that consumer skipped the shared `RiftOSCore.path.canonical()` contract.
+- `C:/...` or `D:/...` resolves to a different tree than its compatibility root -> JS/Kotlin volume maps drifted or a caller bypassed RiftFS routing.
+- a drive/root can be removed or moved through one spelling but not the other -> protection was applied to only the alias or only the canonical backing root.
+- MCP/Project Intelligence/Workspace Records appear to see a second workspace copy -> a subsystem incorrectly moved off the physical `/workspace` backing tree.
+
+## Fix map
+
+Drive parsing/canonicalization and JS filesystem routing -> `src/riftcore.js`.
+Native app drive resolution -> `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt`.
+Physical Android/SAF IO -> `RiftNativeDispatcher.kt` and transfer/mount owners; do not duplicate volume policy there.
+Workspace-scoped MCP/diff/records identity -> keep `/workspace` as the physical backing boundary and fix only the user-facing consumer that failed to canonicalize.
+
 ## Validation
 
 Verify root listing exposes C:, D: and mounts; `stat`, `list`, read/write, copy/move and archive operations resolve children correctly; protected roots reject destructive root operations; `/workspace/foo` and `D:/Workspace/foo` address the same data; and Android `RiftVolumePaths` resolves the same fixed mappings as JS RiftFS.
