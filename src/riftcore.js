@@ -88,6 +88,7 @@ class RiftNativeBridge extends EventTarget{
       clipboard:true,
       browser:true,
       workspace:true,
+      localBuildExecutor:false,
       jsonPatches:true,
       patchRollback:true,
       vortexDevBridge:true,

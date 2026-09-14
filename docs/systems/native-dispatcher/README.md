@@ -28,6 +28,7 @@ For copy/move, the dispatcher first resolves source/destination mount types. It 
 
 - Internal paths are resolved inside the RiftFS root.
 - `fs.sha256` accepts only a resolved RiftFS/SAF file and streams it through `MessageDigest`; it must never expose raw Android paths or return file bytes.
+- `build.execute` is intentionally a finite fail-closed placeholder until a trusted native build executor exists; it throws rather than pretending compilation succeeded, while `RiftNativeBridge.capabilities()` advertises `localBuildExecutor:false`.
 - SAF paths are resolved relative to an explicitly persisted mount.
 - External intents are limited to an allowed scheme set.
 - This dispatcher is available to the trusted RiftOS shell, not directly to guest web pages or MCP.

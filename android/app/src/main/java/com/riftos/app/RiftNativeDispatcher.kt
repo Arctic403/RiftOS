@@ -152,6 +152,7 @@ class RiftNativeDispatcher(
         "fs.writeBase64" -> writeBase64(args.getString("mountId"), args.optString("path"), args.optString("base64"))
         "fs.mkdir" -> mkdir(args.getString("mountId"), args.optString("path"))
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
+        "build.execute" -> throw UnsupportedOperationException("Local RiftBuild executor is not installed in this APK")
         "fs.zip" -> {
             val progress = TransferProgress(args.optString("transferId").ifBlank { UUID.randomUUID().toString() }, "zip")
             val manifest = buildTransferManifest(args.getString("fromMountId"), args.optString("from"))

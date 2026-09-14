@@ -13,7 +13,7 @@ RiftBuild is RiftOS's local build controller. The MVP provides deterministic pro
 
 ## Capability contract
 
-`rift build doctor` must fail closed. Missing Java/Gradle/SDK/NDK/signing execution is a blocker, not a warning that can be bypassed. `rift build plan` remains useful offline and reports project shape, source count, working-set size, target and artifact destination without mutating source.
+`rift build doctor` must fail closed. Missing Java/Gradle/SDK/NDK/signing execution is a blocker, not a warning that can be bypassed. The current Android host explicitly reports `localBuildExecutor:false`; the finite `build.execute` native route exists only as a fail-closed placeholder and throws if a caller bypasses the doctor. `rift build plan` remains useful offline and reports project shape, source count, working-set size, target and artifact destination without mutating source.
 
 ## Failure signatures
 
