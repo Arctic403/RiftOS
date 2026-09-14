@@ -28,6 +28,7 @@ MainActivity
       -> riftcore.js
       -> Android/workspace/runtime/app/git modules
       -> RiftVault -> RiftRepo -> RiftMemory -> RiftBuild -> RiftLocalPlatform
+      -> optional RiftLLM standalone Dev API bridge
       -> batch -> Dev Lab
       -> riftos.js
       -> late desktop/MCP/runtime compatibility modules
@@ -39,7 +40,7 @@ MainActivity
 
 - `RiftAndroid` must exist before `riftandroid-preload.js` completes.
 - `riftcore.js` must evaluate before any consumer reads `globalThis.RiftOSCore`.
-- Local-first dependency order is fixed: RiftVault -> RiftRepo -> RiftMemory -> RiftBuild -> RiftLocalPlatform -> Dev Lab -> RiftShell UI.
+- Trusted dependency order is fixed: RiftVault -> RiftRepo -> RiftMemory -> RiftBuild -> RiftLocalPlatform -> optional RiftLLM bridge -> Dev Lab -> RiftShell UI. RiftLLM itself remains a separate APK and is not a boot dependency; only the adapter module is loaded.
 - A top-level exception in any early imported module prevents later imports, including `riftos.js`; the visible symptom is often an endless animated boot splash.
 - Android packaged assets come from Gradle's generated `www` asset tree; source changes require a new APK build to reach the installed app.
 

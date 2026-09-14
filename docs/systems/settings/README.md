@@ -13,7 +13,7 @@ Settings provides user-facing configuration/diagnostic entry points for RiftOS s
 
 ## Current responsibilities
 
-Settings exposes system/desktop preferences and System Diagnostics actions, including Save system dump. Desktop-specific controls should call the desktop system's public/persistence path rather than duplicate geometry/wallpaper state.
+Settings exposes system/desktop preferences and System Diagnostics actions, including Save system dump. It also exposes Pair / Status / Unpair controls for the optional standalone RiftLLM Dev API bridge; the pairing value is entered only in the local prompt and is never rendered back after submission. Desktop-specific controls should call the desktop system's public/persistence path rather than duplicate geometry/wallpaper state.
 
 ## Critical invariants
 

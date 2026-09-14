@@ -8,7 +8,7 @@
 
 `android/app/src/main/java/com/riftos/app/RiftSecretStore.kt`.
 
-Current primary consumer: `RiftRelaySettings` for the optional MCP relay bearer token.
+Current consumers include `RiftRelaySettings` for the optional MCP relay bearer token and `RiftLlmDevClient` for the optional standalone RiftLLM Dev API pairing token (`riftllm.dev.token`). Neither consumer may expose plaintext through diagnostics, shell/tool results or workspace state.
 
 ## Design
 

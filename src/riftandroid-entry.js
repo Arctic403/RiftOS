@@ -13,6 +13,7 @@ await import("./riftrepo.js");
 await import("./riftmemory-control.js");
 await import("./riftbuild.js");
 await import("./riftlocal-platform.js");
+await import("./riftllm-bridge.js");
 await import("./riftshell-batch.js");
 await import("./riftdevlab.js");
 await import("./riftos.js");

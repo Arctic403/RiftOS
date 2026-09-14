@@ -31,6 +31,7 @@ const requiredDocs = [
   'docs/systems/workspace/README.md',
   'docs/systems/workspace/live/README.md',
   'docs/systems/dev-lab/README.md',
+  'docs/systems/riftllm-bridge/README.md',
   'docs/systems/apps/README.md',
   'docs/systems/riftrt/README.md',
   'docs/systems/riftrt/engines/README.md',

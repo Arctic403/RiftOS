@@ -16,6 +16,7 @@ The build/validation layer catches source-contract regressions before the separa
 - `scripts/test-rift-shell-batch.mjs` — batch parser/preflight/rollback behavior.
 - `scripts/test-rift-shell-git.mjs` — shell/Git workflow tests.
 - `scripts/test-rift-local-platform.mjs` — local-first repo/vault/build/memory module wiring, provider capability honesty and fail-closed build-executor contract.
+- `scripts/test-riftllm-bridge.mjs` — fixed standalone RiftLLM Binder API identity/allowlist, Keystore pairing, guarded Workspace publication and shell-boundary contract.
 - `scripts/test-rift-app-import.mjs` — `.rift` package import contract.
 - `android/app/build.gradle.kts` — Android source verification and web-asset sync.
 - external `Arctic403/Riftos-builder` — manual Android build/sign/verify worker.

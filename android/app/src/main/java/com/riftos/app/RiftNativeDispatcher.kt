@@ -50,6 +50,7 @@ class RiftNativeDispatcher(
     private val notificationScheduler = Executors.newSingleThreadScheduledExecutor()
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val secrets = RiftSecretStore(activity)
+    private val riftLlmDev = RiftLlmDevClient(activity.applicationContext)
     private val vortexBridge = RiftMcpRuntime.vortexBridge(activity)
     private val riftRoot = File(activity.filesDir, "riftfs").apply {
         mkdirs()
@@ -107,7 +108,7 @@ class RiftNativeDispatcher(
         }
         val worker = when {
             method in setOf("fs.copy", "fs.move", "fs.zip", "fs.unzip") -> transferExecutor
-            method in setOf("vortex.agent", "riftos.agent") -> agentExecutor
+            method in setOf("vortex.agent", "riftos.agent", "riftllm.dev") -> agentExecutor
             else -> executor
         }
         worker.execute {
@@ -225,6 +226,7 @@ class RiftNativeDispatcher(
         "vortex.session" -> vortexBridge.executeSession(args)
         "vortex.agent" -> RiftVortexLocalAgent.execute(activity.applicationContext, args)
         "riftos.agent" -> RiftOsLocalAgent.execute(activity, args)
+        "riftllm.dev" -> riftLlmDev.execute(args)
         "chat.handoff" -> RiftChatHandoff.execute(riftRoot, args)
         "device.vibrate" -> vibrate(args.optLong("milliseconds", 40L))
         "clipboard.read", "clipboard.readText" -> clipboardRead()
