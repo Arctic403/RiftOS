@@ -2,7 +2,7 @@
 
 ## Purpose
 
-RiftDesktop is the permanent Android-native RiftOS shell. Android owns the visible desktop, launcher, Start menu, status area, taskbar, native window frames, focus/z-order, move/resize, minimize/maximize/restore/close, show-desktop behavior, system insets and Android Accessibility semantics.
+RiftDesktop is the permanent Android-native RiftOS shell. Android owns the visible desktop, launcher, Start menu, taskbar, native window frames, focus/z-order, move/resize, minimize/maximize/restore/close, show-desktop behavior, system insets and Android Accessibility semantics.
 
 The trusted RiftOS WebView still exists during the migration, but it is **not the desktop/window manager**. It is a compatibility content canvas used to keep existing Files, Editor, Settings, RiftShell, Workspace Records and RiftRT app bodies working while those surfaces are migrated selectively. Native Android publishes each window's content rectangle and state; JavaScript positions only the app body inside that rectangle. Window chrome and window authority never come from DOM elements in native mode.
 
@@ -35,6 +35,12 @@ Dynamic launcher entries remain compatible with existing app registration. The h
 
 RiftRT uses the same base window manager in native mode. It may own runtime/session cleanup, but it must not manufacture a second DOM window authority.
 
+## Visual parity contract
+
+Native rendering changes ownership, not the RiftOS visual language. The legacy RiftDesktop stylesheet remains the reference for proportions and app-interior styling: no permanent top status strip, a 48dp taskbar, 38dp title bars, subtle one-pixel window borders, compact 74x80dp desktop icons on narrow screens (84x90dp on wider layouts), three-column Start tiles, icon-first taskbar entries with running/active underlines, and the dark teal RiftOS desktop/window palette. The native launcher is vertically scrollable so installed apps cannot disappear under the taskbar.
+
+`riftdesktop-native-compat.js` deliberately adds `rift-desktop-mode` alongside `rift-native-host`. This reuses the existing desktop interior rules for Files, Settings, Browser, Editor, RiftShell and other compatibility bodies while its later native-compat rules still hide the DOM launcher/taskbar/title bars and leave Android as the only window authority.
+
 ## Persistence
 
 Wallpaper, taskbar pins and per-window normal geometry continue to use `/system/settings/desktop.json`. Native geometry is converted between Android physical pixels and WebView CSS coordinates at the compatibility boundary. Maximized frames do not overwrite the saved restore geometry. Reset Layout clears persisted native window geometry while keeping the settings file contract stable.
@@ -52,6 +58,9 @@ Pinned apps and running windows share the native taskbar. Installed RiftRT apps 
 - Browser renderer visibility follows the native focused window's compatibility content rectangle and stays under native chrome.
 - Taskbar pins, wallpaper and normal geometry continue to persist through RiftFS settings rather than creating an unrelated second settings store.
 - Native launcher controls use fixed app ids and only call back into the trusted RiftOS runtime; they do not expose arbitrary Android package launching.
+- Native visual proportions stay aligned with the RiftDesktop reference: 48dp taskbar, 38dp title bar, no top status strip, one-pixel frame border and responsive 74/84dp launcher tiles.
+- The desktop launcher remains vertically scrollable and must stop above the taskbar even with many installed apps.
+- Native compatibility mode reuses `.rift-desktop-mode` for app-interior styling only; native-compat overrides must continue hiding DOM shell chrome.
 
 ## Failure signatures
 
@@ -63,6 +72,8 @@ Pinned apps and running windows share the native taskbar. Installed RiftRT apps 
 - Browser renderer covers taskbar/title bar -> `RiftBrowserWindow` is mounted above native chrome or visibility/focus state is wrong.
 - Pin disappears after restart -> `desktop.json.taskbarPins` mirror or native launcher update omitted pins.
 - Geometry resets every launch -> native state persistence/open saved-bounds contract failed.
+- Desktop suddenly looks like generic Android widgets or app interiors lose their RiftOS styling -> `RiftNativeDesktop` visual constants/helpers or the `rift-desktop-mode` native-compat class regressed.
+- Installed apps disappear below the taskbar -> native launcher `ScrollView`/responsive grid regression.
 
 ## Fix map
 
@@ -77,7 +88,7 @@ Legacy fallback only -> `riftdesktop-android.js` and related legacy desktop file
 
 ## Validation
 
-Run repository source checks, then an Android/Gradle build. Validation must prove `RiftNativeDesktop.kt` is in the Android source snapshot, MainActivity hosts the compatibility WebView through `RiftNativeDesktop`, native mode conditionally excludes legacy desktop imports, RiftRT delegates windows to the base manager, and the MCP tool family does not grow.
+Run repository source checks, then an Android/Gradle build. Validation must prove `RiftNativeDesktop.kt` is in the Android source snapshot, MainActivity hosts the compatibility WebView through `RiftNativeDesktop`, native mode conditionally excludes legacy desktop imports, RiftRT delegates windows to the base manager, the MCP tool family does not grow, and the native visual contract retains the RiftOS 48dp taskbar / 38dp title bar / scrollable responsive launcher / desktop-interior compatibility styling.
 
 On device, use the fixed-scope RiftOS self-agent. The Accessibility tree should expose native launcher/taskbar/window controls as Android nodes. Test multiple windows, overlapping/focus changes, drag, resize, maximize/restore, minimize/taskbar restore, show desktop, Android Back, close, Task Manager termination and RiftShell `kill`. Test persisted geometry, wallpaper and pins across Activity/app restart. Verify Files/Editor/etc. still render and receive input inside native content rectangles, then progressively migrate individual built-ins only where useful.
 

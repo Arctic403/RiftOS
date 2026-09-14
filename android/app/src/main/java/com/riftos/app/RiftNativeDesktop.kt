@@ -39,13 +39,15 @@ class RiftNativeDesktop(
     private val appOpenSink: (String) -> Unit
 ) {
     companion object {
-        private const val BG = 0xff080d12.toInt()
-        private const val PANEL = 0xff101922.toInt()
-        private const val PANEL_ACTIVE = 0xff173227.toInt()
-        private const val BORDER = 0xff324352.toInt()
-        private const val ACCENT = 0xff79f6c8.toInt()
-        private const val TEXT = 0xffedf5fa.toInt()
-        private const val MUTED = 0xff8fa0b1.toInt()
+        private const val BG = 0xff07141d.toInt()
+        private const val PANEL = 0xe80a1118.toInt()
+        private const val WINDOW_BAR = 0xe8101a22.toInt()
+        private const val PANEL_ACTIVE = 0x13ffffff
+        private const val BORDER = 0x26ffffff
+        private const val FOCUS_BORDER = 0x4a78f6c7
+        private const val ACCENT = 0xff78f6c7.toInt()
+        private const val TEXT = 0xffe7eef5.toInt()
+        private const val MUTED = 0xff9aa8b5.toInt()
     }
 
     data class LauncherApp(val id: String, val name: String, val icon: String)
@@ -82,6 +84,7 @@ class RiftNativeDesktop(
         setBackgroundColor(Color.TRANSPARENT)
     }
     private val wallpaper = View(activity)
+    private val launcherScroll = android.widget.ScrollView(activity)
     private val launcher = GridLayout(activity)
     private val startMenu = LinearLayout(activity)
     private val statusBar = LinearLayout(activity)
@@ -101,19 +104,22 @@ class RiftNativeDesktop(
     private var sequence = 0L
     private var pendingBoundsState = false
     private var pendingReason = "bounds"
+    private var launcherLayoutProfile = ""
 
-    private val statusHeight = dp(34)
-    private val taskbarHeight = dp(58)
-    private val titleHeight = dp(42)
-    private val borderWidth = dp(2).coerceAtLeast(1)
-    private val resizeSize = dp(28)
+    private val statusHeight = 0
+    private val taskbarHeight = dp(48)
+    private val titleHeight = dp(38)
+    private val borderWidth = dp(1).coerceAtLeast(1)
+    private val resizeSize = dp(18)
     private val minWindowWidth = dp(300)
     private val minWindowHeight = dp(220)
 
     private val clockTick = object : Runnable {
         override fun run() {
-            val now = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date())
-            clock.text = now
+            val now = java.util.Date()
+            val time = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(now)
+            val date = java.text.SimpleDateFormat("M/d/yy", java.util.Locale.getDefault()).format(now)
+            clock.text = "$time\n$date"
             handler.postDelayed(this, 1_000L)
         }
     }
@@ -181,77 +187,70 @@ class RiftNativeDesktop(
     }
 
     private fun buildStatusBar() {
-        statusBar.orientation = LinearLayout.HORIZONTAL
-        statusBar.gravity = Gravity.CENTER_VERTICAL
-        statusBar.setPadding(dp(12), 0, dp(12), 0)
-        statusBar.background = solid(PANEL, 0f)
-        val brand = TextView(activity).apply {
-            text = "RiftOS"
-            setTextColor(ACCENT)
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            contentDescription = "RiftOS"
-        }
-        statusTitle.apply {
-            text = "Native desktop"
-            setTextColor(MUTED)
-            textSize = 11f
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-        }
-        statusBar.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        statusBar.addView(statusTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 2f))
-        chromeHost.addView(statusBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, statusHeight).apply {
-            gravity = Gravity.TOP
-        })
+        // The permanent RiftDesktop shell intentionally has no top status strip.
+        statusBar.visibility = View.GONE
     }
 
     private fun buildLauncher() {
-        launcher.columnCount = 2
+        launcher.columnCount = desiredLauncherColumns()
         launcher.rowCount = GridLayout.UNDEFINED
-        launcher.setPadding(dp(14), dp(14), dp(14), dp(14))
+        launcher.setPadding(dp(6), dp(6), dp(6), dp(6))
+        launcher.setBackgroundColor(Color.TRANSPARENT)
         launcher.contentDescription = "RiftOS desktop launcher"
-        chromeHost.addView(launcher, FrameLayout.LayoutParams(dp(330), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        launcherScroll.apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            contentDescription = "RiftOS desktop apps"
+            addView(launcher, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        chromeHost.addView(launcherScroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply {
             gravity = Gravity.TOP or Gravity.START
-            topMargin = statusHeight + dp(12)
-            leftMargin = dp(8)
+            bottomMargin = taskbarHeight
         })
     }
 
     private fun buildTaskbar() {
         taskbar.orientation = LinearLayout.HORIZONTAL
         taskbar.gravity = Gravity.CENTER_VERTICAL
-        taskbar.setPadding(dp(6), dp(5), dp(6), dp(5))
-        taskbar.background = solid(0xff0d151d.toInt(), 0f, BORDER, dp(1))
+        taskbar.setPadding(dp(6), dp(4), dp(6), dp(4))
+        taskbar.background = solid(PANEL, 0f, 0x1cffffff, dp(1))
+        taskbar.elevation = dp(18).toFloat()
 
         configureButton(startButton, "⊞", "Start")
+        startButton.textSize = 22f
         startButton.setOnClickListener {
             if (!runtimeReady) return@setOnClickListener
             startMenu.visibility = if (startMenu.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             raiseSystemChrome()
         }
-        taskbar.addView(startButton, LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.MATCH_PARENT))
+        taskbar.addView(startButton, LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT))
 
         taskStrip.orientation = LinearLayout.HORIZONTAL
         taskStrip.gravity = Gravity.CENTER_VERTICAL
         val scroll = HorizontalScrollView(activity).apply {
             isHorizontalScrollBarEnabled = false
-            contentDescription = "Open RiftOS windows"
+            isHorizontalFadingEdgeEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            contentDescription = "Pinned apps and open windows; scroll horizontally for more"
             addView(taskStrip, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         taskbar.addView(scroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
 
         clock.apply {
             setTextColor(MUTED)
-            textSize = 10f
-            gravity = Gravity.CENTER
+            textSize = 9f
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setIncludeFontPadding(false)
             contentDescription = "Clock"
-            setPadding(dp(6), 0, dp(6), 0)
+            setPadding(dp(4), 0, dp(4), 0)
         }
-        taskbar.addView(clock, LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.MATCH_PARENT))
+        taskbar.addView(clock, LinearLayout.LayoutParams(dp(68), ViewGroup.LayoutParams.MATCH_PARENT))
 
-        configureButton(showDesktopButton, "▯", "Show desktop")
+        configureButton(showDesktopButton, "", "Show desktop")
+        showDesktopButton.background = pressable(Color.TRANSPARENT, 0x13ffffff, 0, 0x33ffffff)
         showDesktopButton.setOnClickListener { if (runtimeReady) showDesktop() }
-        taskbar.addView(showDesktopButton, LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT))
+        taskbar.addView(showDesktopButton, LinearLayout.LayoutParams(dp(8), ViewGroup.LayoutParams.MATCH_PARENT))
 
         chromeHost.addView(taskbar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, taskbarHeight).apply {
             gravity = Gravity.BOTTOM
@@ -260,15 +259,15 @@ class RiftNativeDesktop(
 
     private fun buildStartMenu() {
         startMenu.orientation = LinearLayout.VERTICAL
-        startMenu.setPadding(dp(8), dp(8), dp(8), dp(8))
-        startMenu.background = solid(0xff101922.toInt(), dp(10).toFloat(), BORDER, dp(1))
-        startMenu.elevation = dp(14).toFloat()
+        startMenu.setPadding(dp(18), dp(14), dp(18), dp(18))
+        startMenu.background = solid(0xed0c1822.toInt(), dp(10).toFloat(), 0x22ffffff, dp(1))
+        startMenu.elevation = dp(24).toFloat()
         startMenu.visibility = View.GONE
         startMenu.contentDescription = "Start menu"
-        chromeHost.addView(startMenu, FrameLayout.LayoutParams(dp(270), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        chromeHost.addView(startMenu, FrameLayout.LayoutParams(desiredStartMenuWidth(), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.BOTTOM or Gravity.START
-            leftMargin = dp(6)
-            bottomMargin = taskbarHeight + dp(6)
+            leftMargin = dp(8)
+            bottomMargin = taskbarHeight + dp(8)
         })
     }
 
@@ -297,39 +296,56 @@ class RiftNativeDesktop(
     private fun updateLauncherViews() {
         launcher.removeAllViews()
         startMenu.removeAllViews()
+        launcher.columnCount = desiredLauncherColumns()
+        val compact = isCompactDesktop()
+        launcherLayoutProfile = "${launcher.columnCount}:$compact"
+        val tileWidth = dp(if (compact) 74 else 84)
+        val tileHeight = dp(if (compact) 80 else 90)
         for (app in launcherApps) {
-            val tile = Button(activity).apply {
-                text = "${app.icon}\n${app.name}"
-                isAllCaps = false
-                textSize = 10f
-                setTextColor(TEXT)
-                gravity = Gravity.CENTER
-                contentDescription = app.name
-                background = solid(0xff111d26.toInt(), dp(9).toFloat(), BORDER, dp(1))
-                isEnabled = runtimeReady
-                setOnClickListener { if (runtimeReady) openApp(app.id) }
-            }
-            launcher.addView(tile, GridLayout.LayoutParams().apply {
-                width = dp(148)
+            launcher.addView(launcherTile(app), GridLayout.LayoutParams().apply {
+                width = tileWidth
+                height = tileHeight
+                setMargins(dp(4), dp(4), dp(4), dp(4))
+            })
+        }
+
+        val header = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+        }
+        header.addView(TextView(activity).apply {
+            text = "RiftOS"
+            setTextColor(TEXT)
+            textSize = 18f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setIncludeFontPadding(false)
+        }, LinearLayout.LayoutParams(0, dp(32), 1f))
+        header.addView(TextView(activity).apply {
+            text = "Apps"
+            setTextColor(MUTED)
+            textSize = 10f
+            gravity = Gravity.END or Gravity.BOTTOM
+            setIncludeFontPadding(false)
+        }, LinearLayout.LayoutParams(dp(64), dp(32)))
+        startMenu.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)))
+        startMenu.addView(View(activity).apply { setBackgroundColor(0x16ffffff) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+            bottomMargin = dp(10)
+        })
+
+        val menuGrid = GridLayout(activity).apply {
+            columnCount = 3
+            rowCount = GridLayout.UNDEFINED
+        }
+        val itemWidth = ((desiredStartMenuWidth() - dp(36) - dp(24)) / 3).coerceAtLeast(dp(72))
+        for (app in launcherApps) {
+            menuGrid.addView(startMenuTile(app), GridLayout.LayoutParams().apply {
+                width = itemWidth
                 height = dp(78)
                 setMargins(dp(4), dp(4), dp(4), dp(4))
             })
-            val row = Button(activity).apply {
-                text = "${app.icon}   ${app.name}"
-                isAllCaps = false
-                gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                textSize = 11f
-                setTextColor(TEXT)
-                contentDescription = app.name
-                background = ColorDrawable(Color.TRANSPARENT)
-                isEnabled = runtimeReady
-                setOnClickListener {
-                    startMenu.visibility = View.GONE
-                    if (runtimeReady) openApp(app.id)
-                }
-            }
-            startMenu.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
         }
+        startMenu.addView(menuGrid, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        resizeStartMenu()
     }
 
     private fun openApp(id: String) {
@@ -389,30 +405,32 @@ class RiftNativeDesktop(
             setTextColor(TEXT)
             textSize = 11f
             gravity = Gravity.CENTER_VERTICAL
-            maxLines = 2
-            setPadding(dp(10), 0, dp(4), 0)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setIncludeFontPadding(false)
+            setPadding(dp(12), 0, dp(4), 0)
         }
         titleBar.addView(titleText, FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT).apply {
             width = ViewGroup.LayoutParams.MATCH_PARENT
-            rightMargin = dp(138)
+            rightMargin = dp(126)
         })
         val actions = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        titleBar.addView(actions, FrameLayout.LayoutParams(dp(138), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
+        titleBar.addView(actions, FrameLayout.LayoutParams(dp(126), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END))
         val min = windowButton("—", "Minimize $title")
         val max = windowButton("□", "Maximize $title")
-        val close = windowButton("×", "Close $title")
-        actions.addView(min, LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.MATCH_PARENT))
-        actions.addView(max, LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.MATCH_PARENT))
-        actions.addView(close, LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.MATCH_PARENT))
+        val close = windowButton("×", "Close $title", danger = true)
+        actions.addView(min, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
+        actions.addView(max, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
+        actions.addView(close, LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT))
 
         val left = View(activity).apply { setBackgroundColor(BORDER) }
         val right = View(activity).apply { setBackgroundColor(BORDER) }
         val bottom = View(activity).apply { setBackgroundColor(BORDER) }
         val resize = View(activity).apply {
-            setBackgroundColor(0xff547160.toInt())
+            setBackgroundColor(Color.TRANSPARENT)
             contentDescription = "Resize $title"
             isClickable = true
         }
@@ -533,7 +551,7 @@ class RiftNativeDesktop(
     }
 
     private fun updateTitle(record: WindowRecord) {
-        record.titleText.text = if (record.kicker.isBlank()) record.title else "${record.kicker}\n${record.title}"
+        record.titleText.text = record.title
         record.titleBar.contentDescription = "${record.title} window"
         record.minimizeButton.contentDescription = "Minimize ${record.title}"
         record.maximizeButton.contentDescription = if (record.maximized) "Restore ${record.title}" else "Maximize ${record.title}"
@@ -570,7 +588,7 @@ class RiftNativeDesktop(
     }
 
     private fun syncTaskbar() {
-        launcher.visibility = if (windows.values.any { !it.minimized }) View.GONE else View.VISIBLE
+        launcherScroll.visibility = if (windows.values.any { !it.minimized }) View.GONE else View.VISIBLE
         taskStrip.removeAllViews()
         val represented = LinkedHashSet<String>()
         for (appId in taskbarPins) {
@@ -590,14 +608,15 @@ class RiftNativeDesktop(
 
     private fun addTaskButton(appId: String, label: String, record: WindowRecord?) {
         val active = record != null && record.id == activeId && !record.minimized
-        val button = Button(activity).apply {
-            text = label.take(24)
-            isAllCaps = false
-            textSize = 9f
-            setTextColor(if (active) ACCENT else TEXT)
+        val baseId = appId.removePrefix("riftrt:")
+        val pinned = taskbarPins.contains(baseId)
+        val showLabel = !isCompactDesktop() && record != null && !pinned
+        val itemWidth = if (showLabel) dp(140) else dp(44)
+        val item = FrameLayout(activity).apply {
+            isClickable = true
+            isFocusable = true
             contentDescription = label
-            background = solid(if (active) PANEL_ACTIVE else PANEL, dp(7).toFloat(), BORDER, dp(1))
-            setPadding(dp(10), 0, dp(10), 0)
+            background = pressable(if (active) PANEL_ACTIVE else Color.TRANSPARENT, 0x13ffffff, 6)
             setOnClickListener {
                 val live = windows[appId] ?: windows["riftrt:$appId"] ?: record?.let { windows[it.id] }
                 if (live == null) openApp(appId)
@@ -605,8 +624,26 @@ class RiftNativeDesktop(
                 else focus(live.id, "taskbar-focus")
             }
         }
-        taskStrip.addView(button, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT).apply {
-            setMargins(dp(3), 0, dp(3), 0)
+        item.addView(TextView(activity).apply {
+            val icon = taskIcon(baseId, label)
+            text = if (showLabel) "$icon   ${label.take(18)}" else icon
+            setTextColor(TEXT)
+            textSize = if (showLabel) 10f else 18f
+            gravity = if (showLabel) Gravity.START or Gravity.CENTER_VERTICAL else Gravity.CENTER
+            setIncludeFontPadding(false)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(if (showLabel) dp(9) else 0, 0, if (showLabel) dp(6) else 0, 0)
+        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        if (record != null) {
+            item.addView(View(activity).apply {
+                background = solid(if (active) ACCENT else 0xff8ba6b7.toInt(), dp(3).toFloat())
+            }, FrameLayout.LayoutParams(dp(if (active) 24 else 14), dp(3), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                bottomMargin = dp(1)
+            })
+        }
+        taskStrip.addView(item, LinearLayout.LayoutParams(itemWidth, dp(40)).apply {
+            setMargins(dp(1), 0, dp(1), 0)
         })
     }
 
@@ -723,16 +760,22 @@ class RiftNativeDesktop(
     }
 
     private fun raiseSystemChrome() {
-        statusBar.bringToFront()
         taskbar.bringToFront()
         if (startMenu.visibility == View.VISIBLE) startMenu.bringToFront()
     }
 
     private fun updateFocusStyle(record: WindowRecord, focused: Boolean) {
-        record.titleBar.background = solid(if (focused) PANEL_ACTIVE else PANEL, dp(7).toFloat(), if (focused) ACCENT else BORDER, dp(1))
+        val border = if (focused) FOCUS_BORDER else BORDER
+        record.titleBar.background = solid(WINDOW_BAR, dp(8).toFloat(), border, borderWidth)
+        record.leftBorder.setBackgroundColor(border)
+        record.rightBorder.setBackgroundColor(border)
+        record.bottomBorder.setBackgroundColor(border)
     }
 
     private fun relayoutForHostChange() {
+        val columns = desiredLauncherColumns()
+        val profile = "$columns:${isCompactDesktop()}"
+        if (launcherLayoutProfile != profile) updateLauncherViews() else resizeStartMenu()
         windows.values.forEach { record ->
             record.bounds = if (record.maximized) workspaceBounds() else clampBounds(record.bounds)
             applyRecordLayout(record)
@@ -754,11 +797,11 @@ class RiftNativeDesktop(
         val availableH = work.height().coerceAtLeast(1)
         val minW = minWindowWidth.coerceAtMost(availableW)
         val minH = minWindowHeight.coerceAtMost(availableH)
-        val width = (availableW * 0.78f).roundToInt().coerceIn(minW.coerceAtLeast(1), availableW)
-        val height = (availableH * 0.76f).roundToInt().coerceIn(minH.coerceAtLeast(1), availableH)
-        val offset = dp(18) * (index % 6)
-        val left = (work.left + dp(22) + offset).coerceIn(work.left, (work.right - width).coerceAtLeast(work.left))
-        val top = (work.top + dp(18) + offset).coerceIn(work.top, (work.bottom - height).coerceAtLeast(work.top))
+        val width = (availableW * 0.68f).roundToInt().coerceIn(minW.coerceAtLeast(1), availableW)
+        val height = (availableH * 0.72f).roundToInt().coerceIn(minH.coerceAtLeast(1), availableH)
+        val offset = dp(24) * (index % 6)
+        val left = (work.left + dp(34) + offset).coerceIn(work.left, (work.right - width).coerceAtLeast(work.left))
+        val top = (work.top + dp(30) + offset).coerceIn(work.top, (work.bottom - height).coerceAtLeast(work.top))
         return Rect(left, top, left + width, top + height)
     }
 
@@ -842,7 +885,7 @@ class RiftNativeDesktop(
     private fun setWallpaper(raw: String) {
         val value = raw.trim()
         if (value.isBlank()) {
-            wallpaper.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xff0b1118.toInt(), 0xff071019.toInt(), 0xff0d1715.toInt()))
+            wallpaper.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xff07141d.toInt(), 0xff0b2530.toInt(), 0xff08161d.toInt()))
             return
         }
         if (value.startsWith("data:image/", ignoreCase = true) && value.contains(";base64,")) {
@@ -868,25 +911,152 @@ class RiftNativeDesktop(
         view.layoutParams = params
     }
 
+    private fun isCompactDesktop(): Boolean {
+        val width = chromeHost.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+        return width < dp(700)
+    }
+
+    private fun desiredLauncherColumns(): Int {
+        val width = chromeHost.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+        val tileWidth = dp(if (isCompactDesktop()) 74 else 84)
+        return ((width - dp(12)).coerceAtLeast(tileWidth) / (tileWidth + dp(8))).coerceAtLeast(1)
+    }
+
+    private fun desiredStartMenuWidth(): Int {
+        val width = chromeHost.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+        return dp(420).coerceAtMost((width - dp(16)).coerceAtLeast(dp(240)))
+    }
+
+    private fun resizeStartMenu() {
+        val params = (startMenu.layoutParams as? FrameLayout.LayoutParams) ?: return
+        params.width = desiredStartMenuWidth()
+        params.leftMargin = dp(8)
+        params.bottomMargin = taskbarHeight + dp(8)
+        params.gravity = Gravity.BOTTOM or Gravity.START
+        startMenu.layoutParams = params
+    }
+
+    private fun launcherTile(app: LauncherApp): View {
+        val compact = isCompactDesktop()
+        val iconSize = dp(if (compact) 40 else 44)
+        return LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(4), dp(7), dp(4), dp(4))
+            background = pressable(Color.TRANSPARENT, 0x17ffffff, 7)
+            isClickable = true
+            isFocusable = true
+            isEnabled = runtimeReady
+            contentDescription = app.name
+            setOnClickListener { if (runtimeReady) openApp(app.id) }
+            addView(TextView(activity).apply {
+                text = app.icon
+                setTextColor(ACCENT)
+                textSize = if (compact) 17f else 19f
+                gravity = Gravity.CENTER
+                setIncludeFontPadding(false)
+                setTypeface(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+                background = iconBackground(if (compact) 9 else 10)
+            }, LinearLayout.LayoutParams(iconSize, iconSize))
+            addView(TextView(activity).apply {
+                text = app.name
+                setTextColor(TEXT)
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setIncludeFontPadding(false)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(5), 0, 0)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+    }
+
+    private fun startMenuTile(app: LauncherApp): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        background = pressable(Color.TRANSPARENT, 0x12ffffff, 8)
+        isClickable = true
+        isFocusable = true
+        isEnabled = runtimeReady
+        contentDescription = app.name
+        setOnClickListener {
+            startMenu.visibility = View.GONE
+            if (runtimeReady) openApp(app.id)
+        }
+        addView(TextView(activity).apply {
+            text = app.icon
+            setTextColor(ACCENT)
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setIncludeFontPadding(false)
+            setTypeface(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+            background = solid(0xff142b37.toInt(), dp(8).toFloat())
+        }, LinearLayout.LayoutParams(dp(34), dp(34)))
+        addView(TextView(activity).apply {
+            text = app.name
+            setTextColor(TEXT)
+            textSize = 10f
+            gravity = Gravity.CENTER
+            setIncludeFontPadding(false)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(2), dp(6), dp(2), 0)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+    }
+
+    private fun taskIcon(appId: String, label: String): String =
+        launcherApps.firstOrNull { it.id == appId }?.icon
+            ?: launcherApps.firstOrNull { it.name.equals(label, ignoreCase = true) }?.icon
+            ?: "□"
+
+    private fun iconBackground(radiusDp: Int): GradientDrawable =
+        GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xff1c3340.toInt(), 0xff10242d.toInt())).apply {
+            cornerRadius = dp(radiusDp).toFloat()
+            setStroke(dp(1), 0x22ffffff)
+        }
+
+    private fun pressable(
+        normalColor: Int = Color.TRANSPARENT,
+        pressedColor: Int = 0x13ffffff,
+        radiusDp: Int = 6,
+        strokeColor: Int? = null
+    ): android.graphics.drawable.StateListDrawable = android.graphics.drawable.StateListDrawable().apply {
+        val radius = dp(radiusDp).toFloat()
+        val focusStroke = strokeColor ?: 0x24ffffff
+        addState(intArrayOf(android.R.attr.state_pressed), solid(pressedColor, radius, focusStroke, dp(1)))
+        addState(intArrayOf(android.R.attr.state_focused), solid(pressedColor, radius, focusStroke, dp(1)))
+        addState(intArrayOf(), solid(normalColor, radius, strokeColor, if (strokeColor == null) 0 else dp(1)))
+    }
+
     private fun configureButton(button: Button, label: String, description: String) {
         button.text = label
         button.isAllCaps = false
         button.textSize = 12f
         button.setTextColor(TEXT)
+        button.setIncludeFontPadding(false)
         button.contentDescription = description
-        button.background = solid(PANEL, dp(7).toFloat(), BORDER, dp(1))
-        button.setPadding(dp(6), 0, dp(6), 0)
+        button.background = pressable()
+        button.minWidth = 0
+        button.minimumWidth = 0
+        button.minHeight = 0
+        button.minimumHeight = 0
+        button.stateListAnimator = null
+        button.setPadding(dp(4), 0, dp(4), 0)
     }
 
-    private fun windowButton(label: String, description: String): Button = Button(activity).apply {
+    private fun windowButton(label: String, description: String, danger: Boolean = false): Button = Button(activity).apply {
         text = label
         isAllCaps = false
-        textSize = 13f
+        textSize = if (danger) 20f else 14f
         setTextColor(TEXT)
+        setIncludeFontPadding(false)
         contentDescription = description
-        background = ColorDrawable(Color.TRANSPARENT)
+        background = pressable(Color.TRANSPARENT, if (danger) 0xffc42b1c.toInt() else 0x12ffffff, 0)
         minWidth = 0
         minimumWidth = 0
+        minHeight = 0
+        minimumHeight = 0
+        stateListAnimator = null
         setPadding(0, 0, 0, 0)
     }
 

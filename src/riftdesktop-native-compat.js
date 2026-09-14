@@ -3,7 +3,7 @@ const nativeDesktop=globalThis.RiftNativeDesktop;
 if(!core||!nativeDesktop?.enabled)throw new Error('Native desktop compatibility renderer requires RiftOS native desktop authority');
 
 const root=document.documentElement;
-root.classList.add('rift-native-host');
+root.classList.add('rift-native-host','rift-desktop-mode');
 root.dataset.riftDesktop='native';
 
 const style=document.createElement('style');
