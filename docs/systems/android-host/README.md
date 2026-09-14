@@ -12,6 +12,8 @@ RiftOS is a user-space operating environment, not a replacement Android kernel. 
 
 - `android/app/src/main/java/com/riftos/app/MainActivity.kt`
 - `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt`
+- `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt`
+- `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt`
 - `src/riftandroid-preload.js`
 - `src/riftandroid-platform.js`
 - `src/riftandroid-entry.js`
@@ -22,7 +24,7 @@ Related but separately documented: `RiftNativeDispatcher`, `RiftBrowserWindow`, 
 
 ## Responsibilities
 
-`MainActivity` creates/configures the trusted compatibility WebView, installs safe insets, serves local assets through `WebViewAssetLoader`, then gives that WebView to `RiftNativeDesktop` instead of mounting it as the desktop root. `RiftNativeDesktop` owns native launcher/taskbar/window chrome, geometry, focus and accessibility controls; the WebView remains only a compatibility app-content canvas. MainActivity also receives `RiftAndroid` messages, routes bounded `desktop.*` and other native requests, owns Android file/directory pickers, forwards transfer progress/results, owns the RiftBrowser content plane, starts the workspace watcher, and starts the relay client only according to saved relay configuration.
+`MainActivity` creates/configures the trusted compatibility WebView, installs safe insets, serves local assets through `WebViewAssetLoader`, then gives that WebView to `RiftNativeDesktop` instead of mounting it as the desktop root. `RiftNativeDesktop` owns native launcher/taskbar/window chrome, geometry, focus, content attachment and accessibility controls; the WebView remains only a compatibility app-content canvas for built-ins that have not migrated. `MainActivity` also creates `RiftNativeAppHost`, which owns dedicated Android program surfaces for installed Rift apps. MainActivity receives `RiftAndroid` messages, routes bounded `desktop.*`, `app.runtime.*` and other native requests, owns Android file/directory pickers, forwards transfer progress/results, owns the RiftBrowser content plane, starts the workspace watcher, and starts the relay client only according to saved relay configuration.
 
 `src/riftandroid-platform.js` intentionally exports `globalThis.RiftAndroidAPI` as the shell-facing Android service facade, `globalThis.RiftKernel` as its system subset, and `globalThis.RiftAndroidBack` as the callback invoked by `MainActivity` before Android Back exits the host. These globals are public RiftOS shell surfaces even when no other repository module currently calls every method directly.
 
@@ -44,7 +46,7 @@ RiftOS JS
   -> JS pending request resolves
 ```
 
-Desktop and browser window commands are separated from general native dispatcher calls. `desktop.*` requests terminate in `RiftNativeDesktop`; `browser.window.*` terminates in `RiftBrowserWindow`. Workspace events have their own callback path. MCP guest-page messaging uses `RiftBrowserMcpAppBridge`, not the general shell bridge.
+Desktop, installed-program and browser window commands are separated from general native dispatcher calls. `desktop.*` requests terminate in `RiftNativeDesktop`; `app.runtime.*` terminates in the fixed `RiftNativeAppHost`; `browser.window.*` terminates in `RiftBrowserWindow`. Workspace events have their own callback path. MCP guest-page messaging uses `RiftBrowserMcpAppBridge`, not the general shell bridge.
 
 ## Security boundary
 

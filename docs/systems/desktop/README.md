@@ -4,7 +4,7 @@
 
 RiftDesktop is the permanent Android-native RiftOS shell. Android owns the visible desktop, launcher, Start menu, taskbar, native window frames, focus/z-order, move/resize, minimize/maximize/restore/close, show-desktop behavior, system insets and Android Accessibility semantics.
 
-The trusted RiftOS WebView still exists during the migration, but it is **not the desktop/window manager**. It is a compatibility content canvas used to keep existing Files, Editor, Settings, RiftShell, Workspace Records and RiftRT app bodies working while those surfaces are migrated selectively. Native Android publishes each window's content rectangle and state; JavaScript positions only the app body inside that rectangle. Window chrome and window authority never come from DOM elements in native mode.
+The trusted RiftOS WebView still exists during the migration, but it is **not the desktop/window manager**. It is a compatibility content canvas used only for built-in surfaces such as Files, Settings, RiftShell and Workspace Records that have not yet migrated. Installed Rift programs no longer use that shared content plane: RiftRT asks `RiftNativeAppHost` for a dedicated Android-owned app View and `RiftNativeDesktop` attaches that View to the matching native WindowRecord. Native Android publishes each window's content rectangle/state and owns all chrome/geometry. No installed program is hosted in a shell iframe.
 
 ## Source ownership
 
@@ -95,4 +95,4 @@ On device, use the fixed-scope RiftOS self-agent. The Accessibility tree should 
 
 ## Safe extension points
 
-Add generic window policy to `RiftNativeDesktop` and expose only bounded compatibility requests through the existing trusted native bridge. Keep app-specific behavior inside the app/runtime. A built-in may later become fully native without changing the window-manager contract; Web/Rift apps may continue using managed WebView/runtime surfaces inside native windows where appropriate.
+Add generic window policy to `RiftNativeDesktop` and expose only bounded compatibility requests through the existing trusted native bridge. Keep app-specific behavior inside the app/runtime. Installed Rift programs must attach through the native content-view contract, while built-ins can migrate from the shared compatibility plane without changing window authority. Renderer backends (native Android UI, dedicated managed WebView, WASM/native surfaces) may evolve independently as long as they remain attached to the native WindowRecord and never restore iframe execution.

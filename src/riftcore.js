@@ -1,6 +1,11 @@
-const CORE_VERSION = "2.1.0-android-native";
+const CORE_VERSION = "2.2.0-android-native-volumes";
 const ROOT_MOUNT = "__riftfs__";
-const PROTECTED_RIFT_ROOTS = new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts"]);
+const PROTECTED_RIFT_ROOTS = new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts","/C:","/D:","/C:/RiftOS","/C:/Programs","/C:/ProgramData","/C:/Toolchains","/D:/Users","/D:/Workspace","/D:/Projects","/D:/Packages","/D:/Builds","/D:/Documents","/D:/Downloads","/D:/Vault","/D:/Temp"]);
+const RIFT_VOLUMES = Object.freeze({
+  "C:":Object.freeze({id:"C",letter:"C:",label:"RiftOS System",backing:"/system/volumes/C",roots:Object.freeze({RiftOS:"/system/riftos",Programs:"/system/programs",ProgramData:"/system/program-data",Toolchains:"/system/toolchains"})}),
+  "D:":Object.freeze({id:"D",letter:"D:",label:"User Data",backing:"/system/volumes/D",roots:Object.freeze({Users:"/home/users",Workspace:"/workspace",Projects:"/home/projects",Packages:"/documents/packages",Builds:"/documents/builds",Documents:"/documents",Downloads:"/downloads",Vault:"/documents/vault",Temp:"/home/temp"})})
+});
+const VOLUME_ROOTS = new Set(Object.keys(RIFT_VOLUMES).map(letter=>`/${letter}`));
 
 const SYSTEM_APPS = [
   {id:"system",name:"RiftKernel",trusted:true,permissions:["fs.read","fs.write","process.read","process.manage","system.settings","native.read","native.files"]},
@@ -52,6 +57,15 @@ function safeMountName(value){
   return String(value||"mount").trim().replace(/[\/\\]+/g,"-").replace(/\s+/g," ").slice(0,80)||"mount";
 }
 function sizeOf(value){return new TextEncoder().encode(String(value??"")).byteLength;}
+function volumeForPath(value){
+  const path=normalizePath(value),parts=path.split("/").filter(Boolean),letter=String(parts[0]||"").toUpperCase();
+  const volume=RIFT_VOLUMES[letter];if(!volume)return null;
+  if(parts.length===1)return {volume,path,virtualRoot:true,physical:volume.backing,rootName:null,tail:[]};
+  const requestedRoot=parts[1],rootName=Object.keys(volume.roots).find(name=>name.toLowerCase()===requestedRoot.toLowerCase())||null;
+  const tail=parts.slice(2),physical=rootName?joinPath(volume.roots[rootName],...tail):joinPath(volume.backing,...parts.slice(1));
+  return {volume,path,virtualRoot:false,physical,rootName,tail};
+}
+function volumeDescriptors(){return Object.values(RIFT_VOLUMES).map(volume=>({letter:volume.letter,label:volume.label,path:`/${volume.letter}`,roots:Object.keys(volume.roots)}));}
 
 class RiftNativeBridge extends EventTarget{
   constructor(){
@@ -151,16 +165,17 @@ class RiftFS extends EventTarget{
     this.transferQueue=new RiftTransferQueue();
   }
   route(value){
-    const path=normalizePath(value);
+    const path=normalizePath(value),mapped=volumeForPath(path);
+    if(mapped)return {path,mountId:ROOT_MOUNT,relative:mapped.physical.replace(/^\/+/,""),backend:"rift-volume",mount:null,volume:mapped.volume,virtualVolumeRoot:mapped.virtualRoot,volumeRootName:mapped.rootName};
     const mount=this.resolveMount(path);
-    if(mount)return {path,mountId:mount.mountId,relative:mount.relative||"",backend:"android-saf",mount};
-    return {path,mountId:ROOT_MOUNT,relative:path.replace(/^\/+/,""),backend:"android-internal",mount:null};
+    if(mount)return {path,mountId:mount.mountId,relative:mount.relative||"",backend:"android-saf",mount,volume:null,virtualVolumeRoot:false};
+    return {path,mountId:ROOT_MOUNT,relative:path.replace(/^\/+/,""),backend:"android-internal",mount:null,volume:null,virtualVolumeRoot:false};
   }
   async init(){
     if(this.ready)return this;
     if(!this.native.connected)throw new Error("RiftFS requires the Android native host on this branch.");
     await this.restoreNativeMounts().catch(error=>console.warn("[RiftFS] SAF mount restore failed",error));
-    for(const path of ["home","apps","system","workspace","downloads","documents"]){
+    for(const path of ["home","apps","system","workspace","downloads","documents","system/riftos","system/programs","system/program-data","system/program-data/registry","system/program-data/installer","system/program-data/installer/staging","system/program-data/installer/rollback","system/toolchains","system/volumes","system/volumes/C","system/volumes/D","home/users","home/users/Default","home/users/Default/AppData","home/projects","home/temp","documents/packages","documents/builds","documents/vault"]){
       await this.native.call("fs.mkdir",{mountId:ROOT_MOUNT,path});
     }
     this.nativeRootReady=true;
@@ -213,9 +228,10 @@ class RiftFS extends EventTarget{
   async stat(value){
     const target=this.route(value);
     if(target.path==="/mounts")return {path:"/mounts",kind:"directory",size:0,modified:0,backend:"android-virtual"};
+    if(target.virtualVolumeRoot)return {path:target.path,kind:"directory",size:0,modified:0,backend:"rift-volume",volume:target.volume.letter,label:target.volume.label};
     if(target.mount&&!target.relative)return {path:target.path,kind:"mount",size:0,modified:0,backend:"android-saf",mountId:target.mountId};
     const stat=await this.native.call("fs.stat",{mountId:target.mountId,path:target.relative});
-    return stat?{...stat,path:target.path,backend:target.backend}:null;
+    return stat?{...stat,path:target.path,backend:target.backend,volume:target.volume?.letter||null}:null;
   }
   async openNative(value){
     const target=this.route(value);
@@ -225,6 +241,7 @@ class RiftFS extends EventTarget{
   async get(value){
     const target=this.route(value);
     if(target.path==="/mounts")return {path:"/mounts",kind:"directory",size:0,modified:0,backend:"android-virtual"};
+    if(target.virtualVolumeRoot)return {path:target.path,kind:"directory",size:0,modified:0,backend:"rift-volume",volume:target.volume.letter,label:target.volume.label};
     if(target.mount&&!target.relative)return {path:target.path,kind:"mount",size:0,modified:0,backend:"android-saf",mountId:target.mountId};
     const stat=await this.native.call("fs.stat",{mountId:target.mountId,path:target.relative});
     if(!stat)return null;
@@ -235,17 +252,17 @@ class RiftFS extends EventTarget{
   async readText(value){return (await this.get(value))?.content??null;}
   async readBase64(value){
     const target=this.route(value);
-    if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Binary reads require a file path");
+    if(target.path==="/mounts"||target.virtualVolumeRoot||target.mount&&!target.relative)throw new Error("Binary reads require a file path");
     return this.native.call("fs.readBase64",{mountId:target.mountId,path:target.relative});
   }
   async sha256(value){
     const target=this.route(value);
-    if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("SHA-256 requires a file path");
+    if(target.path==="/mounts"||target.virtualVolumeRoot||target.mount&&!target.relative)throw new Error("SHA-256 requires a file path");
     return this.native.call("fs.sha256",{mountId:target.mountId,path:target.relative});
   }
   async write(value,content){
     const target=this.route(value);
-    if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Cannot write over a mount root");
+    if(target.path==="/mounts"||target.virtualVolumeRoot||target.mount&&!target.relative)throw new Error("Cannot write over a mount or volume root");
     const text=String(content??"");
     const stat=await this.native.call("fs.writeText",{mountId:target.mountId,path:target.relative,text});
     const record={...stat,path:target.path,content:text,size:Number(stat?.size??sizeOf(text)),backend:target.backend};
@@ -255,7 +272,7 @@ class RiftFS extends EventTarget{
   writeText(value,content){return this.write(value,content);}
   async writeBase64(value,base64){
     const target=this.route(value);
-    if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Binary writes require a file path");
+    if(target.path==="/mounts"||target.virtualVolumeRoot||target.mount&&!target.relative)throw new Error("Binary writes require a file path");
     const stat=await this.native.call("fs.writeBase64",{mountId:target.mountId,path:target.relative,base64:String(base64||"")});
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"write",path:target.path}}));
     return {...stat,path:target.path,backend:target.backend};
@@ -263,6 +280,7 @@ class RiftFS extends EventTarget{
   async mkdir(value){
     const target=this.route(value);
     if(target.path==="/mounts")return {path:"/mounts",kind:"directory",backend:"android-virtual"};
+    if(target.virtualVolumeRoot)return {path:target.path,kind:"directory",backend:"rift-volume",volume:target.volume.letter};
     if(target.mount&&!target.relative)return {path:target.path,kind:"mount",backend:"android-saf"};
     const stat=await this.native.call("fs.mkdir",{mountId:target.mountId,path:target.relative});
     this.dispatchEvent(new CustomEvent("change",{detail:{type:"mkdir",path:target.path}}));
@@ -279,8 +297,8 @@ class RiftFS extends EventTarget{
   }
   async zip(fromValue,toValue,{transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);
-    if(source.path==="/"||source.path==="/mounts"||source.mount&&!source.relative)throw new Error("Cannot archive a filesystem root or mount root");
-    if(destination.path==="/"||destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Archive destination must be a file");
+    if(source.path==="/"||source.path==="/mounts"||source.virtualVolumeRoot||source.mount&&!source.relative)throw new Error("Cannot archive a filesystem, volume or mount root");
+    if(destination.path==="/"||destination.path==="/mounts"||destination.virtualVolumeRoot||destination.mount&&!destination.relative)throw new Error("Archive destination must be a file");
     const stat=await this.transferQueue.run(()=>this.native.call("fs.zip",{
       fromMountId:source.mountId,from:source.relative,toMountId:destination.mountId,to:destination.relative,
       transferId:transferId||crypto.randomUUID?.()||`transfer-${Date.now()}`
@@ -290,8 +308,8 @@ class RiftFS extends EventTarget{
   }
   async unzip(fromValue,toValue,{transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);
-    if(source.path==="/"||source.path==="/mounts"||source.mount&&!source.relative)throw new Error("Archive source must be a file");
-    if(destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Choose a folder inside the mounted filesystem");
+    if(source.path==="/"||source.path==="/mounts"||source.virtualVolumeRoot||source.mount&&!source.relative)throw new Error("Archive source must be a file");
+    if(destination.path==="/mounts"||destination.virtualVolumeRoot||destination.mount&&!destination.relative)throw new Error("Choose a folder inside the destination volume or mounted filesystem");
     const stat=await this.transferQueue.run(()=>this.native.call("fs.unzip",{
       fromMountId:source.mountId,from:source.relative,toMountId:destination.mountId,to:destination.relative,
       transferId:transferId||crypto.randomUUID?.()||`transfer-${Date.now()}`
@@ -301,8 +319,8 @@ class RiftFS extends EventTarget{
   }
   async copy(fromValue,toValue,{overwrite=false,transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);
-    if(source.path==="/"||source.path==="/mounts"||source.mount&&!source.relative)throw new Error("Cannot copy a filesystem root or mount root");
-    if(destination.path==="/"||destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Cannot replace a filesystem root or mount root");
+    if(source.path==="/"||source.path==="/mounts"||source.virtualVolumeRoot||source.mount&&!source.relative)throw new Error("Cannot copy a filesystem, volume or mount root");
+    if(destination.path==="/"||destination.path==="/mounts"||destination.virtualVolumeRoot||destination.mount&&!destination.relative)throw new Error("Cannot replace a filesystem, volume or mount root");
     const stat=await this.transferQueue.run(()=>this.native.call("fs.copy",{
       fromMountId:source.mountId,from:source.relative,
       toMountId:destination.mountId,to:destination.relative,overwrite:overwrite===true,
@@ -314,8 +332,8 @@ class RiftFS extends EventTarget{
   }
   async move(fromValue,toValue,{overwrite=false,transferId=null}={}){
     const source=this.route(fromValue),destination=this.route(toValue);
-    if(source.path==="/"||PROTECTED_RIFT_ROOTS.has(source.path)||source.mount&&!source.relative)throw new Error("Cannot move a RiftFS system root or mount root");
-    if(destination.path==="/"||destination.path==="/mounts"||destination.mount&&!destination.relative)throw new Error("Cannot replace a filesystem root or mount root");
+    if(source.path==="/"||PROTECTED_RIFT_ROOTS.has(source.path)||source.virtualVolumeRoot||source.mount&&!source.relative)throw new Error("Cannot move a RiftFS system, volume or mount root");
+    if(destination.path==="/"||destination.path==="/mounts"||destination.virtualVolumeRoot||destination.mount&&!destination.relative)throw new Error("Cannot replace a filesystem, volume or mount root");
     const stat=await this.transferQueue.run(()=>this.native.call("fs.move",{
       fromMountId:source.mountId,from:source.relative,
       toMountId:destination.mountId,to:destination.relative,overwrite:overwrite===true,
@@ -327,20 +345,36 @@ class RiftFS extends EventTarget{
   }
   rename(value,newValue,options={}){return this.move(value,newValue,options);}
   createFile(value,text=""){return this.writeText(value,text);}
+  async listVolumeRoot(path,volume,recursive){
+    const out=[],seen=new Set(),push=row=>{if(!seen.has(row.path)){seen.add(row.path);out.push(row);}};
+    const backing=await this.native.call("fs.list",{mountId:ROOT_MOUNT,path:volume.backing.replace(/^\/+/,""),recursive}).catch(()=>[]);
+    for(const row of Array.isArray(backing)?backing:[])push({...row,path:joinPath(path,row.path||row.name||""),backend:"rift-volume",volume:volume.letter});
+    for(const [name,physical] of Object.entries(volume.roots)){
+      const display=joinPath(path,name);push({path:display,kind:"directory",size:0,modified:0,backend:"rift-volume",volume:volume.letter,systemAlias:true});
+      if(!recursive)continue;
+      const rows=await this.native.call("fs.list",{mountId:ROOT_MOUNT,path:physical.replace(/^\/+/,""),recursive}).catch(()=>[]);
+      for(const row of Array.isArray(rows)?rows:[])push({...row,path:joinPath(display,row.path||row.name||""),backend:"rift-volume",volume:volume.letter,systemAlias:true});
+    }
+    return out.sort((a,b)=>a.path.localeCompare(b.path));
+  }
   async list(value="/",options={}){
     const path=normalizePath(value),recursive=options.recursive!==false;
     if(path==="/mounts"){
       return [...this.mounts.values()].map(m=>({path:m.path,kind:"mount",size:0,modified:0,backend:"android-saf",mountId:m.mountId})).sort((a,b)=>a.path.localeCompare(b.path));
     }
+    const volumeRoot=volumeForPath(path);if(volumeRoot?.virtualRoot)return this.listVolumeRoot(path,volumeRoot.volume,recursive);
     const target=this.route(path);
     const rows=await this.native.call("fs.list",{mountId:target.mountId,path:target.relative,recursive});
-    const mapped=(Array.isArray(rows)?rows:[]).map(row=>({...row,path:joinPath(path,row.path||row.name||""),backend:target.backend}));
+    const mapped=(Array.isArray(rows)?rows:[]).map(row=>({...row,path:joinPath(path,row.path||row.name||""),backend:target.backend,volume:target.volume?.letter||null}));
     if(path==="/"){
+      mapped.push({path:"/C:",kind:"directory",size:0,modified:0,backend:"rift-volume",volume:"C:",label:"RiftOS System"});
+      mapped.push({path:"/D:",kind:"directory",size:0,modified:0,backend:"rift-volume",volume:"D:",label:"User Data"});
       mapped.push({path:"/mounts",kind:"directory",size:0,modified:0,backend:"android-virtual"});
       if(recursive)for(const mount of this.mounts.values())mapped.push({path:mount.path,kind:"mount",size:0,modified:0,backend:"android-saf",mountId:mount.mountId});
     }
     return mapped.sort((a,b)=>a.path.localeCompare(b.path));
   }
+  volumes(){return volumeDescriptors();}
   setting(key){return this.native.call("settings.get",{key:String(key)});}
   setSetting(key,value){return this.native.call("settings.set",{key:String(key),value});}
   estimate(){return this.native.call("system.storage",{});}

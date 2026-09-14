@@ -34,7 +34,7 @@ import kotlin.math.roundToInt
 class RiftNativeDesktop(
     private val activity: Activity,
     host: FrameLayout,
-    compatibilityView: WebView,
+    private val compatibilityView: WebView,
     private val stateSink: (JSONObject) -> Unit,
     private val appOpenSink: (String) -> Unit,
     private val windowClosedSink: (String) -> Unit
@@ -70,7 +70,8 @@ class RiftNativeDesktop(
         var restoreBounds: Rect? = null,
         var minimized: Boolean = false,
         var maximized: Boolean = false,
-        var z: Long = 0L
+        var z: Long = 0L,
+        var contentView: View? = null
     )
 
     val contentHost = FrameLayout(activity).apply {
@@ -169,6 +170,29 @@ class RiftNativeDesktop(
         }
         "desktop.layout.reset" -> resetLayout()
         else -> throw IllegalArgumentException("Unsupported native desktop method: $method")
+    }
+
+    fun attachContent(id: String, view: View): JSONObject {
+        val record = windows[id] ?: throw IllegalArgumentException("Native window not found: $id")
+        if (record.contentView !== view) {
+            record.contentView?.let { old -> runCatching { contentHost.removeView(old) } }
+            (view.parent as? ViewGroup)?.removeView(view)
+            contentHost.addView(view)
+            record.contentView = view
+        }
+        applyRecordLayout(record)
+        if (activeId == id && !record.minimized) view.bringToFront()
+        raiseSystemChrome()
+        return publish("content-attach")
+    }
+
+    fun detachContent(id: String, view: View? = null): Boolean {
+        val record = windows[id] ?: return false
+        val current = record.contentView ?: return false
+        if (view != null && current !== view) return false
+        runCatching { contentHost.removeView(current) }
+        record.contentView = null
+        return true
     }
 
     fun handleBack(): Boolean {
@@ -487,6 +511,7 @@ class RiftNativeDesktop(
         record.minimized = false
         record.z = ++zCounter
         windows.values.forEach { updateFocusStyle(it, it.id == record.id) }
+        if (record.contentView != null) record.contentView?.bringToFront() else compatibilityView.bringToFront()
         bringWindowChrome(record)
         statusTitle.text = record.title
         applyRecordLayout(record)
@@ -776,6 +801,12 @@ class RiftNativeDesktop(
         record.rightBorder.visibility = visible
         record.bottomBorder.visibility = visible
         record.resizeHandle.visibility = if (record.maximized) View.GONE else visible
+        val content = contentBounds(record)
+        record.contentView?.let { view ->
+            place(view, content.left, content.top, content.width().coerceAtLeast(1), content.height().coerceAtLeast(1))
+            view.visibility = visible
+            view.translationZ = record.z.toFloat()
+        }
         updateFocusStyle(record, record.id == activeId)
     }
 
@@ -785,9 +816,12 @@ class RiftNativeDesktop(
         record.rightBorder.visibility = View.GONE
         record.bottomBorder.visibility = View.GONE
         record.resizeHandle.visibility = View.GONE
+        record.contentView?.visibility = View.GONE
     }
 
     private fun removeWindowViews(record: WindowRecord) {
+        record.contentView?.let { view -> runCatching { contentHost.removeView(view) } }
+        record.contentView = null
         runCatching { chromeHost.removeView(record.titleBar) }
         runCatching { chromeHost.removeView(record.leftBorder) }
         runCatching { chromeHost.removeView(record.rightBorder) }

@@ -49,7 +49,7 @@ async function preflight(commands,state,resolve){
   const directory=async path=>{const entry=await stat(path);if(!entry||(!entry.deferred&&!["directory","mount"].includes(entry.kind)))throw new Error(`not a directory: ${path}`);};
   const ensureParents=async path=>{const dir=parent(path);if(dir===path)return;const entry=await stat(dir);if(entry){await directory(dir);return;}await ensureParents(dir);overlay.set(dir,{kind:"directory"});};
   const permission=async capability=>{if(!core.permissions?.has||!await core.permissions.has("terminal",capability))throw new Error(`Batch permission denied: ${capability}`);};
-  const shapes={help:[0,0],sysinfo:[0,0],df:[0,0],ps:[0,0],apps:[0,0],permissions:[0,0],native:[0,0],pwd:[0,0],home:[0,0],clear:[0,0],uptime:[0,0],version:[0,0],cd:[0,1],ls:[0,2],tree:[0,1],stat:[1,1],cat:[1,1],head:[1,2],tail:[1,2],write:[1,Infinity],touch:[1,1],mkdir:[1,1],rm:[1,1],cp:[2,3],mv:[2,3],zip:[2,2],unzip:[2,2],workspace:[0,2]};
+  const shapes={help:[0,0],sysinfo:[0,0],drives:[0,0],df:[0,0],ps:[0,0],apps:[0,0],permissions:[0,0],native:[0,0],pwd:[0,0],home:[0,0],clear:[0,0],uptime:[0,0],version:[0,0],cd:[0,1],ls:[0,2],tree:[0,1],stat:[1,1],cat:[1,1],head:[1,2],tail:[1,2],write:[1,Infinity],touch:[1,1],mkdir:[1,1],rm:[1,1],cp:[2,3],mv:[2,3],zip:[2,2],unzip:[2,2],workspace:[0,2]};
   for(const command of commands){
     const args=tokenize(command),cmd=(args.shift()||"").toLowerCase();
     const targets=mutationTargets(command,planned,resolve),shape=shapes[cmd];

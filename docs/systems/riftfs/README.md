@@ -2,69 +2,61 @@
 
 ## Purpose
 
-RiftFS is RiftOS's logical filesystem namespace. It gives the shell, apps and workspace a consistent path model while Android supplies actual app-private storage and Storage Access Framework mounts.
+RiftFS is RiftOS's filesystem and volume namespace. Android app-private storage remains the physical backing store, while RiftFS now presents first-class OS-style volumes so system/program files and user/project data are separated by policy and by stable paths.
+
+## Volume model
+
+RiftOS V1 exposes two permanent virtual volumes:
+
+```text
+C:/  RiftOS System
+  RiftOS/       -> /system/riftos
+  Programs/     -> /system/programs
+  ProgramData/  -> /system/program-data
+  Toolchains/   -> /system/toolchains
+
+D:/  User Data
+  Users/        -> /home/users
+  Workspace/    -> /workspace
+  Projects/     -> /home/projects
+  Packages/     -> /documents/packages
+  Builds/       -> /documents/builds
+  Documents/    -> /documents
+  Downloads/    -> /downloads
+  Vault/        -> /documents/vault
+  Temp/         -> /home/temp
+```
+
+The drive letters are RiftOS namespaces, not Android partitions. `C:/Programs` and `/system/programs`, for example, resolve to the same canonical physical RiftFS directory. This lets existing Workspace/MCP/build code keep using its canonical compatibility root while new OS/application code uses the drive-oriented namespace.
 
 ## Source ownership
 
-- `RiftFS` in `src/riftcore.js` — logical path API, mount-aware operations, JSON helpers and transfer queue integration.
-- `RiftNativeDispatcher.kt` — native internal-file and SAF implementations.
-- `src/riftworkspace-android-adapter.js` — maps workspace operations to native storage.
-- `MainActivity.kt` — picker/mount acquisition lifecycle.
+- `src/riftcore.js` — JS RiftFS API, virtual-volume resolver, drive listing and compatibility routing.
+- `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt` — Android-side copy of the fixed C:/D: mapping for native program surfaces.
+- `android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt` — physical Android internal/SAF storage implementation.
 
-## Namespace
+The JS and Kotlin volume maps are deliberately fixed code, not package-controlled metadata. Installed apps cannot invent a system-drive alias or remap `C:/Programs` to another directory.
 
-The Android app initializes RiftFS under `filesDir/riftfs`, including logical roots such as `/home`, `/apps`, `/system`, `/workspace`, `/downloads` and `/documents`. External folders appear under mount paths backed by persisted SAF URI permissions.
+## Compatibility and migration
 
-The canonical MCP/project workspace is `/workspace`, physically `filesDir/riftfs/workspace`. MCP is intentionally restricted to that tree; the general RiftFS API is broader.
+Legacy roots (`/workspace`, `/documents`, `/downloads`, `/home`, `/system`, `/apps`) remain readable during the migration. The new drive names do not bulk-move existing projects. `D:/Workspace` resolves to `/workspace`, preserving MCP's canonical workspace and existing Git/project metadata. Old `/apps/packages` and `/apps/data` are migration inputs only for the program installer; new installs live under C:/Programs and user state under D:/Users/Default/AppData.
 
-## Why this boundary exists
+## Protection rules
 
-Every consumer should reason in RiftOS paths rather than raw Android `File`, URI, or `DocumentFile` semantics. Native storage implementations can therefore change without rewriting the shell/app APIs.
+Volume roots and major mapped roots are protected from ordinary root-level remove/move operations. This prevents a generic file operation from deleting `C:/Programs`, `D:/Workspace`, or another OS namespace root. Children remain manageable through the owning subsystem and normal permission checks.
 
-## Data flow
+SAF mounts remain under `/mounts/*`. Future removable/cloud volumes may receive additional drive letters, but C: and D: are permanent OS-owned volumes.
 
-```text
-consumer
-  -> RiftFS normalized logical path
-  -> internal path or mount routing
-  -> RiftNativeBridge
-  -> RiftNativeDispatcher
-      -> java.io.File for app-private RiftFS
-      -> DocumentFile/ContentResolver for SAF mount
-```
+## Invariants
 
-Large copy/move work is queued and progress-aware. Provider-native copy/move is attempted where possible before streaming fallback. `RiftFS.sha256(path)` is a narrow native streaming digest operation for both app-private RiftFS and SAF files; it reads in bounded native buffers and returns only the 64-character digest so large repository/vault objects never need to cross the WebView bridge as base64.
-
-## Critical invariants
-
-- Normalize path segments; reject traversal rather than silently escaping a root.
-- Do not mix MCP's narrower workspace authority with general RiftFS authority.
-- Preserve internal-vs-mount routing semantics.
-- SHA-256 must stream from the resolved internal/SAF file and return only the digest; do not reimplement large-file hashing by reading full base64 payloads into JavaScript.
-- Writes should not report success before native commit completes.
-- Move/copy must preserve verification and progress semantics for large trees.
-- SAF access depends on persisted URI permission; a provider can disappear or revoke access independently.
-
-## Failure signatures
-
-- Internal files fail everywhere -> RiftFS/native dispatcher path or bridge.
-- Only mounted folder fails -> SAF mount record/provider permission/path traversal.
-- Workspace works in Files but not MCP -> MCP sandbox boundary, not RiftFS.
-- Copy/move freezes UI -> transfer scheduling/progress path.
-- A move duplicates or loses data -> native move/copy verification/commit path.
-
-## Fix map
-
-- Logical path normalization/routing/API -> `RiftFS`.
-- Android internal/SAF read-write-list-copy-move -> `RiftNativeDispatcher`.
-- Project-only abstractions -> RiftWorkspace.
-- MCP-only workspace operations -> `RiftToolSandbox`.
-- Transfer cancellation/progress/jobs -> transfer subsystem.
+- `C:/` contains OS/program/toolchain state; ordinary app data does not belong there.
+- `D:/` contains user data, projects, packages and build outputs.
+- `D:/Workspace` and `/workspace` are the same canonical data, not copies.
+- Display drive paths must be normalized before resolving to a physical RiftFS path.
+- Path traversal must fail before touching Android storage.
+- Volume roots cannot be overwritten as files or used as archive endpoints.
+- External SAF mount semantics remain independent from the C:/D: mapping.
 
 ## Validation
 
-Exercise internal file create/read/write/delete, streaming SHA-256 on app-private and SAF files (including files larger than the binary bridge limit), recursive list, directory tree copy/move, mount-to-internal and internal-to-mount transfers, ZIP/unzip, and provider cancellation/revocation. For destructive fixes use a workspace snapshot first.
-
-## Safe extension points
-
-New filesystem features should enter through a stable RiftFS method and a narrow native method if Android authority is required. Avoid creating parallel storage roots or bypass APIs inside individual apps.
+Verify root listing exposes C:, D: and mounts; `stat`, `list`, read/write, copy/move and archive operations resolve children correctly; protected roots reject destructive root operations; `/workspace/foo` and `D:/Workspace/foo` address the same data; and Android `RiftVolumePaths` resolves the same fixed mappings as JS RiftFS.

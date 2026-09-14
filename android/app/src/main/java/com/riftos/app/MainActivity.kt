@@ -45,6 +45,7 @@ class MainActivity : Activity() {
     private lateinit var rootView: FrameLayout
     private lateinit var webView: WebView
     private lateinit var nativeDesktop: RiftNativeDesktop
+    private lateinit var nativeAppHost: RiftNativeAppHost
     private lateinit var browserWindow: RiftBrowserWindow
     private lateinit var shellBridge: RiftShellBridge
     private lateinit var dispatcher: RiftNativeDispatcher
@@ -103,6 +104,7 @@ class MainActivity : Activity() {
             appOpenSink = ::openNativeDesktopApp,
             windowClosedSink = ::closeNativeDesktopApp
         )
+        nativeAppHost = RiftNativeAppHost(this, nativeDesktop)
         setContentView(rootView)
         ViewCompat.requestApplyInsets(rootView)
         browserWindow = RiftBrowserWindow(
@@ -219,6 +221,17 @@ class MainActivity : Activity() {
             runDesktopCommand(requestId) { nativeDesktop.handle(method, args) }
             return true
         }
+        if (method.startsWith("app.runtime.")) {
+            runDesktopCommand(requestId) {
+                when (method) {
+                    "app.runtime.open" -> nativeAppHost.open(args)
+                    "app.runtime.close" -> nativeAppHost.close(args)
+                    "app.runtime.state" -> nativeAppHost.state()
+                    else -> throw IllegalArgumentException("Unsupported app runtime method: $method")
+                }
+            }
+            return true
+        }
 
         when (method) {
             "system.dump.save" -> openSystemDumpPicker(requestId)
@@ -286,6 +299,7 @@ class MainActivity : Activity() {
     }
 
     private fun closeNativeDesktopApp(id: String) {
+        if (::nativeAppHost.isInitialized) nativeAppHost.closeWindow(id)
         val script = "window.RiftDesktop?.closeWindow(${JSONObject.quote(id)},{fromNative:true});"
         runOnUiThread {
             if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
@@ -500,6 +514,7 @@ class MainActivity : Activity() {
         // shell bridge whenever Android resumes it, including task/background transitions.
         if (::shellBridge.isInitialized) RiftMcpRuntime.registerShellBridge(shellBridge)
         if (::webView.isInitialized) webView.onResume()
+        if (::nativeAppHost.isInitialized) nativeAppHost.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
     }
 
@@ -512,6 +527,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         if (::browserWindow.isInitialized) browserWindow.onPause()
+        if (::nativeAppHost.isInitialized) nativeAppHost.onPause()
         if (::webView.isInitialized) webView.onPause()
         super.onPause()
     }
@@ -529,6 +545,7 @@ class MainActivity : Activity() {
         }
         if (::dispatcher.isInitialized) dispatcher.shutdown()
         if (::browserWindow.isInitialized) browserWindow.destroy()
+        if (::nativeAppHost.isInitialized) nativeAppHost.destroy()
         if (::nativeDesktop.isInitialized) nativeDesktop.destroy()
         kernelExecutor.shutdownNow()
         fileChooserCallback?.onReceiveValue(null)

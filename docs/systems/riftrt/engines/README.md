@@ -1,30 +1,10 @@
-# RiftRT Engine Map
+# RiftRT Engines
 
-RiftRT supports multiple execution engines behind one application/runtime boundary. The parent maintenance guide is [`../README.md`](../README.md).
+RiftRT engine implementations are execution backends beneath the same installed-program, permission, process and RiftDesktop contracts.
 
-## Source ownership
+- [`native-webview/README.md`](native-webview/README.md) — V1 default for installed HTML/JS-compatible programs; dedicated Android WebView View in the native window, never an iframe.
+- [`worker-js/README.md`](worker-js/README.md) — constrained Worker + host-canvas compatibility engine.
+- [`wasm-base64/README.md`](wasm-base64/README.md) — sandboxed WebAssembly compatibility engine.
+- [`native-arm64/README.md`](native-arm64/README.md) — reserved packaged native-plugin direction; arbitrary downloaded ELF execution remains disabled.
 
-All current engine implementations live in `src/riftrt.js`; package/ABI intent is summarized in `docs/RIFTRT-v1.md`.
-
-Engine guides:
-
-- [`iframe/README.md`](iframe/README.md) — legacy HTML/iframe packages.
-- [`worker-js/README.md`](worker-js/README.md) — isolated JavaScript Worker + host-owned canvas.
-- [`wasm-base64/README.md`](wasm-base64/README.md) — WASM module + Rift frame ABI.
-- [`native-arm64/README.md`](native-arm64/README.md) — reserved trusted-native direction; downloaded ELF execution is not active.
-
-## Boundary
-
-Engine selection changes how app code executes, not who owns permissions, storage, desktop windows or package validation. Those stay in RiftRT, RiftKernel/RiftFS and the app registry.
-
-## Failure signatures
-
-If only one runtime type fails, start in that engine guide. If every engine fails, start in the parent RiftRT README and shared `parseRuntime`, capability, window/process and package paths.
-
-## Fix map
-
-Engine-specific launch/ABI/input/frame failures -> engine guide. Shared capability/storage/window/process failures -> parent RiftRT subsystem.
-
-## Validation
-
-Every supported active engine must have at least one launch/close test path plus error-path coverage. Reserved engines must remain explicitly unavailable rather than silently falling back to unsafe execution.
+The retired iframe engine is intentionally absent. A legacy `engine: "iframe"` package declaration is translated by RiftRT to `native-webview` so old packages can migrate without reintroducing iframe execution.

@@ -1,44 +1,52 @@
-# RiftRT v1
+# RiftRT v2 Native Program Foundation
 
-RiftRT is the active RiftOS desktop application runtime. Android remains the kernel/driver host; RiftOS owns app/process records, windows, brokered capabilities and RiftFS namespace.
+RiftRT is the RiftOS application execution layer. Android remains the kernel/driver host; RiftKernel owns RiftOS process records, permissions and the RiftFS namespace; RiftDesktop owns native window authority.
 
-## Package model
+## Package and install model
 
-RiftRT extends the existing `rift-app-v1` `.rift` JSON package. Existing iframe packages remain compatible. A package opts into RiftRT by including `riftrt.json` in `files`.
+`.rift` remains the portable `rift-app-v1` distribution container in this phase, but importing it means **installing** it. The package is validated and promoted into `C:/Programs/<app-id>` by RiftApps. User state is separate under `D:/Users/Default/AppData/<app-id>`. RiftRT launches the installed copy; it does not execute the selected `.rift` file directly.
+
+A package can include `riftrt.json`:
 
 ```json
 {
-  "engine": "worker-js",
-  "entry": "main.js",
+  "engine": "native-webview",
+  "entry": "index.html",
   "abi": "riftrt-1",
   "capabilities": ["fs.read", "fs.write", "build.local"],
   "window": { "width": 720, "height": 480 }
 }
 ```
 
-Supported v1 engines:
+A package with no runtime spec defaults to `native-webview`. A legacy `engine: "iframe"` value is translated to `native-webview`; there is no iframe execution engine anymore.
 
-- `iframe` — legacy `.rift` HTML application hosted in a RiftDesktop window.
-- `worker-js` — isolated Worker application using a host-owned canvas surface and RiftRT APIs.
-- `wasm-base64` — WebAssembly module stored as base64 text and loaded through the Rift ABI.
-- `native-arm64` — reserved direction for modules compiled/packaged with RiftOS; arbitrary downloaded native ELF execution is not enabled.
+## Engines
 
-## Worker ABI
+- `native-webview` — V1/default Android-owned application surface. A dedicated Android WebView is mounted directly inside the app's native RiftDesktop WindowRecord. It is not nested inside the trusted shell WebView.
+- `worker-js` — compatibility/experimentation Worker runtime using a host-owned canvas and bounded RPC surface.
+- `wasm-base64` — sandboxed WebAssembly compatibility runtime using the existing Rift frame/input ABI.
+- `native-arm64` — reserved packaged/plugin direction. Arbitrary downloaded ELF execution from writable storage remains disabled.
 
-Worker apps receive a frozen `Rift` object with logging, window title, host-owned surface, resize/input callbacks, local app storage and capability-gated filesystem/clipboard/share/build-controller operations. Share is exposed as `Rift.share.text(text)` and requires the app's `share` capability. Apps that declare and receive `build.local` can use the bounded `Rift.build` controller (`doctor`, `plan`, `submit`, `runs`, `artifacts`). `Rift.build.nativeExecutor` is a host-supplied boolean and must remain false until the APK actually contains a trusted local compiler executor.
+## Native application surface
 
-Canvas frame commands currently include `clear`, `rect`, `line` and `text`.
+RiftRT first creates the RiftKernel process and native RiftDesktop window. Once Android confirms that WindowRecord exists, RiftRT calls `app.runtime.open`. `RiftNativeAppHost` loads only the installed package for that app id and attaches its dedicated content View through `RiftNativeDesktop.attachContent`.
 
-## WASM ABI
+This removes the previous iframe-in-shell architecture while keeping the renderer replaceable. R.O.P.E's later compiler can target a stronger compiled Rift ABI without changing installation, permissions, drives, taskbar or native window lifecycle.
 
-A `wasm-base64` app may export `rift_init`, `rift_tick`, `rift_resize`, pointer/key/wheel handlers, memory and frame JSON accessors. Host imports expose width, height and simple logging.
+## Capability ABI
 
-The WASM path uses the same host-owned surface command format as Worker apps.
+The native app host exposes a frozen bounded `Rift` object covering application lifecycle/info/title, app-local storage, permission requests, RiftFS text/list operations, clipboard/share and the bounded RiftBuild controller surface. There is no arbitrary native-method bridge or shell API.
+
+`build.local` stays honest: planning/controller APIs can exist while `Rift.build.nativeExecutor` remains false until the APK actually ships a trusted compiler/toolchain executor.
+
+## Worker/WASM compatibility
+
+Worker apps retain the host RPC controller and canvas command ABI (`clear`, `rect`, `line`, `text`). WASM packages retain the existing base64 module/import/export path. They are compatibility engines, not the default installation target.
 
 ## Desktop integration
 
-RiftRT uses the existing RiftOS window manager. Runtime apps participate in taskbar state, focus, move/resize, minimize/maximize, Alt-Tab/show-desktop behavior and RiftKernel process management.
+RiftRT participates in the existing RiftDesktop window/process model. Android owns focus, z-order, move/resize, minimize/maximize/restore, taskbar and close. Runtime cleanup must converge when closure originates from app code, the native close button, process termination or Android Back.
 
 ## Security direction
 
-Modern Android does not provide a safe general-purpose route for running arbitrary downloaded ELF binaries from writable app storage. Native acceleration therefore targets code compiled and packaged with RiftOS or a future explicitly trusted plugin mechanism.
+Installed program paths are fixed by RiftOS. Packages cannot choose a C: install location or remap volumes. Program data stays on D:. The V1 native-webview renderer uses a fixed local origin, CSP, disabled file/content URI access, default-denied external network loading and a fixed WebMessage method set. Future compiled engines must preserve the same containment/permission contracts.

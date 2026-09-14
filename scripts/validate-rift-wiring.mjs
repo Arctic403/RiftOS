@@ -249,34 +249,29 @@ for (const method of supported) {
 }
 if (supported.has('browser.open')) failures.push('obsolete dispatcher browser.open alias is still registered');
 
-// Installed .rift iframe bridge methods must match the host dispatcher.
+// Installed .rift files are installers. Program execution must route into the Android native app host.
 const appsSource = read('src/riftapps.js');
-const bridgeSlice = appsSource.slice(appsSource.indexOf('function injectBridge('), appsSource.indexOf('function materializeHtml('));
-const appBridgeCalls = new Set([...bridgeSlice.matchAll(/\bcall\(\s*["']([^"']+)["']/g)].map(match => match[1]));
-const appHostSlice = appsSource.slice(appsSource.indexOf('async function handleAppMessage('), appsSource.indexOf('window.addEventListener("message",handleAppMessage)'));
-const appHostMethods = new Set([...appHostSlice.matchAll(/msg\.method===\s*["']([^"']+)["']/g)].map(match => match[1]));
-for (const method of appBridgeCalls) if (!appHostMethods.has(method)) failures.push(`.rift app bridge method has no host implementation: ${method}`);
-for (const method of appHostMethods) if (method !== 'app.ready' && !appBridgeCalls.has(method)) failures.push(`.rift app host branch is not exposed by the injected bridge: ${method}`);
+if (!appsSource.includes('const PROGRAM_ROOT="/C:/Programs"') || !appsSource.includes('const USER_APPDATA_ROOT="/D:/Users/Default/AppData"') || !appsSource.includes('async installAtomic(')) failures.push('.rift installer is not using the C:/Programs + D:/AppData layout');
+if (appsSource.includes('<iframe') || appsSource.includes('function injectBridge(') || appsSource.includes('function materializeHtml(')) failures.push('installed app iframe execution path returned');
+if (!appsSource.includes('globalThis.RiftRT.launch(id)')) failures.push('installed program launch does not delegate to RiftRT');
 
-// RiftRT iframe/Worker RPC methods must agree with hostCall; outer-only window/lifecycle methods are handled separately.
+// RiftRT defaults installed HTML programs to the native Android app surface. Legacy iframe specs are translated, never executed as frames.
 const riftrt = read('src/riftrt.js');
+if (!riftrt.includes("engine:'native-webview'") || !riftrt.includes("requested==='iframe'?'native-webview':requested")) failures.push('RiftRT does not default/translate installed programs to native-webview');
+if (!riftrt.includes("core.native.call('app.runtime.open'") || !riftrt.includes("core.native.call('app.runtime.close'") || !riftrt.includes("core.native.call('app.runtime.state'")) failures.push('RiftRT native app runtime routes are incomplete');
+if (riftrt.includes('function launchIframe(') || riftrt.includes('function iframeHtml(') || riftrt.includes('messageInstances')) failures.push('retired RiftRT iframe execution machinery remains');
+
+// Worker RPCs still use the bounded hostCall controller while native-webview apps use RiftNativeAppHost.
 const hostStart = riftrt.indexOf('async function hostCall(');
-const hostEnd = riftrt.indexOf('function materializeAsset(', hostStart);
+const hostEnd = riftrt.indexOf('async function launchNativeWebView(', hostStart);
 const hostSlice = riftrt.slice(hostStart, hostEnd);
 const riftrtHostMethods = new Set([...hostSlice.matchAll(/method===\s*["']([^"']+)["']/g)].map(match => match[1]));
-const iframeStart = riftrt.indexOf('function iframeHtml(');
-const iframeEnd = riftrt.indexOf('async function launchIframe(', iframeStart);
-const iframeSlice = riftrt.slice(iframeStart, iframeEnd);
-const iframeCalls = new Set([...iframeSlice.matchAll(/\bcall\(\s*["']([^"']+)["']/g)].map(match => match[1]));
 const workerStart = riftrt.indexOf('const workerBootstrap=');
 const workerEnd = riftrt.indexOf('function fitCanvas(', workerStart);
 const workerSlice = riftrt.slice(workerStart, workerEnd);
 const workerCalls = new Set([...workerSlice.matchAll(/\brpc\(\s*["']([^"']+)["']/g)].map(match => match[1]));
-const outerRiftRtMethods = new Set(['app.close', 'window.title']);
-for (const method of iframeCalls) if (!outerRiftRtMethods.has(method) && !riftrtHostMethods.has(method)) failures.push(`RiftRT iframe API has no hostCall implementation: ${method}`);
 for (const method of workerCalls) if (!riftrtHostMethods.has(method)) failures.push(`RiftRT Worker API has no hostCall implementation: ${method}`);
-for (const method of riftrtHostMethods) if (!iframeCalls.has(method) || !workerCalls.has(method)) failures.push(`RiftRT hostCall is not exposed consistently by iframe and Worker APIs: ${method}`);
-for (const method of outerRiftRtMethods) if (!iframeCalls.has(method) || !riftrt.includes(`msg.method==='${method}'`)) failures.push(`RiftRT iframe lifecycle/window method is not wired end-to-end: ${method}`);
+for (const method of riftrtHostMethods) if (!workerCalls.has(method)) failures.push(`RiftRT hostCall is not exposed consistently by Worker API: ${method}`);
 
 // Retired Rift AI task/session/journal architecture must stay absent.
 const mcpServerSource = read('android/app/src/main/java/com/riftos/app/RiftMcpServer.kt');

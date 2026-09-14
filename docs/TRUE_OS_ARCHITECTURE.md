@@ -64,7 +64,7 @@ RiftKernel does not claim Android kernel privilege and does not bypass Android p
 
 ## Storage and workspace
 
-The active Android RiftFS root is `filesDir/riftfs`. Internal roots include `home`, `apps`, `system`, `workspace`, `downloads` and `documents`. User-selected external folders are mounted through Android Storage Access Framework.
+The active Android RiftFS root is `filesDir/riftfs`. RiftOS now exposes permanent virtual OS volumes over that same canonical storage: `C:/` for RiftOS/program/toolchain state and `D:/` for users, workspace/projects, packages, builds, documents, downloads and vault data. These are RiftFS namespaces rather than Android block partitions. Legacy roots such as `/workspace`, `/documents`, `/home` and `/system` remain compatibility aliases during migration. User-selected external folders are mounted through Android Storage Access Framework.
 
 `src/riftworkspace-web.js` is the common/local workspace layer. `src/riftworkspace-android-adapter.js` is the **single Android workspace implementation** and replaces `window.RiftWorkspace` after the common layer loads. `RiftWorkspaceJSON` resolves the active workspace object at call time.
 
@@ -78,7 +78,7 @@ The browser's native renderer is a content plane positioned inside a RiftOS-mana
 
 ## RiftRT
 
-RiftRT v1 supports iframe, Worker JavaScript and base64 WebAssembly application engines using the existing RiftDesktop/process model and capability broker. The `native-arm64` engine remains a reserved packaged/plugin direction; arbitrary downloaded native ELF execution is not enabled.
+RiftRT launches installed programs from `C:/Programs`, never directly from the imported `.rift` file. The default V1 renderer is `native-webview`: a dedicated Android-owned WebView View attached directly to the app's native RiftDesktop window, not an iframe in the shell WebView. Legacy `engine: iframe` declarations are translated to that renderer. Worker JavaScript and base64 WebAssembly remain compatibility engines, while `native-arm64` remains a reserved packaged/plugin direction; arbitrary downloaded native ELF execution is not enabled.
 
 ## Browser security boundary
 

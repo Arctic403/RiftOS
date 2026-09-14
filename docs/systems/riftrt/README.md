@@ -2,56 +2,62 @@
 
 ## Purpose
 
-RiftRT is the execution/runtime layer for modern RiftOS applications. It runs app code inside RiftDesktop windows while brokering host capabilities and app storage through RiftOS rather than giving apps unrestricted page/native authority.
+RiftRT is the execution layer between an installed RiftOS program and RiftDesktop. Installation is owned by RiftApps; RiftRT launches only the installed copy registered under C:/Programs.
 
-## Source ownership
+RiftRT does not own a second desktop/window manager. Android `RiftNativeDesktop` remains the authoritative window frame, focus, geometry, taskbar and close lifecycle.
 
-- `src/riftrt.js` — runtime parsing, windows, host calls, worker/WASM/iframe execution, canvas command rendering and manager UI.
-- `src/riftruntime.js` — platform/runtime capability report.
-- `src/riftapps.js` — package registry consumed by RiftRT.
-- `docs/RIFTRT-v1.md` — ABI overview; this README is the maintenance map.
+## Engines
 
-## Supported engines
+### native-webview (V1 default)
 
-`parseRuntime(app)` recognizes `iframe`, `worker-js`, `wasm-base64`, and the reserved `native-arm64` direction. Each engine has its own maintenance README under [`engines/README.md`](engines/README.md). Arbitrary downloaded native ELF execution is not enabled.
+HTML/JS-compatible installed programs run in a **dedicated Android `WebView` View** created by `RiftNativeAppHost` and attached directly to the Android-owned RiftDesktop content rectangle. This is not an iframe, is not a child of the trusted shell WebView, and has an independent Android renderer/view lifecycle.
 
-### iframe
+The target exists to make the installer/native-window architecture usable immediately while R.O.P.E's compiled Rift ABI/toolchain is built. It is an execution backend, not the permanent definition of a Rift app.
 
-Legacy package HTML runs in a sandboxed app frame with the app host bridge.
+Old `riftrt.json` values declaring `iframe` are translated to `native-webview`; the iframe engine itself no longer exists.
 
 ### worker-js
 
-A Worker receives a constrained runtime API, can make RPC host calls and drives a host-owned canvas through command messages. Resize and normalized pointer/key/wheel input are forwarded by the host.
+Compatibility/runtime experimentation engine. A Worker receives a constrained Rift API and drives a host canvas. It stays capability-gated and cannot become a raw shell bridge.
 
 ### wasm-base64
 
-A base64-encoded WASM module is instantiated with a small import surface. Optional `rift_*` exports drive initialization/tick/resize/input and a JSON frame-command buffer. Frame command length is bounded before decode/render.
+Sandboxed WebAssembly compatibility engine using the existing bounded Rift ABI/frame-command surface.
 
-## Host capabilities
+### native-arm64
 
-`hostCall(app,method,args)` is the central runtime broker. Capabilities are checked against the app/package before filesystem, clipboard, share and local-build-controller operations. Both iframe and Worker engines expose share as `Rift.share.text(text)`, which requires the declared/granted `share` capability and routes to the Android share sheet. Apps declaring `build.local` receive a bounded `Rift.build` API backed by the trusted `RiftBuild` controller: `doctor`, `plan`, `submit`, `runs` and `artifacts`. `submit` accepts only the validated `rope-build-job-v1` Gradle job contract; it never accepts a shell command. `Rift.build.nativeExecutor` mirrors the host capability and stays false until the APK ships a proven native build executor. Per-app persistent runtime storage is JSON under `/system/appdata/<id>/riftrt-storage.json` and is capped at roughly 1 MB serialized data.
+Reserved packaged-plugin direction. RiftOS does not execute arbitrary downloaded ELF binaries from writable storage.
 
-## Desktop/process integration
+## Native app host
 
-RiftRT creates normal RiftDesktop windows and kernel process records. In Android-native desktop mode it delegates window creation, title changes, focus, taskbar, minimize/maximize, show desktop and close authority to the base `RiftOSWindowManager`; RiftRT retains only runtime/session disposal and app-engine ownership. It must not manufacture a second DOM window manager in native mode. The legacy DOM extension remains fallback-only when native desktop authority is unavailable. Removing a running app disposes its session before package/data removal; destructive removal requires explicit confirmation and surfaced async failures.
+`RiftNativeAppHost.kt` owns V1 native program surfaces. It loads only the installed package selected by app id, serves package assets through the fixed `https://app.riftos.local` origin, disables file/content access, denies frames, and exposes a fixed WebMessage API. It does not expose the general `RiftNativeDispatcher` method namespace.
 
-## Failure signatures
+The app surface is mounted with `RiftNativeDesktop.attachContent(windowId, view)`. Minimize/restore/move/resize/close follows the same Android-owned WindowRecord as every other native RiftDesktop window.
 
-- Package installs but runtime manager says invalid spec -> `parseRuntime`/`riftrt.json`.
-- Worker runs but canvas is blank -> worker message/frame command path or resize.
-- WASM instantiates but no output -> exported ABI functions/memory/frame accessor contract.
-- Capability call denied -> app declaration/permission broker, not worker messaging.
-- `Rift.build` exists but `nativeExecutor` is false -> controller bridge is healthy; local Java/Gradle/SDK execution is intentionally unavailable in that APK.
-- Closing app leaves process/window -> dispose/process/window integration.
+A normal program `fs.write` grant does not make C: writable. Native app filesystem access is restricted to approved D: user/project roots plus that program's own AppData; read access additionally permits that program's own `C:/Programs/<id>` directory. Installer/system code remains the authority that changes C:/Programs, C:/ProgramData and C:/Toolchains.
 
-## Fix map
+## Capabilities and data
 
-Engine parsing/execution/ABI -> `riftrt.js`.
-Package metadata -> app system.
-Window behavior -> RiftDesktop.
-Filesystem/native semantics -> kernel/RiftFS.
-Platform availability reporting -> runtime-capabilities subsystem.
+Native app calls are checked against the installed manifest and the same persisted `permissions:<appId>` grants used by RiftOS. A first-use request is surfaced as an Android permission dialog. Filesystem calls use the fixed C:/D: resolver and canonical RiftFS containment.
+
+Program-local state lives under D:/Users/Default/AppData/<id>. `build.local` remains a bounded controller capability; the APK continues to report/behave as no local compiler executor until the real toolchain worker ships.
+
+## Source ownership
+
+- `src/riftrt.js` — engine parsing, kernel process/session lifecycle, native-window coordination, Worker/WASM compatibility engines and runtime manager.
+- `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` — Android V1 installed-program view/bridge.
+- `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` — window/surface authority.
+- `src/riftapps.js` — installation/registry only.
+
+## Invariants
+
+- No installed Rift program is rendered in an iframe.
+- Normal installed V1 programs get an Android-owned content View separate from the shell WebView.
+- RiftRT waits for the native WindowRecord before attaching the native program surface.
+- Closing via app, native close button, taskbar/process kill or Android Back converges on one window/process cleanup path.
+- Native app messaging exposes fixed methods, bounded payloads and declared capabilities only.
+- The trusted shell WebView remains an internal compatibility plane for built-ins that have not yet migrated; it is not an installed-app host.
 
 ## Validation
 
-Test every engine path represented in v1, app storage set/get/remove, denied and allowed capabilities, resize/input, repeated launch/close, close-with-another-window-visible focus handoff, show-desktop event behavior and error during engine initialization. Keep Worker/WASM payloads bounded and verify one broken app does not destabilize the shell.
+Test install -> launch -> native surface, move/resize/minimize/maximize/restore, taskbar focus, app-initiated close, native close and process termination. Accessibility should see the app's dedicated Android WebView node inside the native window, not a shell iframe. Verify denied/granted filesystem and clipboard calls, package asset containment, network default-deny behavior and no arbitrary native method passthrough.

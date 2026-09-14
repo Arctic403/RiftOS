@@ -10,7 +10,7 @@ const DEMO_PACKAGE = {
     permissions: ["storage"]
   },
   files: {
-    "index.html": "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{font-family:system-ui;background:#0b0f16;color:#f5f7fb;margin:0;padding:28px}button{font:inherit;border:0;border-radius:12px;padding:12px 16px;margin:6px 6px 6px 0}input{font:inherit;padding:12px;border-radius:10px;border:1px solid #3a4352;background:#111723;color:white;width:min(320px,90%)}</style></head><body><h1>Hello from a .rift app ✦</h1><p>This page is running in its own sandbox inside RiftOS.</p><input id='name' placeholder='Type something'><div><button id='save'>Save locally</button><button id='load'>Load</button><button id='close'>Close app</button></div><pre id='out'></pre><script>const out=document.querySelector('#out');document.querySelector('#save').onclick=async()=>{await Rift.storage.set('demo',document.querySelector('#name').value);out.textContent='Saved inside this app sandbox.'};document.querySelector('#load').onclick=async()=>{out.textContent='Stored: '+await Rift.storage.get('demo')};document.querySelector('#close').onclick=()=>Rift.app.close();<\/script></body></html>"
+    "index.html": "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>body{font-family:system-ui;background:#0b0f16;color:#f5f7fb;margin:0;padding:28px}button{font:inherit;border:0;border-radius:12px;padding:12px 16px;margin:6px 6px 6px 0}input{font:inherit;padding:12px;border-radius:10px;border:1px solid #3a4352;background:#111723;color:white;width:min(320px,90%)}</style></head><body><h1>Hello from a .rift app ✦</h1><p>This installed program runs on its own RiftRT application surface inside RiftOS.</p><input id='name' placeholder='Type something'><div><button id='save'>Save locally</button><button id='load'>Load</button><button id='close'>Close app</button></div><pre id='out'></pre><script>const out=document.querySelector('#out');document.querySelector('#save').onclick=async()=>{await Rift.storage.set('demo',document.querySelector('#name').value);out.textContent='Saved inside this app sandbox.'};document.querySelector('#load').onclick=async()=>{out.textContent='Stored: '+await Rift.storage.get('demo')};document.querySelector('#close').onclick=()=>Rift.app.close();<\/script></body></html>"
   }
 };
 
@@ -84,11 +84,11 @@ function renameImportControl(manager){
   if(!label) return;
 
   const textNode = [...label.childNodes].find(node=>node.nodeType === Node.TEXT_NODE);
-  if(textNode) textNode.textContent = "Import .rift";
-  else label.insertBefore(document.createTextNode("Import .rift"), input);
+  if(textNode) textNode.textContent = "Install .rift";
+  else label.insertBefore(document.createTextNode("Install .rift"), input);
 
-  label.title = "Choose an existing .rift package from Files and install it";
-  label.setAttribute("aria-label", "Import a .rift package from Files");
+  label.title = "Choose a .rift installer package and install it into C:/Programs";
+  label.setAttribute("aria-label", "Install a .rift package into RiftOS Programs");
 }
 
 function addDemoSaveButton(manager){
@@ -139,7 +139,7 @@ function clarifyManagerCopy(manager){
   const paragraph = manager.querySelector(".rift-app-hero p");
   if(!paragraph || paragraph.dataset.riftFileCopy === "1") return;
   paragraph.dataset.riftFileCopy = "1";
-  paragraph.textContent = ".rift apps live locally in RiftOS. Import .rift chooses an existing package from Files. Save .rift creates a package you can keep, share, or import again.";
+  paragraph.textContent = ".rift files are installer packages. Install .rift promotes the program into C:/Programs; per-user state stays under D:/Users/Default/AppData. Save .rift creates a portable installer you can keep, share, or install again.";
 }
 
 function enhanceManager(){

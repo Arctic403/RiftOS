@@ -35,7 +35,7 @@ const requiredDocs = [
   'docs/systems/apps/README.md',
   'docs/systems/riftrt/README.md',
   'docs/systems/riftrt/engines/README.md',
-  'docs/systems/riftrt/engines/iframe/README.md',
+  'docs/systems/riftrt/engines/native-webview/README.md',
   'docs/systems/riftrt/engines/worker-js/README.md',
   'docs/systems/riftrt/engines/wasm-base64/README.md',
   'docs/systems/riftrt/engines/native-arm64/README.md',

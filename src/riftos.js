@@ -625,7 +625,8 @@ const shellRootAliases=new Set(["home","workspace","downloads","documents","moun
 function resolvePath(cwd,value){
   if(!value)return cwd;
   let raw=String(value).trim().replace(/\\/g,"/");
-  if(raw==="~"||raw.startsWith("~/"))raw=`/home${raw.slice(1)}`;
+  if(raw==="~"||raw.startsWith("~/"))raw=`/D:/Users/Default${raw.slice(1)}`;
+  if(/^[A-Za-z]:($|\/)/.test(raw))raw=`/${raw}`;
   if(!raw.startsWith("/")&&shellRootAliases.has(raw.split("/")[0].toLowerCase()))raw=`/${raw}`;
   if(!raw.startsWith("/"))raw=`${cwd}/${raw}`;
   const parts=[];
@@ -840,8 +841,9 @@ async function runShell(raw,print,state,context={}){
   if(cmd==="riftllm-agent"){if(!window.RiftLlmBridge?.run)throw new Error("RiftLLM bridge is not loaded");return window.RiftLlmBridge.run(args,print,{cwd:state.cwd});}
   if(cmd==="chat")return runChatShell(args,print,state);
   if(cmd==="devlab")return runDevLabShell(args,print,state);
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\nriftos-agent help                 RiftOS-self local Android UI + Dev Lab agent\nriftos-agent devlab help          structured Dev Lab controller\nriftllm-agent help                 standalone RiftLLM Dev API bridge\ndevlab help                       isolated live test/snapshot/local-workspace publish\nchat help                         local .riftchat development-session handoffs\nrift help                         local-first repo/vault/build/memory platform\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  drives  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\nriftos-agent help                 RiftOS-self local Android UI + Dev Lab agent\nriftos-agent devlab help          structured Dev Lab controller\nriftllm-agent help                 standalone RiftLLM Dev API bridge\ndevlab help                       isolated live test/snapshot/local-workspace publish\nchat help                         local .riftchat development-session handoffs\nrift help                         local-first repo/vault/build/memory platform\ngit help\n\nDrives: C:/ = system/programs/toolchains · D:/ = user/workspace/data\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
+  if(cmd==="drives")return print((core.fs.volumes?.()||[]).map(volume=>`${volume.letter}  ${volume.label}  /${volume.letter}`).join("\n")||"(no Rift volumes)");
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}
   if(cmd==="df"){const storage=await core.fs.estimate();return print(`${storage.backend}\nused ${fmtBytes(storage.usage)}\nquota ${fmtBytes(storage.quota)}\nfree ${fmtBytes(storage.free)}`);}
@@ -858,13 +860,13 @@ async function runShell(raw,print,state,context={}){
     }
     const ws=window.RiftWorkspace;if(!ws?.available)return print("RiftWorkspace unavailable");
     const sub=(args.shift()||"info").toLowerCase();if(sub==="info")return print(JSON.stringify(await ws.info(),null,2));
-    if(sub==="cd"){state.cwd="/workspace";return print(state.cwd);}
+    if(sub==="cd"){state.cwd="/D:/Workspace";return print(state.cwd);}
     if(sub==="ls")return print((await ws.list(args[0]||"",{recursive:false})).map(row=>`${row.kind==="directory"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");
     if(sub==="history")return print(JSON.stringify(await ws.history(),null,2));if(sub==="rollback")return print(JSON.stringify(await ws.rollback(args[0]||null),null,2));
     return print("usage: workspace [cd|info|ls [path]|history|rollback [historyId]]");
   }
   if(cmd==="pwd")return print(state.cwd);
-  if(cmd==="home"){state.cwd="/home";return print(state.cwd);}
+  if(cmd==="home"){state.cwd="/D:/Users/Default";return print(state.cwd);}
   if(cmd==="cd"){const next=resolvePath(state.cwd,args[0]||"/home");const stat=await core.fs.stat(next);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error(`not a directory: ${next}`);state.cwd=next;return print(state.cwd);}
   if(cmd==="ls"){const recursive=args.some(arg=>/^-[^-]*[Rr]/.test(arg)),target=args.find(arg=>!arg.startsWith("-")),path=resolvePath(state.cwd,target||state.cwd),rows=await core.fs.list(path,{recursive});return print(rows.map(row=>`${row.kind==="directory"||row.kind==="mount"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");}
   if(cmd==="tree"){const path=resolvePath(state.cwd,args[0]||state.cwd),rows=await core.fs.list(path,{recursive:true});return print(rows.map(row=>`${row.kind==="directory"||row.kind==="mount"?"d":"-"}\t${row.path}`).join("\n")||"(empty)");}

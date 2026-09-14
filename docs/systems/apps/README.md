@@ -1,55 +1,69 @@
-# Rift App Package System
+# RiftOS Programs and .rift Installer
 
 ## Purpose
 
-The app package system installs, validates, stores, launches and exports RiftOS applications using the `rift-app-v1` `.rift` JSON package format. It is the application distribution/registry layer beneath RiftRT and legacy iframe apps.
+The app package subsystem is the installation/distribution layer for RiftOS programs. A `.rift` file is an installer package. It is **not** the live execution container and is never launched in an iframe.
+
+## Installed layout
+
+```text
+C:/Programs/<app-id>/
+  package.json      validated installed package payload
+  install.json      installation metadata
+
+D:/Users/Default/AppData/<app-id>/
+  storage.json      user/application state
+
+C:/ProgramData/Installer/
+  staging/          transaction candidates
+  rollback/         temporary previous versions
+```
+
+Source projects normally live under D:/Workspace or D:/Projects. Build outputs/packages normally live under D:/Builds and D:/Packages. Installing a package makes a separate installed program copy under C:/Programs.
+
+## Install transaction
+
+`src/riftapps.js` validates the package, writes a complete candidate to `C:/ProgramData/Installer/staging`, moves an existing program to a rollback location when updating, atomically promotes the staged directory to `C:/Programs/<id>`, and removes the rollback copy only after promotion succeeds. A failed promotion attempts to restore the previous installed program.
+
+User AppData is not overwritten by upgrades. Uninstall removes the program directory and that app's AppData only after explicit user confirmation.
+
+## Legacy migration
+
+IndexedDB app records and old `/apps/packages` + `/apps/data` content are one-way migration inputs. Migrated data is copied into the C:/D: layout without deleting the legacy source during V1, allowing rollback to an older RiftOS build.
+
+## Execution boundary
+
+`RiftApps.launch(id)` delegates to `RiftRT.launch(id)`. `riftapps.js` contains no guest iframe execution path and does not own app runtime bridges. RiftRT decides the executable engine; on Android, normal installed HTML-based V1 packages default to the dedicated Android-owned `native-webview` app surface. Worker/WASM/native plugin engines remain explicit RiftRT targets.
+
+This split is intentional:
+
+```text
+.rift package -> RiftApps installer -> C:/Programs/<id> -> RiftRT -> native RiftDesktop window/surface
+```
+
+Future R.O.P.E compiler outputs can replace the HTML-compatible payload with a compiled Rift ABI without changing the installer/registry or C:/D: layout.
+
+## Package validation
+
+`rift-app-v1` remains a bounded text package in V1. IDs, entry paths, file paths, total package bytes and declared capabilities are validated before install. Traversal components are rejected. Supported declarations include storage, filesystem, network, clipboard, share, notifications, local-build controller and bounded native capabilities.
 
 ## Source ownership
 
-- `src/riftapps.js` — package validation, registry, storage, launcher integration, iframe materialization, permission/capability bridge and app manager.
-- `src/riftapps-files.js` — portable package export/save helpers and manager UI enhancements.
-- `src/riftrt.js` — executes packages that opt into RiftRT through `riftrt.json`.
-- `/apps` source directory is currently empty/reserved; installed apps live in RiftFS at runtime rather than as repository source packages.
+- `src/riftapps.js` — validation, transactional install/update/uninstall, migration and program registry/manager.
+- `src/riftapps-files.js` — package export/share UX.
+- `src/riftrt.js` — execution after installation.
+- `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` — Android-owned V1 installed-program surface and native capability broker.
 
-## Package lifecycle
+## Invariants
 
-`installPackageFile(file)` parses imported JSON then calls `installPackageObject(pkg)`. `validatePackage` rejects malformed IDs/files/entry paths and normalizes the package. `RiftAppRegistry` persists package metadata/assets in RiftFS. `refreshLauncher()` creates/removes launcher entries from installed state. `launchInstalled(id)` materializes the package and opens its runtime.
-
-Portable export reconstructs package JSON from installed state and saves it as a `.rift` file through the browser/download path.
-
-## Runtime models
-
-A package without a RiftRT spec can run as an iframe-style app. A package containing `riftrt.json` opts into the RiftRT engine described in the RiftRT README.
-
-## Capability model
-
-App permissions are declared by the package and mapped through `capabilityForPermission`/`requirePermission`. The host bridge handles allowed calls such as storage, filesystem, clipboard, share and notifications according to app permission and platform availability. `notifications.request` requests Android notification permission and `notifications.schedule` queues a bounded in-process delayed notification through the native dispatcher. Injected app HTML receives a scoped token and Content Security Policy; it does not receive arbitrary RiftOS globals.
-
-## Critical invariants
-
-- Package import must validate before writing registry state.
-- Asset paths are normalized and may not use traversal.
-- App IDs become storage/runtime identities; changing normalization can orphan data.
-- Permission checks happen before host operations.
-- Exported `.rift` files must round-trip through the importer.
-- Destructive app removal must require explicit confirmation and async install/open/remove failures must be surfaced to the user rather than becoming unhandled promise rejections.
-- Do not store GitHub or privileged host credentials inside app packages.
-
-## Failure signatures
-
-- Android file picker greys out `.rift` -> picker/MIME/import entry configuration, not package JSON validation.
-- File selectable but install fails -> `validatePackage`/JSON/package contents.
-- Installed app absent from launcher -> registry write or `refreshLauncher`.
-- App opens blank -> entry/assets/CSP/bridge materialization or runtime engine.
-- Exported package cannot re-import -> portablePackage/export fidelity.
-
-## Fix map
-
-Validation/registry/import/iframe host -> `riftapps.js`.
-Saving/exporting `.rift` -> `riftapps-files.js`.
-RiftRT-specific engine execution -> `riftrt.js`.
-Android picker acceptance -> Android host/file chooser.
+- Import/install never means execute in an iframe.
+- Program files live under C:/Programs; user app state lives under D:/Users/Default/AppData.
+- Update failure must not silently destroy the previous installed program.
+- An installed package cannot choose its install root.
+- Ordinary installed-program filesystem grants cannot modify C:/Programs, C:/ProgramData or another app's AppData; those boundaries are enforced again by the native app host.
+- Launcher entries are generated from the installed registry, not arbitrary package-provided Android intents.
+- Package execution goes through RiftRT and RiftDesktop lifecycle/process ownership.
 
 ## Validation
 
-Run `scripts/test-rift-app-import.mjs`. Test a minimal package, multiple assets, invalid traversal, invalid IDs, reinstall/update, export/re-import and both legacy iframe and RiftRT packages.
+Run `scripts/test-rift-app-import.mjs`. Verify valid generic-MIME `.rift` files install beneath C:/Programs, invalid packages fail before promotion, upgrades preserve AppData, source contains no installed-app iframe path, and launching an installed program delegates to RiftRT.
