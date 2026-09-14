@@ -13,8 +13,8 @@ async function ensure(){await core.ready;await core.fs.mkdir(ROOT);if(!(await co
 async function registry(){await ensure();return await core.fs.readJSON(REGISTRY,{format:"riftrepo-registry-v1",version:1,repos:[]});}
 async function saveRegistry(value){await core.fs.writeJSON(REGISTRY,value);return value;}
 function normalizeWorkspacePath(value,cwd="/workspace"){
-  const raw=String(value||cwd||"/workspace").trim();const full=core.path.normalize(raw.startsWith("/")?raw:core.path.join(cwd||"/workspace",raw));
-  if(full!=="/workspace"&&!full.startsWith("/workspace/"))throw new Error("RiftRepo working trees must live under /workspace");return full;
+  const raw=String(value||cwd||"/workspace").trim(),display=core.path.normalize(core.path.isAbsolute(raw)?raw:core.path.join(cwd||"/workspace",raw)),full=core.path.canonical(display);
+  if(full!=="/workspace"&&!full.startsWith("/workspace/"))throw new Error("RiftRepo working trees must live under D:/Workspace (/workspace compatibility root)");return full;
 }
 function repoDir(id){return `${ROOT}/repos/${id}`;}
 function configPath(id){return `${repoDir(id)}/config.json`;}

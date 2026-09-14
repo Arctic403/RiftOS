@@ -2,7 +2,8 @@ const core=window.RiftOSCore;
 if(!core)throw new Error("RiftOSCore must load before RiftShellBatch");
 
 const NON_REVERSIBLE=new Set(["git","gh","github","mount","umount","kill","open","browser","batch","vortex","vortex-agent","riftos-agent","riftllm-agent","chat","devlab","rift"]);
-const PROTECTED_ROOTS=new Set(["/","/home","/apps","/system","/workspace","/downloads","/documents","/mounts"]);
+const PROTECTED_ROOTS=new Set(["/","/home","/apps","/system","/workspace","/downloads","/documents","/mounts","/system/riftos","/system/programs","/system/program-data","/system/toolchains","/home/users","/home/projects","/home/temp","/documents/packages","/documents/builds","/documents/vault","/C:","/D:","/C:/RiftOS","/C:/Programs","/C:/ProgramData","/C:/Toolchains","/D:/Users","/D:/Workspace","/D:/Projects","/D:/Packages","/D:/Builds","/D:/Documents","/D:/Downloads","/D:/Vault","/D:/Temp"]);
+function isProtectedRoot(path){const display=core.path?.normalize?core.path.normalize(path):String(path||"");const canonical=core.path?.canonical?core.path.canonical(display):display;return PROTECTED_ROOTS.has(display)||PROTECTED_ROOTS.has(canonical);}
 
 function tokenize(raw){const out=[];String(raw||"").replace(/"([^"]*)"|'([^']*)'|([^\s]+)/g,(_,a,b,c)=>{out.push(a??b??c);return "";});return out;}
 function split(script){
@@ -62,14 +63,14 @@ async function preflight(commands,state,resolve){
     await permission("fs.read");
     if(targets.length)await permission("fs.write");
     for(const target of targets){
-      if(PROTECTED_ROOTS.has(target))throw new Error(`Atomic batch cannot replace RiftFS root ${target}`);
+      if(isProtectedRoot(target))throw new Error(`Atomic batch cannot replace RiftFS root ${target}`);
       if(target==="/system/riftshell-batches"||target.startsWith("/system/riftshell-batches/"))throw new Error("Batch commands cannot target the rollback area");
       const route=core.fs.route?.(target);
       if(route?.mount||target.startsWith("/mounts/"))throw new Error("Mounted provider mutations are not eligible for batch rollback; run separately");
     }
     const path=resolve(planned.cwd,args[0]||planned.cwd);
     if(cmd==="cd"||cmd==="home"||cmd==="workspace"&&args[0]==="cd"){
-      const next=cmd==="home"||cmd==="cd"&&!args[0]?"/home":cmd==="workspace"?"/workspace":path;
+      const next=cmd==="home"?"/D:/Users/Default":cmd==="workspace"?"/D:/Workspace":cmd==="cd"&&!args[0]?"/home":path;
       await directory(next);planned.cwd=next;continue;
     }
     if(["cat","head","tail","stat","tree","ls","cp","mv","zip","unzip"].includes(cmd)){
@@ -115,7 +116,7 @@ async function run(script,{state,execute,print=console.log,resolve,dryRun=false}
   }
   const batchId=`batch-${Date.now()}-${Math.random().toString(16).slice(2)}`,backupRoot=`/system/riftshell-batches/${batchId}`,backups=new Map(),order=[];
   const backup=async target=>{
-    if(PROTECTED_ROOTS.has(target))throw new Error(`Atomic batch cannot replace RiftFS root ${target}`);
+    if(isProtectedRoot(target))throw new Error(`Atomic batch cannot replace RiftFS root ${target}`);
     if(target==="/system/riftshell-batches"||target.startsWith("/system/riftshell-batches/"))throw new Error("Batch commands cannot target the rollback area");
     // Back up the first missing ancestor too, so implicit mkdirs roll back.
     let ancestor=target.slice(0,target.lastIndexOf("/"))||"/";

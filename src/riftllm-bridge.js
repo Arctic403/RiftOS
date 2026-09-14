@@ -11,7 +11,7 @@ const utf8=new TextEncoder();
 function clone(value){return value==null?value:JSON.parse(JSON.stringify(value));}
 function normalizeProjectPath(value){
   let raw=String(value??"").trim().replace(/\\/g,"/");
-  for(const prefix of ["/workspace/RiftLLM/","workspace/RiftLLM/","/RiftLLM/","RiftLLM/"])if(raw.startsWith(prefix)){raw=raw.slice(prefix.length);break;}
+  for(const prefix of ["/workspace/RiftLLM/","workspace/RiftLLM/","/D:/Workspace/RiftLLM/","D:/Workspace/RiftLLM/","/RiftLLM/","RiftLLM/"])if(raw.startsWith(prefix)){raw=raw.slice(prefix.length);break;}
   raw=raw.replace(/^\/+/,"");
   if(!raw)throw new Error("RiftLLM project path is required");
   const parts=raw.split("/");
@@ -19,7 +19,7 @@ function normalizeProjectPath(value){
   return parts.join("/");
 }
 function canonicalPath(relative){return `${PROJECT_ROOT}/${normalizeProjectPath(relative)}`;}
-function resolveRiftFs(cwd,value){const raw=String(value||"").trim();if(!raw)throw new Error("RiftFS source path is required");return raw.startsWith("/")?core.path.normalize(raw):core.path.join(cwd||"/",raw);}
+function resolveRiftFs(cwd,value){const raw=String(value||"").trim();if(!raw)throw new Error("RiftFS source path is required");return core.path.isAbsolute(raw)?core.path.normalize(raw):core.path.join(cwd||"/",raw);}
 function hex(bytes){return [...new Uint8Array(bytes)].map(byte=>byte.toString(16).padStart(2,"0")).join("");}
 async function sha256Text(text){return hex(await crypto.subtle.digest("SHA-256",utf8.encode(String(text??""))));}
 async function native(op,request={},extra={}){return core.native.call("riftllm.dev",{op,request,...extra});}

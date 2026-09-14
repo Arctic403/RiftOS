@@ -43,7 +43,7 @@ Legacy roots (`/workspace`, `/documents`, `/downloads`, `/home`, `/system`, `/ap
 
 ## Protection rules
 
-Volume roots and major mapped roots are protected from ordinary root-level remove/move operations. This prevents a generic file operation from deleting `C:/Programs`, `D:/Workspace`, or another OS namespace root. Children remain manageable through the owning subsystem and normal permission checks.
+Volume roots and major mapped roots are protected from ordinary root-level remove/move operations. Protection applies to both the drive-facing alias and its canonical compatibility root, so `C:/Programs` and `/system/programs` cannot disagree about whether the same root is removable. This prevents a generic file operation from deleting `C:/Programs`, `D:/Workspace`, or another OS namespace root. Children remain manageable through the owning subsystem and normal permission checks.
 
 SAF mounts remain under `/mounts/*`. Future removable/cloud volumes may receive additional drive letters, but C: and D: are permanent OS-owned volumes.
 
@@ -56,6 +56,12 @@ SAF mounts remain under `/mounts/*`. Future removable/cloud volumes may receive 
 - Path traversal must fail before touching Android storage.
 - Volume roots cannot be overwritten as files or used as archive endpoints.
 - External SAF mount semantics remain independent from the C:/D: mapping.
+
+## Shared path contract
+
+`RiftOSCore.path.isAbsolute()` is the single trusted test for absolute Rift paths and recognizes both slash-rooted paths and bare drive paths such as `D:/Workspace/Game`. `RiftOSCore.path.canonical()` converts a display/drive path to the stable compatibility identity used for containment and subsystem identity checks. For example, `D:/Workspace/Game` canonicalizes to `/workspace/Game` and `C:/Programs/App` canonicalizes to `/system/programs/App`.
+
+User-facing shell/Files/app surfaces may retain C:/D: display paths. Workspace-scoped internals such as MCP, Project Intelligence, Workspace Records and the in-house diff stay physically pinned to `/workspace`; they must not be rewritten to a second copy under D:. Higher-level consumers that accept user paths canonicalize before enforcing a workspace boundary instead of reimplementing drive parsing.
 
 ## Validation
 

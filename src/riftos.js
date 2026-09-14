@@ -42,7 +42,7 @@ globalThis.RiftTransferUI=Object.freeze({
 });
 const filesNavigation={history:["/"],index:0};
 const filesClipboard={mode:"copy",paths:[]};
-const protectedFileRoots=new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts"]);
+const protectedFileRoots=new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts","/system/riftos","/system/programs","/system/program-data","/system/toolchains","/home/users","/home/projects","/home/temp","/documents/packages","/documents/builds","/documents/vault","/C:","/D:","/C:/RiftOS","/C:/Programs","/C:/ProgramData","/C:/Toolchains","/D:/Users","/D:/Workspace","/D:/Projects","/D:/Packages","/D:/Builds","/D:/Documents","/D:/Downloads","/D:/Vault","/D:/Temp"]);
 let nativeDesktopEnabled=false,nativeDesktopBootstrap=null,nativeDesktopState=null,nativeDesktopSequence=-1,nativeLauncherTimer=0,nativeLauncherObserver=null,nativeDesktopPersistTimer=0,nativeDesktopSettings={};
 try{
   await core.ready;
@@ -269,8 +269,8 @@ async function openFiles(path="/",options={}){
   const selected=new Set();
   let selectionBox=null;
   const roots=[
-    ["/home","⌂","Home"],["/documents","▤","Documents"],["/downloads","⇩","Downloads"],
-    ["/workspace","◇","Workspace"],["/apps","▦","Apps"],["/mounts","⛓","Android mounts"]
+    ["/D:/Users/Default","⌂","Home"],["/D:/Documents","▤","Documents"],["/D:/Downloads","⇩","Downloads"],
+    ["/D:/Workspace","◇","Workspace"],["/C:/Programs","▦","Programs"],["/mounts","⛓","Android mounts"]
   ];
   const pathParts=path==="/"?[]:path.split("/").filter(Boolean);
   const crumbs=[`<button data-crumb="/">RiftFS</button>`];

@@ -76,7 +76,7 @@ async function run(args,print=console.log,context={}){
   if(cmd==="jobs")return print(JSON.stringify(await jobs(Number(list[0])||30),null,2));
   if(cmd==="bench")return print(JSON.stringify(await bench(list[0]||"local"),null,2));
   if(cmd==="login")return print(JSON.stringify(await login(list[0]),null,2));
-  const resolve=value=>normalizePath(String(value||"").startsWith("/")?value:core.path.join(context.cwd||"/",value));
+  const resolve=value=>normalizePath(core.path.isAbsolute(value)?value:core.path.join(context.cwd||"/",value));
   if(cmd==="backup"){if(!list[0])throw new Error("usage: rift vault backup <path>");return print(JSON.stringify(await backupPath(resolve(list[0])),null,2));}
   if(cmd==="restore"){if(list.length<2)throw new Error("usage: rift vault restore <ref> <path>");return print(JSON.stringify(await restore(list[0],resolve(list[1]),{overwrite:list.includes("--force")}),null,2));}
   if(cmd==="object"){if(!list[0])throw new Error("usage: rift vault object <sha256>");return print(JSON.stringify(await object(list[0]),null,2));}

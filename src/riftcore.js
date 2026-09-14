@@ -1,6 +1,6 @@
 const CORE_VERSION = "2.2.0-android-native-volumes";
 const ROOT_MOUNT = "__riftfs__";
-const PROTECTED_RIFT_ROOTS = new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts","/C:","/D:","/C:/RiftOS","/C:/Programs","/C:/ProgramData","/C:/Toolchains","/D:/Users","/D:/Workspace","/D:/Projects","/D:/Packages","/D:/Builds","/D:/Documents","/D:/Downloads","/D:/Vault","/D:/Temp"]);
+const PROTECTED_RIFT_ROOTS = new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts","/system/riftos","/system/programs","/system/program-data","/system/toolchains","/home/users","/home/projects","/home/temp","/documents/packages","/documents/builds","/documents/vault","/C:","/D:","/C:/RiftOS","/C:/Programs","/C:/ProgramData","/C:/Toolchains","/D:/Users","/D:/Workspace","/D:/Projects","/D:/Packages","/D:/Builds","/D:/Documents","/D:/Downloads","/D:/Vault","/D:/Temp"]);
 const RIFT_VOLUMES = Object.freeze({
   "C:":Object.freeze({id:"C",letter:"C:",label:"RiftOS System",backing:"/system/volumes/C",roots:Object.freeze({RiftOS:"/system/riftos",Programs:"/system/programs",ProgramData:"/system/program-data",Toolchains:"/system/toolchains"})}),
   "D:":Object.freeze({id:"D",letter:"D:",label:"User Data",backing:"/system/volumes/D",roots:Object.freeze({Users:"/home/users",Workspace:"/workspace",Projects:"/home/projects",Packages:"/documents/packages",Builds:"/documents/builds",Documents:"/documents",Downloads:"/downloads",Vault:"/documents/vault",Temp:"/home/temp"})})
@@ -53,6 +53,14 @@ function parentPath(path){
 }
 function basename(path){return normalizePath(path).split("/").filter(Boolean).pop()||"";}
 function joinPath(...parts){return normalizePath(parts.join("/"));}
+function isAbsolutePath(value){
+  const raw=String(value??"").trim().replace(/\\/g,"/");
+  return raw.startsWith("/")||/^[A-Za-z]:($|\/)/.test(raw);
+}
+function canonicalPath(value="/"){
+  const normalized=normalizePath(value),mapped=volumeForPath(normalized);
+  return mapped?mapped.physical:normalized;
+}
 function safeMountName(value){
   return String(value||"mount").trim().replace(/[\/\\]+/g,"-").replace(/\s+/g," ").slice(0,80)||"mount";
 }
@@ -504,7 +512,7 @@ window.RiftNative=Object.freeze({
 
 window.RiftOSCore=Object.freeze({
   version:CORE_VERSION,ready,kernel,fs:kernel.fs,processes:kernel.processes,permissions:kernel.permissions,native:kernel.native,workspace:null,
-  path:Object.freeze({normalize:normalizePath,parent:parentPath,basename,join:joinPath})
+  path:Object.freeze({normalize:normalizePath,parent:parentPath,basename,join:joinPath,isAbsolute:isAbsolutePath,canonical:canonicalPath})
 });
 
 console.info(`[RiftOS Android] RiftKernel ${CORE_VERSION} loading`);

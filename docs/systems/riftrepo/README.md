@@ -12,6 +12,10 @@ RiftRepo is RiftOS-owned local source control for `/workspace`. It creates offli
 
 `.riftgit.json`, Gradle build outputs and dependency/build caches are excluded by default because they are transport/reproducible state rather than authoritative source.
 
+## Drive-path compatibility
+
+RiftRepo accepts either `D:/Workspace/...` or `/workspace/...`, then canonicalizes through `RiftOSCore.path.canonical()` before registry lookup and containment checks. Registry roots therefore use one stable `/workspace/...` identity even when the shell cwd is the D: display alias. Paths outside the Workspace backing tree remain rejected.
+
 ## Transaction model
 
 A checkpoint hashes the current repository, stores missing immutable objects, writes a manifest, writes a checkpoint record, then advances the active branch head. Rollback first creates an automatic safety checkpoint, restores the requested manifest, and attempts safety restoration if the target restore fails. Branch switching refuses a dirty RiftRepo working tree.

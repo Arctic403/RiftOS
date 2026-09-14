@@ -40,6 +40,10 @@ Only after `applyPatch` returns a Workspace `historyId` does RiftOS call `ack_pu
 
 Publication means local Workspace mutation only. The bridge never authorizes Git push, Android build or install.
 
+## RiftFS source-path compatibility
+
+`stage-file` and other RiftFS-source operations use the shared RiftCore absolute-path rule. Bare drive paths such as `D:/Workspace/...` are accepted as absolute instead of being joined to the shell cwd. Project-path normalization also recognizes `D:/Workspace/RiftLLM/...` as the same canonical RiftLLM project namespace as `/workspace/RiftLLM/...`; publication still targets guarded Workspace-relative `RiftLLM/...` paths only.
+
 ## Shell surface
 
 `riftllm-agent` provides fixed semantic commands for status/pair/unpair, source sync, load/staged/stage/stage-file/delete/unstage/reset, snapshots, read-only benchmark records, preview, publish and receipt recovery. It is deliberately excluded from generic RiftShell atomic batch because Binder-side Dev Lab mutations and Workspace publication have their own transaction/receipt semantics.

@@ -226,7 +226,7 @@ async function status(){
 }
 function resolveRiftFsPath(value,cwd="/"){
   const raw=String(value??"").trim();if(!raw)throw new Error("RiftFS source path is required");
-  return raw.startsWith("/")?core.path.normalize(raw):core.path.join(core.path.normalize(cwd||"/"),raw);
+  return core.path.isAbsolute(raw)?core.path.normalize(raw):core.path.join(core.path.normalize(cwd||"/"),raw);
 }
 async function resolveSnapshotId(value){
   const requested=String(value||"latest").trim();if(requested&&requested!=="latest")return requested;

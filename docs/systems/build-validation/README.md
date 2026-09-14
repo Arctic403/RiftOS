@@ -15,6 +15,7 @@ The build/validation layer catches source-contract regressions before the separa
 - `scripts/test-rift-raw-protocol.mjs` — raw call parser/nested arguments/result protocol tests.
 - `scripts/test-rift-shell-batch.mjs` — batch parser/preflight/rollback behavior.
 - `scripts/test-rift-shell-git.mjs` — shell/Git workflow tests.
+- `scripts/test-rift-path-compat.mjs` — executable C:/D: path-helper semantics plus cross-subsystem assertions that drive aliases canonicalize before identity/containment checks.
 - `scripts/test-rift-local-platform.mjs` — local-first repo/vault/build/memory module wiring, provider capability honesty and fail-closed build-executor contract.
 - `scripts/test-riftllm-bridge.mjs` — fixed standalone RiftLLM Binder API identity/allowlist, Keystore pairing, guarded Workspace publication and shell-boundary contract.
 - `scripts/test-rift-app-import.mjs` — `.rift` package import contract.

@@ -10,6 +10,10 @@ RiftGit provides GitHub-backed source synchronization for complete RiftFS projec
 
 Primary commands/functions include clone, attach/init, status, pull, atomic push, sync, branch list/switch, workspace status/push and token/auth session handling.
 
+## Drive-path compatibility
+
+RiftGit treats bare `C:/...` and `D:/...` paths as absolute Rift paths. Before repository metadata lookup/storage and Workspace Records checkpoint routing, drive aliases are canonicalized to their compatibility identity. Thus `git -C D:/Workspace/RiftOS-main status` addresses the same checkout as `/workspace/RiftOS-main` and does not create a second repository identity. User-facing shell paths may still use D:; `.riftgit.json` keeps the stable canonical root.
+
 ## Metadata model
 
 `.riftgit.json` (`riftgit-v3`) records owner/repo/branch/root/head SHA and tracked file blob SHA/size/mode. The file is local synchronization metadata and is excluded from Git tree content where appropriate. A separate current-root pointer supports shell workflows.

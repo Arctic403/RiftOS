@@ -9,6 +9,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-raw-protocol.mjs` — browser raw tool-call parser/protocol.
 - `test-rift-shell-batch.mjs` — local shell batch preflight/rollback.
 - `test-rift-shell-git.mjs` — RiftGit/shell integration.
+- `test-rift-path-compat.mjs` — shared C:/D: absolute-path and canonical-identity contract across RiftCore, Build, Repo, Git, Vault, Memory, Dev Lab, RiftLLM and Files.
 - `test-rift-local-platform.mjs` — RiftRepo/RiftVault/RiftBuild/RiftMemory wiring, fail-closed capability and shell-surface contract.
 - `test-riftllm-bridge.mjs` — standalone RiftLLM Binder bridge, secure pairing, guarded patch publication and shell-boundary contract.
 - `test-rift-app-import.mjs` — `.rift` package import/validation.

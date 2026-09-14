@@ -34,7 +34,9 @@ function normalizePath(value="/"){
   let raw=String(value||"/").trim().replace(/\\/g,"/");if(raw==="~"||raw.startsWith("~/"))raw=`/home${raw.slice(1)}`;
   const parts=[];for(const part of raw.split("/")){if(!part||part===".")continue;if(part===".."){parts.pop();continue;}parts.push(part);}return "/"+parts.join("/");
 }
-function resolvePath(cwd,value){const raw=String(value||"");return normalizePath(raw.startsWith("/")||raw.startsWith("~")?raw:`${cwd||"/home"}/${raw}`);}
+function isAbsolutePath(value){return typeof core.path?.isAbsolute==="function"?core.path.isAbsolute(value):String(value||"").startsWith("/")||String(value||"").startsWith("~")||/^[A-Za-z]:($|[\\/])/.test(String(value||""));}
+function canonicalPath(value="/"){const normalized=normalizePath(value);return typeof core.path?.canonical==="function"?core.path.canonical(normalized):normalized;}
+function resolvePath(cwd,value){const raw=String(value||"");return canonicalPath(isAbsolutePath(raw)?raw:`${cwd||"/home"}/${raw}`);}
 function parentPath(path){const parts=normalizePath(path).split("/").filter(Boolean);parts.pop();return "/"+parts.join("/");}
 function basename(path){return normalizePath(path).split("/").filter(Boolean).pop()||"repo";}
 function parseRepo(value){
@@ -65,7 +67,7 @@ async function treeFor(repo,branch){
 }
 async function blobBase64(repo,sha){const blob=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/blobs/${encodeURIComponent(sha)}`);if(blob.encoding!=="base64")throw new Error("Unsupported GitHub blob encoding");return String(blob.content||"").replace(/\s/g,"");}
 async function findMeta(startPath){
-  let current=normalizePath(startPath||"/home");const startStat=await fs.stat(current).catch(()=>null);if(startStat?.kind==="file")current=parentPath(current);
+  let current=canonicalPath(startPath||"/home");const startStat=await fs.stat(current).catch(()=>null);if(startStat?.kind==="file")current=parentPath(current);
   while(true){const file=await fs.get(`${current}/${META_NAME}`).catch(()=>null);if(file?.content){const meta=JSON.parse(file.content);meta.root=current;return meta;}if(current==="/")break;current=parentPath(current);}return null;
 }
 async function loadMeta(cwd){
@@ -73,7 +75,7 @@ async function loadMeta(cwd){
   if(current?.content){const pointed=await findMeta(current.content);if(pointed)return pointed;throw new Error(`Saved repo path no longer exists: ${current.content}. Run "git init owner/repo branch" inside the project folder.`);}
   throw new Error("No repo is attached here. cd into the project and run: git init owner/repo [branch]");
 }
-async function writeMeta(meta){meta.format="riftgit-v3";meta.root=normalizePath(meta.root);meta.updatedAt=Date.now();await fs.write(`${meta.root}/${META_NAME}`,JSON.stringify(meta,null,2));}
+async function writeMeta(meta){meta.format="riftgit-v3";meta.root=canonicalPath(meta.root);meta.updatedAt=Date.now();await fs.write(`${meta.root}/${META_NAME}`,JSON.stringify(meta,null,2));}
 async function saveMeta(meta){await writeMeta(meta);await fs.write(CURRENT_PATH,meta.root);}
 async function refreshAttachedWorkspaceMeta(meta){
   const file=await fs.get(`${meta.root}/${META_NAME}`).catch(()=>null);if(!file?.content)return false;
@@ -224,7 +226,7 @@ async function workspaceDiff(options={}){
 }
 
 async function checkpointWorkspaceRecords(root,reason,headSha){
-  const normalized=normalizePath(root);
+  const normalized=canonicalPath(root);
   if(normalized!=="/workspace"&&!normalized.startsWith("/workspace/"))return;
   if(typeof core?.native?.call!=="function")return;
   const gitRoot=normalized.slice("/workspace/".length);
@@ -265,7 +267,7 @@ async function sync(message,print,cwd){
   return atomicPush(message,print,cwd);
 }
 async function use(value,print,cwd){
-  let meta;if(String(value||"").startsWith("/")||String(value||"").startsWith("."))meta=await findMeta(resolvePath(cwd,value));else{const repo=parseRepo(value);for(const root of [defaultRoot(repo),`/home/repos/${repo.repo}`]){meta=await findMeta(root);if(meta)break;}}
+  let meta;if(isAbsolutePath(value)||String(value||"").startsWith("."))meta=await findMeta(resolvePath(cwd,value));else{const repo=parseRepo(value);for(const root of [defaultRoot(repo),`/home/repos/${repo.repo}`]){meta=await findMeta(root);if(meta)break;}}
   if(!meta)throw new Error(`No attached RiftGit repository found for ${value}`);await saveMeta(meta);print(`Current repo: ${meta.full}#${meta.branch}\n${meta.root}`);
 }
 async function switchBranch(branch,print,cwd){
@@ -275,7 +277,7 @@ async function switchBranch(branch,print,cwd){
 async function listBranches(print,cwd){const meta=await loadMeta(cwd),rows=await api(`/repos/${encodeURIComponent(meta.owner)}/${encodeURIComponent(meta.repo)}/branches?per_page=100`);rows.forEach(row=>print(`${row.name===meta.branch?"*":" "} ${row.name}`));}
 
 async function run(input,print=console.log,context={}){
-  const args=[...input];let cwd=normalizePath(context.cwd||"/home");if(args[0]==="-C"){if(!args[1])throw new Error("usage: git -C <folder> <command>");cwd=resolvePath(cwd,args[1]);args.splice(0,2);}const cmd=(args.shift()||"help").toLowerCase();
+  const args=[...input];let cwd=canonicalPath(context.cwd||"/home");if(args[0]==="-C"){if(!args[1])throw new Error("usage: git -C <folder> <command>");cwd=resolvePath(cwd,args[1]);args.splice(0,2);}const cmd=(args.shift()||"help").toLowerCase();
   if(cmd==="help")return print(`RiftGit / full RiftFS sync\ngit auth | logout\ngit workspace status                compare /workspace/RiftOS-main to Arctic403/RiftOS main\ngit workspace push [message]       publish workspace to main in one commit\ngit clone owner/repo [branch] [destination]\ngit init owner/repo [branch] [folder]   attach an existing folder\ngit use <folder|owner/repo>\ngit root | repo | status | pull\ngit commit -m <message>\ngit push [commit message]\ngit sync [commit message]            pull or atomic push in one command\ngit branches | switch <branch>\ngit -C <folder> <command>\n\nCommands use the shell's current directory. Repositories can live under /home, /workspace, or a mounted Android folder. Full directory trees and binary files are synchronized atomically.`);
   if(cmd==="workspace")return workspaceCommand(args,print);
   if(cmd==="auth"){const value=prompt("GitHub token for this RiftOS session only:","");if(!value)return print("auth cancelled");sessionStorage.setItem("riftgit-token",value.trim());const me=await api("/user");return print(`Authenticated as ${me.login}. Token is session-only.`);}

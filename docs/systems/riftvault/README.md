@@ -12,6 +12,10 @@ RiftVault is RiftOS's provider-independent durable object layer. The current MVP
 
 The working tree is never used for vault metadata. Provider credentials use the existing Android Keystore-backed native secrets route; shell arguments never contain secrets.
 
+## Drive-path compatibility
+
+Shell path resolution uses the shared RiftCore absolute-path test, so bare drive arguments such as `D:/Projects/game` are not accidentally joined to the current directory. RiftVault may retain the caller-facing logical path in metadata, while all actual bytes still flow through RiftFS and therefore resolve to the same physical backing store.
+
 ## Storage contract
 
 Objects are immutable at `/system/riftvault/v1/objects/sha256/<prefix>/<hash>`. Metadata, manifests and durable job records are separate. Local restore re-hashes the restored bytes before success is returned. File hashing uses `RiftFS.sha256()` backed by Android streaming SHA-256, so large files are digested in bounded native buffers instead of being base64-loaded across the WebView bridge.

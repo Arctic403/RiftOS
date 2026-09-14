@@ -21,6 +21,10 @@ Navigation/address path, list/details presentation, multi-select, selection rect
 
 `createVirtualListRenderer()` exists as a reusable virtual-list foundation. The Files renderer must preserve selection, `data-path`, context menus, keyboard/pointer behavior and operation lookups when migrating large directory rendering to virtualization. Do not optimize by dropping interaction state.
 
+## Drive-first navigation and protection
+
+Quick access uses the OS-facing namespace (`D:/Users/Default`, `D:/Documents`, `D:/Downloads`, `D:/Workspace`, `C:/Programs`) while compatibility roots remain valid when opened directly. Protected-root UI checks include both drive aliases and canonical backing roots, matching RiftFS enforcement instead of presenting destructive actions that the backend must later reject.
+
 ## Critical invariants
 
 - UI path and selected-path state reflect the canonical RiftFS path.

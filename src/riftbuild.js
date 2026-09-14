@@ -11,7 +11,7 @@ const nowISO=()=>new Date().toISOString();
 const runId=()=>`build-${Date.now()}-${crypto.randomUUID?.()||Math.random().toString(36).slice(2)}`;
 const ALLOWED_TASK=/^:(?:[A-Za-z0-9_.-]+:)*(?:assemble(?:Debug|Release)|bundle(?:Debug|Release))$/;
 async function ensure(){await core.ready;await core.fs.mkdir(ROOT);await core.fs.mkdir(RUN_ROOT);await core.fs.mkdir(ARTIFACT_ROOT);}
-function normalizeProject(value,cwd="/workspace"){const raw=String(value||cwd||"/workspace").trim(),path=core.path.normalize(raw.startsWith("/")?raw:core.path.join(cwd||"/workspace",raw));if(path!=="/workspace"&&!path.startsWith("/workspace/"))throw new Error("RiftBuild projects must live under /workspace");return path;}
+function normalizeProject(value,cwd="/workspace"){const raw=String(value||cwd||"/workspace").trim(),display=core.path.normalize(core.path.isAbsolute(raw)?raw:core.path.join(cwd||"/workspace",raw)),path=core.path.canonical(display);if(path!=="/workspace"&&!path.startsWith("/workspace/"))throw new Error("RiftBuild projects must live under D:/Workspace (/workspace compatibility root)");return path;}
 function normalizeTask(value=":app:assembleDebug"){const task=String(value||":app:assembleDebug").trim();if(!ALLOWED_TASK.test(task))throw new Error("RiftBuild task must be an assemble/bundle Debug/Release Gradle task path");return task;}
 
 async function detectProject(path){
