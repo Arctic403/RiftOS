@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const normalize=value=>'/'+String(value||'/').replace(/\\/g,'/').split('/').filter(Boolean).join('/');
 const files=new Map([['/workspace/original.txt','before']]),directories=new Set(['/','/workspace','/system']),archives=new Map();
 const fs={
-  async stat(path){path=normalize(path);if(files.has(path))return {kind:'file',size=files.get(path).length};if(directories.has(path)||[...files.keys()].some(key=>key.startsWith(path+'/')))return {kind:'directory',size:0};return null;},
+  async stat(path){path=normalize(path);if(files.has(path))return {kind:'file',size:files.get(path).length};if(directories.has(path)||[...files.keys()].some(key=>key.startsWith(path+'/')))return {kind:'directory',size:0};return null;},
   async mkdir(path){directories.add(normalize(path));return {kind:'directory'};},
   async remove(path){path=normalize(path);files.delete(path);archives.delete(path);for(const key of [...files.keys()])if(key.startsWith(path+'/'))files.delete(key);for(const key of [...directories])if(key===path||key.startsWith(path+'/'))directories.delete(key);return true;},
   async copy(from,to){from=normalize(from);to=normalize(to);if(files.has(from)){files.set(to,files.get(from));if(archives.has(from))archives.set(to,new Map(archives.get(from)));return {kind:'file'};}directories.add(to);for(const [key,value] of [...files])if(key.startsWith(from+'/'))files.set(to+key.slice(from.length),value);return {kind:'directory'};},
