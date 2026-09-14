@@ -19,7 +19,7 @@ MCP's `RiftToolSandbox` reaches the same physical workspace independently; it do
 
 ## Why this boundary exists
 
-Project features need more structure than raw file IO: snapshots, history, patch preview/apply and consistent JSON-safe results. Keeping this boundary separate from browser guest content means local project UI can be powerful without granting normal webpages filesystem access.
+Project features need more structure than raw file IO: snapshots, history, patch preview/apply and consistent JSON-safe results. Keeping this boundary separate from browser guest content means local project UI can be powerful without granting normal webpages filesystem access. RiftOS Dev Lab deliberately reuses this boundary: experiments stay under `/system/devlab`, while an approved Dev Lab snapshot publishes into `RiftOS-main/**` only through guarded `previewPatch` + `applyPatch`, so baseline conflicts and rollback stay centralized here.
 
 ## Workspace authority
 

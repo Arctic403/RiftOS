@@ -43,6 +43,7 @@ When behavior changes, update the owning system README in the same patch. Histor
 | Project exporter | [`systems/mcp/project-exporter/README.md`](systems/mcp/project-exporter/README.md) | `RiftProjectExporter.kt` |
 | RiftWorkspace | [`systems/workspace/README.md`](systems/workspace/README.md) | `src/riftworkspace-*.js` |
 | Workspace Records | [`systems/workspace/live/README.md`](systems/workspace/live/README.md) | `workspace-live/`, `RiftWorkspaceRecords.kt`, `RiftWorkspaceWatcher.kt` |
+| RiftOS Dev Lab | [`systems/dev-lab/README.md`](systems/dev-lab/README.md) | `src/riftdevlab.js`, RiftWorkspace guarded patch publication |
 | App/package system | [`systems/apps/README.md`](systems/apps/README.md) | `src/riftapps*.js` |
 | RiftRT | [`systems/riftrt/README.md`](systems/riftrt/README.md) | `src/riftrt.js` |
 | Runtime capability report | [`systems/runtime-capabilities/README.md`](systems/runtime-capabilities/README.md) | `src/riftruntime.js` |

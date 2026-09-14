@@ -9,6 +9,7 @@ await import("./riftapps.js");
 await import("./riftapps-files.js");
 await import("./riftgit.js");
 await import("./riftshell-batch.js");
+await import("./riftdevlab.js");
 await import("./riftos.js");
 if(globalThis.RiftNativeDesktop?.enabled){
   await import("./riftdesktop-native-compat.js");

@@ -31,6 +31,7 @@ const relayWorker = readFileSync('relay/src/index.js', 'utf8');
 const riftGit = readFileSync('src/riftgit.js', 'utf8');
 const riftRt = readFileSync('src/riftrt.js', 'utf8');
 const riftApps = readFileSync('src/riftapps.js', 'utf8');
+const devLab = readFileSync('src/riftdevlab.js', 'utf8');
 const shellBatch = readFileSync('src/riftshell-batch.js', 'utf8');
 const aiAdapterRegistry = readFileSync('android/app/src/main/assets/adapters/ai-adapter-registry.js', 'utf8');
 const relayClient = readFileSync('android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt', 'utf8');
@@ -56,6 +57,9 @@ const checks = [
   ['Android Back closes the visible focused window through the window manager', androidPlatform.includes('manager.close(focused.window)===true') && androidPlatform.includes("rift-focused")],
   ['Workspace Records leads with persistent local events and avoids automatic Git calls', workspacePage.indexOf('id="recordCount"') < workspacePage.indexOf('id="localCount"') && !workspacePage.includes('id="checkpointBtn"') && !workspacePage.includes('Reconnect') && !workspacePageScript.includes('await refreshGit();')],
 
+  ['RiftOS Dev Lab stages outside the project and publishes only through guarded Workspace patches', entry.includes('import("./riftdevlab.js")') && core.includes('{id:"devlab",name:"RiftOS Dev Lab"') && filesUi.includes('id==="devlab"') && filesUi.includes('RiftDevLab?.open') && devLab.includes('const LAB_ROOT="/system/devlab"') && devLab.includes('const PROJECT_ROOT="RiftOS-main"') && devLab.includes('base_sha256:baseline.base_sha256') && devLab.includes('workspace.previewPatch(patch)') && devLab.includes('workspace.applyPatch(patch)') && devLab.includes('format:"riftcity-ai-patch",version:2') && !devLab.includes('workspace.writeText(projectPath') && !devLab.includes('core.fs.writeText(`/workspace')],
+  ['RiftOS Dev Lab keeps live experimentation honest about compiled-source permanence', devLab.includes('mode:"live-css"') && devLab.includes('mode:"live-script-assisted"') && devLab.includes('mode:"compiled-native"') && devLab.includes('requiresRebuild:true') && devLab.includes('new AsyncFunction') && devLab.includes('readOnlyWorkspace') && devLab.includes('readOnlyFs') && devLab.includes('RUN_ROOT') && devLab.includes('evidenceRuns')],
+  ['RiftOS Dev Lab is first-class in RiftShell but excluded from generic atomic batch', filesUi.includes('async function runDevLabShell') && filesUi.includes('if(cmd==="devlab")return runDevLabShell') && filesUi.includes('devlab publish [snapshot-id|latest]') && shellBatch.includes('"devlab"')],
   ['Rift AI workspace app is removed', !existsSync('src/riftai-workspace.js') && !entry.includes('riftai-workspace')],
   ['native Rift AI command surface is removed', !main.includes('"ai.') && !main.includes('RiftAiJournal')],
   ['browser has no Rift AI task orchestration', !browser.includes('startAiTask') && !browser.includes('aiTransportOnly') && !browser.includes('control.queueTask')],

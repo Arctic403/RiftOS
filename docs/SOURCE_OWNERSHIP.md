@@ -33,6 +33,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `src/riftdesktop-android.js` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-window-host.js` | `docs/systems/desktop/README.md` |
 | `src/riftgit.js` | `docs/systems/git/README.md` |
+| `src/riftdevlab.js` | `docs/systems/dev-lab/README.md` + `docs/systems/workspace/README.md` |
 | `src/riftmcp-system.js` | `docs/systems/mcp/README.md` |
 | `src/riftos.js` | `docs/systems/shell-ui/README.md`, `docs/systems/boot/README.md`, `docs/systems/files-app/README.md`, `docs/systems/settings/README.md`, `docs/systems/shell/README.md`, `docs/systems/browser/README.md`, `docs/systems/chat-handoff/README.md` |
 | `src/riftrt.js` | `docs/systems/riftrt/README.md` + `docs/systems/riftrt/engines/README.md` + engine-specific READMEs under `docs/systems/riftrt/engines/` |
@@ -101,6 +102,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | --- | --- |
 | `scripts/test-rift-ai-adapters.mjs` | `docs/systems/build-validation/README.md` + AI adapters |
 | `scripts/test-rift-app-import.mjs` | `docs/systems/build-validation/README.md` + apps |
+| `scripts/test-rift-dev-lab.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/dev-lab/README.md` |
 | `scripts/test-rift-raw-protocol.mjs` | `docs/systems/build-validation/README.md` + browser MCP compatibility |
 | `scripts/test-rift-workspace-records.mjs` | `docs/systems/build-validation/README.md` + workspace records |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
