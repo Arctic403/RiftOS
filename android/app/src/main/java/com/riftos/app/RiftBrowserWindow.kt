@@ -104,6 +104,13 @@ class RiftBrowserWindow(
         return state()
     }
 
+    fun setDesktopMode(enabled: Boolean): JSONObject {
+        ensureAlive()
+        activeEngine().setDesktopMode(enabled)
+        emitState()
+        return state()
+    }
+
     fun newTab(rawUrl: String?): JSONObject {
         ensureAlive()
         createTabInternal(rawUrl, select = true, load = true)
@@ -194,6 +201,7 @@ class RiftBrowserWindow(
                     .put("crashed", rendererState.optBoolean("crashed", false))
                     .put("canGoBack", rendererState.optBoolean("canGoBack", false))
                     .put("canGoForward", rendererState.optBoolean("canGoForward", false))
+                    .put("desktopMode", rendererState.optBoolean("desktopMode", false))
                     .put("active", tab.id == active.id)
             )
         }

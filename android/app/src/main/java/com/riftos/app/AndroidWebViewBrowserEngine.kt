@@ -20,6 +20,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.UserAgentMetadata
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 import java.net.URLConnection
 
@@ -49,12 +52,18 @@ class AndroidWebViewBrowserEngine(
     override val rendererId = "android-webview"
 
     private val mcpApp = RiftBrowserMcpAppBridge(activity, webView)
+    private val defaultUserAgent = WebSettings.getDefaultUserAgent(activity)
+    private var defaultUserAgentMetadata: UserAgentMetadata? = null
     private var popupWebView: WebView? = null
     private var crashed = false
+    private var desktopMode = false
 
     init {
         CookieManager.getInstance().setAcceptCookie(true)
         configureMainWebView(webView)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+            defaultUserAgentMetadata = runCatching { WebSettingsCompat.getUserAgentMetadata(webView.settings) }.getOrNull()
+        }
         mcpApp.install()
         installChromeClient()
         installWebViewClient()
@@ -78,6 +87,17 @@ class AndroidWebViewBrowserEngine(
     override fun goForward() { if (webView.canGoForward()) webView.goForward() }
     override fun reload() { crashed = false; webView.reload() }
 
+    override fun setDesktopMode(enabled: Boolean) {
+        if (desktopMode == enabled) return
+        val current = webView.url.orEmpty()
+        runCatching { webView.stopLoading() }
+        destroyPopup()
+        desktopMode = enabled
+        applyBrowserIdentity(webView.settings, enabled)
+        crashed = false
+        if (current.isNotBlank() && current != "about:blank") webView.reload() else stateChanged()
+    }
+
     override fun state(): JSONObject = JSONObject()
         .put("renderer", rendererId)
         .put("url", webView.url ?: "")
@@ -86,6 +106,7 @@ class AndroidWebViewBrowserEngine(
         .put("canGoForward", webView.canGoForward())
         .put("progress", webView.progress)
         .put("crashed", crashed)
+        .put("desktopMode", desktopMode)
         .put("riftMcpApp", mcpApp.state())
 
     override fun onResume() { webView.onResume() }
@@ -137,7 +158,42 @@ class AndroidWebViewBrowserEngine(
             setGeolocationEnabled(false)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) safeBrowsingEnabled = true
         }
+        applyBrowserIdentity(view.settings, desktopMode)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
+    }
+
+    private fun desktopUserAgent(): String {
+        val chromeVersion = Regex("Chrome/([0-9.]+)").find(defaultUserAgent)?.groupValues?.getOrNull(1)
+            ?: "140.0.0.0"
+        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeVersion Safari/537.36"
+    }
+
+    private fun desktopUserAgentMetadata(): UserAgentMetadata? {
+        val base = defaultUserAgentMetadata ?: return null
+        val builder = UserAgentMetadata.Builder(base)
+            .setMobile(false)
+            .setPlatform("Windows")
+            .setPlatformVersion("10.0.0")
+            .setModel("")
+            .setArchitecture("x86")
+            .setBitness(64)
+            .setWow64(false)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA_FORM_FACTORS)) {
+            builder.setFormFactors(listOf(UserAgentMetadata.FORM_FACTOR_DESKTOP))
+        }
+        return builder.build()
+    }
+
+    private fun applyBrowserIdentity(settings: WebSettings, enabled: Boolean) {
+        settings.useWideViewPort = true
+        settings.loadWithOverviewMode = enabled
+        settings.builtInZoomControls = enabled
+        settings.displayZoomControls = false
+        settings.userAgentString = if (enabled) desktopUserAgent() else defaultUserAgent
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+            val metadata = if (enabled) desktopUserAgentMetadata() else defaultUserAgentMetadata
+            if (metadata != null) runCatching { WebSettingsCompat.setUserAgentMetadata(settings, metadata) }
+        }
     }
 
     private fun installChromeClient() {

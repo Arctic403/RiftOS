@@ -553,12 +553,12 @@ async function openBrowser(startUrl="https://chatgpt.com"){
     <div class="rift-browser-windowbar">
       <button id="browserBack" title="Back" aria-label="Browser Back" disabled>←</button><button id="browserForward" title="Forward" aria-label="Browser Forward" disabled>→</button><button id="browserReload" title="Reload" aria-label="Browser Reload">↻</button>
       <input id="browserUrl" aria-label="Browser address" value="${escapeHTML(url)}" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url">
-      <button class="primary" id="browserGo">Go</button>
+      <button class="primary" id="browserGo">Go</button><button id="browserDesktopMode" class="rift-browser-desktop-toggle" title="Request desktop site" aria-label="Desktop site mode" aria-pressed="false">Desktop</button>
     </div>
     <div class="rift-browser-meta"><span id="browserState">RiftBrowser Engine</span><span id="browserMode">WebView compatibility backend · ChatGPT MCP isolated</span></div>
     <div class="rift-browser-native-surface" id="riftBrowserNativeSurface"><div><span>◎</span><strong>RiftBrowser</strong><small>Only the selected tab owns the visible renderer surface.</small></div></div>
   </div>`;
-  const surface=body.querySelector("#riftBrowserNativeSurface"),input=body.querySelector("#browserUrl"),stateEl=body.querySelector("#browserState"),modeEl=body.querySelector("#browserMode"),tabList=body.querySelector("#browserTabList"),back=body.querySelector("#browserBack"),forward=body.querySelector("#browserForward");
+  const surface=body.querySelector("#riftBrowserNativeSurface"),input=body.querySelector("#browserUrl"),stateEl=body.querySelector("#browserState"),modeEl=body.querySelector("#browserMode"),tabList=body.querySelector("#browserTabList"),back=body.querySelector("#browserBack"),forward=body.querySelector("#browserForward"),desktopToggle=body.querySelector("#browserDesktopMode");
   let closed=false,lastBounds="",syncTimer=0,activeTabId="";
   const native=async(method,args={})=>core.native.call(`browser.window.${method}`,args);
   const renderTabs=state=>{
@@ -577,8 +577,9 @@ async function openBrowser(startUrl="https://chatgpt.com"){
     renderTabs(state||{});
     if(state?.url&&document.activeElement!==input)input.value=state.url;
     back.disabled=!state?.canGoBack;forward.disabled=!state?.canGoForward;
+    const desktopMode=state?.desktopMode===true;desktopToggle.classList.toggle("active",desktopMode);desktopToggle.setAttribute("aria-pressed",desktopMode?"true":"false");desktopToggle.title=desktopMode?"Desktop site mode on — switch to mobile":"Request desktop site";
     stateEl.textContent=state?.crashed?"Renderer restarted":Number(state?.progress||0)<100?`Loading ${state?.progress||0}%`:(state?.title||"RiftBrowser");
-    const count=Number(state?.tabCount||state?.tabs?.length||1),max=Number(state?.maxTabs||8);modeEl.textContent=`${count}/${max} tabs · WebView compatibility backend · ChatGPT MCP isolated`;
+    const count=Number(state?.tabCount||state?.tabs?.length||1),max=Number(state?.maxTabs||8);modeEl.textContent=`${count}/${max} tabs · ${desktopMode?"Desktop":"Mobile"} site · WebView compatibility backend · ChatGPT MCP isolated`;
   };
   browserNativeListeners.add(updateState);
   const visible=()=>document.contains(surface)&&!win.classList.contains("rift-minimized")&&win.classList.contains("rift-focused")&&!document.querySelector("#riftStartMenu.open");
@@ -596,9 +597,10 @@ async function openBrowser(startUrl="https://chatgpt.com"){
     },24);
   };
   const navigate=async()=>{try{updateState(await native("navigate",{url:input.value.trim()||"https://chatgpt.com"}));}catch(error){stateEl.textContent=error.message;}};
+  const toggleDesktopMode=async()=>{const enabled=desktopToggle.getAttribute("aria-pressed")!=="true";try{updateState(await native("desktop-mode",{enabled}));}catch(error){stateEl.textContent=error.message;}};
   const newTab=async()=>{try{updateState(await native("tab.new",{url:"https://www.google.com"}));}catch(error){stateEl.textContent=error.message;}};
   const closeActiveTab=async()=>{if(!activeTabId)return;try{updateState(await native("tab.close",{tabId:activeTabId}));}catch(error){stateEl.textContent=error.message;}};
-  body.querySelector("#browserGo").onclick=navigate;body.querySelector("#browserNewTab").onclick=newTab;input.addEventListener("keydown",event=>{if(event.key==="Enter")navigate();});
+  body.querySelector("#browserGo").onclick=navigate;body.querySelector("#browserNewTab").onclick=newTab;desktopToggle.onclick=toggleDesktopMode;input.addEventListener("keydown",event=>{if(event.key==="Enter")navigate();});
   back.onclick=()=>native("back").then(updateState).catch(()=>{});forward.onclick=()=>native("forward").then(updateState).catch(()=>{});body.querySelector("#browserReload").onclick=()=>native("reload").then(updateState).catch(()=>{});
   const keyHandler=event=>{if(closed||!win.classList.contains("rift-focused")||!(event.ctrlKey||event.metaKey))return;const key=String(event.key||"").toLowerCase();if(key==="t"){event.preventDefault();newTab();}else if(key==="w"){event.preventDefault();closeActiveTab();}else if(key==="l"){event.preventDefault();input.focus();input.select();}};
   window.addEventListener("keydown",keyHandler);

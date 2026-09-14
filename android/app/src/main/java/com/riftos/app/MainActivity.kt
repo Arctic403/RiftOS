@@ -225,6 +225,7 @@ class MainActivity : Activity() {
             "browser.window.back" -> runBrowserCommand(requestId) { browserWindow.back() }
             "browser.window.forward" -> runBrowserCommand(requestId) { browserWindow.forward() }
             "browser.window.reload" -> runBrowserCommand(requestId) { browserWindow.reload() }
+            "browser.window.desktop-mode" -> runBrowserCommand(requestId) { browserWindow.setDesktopMode(args.optBoolean("enabled", false)) }
             "browser.window.tab.new" -> runBrowserCommand(requestId) { browserWindow.newTab(args.optString("url", "")) }
             "browser.window.tab.select" -> runBrowserCommand(requestId) { browserWindow.selectTab(args.optString("tabId", "")) }
             "browser.window.tab.close" -> runBrowserCommand(requestId) { browserWindow.closeTab(args.optString("tabId", "")) }

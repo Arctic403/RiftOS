@@ -15,6 +15,7 @@ interface RiftBrowserEngine {
     fun canGoForward(): Boolean
     fun goForward()
     fun reload()
+    fun setDesktopMode(enabled: Boolean)
     fun state(): JSONObject
     fun onResume()
     fun onPause()

@@ -15,7 +15,7 @@ RiftBrowser is a RiftOS-owned desktop browser window with native multi-tab rende
 
 ## Ownership split
 
-RiftOS HTML owns title/tab/address/taskbar chrome, desktop move/resize/minimize/maximize and user-visible window state. `RiftBrowserWindow` owns the native content surface rectangle, the bounded tab registry, active-tab selection and renderer visibility. Each tab owns one `RiftBrowserEngine`; only the selected tab may be visible/clickable while inactive tab engines are paused and `View.GONE`. `RiftBrowserEngine` still owns navigation/rendering implementation.
+RiftOS HTML owns title/tab/address/taskbar chrome, desktop move/resize/minimize/maximize and user-visible window state. `RiftBrowserWindow` owns the native content surface rectangle, the bounded tab registry, active-tab selection and renderer visibility. Each tab owns one `RiftBrowserEngine`; only the selected tab may be visible/clickable while inactive tab engines are paused and `View.GONE`. Desktop Site is per-tab and is applied by that tab's renderer, not globally. `RiftBrowserEngine` still owns navigation/rendering implementation.
 
 This split is intentional so Android System WebView can later be replaced without rewriting the desktop contract.
 
@@ -37,6 +37,13 @@ New tab / switch / close
   -> selected renderer becomes the only visible native child
   -> pushed state refreshes the tab strip + active address/history controls
 
+Desktop Site toggle
+  -> browser.window.desktop-mode
+  -> RiftBrowserWindow targets only the active tab engine
+  -> engine switches desktop/mobile UA + supported UA Client Hints + viewport/zoom behavior
+  -> current history entry reloads with the new request identity
+  -> tab state preserves its own desktopMode flag while other tabs are unchanged
+
 Resize/focus/minimize
   -> JS syncBounds/visibility event
   -> browser.window.bounds/visible
@@ -49,6 +56,8 @@ The native host also keeps `browser.window.state` as an intentional diagnostic/q
 
 - The native renderer is not a second full-screen activity.
 - One RiftBrowser desktop window owns at most 8 live native tabs to bound memory use on low-end/32-bit Android.
+- Desktop Site mode is scoped to one tab; toggling it must not change the identity or history of sibling tabs.
+- Desktop identity changes request presentation only; it never broadens guest access to RiftAndroid, RiftFS or native capabilities.
 - Exactly one tab renderer may be visible/clickable at a time; inactive renderers are paused and `View.GONE` while preserving their navigation/session state.
 - Hidden/minimized/unfocused/show-desktop browser surfaces make every tab renderer `View.GONE`.
 - Browser guest content never receives general `RiftAndroid`/RiftFS authority.
@@ -72,4 +81,4 @@ ChatGPT tool-loop behavior -> browser MCP compatibility subsystem.
 
 ## Validation
 
-Test navigation, redirect/auth popup, file chooser, downloads, back/forward/reload, resize, minimize/restore, show desktop, background/foreground and renderer crash handling. Create multiple tabs, verify independent URL/history/title state, switch repeatedly, close active/background tabs, hit the 8-tab limit, and verify only the selected WebView is visible/clickable. Test Ctrl+T, Ctrl+W and Ctrl+L. Confirm no guest page can call the general native dispatcher.
+Test navigation, redirect/auth popup, file chooser, downloads, back/forward/reload, resize, minimize/restore, show desktop, background/foreground and renderer crash handling. Create multiple tabs, verify independent URL/history/title/Desktop Site state, switch repeatedly, close active/background tabs, hit the 8-tab limit, and verify only the selected WebView is visible/clickable. Toggle Desktop Site on one tab and confirm a UA/client-hint inspection page reports non-mobile Windows/Desktop identity while a sibling tab remains on the normal Android identity; confirm the current page reloads once and downloads use the active identity. Test Ctrl+T, Ctrl+W and Ctrl+L. Confirm no guest page can call the general native dispatcher.

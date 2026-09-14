@@ -20,11 +20,13 @@ RiftOS title/address/taskbar chrome
  AndroidWebViewBrowserEngine (current backend)
 ```
 
-`RiftBrowserWindow` owns geometry, visibility, minimize/restore behavior, the renderer container and a bounded multi-tab registry. Each tab owns its own `RiftBrowserEngine` instance and therefore its own navigation history/title/render state. Only the selected tab's renderer can be visible/clickable; inactive tab engines are paused and kept `View.GONE`. `AndroidWebViewBrowserEngine` owns WebView-specific page rendering, cookies, downloads, auth popups and per-tab WebView lifecycle.
+`RiftBrowserWindow` owns geometry, visibility, minimize/restore behavior, the renderer container and a bounded multi-tab registry. Each tab owns its own `RiftBrowserEngine` instance and therefore its own navigation history/title/render state plus its own desktop-site preference. Only the selected tab's renderer can be visible/clickable; inactive tab engines are paused and kept `View.GONE`. `AndroidWebViewBrowserEngine` owns WebView-specific page rendering, cookies, downloads, auth popups, desktop/mobile request identity and per-tab WebView lifecycle.
 
 ## Window behavior
 
-The browser is not a full-screen Activity and the renderer is not a parallel full-host surface. `src/riftos.js` synchronizes the browser content rectangle with `RiftBrowserWindow` through open, navigate, back, forward, reload, tab.new, tab.select, tab.close, bounds, visible, state and close. One desktop browser window may own up to 8 live native tab engines; this cap intentionally bounds WebView memory pressure on low-end/32-bit Android.
+The browser is not a full-screen Activity and the renderer is not a parallel full-host surface. `src/riftos.js` synchronizes the browser content rectangle with `RiftBrowserWindow` through open, navigate, back, forward, reload, desktop-mode, tab.new, tab.select, tab.close, bounds, visible, state and close. One desktop browser window may own up to 8 live native tab engines; this cap intentionally bounds WebView memory pressure on low-end/32-bit Android.
+
+Desktop Site is a per-tab renderer preference. Enabling it changes the active engine to a desktop Chromium user agent, marks UA Client Hints as non-mobile with Windows/Desktop metadata when the installed WebView supports those APIs, enables wide/overview viewport behavior and pinch zoom, then reloads the current URL. Disabling it restores that engine's captured system WebView user agent and UA metadata. It does not grant guest pages any additional RiftOS/native authority.
 
 Critical invariants are enforced by source validation: **exactly one selected tab renderer may be `View.VISIBLE`, and when RiftBrowser is minimized, hidden, unfocused, or Show Desktop is used, every tab renderer plus the native container is `View.GONE`.** Inactive engine objects stay allocated and paused so tab history/session state survives without an invisible native sibling stealing touch/focus or covering later windows.
 
