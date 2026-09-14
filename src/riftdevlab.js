@@ -226,6 +226,44 @@ async function status(){
   await init();const state=await loadState(),snapshots=await listSnapshots(200),runs=await listRuns(200);
   return {available:true,root:LAB_ROOT,project:PROJECT_ROOT,targetRepo:TARGET_REPO,targetBranch:TARGET_BRANCH,workspaceHeadSha:await currentHeadSha(),baselineHeadSha:state.baselineHeadSha,staged:Object.keys(state.staged||{}).length,snapshots:snapshots.length,runs:runs.length,activeLiveCss:[...activeCss.keys()],latestSnapshot:state.latestSnapshot,lastPublished:state.lastPublished};
 }
+function resolveRiftFsPath(value,cwd="/"){
+  const raw=String(value??"").trim();if(!raw)throw new Error("RiftFS source path is required");
+  return raw.startsWith("/")?core.path.normalize(raw):core.path.join(core.path.normalize(cwd||"/"),raw);
+}
+async function resolveSnapshotId(value){
+  const requested=String(value||"latest").trim();if(requested&&requested!=="latest")return requested;
+  const state=await loadState();if(state.latestSnapshot)return state.latestSnapshot;
+  const latest=(await listSnapshots(1))[0]?.id;if(!latest)throw new Error("No Dev Lab snapshot is available");return latest;
+}
+async function executeAgentRequest(raw={}){
+  await init();const request=raw&&typeof raw==="object"?raw:{};const action=String(request.action||"").trim().toLowerCase();
+  if(!action)throw new Error("Dev Lab agent action is required");
+  if(action==="status")return status();
+  if(action==="open")return {opened:await open()};
+  if(action==="load")return loadSource(request.path);
+  if(action==="staged")return listStaged();
+  if(action==="stage")return stageEdit(request.path,String(request.text??""),{reason:String(request.reason||"RiftOS local agent").slice(0,500)});
+  if(action==="stage-file"){
+    const sourcePath=resolveRiftFsPath(request.sourcePath,request.cwd),source=await core.fs.readText(sourcePath);if(source==null)throw new Error(`source file not found: ${sourcePath}`);
+    return stageEdit(request.path,source,{reason:String(request.reason||`RiftOS local agent staged from ${sourcePath}`).slice(0,500)});
+  }
+  if(action==="delete")return stageDelete(request.path,{reason:String(request.reason||"RiftOS local agent").slice(0,500)});
+  if(action==="unstage")return {unstaged:await unstage(request.path),path:sourcePath(request.path)};
+  if(action==="reset")return {reset:await resetStage()};
+  if(action==="css")return applyLiveCss(request.path);
+  if(action==="css-off")return {removed:removeLive(request.path),path:sourcePath(request.path)};
+  if(action==="run")return runScript(String(request.source??""));
+  if(action==="run-file"){
+    const sourcePath=resolveRiftFsPath(request.sourcePath,request.cwd),source=await core.fs.readText(sourcePath);if(source==null)throw new Error(`script file not found: ${sourcePath}`);return runScript(source);
+  }
+  if(action==="runs")return listRuns(Number(request.limit)||20);
+  if(action==="snapshot")return createSnapshot(String(request.note||""));
+  if(action==="snapshots")return listSnapshots(Number(request.limit)||50);
+  if(action==="load-snapshot")return loadSnapshot(await resolveSnapshotId(request.snapshotId));
+  if(action==="preview")return previewSnapshot(await resolveSnapshotId(request.snapshotId));
+  if(action==="publish")return publishSnapshot(await resolveSnapshotId(request.snapshotId));
+  throw new Error(`Unsupported RiftOS Dev Lab agent action: ${action}`);
+}
 
 async function open(){
   await init();const manager=globalThis.RiftOSWindowManager;if(!manager?.open)throw new Error("RiftOS window manager is unavailable");
@@ -263,6 +301,6 @@ async function open(){
   await refresh();await loadCurrent("styles.css");return true;
 }
 
-const api=Object.freeze({init,status,classify,loadSource,stageEdit,stageDelete,unstage,resetStage,listStaged,applyLiveCss,removeLive,runScript,listRuns,createSnapshot,listSnapshots,loadSnapshot,previewSnapshot,publishSnapshot,open,get root(){return LAB_ROOT;},get project(){return PROJECT_ROOT;}});
+const api=Object.freeze({init,status,classify,loadSource,stageEdit,stageDelete,unstage,resetStage,listStaged,applyLiveCss,removeLive,runScript,listRuns,createSnapshot,listSnapshots,loadSnapshot,previewSnapshot,publishSnapshot,executeAgentRequest,open,get root(){return LAB_ROOT;},get project(){return PROJECT_ROOT;}});
 window.RiftDevLab=api;
 console.info("[RiftDevLab] isolated live-development workspace ready");

@@ -14,7 +14,7 @@ Call entry: `handleAsync(raw)` -> `dispatch(method,args)`.
 
 The dispatcher implements internal RiftFS and SAF-mounted file operations, stat/list/read/write/base64 IO, mkdir/remove, recursive copy/move, ZIP/unzip, transfer manifest/progress/verification, mount enumeration/unmounting, settings storage, device/storage info, clipboard, share, vibration, allowed Android intents, preview launch and notifications. It also exposes the Android-native `vortex.bridge` route plus bounded `vortex.session` foreground-session route to `RiftVortexBridgeClient`, the separate fixed-scope `vortex.agent` and `riftos.agent` routes to the local UI-agent subsystem, and the local `chat.handoff` route to `RiftChatHandoff`. Vortex protocol/session semantics remain owned by the dedicated bridge subsystem, Android UI automation policy remains owned by the fixed-scope local-agent subsystem, and `.riftchat` schema/path/hash policy remains owned by the chat-handoff subsystem.
 
-Directory/notification picker completion enters from `MainActivity` through dedicated completion methods rather than pretending those asynchronous Android UI operations are synchronous dispatcher calls.
+Local-agent methods run on a dedicated single-thread `agentExecutor`, separate from ordinary native RPCs. This is required because `riftos.agent` Dev Lab control can synchronously re-enter the trusted shell while the Dev Lab operation itself performs nested RiftFS/workspace RPCs; putting both on the normal single native worker would deadlock. Directory/notification picker completion enters from `MainActivity` through dedicated completion methods rather than pretending those asynchronous Android UI operations are synchronous dispatcher calls.
 
 ## Why this boundary exists
 
@@ -31,7 +31,7 @@ For copy/move, the dispatcher first resolves source/destination mount types. It 
 - External intents are limited to an allowed scheme set.
 - This dispatcher is available to the trusted RiftOS shell, not directly to guest web pages or MCP.
 - `vortex.bridge` and `vortex.session` use explicit local Binder IPC through `RiftVortexBridgeClient`; do not replace them with a localhost/network listener or direct Vortex private-file access.
-- `vortex.agent` delegates only to hard-coded `com.vortex3d.app`, while `riftos.agent` delegates only to hard-coded `com.riftos.app`; never add an arbitrary package argument here.
+- `vortex.agent` delegates only to hard-coded `com.vortex3d.app`, while `riftos.agent` delegates only to hard-coded `com.riftos.app`; never add an arbitrary package argument here. The RiftOS self-agent's Dev Lab branch is a finite structured action whitelist routed through the authoritative shell/Dev Lab API, not a generic command field.
 - `chat.handoff` delegates only to app-private RiftFS bundle logic; it must not read ChatGPT/Android app-private storage or grow a network path.
 - MCP has its own narrower `RiftToolSandbox`; do not expose this dispatcher as an MCP shortcut.
 

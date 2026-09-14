@@ -51,6 +51,12 @@ Snapshots and run evidence survive `Reset staged` so a failed experiment can be 
 
 RiftShell exposes the same workflow for automated abuse: `devlab status`, `staged`, `stage`, `stage-file`, `delete`, `unstage`, `css`, `css-off`, `run`, `run-file`, `snapshot`, `snapshots`, `preview`, `publish`, `reset`, and `open`. `latest` resolves the newest snapshot for preview/publish. The `devlab` command family is explicitly rejected inside RiftShell atomic `batch`; Dev Lab publication already has its own guarded Workspace transaction and live/runtime actions are not reversible filesystem batch operations.
 
+### Local-agent tool layer
+
+`riftos-agent devlab ...` is the automation-safe controller intended for ChatGPT/MCP acceptance work. Shell parsing produces a structured request (`action`, paths/content/snapshot id, cwd); native `RiftDevLabLocalAgent` accepts only the fixed Dev Lab action set, encodes the request as base64 JSON, and sends only `devlab rpc <payload>` through the current authoritative `RiftShellBridge`. The Dev Lab runtime then calls `executeAgentRequest()` and therefore uses the same staging metadata, per-file baselines, evidence, immutable snapshots and guarded Workspace publication as the UI/direct `devlab` shell family. There is no arbitrary command passthrough and no direct stage-folder mutation. `stage-file` and `run-file` are the preferred exact-payload paths for multi-line or heavily quoted code.
+
+The native dispatcher runs agent calls on a dedicated worker so this synchronous agent-to-shell round trip cannot block the ordinary native worker that nested RiftFS/workspace operations require.
+
 ## Failure signatures
 
 - **Publish aborted: Workspace file changed since the patch was created** -> the canonical project drifted after staging/snapshot. Reload/re-stage against the current project; never bypass the hash guard.

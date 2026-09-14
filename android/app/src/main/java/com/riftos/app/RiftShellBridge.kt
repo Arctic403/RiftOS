@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap
 class RiftShellBridge(private val shellWebView: WebView) {
     companion object {
         private const val SHELL_TIMEOUT_MS = 60_000L
+        private const val DEVLAB_AGENT_TIMEOUT_MS = 90_000L
         private const val VORTEX_SESSION_TIMEOUT_MS = 105_000L
     }
 
@@ -43,9 +44,12 @@ class RiftShellBridge(private val shellWebView: WebView) {
                 "window.RiftShellMcpNative?.request(${JSONObject.quote(payload.toString())});",
                 null
             )
-            val timeoutMs = if (command.trim().matches(Regex("^vortex\\s+(?:test-wait|validate-wait|script-wait)\\b.*", RegexOption.IGNORE_CASE))) {
-                VORTEX_SESSION_TIMEOUT_MS
-            } else SHELL_TIMEOUT_MS
+            val trimmedCommand = command.trim()
+            val timeoutMs = when {
+                trimmedCommand.matches(Regex("^vortex\\s+(?:test-wait|validate-wait|script-wait)\\b.*", RegexOption.IGNORE_CASE)) -> VORTEX_SESSION_TIMEOUT_MS
+                trimmedCommand.matches(Regex("^(?:devlab\\s+rpc|riftos-agent\\s+devlab)\\b.*", RegexOption.IGNORE_CASE)) -> DEVLAB_AGENT_TIMEOUT_MS
+                else -> SHELL_TIMEOUT_MS
+            }
             shellWebView.postDelayed({
                 pending.remove(id)?.invoke(
                     JSONObject()

@@ -667,7 +667,28 @@ async function runLocalAgentShell(commandName,nativeMethod,title,args,print){
   throw new Error(`unknown ${commandName} command: ${sub}`);
 }
 async function runVortexAgentShell(args,print){return runLocalAgentShell("vortex-agent","vortex.agent","RiftOS Vortex local agent",args,print);}
-async function runRiftOsAgentShell(args,print){return runLocalAgentShell("riftos-agent","riftos.agent","RiftOS self UI agent",args,print);}
+function parseDevLabAgentRequest(args,state){
+  const action=(args.shift()||"help").toLowerCase(),request={action,cwd:state.cwd};
+  if(action==="help")return request;
+  if(["status","open","staged","reset"].includes(action))return request;
+  if(["load","delete","unstage","css","css-off"].includes(action)){if(!args[0])throw new Error(`usage: riftos-agent devlab ${action} <project-path>`);request.path=args[0];return request;}
+  if(action==="stage"){if(args.length<2)throw new Error("usage: riftos-agent devlab stage <project-path> <text>");request.path=args.shift();request.text=args.join(" ");return request;}
+  if(action==="stage-file"){if(args.length<2)throw new Error("usage: riftos-agent devlab stage-file <project-path> <riftfs-source-file>");request.path=args.shift();request.sourcePath=args.shift();return request;}
+  if(action==="run"){if(!args.length)throw new Error("usage: riftos-agent devlab run <script>");request.source=args.join(" ");return request;}
+  if(action==="run-file"){if(!args[0])throw new Error("usage: riftos-agent devlab run-file <riftfs-script-file>");request.sourcePath=args[0];return request;}
+  if(action==="snapshot"){request.note=args.join(" ");return request;}
+  if(["preview","publish","load-snapshot"].includes(action)){request.snapshotId=args[0]||"latest";return request;}
+  if(["snapshots","runs"].includes(action)){if(args[0]!==undefined){const limit=Number(args[0]);if(!Number.isFinite(limit))throw new Error("Dev Lab list limit must be numeric");request.limit=limit;}return request;}
+  throw new Error(`unknown riftos-agent devlab action: ${action}`);
+}
+async function runRiftOsAgentShell(args,print,state){
+  if((args[0]||"").toLowerCase()==="devlab"){
+    args.shift();const request=parseDevLabAgentRequest(args,state);
+    if(request.action==="help")return print(`RiftOS local-agent Dev Lab controller\nriftos-agent devlab status\nriftos-agent devlab open\nriftos-agent devlab load <project-path>\nriftos-agent devlab staged\nriftos-agent devlab stage <project-path> <text>\nriftos-agent devlab stage-file <project-path> <riftfs-source-file>\nriftos-agent devlab delete <project-path>\nriftos-agent devlab unstage <project-path>\nriftos-agent devlab css <project-path>\nriftos-agent devlab css-off <project-path>\nriftos-agent devlab run <script>\nriftos-agent devlab run-file <riftfs-script-file>\nriftos-agent devlab runs [limit]\nriftos-agent devlab snapshot [note]\nriftos-agent devlab snapshots [limit]\nriftos-agent devlab load-snapshot [snapshot-id|latest]\nriftos-agent devlab preview [snapshot-id|latest]\nriftos-agent devlab publish [snapshot-id|latest]\nriftos-agent devlab reset`);
+    const result=await core.native.call("riftos.agent",{op:"devlab",request});print(JSON.stringify(result,null,2));return result;
+  }
+  return runLocalAgentShell("riftos-agent","riftos.agent","RiftOS self UI agent",args,print);
+}
 async function runDevLabShell(args,print,state){
   const lab=window.RiftDevLab;if(!lab)throw new Error("RiftOS Dev Lab is not loaded");
   const sub=(args.shift()||"help").toLowerCase();
@@ -677,6 +698,11 @@ async function runDevLabShell(args,print,state){
     const status=await lab.status();if(status.latestSnapshot)return status.latestSnapshot;
     const latest=(await lab.listSnapshots(1))[0]?.id;if(!latest)throw new Error("No Dev Lab snapshot is available");return latest;
   };
+  if(sub==="rpc"){
+    if(!args[0]||args.length!==1)throw new Error("usage: devlab rpc <base64-json>");
+    let request;try{const bytes=Uint8Array.from(atob(args[0]),char=>char.charCodeAt(0));request=JSON.parse(new TextDecoder().decode(bytes));}catch{throw new Error("invalid Dev Lab RPC payload");}
+    return show(await lab.executeAgentRequest(request));
+  }
   if(sub==="help")return print(`RiftOS Dev Lab\ndevlab status\ndevlab open\ndevlab staged\ndevlab stage <project-path> <text>\ndevlab stage-file <project-path> <riftfs-source-file>\ndevlab delete <project-path>\ndevlab unstage <project-path>\ndevlab css <project-path>\ndevlab css-off <project-path>\ndevlab run <script>\ndevlab run-file <riftfs-script-file>\ndevlab snapshot [note]\ndevlab snapshots\ndevlab preview [snapshot-id|latest]\ndevlab publish [snapshot-id|latest]\ndevlab reset`);
   if(sub==="status")return show(await lab.status());
   if(sub==="open")return show({opened:await lab.open()});
@@ -738,10 +764,10 @@ async function runShell(raw,print,state,context={}){
   if(/^(git|gh|github)$/i.test(cmd)){if(!window.RiftGit?.run)throw new Error("RiftGit is not loaded");return window.RiftGit.run(args,print,{cwd:state.cwd});}
   if(cmd==="vortex")return runVortexShell(args,print,state);
   if(cmd==="vortex-agent")return runVortexAgentShell(args,print);
-  if(cmd==="riftos-agent")return runRiftOsAgentShell(args,print);
+  if(cmd==="riftos-agent")return runRiftOsAgentShell(args,print,state);
   if(cmd==="chat")return runChatShell(args,print,state);
   if(cmd==="devlab")return runDevLabShell(args,print,state);
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\nriftos-agent help                 RiftOS-self local Android UI agent\ndevlab help                       isolated live test/snapshot/local-workspace publish\nchat help                         local .riftchat development-session handoffs\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\nriftos-agent help                 RiftOS-self local Android UI + Dev Lab agent\nriftos-agent devlab help          structured Dev Lab controller\ndevlab help                       isolated live test/snapshot/local-workspace publish\nchat help                         local .riftchat development-session handoffs\ngit help\n\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
   if(cmd==="umount"){if(!args[0])return print("usage: umount <path>");return print(await core.fs.unmount(resolvePath(state.cwd,args[0]))?"unmounted":"mount not found");}

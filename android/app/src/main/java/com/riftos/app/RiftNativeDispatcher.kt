@@ -41,6 +41,9 @@ class RiftNativeDispatcher(
     private val notificationPermissionRequester: (String) -> Unit
 ) {
     private val executor = Executors.newSingleThreadExecutor()
+    // Agent calls can synchronously re-enter the trusted shell runtime; keep them off the normal
+    // native worker so nested Dev Lab RiftFS/workspace RPCs cannot deadlock behind the agent call.
+    private val agentExecutor = Executors.newSingleThreadExecutor()
     // Long-running file transfers use their own worker so normal FS/UI RPCs stay responsive.
     private val transferExecutor = Executors.newSingleThreadExecutor()
     private val notificationScheduler = Executors.newSingleThreadScheduledExecutor()
@@ -101,7 +104,11 @@ class RiftNativeDispatcher(
             "files.pickDirectory" -> { directoryPicker(id); return }
             "notifications.request" -> { notificationPermissionRequester(id); return }
         }
-        val worker = if (method in setOf("fs.copy", "fs.move", "fs.zip", "fs.unzip")) transferExecutor else executor
+        val worker = when {
+            method in setOf("fs.copy", "fs.move", "fs.zip", "fs.unzip") -> transferExecutor
+            method in setOf("vortex.agent", "riftos.agent") -> agentExecutor
+            else -> executor
+        }
         worker.execute {
             try { resultSink(id, true, dispatch(method, args), null) }
             catch (error: Throwable) { resultSink(id, false, null, error.message ?: error.javaClass.simpleName) }
@@ -126,6 +133,7 @@ class RiftNativeDispatcher(
     }
     fun shutdown() {
         executor.shutdownNow()
+        agentExecutor.shutdownNow()
         transferExecutor.shutdownNow()
         notificationScheduler.shutdownNow()
         // Vortex bridge is process-owned by RiftMcpRuntime; Activity teardown must not unbind it.

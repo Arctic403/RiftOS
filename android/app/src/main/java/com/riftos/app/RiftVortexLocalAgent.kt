@@ -8,6 +8,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Base64
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
@@ -422,6 +423,41 @@ object RiftVortexLocalAgent {
     internal fun ensureActiveForSession(context: Context) = delegate.ensureActive(context)
 }
 
+/** Structured RiftOS Dev Lab controller tunneled through the authoritative shell runtime. */
+private object RiftDevLabLocalAgent {
+    private const val DEVLAB_TIMEOUT_MS = 85_000L
+    private val allowedActions = setOf(
+        "status", "open", "load", "staged", "stage", "stage-file", "delete", "unstage", "reset",
+        "css", "css-off", "run", "run-file", "runs", "snapshot", "snapshots", "load-snapshot", "preview", "publish"
+    )
+
+    fun execute(args: JSONObject): JSONObject {
+        val request = args.optJSONObject("request") ?: throw IllegalArgumentException("Dev Lab request is required")
+        val action = request.optString("action").trim().lowercase()
+        require(action in allowedActions) { "Unsupported RiftOS Dev Lab agent action: $action" }
+        val bridge = RiftMcpRuntime.shellBridge() ?: throw IllegalStateException("RiftOS shell bridge is unavailable")
+        val payload = JSONObject(request.toString()).put("source", "riftos-local-agent")
+        val encoded = Base64.encodeToString(payload.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val cwd = request.optString("cwd", "/").ifBlank { "/" }
+        val latch = CountDownLatch(1)
+        var response: JSONObject? = null
+        bridge.execute("devlab rpc $encoded", cwd) { result ->
+            response = result
+            latch.countDown()
+        }
+        require(latch.await(DEVLAB_TIMEOUT_MS, TimeUnit.MILLISECONDS)) { "Timed out waiting for RiftOS Dev Lab agent action: $action" }
+        val shell = response ?: throw IllegalStateException("RiftOS Dev Lab agent returned no response")
+        if (!shell.optBoolean("ok", false)) {
+            throw IllegalStateException(shell.optString("error").ifBlank { "RiftOS Dev Lab agent action failed: $action" })
+        }
+        return JSONObject()
+            .put("scope", "riftos-devlab")
+            .put("action", action)
+            .put("cwd", shell.optString("cwd", cwd))
+            .put("value", shell.opt("result") ?: JSONObject.NULL)
+    }
+}
+
 /** RiftOS-self-only fixed local UI authority used for shell-driven UI acceptance testing. */
 object RiftOsLocalAgent {
     private const val TARGET_PACKAGE = "com.riftos.app"
@@ -429,7 +465,9 @@ object RiftOsLocalAgent {
     private val delegate = RiftScopedLocalAgent(TARGET_PACKAGE, "RiftOS")
 
     fun execute(context: Context, args: JSONObject): JSONObject {
-        if (args.optString("op").trim().equals("back", ignoreCase = true) && context is MainActivity) {
+        val op = args.optString("op").trim().lowercase()
+        if (op == "devlab") return RiftDevLabLocalAgent.execute(args)
+        if (op == "back" && context is MainActivity) {
             delegate.ensureActive(context)
             val latch = CountDownLatch(1)
             var failure: Throwable? = null
