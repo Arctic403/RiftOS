@@ -12,6 +12,7 @@ const originalWM=globalThis.RiftOSWindowManager;
 const stage=document.querySelector('#stage');
 const template=document.querySelector('#windowTemplate');
 if(!originalWM||!stage||!template)throw new Error('RiftRT requires the RiftDesktop window host');
+const nativeHosted=Boolean(globalThis.RiftNativeDesktop?.enabled&&originalWM.native);
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
 const safeId=value=>String(value||'app').replace(/[^a-z0-9._:-]/gi,'-').slice(0,96);
@@ -54,44 +55,39 @@ function findExternal(target){
   for(const record of externalWindows.values())if(record.win===win)return record;
   return null;
 }
-function focusExternal(target){
-  const record=findExternal(target);if(!record)return false;
-  record.win.classList.remove('rift-minimized');stage.classList.remove('hidden');
-  record.lastFocus=Date.now();
-  globalThis.dispatchEvent(new CustomEvent('riftos:window-activate',{detail:{id:record.id,window:record.win,pid:record.process?.pid}}));
-  return true;
-}
-function closeExternal(target,{fromProcess=false}={}){
-  const record=findExternal(target);if(!record)return false;
+function cleanupExternal(record){
+  if(!record)return;
   externalWindows.delete(record.id);
   const session=sessions.get(record.id);if(session){sessions.delete(record.id);try{session.dispose?.();}catch(error){console.warn('[RiftRT] dispose failed',error);}}
   for(const [token,instance] of [...messageInstances])if(instance.record===record){instance.urls?.forEach(URL.revokeObjectURL);messageInstances.delete(token);}
-  record.win.remove();
-  if(!fromProcess&&record.process?.pid)core.kernel.kill(record.process.pid);
+}
+function focusExternal(target){
+  const record=findExternal(target);if(!record)return false;
+  if(nativeHosted)return originalWM.focus(record.id);
+  record.win.classList.remove('rift-minimized');stage.classList.remove('hidden');record.lastFocus=Date.now();
+  globalThis.dispatchEvent(new CustomEvent('riftos:window-activate',{detail:{id:record.id,window:record.win,pid:record.process?.pid}}));return true;
+}
+function closeExternal(target,{fromProcess=false}={}){
+  const record=findExternal(target);if(!record)return false;cleanupExternal(record);
+  if(nativeHosted){if(fromProcess)return true;return originalWM.close(record.id);}
+  record.win.remove();if(!fromProcess&&record.process?.pid)core.kernel.kill(record.process.pid);
   globalThis.dispatchEvent(new CustomEvent('riftos:window-close',{detail:{id:record.id,pid:record.process?.pid}}));
-  const next=[...stage.querySelectorAll('.window.rift-desktop-window:not(.rift-minimized)')].sort((a,b)=>(Number(b.style.zIndex)||0)-(Number(a.style.zIndex)||0))[0];
-  if(next)globalThis.RiftOSWindowManager?.focus?.(next.dataset.app||next);
-  return true;
+  const next=[...stage.querySelectorAll('.window.rift-desktop-window:not(.rift-minimized)')].sort((a,b)=>(Number(b.style.zIndex)||0)-(Number(a.style.zIndex)||0))[0];if(next)globalThis.RiftOSWindowManager?.focus?.(next.dataset.app||next);return true;
 }
-function showDesktop(){
-  for(const record of externalWindows.values())record.win.classList.add('rift-minimized');
-  originalWM.showDesktop?.();
-}
+function showDesktop(){if(nativeHosted)return originalWM.showDesktop?.();for(const record of externalWindows.values())record.win.classList.add('rift-minimized');return originalWM.showDesktop?.();}
 function createWindow(id,title,kicker='RIFTRT'){
   const existing=externalWindows.get(id);if(existing){focusExternal(existing);return{record:existing,body:existing.win.querySelector('.window-body')};}
-  const win=template.content.firstElementChild.cloneNode(true);win.dataset.app=id;win.dataset.windowId=`${id}-${uid()}`;
-  win.querySelector('.window-title').textContent=title;win.querySelector('.window-kicker').textContent=kicker;
-  const record={id,title,win,lastFocus:Date.now(),process:null};
-  const process=core.kernel.launchProcess(id,title,{kind:'riftrt',runtime:'RiftRT',onTerminate:()=>closeExternal(record,{fromProcess:true})});record.process=process;
-  externalWindows.set(id,record);
-  win.querySelector('.window-close').onclick=()=>closeExternal(record);
-  stage.classList.remove('hidden');stage.append(win);
-  globalThis.dispatchEvent(new CustomEvent('riftos:window-open',{detail:{id,window:win,pid:process.pid,title}}));
-  return{record,body:win.querySelector('.window-body')};
+  if(nativeHosted){
+    let recordRef=null;const body=originalWM.open(id,title,kicker,{kind:'riftrt',runtime:'RiftRT',onTerminate:()=>cleanupExternal(recordRef)});const record=originalWM.get(id);if(!record)throw new Error(`Native RiftRT window failed: ${id}`);recordRef=record;externalWindows.set(id,record);return{record,body};
+  }
+  const win=template.content.firstElementChild.cloneNode(true);win.dataset.app=id;win.dataset.windowId=`${id}-${uid()}`;win.querySelector('.window-title').textContent=title;win.querySelector('.window-kicker').textContent=kicker;
+  const record={id,title,win,lastFocus:Date.now(),process:null};const process=core.kernel.launchProcess(id,title,{kind:'riftrt',runtime:'RiftRT',onTerminate:()=>closeExternal(record,{fromProcess:true})});record.process=process;externalWindows.set(id,record);
+  win.querySelector('.window-close').onclick=()=>closeExternal(record);stage.classList.remove('hidden');stage.append(win);globalThis.dispatchEvent(new CustomEvent('riftos:window-open',{detail:{id,window:win,pid:process.pid,title}}));return{record,body:win.querySelector('.window-body')};
 }
+function setRecordTitle(record,title){record.title=String(title||record.title).slice(0,80);if(nativeHosted)originalWM.setTitle?.(record.id,record.title);else{const node=record.win.querySelector('.window-title');if(node)node.textContent=record.title;}}
 
-// Extend the existing RiftOS window manager instead of creating a second desktop.
-globalThis.RiftOSWindowManager=Object.freeze({
+// Legacy WebView desktop needs RiftRT to extend its DOM manager; native mode already owns every record.
+if(!nativeHosted)globalThis.RiftOSWindowManager=Object.freeze({
   ...originalWM,
   list:()=>[...originalWM.list(),...externalWindows.values()].map(item=>item.win?wmRecord(item):item),
   get:id=>externalWindows.has(id)?externalWindows.get(id):originalWM.get(id),
@@ -170,7 +166,7 @@ async function launchWorker(app,spec,record,body){
   body.innerHTML=`<div class="riftrt-host"><div class="riftrt-toolbar"><strong>${esc(app.manifest.name)}</strong><span class="riftrt-chip ok">WORKER</span><span class="riftrt-chip">CANVAS GPU PATH</span><span class="grow"></span><small>ABI ${esc(spec.abi)}</small></div><div class="riftrt-surface-wrap"><canvas class="riftrt-canvas" tabindex="0"></canvas><pre class="riftrt-log"></pre></div></div>`;
   const canvas=body.querySelector('canvas'),log=body.querySelector('.riftrt-log');const blob=URL.createObjectURL(new Blob([workerBootstrap,'\n',source],{type:'text/javascript'}));const worker=new Worker(blob);
   const logLine=value=>{log.textContent=(log.textContent+'\n'+String(value)).trim().split('\n').slice(-10).join('\n');};
-  worker.onmessage=async event=>{const msg=event.data||{};if(msg.type==='frame')drawCommands(canvas,msg.commands);else if(msg.type==='title'){record.title=String(msg.title||app.manifest.name).slice(0,80);record.win.querySelector('.window-title').textContent=record.title;}else if(msg.type==='log')logLine((msg.values||[]).join(' '));else if(msg.type==='rpc'){try{worker.postMessage({type:'rpc-result',id:msg.id,ok:true,value:await hostCall(app,msg.method,msg.args||{})});}catch(error){worker.postMessage({type:'rpc-result',id:msg.id,ok:false,error:String(error?.message||error)});}}};
+  worker.onmessage=async event=>{const msg=event.data||{};if(msg.type==='frame')drawCommands(canvas,msg.commands);else if(msg.type==='title'){setRecordTitle(record,msg.title||app.manifest.name);}else if(msg.type==='log')logLine((msg.values||[]).join(' '));else if(msg.type==='rpc'){try{worker.postMessage({type:'rpc-result',id:msg.id,ok:true,value:await hostCall(app,msg.method,msg.args||{})});}catch(error){worker.postMessage({type:'rpc-result',id:msg.id,ok:false,error:String(error?.message||error)});}}};
   worker.onerror=event=>logLine(`worker error: ${event.message||'unknown'}`);
   const resize=()=>{const s=fitCanvas(canvas);worker.postMessage({type:'resize',...s});};
   const ro=globalThis.ResizeObserver?new ResizeObserver(resize):null;ro?.observe(canvas);globalThis.addEventListener('resize',resize);setTimeout(resize,0);
@@ -248,7 +244,7 @@ document.addEventListener('click',event=>{
 globalThis.addEventListener('message',async event=>{
   const msg=event.data;if(!msg||msg.__riftrt!==true||!msg.token)return;const instance=messageInstances.get(msg.token);if(!instance||event.source!==instance.frame.contentWindow)return;
   if(msg.method==='app.ready')return;const reply=(ok,value,error)=>instance.frame.contentWindow?.postMessage({__riftrtHost:true,token:msg.token,id:msg.id,ok,value,error},'*');
-  try{let value=null;if(msg.method==='app.close'){closeExternal(instance.record);value=true;}else if(msg.method==='window.title'){instance.record.title=String(msg.args?.title||instance.app.manifest.name).slice(0,80);instance.record.win.querySelector('.window-title').textContent=instance.record.title;value=true;}else value=await hostCall(instance.app,msg.method,msg.args||{});reply(true,value,null);}catch(error){reply(false,null,String(error?.message||error));}
+  try{let value=null;if(msg.method==='app.close'){closeExternal(instance.record);value=true;}else if(msg.method==='window.title'){setRecordTitle(instance.record,msg.args?.title||instance.app.manifest.name);value=true;}else value=await hostCall(instance.app,msg.method,msg.args||{});reply(true,value,null);}catch(error){reply(false,null,String(error?.message||error));}
 });
 
 globalThis.addEventListener('riftos:launcher-ready',()=>refreshLauncher().catch(console.error));

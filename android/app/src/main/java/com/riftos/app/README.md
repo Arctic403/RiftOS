@@ -5,6 +5,7 @@ This package contains Android-side authorities and services. Keep class ownershi
 | Component | Owner |
 | --- | --- |
 | `MainActivity.kt` | [`android-host`](../../../../../../../../docs/systems/android-host/README.md) |
+| `RiftNativeDesktop.kt` | [`desktop`](../../../../../../../../docs/systems/desktop/README.md) |
 | `RiftNativeDispatcher.kt` | [`native-dispatcher`](../../../../../../../../docs/systems/native-dispatcher/README.md) |
 | `RiftTransferManifest.kt` + transfer logic in `RiftNativeDispatcher.kt` | [`transfers`](../../../../../../../../docs/systems/transfers/README.md) |
 | `RiftBrowserWindow.kt` | [`browser`](../../../../../../../../docs/systems/browser/README.md) |

@@ -17,7 +17,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -43,6 +42,7 @@ class MainActivity : Activity() {
 
     private lateinit var rootView: FrameLayout
     private lateinit var webView: WebView
+    private lateinit var nativeDesktop: RiftNativeDesktop
     private lateinit var browserWindow: RiftBrowserWindow
     private lateinit var shellBridge: RiftShellBridge
     private lateinit var dispatcher: RiftNativeDispatcher
@@ -93,15 +93,18 @@ class MainActivity : Activity() {
         workspaceWatcher.start()
         shellBridge = RiftShellBridge(webView)
         RiftMcpRuntime.registerShellBridge(shellBridge)
-        rootView.addView(
-            webView,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        nativeDesktop = RiftNativeDesktop(
+            activity = this,
+            host = rootView,
+            compatibilityView = webView,
+            stateSink = ::sendDesktopState,
+            appOpenSink = ::openNativeDesktopApp
         )
         setContentView(rootView)
         ViewCompat.requestApplyInsets(rootView)
         browserWindow = RiftBrowserWindow(
             activity = this,
-            host = rootView,
+            host = nativeDesktop.contentHost,
             launchFileChooser = ::launchFileChooser,
             stateSink = ::sendBrowserWindowState
         )
@@ -207,7 +210,12 @@ class MainActivity : Activity() {
             if (::shellBridge.isInitialized) shellBridge.receive(args.optJSONObject("result") ?: JSONObject())
             return true
         }
-        if (requestId.isBlank()) return method == "system.dump.save" || method.startsWith("browser.window.")
+        if (requestId.isBlank()) return method == "system.dump.save" || method.startsWith("browser.window.") || method.startsWith("desktop.")
+
+        if (method.startsWith("desktop.")) {
+            runDesktopCommand(requestId) { nativeDesktop.handle(method, args) }
+            return true
+        }
 
         when (method) {
             "system.dump.save" -> openSystemDumpPicker(requestId)
@@ -243,6 +251,30 @@ class MainActivity : Activity() {
             } catch (error: Throwable) {
                 sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
             }
+        }
+    }
+
+    private fun runDesktopCommand(requestId: String, command: () -> Any?) {
+        runOnUiThread {
+            try {
+                sendNativeResult(requestId, true, command(), null)
+            } catch (error: Throwable) {
+                sendNativeResult(requestId, false, null, error.message ?: error.javaClass.simpleName)
+            }
+        }
+    }
+
+    private fun sendDesktopState(state: JSONObject) {
+        val script = "window.RiftNativeDesktop?.__state(${state});"
+        runOnUiThread {
+            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+        }
+    }
+
+    private fun openNativeDesktopApp(id: String) {
+        val script = "window.RiftDesktop?.openApp(${JSONObject.quote(id)});"
+        runOnUiThread {
+            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
         }
     }
 
@@ -418,6 +450,7 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (::nativeDesktop.isInitialized && nativeDesktop.handleBack()) return
         if (!::webView.isInitialized) return super.onBackPressed()
         webView.evaluateJavascript("Boolean(window.RiftAndroidBack?.())") { result ->
             if (result == "true") return@evaluateJavascript
@@ -447,6 +480,7 @@ class MainActivity : Activity() {
         if (::shellBridge.isInitialized) shellBridge.clear()
         if (::dispatcher.isInitialized) dispatcher.shutdown()
         if (::browserWindow.isInitialized) browserWindow.destroy()
+        if (::nativeDesktop.isInitialized) nativeDesktop.destroy()
         kernelExecutor.shutdownNow()
         fileChooserCallback?.onReceiveValue(null)
         fileChooserCallback = null

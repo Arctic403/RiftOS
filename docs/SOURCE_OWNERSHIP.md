@@ -28,6 +28,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `src/riftapps.js` | `docs/systems/apps/README.md` |
 | `src/riftcore.js` | `docs/systems/kernel/README.md` + `docs/systems/riftfs/README.md` + `docs/systems/chat-handoff/README.md` |
 | `src/riftdesktop-android-compat.js` | `docs/systems/desktop/README.md` |
+| `src/riftdesktop-native-compat.js` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-android.css` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-android.js` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-window-host.js` | `docs/systems/desktop/README.md` |
@@ -54,6 +55,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt` | `docs/systems/mcp/relay/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` | `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt` | `docs/systems/native-dispatcher/README.md` + `docs/systems/chat-handoff/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftPreviewActivity.kt` | `docs/systems/preview/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftProjectExporter.kt` | `docs/systems/mcp/project-exporter/README.md` |

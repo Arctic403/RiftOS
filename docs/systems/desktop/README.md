@@ -2,53 +2,85 @@
 
 ## Purpose
 
-RiftDesktop is the permanent Android RiftOS shell. It owns windows, focus/z-order, move/resize, minimize/maximize/restore, taskbar state, show-desktop behavior, desktop icons, wallpaper, persisted geometry and the optional virtual mouse/trackpad layer. Narrow screens change responsive layout; they do not switch RiftOS into a separate mobile/app-takeover mode.
+RiftDesktop is the permanent Android-native RiftOS shell. Android owns the visible desktop, launcher, Start menu, status area, taskbar, native window frames, focus/z-order, move/resize, minimize/maximize/restore/close, show-desktop behavior, system insets and Android Accessibility semantics.
+
+The trusted RiftOS WebView still exists during the migration, but it is **not the desktop/window manager**. It is a compatibility content canvas used to keep existing Files, Editor, Settings, RiftShell, Workspace Records and RiftRT app bodies working while those surfaces are migrated selectively. Native Android publishes each window's content rectangle and state; JavaScript positions only the app body inside that rectangle. Window chrome and window authority never come from DOM elements in native mode.
 
 ## Source ownership
 
-- `src/riftdesktop-android.js` — main Android desktop behavior.
-- `src/riftdesktop-android.css` — desktop/window/taskbar/Files/Settings/browser presentation.
-- `src/riftdesktop-window-host.js` — keeps the desktop host/window state synchronized.
-- `src/riftdesktop-android-compat.js` — small Android compatibility synchronization.
-- base window creation/focus/close records in `src/riftos.js`.
+- `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` — Android-native desktop, launcher, Start menu, taskbar, window records/chrome, bounds, focus/z-order and accessibility controls.
+- `android/app/src/main/java/com/riftos/app/MainActivity.kt` — creates the native desktop host and routes the bounded `desktop.*` compatibility requests.
+- `src/riftos.js` — compatibility window/process records, native state mirroring, dynamic launcher registry, RiftFS desktop-settings persistence and public `RiftOSWindowManager` / `RiftDesktop` surfaces.
+- `src/riftdesktop-native-compat.js` — transparent compatibility-content layout used only when Android native desktop authority is active.
+- `src/riftandroid-entry.js` — selects native mode and prevents the legacy DOM desktop modules from loading in that mode.
+- `src/riftdesktop-android.js`, `src/riftdesktop-window-host.js`, `src/riftdesktop-android-compat.js` and `src/riftdesktop-android.css` — retained legacy/fallback WebView desktop implementation; they must not own the shell when `RiftNativeDesktop` is available.
 
 ## Runtime model
 
-The shell creates `.window` elements. RiftDesktop upgrades them to `.rift-desktop-window`, adds desktop controls/resize affordances, restores persisted geometry, and tracks active window plus z-index. `RiftOSWindowManager` is the cross-system surface used by RiftRT and shell windows.
+```text
+Android MainActivity
+  -> RiftNativeDesktop
+       -> native wallpaper / launcher / Start / status / taskbar
+       -> native window frames + drag/resize + z/focus + controls
+       -> contentHost
+            -> trusted compatibility WebView
+                 -> existing RiftOS app bodies only
+            -> RiftBrowser native renderer surface when focused
+  -> native chrome layer always above content surfaces
+```
 
-Native RiftBrowser content is special: the HTML window owns chrome/geometry while `RiftBrowserWindow` owns the native renderer. Desktop emits `riftos:window-visibility` immediately on minimize/restore so Android can hide/show the native surface without waiting for a later geometry pass.
+At boot `src/riftos.js` calls `desktop.window.bootstrap`. If Android returns native authority, the runtime loads `riftdesktop-native-compat.js`; it does **not** load the old DOM window-manager modules. The base JS `openWindow()` still returns a body synchronously so existing apps do not need an immediate rewrite, but it requests the actual frame from Android. Android publishes authoritative window state (`contentPx`, focus, minimized/maximized state, z-order); JS mirrors that state onto the content body only.
+
+Dynamic launcher entries remain compatible with existing app registration. The hidden `#appGrid` is a registry mirror, not a visible launcher. A MutationObserver sends built-ins, RiftRT/Rift Apps, installed packages and system apps to `desktop.launcher.update`; Android renders the real launcher and Start controls. Because the compatibility WebView is a full native content plane, the native launcher is the desktop/home surface: it is visible when no windows are restored and hides while any window is visible, returning on Show Desktop or after the last visible window minimizes/closes. This prevents launcher controls from floating over app content while keeping native touch ownership deterministic.
+
+RiftRT uses the same base window manager in native mode. It may own runtime/session cleanup, but it must not manufacture a second DOM window authority.
+
+## Persistence
+
+Wallpaper, taskbar pins and per-window normal geometry continue to use `/system/settings/desktop.json`. Native geometry is converted between Android physical pixels and WebView CSS coordinates at the compatibility boundary. Maximized frames do not overwrite the saved restore geometry. Reset Layout clears persisted native window geometry while keeping the settings file contract stable.
+
+Pinned apps and running windows share the native taskbar. Installed RiftRT apps use their launcher app id for the pinned entry while their live window may use a `riftrt:<id>` runtime id; the native taskbar coalesces those into one entry.
 
 ## Critical invariants
 
-- Window geometry is clamped to the actual stage/visual viewport; windows must not drift off the right/bottom edge.
-- Minimized windows are not considered visible/focused.
-- Focus updates z-order, visual focused state and taskbar state together.
-- The taskbar is demand-driven: Start/tray stay present, pinned apps persist, and unpinned apps appear only while their window is open (including minimized windows) and disappear after close.
-- Taskbar pins persist in `/system/settings/desktop.json` as `taskbarPins`; `RiftDesktop.pinTaskbar(id, pinned)` is the programmatic pin/unpin surface.
-- Browser minimize/show-desktop must announce visibility before leaving a native renderer onscreen.
-- Geometry persistence is keyed by app/window identity and must tolerate smaller future viewports. Maximize captures the exact current geometry in `riftRestoreGeometry`; Restore returns to that geometry rather than a newly computed default rectangle. Async saved-geometry reads are revision-guarded so a late restore cannot overwrite a newer maximize, drag, resize or minimize action. Physical and virtual-mouse drag/resize both bump the same revision and refuse to move/resize a maximized window.
-- Window controls and taskbar entries keep stable semantic app-specific accessibility names even when their visual labels are hidden; stacked windows must not expose ambiguous generic Close/Maximize controls.
-- Desktop mode remains usable on narrow Android screens; minimum width/height must never exceed available bounds.
+- Native Android owns desktop/window chrome and geometry whenever `RiftNativeDesktop` is available.
+- `MainActivity` must not add the shell WebView as the top-level desktop surface; the WebView belongs inside `RiftNativeDesktop.contentHost`.
+- Legacy `riftdesktop-android.js` / window-host modules are fallback-only and must not execute in native mode.
+- The compatibility WebView may render app bodies, but no DOM title bar, taskbar, launcher, drag/resize implementation or z-order policy may become authoritative in native mode.
+- Window/process close remains idempotent across native close controls, Task Manager, RiftShell `kill`, app self-close and Android Back.
+- Native state sequence numbers prevent duplicate request-response/event delivery from replaying older geometry.
+- Browser renderer visibility follows the native focused window's compatibility content rectangle and stays under native chrome.
+- Taskbar pins, wallpaper and normal geometry continue to persist through RiftFS settings rather than creating an unrelated second settings store.
+- Native launcher controls use fixed app ids and only call back into the trusted RiftOS runtime; they do not expose arbitrary Android package launching.
 
 ## Failure signatures
 
-- Whole desktop extends past screen -> `desktopBounds`, `applyGeometry`, CSS min-width/max-width or Android insets.
-- Window restores offscreen or maximize/restore changes its size unexpectedly -> stored geometry clamp plus `riftRestoreGeometry` capture/restore.
-- Clicking one window highlights another -> focus/taskbar record divergence.
-- Browser renderer covers another window -> visibility/bounds event path to native browser host.
-- Virtual mouse clicks wrong target -> cursor coordinates, overlay pointer-events or `elementFromPoint` target resolution.
+- Only a full-screen WebView appears in Android Accessibility -> native desktop bootstrap/host wiring failed or legacy mode loaded unexpectedly.
+- Native frame appears but app body is elsewhere -> physical-pixel/CSS-coordinate conversion or stale native state sequence.
+- Window close removes frame but leaves process/body -> native state callback and JS process lifecycle diverged.
+- Shell `kill <pid>` removes the process but leaves native frame -> `openWindow()` onTerminate/native close bridge regression.
+- RiftRT app gets HTML title bars or its own taskbar entry manager -> `nativeHosted` path failed and RiftRT created legacy windows.
+- Browser renderer covers taskbar/title bar -> `RiftBrowserWindow` is mounted above native chrome or visibility/focus state is wrong.
+- Pin disappears after restart -> `desktop.json.taskbarPins` mirror or native launcher update omitted pins.
+- Geometry resets every launch -> native state persistence/open saved-bounds contract failed.
 
 ## Fix map
 
-Geometry/focus/taskbar/desktop gestures -> `riftdesktop-android.js`.
-Visual layout -> `riftdesktop-android.css`.
-Base shell window record creation -> `riftos.js`.
-Native browser surface mismatch -> browser window integration, not z-index hacks.
+Native frame/taskbar/launcher/focus/geometry/accessibility -> `RiftNativeDesktop.kt`.
+Android root layering/insets/desktop request routing -> `MainActivity.kt`.
+JS process/content compatibility and persisted settings -> `riftos.js`.
+Compatibility content CSS only -> `riftdesktop-native-compat.js`.
+Native-vs-legacy boot selection -> `riftandroid-entry.js`.
+RiftRT native-window participation -> `riftrt.js`.
+Native browser renderer mismatch -> `RiftBrowserWindow` / browser integration; do not solve it with DOM z-index hacks.
+Legacy fallback only -> `riftdesktop-android.js` and related legacy desktop files.
 
 ## Validation
 
-Test phone portrait, landscape, narrow split-screen and DeX-sized windows. With no pins and no open windows, verify only Start/tray remain. Open unpinned apps and verify they appear while open/minimized and disappear after close. Pin/unpin an app and verify the choice survives desktop reload. Open multiple windows; move/resize/maximize/minimize/restore rapidly enough to race persisted geometry and verify the latest user action wins using both direct touch and virtual mouse. Cancel a desktop-icon drag and verify no stale drag listener remains. Verify taskbar/window controls retain app-specific accessibility names while labels are visually hidden. Show desktop; reopen after viewport shrink; verify browser native surface tracks the HTML content rectangle.
+Run repository source checks, then an Android/Gradle build. Validation must prove `RiftNativeDesktop.kt` is in the Android source snapshot, MainActivity hosts the compatibility WebView through `RiftNativeDesktop`, native mode conditionally excludes legacy desktop imports, RiftRT delegates windows to the base manager, and the MCP tool family does not grow.
+
+On device, use the fixed-scope RiftOS self-agent. The Accessibility tree should expose native launcher/taskbar/window controls as Android nodes. Test multiple windows, overlapping/focus changes, drag, resize, maximize/restore, minimize/taskbar restore, show desktop, Android Back, close, Task Manager termination and RiftShell `kill`. Test persisted geometry, wallpaper and pins across Activity/app restart. Verify Files/Editor/etc. still render and receive input inside native content rectangles, then progressively migrate individual built-ins only where useful.
 
 ## Safe extension points
 
-New window policies should go through `RiftOSWindowManager` and visibility events. New desktop persistence belongs in `/system/settings/desktop.json`. Keep app-specific behavior out of the generic manager unless it is required for every window.
+Add generic window policy to `RiftNativeDesktop` and expose only bounded compatibility requests through the existing trusted native bridge. Keep app-specific behavior inside the app/runtime. A built-in may later become fully native without changing the window-manager contract; Web/Rift apps may continue using managed WebView/runtime surfaces inside native windows where appropriate.

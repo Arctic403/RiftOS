@@ -33,7 +33,7 @@ A base64-encoded WASM module is instantiated with a small import surface. Option
 
 ## Desktop/process integration
 
-RiftRT creates normal RiftDesktop windows and kernel process records. Runtime windows participate in focus, taskbar, minimize/maximize, show desktop and process close behavior. Closing a focused RiftRT window hands focus to the highest shared visible RiftDesktop window, and RiftRT delegates show-desktop to the canonical window manager so the visibility event is emitted once. Removing a running app disposes its session before package/data removal; destructive removal requires explicit confirmation and surfaced async failures. Do not create a parallel window manager for runtime apps.
+RiftRT creates normal RiftDesktop windows and kernel process records. In Android-native desktop mode it delegates window creation, title changes, focus, taskbar, minimize/maximize, show desktop and close authority to the base `RiftOSWindowManager`; RiftRT retains only runtime/session disposal and app-engine ownership. It must not manufacture a second DOM window manager in native mode. The legacy DOM extension remains fallback-only when native desktop authority is unavailable. Removing a running app disposes its session before package/data removal; destructive removal requires explicit confirmation and surfaced async failures.
 
 ## Failure signatures
 

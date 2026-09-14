@@ -42,12 +42,20 @@ globalThis.RiftTransferUI=Object.freeze({
 const filesNavigation={history:["/"],index:0};
 const filesClipboard={mode:"copy",paths:[]};
 const protectedFileRoots=new Set(["/home","/apps","/system","/workspace","/downloads","/documents","/mounts"]);
+let nativeDesktopEnabled=false,nativeDesktopBootstrap=null,nativeDesktopState=null,nativeDesktopSequence=-1,nativeLauncherTimer=0,nativeLauncherObserver=null,nativeDesktopPersistTimer=0,nativeDesktopSettings={};
+try{
+  await core.ready;
+  nativeDesktopSettings=await core.fs.readJSON('/system/settings/desktop.json',{})||{};
+  nativeDesktopBootstrap=await core.native.call("desktop.window.bootstrap",{});
+  nativeDesktopEnabled=nativeDesktopBootstrap?.native===true;
+}catch(error){console.warn("[RiftDesktop] native desktop bootstrap unavailable; using compatibility shell",error);}
+if(nativeDesktopEnabled)document.documentElement.classList.add("rift-native-host");
 
 function setStatus(value){const el=$("#statusText");if(el)el.textContent=value;}
 function tick(){const clock=$("#clock");if(clock)clock.textContent=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});}
 setInterval(tick,1000);tick();
 
-function desktopMode(){return document.documentElement.classList.contains("rift-desktop-mode");}
+function desktopMode(){return nativeDesktopEnabled||document.documentElement.classList.contains("rift-desktop-mode");}
 function recordFor(target){
   if(!target)return null;
   if(typeof target==="string")return windows.get(target)||null;
@@ -56,8 +64,41 @@ function recordFor(target){
   return null;
 }
 function visibleRecords(){return [...windows.values()].filter(record=>!record.win.classList.contains("rift-minimized"));}
+const nativeDesktopCall=(method,args={})=>core.native.call(`desktop.${method}`,args);
+function nativeCssRect(rect={}){const scale=Number(window.devicePixelRatio||1)||1;return{left:Number(rect.left||0)/scale,top:Number(rect.top||0)/scale,width:Number(rect.width||0)/scale,height:Number(rect.height||0)/scale};}
+async function persistNativeDesktopSettings(patch={}){nativeDesktopSettings={...nativeDesktopSettings,...patch,updated:Date.now()};try{await core.fs.writeJSON('/system/settings/desktop.json',nativeDesktopSettings);}catch(_){} }
+function scheduleNativeGeometryPersist(state){
+  if(!nativeDesktopEnabled||!state?.windows)return;clearTimeout(nativeDesktopPersistTimer);nativeDesktopPersistTimer=setTimeout(()=>{
+    const saved={...(nativeDesktopSettings.windows||{})};for(const row of state.windows){if(row?.maximized)continue;const rect=nativeCssRect(row?.framePx||{});if(rect.width>0&&rect.height>0)saved[String(row.id)]={left:rect.left,top:rect.top,width:rect.width,height:rect.height};}
+    persistNativeDesktopSettings({windows:saved});
+  },120);
+}
+function applyNativeDesktopState(state){
+  if(!nativeDesktopEnabled||!state||state.native!==true)return;
+  const sequence=Number(state.sequence??-1);if(sequence>=0&&sequence<=nativeDesktopSequence)return;
+  if(sequence>=0)nativeDesktopSequence=sequence;
+  nativeDesktopState=state;
+  const nativeRows=new Map((Array.isArray(state.windows)?state.windows:[]).map(row=>[String(row.id),row]));
+  for(const record of [...windows.values()]){
+    const row=nativeRows.get(record.id);
+    if(!row){if(record.nativeOpened&&!record.nativePending&&!record.closing)closeWindow(record.win,{fromNative:true});continue;}
+    record.nativeOpened=true;record.nativePending=false;record.lastFocus=Number(row.z||record.lastFocus||0);
+    const wasMinimized=record.win.classList.contains("rift-minimized"),wasFocused=record.win.classList.contains("rift-focused");
+    const minimized=Boolean(row.minimized),focused=Boolean(row.focused),rect=nativeCssRect(row.contentPx||{});
+    record.win.classList.toggle("rift-minimized",minimized);record.win.classList.toggle("rift-focused",focused);record.win.classList.add("rift-native-content-window");
+    Object.assign(record.win.style,{left:`${rect.left}px`,top:`${rect.top}px`,width:`${Math.max(1,rect.width)}px`,height:`${Math.max(1,rect.height)}px`,zIndex:String(Number(row.z||1)),display:minimized?"none":"block"});
+    if(wasMinimized!==minimized)window.dispatchEvent(new CustomEvent("riftos:window-visibility",{detail:{id:record.id,window:record.win,visible:!minimized,reason:state.reason||"native"}}));
+    if(focused&&!wasFocused){setStatus(record.title);window.dispatchEvent(new CustomEvent("riftos:window-activate",{detail:{id:record.id,window:record.win,pid:record.process?.pid}}));}
+  }
+  if(state.reason==="show-desktop")window.dispatchEvent(new Event("riftos:show-desktop"));
+  if(["bounds","move","resize","restore","layout-reset","host-layout"].includes(String(state.reason||"")))scheduleNativeGeometryPersist(state);
+  syncShellState();
+}
+globalThis.RiftNativeDesktop=Object.freeze({get enabled(){return nativeDesktopEnabled;},get state(){return nativeDesktopState;},__state:applyNativeDesktopState,request:(method,args={})=>nativeDesktopCall(method,args).then(value=>{applyNativeDesktopState(value);return value;})});
+if(nativeDesktopBootstrap)applyNativeDesktopState(nativeDesktopBootstrap);
 function syncShellState(){
   const visible=visibleRecords();
+  if(nativeDesktopEnabled){stage.classList.remove("hidden");if(!visible.length)setStatus("Ready");return;}
   stage.classList.toggle("hidden",windows.size===0);
   if(desktopMode())workspace.classList.remove("hidden");
   else workspace.classList.toggle("hidden",visible.length>0);
@@ -66,63 +107,60 @@ function syncShellState(){
 }
 function focusWindow(target){
   const record=recordFor(target);if(!record)return false;
-  record.win.classList.remove("rift-minimized");
-  stage.classList.remove("hidden");
-  if(!desktopMode())workspace.classList.add("hidden");
   record.lastFocus=Date.now();
-  setStatus(record.title);
+  if(nativeDesktopEnabled){nativeDesktopCall("window.focus",{id:record.id}).then(applyNativeDesktopState).catch(error=>setStatus(error.message));return true;}
+  record.win.classList.remove("rift-minimized");stage.classList.remove("hidden");if(!desktopMode())workspace.classList.add("hidden");setStatus(record.title);
   window.dispatchEvent(new CustomEvent("riftos:window-activate",{detail:{id:record.id,window:record.win,pid:record.process?.pid}}));
   return true;
 }
-function closeWindow(target,{fromProcess=false}={}){
-  const record=recordFor(target);if(!record)return false;
-  if(record.closing)return true;
-  record.closing=true;
+function closeWindow(target,{fromProcess=false,fromNative=false}={}){
+  const record=recordFor(target);if(!record)return false;if(record.closing)return true;record.closing=true;
   if(!fromProcess){try{if(record.process?.pid)core.kernel.kill(record.process.pid);}catch(_){}}
-  windows.delete(record.id);
-  record.win.remove();
-  window.dispatchEvent(new CustomEvent("riftos:window-close",{detail:{id:record.id,pid:record.process?.pid}}));
-  syncShellState();
-  const next=[...windows.values()].filter(item=>!item.win.classList.contains("rift-minimized")).sort((a,b)=>(b.lastFocus||0)-(a.lastFocus||0))[0];
-  if(next)focusWindow(next.id);
+  windows.delete(record.id);record.win.remove();
+  if(nativeDesktopEnabled&&!fromNative)nativeDesktopCall("window.close",{id:record.id}).then(applyNativeDesktopState).catch(()=>{});
+  window.dispatchEvent(new CustomEvent("riftos:window-close",{detail:{id:record.id,pid:record.process?.pid}}));syncShellState();
+  if(!nativeDesktopEnabled){const next=[...windows.values()].filter(item=>!item.win.classList.contains("rift-minimized")).sort((a,b)=>(b.lastFocus||0)-(a.lastFocus||0))[0];if(next)focusWindow(next.id);}
   return true;
 }
 function showDesktop(){
-  for(const record of windows.values())record.win.classList.add("rift-minimized");
-  workspace.classList.remove("hidden");
-  stage.classList.remove("hidden");
-  window.dispatchEvent(new Event("riftos:show-desktop"));
-  syncShellState();
+  if(nativeDesktopEnabled){nativeDesktopCall("window.showDesktop",{}).then(applyNativeDesktopState).catch(error=>setStatus(error.message));return true;}
+  for(const record of windows.values())record.win.classList.add("rift-minimized");workspace.classList.remove("hidden");stage.classList.remove("hidden");window.dispatchEvent(new Event("riftos:show-desktop"));syncShellState();return true;
 }
-function openWindow(id,title,kicker="RIFT APP"){
+function setWindowTitle(target,title,kicker){
+  const record=recordFor(target);if(!record)return false;record.title=String(title||record.title).slice(0,96);if(kicker!==undefined)record.kicker=String(kicker||"").slice(0,96);
+  const titleNode=record.win.querySelector(".window-title"),kickerNode=record.win.querySelector(".window-kicker");if(titleNode)titleNode.textContent=record.title;if(kickerNode&&kicker!==undefined)kickerNode.textContent=record.kicker;
+  if(nativeDesktopEnabled)nativeDesktopCall("window.title",{id:record.id,title:record.title,kicker:record.kicker||""}).then(applyNativeDesktopState).catch(()=>{});return true;
+}
+function openWindow(id,title,kicker="RIFT APP",processDetails={}){
   const existing=windows.get(id);
-  if(existing){
-    existing.title=title;
-    existing.win.querySelector(".window-title").textContent=title;
-    existing.win.querySelector(".window-kicker").textContent=kicker;
-    const body=existing.win.querySelector(".window-body");body.innerHTML="";
-    focusWindow(id);
-    return body;
-  }
+  if(existing){setWindowTitle(existing,title,kicker);const body=existing.win.querySelector(".window-body");body.innerHTML="";focusWindow(id);return body;}
   const template=$("#windowTemplate");if(!template)throw new Error("RiftOS window template is missing");
-  const win=template.content.firstElementChild.cloneNode(true);
-  win.dataset.app=id;win.dataset.windowId=`${id}-${++windowSerial}`;
-  win.querySelector(".window-title").textContent=title;
-  win.querySelector(".window-kicker").textContent=kicker;
-  const record={id,title,win,process:null,lastFocus:Date.now(),closing:false};
-  const process=core.kernel.launchProcess(id,title,{kind:"ui",onTerminate:()=>closeWindow(win,{fromProcess:true})});
-  record.process=process;
-  windows.set(id,record);
-  win.querySelector(".window-close").onclick=()=>closeWindow(win);
-  stage.classList.remove("hidden");stage.append(win);
-  syncShellState();focusWindow(id);
-  window.dispatchEvent(new CustomEvent("riftos:window-open",{detail:{id,window:win,pid:process?.pid,title}}));
+  const win=template.content.firstElementChild.cloneNode(true);win.dataset.app=id;win.dataset.windowId=`${id}-${++windowSerial}`;
+  win.querySelector(".window-title").textContent=title;win.querySelector(".window-kicker").textContent=kicker;
+  if(nativeDesktopEnabled)win.classList.add("rift-native-content-window");
+  let record=null;const externalTerminate=typeof processDetails?.onTerminate==="function"?processDetails.onTerminate:null;const details={...processDetails};delete details.onTerminate;if(!details.kind)details.kind="ui";
+  const process=core.kernel.launchProcess(id,title,{...details,onTerminate:()=>{try{externalTerminate?.();}finally{closeWindow(win,{fromProcess:true});}}});
+  record={id,title,kicker,win,process,lastFocus:Date.now(),closing:false,nativePending:nativeDesktopEnabled,nativeOpened:false};windows.set(id,record);
+  win.querySelector(".window-close").onclick=()=>closeWindow(win);win.addEventListener("pointerdown",()=>{if(nativeDesktopEnabled)focusWindow(id);},{capture:true});stage.classList.remove("hidden");stage.append(win);
+  syncShellState();window.dispatchEvent(new CustomEvent("riftos:window-open",{detail:{id,window:win,pid:process?.pid,title}}));
+  if(nativeDesktopEnabled){nativeDesktopCall("window.open",{id,title,kicker,pid:process?.pid||0,dpr:Number(window.devicePixelRatio||1)||1,boundsCss:nativeDesktopSettings.windows?.[id]||null}).then(state=>{record.nativePending=false;record.nativeOpened=true;applyNativeDesktopState(state);}).catch(error=>{record.nativePending=false;setStatus(`Native window failed: ${error.message}`);closeWindow(win,{fromNative:true});});}
+  else focusWindow(id);
   return win.querySelector(".window-body");
 }
+function collectNativeLauncherApps(){
+  const grid=$("#appGrid");if(!grid)return[];const rows=[],seen=new Set();
+  for(const button of grid.querySelectorAll(".app-card,[data-rift-installed-app],[data-rift-app-manager],[data-rift-system-app]")){
+    let id=button.dataset.open||button.dataset.riftInstalledApp||button.dataset.riftSystemApp||"";
+    if(button.dataset.riftAppManager!==undefined)id=(globalThis.RiftRT||button.textContent?.includes("RiftRT"))?"riftrt":"riftapps";
+    id=String(id||"").trim();if(!id||id==="home"||seen.has(id))continue;seen.add(id);
+    const name=button.querySelector("strong")?.textContent?.trim()||button.querySelector("span")?.textContent?.trim()||id;const icon=button.querySelector(".app-icon,b")?.textContent?.trim()||"□";rows.push({id,name,icon});
+  }
+  return rows;
+}
+function syncNativeLauncher(){if(!nativeDesktopEnabled)return;clearTimeout(nativeLauncherTimer);nativeLauncherTimer=setTimeout(()=>nativeDesktopCall("launcher.update",{apps:collectNativeLauncherApps(),pins:Array.isArray(nativeDesktopSettings.taskbarPins)?nativeDesktopSettings.taskbarPins:[]}).then(applyNativeDesktopState).catch(()=>{}),20);}
+function startNativeLauncherMirror(){if(!nativeDesktopEnabled||nativeLauncherObserver)return;const grid=$("#appGrid");if(!grid)return;nativeLauncherObserver=new MutationObserver(syncNativeLauncher);nativeLauncherObserver.observe(grid,{childList:true,subtree:true,characterData:true,attributes:true});syncNativeLauncher();}
 function appGrid(){
-  const grid=$("#appGrid");if(!grid)return;
-  grid.innerHTML=BUILTIN_APPS.map(app=>`<button class="app-card" data-open="${app.id}"><span class="app-icon">${app.icon}</span><span><strong>${app.name}</strong><br><small>${app.desc}</small></span></button>`).join("");
-  window.dispatchEvent(new Event("riftos:launcher-ready"));
+  const grid=$("#appGrid");if(!grid)return;grid.innerHTML=BUILTIN_APPS.map(app=>`<button class="app-card" data-open="${app.id}"><span class="app-icon">${app.icon}</span><span><strong>${app.name}</strong><br><small>${app.desc}</small></span></button>`).join("");window.dispatchEvent(new Event("riftos:launcher-ready"));syncNativeLauncher();
 }
 function topLevelEntries(rows,path="/"){
   const base=core.path.normalize(path),map=new Map();
@@ -699,7 +737,7 @@ async function runShell(raw,print,state,context={}){
   if(cmd==="zip"){if(args.length<2)throw new Error("usage: zip <from> <archive.zip>");const from=resolvePath(state.cwd,args[0]),to=resolvePath(state.cwd,args[1]);await core.fs.zip(from,to);return print(`archived ${from} -> ${to}`);}
   if(cmd==="unzip"){if(args.length<2)throw new Error("usage: unzip <archive.zip> <folder>");const from=resolvePath(state.cwd,args[0]),to=resolvePath(state.cwd,args[1]);await core.fs.unzip(from,to);return print(`extracted ${from} -> ${to}`);}
   if(cmd==="rm"){const path=resolvePath(state.cwd,args[0]);await core.fs.remove(path);return print(`removed ${path}`);}
-  if(cmd==="open"){const app=(args[0]||"home").toLowerCase();if(app==="mcp"){if(!globalThis.RiftMcp?.open)throw new Error("Rift MCP launcher is unavailable");globalThis.RiftMcp.open();return print("opened mcp");}if(app==="riftrt"){if(!globalThis.RiftRT?.openManager)throw new Error("RiftRT manager is unavailable");await globalThis.RiftRT.openManager();return print("opened riftrt");}const button=document.querySelector(`[data-open="${CSS.escape(app)}"]`);if(!button)throw new Error(`app not found: ${app}`);button.click();return print(`opened ${app}`);}
+  if(cmd==="open"){const app=(args[0]||"home").toLowerCase();const opened=await openApp(app);if(opened===false)throw new Error(`app not found: ${app}`);return print(`opened ${app}`);}
   if(cmd==="clear")return {clear:true};
   if(cmd==="uptime")return print(`${core.kernel.uptime()}s`);
   if(cmd==="version")return print(core.version);
@@ -730,6 +768,7 @@ async function openWorkspaceLive(){
 }
 
 async function openApp(id){
+  id=String(id||"home").trim();
   if(id==="home")return showDesktop();
   if(id==="files")return openFiles("/");
   if(id==="terminal")return openTerminal();
@@ -738,7 +777,11 @@ async function openApp(id){
   if(id==="editor")return openEditor();
   if(id==="tasks")return openTasks();
   if(id==="settings")return openSettings();
-  if(window.RiftApps?.open)return window.RiftApps.open(id);
+  if(id==="mcp"){if(!globalThis.RiftMcp?.open)return false;return globalThis.RiftMcp.open();}
+  if(id==="riftrt"){if(!globalThis.RiftRT?.openManager)return false;return globalThis.RiftRT.openManager();}
+  if(id==="riftapps"){if(!globalThis.RiftApps?.openManager)return false;return globalThis.RiftApps.openManager();}
+  let installed=null;try{installed=await globalThis.RiftApps?.get?.(id);}catch(_){}
+  if(installed&&globalThis.RiftRT?.launch)return globalThis.RiftRT.launch(id);if(installed&&globalThis.RiftApps?.launch)return globalThis.RiftApps.launch(id);return false;
 }
 
 document.addEventListener("click",event=>{
@@ -749,13 +792,15 @@ document.addEventListener("click",event=>{
 });
 
 window.RiftOSWindowManager=Object.freeze({
-  list:()=>[...windows.values()].map(record=>({id:record.id,title:record.title,pid:record.process?.pid,minimized:record.win.classList.contains("rift-minimized"),window:record.win})),
+  list:()=>[...windows.values()].map(record=>({id:record.id,title:record.title,pid:record.process?.pid,minimized:record.win.classList.contains("rift-minimized"),window:record.win,win:record.win,process:record.process,native:nativeDesktopEnabled})),
   get:id=>windows.get(id)||null,
-  open:(id,title,kicker="RIFT APP")=>openWindow(String(id),String(title),String(kicker)),
+  open:(id,title,kicker="RIFT APP",details={})=>openWindow(String(id),String(title),String(kicker),details||{}),
   focus:focusWindow,
   close:closeWindow,
+  setTitle:setWindowTitle,
   showDesktop,
-  sync:syncShellState
+  sync:syncShellState,
+  native:nativeDesktopEnabled
 });
 window.RiftShellMcp = Object.freeze({
   async execute(command, cwd = '/') {
@@ -793,13 +838,13 @@ window.RiftShellMcpNative = Object.freeze({
   }
 });
 
-window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,openWorkspaceLive,closeWindow,showDesktop,setStatus});
+window.RiftDesktop=Object.freeze({openApp,openFiles,openEditor,openTerminal,openSettings,openBrowser,openWorkspaceLive,closeWindow,showDesktop,setStatus,get mode(){return nativeDesktopEnabled?"native":"compatibility";},get taskbarPins(){return Array.isArray(nativeDesktopSettings.taskbarPins)?[...nativeDesktopSettings.taskbarPins]:[];},async pinTaskbar(id,pinned=true){if(!nativeDesktopEnabled)return false;const key=String(id||'').trim();if(!key||key==='home')return false;const pins=new Set(Array.isArray(nativeDesktopSettings.taskbarPins)?nativeDesktopSettings.taskbarPins:[]);if(pinned)pins.add(key);else pins.delete(key);await persistNativeDesktopSettings({taskbarPins:[...pins]});syncNativeLauncher();return true;},async setWallpaper(value){if(!nativeDesktopEnabled)return;const wallpaper=String(value||"");await persistNativeDesktopSettings({wallpaper});return nativeDesktopCall("wallpaper.set",{value:wallpaper}).then(applyNativeDesktopState);},async resetLayout(){if(!nativeDesktopEnabled)return;await persistNativeDesktopSettings({windows:{},icons:{}});return nativeDesktopCall("layout.reset",{}).then(applyNativeDesktopState);}});
 
 (async()=>{
   try{
-    await core.ready;appGrid();
+    await core.ready;appGrid();if(nativeDesktopEnabled)startNativeLauncherMirror();
     const boot=$("#boot"),os=$("#os");
-    setTimeout(()=>{boot?.classList.add("hidden");os?.classList.remove("hidden");syncShellState();setStatus("Ready");},220);
+    setTimeout(()=>{boot?.classList.add("hidden");os?.classList.remove("hidden");syncShellState();setStatus(nativeDesktopEnabled?"Native desktop ready":"Ready");},220);
   }catch(error){
     const boot=$("#boot");if(boot)boot.innerHTML=`<div class="boot-title">RiftOS boot failed</div><pre>${escapeHTML(error.stack||error.message)}</pre>`;
   }

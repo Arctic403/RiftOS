@@ -5,15 +5,16 @@ The active RiftOS distribution is a native Android APK targeting Android 8.0 / A
 ## Runtime stack
 
 ```text
-RiftOS HTML/JS shell
-    -> RiftKernel / RiftDesktop
-    -> RiftNativeTransport
-    -> exact-origin RiftAndroid WebMessage
-    -> MainActivity / RiftNativeDispatcher
-    -> Android APIs
+Android MainActivity
+    -> RiftNativeDesktop (desktop / launcher / taskbar / native window authority)
+    -> trusted compatibility WebView (existing app bodies + RiftKernel/RiftFS/RiftGit runtime)
+         -> RiftNativeTransport
+         -> exact-origin RiftAndroid WebMessage
+    -> RiftNativeDispatcher / Android APIs
+    -> RiftBrowserWindow focused native renderer surface
 ```
 
-`MainActivity` hosts the RiftOS shell WebView through `WebViewAssetLoader` and owns the native browser content surface and system-document pickers.
+`MainActivity` hosts `RiftNativeDesktop` as the visible shell. The trusted RiftOS WebView is still served through `WebViewAssetLoader`, but it lives inside the native desktop's content layer and is used as a compatibility app-content canvas rather than as the desktop/window manager. Native Android owns launcher/taskbar/window chrome, bounds, focus, move/resize, minimize/maximize/restore/close and Accessibility controls.
 
 ## Storage
 
@@ -33,6 +34,8 @@ The canonical project workspace lives at `filesDir/riftfs/workspace` and is shar
 - DownloadManager,
 - preview Activity for workspace files,
 - privacy-limited System Dump + Save As picker,
+- `RiftNativeDesktop` desktop/window/taskbar/launcher authority,
+- trusted compatibility WebView app-content plane,
 - `RiftBrowserWindow` native WebView content plane,
 - local `RiftMcpServer` + `RiftToolHost`,
 - optional outbound `RiftMcpRelayClient`,
@@ -40,9 +43,11 @@ The canonical project workspace lives at `filesDir/riftfs/workspace` and is shar
 
 The APK never opens an MCP listening socket. When explicitly enabled, its WSS client authenticates to the configured public relay and forwards MCP JSON-RPC into the same local server.
 
-## Desktop browser host
+## Native desktop and browser host
 
-`RiftBrowserWindow` is created inside `MainActivity`. RiftDesktop sends window bounds/visibility/navigation commands through the native bridge. Android positions the WebView over the browser content rectangle while RiftOS retains title bar, address bar, move/resize, minimize/maximize, focus and taskbar behavior.
+`RiftNativeDesktop` is created inside `MainActivity` before the trusted runtime page loads. It owns the Android-visible desktop, launcher, Start menu, taskbar, native window chrome, geometry/focus state and Back behavior. Existing RiftOS app bodies initially remain inside the trusted compatibility WebView; the JS compatibility layer mirrors Android-published content rectangles but does not own frame geometry or chrome. Dynamic RiftRT/installed/system launcher entries are mirrored into Android controls.
+
+`RiftBrowserWindow` is mounted inside the native desktop content layer. The compatibility app body still owns the address/navigation controls while Android positions the dedicated renderer surface over that browser body rectangle. The focused browser renderer remains below native window/taskbar chrome and is hidden immediately when browser visibility/focus changes.
 
 The obsolete standalone `RiftBrowserActivity` is not part of the current source/build.
 

@@ -11,8 +11,9 @@ This directory contains the trusted RiftOS shell/runtime JavaScript packaged int
 | `riftandroid-platform.js` | `../docs/systems/android-host/README.md` |
 | `riftcore.js` | `../docs/systems/kernel/README.md` and `../docs/systems/riftfs/README.md` |
 | `riftos.js` | shell UI plus Files/Settings/Browser integration; see `../docs/README.md` |
-| `riftdesktop-android.js` / `.css` | `../docs/systems/desktop/README.md` |
-| `riftdesktop-window-host.js` / `riftdesktop-android-compat.js` | `../docs/systems/desktop/README.md` |
+| `riftdesktop-native-compat.js` | native-window compatibility content renderer; `../docs/systems/desktop/README.md` |
+| `riftdesktop-android.js` / `.css` | legacy/fallback desktop; `../docs/systems/desktop/README.md` |
+| `riftdesktop-window-host.js` / `riftdesktop-android-compat.js` | legacy/fallback host compatibility; `../docs/systems/desktop/README.md` |
 | `riftapps.js` / `riftapps-files.js` | `../docs/systems/apps/README.md` |
 | `riftrt.js` | `../docs/systems/riftrt/README.md` |
 | `riftruntime.js` | `../docs/systems/runtime-capabilities/README.md` |
