@@ -35,10 +35,18 @@ function mutationTargets(command,state,resolve){
   return [];
 }
 async function preflight(commands,state,resolve){
-  const planned={cwd:state.cwd},overlay=new Map();
-  const stat=async path=>overlay.has(path)?overlay.get(path):core.fs.stat(path);
+  const planned={cwd:state.cwd},overlay=new Map(),deferredRoots=new Set(),removedRoots=new Set();
+  const inside=(path,root)=>path===root||path.startsWith(root+"/");
+  const isRemoved=path=>[...removedRoots].some(root=>inside(path,root));
+  const isDeferred=path=>[...deferredRoots].some(root=>inside(path,root));
+  const stat=async path=>{
+    if(overlay.has(path))return overlay.get(path);
+    if(isRemoved(path))return null;
+    const live=await core.fs.stat(path);if(live)return live;
+    return isDeferred(path)?{kind:"deferred",deferred:true}:null;
+  };
   const parent=path=>path.slice(0,path.lastIndexOf("/"))||"/";
-  const directory=async path=>{const entry=await stat(path);if(!entry||!["directory","mount"].includes(entry.kind))throw new Error(`not a directory: ${path}`);};
+  const directory=async path=>{const entry=await stat(path);if(!entry||(!entry.deferred&&!["directory","mount"].includes(entry.kind)))throw new Error(`not a directory: ${path}`);};
   const ensureParents=async path=>{const dir=parent(path);if(dir===path)return;const entry=await stat(dir);if(entry){await directory(dir);return;}await ensureParents(dir);overlay.set(dir,{kind:"directory"});};
   const permission=async capability=>{if(!core.permissions?.has||!await core.permissions.has("terminal",capability))throw new Error(`Batch permission denied: ${capability}`);};
   const shapes={help:[0,0],sysinfo:[0,0],df:[0,0],ps:[0,0],apps:[0,0],permissions:[0,0],native:[0,0],pwd:[0,0],home:[0,0],clear:[0,0],uptime:[0,0],version:[0,0],cd:[0,1],ls:[0,2],tree:[0,1],stat:[1,1],cat:[1,1],head:[1,2],tail:[1,2],write:[1,Infinity],touch:[1,1],mkdir:[1,1],rm:[1,1],cp:[2,3],mv:[2,3],zip:[2,2],unzip:[2,2],workspace:[0,2]};
@@ -67,20 +75,22 @@ async function preflight(commands,state,resolve){
     if(["cat","head","tail","stat","tree","ls","cp","mv","zip","unzip"].includes(cmd)){
       const source=cmd==="ls"?resolve(planned.cwd,args.find(a=>!a.startsWith("-"))||planned.cwd):path;
       const entry=await stat(source);if(!entry)throw new Error(`path not found: ${source}`);
-      if(["cat","head","tail","unzip"].includes(cmd)&&entry.kind!=="file")throw new Error(`not a file: ${source}`);
+      if(["cat","head","tail","unzip"].includes(cmd)&&!entry.deferred&&entry.kind!=="file")throw new Error(`not a file: ${source}`);
     }
     if(["write","touch","mkdir"].includes(cmd)){
       const entry=await stat(path);
-      if(entry&&((cmd==="mkdir")!==(entry.kind==="directory")))throw new Error(`Path kind conflict: ${path}`);
+      if(entry&&!entry.deferred&&((cmd==="mkdir")!==(entry.kind==="directory")))throw new Error(`Path kind conflict: ${path}`);
       if(cmd==="write"&&new TextEncoder().encode(args.slice(1).join(" ")).length>4*1024*1024)throw new Error("Text write exceeds the 4 MiB UTF-8 limit");
       await ensureParents(path);overlay.set(path,{kind:cmd==="mkdir"?"directory":"file"});
     }
     if(["cp","mv","zip","unzip"].includes(cmd)){
       const to=resolve(planned.cwd,args[1]),entry=await stat(to),source=await stat(path);
       if(to===path||to.startsWith(path+"/")||path.startsWith(to+"/"))throw new Error("Source and destination overlap");
-      if(entry&&!(args.includes("--force")||args.includes("-f"))&&cmd!=="unzip")throw new Error(`Destination exists: ${to}`);
-      if(cmd==="unzip"&&entry&&entry.kind!=="directory")throw new Error(`not a directory: ${to}`);
+      if(entry&&!entry.deferred&&!(args.includes("--force")||args.includes("-f"))&&cmd!=="unzip")throw new Error(`Destination exists: ${to}`);
+      if(cmd==="unzip"&&entry&&!entry.deferred&&entry.kind!=="directory")throw new Error(`not a directory: ${to}`);
       await ensureParents(to);overlay.set(to,{kind:cmd==="zip"?"file":cmd==="unzip"?"directory":source.kind});
+      if(cmd==="unzip")deferredRoots.add(to);
+      if(["cp","mv"].includes(cmd)&&source.deferred)deferredRoots.add(to);
       if(["cp","mv"].includes(cmd)&&source.kind==="directory"){
         const rows=await core.fs.list(path,{recursive:true});
         for(const row of rows)overlay.set(to+row.path.slice(path.length),row);
@@ -88,6 +98,7 @@ async function preflight(commands,state,resolve){
       }
     }
     if(cmd==="rm"||cmd==="mv"){
+      removedRoots.add(path);
       for(const row of await core.fs.list(path,{recursive:true}).catch(()=>[]))overlay.set(row.path,null);
       for(const key of [...overlay.keys()])if(key.startsWith(path+"/"))overlay.set(key,null);
       overlay.set(path,null);

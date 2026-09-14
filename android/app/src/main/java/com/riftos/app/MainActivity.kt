@@ -468,12 +468,18 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // MCP shell execution must follow the currently resumed RiftOS runtime, not merely the
-        // most recently created MainActivity. REORDER_TO_FRONT can resume an older Activity
-        // instance without recreating it, so refresh process-wide bridge ownership here.
+        // MainActivity is the singleTask RiftOS shell authority. Reclaim the process-wide MCP
+        // shell bridge whenever Android resumes it, including task/background transitions.
         if (::shellBridge.isInitialized) RiftMcpRuntime.registerShellBridge(shellBridge)
         if (::webView.isInitialized) webView.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Window focus is a stricter signal than lifecycle resume when another RiftOS Activity
+        // temporarily covers the shell. The focused singleton shell must always own MCP execution.
+        if (hasFocus && ::shellBridge.isInitialized) RiftMcpRuntime.registerShellBridge(shellBridge)
     }
 
     override fun onPause() {

@@ -28,6 +28,8 @@ Related but separately documented: `RiftNativeDispatcher`, `RiftBrowserWindow`, 
 
 `AndroidManifest.xml` owns APK component declarations, Android permissions and package-visibility queries for this host. The `com.vortex3d.app` query exists only so the explicit local development Binder client can resolve/bind the debug Vortex3D package; RiftOS does not declare the Vortex service itself. `res/values/styles.xml` owns the native Activity/window theme and initial system-bar/window background. Keep these synchronized with the Activities/services actually present in source; do not solve missing-component or permission problems in JavaScript.
 
+`MainActivity` is declared `singleTask` because it is the one RiftOS desktop/kernel authority. Relaunch/foreground requests must route back to that existing shell instead of creating another compatibility WebView with an independent RiftKernel/ProcessTable. Resume and window-focus transitions reclaim process-wide MCP shell-bridge ownership for that singleton runtime.
+
 It also preserves WebView lifecycle/state across pause/resume/save-state and tears down native resources in `onDestroy`.
 
 ## Control flow

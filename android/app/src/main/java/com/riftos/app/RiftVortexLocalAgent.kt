@@ -286,17 +286,23 @@ private class RiftScopedLocalAgent(
             for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
         val matches = if (exactMatches.isNotEmpty()) exactMatches else semanticMatches
-        val anchored = LinkedHashMap<String, AccessibilityNodeInfo>()
+        val actionableAnchors = LinkedHashMap<String, AccessibilityNodeInfo>()
+        val passiveMatches = LinkedHashMap<String, AccessibilityNodeInfo>()
         for (match in matches) {
             val anchor = actionAnchor(match)
-            anchored.putIfAbsent(nodeIdentity(anchor), anchor)
+            if (anchor.isClickable || anchor.isEditable) {
+                actionableAnchors.putIfAbsent(nodeIdentity(anchor), anchor)
+            } else {
+                passiveMatches.putIfAbsent(nodeIdentity(match), match)
+            }
         }
-        if (anchored.size > 1) {
+        val resolved = if (actionableAnchors.isNotEmpty()) actionableAnchors else passiveMatches
+        if (resolved.size > 1) {
             throw IllegalArgumentException(
                 "$displayName UI target is ambiguous: $target; use a unique content-description or view-id"
             )
         }
-        return anchored.values.firstOrNull()
+        return resolved.values.firstOrNull()
     }
 
     private fun actionAnchor(node: AccessibilityNodeInfo): AccessibilityNodeInfo {

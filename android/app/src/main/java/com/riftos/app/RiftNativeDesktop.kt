@@ -251,7 +251,10 @@ class RiftNativeDesktop(
         configureButton(showDesktopButton, "", "Show desktop")
         showDesktopButton.background = pressable(Color.TRANSPARENT, 0x13ffffff, 0, 0x33ffffff)
         showDesktopButton.setOnClickListener { if (runtimeReady) showDesktop() }
-        taskbar.addView(showDesktopButton, LinearLayout.LayoutParams(dp(8), ViewGroup.LayoutParams.MATCH_PARENT))
+        // Keep the Windows-style edge control visually quiet, but give it a usable touch/
+        // Accessibility target. The old 8dp strip was only ~15px wide on the low-end test phone
+        // and injected/assistive taps could land without dispatching the Button click listener.
+        taskbar.addView(showDesktopButton, LinearLayout.LayoutParams(dp(24), ViewGroup.LayoutParams.MATCH_PARENT))
 
         chromeHost.addView(taskbar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, taskbarHeight).apply {
             gravity = Gravity.BOTTOM

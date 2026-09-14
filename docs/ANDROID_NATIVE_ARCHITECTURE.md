@@ -14,7 +14,7 @@ Android MainActivity
     -> RiftBrowserWindow focused native renderer surface
 ```
 
-`MainActivity` hosts `RiftNativeDesktop` as the visible shell. The trusted RiftOS WebView is still served through `WebViewAssetLoader`, but it lives inside the native desktop's content layer and is used as a compatibility app-content canvas rather than as the desktop/window manager. Native Android owns launcher/taskbar/window chrome, bounds, focus, move/resize, minimize/maximize/restore/close and Accessibility controls.
+`MainActivity` hosts `RiftNativeDesktop` as the visible shell and is declared Android `singleTask`: one APK process must expose one authoritative RiftOS desktop/kernel/WebView runtime, not multiple independent ProcessTables. The trusted RiftOS WebView is still served through `WebViewAssetLoader`, but it lives inside the native desktop's content layer and is used as a compatibility app-content canvas rather than as the desktop/window manager. Native Android owns launcher/taskbar/window chrome, bounds, focus, move/resize, minimize/maximize/restore/close and Accessibility controls.
 
 ## Storage
 
