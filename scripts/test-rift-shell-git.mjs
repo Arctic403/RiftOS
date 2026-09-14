@@ -133,3 +133,17 @@ assert.equal(files.has('/home/.riftgit-current'),true);
 assert.equal(Buffer.from(files.get('/home/.riftgit-current'),'base64').toString(),'/home/RiftOS-main');
 console.log('ok - workspace status and push work without attaching or changing current repo');
 console.log('ok - no auth, local edits and remote races stop before publishing');
+
+// If the fixed workspace is already attached, workspace push must refresh that local metadata
+// without stealing the user's current-repo pointer.
+remoteHead='head2';
+await fs.writeText('/workspace/RiftOS-main/.riftgit.json',JSON.stringify({format:'riftgit-v3',owner:'Arctic403',repo:'RiftOS',full:'Arctic403/RiftOS',branch:'main',root:'/workspace/RiftOS-main',headSha:'head2',tracked:{'README.md':{blobSha:remoteReadme,size:7,mode:'100644'}}},null,2));
+await fs.writeText('/home/.riftgit-current','/home/RiftOS-main');
+await fs.writeText('/workspace/RiftOS-main/src/feature.bin','attached workspace update');
+output.length=0;
+await workspace(['push','refresh attached workspace metadata'],print);
+const refreshedWorkspaceMeta=JSON.parse(Buffer.from(files.get('/workspace/RiftOS-main/.riftgit.json'),'base64').toString());
+assert.equal(refreshedWorkspaceMeta.headSha,'commit1');
+assert.equal(refreshedWorkspaceMeta.tracked['src/feature.bin'].blobSha,gitSha(encode('attached workspace update')));
+assert.equal(Buffer.from(files.get('/home/.riftgit-current'),'base64').toString(),'/home/RiftOS-main');
+console.log('ok - workspace push refreshes existing workspace metadata without changing current repo');

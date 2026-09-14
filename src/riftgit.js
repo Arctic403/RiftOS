@@ -73,7 +73,14 @@ async function loadMeta(cwd){
   if(current?.content){const pointed=await findMeta(current.content);if(pointed)return pointed;throw new Error(`Saved repo path no longer exists: ${current.content}. Run "git init owner/repo branch" inside the project folder.`);}
   throw new Error("No repo is attached here. cd into the project and run: git init owner/repo [branch]");
 }
-async function saveMeta(meta){meta.format="riftgit-v3";meta.root=normalizePath(meta.root);meta.updatedAt=Date.now();await fs.write(`${meta.root}/${META_NAME}`,JSON.stringify(meta,null,2));await fs.write(CURRENT_PATH,meta.root);}
+async function writeMeta(meta){meta.format="riftgit-v3";meta.root=normalizePath(meta.root);meta.updatedAt=Date.now();await fs.write(`${meta.root}/${META_NAME}`,JSON.stringify(meta,null,2));}
+async function saveMeta(meta){await writeMeta(meta);await fs.write(CURRENT_PATH,meta.root);}
+async function refreshAttachedWorkspaceMeta(meta){
+  const file=await fs.get(`${meta.root}/${META_NAME}`).catch(()=>null);if(!file?.content)return false;
+  let attached;try{attached=JSON.parse(file.content);}catch{return false;}
+  if(attached.owner!==meta.owner||attached.repo!==meta.repo||attached.branch!==meta.branch)return false;
+  await writeMeta({...attached,...meta,root:meta.root});return true;
+}
 function ignoredRelative(path){return path===META_NAME||path===".git"||path.startsWith(".git/");}
 async function localFileMap(meta){
   const rows=await fs.list(meta.root),map=new Map();for(const row of rows){if(row.kind!=="file")continue;const rel=row.path.slice(meta.root.length).replace(/^\/+/,"");if(rel&&!ignoredRelative(rel))map.set(rel,row);}return map;
@@ -195,7 +202,7 @@ async function atomicPush(message,print,cwd,initialMeta=null){
   const commit=await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/commits`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:message||meta.pendingMessage||"RiftOS workspace update",tree:tree.sha,parents:[remote.commit.sha]})});
   await api(`/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.repo)}/git/refs/heads/${meta.branch.split("/").map(encodeURIComponent).join("/")}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({sha:commit.sha,force:false})});
   for(const path of deleted)delete meta.tracked[path];for(const path of [...modified,...untracked])meta.tracked[path]={blobSha:newBlobShas.get(path),size:Number((await fs.stat(`${meta.root}/${path}`))?.size||0),mode:meta.tracked?.[path]?.mode||"100644"};
-  meta.headSha=commit.sha;delete meta.pendingMessage;await saveMeta(meta);await checkpointWorkspaceRecords(meta.root,"git:push",commit.sha);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
+  meta.headSha=commit.sha;delete meta.pendingMessage;if(initialMeta)await refreshAttachedWorkspaceMeta(meta);else await saveMeta(meta);await checkpointWorkspaceRecords(meta.root,"git:push",commit.sha);print(`Push complete: ${commit.sha.slice(0,12)} · one Git commit.`);
 }
 async function workspaceDiff(options={}){
   const meta=await workspaceState(),state=await statusFor(meta,()=>{},true);
