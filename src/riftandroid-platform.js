@@ -22,6 +22,7 @@ const api=Object.freeze({
   browser:url=>globalThis.RiftDesktop?.openBrowser?.(String(url||"https://chatgpt.com"))??core.native.call("browser.window.open",{url:String(url||"https://chatgpt.com")}),
   preview:(root="",entry="index.html")=>core.native.call("preview.open",{root:String(root||""),entry:String(entry||"index.html")}),
   notify:(title,body="")=>core.native.call("notifications.show",{title:String(title||"RiftOS"),body:String(body||"")}),
+  scheduleNotification:(title,body="",seconds=1)=>core.native.call("notifications.schedule",{title:String(title||"RiftOS"),body:String(body||""),seconds:Math.max(1,Number(seconds)||1)}),
   requestNotifications:()=>core.native.call("notifications.request",{}),
   secrets:Object.freeze({
     get:key=>core.native.call("secrets.get",{key:String(key)}),
