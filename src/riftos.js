@@ -709,7 +709,25 @@ function parseDevLabAgentRequest(args,state){
   throw new Error(`unknown riftos-agent devlab action: ${action}`);
 }
 async function runRiftOsAgentShell(args,print,state){
-  if((args[0]||"").toLowerCase()==="devlab"){
+  const first=(args[0]||"help").toLowerCase();
+  if(first==="help")return print(`RiftOS self UI agent\nriftos-agent status\nriftos-agent open\nriftos-agent tree [limit]\nriftos-agent click <text|content-description|view-id>\nriftos-agent tap <x> <y>\nriftos-agent swipe <x1> <y1> <x2> <y2> [ms]\nriftos-agent type <target> <text>\nriftos-agent type-focused <text>\nriftos-agent keyboard status\nriftos-agent keyboard key <label>\nriftos-agent back\nriftos-agent devlab help`);
+  if(first==="type-focused"){
+    args.shift();if(!args.length)throw new Error("usage: riftos-agent type-focused <text>");
+    const result=await core.native.call("riftos.agent",{op:"type-focused",text:args.join(" ")});print(JSON.stringify(result,null,2));return result;
+  }
+  if(first==="keyboard"){
+    args.shift();const action=(args.shift()||"help").toLowerCase();
+    if(action==="help")return print(`RiftOS Samsung Keyboard companion\nriftos-agent keyboard status\nriftos-agent keyboard key <label>`);
+    if(action==="status"){
+      const result=await core.native.call("riftos.agent",{op:"keyboard",action:"status"});print(JSON.stringify(result,null,2));return result;
+    }
+    if(action==="key"){
+      if(!args.length)throw new Error("usage: riftos-agent keyboard key <label>");
+      const result=await core.native.call("riftos.agent",{op:"keyboard",action:"key",target:args.join(" ")});print(JSON.stringify(result,null,2));return result;
+    }
+    throw new Error(`unknown riftos-agent keyboard action: ${action}`);
+  }
+  if(first==="devlab") {
     args.shift();const request=parseDevLabAgentRequest(args,state);
     if(request.action==="help")return print(`RiftOS local-agent Dev Lab controller\nriftos-agent devlab status\nriftos-agent devlab open\nriftos-agent devlab load <project-path>\nriftos-agent devlab staged\nriftos-agent devlab stage <project-path> <text>\nriftos-agent devlab stage-file <project-path> <riftfs-source-file>\nriftos-agent devlab delete <project-path>\nriftos-agent devlab unstage <project-path>\nriftos-agent devlab css <project-path>\nriftos-agent devlab css-off <project-path>\nriftos-agent devlab run <script>\nriftos-agent devlab run-file <riftfs-script-file>\nriftos-agent devlab runs [limit]\nriftos-agent devlab snapshot [note]\nriftos-agent devlab snapshots [limit]\nriftos-agent devlab load-snapshot [snapshot-id|latest]\nriftos-agent devlab preview [snapshot-id|latest]\nriftos-agent devlab publish [snapshot-id|latest]\nriftos-agent devlab reset`);
     const result=await core.native.call("riftos.agent",{op:"devlab",request});print(JSON.stringify(result,null,2));return result;

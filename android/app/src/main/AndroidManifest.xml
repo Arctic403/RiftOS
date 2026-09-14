@@ -6,6 +6,7 @@
 
     <queries>
         <package android:name="com.vortex3d.app" />
+        <package android:name="com.samsung.android.honeyboard" />
     </queries>
 
     <application

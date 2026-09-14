@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.util.Base64
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.ArrayDeque
@@ -53,6 +54,41 @@ private class RiftScopedLocalAgent(
 
     fun ensureActive(context: Context) {
         requireTargetServiceAndRoot(context)
+    }
+
+    fun typeFocused(context: Context, text: String): JSONObject {
+        require(text.length <= MAX_TEXT_CHARS) { "$displayName agent text exceeds $MAX_TEXT_CHARS characters" }
+        val (_, root) = requireTargetServiceAndRoot(context)
+        val node = findFocusedEditable(root)
+            ?: throw IllegalStateException("$displayName has no focused editable field")
+        rejectPassword(node)
+        val bundle = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        }
+        val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)
+        if (!ok) throw IllegalStateException("Android rejected focused text input for $displayName")
+        SystemClock.sleep(ACTION_SETTLE_MS)
+        return JSONObject()
+            .put("scope", targetPackage)
+            .put("typed", true)
+            .put("input", "focused_editable")
+            .put("characters", text.length)
+            .put("settled_ms", ACTION_SETTLE_MS)
+    }
+
+    private fun findFocusedEditable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val matches = LinkedHashMap<String, AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (node.packageName?.toString() == targetPackage && node.isVisibleToUser && node.isEnabled && node.isEditable && node.isFocused) {
+                matches.putIfAbsent(nodeIdentity(node), node)
+            }
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
+        }
+        if (matches.size > 1) throw IllegalStateException("$displayName exposes multiple focused editable fields")
+        return matches.values.firstOrNull()
     }
 
     private fun status(context: Context): JSONObject {
@@ -458,6 +494,139 @@ private object RiftDevLabLocalAgent {
     }
 }
 
+private object RiftOsKeyboardAgent {
+    private const val RIFTOS_PACKAGE = "com.riftos.app"
+    private const val SAMSUNG_KEYBOARD_PACKAGE = "com.samsung.android.honeyboard"
+    private const val MAX_KEY_LABEL_CHARS = 24
+    private val functionKeys = setOf("space", "enter", "done", "next", "go", "search", "shift", "backspace", "symbols", "abc")
+
+    fun execute(context: Context, args: JSONObject): JSONObject {
+        return when (val action = args.optString("action").trim().lowercase()) {
+            "status" -> status(context)
+            "key" -> pressKey(context, args)
+            else -> throw IllegalArgumentException("Unsupported RiftOS keyboard-agent action: $action")
+        }
+    }
+
+    private fun status(context: Context): JSONObject {
+        val service = RiftVortexAccessibilityService.current()
+        val windows = service?.windows.orEmpty()
+        val appRoot = findWindowRoot(windows, AccessibilityWindowInfo.TYPE_APPLICATION, RIFTOS_PACKAGE)
+        val keyboardRoot = findWindowRoot(windows, AccessibilityWindowInfo.TYPE_INPUT_METHOD, SAMSUNG_KEYBOARD_PACKAGE)
+        val focused = appRoot?.let(::findFocusedEditable)
+        val installed = runCatching { context.packageManager.getApplicationInfo(SAMSUNG_KEYBOARD_PACKAGE, 0) }.isSuccess
+        return JSONObject()
+            .put("scope", RIFTOS_PACKAGE)
+            .put("keyboard_package", SAMSUNG_KEYBOARD_PACKAGE)
+            .put("keyboard_installed", installed)
+            .put("accessibility_connected", service != null)
+            .put("riftos_window_visible", appRoot != null)
+            .put("keyboard_visible", keyboardRoot != null)
+            .put("focused_editable", focused != null)
+            .put("password_blocked", focused?.isPassword == true)
+    }
+
+    private fun pressKey(context: Context, args: JSONObject): JSONObject {
+        val rawTarget = args.optString("target").trim()
+        require(rawTarget.isNotEmpty()) { "keyboard key target is required" }
+        require(rawTarget.length <= MAX_KEY_LABEL_CHARS) { "keyboard key target is too long" }
+        val target = normalizeKey(rawTarget)
+        val service = RiftVortexAccessibilityService.current()
+            ?: throw IllegalStateException("RiftOS Local UI Agent accessibility service is not enabled")
+        SystemClock.sleep(180L)
+        val windows = service.windows
+        val appRoot = findWindowRoot(windows, AccessibilityWindowInfo.TYPE_APPLICATION, RIFTOS_PACKAGE)
+            ?: throw IllegalStateException("RiftOS must be visible before the keyboard companion can act")
+        val focused = findFocusedEditable(appRoot)
+            ?: throw IllegalStateException("RiftOS has no focused editable field")
+        require(!focused.isPassword) { "Password fields are not available to the local UI agent" }
+        val keyboardRoot = findWindowRoot(windows, AccessibilityWindowInfo.TYPE_INPUT_METHOD, SAMSUNG_KEYBOARD_PACKAGE)
+            ?: throw IllegalStateException("Samsung Keyboard is not visible")
+        val key = findKey(keyboardRoot, target)
+            ?: throw IllegalArgumentException("Samsung Keyboard key not found: $rawTarget")
+        val clicked = key.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        if (!clicked) throw IllegalStateException("Android rejected Samsung Keyboard key: $rawTarget")
+        SystemClock.sleep(400L)
+        return JSONObject()
+            .put("scope", RIFTOS_PACKAGE)
+            .put("keyboard_package", SAMSUNG_KEYBOARD_PACKAGE)
+            .put("clicked", true)
+            .put("target", rawTarget)
+            .put("input", "keyboard_accessibility_click")
+            .put("settled_ms", 400L)
+    }
+
+    private fun findWindowRoot(windows: List<AccessibilityWindowInfo>, type: Int, packageName: String): AccessibilityNodeInfo? {
+        for (window in windows) {
+            if (window.type != type) continue
+            val root = window.root ?: continue
+            if (root.packageName?.toString() == packageName && root.isVisibleToUser) return root
+        }
+        return null
+    }
+
+    private fun findFocusedEditable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val matches = LinkedHashMap<String, AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (node.packageName?.toString() == RIFTOS_PACKAGE && node.isVisibleToUser && node.isEnabled && node.isEditable && node.isFocused) {
+                matches.putIfAbsent(identity(node), node)
+            }
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
+        }
+        if (matches.size > 1) throw IllegalStateException("RiftOS exposes multiple focused editable fields")
+        return matches.values.firstOrNull()
+    }
+
+    private fun findKey(root: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val matches = LinkedHashMap<String, AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (node.packageName?.toString() == SAMSUNG_KEYBOARD_PACKAGE && node.isVisibleToUser && node.isEnabled && node.isClickable) {
+                val label = keyLabel(node)
+                if (label.isNotEmpty() && keyEligible(label) && normalizeKey(label) == target) {
+                    matches.putIfAbsent(identity(node), node)
+                }
+            }
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
+        }
+        if (matches.size > 1) {
+            throw IllegalArgumentException("Samsung Keyboard key is ambiguous; use a more specific key label")
+        }
+        return matches.values.firstOrNull()
+    }
+
+    private fun keyLabel(node: AccessibilityNodeInfo): String {
+        if (node.isPassword) return ""
+        return node.contentDescription?.toString()?.trim().takeUnless { it.isNullOrEmpty() }
+            ?: node.text?.toString()?.trim().orEmpty()
+    }
+
+    private fun keyEligible(label: String): Boolean {
+        val normalized = normalizeKey(label)
+        return normalized in functionKeys || normalized.length <= 3
+    }
+
+    private fun normalizeKey(value: String): String {
+        val clean = value.trim().lowercase().replace(Regex("\\s+"), " ")
+        return when (clean) {
+            "spacebar" -> "space"
+            "return" -> "enter"
+            "delete", "del" -> "backspace"
+            else -> clean
+        }
+    }
+
+    private fun identity(node: AccessibilityNodeInfo): String {
+        val bounds = Rect().also(node::getBoundsInScreen)
+        return "${node.windowId}:${node.className}:${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}"
+    }
+}
+
 /** RiftOS-self-only fixed local UI authority used for shell-driven UI acceptance testing. */
 object RiftOsLocalAgent {
     private const val TARGET_PACKAGE = "com.riftos.app"
@@ -467,6 +636,8 @@ object RiftOsLocalAgent {
     fun execute(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
         if (op == "devlab") return RiftDevLabLocalAgent.execute(args)
+        if (op == "keyboard") return RiftOsKeyboardAgent.execute(context, args)
+        if (op == "type-focused") return delegate.typeFocused(context, args.optString("text"))
         if (op == "back" && context is MainActivity) {
             delegate.ensureActive(context)
             val latch = CountDownLatch(1)
