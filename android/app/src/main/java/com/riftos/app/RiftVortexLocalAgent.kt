@@ -189,7 +189,11 @@ private class RiftScopedLocalAgent(
         val ok = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
         if (!ok) throw IllegalStateException("Android rejected Back while $displayName was foreground")
         SystemClock.sleep(ACTION_SETTLE_MS)
-        return JSONObject().put("scope", targetPackage).put("back", true).put("settled_ms", ACTION_SETTLE_MS)
+        return JSONObject()
+            .put("scope", targetPackage)
+            .put("back", true)
+            .put("input", "accessibility_global_back")
+            .put("settled_ms", ACTION_SETTLE_MS)
     }
 
     private fun requireTargetRoot(context: Context): AccessibilityNodeInfo = requireTargetServiceAndRoot(context).second
@@ -390,14 +394,18 @@ object RiftOsLocalAgent {
         if (args.optString("op").trim().equals("back", ignoreCase = true) && context is MainActivity) {
             delegate.ensureActive(context)
             val latch = CountDownLatch(1)
+            var failure: Throwable? = null
             context.runOnUiThread {
                 try {
                     context.onBackPressed()
+                } catch (error: Throwable) {
+                    failure = error
                 } finally {
                     latch.countDown()
                 }
             }
             require(latch.await(2_000L, TimeUnit.MILLISECONDS)) { "Timed out dispatching RiftOS self Back" }
+            failure?.let { throw IllegalStateException("RiftOS self Back failed", it) }
             SystemClock.sleep(SELF_BACK_SETTLE_MS)
             return JSONObject()
                 .put("scope", TARGET_PACKAGE)
