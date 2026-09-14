@@ -173,6 +173,7 @@ for (const [name, command] of Object.entries(pkg.scripts || {})) {
 // Native route sources are also used by the trust-boundary checks below.
 const dispatcher = read('android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt');
 const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
+const nativeDesktopSource = read('android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt');
 
 // RiftShell MCP execution must stay in the trusted shell WebView, never the guest browser asset.
 const browserAdapter = read('android/app/src/main/assets/riftbrowser-mcp-app.js');
@@ -186,10 +187,18 @@ if (browserMcpBridgeSource.includes('RiftShellBridge(') || browserMcpBridgeSourc
 if (!shellBridgeSource.includes('private val shellWebView: WebView') || !shellBridgeSource.includes('SHELL_TIMEOUT_MS')) failures.push('RiftShellBridge is not bound to the trusted shell WebView with timeout protection');
 
 // Native method callers and handlers must agree in both directions.
+const nativeDesktopHandlers = routeMethods(
+  nativeDesktopSource,
+  'fun handle(method: String, args: JSONObject): JSONObject = when (method)',
+  'fun handleBack(): Boolean'
+);
+const nativeDesktopRouted = mainActivity.includes('method.startsWith("desktop.")') && mainActivity.includes('nativeDesktop.handle(method, args)');
+if (!nativeDesktopRouted) failures.push('MainActivity does not own the bounded desktop.* router to RiftNativeDesktop');
 const supported = new Set([
   ...routeMethods(dispatcher, 'fun handleAsync(raw: String)', 'fun completeDirectoryPick'),
   ...routeMethods(dispatcher, 'private fun dispatch(method: String', 'private fun normalizeSegments'),
   ...routeMethods(mainActivity, 'private fun handleKernelRequest(raw: String)', 'private fun runKernelCommand'),
+  ...(nativeDesktopRouted ? nativeDesktopHandlers : []),
 ]);
 const nativeCallers = new Set();
 for (const file of srcModules.map(name => `src/${name}`)) {
@@ -206,10 +215,24 @@ if (shellUi.includes('core.native.call(`browser.window.${method}`')) {
 for (const match of shellUi.matchAll(/\brunLocalAgentShell\(\s*["'][^"']+["']\s*,\s*["']([^"']+)["']/g)) {
   nativeCallers.add(match[1]);
 }
+// Native desktop calls use nativeDesktopCall("window.focus", ...), which expands to
+// core.native.call(`desktop.${method}`, ...). Resolve those literals so typos still fail CI.
+for (const match of shellUi.matchAll(/\bnativeDesktopCall\(\s*["']([^"']+)["']/g)) {
+  nativeCallers.add(`desktop.${match[1]}`);
+}
 for (const method of nativeCallers) {
   if (!supported.has(method)) failures.push(`JavaScript native call has no Android handler: ${method}`);
 }
-const intentionalQueryHandlers = new Set(['browser.window.state', 'workspace.watch.state']);
+const intentionalQueryHandlers = new Set([
+  'browser.window.state',
+  'workspace.watch.state',
+  // These native-desktop routes are driven by Android chrome controls or the dynamic
+  // RiftNativeDesktop.request facade rather than a fixed literal JS call site.
+  'desktop.window.minimize',
+  'desktop.window.maximize',
+  'desktop.window.restore',
+  'desktop.window.state',
+]);
 for (const method of supported) {
   if (!nativeCallers.has(method) && !intentionalQueryHandlers.has(method)) failures.push(`Android native handler has no RiftOS caller/documented query role: ${method}`);
 }

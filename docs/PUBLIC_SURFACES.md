@@ -16,9 +16,10 @@ This inventory documents deliberate `Rift*` globals/bridge names. A zero-consume
 | `RiftAndroidBack` | `riftandroid-platform.js` | Callback invoked by native Android Back handling before the Activity exits. |
 | `RiftApps` | `riftapps.js` | Installed `.rift` package registry/open/install API; consumed by shell, Files and RiftRT. |
 | `RiftAppFiles` | `riftapps-files.js` | Package file import/export helper surface for UI/developer use. |
-| `RiftDesktop` | `riftos.js` + `riftdesktop-android.js` | Built-in app/window operations plus permanent Android desktop controls. |
-| `RiftDesktopPlatform` | `riftdesktop-android-compat.js` | Read-only desktop/platform compatibility descriptor. |
-| `RiftDesktopHost` | `riftdesktop-window-host.js` | Window-host compatibility/control surface used by integrations that need shell-window state. |
+| `RiftDesktop` | `riftos.js` (+ legacy `riftdesktop-android.js` fallback) | Built-in app operations, persisted desktop settings and the public native/legacy desktop facade. |
+| `RiftNativeDesktop` | `riftos.js` + Android `RiftNativeDesktop.kt` | Trusted-shell native-desktop state/request facade. Android owns window chrome/geometry; this surface mirrors authoritative state and sends bounded `desktop.*` requests. |
+| `RiftDesktopPlatform` | `riftdesktop-native-compat.js` (+ legacy `riftdesktop-android-compat.js`) | Read-only descriptor for the active Android-native or fallback desktop compatibility layer. |
+| `RiftDesktopHost` | `riftdesktop-window-host.js` | Legacy/fallback window-host compatibility surface; not authoritative when `RiftNativeDesktop` is active. |
 | `RiftOSWindowManager` | `riftos.js`, wrapped by `riftrt.js` | Canonical window/process registration API shared with RiftRT. |
 | `RiftGit` | `riftgit.js` | RiftShell/project GitHub workflow surface. |
 | `RiftShellBatch` | `riftshell-batch.js` | Batch parser/executor consumed by RiftShell. |
