@@ -9,6 +9,7 @@ RiftShell is the interactive command surface for navigating and operating the wi
 - shell parser/command dispatcher: `runShell()` and helpers in `src/riftos.js`.
 - transactional batch engine: `src/riftshell-batch.js`.
 - Git subcommands: `src/riftgit.js`.
+- local-first `rift repo|vault|build|memory` dispatch: `src/riftlocal-platform.js` plus its four subsystem modules.
 - MCP shell bridge: `RiftShellBridge.kt` -> trusted-shell-WebView execution/result exchange owned by `MainActivity`.
 
 ## Namespace
@@ -17,7 +18,7 @@ Unlike normal MCP filesystem tools, RiftShell can operate on RiftOS roots such a
 
 ## Command flow
 
-The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relative to shell `cwd`. Filesystem commands call `RiftOSCore.fs`; Git commands delegate to RiftGit; `batch` delegates to `RiftShellBatch`; `open` resolves normal launcher targets plus the dynamic `mcp` and `riftrt` system surfaces and errors instead of claiming success for an unknown app; the `vortex` command family delegates to the native `vortex.bridge` Binder client documented in `../vortex-bridge/README.md`; `vortex-agent` delegates to the fixed Vortex-only local Android UI agent and `riftos-agent` delegates to the fixed RiftOS-self UI agent documented in `../vortex-agent/README.md`. `riftos-agent devlab ...` is a structured self-agent controller that reaches the authoritative Dev Lab API through the current shell bridge without exposing arbitrary shell execution; `chat` delegates to the local `.riftchat` handoff store documented in `../chat-handoff/README.md`.
+The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relative to shell `cwd`. Filesystem commands call `RiftOSCore.fs`; Git commands delegate to RiftGit; `batch` delegates to `RiftShellBatch`; `open` resolves normal launcher targets plus the dynamic `mcp` and `riftrt` system surfaces and errors instead of claiming success for an unknown app; the `vortex` command family delegates to the native `vortex.bridge` Binder client documented in `../vortex-bridge/README.md`; `vortex-agent` delegates to the fixed Vortex-only local Android UI agent and `riftos-agent` delegates to the fixed RiftOS-self UI agent documented in `../vortex-agent/README.md`. `riftos-agent devlab ...` is a structured self-agent controller that reaches the authoritative Dev Lab API through the current shell bridge without exposing arbitrary shell execution; `chat` delegates to the local `.riftchat` handoff store documented in `../chat-handoff/README.md`. The `rift` family delegates to `RiftLocalPlatform`, which routes `repo`, `vault`, `build` and `memory` without expanding the MCP tool catalog.
 
 ## Atomic batch engine
 
@@ -36,7 +37,7 @@ The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relat
 - Shell MCP bridge requires explicit local write permission and must not become raw Android shell access.
 - RiftOS must have exactly one `MainActivity` shell runtime (`singleTask`); process-wide MCP shell ownership follows that shell on resume and window focus, unregister is identity-checked, and destroyed bridges reject future execution.
 - Git remote actions are handled by RiftGit's own high-level command semantics, not faked as locally reversible file operations.
-- Live `vortex` / `vortex-agent` / `riftos-agent` operations and `chat` bundle creation are explicitly listed as non-reversible and rejected by atomic batch preflight; they cannot truthfully participate in the batch engine's ordinary RiftFS rollback contract.
+- Live `vortex` / `vortex-agent` / `riftos-agent` operations, `chat` bundle creation and the `rift` local-platform family are explicitly listed as non-reversible and rejected by atomic batch preflight; repo/vault/build/memory operations use their own transaction/durability semantics and cannot truthfully participate in the batch engine's ordinary RiftFS rollback contract.
 
 ## Failure signatures
 
@@ -55,4 +56,4 @@ MCP/native shell bridge -> `RiftShellBridge.kt`, `MainActivity`'s trusted-shell 
 
 ## Validation
 
-Run `scripts/test-rift-shell-batch.mjs` and `scripts/test-rift-shell-git.mjs`. Test cwd changes, quoted arguments, failure rollback, dry-run, permission denial and MCP shell execution after any shell protocol change. On Android, also force/reproduce MainActivity reordering or recreation and confirm MCP `ps` matches the visible Task Manager before and after resume/destroy transitions.
+Run `scripts/test-rift-shell-batch.mjs`, `scripts/test-rift-shell-git.mjs` and `scripts/test-rift-local-platform.mjs`. Test cwd changes, quoted arguments, failure rollback, dry-run, permission denial and MCP shell execution after any shell protocol change. On Android, also force/reproduce MainActivity reordering or recreation and confirm MCP `ps` matches the visible Task Manager before and after resume/destroy transitions.

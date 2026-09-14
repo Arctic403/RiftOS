@@ -49,6 +49,10 @@ When behavior changes, update the owning system README in the same patch. Histor
 | Runtime capability report | [`systems/runtime-capabilities/README.md`](systems/runtime-capabilities/README.md) | `src/riftruntime.js` |
 | RiftShell | [`systems/shell/README.md`](systems/shell/README.md) | shell in `riftos.js`, `riftshell-batch.js` |
 | RiftGit | [`systems/git/README.md`](systems/git/README.md) | `src/riftgit.js` |
+| RiftRepo | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | `src/riftrepo.js` |
+| RiftVault | [`systems/riftvault/README.md`](systems/riftvault/README.md) | `src/riftvault.js` |
+| RiftBuild | [`systems/riftbuild/README.md`](systems/riftbuild/README.md) | `src/riftbuild.js` |
+| RiftMemory | [`systems/riftmemory/README.md`](systems/riftmemory/README.md) | `src/riftmemory-control.js` |
 | Files app | [`systems/files-app/README.md`](systems/files-app/README.md) | `openFiles()` in `src/riftos.js` |
 | Settings | [`systems/settings/README.md`](systems/settings/README.md) | `openSettings()` in `src/riftos.js` |
 | Preview | [`systems/preview/README.md`](systems/preview/README.md) | `RiftPreviewActivity.kt` |

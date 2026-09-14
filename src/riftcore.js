@@ -62,7 +62,7 @@ class RiftNativeBridge extends EventTarget{
   }
   timeoutFor(method){
     if(method==="files.pickDirectory")return 10*60*1000;
-    if(method==="fs.copy"||method==="fs.move"||method==="fs.remove")return 15*60*1000;
+    if(method==="fs.copy"||method==="fs.move"||method==="fs.remove"||method==="fs.sha256")return 15*60*1000;
     if(method==="fs.list"||method==="fs.readText"||method==="fs.writeText"||method==="fs.readBase64"||method==="fs.writeBase64")return 2*60*1000;
     if(method==="vortex.bridge")return 90*1000;
     if(method==="vortex.session")return 95*1000;
@@ -235,6 +235,11 @@ class RiftFS extends EventTarget{
     const target=this.route(value);
     if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("Binary reads require a file path");
     return this.native.call("fs.readBase64",{mountId:target.mountId,path:target.relative});
+  }
+  async sha256(value){
+    const target=this.route(value);
+    if(target.path==="/mounts"||target.mount&&!target.relative)throw new Error("SHA-256 requires a file path");
+    return this.native.call("fs.sha256",{mountId:target.mountId,path:target.relative});
   }
   async write(value,content){
     const target=this.route(value);

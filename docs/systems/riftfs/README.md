@@ -33,13 +33,14 @@ consumer
       -> DocumentFile/ContentResolver for SAF mount
 ```
 
-Large copy/move work is queued and progress-aware. Provider-native copy/move is attempted where possible before streaming fallback.
+Large copy/move work is queued and progress-aware. Provider-native copy/move is attempted where possible before streaming fallback. `RiftFS.sha256(path)` is a narrow native streaming digest operation for both app-private RiftFS and SAF files; it reads in bounded native buffers and returns only the 64-character digest so large repository/vault objects never need to cross the WebView bridge as base64.
 
 ## Critical invariants
 
 - Normalize path segments; reject traversal rather than silently escaping a root.
 - Do not mix MCP's narrower workspace authority with general RiftFS authority.
 - Preserve internal-vs-mount routing semantics.
+- SHA-256 must stream from the resolved internal/SAF file and return only the digest; do not reimplement large-file hashing by reading full base64 payloads into JavaScript.
 - Writes should not report success before native commit completes.
 - Move/copy must preserve verification and progress semantics for large trees.
 - SAF access depends on persisted URI permission; a provider can disappear or revoke access independently.
@@ -62,7 +63,7 @@ Large copy/move work is queued and progress-aware. Provider-native copy/move is 
 
 ## Validation
 
-Exercise internal file create/read/write/delete, recursive list, directory tree copy/move, mount-to-internal and internal-to-mount transfers, ZIP/unzip, and provider cancellation/revocation. For destructive fixes use a workspace snapshot first.
+Exercise internal file create/read/write/delete, streaming SHA-256 on app-private and SAF files (including files larger than the binary bridge limit), recursive list, directory tree copy/move, mount-to-internal and internal-to-mount transfers, ZIP/unzip, and provider cancellation/revocation. For destructive fixes use a workspace snapshot first.
 
 ## Safe extension points
 

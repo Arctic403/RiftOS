@@ -100,9 +100,14 @@ const adapterIndex = entry.indexOf('import("./riftworkspace-android-adapter.js")
 const liveIndex = entry.indexOf('import("./riftworkspace-live-host.js")');
 if (!(webIndex >= 0 && adapterIndex > webIndex && liveIndex > adapterIndex)) failures.push('workspace module load order must be web -> android-adapter -> live-host');
 const gitIndex = entry.indexOf('import("./riftgit.js")');
+const vaultIndex = entry.indexOf('import("./riftvault.js")');
+const repoIndex = entry.indexOf('import("./riftrepo.js")');
+const memoryIndex = entry.indexOf('import("./riftmemory-control.js")');
+const buildIndex = entry.indexOf('import("./riftbuild.js")');
+const localPlatformIndex = entry.indexOf('import("./riftlocal-platform.js")');
 const devLabIndex = entry.indexOf('import("./riftdevlab.js")');
 const shellIndex = entry.indexOf('import("./riftos.js")');
-if (!(devLabIndex > liveIndex && devLabIndex > gitIndex && shellIndex > devLabIndex)) failures.push('Rift Dev Lab must load after Workspace/Git and before shell app routing');
+if (!(vaultIndex > gitIndex && repoIndex > vaultIndex && memoryIndex > repoIndex && buildIndex > memoryIndex && localPlatformIndex > buildIndex && devLabIndex > localPlatformIndex && devLabIndex > liveIndex && shellIndex > devLabIndex)) failures.push('local-first platform must load Git -> Vault -> Repo -> Memory -> Build -> aggregator -> Dev Lab -> shell');
 const workspaceWeb = read('src/riftworkspace-web.js');
 const workspaceAdapter = read('src/riftworkspace-android-adapter.js');
 if (!workspaceWeb.includes('const activeWorkspace=window.RiftWorkspace||workspace;')) failures.push('RiftWorkspaceJSON does not resolve the active Android adapter dynamically');

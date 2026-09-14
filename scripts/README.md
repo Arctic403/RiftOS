@@ -9,6 +9,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-raw-protocol.mjs` — browser raw tool-call parser/protocol.
 - `test-rift-shell-batch.mjs` — local shell batch preflight/rollback.
 - `test-rift-shell-git.mjs` — RiftGit/shell integration.
+- `test-rift-local-platform.mjs` — RiftRepo/RiftVault/RiftBuild/RiftMemory wiring, fail-closed capability and shell-surface contract.
 - `test-rift-app-import.mjs` — `.rift` package import/validation.
 
 When behavior intentionally changes, update the owning subsystem code, README and focused test together. Do not weaken a validator only to make an unintended regression pass.

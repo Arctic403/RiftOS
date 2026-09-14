@@ -27,6 +27,7 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.IOException
 import java.io.OutputStream
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
@@ -147,6 +148,7 @@ class RiftNativeDispatcher(
         "fs.readText" -> readText(args.getString("mountId"), args.optString("path"))
         "fs.writeText" -> writeText(args.getString("mountId"), args.optString("path"), args.optString("text"))
         "fs.readBase64" -> readBase64(args.getString("mountId"), args.optString("path"))
+        "fs.sha256" -> sha256(args.getString("mountId"), args.optString("path"))
         "fs.writeBase64" -> writeBase64(args.getString("mountId"), args.optString("path"), args.optString("base64"))
         "fs.mkdir" -> mkdir(args.getString("mountId"), args.optString("path"))
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
@@ -431,6 +433,34 @@ class RiftNativeDispatcher(
         require(bytes.size.toLong() <= MAX_BRIDGE_BINARY_BYTES) { "File is too large for Git sync (${bytes.size} bytes)" }
         return Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
+    private fun sha256(mountId: String, path: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val input = if (mountId == "__riftfs__") {
+            val file = internalFile(path)
+            require(file.isFile) { "File not found: $path" }
+            BufferedInputStream(file.inputStream(), COPY_BUFFER_BYTES)
+        } else {
+            val doc = externalFile(mountId, path, false)
+            require(doc.isFile) { "File not found: $path" }
+            BufferedInputStream(
+                activity.contentResolver.openInputStream(doc.uri)
+                    ?: throw IllegalStateException("Could not read $path"),
+                COPY_BUFFER_BYTES
+            )
+        }
+        input.use { stream ->
+            val buffer = ByteArray(COPY_BUFFER_BYTES)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { byte ->
+            (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
+    }
+
     private fun writeBase64(mountId: String, path: String, encoded: String): JSONObject {
         val bytes = runCatching { Base64.decode(encoded, Base64.DEFAULT) }
             .getOrElse { throw IllegalArgumentException("Invalid base64 content for $path") }

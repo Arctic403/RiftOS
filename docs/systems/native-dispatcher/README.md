@@ -12,7 +12,7 @@ Call entry: `handleAsync(raw)` -> `dispatch(method,args)`.
 
 ## Responsibilities
 
-The dispatcher implements internal RiftFS and SAF-mounted file operations, stat/list/read/write/base64 IO, mkdir/remove, recursive copy/move, ZIP/unzip, transfer manifest/progress/verification, mount enumeration/unmounting, settings storage, device/storage info, clipboard, share, vibration, allowed Android intents, preview launch and notifications. It also exposes the Android-native `vortex.bridge` route plus bounded `vortex.session` foreground-session route to `RiftVortexBridgeClient`, the separate fixed-scope `vortex.agent` and `riftos.agent` routes to the local UI-agent subsystem, and the local `chat.handoff` route to `RiftChatHandoff`. Vortex protocol/session semantics remain owned by the dedicated bridge subsystem, Android UI automation policy remains owned by the fixed-scope local-agent subsystem, and `.riftchat` schema/path/hash policy remains owned by the chat-handoff subsystem.
+The dispatcher implements internal RiftFS and SAF-mounted file operations, stat/list/read/write/base64 IO, bounded-buffer streaming SHA-256, mkdir/remove, recursive copy/move, ZIP/unzip, transfer manifest/progress/verification, mount enumeration/unmounting, settings storage, device/storage info, clipboard, share, vibration, allowed Android intents, preview launch and notifications. It also exposes the Android-native `vortex.bridge` route plus bounded `vortex.session` foreground-session route to `RiftVortexBridgeClient`, the separate fixed-scope `vortex.agent` and `riftos.agent` routes to the local UI-agent subsystem, and the local `chat.handoff` route to `RiftChatHandoff`. Vortex protocol/session semantics remain owned by the dedicated bridge subsystem, Android UI automation policy remains owned by the fixed-scope local-agent subsystem, and `.riftchat` schema/path/hash policy remains owned by the chat-handoff subsystem.
 
 Local-agent methods run on a dedicated single-thread `agentExecutor`, separate from ordinary native RPCs. This is required because `riftos.agent` Dev Lab control can synchronously re-enter the trusted shell while the Dev Lab operation itself performs nested RiftFS/workspace RPCs; putting both on the normal single native worker would deadlock. Directory/notification picker completion enters from `MainActivity` through dedicated completion methods rather than pretending those asynchronous Android UI operations are synchronous dispatcher calls.
 
@@ -27,6 +27,7 @@ For copy/move, the dispatcher first resolves source/destination mount types. It 
 ## Security and path rules
 
 - Internal paths are resolved inside the RiftFS root.
+- `fs.sha256` accepts only a resolved RiftFS/SAF file and streams it through `MessageDigest`; it must never expose raw Android paths or return file bytes.
 - SAF paths are resolved relative to an explicitly persisted mount.
 - External intents are limited to an allowed scheme set.
 - This dispatcher is available to the trusted RiftOS shell, not directly to guest web pages or MCP.
@@ -49,7 +50,7 @@ Keep semantic policy in the caller when it is not Android-specific. Patch this c
 
 ## Validation
 
-After native dispatcher changes, build the APK and test both app-private storage and at least one SAF provider. Exercise failure/cancel paths as well as success. Transfer changes should test files, nested directories, zero-byte files and cross-provider moves.
+After native dispatcher changes, build the APK and test both app-private storage and at least one SAF provider. Verify `fs.sha256` against known digests, zero-byte files and a file larger than the 48 MiB binary bridge limit. Exercise failure/cancel paths as well as success. Transfer changes should test files, nested directories, zero-byte files and cross-provider moves.
 
 ## Safe extension points
 

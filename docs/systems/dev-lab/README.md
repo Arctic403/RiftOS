@@ -42,7 +42,7 @@ All source publications still require a later APK build/install before the insta
 1. Load a project-relative text source path.
 2. Stage an edit or deletion. The first stage captures the current RiftGit head plus the exact file baseline hash.
 3. Apply reversible live CSS overrides and/or use Live Script to abuse the current runtime; run evidence is retained.
-4. Create a snapshot. Snapshot content is immutable and independent of later editor changes.
+4. Create a snapshot. Snapshot content is immutable and independent of later editor changes. Independent staged-file and evidence reads are queued together so large multi-file snapshots do not pay one WebView/native round trip at a time; ordering, copied bytes and hash guards remain unchanged.
 5. Preview publication. Dev Lab converts the snapshot into one `riftcity-ai-patch` v2 patch targeting `RiftOS-main/**` with `base_sha256` on every source.
 6. Publish. RiftWorkspace validates every baseline, snapshots affected paths, applies the entire patch, creates one rollback history entry, and restores all affected files if any write fails.
 7. Dev Lab stores a publication receipt and clears only staged entries that still exactly match the published snapshot. Newer edits remain staged.

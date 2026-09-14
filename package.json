@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check:transport": "node scripts/validate-rift-wiring.mjs && node scripts/validate-rift-transport.mjs && node scripts/validate-rift-docs.mjs && node scripts/test-rift-workspace-records.mjs && node scripts/test-rift-dev-lab.mjs && node scripts/test-rift-ai-adapters.mjs && node scripts/test-rift-raw-protocol.mjs && node scripts/test-rift-shell-batch.mjs && node scripts/test-rift-shell-git.mjs && node scripts/test-rift-app-import.mjs",
+    "check:transport": "node scripts/validate-rift-wiring.mjs && node scripts/validate-rift-transport.mjs && node scripts/validate-rift-docs.mjs && node scripts/test-rift-workspace-records.mjs && node scripts/test-rift-dev-lab.mjs && node scripts/test-rift-ai-adapters.mjs && node scripts/test-rift-raw-protocol.mjs && node scripts/test-rift-shell-batch.mjs && node scripts/test-rift-shell-git.mjs && node scripts/test-rift-local-platform.mjs && node scripts/test-rift-app-import.mjs",
     "check": "npm run check:transport"
   }
 }

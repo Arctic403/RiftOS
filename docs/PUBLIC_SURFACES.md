@@ -22,6 +22,11 @@ This inventory documents deliberate `Rift*` globals/bridge names. A zero-consume
 | `RiftDesktopHost` | `riftdesktop-window-host.js` | Legacy/fallback window-host compatibility surface; not authoritative when `RiftNativeDesktop` is active. |
 | `RiftOSWindowManager` | `riftos.js`, wrapped by `riftrt.js` | Canonical window/process registration API shared with RiftRT. |
 | `RiftGit` | `riftgit.js` | RiftShell/project GitHub workflow surface. |
+| `RiftVault` | `riftvault.js` | Trusted local-first durable object store: content-addressed objects, manifests, verified restore, provider capability state and vault shell commands. |
+| `RiftRepo` | `riftrepo.js` | Trusted local source-control API for `/workspace`: checkpoints, manifests, history, diffs, branches, tags, releases and safety rollback. |
+| `RiftMemory` | `riftmemory-control.js` | Trusted build/workset cache control plane for local warm-cache prefetch, pin/unpin, status and pruning; does not claim the future C++ accelerator is active. |
+| `RiftBuild` | `riftbuild.js` | Trusted build doctor/planner/run history API. Local compilation is fail-closed unless the native host advertises a verified local build executor. |
+| `RiftLocalPlatform` | `riftlocal-platform.js` | Aggregates `rift repo`, `rift vault`, `rift build` and `rift memory` under one RiftShell family. |
 | `RiftDevLab` | `riftdevlab.js` | Trusted in-house Dev Lab API for isolated staging, live experimentation, evidence, snapshots and guarded publication into the local RiftOS workspace. Consumed by the built-in Dev Lab UI, direct `devlab` shell commands and the fixed-whitelist `riftos-agent devlab` controller. |
 | `RiftShellBatch` | `riftshell-batch.js` | Batch parser/executor consumed by RiftShell. |
 | `RiftShellMcp` | `riftos.js` | Trusted-shell wrapper around the RiftShell parser for native MCP shell execution. Never exposed to guest pages. |

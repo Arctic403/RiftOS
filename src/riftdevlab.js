@@ -173,16 +173,14 @@ async function runScript(source){
 }
 
 async function listRuns(limit=20){
-  await init();const rows=await core.fs.list(RUN_ROOT,{recursive:false}).catch(()=>[]),runs=[];
-  for(const row of rows.filter(row=>row.kind==="file"&&row.path.endsWith(".json"))){const value=await core.fs.readJSON(row.path,null).catch(()=>null);if(value)runs.push(value);}
+  await init();const rows=await core.fs.list(RUN_ROOT,{recursive:false}).catch(()=>[]),candidates=rows.filter(row=>row.kind==="file"&&row.path.endsWith(".json"));
+  const values=await Promise.all(candidates.map(row=>core.fs.readJSON(row.path,null).catch(()=>null))),runs=values.filter(Boolean);
   return runs.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,Math.max(1,Math.min(100,limit)));
 }
 
 async function createSnapshot(note=""){
-  await init();const state=await loadState(),entries=[];
-  for(const entry of Object.values(state.staged||{}).sort((a,b)=>a.path.localeCompare(b.path))){
-    const item={...entry};if(entry.action==="write")item.content=String(await core.fs.readText(stagePath(entry.path))??"");entries.push(item);
-  }
+  await init();const state=await loadState(),staged=Object.values(state.staged||{}).sort((a,b)=>a.path.localeCompare(b.path));
+  const entries=await Promise.all(staged.map(async entry=>{const item={...entry};if(entry.action==="write")item.content=String(await core.fs.readText(stagePath(entry.path))??"");return item;}));
   if(!entries.length)throw new Error("Nothing is staged in RiftOS Dev Lab");
   const id=uid("snapshot"),createdAt=nowISO(),runs=await listRuns(10),snapshot={
     format:"riftos-devlab-snapshot",version:1,id,createdAt,note:String(note||"").slice(0,1000),project:PROJECT_ROOT,targetRepo:TARGET_REPO,targetBranch:TARGET_BRANCH,

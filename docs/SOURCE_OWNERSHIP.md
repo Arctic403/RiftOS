@@ -33,9 +33,14 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `src/riftdesktop-android.js` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-window-host.js` | `docs/systems/desktop/README.md` |
 | `src/riftgit.js` | `docs/systems/git/README.md` |
+| `src/riftvault.js` | `docs/systems/riftvault/README.md` |
+| `src/riftrepo.js` | `docs/systems/riftrepo/README.md` |
+| `src/riftmemory-control.js` | `docs/systems/riftmemory/README.md` |
+| `src/riftbuild.js` | `docs/systems/riftbuild/README.md` |
+| `src/riftlocal-platform.js` | `docs/systems/riftrepo/README.md` + `docs/systems/riftvault/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/riftmemory/README.md` |
 | `src/riftdevlab.js` | `docs/systems/dev-lab/README.md` + `docs/systems/workspace/README.md` |
 | `src/riftmcp-system.js` | `docs/systems/mcp/README.md` |
-| `src/riftos.js` | `docs/systems/shell-ui/README.md`, `docs/systems/boot/README.md`, `docs/systems/files-app/README.md`, `docs/systems/settings/README.md`, `docs/systems/shell/README.md`, `docs/systems/browser/README.md`, `docs/systems/chat-handoff/README.md`, `docs/systems/dev-lab/README.md`, `docs/systems/vortex-agent/README.md` |
+| `src/riftos.js` | `docs/systems/shell-ui/README.md`, `docs/systems/boot/README.md`, `docs/systems/files-app/README.md`, `docs/systems/settings/README.md`, `docs/systems/shell/README.md`, `docs/systems/browser/README.md`, `docs/systems/chat-handoff/README.md`, `docs/systems/dev-lab/README.md`, `docs/systems/vortex-agent/README.md`, `docs/systems/riftrepo/README.md`, `docs/systems/riftvault/README.md`, `docs/systems/riftbuild/README.md`, `docs/systems/riftmemory/README.md` |
 | `src/riftrt.js` | `docs/systems/riftrt/README.md` + `docs/systems/riftrt/engines/README.md` + engine-specific READMEs under `docs/systems/riftrt/engines/` |
 | `src/riftruntime.js` | `docs/systems/runtime-capabilities/README.md` |
 | `src/riftshell-batch.js` | `docs/systems/shell/README.md` + `docs/systems/chat-handoff/README.md` |
@@ -107,6 +112,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `scripts/test-rift-workspace-records.mjs` | `docs/systems/build-validation/README.md` + workspace records |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
+| `scripts/test-rift-local-platform.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftrepo/README.md` + `docs/systems/riftvault/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/riftmemory/README.md` |
 | `scripts/validate-rift-wiring.mjs` | `docs/systems/build-validation/README.md` |
 | `scripts/validate-rift-transport.mjs` | `docs/systems/build-validation/README.md` |
 | `scripts/validate-rift-docs.mjs` | `docs/systems/build-validation/README.md` |
