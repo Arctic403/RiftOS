@@ -27,6 +27,9 @@ private class RiftScopedLocalAgent(
         private const val GESTURE_TIMEOUT_MS = 5_000L
         private const val ACTIVATION_TIMEOUT_MS = 3_000L
         private const val ACTIVATION_POLL_MS = 50L
+        private const val ROOT_SETTLE_MS = 120L
+        private const val ACTION_SETTLE_MS = 140L
+        private const val REQUIRED_STABLE_ROOT_POLLS = 2
     }
 
     fun execute(context: Context, args: JSONObject): JSONObject {
@@ -111,10 +114,12 @@ private class RiftScopedLocalAgent(
         }
         val clicked = actionNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
         if (!clicked) throw IllegalStateException("$displayName UI target is not clickable: $target")
+        SystemClock.sleep(ACTION_SETTLE_MS)
         return JSONObject()
             .put("scope", targetPackage)
             .put("clicked", true)
             .put("target", target)
+            .put("settled_ms", ACTION_SETTLE_MS)
             .put("node", nodeJson(node, 0))
     }
 
@@ -125,7 +130,8 @@ private class RiftScopedLocalAgent(
         requirePoint(service, x, y)
         val path = Path().apply { moveTo(x, y) }
         dispatchGesture(service, path, 80L)
-        return JSONObject().put("scope", targetPackage).put("tapped", true).put("x", x).put("y", y)
+        SystemClock.sleep(ACTION_SETTLE_MS)
+        return JSONObject().put("scope", targetPackage).put("tapped", true).put("x", x).put("y", y).put("settled_ms", ACTION_SETTLE_MS)
     }
 
     private fun swipe(context: Context, args: JSONObject): JSONObject {
@@ -139,9 +145,11 @@ private class RiftScopedLocalAgent(
         val duration = args.optLong("durationMs", 350L).coerceIn(50L, 3_000L)
         val path = Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
         dispatchGesture(service, path, duration)
+        SystemClock.sleep(ACTION_SETTLE_MS)
         return JSONObject()
             .put("scope", targetPackage)
             .put("swiped", true)
+            .put("settled_ms", ACTION_SETTLE_MS)
             .put("x1", x1).put("y1", y1).put("x2", x2).put("y2", y2)
             .put("duration_ms", duration)
     }
@@ -159,14 +167,16 @@ private class RiftScopedLocalAgent(
         }
         val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle)
         if (!ok) throw IllegalStateException("Android rejected text input for $displayName target: $target")
-        return JSONObject().put("scope", targetPackage).put("typed", true).put("target", target).put("characters", text.length)
+        SystemClock.sleep(ACTION_SETTLE_MS)
+        return JSONObject().put("scope", targetPackage).put("typed", true).put("target", target).put("characters", text.length).put("settled_ms", ACTION_SETTLE_MS)
     }
 
     private fun back(context: Context): JSONObject {
         val (service, _) = requireTargetServiceAndRoot(context)
         val ok = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
         if (!ok) throw IllegalStateException("Android rejected Back while $displayName was foreground")
-        return JSONObject().put("scope", targetPackage).put("back", true)
+        SystemClock.sleep(ACTION_SETTLE_MS)
+        return JSONObject().put("scope", targetPackage).put("back", true).put("settled_ms", ACTION_SETTLE_MS)
     }
 
     private fun requireTargetRoot(context: Context): AccessibilityNodeInfo = requireTargetServiceAndRoot(context).second
@@ -174,31 +184,49 @@ private class RiftScopedLocalAgent(
     private fun requireTargetServiceAndRoot(context: Context): Pair<RiftVortexAccessibilityService, AccessibilityNodeInfo> {
         val service = RiftVortexAccessibilityService.current()
             ?: throw IllegalStateException("RiftOS Local UI Agent accessibility service is not enabled")
-        val current = service.rootInActiveWindow
-        if (current?.packageName?.toString() == targetPackage) return service to current
 
-        // ChatGPT/RiftBrowser can retake foreground between separate MCP calls. Activate only this
-        // constructor-fixed target, then re-check the exact package before inspection or touch.
-        val launch = context.packageManager.getLaunchIntentForPackage(targetPackage)
-            ?: throw IllegalStateException("$displayName is not installed: $targetPackage")
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-        context.startActivity(launch)
+        // Let Accessibility publish the real active window before trusting a cached root from the
+        // previous MCP call. ChatGPT can retake foreground between calls.
+        SystemClock.sleep(ROOT_SETTLE_MS)
+        val initialRoot = service.rootInActiveWindow
+        val initialReady = initialRoot != null && initialRoot.packageName?.toString() == targetPackage &&
+            initialRoot.isVisibleToUser && (initialRoot.window?.isActive != false)
+        if (!initialReady) {
+            val launch = context.packageManager.getLaunchIntentForPackage(targetPackage)
+                ?: throw IllegalStateException("$displayName is not installed: $targetPackage")
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            context.startActivity(launch)
+        }
 
         val deadline = SystemClock.elapsedRealtime() + ACTIVATION_TIMEOUT_MS
-        var lastPackage = current?.packageName?.toString().orEmpty()
+        var lastPackage = initialRoot?.packageName?.toString().orEmpty()
+        var lastSignature = ""
+        var stablePolls = 0
         while (SystemClock.elapsedRealtime() < deadline) {
-            SystemClock.sleep(ACTIVATION_POLL_MS)
             val root = service.rootInActiveWindow
             lastPackage = root?.packageName?.toString().orEmpty()
-            if (lastPackage == targetPackage && root != null) return service to root
+            if (root != null && lastPackage == targetPackage && root.isVisibleToUser &&
+                (root.window?.isActive != false)) {
+                val signature = "${root.windowId}:${root.childCount}"
+                stablePolls = if (signature == lastSignature) stablePolls + 1 else 1
+                lastSignature = signature
+                if (stablePolls >= REQUIRED_STABLE_ROOT_POLLS) return service to root
+            } else {
+                stablePolls = 0
+                lastSignature = ""
+            }
+            SystemClock.sleep(ACTIVATION_POLL_MS)
         }
         throw IllegalStateException(
-            "$displayName agent could not activate $targetPackage; last foreground package was ${lastPackage.ifBlank { "(none)" }}"
+            "$displayName agent could not stabilize $targetPackage; last foreground package was ${lastPackage.ifBlank { "(none)" }}"
         )
     }
 
     private fun findNode(root: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
+        val exactMatches = mutableListOf<AccessibilityNodeInfo>()
+        val semanticMatches = mutableListOf<AccessibilityNodeInfo>()
+        val semanticTarget = semanticLabel(target)
         queue.add(root)
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
@@ -206,10 +234,38 @@ private class RiftScopedLocalAgent(
             val text = if (node.isPassword) "" else node.text?.toString().orEmpty()
             val description = node.contentDescription?.toString().orEmpty()
             val viewId = node.viewIdResourceName.orEmpty()
-            if (target == text || target == description || target == viewId) return node
+            if (node.isVisibleToUser && node.isEnabled) {
+                if (target == text || target == description || target == viewId) {
+                    exactMatches.add(node)
+                } else if (semanticTarget.isNotEmpty() && (
+                        semanticTarget.equals(semanticLabel(text), ignoreCase = true) ||
+                        semanticTarget.equals(semanticLabel(description), ignoreCase = true)
+                    )) {
+                    semanticMatches.add(node)
+                }
+            }
             for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
-        return null
+        val matches = if (exactMatches.isNotEmpty()) exactMatches else semanticMatches
+        if (matches.size > 1) {
+            throw IllegalArgumentException(
+                "$displayName UI target is ambiguous: $target; use a unique content-description or view-id"
+            )
+        }
+        return matches.firstOrNull()
+    }
+
+    private fun semanticLabel(value: String): String {
+        val trimmed = value.trim().replace(Regex("\\s+"), " ")
+        if (trimmed.isEmpty()) return ""
+        val parts = trimmed.split(" ", limit = 2)
+        if (parts.size != 2) return trimmed
+        val prefix = parts[0]
+        val iconLike = prefix.length <= 3 && (
+            prefix.any { !it.isLetterOrDigit() } ||
+            (prefix.length <= 2 && prefix.any { it.isLetter() } && prefix.all { !it.isLetter() || it.isUpperCase() })
+        )
+        return if (iconLike) parts[1].trim() else trimmed
     }
 
     private fun nodeJson(node: AccessibilityNodeInfo, depth: Int): JSONObject {

@@ -33,7 +33,7 @@ A base64-encoded WASM module is instantiated with a small import surface. Option
 
 ## Desktop/process integration
 
-RiftRT creates normal RiftDesktop windows and kernel process records. Runtime windows participate in focus, taskbar, minimize/maximize, show desktop and process close behavior. Do not create a parallel window manager for runtime apps.
+RiftRT creates normal RiftDesktop windows and kernel process records. Runtime windows participate in focus, taskbar, minimize/maximize, show desktop and process close behavior. Closing a focused RiftRT window hands focus to the highest shared visible RiftDesktop window, and RiftRT delegates show-desktop to the canonical window manager so the visibility event is emitted once. Removing a running app disposes its session before package/data removal; destructive removal requires explicit confirmation and surfaced async failures. Do not create a parallel window manager for runtime apps.
 
 ## Failure signatures
 
@@ -53,4 +53,4 @@ Platform availability reporting -> runtime-capabilities subsystem.
 
 ## Validation
 
-Test every engine path represented in v1, app storage set/get/remove, denied and allowed capabilities, resize/input, repeated launch/close and error during engine initialization. Keep Worker/WASM payloads bounded and verify one broken app does not destabilize the shell.
+Test every engine path represented in v1, app storage set/get/remove, denied and allowed capabilities, resize/input, repeated launch/close, close-with-another-window-visible focus handoff, show-desktop event behavior and error during engine initialization. Keep Worker/WASM payloads bounded and verify one broken app does not destabilize the shell.

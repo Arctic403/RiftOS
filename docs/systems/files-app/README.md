@@ -13,7 +13,7 @@ The Files app is RiftOS's Explorer-style UI over RiftFS. It provides navigation 
 
 ## Features
 
-Navigation/address path, list/details presentation, multi-select, selection rectangle/context menu, create file/folder, rename, copy, cut/paste, duplicate, move, delete, archive/extract, mount controls and opening text/previewable entries. Icon-only navigation controls expose explicit accessibility names so the fixed-scope `riftos-agent` can target Back/Forward/Up/Refresh semantically during device acceptance.
+Navigation/address path, list/details presentation, multi-select, selection rectangle/context menu, create file/folder, rename, copy, cut/paste, duplicate, move, delete, archive/extract, mount controls and opening text/previewable entries. Context Open/Paste reuse the same real operation paths as the toolbar. Long-press selects the pressed row and cancels when the pointer moves so scrolling cannot accidentally open a menu. Destination pickers list only immediate child folders, surface listing errors instead of leaving a pending dialog promise, and folder-only Move begins in the current directory. Icon-only navigation controls expose explicit accessibility names so the fixed-scope `riftos-agent` can target Back/Forward/Up/Refresh semantically during device acceptance.
 
 `openFileEntry`/`openEntry` decide whether to navigate into a directory, open a text editor, or hand a file to native preview/open behavior.
 
@@ -28,7 +28,9 @@ Navigation/address path, list/details presentation, multi-select, selection rect
 - Large transfers should show progress and not synchronously lock the main UI.
 - Selection survives only when entries still exist after refresh.
 - Destructive actions operate on the intended selected paths, not stale DOM indexes.
-- Context menu actions and toolbar actions should share operation code paths.
+- Context menu actions and toolbar actions should share operation code paths; direct menu paths must not bypass protected-root restrictions.
+- Destination pickers must be shallow (`recursive:false`), reject cleanly on filesystem errors, and treat moving to the current parent as a no-op rather than an implicit rename.
+- Long-press menus and rubber-band selection must clean up on pointer cancel as well as pointer up; they must not leave global move listeners or stale selection overlays behind.
 
 ## Failure signatures
 
@@ -47,4 +49,4 @@ Filesystem correctness -> RiftFS.
 
 ## Validation
 
-Test empty/large directories, thousands of entries, multi-select, context/toolbar parity, cut/copy/paste, duplicate, rename, delete, archive/extract, mounted folders and navigation during/after long transfers.
+Test empty/large directories, thousands of entries, multi-select, context/toolbar Open/Paste parity, long-press then scroll/cancel, shallow destination navigation, same-folder Move no-op, cut/copy/paste, duplicate, rename, protected-root behavior, delete, archive/extract, mounted folders and navigation during/after long transfers.

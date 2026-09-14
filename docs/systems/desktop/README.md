@@ -26,7 +26,8 @@ Native RiftBrowser content is special: the HTML window owns chrome/geometry whil
 - The taskbar is demand-driven: Start/tray stay present, pinned apps persist, and unpinned apps appear only while their window is open (including minimized windows) and disappear after close.
 - Taskbar pins persist in `/system/settings/desktop.json` as `taskbarPins`; `RiftDesktop.pinTaskbar(id, pinned)` is the programmatic pin/unpin surface.
 - Browser minimize/show-desktop must announce visibility before leaving a native renderer onscreen.
-- Geometry persistence is keyed by app/window identity and must tolerate smaller future viewports. Maximize captures the exact current geometry in `riftRestoreGeometry`; Restore returns to that geometry rather than a newly computed default rectangle.
+- Geometry persistence is keyed by app/window identity and must tolerate smaller future viewports. Maximize captures the exact current geometry in `riftRestoreGeometry`; Restore returns to that geometry rather than a newly computed default rectangle. Async saved-geometry reads are revision-guarded so a late restore cannot overwrite a newer maximize, drag, resize or minimize action. Physical and virtual-mouse drag/resize both bump the same revision and refuse to move/resize a maximized window.
+- Window controls and taskbar entries keep stable semantic app-specific accessibility names even when their visual labels are hidden; stacked windows must not expose ambiguous generic Close/Maximize controls.
 - Desktop mode remains usable on narrow Android screens; minimum width/height must never exceed available bounds.
 
 ## Failure signatures
@@ -46,7 +47,7 @@ Native browser surface mismatch -> browser window integration, not z-index hacks
 
 ## Validation
 
-Test phone portrait, landscape, narrow split-screen and DeX-sized windows. With no pins and no open windows, verify only Start/tray remain. Open unpinned apps and verify they appear while open/minimized and disappear after close. Pin/unpin an app and verify the choice survives desktop reload. Open multiple windows; move/resize/maximize/minimize/restore; show desktop; reopen after viewport shrink; verify browser native surface tracks the HTML content rectangle.
+Test phone portrait, landscape, narrow split-screen and DeX-sized windows. With no pins and no open windows, verify only Start/tray remain. Open unpinned apps and verify they appear while open/minimized and disappear after close. Pin/unpin an app and verify the choice survives desktop reload. Open multiple windows; move/resize/maximize/minimize/restore rapidly enough to race persisted geometry and verify the latest user action wins using both direct touch and virtual mouse. Cancel a desktop-icon drag and verify no stale drag listener remains. Verify taskbar/window controls retain app-specific accessibility names while labels are visually hidden. Show desktop; reopen after viewport shrink; verify browser native surface tracks the HTML content rectangle.
 
 ## Safe extension points
 

@@ -69,12 +69,13 @@ function closeExternal(target,{fromProcess=false}={}){
   record.win.remove();
   if(!fromProcess&&record.process?.pid)core.kernel.kill(record.process.pid);
   globalThis.dispatchEvent(new CustomEvent('riftos:window-close',{detail:{id:record.id,pid:record.process?.pid}}));
+  const next=[...stage.querySelectorAll('.window.rift-desktop-window:not(.rift-minimized)')].sort((a,b)=>(Number(b.style.zIndex)||0)-(Number(a.style.zIndex)||0))[0];
+  if(next)globalThis.RiftOSWindowManager?.focus?.(next.dataset.app||next);
   return true;
 }
 function showDesktop(){
   for(const record of externalWindows.values())record.win.classList.add('rift-minimized');
   originalWM.showDesktop?.();
-  globalThis.dispatchEvent(new Event('riftos:show-desktop'));
 }
 function createWindow(id,title,kicker='RIFTRT'){
   const existing=externalWindows.get(id);if(existing){focusExternal(existing);return{record:existing,body:existing.win.querySelector('.window-body')};}
@@ -226,10 +227,10 @@ async function installDemo(){const app=await baseApps.installPackageObject(demoP
 async function openManager(){
   const id='riftrt:manager',created=createWindow(id,'RiftRT','RUNTIME MANAGER'),body=created.body;body.style.padding='0';const [apps,caps]=await Promise.all([baseApps.list(),runtimeCapabilities()]);
   body.innerHTML=`<div class="riftrt-manager"><section class="riftrt-hero"><div><h2>RiftRT ${VERSION}</h2><p>RiftOS-native desktop application runtime. Apps stay inside RiftDesktop windows and can target sandboxed HTML, Worker + canvas, or the Rift WASM ABI without carrying a second Linux desktop.</p></div><div class="riftrt-actions"><button class="riftrt-btn primary" id="riftrtDemo">Install RiftRT demo</button><label class="riftrt-btn">Import .rift<input type="file" id="riftrtImport" accept=".rift,*/*" hidden></label></div></section><div class="riftrt-capabilities"><span class="riftrt-chip ${caps.worker?'ok':''}">WORKER ${caps.worker?'ON':'OFF'}</span><span class="riftrt-chip ${caps.wasm?'ok':''}">WASM ${caps.wasm?'ON':'OFF'}</span><span class="riftrt-chip ${caps.webgl2?'ok':''}">WEBGL2 ${caps.webgl2?'ON':'OFF'}</span><span class="riftrt-chip ok">RIFTFS</span><span class="riftrt-chip">${esc(caps.device?.manufacturer||'Android')} ${esc(caps.device?.model||'')}</span><span class="riftrt-chip">${caps.hardwareConcurrency} CPU THREADS</span></div><div class="riftrt-grid">${apps.length?apps.map(app=>{const spec=parseRuntime(app);return`<article class="riftrt-card"><header><div class="riftrt-icon">${esc(app.manifest.icon||'R')}</div><div><strong>${esc(app.manifest.name)}</strong><small>${esc(app.id)} · ${esc(spec.engine)}</small></div></header><p>${esc(app.manifest.description||'Installed Rift application')}</p><footer><button class="riftrt-btn primary" data-rt-launch="${esc(app.id)}">Open</button><button class="riftrt-btn danger" data-rt-remove="${esc(app.id)}">Remove</button></footer></article>`}).join(''):`<div class="riftrt-empty">No Rift apps installed.</div>`}</div></div>`;
-  body.querySelector('#riftrtDemo').onclick=async()=>{await installDemo();await openManager();};
+  body.querySelector('#riftrtDemo').onclick=async()=>{try{await installDemo();await openManager();}catch(error){alert(`Demo install failed: ${error?.message||error}`);}};
   body.querySelector('#riftrtImport').onchange=async event=>{try{await baseApps.installPackageFile(event.target.files?.[0]);await refreshLauncher();await openManager();}catch(error){alert(`Install failed: ${error.message}`);}};
-  body.querySelectorAll('[data-rt-launch]').forEach(button=>button.onclick=()=>launch(button.dataset.rtLaunch).catch(error=>alert(error.message)));
-  body.querySelectorAll('[data-rt-remove]').forEach(button=>button.onclick=async()=>{const appId=button.dataset.rtRemove;closeExternal(sessionId(appId));await baseApps.remove(appId);await refreshLauncher();await openManager();});
+  body.querySelectorAll('[data-rt-launch]').forEach(button=>button.onclick=()=>launch(button.dataset.rtLaunch).catch(error=>alert(`Open failed: ${error?.message||error}`)));
+  body.querySelectorAll('[data-rt-remove]').forEach(button=>button.onclick=async()=>{const appId=button.dataset.rtRemove;if(!confirm(`Remove ${appId}? Its saved app data will also be deleted.`))return;try{closeExternal(sessionId(appId));await baseApps.remove(appId);await refreshLauncher();await openManager();}catch(error){alert(`Remove failed: ${error?.message||error}`);}});
   return created.record;
 }
 

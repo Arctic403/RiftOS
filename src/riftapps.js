@@ -274,9 +274,9 @@ share
 notifications
 native.files</pre></details></section>`;
   body.querySelector("#riftPackageInput").onchange=async event=>{try{await installPackageFile(event.target.files?.[0]);await openManager();}catch(error){alert(`Install failed: ${error.message}`);}};
-  body.querySelector("#riftDemoInstall").onclick=async()=>{await installPackageObject(demoPackage);await openManager();};
-  body.querySelectorAll("[data-rift-launch]").forEach(button=>button.onclick=()=>launchInstalled(button.dataset.riftLaunch));
-  body.querySelectorAll("[data-rift-remove]").forEach(button=>button.onclick=async()=>{await registry.remove(button.dataset.riftRemove);await refreshLauncher();await openManager();});
+  body.querySelector("#riftDemoInstall").onclick=async()=>{try{await installPackageObject(demoPackage);await openManager();}catch(error){alert(`Demo install failed: ${error?.message||error}`);}};
+  body.querySelectorAll("[data-rift-launch]").forEach(button=>button.onclick=()=>launchInstalled(button.dataset.riftLaunch).catch(error=>alert(`Open failed: ${error?.message||error}`)));
+  body.querySelectorAll("[data-rift-remove]").forEach(button=>button.onclick=async()=>{const appId=button.dataset.riftRemove;if(!confirm(`Remove ${appId}? Its saved app data will also be deleted.`))return;try{await registry.remove(appId);await refreshLauncher();await openManager();}catch(error){alert(`Remove failed: ${error?.message||error}`);}});
 }
 
 async function refreshLauncher(){

@@ -32,6 +32,7 @@ App permissions are declared by the package and mapped through `capabilityForPer
 - App IDs become storage/runtime identities; changing normalization can orphan data.
 - Permission checks happen before host operations.
 - Exported `.rift` files must round-trip through the importer.
+- Destructive app removal must require explicit confirmation and async install/open/remove failures must be surfaced to the user rather than becoming unhandled promise rejections.
 - Do not store GitHub or privileged host credentials inside app packages.
 
 ## Failure signatures

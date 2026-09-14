@@ -74,9 +74,11 @@ function focusWindow(target){
   window.dispatchEvent(new CustomEvent("riftos:window-activate",{detail:{id:record.id,window:record.win,pid:record.process?.pid}}));
   return true;
 }
-function closeWindow(target){
+function closeWindow(target,{fromProcess=false}={}){
   const record=recordFor(target);if(!record)return false;
-  try{if(record.process?.pid)core.kernel.kill(record.process.pid);}catch(_){}
+  if(record.closing)return true;
+  record.closing=true;
+  if(!fromProcess){try{if(record.process?.pid)core.kernel.kill(record.process.pid);}catch(_){}}
   windows.delete(record.id);
   record.win.remove();
   window.dispatchEvent(new CustomEvent("riftos:window-close",{detail:{id:record.id,pid:record.process?.pid}}));
@@ -107,8 +109,9 @@ function openWindow(id,title,kicker="RIFT APP"){
   win.dataset.app=id;win.dataset.windowId=`${id}-${++windowSerial}`;
   win.querySelector(".window-title").textContent=title;
   win.querySelector(".window-kicker").textContent=kicker;
-  const process=core.kernel.launchProcess(id,title,{kind:"ui"});
-  const record={id,title,win,process,lastFocus:Date.now()};
+  const record={id,title,win,process:null,lastFocus:Date.now(),closing:false};
+  const process=core.kernel.launchProcess(id,title,{kind:"ui",onTerminate:()=>closeWindow(win,{fromProcess:true})});
+  record.process=process;
   windows.set(id,record);
   win.querySelector(".window-close").onclick=()=>closeWindow(win);
   stage.classList.remove("hidden");stage.append(win);
@@ -226,8 +229,6 @@ async function openFiles(path="/",options={}){
   const byPath=new Map(entries.map(entry=>[entry.path,entry]));
   const selected=new Set();
   let selectionBox=null;
-  let longPressTimer=0;
-  let pressStart=null;
   const roots=[
     ["/home","⌂","Home"],["/documents","▤","Documents"],["/downloads","⇩","Downloads"],
     ["/workspace","◇","Workspace"],["/apps","▦","Apps"],["/mounts","⛓","Android mounts"]
@@ -284,24 +285,24 @@ async function openFiles(path="/",options={}){
 
   const itemButtons=[...body.querySelectorAll(".rift-explorer-item")];
   const actionIds=["fsOpen","fsRename","fsCopy","fsCut","fsDuplicate","fsMove","fsDelete"];
-  const destinationPicker={open:openDestinationPicker};
   async function openDestinationPicker(startPath,suggestedName,folderOnly=false){
-    const start=core.path.parent(startPath);
-    return new Promise(async resolve=>{
+    const start=folderOnly?core.path.normalize(startPath):core.path.parent(startPath);
+    return new Promise((resolve,reject)=>{
       const overlay=document.createElement("div");
       overlay.className="rift-destination-picker";
       let current=start;
-      let selected=current;
+      const finish=value=>{overlay.remove();resolve(value);};
+      const fail=error=>{overlay.remove();reject(error);};
       const render=async()=>{
-        const rows=await core.fs.list(current,false);
-        overlay.innerHTML=`<div class="rift-destination-dialog"><header>Select destination</header><div class="rift-destination-path"><button data-up>↑</button> ${escapeHTML(current)}</div><div class="rift-destination-list">${rows.filter(row=>row.kind==="directory"||row.kind==="mount").map(row=>`<button data-path="${escapeHTML(row.path)}">${escapeHTML(core.path.basename(row.path)||row.path)}</button>`).join("")||"<span>Empty folder</span>"}</div><input id="destinationName" value="${escapeHTML(suggestedName)}"><footer><button data-cancel>Cancel</button><button data-confirm>Confirm</button></footer></div>`;
-        overlay.querySelectorAll("[data-path]").forEach(button=>button.onclick=()=>{current=button.dataset.path;render();});
-        overlay.querySelector("[data-up]").onclick=()=>{const parent=core.path.parent(current);if(parent&&parent!==current){current=parent;render();}};
-        overlay.querySelector("[data-cancel]").onclick=()=>{overlay.remove();resolve(null);};
-        overlay.querySelector("[data-confirm]").onclick=async()=>{const name=overlay.querySelector("#destinationName").value.trim();if(!folderOnly&&!name)return;const target=folderOnly?current:core.path.join(current,name);if(await core.fs.stat(target)&&!folderOnly&&!confirm("Destination exists. Continue and overwrite/merge where supported?"))return;overlay.remove();resolve(target);};
+        const rows=await core.fs.list(current,{recursive:false});
+        overlay.innerHTML=`<div class="rift-destination-dialog"><header>Select destination</header><div class="rift-destination-path"><button data-up aria-label="Up">↑</button> ${escapeHTML(current)}</div><div class="rift-destination-list">${rows.filter(row=>row.kind==="directory"||row.kind==="mount").map(row=>`<button data-path="${escapeHTML(row.path)}">${escapeHTML(core.path.basename(row.path)||row.path)}</button>`).join("")||"<span>Empty folder</span>"}</div><input id="destinationName" value="${escapeHTML(suggestedName)}" ${folderOnly?"hidden":""}><footer><button data-cancel>Cancel</button><button data-confirm>Confirm</button></footer></div>`;
+        overlay.querySelectorAll("[data-path]").forEach(button=>button.onclick=()=>{current=button.dataset.path;render().catch(fail);});
+        overlay.querySelector("[data-up]").onclick=()=>{const parent=core.path.parent(current);if(parent&&parent!==current){current=parent;render().catch(fail);}};
+        overlay.querySelector("[data-cancel]").onclick=()=>finish(null);
+        overlay.querySelector("[data-confirm]").onclick=async()=>{try{const name=overlay.querySelector("#destinationName")?.value.trim()||"";if(!folderOnly&&!name)return;const target=folderOnly?current:core.path.join(current,name);if(await core.fs.stat(target)&&!folderOnly&&!confirm("Destination exists. Continue and overwrite/merge where supported?"))return;finish(target);}catch(error){fail(error);}};
       };
       document.body.appendChild(overlay);
-      await render();
+      render().catch(fail);
     });
   }
   async function chooseArchiveDestination(sourcePath,mode){
@@ -314,7 +315,7 @@ async function openFiles(path="/",options={}){
     const menu=document.createElement('div'); menu.className='rift-file-context-menu';
     menu.innerHTML='<button data-action="open">Open</button><button data-action="copy">Copy</button><button data-action="cut">Move</button><button data-action="paste">Paste</button><button data-action="delete">Delete</button><button data-action="rename">Rename</button><button data-action="zip">Zip</button><button data-action="unzip">Unzip</button>';
     menu.style.left=x+'px'; menu.style.top=y+'px'; document.body.appendChild(menu);
-    menu.onclick=async e=>{const action=e.target.dataset.action;if(!action)return;menu.remove(); if(action==='copy')body.querySelector('#fsCopy').click(); if(action==='cut')body.querySelector('#fsCut').click(); if(action==='delete')body.querySelector('#fsDelete').click(); if(action==='rename')body.querySelector('#fsRename').click(); if(action==='zip')runFileAction("Zip",async()=>{const target=await chooseArchiveDestination(entry.path,"zip");if(!target)throw new Error("Cancelled");await core.fs.zip(entry.path,target);}); if(action==='unzip')runFileAction("Unzip",async()=>{const target=await chooseArchiveDestination(entry.path,"unzip");if(!target)throw new Error("Cancelled");await core.fs.unzip(entry.path,target);});};
+    menu.onclick=async e=>{const action=e.target.dataset.action;if(!action)return;menu.remove();if(action==='open')await openEntry(entry);if(action==='copy')body.querySelector('#fsCopy').click();if(action==='cut')body.querySelector('#fsCut').click();if(action==='paste'){const destination=entry.kind==='directory'||entry.kind==='mount'?entry.path:path;runFileAction(filesClipboard.mode==="cut"?"Move":"Paste",()=>pasteInto(destination));}if(action==='delete')body.querySelector('#fsDelete').click();if(action==='rename')body.querySelector('#fsRename').click();if(action==='zip'&&!protectedFileRoots.has(entry.path))runFileAction("Zip",async()=>{const target=await chooseArchiveDestination(entry.path,"zip");if(!target)throw new Error("Cancelled");await core.fs.zip(entry.path,target);});if(action==='unzip')runFileAction("Unzip",async()=>{const target=await chooseArchiveDestination(entry.path,"unzip");if(!target)throw new Error("Cancelled");await core.fs.unzip(entry.path,target);});};
   }
   function startSelectionBox(x,y){
     selectionBox=document.createElement('div');
@@ -339,11 +340,14 @@ async function openFiles(path="/",options={}){
     };
     const finish=()=>{
       window.removeEventListener('pointermove',update);
+      window.removeEventListener('pointerup',finish);
+      window.removeEventListener('pointercancel',finish);
       selectionBox?.remove();
       selectionBox=null;
     };
     window.addEventListener('pointermove',update);
     window.addEventListener('pointerup',finish,{once:true});
+    window.addEventListener('pointercancel',finish,{once:true});
   }
   const selectionStatus=body.querySelector("#fsSelectionStatus");
   function chosen(){return [...selected].map(value=>byPath.get(value)).filter(Boolean);}
@@ -376,6 +380,19 @@ async function openFiles(path="/",options={}){
     catch(error){setStatus("Files");alert(`${label} failed: ${error?.message||error}`);syncSelection();}
     finally{fileActionBusy=false;}
   }
+  async function pasteInto(destinationDir){
+    const pending=[...filesClipboard.paths];if(!pending.length)return;
+    const completed=[];
+    for(const source of pending){
+      if(!(await core.fs.stat(source)))continue;
+      if(filesClipboard.mode==="cut"&&core.path.parent(source)===destinationDir){completed.push(source);continue;}
+      let destination=core.path.join(destinationDir,core.path.basename(source));
+      if(await core.fs.stat(destination))destination=await uniqueChildPath(destinationDir,duplicateBaseName(core.path.basename(source)));
+      if(filesClipboard.mode==="cut")await core.fs.move(source,destination);else await core.fs.copy(source,destination);
+      completed.push(source);
+    }
+    if(filesClipboard.mode==="cut"){filesClipboard.paths=filesClipboard.paths.filter(source=>!completed.includes(source));if(!filesClipboard.paths.length)filesClipboard.mode="copy";}
+  }
 
   body.querySelector("#fsBack").onclick=()=>{if(filesNavigation.index>0){filesNavigation.index--;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
   body.querySelector("#fsForward").onclick=()=>{if(filesNavigation.index<filesNavigation.history.length-1){filesNavigation.index++;openFiles(filesNavigation.history[filesNavigation.index],{record:false});}};
@@ -384,6 +401,8 @@ async function openFiles(path="/",options={}){
   body.querySelectorAll("[data-crumb]").forEach(button=>button.onclick=()=>openFiles(button.dataset.crumb));
   body.querySelectorAll("[data-place]").forEach(button=>button.onclick=()=>openFiles(button.dataset.place));
   for(const button of itemButtons){
+    let pressStart=null,longPressTimer=0;
+    const cancelLongPress=()=>{clearTimeout(longPressTimer);longPressTimer=0;pressStart=null;};
     button.onclick=event=>{
       const target=button.dataset.path;
       if(event.ctrlKey||event.metaKey||event.shiftKey){if(selected.has(target))selected.delete(target);else selected.add(target);}
@@ -391,8 +410,10 @@ async function openFiles(path="/",options={}){
       syncSelection();
     };
     button.oncontextmenu=event=>{event.preventDefault();selected.clear();selected.add(button.dataset.path);syncSelection();showFileMenu(byPath.get(button.dataset.path),event.clientX,event.clientY);};
-    button.onpointerdown=event=>{pressStart={x:event.clientX,y:event.clientY};longPressTimer=setTimeout(()=>showFileMenu(byPath.get(button.dataset.path),event.clientX,event.clientY),550);};
-    button.onpointerup=()=>clearTimeout(longPressTimer);
+    button.onpointerdown=event=>{cancelLongPress();pressStart={x:event.clientX,y:event.clientY};const x=event.clientX,y=event.clientY;longPressTimer=setTimeout(()=>{selected.clear();selected.add(button.dataset.path);syncSelection();showFileMenu(byPath.get(button.dataset.path),x,y);cancelLongPress();},550);};
+    button.onpointermove=event=>{if(pressStart&&Math.hypot(event.clientX-pressStart.x,event.clientY-pressStart.y)>8)cancelLongPress();};
+    button.onpointerup=cancelLongPress;
+    button.onpointercancel=cancelLongPress;
     button.ondblclick=()=>openEntry(byPath.get(button.dataset.path));
   }
   body.querySelector("#fsSelectAll").onclick=()=>{if(selected.size===entries.length)selected.clear();else entries.forEach(entry=>selected.add(entry.path));syncSelection();};
@@ -411,23 +432,11 @@ async function openFiles(path="/",options={}){
   body.querySelector("#fsRename").onclick=()=>runFileAction("Rename",async()=>{const entry=chosen()[0];if(!entry)return;const current=core.path.basename(entry.path),name=prompt("New name",current);if(!name||name===current)throw new Error("Cancelled");const destination=core.path.join(core.path.parent(entry.path),cleanLeafName(name));if(await core.fs.stat(destination))throw new Error("A file or folder with that name already exists.");await core.fs.rename(entry.path,destination);});
   body.querySelector("#fsCopy").onclick=()=>{filesClipboard.mode="copy";filesClipboard.paths=chosen().map(entry=>entry.path);const paste=body.querySelector("#fsPaste");paste.disabled=!filesClipboard.paths.length||virtualMountsRoot;paste.textContent=`Paste${filesClipboard.paths.length?` (${filesClipboard.paths.length})`:""}`;setStatus(`Files · ${filesClipboard.paths.length} copied`);};
   body.querySelector("#fsCut").onclick=()=>{filesClipboard.mode="cut";filesClipboard.paths=chosen().map(entry=>entry.path);const paste=body.querySelector("#fsPaste");paste.disabled=!filesClipboard.paths.length||virtualMountsRoot;paste.textContent=`Paste${filesClipboard.paths.length?` (${filesClipboard.paths.length})`:""}`;setStatus(`Files · ${filesClipboard.paths.length} cut`);};
-  body.querySelector("#fsPaste").onclick=()=>runFileAction(filesClipboard.mode==="cut"?"Move":"Paste",async()=>{
-    const pending=[...filesClipboard.paths];if(!pending.length)return;
-    const completed=[];
-    for(const source of pending){
-      if(!(await core.fs.stat(source)))continue;
-      let destination=core.path.join(path,core.path.basename(source));
-      if(filesClipboard.mode==="cut"&&core.path.parent(source)===path){completed.push(source);continue;}
-      if(await core.fs.stat(destination))destination=await uniqueChildPath(path,duplicateBaseName(core.path.basename(source)));
-      if(filesClipboard.mode==="cut")await core.fs.move(source,destination);else await core.fs.copy(source,destination);
-      completed.push(source);
-    }
-    if(filesClipboard.mode==="cut"){filesClipboard.paths=filesClipboard.paths.filter(source=>!completed.includes(source));if(!filesClipboard.paths.length)filesClipboard.mode="copy";}
-  });
+  body.querySelector("#fsPaste").onclick=()=>runFileAction(filesClipboard.mode==="cut"?"Move":"Paste",()=>pasteInto(path));
   body.querySelector("#fsDuplicate").onclick=()=>runFileAction("Duplicate",async()=>{for(const entry of chosen()){const destination=await uniqueChildPath(path,duplicateBaseName(core.path.basename(entry.path)));await core.fs.copy(entry.path,destination);}});
   body.querySelector("#fsMove").onclick=()=>runFileAction("Move",async()=>{
     const destinationRaw=await openDestinationPicker(path,"",true);if(!destinationRaw)throw new Error("Cancelled");const destinationDir=core.path.normalize(destinationRaw);const stat=await core.fs.stat(destinationDir);if(!stat||!["directory","mount"].includes(stat.kind))throw new Error("Destination folder does not exist.");
-    for(const entry of chosen()){let destination=core.path.join(destinationDir,core.path.basename(entry.path));if(await core.fs.stat(destination))destination=await uniqueChildPath(destinationDir,duplicateBaseName(core.path.basename(entry.path)));await core.fs.move(entry.path,destination);}
+    for(const entry of chosen()){if(core.path.parent(entry.path)===destinationDir)continue;let destination=core.path.join(destinationDir,core.path.basename(entry.path));if(await core.fs.stat(destination))destination=await uniqueChildPath(destinationDir,duplicateBaseName(core.path.basename(entry.path)));await core.fs.move(entry.path,destination);}
   });
   body.querySelector("#fsDelete").onclick=()=>runFileAction("Delete",async()=>{const picked=chosen();if(!picked.length)return;if(!confirm(`Delete ${picked.length} selected item${picked.length===1?"":"s"}? This cannot be undone.`))throw new Error("Cancelled");for(const entry of picked)await core.fs.remove(entry.path);});
   body.querySelector("#fsMountNative").onclick=async()=>{try{await core.fs.mountNativeDirectory();openFiles("/mounts");}catch(error){alert(error.message);}};
@@ -441,9 +450,9 @@ async function openEditor(path="/home/scratch.txt"){
   if(meta&&Number(meta.size||0)>MAX_RIFT_EDITOR_BYTES)throw new Error(`Rift Editor opens text files up to ${fmtBytes(MAX_RIFT_EDITOR_BYTES)}.`);
   if(meta&&!looksTextEntry(meta))throw new Error("Rift Editor only opens text documents.");
   const file=await core.fs.get(path),body=openWindow("editor","Editor","ANDROID RIFTFS EDITOR");
-  body.innerHTML=`<div class="trueos-editor"><div class="trueos-head"><div><strong>${escapeHTML(path)}</strong><small>${escapeHTML(file?.backend||"android-internal")}</small></div><button class="trueos-btn" id="editorFiles">Files</button><button class="trueos-btn primary" id="editorSave">Save</button></div><textarea spellcheck="false" autocomplete="off"></textarea></div>`;
-  const textarea=body.querySelector("textarea");textarea.value=file?.content||"";textarea.addEventListener("input",()=>setStatus("Editor · unsaved"));
-  body.querySelector("#editorSave").onclick=async()=>{await core.fs.writeText(path,textarea.value);setStatus("Saved");setTimeout(()=>setStatus("Editor"),800);};
+  body.innerHTML=`<div class="trueos-editor"><div class="trueos-head"><div><strong>${escapeHTML(path)}</strong><small>${escapeHTML(file?.backend||"android-internal")}</small></div><button class="trueos-btn" id="editorFiles">Files</button><button class="trueos-btn primary" id="editorSave">Save</button></div><textarea id="editorText" aria-label="Editor text" spellcheck="false" autocomplete="off"></textarea></div>`;
+  const textarea=body.querySelector("textarea");textarea.value=file?.content||"";let editRevision=0;textarea.addEventListener("input",()=>{editRevision++;setStatus("Editor · unsaved");});
+  body.querySelector("#editorSave").onclick=async()=>{const revision=editRevision,text=textarea.value;try{await core.fs.writeText(path,text);if(editRevision===revision){setStatus("Saved");setTimeout(()=>{if(editRevision===revision)setStatus("Editor");},800);}else setStatus("Editor · unsaved");}catch(error){setStatus("Editor · save failed");alert(`Save failed: ${error?.message||error}`);}};
   body.querySelector("#editorFiles").onclick=()=>openFiles(core.path.parent(path));setTimeout(()=>textarea.focus(),40);
 }
 
@@ -690,7 +699,7 @@ async function runShell(raw,print,state,context={}){
   if(cmd==="zip"){if(args.length<2)throw new Error("usage: zip <from> <archive.zip>");const from=resolvePath(state.cwd,args[0]),to=resolvePath(state.cwd,args[1]);await core.fs.zip(from,to);return print(`archived ${from} -> ${to}`);}
   if(cmd==="unzip"){if(args.length<2)throw new Error("usage: unzip <archive.zip> <folder>");const from=resolvePath(state.cwd,args[0]),to=resolvePath(state.cwd,args[1]);await core.fs.unzip(from,to);return print(`extracted ${from} -> ${to}`);}
   if(cmd==="rm"){const path=resolvePath(state.cwd,args[0]);await core.fs.remove(path);return print(`removed ${path}`);}
-  if(cmd==="open"){const app=args[0]||"home";document.querySelector(`[data-open="${CSS.escape(app)}"]`)?.click();return print(`opened ${app}`);}
+  if(cmd==="open"){const app=(args[0]||"home").toLowerCase();if(app==="mcp"){if(!globalThis.RiftMcp?.open)throw new Error("Rift MCP launcher is unavailable");globalThis.RiftMcp.open();return print("opened mcp");}if(app==="riftrt"){if(!globalThis.RiftRT?.openManager)throw new Error("RiftRT manager is unavailable");await globalThis.RiftRT.openManager();return print("opened riftrt");}const button=document.querySelector(`[data-open="${CSS.escape(app)}"]`);if(!button)throw new Error(`app not found: ${app}`);button.click();return print(`opened ${app}`);}
   if(cmd==="clear")return {clear:true};
   if(cmd==="uptime")return print(`${core.kernel.uptime()}s`);
   if(cmd==="version")return print(core.version);

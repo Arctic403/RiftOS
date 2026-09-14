@@ -17,7 +17,7 @@ Unlike normal MCP filesystem tools, RiftShell can operate on RiftOS roots such a
 
 ## Command flow
 
-The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relative to shell `cwd`. Filesystem commands call `RiftOSCore.fs`; Git commands delegate to RiftGit; `batch` delegates to `RiftShellBatch`; the `vortex` command family delegates to the native `vortex.bridge` Binder client documented in `../vortex-bridge/README.md`; `vortex-agent` delegates to the fixed Vortex-only local Android UI agent and `riftos-agent` delegates to the fixed RiftOS-self UI agent documented in `../vortex-agent/README.md`; `chat` delegates to the local `.riftchat` handoff store documented in `../chat-handoff/README.md`.
+The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relative to shell `cwd`. Filesystem commands call `RiftOSCore.fs`; Git commands delegate to RiftGit; `batch` delegates to `RiftShellBatch`; `open` resolves normal launcher targets plus the dynamic `mcp` and `riftrt` system surfaces and errors instead of claiming success for an unknown app; the `vortex` command family delegates to the native `vortex.bridge` Binder client documented in `../vortex-bridge/README.md`; `vortex-agent` delegates to the fixed Vortex-only local Android UI agent and `riftos-agent` delegates to the fixed RiftOS-self UI agent documented in `../vortex-agent/README.md`; `chat` delegates to the local `.riftchat` handoff store documented in `../chat-handoff/README.md`.
 
 ## Atomic batch engine
 

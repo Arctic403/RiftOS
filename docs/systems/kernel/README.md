@@ -40,6 +40,7 @@ Local bookkeeping such as process records or permission decisions stays in the k
 - Native requests need unique IDs and bounded pending-request lifecycle; unmatched results must not resolve unrelated requests.
 - Filesystem paths must be normalized before routing.
 - Permission decisions must be checked before capability use, not after the native side-effect.
+- UI-backed process records must register termination cleanup. A process kill from RiftShell, Task Manager or another control path must remove the corresponding window exactly once; UI-close and process-close paths must be idempotent.
 - A missing class/reference at module evaluation time stops the entire Android import chain.
 
 ## Failure signatures
@@ -50,7 +51,7 @@ Local bookkeeping such as process records or permission decisions stays in the k
 
 **Apps launch but capability operations fail:** `PermissionBroker`, app permission declaration, or downstream subsystem.
 
-**Task list wrong/stale:** `ProcessTable` lifecycle rather than desktop DOM state.
+**Task list wrong/stale or `kill <pid>` leaves a window behind:** `ProcessTable` / UI `onTerminate` lifecycle rather than desktop DOM state.
 
 ## Fix map
 
@@ -64,7 +65,7 @@ Do not add Android framework logic directly to consumer apps to bypass a kernel 
 
 ## Validation
 
-`package.json` runs `node --check src/riftcore.js` as part of `npm run check`. Because most kernel regressions are integration regressions, also test cold boot, native request/response, Files, Settings, app launch and terminal after a kernel change.
+`package.json` runs `node --check src/riftcore.js` as part of `npm run check`. Because most kernel regressions are integration regressions, also test cold boot, native request/response, Files, Settings, app launch and terminal after a kernel change. Open a built-in window and terminate its PID from RiftShell; verify both the process record and window disappear once, without a duplicate close/focus event.
 
 ## Safe extension points
 
