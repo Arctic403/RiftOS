@@ -29,6 +29,8 @@ private class RiftScopedLocalAgent(
         private const val ACTIVATION_POLL_MS = 50L
         private const val ROOT_SETTLE_MS = 180L
         private const val ACTION_SETTLE_MS = 400L
+        private const val TARGET_LOOKUP_TIMEOUT_MS = 1_000L
+        private const val TARGET_LOOKUP_POLL_MS = 50L
         private const val REQUIRED_STABLE_ROOT_POLLS = 3
     }
 
@@ -104,7 +106,7 @@ private class RiftScopedLocalAgent(
     private fun click(context: Context, args: JSONObject): JSONObject {
         val target = requiredTarget(args)
         val (service, root) = requireTargetServiceAndRoot(context)
-        val node = findNode(root, target)
+        val node = findNodeWithRetry(service, root, target)
             ?: throw IllegalArgumentException("$displayName UI target not found: $target")
         rejectPassword(node)
         val actionNode = actionAnchor(node)
@@ -171,7 +173,8 @@ private class RiftScopedLocalAgent(
         val target = requiredTarget(args)
         val text = args.optString("text")
         require(text.length <= MAX_TEXT_CHARS) { "$displayName agent text exceeds $MAX_TEXT_CHARS characters" }
-        val node = findNode(requireTargetRoot(context), target)
+        val (service, root) = requireTargetServiceAndRoot(context)
+        val node = findNodeWithRetry(service, root, target)
             ?: throw IllegalArgumentException("$displayName text target not found: $target")
         rejectPassword(node)
         require(node.isEditable) { "$displayName target is not editable: $target" }
@@ -237,6 +240,25 @@ private class RiftScopedLocalAgent(
         throw IllegalStateException(
             "$displayName agent could not stabilize $targetPackage; last foreground package was ${lastPackage.ifBlank { "(none)" }}"
         )
+    }
+
+    private fun findNodeWithRetry(
+        service: RiftVortexAccessibilityService,
+        initialRoot: AccessibilityNodeInfo,
+        target: String
+    ): AccessibilityNodeInfo? {
+        var root = initialRoot
+        val deadline = SystemClock.elapsedRealtime() + TARGET_LOOKUP_TIMEOUT_MS
+        while (true) {
+            findNode(root, target)?.let { return it }
+            if (SystemClock.elapsedRealtime() >= deadline) return null
+            SystemClock.sleep(TARGET_LOOKUP_POLL_MS)
+            val fresh = service.rootInActiveWindow
+            if (fresh != null && fresh.packageName?.toString() == targetPackage &&
+                fresh.isVisibleToUser && (fresh.window?.isActive != false)) {
+                root = fresh
+            }
+        }
     }
 
     private fun findNode(root: AccessibilityNodeInfo, target: String): AccessibilityNodeInfo? {
@@ -339,9 +361,19 @@ private class RiftScopedLocalAgent(
         return value.toFloat()
     }
 
+    @Suppress("DEPRECATION")
     private fun requirePoint(service: AccessibilityService, x: Float, y: Float) {
-        val metrics = service.resources.displayMetrics
-        require(x >= 0f && y >= 0f && x < metrics.widthPixels && y < metrics.heightPixels) {
+        // AccessibilityNodeInfo#getBoundsInScreen and dispatchGesture both use full-display screen
+        // coordinates. Resource displayMetrics can describe only the app/content area on devices
+        // with system bars, which falsely rejects valid controls near the native taskbar. Validate
+        // against the real display bounds first and keep resource metrics only as a safe fallback.
+        val realMetrics = android.util.DisplayMetrics()
+        val windowManager = service.getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
+        runCatching { windowManager?.defaultDisplay?.getRealMetrics(realMetrics) }
+        val fallback = service.resources.displayMetrics
+        val width = realMetrics.widthPixels.takeIf { it > 0 } ?: fallback.widthPixels
+        val height = realMetrics.heightPixels.takeIf { it > 0 } ?: fallback.heightPixels
+        require(x >= 0f && y >= 0f && x < width && y < height) {
             "gesture point is outside the local display"
         }
     }

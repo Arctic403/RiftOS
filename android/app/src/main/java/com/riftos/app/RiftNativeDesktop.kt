@@ -36,7 +36,8 @@ class RiftNativeDesktop(
     host: FrameLayout,
     compatibilityView: WebView,
     private val stateSink: (JSONObject) -> Unit,
-    private val appOpenSink: (String) -> Unit
+    private val appOpenSink: (String) -> Unit,
+    private val windowClosedSink: (String) -> Unit
 ) {
     companion object {
         private const val BG = 0xff07141d.toInt()
@@ -495,6 +496,7 @@ class RiftNativeDesktop(
             if (next != null) focusInternal(next) else statusTitle.text = "Native desktop"
         }
         syncTaskbar()
+        windowClosedSink(id)
         return publish(reason)
     }
 

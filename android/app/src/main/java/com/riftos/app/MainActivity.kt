@@ -98,7 +98,8 @@ class MainActivity : Activity() {
             host = rootView,
             compatibilityView = webView,
             stateSink = ::sendDesktopState,
-            appOpenSink = ::openNativeDesktopApp
+            appOpenSink = ::openNativeDesktopApp,
+            windowClosedSink = ::closeNativeDesktopApp
         )
         setContentView(rootView)
         ViewCompat.requestApplyInsets(rootView)
@@ -273,6 +274,13 @@ class MainActivity : Activity() {
 
     private fun openNativeDesktopApp(id: String) {
         val script = "window.RiftDesktop?.openApp(${JSONObject.quote(id)});"
+        runOnUiThread {
+            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+        }
+    }
+
+    private fun closeNativeDesktopApp(id: String) {
+        val script = "window.RiftDesktop?.closeWindow(${JSONObject.quote(id)},{fromNative:true});"
         runOnUiThread {
             if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
         }
@@ -460,6 +468,10 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // MCP shell execution must follow the currently resumed RiftOS runtime, not merely the
+        // most recently created MainActivity. REORDER_TO_FRONT can resume an older Activity
+        // instance without recreating it, so refresh process-wide bridge ownership here.
+        if (::shellBridge.isInitialized) RiftMcpRuntime.registerShellBridge(shellBridge)
         if (::webView.isInitialized) webView.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
     }
@@ -477,7 +489,10 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         if (::workspaceWatcher.isInitialized) workspaceWatcher.shutdown()
-        if (::shellBridge.isInitialized) shellBridge.clear()
+        if (::shellBridge.isInitialized) {
+            RiftMcpRuntime.unregisterShellBridge(shellBridge)
+            shellBridge.close()
+        }
         if (::dispatcher.isInitialized) dispatcher.shutdown()
         if (::browserWindow.isInitialized) browserWindow.destroy()
         if (::nativeDesktop.isInitialized) nativeDesktop.destroy()

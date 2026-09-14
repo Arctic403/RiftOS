@@ -19,8 +19,13 @@ class RiftShellBridge(private val shellWebView: WebView) {
     }
 
     private val pending = ConcurrentHashMap<String, (JSONObject) -> Unit>()
+    @Volatile private var closed = false
 
     fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit) {
+        if (closed) {
+            reply(JSONObject().put("ok", false).put("error", "RiftShell bridge closed"))
+            return
+        }
         val id = "shell-${UUID.randomUUID()}"
         pending[id] = reply
         val payload = JSONObject()
@@ -30,6 +35,10 @@ class RiftShellBridge(private val shellWebView: WebView) {
 
         shellWebView.post {
             if (!pending.containsKey(id)) return@post
+            if (closed) {
+                pending.remove(id)?.invoke(JSONObject().put("id", id).put("ok", false).put("error", "RiftShell bridge closed"))
+                return@post
+            }
             shellWebView.evaluateJavascript(
                 "window.RiftShellMcpNative?.request(${JSONObject.quote(payload.toString())});",
                 null
@@ -53,7 +62,8 @@ class RiftShellBridge(private val shellWebView: WebView) {
         pending.remove(id)?.invoke(result)
     }
 
-    fun clear() {
+    fun close() {
+        closed = true
         val callbacks = pending.entries.toList()
         pending.clear()
         callbacks.forEach { (id, reply) ->

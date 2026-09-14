@@ -183,6 +183,7 @@ const browserMcpBridgeSource = read('android/app/src/main/java/com/riftos/app/Ri
 if (/RiftShellMcp|RiftShellMcpNative|RiftMcpShellNativeResult|rift_shell_result/.test(browserAdapter)) failures.push('guest browser MCP asset contains RiftShell execution/result authority');
 if (!shellSource.includes('window.RiftShellMcpNative = Object.freeze') || !shellSource.includes("method:'mcp.shell.result'")) failures.push('trusted shell does not own the RiftShell MCP shim/result path');
 if (!mainActivity.includes('shellBridge = RiftShellBridge(webView)') || !mainActivity.includes('method == "mcp.shell.result"')) failures.push('MainActivity does not own the shell bridge/result route on the trusted shell WebView');
+if (!mainActivity.includes('override fun onResume()') || !mainActivity.includes('RiftMcpRuntime.registerShellBridge(shellBridge)') || !mainActivity.includes('RiftMcpRuntime.unregisterShellBridge(shellBridge)') || !mainActivity.includes('shellBridge.close()')) failures.push('MainActivity does not keep MCP RiftShell ownership aligned with the resumed/destroyed trusted shell runtime');
 if (browserMcpBridgeSource.includes('RiftShellBridge(') || browserMcpBridgeSource.includes('rift_shell_result')) failures.push('browser MCP compatibility bridge still owns shell execution/result routing');
 if (!shellBridgeSource.includes('private val shellWebView: WebView') || !shellBridgeSource.includes('SHELL_TIMEOUT_MS')) failures.push('RiftShellBridge is not bound to the trusted shell WebView with timeout protection');
 

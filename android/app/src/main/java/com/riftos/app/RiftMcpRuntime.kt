@@ -13,8 +13,17 @@ object RiftMcpRuntime {
     fun shellBridge(): RiftShellBridge? = shellBridge
 
     fun registerShellBridge(bridge: RiftShellBridge) {
-        shellBridge = bridge
-        host?.setShellBridge(bridge)
+        synchronized(this) {
+            shellBridge = bridge
+            host?.setShellBridge(bridge)
+        }
+    }
+
+    fun unregisterShellBridge(bridge: RiftShellBridge) {
+        synchronized(this) {
+            if (shellBridge === bridge) shellBridge = null
+            host?.clearShellBridge(bridge)
+        }
     }
 
     fun toolHost(context: Context): RiftToolHost {

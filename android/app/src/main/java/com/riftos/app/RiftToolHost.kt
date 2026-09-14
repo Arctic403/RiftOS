@@ -28,6 +28,10 @@ class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null
         shellBridge = bridge
     }
 
+    fun clearShellBridge(bridge: RiftShellBridge) {
+        if (shellBridge === bridge) shellBridge = null
+    }
+
     init {
         migrateLegacyState()
         sandbox = RiftToolSandbox(appContext)

@@ -25,7 +25,7 @@ The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relat
 
 ## MCP bridge
 
-`MainActivity` registers `RiftShellBridge` against the trusted RiftOS shell WebView. `RiftShellBridge.execute(command,cwd,reply)` invokes `window.RiftShellMcpNative.request(...)` there. The shell executes through the existing `RiftShellMcp` parser, then sends a one-way exact-origin `mcp.shell.result` message over `RiftAndroid`; native correlates the result back to the pending MCP call. The guest RiftBrowser/ChatGPT page never receives `RiftShellMcp` or shell authority. The bridge has a bounded timeout and still never exposes Android/Linux `/system/bin/sh`. Normal shell calls retain the 60-second envelope; the explicit `vortex test-wait` / `validate-wait` / `script-wait` foreground-session commands receive a separate 105-second envelope because their native Vortex session is bounded to 85 seconds.
+`MainActivity` owns a `RiftShellBridge` against its trusted RiftOS shell WebView. The process-wide MCP runtime registers that bridge at creation and refreshes ownership from `MainActivity.onResume()`, so `FLAG_ACTIVITY_REORDER_TO_FRONT` or another Activity-instance transition cannot leave MCP attached to a hidden older RiftOS runtime. Destroy unregisters only that exact bridge identity before closing it; an older Activity therefore cannot clear a newer resumed bridge, and a closed bridge refuses future execution. `RiftShellBridge.execute(command,cwd,reply)` invokes `window.RiftShellMcpNative.request(...)` in the current trusted shell runtime. The shell executes through the existing `RiftShellMcp` parser, then sends a one-way exact-origin `mcp.shell.result` message over `RiftAndroid`; native correlates the result back to the pending MCP call. The guest RiftBrowser/ChatGPT page never receives `RiftShellMcp` or shell authority. The bridge has a bounded timeout and still never exposes Android/Linux `/system/bin/sh`. Normal shell calls retain the 60-second envelope; the explicit `vortex test-wait` / `validate-wait` / `script-wait` foreground-session commands receive a separate 105-second envelope because their native Vortex session is bounded to 85 seconds.
 
 ## Critical invariants
 
@@ -33,12 +33,14 @@ The terminal calls `runShell(raw,print,state,context)`. Paths are resolved relat
 - Batch write classification/preflight occurs before executing mutations.
 - Rollback captures every mutation target that a supported batch command can touch.
 - Shell MCP bridge requires explicit local write permission and must not become raw Android shell access.
+- Process-wide MCP shell ownership must follow the currently resumed RiftOS `MainActivity`; unregister is identity-checked and destroyed bridges must reject future execution so a reordered/older Activity cannot serve stale process/filesystem state.
 - Git remote actions are handled by RiftGit's own high-level command semantics, not faked as locally reversible file operations.
 - Live `vortex` / `vortex-agent` / `riftos-agent` operations and `chat` bundle creation are explicitly listed as non-reversible and rejected by atomic batch preflight; they cannot truthfully participate in the batch engine's ordinary RiftFS rollback contract.
 
 ## Failure signatures
 
 - Terminal command works manually but MCP shell fails -> shell bridge registration/permissions/correlation.
+- MCP `ps`/`kill` disagrees with visible Task Manager or native windows -> suspect stale MainActivity/WebView bridge ownership; verify `onResume()` re-registration and identity-safe destroy/unregister before changing `ProcessTable`.
 - Batch partially changes files after failure -> mutation target/preflight/rollback bug.
 - Relative path acts in wrong directory -> shell state/resolvePath.
 - Git command parsing wrong -> handoff between `runShell` and RiftGit.
@@ -52,4 +54,4 @@ MCP/native shell bridge -> `RiftShellBridge.kt`, `MainActivity`'s trusted-shell 
 
 ## Validation
 
-Run `scripts/test-rift-shell-batch.mjs` and `scripts/test-rift-shell-git.mjs`. Test cwd changes, quoted arguments, failure rollback, dry-run, permission denial and MCP shell execution after any shell protocol change.
+Run `scripts/test-rift-shell-batch.mjs` and `scripts/test-rift-shell-git.mjs`. Test cwd changes, quoted arguments, failure rollback, dry-run, permission denial and MCP shell execution after any shell protocol change. On Android, also force/reproduce MainActivity reordering or recreation and confirm MCP `ps` matches the visible Task Manager before and after resume/destroy transitions.
