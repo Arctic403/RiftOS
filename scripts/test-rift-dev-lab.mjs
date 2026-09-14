@@ -62,7 +62,7 @@ assert.equal(lastPatch.version,2);assert.equal(lastPatch.changes[0].base_sha256,
 assert.equal((await lab.listStaged()).length,1,'newer post-snapshot stage must survive publication cleanup');
 
 const run=await lab.runScript('lab.log("hello"); lab.assert(!workspace.writeText, "workspace must be read-only"); lab.assert(!core.fs.writeText, "core fs must be read-only"); return 7;');
-assert.equal(run.ok,true);assert.equal(run.result,7);assert.deepEqual(run.logs,['hello']);
+assert.equal(run.ok,true);assert.equal(run.result,7);assert.deepEqual(Array.from(run.logs),['hello']);
 await lab.resetStage();
 files.set('/documents/agent-source.js','window.agentSource=42;');
 const agentStage=await lab.executeAgentRequest({action:'stage-file',path:'src/agent-source.js',sourcePath:'agent-source.js',cwd:'/documents'});
