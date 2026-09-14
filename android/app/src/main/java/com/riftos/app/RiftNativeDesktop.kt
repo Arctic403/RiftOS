@@ -42,10 +42,10 @@ class RiftNativeDesktop(
     companion object {
         private const val BG = 0xff07141d.toInt()
         private const val PANEL = 0xe80a1118.toInt()
-        private const val WINDOW_BAR = 0xe8101a22.toInt()
+        private const val WINDOW_BAR = 0xff101a22.toInt()
         private const val PANEL_ACTIVE = 0x13ffffff
-        private const val BORDER = 0x26ffffff
-        private const val FOCUS_BORDER = 0x4a78f6c7
+        private const val BORDER = 0xff2a3640.toInt()
+        private const val FOCUS_BORDER = 0xff4fb99a.toInt()
         private const val ACCENT = 0xff78f6c7.toInt()
         private const val TEXT = 0xffe7eef5.toInt()
         private const val MUTED = 0xff9aa8b5.toInt()
@@ -406,7 +406,6 @@ class RiftNativeDesktop(
         val titleBar = FrameLayout(activity).apply {
             isClickable = true
             isFocusable = true
-            elevation = dp(8).toFloat()
         }
         val titleText = TextView(activity).apply {
             setTextColor(TEXT)
@@ -811,7 +810,7 @@ class RiftNativeDesktop(
 
     private fun updateFocusStyle(record: WindowRecord, focused: Boolean) {
         val border = if (focused) FOCUS_BORDER else BORDER
-        record.titleBar.background = solid(WINDOW_BAR, dp(8).toFloat(), border, borderWidth)
+        record.titleBar.background = solid(WINDOW_BAR, 0f, border, borderWidth)
         record.leftBorder.setBackgroundColor(border)
         record.rightBorder.setBackgroundColor(border)
         record.bottomBorder.setBackgroundColor(border)
