@@ -615,7 +615,7 @@ class RiftNativeDesktop(
         val item = FrameLayout(activity).apply {
             isClickable = true
             isFocusable = true
-            contentDescription = label
+            contentDescription = "Taskbar $label"
             background = pressable(if (active) PANEL_ACTIVE else Color.TRANSPARENT, 0x13ffffff, 6)
             setOnClickListener {
                 val live = windows[appId] ?: windows["riftrt:$appId"] ?: record?.let { windows[it.id] }
@@ -633,6 +633,7 @@ class RiftNativeDesktop(
             setIncludeFontPadding(false)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             setPadding(if (showLabel) dp(9) else 0, 0, if (showLabel) dp(6) else 0, 0)
         }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         if (record != null) {
@@ -956,6 +957,7 @@ class RiftNativeDesktop(
                 gravity = Gravity.CENTER
                 setIncludeFontPadding(false)
                 setTypeface(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 background = iconBackground(if (compact) 9 else 10)
             }, LinearLayout.LayoutParams(iconSize, iconSize))
             addView(TextView(activity).apply {
@@ -966,6 +968,7 @@ class RiftNativeDesktop(
                 setIncludeFontPadding(false)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 setPadding(0, dp(5), 0, 0)
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         }
@@ -978,7 +981,7 @@ class RiftNativeDesktop(
         isClickable = true
         isFocusable = true
         isEnabled = runtimeReady
-        contentDescription = app.name
+        contentDescription = "Start ${app.name}"
         setOnClickListener {
             startMenu.visibility = View.GONE
             if (runtimeReady) openApp(app.id)
@@ -990,6 +993,7 @@ class RiftNativeDesktop(
             gravity = Gravity.CENTER
             setIncludeFontPadding(false)
             setTypeface(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             background = solid(0xff142b37.toInt(), dp(8).toFloat())
         }, LinearLayout.LayoutParams(dp(34), dp(34)))
         addView(TextView(activity).apply {
@@ -1000,6 +1004,7 @@ class RiftNativeDesktop(
             setIncludeFontPadding(false)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             setPadding(dp(2), dp(6), dp(2), 0)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
     }

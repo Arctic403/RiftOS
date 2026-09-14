@@ -27,9 +27,9 @@ private class RiftScopedLocalAgent(
         private const val GESTURE_TIMEOUT_MS = 5_000L
         private const val ACTIVATION_TIMEOUT_MS = 3_000L
         private const val ACTIVATION_POLL_MS = 50L
-        private const val ROOT_SETTLE_MS = 120L
-        private const val ACTION_SETTLE_MS = 140L
-        private const val REQUIRED_STABLE_ROOT_POLLS = 2
+        private const val ROOT_SETTLE_MS = 180L
+        private const val ACTION_SETTLE_MS = 400L
+        private const val REQUIRED_STABLE_ROOT_POLLS = 3
     }
 
     fun execute(context: Context, args: JSONObject): JSONObject {
@@ -103,24 +103,37 @@ private class RiftScopedLocalAgent(
 
     private fun click(context: Context, args: JSONObject): JSONObject {
         val target = requiredTarget(args)
-        val node = findNode(requireTargetRoot(context), target)
+        val (service, root) = requireTargetServiceAndRoot(context)
+        val node = findNode(root, target)
             ?: throw IllegalArgumentException("$displayName UI target not found: $target")
         rejectPassword(node)
-        var actionNode: AccessibilityNodeInfo? = node
-        while (actionNode != null && !actionNode.isClickable) {
-            val parent = actionNode.parent
-            if (parent?.packageName?.toString() != targetPackage) break
-            actionNode = parent
+        val actionNode = actionAnchor(node)
+        require(actionNode.isClickable) { "$displayName UI target is not clickable: $target" }
+
+        val inputMode = if (targetPackage == "com.riftos.app") {
+            // Android can report ACTION_CLICK=true for RiftOS self-controls without dispatching the
+            // View click listener. A short fixed-scope accessibility gesture matches physical input
+            // and proved reliable against the native RiftDesktop during live acceptance testing.
+            val bounds = Rect().also(actionNode::getBoundsInScreen)
+            require(!bounds.isEmpty) { "$displayName UI target has no tappable bounds: $target" }
+            val x = bounds.exactCenterX()
+            val y = bounds.exactCenterY()
+            requirePoint(service, x, y)
+            dispatchGesture(service, Path().apply { moveTo(x, y) }, 80L)
+            "gesture_tap"
+        } else {
+            val clicked = actionNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (!clicked) throw IllegalStateException("$displayName UI target is not clickable: $target")
+            "accessibility_click"
         }
-        val clicked = actionNode?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
-        if (!clicked) throw IllegalStateException("$displayName UI target is not clickable: $target")
         SystemClock.sleep(ACTION_SETTLE_MS)
         return JSONObject()
             .put("scope", targetPackage)
             .put("clicked", true)
             .put("target", target)
+            .put("input", inputMode)
             .put("settled_ms", ACTION_SETTLE_MS)
-            .put("node", nodeJson(node, 0))
+            .put("node", nodeJson(actionNode, 0))
     }
 
     private fun tap(context: Context, args: JSONObject): JSONObject {
@@ -247,12 +260,31 @@ private class RiftScopedLocalAgent(
             for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
         val matches = if (exactMatches.isNotEmpty()) exactMatches else semanticMatches
-        if (matches.size > 1) {
+        val anchored = LinkedHashMap<String, AccessibilityNodeInfo>()
+        for (match in matches) {
+            val anchor = actionAnchor(match)
+            anchored.putIfAbsent(nodeIdentity(anchor), anchor)
+        }
+        if (anchored.size > 1) {
             throw IllegalArgumentException(
                 "$displayName UI target is ambiguous: $target; use a unique content-description or view-id"
             )
         }
-        return matches.firstOrNull()
+        return anchored.values.firstOrNull()
+    }
+
+    private fun actionAnchor(node: AccessibilityNodeInfo): AccessibilityNodeInfo {
+        var current: AccessibilityNodeInfo? = node
+        while (current != null && current.packageName?.toString() == targetPackage) {
+            if (current.isClickable || current.isEditable) return current
+            current = current.parent
+        }
+        return node
+    }
+
+    private fun nodeIdentity(node: AccessibilityNodeInfo): String {
+        val bounds = Rect().also(node::getBoundsInScreen)
+        return "${node.windowId}:${node.className}:${node.viewIdResourceName}:${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}"
     }
 
     private fun semanticLabel(value: String): String {
@@ -351,9 +383,28 @@ object RiftVortexLocalAgent {
 /** RiftOS-self-only fixed local UI authority used for shell-driven UI acceptance testing. */
 object RiftOsLocalAgent {
     private const val TARGET_PACKAGE = "com.riftos.app"
+    private const val SELF_BACK_SETTLE_MS = 400L
     private val delegate = RiftScopedLocalAgent(TARGET_PACKAGE, "RiftOS")
 
     fun execute(context: Context, args: JSONObject): JSONObject {
+        if (args.optString("op").trim().equals("back", ignoreCase = true) && context is MainActivity) {
+            delegate.ensureActive(context)
+            val latch = CountDownLatch(1)
+            context.runOnUiThread {
+                try {
+                    context.onBackPressed()
+                } finally {
+                    latch.countDown()
+                }
+            }
+            require(latch.await(2_000L, TimeUnit.MILLISECONDS)) { "Timed out dispatching RiftOS self Back" }
+            SystemClock.sleep(SELF_BACK_SETTLE_MS)
+            return JSONObject()
+                .put("scope", TARGET_PACKAGE)
+                .put("back", true)
+                .put("input", "riftos_activity_back")
+                .put("settled_ms", SELF_BACK_SETTLE_MS)
+        }
         val out = delegate.execute(context, args)
         if (out.has("target_foreground")) out.put("riftos_foreground", out.optBoolean("target_foreground"))
         return out

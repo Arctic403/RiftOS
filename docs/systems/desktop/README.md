@@ -53,7 +53,8 @@ Pinned apps and running windows share the native taskbar. Installed RiftRT apps 
 - `MainActivity` must not add the shell WebView as the top-level desktop surface; the WebView belongs inside `RiftNativeDesktop.contentHost`.
 - Legacy `riftdesktop-android.js` / window-host modules are fallback-only and must not execute in native mode.
 - The compatibility WebView may render app bodies, but no DOM title bar, taskbar, launcher, drag/resize implementation or z-order policy may become authoritative in native mode.
-- Window/process close remains idempotent across native close controls, Task Manager, RiftShell `kill`, app self-close and Android Back.
+- Compatibility CSS must preserve the Android-published inline `left`/`top` content coordinates. Never reset the native content window with an `inset:* !important` shorthand; only non-authoritative `right`/`bottom` edges may be forced to `auto`.
+- Window/process close remains idempotent across native close controls, Task Manager, RiftShell `kill`, app self-close and Android Back. Task Manager subscribes to ProcessTable changes while open so external termination is reflected immediately, and its listener is released with the Task Manager process.
 - Native state sequence numbers prevent duplicate request-response/event delivery from replaying older geometry.
 - Browser renderer visibility follows the native focused window's compatibility content rectangle and stays under native chrome.
 - Taskbar pins, wallpaper and normal geometry continue to persist through RiftFS settings rather than creating an unrelated second settings store.
@@ -65,7 +66,7 @@ Pinned apps and running windows share the native taskbar. Installed RiftRT apps 
 ## Failure signatures
 
 - Only a full-screen WebView appears in Android Accessibility -> native desktop bootstrap/host wiring failed or legacy mode loaded unexpectedly.
-- Native frame appears but app body is elsewhere -> physical-pixel/CSS-coordinate conversion or stale native state sequence.
+- Native frame appears but app body is elsewhere -> first inspect `riftdesktop-native-compat.js` for CSS overriding the inline native `left`/`top`; then inspect physical-pixel/CSS-coordinate conversion or stale native state sequence.
 - Window close removes frame but leaves process/body -> native state callback and JS process lifecycle diverged.
 - Shell `kill <pid>` removes the process but leaves native frame -> `openWindow()` onTerminate/native close bridge regression.
 - RiftRT app gets HTML title bars or its own taskbar entry manager -> `nativeHosted` path failed and RiftRT created legacy windows.

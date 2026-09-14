@@ -213,7 +213,7 @@ class RiftNativeDispatcher(
         "vortex.bridge" -> vortexBridge.execute(args)
         "vortex.session" -> vortexBridge.executeSession(args)
         "vortex.agent" -> RiftVortexLocalAgent.execute(activity.applicationContext, args)
-        "riftos.agent" -> RiftOsLocalAgent.execute(activity.applicationContext, args)
+        "riftos.agent" -> RiftOsLocalAgent.execute(activity, args)
         "chat.handoff" -> RiftChatHandoff.execute(riftRoot, args)
         "device.vibrate" -> vibrate(args.optLong("milliseconds", 40L))
         "clipboard.read", "clipboard.readText" -> clipboardRead()
