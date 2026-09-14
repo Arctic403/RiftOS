@@ -200,6 +200,12 @@ const shellUi = read('src/riftos.js');
 if (shellUi.includes('core.native.call(`browser.window.${method}`')) {
   for (const match of shellUi.matchAll(/\bnative\(\s*["']([^"']+)["']/g)) nativeCallers.add(`browser.window.${match[1]}`);
 }
+// Shared local-agent shell calls route through core.native.call(nativeMethod, ...), so the
+// route literal lives at the runLocalAgentShell call site rather than inside native.call().
+// Resolve those literals explicitly instead of weakening the orphan-handler check.
+for (const match of shellUi.matchAll(/\brunLocalAgentShell\(\s*["'][^"']+["']\s*,\s*["']([^"']+)["']/g)) {
+  nativeCallers.add(match[1]);
+}
 for (const method of nativeCallers) {
   if (!supported.has(method)) failures.push(`JavaScript native call has no Android handler: ${method}`);
 }
