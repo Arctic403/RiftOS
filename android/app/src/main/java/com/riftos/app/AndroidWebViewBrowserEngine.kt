@@ -47,19 +47,32 @@ class AndroidWebViewBrowserEngine(
         )
     }
 
+    private val container = android.widget.FrameLayout(activity).apply {
+        clipChildren = true
+        clipToPadding = true
+        setBackgroundColor(0xff0a0d12.toInt())
+    }
     val webView = WebView(activity)
-    override val view get() = webView
+    override val view get() = container
     override val rendererId = "android-webview"
 
     private val mcpApp = RiftBrowserMcpAppBridge(activity, webView)
     private val defaultUserAgent = WebSettings.getDefaultUserAgent(activity)
     private var defaultUserAgentMetadata: UserAgentMetadata? = null
     private var popupWebView: WebView? = null
+    private var popupHost: android.widget.FrameLayout? = null
     private var crashed = false
     private var desktopMode = false
 
     init {
         CookieManager.getInstance().setAcceptCookie(true)
+        container.addView(
+            webView,
+            android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
         configureMainWebView(webView)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
             defaultUserAgentMetadata = runCatching { WebSettingsCompat.getUserAgentMetadata(webView.settings) }.getOrNull()
@@ -107,10 +120,18 @@ class AndroidWebViewBrowserEngine(
         .put("progress", webView.progress)
         .put("crashed", crashed)
         .put("desktopMode", desktopMode)
+        .put("popupOpen", popupWebView != null)
         .put("riftMcpApp", mcpApp.state())
 
-    override fun onResume() { webView.onResume() }
-    override fun onPause() { webView.onPause() }
+    override fun onResume() {
+        webView.onResume()
+        popupWebView?.onResume()
+    }
+
+    override fun onPause() {
+        popupWebView?.onPause()
+        webView.onPause()
+    }
 
     override fun destroy() {
         destroyPopup()
@@ -119,6 +140,7 @@ class AndroidWebViewBrowserEngine(
         runCatching { webView.loadUrl("about:blank") }
         runCatching { webView.removeAllViews() }
         runCatching { webView.destroy() }
+        runCatching { container.removeAllViews() }
     }
 
     private fun configureMainWebView(view: WebView) {
@@ -213,26 +235,9 @@ class AndroidWebViewBrowserEngine(
                 isUserGesture: Boolean,
                 resultMsg: Message
             ): Boolean {
-                if (!isUserGesture || !isAuthFlowUrl(view.url)) return false
-                destroyPopup()
-                val popup = WebView(activity)
-                popupWebView = popup
-                configurePopupWebView(popup)
-                popup.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                        redirectPopupToMain(request.url)
-
-                    override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                        if (url != "about:blank") redirectPopupToMain(Uri.parse(url))
-                    }
-                }
-                val transport = resultMsg.obj as? WebView.WebViewTransport ?: run {
-                    destroyPopup()
-                    return false
-                }
-                transport.webView = popup
-                resultMsg.sendToTarget()
-                return true
+                val opener = runCatching { Uri.parse(view.url.orEmpty()) }.getOrNull()
+                if (!isUserGesture || opener?.scheme?.equals("https", ignoreCase = true) != true) return false
+                return createVisiblePopup(resultMsg)
             }
 
             override fun onCloseWindow(window: WebView) {
@@ -250,6 +255,95 @@ class AndroidWebViewBrowserEngine(
 
             override fun onProgressChanged(view: WebView?, newProgress: Int) { stateChanged() }
         }
+    }
+
+    private fun createVisiblePopup(resultMsg: Message): Boolean {
+        destroyPopup()
+        val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+        val popup = WebView(activity)
+        val host = android.widget.FrameLayout(activity).apply {
+            clipChildren = true
+            clipToPadding = true
+            setBackgroundColor(0xff0a0d12.toInt())
+        }
+        popupWebView = popup
+        popupHost = host
+        configurePopupWebView(popup)
+        popup.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+        popup.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, false)
+        popup.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (!request.isForMainFrame) return false
+                val uri = request.url
+                return when (uri.scheme?.lowercase()) {
+                    "https" -> false
+                    "http" -> {
+                        view.loadUrl(uri.buildUpon().scheme("https").build().toString())
+                        true
+                    }
+                    in EXTERNAL_SCHEMES -> openExternal(uri)
+                    else -> true
+                }
+            }
+
+            override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler, error: SslError?) {
+                handler.cancel()
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                CookieManager.getInstance().flush()
+                super.onPageFinished(view, url)
+            }
+        }
+        popup.webChromeClient = object : WebChromeClient() {
+            override fun onCloseWindow(window: WebView) {
+                if (window === popupWebView) destroyPopup()
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?,
+                callback: GeolocationPermissions.Callback?
+            ) {
+                callback?.invoke(origin, false, false)
+            }
+        }
+        host.addView(
+            popup,
+            android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        val closeSize = (48f * activity.resources.displayMetrics.density + 0.5f).toInt()
+        val close = android.widget.Button(activity).apply {
+            text = "×"
+            contentDescription = "Close authentication popup"
+            setTextColor(android.graphics.Color.WHITE)
+            setBackgroundColor(0xcc101a22.toInt())
+            setOnClickListener { destroyPopup() }
+        }
+        host.addView(
+            close,
+            android.widget.FrameLayout.LayoutParams(
+                closeSize,
+                closeSize,
+                android.view.Gravity.TOP or android.view.Gravity.END
+            )
+        )
+        container.addView(
+            host,
+            android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        host.bringToFront()
+        transport.webView = popup
+        resultMsg.sendToTarget()
+        stateChanged()
+        return true
     }
 
     private fun installWebViewClient() {
@@ -339,25 +433,19 @@ class AndroidWebViewBrowserEngine(
             hostName.endsWith(".openai.com")
     }
 
-    private fun redirectPopupToMain(uri: Uri): Boolean {
-        if (uri.scheme?.lowercase() != "https") {
-            destroyPopup()
-            return true
-        }
-        updateCookiePolicy(uri.toString())
-        webView.loadUrl(uri.toString())
-        destroyPopup()
-        return true
-    }
-
     private fun destroyPopup() {
-        popupWebView?.let { popup ->
-            popupWebView = null
+        val popup = popupWebView
+        val host = popupHost
+        popupWebView = null
+        popupHost = null
+        if (host != null) runCatching { container.removeView(host) }
+        if (popup != null) {
             runCatching { popup.stopLoading() }
             runCatching { popup.loadUrl("about:blank") }
             runCatching { popup.removeAllViews() }
             runCatching { popup.destroy() }
         }
+        stateChanged()
     }
 
     private fun openExternal(uri: Uri): Boolean {

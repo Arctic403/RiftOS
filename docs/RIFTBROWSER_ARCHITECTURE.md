@@ -39,7 +39,7 @@ Desktop minimize/restore emits `riftos:window-visibility` so the native renderer
 The compatibility backend currently provides:
 
 - HTTPS navigation, back/forward/reload,
-- cookies and auth popup handling,
+- cookies and visible opener-linked auth popup handling,
 - downloads and file chooser integration,
 - renderer state/progress,
 - exact-origin ChatGPT MCP injection,
@@ -54,6 +54,7 @@ The compatibility backend currently provides:
 - Camera/microphone/geolocation are not automatically granted.
 - Arbitrary Android file/content access is disabled.
 - External `mailto`, `tel` and `geo` schemes are handed to Android.
+- A user-initiated popup is accepted only from an HTTPS opener, rendered inside that tab's owned engine surface, and never allowed to escape over RiftOS chrome. The child retains `WebViewTransport` opener semantics and has an explicit native close control.
 
 ## ChatGPT + local MCP
 

@@ -18,6 +18,8 @@ It also owns WebView security defaults: mixed content blocked, SSL errors cancel
 
 Desktop Site mode captures the WebView's normal user agent and supported UA metadata at engine creation. When enabled, the engine uses a desktop Chromium/Windows UA, non-mobile Windows client hints plus the Desktop form factor where supported, wide/overview layout and hidden built-in zoom controls; the active URL is then reloaded in place without adding a duplicate navigation-history entry. Disabling restores the captured Android WebView identity. Popup/auth WebViews inherit the owning tab's current mode.
 
+User-initiated popups from an HTTPS page are rendered as a real child WebView inside the owning engine surface. The child remains connected through Android `WebViewTransport`, so OAuth providers can use normal `window.opener` / `window.close` behavior and shared WebView cookies. The popup is bounded to the RiftBrowser renderer plane, carries an explicit native close control, keeps SSL/permission/geolocation restrictions, upgrades plain HTTP to HTTPS, and is destroyed when the tab/engine is destroyed or Desktop Site mode changes. Popups are no longer redirected invisibly into the parent tab.
+
 ## What it does not own
 
 It does not own desktop geometry, minimize/maximize/taskbar state, MCP tool schemas or execution, workspace permissions, or generic Android capability dispatch. Those belong to RiftBrowserWindow/RiftDesktop, Rift MCP, and the native dispatcher respectively.
@@ -38,7 +40,7 @@ State callbacks propagate URL, title, progress, navigation capability and crash 
 
 - WebView guest content never receives the generic native dispatcher.
 - Exact-origin MCP injection remains origin-gated.
-- Popup WebViews are temporary and cleaned up.
+- Popup WebViews are temporary, visible only inside the owning renderer surface, retain opener linkage, and are cleaned up.
 - `destroy()` releases popup, bridge and WebView resources.
 - Renderer crashes must be surfaced rather than silently leaving stale state.
 - Authentication/cookie behavior must not be mixed into desktop-window code.
@@ -48,7 +50,8 @@ State callbacks propagate URL, title, progress, navigation capability and crash 
 ## Failure signatures
 
 - Blank page after renderer death -> render-process-gone handling.
-- OAuth/login loops -> popup redirect or cookie policy.
+- OAuth/login popup never appears -> `onCreateWindow` / visible popup-host ownership or user-gesture gating.
+- OAuth/login completes but the opener does not update -> popup opener linkage, cookie policy or provider restrictions.
 - File chooser/download fails -> WebChromeClient/download callbacks or MainActivity delegation.
 - External link does nothing -> external scheme handoff.
 - ChatGPT renders but Rift MCP compatibility is absent -> exact-origin bridge installation/lifecycle.
