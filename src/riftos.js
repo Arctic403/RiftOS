@@ -546,19 +546,41 @@ async function openBrowser(startUrl="https://chatgpt.com"){
   const win=body.closest(".window");
   const url=String(startUrl||"https://chatgpt.com").trim()||"https://chatgpt.com";
   body.innerHTML=`<div class="rift-browser-window">
+    <div class="rift-browser-tabsbar">
+      <div class="rift-browser-tab-list" id="browserTabList" role="tablist" aria-label="Browser tabs"></div>
+      <button id="browserNewTab" class="rift-browser-new-tab" title="New tab" aria-label="New tab">＋</button>
+    </div>
     <div class="rift-browser-windowbar">
       <button id="browserBack" title="Back" aria-label="Browser Back" disabled>←</button><button id="browserForward" title="Forward" aria-label="Browser Forward" disabled>→</button><button id="browserReload" title="Reload" aria-label="Browser Reload">↻</button>
       <input id="browserUrl" aria-label="Browser address" value="${escapeHTML(url)}" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url">
       <button class="primary" id="browserGo">Go</button>
     </div>
-    <div class="rift-browser-meta"><span id="browserState">RiftBrowser Engine</span><span>WebView compatibility backend · ChatGPT MCP isolated</span></div>
-    <div class="rift-browser-native-surface" id="riftBrowserNativeSurface"><div><span>◎</span><strong>RiftBrowser</strong><small>Renderer is owned and clipped by this RiftOS window.</small></div></div>
+    <div class="rift-browser-meta"><span id="browserState">RiftBrowser Engine</span><span id="browserMode">WebView compatibility backend · ChatGPT MCP isolated</span></div>
+    <div class="rift-browser-native-surface" id="riftBrowserNativeSurface"><div><span>◎</span><strong>RiftBrowser</strong><small>Only the selected tab owns the visible renderer surface.</small></div></div>
   </div>`;
-  const surface=body.querySelector("#riftBrowserNativeSurface"),input=body.querySelector("#browserUrl"),stateEl=body.querySelector("#browserState"),back=body.querySelector("#browserBack"),forward=body.querySelector("#browserForward");
-  let closed=false,lastBounds="",syncTimer=0;
-  const updateState=state=>{if(closed||!document.contains(body))return;if(state.url&&document.activeElement!==input)input.value=state.url;back.disabled=!state.canGoBack;forward.disabled=!state.canGoForward;stateEl.textContent=state.crashed?"Renderer restarted":state.progress<100?`Loading ${state.progress||0}%`:(state.title||"RiftBrowser");};
-  browserNativeListeners.add(updateState);
+  const surface=body.querySelector("#riftBrowserNativeSurface"),input=body.querySelector("#browserUrl"),stateEl=body.querySelector("#browserState"),modeEl=body.querySelector("#browserMode"),tabList=body.querySelector("#browserTabList"),back=body.querySelector("#browserBack"),forward=body.querySelector("#browserForward");
+  let closed=false,lastBounds="",syncTimer=0,activeTabId="";
   const native=async(method,args={})=>core.native.call(`browser.window.${method}`,args);
+  const renderTabs=state=>{
+    const tabs=Array.isArray(state?.tabs)?state.tabs:[];
+    activeTabId=String(state?.activeTabId||tabs.find(tab=>tab?.active)?.id||"");
+    tabList.innerHTML=tabs.map(tab=>{
+      const id=escapeHTML(tab?.id||""),rawLabel=String(tab?.title||tab?.url||"New tab"),label=escapeHTML(rawLabel==="RiftBrowser"&&tab?.url?tab.url:rawLabel);
+      return `<div class="rift-browser-tab${tab?.active?" active":""}" data-browser-tab-wrap="${id}" role="presentation"><button class="rift-browser-tab-main" data-browser-tab="${id}" role="tab" aria-selected="${tab?.active?"true":"false"}" title="${label}"><span>${label}</span></button><button class="rift-browser-tab-close" data-browser-tab-close="${id}" title="Close tab" aria-label="Close ${label}">×</button></div>`;
+    }).join("");
+    tabList.querySelectorAll("[data-browser-tab]").forEach(button=>button.onclick=()=>native("tab.select",{tabId:button.dataset.browserTab}).then(updateState).catch(error=>{stateEl.textContent=error.message;}));
+    tabList.querySelectorAll("[data-browser-tab-close]").forEach(button=>button.onclick=event=>{event.stopPropagation();native("tab.close",{tabId:button.dataset.browserTabClose}).then(updateState).catch(error=>{stateEl.textContent=error.message;});});
+    tabList.querySelector(".rift-browser-tab.active")?.scrollIntoView({block:"nearest",inline:"nearest"});
+  };
+  const updateState=state=>{
+    if(closed||!document.contains(body))return;
+    renderTabs(state||{});
+    if(state?.url&&document.activeElement!==input)input.value=state.url;
+    back.disabled=!state?.canGoBack;forward.disabled=!state?.canGoForward;
+    stateEl.textContent=state?.crashed?"Renderer restarted":Number(state?.progress||0)<100?`Loading ${state?.progress||0}%`:(state?.title||"RiftBrowser");
+    const count=Number(state?.tabCount||state?.tabs?.length||1),max=Number(state?.maxTabs||8);modeEl.textContent=`${count}/${max} tabs · WebView compatibility backend · ChatGPT MCP isolated`;
+  };
+  browserNativeListeners.add(updateState);
   const visible=()=>document.contains(surface)&&!win.classList.contains("rift-minimized")&&win.classList.contains("rift-focused")&&!document.querySelector("#riftStartMenu.open");
   const syncBounds=force=>{
     clearTimeout(syncTimer);
@@ -573,9 +595,13 @@ async function openBrowser(startUrl="https://chatgpt.com"){
       if(force||key!==lastBounds){lastBounds=key;try{await native("bounds",{left:rect.left,top:rect.top,width:rect.width,height:rect.height,dpr:window.devicePixelRatio||1});await native("visible",{visible:true});}catch(_){}}
     },24);
   };
-  const navigate=async()=>{try{await native("navigate",{url:input.value.trim()||"https://chatgpt.com"});}catch(error){stateEl.textContent=error.message;}};
-  body.querySelector("#browserGo").onclick=navigate;input.addEventListener("keydown",event=>{if(event.key==="Enter")navigate();});
-  back.onclick=()=>native("back").catch(()=>{});forward.onclick=()=>native("forward").catch(()=>{});body.querySelector("#browserReload").onclick=()=>native("reload").catch(()=>{});
+  const navigate=async()=>{try{updateState(await native("navigate",{url:input.value.trim()||"https://chatgpt.com"}));}catch(error){stateEl.textContent=error.message;}};
+  const newTab=async()=>{try{updateState(await native("tab.new",{url:"https://www.google.com"}));}catch(error){stateEl.textContent=error.message;}};
+  const closeActiveTab=async()=>{if(!activeTabId)return;try{updateState(await native("tab.close",{tabId:activeTabId}));}catch(error){stateEl.textContent=error.message;}};
+  body.querySelector("#browserGo").onclick=navigate;body.querySelector("#browserNewTab").onclick=newTab;input.addEventListener("keydown",event=>{if(event.key==="Enter")navigate();});
+  back.onclick=()=>native("back").then(updateState).catch(()=>{});forward.onclick=()=>native("forward").then(updateState).catch(()=>{});body.querySelector("#browserReload").onclick=()=>native("reload").then(updateState).catch(()=>{});
+  const keyHandler=event=>{if(closed||!win.classList.contains("rift-focused")||!(event.ctrlKey||event.metaKey))return;const key=String(event.key||"").toLowerCase();if(key==="t"){event.preventDefault();newTab();}else if(key==="w"){event.preventDefault();closeActiveTab();}else if(key==="l"){event.preventDefault();input.focus();input.select();}};
+  window.addEventListener("keydown",keyHandler);
   const resizeObserver=new ResizeObserver(()=>syncBounds(false));resizeObserver.observe(surface);resizeObserver.observe(win);
   const windowObserver=new MutationObserver(()=>syncBounds(false));windowObserver.observe(win,{attributes:true,attributeFilter:["class","style"]});
   const startMenu=document.querySelector("#riftStartMenu"),startObserver=startMenu?new MutationObserver(()=>syncBounds(true)):null;if(startMenu)startObserver.observe(startMenu,{attributes:true,attributeFilter:["class"]});
@@ -583,12 +609,11 @@ async function openBrowser(startUrl="https://chatgpt.com"){
   const visibilityHandler=event=>{if(event.detail?.id!=="browser")return;if(event.detail.visible===false){clearTimeout(syncTimer);lastBounds="";native("visible",{visible:false}).catch(()=>{});}else syncBounds(true);};
   const showDesktopHandler=()=>{clearTimeout(syncTimer);lastBounds="";native("visible",{visible:false}).catch(()=>{});};
   window.addEventListener("riftos:window-activate",activation);window.addEventListener("riftos:window-visibility",visibilityHandler);window.addEventListener("riftos:show-desktop",showDesktopHandler);window.addEventListener("resize",activation);
-  const closeHandler=event=>{if(event.detail?.id!=="browser")return;closed=true;clearTimeout(syncTimer);native("visible",{visible:false}).catch(()=>{});browserNativeListeners.delete(updateState);resizeObserver.disconnect();windowObserver.disconnect();startObserver?.disconnect();window.removeEventListener("riftos:window-activate",activation);window.removeEventListener("riftos:window-visibility",visibilityHandler);window.removeEventListener("riftos:show-desktop",showDesktopHandler);window.removeEventListener("resize",activation);window.removeEventListener("riftos:window-close",closeHandler);native("close").catch(()=>{});};
+  const closeHandler=event=>{if(event.detail?.id!=="browser")return;closed=true;clearTimeout(syncTimer);native("visible",{visible:false}).catch(()=>{});browserNativeListeners.delete(updateState);resizeObserver.disconnect();windowObserver.disconnect();startObserver?.disconnect();window.removeEventListener("keydown",keyHandler);window.removeEventListener("riftos:window-activate",activation);window.removeEventListener("riftos:window-visibility",visibilityHandler);window.removeEventListener("riftos:show-desktop",showDesktopHandler);window.removeEventListener("resize",activation);window.removeEventListener("riftos:window-close",closeHandler);native("close").catch(()=>{});};
   window.addEventListener("riftos:window-close",closeHandler);
   requestAnimationFrame(()=>{syncBounds(true);native("open",{url}).then(updateState).catch(error=>{stateEl.textContent=error.message;});});
   return true;
 }
-
 function tokenize(raw){const out=[];String(raw||"").replace(/"([^"]*)"|'([^']*)'|([^\s]+)/g,(_,a,b,c)=>{out.push(a??b??c);return "";});return out;}
 const shellRootAliases=new Set(["home","workspace","downloads","documents","mounts","apps","system"]);
 function resolvePath(cwd,value){

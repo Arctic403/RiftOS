@@ -6,15 +6,18 @@ import android.view.View
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.widget.FrameLayout
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.util.UUID
 import kotlin.math.roundToInt
 
 /**
  * RiftOS-owned browser window surface.
  *
- * The renderer is a child of this surface and is never parked full-screen behind the shell.
- * Hiding/minimizing RiftBrowser removes the native surface from layout while keeping the engine alive.
+ * One desktop browser window owns a bounded set of renderer tabs. Every tab keeps its own
+ * RiftBrowserEngine/history/session state, but only the selected tab is attached as VISIBLE.
+ * Hiding/minimizing RiftBrowser removes every native renderer from layout.
  */
 class RiftBrowserWindow(
     private val activity: Activity,
@@ -22,6 +25,17 @@ class RiftBrowserWindow(
     private val launchFileChooser: (ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams?) -> Boolean,
     private val stateSink: (JSONObject) -> Unit
 ) {
+    companion object {
+        private const val MAX_TABS = 8
+        private const val DEFAULT_URL = "https://chatgpt.com"
+        private const val NEW_TAB_URL = "https://www.google.com"
+    }
+
+    private data class BrowserTab(
+        val id: String,
+        val engine: RiftBrowserEngine
+    )
+
     private val surfaceHost = FrameLayout(activity).apply {
         visibility = View.GONE
         isClickable = false
@@ -31,33 +45,25 @@ class RiftBrowserWindow(
         setBackgroundColor(0xff0a0d12.toInt())
     }
 
+    private val tabs = LinkedHashMap<String, BrowserTab>()
+    private var activeTabId: String? = null
     private var requestedVisible = false
     private var hasBounds = false
     private var destroyed = false
-
-    private val engine: RiftBrowserEngine = AndroidWebViewBrowserEngine(
-        activity = activity,
-        launchFileChooser = launchFileChooser,
-        stateChanged = ::emitState
-    )
+    private var resumed = true
 
     init {
-        surfaceHost.addView(
-            engine.view,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        )
         host.addView(surfaceHost, FrameLayout.LayoutParams(1, 1))
+        createTabInternal(null, select = true, load = false)
         hideSurface()
     }
 
     fun open(rawUrl: String?): JSONObject {
         ensureAlive()
+        val engine = activeEngine()
         val current = engine.currentUrl()
         val target = normalizeStartUrl(rawUrl).ifBlank {
-            current.takeIf { it.isNotBlank() && it != "about:blank" } ?: "https://chatgpt.com"
+            current.takeIf { it.isNotBlank() && it != "about:blank" } ?: DEFAULT_URL
         }
         requestedVisible = true
         if (current.isBlank() || current == "about:blank") {
@@ -72,28 +78,69 @@ class RiftBrowserWindow(
 
     fun navigate(rawUrl: String?): JSONObject {
         ensureAlive()
-        engine.loadUrl(normalizeStartUrl(rawUrl).ifBlank { "https://chatgpt.com" })
+        activeEngine().loadUrl(normalizeStartUrl(rawUrl).ifBlank { DEFAULT_URL })
         emitState()
         return state()
     }
 
     fun back(): JSONObject {
         ensureAlive()
-        if (engine.canGoBack()) engine.goBack()
+        activeEngine().let { if (it.canGoBack()) it.goBack() }
         emitState()
         return state()
     }
 
     fun forward(): JSONObject {
         ensureAlive()
-        if (engine.canGoForward()) engine.goForward()
+        activeEngine().let { if (it.canGoForward()) it.goForward() }
         emitState()
         return state()
     }
 
     fun reload(): JSONObject {
         ensureAlive()
-        engine.reload()
+        activeEngine().reload()
+        emitState()
+        return state()
+    }
+
+    fun newTab(rawUrl: String?): JSONObject {
+        ensureAlive()
+        createTabInternal(rawUrl, select = true, load = true)
+        applyVisibility()
+        emitState()
+        return state()
+    }
+
+    fun selectTab(tabId: String?): JSONObject {
+        ensureAlive()
+        val id = tabId.orEmpty()
+        require(tabs.containsKey(id)) { "Unknown RiftBrowser tab: $id" }
+        selectTabInternal(id)
+        applyVisibility()
+        emitState()
+        return state()
+    }
+
+    fun closeTab(tabId: String?): JSONObject {
+        ensureAlive()
+        val id = tabId?.takeIf { it.isNotBlank() } ?: activeTabId.orEmpty()
+        val tab = tabs[id] ?: throw IllegalArgumentException("Unknown RiftBrowser tab: $id")
+        val order = tabs.keys.toList()
+        val index = order.indexOf(id)
+        val wasActive = activeTabId == id
+        tabs.remove(id)
+        runCatching { surfaceHost.removeView(tab.engine.view) }
+        runCatching { tab.engine.destroy() }
+
+        if (tabs.isEmpty()) {
+            createTabInternal(null, select = true, load = false)
+        } else if (wasActive) {
+            val remaining = tabs.keys.toList()
+            val fallback = remaining[(index - 1).coerceIn(0, remaining.lastIndex)]
+            selectTabInternal(fallback)
+        }
+        applyVisibility()
         emitState()
         return state()
     }
@@ -133,10 +180,30 @@ class RiftBrowserWindow(
     }
 
     fun state(): JSONObject {
-        val state = engine.state()
+        val active = activeTab()
+        val state = active.engine.state()
+        val tabArray = JSONArray()
+        tabs.values.forEach { tab ->
+            val rendererState = tab.engine.state()
+            tabArray.put(
+                JSONObject()
+                    .put("id", tab.id)
+                    .put("title", rendererState.optString("title", "RiftBrowser"))
+                    .put("url", rendererState.optString("url", ""))
+                    .put("progress", rendererState.optInt("progress", 0))
+                    .put("crashed", rendererState.optBoolean("crashed", false))
+                    .put("canGoBack", rendererState.optBoolean("canGoBack", false))
+                    .put("canGoForward", rendererState.optBoolean("canGoForward", false))
+                    .put("active", tab.id == active.id)
+            )
+        }
         state.put("open", !destroyed)
         state.put("visible", !destroyed && requestedVisible && hasBounds && surfaceHost.visibility == View.VISIBLE)
         state.put("surface", "rift-window-owned")
+        state.put("activeTabId", active.id)
+        state.put("tabCount", tabs.size)
+        state.put("maxTabs", MAX_TABS)
+        state.put("tabs", tabArray)
         return state
     }
 
@@ -149,11 +216,17 @@ class RiftBrowserWindow(
     }
 
     fun onResume() {
-        if (!destroyed) engine.onResume()
+        if (destroyed) return
+        resumed = true
+        if (requestedVisible && hasBounds) activeEngine().onResume()
+        tabs.values.filter { it.id != activeTabId }.forEach { runCatching { it.engine.onPause() } }
+        applyVisibility()
     }
 
     fun onPause() {
-        if (!destroyed) engine.onPause()
+        if (destroyed) return
+        resumed = false
+        tabs.values.forEach { runCatching { it.engine.onPause() } }
     }
 
     fun destroy() {
@@ -161,9 +234,57 @@ class RiftBrowserWindow(
         destroyed = true
         requestedVisible = false
         hideSurface()
+        val existing = tabs.values.toList()
+        tabs.clear()
+        activeTabId = null
+        existing.forEach { tab ->
+            runCatching { surfaceHost.removeView(tab.engine.view) }
+            runCatching { tab.engine.destroy() }
+        }
         runCatching { host.removeView(surfaceHost) }
         runCatching { surfaceHost.removeAllViews() }
-        runCatching { engine.destroy() }
+    }
+
+    private fun createTabInternal(rawUrl: String?, select: Boolean, load: Boolean): BrowserTab {
+        check(tabs.size < MAX_TABS) { "RiftBrowser tab limit reached ($MAX_TABS)" }
+        val id = "tab-${UUID.randomUUID().toString().take(12)}"
+        val engine = AndroidWebViewBrowserEngine(
+            activity = activity,
+            launchFileChooser = launchFileChooser,
+            stateChanged = { onEngineStateChanged(id) }
+        )
+        val tab = BrowserTab(id, engine)
+        tabs[id] = tab
+        engine.view.visibility = View.GONE
+        engine.view.isClickable = false
+        surfaceHost.addView(
+            engine.view,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        if (select) selectTabInternal(id) else engine.onPause()
+        if (load) engine.loadUrl(normalizeStartUrl(rawUrl).ifBlank { NEW_TAB_URL })
+        return tab
+    }
+
+    private fun selectTabInternal(id: String) {
+        if (activeTabId == id) return
+        activeTabId?.let { previousId -> tabs[previousId]?.engine?.let { runCatching { it.onPause() } } }
+        activeTabId = id
+        if (resumed && requestedVisible && hasBounds) tabs[id]?.engine?.onResume()
+        refreshEngineVisibility()
+    }
+
+    private fun activeTab(): BrowserTab = tabs[activeTabId]
+        ?: error("RiftBrowser has no active tab")
+
+    private fun activeEngine(): RiftBrowserEngine = activeTab().engine
+
+    private fun onEngineStateChanged(tabId: String) {
+        if (destroyed || !tabs.containsKey(tabId)) return
+        emitState()
     }
 
     private fun ensureAlive() {
@@ -174,19 +295,33 @@ class RiftBrowserWindow(
         if (requestedVisible && hasBounds) showSurface() else hideSurface()
     }
 
+    private fun refreshEngineVisibility() {
+        val showActive = requestedVisible && hasBounds && !destroyed
+        tabs.values.forEach { tab ->
+            val active = tab.id == activeTabId && showActive
+            tab.engine.view.visibility = if (active) View.VISIBLE else View.GONE
+            tab.engine.view.isClickable = active
+            tab.engine.view.isFocusable = active
+            tab.engine.view.isFocusableInTouchMode = active
+            if (!active) tab.engine.view.clearFocus()
+        }
+    }
+
     private fun showSurface() {
-        engine.view.visibility = View.VISIBLE
-        engine.view.isClickable = true
-        engine.view.isFocusable = true
-        engine.view.isFocusableInTouchMode = true
+        refreshEngineVisibility()
         surfaceHost.visibility = View.VISIBLE
+        activeEngine().view.bringToFront()
         surfaceHost.bringToFront()
+        if (resumed) activeEngine().onResume()
     }
 
     private fun hideSurface() {
-        // Critical invariant: a hidden RiftBrowser renderer is never left as a full-host VISIBLE sibling.
-        engine.view.clearFocus()
-        engine.view.isClickable = false
+        tabs.values.forEach { tab ->
+            tab.engine.view.clearFocus()
+            tab.engine.view.isClickable = false
+            tab.engine.view.visibility = View.GONE
+            runCatching { tab.engine.onPause() }
+        }
         surfaceHost.isClickable = false
         surfaceHost.visibility = View.GONE
     }
@@ -201,7 +336,7 @@ class RiftBrowserWindow(
         if (value.isBlank()) return ""
         return when {
             value.startsWith("https://", ignoreCase = true) -> value
-            value.startsWith("http://", ignoreCase = true) -> "https://${value.substringAfter("://")}" 
+            value.startsWith("http://", ignoreCase = true) -> "https://${value.substringAfter("://")}"
             value.contains('.') && !value.contains(' ') -> "https://$value"
             else -> "https://www.google.com/search?q=" + URLEncoder.encode(value, "UTF-8")
         }

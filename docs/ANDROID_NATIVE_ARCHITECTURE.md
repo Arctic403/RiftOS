@@ -47,7 +47,7 @@ The APK never opens an MCP listening socket. When explicitly enabled, its WSS cl
 
 `RiftNativeDesktop` is created inside `MainActivity` before the trusted runtime page loads. It owns the Android-visible desktop, launcher, Start menu, taskbar, native window chrome, geometry/focus state and Back behavior. Existing RiftOS app bodies initially remain inside the trusted compatibility WebView; the JS compatibility layer mirrors Android-published content rectangles but does not own frame geometry or chrome. Dynamic RiftRT/installed/system launcher entries are mirrored into Android controls.
 
-`RiftBrowserWindow` is mounted inside the native desktop content layer. The compatibility app body still owns the address/navigation controls while Android positions the dedicated renderer surface over that browser body rectangle. The focused browser renderer remains below native window/taskbar chrome and is hidden immediately when browser visibility/focus changes.
+`RiftBrowserWindow` is mounted inside the native desktop content layer. The compatibility app body owns the tab/address/navigation controls while Android positions one dedicated renderer container over that browser body rectangle. The container may hold up to eight per-tab engines, but exactly one selected renderer is visible/clickable at a time; inactive tabs are paused and `View.GONE`. Every renderer is hidden immediately when browser visibility/focus changes.
 
 The obsolete standalone `RiftBrowserActivity` is not part of the current source/build.
 
@@ -77,9 +77,9 @@ Read access defaults on. Write access defaults off. The `Rift MCP` system app is
 
 ## RiftBrowser engine ownership
 
-`RiftBrowserWindow` owns a dedicated native renderer container. The renderer is created behind the `RiftBrowserEngine` contract; `AndroidWebViewBrowserEngine` is the current compatibility backend. Browser minimize/unfocus never keeps a full-host native WebView visible behind the shell: the renderer container becomes Android `GONE` while the engine/session remains allocated.
+`RiftBrowserWindow` owns a dedicated native renderer container plus the bounded browser-tab registry. Each tab is created behind the same `RiftBrowserEngine` contract; `AndroidWebViewBrowserEngine` is the current compatibility backend. Switching tabs pauses/hides the previous engine and exposes only the selected renderer. Browser minimize/unfocus makes every tab renderer and the container Android `GONE` while tab engine/session/history state remains allocated.
 
-The WebView backend owns WebView-specific cookies, downloads, popup/auth handling, navigation callbacks and exact-origin MCP injection. This keeps `RiftBrowserWindow` responsible only for RiftOS window geometry/visibility/lifecycle and makes a future renderer swap possible without changing the desktop window contract.
+The WebView backend owns per-tab rendering, navigation history, downloads, popup/auth handling, callbacks and exact-origin MCP injection; cookies remain the normal shared WebView cookie jar. This keeps `RiftBrowserWindow` responsible for RiftOS browser-window geometry/visibility/tab lifecycle and makes a future renderer swap possible without changing the desktop/tab contract.
 
 ## System Dump
 

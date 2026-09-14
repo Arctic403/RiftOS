@@ -2,7 +2,7 @@
 
 ## Purpose
 
-RiftBrowser is a RiftOS-owned desktop browser window. RiftOS owns window chrome and lifecycle; a replaceable native engine owns page rendering.
+RiftBrowser is a RiftOS-owned desktop browser window with native multi-tab rendering. RiftOS owns window/tab chrome and lifecycle; each tab owns an independent replaceable native engine with its own URL/history/title/session state.
 
 ## Source ownership
 
@@ -15,7 +15,7 @@ RiftBrowser is a RiftOS-owned desktop browser window. RiftOS owns window chrome 
 
 ## Ownership split
 
-RiftOS HTML owns title/address/taskbar chrome, desktop move/resize/minimize/maximize and user-visible window state. `RiftBrowserWindow` owns the native content surface rectangle and whether that surface is attached/visible. `RiftBrowserEngine` owns navigation/rendering implementation.
+RiftOS HTML owns title/tab/address/taskbar chrome, desktop move/resize/minimize/maximize and user-visible window state. `RiftBrowserWindow` owns the native content surface rectangle, the bounded tab registry, active-tab selection and renderer visibility. Each tab owns one `RiftBrowserEngine`; only the selected tab may be visible/clickable while inactive tab engines are paused and `View.GONE`. `RiftBrowserEngine` still owns navigation/rendering implementation.
 
 This split is intentional so Android System WebView can later be replaced without rewriting the desktop contract.
 
@@ -26,9 +26,16 @@ openBrowser()
   -> create desktop window/chrome
   -> browser.window.open via native bridge
   -> RiftBrowserWindow.open()
-  -> engine.loadUrl()
+  -> active tab engine.loadUrl()
   -> engine state callback
-  -> shell updates address/loading controls
+  -> shell updates tab/address/loading controls
+
+New tab / switch / close
+  -> browser.window.tab.new/select/close
+  -> RiftBrowserWindow updates its bounded tab registry
+  -> previous renderer is paused + hidden
+  -> selected renderer becomes the only visible native child
+  -> pushed state refreshes the tab strip + active address/history controls
 
 Resize/focus/minimize
   -> JS syncBounds/visibility event
@@ -41,7 +48,9 @@ The native host also keeps `browser.window.state` as an intentional diagnostic/q
 ## Critical invariants
 
 - The native renderer is not a second full-screen activity.
-- Hidden/minimized/unfocused/show-desktop browser surfaces become `View.GONE`; session state may remain allocated.
+- One RiftBrowser desktop window owns at most 8 live native tabs to bound memory use on low-end/32-bit Android.
+- Exactly one tab renderer may be visible/clickable at a time; inactive renderers are paused and `View.GONE` while preserving their navigation/session state.
+- Hidden/minimized/unfocused/show-desktop browser surfaces make every tab renderer `View.GONE`.
 - Browser guest content never receives general `RiftAndroid`/RiftFS authority.
 - Exact-origin MCP integration stays behind a separate WebMessage bridge.
 - Browser engine swap must not change MCP tool schemas or desktop window APIs.
@@ -63,4 +72,4 @@ ChatGPT tool-loop behavior -> browser MCP compatibility subsystem.
 
 ## Validation
 
-Test navigation, redirect/auth popup, file chooser, downloads, back/forward/reload, resize, minimize/restore, show desktop, background/foreground and renderer crash handling. Confirm no guest page can call the general native dispatcher.
+Test navigation, redirect/auth popup, file chooser, downloads, back/forward/reload, resize, minimize/restore, show desktop, background/foreground and renderer crash handling. Create multiple tabs, verify independent URL/history/title state, switch repeatedly, close active/background tabs, hit the 8-tab limit, and verify only the selected WebView is visible/clickable. Test Ctrl+T, Ctrl+W and Ctrl+L. Confirm no guest page can call the general native dispatcher.

@@ -20,13 +20,13 @@ RiftOS title/address/taskbar chrome
  AndroidWebViewBrowserEngine (current backend)
 ```
 
-`RiftBrowserWindow` owns geometry, visibility, minimize/restore behavior and the renderer container. `AndroidWebViewBrowserEngine` owns WebView-specific page rendering, cookies, downloads, auth popups and WebView lifecycle.
+`RiftBrowserWindow` owns geometry, visibility, minimize/restore behavior, the renderer container and a bounded multi-tab registry. Each tab owns its own `RiftBrowserEngine` instance and therefore its own navigation history/title/render state. Only the selected tab's renderer can be visible/clickable; inactive tab engines are paused and kept `View.GONE`. `AndroidWebViewBrowserEngine` owns WebView-specific page rendering, cookies, downloads, auth popups and per-tab WebView lifecycle.
 
 ## Window behavior
 
-The browser is not a full-screen Activity and the renderer is not a parallel full-host surface. `src/riftos.js` synchronizes the browser content rectangle with `RiftBrowserWindow` through open, navigate, back, forward, reload, bounds, visible, state and close.
+The browser is not a full-screen Activity and the renderer is not a parallel full-host surface. `src/riftos.js` synchronizes the browser content rectangle with `RiftBrowserWindow` through open, navigate, back, forward, reload, tab.new, tab.select, tab.close, bounds, visible, state and close. One desktop browser window may own up to 8 live native tab engines; this cap intentionally bounds WebView memory pressure on low-end/32-bit Android.
 
-A critical invariant is enforced by source validation: **when RiftBrowser is minimized, hidden, unfocused, or Show Desktop is used, its native renderer container is `View.GONE`.** The browser engine object stays alive so session/cookies/page state can survive, but there is no invisible full-screen native sibling capable of stealing touch/focus or covering later windows.
+Critical invariants are enforced by source validation: **exactly one selected tab renderer may be `View.VISIBLE`, and when RiftBrowser is minimized, hidden, unfocused, or Show Desktop is used, every tab renderer plus the native container is `View.GONE`.** Inactive engine objects stay allocated and paused so tab history/session state survives without an invisible native sibling stealing touch/focus or covering later windows.
 
 Desktop minimize/restore emits `riftos:window-visibility` so the native renderer is hidden immediately instead of waiting for a delayed bounds pass.
 
