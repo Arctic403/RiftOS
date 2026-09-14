@@ -9,8 +9,10 @@ const RUN_ROOT=`${ROOT}/runs`;
 const ARTIFACT_ROOT="/documents/builds";
 const nowISO=()=>new Date().toISOString();
 const runId=()=>`build-${Date.now()}-${crypto.randomUUID?.()||Math.random().toString(36).slice(2)}`;
+const ALLOWED_TASK=/^:(?:[A-Za-z0-9_.-]+:)*(?:assemble(?:Debug|Release)|bundle(?:Debug|Release))$/;
 async function ensure(){await core.ready;await core.fs.mkdir(ROOT);await core.fs.mkdir(RUN_ROOT);await core.fs.mkdir(ARTIFACT_ROOT);}
 function normalizeProject(value,cwd="/workspace"){const raw=String(value||cwd||"/workspace").trim(),path=core.path.normalize(raw.startsWith("/")?raw:core.path.join(cwd||"/workspace",raw));if(path!=="/workspace"&&!path.startsWith("/workspace/"))throw new Error("RiftBuild projects must live under /workspace");return path;}
+function normalizeTask(value=":app:assembleDebug"){const task=String(value||":app:assembleDebug").trim();if(!ALLOWED_TASK.test(task))throw new Error("RiftBuild task must be an assemble/bundle Debug/Release Gradle task path");return task;}
 
 async function detectProject(path){
   const root=normalizeProject(path),stat=await core.fs.stat(root);if(!stat||stat.kind!=="directory")throw new Error(`Build project is not a directory: ${root}`);const exists=async child=>!!(await core.fs.stat(core.path.join(root,child)).catch(()=>null));
@@ -25,8 +27,15 @@ async function plan(project,target="universal",cwd="/workspace"){
   await ensure();const detected=await detectProject(normalizeProject(project,cwd)),rows=await core.fs.list(detected.root,{recursive:true}),files=rows.filter(row=>row.kind==="file"),bytes=files.reduce((sum,row)=>sum+Number(row.size||0),0),sourceFiles=files.filter(row=>/\.(?:kt|java|cpp|c|cc|h|hpp|js|mjs|ts|tsx|css|html|xml|gradle|kts|json)$/i.test(row.path));const normalizedTarget=String(target||"universal").toLowerCase();if(!["arm32","arm64","universal"].includes(normalizedTarget))throw new Error("Build target must be arm32, arm64 or universal");return {format:"riftbuild-plan-v1",project:detected,target:normalizedTarget,createdAt:nowISO(),files:files.length,sourceFiles:sourceFiles.length,workingSetBytes:bytes,stages:["planning","hydrating","compiling","linking","packaging","signing","verifying","artifact backup"],artifactRoot:core.path.join(ARTIFACT_ROOT,detected.name),memory:await memory.status()};
 }
 async function build(project,target="universal",cwd="/workspace",options={}){
-  const projectPath=normalizeProject(project,cwd),health=await doctor(projectPath,cwd);if(!health.ready)throw new Error(`RiftBuild doctor blocked local execution: ${health.blockers.join(" ")}`);const planValue=await plan(projectPath,target,cwd),id=runId(),record={format:"riftbuild-run-v1",id,state:"running",startedAt:nowISO(),plan:planValue,source:options.checkpoint?{checkpoint:options.checkpoint}:{workingTree:true}};await core.fs.writeJSON(`${RUN_ROOT}/${id}.json`,record);
-  try{const result=await core.native.call("build.execute",{project:projectPath,target:planValue.target,checkpoint:options.checkpoint||null,runId:id,artifactRoot:planValue.artifactRoot});Object.assign(record,{state:"complete",completedAt:nowISO(),result});await core.fs.writeJSON(`${RUN_ROOT}/${id}.json`,record);return record;}catch(error){Object.assign(record,{state:"failed",failedAt:nowISO(),error:error.message});await core.fs.writeJSON(`${RUN_ROOT}/${id}.json`,record).catch(()=>{});throw error;}
+  const projectPath=normalizeProject(project,cwd),task=normalizeTask(options.task||":app:assembleDebug"),health=await doctor(projectPath,cwd);if(!health.ready)throw new Error(`RiftBuild doctor blocked local execution: ${health.blockers.join(" ")}`);const planValue=await plan(projectPath,target,cwd),id=runId(),record={format:"riftbuild-run-v1",id,state:"running",startedAt:nowISO(),plan:planValue,request:{task,sourceJobId:options.sourceJobId||null},source:options.checkpoint?{checkpoint:options.checkpoint}:{workingTree:true}};await core.fs.writeJSON(`${RUN_ROOT}/${id}.json`,record);
+  try{const result=await core.native.call("build.execute",{project:projectPath,target:planValue.target,task,checkpoint:options.checkpoint||null,runId:id,artifactRoot:planValue.artifactRoot});Object.assign(record,{state:"complete",completedAt:nowISO(),result});await core.fs.writeJSON(`${RUN_ROOT}/${id}.json`,record);return record;}catch(error){Object.assign(record,{state:"failed",failedAt:nowISO(),error:error.message});await core.fs.writeJSON(`${RUN_ROOT}/${id}.json`,record).catch(()=>{});throw error;}
+}
+async function submit(job,cwd="/workspace"){
+  if(!job||typeof job!=="object"||Array.isArray(job))throw new Error("RiftBuild submit requires a build job object");
+  if(job.format!=="rope-build-job-v1")throw new Error("Unsupported RiftBuild job format");
+  if(String(job.engine||"")!=="gradle")throw new Error("RiftBuild submit accepts Gradle jobs only");
+  const project=normalizeProject(job.projectPath,cwd),target=String(job.target||"universal").toLowerCase(),task=normalizeTask(job.task||":app:assembleDebug");
+  return build(project,target,cwd,{task,sourceJobId:String(job.id||"").slice(0,160)||null});
 }
 async function runs(limit=20){await ensure();const rows=await core.fs.list(RUN_ROOT,{recursive:false}).catch(()=>[]),out=[];for(const row of rows.filter(r=>r.kind==="file").sort((a,b)=>Number(b.modified||0)-Number(a.modified||0)).slice(0,Math.max(1,Math.min(100,Number(limit)||20)))){const value=await core.fs.readJSON(row.path,null);if(value)out.push(value);}return out;}
 async function artifacts(project=null){await ensure();const root=project?core.path.join(ARTIFACT_ROOT,core.path.basename(normalizeProject(project))):ARTIFACT_ROOT;return await core.fs.list(root,{recursive:true}).catch(()=>[]);}
@@ -36,4 +45,4 @@ async function run(args,print=console.log,context={}){
 }
 
 await ensure();
-globalThis.RiftBuild=Object.freeze({version:1,root:ROOT,doctor,plan,build,runs,artifacts,run});
+globalThis.RiftBuild=Object.freeze({version:1,root:ROOT,doctor,plan,build,submit,runs,artifacts,run});

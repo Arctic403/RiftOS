@@ -56,7 +56,7 @@ The guest page must **not** contain `RiftAndroid`, `RiftShellMcp`, `RiftShellMcp
 
 ## Sandboxed installed-app surfaces
 
-Installed `.rift` apps do not receive the trusted globals above. They use narrow `postMessage`/injected `Rift` APIs whose method sets are cross-checked by `scripts/validate-rift-wiring.mjs`. Workspace Records is a trusted shell component with access to these globals; its shadow root isolates layout only.
+Installed `.rift` apps do not receive the trusted globals above. They use narrow `postMessage`/injected `Rift` APIs whose method sets are cross-checked by `scripts/validate-rift-wiring.mjs`. RiftRT guests may opt into the permission-gated `Rift.build` controller with `build.local`; that guest surface exposes only doctor/plan/submit/runs/artifacts and does not expose host shell execution. Workspace Records is a trusted shell component with access to these globals; its shadow root isolates layout only.
 
 ## Change rule
 

@@ -40,6 +40,7 @@ Local bookkeeping such as process records or permission decisions stays in the k
 - Native requests need unique IDs and bounded pending-request lifecycle; unmatched results must not resolve unrelated requests.
 - Filesystem paths must be normalized before routing.
 - Permission decisions must be checked before capability use, not after the native side-effect.
+- `build.local` is the explicit guest capability for the bounded RiftBuild controller. It does not imply that a native compiler exists; `localBuildExecutor` remains a separate host capability and may be false.
 - UI-backed process records must register termination cleanup. A process kill from RiftShell, Task Manager or another control path must remove the corresponding window exactly once; UI-close and process-close paths must be idempotent.
 - A missing class/reference at module evaluation time stops the entire Android import chain.
 

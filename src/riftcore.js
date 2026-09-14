@@ -18,7 +18,7 @@ const SYSTEM_APPS = [
 
 const CAPABILITIES = Object.freeze([
   "fs.read","fs.write","network",
-  "clipboard.read","clipboard.write","share","notifications",
+  "clipboard.read","clipboard.write","share","notifications","build.local",
   "process.read","process.manage","system.settings",
   "native.read","native.files","native.background"
 ]);
@@ -26,6 +26,7 @@ const CAPABILITIES = Object.freeze([
 const RIFT_CAPABILITY_REGISTRY = Object.freeze({
   filesystem:["fs.read","fs.write"],
   process:["process.read","process.manage"],
+  build:["build.local"],
   native:["native.read","native.files","native.background"],
   system:["system.settings"]
 });

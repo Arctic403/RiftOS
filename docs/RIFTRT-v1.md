@@ -11,7 +11,7 @@ RiftRT extends the existing `rift-app-v1` `.rift` JSON package. Existing iframe 
   "engine": "worker-js",
   "entry": "main.js",
   "abi": "riftrt-1",
-  "capabilities": ["fs.read", "fs.write"],
+  "capabilities": ["fs.read", "fs.write", "build.local"],
   "window": { "width": 720, "height": 480 }
 }
 ```
@@ -25,7 +25,7 @@ Supported v1 engines:
 
 ## Worker ABI
 
-Worker apps receive a frozen `Rift` object with logging, window title, host-owned surface, resize/input callbacks, local app storage and capability-gated filesystem/clipboard/share operations. Share is exposed as `Rift.share.text(text)` and requires the app's `share` capability.
+Worker apps receive a frozen `Rift` object with logging, window title, host-owned surface, resize/input callbacks, local app storage and capability-gated filesystem/clipboard/share/build-controller operations. Share is exposed as `Rift.share.text(text)` and requires the app's `share` capability. Apps that declare and receive `build.local` can use the bounded `Rift.build` controller (`doctor`, `plan`, `submit`, `runs`, `artifacts`). `Rift.build.nativeExecutor` is a host-supplied boolean and must remain false until the APK actually contains a trusted local compiler executor.
 
 Canvas frame commands currently include `clear`, `rect`, `line` and `text`.
 

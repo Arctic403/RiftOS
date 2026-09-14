@@ -29,7 +29,7 @@ A base64-encoded WASM module is instantiated with a small import surface. Option
 
 ## Host capabilities
 
-`hostCall(app,method,args)` is the central runtime broker. Capabilities are checked against the app/package before filesystem, clipboard and share operations. Both iframe and Worker engines expose share as `Rift.share.text(text)`, which requires the declared/granted `share` capability and routes to the Android share sheet. Per-app persistent runtime storage is JSON under `/system/appdata/<id>/riftrt-storage.json` and is capped at roughly 1 MB serialized data.
+`hostCall(app,method,args)` is the central runtime broker. Capabilities are checked against the app/package before filesystem, clipboard, share and local-build-controller operations. Both iframe and Worker engines expose share as `Rift.share.text(text)`, which requires the declared/granted `share` capability and routes to the Android share sheet. Apps declaring `build.local` receive a bounded `Rift.build` API backed by the trusted `RiftBuild` controller: `doctor`, `plan`, `submit`, `runs` and `artifacts`. `submit` accepts only the validated `rope-build-job-v1` Gradle job contract; it never accepts a shell command. `Rift.build.nativeExecutor` mirrors the host capability and stays false until the APK ships a proven native build executor. Per-app persistent runtime storage is JSON under `/system/appdata/<id>/riftrt-storage.json` and is capped at roughly 1 MB serialized data.
 
 ## Desktop/process integration
 
@@ -41,6 +41,7 @@ RiftRT creates normal RiftDesktop windows and kernel process records. In Android
 - Worker runs but canvas is blank -> worker message/frame command path or resize.
 - WASM instantiates but no output -> exported ABI functions/memory/frame accessor contract.
 - Capability call denied -> app declaration/permission broker, not worker messaging.
+- `Rift.build` exists but `nativeExecutor` is false -> controller bridge is healthy; local Java/Gradle/SDK execution is intentionally unavailable in that APK.
 - Closing app leaves process/window -> dispose/process/window integration.
 
 ## Fix map
