@@ -4,12 +4,13 @@
 
 RiftDesktop is the permanent Android-native RiftOS shell. Android owns the visible desktop, launcher, Start menu, taskbar, native window frames, focus/z-order, move/resize, minimize/maximize/restore/close, show-desktop behavior, system insets and Android Accessibility semantics.
 
-The trusted RiftOS WebView still exists during the migration, but it is **not the desktop/window manager**. It is a compatibility content canvas used only for built-in surfaces such as Files, Settings, RiftShell and Workspace Records that have not yet migrated. Installed Rift programs no longer use that shared content plane: RiftRT asks `RiftNativeAppHost` for a dedicated Android-owned app View and `RiftNativeDesktop` attaches that View to the matching native WindowRecord. Native Android publishes each window's content rectangle/state and owns all chrome/geometry. No installed program is hosted in a shell iframe.
+The trusted RiftOS WebView still exists during the migration, but it is **not the desktop/window manager**. It is a compatibility content canvas used only for built-in surfaces such as Files, Editor, Settings, Dev Lab and Workspace Records that have not yet migrated. RiftShell Terminal and Task Manager are already Android-native through `RiftNativeSystemApps`; installed Rift programs also no longer use the shared content plane. RiftRT asks `RiftNativeAppHost` for a dedicated Android-owned app View and `RiftNativeDesktop` attaches that View to the matching native WindowRecord. Native Android publishes each window's content rectangle/state and owns all chrome/geometry. No installed program is hosted in a shell iframe.
 
 ## Source ownership
 
 - `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` — Android-native desktop, launcher, Start menu, taskbar, window records/chrome, bounds, focus/z-order and accessibility controls.
-- `android/app/src/main/java/com/riftos/app/MainActivity.kt` — creates the native desktop host and routes the bounded `desktop.*` compatibility requests.
+- `android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt` — Android-native Terminal and Task Manager bodies attached to the same WindowRecords.
+- `android/app/src/main/java/com/riftos/app/MainActivity.kt` — creates the native desktop/system-app hosts and routes bounded `desktop.*` / `system.app.*` compatibility requests.
 - `src/riftos.js` — compatibility window/process records, native state mirroring, dynamic launcher registry, RiftFS desktop-settings persistence and public `RiftOSWindowManager` / `RiftDesktop` surfaces.
 - `src/riftdesktop-native-compat.js` — transparent compatibility-content layout used only when Android native desktop authority is active.
 - `src/riftandroid-entry.js` — selects native mode and prevents the legacy DOM desktop modules from loading in that mode.
@@ -23,8 +24,8 @@ Android MainActivity
        -> native wallpaper / launcher / Start / status / taskbar
        -> native window frames + drag/resize + z/focus + controls
        -> contentHost
-            -> trusted compatibility WebView
-                 -> existing RiftOS app bodies only
+            -> RiftNativeSystemApps Android Views (Terminal / Task Manager)
+            -> trusted compatibility WebView (unmigrated built-in bodies only)
             -> RiftBrowser native renderer surface when focused
   -> native chrome layer always above content surfaces
 ```
@@ -54,7 +55,7 @@ Pinned apps and running windows share the native taskbar. Installed RiftRT apps 
 - Legacy `riftdesktop-android.js` / window-host modules are fallback-only and must not execute in native mode.
 - The compatibility WebView may render app bodies, but no DOM title bar, taskbar, launcher, drag/resize implementation or z-order policy may become authoritative in native mode.
 - Compatibility CSS must preserve the Android-published inline `left`/`top` content coordinates. Never reset the native content window with an `inset:* !important` shorthand; only non-authoritative `right`/`bottom` edges may be forced to `auto`.
-- Window/process close remains idempotent across native close controls, Task Manager, RiftShell `kill`, app self-close and Android Back. Native frame close sends an explicit trusted `windowClosedSink` callback into `RiftDesktop.closeWindow(...,{fromNative:true})` so JS process/body cleanup does not depend on waiting for a later native state snapshot; the ordinary state mirror remains a reconciliation fallback. Task Manager subscribes to ProcessTable changes while open so external termination is reflected immediately, and its listener is released with the Task Manager process. Every non-protected row exposes a unique Accessibility kill label in the form `End task <process name> PID <pid>` so local-agent acceptance never has to guess between identical buttons.
+- Window/process close remains idempotent across native close controls, the native Task Manager, RiftShell `kill`, app self-close and Android Back. Native frame close sends the window id through `windowClosedSink`; migrated native system apps clean their Android View state there, while compatibility windows still receive the trusted `RiftDesktop.closeWindow(...,{fromNative:true})` cleanup callback. Native Task Manager reads `desktop.window.state`, refreshes on a bounded timer, closes target WindowRecords through `desktop.window.close`, and removes its Handler callbacks when Tasks closes. It labels End Task controls with the target title/id instead of inventing Android process IDs.
 - Native state sequence numbers prevent duplicate request-response/event delivery from replaying older geometry.
 - Browser renderer visibility follows the native focused window's compatibility content rectangle and stays under native chrome.
 - Taskbar pins, wallpaper and normal geometry continue to persist through RiftFS settings rather than creating an unrelated second settings store.

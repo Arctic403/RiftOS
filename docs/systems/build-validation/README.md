@@ -8,7 +8,7 @@ The build/validation layer catches source-contract regressions before the separa
 
 - root `package.json` — `npm run check` / `check:transport` command chain.
 - `scripts/validate-rift-wiring.mjs` — parses every active JS/MJS file and validates module imports, HTML/CSS assets, Android Activity registration/reachability, browser asset injection, relay entrypoints, package-script references, native caller/handler agreement and known removed runtime islands.
-- `scripts/validate-rift-transport.mjs` — architectural/source invariants, including the explicit local Vortex3D Binder bridge, unchanged MCP tool family, bounded artifact/image flow and shell-result framing.
+- `scripts/validate-rift-transport.mjs` — architectural/source invariants, including native desktop/system-app ownership, the explicit local Vortex3D Binder bridge, unchanged MCP tool family, bounded artifact/image flow and shell-result framing. It rejects regressions where migrated Terminal/Task Manager bodies return to the trusted shell WebView.
 - `scripts/validate-rift-docs.mjs` — required system READMEs and active-source ownership coverage.
 - `scripts/test-rift-dev-lab.mjs` — isolated staging, immutable snapshot, baseline-conflict abort, guarded workspace publish and retained evidence behavior.
 - `scripts/test-rift-ai-adapters.mjs` — AI selector registry tests.
@@ -26,7 +26,7 @@ The build/validation layer catches source-contract regressions before the separa
 
 `npm run check` starts with the wiring validator, which syntax-checks every active JS/MJS file and verifies the runtime reference graph, then runs the transport/documentation validators and focused test scripts. These are fast source-level checks and do not replace an Android compile.
 
-Gradle `verifyRiftOsAndroidSources` rejects incomplete native snapshots. `syncRiftOsWebAssets` copies root `index.html`, styles, `src/**` and `workspace-live/**` into generated Android assets before build.
+Gradle `verifyRiftOsAndroidSources` rejects incomplete native snapshots, including the mandatory `RiftNativeSystemApps.kt` system-app host. `syncRiftOsWebAssets` copies root `index.html`, styles, `src/**` and `workspace-live/**` into generated Android assets before build.
 
 ## External builder boundary
 

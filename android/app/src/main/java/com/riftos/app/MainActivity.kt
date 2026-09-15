@@ -47,6 +47,7 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var nativeDesktop: RiftNativeDesktop
     private lateinit var nativeAppHost: RiftNativeAppHost
+    private lateinit var nativeSystemApps: RiftNativeSystemApps
     private lateinit var browserWindow: RiftBrowserWindow
     private lateinit var shellBridge: RiftShellBridge
     private lateinit var dispatcher: RiftNativeDispatcher
@@ -108,6 +109,7 @@ class MainActivity : Activity() {
             windowClosedSink = ::closeNativeDesktopApp
         )
         nativeAppHost = RiftNativeAppHost(this, nativeDesktop)
+        nativeSystemApps = RiftNativeSystemApps(this, nativeDesktop, RiftMcpRuntime.nativeShell(this))
         setContentView(rootView)
         ViewCompat.requestApplyInsets(rootView)
         browserWindow = RiftBrowserWindow(
@@ -236,6 +238,10 @@ class MainActivity : Activity() {
             runDesktopCommand(requestId) { nativeDesktop.handle(method, args) }
             return true
         }
+        if (method.startsWith("system.app.")) {
+            runDesktopCommand(requestId) { nativeSystemApps.handle(method, args) }
+            return true
+        }
         if (method.startsWith("app.runtime.")) {
             runDesktopCommand(requestId) {
                 when (method) {
@@ -307,13 +313,15 @@ class MainActivity : Activity() {
     }
 
     private fun openNativeDesktopApp(id: String) {
-        val script = "window.RiftDesktop?.openApp(${JSONObject.quote(id)});"
         runOnUiThread {
+            if (::nativeSystemApps.isInitialized && nativeSystemApps.openFromLauncher(id)) return@runOnUiThread
+            val script = "window.RiftDesktop?.openApp(${JSONObject.quote(id)});"
             if (!isFinishing && ::webView.isInitialized && !shellRendererGone) webView.evaluateJavascript(script, null)
         }
     }
 
     private fun closeNativeDesktopApp(id: String) {
+        if (::nativeSystemApps.isInitialized && nativeSystemApps.onDesktopClosed(id)) return
         if (::nativeAppHost.isInitialized) nativeAppHost.closeWindow(id)
         val script = "window.RiftDesktop?.closeWindow(${JSONObject.quote(id)},{fromNative:true});"
         runOnUiThread {
@@ -560,6 +568,7 @@ class MainActivity : Activity() {
         }
         if (::dispatcher.isInitialized) dispatcher.shutdown()
         if (::browserWindow.isInitialized) browserWindow.destroy()
+        if (::nativeSystemApps.isInitialized) nativeSystemApps.destroy()
         if (::nativeAppHost.isInitialized) nativeAppHost.destroy()
         if (::nativeDesktop.isInitialized) nativeDesktop.destroy()
         kernelExecutor.shutdownNow()

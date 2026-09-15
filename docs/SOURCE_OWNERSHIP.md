@@ -63,6 +63,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` | `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt` | `docs/systems/shell-ui/README.md` + `docs/systems/shell/README.md` + `docs/systems/desktop/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` | `docs/systems/riftrt/README.md` + `docs/systems/apps/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRendererCrashGuard.kt` | `docs/systems/android-host/README.md` + `docs/systems/diagnostics/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt` | `docs/systems/riftfs/README.md` |

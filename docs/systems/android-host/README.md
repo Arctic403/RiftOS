@@ -12,6 +12,7 @@ RiftOS is a user-space operating environment, not a replacement Android kernel. 
 
 - `android/app/src/main/java/com/riftos/app/MainActivity.kt`
 - `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt`
+- `android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt`
 - `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt`
 - `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt`
 - `android/app/src/main/java/com/riftos/app/RiftRendererCrashGuard.kt`
@@ -48,7 +49,7 @@ RiftOS JS
   -> JS pending request resolves
 ```
 
-Desktop, installed-program and browser window commands are separated from general native dispatcher calls. `desktop.*` requests terminate in `RiftNativeDesktop`; `app.runtime.*` terminates in the fixed `RiftNativeAppHost`; `browser.window.*` terminates in `RiftBrowserWindow`. Workspace events have their own callback path. MCP guest-page messaging uses `RiftBrowserMcpAppBridge`, not the general shell bridge.
+Desktop, migrated system-app, installed-program and browser window commands are separated from general native dispatcher calls. `desktop.*` requests terminate in `RiftNativeDesktop`; `system.app.*` terminates in `RiftNativeSystemApps`; `app.runtime.*` terminates in the fixed `RiftNativeAppHost`; `browser.window.*` terminates in `RiftBrowserWindow`. Workspace events have their own callback path. MCP guest-page messaging uses `RiftBrowserMcpAppBridge`, not the general shell bridge.
 
 ## Security boundary
 

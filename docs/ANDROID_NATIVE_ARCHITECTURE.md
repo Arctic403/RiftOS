@@ -9,7 +9,8 @@ Android MainActivity
     -> RiftNativeDesktop (desktop / launcher / taskbar / native window authority)
     -> RiftNativeShell (process-owned MCP/RiftShell core; no WebView)
          -> optional trusted compatibility shell fallback for not-yet-ported command families
-    -> trusted compatibility WebView (existing built-in app bodies + remaining JS runtime)
+    -> RiftNativeSystemApps (native Terminal + Task Manager Views; no WebView)
+    -> trusted compatibility WebView (unmigrated built-in bodies + remaining JS runtime)
          -> RiftNativeTransport
          -> exact-origin RiftAndroid WebMessage
     -> RiftNativeDispatcher / Android APIs
@@ -37,6 +38,7 @@ The canonical project workspace lives at `filesDir/riftfs/workspace` and is shar
 - preview Activity for workspace files,
 - privacy-limited System Dump + Save As picker,
 - `RiftNativeDesktop` desktop/window/taskbar/launcher authority,
+- `RiftNativeSystemApps` Android-native Terminal and Task Manager bodies,
 - trusted compatibility WebView for unmigrated built-in app bodies,
 - `RiftNativeAppHost` dedicated installed-program Android content surfaces,
 - `RiftBrowserWindow` native WebView content plane,
@@ -48,7 +50,7 @@ The APK never opens an MCP listening socket. When explicitly enabled, its WSS cl
 
 ## Native desktop and browser host
 
-`RiftNativeDesktop` is created inside `MainActivity` before the trusted runtime page loads. It owns the Android-visible desktop, launcher, Start menu, taskbar, native window chrome, geometry/focus state, native content attachment and Back behavior. Built-in RiftOS bodies that have not migrated still use the trusted compatibility WebView; the JS compatibility layer mirrors Android-published content rectangles but does not own frame geometry or chrome. Installed Rift programs are different: RiftRT opens the native frame, then `RiftNativeAppHost` attaches the program's dedicated Android content View through `RiftNativeDesktop.attachContent`. Dynamic RiftRT/installed/system launcher entries are mirrored into Android controls.
+`RiftNativeDesktop` is created inside `MainActivity` before the trusted runtime page loads. It owns the Android-visible desktop, launcher, Start menu, taskbar, native window chrome, geometry/focus state, native content attachment and Back behavior. `RiftNativeSystemApps` attaches the migrated Terminal and Task Manager directly as Android Views to those WindowRecords. Built-in RiftOS bodies that have not migrated still use the trusted compatibility WebView; the JS compatibility layer mirrors Android-published content rectangles but does not own frame geometry or chrome. Installed Rift programs are different: RiftRT opens the native frame, then `RiftNativeAppHost` attaches the program's dedicated Android content View through `RiftNativeDesktop.attachContent`. Dynamic RiftRT/installed/system launcher entries are mirrored into Android controls.
 
 `RiftBrowserWindow` is mounted inside the native desktop content layer. The compatibility app body owns the tab/address/navigation controls while Android positions one dedicated renderer container over that browser body rectangle. The container may hold up to eight per-tab engines, but exactly one selected renderer is visible/clickable at a time; inactive tabs are paused and `View.GONE`. Every renderer is hidden immediately when browser visibility/focus changes.
 

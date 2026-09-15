@@ -2,57 +2,62 @@
 
 ## Purpose
 
-The shell UI is the trusted web surface that turns RiftKernel services into the visible RiftOS environment: boot/status/workspace layout, launcher cards, base window records, system app dispatch, task manager, built-in text editing surface, terminal window and the common shell event/state glue used by desktop mode.
+RiftOS system UI is being split away from the trusted compatibility WebView. Android already owns the desktop/window manager; Patch 2A moves the visible RiftShell Terminal and Task Manager into Android-native Views as well. The trusted web shell remains a temporary compatibility plane for unmigrated built-ins such as Files, Editor, Settings, Dev Lab and Workspace Records plus the remaining JavaScript runtime.
 
-## Why this boundary exists
+## Ownership boundary
 
-RiftDesktop manages desktop behavior, while individual apps own their domain logic. The shell layer sits between them: it creates common windows and routes the user to Files, Settings, Browser, Terminal, Tasks, Workspace Records and installed apps without owning the backend implementation of those systems.
+`RiftNativeSystemApps.kt` owns migrated Android-native built-in bodies. `RiftNativeDesktop.kt` continues to own all window chrome, geometry, focus, taskbar and launcher state. `RiftNativeShell.kt` owns shell execution. `src/riftos.js` keeps compatibility routing and the remaining web-built-in bodies, but its `openTerminal()` and `openTasks()` entry points now only dispatch `system.app.open` and never construct those bodies in DOM.
+
+This split is deliberate: moving a built-in native must not duplicate its backend policy. Terminal delegates commands to the existing process-owned `RiftShellExecutor`; Task Manager reads and closes the authoritative native desktop window state instead of inventing a second task registry.
 
 ## Source ownership
 
-- `index.html` — trusted shell DOM and boot/workspace/window containers.
-- `styles.css` — base shell/boot/status/window styling shared before desktop-specific styling.
-- `src/riftos.js` — base window registry, launcher/system-app dispatch, shell status/clock, task manager, simple editor, Files/Settings/Browser/Terminal/Workspace Records entry points and cross-system UI glue.
-- `src/riftdesktop-android.js/.css` — desktop behavior layered over shell windows, documented separately.
+- `android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt` — migrated Android-native Terminal and Task Manager bodies/lifecycle.
+- `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` — native window frames/content attachment, focus and window state.
+- `src/riftos.js` — compatibility app dispatch plus Files, Editor, Settings, Workspace Records and other not-yet-migrated built-in UI.
+- `index.html` / `styles.css` — trusted compatibility shell boot/base styling while that plane still exists.
 
-## Window model
+## Native built-ins
 
-`openWindow(id,title,kicker)` creates/reuses a base shell window and its record. `focusWindow`, `closeWindow`, `showDesktop`, `syncShellState`, and the window map keep the base state coherent. RiftDesktop upgrades these windows for desktop geometry/taskbar behavior; runtime apps may also participate through the public window-manager surface.
+### RiftShell Terminal
 
-The shell must not become a second implementation of filesystem, browser rendering, MCP or Git. Entry functions should delegate to the owning system.
+The Terminal is a native Android `EditText`/`TextView` surface attached directly to the `terminal` native WindowRecord. Commands call the process-owned `RiftShellExecutor` with the Terminal's current cwd. Native commands therefore never enter Chromium. Command families that have not yet migrated may still use the explicitly temporary `RiftShellBridge` compatibility fallback inside the executor; that fallback is a command-runtime boundary, not the Terminal UI.
 
-## Built-in surfaces
+Terminal submission is serialized while one command is active so cwd transitions cannot race. Output is bounded and old text is trimmed instead of allowing an unlimited native view buffer.
 
-- `openTasks()` reads the kernel process table and presents process/uptime state.
-- `openEditor(path)` is the current lightweight text editor used for ordinary text files; it is not the removed RiftDev IDE.
-- `openTerminal()` wraps RiftShell.
-- `openApp(id)` dispatches system apps or installed package/runtime apps.
-- `appGrid()`/launcher refresh hooks expose installed/system app launchers.
+### Task Manager
+
+Task Manager is an Android-native View attached to the `tasks` WindowRecord. It queries `desktop.window.state` and displays protected RiftOS runtime authorities plus live native desktop windows. End Task closes the selected WindowRecord through `desktop.window.close`; it does not pretend every RiftOS window is a separate Android/Linux PID. The list refreshes on a bounded timer while Task Manager is open and the timer is removed when the window closes.
+
+## Compatibility built-ins
+
+Files, Editor, Settings, Dev Lab, Workspace Records and other remaining web bodies still use the trusted compatibility plane until their own migration cut lands. Their launcher ids and external entry points remain stable while ownership moves underneath them.
 
 ## Critical invariants
 
-- Base window IDs are stable identities; avoid duplicate windows for the same system surface unless explicitly designed.
-- Closing/focusing a shell window must keep process/window/taskbar state consistent with RiftDesktop.
-- System UI must call subsystem APIs instead of reaching around their security or storage boundaries.
-- Boot/status elements remain usable before desktop enhancement finishes.
-- The simple editor must await RiftFS writes and must not pretend to be a full IDE/project manager.
+- `terminal` and `tasks` must open through `RiftNativeSystemApps`, whether launched from native launcher/taskbar or from compatibility `openApp()`.
+- `RiftNativeSystemApps.kt` must not import or construct `WebView`.
+- Terminal must execute through `RiftShellExecutor`; it must never expose Android `/system/bin/sh` or create a second shell parser.
+- Task Manager must use `RiftNativeDesktop` state/close authority and must not manufacture fake Android process IDs.
+- Closing a migrated native built-in must clean its native UI state without requiring a JavaScript `closeWindow()` callback.
+- Base launcher ids remain stable so migration does not duplicate windows or taskbar entries.
 
 ## Failure signatures
 
-- App button does nothing but subsystem works directly -> launcher/openApp dispatch.
-- Duplicate or stale windows -> base window map/open/close synchronization.
-- Task list is wrong -> kernel process table or task rendering, not desktop DOM enumeration.
-- Text editor saves wrong/stale path -> editor path/state/RiftFS call.
-- Desktop-specific movement/minimize issue -> RiftDesktop, not base shell window creation.
+- Launcher Terminal/Tasks opens a blank compatibility body -> `MainActivity.openNativeDesktopApp()` native-first routing regressed.
+- `open terminal` or compatibility launcher creates DOM -> `src/riftos.js` entry routing regressed.
+- Terminal works only while trusted shell renderer is alive for native commands -> `RiftNativeSystemApps` is not using process-owned `RiftNativeShell` correctly.
+- Task Manager shows stale/phantom windows -> inspect `desktop.window.state` refresh and close cleanup, not the old JS `ProcessTable`.
+- Closing Tasks keeps refreshing -> native Task Manager Handler cleanup regressed.
 
 ## Fix map
 
-Launcher, shared shell windows, status/task/editor/terminal entry wiring -> `riftos.js`.
-Base static structure -> `index.html`.
-Base look/boot/status styling -> `styles.css`.
-Desktop geometry/taskbar/gestures -> desktop subsystem.
-Backend behavior -> owning subsystem README from `docs/README.md`.
+Native Terminal / Task Manager UI and lifecycle -> `RiftNativeSystemApps.kt`.
+Native frame/state/focus/close -> `RiftNativeDesktop.kt`.
+Native launcher interception / compatibility request routing -> `MainActivity.kt`.
+Compatibility built-ins and stable app entry functions -> `src/riftos.js`.
+Shell execution semantics -> `RiftNativeShell.kt` and temporary `RiftShellBridge.kt` fallback.
 
 ## Validation
 
-After shell changes, cold boot and open every system surface. Open/focus/close multiple windows, check task list/process records, edit/save a text file, launch installed apps and verify desktop mode can still upgrade/reuse the same base windows.
+Build-time transport validation asserts that Terminal/Tasks are owned by `RiftNativeSystemApps`, that the class has no WebView dependency, that MainActivity intercepts native launcher opens, and that the compatibility entry points only call `system.app.open`. On-device acceptance must open/focus/minimize/restore/close both apps repeatedly, execute native shell commands and bounded errors, End Task other windows, and verify the RiftOS process/MCP uptime does not reset.

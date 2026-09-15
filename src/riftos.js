@@ -495,13 +495,9 @@ async function openEditor(path="/home/scratch.txt"){
   body.querySelector("#editorFiles").onclick=()=>openFiles(core.path.parent(path));setTimeout(()=>textarea.focus(),40);
 }
 
-let tasksProcessListener=null;
-function clearTasksProcessListener(){if(!tasksProcessListener)return;core.processes.removeEventListener("change",tasksProcessListener);tasksProcessListener=null;}
 async function openTasks(){
-  await core.ready;clearTasksProcessListener();
-  const body=openWindow("tasks","Task Manager","RIFTKERNEL PROCESS TABLE",{onTerminate:clearTasksProcessListener});
-  const render=()=>{const rows=core.processes.list();body.innerHTML=`<div class="trueos-head"><div><strong>RiftKernel processes</strong><small>Uptime ${core.kernel.uptime()}s</small></div><span class="trueos-chip ok">${rows.length} RUNNING</span></div><table class="trueos-table"><thead><tr><th>PID</th><th>Process</th><th>Kind</th><th></th></tr></thead><tbody>${rows.map(process=>`<tr><td>${process.pid}</td><td>${escapeHTML(process.name)}</td><td>${escapeHTML(process.kind||process.appId)}</td><td>${process.protected?"system":`<button class="trueos-btn" data-kill="${process.pid}" aria-label="End task ${escapeHTML(process.name)} PID ${process.pid}">End task</button>`}</td></tr>`).join("")}</tbody></table>`;body.querySelectorAll("[data-kill]").forEach(button=>button.onclick=()=>{const pid=Number(button.dataset.kill);const record=[...windows.values()].find(item=>Number(item.process?.pid)===pid);if(record)closeWindow(record.win);else core.kernel.kill(pid);});};
-  tasksProcessListener=()=>{if(body.isConnected)render();else clearTasksProcessListener();};core.processes.addEventListener("change",tasksProcessListener);render();
+  await core.ready;
+  return core.native.call("system.app.open",{id:"tasks"});
 }
 
 async function openSettings(){
@@ -888,12 +884,8 @@ async function runShell(raw,print,state,context={}){
 }
 
 async function openTerminal(){
-  await core.ready;const body=openWindow("terminal","RiftShell","ANDROID NATIVE SHELL"),state={cwd:"/"};
-  body.innerHTML=`<div class="shell"><pre class="shell-output" id="shellOutput">RiftShell ${escapeHTML(core.version)}\nAndroid-native RiftFS ready. Type help.</pre><form id="shellForm" class="shell-form"><span id="shellPrompt">/ $</span><input id="shellInput" autocomplete="off" autocapitalize="none" spellcheck="false"></form></div>`;
-  const out=body.querySelector("#shellOutput"),form=body.querySelector("#shellForm"),input=body.querySelector("#shellInput"),promptEl=body.querySelector("#shellPrompt");
-  const print=value=>{out.textContent+=(out.textContent?"\n":"")+String(value??"");out.scrollTop=out.scrollHeight;};
-  form.onsubmit=async event=>{event.preventDefault();const raw=input.value;input.value="";if(!raw.trim())return;print(`${state.cwd} $ ${raw}`);try{const result=await runShell(raw,print,state);if(result?.clear)out.textContent="";}catch(error){print(`error: ${error.message}`);}promptEl.textContent=`${state.cwd} $`;};
-  setTimeout(()=>input.focus(),60);
+  await core.ready;
+  return core.native.call("system.app.open",{id:"terminal"});
 }
 
 async function openWorkspaceLive(){

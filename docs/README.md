@@ -24,13 +24,13 @@ When behavior changes, update the owning system README in the same patch. Histor
 | System | Primary documentation | Main source |
 | --- | --- | --- |
 | Boot/module loading | [`systems/boot/README.md`](systems/boot/README.md) | `src/riftandroid-entry.js`, `src/riftandroid-preload.js`, `index.html` |
-| Shell UI/system windows | [`systems/shell-ui/README.md`](systems/shell-ui/README.md) | `index.html`, `styles.css`, `src/riftos.js` |
+| Shell UI/system windows | [`systems/shell-ui/README.md`](systems/shell-ui/README.md) | `RiftNativeSystemApps.kt`, `RiftNativeDesktop.kt`, `src/riftos.js` |
 | Android host | [`systems/android-host/README.md`](systems/android-host/README.md) | `MainActivity.kt`, `src/riftandroid-platform.js` |
 | RiftKernel | [`systems/kernel/README.md`](systems/kernel/README.md) | `src/riftcore.js` |
 | RiftFS | [`systems/riftfs/README.md`](systems/riftfs/README.md) | `src/riftcore.js`, `RiftNativeDispatcher.kt` |
 | Native dispatcher | [`systems/native-dispatcher/README.md`](systems/native-dispatcher/README.md) | `RiftNativeDispatcher.kt` |
 | Transfer pipeline | [`systems/transfers/README.md`](systems/transfers/README.md) | `RiftTransfer*.kt`, `RiftTransferQueue` |
-| Desktop/window manager | [`systems/desktop/README.md`](systems/desktop/README.md) | `src/riftdesktop-android*.js/css` |
+| Desktop/window manager | [`systems/desktop/README.md`](systems/desktop/README.md) | `RiftNativeDesktop.kt`, `src/riftdesktop-native-compat.js` |
 | RiftBrowser | [`systems/browser/README.md`](systems/browser/README.md) | `RiftBrowserWindow.kt`, browser shell in `riftos.js` |
 | Browser engine | [`systems/browser/engine/README.md`](systems/browser/engine/README.md) | `RiftBrowserEngine.kt`, `AndroidWebViewBrowserEngine.kt` |
 | Browser MCP compatibility | [`systems/browser/mcp-compat/README.md`](systems/browser/mcp-compat/README.md) | `riftbrowser-mcp-app.js`, `RiftBrowserMcpAppBridge.kt` |
