@@ -235,26 +235,65 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         alreadyResolved: Boolean = false
     ): ShellOutcome {
         val path = if (alreadyResolved) normalizeDisplay(rawPath ?: cwd) else resolveDisplay(cwd, rawPath ?: cwd)
+        if (RiftVolumePaths.isVolumeRoot(path)) return listVolumeRoot(cwd, path, recursive)
+
         val file = resolveFile(path)
         require(file.exists()) { "path not found: $path" }
         val rows = ArrayList<String>()
         if (file.isFile) {
             rows += "-\t$path"
         } else if (recursive) {
-            file.walkTopDown().drop(1).take(MAX_TREE_ROWS).forEach { child ->
-                val relative = child.relativeTo(file).invariantSeparatorsPath
-                val display = joinDisplay(path, relative)
-                rows += "${if (child.isDirectory) "d" else "-"}\t$display"
-            }
+            appendTreeRows(rows, path, file)
         } else {
             file.listFiles()?.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))?.forEach { child ->
                 rows += "${if (child.isDirectory) "d" else "-"}\t${joinDisplay(path, child.name)}"
             }
         }
+        return listOutcome(cwd, path, recursive, rows)
+    }
+
+    private fun listVolumeRoot(cwd: String, path: String, recursive: Boolean): ShellOutcome {
+        val volume = RiftVolumePaths.volume(path) ?: throw IllegalArgumentException("Unknown RiftOS volume: $path")
+        val rows = ArrayList<String>()
+        val seen = linkedSetOf<String>()
+
+        for (name in volume.roots.keys) {
+            if (rows.size >= MAX_TREE_ROWS) break
+            val childPath = joinDisplay(path, name)
+            if (!seen.add(childPath)) continue
+            rows += "d\t$childPath"
+            if (recursive && rows.size < MAX_TREE_ROWS) {
+                val childFile = resolveFile(childPath)
+                if (childFile.isDirectory) appendTreeRows(rows, childPath, childFile)
+            }
+        }
+
+        val backing = resolveFile(path)
+        backing.listFiles()?.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))?.forEach { child ->
+            if (rows.size >= MAX_TREE_ROWS) return@forEach
+            val childPath = joinDisplay(path, child.name)
+            if (!seen.add(childPath)) return@forEach
+            rows += "${if (child.isDirectory) "d" else "-"}\t$childPath"
+            if (recursive && child.isDirectory && rows.size < MAX_TREE_ROWS) appendTreeRows(rows, childPath, child)
+        }
+        return listOutcome(cwd, path, recursive, rows)
+    }
+
+    private fun appendTreeRows(rows: ArrayList<String>, displayRoot: String, root: File) {
+        if (!root.isDirectory || rows.size >= MAX_TREE_ROWS) return
+        for (child in root.walkTopDown().drop(1)) {
+            if (rows.size >= MAX_TREE_ROWS) break
+            val relative = child.relativeTo(root).invariantSeparatorsPath
+            rows += "${if (child.isDirectory) "d" else "-"}\t${joinDisplay(displayRoot, relative)}"
+        }
+    }
+
+    private fun listOutcome(cwd: String, path: String, recursive: Boolean, rows: ArrayList<String>): ShellOutcome {
         val result = nativeResult(if (recursive) "tree" else "ls")
             .put("path", path)
             .put("rows", rows.size)
             .put("truncated", recursive && rows.size >= MAX_TREE_ROWS)
+            .put("virtualVolumeRoot", RiftVolumePaths.isVolumeRoot(path))
         return ShellOutcome(rows.joinToString("\n").ifBlank { "(empty)" }, cwd, result)
     }
 
