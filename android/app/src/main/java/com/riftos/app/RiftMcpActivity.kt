@@ -218,7 +218,8 @@ class RiftMcpActivity : Activity() {
             val ok = if (item.optBoolean("ok", false)) "✓" else "×"
             val target = item.optString("target").takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
             val error = item.optString("error").takeIf { it.isNotBlank() && it != "null" }?.let { " · $it" }.orEmpty()
-            lines += "$ok $at · ${item.optString("tool")}$target$error"
+            val duration = if (item.has("durationMs") && !item.isNull("durationMs")) " · ${item.optLong("durationMs")}ms" else ""
+            lines += "$ok $at · ${item.optString("tool")}$target$duration$error"
         }
         return lines.joinToString("\n")
     }

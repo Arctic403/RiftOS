@@ -1,5 +1,6 @@
 package com.riftos.app
 
+import android.os.SystemClock
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
@@ -247,10 +248,11 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
                 reply(JSONObject().put("ok", false).put("error", error))
                 return
             }
+            val startedAt = SystemClock.elapsedRealtime()
             shellExecutor?.execute(command, args.optString("cwd", "/")) { result ->
                 val ok = result.optBoolean("ok", false)
                 val error = if (ok) null else result.optString("error", "RiftShell execution failed")
-                recordAudit(name, args, ok, error)
+                recordAudit(name, args, ok, error, SystemClock.elapsedRealtime() - startedAt)
                 if (ok) {
                     reply(JSONObject()
                         .put("ok", true)
@@ -480,7 +482,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
     }
 
     @Synchronized
-    private fun recordAudit(name: String, args: JSONObject, ok: Boolean, error: String?) {
+    private fun recordAudit(name: String, args: JSONObject, ok: Boolean, error: String?, durationMs: Long? = null) {
         val current = audit()
         val next = JSONArray()
         val start = (current.length() - (MAX_AUDIT - 1)).coerceAtLeast(0)
@@ -490,6 +492,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
                 .put("at", System.currentTimeMillis())
                 .put("tool", name)
                 .put("target", auditTarget(name, args))
+                .put("durationMs", durationMs ?: JSONObject.NULL)
                 .put("ok", ok)
                 .put("error", error ?: JSONObject.NULL)
         )
@@ -501,6 +504,8 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
         "rift_workspace_diff" -> args.optString("path").ifBlank { "workspace" }.take(300)
         "rift_info" -> "sandbox"
+        "rift_shell_exec" -> args.optString("command").trim().takeWhile { !it.isWhitespace() }
+            .take(48).replace(Regex("[^A-Za-z0-9_-]"), "?") + " [arguments omitted]"
         else -> args.optString("path").take(300)
     }
 

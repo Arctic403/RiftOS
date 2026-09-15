@@ -38,6 +38,12 @@ Atomic batch preflight must model the same cwd transitions as real execution: `h
 
 ## Critical invariants
 
+Compatibility RPC now requires an explicit acceptance acknowledgement. Missing handlers fail immediately; a native scheduled deadline starts before the UI dispatch, and expired queued requests are rejected before execution. The trusted JavaScript shim retains up to eight running/completed records and exposes `poll(id)` so native code can recover a completion when WebMessage reply delivery fails. Delivery errors are logged rather than swallowed. Pending native callbacks are removed exactly once, and their deadline tasks are cancelled on completion/close.
+
+A deadline ends waiting, not side effects. An identical command and cwd cannot start again while the original promise is unresolved, even after its MCP waiter expires. Distinct commands remain allowed within the eight-record bound, including the nested `riftos-agent devlab` -> `devlab rpc` route. This is not a global filesystem transaction lock, cross-process deduplication, or cancellation of a Git/native action. Renderer loss can still leave an unknown outcome; callers must inspect state before retrying. Native command migration remains incremental.
+
+`RiftToolHost` records shell command family (arguments omitted), elapsed milliseconds, and the returned error; `RiftMcpActivity` displays the duration. Payload arguments are deliberately excluded because shell calls can include source content or credentials. Bridge failures carry request IDs where outcomes are unknown. Regression coverage: `scripts/test-rift-shell-bridge.mjs` exercises acceptance, duplicate suppression, expired dispatch, lost replies, synchronous/asynchronous errors, bounded state and nested commands.
+
 - Shell path resolution must not accidentally reinterpret absolute paths as cwd-relative.
 - Batch write classification/preflight occurs before executing mutations.
 - Planned `unzip` destinations expose deferred descendants during preflight; file-vs-directory truth for those unknown descendants is resolved by real execution, and any mismatch still rolls the whole batch back.

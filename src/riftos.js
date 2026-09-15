@@ -951,26 +951,52 @@ window.RiftShellMcp = Object.freeze({
     }
   }
 });
+// Keep running commands locked even after their MCP waiter times out.
+const shellMcpRequests = new Map();
+const shellMcpActive = new Map();
 window.RiftShellMcpNative = Object.freeze({
   request(raw) {
-    let payload = null;
-    const send = result => {
-      try { globalThis.RiftNativeTransport?.postMessage({method:'mcp.shell.result',args:{result}}); }
-      catch (_) {}
-    };
     try {
-      payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const payload = typeof raw === 'string' ? JSON.parse(raw) : raw;
       const id = String(payload?.id || '');
       const command = String(payload?.command || '').trim();
       const cwd = String(payload?.cwd || '/');
       if (!id) throw new Error('Missing shell bridge id');
       if (!command) throw new Error('Missing shell command');
-      Promise.resolve(window.RiftShellMcp.execute(command, cwd)).then(result => {
-        send({id,...(result && typeof result === 'object' ? result : {ok:true,result})});
-      }).catch(error => send({id,ok:false,error:String(error?.message || error)}));
+      if (shellMcpRequests.has(id)) return {accepted:true,id};
+      if (Number.isFinite(payload?.expiresAt) && Date.now() >= payload.expiresAt) throw new Error('RiftShell request expired before execution; command was not started');
+      const key = JSON.stringify([command,cwd]);
+      if (shellMcpActive.has(key)) return {accepted:false,error:'RiftShell command still running: '+shellMcpActive.get(key)+'. Wait for completion before retrying.'};
+      if (typeof window.RiftShellMcp?.execute !== 'function') throw new Error('RiftShell executor is not ready');
+      if (shellMcpRequests.size >= 8) {
+        const completed = [...shellMcpRequests].find(([,value])=>value.state === 'completed');
+        if (completed) shellMcpRequests.delete(completed[0]);
+        else return {accepted:false,error:'RiftShell compatibility queue is full; wait for running commands.'};
+      }
+      const entry = {state:'running'};
+      shellMcpRequests.set(id,entry);
+      shellMcpActive.set(key,id);
+      const complete = result => {
+        entry.state = 'completed';
+        entry.result = {...result,id};
+        shellMcpActive.delete(key);
+        try {
+          if (typeof globalThis.RiftNativeTransport?.postMessage !== 'function') throw new Error('Native reply transport unavailable');
+          globalThis.RiftNativeTransport.postMessage({method:'mcp.shell.result',args:{result:entry.result}});
+        } catch (error) {
+          console.error('[RiftShell] reply delivery failed; completion retained for native polling',id,String(error?.message || error));
+        }
+      };
+      Promise.resolve().then(()=>window.RiftShellMcp.execute(command,cwd))
+        .then(result=>complete(result && typeof result === 'object' ? result : {ok:true,result}))
+        .catch(error=>complete({ok:false,error:String(error?.message || error)}));
+      return {accepted:true,id};
     } catch (error) {
-      send({id:String(payload?.id || ''),ok:false,error:String(error?.message || error)});
+      return {accepted:false,error:String(error?.message || error)};
     }
+  },
+  poll(id) {
+    return shellMcpRequests.get(String(id)) || {state:'unknown'};
   }
 });
 
