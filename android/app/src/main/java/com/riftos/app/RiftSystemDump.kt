@@ -5,7 +5,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.StatFs
-import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.webkit.WebView
 import org.json.JSONArray
@@ -105,6 +104,9 @@ class RiftSystemDump(private val context: Context) {
             .put("webView", JSONObject()
                 .put("package", webViewPackage?.packageName ?: "unknown")
                 .put("version", webViewPackage?.versionName ?: "unknown"))
+            .put("crashRecovery", JSONObject()
+                .put("rendererEvents", RiftRendererCrashGuard.recent(context))
+                .put("historicalProcessExits", RiftRendererCrashGuard.historicalProcessExits(context)))
             .put("privacy", JSONObject()
                 .put("fileContentsIncluded", false)
                 .put("fileNamesIncluded", false)
@@ -157,10 +159,7 @@ class RiftSystemDump(private val context: Context) {
             .put("entryLimit", MAX_TREE_ENTRIES)
     }
 
-    private fun processUptimeMs(): Long =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            (SystemClock.elapsedRealtime() - android.os.Process.getStartUptimeMillis()).coerceAtLeast(0L)
-        } else 0L
+    private fun processUptimeMs(): Long = RiftRendererCrashGuard.currentProcessUptimeMs()
 
     private fun packageVersionCode(info: android.content.pm.PackageInfo): Long =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

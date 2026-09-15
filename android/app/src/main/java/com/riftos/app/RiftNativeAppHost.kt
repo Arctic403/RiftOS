@@ -111,6 +111,7 @@ class RiftNativeAppHost(
             }
 
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                RiftRendererCrashGuard.record(activity, "installed-app", detail)
                 lastRendererCrash = JSONObject()
                     .put("windowId", windowId)
                     .put("appId", app.id)
@@ -120,8 +121,7 @@ class RiftNativeAppHost(
                 instances.remove(windowId)
                 runCatching { desktop.detachContent(windowId, view) }
                 runCatching { WebViewCompat.removeWebMessageListener(view, BRIDGE_NAME) }
-                runCatching { view.removeAllViews() }
-                runCatching { view.destroy() }
+                RiftRendererCrashGuard.destroyDeadWebView(view)
                 runCatching { desktop.handle("desktop.window.close", JSONObject().put("id", windowId)) }
                 return true
             }

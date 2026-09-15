@@ -13,6 +13,7 @@ RiftOS is a user-space operating environment, not a replacement Android kernel. 
 - `android/app/src/main/java/com/riftos/app/MainActivity.kt`
 - `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt`
 - `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt`
+- `android/app/src/main/java/com/riftos/app/RiftRendererCrashGuard.kt`
 - `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt`
 - `src/riftandroid-preload.js`
 - `src/riftandroid-platform.js`
@@ -32,7 +33,7 @@ Related but separately documented: `RiftNativeDispatcher`, `RiftBrowserWindow`, 
 
 `MainActivity` is declared `singleTask` because it is the one RiftOS desktop/kernel authority. Relaunch/foreground requests must route back to that existing shell instead of creating another compatibility WebView with an independent RiftKernel/ProcessTable. Resume and window-focus transitions reclaim process-wide MCP shell-bridge ownership for that singleton runtime.
 
-It also preserves WebView lifecycle/state across pause/resume/save-state and tears down native resources in `onDestroy`.
+It also preserves WebView lifecycle/state across pause/resume/save-state and tears down native resources in `onDestroy`. `RiftRendererCrashGuard` is the process-safety layer for Chromium renderer loss: every RiftOS-owned WebView surface must return handled, record bounded diagnostics, destroy only the dead WebView object, and rebuild/close the owning surface instead of allowing a shared renderer failure to terminate the RiftOS process.
 
 ## Control flow
 
@@ -63,12 +64,13 @@ Android owns process/activity/WebView state and `filesDir`. RiftOS persistent lo
 - Browser content floats over minimized windows -> `RiftBrowserWindow` bounds/visibility ownership, not shell WebView z-order hacks.
 - Workspace Records stops receiving external changes -> always-on `RiftWorkspaceWatcher` event forwarding / `RiftWorkspaceRecords` reconciliation.
 - Insets/right edge are clipped -> Android window inset handling plus desktop geometry, not arbitrary CSS width inflation.
-- Launching an installed Rift app kills/restarts the whole RiftOS process -> inspect `RiftNativeAppHost` renderer-loss handling first; a guest WebView renderer failure must be handled and reduced to that program window rather than using WebViewClient's process-fatal default.
+- Launching an installed Rift app kills/restarts the whole RiftOS process -> inspect renderer-loss coverage across **all** WebViews, not only `RiftNativeAppHost`; a Chromium renderer may be shared, so the trusted shell, installed apps, browser main/popup and preview surfaces must all return handled.
+- Trusted shell renderer exits -> `MainActivity` records the event, detaches the dead shell WebView and requests one guarded Activity recreation; MCP must never keep a dead shell bridge registered.
 
 ## Fix map
 
-Patch `MainActivity` only for Android lifecycle, picker, permission, bridge routing, host surface, or event-forwarding issues. Put filesystem semantics in `RiftNativeDispatcher`/RiftFS, browser rendering semantics in the browser engine, and MCP semantics in MCP classes.
+Patch `MainActivity` only for Android lifecycle, picker, permission, bridge routing, trusted-shell recovery, host surface, or event-forwarding issues. Shared renderer crash journaling/recovery coordination belongs in `RiftRendererCrashGuard`; individual WebView owners still clean up their own dead view. Put filesystem semantics in `RiftNativeDispatcher`/RiftFS, browser rendering semantics in the browser engine, and MCP semantics in MCP classes.
 
 ## Validation
 
-The source validator checks Android host/inset/browser invariants, including installed-program renderer-loss containment. Any native Kotlin change requires an APK build. Test cold start, rotation/resizing where applicable, background/foreground lifecycle, picker cancellation, guest WebView renderer loss, and destruction/recreation for host-level changes. A renderer crash must close only the affected installed program while the singleton RiftOS Activity, shell bridge and MCP remain alive.
+The source validator checks Android host/inset/browser invariants, including renderer-loss containment on every WebView surface. Any native Kotlin change requires an APK build. Test cold start, rotation/resizing where applicable, background/foreground lifecycle, picker cancellation, installed-app/browser/popup/preview renderer loss, and trusted-shell destruction/recreation. A guest-only renderer crash must not terminate RiftOS; a trusted-shell/browser-main renderer crash may recreate the Activity but must keep the Android process alive and leave a crash-recovery record for the next dump.

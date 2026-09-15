@@ -64,6 +64,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` | `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` | `docs/systems/riftrt/README.md` + `docs/systems/apps/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftRendererCrashGuard.kt` | `docs/systems/android-host/README.md` + `docs/systems/diagnostics/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt` | `docs/systems/riftfs/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt` | `docs/systems/native-dispatcher/README.md` + `docs/systems/chat-handoff/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftLlmDevClient.kt` | `docs/systems/riftllm-bridge/README.md` |

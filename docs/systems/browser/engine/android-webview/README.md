@@ -48,14 +48,15 @@ State callbacks propagate URL, title, progress, navigation capability and crash 
 - Exact-origin MCP injection remains origin-gated.
 - Popup WebViews are temporary, visible only inside the owning renderer surface, retain opener linkage, and are cleaned up.
 - `destroy()` releases popup, bridge and WebView resources.
-- Renderer crashes must be surfaced rather than silently leaving stale state.
+- Renderer crashes must be surfaced rather than silently leaving stale state. Main and popup WebViews both return handled through `RiftRendererCrashGuard`; a dead main renderer requests guarded shell Activity recovery, while a dead popup is removed/destroyed locally.
 - Authentication/cookie behavior must not be mixed into desktop-window code.
 - Desktop Site must remain per engine/tab and restore the captured WebView identity when switched off.
 - UA Client Hint overrides are feature-gated; unsupported WebView builds fall back to the desktop UA/viewport path rather than failing navigation.
 
 ## Failure signatures
 
-- Blank page after renderer death -> render-process-gone handling.
+- Blank page after renderer death -> render-process-gone handling / guarded Activity recovery.
+- Popup renderer loss kills RiftOS -> popup WebView skipped `RiftRendererCrashGuard`; every affected WebView in a shared renderer must return handled.
 - OAuth/login popup never appears -> `onCreateWindow` / visible popup-host ownership or user-gesture gating.
 - OAuth/login completes but the opener does not update -> popup opener linkage, cookie policy or provider restrictions.
 - File chooser/download fails -> WebChromeClient/download callbacks or MainActivity delegation.
@@ -68,7 +69,7 @@ WebView settings, cookies, auth popup behavior, download/file chooser callbacks,
 
 ## Validation
 
-Exercise HTTPS navigation, back/forward/reload, OAuth-style popup flows, cookies, file chooser, downloads, SSL cancellation, external schemes, renderer process loss, pause/resume and exact-origin MCP injection after changes. Verify Desktop Site changes `navigator.userAgent` away from Android/mobile, reports non-mobile Windows/Desktop client hints when supported, affects popups/download requests consistently, and restores the captured mobile identity when disabled.
+Exercise HTTPS navigation, back/forward/reload, OAuth-style popup flows, cookies, file chooser, downloads, SSL cancellation, external schemes, main-renderer and popup-renderer process loss, pause/resume and exact-origin MCP injection after changes. Verify renderer loss is recorded and handled without terminating the RiftOS process. Verify Desktop Site changes `navigator.userAgent` away from Android/mobile, reports non-mobile Windows/Desktop client hints when supported, affects popups/download requests consistently, and restores the captured mobile identity when disabled.
 
 ## Safe extension points
 

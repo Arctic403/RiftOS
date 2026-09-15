@@ -7,6 +7,7 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `MainActivity.kt` | [`android-host`](../../../../../../../../docs/systems/android-host/README.md) |
 | `RiftNativeDesktop.kt` | [`desktop`](../../../../../../../../docs/systems/desktop/README.md) |
 | `RiftNativeAppHost.kt` | [`riftrt`](../../../../../../../../docs/systems/riftrt/README.md) + [`apps`](../../../../../../../../docs/systems/apps/README.md) |
+| `RiftRendererCrashGuard.kt` | [`android-host`](../../../../../../../../docs/systems/android-host/README.md) + [`diagnostics`](../../../../../../../../docs/systems/diagnostics/README.md) |
 | `RiftVolumePaths.kt` | [`riftfs`](../../../../../../../../docs/systems/riftfs/README.md) |
 | `RiftNativeDispatcher.kt` | [`native-dispatcher`](../../../../../../../../docs/systems/native-dispatcher/README.md) |
 | `RiftTransferManifest.kt` + transfer logic in `RiftNativeDispatcher.kt` | [`transfers`](../../../../../../../../docs/systems/transfers/README.md) |

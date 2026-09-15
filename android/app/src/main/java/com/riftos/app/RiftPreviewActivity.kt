@@ -3,6 +3,7 @@ package com.riftos.app
 import android.app.Activity
 import android.net.Uri
 import android.os.Bundle
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -16,6 +17,7 @@ class RiftPreviewActivity : Activity() {
     companion object { const val EXTRA_ROOT="root"; const val EXTRA_ENTRY="entry"; private const val HOST="riftpreview.local" }
     private lateinit var webView: WebView
     private lateinit var previewRoot: File
+    private var rendererGone = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,6 +33,13 @@ class RiftPreviewActivity : Activity() {
             override fun shouldInterceptRequest(view:WebView,request:WebResourceRequest):WebResourceResponse?{
                 if(request.url.host!=HOST)return null
                 return responseFor(request.url)
+            }
+            override fun onRenderProcessGone(view:WebView,detail:RenderProcessGoneDetail):Boolean{
+                rendererGone=true
+                RiftRendererCrashGuard.record(this@RiftPreviewActivity,"preview",detail)
+                RiftRendererCrashGuard.destroyDeadWebView(view)
+                finish()
+                return true
             }
         }
         val entry=normalize(intent.getStringExtra(EXTRA_ENTRY).orEmpty().ifBlank{"index.html"}).joinToString("/")
@@ -62,5 +71,5 @@ class RiftPreviewActivity : Activity() {
         return WebResourceResponse(mime,encoding,FileInputStream(file))
     }
     override fun onBackPressed(){if(webView.canGoBack())webView.goBack()else super.onBackPressed()}
-    override fun onDestroy(){webView.destroy();super.onDestroy()}
+    override fun onDestroy(){if(::webView.isInitialized&&!rendererGone)runCatching{webView.destroy()};super.onDestroy()}
 }

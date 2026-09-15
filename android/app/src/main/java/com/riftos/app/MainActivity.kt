@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -57,9 +58,11 @@ class MainActivity : Activity() {
     private var pendingNotificationRequestId: String? = null
     private var pendingSystemDumpRequestId: String? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private var shellRendererGone = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        RiftRendererCrashGuard.resetRecoveryGate()
         // Target SDK 35+ is edge-to-edge by default. Own the insets explicitly so the
         // WebView viewport never extends behind Samsung's side navigation bar/cutout.
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -160,6 +163,18 @@ class MainActivity : Activity() {
                 } catch (_: Exception) {
                     true
                 }
+            }
+
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                shellRendererGone = true
+                RiftRendererCrashGuard.record(this@MainActivity, "trusted-shell", detail)
+                if (::shellBridge.isInitialized) {
+                    runCatching { RiftMcpRuntime.unregisterShellBridge(shellBridge) }
+                    runCatching { shellBridge.close() }
+                }
+                RiftRendererCrashGuard.destroyDeadWebView(view)
+                RiftRendererCrashGuard.requestShellRecovery(this@MainActivity)
+                return true
             }
         }
 
@@ -287,14 +302,14 @@ class MainActivity : Activity() {
     private fun sendDesktopState(state: JSONObject) {
         val script = "window.RiftNativeDesktop?.__state(${state});"
         runOnUiThread {
-            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+            if (!isFinishing && ::webView.isInitialized && !shellRendererGone) webView.evaluateJavascript(script, null)
         }
     }
 
     private fun openNativeDesktopApp(id: String) {
         val script = "window.RiftDesktop?.openApp(${JSONObject.quote(id)});"
         runOnUiThread {
-            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+            if (!isFinishing && ::webView.isInitialized && !shellRendererGone) webView.evaluateJavascript(script, null)
         }
     }
 
@@ -302,21 +317,21 @@ class MainActivity : Activity() {
         if (::nativeAppHost.isInitialized) nativeAppHost.closeWindow(id)
         val script = "window.RiftDesktop?.closeWindow(${JSONObject.quote(id)},{fromNative:true});"
         runOnUiThread {
-            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+            if (!isFinishing && ::webView.isInitialized && !shellRendererGone) webView.evaluateJavascript(script, null)
         }
     }
 
     private fun sendWorkspaceEvent(event: JSONObject) {
         val script = "window.RiftWorkspaceNative?.__event(${event});"
         runOnUiThread {
-            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+            if (!isFinishing && ::webView.isInitialized && !shellRendererGone) webView.evaluateJavascript(script, null)
         }
     }
 
     private fun sendBrowserWindowState(state: JSONObject) {
         val script = "window.RiftBrowserNative?.__state(${state});"
         runOnUiThread {
-            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+            if (!isFinishing && ::webView.isInitialized && !shellRendererGone) webView.evaluateJavascript(script, null)
         }
     }
 
@@ -324,7 +339,7 @@ class MainActivity : Activity() {
         val urlJs = JSONObject.quote(rawUrl.ifBlank { "https://chatgpt.com" })
         val script = "window.RiftDesktop?.openBrowser($urlJs);"
         runOnUiThread {
-            if (!isFinishing && ::webView.isInitialized) webView.evaluateJavascript(script, null)
+            if (!isFinishing && ::webView.isInitialized && !shellRendererGone) webView.evaluateJavascript(script, null)
         }
     }
 
@@ -484,7 +499,7 @@ class MainActivity : Activity() {
 
     private fun sendNativeProgress(value: JSONObject) {
         val script = "window.RiftTransferUI?.__progress(${value});"
-        runOnUiThread { if (!isFinishing) webView.evaluateJavascript(script, null) }
+        runOnUiThread { if (!isFinishing && !shellRendererGone) webView.evaluateJavascript(script, null) }
     }
 
     private fun sendNativeResult(id: String, ok: Boolean, value: Any?, error: String?) {
@@ -496,12 +511,12 @@ class MainActivity : Activity() {
         }
         val errorJs = if (error == null) "null" else JSONObject.quote(error)
         val script = "window.RiftNative?.__resolve(${JSONObject.quote(id)},${if (ok) "true" else "false"},$valueJs,$errorJs);"
-        runOnUiThread { if (!isFinishing) webView.evaluateJavascript(script, null) }
+        runOnUiThread { if (!isFinishing && !shellRendererGone) webView.evaluateJavascript(script, null) }
     }
 
     override fun onBackPressed() {
         if (::nativeDesktop.isInitialized && nativeDesktop.handleBack()) return
-        if (!::webView.isInitialized) return super.onBackPressed()
+        if (!::webView.isInitialized || shellRendererGone) return super.onBackPressed()
         webView.evaluateJavascript("Boolean(window.RiftAndroidBack?.())") { result ->
             if (result == "true") return@evaluateJavascript
             if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
@@ -512,8 +527,8 @@ class MainActivity : Activity() {
         super.onResume()
         // MainActivity is the singleTask RiftOS shell authority. Reclaim the process-wide MCP
         // shell bridge whenever Android resumes it, including task/background transitions.
-        if (::shellBridge.isInitialized) RiftMcpRuntime.registerShellBridge(shellBridge)
-        if (::webView.isInitialized) webView.onResume()
+        if (::shellBridge.isInitialized && !shellRendererGone) RiftMcpRuntime.registerShellBridge(shellBridge)
+        if (::webView.isInitialized && !shellRendererGone) webView.onResume()
         if (::nativeAppHost.isInitialized) nativeAppHost.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
     }
@@ -522,18 +537,18 @@ class MainActivity : Activity() {
         super.onWindowFocusChanged(hasFocus)
         // Window focus is a stricter signal than lifecycle resume when another RiftOS Activity
         // temporarily covers the shell. The focused singleton shell must always own MCP execution.
-        if (hasFocus && ::shellBridge.isInitialized) RiftMcpRuntime.registerShellBridge(shellBridge)
+        if (hasFocus && ::shellBridge.isInitialized && !shellRendererGone) RiftMcpRuntime.registerShellBridge(shellBridge)
     }
 
     override fun onPause() {
         if (::browserWindow.isInitialized) browserWindow.onPause()
         if (::nativeAppHost.isInitialized) nativeAppHost.onPause()
-        if (::webView.isInitialized) webView.onPause()
+        if (::webView.isInitialized && !shellRendererGone) webView.onPause()
         super.onPause()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        webView.saveState(outState)
+        if (::webView.isInitialized && !shellRendererGone) runCatching { webView.saveState(outState) }
         super.onSaveInstanceState(outState)
     }
 
@@ -551,8 +566,11 @@ class MainActivity : Activity() {
         fileChooserCallback?.onReceiveValue(null)
         fileChooserCallback = null
         pendingSystemDumpRequestId = null
-        if (::webView.isInitialized) {
-            webView.stopLoading(); webView.loadUrl("about:blank"); webView.removeAllViews(); webView.destroy()
+        if (::webView.isInitialized && !shellRendererGone) {
+            runCatching { webView.stopLoading() }
+            runCatching { webView.loadUrl("about:blank") }
+            runCatching { webView.removeAllViews() }
+            runCatching { webView.destroy() }
         }
         super.onDestroy()
     }

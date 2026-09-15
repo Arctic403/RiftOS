@@ -61,6 +61,7 @@ class AndroidWebViewBrowserEngine(
     private var defaultUserAgentMetadata: UserAgentMetadata? = null
     private var popupWebView: WebView? = null
     private var popupHost: android.widget.FrameLayout? = null
+    private var mainRendererGone = false
     private var crashed = false
     private var desktopMode = false
     private var inspectorActive = false
@@ -87,22 +88,24 @@ class AndroidWebViewBrowserEngine(
         webView.setBackgroundColor(0xff0a0d12.toInt())
     }
 
-    override fun currentUrl(): String = webView.url.orEmpty()
+    override fun currentUrl(): String = if (mainRendererGone) "" else webView.url.orEmpty()
 
     override fun loadUrl(url: String) {
+        check(!mainRendererGone) { "RiftBrowser renderer is recovering" }
         crashed = false
         inspectorActive = false
         updateCookiePolicy(url)
         webView.loadUrl(url)
     }
 
-    override fun canGoBack(): Boolean = webView.canGoBack()
-    override fun goBack() { if (webView.canGoBack()) webView.goBack() }
-    override fun canGoForward(): Boolean = webView.canGoForward()
-    override fun goForward() { if (webView.canGoForward()) webView.goForward() }
-    override fun reload() { crashed = false; inspectorActive = false; webView.reload() }
+    override fun canGoBack(): Boolean = !mainRendererGone && webView.canGoBack()
+    override fun goBack() { if (!mainRendererGone && webView.canGoBack()) webView.goBack() }
+    override fun canGoForward(): Boolean = !mainRendererGone && webView.canGoForward()
+    override fun goForward() { if (!mainRendererGone && webView.canGoForward()) webView.goForward() }
+    override fun reload() { check(!mainRendererGone) { "RiftBrowser renderer is recovering" }; crashed = false; inspectorActive = false; webView.reload() }
 
     override fun setDesktopMode(enabled: Boolean) {
+        check(!mainRendererGone) { "RiftBrowser renderer is recovering" }
         if (desktopMode == enabled) return
         val current = webView.url.orEmpty()
         runCatching { webView.stopLoading() }
@@ -115,6 +118,7 @@ class AndroidWebViewBrowserEngine(
     }
 
     override fun inspect(request: JSONObject, callback: (JSONObject?, Throwable?) -> Unit) {
+        if (mainRendererGone) { callback(null, IllegalStateException("RiftBrowser renderer is recovering")); return }
         val uri = runCatching { Uri.parse(webView.url.orEmpty()) }.getOrNull()
         if (uri?.scheme?.equals("https", ignoreCase = true) != true) {
             callback(null, IllegalArgumentException("RiftBrowser inspector only supports the active HTTPS page"))
@@ -243,11 +247,11 @@ class AndroidWebViewBrowserEngine(
 
     override fun state(): JSONObject = JSONObject()
         .put("renderer", rendererId)
-        .put("url", webView.url ?: "")
-        .put("title", webView.title ?: "RiftBrowser")
-        .put("canGoBack", webView.canGoBack())
-        .put("canGoForward", webView.canGoForward())
-        .put("progress", webView.progress)
+        .put("url", if (mainRendererGone) "" else webView.url ?: "")
+        .put("title", if (mainRendererGone) "RiftBrowser · renderer recovering" else webView.title ?: "RiftBrowser")
+        .put("canGoBack", !mainRendererGone && webView.canGoBack())
+        .put("canGoForward", !mainRendererGone && webView.canGoForward())
+        .put("progress", if (mainRendererGone) 0 else webView.progress)
         .put("crashed", crashed)
         .put("desktopMode", desktopMode)
         .put("inspectorActive", inspectorActive)
@@ -255,13 +259,13 @@ class AndroidWebViewBrowserEngine(
         .put("riftMcpApp", mcpApp.state())
 
     override fun onResume() {
-        webView.onResume()
+        if (!mainRendererGone) webView.onResume()
         popupWebView?.onResume()
     }
 
     override fun onPause() {
         popupWebView?.onPause()
-        webView.onPause()
+        if (!mainRendererGone) webView.onPause()
     }
 
     override fun destroy() {
@@ -425,6 +429,17 @@ class AndroidWebViewBrowserEngine(
                 CookieManager.getInstance().flush()
                 super.onPageFinished(view, url)
             }
+
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                RiftRendererCrashGuard.record(activity, "browser-popup", detail)
+                val hostView = popupHost
+                popupWebView = null
+                popupHost = null
+                if (hostView != null) runCatching { container.removeView(hostView) }
+                RiftRendererCrashGuard.destroyDeadWebView(view)
+                runCatching { stateChanged() }
+                return true
+            }
         }
         popup.webChromeClient = object : WebChromeClient() {
             override fun onCloseWindow(window: WebView) {
@@ -523,8 +538,12 @@ class AndroidWebViewBrowserEngine(
             }
 
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                mainRendererGone = true
                 crashed = true
-                stateChanged()
+                RiftRendererCrashGuard.record(activity, "browser-main", detail)
+                RiftRendererCrashGuard.destroyDeadWebView(view)
+                runCatching { stateChanged() }
+                RiftRendererCrashGuard.requestShellRecovery(activity)
                 return true
             }
         }
