@@ -79,14 +79,14 @@ assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synthesized.jsonl'));
 assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synth-manifest.json'));
 const result=await api.corpusBuild('/workspace/RiftLLM/tokenizer/private/synthesized.jsonl',undefined,{heldoutPermyriad:5000,seed:'rift-corpus-test-seed'});
 assert.equal(result.format,'rift-corpus-v1');
-assert.equal(result.sampleCount,180);
-assert.equal(result.trainCount+result.heldoutCount,180);
+assert.equal(result.sampleCount,216);
+assert.equal(result.trainCount+result.heldoutCount,216);
 assert.ok(result.trainCount>0&&result.heldoutCount>0);
 assert.equal(result.backupCleanupPending,false);
 for(const path of ['train.jsonl','heldout.jsonl','heldout.tsv','corpus-manifest.json'])assert.ok(files.has(`/workspace/RiftLLM/tokenizer/private/build/${path}`),`missing ${path}`);
 const status=await api.corpusStatus();
 assert.equal(status.available,true);
-assert.equal(status.manifest.sampleCount,180);
+assert.equal(status.manifest.sampleCount,216);
 assert.equal(status.manifest.normalization,'identity-utf8');
 
 await assert.rejects(()=>api.corpusSynth('/workspace/RiftOS-main/private.jsonl'),/must stay under/);
