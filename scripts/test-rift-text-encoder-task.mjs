@@ -1,0 +1,36 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const read=file=>fs.readFileSync(file,'utf8');
+const runner=read('android/app/src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt');
+const cli=read('android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt');
+const shell=read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
+const gradle=read('android/app/build.gradle.kts');
+
+assert.match(runner,/ARTIFACT_MAGIC = "RIFT_BYTE_BPE_V1"/);
+assert.match(runner,/TRAINER_ID = "rift-batch-bpe-v1"/);
+assert.match(runner,/VOCAB_SIZE = 32768/);
+assert.match(runner,/MERGE_TARGET = 32504/);
+assert.match(runner,/tokenizer\/private\/build\/train\.jsonl/);
+assert.match(runner,/tokenizer\/output\/rift-token-a-frequency-v1\.riftbpe/);
+assert.match(runner,/tokenizer\/output\/rift-token-b-balanced-v1\.riftbpe/);
+assert.match(runner,/ccf9e36e135da05beb9203a2496391ac3ab6b58c32dc697ee8b1c36174602606/);
+assert.match(runner,/eed655f1902cf021b5f7faf5a070a2f5085913053908c1f2d4b2a67ee18cbeb2/);
+assert.match(runner,/463bb9e8af82e1094b50702888986e144eec504cc7939cbedcbfad50503669b3/);
+assert.match(runner,/9ff5eefb11e76086c244a90d67630c7ca0092deed3d47bfa1f1a9aa3160accf6/);
+assert.match(runner,/training corpus cannot mathematically emit 32,504 merges/);
+assert.match(runner,/minimumByteTokenBudgetForMergeCount/);
+assert.match(runner,/CodingErrorAction\.REPORT/);
+assert.match(runner,/scoreMode == "frequency"/);
+assert.match(runner,/category_balanced/);
+assert.match(runner,/special=/);
+assert.match(runner,/merges_begin/);
+assert.match(runner,/merges_end/);
+for(const forbidden of ['ProcessBuilder','Runtime.getRuntime','python3','Runtime.exec','Socket(']) assert.ok(!runner.includes(forbidden),`forbidden generic execution surface in tokenizer runner: ${forbidden}`);
+assert.match(cli,/"tokenizer" ->/);
+assert.match(cli,/require\(isEnabled\(\)\).*Tokenizer tasks require explicit process-local enable/);
+assert.match(cli,/RiftTextEncoderTaskRunner\.execute\(context, action\)/);
+assert.match(cli,/No generic Python\/process runner/);
+assert.match(shell,/RiftExperimentalCli\.executeShell\(appContext, args\)/);
+assert.match(gradle,/RiftTokenizerTaskRunner\.kt/);
+console.log('Rift experimental tokenizer task contract OK');

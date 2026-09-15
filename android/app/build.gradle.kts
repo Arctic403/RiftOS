@@ -15,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.11.1-relay-client"
+        versionName = "0.11.2-relay-client"
         buildConfigField("String", "RIFT_SOURCE_SHA", "\"$riftSourceSha\"")
         buildConfigField("String", "RIFT_BUILD_RUN_ID", "\"$riftBuildRunId\"")
         buildConfigField("String", "RIFT_BUILD_RUN_NUMBER", "\"$riftBuildRunNumber\"")
@@ -65,6 +65,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftNativeSystemApps.kt",
         "src/main/java/com/riftos/app/RiftNativeShell.kt",
         "src/main/java/com/riftos/app/RiftExperimentalCli.kt",
+        "src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt",
         "src/main/java/com/riftos/app/RiftRendererCrashGuard.kt",
         "src/main/java/com/riftos/app/RiftVolumePaths.kt"
     )

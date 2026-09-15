@@ -14,6 +14,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-local-platform.mjs` — RiftRepo/RiftVault/RiftBuild/RiftMemory wiring, fail-closed capability and shell-surface contract.
 - `test-riftllm-bridge.mjs` — standalone RiftLLM Binder bridge, secure pairing, guarded patch publication and shell-boundary contract.
 - `test-riftllm-corpus.mjs` — executes the local RiftCorpus helper against an in-memory RiftFS mock and verifies deterministic split output, private-path confinement and unfinished-Rift-source rejection.
+- `test-rift-text-encoder-task.mjs` — locks the experimental fixed-path native RiftTokenizer task contract, pinned configs, 32K arithmetic and no-generic-process boundary.
 - `test-rift-app-import.mjs` — `.rift` package import/validation.
 
 When behavior intentionally changes, update the owning subsystem code, README and focused test together. Do not weaken a validator only to make an unintended regression pass.

@@ -49,7 +49,7 @@ object RiftExperimentalCli {
 
     fun isEnabled(): Boolean = mode == Mode.EXPERIMENTAL
 
-    fun executeShell(args: List<String>): CommandResult {
+    fun executeShell(context: Context, args: List<String>): CommandResult {
         val sub = args.firstOrNull()?.trim()?.lowercase().orEmpty().ifBlank { "help" }
         val tail = args.drop(1)
         return when (sub) {
@@ -95,6 +95,13 @@ object RiftExperimentalCli {
                 val goal = tail.joinToString(" ").trim()
                 require(goal.isNotBlank()) { "usage: rift-cli plan <goal>" }
                 val value = plan(goal)
+                result(value.toString(2), value)
+            }
+            "tokenizer" -> {
+                require(isEnabled()) { "EXPERIMENTAL RiftCLI is OFF. Tokenizer tasks require explicit process-local enable." }
+                require(tail.size <= 1) { "usage: rift-cli tokenizer status|self-test|train-a|train-b" }
+                val action = tail.firstOrNull() ?: "status"
+                val value = RiftTextEncoderTaskRunner.execute(context, action)
                 result(value.toString(2), value)
             }
             else -> throw IllegalArgumentException("unknown rift-cli command: $sub")
@@ -171,6 +178,8 @@ object RiftExperimentalCli {
         .put("brainBackend", "scaffold-rule-planner")
         .put("swarmRoles", roles.size)
         .put("autoMutation", false)
+        .put("manualTokenizerTasks", isEnabled())
+        .put("tokenizerTaskExecution", "native-kotlin-fixed-paths")
         .put("newMcpTools", 0)
         .put("authorityWidened", false)
         .put("lastLocalAgentRoute", lastRoute)
@@ -187,8 +196,10 @@ object RiftExperimentalCli {
         rift-cli enable CONFIRM-EXPERIMENTAL
         rift-cli disable
         rift-cli plan <goal>     # planning scaffold only; never executes mutations
+        rift-cli tokenizer status|self-test|train-a|train-b
+                                # manual fixed-path RiftTokenizer V1 tasks; enable required
 
-        No new MCP tools. No raw Android shell. No wider package authority. No autonomous writes.
+        No new MCP tools. No raw Android shell. No generic Python/process runner. No wider package authority. No autonomous writes.
         The future model/swarm backend is intentionally not connected yet.
     """.trimIndent()
 }

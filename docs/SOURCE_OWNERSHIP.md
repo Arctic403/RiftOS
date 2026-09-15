@@ -75,6 +75,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftSecretStore.kt` | `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellBridge.kt` | `docs/systems/shell/README.md` + `docs/systems/dev-lab/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftSystemDump.kt` | `docs/systems/diagnostics/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` |
@@ -129,6 +130,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 
 | `scripts/test-rift-shell-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` |
 | `scripts/test-riftllm-corpus.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
+| `scripts/test-rift-text-encoder-task.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 
 ## Rule for new source
 
