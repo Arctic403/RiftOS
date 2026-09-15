@@ -85,9 +85,10 @@ object RiftExperimentalCli {
                 result("EXPERIMENTAL RiftCLI enabled for this process only. Restarting RiftOS resets to legacy mode.", value)
             }
             "disable" -> {
+                RiftTextEncoderTaskRunner.cancelActive("experimental CLI disabled")
                 mode = Mode.LEGACY
                 lastRoute = "none"
-                val value = statusJson().put("notice", "legacy Local Agent routing restored")
+                val value = statusJson().put("notice", "legacy Local Agent routing restored; active tokenizer training cancellation requested")
                 result("RiftCLI experimental routing disabled. Legacy Local Agent routing is active.", value)
             }
             "plan" -> {
@@ -99,7 +100,7 @@ object RiftExperimentalCli {
             }
             "tokenizer" -> {
                 require(isEnabled()) { "EXPERIMENTAL RiftCLI is OFF. Tokenizer tasks require explicit process-local enable." }
-                require(tail.size <= 1) { "usage: rift-cli tokenizer status|self-test|train-a|train-b" }
+                require(tail.size <= 1) { "usage: rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel" }
                 val action = tail.firstOrNull() ?: "status"
                 val value = RiftTextEncoderTaskRunner.execute(context, action)
                 result(value.toString(2), value)
@@ -179,7 +180,7 @@ object RiftExperimentalCli {
         .put("swarmRoles", roles.size)
         .put("autoMutation", false)
         .put("manualTokenizerTasks", isEnabled())
-        .put("tokenizerTaskExecution", "native-kotlin-fixed-paths")
+        .put("tokenizerTaskExecution", "native-kotlin-fixed-paths-async")
         .put("newMcpTools", 0)
         .put("authorityWidened", false)
         .put("lastLocalAgentRoute", lastRoute)
@@ -196,8 +197,8 @@ object RiftExperimentalCli {
         rift-cli enable CONFIRM-EXPERIMENTAL
         rift-cli disable
         rift-cli plan <goal>     # planning scaffold only; never executes mutations
-        rift-cli tokenizer status|self-test|train-a|train-b
-                                # manual fixed-path RiftTokenizer V1 tasks; enable required
+        rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel
+                                # manual fixed-path RiftTokenizer V1 tasks; training runs as one cancellable background job
 
         No new MCP tools. No raw Android shell. No generic Python/process runner. No wider package authority. No autonomous writes.
         The future model/swarm backend is intentionally not connected yet.
