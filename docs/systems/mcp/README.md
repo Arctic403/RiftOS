@@ -16,7 +16,8 @@ Native core:
 Supporting subsystems:
 - `RiftProjectExporter.kt` — deterministic source export.
 - `RiftMcpRelayClient.kt` / `RiftRelaySettings.kt` — optional outbound remote transport.
-- `RiftShellBridge.kt` — narrow bridge for `rift_shell_exec` into existing RiftShell.
+- `RiftNativeShell.kt` — process-owned native core for `rift_shell_exec`, independent of WebView lifetime.
+- `RiftShellBridge.kt` — temporary trusted-WebView compatibility fallback for shell families not yet ported native.
 - `src/riftmcp-system.js` — launcher/start-menu entry.
 - browser MCP compatibility assets — one optional client transport.
 
@@ -27,7 +28,8 @@ client transport
   -> RiftMcpServer
   -> RiftToolHost
       -> permission + schema + bounded audit
-      -> RiftToolSandbox OR RiftShellBridge
+      -> RiftToolSandbox OR RiftNativeShell
+             -> optional RiftShellBridge compatibility fallback for not-yet-native commands
   -> result
 ```
 
@@ -45,7 +47,7 @@ Read defaults enabled; write defaults disabled. `rift_workspace_exec` is read-ga
 
 ## Filesystem boundary
 
-Normal MCP filesystem tools are hard-scoped to `filesDir/riftfs/workspace`. They cannot address `/home`, downloads, documents, SAF mounts, system roots or arbitrary Android storage. The shell tool is intentionally a different capability and routes to RiftShell, not `RiftToolSandbox`.
+Normal MCP filesystem tools are hard-scoped to `filesDir/riftfs/workspace`. They cannot address `/home`, downloads, documents, SAF mounts, system roots or arbitrary Android storage. The shell tool is intentionally a different capability and routes to the process-owned `RiftNativeShell`, not `RiftToolSandbox`. During migration only unsupported command families may delegate to the trusted compatibility shell; native core commands remain available without Chromium.
 
 ## Failure signatures
 
@@ -54,6 +56,7 @@ Normal MCP filesystem tools are hard-scoped to `filesDir/riftfs/workspace`. They
 - Only one tool fails -> tool mapping/argument/sandbox implementation.
 - All relay calls fail but browser-local works -> relay transport/settings/service.
 - Browser-local fails but relay works -> browser compatibility/bridge.
+- `rift_shell_exec native` reports WebView required or native workspace status dies with the shell renderer -> process-owned native-shell regression.
 
 ## Fix map
 

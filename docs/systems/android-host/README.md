@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Android host owns the real Android `Activity`, the Android-native RiftDesktop/window manager, the trusted compatibility WebView content canvas, exact-origin native bridge installation, system pickers/permissions, native browser surface, workspace watcher wiring, and lifecycle handoff between Android and RiftOS.
+The Android host owns the real Android `Activity`, Android-native RiftDesktop/window manager, process-owned native MCP/RiftShell control plane, the temporary trusted compatibility WebView content canvas, system pickers/permissions, RiftBrowser surface, workspace watcher wiring, and lifecycle handoff between Android and RiftOS.
 
 ## Why this boundary exists
 
@@ -13,6 +13,7 @@ RiftOS is a user-space operating environment, not a replacement Android kernel. 
 - `android/app/src/main/java/com/riftos/app/MainActivity.kt`
 - `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt`
 - `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt`
+- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt`
 - `android/app/src/main/java/com/riftos/app/RiftRendererCrashGuard.kt`
 - `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt`
 - `src/riftandroid-preload.js`
@@ -31,7 +32,7 @@ Related but separately documented: `RiftNativeDispatcher`, `RiftBrowserWindow`, 
 
 `AndroidManifest.xml` owns APK component declarations, Android permissions and package-visibility queries for this host. The `com.vortex3d.app` query exists only so the explicit local development Binder client can resolve/bind the debug Vortex3D package; RiftOS does not declare the Vortex service itself. The `com.riftllm.app` query similarly provides visibility only for the optional fixed RiftLLM Dev API Binder adapter documented in `../riftllm-bridge/README.md`; it grants no authority over RiftLLM private storage and does not make RiftLLM dependent on RiftOS. `res/values/styles.xml` owns the native Activity/window theme and initial system-bar/window background. Keep these synchronized with the Activities/services actually present in source; do not solve missing-component or permission problems in JavaScript.
 
-`MainActivity` is declared `singleTask` because it is the one RiftOS desktop/kernel authority. Relaunch/foreground requests must route back to that existing shell instead of creating another compatibility WebView with an independent RiftKernel/ProcessTable. Resume and window-focus transitions reclaim process-wide MCP shell-bridge ownership for that singleton runtime.
+`MainActivity` is declared `singleTask` because it is the one visible RiftOS desktop authority. Relaunch/foreground requests route back to that Activity instead of creating duplicate compatibility surfaces. MCP shell authority itself is now process-owned by `RiftNativeShell`; resume/focus only attaches the temporary trusted-WebView fallback. A compatibility renderer loss must detach that fallback without taking native MCP/RiftShell commands offline.
 
 It also preserves WebView lifecycle/state across pause/resume/save-state and tears down native resources in `onDestroy`. `RiftRendererCrashGuard` is the process-safety layer for Chromium renderer loss: every RiftOS-owned WebView surface must return handled, record bounded diagnostics, destroy only the dead WebView object, and rebuild/close the owning surface instead of allowing a shared renderer failure to terminate the RiftOS process.
 
@@ -59,7 +60,8 @@ Android owns process/activity/WebView state and `filesDir`. RiftOS persistent lo
 
 ## Failure signatures
 
-- Entire shell cannot call native methods -> bridge installation/origin or `handleKernelRequest`.
+- Native `rift_shell_exec` core disappears with the compatibility renderer -> `RiftMcpRuntime`/`RiftNativeShell` lifetime regression.
+- Compatibility shell cannot call native methods -> bridge installation/origin or `handleKernelRequest`.
 - File chooser/save picker never returns -> request-code/result routing in `MainActivity`.
 - Browser content floats over minimized windows -> `RiftBrowserWindow` bounds/visibility ownership, not shell WebView z-order hacks.
 - Workspace Records stops receiving external changes -> always-on `RiftWorkspaceWatcher` event forwarding / `RiftWorkspaceRecords` reconciliation.

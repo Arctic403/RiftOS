@@ -35,7 +35,7 @@ The adapter tracks assistant/user message baselines so historical tool envelopes
 
 ## Important boundary
 
-This layer must never implement filesystem or RiftShell operations itself. The page receives neither `RiftAndroid`, `RiftNativeDispatcher`, `RiftShellMcp` nor a raw RiftFS object. The only native page capability is structured MCP JSON-RPC through an allowed HTTPS origin. `rift_shell_exec` is executed by the native tool host through the trusted RiftOS shell WebView, not by guest-page JavaScript.
+This layer must never implement filesystem or RiftShell operations itself. The page receives neither `RiftAndroid`, `RiftNativeDispatcher`, `RiftShellMcp` nor a raw RiftFS object. The only native page capability is structured MCP JSON-RPC through an allowed HTTPS origin. `rift_shell_exec` is executed by the native tool host through process-owned `RiftNativeShell`, not by guest-page JavaScript. Only command families not yet ported native may temporarily delegate to the trusted RiftOS shell WebView compatibility executor.
 
 ## Current manual-send behavior
 

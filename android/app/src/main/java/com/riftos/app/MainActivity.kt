@@ -98,7 +98,7 @@ class MainActivity : Activity() {
         workspaceWatcher = RiftWorkspaceWatcher(this, ::sendWorkspaceEvent, workspaceRecords)
         workspaceWatcher.start()
         shellBridge = RiftShellBridge(webView)
-        RiftMcpRuntime.registerShellBridge(shellBridge)
+        RiftMcpRuntime.registerShellBridge(this, shellBridge)
         nativeDesktop = RiftNativeDesktop(
             activity = this,
             host = rootView,
@@ -527,7 +527,7 @@ class MainActivity : Activity() {
         super.onResume()
         // MainActivity is the singleTask RiftOS shell authority. Reclaim the process-wide MCP
         // shell bridge whenever Android resumes it, including task/background transitions.
-        if (::shellBridge.isInitialized && !shellRendererGone) RiftMcpRuntime.registerShellBridge(shellBridge)
+        if (::shellBridge.isInitialized && !shellRendererGone) RiftMcpRuntime.registerShellBridge(this, shellBridge)
         if (::webView.isInitialized && !shellRendererGone) webView.onResume()
         if (::nativeAppHost.isInitialized) nativeAppHost.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
@@ -537,7 +537,7 @@ class MainActivity : Activity() {
         super.onWindowFocusChanged(hasFocus)
         // Window focus is a stricter signal than lifecycle resume when another RiftOS Activity
         // temporarily covers the shell. The focused singleton shell must always own MCP execution.
-        if (hasFocus && ::shellBridge.isInitialized && !shellRendererGone) RiftMcpRuntime.registerShellBridge(shellBridge)
+        if (hasFocus && ::shellBridge.isInitialized && !shellRendererGone) RiftMcpRuntime.registerShellBridge(this, shellBridge)
     }
 
     override fun onPause() {

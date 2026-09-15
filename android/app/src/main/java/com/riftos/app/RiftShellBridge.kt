@@ -12,7 +12,13 @@ import java.util.concurrent.ConcurrentHashMap
  * the existing RiftShell runtime in MainActivity's shell WebView and results return
  * through the shell's exact-origin RiftAndroid WebMessage channel.
  */
-class RiftShellBridge(private val shellWebView: WebView) {
+interface RiftShellExecutor {
+    fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit)
+    fun close()
+}
+
+/** Temporary trusted-WebView compatibility executor for shell families not yet ported native. */
+class RiftShellBridge(private val shellWebView: WebView) : RiftShellExecutor {
     companion object {
         private const val SHELL_TIMEOUT_MS = 60_000L
         private const val DEVLAB_AGENT_TIMEOUT_MS = 90_000L
@@ -22,7 +28,7 @@ class RiftShellBridge(private val shellWebView: WebView) {
     private val pending = ConcurrentHashMap<String, (JSONObject) -> Unit>()
     @Volatile private var closed = false
 
-    fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit) {
+    override fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit) {
         if (closed) {
             reply(JSONObject().put("ok", false).put("error", "RiftShell bridge closed"))
             return
@@ -66,7 +72,7 @@ class RiftShellBridge(private val shellWebView: WebView) {
         pending.remove(id)?.invoke(result)
     }
 
-    fun close() {
+    override fun close() {
         closed = true
         val callbacks = pending.entries.toList()
         pending.clear()

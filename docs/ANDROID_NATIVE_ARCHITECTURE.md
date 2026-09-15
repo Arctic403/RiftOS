@@ -7,7 +7,9 @@ The active RiftOS distribution is a native Android APK targeting Android 8.0 / A
 ```text
 Android MainActivity
     -> RiftNativeDesktop (desktop / launcher / taskbar / native window authority)
-    -> trusted compatibility WebView (existing app bodies + RiftKernel/RiftFS/RiftGit runtime)
+    -> RiftNativeShell (process-owned MCP/RiftShell core; no WebView)
+         -> optional trusted compatibility shell fallback for not-yet-ported command families
+    -> trusted compatibility WebView (existing built-in app bodies + remaining JS runtime)
          -> RiftNativeTransport
          -> exact-origin RiftAndroid WebMessage
     -> RiftNativeDispatcher / Android APIs
@@ -38,7 +40,7 @@ The canonical project workspace lives at `filesDir/riftfs/workspace` and is shar
 - trusted compatibility WebView for unmigrated built-in app bodies,
 - `RiftNativeAppHost` dedicated installed-program Android content surfaces,
 - `RiftBrowserWindow` native WebView content plane,
-- local `RiftMcpServer` + `RiftToolHost`,
+- local `RiftMcpServer` + `RiftToolHost` + process-owned `RiftNativeShell`,
 - optional outbound `RiftMcpRelayClient`,
 - `RiftMcpActivity` for local grants, audit and relay configuration.
 
@@ -66,11 +68,14 @@ RiftBrowserMcpAppBridge
    RiftMcpServer
         |
    RiftToolHost
-        |
- RiftToolSandbox
+      /       \
+RiftToolSandbox  RiftNativeShell
+                    |
+             optional trusted-shell
+             compatibility fallback
 ```
 
-`RiftToolHost` owns tool schemas, local read/write grants and the bounded audit log. `RiftToolSandbox` enforces canonical-path containment and payload/listing limits.
+`RiftToolHost` owns tool schemas, local read/write grants and the bounded audit log. `RiftToolSandbox` enforces canonical-path containment and payload/listing limits. `rift_shell_exec` targets process-owned `RiftNativeShell`; only command families not yet ported native may temporarily delegate to the trusted compatibility shell. Native core commands therefore do not depend on Chromium lifetime.
 
 `RiftMcpRelayClient` is transport-only. It stores its bearer token using Android Keystore, requires TLS (`wss://`) and reconnects with bounded backoff. The existing exact-origin WebMessage route remains available as a fallback during migration.
 

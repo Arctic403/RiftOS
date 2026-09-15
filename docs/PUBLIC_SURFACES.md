@@ -31,7 +31,7 @@ This inventory documents deliberate `Rift*` globals/bridge names. A zero-consume
 | `RiftDevLab` | `riftdevlab.js` | Trusted in-house Dev Lab API for isolated staging, live experimentation, evidence, snapshots and guarded publication into the local RiftOS workspace. Consumed by the built-in Dev Lab UI, direct `devlab` shell commands and the fixed-whitelist `riftos-agent devlab` controller. |
 | `RiftShellBatch` | `riftshell-batch.js` | Batch parser/executor consumed by RiftShell. |
 | `RiftShellMcp` | `riftos.js` | Trusted-shell wrapper around the RiftShell parser for native MCP shell execution. Never exposed to guest pages. |
-| `RiftShellMcpNative` | `riftos.js` | Trusted-shell native request shim used only by `RiftShellBridge`; returns `mcp.shell.result` over `RiftNativeTransport`. |
+| `RiftShellMcpNative` | `riftos.js` | Temporary trusted-shell compatibility shim used only when `RiftNativeShell` delegates a not-yet-ported command to `RiftShellBridge`; returns `mcp.shell.result` over `RiftNativeTransport`. |
 | `RiftWorkspace` | `riftworkspace-web.js`, replaced by `riftworkspace-android-adapter.js` | Active workspace API. Android adapter is authoritative on Android. |
 | `RiftWorkspaceJSON` | `riftworkspace-web.js` | JSON-safe trusted compatibility/RPC facade; resolves the active `RiftWorkspace` at call time. |
 | `RiftWorkspaceLiveHost` | `riftworkspace-live-host.js` | Compatibility-named trusted-shell host for the local Workspace Records component. |

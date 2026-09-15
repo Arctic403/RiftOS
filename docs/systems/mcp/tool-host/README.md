@@ -21,7 +21,8 @@ tool name + args
   -> normalize arguments
   -> classify mutation (`requiresWrite`)
   -> check local grants
-  -> sandbox.handleAsync() OR RiftShellBridge.execute()
+  -> sandbox.handleAsync() OR RiftNativeShell.execute()
+       -> optional RiftShellBridge compatibility fallback
   -> record bounded audit metadata
   -> host result
 ```
@@ -51,11 +52,12 @@ A bounded recent audit list records tool, target, success/failure and error meta
 - Tool listed but unsupported at call time -> `canonicalName`/`methodFor` mismatch.
 - Write unexpectedly allowed/denied -> `requiresWrite`, `workspaceBatchMutates`, preference state.
 - Audit target wrong -> `auditTarget` mapping.
-- Shell tool says bridge unavailable -> runtime registration/`RiftShellBridge`, not sandbox.
+- Native shell core says unavailable -> process-owned `RiftNativeShell`/`RiftMcpRuntime` regression, not sandbox.
+- Only a not-yet-ported shell family says compatibility unavailable -> expected `RiftShellBridge` fallback boundary.
 
 ## Fix map
 
-Tool schemas, aliases, backend method mapping, permission classification, manifest generation and bounded host audit metadata belong in `RiftToolHost`. Workspace filesystem semantics and transactional rollback belong in `RiftToolSandbox`; MCP framing/idempotency belongs in `RiftMcpServer`; shell execution belongs in `RiftShellBridge`.
+Tool schemas, aliases, backend method mapping, permission classification, manifest generation and bounded host audit metadata belong in `RiftToolHost`. Workspace filesystem semantics and transactional rollback belong in `RiftToolSandbox`; MCP framing/idempotency belongs in `RiftMcpServer`; native shell execution belongs in `RiftNativeShell`, with `RiftShellBridge` only for temporary compatibility delegation.
 
 ## Change checklist
 

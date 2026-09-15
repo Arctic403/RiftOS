@@ -38,10 +38,13 @@ RiftKernel                RiftMcpServer
  /   |   \                    |
 /    |    \               RiftToolHost
 |    |     \              /           \
-|    |      \     RiftToolSandbox   RiftShellBridge
+|    |      \     RiftToolSandbox   RiftNativeShell
 |    |       \          |                |
-|    |        \   riftfs/workspace       |
-|    |         \                     trusted shell WebView
+|    |        \   riftfs/workspace       +-- native core (no WebView)
+|    |         \                         |
+|    |          \                   optional RiftShellBridge
+|    |                                   |
+|    |                              trusted shell WebView
 |    |          \
 RiftFS  RiftRT  RiftDesktop
   |
@@ -96,7 +99,7 @@ When a compatibility-mode tool finishes, its bounded `[RIFT_RESULT]` text is sta
 
 Mutating `rift_workspace_exec` batches use copy-on-write transactional rollback: either the whole batch commits or touched paths are restored. Snapshot/hash guards can reject stale edits. There is **no active hidden Rift AI task controller, private AI session ID or persistent AI mutation journal**. Durable review/history should use explicit source-control/project workflows rather than an unreachable parallel session layer.
 
-`rift_shell_exec` is intentionally outside the filesystem sandbox but is still not an Android/Linux shell. `RiftShellBridge` is registered against the trusted shell WebView by `MainActivity`, executes the existing RiftShell command parser, and returns a correlated one-way `mcp.shell.result` message. The guest browser never receives `RiftShellMcp`.
+`rift_shell_exec` is intentionally outside the filesystem sandbox but is still not an Android/Linux shell. Its primary executor is process-owned `RiftNativeShell`, so native diagnostic/read/workspace-status commands do not depend on a renderer. `MainActivity` may attach `RiftShellBridge` only as a compatibility fallback for command families not yet ported; that fallback executes the existing trusted-shell parser and returns a correlated one-way `mcp.shell.result` message. The guest browser never receives `RiftShellMcp`.
 
 ## Transfer boundary
 

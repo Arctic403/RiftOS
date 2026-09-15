@@ -471,13 +471,13 @@ private object RiftDevLabLocalAgent {
         val request = args.optJSONObject("request") ?: throw IllegalArgumentException("Dev Lab request is required")
         val action = request.optString("action").trim().lowercase()
         require(action in allowedActions) { "Unsupported RiftOS Dev Lab agent action: $action" }
-        val bridge = RiftMcpRuntime.shellBridge() ?: throw IllegalStateException("RiftOS shell bridge is unavailable")
+        val executor = RiftMcpRuntime.shellExecutor() ?: throw IllegalStateException("RiftOS shell executor is unavailable")
         val payload = JSONObject(request.toString()).put("source", "riftos-local-agent")
         val encoded = Base64.encodeToString(payload.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val cwd = request.optString("cwd", "/").ifBlank { "/" }
         val latch = CountDownLatch(1)
         var response: JSONObject? = null
-        bridge.execute("devlab rpc $encoded", cwd) { result ->
+        executor.execute("devlab rpc $encoded", cwd) { result ->
             response = result
             latch.countDown()
         }

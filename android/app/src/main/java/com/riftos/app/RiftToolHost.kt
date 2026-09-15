@@ -6,7 +6,7 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 /** Canonical device-side capability registry for the local Rift MCP server. */
-class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null) {
+class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = null) {
     companion object {
         private const val PREFS = "rift-mcp-tools"
         private const val LEGACY_PREFS = "rift-bridge"
@@ -22,14 +22,14 @@ class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val sandbox: RiftToolSandbox
-    @Volatile private var shellBridge: RiftShellBridge? = initialShellBridge
+    @Volatile private var shellExecutor: RiftShellExecutor? = initialShellExecutor
 
-    fun setShellBridge(bridge: RiftShellBridge) {
-        shellBridge = bridge
+    fun setShellExecutor(executor: RiftShellExecutor) {
+        shellExecutor = executor
     }
 
-    fun clearShellBridge(bridge: RiftShellBridge) {
-        if (shellBridge === bridge) shellBridge = null
+    fun clearShellExecutor(executor: RiftShellExecutor) {
+        if (shellExecutor === executor) shellExecutor = null
     }
 
     init {
@@ -78,7 +78,7 @@ class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null
     fun tools(): JSONArray = JSONArray()
         .put(tool(
             "rift_shell_exec",
-            "Execute an existing RiftShell command through the RiftOS web runtime. Does not expose raw Android shell access.",
+            "Execute a RiftShell command through the process-owned native core, with a temporary trusted compatibility fallback for not-yet-ported command families. Does not expose raw Android shell access.",
             objectSchema(JSONObject()
                 .put("command", stringProperty("RiftShell command to execute."))
                 .put("cwd", stringProperty("Optional RiftShell working directory.")), listOf("command"))
@@ -247,7 +247,7 @@ class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null
                 reply(JSONObject().put("ok", false).put("error", error))
                 return
             }
-            shellBridge?.execute(command, args.optString("cwd", "/")) { result ->
+            shellExecutor?.execute(command, args.optString("cwd", "/")) { result ->
                 val ok = result.optBoolean("ok", false)
                 val error = if (ok) null else result.optString("error", "RiftShell execution failed")
                 recordAudit(name, args, ok, error)
@@ -262,7 +262,7 @@ class RiftToolHost(context: Context, initialShellBridge: RiftShellBridge? = null
                     reply(JSONObject().put("ok", false).put("error", error ?: "RiftShell execution failed"))
                 }
             } ?: run {
-                val error = "RiftShell bridge unavailable"
+                val error = "RiftShell executor unavailable"
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("error", error))
             }
