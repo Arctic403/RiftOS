@@ -127,6 +127,9 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `scripts/validate-rift-transport.mjs` | `docs/systems/build-validation/README.md` |
 | `scripts/validate-rift-docs.mjs` | `docs/systems/build-validation/README.md` |
 
+| `scripts/test-rift-shell-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` |
+| `scripts/test-riftllm-corpus.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
+
 ## Rule for new source
 
 When a new active implementation, browser asset, relay source, Workspace Records source or validation script is added, add its exact repository-relative path here and either assign it to an existing system README or create a new system/subsystem README. Documentation validation is intentionally strict so ownership cannot silently decay.
