@@ -32,5 +32,5 @@ assert.match(cli,/require\(isEnabled\(\)\).*Tokenizer tasks require explicit pro
 assert.match(cli,/RiftTextEncoderTaskRunner\.execute\(context, action\)/);
 assert.match(cli,/No generic Python\/process runner/);
 assert.match(shell,/RiftExperimentalCli\.executeShell\(appContext, args\)/);
-assert.match(gradle,/RiftTokenizerTaskRunner\.kt/);
+assert.match(gradle,/RiftTextEncoderTaskRunner\.kt/);
 console.log('Rift experimental tokenizer task contract OK');
