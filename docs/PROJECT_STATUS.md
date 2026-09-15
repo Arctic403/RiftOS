@@ -75,6 +75,14 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - Live status/catalog/state/UI/screenshot calls, asynchronous validation/VTXScript jobs, semantic UI clicks/touch replay, bounded screenshot image attachment and evidence pulls into `workspace/.vortex-bridge/` are supported by the source contract.
 - Vortex3D's own validation suites/VTXScript/capture runtime remain authoritative; RiftOS is transport/orchestration only.
 
+### Experimental RiftCLI brain / development swarm
+
+- A native `rift-cli` scaffold now exists strictly as an **experimental, manual-only** subsystem below the stable MCP/relay surface.
+- It is OFF on every process start; enable state is not persisted and requires the exact manual confirmation command.
+- The current brain backend is a non-mutating rule-based planning scaffold with a logical development-team role graph. No model backend is connected yet.
+- When manually enabled, the only live Local Agent behavior is compatibility pass-through through a single router directly above the existing fixed-scope `RiftOsLocalAgent`; no package authority or Android permission is widened.
+- It adds zero MCP tools, no relay protocol, no raw Android shell, and no autonomous writes. It is not approved for production/autonomous development until explicitly promoted by the project owner.
+
 ### Rift MCP
 
 - `RiftToolHost` is the canonical device-side capability registry.

@@ -90,6 +90,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "help  pwd  home  drives  df  sysinfo  native  uptime  version\n" +
                     "ls [path]  tree [path]  stat <path>  cat <file>  head <file> [n]  tail <file> [n]\n" +
                     "workspace [cd|info|ls|status]\n" +
+                    "rift-cli status|team|architecture|enable|disable|plan   [EXPERIMENTAL / OFF BY DEFAULT]\n" +
                     "Remaining command families temporarily use the trusted compatibility shell while they migrate.",
                 cwd,
                 nativeResult(command)
@@ -131,7 +132,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "home", "drives", "df", "sysinfo", "native", "uptime", "version",
                         "ls", "tree", "stat", "cat", "head", "tail", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status"
+                        "workspace ls", "workspace status", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -154,6 +155,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "head" -> textCommand(cwd, args, "head")
             "tail" -> textCommand(cwd, args, "tail")
             "workspace" -> workspaceCommand(cwd, args)
+            "rift-cli" -> {
+                val cli = RiftExperimentalCli.executeShell(args)
+                ShellOutcome(cli.output, cwd, cli.result)
+            }
             else -> throw UnsupportedNativeCommand()
         }
     }

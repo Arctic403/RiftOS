@@ -22,6 +22,7 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftMcpRelayClient.kt`, `RiftRelaySettings.kt` | [`mcp/relay`](../../../../../../../../docs/systems/mcp/relay/README.md) |
 | `RiftProjectExporter.kt` | [`mcp/project-exporter`](../../../../../../../../docs/systems/mcp/project-exporter/README.md) |
 | `RiftNativeShell.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
+| `RiftExperimentalCli.kt` | [`experimental-cli`](../../../../../../../../docs/systems/experimental-cli/README.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
 | `RiftShellBridge.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) |
 | `RiftWorkspaceRecords.kt`, `RiftWorkspaceWatcher.kt` | [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) |
 | `RiftPreviewActivity.kt` | [`preview`](../../../../../../../../docs/systems/preview/README.md) |

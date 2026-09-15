@@ -64,6 +64,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftNativeAppHost.kt",
         "src/main/java/com/riftos/app/RiftNativeSystemApps.kt",
         "src/main/java/com/riftos/app/RiftNativeShell.kt",
+        "src/main/java/com/riftos/app/RiftExperimentalCli.kt",
         "src/main/java/com/riftos/app/RiftRendererCrashGuard.kt",
         "src/main/java/com/riftos/app/RiftVolumePaths.kt"
     )

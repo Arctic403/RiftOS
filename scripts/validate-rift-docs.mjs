@@ -41,6 +41,7 @@ const requiredDocs = [
   'docs/systems/riftrt/engines/native-arm64/README.md',
   'docs/systems/runtime-capabilities/README.md',
   'docs/systems/shell/README.md',
+  'docs/systems/experimental-cli/README.md',
   'docs/systems/git/README.md',
   'docs/systems/riftrepo/README.md',
   'docs/systems/riftvault/README.md',
