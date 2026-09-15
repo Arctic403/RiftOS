@@ -50,6 +50,7 @@ globalThis.RiftWorkspace={stat:async()=>null,readText:async()=>null,history:asyn
 
 await import(new URL('../src/riftllm-bridge.js?corpus-test=1',import.meta.url));
 const api=globalThis.RiftLlmBridge;
+assert.ok(api?.corpusSynth,'corpusSynth public bridge method missing');
 assert.ok(api?.corpusBuild,'corpusBuild public bridge method missing');
 assert.ok(api?.corpusStatus,'corpusStatus public bridge method missing');
 
@@ -67,7 +68,16 @@ for(const category of categories){
 }
 const input='/workspace/RiftLLM/tokenizer/private/samples.jsonl';
 await fsMock.writeText(input,rows.map(row=>JSON.stringify(row)).join('\n')+'\n');
-const result=await api.corpusBuild(input,undefined,{heldoutPermyriad:5000,seed:'rift-corpus-test-seed'});
+const synth=await api.corpusSynth(input,undefined,undefined,{countPerCategory:12,seed:'rift-corpus-synth-v1-a'});
+assert.equal(synth.format,'rift-corpus-synth-v1');
+assert.equal(synth.generator,'rift-corpus-synthesizer-v1');
+assert.equal(synth.synthesizedCount,36);
+assert.equal(synth.totalCount,216);
+assert.deepEqual(synth.categoryCounts,{code:72,non_ascii:72,prose:72});
+assert.ok(synth.outputUtf8Bytes>0&&synth.outputUtf8Bytes<4*1024*1024);
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synthesized.jsonl'));
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synth-manifest.json'));
+const result=await api.corpusBuild('/workspace/RiftLLM/tokenizer/private/synthesized.jsonl',undefined,{heldoutPermyriad:5000,seed:'rift-corpus-test-seed'});
 assert.equal(result.format,'rift-corpus-v1');
 assert.equal(result.sampleCount,180);
 assert.equal(result.trainCount+result.heldoutCount,180);
@@ -79,6 +89,9 @@ assert.equal(status.available,true);
 assert.equal(status.manifest.sampleCount,180);
 assert.equal(status.manifest.normalization,'identity-utf8');
 
+await assert.rejects(()=>api.corpusSynth('/workspace/RiftOS-main/private.jsonl'),/must stay under/);
+await assert.rejects(()=>api.corpusSynth(input,'/workspace/outside.jsonl'),/must stay under/);
+await assert.rejects(()=>api.corpusSynth(input,undefined,undefined,{countPerCategory:2801,seed:'rift-corpus-synth-v1-a'}),/1\.\.2800/);
 await assert.rejects(()=>api.corpusBuild('/workspace/RiftOS-main/private.jsonl'),/must stay under/);
 const blocked={...rows[0],id:'blocked:001',text:'blocked source sample',source_project:'RiftOS'};
 await fsMock.writeText(input,[JSON.stringify(blocked),...rows.slice(1).map(row=>JSON.stringify(row))].join('\n')+'\n');

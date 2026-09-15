@@ -41,6 +41,15 @@ const CORPUS_BLOCKED_URIS=Object.freeze([
 ]);
 const CORPUS_ID_RE=/^[A-Za-z0-9._:-]{1,160}$/;
 const CORPUS_FIELDS=new Set(["id","category","domain","origin","text","source_project","reference_uri","reference_title","reference_license","notes"]);
+const CORPUS_SYNTH_FORMAT="rift-corpus-synth-v1";
+const CORPUS_SYNTH_GENERATOR="rift-corpus-synthesizer-v1";
+const CORPUS_SYNTH_TEMPLATE="rift-synth-templates-v1";
+const CORPUS_SYNTH_SEED="rift-corpus-synth-v1-a";
+const CORPUS_SYNTH_DEFAULT_COUNT=2800;
+const CORPUS_SYNTH_MAX_COUNT=2800;
+const CORPUS_SYNTH_OUTPUT=`${CORPUS_ROOT}/synthesized.jsonl`;
+const CORPUS_SYNTH_MANIFEST=`${CORPUS_ROOT}/synth-manifest.json`;
+const CORPUS_SYNTH_MAX_OUTPUT_BYTES=4*1024*1024;
 
 function sortedJsonValue(value){
   if(Array.isArray(value))return value.map(sortedJsonValue);
@@ -127,6 +136,59 @@ async function corpusStatus(outputDir=CORPUS_DEFAULT_OUTPUT){
   const target=normalizeCorpusPath(outputDir,CORPUS_DEFAULT_OUTPUT),manifestPath=`${target}/corpus-manifest.json`,stat=await core.fs.stat(manifestPath);if(!stat)return {available:false,outputDir:target};
   const text=await core.fs.readText(manifestPath);let manifest;try{manifest=JSON.parse(text);}catch{throw new Error(`Invalid RiftCorpus manifest: ${manifestPath}`);}
   return {available:true,outputDir:target,manifest,manifestSha256:await sha256Text(text)};
+}
+
+const SYNTH_PROSE_DOMAINS=Object.freeze(["systems","networking","storage","security","performance","ai_ml","structured_data","concurrency","testing","troubleshooting","math_science","general_writing"]);
+const SYNTH_SUBJECTS=Object.freeze(["scheduler","parser","serializer","worker pool","cache","queue","model loader","benchmark harness","file index","transport","validator","runtime","allocator","event loop","manifest writer","request router","token stream","state machine","database adapter","configuration layer"]);
+const SYNTH_ACTIONS=Object.freeze(["validates its inputs before changing state","records enough metadata to reproduce a result","keeps ownership of mutable state explicit","separates policy from mechanism","uses bounded work queues under load","writes complete replacements before swapping active data","checks invariants where data enters","distinguishes temporary failures from permanent errors","keeps evaluation data outside the training path","measures latency and throughput separately","normalizes paths before containment checks","uses stable identifiers instead of timestamps","keeps a simple reference path beside optimized code","limits memory growth with explicit budgets","publishes readiness only after dependencies are verified","treats cancellation as an observable state transition"]);
+const SYNTH_CONDITIONS=Object.freeze(["when inputs are malformed","during a cold start","while several workers run concurrently","after a partial network interruption","under low-memory pressure","when the same operation is retried","before a version migration","after configuration changes","while processing a large batch","when a dependency becomes unavailable","during repeated benchmark runs","when a cache entry expires"]);
+const SYNTH_EVIDENCE=Object.freeze(["a content hash and stable record id","a bounded retry counter and final error class","before-and-after byte counts","a deterministic manifest with sorted keys","a median across repeated measurements","a round-trip equality check","an explicit state-transition log","a separate held-out result","a checksum plus input-shape metadata","a reproducible test case","a size limit enforced before allocation","an atomic replacement marker"]);
+const SYNTH_SECOND=Object.freeze(["That makes failures easier to localize because the evidence is tied to one boundary.","The fallback path keeps the same ownership rules as the primary path.","The result is easier to audit because each transition has a named cause and bounded effect.","This keeps timing noise from becoming a correctness claim.","A later implementation can optimize the mechanism without changing the external contract.","The same record can be compared across runs because identity does not depend on wall-clock time.","This avoids silently converting uncertainty into permission or success.","A recovery path remains available until the replacement is fully verified."]);
+const SYNTH_CODE_LANGS=Object.freeze(["python","javascript","typescript","kotlin","cpp","rust","sql","json","yaml","shell"]);
+const SYNTH_STEMS=Object.freeze(["alpha","delta","vector","buffer","packet","record","sample","frame","metric","entry","segment","window","batch","cursor","worker","request","result","state","chunk","index"]);
+const SYNTH_NONASCII=Object.freeze([
+  ["fr","Le composant {subject} valide {obj} avant de publier un nouvel état. La mesure {metric} est répétée et la limite est {value} éléments."],
+  ["es","El componente {subject} valida {obj} antes de publicar un estado nuevo. La métrica {metric} se repite y el límite es de {value} elementos."],
+  ["de","Die Komponente {subject} prüft {obj}, bevor ein neuer Zustand veröffentlicht wird. Die Messung {metric} wird wiederholt; die Grenze liegt bei {value} Elementen."],
+  ["pt","O componente {subject} valida {obj} antes de publicar um novo estado. A métrica {metric} é repetida e o limite é {value} itens."],
+  ["it","Il componente {subject} convalida {obj} prima di pubblicare un nuovo stato. La misura {metric} viene ripetuta e il limite è {value} elementi."],
+  ["pl","Komponent {subject} sprawdza {obj} przed opublikowaniem nowego stanu. Pomiar {metric} jest powtarzany, a limit wynosi {value} elementów."],
+  ["tr","{subject} bileşeni yeni durumu yayımlamadan önce {obj} verisini doğrular. {metric} ölçümü tekrarlanır ve sınır {value} öğedir."],
+  ["el","Το στοιχείο {subject} ελέγχει το {obj} πριν δημοσιεύσει νέα κατάσταση. Η μέτρηση {metric} επαναλαμβάνεται και το όριο είναι {value} στοιχεία."],
+  ["ru","Компонент {subject} проверяет {obj} перед публикацией нового состояния. Измерение {metric} повторяется, а лимит равен {value} элементам."],
+  ["ja","{subject} コンポーネントは新しい状態を公開する前に {obj} を検証します。{metric} の測定を繰り返し、上限を {value} 件にします。"],
+  ["ko","{subject} 구성 요소는 새 상태를 게시하기 전에 {obj} 데이터를 검증합니다. {metric} 측정을 반복하고 한도를 {value}개로 둡니다."],
+  ["ar","يتحقق المكوّن {subject} من {obj} قبل نشر حالة جديدة. يتكرر قياس {metric} ويكون الحد {value} عنصراً."],
+  ["hi","{subject} घटक नई स्थिति प्रकाशित करने से पहले {obj} की जाँच करता है। {metric} माप दोहराया जाता है और सीमा {value} मद है।"]
+]);
+const SYNTH_NONASCII_SUBJECTS=Object.freeze(["parser","scheduler","cache","router","worker","validator","runtime","index"]);
+const SYNTH_NONASCII_OBJECTS=Object.freeze(["input","manifest","request","buffer","record","path","batch","configuration"]);
+const SYNTH_NONASCII_METRICS=Object.freeze(["latency","throughput","memory","error rate","token density","queue depth"]);
+function synthChoose(values,index,salt){return values[(index*(31+salt*2)+salt*17)%values.length];}
+function synthRecord(id,category,domain,text){return {id,category,domain,origin:"original",source_project:"",text,notes:`generated by ${CORPUS_SYNTH_GENERATOR}/${CORPUS_SYNTH_TEMPLATE}`};}
+function synthProse(index){const domain=SYNTH_PROSE_DOMAINS[index%SYNTH_PROSE_DOMAINS.length],subject=synthChoose(SYNTH_SUBJECTS,index,1),action=synthChoose(SYNTH_ACTIONS,index,2),condition=synthChoose(SYNTH_CONDITIONS,index,3),evidence=synthChoose(SYNTH_EVIDENCE,index,4),second=synthChoose(SYNTH_SECOND,index,5),limit=16+((index*977+113)%8176),run=(index*7919+104729)%100000,text=`In ${domain} case P${String(index).padStart(5,"0")}, the ${subject} ${action} ${condition}. It records ${evidence}, enforces a working bound of ${limit} units, and labels observation run-${String(run).padStart(5,"0")}. ${second}`;return synthRecord(`synth.prose.${String(index).padStart(5,"0")}`,"prose",domain,text);}
+function synthCodeText(index,lang,stem){const limit=16+((index*1543+97)%4096),num=String(index).padStart(5,"0"),ident=`${stem}_${num}`;
+  if(lang==="python")return `def fold_${ident}(items):\n    if len(items) > ${limit}: raise ValueError("batch exceeds limit")\n    total = sum((i + 1) * int(v) for i, v in enumerate(items))\n    return {"id": "${ident}", "count": len(items), "total": total}`;
+  if(lang==="javascript")return `export function fold_${ident}(items) {\n  if (items.length > ${limit}) throw new RangeError("batch exceeds limit");\n  return items.reduce((sum, v, i) => sum + (i + 1) * Number(v), 0);\n}`;
+  if(lang==="typescript")return `type Result${num} = { id: string; value: number };\nfunction normalize_${ident}(value: number): Result${num} {\n  return { id: "${ident}", value: Number.isFinite(value) ? value : 0 };\n}`;
+  if(lang==="kotlin")return `data class Result${num}(val count: Int, val checksum: Long)\nfun fold_${ident}(values: List<Int>): Result${num} {\n    require(values.size <= ${limit})\n    var sum = 0L\n    values.forEachIndexed { i, v -> sum += (i + 1L) * v }\n    return Result${num}(values.size, sum)\n}`;
+  if(lang==="cpp")return `#include <cstdint>\n#include <vector>\nstd::int64_t fold_${ident}(const std::vector<int>& values) {\n    if (values.size() > ${limit}u) return -1;\n    std::int64_t sum = 0;\n    for (std::size_t i = 0; i < values.size(); ++i) sum += static_cast<std::int64_t>(i + 1) * values[i];\n    return sum;\n}`;
+  if(lang==="rust")return `fn fold_${ident}(values: &[i64]) -> Option<i64> {\n    if values.len() > ${limit} { return None; }\n    Some(values.iter().enumerate().map(|(i, v)| (i as i64 + 1) * v).sum())\n}`;
+  if(lang==="sql")return `SELECT id, value, updated_at\nFROM ${stem}_records\nWHERE updated_at >= ${1000+index*17} AND state = 'ready'\nORDER BY updated_at DESC, id ASC\nLIMIT ${16+index%240}; -- ${ident}`;
+  if(lang==="json")return JSON.stringify(sortedJsonValue({format:"synthetic-record-v1",id:ident,limits:{items:limit,bytes:limit*8},flags:["validate","measure","commit"],enabled:true}),null,2);
+  if(lang==="yaml")return `job:\n  id: ${ident}\n  workers: ${1+index%8}\n  policy:\n    validate_before_write: true\n    max_items: ${limit}\n    retry_limit: ${1+index%5}`;
+  return `set -eu\ninput="${ident}.json"\noutput="${ident}.checked"\ntest -f "$input"\nbytes=$(wc -c < "$input")\ntest "$bytes" -le ${4096+index*3}\nprintf "%s\\n" "$bytes" > "$output"`;}
+function synthCode(index){const lang=SYNTH_CODE_LANGS[index%SYNTH_CODE_LANGS.length],stem=synthChoose(SYNTH_STEMS,index,6);return synthRecord(`synth.code.${String(index).padStart(5,"0")}`,"code",lang,synthCodeText(index,lang,stem));}
+function synthNonAscii(index){const [domain,template]=SYNTH_NONASCII[index%SYNTH_NONASCII.length],subject=synthChoose(SYNTH_NONASCII_SUBJECTS,index,7),obj=synthChoose(SYNTH_NONASCII_OBJECTS,index,8),metric=synthChoose(SYNTH_NONASCII_METRICS,index,9),value=16+((index*1237+211)%8176),text=template.replace("{subject}",subject).replace("{obj}",obj).replace("{metric}",metric).replace("{value}",String(value))+` [N${String(index).padStart(5,"0")}:${domain}-${value}]`;return synthRecord(`synth.nonascii.${String(index).padStart(5,"0")}`,"non_ascii",domain,text);}
+function stripCorpusHash(row){const {text_sha256,...rest}=row;return rest;}
+async function corpusSynth(base=CORPUS_DEFAULT_INPUT,output=CORPUS_SYNTH_OUTPUT,manifestPath=CORPUS_SYNTH_MANIFEST,options={}){
+  const basePath=normalizeCorpusPath(base,CORPUS_DEFAULT_INPUT),outputPath=normalizeCorpusPath(output,CORPUS_SYNTH_OUTPUT),manifest=normalizeCorpusPath(manifestPath,CORPUS_SYNTH_MANIFEST),count=options.countPerCategory==null?CORPUS_SYNTH_DEFAULT_COUNT:Number(options.countPerCategory),seed=String(options.seed||CORPUS_SYNTH_SEED);
+  if(seed!==CORPUS_SYNTH_SEED)throw new Error(`RiftCorpus Synthesizer V1 seed is pinned to ${CORPUS_SYNTH_SEED}`);if(!Number.isInteger(count)||count<1||count>CORPUS_SYNTH_MAX_COUNT)throw new Error(`count-per-category must be an integer in 1..${CORPUS_SYNTH_MAX_COUNT}`);if(outputPath===basePath)throw new Error("RiftCorpus synth output must differ from the authored base");if(manifest===basePath||manifest===outputPath)throw new Error("RiftCorpus synth manifest must use a separate private path");
+  const {source,samples}=await loadCorpusSamples(basePath),rows=samples.map(stripCorpusHash),ids=new Set(rows.map(row=>row.id)),texts=new Set(rows.map(row=>row.text)),generated=[];
+  for(let index=1;index<=count;index++)for(const row of [synthProse(index),synthCode(index),synthNonAscii(index)]){if(ids.has(row.id))throw new Error(`synthesized id collides with base: ${row.id}`);if(texts.has(row.text))throw new Error(`synthesized text collides with base/generated data: ${row.id}`);if(utf8.encode(row.text).byteLength>CORPUS_MAX_SAMPLE_BYTES)throw new Error(`synthesized sample exceeds ${CORPUS_MAX_SAMPLE_BYTES} UTF-8 bytes: ${row.id}`);ids.add(row.id);texts.add(row.text);generated.push(row);}
+  const all=[...rows,...generated],outputText=all.map(canonicalJson).join("\n")+"\n",outputBytes=utf8.encode(outputText).byteLength;if(outputBytes>CORPUS_SYNTH_MAX_OUTPUT_BYTES)throw new Error(`synthesized corpus is ${outputBytes} bytes and exceeds the ${CORPUS_SYNTH_MAX_OUTPUT_BYTES}-byte RiftFS bridge ceiling; reduce count or move to a reviewed shard contract`);
+  const result={format:CORPUS_SYNTH_FORMAT,generator:CORPUS_SYNTH_GENERATOR,templateVersion:CORPUS_SYNTH_TEMPLATE,seed,countPerCategory:count,basePresent:true,baseSha256:await sha256Text(source),baseCount:rows.length,synthesizedCount:generated.length,totalCount:all.length,categoryCounts:corpusCounts(all,"category"),domainCounts:corpusCounts(all,"domain"),outputSha256:await sha256Text(outputText),outputUtf8Bytes:outputBytes,origin:"original",unfinishedRiftSourceIncluded:false};
+  const manifestText=JSON.stringify(sortedJsonValue(result),null,2)+"\n";await core.fs.writeText(outputPath,outputText);await core.fs.writeText(manifest,manifestText);return {...result,manifestSha256:await sha256Text(manifestText),basePath,outputPath,manifestPath:manifest};
 }
 
 async function native(op,request={},extra={}){return core.native.call("riftllm.dev",{op,request,...extra});}
@@ -227,7 +289,7 @@ async function publish(id="latest"){
 async function run(args,print=console.log,context={}){
   const list=[...args],cmd=(list.shift()||"help").toLowerCase();
   const show=value=>{print(typeof value==="string"?value:JSON.stringify(value,null,2));return value;};
-  if(cmd==="help")return print(`RiftLLM standalone Dev API bridge\nriftllm-agent status\nriftllm-agent pair\nriftllm-agent unpair\nriftllm-agent sync <project-path>\nriftllm-agent sync-missing <project-path>\nriftllm-agent load <project-path>\nriftllm-agent staged\nriftllm-agent stage <project-path> <text>\nriftllm-agent stage-file <project-path> <riftfs-source-file>\nriftllm-agent delete <project-path>\nriftllm-agent unstage <project-path>\nriftllm-agent reset\nriftllm-agent snapshot [note]\nriftllm-agent snapshots [limit]\nriftllm-agent get-snapshot [id|latest]\nriftllm-agent benchmarks [limit]\nriftllm-agent benchmark [record-id|latest]\nriftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]\nriftllm-agent corpus-status [output-dir]\nriftllm-agent preview [id|latest]\nriftllm-agent publish [id|latest]\nriftllm-agent ack <id|latest> <workspace-history-id>\nCorpus commands are local-only and confined to /workspace/RiftLLM/tokenizer/private. Pairing token is entered only in the local secure prompt, never as a shell argument.`);
+  if(cmd==="help")return print(`RiftLLM standalone Dev API bridge\nriftllm-agent status\nriftllm-agent pair\nriftllm-agent unpair\nriftllm-agent sync <project-path>\nriftllm-agent sync-missing <project-path>\nriftllm-agent load <project-path>\nriftllm-agent staged\nriftllm-agent stage <project-path> <text>\nriftllm-agent stage-file <project-path> <riftfs-source-file>\nriftllm-agent delete <project-path>\nriftllm-agent unstage <project-path>\nriftllm-agent reset\nriftllm-agent snapshot [note]\nriftllm-agent snapshots [limit]\nriftllm-agent get-snapshot [id|latest]\nriftllm-agent benchmarks [limit]\nriftllm-agent benchmark [record-id|latest]\nriftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]\nriftllm-agent corpus-status [output-dir]\nriftllm-agent preview [id|latest]\nriftllm-agent publish [id|latest]\nriftllm-agent ack <id|latest> <workspace-history-id>\nCorpus commands are local-only and confined to /workspace/RiftLLM/tokenizer/private. Pairing token is entered only in the local secure prompt, never as a shell argument.`);
   if(cmd==="status")return show(await status());
   if(cmd==="pair"){if(list.length)throw new Error("usage: riftllm-agent pair (enter the token only in the secure local prompt)");return show(await pair());}
   if(cmd==="unpair"){if(list.length)throw new Error("usage: riftllm-agent unpair");return show(await unpair());}
@@ -247,6 +309,11 @@ async function run(args,print=console.log,context={}){
   if(cmd==="get-snapshot")return show(await getSnapshot(list[0]||"latest"));
   if(cmd==="benchmarks"){if(list[0]!==undefined&&!Number.isFinite(Number(list[0])))throw new Error("benchmark limit must be numeric");return show(await listBenchmarks(list[0]));}
   if(cmd==="benchmark")return show(await getBenchmark(list[0]||"latest"));
+  if(cmd==="corpus-synth"){
+    if(list.length>4)throw new Error("usage: riftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]");
+    const base=list[0]||CORPUS_DEFAULT_INPUT,output=list[1]||CORPUS_SYNTH_OUTPUT,manifest=list[2]||CORPUS_SYNTH_MANIFEST,count=list[3]===undefined?CORPUS_SYNTH_DEFAULT_COUNT:Number(list[3]);
+    return show(await corpusSynth(base,output,manifest,{countPerCategory:count,seed:CORPUS_SYNTH_SEED}));
+  }
   if(cmd==="corpus-build"){
     if(list.length>4)throw new Error("usage: riftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]");
     const input=list[0]||CORPUS_DEFAULT_INPUT,output=list[1]||CORPUS_DEFAULT_OUTPUT,heldout=list[2]===undefined?CORPUS_DEFAULT_HELDOUT:Number(list[2]),seed=list[3]||CORPUS_DEFAULT_SEED;
@@ -259,4 +326,4 @@ async function run(args,print=console.log,context={}){
   throw new Error(`unknown riftllm-agent command: ${cmd}`);
 }
 
-globalThis.RiftLlmBridge=Object.freeze({version:1,status,pair,unpair,sync,syncMissing,load,listStaged,stage,stageDelete,unstage,reset,snapshot,listSnapshots,getSnapshot,listBenchmarks,getBenchmark,corpusBuild,corpusStatus,preview,publish,acknowledge,run});
+globalThis.RiftLlmBridge=Object.freeze({version:1,status,pair,unpair,sync,syncMissing,load,listStaged,stage,stageDelete,unstage,reset,snapshot,listSnapshots,getSnapshot,listBenchmarks,getBenchmark,corpusSynth,corpusBuild,corpusStatus,preview,publish,acknowledge,run});

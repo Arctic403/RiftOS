@@ -18,7 +18,7 @@ The build/validation layer catches source-contract regressions before the separa
 - `scripts/test-rift-path-compat.mjs` — executable C:/D: path-helper semantics plus cross-subsystem assertions that drive aliases canonicalize before identity/containment checks.
 - `scripts/test-rift-local-platform.mjs` — local-first repo/vault/build/memory module wiring, provider capability honesty and fail-closed build-executor contract.
 - `scripts/test-riftllm-bridge.mjs` — fixed standalone RiftLLM Binder API identity/allowlist, Keystore pairing, guarded Workspace publication and shell-boundary contract.
-- `scripts/test-riftllm-corpus.mjs` — executable RiftCorpus local-helper contract: deterministic build/manifest generation, private-path confinement, no Binder dependency and unfinished-project source exclusion.
+- `scripts/test-riftllm-corpus.mjs` — executable RiftCorpus local-helper contract: deterministic synthesis, finite count/size bounds, synth-to-build composition, build/manifest generation, private-path confinement, no Binder dependency and unfinished-project source exclusion.
 - `scripts/test-rift-text-encoder-task.mjs` — fixed-path experimental native tokenizer task contract, pinned candidate configs, 32K merge arithmetic and generic-process rejection.
 - `scripts/test-rift-app-import.mjs` — `.rift` package import contract.
 - `android/app/build.gradle.kts` — Android source verification and web-asset sync.
