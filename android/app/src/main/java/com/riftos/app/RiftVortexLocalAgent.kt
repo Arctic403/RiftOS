@@ -151,8 +151,16 @@ private class RiftScopedLocalAgent(
 
         val inputMode = if (targetPackage == "com.riftos.app") {
             // Android can report ACTION_CLICK=true for RiftOS self-controls without dispatching the
-            // View click listener. A short fixed-scope accessibility gesture matches physical input
-            // and proved reliable against the native RiftDesktop during live acceptance testing.
+            // View click listener. Editable controls also need explicit input focus after a native
+            // window has been minimized/restored: the IME can be visible while isFocused is false.
+            // Keep that repair inside the already-fixed RiftOS package before the physical gesture.
+            if (actionNode.isEditable) {
+                val focused = actionNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                if (!focused && !actionNode.isFocused) {
+                    throw IllegalStateException("$displayName editable target could not receive input focus: $target")
+                }
+                SystemClock.sleep(50L)
+            }
             val bounds = Rect().also(actionNode::getBoundsInScreen)
             require(!bounds.isEmpty) { "$displayName UI target has no tappable bounds: $target" }
             val x = bounds.exactCenterX()
