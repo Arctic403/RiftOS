@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -60,6 +61,7 @@ class RiftNativeAppHost(
     )
 
     private val instances = LinkedHashMap<String, Instance>()
+    private var lastRendererCrash: JSONObject? = null
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val executor = Executors.newSingleThreadExecutor()
     private val riftRoot = File(activity.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
@@ -107,6 +109,22 @@ class RiftNativeAppHost(
                 val uri = request.url
                 return !(uri.scheme.equals("https", true) && uri.host.equals("app.riftos.local", true))
             }
+
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                lastRendererCrash = JSONObject()
+                    .put("windowId", windowId)
+                    .put("appId", app.id)
+                    .put("didCrash", detail.didCrash())
+                    .put("rendererPriorityAtExit", detail.rendererPriorityAtExit())
+                    .put("at", System.currentTimeMillis())
+                instances.remove(windowId)
+                runCatching { desktop.detachContent(windowId, view) }
+                runCatching { WebViewCompat.removeWebMessageListener(view, BRIDGE_NAME) }
+                runCatching { view.removeAllViews() }
+                runCatching { view.destroy() }
+                runCatching { desktop.handle("desktop.window.close", JSONObject().put("id", windowId)) }
+                return true
+            }
         }
 
         require(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -147,9 +165,13 @@ class RiftNativeAppHost(
         return JSONObject().put("closed", true).put("windowId", windowId).put("appId", instance.app.id)
     }
 
-    fun state(): JSONObject = JSONObject().put("native", true).put("engine", "native-webview").put("instances", JSONArray().apply {
-        for (instance in instances.values) put(instanceState(instance))
-    })
+    fun state(): JSONObject = JSONObject()
+        .put("native", true)
+        .put("engine", "native-webview")
+        .put("lastRendererCrash", lastRendererCrash ?: JSONObject.NULL)
+        .put("instances", JSONArray().apply {
+            for (instance in instances.values) put(instanceState(instance))
+        })
 
     fun onResume() { instances.values.forEach { it.webView.onResume() } }
     fun onPause() { instances.values.forEach { it.webView.onPause() } }

@@ -49,6 +49,7 @@ A single `RiftNativeApp` WebMessage endpoint provides the bounded Rift API. Supp
 - network works before a declared/granted `network` capability -> WebView default-deny regression.
 - app can write C:/Programs, C:/ProgramData, another app's AppData, or escape an approved D: root -> native filesystem containment regression.
 - closing/minimizing/restoring leaves the Android renderer visible or alive incorrectly -> `RiftNativeDesktop` content-view lifecycle mismatch.
+- a guest WebView renderer dies and the entire RiftOS Activity/process exits -> `RiftNativeAppHost.onRenderProcessGone()` isolation regressed; renderer loss must close only the affected installed-program surface and be recorded in app-runtime state.
 
 ## Fix map
 
@@ -59,7 +60,7 @@ Drive mapping -> `RiftVolumePaths.kt` plus RiftFS contract; do not invent a seco
 
 ## Validation
 
-Install and launch a V1 package; verify the dedicated Android WebView is attached to the native WindowRecord and never the shell DOM. Exercise local asset loads, denied/granted network, own AppData read/write, approved D: roots, denied C:/system and foreign-AppData writes, clipboard/share/build-controller permissions, minimize/restore/focus/resize/close, and repeated launch/dispose without leaked renderer state.
+Install and launch a V1 package; verify the dedicated Android WebView is attached to the native WindowRecord and never the shell DOM. Exercise local asset loads, denied/granted network, own AppData read/write, approved D: roots, denied C:/system and foreign-AppData writes, clipboard/share/build-controller permissions, minimize/restore/focus/resize/close, and repeated launch/dispose without leaked renderer state. Force or simulate renderer loss and verify `onRenderProcessGone()` returns handled, removes/destroys only that guest surface, closes its native window, records `lastRendererCrash`, and leaves the RiftOS shell/MCP runtime alive.
 
 ## Future compiler ABI
 

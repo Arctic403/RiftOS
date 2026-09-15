@@ -63,6 +63,7 @@ Android owns process/activity/WebView state and `filesDir`. RiftOS persistent lo
 - Browser content floats over minimized windows -> `RiftBrowserWindow` bounds/visibility ownership, not shell WebView z-order hacks.
 - Workspace Records stops receiving external changes -> always-on `RiftWorkspaceWatcher` event forwarding / `RiftWorkspaceRecords` reconciliation.
 - Insets/right edge are clipped -> Android window inset handling plus desktop geometry, not arbitrary CSS width inflation.
+- Launching an installed Rift app kills/restarts the whole RiftOS process -> inspect `RiftNativeAppHost` renderer-loss handling first; a guest WebView renderer failure must be handled and reduced to that program window rather than using WebViewClient's process-fatal default.
 
 ## Fix map
 
@@ -70,4 +71,4 @@ Patch `MainActivity` only for Android lifecycle, picker, permission, bridge rout
 
 ## Validation
 
-The source validator checks Android host/inset/browser invariants. Any native Kotlin change requires an APK build. Test cold start, rotation/resizing where applicable, background/foreground lifecycle, picker cancellation, and destruction/recreation for host-level changes.
+The source validator checks Android host/inset/browser invariants, including installed-program renderer-loss containment. Any native Kotlin change requires an APK build. Test cold start, rotation/resizing where applicable, background/foreground lifecycle, picker cancellation, guest WebView renderer loss, and destruction/recreation for host-level changes. A renderer crash must close only the affected installed program while the singleton RiftOS Activity, shell bridge and MCP remain alive.
