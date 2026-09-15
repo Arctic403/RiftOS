@@ -238,17 +238,36 @@ private class RiftScopedLocalAgent(
 
     private fun requireTargetRoot(context: Context): AccessibilityNodeInfo = requireTargetServiceAndRoot(context).second
 
+    private fun currentTargetApplicationRoot(service: RiftVortexAccessibilityService): AccessibilityNodeInfo? {
+        val active = service.rootInActiveWindow
+        if (active != null && active.packageName?.toString() == targetPackage && active.isVisibleToUser) {
+            return active
+        }
+
+        // An IME can own rootInActiveWindow while the constructor-fixed target application
+        // remains visible and owns the focused EditText. Resolve only visible application windows
+        // for that exact fixed package instead of relaunching the app and destroying input focus.
+        val candidates = mutableListOf<Pair<AccessibilityWindowInfo, AccessibilityNodeInfo>>()
+        for (window in service.windows.orEmpty()) {
+            if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+            val root = window.root ?: continue
+            if (root.packageName?.toString() != targetPackage || !root.isVisibleToUser) continue
+            candidates += window to root
+        }
+        return candidates.firstOrNull { (window, _) -> window.isActive || window.isFocused }?.second
+            ?: candidates.singleOrNull()?.second
+    }
+
     private fun requireTargetServiceAndRoot(context: Context): Pair<RiftVortexAccessibilityService, AccessibilityNodeInfo> {
         val service = RiftVortexAccessibilityService.current()
             ?: throw IllegalStateException("RiftOS Local UI Agent accessibility service is not enabled")
 
-        // Let Accessibility publish the real active window before trusting a cached root from the
-        // previous MCP call. ChatGPT can retake foreground between calls.
+        // Let Accessibility publish the current window set before trusting a cached root from the
+        // previous MCP call. The active window may legitimately be the IME while the fixed target
+        // application remains visible underneath and still owns the focused editable field.
         SystemClock.sleep(ROOT_SETTLE_MS)
-        val initialRoot = service.rootInActiveWindow
-        val initialReady = initialRoot != null && initialRoot.packageName?.toString() == targetPackage &&
-            initialRoot.isVisibleToUser && (initialRoot.window?.isActive != false)
-        if (!initialReady) {
+        val initialRoot = currentTargetApplicationRoot(service)
+        if (initialRoot == null) {
             val launch = context.packageManager.getLaunchIntentForPackage(targetPackage)
                 ?: throw IllegalStateException("$displayName is not installed: $targetPackage")
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
@@ -256,14 +275,13 @@ private class RiftScopedLocalAgent(
         }
 
         val deadline = SystemClock.elapsedRealtime() + ACTIVATION_TIMEOUT_MS
-        var lastPackage = initialRoot?.packageName?.toString().orEmpty()
+        var lastPackage = service.rootInActiveWindow?.packageName?.toString().orEmpty()
         var lastSignature = ""
         var stablePolls = 0
         while (SystemClock.elapsedRealtime() < deadline) {
-            val root = service.rootInActiveWindow
-            lastPackage = root?.packageName?.toString().orEmpty()
-            if (root != null && lastPackage == targetPackage && root.isVisibleToUser &&
-                (root.window?.isActive != false)) {
+            val root = currentTargetApplicationRoot(service)
+            lastPackage = service.rootInActiveWindow?.packageName?.toString().orEmpty()
+            if (root != null) {
                 val signature = "${root.windowId}:${root.childCount}"
                 stablePolls = if (signature == lastSignature) stablePolls + 1 else 1
                 lastSignature = signature
@@ -290,11 +308,7 @@ private class RiftScopedLocalAgent(
             findNode(root, target)?.let { return it }
             if (SystemClock.elapsedRealtime() >= deadline) return null
             SystemClock.sleep(TARGET_LOOKUP_POLL_MS)
-            val fresh = service.rootInActiveWindow
-            if (fresh != null && fresh.packageName?.toString() == targetPackage &&
-                fresh.isVisibleToUser && (fresh.window?.isActive != false)) {
-                root = fresh
-            }
+            currentTargetApplicationRoot(service)?.let { root = it }
         }
     }
 
