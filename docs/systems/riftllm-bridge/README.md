@@ -9,7 +9,7 @@ The integration follows RiftLLM's authoritative `docs/RIFTOS_DEV_API_HANDOFF.md`
 ## Source ownership
 
 - `android/app/src/main/java/com/riftos/app/RiftLlmDevClient.kt` — fixed-purpose Binder client, target/provider identity, API-operation allowlist and Keystore-backed pairing-token use.
-- `src/riftllm-bridge.js` — trusted-shell orchestration for exact source sync, staging commands, immutable snapshot selection, patch validation, Workspace preview/apply and publication acknowledgment.
+- `src/riftllm-bridge.js` — trusted-shell orchestration for exact source sync, staging commands, immutable snapshot selection, patch validation, Workspace preview/apply and publication acknowledgment; it also owns the local-only bounded RiftCorpus build/status helper under `/workspace/RiftLLM/tokenizer/private/`.
 - `src/riftos.js` — `riftllm-agent` RiftShell routing plus local Settings pairing/status controls.
 - `android/app/src/main/AndroidManifest.xml` — package visibility query for `com.riftllm.app`; this grants no RiftLLM privilege.
 - `RiftNativeDispatcher.kt` — finite `riftllm.dev` native route executed on the dedicated agent worker.
@@ -34,6 +34,8 @@ For existing files, `sync` reads the exact canonical `RiftLLM/<path>` Workspace 
 
 `stage`, `delete`, `unstage`, `reset`, `snapshot` and snapshot-list/load operations change only RiftLLM's own app-private Dev Lab state until publication. `stage-file` is the exact-payload shell path for multiline edits. The provider's bounded read-only `list_benchmarks` / `get_benchmark` methods are exposed as `benchmarks` / `benchmark`; they never mutate staging or source and still require the same paired local API.
 
+`corpus-build` and `corpus-status` are different: they are **local RiftFS operations**, not Binder calls. They require no RiftLLM pairing token and are hard-confined to `/workspace/RiftLLM/tokenizer/private/`. `corpus-build` mirrors RiftCorpus V1 validation: allowed categories/origins, duplicate ID/text rejection, 16 KiB sample bound, unfinished Rift project exclusions, SHA-256 deterministic train/held-out assignment, required category coverage in both splits, canonical JSONL/TSV output and a hashed manifest. Output replacement uses a staged directory + backup/restore sequence rather than partially rewriting the active build folder. After a successful replacement, inability to remove the retired backup is reported as `backupCleanupPending=true` instead of falsely marking the new build as failed.
+
 For preview/publication, RiftOS resolves `latest` to a concrete immutable snapshot ID, requests `get_patch`, then independently requires patch format v2, repo `Arctic403/RiftLLM`, branch `main`, a bounded change count, only write/delete actions, exact `RiftLLM/...` paths, preserved `base_sha256`, and text content for writes. It then delegates to the existing RiftWorkspace `previewPatch`/`applyPatch` transaction. Baseline conflicts abort before mutation and are never bypassed.
 
 Only after `applyPatch` returns a Workspace `historyId` does RiftOS call `ack_publish`. If that final receipt call fails, the bridge reports `published:true, acknowledged:false` with the Workspace history ID rather than reapplying or pretending the local publication did not happen. `riftllm-agent ack` is a bounded recovery operation and first requires a matching Workspace history record for the exact RiftLLM repo/branch.
@@ -46,7 +48,7 @@ Publication means local Workspace mutation only. The bridge never authorizes Git
 
 ## Shell surface
 
-`riftllm-agent` provides fixed semantic commands for status/pair/unpair, source sync, load/staged/stage/stage-file/delete/unstage/reset, snapshots, read-only benchmark records, preview, publish and receipt recovery. It is deliberately excluded from generic RiftShell atomic batch because Binder-side Dev Lab mutations and Workspace publication have their own transaction/receipt semantics.
+`riftllm-agent` provides fixed semantic commands for status/pair/unpair, source sync, load/staged/stage/stage-file/delete/unstage/reset, snapshots, read-only benchmark records, local `corpus-build` / `corpus-status`, preview, publish and receipt recovery. Corpus commands remain local and private-data-path confined; all other RiftLLM Dev API commands retain the Binder/pairing boundary. The family is deliberately excluded from generic RiftShell atomic batch because Binder-side Dev Lab mutations, corpus directory replacement and Workspace publication each have their own transaction/receipt semantics.
 
 No dedicated MCP tool family is added. Existing trusted `rift_shell_exec` may invoke the bounded shell commands, but the pairing token itself can only be entered in the local RiftOS prompt.
 
@@ -61,12 +63,15 @@ No dedicated MCP tool family is added. Existing trusted `rift_shell_exec` may in
 - Never manually loop project writes in place of RiftWorkspace guarded apply.
 - Never let RiftLLM publication imply Git push/build/install.
 - Never add a network listener to work around Binder payload limits.
+- Keep `corpus-build` / `corpus-status` confined to `/workspace/RiftLLM/tokenizer/private/`; they must never become arbitrary RiftFS writers or process/script execution surfaces.
+- Corpus build must reject RiftLLM/RiftOS/Vortex3D/VTXBuilder/VortexScript source identities during the unfinished-project exclusion phase and must replace output through staged/backup directory moves.
 
 ## Failure signatures
 
 - `provider is not installed or visible` -> RiftLLM is absent or package visibility/provider declaration changed.
 - `Dev API is disabled` or token rejected -> enable/rotate in RiftLLM, then pair again; do not discover tokens programmatically.
 - `request exceeds 512 KiB` or Binder failure -> V1 IPC payload limit; reduce the operation rather than adding a network shortcut.
+- corpus source read exceeds the trusted RiftFS text-bridge limit -> keep authoring batches below the current per-file bridge bound or shard the future corpus-builder design; do not expose raw Android shell/Python as a workaround.
 - `sync verification failed` -> source content/hash did not describe the same Workspace state; reread and retry.
 - baseline replacement rejected while staged -> publish/unstage/reconcile first.
 - Workspace `base_sha256` conflict -> canonical source changed after sync; abort, inspect, resync and restage.
@@ -75,7 +80,7 @@ No dedicated MCP tool family is added. Existing trusted `rift_shell_exec` may in
 ## Fix map
 
 Binder/provider identity, operation mapping, request size and token persistence -> `RiftLlmDevClient.kt`.
-Source baseline/hash synchronization, patch validation, preview/apply/ack orchestration -> `src/riftllm-bridge.js`.
+Source baseline/hash synchronization, patch validation, preview/apply/ack orchestration and bounded local RiftCorpus build/status -> `src/riftllm-bridge.js`.
 RiftShell parsing/Settings buttons -> `src/riftos.js`.
 Generic atomic-batch exclusion -> `src/riftshell-batch.js`.
 Workspace atomicity/history/rollback -> existing `src/riftworkspace-web.js`; do not duplicate it here.
@@ -83,6 +88,6 @@ RiftLLM provider/store behavior -> fix RiftLLM itself and update its handoff con
 
 ## Validation
 
-`npm run check` must include `scripts/test-riftllm-bridge.mjs`, wiring, transport and documentation validation. The Android source verifier must require `RiftLlmDevClient.kt`. Any native change still requires a later manual APK build/install.
+`npm run check` must include `scripts/test-riftllm-bridge.mjs`, `scripts/test-riftllm-corpus.mjs`, wiring, transport and documentation validation. The corpus test executes the real bridge helper against an in-memory RiftFS mock and verifies successful split/manifest generation, path confinement and unfinished-Rift-source rejection. The Android source verifier must require `RiftLlmDevClient.kt`. Any native change still requires a later manual APK build/install.
 
 On-device acceptance must prove absent-target handling, disabled API rejection, wrong-token rejection, correct pairing/status, exact source sync/hash, isolated RiftLLM staging, immutable snapshot creation, guarded preview, deliberate Workspace-drift conflict with zero partial writes, successful apply + receipt acknowledgment, preservation of newer post-snapshot edits, Workspace rollback, no token in logs/MCP/Git/workspace, and normal standalone RiftLLM behavior when the RiftOS bridge is absent or unpaired.
