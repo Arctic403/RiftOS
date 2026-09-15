@@ -184,6 +184,7 @@ for (const [name, command] of Object.entries(pkg.scripts || {})) {
 const dispatcher = read('android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt');
 const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
 const nativeDesktopSource = read('android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt');
+const nativeSystemAppsSource = read('android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt');
 
 // RiftShell MCP execution is native-first. The trusted shell WebView is compatibility fallback only; guest browser assets never receive shell authority.
 const browserAdapter = read('android/app/src/main/assets/riftbrowser-mcp-app.js');
@@ -207,11 +208,19 @@ const nativeDesktopHandlers = routeMethods(
 );
 const nativeDesktopRouted = mainActivity.includes('method.startsWith("desktop.")') && mainActivity.includes('nativeDesktop.handle(method, args)');
 if (!nativeDesktopRouted) failures.push('MainActivity does not own the bounded desktop.* router to RiftNativeDesktop');
+const nativeSystemAppHandlers = routeMethods(
+  nativeSystemAppsSource,
+  'fun handle(method: String, args: JSONObject): JSONObject = when (method)',
+  'fun onDesktopClosed(id: String): Boolean'
+);
+const nativeSystemAppsRouted = mainActivity.includes('method.startsWith("system.app.")') && mainActivity.includes('nativeSystemApps.handle(method, args)');
+if (!nativeSystemAppsRouted) failures.push('MainActivity does not own the bounded system.app.* router to RiftNativeSystemApps');
 const supported = new Set([
   ...routeMethods(dispatcher, 'fun handleAsync(raw: String)', 'fun completeDirectoryPick'),
   ...routeMethods(dispatcher, 'private fun dispatch(method: String', 'private fun normalizeSegments'),
   ...routeMethods(mainActivity, 'private fun handleKernelRequest(raw: String)', 'private fun runKernelCommand'),
   ...(nativeDesktopRouted ? nativeDesktopHandlers : []),
+  ...(nativeSystemAppsRouted ? nativeSystemAppHandlers : []),
 ]);
 const nativeCallers = new Set();
 for (const file of srcModules.map(name => `src/${name}`)) {
@@ -245,6 +254,10 @@ const intentionalQueryHandlers = new Set([
   'desktop.window.maximize',
   'desktop.window.restore',
   'desktop.window.state',
+  // Native system-app close is driven by Android window chrome, while state is a bounded
+  // diagnostics/query surface; neither requires a fixed literal JS caller.
+  'system.app.close',
+  'system.app.state',
 ]);
 for (const method of supported) {
   if (!nativeCallers.has(method) && !intentionalQueryHandlers.has(method)) failures.push(`Android native handler has no RiftOS caller/documented query role: ${method}`);
