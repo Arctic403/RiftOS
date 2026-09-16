@@ -4,9 +4,9 @@ export const RIFT_VM_ABI='riftvm-1';
 const NAME=/^[A-Za-z_][A-Za-z0-9_.:$-]{0,95}$/;
 const HOST_METHOD=/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*){1,3}$/;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
-const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','jump','jump_if_false','call','host','print','ret','halt']);
+const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','make_struct','get_field','make_enum','enum_is','enum_get','jump','jump_if_false','call','host','print','ret','halt']);
 const DEFAULT_LIMITS=Object.freeze({maxSteps:100000,maxStack:1024,maxCallDepth:32});
-const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536});
+const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536});
 const INT_BOUNDS=Object.freeze({u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
 const UNIT=Object.freeze({type:'unit',value:null});
 const PREPARED=Symbol('riftvm.prepared');
@@ -47,11 +47,22 @@ function normalizeLimits(raw){
     maxCallDepth:integer(limits.maxCallDepth??DEFAULT_LIMITS.maxCallDepth,'limits.maxCallDepth',1,HARD_LIMITS.maxCallDepth)
   });
 }
+function normalizeFieldList(raw,where){
+  if(!Array.isArray(raw)||raw.length<1||raw.length>HARD_LIMITS.maxCompositeItems)fail(`${where}.fields must contain 1..${HARD_LIMITS.maxCompositeItems} names`);
+  const seen=new Set(),fields=[];
+  for(let i=0;i<raw.length;i++){const name=safeName(raw[i],`${where}.fields[${i}]`);if(seen.has(name))fail(`${where}.fields contains duplicate ${name}`);seen.add(name);fields.push(name);}
+  return Object.freeze(fields);
+}
 function normalizeInstruction(raw,where,ctx){
   if(!plain(raw))fail(`${where} instruction must be an object`);
   const op=String(raw.op||'');if(!OPS.has(op))fail(`${where} has unsupported opcode: ${op||'(empty)'}`);
   if(op==='const')return Object.freeze({op,index:integer(raw.index,`${where}.index`,0,ctx.constantCount-1)});
   if(op==='load'||op==='store')return Object.freeze({op,index:integer(raw.index,`${where}.index`,0,ctx.locals-1)});
+  if(op==='make_struct')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),fields:normalizeFieldList(raw.fields,where)});
+  if(op==='get_field')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),field:safeName(raw.field,`${where}.field`)});
+  if(op==='make_enum')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),variant:safeName(raw.variant,`${where}.variant`),argc:integer(raw.argc??0,`${where}.argc`,0,HARD_LIMITS.maxCompositeItems)});
+  if(op==='enum_is')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),variant:safeName(raw.variant,`${where}.variant`)});
+  if(op==='enum_get')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),variant:safeName(raw.variant,`${where}.variant`),index:integer(raw.index,`${where}.index`,0,HARD_LIMITS.maxCompositeItems-1)});
   if(op==='jump'||op==='jump_if_false')return Object.freeze({op,target:integer(raw.target,`${where}.target`,0,ctx.codeLength-1)});
   if(op==='call'){
     const name=safeName(raw.name,`${where}.name`),argc=integer(raw.argc??0,`${where}.argc`,0,HARD_LIMITS.maxParams),target=ctx.functions[name];
@@ -91,17 +102,31 @@ export function prepareRiftExecutable(raw){
   return Object.freeze({[PREPARED]:true,format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry,imports:Object.freeze([...imports]),constants,functions:Object.freeze(functions),limits:normalizeLimits(source.limits),instructionCount:totalInstructions});
 }
 
-function valueToPublic(value){if(!value||value.type==='unit')return{type:'unit'};if(value.type==='u32'||value.type==='s32')return{type:value.type,value:value.value.toString()};return{type:value.type,value:value.value};}
-function valueToHost(value){if(!value||value.type==='unit')return null;if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
+function publicValue(value){
+  if(!value||value.type==='unit')return{type:'unit'};
+  if(value.type==='u32'||value.type==='s32')return{type:value.type,value:value.value.toString()};
+  if(value.type==='struct'){const fields={};for(const [key,item] of Object.entries(value.fields))fields[key]=publicValue(item);return{type:'struct',name:value.name,fields};}
+  if(value.type==='enum')return{type:'enum',name:value.name,variant:value.variant,values:value.values.map(publicValue)};
+  return{type:value.type,value:value.value};
+}
+function valueToPublic(value){return publicValue(value);}
+function valueToHost(value){if(!value||value.type==='unit')return null;if(value.type==='struct'||value.type==='enum')fail('composite values cannot cross the host import boundary');if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
 function hostToValue(raw){if(raw===null||raw===undefined)return UNIT;if(typeof raw==='boolean')return Object.freeze({type:'bool',value:raw});if(typeof raw==='string')return Object.freeze({type:'string',value:stringBytes(raw,'host string')});if(typeof raw==='number'){if(!Number.isFinite(raw))fail('host returned a non-finite number');return Object.freeze({type:'f64',value:raw});}const text=JSON.stringify(raw);return Object.freeze({type:'string',value:stringBytes(text,'host JSON result')});}
-function displayValue(value){if(!value||value.type==='unit')return'unit';if(value.type==='u32'||value.type==='s32')return value.value.toString();return String(value.value);}
-function sameType(a,b,op){if(!a||!b||a.type!==b.type)fail(`${op} requires operands of the same type`);}
+function displayValue(value){
+  if(!value||value.type==='unit')return'unit';
+  if(value.type==='u32'||value.type==='s32')return value.value.toString();
+  if(value.type==='struct')return `${value.name}{${Object.entries(value.fields).map(([key,item])=>`${key}=${displayValue(item)}`).join(',')}}`;
+  if(value.type==='enum')return `${value.name}.${value.variant}${value.values.length?`(${value.values.map(displayValue).join(',')})`:''}`;
+  return String(value.value);
+}
+function sameType(a,b,op){if(!a||!b||a.type!==b.type)fail(`${op} requires operands of the same type`);if(a.type==='struct'||a.type==='enum')fail(`${op} does not support composite values`);}
 function checkedInteger(type,value,op){const bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])fail(`${op} ${type} overflow`);return Object.freeze({type,value});}
 function numericBinary(op,a,b){
   sameType(a,b,op);if(a.type==='f64'){let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);if(!Number.isFinite(value))fail(`${op} produced non-finite f64`);return Object.freeze({type:'f64',value});}
   if(a.type!=='u32'&&a.type!=='s32')fail(`${op} requires numeric operands`);let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0n)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0n)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);return checkedInteger(a.type,value,op);
 }
 function compare(op,a,b){
+  if(a?.type==='struct'||a?.type==='enum'||b?.type==='struct'||b?.type==='enum')fail(`${op} does not support composite values`);
   if(op==='eq'||op==='ne'){const equal=a?.type===b?.type&&(a?.type==='unit'||a?.value===b?.value);return Object.freeze({type:'bool',value:op==='eq'?equal:!equal});}
   sameType(a,b,op);if(!['u32','s32','f64','string'].includes(a.type))fail(`${op} requires ordered operands`);let value;if(op==='lt')value=a.value<b.value;else if(op==='le')value=a.value<=b.value;else if(op==='gt')value=a.value>b.value;else value=a.value>=b.value;return Object.freeze({type:'bool',value});
 }
@@ -129,6 +154,11 @@ export async function executeRiftExecutable(raw,host={},options={}){
       case'eq':case'ne':case'lt':case'le':case'gt':case'ge':{const b=pop(frame,ins.op),a=pop(frame,ins.op);push(frame,compare(ins.op,a,b));break;}
       case'not':{const a=pop(frame,'not');if(a.type!=='bool')fail('not requires bool');push(frame,Object.freeze({type:'bool',value:!a.value}));break;}
       case'concat':{const b=pop(frame,'concat'),a=pop(frame,'concat');if(a.type!=='string'||b.type!=='string')fail('concat requires strings');push(frame,Object.freeze({type:'string',value:stringBytes(a.value+b.value,'concat result')}));break;}
+      case'make_struct':{const values=Array(ins.fields.length);for(let i=ins.fields.length-1;i>=0;i--)values[i]=pop(frame,'make_struct');const fields=Object.create(null);for(let i=0;i<ins.fields.length;i++)fields[ins.fields[i]]=values[i];push(frame,Object.freeze({type:'struct',name:ins.name,fields:Object.freeze(fields)}));break;}
+      case'get_field':{const value=pop(frame,'get_field');if(value.type!=='struct'||value.name!==ins.name)fail(`get_field expected struct ${ins.name}`);if(!Object.prototype.hasOwnProperty.call(value.fields,ins.field))fail(`struct ${ins.name} has no field ${ins.field}`);push(frame,value.fields[ins.field]);break;}
+      case'make_enum':{const values=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)values[i]=pop(frame,'make_enum');push(frame,Object.freeze({type:'enum',name:ins.name,variant:ins.variant,values:Object.freeze(values)}));break;}
+      case'enum_is':{const value=pop(frame,'enum_is');if(value.type!=='enum'||value.name!==ins.name)fail(`enum_is expected enum ${ins.name}`);push(frame,Object.freeze({type:'bool',value:value.variant===ins.variant}));break;}
+      case'enum_get':{const value=pop(frame,'enum_get');if(value.type!=='enum'||value.name!==ins.name)fail(`enum_get expected enum ${ins.name}`);if(value.variant!==ins.variant)fail(`enum_get expected ${ins.name}.${ins.variant}, got ${value.name}.${value.variant}`);if(ins.index>=value.values.length)fail(`enum_get payload index ${ins.index} is out of range`);push(frame,value.values[ins.index]);break;}
       case'jump':frame.ip=ins.target;break;
       case'jump_if_false':{const condition=pop(frame,'jump_if_false');if(condition.type!=='bool')fail('jump_if_false requires bool');if(!condition.value)frame.ip=ins.target;break;}
       case'call':{const args=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)args[i]=pop(frame,'call');frames.push(makeFrame(ins.name,args));break;}

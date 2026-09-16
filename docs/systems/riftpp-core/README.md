@@ -2,9 +2,7 @@
 
 ## Purpose
 
-`src/riftpp-core.js` is the first executable Rift++ Core frontend. It is independent of the experimental RiftCLI/V0 swarm DSL. It accepts a deliberately small, specified subset of `riftpp 1`, produces a source-spanned AST, performs deterministic semantic/type checks, and lowers successful programs into the data-only `rift-exec-v1` format consumed by RiftVM.
-
-This is the bootstrap route that removes the need for C++ or Kotlin to define Rift++ language semantics:
+`src/riftpp-core.js` is the first executable Rift++ Core frontend. It is independent of the experimental RiftCLI/V0 swarm DSL. It accepts a deliberately bounded subset of `riftpp 1`, produces a source-spanned AST, performs deterministic semantic/type/control-flow checks, and lowers successful programs into the data-only `rift-exec-v1` format consumed by RiftVM.
 
 ```text
 .riftpp source
@@ -14,49 +12,78 @@ This is the bootstrap route that removes the need for C++ or Kotlin to define Ri
  -> RiftRT / RiftOS
 ```
 
-The frontend runs inside the existing RiftOS JavaScript runtime. The long-term target is to rewrite the compiler in Rift++ after the language/runtime are capable enough, then use the bootstrap compiler only for compatibility/recovery.
+The frontend runs inside the existing RiftOS JavaScript runtime. The long-term target remains self-hosting in Rift++ after the language/runtime are capable enough.
 
 ## Implemented bootstrap slice
 
-The current `0.2.0-bootstrap` slice requires `riftpp 1` and a `module` declaration. It supports function declarations, typed parameters, `unit`, `bool`, `u32`, `s32`, `string`, immutable `let`, mutable `var`, checked assignment (`=`, `+=`, `-=`, `*=`, `/=`, `%=`), lexical block scopes, `if/else` and `else if`, `while`, `break`, `continue`, short-circuit `and/or`, decimal/hex integer literals, strings, booleans, direct function calls, arithmetic, comparisons, unary `not`/`+`/`-`, `return`, expression statements and the bootstrap prelude intrinsic `print(value)`.
+The current `0.3.0-bootstrap` slice requires `riftpp 1` and a `module` declaration. It supports:
 
-`main` must be `fn main()` with unit return. User function arguments evaluate left-to-right. Integer operations inherit RiftVM checked arithmetic. `let` remains immutable, `var` is mutable, names resolve from the innermost lexical scope outward, same-scope duplicates fail, and inner blocks may shadow outer bindings. Non-`unit` functions must return on every reachable path; unreachable statements after unconditional control transfer are rejected. `print` is a reserved bootstrap-prelude name and cannot be shadowed by functions, parameters or locals.
+- functions with explicitly typed parameters/returns;
+- primitive `unit`, `bool`, `u32`, `s32`, `string`;
+- immutable `let`, mutable `var`, checked assignment and compound assignment;
+- lexical block scopes and inner-scope shadowing;
+- `if/else`, `while`, `break`, `continue`, short-circuit `and/or`;
+- local nominal `struct` declarations, exact struct construction and field reads;
+- local nominal tagged-union `enum` declarations with zero/payload cases;
+- enum construction through `Type.Case(...)` / `Type.Case`;
+- exhaustive `match` on closed enums and `bool`;
+- match payload bindings, `_`, whole-value bindings and boolean cases;
+- match guards, with guarded cases not counted as exhaustive coverage;
+- checked integer arithmetic, strings, comparisons and direct function calls;
+- reachable-path return analysis and unreachable-code diagnostics;
+- bootstrap prelude `print(value)`.
 
-Valid Core syntax not implemented by this slice fails closed with a structured `RiftCoreCompileError`; it is not silently reinterpreted. Notably absent today: imports, top-level const, structs/enums, `match`, `for`, `loop`, bit operations, collections, result/option, ownership/borrowing, capability/effect clauses, FFI, tensors, tasks and compute extensions.
+Struct construction must supply each declared field exactly once. Enum payload arity/types are checked. Struct/enum values are nominal and can pass through locals, function parameters and returns. Composite equality/ordering is intentionally undefined in this bootstrap and fails closed.
+
+Bootstrap pattern limitations remain deliberate: enum payload patterns currently accept bindings or `_`; nested/literal payload patterns are not implemented. Field mutation/place assignment is not implemented yet; rebuild and assign the whole struct instead.
+
+## Still absent
+
+Valid Core syntax not implemented by this slice fails closed. Major missing pieces include imports/module graphs, top-level const, `for`, `loop`, bit operations, field/index assignment, nested match payload patterns, arrays/slices/vec, option/result/`?`, ownership/borrowing, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler.
 
 ## Public surface
 
-`globalThis.RiftPlusPlusCore` exposes pure bounded compiler operations only:
+`globalThis.RiftPlusPlusCore` exposes only pure bounded compiler operations:
 
 - `lex(source)`
 - `parse(source)`
 - `compile(source)`
 - `inspect(source)`
 
-It has no filesystem, network, shell, process, Android, MCP or mutation authority. `compile` returns `riftpp-core-compile-result/1` with the AST plus deterministic `rift-exec-v1` object/text.
+It has no filesystem, network, shell, process, Android, MCP or mutation authority. Generated output is independently passed through `prepareRiftExecutable` before compile succeeds.
 
-## Diagnostics
+## Structured-data runtime boundary
 
-Compiler failures carry a structured diagnostic with `code`, `message`, source `span`, violated `rule`, and optional `help`. Host bounds cap source bytes, token count, functions, parameters and locals.
+RiftVM now provides only five finite composite operations used by Core:
+
+```text
+make_struct
+get_field
+make_enum
+enum_is
+enum_get
+```
+
+These are data-only operations. Composite values cannot implicitly cross the RiftVM host-import boundary. There is no generic object/property opcode, reflection API or authority widening.
 
 ## Source ownership
 
-- `src/riftpp-core.js` — lexer, parser, AST, semantic/type checking, `.rxe` lowering and bounded global compiler surface.
-- `src/riftvm.js` — executable validator/runtime; the compiler never bypasses it and validates generated output through `prepareRiftExecutable`.
-- `scripts/test-rift-plus-plus-core-v1.mjs` — source -> compiler -> `.rxe` -> RiftVM executable proof and negative diagnostics.
-- `scripts/test-riftpp-shell.mjs` — normal RiftShell `riftpp` command routing and execution-authority boundary.
-- `src/riftos.js::runRiftppShell` — shell-only adapter for self-test/check/compile/inspect/run/exec; it does not belong to or enable experimental RiftCLI.
-- `examples/riftpp/core-v1-hello.riftpp` — first human-written executable Core source fixture.
+- `src/riftpp-core.js` — lexer/parser/AST, name/type/control-flow checks and `.rxe` lowering.
+- `src/riftvm.js` — executable validator/runtime including nominal composite value operations.
+- `scripts/test-rift-plus-plus-core-v1.mjs` — source/compiler/runtime proof plus negative language diagnostics.
+- `scripts/test-rift-vm.mjs` — independent raw-VM opcode/value/security proof.
+- `scripts/test-riftpp-shell.mjs` — normal RiftShell `riftpp` routing and execution-authority boundary.
+- `examples/riftpp/core-v1-structured-data.riftpp` — Gate 2 struct/enum/match proof fixture.
 
 ## Invariants
 
 - V0 swarm syntax remains separate and non-executable.
 - Core source never executes through `eval`, `Function`, shell or host-language code generation.
 - Generated output must pass independent RiftVM validation before compile succeeds.
-- Runtime authority is not inferred from source; future capability lowering must remain explicit and revalidated by RiftRT/RiftVM.
-- Unsupported Core syntax fails closed rather than gaining accidental semantics.
+- Runtime authority is not inferred from structured values.
+- Unsupported Core syntax/semantics fail closed.
 - Same source and compiler version produce deterministic executable structure.
 
 ## Validation
 
-Run `scripts/test-rift-plus-plus-core-v1.mjs` and `scripts/test-riftpp-shell.mjs` in the normal Node validation environment. The Core test executes both `core-v1-hello.riftpp` and `core-v1-control-flow.riftpp`, verifies mutable assignment, scoped shadowing, branches, loops, break/continue and short-circuit `and/or`, then checks immutable-assignment, illegal loop control, incomplete return paths, unreachable code, unsupported features and absence of dynamic-code/process escape paths.
+`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1 and Structured Data V1 fixtures, then attacks duplicate/missing fields, duplicate enum cases, wrong payload arity/type, non-exhaustive enum/bool matches, guarded exhaustiveness and composite equality. `test-rift-vm.mjs` separately executes raw struct/enum bytecode, malformed composite instructions and the no-composite-host-boundary rule.

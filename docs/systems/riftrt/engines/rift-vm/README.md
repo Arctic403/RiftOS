@@ -42,11 +42,11 @@ The first payload schema is `rift-exec-v1` with ABI `riftvm-1`.
 }
 ```
 
-V1 scalar constants are `unit`, `bool`, `u32`, `s32`, `f64`, and `string`. Integer arithmetic is checked; overflow traps. Division/modulo by zero trap. Branch conditions require `bool`. Host calls must be declared in the executable import table before execution.
+V1 scalar constants are `unit`, `bool`, `u32`, `s32`, `f64`, and `string`. Runtime values may additionally contain nominal immutable `struct` and tagged `enum` composites constructed only by validated VM instructions. Integer arithmetic is checked; overflow traps. Division/modulo by zero trap. Branch conditions require `bool`. Host calls must be declared in the executable import table before execution, and composite values cannot implicitly cross that host boundary.
 
 ## VM instructions
 
-V1 supports bounded constants/locals/stack operations, checked arithmetic/comparison, string concatenation, jumps, calls/returns, declared host imports, output, and halt. Unsupported opcodes fail validation before execution.
+V1 supports bounded constants/locals/stack operations, checked arithmetic/comparison, string concatenation, nominal composite operations (`make_struct`, `get_field`, `make_enum`, `enum_is`, `enum_get`), jumps, calls/returns, declared host imports, output, and halt. Composite operations name their struct/enum/field/case explicitly; there is no generic reflection/property instruction. Unsupported opcodes fail validation before execution.
 
 The VM has hard ceilings for function count, constants, instructions, locals, parameters, stack depth, call depth, string size and executed steps. A program can request smaller limits but cannot raise the runtime hard ceilings.
 

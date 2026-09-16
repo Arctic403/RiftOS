@@ -1,0 +1,67 @@
+riftpp 1
+module demo.structured_data
+
+struct BrainState {
+  verified: u32
+  attempts: u32
+  active: bool
+}
+
+enum Outcome {
+  Promoted(u32)
+  Rejected(string)
+  Pending
+}
+
+fn apply(state: BrainState, outcome: Outcome) -> BrainState {
+  match outcome {
+    Outcome.Promoted(value) => {
+      return BrainState {
+        verified: value,
+        attempts: state.attempts + 1,
+        active: true
+      }
+    }
+    Outcome.Rejected(reason) => {
+      print(reason)
+      return BrainState {
+        verified: state.verified,
+        attempts: state.attempts + 1,
+        active: false
+      }
+    }
+    Pending => {
+      return state
+    }
+  }
+}
+
+fn bool_name(value: bool) -> string {
+  match value {
+    true => { return "yes" }
+    false => { return "no" }
+  }
+}
+
+fn main() {
+  let initial: BrainState = BrainState {
+    verified: 0,
+    attempts: 0,
+    active: false
+  }
+  let promoted: Outcome = Outcome.Promoted(42)
+  let learned: BrainState = apply(initial, promoted)
+  print(learned.verified)
+  print(learned.attempts)
+  print(learned.active)
+  print(bool_name(false))
+
+  let rejected: BrainState = apply(learned, Outcome.Rejected("bad candidate"))
+  print(rejected.verified)
+  print(rejected.attempts)
+  print(rejected.active)
+
+  let pending: Outcome = Outcome.Pending
+  let unchanged: BrainState = apply(rejected, pending)
+  print(unchanged.verified)
+}

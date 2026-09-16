@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.2.0-bootstrap');
+assert.equal(compiled.compiler,'0.3.0-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -34,10 +34,20 @@ assert(controlOps.includes('store'),'control flow must lower mutable bindings/as
 assert(controlOps.includes('jump'),'control flow must lower loops/branches to jump');
 assert(controlOps.includes('jump_if_false'),'control flow must lower bool conditions to jump_if_false');
 
-const shortCircuit=`riftpp 1\nmodule proof.short_circuit\nfn main() {\n print(false and (1 / 0 == 0))\n print(true or (1 / 0 == 0))\n}\n`;
-const shortResult=await execute(shortCircuit);
-assert.deepEqual(shortResult.output,['false','true'],'and/or must skip a RHS that would trap');
+const structuredSource=readFileSync('examples/riftpp/core-v1-structured-data.riftpp','utf8');
+const structuredAst=parseRiftPlusPlusCoreV1(structuredSource);
+assert.deepEqual(structuredAst.structs.map(item=>item.name),['BrainState']);
+assert.deepEqual(structuredAst.enums.map(item=>item.name),['Outcome']);
+const structured=await execute(structuredSource);
+assert.deepEqual(structured.output,['42','1','true','no','bad candidate','42','2','false','42']);
+const structuredInspect=inspectRiftPlusPlusCoreV1(structuredSource);
+assert.deepEqual(structuredInspect.structs,['BrainState']);
+assert.deepEqual(structuredInspect.enums,['Outcome']);
+const structuredOps=Object.values(structured.compiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));
+for(const op of ['make_struct','get_field','make_enum','enum_is','enum_get'])assert(structuredOps.includes(op),`structured data must lower ${op}`);
 
+const shortCircuit=`riftpp 1\nmodule proof.short_circuit\nfn main() {\n print(false and (1 / 0 == 0))\n print(true or (1 / 0 == 0))\n}\n`;
+assert.deepEqual((await execute(shortCircuit)).output,['false','true'],'and/or must skip a RHS that would trap');
 const stringCompound=`riftpp 1\nmodule proof.string_compound\nfn main() {\n var text: string = "Rift"\n text += "++"\n print(text)\n}\n`;
 assert.deepEqual((await execute(stringCompound)).output,['Rift++']);
 
@@ -61,7 +71,30 @@ const incompleteReturn=`riftpp 1\nmodule bad.return_path\nfn choose(flag: bool) 
 assert.throws(()=>compileRiftPlusPlusCoreV1(incompleteReturn),/does not return on every reachable path/);
 const unreachable=`riftpp 1\nmodule bad.unreachable\nfn value() -> u32 {\n return 1\n print("never")\n}\nfn main() { print(value()) }\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(unreachable),/unreachable statement/);
-const unsupported=`riftpp 1\nmodule bad.match_case\nfn main() {\n match true { }\n}\n`;
+
+const duplicateField=`riftpp 1\nmodule bad.duplicate_field\nstruct S { x: u32 x: u32 }\nfn main() {}\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(duplicateField),/duplicate field 'x'/);
+const duplicateCase=`riftpp 1\nmodule bad.duplicate_case\nenum E { A A }\nfn main() {}\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(duplicateCase),/duplicate case 'A'/);
+const missingField=`riftpp 1\nmodule bad.missing_field\nstruct S { x: u32 y: bool }\nfn main() { let s: S = S { x: 1 } print(s.x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(missingField),/missing field 'y'/);
+const unknownField=`riftpp 1\nmodule bad.unknown_field\nstruct S { x: u32 }\nfn main() { let s: S = S { x: 1, y: 2 } print(s.x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(unknownField),/has no field 'y'/);
+const badEnumArity=`riftpp 1\nmodule bad.enum_arity\nenum E { A(u32) }\nfn main() { let x: E = E.A() }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(badEnumArity),/expects 1 payload value/);
+const badEnumType=`riftpp 1\nmodule bad.enum_type\nenum E { A(u32) }\nfn main() { let x: E = E.A("wrong") }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(badEnumType),/type mismatch/);
+const payloadCaseWithoutPayload=`riftpp 1\nmodule bad.payload_pattern\nenum E { A(u32) B }\nfn choose(x: E) -> u32 { match x { A => { return 1 } B => { return 2 } } }\nfn main() { print(choose(E.B)) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(payloadCaseWithoutPayload),/E.A pattern expects 1 payload pattern/);
+const nonExhaustiveEnum=`riftpp 1\nmodule bad.non_exhaustive_enum\nenum E { A B }\nfn choose(x: E) -> u32 { match x { E.A => { return 1 } } }\nfn main() { print(choose(E.A)) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(nonExhaustiveEnum),/non-exhaustive match on E; missing B/);
+const nonExhaustiveBool=`riftpp 1\nmodule bad.non_exhaustive_bool\nfn choose(x: bool) -> u32 { match x { true => { return 1 } } }\nfn main() { print(choose(true)) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(nonExhaustiveBool),/non-exhaustive match on bool; missing false/);
+const guardedNotExhaustive=`riftpp 1\nmodule bad.guarded_match\nenum E { A B }\nfn choose(x: E) -> u32 { match x { E.A if true => { return 1 } E.B => { return 2 } } }\nfn main() { print(choose(E.A)) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(guardedNotExhaustive),/non-exhaustive match on E; missing A/);
+const compositeEquality=`riftpp 1\nmodule bad.composite_equality\nstruct S { x: u32 }\nfn main() { let a: S = S { x: 1 } let b: S = S { x: 1 } print(a == b) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(compositeEquality),/equality for composite type S is not defined/);
+const unsupported=`riftpp 1\nmodule bad.loop_case\nfn main() {\n loop { }\n}\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(unsupported),/not implemented in the bootstrap slice/);
 
 const sourceCode=readFileSync('src/riftpp-core.js','utf8');
@@ -70,5 +103,5 @@ assert(!/new\s+Function\b/.test(sourceCode));
 assert(!/ProcessBuilder|Runtime\.getRuntime|child_process/.test(sourceCode));
 console.log('ok - Rift++ Core V1 source parses, type-checks, lowers to rift-exec-v1 and executes on RiftVM');
 console.log('ok - Control Flow V1 executes var/assignment, scopes, if/else, while, break/continue and short-circuit and/or');
-console.log('ok - mutability, loop-control, reachability and all-path return diagnostics fail closed');
-console.log('ok - unsupported Core features remain explicit feature-gate failures');
+console.log('ok - Structured Data V1 executes nominal struct/enum values, field reads, payload binding and exhaustive match');
+console.log('ok - mutability, reachability, structured-data correctness and match exhaustiveness fail closed');
