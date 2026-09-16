@@ -40,7 +40,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - Explorer-style Files app with create, rename, copy, cut/paste, duplicate, move and delete.
 - Settings app with privacy-limited System Dump export and Android Save As picker.
 - RiftRT v2 installed-program runtime: native Android-owned app surfaces by default, Worker/WASM compatibility engines, bounded `rift-vm` execution for `rift-exec-v1` `.rxe` payloads, and no iframe execution path.
-- Rift++ Core bootstrap frontend: bounded `riftpp 1` source parsing/type checking and deterministic `.rxe` lowering for the first executable language slice, separate from the non-executable RiftCLI/V0 swarm DSL.
+- Rift++ Core bootstrap frontend `0.2.0-bootstrap`: bounded `riftpp 1` parsing/type checking and deterministic `.rxe` lowering with functions, typed locals, mutable `var`/assignment, lexical scopes, `if/else`, `while`, `break`/`continue`, short-circuit `and/or`, checked arithmetic and all-path return analysis; separate from the non-executable RiftCLI/V0 swarm DSL.
 - `.rift` transactional installer layout under `C:/Programs` with per-user app state separated under `D:/Users/Default/AppData`.
 - RiftFS virtual `C:/` system/program and `D:/` user/workspace volumes with canonical legacy-path compatibility.
 - Rift MCP system app for local read/write permissions and recent tool activity.

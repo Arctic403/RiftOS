@@ -18,11 +18,11 @@ The frontend runs inside the existing RiftOS JavaScript runtime. The long-term t
 
 ## Implemented bootstrap slice
 
-The current slice requires `riftpp 1` and a `module` declaration. It supports function declarations, typed parameters, `unit`, `bool`, `u32`, `s32`, `string`, immutable `let`, decimal/hex integer literals, strings, booleans, direct function calls, arithmetic, comparisons, unary `not`/`+`/`-`, `return`, expression statements and the bootstrap prelude intrinsic `print(value)`.
+The current `0.2.0-bootstrap` slice requires `riftpp 1` and a `module` declaration. It supports function declarations, typed parameters, `unit`, `bool`, `u32`, `s32`, `string`, immutable `let`, mutable `var`, checked assignment (`=`, `+=`, `-=`, `*=`, `/=`, `%=`), lexical block scopes, `if/else` and `else if`, `while`, `break`, `continue`, short-circuit `and/or`, decimal/hex integer literals, strings, booleans, direct function calls, arithmetic, comparisons, unary `not`/`+`/`-`, `return`, expression statements and the bootstrap prelude intrinsic `print(value)`.
 
-`main` must be `fn main()` with unit return. User function arguments evaluate left-to-right. Integer operations inherit RiftVM checked arithmetic. Locals are immutable and duplicate names in a function are rejected. `print` is a reserved bootstrap-prelude name and cannot be shadowed by functions, parameters or locals.
+`main` must be `fn main()` with unit return. User function arguments evaluate left-to-right. Integer operations inherit RiftVM checked arithmetic. `let` remains immutable, `var` is mutable, names resolve from the innermost lexical scope outward, same-scope duplicates fail, and inner blocks may shadow outer bindings. Non-`unit` functions must return on every reachable path; unreachable statements after unconditional control transfer are rejected. `print` is a reserved bootstrap-prelude name and cannot be shadowed by functions, parameters or locals.
 
-Valid Core syntax not implemented by this slice fails closed with a structured `RiftCoreCompileError`; it is not silently reinterpreted. Notably absent today: imports, top-level const, structs/enums, `var`, assignment, if/match/loops, collections, result/option, ownership/borrowing, capability/effect clauses, FFI, tensors, tasks and compute extensions.
+Valid Core syntax not implemented by this slice fails closed with a structured `RiftCoreCompileError`; it is not silently reinterpreted. Notably absent today: imports, top-level const, structs/enums, `match`, `for`, `loop`, bit operations, collections, result/option, ownership/borrowing, capability/effect clauses, FFI, tensors, tasks and compute extensions.
 
 ## Public surface
 
@@ -59,4 +59,4 @@ Compiler failures carry a structured diagnostic with `code`, `message`, source `
 
 ## Validation
 
-Run `scripts/test-rift-plus-plus-core-v1.mjs` and `scripts/test-riftpp-shell.mjs` in the normal Node validation environment. The test compiles `core-v1-hello.riftpp`, executes the resulting `.rxe` on RiftVM, expects `Hello from Rift++ Core V1`, `42`, and `true`, then verifies version/type/duplicate-name/unsupported-feature failures and absence of dynamic-code/process escape paths.
+Run `scripts/test-rift-plus-plus-core-v1.mjs` and `scripts/test-riftpp-shell.mjs` in the normal Node validation environment. The Core test executes both `core-v1-hello.riftpp` and `core-v1-control-flow.riftpp`, verifies mutable assignment, scoped shadowing, branches, loops, break/continue and short-circuit `and/or`, then checks immutable-assignment, illegal loop control, incomplete return paths, unreachable code, unsupported features and absence of dynamic-code/process escape paths.

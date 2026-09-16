@@ -1,0 +1,39 @@
+riftpp 1
+module demo.control_flow
+
+fn accumulate(limit: u32) -> u32 {
+  var i: u32 = 0
+  var total: u32 = 0
+  while i < limit {
+    i += 1
+    if i == 3 {
+      continue
+    }
+    total += i
+    if i == 5 {
+      break
+    }
+  }
+  return total
+}
+
+fn classify(value: u32) -> string {
+  if value == 12 {
+    return "twelve"
+  } else {
+    return "other"
+  }
+}
+
+fn main() {
+  let answer: u32 = accumulate(10)
+  print(answer)
+  print(classify(answer))
+  print(answer == 12 and true)
+  print(false or answer == 12)
+  if true {
+    let answer: string = "inner"
+    print(answer)
+  }
+  print(answer)
+}
