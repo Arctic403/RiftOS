@@ -57,6 +57,7 @@ globalThis.RiftWorkspace={stat:async()=>null,readText:async()=>null,history:asyn
 await import(new URL('../src/riftllm-bridge.js?corpus-test=1',import.meta.url));
 const api=globalThis.RiftLlmBridge;
 assert.ok(api?.corpusSynth,'corpusSynth public bridge method missing');
+assert.ok(api?.corpusSynthV2,'corpusSynthV2 public bridge method missing');
 assert.ok(api?.corpusBuild,'corpusBuild public bridge method missing');
 assert.ok(api?.corpusStatus,'corpusStatus public bridge method missing');
 const shardVectorMaterial=`part-00000.jsonl\t3\t${'a'.repeat(64)}\npart-00001.jsonl\t5\t${'b'.repeat(64)}\n`;
@@ -115,11 +116,26 @@ assert.equal(status.available,true);
 assert.equal(status.manifest.sampleCount,216);
 assert.equal(status.manifest.normalization,'identity-utf8');
 
+const synthV2=await api.corpusSynthV2(input,undefined,undefined,{countPerCategory:12,seed:'rift-corpus-synth-v2-a'});
+assert.equal(synthV2.format,'rift-corpus-synth-v2');
+assert.equal(synthV2.generator,'rift-corpus-synthesizer-v2');
+assert.equal(synthV2.generalizationDesign,'compositional-grammar-v2');
+assert.equal(synthV2.synthesizedCount,36);
+assert.equal(synthV2.totalCount,216);
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synthesized-v2/part-00000.jsonl'));
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synth-v2-manifest.json'));
+const resultV2=await api.corpusBuild('/workspace/RiftLLM/tokenizer/private/synthesized-v2','/workspace/RiftLLM/tokenizer/private/build-v2',{heldoutPermyriad:5000,seed:'rift-corpus-test-seed'});
+assert.equal(resultV2.sampleCount,216);
+assert.equal(resultV2.trainHashMode,'rift-shard-set-v1');
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/build-v2/train/part-00000.jsonl'));
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/build-v2/heldout.tsv'));
+
 await assert.rejects(()=>api.corpusSynth('/workspace/RiftOS-main/private.jsonl'),/must stay under/);
 await fsMock.mkdir('/workspace/RiftLLM/tokenizer/private/base-dir');
 await assert.rejects(()=>api.corpusSynth('/workspace/RiftLLM/tokenizer/private/base-dir'),/base must be one authored JSONL file/);
 await assert.rejects(()=>api.corpusSynth(input,'/workspace/outside.jsonl'),/must stay under/);
 await assert.rejects(()=>api.corpusSynth(input,undefined,undefined,{countPerCategory:20001,seed:'rift-corpus-synth-v1-a'}),/1\.\.20000/);
+await assert.rejects(()=>api.corpusSynthV2(input,undefined,undefined,{countPerCategory:20001,seed:'rift-corpus-synth-v2-a'}),/1\.\.20000/);
 await assert.rejects(()=>api.corpusBuild('/workspace/RiftOS-main/private.jsonl'),/must stay under/);
 const blocked={...rows[0],id:'blocked:001',text:'blocked source sample',source_project:'RiftOS'};
 await fsMock.writeText(input,[JSON.stringify(blocked),...rows.slice(1).map(row=>JSON.stringify(row))].join('\n')+'\n');

@@ -55,11 +55,20 @@ const CORPUS_SYNTH_DEFAULT_COUNT=12000;
 const CORPUS_SYNTH_MAX_COUNT=20000;
 const CORPUS_SYNTH_OUTPUT=`${CORPUS_ROOT}/synthesized`;
 const CORPUS_SYNTH_MANIFEST=`${CORPUS_ROOT}/synth-manifest.json`;
+const CORPUS_V2_SYNTH_FORMAT="rift-corpus-synth-v2";
+const CORPUS_V2_SYNTH_GENERATOR="rift-corpus-synthesizer-v2";
+const CORPUS_V2_SYNTH_TEMPLATE="rift-synth-grammar-v2";
+const CORPUS_V2_SYNTH_SEED="rift-corpus-synth-v2-a";
+const CORPUS_V2_SYNTH_OUTPUT=`${CORPUS_ROOT}/synthesized-v2`;
+const CORPUS_V2_SYNTH_MANIFEST=`${CORPUS_ROOT}/synth-v2-manifest.json`;
+const CORPUS_V2_BUILD=`${CORPUS_ROOT}/build-v2`;
 const TEXT_ENCODING_CHUNK_BYTES=192*1024;
-const TEXT_ENCODING_HELDOUT=`${CORPUS_DEFAULT_OUTPUT}/heldout.tsv`;
+const TEXT_ENCODING_CHALLENGE_V2="/workspace/RiftLLM/tokenizer/challenges/rift-tokenizer-challenge-v2.tsv";
 const TEXT_ENCODING_CANDIDATES=Object.freeze({
-  a:{candidateId:"rift-token-a-frequency-v1",path:"/workspace/RiftLLM/tokenizer/output/rift-token-a-frequency-v1.riftbpe"},
-  b:{candidateId:"rift-token-b-balanced-v1",path:"/workspace/RiftLLM/tokenizer/output/rift-token-b-balanced-v1.riftbpe"}
+  a:{candidateId:"rift-token-a-frequency-v1",path:"/workspace/RiftLLM/tokenizer/output/rift-token-a-frequency-v1.riftbpe",heldout:`${CORPUS_DEFAULT_OUTPUT}/heldout.tsv`},
+  b:{candidateId:"rift-token-b-balanced-v1",path:"/workspace/RiftLLM/tokenizer/output/rift-token-b-balanced-v1.riftbpe",heldout:`${CORPUS_DEFAULT_OUTPUT}/heldout.tsv`},
+  a2:{candidateId:"rift-token-a-frequency-v2",path:"/workspace/RiftLLM/tokenizer/output/rift-token-a-frequency-v2.riftbpe",heldout:`${CORPUS_V2_BUILD}/heldout.tsv`},
+  b2:{candidateId:"rift-token-b-balanced-v2",path:"/workspace/RiftLLM/tokenizer/output/rift-token-b-balanced-v2.riftbpe",heldout:`${CORPUS_V2_BUILD}/heldout.tsv`}
 });
 
 function sortedJsonValue(value){
@@ -229,6 +238,37 @@ function synthCodeText(index,lang,stem){const limit=16+((index*1543+97)%4096),nu
   return `set -eu\ninput="${ident}.json"\noutput="${ident}.checked"\ntest -f "$input"\nbytes=$(wc -c < "$input")\ntest "$bytes" -le ${4096+index*3}\nprintf "%s\\n" "$bytes" > "$output"`;}
 function synthCode(index){const lang=SYNTH_CODE_LANGS[index%SYNTH_CODE_LANGS.length],stem=synthChoose(SYNTH_STEMS,index,6);return synthRecord(`synth.code.${String(index).padStart(5,"0")}`,"code",lang,synthCodeText(index,lang,stem));}
 function synthNonAscii(index){const [domain,template]=SYNTH_NONASCII[index%SYNTH_NONASCII.length],subject=synthChoose(SYNTH_NONASCII_SUBJECTS,index,7),obj=synthChoose(SYNTH_NONASCII_OBJECTS,index,8),metric=synthChoose(SYNTH_NONASCII_METRICS,index,9),value=16+((index*1237+211)%8176),text=template.replace("{subject}",subject).replace("{obj}",obj).replace("{metric}",metric).replace("{value}",String(value))+` [N${String(index).padStart(5,"0")}:${domain}-${value}]`;return synthRecord(`synth.nonascii.${String(index).padStart(5,"0")}`,"non_ascii",domain,text);}
+
+const V2_DOMAINS=Object.freeze(["systems","storage","networking","security","databases","compilers","graphics","ai_ml","testing","science","mathematics","general"]);
+const V2_SUBJECTS=Object.freeze(["scheduler","indexer","parser","cache","replica","compiler","renderer","queue","allocator","protocol","database","worker","router","serializer","planner","monitor","stream","transaction","checkpoint","pipeline","matrix","dataset","controller","filesystem"]);
+const V2_VERBS=Object.freeze(["checks","rebuilds","measures","compares","buffers","routes","filters","orders","retries","commits","decodes","encodes","samples","balances","merges","splits","records","restores","validates","scans"]);
+const V2_OBJECTS=Object.freeze(["records","segments","requests","pages","tokens","frames","messages","keys","rows","blocks","events","paths","vectors","batches","snapshots","chunks","workers","states"]);
+const V2_QUALIFIERS=Object.freeze(["before publication","under memory pressure","after a timeout","during recovery","without changing identity","while readers remain active","before allocation","after validation","across repeated runs","at the ownership boundary","with bounded retries","without trusting timestamps"]);
+const V2_EVIDENCE=Object.freeze(["content hashes","byte counts","stable identifiers","latency samples","round-trip checks","error classes","sequence numbers","shape metadata","checksums","bounded counters","state transitions","sorted manifests"]);
+const V2_CONNECTORS=Object.freeze(["Meanwhile","Because of that","In contrast","For diagnostics","When the input changes","At the boundary","On retry","For reproducibility"]);
+const V2_CODE_LANGS=Object.freeze(["python","javascript","typescript","kotlin","cpp","rust","go","java","csharp","swift","sql","json","yaml","toml","html","css","shell","lua"]);
+const V2_IDENTS=Object.freeze(["atlas","cobalt","ember","fjord","glyph","harbor","iris","juniper","kestrel","lumen","mosaic","nimbus","orbit","praxis","quartz","relay","solace","tundra","umbra","vertex"]);
+const V2_UNICODE=Object.freeze([
+  ["latin",["résumé","façade","über","mañana","piñata","açúcar","crème","naïve","élève","smörgås"]],
+  ["greek",["δεδομένα","σύστημα","μέτρηση","μνήμη","δίκτυο","κώδικας","έλεγχος","αρχείο"]],
+  ["cyrillic",["данные","система","память","проверка","сеть","модель","файл","поток"]],
+  ["japanese",["データ","状態","検証","メモリ","ネットワーク","モデル","処理","記録"]],
+  ["chinese",["数据","系统","验证","内存","网络","模型","记录","处理"]],
+  ["korean",["데이터","시스템","검증","메모리","네트워크","모델","기록","처리"]],
+  ["arabic",["بيانات","نظام","تحقق","ذاكرة","شبكة","نموذج","سجل","معالجة"]],
+  ["devanagari",["डेटा","प्रणाली","जाँच","स्मृति","नेटवर्क","मॉडल","रिकॉर्ड","प्रक्रिया"]],
+  ["hebrew",["נתונים","מערכת","בדיקה","זיכרון","רשת","מודל","רשומה","עיבוד"]],
+  ["thai",["ข้อมูล","ระบบ","ตรวจสอบ","หน่วยความจำ","เครือข่าย","โมเดล","บันทึก","ประมวลผล"]],
+  ["bengali",["ডেটা","সিস্টেম","যাচাই","মেমরি","নেটওয়ার্ক","মডেল","রেকর্ড","প্রক্রিয়া"]]
+]);
+const V2_SEPARATORS=Object.freeze([" · "," / "," — ","; "," | ",", "," :: "]);
+function v2Mix(index,salt){let x=(Number(index)+Math.imul(0x9E3779B9,(Number(salt)+1)))>>>0;x=(x^(x>>>16))>>>0;x=Math.imul(x,0x7FEB352D)>>>0;x=(x^(x>>>15))>>>0;x=Math.imul(x,0x846CA68B)>>>0;x=(x^(x>>>16))>>>0;return x;}
+function v2Pick(values,index,salt){return values[v2Mix(index,salt)%values.length];}
+function v2Record(id,category,domain,text){return {id,category,domain,origin:"original",source_project:"",text,notes:`generated by ${CORPUS_V2_SYNTH_GENERATOR}/${CORPUS_V2_SYNTH_TEMPLATE}`};}
+function v2Prose(index){const domain=v2Pick(V2_DOMAINS,index,1),subject=v2Pick(V2_SUBJECTS,index,2),verb=v2Pick(V2_VERBS,index,3),obj=v2Pick(V2_OBJECTS,index,4),qualifier=v2Pick(V2_QUALIFIERS,index,5),evidence=v2Pick(V2_EVIDENCE,index,6),other=v2Pick(V2_SUBJECTS,index,7),connector=v2Pick(V2_CONNECTORS,index,8),limit=8+(v2Mix(index,9)%8192),run=v2Mix(index,10)%100000;let text;switch(index%8){case 0:text=`${subject[0].toUpperCase()+subject.slice(1)} design note: the component ${verb} ${obj} ${qualifier}; evidence includes ${evidence}. The working limit is ${limit} units.`;break;case 1:text=`In a ${domain} workload, ${obj} are handled by the ${subject}. ${connector}, the ${other} ${verb} them ${qualifier}, and records ${evidence} for comparison.`;break;case 2:text=`Question: what should happen when ${obj} arrive out of order? Answer: the ${subject} ${verb} them ${qualifier}, preserves ${evidence}, and caps one pass at ${limit}.`;break;case 3:text=`Observation ${index}: ${evidence} changed after the ${subject} processed ${obj}. ${connector}, the ${other} repeats the check ${qualifier}; no success is inferred from timing alone.`;break;case 4:text=`${domain.toUpperCase()} / ${subject}: first validate ${obj}; second ${verb} the accepted set; finally store ${evidence}. A batch larger than ${limit} is split before work begins.`;break;case 5:text=`The ${subject} does not own the ${other}. It only ${verb} ${obj} ${qualifier}. This distinction matters because ${evidence} must remain attributable to one boundary.`;break;case 6:text=`During run ${String(run).padStart(5,"0")}, the ${subject} saw ${limit} ${obj}. ${connector}, it ${verb} a bounded subset and compared ${evidence} before and after the transition.`;break;default:text=`A reliable ${domain} path can be simple: make state explicit, let the ${subject} ${verb} ${obj}, retain ${evidence}, and recover ${qualifier} instead of guessing.`;}return v2Record(`synthv2.prose.${String(index).padStart(5,"0")}`,"prose",domain,text);}
+function v2CodeText(index,lang,ident){const n=3+(v2Mix(index,20)%997),variant=index%3;if(lang==="python")return variant?`def ${ident}(rows):\n    kept = [r for r in rows if r.get('ready') and int(r.get('size', 0)) <= ${n}]\n    return sorted(kept, key=lambda r: (r.get('priority', 0), r.get('id', '')))`:`from dataclasses import dataclass\n@dataclass(frozen=True)\nclass ${ident[0].toUpperCase()+ident.slice(1)}:\n    name: str\n    count: int\n\ndef clamp(v: int) -> int:\n    return max(0, min(${n}, v))`;if(lang==="javascript"||lang==="typescript")return `export const ${ident} = (items) => items.filter(x => x?.ready).map((x, i) => ({...x, rank: i % ${n}})).sort((a,b) => a.rank-b.rank);`;if(lang==="kotlin")return `fun ${ident}(values: List<Int>): List<Int> = values.asSequence().filter { it >= 0 }.map { it % ${n} }.distinct().sorted().toList()`;if(lang==="cpp")return `std::vector<int> ${ident}(std::span<const int> xs) { std::vector<int> out; for (int v : xs) if (v >= 0 && v < ${n}) out.push_back(v); std::sort(out.begin(), out.end()); return out; }`;if(lang==="rust")return `fn ${ident}(xs: &[i64]) -> Vec<i64> { let mut out: Vec<_> = xs.iter().copied().filter(|v| *v >= 0 && *v < ${n}).collect(); out.sort_unstable(); out.dedup(); out }`;if(lang==="go")return `func ${ident}(xs []int) []int { out := make([]int, 0, len(xs)); for _, v := range xs { if v >= 0 && v < ${n} { out = append(out, v) } }; sort.Ints(out); return out }`;if(lang==="java")return `static List<Integer> ${ident}(List<Integer> xs) { return xs.stream().filter(v -> v >= 0 && v < ${n}).distinct().sorted().toList(); }`;if(lang==="csharp")return `static int[] ${ident}(IEnumerable<int> xs) => xs.Where(v => v >= 0 && v < ${n}).Distinct().Order().ToArray();`;if(lang==="swift")return `func ${ident}(_ xs: [Int]) -> [Int] { Array(Set(xs.filter { $0 >= 0 && $0 < ${n} })).sorted() }`;if(lang==="sql")return `WITH recent AS (SELECT id, score FROM events WHERE score BETWEEN 0 AND ${n}) SELECT id, score FROM recent ORDER BY score DESC, id ASC LIMIT ${1+index%90};`;if(lang==="json")return JSON.stringify(sortedJsonValue({kind:"task",id:ident,budget:{items:n,retry:index%7},modes:["scan","verify","commit"],enabled:Boolean(index%2)}));if(lang==="yaml")return `pipeline:\n  name: ${ident}\n  budget: ${n}\n  steps:\n    - scan\n    - verify\n    - commit\n  retry: ${index%7}`;if(lang==="toml")return `[job]\nname = "${ident}"\nbudget = ${n}\nenabled = true\nsteps = ["scan", "verify", "commit"]`;if(lang==="html")return `<section data-id="${ident}"><h2>Status</h2><meter min="0" max="${n}" value="${index%Math.max(1,n)}"></meter><p>Validate before publish.</p></section>`;if(lang==="css")return `.panel-${ident} { display: grid; grid-template-columns: repeat(${1+index%4}, minmax(0, 1fr)); gap: ${1+index%12}px; contain: layout paint; }`;if(lang==="shell")return `set -eu\nroot=${'${1:-.}'}\nfind "$root" -type f -size -${n}k -print | sort | head -n ${1+index%80}`;return `local function ${ident}(xs) local out={} for _,v in ipairs(xs) do if v >= 0 and v < ${n} then out[#out+1]=v end end table.sort(out) return out end`;}
+function v2Code(index){const lang=v2Pick(V2_CODE_LANGS,index,11),ident=`${v2Pick(V2_IDENTS,index,12)}_${String(v2Mix(index,13)%100000).padStart(5,"0")}`;return v2Record(`synthv2.code.${String(index).padStart(5,"0")}`,"code",lang,v2CodeText(index,lang,ident));}
+function v2Unicode(index){const [domain,words]=v2Pick(V2_UNICODE,index,30),sep=v2Pick(V2_SEPARATORS,index,31),count=5+(v2Mix(index,32)%7),chosen=[];for(let offset=0;offset<count;offset++)chosen.push(v2Pick(words,index,40+offset));const left=chosen.join(sep),value=v2Mix(index,60)%10000,forms=[`${left}. ref=${value}; ok=✓`,`[${domain}:${value}] ${left} → ${v2Pick(words,index,61)}`,`${v2Pick(words,index,62)}: ${left}? ${v2Pick(words,index,63)}!`,`${left}\n${v2Pick(words,index,64)}=${value}; 状態=✓`];return v2Record(`synthv2.nonascii.${String(index).padStart(5,"0")}`,"non_ascii",domain,forms[index%forms.length]);}
 function stripCorpusHash(row){const {text_sha256,...rest}=row;return rest;}
 async function corpusSynth(base=CORPUS_DEFAULT_INPUT,output=CORPUS_SYNTH_OUTPUT,manifestPath=CORPUS_SYNTH_MANIFEST,options={}){
   const basePath=normalizeCorpusPath(base,CORPUS_DEFAULT_INPUT),outputPath=normalizeCorpusPath(output,CORPUS_SYNTH_OUTPUT),manifest=normalizeCorpusPath(manifestPath,CORPUS_SYNTH_MANIFEST),count=options.countPerCategory==null?CORPUS_SYNTH_DEFAULT_COUNT:Number(options.countPerCategory),seed=String(options.seed||CORPUS_SYNTH_SEED);
@@ -239,6 +279,19 @@ async function corpusSynth(base=CORPUS_DEFAULT_INPUT,output=CORPUS_SYNTH_OUTPUT,
   const all=[...rows,...generated],stage=normalizeCorpusPath(`${outputPath}.stage-${Date.now()}-${Math.random().toString(36).slice(2,10)}`);await ensureCorpusDir(stage);
   try{
     const descriptors=await writeCorpusShards(stage,all),result={format:CORPUS_SYNTH_FORMAT,generator:CORPUS_SYNTH_GENERATOR,templateVersion:CORPUS_SYNTH_TEMPLATE,seed,countPerCategory:count,basePresent:true,baseSha256:baseSource.inputSha256,baseCount:rows.length,synthesizedCount:generated.length,totalCount:all.length,categoryCounts:corpusCounts(all,"category"),domainCounts:corpusCounts(all,"domain"),outputLayout:"sharded-jsonl",outputHashMode:CORPUS_SHARD_SET_ID,outputSha256:await corpusShardSetSha(descriptors),outputUtf8Bytes:descriptors.reduce((sum,item)=>sum+item.utf8Bytes,0),outputShards:corpusShardRows(descriptors),origin:"original",unfinishedRiftSourceIncluded:false};
+    const backupCleanupPending=await replaceCorpusDirectory(stage,outputPath),manifestText=JSON.stringify(sortedJsonValue(result),null,2)+"\n";await core.fs.writeText(manifest,manifestText);return {...result,manifestSha256:await sha256Text(manifestText),basePath,outputPath,manifestPath:manifest,backupCleanupPending};
+  }catch(error){if(await core.fs.stat(stage))await core.fs.remove(stage).catch(()=>{});throw error;}
+}
+
+async function corpusSynthV2(base=CORPUS_DEFAULT_INPUT,output=CORPUS_V2_SYNTH_OUTPUT,manifestPath=CORPUS_V2_SYNTH_MANIFEST,options={}){
+  const basePath=normalizeCorpusPath(base,CORPUS_DEFAULT_INPUT),outputPath=normalizeCorpusPath(output,CORPUS_V2_SYNTH_OUTPUT),manifest=normalizeCorpusPath(manifestPath,CORPUS_V2_SYNTH_MANIFEST),count=options.countPerCategory==null?CORPUS_SYNTH_DEFAULT_COUNT:Number(options.countPerCategory),seed=String(options.seed||CORPUS_V2_SYNTH_SEED);
+  const baseStat=await core.fs.stat(basePath);if(!baseStat||baseStat.kind!=="file")throw new Error("RiftCorpus Synthesizer V2 base must be one authored JSONL file");
+  if(seed!==CORPUS_V2_SYNTH_SEED)throw new Error(`RiftCorpus Synthesizer V2 seed is pinned to ${CORPUS_V2_SYNTH_SEED}`);if(!Number.isInteger(count)||count<1||count>CORPUS_SYNTH_MAX_COUNT)throw new Error(`count-per-category must be an integer in 1..${CORPUS_SYNTH_MAX_COUNT}`);if(outputPath===basePath)throw new Error("RiftCorpus V2 synth output must differ from the authored base");if(manifest===basePath||manifest===outputPath)throw new Error("RiftCorpus V2 synth manifest must use a separate private path");if(/\.jsonl$/i.test(outputPath))throw new Error("RiftCorpus V2 synth output is a shard directory, not one JSONL file");
+  const baseSource=await loadCorpusSamples(basePath),rows=baseSource.samples.map(stripCorpusHash),ids=new Set(rows.map(row=>row.id)),texts=new Set(rows.map(row=>row.text)),generated=[];
+  for(let index=1;index<=count;index++)for(const row of [v2Prose(index),v2Code(index),v2Unicode(index)]){if(ids.has(row.id))throw new Error(`V2 synthesized id collides with base: ${row.id}`);if(texts.has(row.text))throw new Error(`V2 synthesized text collides with base/generated data: ${row.id}`);if(utf8.encode(row.text).byteLength>CORPUS_MAX_SAMPLE_BYTES)throw new Error(`V2 synthesized sample exceeds ${CORPUS_MAX_SAMPLE_BYTES} UTF-8 bytes: ${row.id}`);ids.add(row.id);texts.add(row.text);generated.push(row);}
+  const all=[...rows,...generated],stage=normalizeCorpusPath(`${outputPath}.stage-${Date.now()}-${Math.random().toString(36).slice(2,10)}`);await ensureCorpusDir(stage);
+  try{
+    const descriptors=await writeCorpusShards(stage,all),result={format:CORPUS_V2_SYNTH_FORMAT,generator:CORPUS_V2_SYNTH_GENERATOR,templateVersion:CORPUS_V2_SYNTH_TEMPLATE,seed,countPerCategory:count,basePresent:true,baseSha256:baseSource.inputSha256,baseCount:rows.length,synthesizedCount:generated.length,totalCount:all.length,categoryCounts:corpusCounts(all,"category"),domainCounts:corpusCounts(all,"domain"),outputLayout:"sharded-jsonl",outputHashMode:CORPUS_SHARD_SET_ID,outputSha256:await corpusShardSetSha(descriptors),outputUtf8Bytes:descriptors.reduce((sum,item)=>sum+item.utf8Bytes,0),outputShards:corpusShardRows(descriptors),origin:"original",unfinishedRiftSourceIncluded:false,generalizationDesign:"compositional-grammar-v2"};
     const backupCleanupPending=await replaceCorpusDirectory(stage,outputPath),manifestText=JSON.stringify(sortedJsonValue(result),null,2)+"\n";await core.fs.writeText(manifest,manifestText);return {...result,manifestSha256:await sha256Text(manifestText),basePath,outputPath,manifestPath:manifest,backupCleanupPending};
   }catch(error){if(await core.fs.stat(stage))await core.fs.remove(stage).catch(()=>{});throw error;}
 }
@@ -342,7 +395,15 @@ function textEncodingCandidate(value){
   const key=String(value||"").trim().toLowerCase();
   if(key==="a"||key==="rift-token-a-frequency-v1")return TEXT_ENCODING_CANDIDATES.a;
   if(key==="b"||key==="rift-token-b-balanced-v1")return TEXT_ENCODING_CANDIDATES.b;
-  throw new Error("Text Encoding Lab candidate must be a or b");
+  if(key==="a2"||key==="rift-token-a-frequency-v2")return TEXT_ENCODING_CANDIDATES.a2;
+  if(key==="b2"||key==="rift-token-b-balanced-v2")return TEXT_ENCODING_CANDIDATES.b2;
+  throw new Error("Text Encoding Lab candidate must be a, b, a2 or b2");
+}
+function textEncodingCorpus(candidate,laneValue){
+  const lane=String(laneValue||"heldout").trim().toLowerCase();
+  if(lane==="heldout"||lane==="heldout-v1"||lane==="heldout-v2")return candidate.heldout;
+  if(lane==="challenge"||lane==="challenge-v2")return TEXT_ENCODING_CHALLENGE_V2;
+  throw new Error("Text Encoding Lab corpus lane must be heldout or challenge");
 }
 function base64Bytes(bytes){
   if(typeof btoa!=="function")throw new Error("Base64 encoder is unavailable in this RiftOS runtime");
@@ -365,18 +426,18 @@ async function uploadTextEncodingSlot(slot,path,maxBytes){
   if(committed?.committed!==true||String(committed?.sha256||"").toLowerCase()!==sha256)throw new Error(`RiftLLM ${slot} upload commit verification failed`);
   return {slot,path,bytes:bytes.byteLength,sha256};
 }
-async function textEncodingEval(candidateValue){
-  const candidate=textEncodingCandidate(candidateValue),artifact=await uploadTextEncodingSlot("artifact",candidate.path,4*1024*1024),heldout=await uploadTextEncodingSlot("heldout",TEXT_ENCODING_HELDOUT,8*1024*1024);
+async function textEncodingEval(candidateValue,laneValue="heldout"){
+  const candidate=textEncodingCandidate(candidateValue),corpusPath=textEncodingCorpus(candidate,laneValue),artifact=await uploadTextEncodingSlot("artifact",candidate.path,4*1024*1024),heldout=await uploadTextEncodingSlot("heldout",corpusPath,8*1024*1024);
   const job=await native("text_encoding_start",{artifactSha256:artifact.sha256,corpusSha256:heldout.sha256,expectedCandidateId:candidate.candidateId});
   if(String(job?.artifactSha256||"")!==artifact.sha256||String(job?.corpusSha256||"")!==heldout.sha256||String(job?.expectedCandidateId||"")!==candidate.candidateId)throw new Error("RiftLLM Text Encoding Lab start provenance mismatch");
-  return {candidateId:candidate.candidateId,artifact,heldout,job};
+  return {candidateId:candidate.candidateId,corpusLane:String(laneValue||"heldout"),artifact,heldout,job};
 }
 async function textEncodingStatus(){return native("text_encoding_status",{});}
 
 async function run(args,print=console.log,context={}){
   const list=[...args],cmd=(list.shift()||"help").toLowerCase();
   const show=value=>{print(typeof value==="string"?value:JSON.stringify(value,null,2));return value;};
-  if(cmd==="help")return print(`RiftLLM standalone Dev API bridge\nriftllm-agent status\nriftllm-agent pair\nriftllm-agent unpair\nriftllm-agent sync <project-path>\nriftllm-agent sync-missing <project-path>\nriftllm-agent load <project-path>\nriftllm-agent staged\nriftllm-agent stage <project-path> <text>\nriftllm-agent stage-file <project-path> <riftfs-source-file>\nriftllm-agent delete <project-path>\nriftllm-agent unstage <project-path>\nriftllm-agent reset\nriftllm-agent snapshot [note]\nriftllm-agent snapshots [limit]\nriftllm-agent get-snapshot [id|latest]\nriftllm-agent benchmarks [limit]\nriftllm-agent benchmark [record-id|latest]\nriftllm-agent text-encoding-eval <a|b>\nriftllm-agent text-encoding-status\nriftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]\nriftllm-agent corpus-status [output-dir]\nriftllm-agent preview [id|latest]\nriftllm-agent publish [id|latest]\nriftllm-agent ack <id|latest> <workspace-history-id>\nCorpus commands are local-only and confined to /workspace/RiftLLM/tokenizer/private. Pairing token is entered only in the local secure prompt, never as a shell argument.`);
+  if(cmd==="help")return print(`RiftLLM standalone Dev API bridge\nriftllm-agent status\nriftllm-agent pair\nriftllm-agent unpair\nriftllm-agent sync <project-path>\nriftllm-agent sync-missing <project-path>\nriftllm-agent load <project-path>\nriftllm-agent staged\nriftllm-agent stage <project-path> <text>\nriftllm-agent stage-file <project-path> <riftfs-source-file>\nriftllm-agent delete <project-path>\nriftllm-agent unstage <project-path>\nriftllm-agent reset\nriftllm-agent snapshot [note]\nriftllm-agent snapshots [limit]\nriftllm-agent get-snapshot [id|latest]\nriftllm-agent benchmarks [limit]\nriftllm-agent benchmark [record-id|latest]\nriftllm-agent text-encoding-eval <a|b|a2|b2> [heldout|challenge]\nriftllm-agent text-encoding-status\nriftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]\nriftllm-agent corpus-status [output-dir]\nriftllm-agent corpus-synth-v2 [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build-v2 [heldout-permyriad] [seed]\nriftllm-agent corpus-status-v2\nriftllm-agent preview [id|latest]\nriftllm-agent publish [id|latest]\nriftllm-agent ack <id|latest> <workspace-history-id>\nCorpus commands are local-only and confined to /workspace/RiftLLM/tokenizer/private. Text-encoding evaluation is fixed to reviewed A/B/A2/B2 artifacts and heldout/challenge lanes. Pairing token is entered only in the local secure prompt, never as a shell argument.`);
   if(cmd==="status")return show(await status());
   if(cmd==="pair"){if(list.length)throw new Error("usage: riftllm-agent pair (enter the token only in the secure local prompt)");return show(await pair());}
   if(cmd==="unpair"){if(list.length)throw new Error("usage: riftllm-agent unpair");return show(await unpair());}
@@ -396,7 +457,7 @@ async function run(args,print=console.log,context={}){
   if(cmd==="get-snapshot")return show(await getSnapshot(list[0]||"latest"));
   if(cmd==="benchmarks"){if(list[0]!==undefined&&!Number.isFinite(Number(list[0])))throw new Error("benchmark limit must be numeric");return show(await listBenchmarks(list[0]));}
   if(cmd==="benchmark")return show(await getBenchmark(list[0]||"latest"));
-  if(cmd==="text-encoding-eval"){if(list.length!==1)throw new Error("usage: riftllm-agent text-encoding-eval <a|b>");return show(await textEncodingEval(list[0]));}
+  if(cmd==="text-encoding-eval"){if(list.length<1||list.length>2)throw new Error("usage: riftllm-agent text-encoding-eval <a|b|a2|b2> [heldout|challenge]");return show(await textEncodingEval(list[0],list[1]||"heldout"));}
   if(cmd==="text-encoding-status"){if(list.length)throw new Error("usage: riftllm-agent text-encoding-status");return show(await textEncodingStatus());}
   if(cmd==="corpus-synth"){
     if(list.length>4)throw new Error("usage: riftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]");
@@ -409,10 +470,21 @@ async function run(args,print=console.log,context={}){
     return show(await corpusBuild(input,output,{heldoutPermyriad:heldout,seed}));
   }
   if(cmd==="corpus-status"){if(list.length>1)throw new Error("usage: riftllm-agent corpus-status [output-dir]");return show(await corpusStatus(list[0]||CORPUS_DEFAULT_OUTPUT));}
+  if(cmd==="corpus-synth-v2"){
+    if(list.length>4)throw new Error("usage: riftllm-agent corpus-synth-v2 [base] [output] [manifest] [count-per-category]");
+    const base=list[0]||CORPUS_DEFAULT_INPUT,output=list[1]||CORPUS_V2_SYNTH_OUTPUT,manifest=list[2]||CORPUS_V2_SYNTH_MANIFEST,count=list[3]===undefined?CORPUS_SYNTH_DEFAULT_COUNT:Number(list[3]);
+    return show(await corpusSynthV2(base,output,manifest,{countPerCategory:count,seed:CORPUS_V2_SYNTH_SEED}));
+  }
+  if(cmd==="corpus-build-v2"){
+    if(list.length>2)throw new Error("usage: riftllm-agent corpus-build-v2 [heldout-permyriad] [seed]");
+    const heldout=list[0]===undefined?CORPUS_DEFAULT_HELDOUT:Number(list[0]),seed=list[1]||CORPUS_DEFAULT_SEED;
+    return show(await corpusBuild(CORPUS_V2_SYNTH_OUTPUT,CORPUS_V2_BUILD,{heldoutPermyriad:heldout,seed}));
+  }
+  if(cmd==="corpus-status-v2"){if(list.length)throw new Error("usage: riftllm-agent corpus-status-v2");return show(await corpusStatus(CORPUS_V2_BUILD));}
   if(cmd==="preview")return show(await preview(list[0]||"latest"));
   if(cmd==="publish")return show(await publish(list[0]||"latest"));
   if(cmd==="ack"){if(list.length<2)throw new Error("usage: riftllm-agent ack <id|latest> <workspace-history-id>");const {snapshotId}=await concreteSnapshot(list[0]);return show(await acknowledge(snapshotId,list[1],{recovery:true}));}
   throw new Error(`unknown riftllm-agent command: ${cmd}`);
 }
 
-globalThis.RiftLlmBridge=Object.freeze({version:1,status,pair,unpair,sync,syncMissing,load,listStaged,stage,stageDelete,unstage,reset,snapshot,listSnapshots,getSnapshot,listBenchmarks,getBenchmark,textEncodingEval,textEncodingStatus,corpusSynth,corpusBuild,corpusStatus,preview,publish,acknowledge,run});
+globalThis.RiftLlmBridge=Object.freeze({version:2,status,pair,unpair,sync,syncMissing,load,listStaged,stage,stageDelete,unstage,reset,snapshot,listSnapshots,getSnapshot,listBenchmarks,getBenchmark,textEncodingEval,textEncodingStatus,corpusSynth,corpusSynthV2,corpusBuild,corpusStatus,preview,publish,acknowledge,run});

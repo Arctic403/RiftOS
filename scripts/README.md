@@ -12,10 +12,10 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-shell-git.mjs` — RiftGit/shell integration.
 - `test-rift-path-compat.mjs` — shared C:/D: absolute-path and canonical-identity contract across RiftCore, Build, Repo, Git, Vault, Memory, Dev Lab, RiftLLM and Files.
 - `test-rift-local-platform.mjs` — RiftRepo/RiftVault/RiftBuild/RiftMemory wiring, fail-closed capability and shell-surface contract.
-- `test-riftllm-bridge.mjs` — standalone RiftLLM Binder bridge, secure pairing, guarded patch publication, fixed A/B Text Encoding Lab method surface and shell-boundary contract.
-- `test-riftllm-text-encoding-bridge.mjs` — executes the A/B-only Text Encoding Lab uploader against a mocked paired Binder route and verifies 192 KiB chunks, offsets, hashes, candidate identity and no arbitrary artifact path.
-- `test-riftllm-corpus.mjs` — executes the local RiftCorpus synth/build helpers against an in-memory RiftFS mock and verifies deterministic 3 MiB shards, shard-set hashes, 12K/20K count bounds, sharded train/full-heldout composition, bounded Android benchmark output, private-path confinement and unfinished-Rift-source rejection.
-- `test-rift-text-encoder-task.mjs` — locks the experimental fixed-path native RiftTokenizer task contract, pinned configs, async train/status/cancel surface, optimized-batch parity hooks, single-file/shard-set provenance parity, streaming per-shard status, transactional artifact/manifest recovery, 32K arithmetic and no-generic-process boundary.
+- `test-riftllm-bridge.mjs` — standalone RiftLLM Binder bridge, secure pairing, guarded patch publication, fixed V1/V2 Text Encoding Lab method surface and shell-boundary contract.
+- `test-riftllm-text-encoding-bridge.mjs` — executes the fixed A2 challenge uploader against a mocked paired Binder route and verifies 192 KiB chunks, offsets, hashes, candidate identity, fixed challenge lane and no arbitrary artifact/corpus path.
+- `test-riftllm-corpus.mjs` — executes V1/V2 local RiftCorpus synth/build helpers against an in-memory RiftFS mock and verifies deterministic 3 MiB shards, shard-set hashes, V2 compositional identity, sharded train/full-heldout composition, bounded Android benchmark output, private-path confinement and unfinished-Rift-source rejection.
+- `test-rift-text-encoder-task.mjs` — locks the experimental fixed-path V1/V2 native RiftTokenizer contract, pinned configs/sources, V2 24-byte learned-token cap, async train/status/cancel surface, optimized-batch parity hooks, provenance, streaming status, transactional artifact/manifest recovery, 32K arithmetic and no-generic-process boundary.
 - `test-rift-plus-plus-v0.mjs` — locks Rift++ V0 non-executable Swarm IR, workspace-only source confinement, finite role/capability policy, preview-only BrainBackend coordinator and no-new-MCP-tool boundary.
 - `test-rift-app-import.mjs` — `.rift` package import/validation.
 

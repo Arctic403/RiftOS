@@ -5,8 +5,8 @@ globalThis.crypto ||= webcrypto;
 globalThis.btoa ||= value=>Buffer.from(value,'binary').toString('base64');
 
 const CHUNK=192*1024;
-const artifactPath='/workspace/RiftLLM/tokenizer/output/rift-token-a-frequency-v1.riftbpe';
-const heldoutPath='/workspace/RiftLLM/tokenizer/private/build/heldout.tsv';
+const artifactPath='/workspace/RiftLLM/tokenizer/output/rift-token-a-frequency-v2.riftbpe';
+const heldoutPath='/workspace/RiftLLM/tokenizer/challenges/rift-tokenizer-challenge-v2.tsv';
 const files=new Map([
   [artifactPath,'A'.repeat(CHUNK+17001)],
   [heldoutPath,'prose\t'+('held-out '.repeat(51000))+'\n']
@@ -40,7 +40,7 @@ const nativeCall=async(method,args)=>{
   if(op==='text_encoding_start'){
     assert.equal(request.artifactSha256,uploads.get('artifact').expected);
     assert.equal(request.corpusSha256,uploads.get('heldout').expected);
-    assert.equal(request.expectedCandidateId,'rift-token-a-frequency-v1');
+    assert.equal(request.expectedCandidateId,'rift-token-a-frequency-v2');
     return {schema:'riftllm-text-encoding-dev-job-v1',active:true,state:'queued',jobId:'test-job',artifactSha256:request.artifactSha256,corpusSha256:request.corpusSha256,expectedCandidateId:request.expectedCandidateId};
   }
   if(op==='text_encoding_status')return {schema:'riftllm-text-encoding-dev-job-v1',active:false,state:'complete',recordId:'run-text-encoding-test.json'};
@@ -64,18 +64,20 @@ globalThis.RiftWorkspace={history:async()=>[],previewPatch:async()=>({valid:true
 
 await import(new URL('../src/riftllm-bridge.js?text-encoding-contract=1',import.meta.url));
 const bridge=globalThis.RiftLlmBridge;
-const started=await bridge.textEncodingEval('a');
-assert.equal(started.candidateId,'rift-token-a-frequency-v1');
+const started=await bridge.textEncodingEval('a2','challenge');
+assert.equal(started.candidateId,'rift-token-a-frequency-v2');
+assert.equal(started.corpusLane,'challenge');
 assert.equal(started.artifact.sha256,sha(files.get(artifactPath)));
 assert.equal(started.heldout.sha256,sha(files.get(heldoutPath)));
-assert.equal(started.job.expectedCandidateId,'rift-token-a-frequency-v1');
+assert.equal(started.job.expectedCandidateId,'rift-token-a-frequency-v2');
 
 const appendCalls=calls.filter(row=>row.op==='text_encoding_append');
 assert.ok(appendCalls.length>=4,'expected multi-chunk artifact + held-out uploads');
 for(const row of appendCalls)assert.ok(Buffer.from(row.request.dataBase64,'base64').length<=CHUNK);
 assert.deepEqual(calls.filter(row=>row.op==='text_encoding_begin').map(row=>row.request.slot),['artifact','heldout']);
 assert.equal(calls.at(-1).op,'text_encoding_start');
-await assert.rejects(()=>bridge.textEncodingEval('/workspace/arbitrary.riftbpe'),/candidate must be a or b/i);
+await assert.rejects(()=>bridge.textEncodingEval('/workspace/arbitrary.riftbpe'),/candidate must be a, b, a2 or b2/i);
+await assert.rejects(()=>bridge.textEncodingEval('a2','/workspace/arbitrary.tsv'),/corpus lane must be heldout or challenge/i);
 const status=await bridge.textEncodingStatus();assert.equal(status.recordId,'run-text-encoding-test.json');
 
 console.log('RiftLLM Text Encoding Lab chunk bridge contract OK');

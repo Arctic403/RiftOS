@@ -16,11 +16,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.ln
 
 /**
- * Fixed-purpose native executor for RiftTokenizer V1 development tasks.
+ * Fixed-purpose native executor for RiftTokenizer V1/V2 development tasks.
  *
  * This is deliberately not a Python/process runner. It mirrors the source-controlled
- * RiftTokenizer V1 reference algorithm while confining reads/writes to exact RiftLLM
- * tokenizer paths inside RiftFS.
+ * RiftTokenizer reference algorithm while confining reads/writes to reviewed RiftLLM
+ * tokenizer paths inside RiftFS. V1 remains the historical control; V2 adds a bounded
+ * learned-token expansion ceiling and a separate training source.
  */
 object RiftTextEncoderTaskRunner {
     private const val ARTIFACT_MAGIC = "RIFT_BYTE_BPE_V1"
@@ -44,10 +45,12 @@ object RiftTextEncoderTaskRunner {
         val action: String,
         val candidateId: String,
         val configRelative: String,
+        val trainingRelative: String,
         val outputRelative: String,
         val configFileSha256: String,
         val canonicalConfigSha256: String,
-        val scoreMode: String
+        val scoreMode: String,
+        val maxTokenBytes: Int
     )
 
     private val candidates = mapOf(
@@ -55,19 +58,45 @@ object RiftTextEncoderTaskRunner {
             action = "train-a",
             candidateId = "rift-token-a-frequency-v1",
             configRelative = "tokenizer/configs/rift-text-a-frequency-v1.json",
+            trainingRelative = "tokenizer/private/build/train",
             outputRelative = "tokenizer/output/rift-token-a-frequency-v1.riftbpe",
             configFileSha256 = "ccf9e36e135da05beb9203a2496391ac3ab6b58c32dc697ee8b1c36174602606",
             canonicalConfigSha256 = "463bb9e8af82e1094b50702888986e144eec504cc7939cbedcbfad50503669b3",
-            scoreMode = "frequency"
+            scoreMode = "frequency",
+            maxTokenBytes = MAX_SAMPLE_BYTES
         ),
         "train-b" to Candidate(
             action = "train-b",
             candidateId = "rift-token-b-balanced-v1",
             configRelative = "tokenizer/configs/rift-text-b-balanced-v1.json",
+            trainingRelative = "tokenizer/private/build/train",
             outputRelative = "tokenizer/output/rift-token-b-balanced-v1.riftbpe",
             configFileSha256 = "eed655f1902cf021b5f7faf5a070a2f5085913053908c1f2d4b2a67ee18cbeb2",
             canonicalConfigSha256 = "9ff5eefb11e76086c244a90d67630c7ca0092deed3d47bfa1f1a9aa3160accf6",
-            scoreMode = "category_balanced"
+            scoreMode = "category_balanced",
+            maxTokenBytes = MAX_SAMPLE_BYTES
+        ),
+        "train-a2" to Candidate(
+            action = "train-a2",
+            candidateId = "rift-token-a-frequency-v2",
+            configRelative = "tokenizer/configs/rift-text-a-frequency-v2.json",
+            trainingRelative = "tokenizer/private/build-v2/train",
+            outputRelative = "tokenizer/output/rift-token-a-frequency-v2.riftbpe",
+            configFileSha256 = "46c9d72dd0c94550390f46503bf4285cd7f8dfd45d71b6f4b396b66dc287fb04",
+            canonicalConfigSha256 = "66b8ed246e63392285db79df0c75318ba3da5c74fe21c115412e4effbc4e6546",
+            scoreMode = "frequency",
+            maxTokenBytes = 24
+        ),
+        "train-b2" to Candidate(
+            action = "train-b2",
+            candidateId = "rift-token-b-balanced-v2",
+            configRelative = "tokenizer/configs/rift-text-b-balanced-v2.json",
+            trainingRelative = "tokenizer/private/build-v2/train",
+            outputRelative = "tokenizer/output/rift-token-b-balanced-v2.riftbpe",
+            configFileSha256 = "517f56e51e34132f815acdd08531ea6c5a6ea96112f7d5197b3118e0309bbc39",
+            canonicalConfigSha256 = "9d442860e3ed407fe10f10e72ad41fabc2854cfc3cdcaeb654b35ddad506faba",
+            scoreMode = "category_balanced",
+            maxTokenBytes = 24
         )
     )
 
@@ -154,10 +183,10 @@ object RiftTextEncoderTaskRunner {
         return when (action) {
             "status" -> status(context)
             "self-test" -> selfTest()
-            "train-a", "train-b" -> startTraining(context.applicationContext, candidates.getValue(action))
+            in candidates.keys -> startTraining(context.applicationContext, candidates.getValue(action))
             "train-status" -> trainingJobJson()
             "train-cancel" -> cancelActive("manual tokenizer cancel requested")
-            else -> throw IllegalArgumentException("usage: rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel")
+            else -> throw IllegalArgumentException("usage: rift-cli tokenizer status|self-test|train-a|train-b|train-a2|train-b2|train-status|train-cancel")
         }
     }
 
@@ -195,12 +224,13 @@ object RiftTextEncoderTaskRunner {
         return file
     }
 
-    private fun discoverTrainingFiles(root: File): Pair<String, List<File>> {
-        val legacy = exactPath(root, "tokenizer/private/build/train.jsonl")
-        val shardDir = exactPath(root, "tokenizer/private/build/train")
+    private fun discoverTrainingFiles(root: File, candidate: Candidate): Pair<String, List<File>> {
+        require(candidate.trainingRelative.endsWith("/train")) { "candidate training path must end in /train" }
+        val shardDir = exactPath(root, candidate.trainingRelative)
+        val legacy = exactPath(root, candidate.trainingRelative.removeSuffix("/train") + "/train.jsonl")
         require(!(legacy.exists() && shardDir.exists())) { "training source is ambiguous: both train.jsonl and train/ exist" }
         if (shardDir.exists()) {
-            require(shardDir.isDirectory) { "tokenizer/private/build/train must be a directory" }
+            require(shardDir.isDirectory) { "${candidate.trainingRelative} must be a directory" }
             val files = (shardDir.listFiles() ?: throw IllegalStateException("could not list tokenizer training shards"))
                 .filter { it.isFile && it.name.lowercase().endsWith(".jsonl") }
                 .also { rows ->
@@ -218,7 +248,7 @@ object RiftTextEncoderTaskRunner {
             require(files.sumOf { it.length() } <= MAX_TRAINING_BYTES) { "tokenizer training shards exceed $MAX_TRAINING_BYTES total bytes" }
             return "sharded-jsonl" to files
         }
-        require(legacy.isFile) { "required tokenizer training source is missing: tokenizer/private/build/train or train.jsonl" }
+        require(legacy.isFile) { "required tokenizer training source is missing: ${candidate.trainingRelative} or ${legacy.name}" }
         require(legacy.length() in 1..MAX_TRAINING_BYTES) { "training split must be 1..$MAX_TRAINING_BYTES bytes" }
         return "single-jsonl" to listOf(legacy)
     }
@@ -236,8 +266,8 @@ object RiftTextEncoderTaskRunner {
         if (layout == "single-jsonl") "file-sha256" to shards.single().sha256
         else SHARD_SET_ID to shardSetSha(shards)
 
-    private fun resolveTrainingSource(root: File): TrainingSource {
-        val (layout, files) = discoverTrainingFiles(root)
+    private fun resolveTrainingSource(root: File, candidate: Candidate): TrainingSource {
+        val (layout, files) = discoverTrainingFiles(root, candidate)
         val shards = files.map { file -> TrainingShard(file.name, file.length(), sha256File(file), 0) }
         val (hashMode, sha) = sourceSha(layout, shards)
         return TrainingSource(layout, hashMode, sha, files.sumOf { it.length() }, files, shards)
@@ -248,8 +278,15 @@ object RiftTextEncoderTaskRunner {
         val legacyTrain = exactPath(root, "tokenizer/private/build/train.jsonl")
         val shardTrain = exactPath(root, "tokenizer/private/build/train")
         val heldoutFile = exactFile(root, "tokenizer/private/build/heldout.tsv", mustExist = false)
-        val hasTraining = legacyTrain.isFile || shardTrain.isDirectory
-        val metadata = if (hasTraining) scanTrainingMetadata(root) else null
+        val metadataByTraining = linkedMapOf<String, TrainingMetadata>()
+        candidates.values.distinctBy { it.trainingRelative }.forEach { candidate ->
+            val shardPath = exactPath(root, candidate.trainingRelative)
+            val legacyPath = exactPath(root, candidate.trainingRelative.removeSuffix("/train") + "/train.jsonl")
+            if (shardPath.isDirectory || legacyPath.isFile) {
+                metadataByTraining[candidate.trainingRelative] = scanTrainingMetadata(root, candidate)
+            }
+        }
+        val metadata = metadataByTraining[candidates.getValue("train-a").trainingRelative]
         val value = JSONObject()
             .put("schema", "rift.experimental-tokenizer-task/1")
             .put("experimental", true)
@@ -287,16 +324,41 @@ object RiftTextEncoderTaskRunner {
                 .put("mergeCountLowerBoundSatisfied", metadata.initialByteTokens >= minimumBudget)
         }
 
+        val sourceRows = JSONArray()
+        metadataByTraining.forEach { (trainingRelative, source) ->
+            sourceRows.put(JSONObject()
+                .put("trainingRelative", trainingRelative)
+                .put("layout", source.sourceLayout)
+                .put("hashMode", source.sourceHashMode)
+                .put("sha256", source.sourceSha256)
+                .put("utf8Bytes", source.sourceTotalBytes)
+                .put("shardCount", source.sourceShards.size)
+                .put("sampleCount", source.sampleCount)
+                .put("initialByteTokens", source.initialByteTokens)
+                .put("categoryCounts", JSONObject(source.categoryCounts))
+                .put("minimumByteTokenBudgetForMergeCount", source.sampleCount.toLong() + MERGE_TARGET.toLong())
+                .put("mergeCountLowerBoundSatisfied", source.initialByteTokens >= source.sampleCount.toLong() + MERGE_TARGET.toLong()))
+        }
+        value.put("trainingSources", sourceRows)
+
         val candidateRows = JSONArray()
         for (candidate in candidates.values.sortedBy { it.action }) {
             val config = exactFile(root, candidate.configRelative, mustExist = false)
             val recovery = recoverOutputPair(root, candidate)
             val paths = outputPaths(root, candidate)
             val pairValid = outputPairValid(candidate, paths.artifact, paths.manifest)
+            val candidateMetadata = metadataByTraining[candidate.trainingRelative]
             candidateRows.put(JSONObject()
                 .put("action", candidate.action)
                 .put("candidateId", candidate.candidateId)
                 .put("scoreMode", candidate.scoreMode)
+                .put("trainingRelative", candidate.trainingRelative)
+                .put("trainingSourceAvailable", candidateMetadata != null)
+                .put("trainingSourceSha256", candidateMetadata?.sourceSha256 ?: JSONObject.NULL)
+                .put("trainingSampleCount", candidateMetadata?.sampleCount ?: JSONObject.NULL)
+                .put("trainingInitialByteTokens", candidateMetadata?.initialByteTokens ?: JSONObject.NULL)
+                .put("mergeCountLowerBoundSatisfied", candidateMetadata?.let { it.initialByteTokens >= it.sampleCount.toLong() + MERGE_TARGET.toLong() } ?: false)
+                .put("maxTokenBytes", candidate.maxTokenBytes)
                 .put("config", fileInfo(root, config))
                 .put("configHashMatchesPinned", config.isFile && sha256File(config) == candidate.configFileSha256)
                 .put("artifact", fileInfo(root, paths.artifact))
@@ -429,7 +491,7 @@ object RiftTextEncoderTaskRunner {
         }
         validateConfig(configFile, candidate)
         ensureNotCancelled(cancel)
-        val input = loadTraining(root)
+        val input = loadTraining(root, candidate)
         val minimumPairCount = 2
         val minimumBudget = input.sampleCount.toLong() + MERGE_TARGET.toLong()
         require(input.initialByteTokens >= minimumBudget) {
@@ -447,6 +509,7 @@ object RiftTextEncoderTaskRunner {
             candidate.scoreMode,
             minimumPairCount,
             batchSize = 64,
+            maxTokenBytes = candidate.maxTokenBytes,
             cancel = cancel
         ) { mergesCompleted, batchesCompleted, currentTokens ->
             updateJob(job) {
@@ -458,7 +521,7 @@ object RiftTextEncoderTaskRunner {
         }
         ensureNotCancelled(cancel)
         require(merges.size == MERGE_TARGET) { "expected $MERGE_TARGET merges, got ${merges.size}" }
-        val currentSource = resolveTrainingSource(root)
+        val currentSource = resolveTrainingSource(root, candidate)
         require(currentSource.sha256 == input.sourceSha256 && currentSource.hashMode == input.sourceHashMode) {
             "training corpus changed while ${candidate.candidateId} was training; refusing to publish an artifact from a moving input"
         }
@@ -480,15 +543,16 @@ object RiftTextEncoderTaskRunner {
         require(obj.optBoolean("byte_fallback", false)) { "byte_fallback must be true" }
         require(obj.optString("score_mode") == candidate.scoreMode) { "score_mode mismatch" }
         require(obj.optInt("batch_merges") == 64) { "batch_merges must be 64 for V1 native parity" }
-        require(obj.optInt("minimum_pair_count", 2) == 2) { "minimum_pair_count must be 2 for V1 native parity" }
+        require(obj.optInt("minimum_pair_count", 2) == 2) { "minimum_pair_count must be 2 for native parity" }
+        require(obj.optInt("max_token_bytes", MAX_SAMPLE_BYTES) == candidate.maxTokenBytes) { "max_token_bytes mismatch" }
         if (candidate.scoreMode == "category_balanced") {
             val weights = obj.optJSONObject("category_weights") ?: throw IllegalArgumentException("category_weights missing")
-            require(REQUIRED_CATEGORIES.all { weights.optDouble(it, -1.0) == 1.0 }) { "V1 balanced category weights must all equal 1.0" }
+            require(REQUIRED_CATEGORIES.all { weights.optDouble(it, -1.0) == 1.0 }) { "balanced category weights must all equal 1.0" }
         }
     }
 
-    private fun loadTraining(root: File): TrainingInput {
-        val (layout, files) = discoverTrainingFiles(root)
+    private fun loadTraining(root: File, candidate: Candidate): TrainingInput {
+        val (layout, files) = discoverTrainingFiles(root, candidate)
         val sequences = mutableListOf<TokenSequence>()
         val categories = linkedMapOf("prose" to 0, "code" to 0, "non_ascii" to 0)
         val shards = mutableListOf<TrainingShard>()
@@ -534,8 +598,8 @@ object RiftTextEncoderTaskRunner {
         )
     }
 
-    private fun scanTrainingMetadata(root: File): TrainingMetadata {
-        val (layout, files) = discoverTrainingFiles(root)
+    private fun scanTrainingMetadata(root: File, candidate: Candidate): TrainingMetadata {
+        val (layout, files) = discoverTrainingFiles(root, candidate)
         val categories = linkedMapOf("prose" to 0, "code" to 0, "non_ascii" to 0)
         val shards = mutableListOf<TrainingShard>()
         var samples = 0
@@ -587,16 +651,24 @@ object RiftTextEncoderTaskRunner {
             shards.sumOf { it.utf8Bytes }
         )
     }
+    private fun mergeLengthAllowed(pair: PairKey, tokenLengths: List<Int>, maxTokenBytes: Int): Boolean {
+        require(pair.left in tokenLengths.indices && pair.right in tokenLengths.indices) { "pair references a token before it exists" }
+        return tokenLengths[pair.left] + tokenLengths[pair.right] <= maxTokenBytes
+    }
+
     private fun train(
         sequences: MutableList<TokenSequence>,
         scoreMode: String,
         minimumPairCount: Int,
         batchSize: Int,
+        maxTokenBytes: Int,
         cancel: AtomicBoolean,
         onProgress: (mergesCompleted: Int, batchesCompleted: Int, currentTokens: Long) -> Unit
     ): List<PairKey> {
         val merges = ArrayList<PairKey>(MERGE_TARGET)
         val emitted = HashSet<PairKey>(MERGE_TARGET * 2)
+        val tokenLengths = ArrayList<Int>(VOCAB_SIZE).apply { repeat(BYTE_TOKENS) { add(1) } }
+        require(maxTokenBytes in 2..MAX_SAMPLE_BYTES) { "maxTokenBytes is out of range" }
         var currentTokens = sequences.sumOf { it.tokens.size.toLong() }
         var batchesCompleted = 0
         while (merges.size < MERGE_TARGET) {
@@ -621,6 +693,7 @@ object RiftTextEncoderTaskRunner {
             val ranked = ArrayList<RankedPair>()
             for ((pair, rawCount) in total) {
                 if (rawCount < minimumPairCount || pair in emitted) continue
+                if (!mergeLengthAllowed(pair, tokenLengths, maxTokenBytes)) continue
                 val score = if (scoreMode == "frequency") {
                     rawCount.toDouble()
                 } else {
@@ -650,6 +723,7 @@ object RiftTextEncoderTaskRunner {
             )
             if (batch.accepted.isEmpty()) throw IllegalStateException("no ranked pair remained applicable; corpus cannot fill the requested vocabulary")
             emitted.addAll(batch.examined)
+            batch.accepted.forEach { pair -> tokenLengths.add(tokenLengths[pair.left] + tokenLengths[pair.right]) }
             merges.addAll(batch.accepted)
             currentTokens -= batch.totalApplied
             batchesCompleted++
@@ -885,6 +959,7 @@ object RiftTextEncoderTaskRunner {
         require(manifestObject.optString("trainerConfigSha256") == candidate.canonicalConfigSha256) { "manifest config hash mismatch" }
         require(manifestObject.optInt("mergeCount") == MERGE_TARGET) { "manifest merge count mismatch" }
         require(manifestObject.optInt("vocabularySize") == VOCAB_SIZE) { "manifest vocabulary mismatch" }
+        require(manifestObject.optInt("maxTokenBytes", MAX_SAMPLE_BYTES) == candidate.maxTokenBytes) { "manifest maxTokenBytes mismatch" }
         val trainingSha = manifestObject.optString("trainingCorpusSha256")
         require(trainingSha.matches(Regex("[0-9a-f]{64}"))) { "manifest training hash is invalid" }
         val trainingHashMode = manifestObject.optString("trainingCorpusHashMode", "file-sha256")
@@ -999,6 +1074,7 @@ object RiftTextEncoderTaskRunner {
             .put("mergeCount", merges.size)
             .put("normalization", "identity-utf8")
             .put("scoreMode", candidate.scoreMode)
+            .put("maxTokenBytes", candidate.maxTokenBytes)
             .put("sourceStableAtCommit", true)
             .put("specialTokenCount", SPECIAL_LITERALS.size)
             .put("trainer", TRAINER_ID)
@@ -1010,7 +1086,7 @@ object RiftTextEncoderTaskRunner {
         writeSyncedText(paths.stagedManifest, sortedManifest(manifest) + "\n")
         require(outputPairValid(candidate, paths.stagedArtifact, paths.stagedManifest)) { "staged tokenizer artifact/manifest verification failed" }
         ensureNotCancelled(cancel)
-        val currentSource = resolveTrainingSource(root)
+        val currentSource = resolveTrainingSource(root, candidate)
         require(currentSource.sha256 == trainingSha && currentSource.hashMode == trainingHashMode) {
             "training corpus changed before ${candidate.candidateId} commit; staged output discarded"
         }
@@ -1073,6 +1149,12 @@ object RiftTextEncoderTaskRunner {
         val first = applyMerge(intArrayOf(97, 98, 97, 98), PairKey(97, 98), 256)
         require(first.first.contentEquals(intArrayOf(256, 256)) && first.second == 2) { "native merge self-test failed" }
         require(MERGE_TARGET + BYTE_TOKENS + SPECIAL_LITERALS.size == VOCAB_SIZE) { "vocabulary arithmetic self-test failed" }
+        val capLengths = MutableList(BYTE_TOKENS) { 1 }
+        capLengths[97] = 20
+        capLengths[98] = 5
+        require(!mergeLengthAllowed(PairKey(97, 98), capLengths, 24)) { "V2 token expansion cap failed" }
+        capLengths[98] = 4
+        require(mergeLengthAllowed(PairKey(97, 98), capLengths, 24)) { "V2 token expansion cap rejected a boundary merge" }
         val shardVector = listOf(
             TrainingShard("part-00000.jsonl", 3L, "a".repeat(64), 0),
             TrainingShard("part-00001.jsonl", 5L, "b".repeat(64), 0)
@@ -1109,6 +1191,7 @@ object RiftTextEncoderTaskRunner {
             .put("optimizedBatchParity", true)
             .put("backgroundTraining", true)
             .put("shardSetParity", true)
+            .put("v2TokenExpansionCapParity", true)
             .put("trainingHashModes", JSONArray(listOf("file-sha256", SHARD_SET_ID)))
             .put("artifactMagic", ARTIFACT_MAGIC)
             .put("trainer", TRAINER_ID)

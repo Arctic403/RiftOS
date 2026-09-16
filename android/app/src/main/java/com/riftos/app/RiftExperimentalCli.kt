@@ -108,7 +108,7 @@ object RiftExperimentalCli {
             }
             "tokenizer" -> {
                 require(isEnabled()) { "EXPERIMENTAL RiftCLI is OFF. Tokenizer tasks require explicit process-local enable." }
-                require(tail.size <= 1) { "usage: rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel" }
+                require(tail.size <= 1) { "usage: rift-cli tokenizer status|self-test|train-a|train-b|train-a2|train-b2|train-status|train-cancel" }
                 val action = tail.firstOrNull() ?: "status"
                 val value = RiftTextEncoderTaskRunner.execute(context, action)
                 result(value.toString(2), value)
@@ -210,8 +210,8 @@ object RiftExperimentalCli {
         rift-cli plan <goal>     # planning scaffold only; never executes mutations
         rift-cli riftpp help|sample|validate|compile|preview
                                 # Rift++ V0 declarative swarm DSL -> non-executable Swarm IR
-        rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel
-                                # manual fixed-path RiftTokenizer V1 tasks; training runs as one cancellable background job
+        rift-cli tokenizer status|self-test|train-a|train-b|train-a2|train-b2|train-status|train-cancel
+                                # manual fixed-path RiftTokenizer V1/V2 tasks; training runs as one cancellable background job
 
         No new MCP tools. No raw Android shell. No generic Python/process runner. No wider package authority. No autonomous writes.
         The future model/swarm backend is intentionally not connected yet.
