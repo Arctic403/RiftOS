@@ -3,9 +3,12 @@ package com.riftos.app
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
 import java.io.File
+import java.io.InputStreamReader
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
+import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
@@ -71,12 +74,28 @@ object RiftTextEncoderTaskRunner {
         val sequences: MutableList<TokenSequence>,
         val sampleCount: Int,
         val initialByteTokens: Long,
-        val categoryCounts: Map<String, Int>
+        val categoryCounts: Map<String, Int>,
+        val sourceSha256: String
+    )
+    private data class TrainingMetadata(
+        val sampleCount: Int,
+        val initialByteTokens: Long,
+        val categoryCounts: Map<String, Int>,
+        val sourceSha256: String
     )
     private data class BatchResult(
         val accepted: List<PairKey>,
         val examined: List<PairKey>,
         val totalApplied: Long
+    )
+    private data class OutputPaths(
+        val artifact: File,
+        val manifest: File,
+        val stagedArtifact: File,
+        val stagedManifest: File,
+        val backupArtifact: File,
+        val backupManifest: File,
+        val marker: File
     )
     private data class TrainingJob(
         val id: String,
@@ -149,37 +168,43 @@ object RiftTextEncoderTaskRunner {
         val root = projectRoot(context)
         val trainFile = exactFile(root, "tokenizer/private/build/train.jsonl", mustExist = false)
         val heldoutFile = exactFile(root, "tokenizer/private/build/heldout.tsv", mustExist = false)
+        val metadata = if (trainFile.isFile) scanTrainingMetadata(trainFile) else null
         val value = JSONObject()
             .put("schema", "rift.experimental-tokenizer-task/1")
             .put("experimental", true)
             .put("processExecution", false)
             .put("pythonRuntimeRequired", false)
-            .put("trainingFile", fileInfo(root, trainFile))
+            .put("statusLoadsTokenArrays", false)
+            .put("trainingFile", fileInfo(root, trainFile, metadata?.sourceSha256))
             .put("heldoutFile", fileInfo(root, heldoutFile))
             .put("mergeTarget", MERGE_TARGET)
             .put("vocabularySize", VOCAB_SIZE)
 
-        if (trainFile.isFile) {
-            val input = loadTraining(trainFile)
-            value.put("sampleCount", input.sampleCount)
-                .put("initialByteTokens", input.initialByteTokens)
-                .put("categoryCounts", JSONObject(input.categoryCounts))
-            val minimumBudget = input.sampleCount.toLong() + MERGE_TARGET.toLong()
+        if (metadata != null) {
+            value.put("sampleCount", metadata.sampleCount)
+                .put("initialByteTokens", metadata.initialByteTokens)
+                .put("categoryCounts", JSONObject(metadata.categoryCounts))
+            val minimumBudget = metadata.sampleCount.toLong() + MERGE_TARGET.toLong()
             value.put("minimumByteTokenBudgetForMergeCount", minimumBudget)
-                .put("mergeCountLowerBoundSatisfied", input.initialByteTokens >= minimumBudget)
+                .put("mergeCountLowerBoundSatisfied", metadata.initialByteTokens >= minimumBudget)
         }
 
         val candidateRows = JSONArray()
         for (candidate in candidates.values.sortedBy { it.action }) {
             val config = exactFile(root, candidate.configRelative, mustExist = false)
-            val output = exactFile(root, candidate.outputRelative, mustExist = false)
+            val recovery = recoverOutputPair(root, candidate)
+            val paths = outputPaths(root, candidate)
+            val pairValid = outputPairValid(candidate, paths.artifact, paths.manifest)
             candidateRows.put(JSONObject()
                 .put("action", candidate.action)
                 .put("candidateId", candidate.candidateId)
                 .put("scoreMode", candidate.scoreMode)
                 .put("config", fileInfo(root, config))
                 .put("configHashMatchesPinned", config.isFile && sha256File(config) == candidate.configFileSha256)
-                .put("artifact", fileInfo(root, output)))
+                .put("artifact", fileInfo(root, paths.artifact))
+                .put("manifest", fileInfo(root, paths.manifest))
+                .put("artifactManifestPairValid", pairValid)
+                .put("outputRecovery", recovery))
         }
         return value.put("candidates", candidateRows)
             .put("trainingJob", trainingJobJson())
@@ -226,6 +251,19 @@ object RiftTextEncoderTaskRunner {
     }
 
     private fun startTraining(context: Context, candidate: Candidate): JSONObject {
+        synchronized(jobLock) {
+            val current = activeJob
+            require(current == null || (current.state != "queued" && current.state != "running" && current.state != "cancelling")) {
+                "tokenizer training is already active: ${current?.candidateId ?: "unknown"}"
+            }
+        }
+        val root = projectRoot(context)
+        recoverOutputPair(root, candidate)
+        val existingPaths = outputPaths(root, candidate)
+        require(
+            !(existingPaths.artifact.exists() || existingPaths.manifest.exists()) ||
+                outputPairValid(candidate, existingPaths.artifact, existingPaths.manifest)
+        ) { "existing ${candidate.candidateId} output is not a valid artifact/manifest pair; repair or remove the incomplete private output before training" }
         val cancel = AtomicBoolean(false)
         val job: TrainingJob
         synchronized(jobLock) {
@@ -323,31 +361,17 @@ object RiftTextEncoderTaskRunner {
         }
         ensureNotCancelled(cancel)
         require(merges.size == MERGE_TARGET) { "expected $MERGE_TARGET merges, got ${merges.size}" }
-        val trainingSha = sha256File(trainFile)
-        val output = exactFile(root, candidate.outputRelative, mustExist = false)
-        output.parentFile?.mkdirs()
-        ensureNotCancelled(cancel)
-        writeArtifact(output, candidate, trainingSha, merges)
-        val artifactSha = sha256File(output)
-        val manifest = JSONObject()
-            .put("artifactSha256", artifactSha)
-            .put("byteFallback", true)
-            .put("candidateId", candidate.candidateId)
-            .put("format", "rift-tokenizer-training-result-v1")
-            .put("mergeCount", merges.size)
-            .put("normalization", "identity-utf8")
-            .put("scoreMode", candidate.scoreMode)
-            .put("specialTokenCount", SPECIAL_LITERALS.size)
-            .put("trainer", TRAINER_ID)
-            .put("trainerConfigSha256", candidate.canonicalConfigSha256)
-            .put("trainingCorpusSha256", trainingSha)
-            .put("vocabularySize", VOCAB_SIZE)
-        val manifestFile = File(output.parentFile, output.name + ".manifest.json")
-        manifestFile.writeText(sortedManifest(manifest) + "\n", Charsets.UTF_8)
-        return JSONObject(manifest.toString())
-            .put("artifactPath", relativePath(root, output))
-            .put("manifestPath", relativePath(root, manifestFile))
-            .put("nativeTaskRunner", true)
+        require(sha256File(trainFile) == input.sourceSha256) {
+            "training corpus changed while ${candidate.candidateId} was training; refusing to publish an artifact from a moving input"
+        }
+        return commitOutputPair(
+            root = root,
+            trainFile = trainFile,
+            candidate = candidate,
+            trainingSha = input.sourceSha256,
+            merges = merges,
+            cancel = cancel
+        ).put("nativeTaskRunner", true)
     }
 
     private fun validateConfig(file: File, candidate: Candidate) {
@@ -368,7 +392,9 @@ object RiftTextEncoderTaskRunner {
 
     private fun loadTraining(file: File): TrainingInput {
         require(file.length() in 1..MAX_TRAINING_BYTES) { "training split must be 1..$MAX_TRAINING_BYTES bytes" }
-        val text = decodeStrictUtf8(readBounded(file, MAX_TRAINING_BYTES))
+        val sourceBytes = readBounded(file, MAX_TRAINING_BYTES)
+        val sourceSha256 = sha256Bytes(sourceBytes)
+        val text = decodeStrictUtf8(sourceBytes)
         val sequences = mutableListOf<TokenSequence>()
         val categories = linkedMapOf("prose" to 0, "code" to 0, "non_ascii" to 0)
         var byteTokens = 0L
@@ -390,7 +416,45 @@ object RiftTextEncoderTaskRunner {
         }
         require(sequences.isNotEmpty()) { "training split is empty" }
         for (category in REQUIRED_CATEGORIES) require(categories.getValue(category) > 0) { "training split contains no $category samples" }
-        return TrainingInput(sequences, sequences.size, byteTokens, categories)
+        return TrainingInput(sequences, sequences.size, byteTokens, categories, sourceSha256)
+    }
+
+    private fun scanTrainingMetadata(file: File): TrainingMetadata {
+        require(file.length() in 1..MAX_TRAINING_BYTES) { "training split must be 1..$MAX_TRAINING_BYTES bytes" }
+        val digest = MessageDigest.getInstance("SHA-256")
+        val categories = linkedMapOf("prose" to 0, "code" to 0, "non_ascii" to 0)
+        var samples = 0
+        var byteTokens = 0L
+        val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+        file.inputStream().buffered().use { buffered ->
+            DigestInputStream(buffered, digest).use { digested ->
+                BufferedReader(InputStreamReader(digested, decoder)).use { reader ->
+                    var lineNumber = 0
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        lineNumber++
+                        if (line.isBlank()) continue
+                        val obj = try { JSONObject(line) } catch (error: Throwable) {
+                            throw IllegalArgumentException("line $lineNumber: invalid training JSON: ${error.message}")
+                        }
+                        val category = obj.optString("category")
+                        require(category in REQUIRED_CATEGORIES) { "line $lineNumber: invalid category" }
+                        val sample = obj.optString("text")
+                        require(sample.isNotEmpty()) { "line $lineNumber: text must be non-empty" }
+                        val sampleBytes = sample.toByteArray(Charsets.UTF_8)
+                        require(sampleBytes.size <= MAX_SAMPLE_BYTES) { "line $lineNumber: text exceeds $MAX_SAMPLE_BYTES UTF-8 bytes" }
+                        categories[category] = categories.getValue(category) + 1
+                        samples++
+                        byteTokens += sampleBytes.size
+                    }
+                }
+            }
+        }
+        require(samples > 0) { "training split is empty" }
+        for (category in REQUIRED_CATEGORIES) require(categories.getValue(category) > 0) { "training split contains no $category samples" }
+        return TrainingMetadata(samples, byteTokens, categories, hex(digest.digest()))
     }
 
     private fun train(
@@ -630,6 +694,226 @@ object RiftTextEncoderTaskRunner {
         return if (output == out.size) out to merged else out.copyOf(output) to merged
     }
 
+    private fun outputPaths(root: File, candidate: Candidate): OutputPaths {
+        val artifact = exactFile(root, candidate.outputRelative, mustExist = false)
+        val parent = artifact.parentFile ?: throw IllegalArgumentException("tokenizer output has no parent")
+        require(parent.exists() || parent.mkdirs()) { "could not create tokenizer output directory" }
+        require(parent.isDirectory) { "tokenizer output parent is not a directory" }
+        val manifest = File(parent, artifact.name + ".manifest.json")
+        return OutputPaths(
+            artifact = artifact,
+            manifest = manifest,
+            stagedArtifact = File(parent, ".${artifact.name}.stage"),
+            stagedManifest = File(parent, ".${artifact.name}.manifest.stage"),
+            backupArtifact = File(parent, ".${artifact.name}.backup"),
+            backupManifest = File(parent, ".${artifact.name}.manifest.backup"),
+            marker = File(parent, ".${artifact.name}.commit")
+        )
+    }
+
+    private fun writeSyncedText(file: File, text: String) {
+        file.parentFile?.let { require(it.exists() || it.mkdirs()) { "could not create parent for ${file.name}" } }
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        java.io.FileOutputStream(file, false).use { output ->
+            output.write(bytes)
+            output.fd.sync()
+        }
+    }
+
+    private fun moveAtomic(source: File, destination: File, label: String) {
+        require(source.exists()) { "missing staged path for $label" }
+        require(!destination.exists()) { "destination already exists for $label" }
+        java.nio.file.Files.move(
+            source.toPath(),
+            destination.toPath(),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE
+        )
+        require(destination.exists() && !source.exists()) { "atomic move verification failed for $label" }
+    }
+
+    private fun deleteIfExists(file: File, label: String) {
+        if (file.exists()) require(file.delete()) { "could not remove $label: ${file.name}" }
+    }
+
+    private fun writeAtomicMarker(file: File, text: String) {
+        val parent = file.parentFile ?: throw IllegalArgumentException("transaction marker has no parent")
+        val temporary = File(parent, ".${file.name}.write-${System.nanoTime()}")
+        try {
+            writeSyncedText(temporary, text)
+            moveAtomic(temporary, file, "tokenizer transaction marker")
+        } finally {
+            runCatching { temporary.delete() }
+        }
+    }
+
+    private fun outputPairValid(candidate: Candidate, artifact: File, manifest: File): Boolean = runCatching {
+        require(artifact.isFile && manifest.isFile) { "artifact/manifest pair is incomplete" }
+        val manifestObject = JSONObject(decodeStrictUtf8(readBounded(manifest, 256L * 1024L)))
+        require(manifestObject.optString("format") == "rift-tokenizer-training-result-v1") { "manifest format mismatch" }
+        require(manifestObject.optString("candidateId") == candidate.candidateId) { "manifest candidate mismatch" }
+        require(manifestObject.optString("trainer") == TRAINER_ID) { "manifest trainer mismatch" }
+        require(manifestObject.optString("trainerConfigSha256") == candidate.canonicalConfigSha256) { "manifest config hash mismatch" }
+        require(manifestObject.optInt("mergeCount") == MERGE_TARGET) { "manifest merge count mismatch" }
+        require(manifestObject.optInt("vocabularySize") == VOCAB_SIZE) { "manifest vocabulary mismatch" }
+        val trainingSha = manifestObject.optString("trainingCorpusSha256")
+        require(trainingSha.matches(Regex("[0-9a-f]{64}"))) { "manifest training hash is invalid" }
+        val artifactSha = manifestObject.optString("artifactSha256")
+        require(artifactSha.matches(Regex("[0-9a-f]{64}")) && artifactSha == sha256File(artifact)) { "artifact hash mismatch" }
+        val artifactText = decodeStrictUtf8(readBounded(artifact, 4L * 1024L * 1024L))
+        require(artifactText.startsWith("$ARTIFACT_MAGIC\n")) { "artifact magic mismatch" }
+        require(artifactText.contains("\ncandidate_id=${candidate.candidateId}\n")) { "artifact candidate mismatch" }
+        require(artifactText.contains("\ntraining_corpus_sha256=$trainingSha\n")) { "artifact training hash mismatch" }
+        require(artifactText.contains("\ntrainer_config_sha256=${candidate.canonicalConfigSha256}\n")) { "artifact config hash mismatch" }
+        require(artifactText.contains("\nvocab_size=$VOCAB_SIZE\n")) { "artifact vocabulary mismatch" }
+        true
+    }.getOrDefault(false)
+
+    private fun cleanupCommittedTransaction(paths: OutputPaths): Boolean {
+        var pending = false
+        for (file in listOf(paths.stagedArtifact, paths.stagedManifest, paths.backupArtifact, paths.backupManifest)) {
+            if (file.exists() && !runCatching { file.delete() }.getOrDefault(false)) pending = true
+        }
+        if (!pending && paths.marker.exists() && !runCatching { paths.marker.delete() }.getOrDefault(false)) pending = true
+        return pending
+    }
+
+    private fun recoverOutputPair(root: File, candidate: Candidate): String {
+        val paths = outputPaths(root, candidate)
+        val finalsValid = outputPairValid(candidate, paths.artifact, paths.manifest)
+        if (!paths.marker.exists()) {
+            deleteIfExists(paths.stagedArtifact, "stale tokenizer artifact stage")
+            deleteIfExists(paths.stagedManifest, "stale tokenizer manifest stage")
+            val backupPresent = paths.backupArtifact.exists() || paths.backupManifest.exists()
+            if (!backupPresent) {
+                return if ((paths.artifact.exists() || paths.manifest.exists()) && !finalsValid) "invalid-pair" else "clean"
+            }
+            if (finalsValid) {
+                deleteIfExists(paths.backupArtifact, "stale tokenizer artifact backup")
+                deleteIfExists(paths.backupManifest, "stale tokenizer manifest backup")
+                return "cleaned-stale-backups"
+            }
+            if (paths.backupArtifact.exists()) {
+                deleteIfExists(paths.artifact, "invalid tokenizer artifact")
+                moveAtomic(paths.backupArtifact, paths.artifact, "restore tokenizer artifact backup")
+            }
+            if (paths.backupManifest.exists()) {
+                deleteIfExists(paths.manifest, "invalid tokenizer manifest")
+                moveAtomic(paths.backupManifest, paths.manifest, "restore tokenizer manifest backup")
+            }
+            require(outputPairValid(candidate, paths.artifact, paths.manifest)) {
+                "tokenizer backup recovery could not restore a complete ${candidate.candidateId} pair"
+            }
+            return "restored-stale-backup-pair"
+        }
+
+        if (finalsValid) {
+            val pending = cleanupCommittedTransaction(paths)
+            return if (pending) "validated-pair-cleanup-pending" else "validated-pair-cleanup-complete"
+        }
+
+        val hadArtifactBackup = paths.backupArtifact.exists()
+        val hadManifestBackup = paths.backupManifest.exists()
+        if (hadArtifactBackup) {
+            deleteIfExists(paths.artifact, "interrupted tokenizer artifact")
+            moveAtomic(paths.backupArtifact, paths.artifact, "rollback tokenizer artifact")
+        }
+        if (hadManifestBackup) {
+            deleteIfExists(paths.manifest, "interrupted tokenizer manifest")
+            moveAtomic(paths.backupManifest, paths.manifest, "rollback tokenizer manifest")
+        }
+        if (hadArtifactBackup || hadManifestBackup) {
+            require(outputPairValid(candidate, paths.artifact, paths.manifest)) {
+                "tokenizer transaction rollback could not restore the previous complete ${candidate.candidateId} pair"
+            }
+            deleteIfExists(paths.stagedArtifact, "interrupted tokenizer artifact stage")
+            deleteIfExists(paths.stagedManifest, "interrupted tokenizer manifest stage")
+            deleteIfExists(paths.marker, "tokenizer transaction marker")
+            return "rolled-back-interrupted-commit"
+        }
+
+        deleteIfExists(paths.artifact, "partial first tokenizer artifact")
+        deleteIfExists(paths.manifest, "partial first tokenizer manifest")
+        deleteIfExists(paths.stagedArtifact, "interrupted tokenizer artifact stage")
+        deleteIfExists(paths.stagedManifest, "interrupted tokenizer manifest stage")
+        deleteIfExists(paths.marker, "tokenizer transaction marker")
+        return "discarded-interrupted-first-commit"
+    }
+
+    private fun commitOutputPair(
+        root: File,
+        trainFile: File,
+        candidate: Candidate,
+        trainingSha: String,
+        merges: List<PairKey>,
+        cancel: AtomicBoolean
+    ): JSONObject {
+        val recoveryBeforeCommit = recoverOutputPair(root, candidate)
+        val paths = outputPaths(root, candidate)
+        val existingPair = paths.artifact.exists() || paths.manifest.exists()
+        require(!existingPair || outputPairValid(candidate, paths.artifact, paths.manifest)) {
+            "existing ${candidate.candidateId} output is not a valid artifact/manifest pair; refusing to overwrite it"
+        }
+        require(!paths.stagedArtifact.exists() && !paths.stagedManifest.exists() && !paths.marker.exists()) {
+            "tokenizer transaction staging paths were not clean after recovery"
+        }
+
+        writeArtifact(paths.stagedArtifact, candidate, trainingSha, merges)
+        val artifactSha = sha256File(paths.stagedArtifact)
+        val manifest = JSONObject()
+            .put("artifactSha256", artifactSha)
+            .put("byteFallback", true)
+            .put("candidateId", candidate.candidateId)
+            .put("format", "rift-tokenizer-training-result-v1")
+            .put("mergeCount", merges.size)
+            .put("normalization", "identity-utf8")
+            .put("scoreMode", candidate.scoreMode)
+            .put("sourceStableAtCommit", true)
+            .put("specialTokenCount", SPECIAL_LITERALS.size)
+            .put("trainer", TRAINER_ID)
+            .put("trainerConfigSha256", candidate.canonicalConfigSha256)
+            .put("trainingCorpusSha256", trainingSha)
+            .put("transactionalPair", true)
+            .put("vocabularySize", VOCAB_SIZE)
+        writeSyncedText(paths.stagedManifest, sortedManifest(manifest) + "\n")
+        require(outputPairValid(candidate, paths.stagedArtifact, paths.stagedManifest)) { "staged tokenizer artifact/manifest verification failed" }
+        ensureNotCancelled(cancel)
+        require(sha256File(trainFile) == trainingSha) {
+            "training corpus changed before ${candidate.candidateId} commit; staged output discarded"
+        }
+
+        val marker = JSONObject()
+            .put("artifactSha256", artifactSha)
+            .put("candidateId", candidate.candidateId)
+            .put("format", "rift-tokenizer-output-transaction-v1")
+            .put("trainingCorpusSha256", trainingSha)
+        writeAtomicMarker(paths.marker, sortedManifest(marker) + "\n")
+
+        try {
+            if (paths.artifact.exists()) {
+                moveAtomic(paths.artifact, paths.backupArtifact, "backup existing tokenizer artifact")
+                moveAtomic(paths.manifest, paths.backupManifest, "backup existing tokenizer manifest")
+            }
+            moveAtomic(paths.stagedArtifact, paths.artifact, "publish tokenizer artifact")
+            moveAtomic(paths.stagedManifest, paths.manifest, "publish tokenizer manifest")
+            require(outputPairValid(candidate, paths.artifact, paths.manifest)) { "committed tokenizer artifact/manifest verification failed" }
+            val cleanupPending = cleanupCommittedTransaction(paths)
+            return JSONObject(manifest.toString())
+                .put("artifactPath", relativePath(root, paths.artifact))
+                .put("manifestPath", relativePath(root, paths.manifest))
+                .put("outputRecoveryBeforeCommit", recoveryBeforeCommit)
+                .put("transactionCleanupPending", cleanupPending)
+        } catch (error: Throwable) {
+            val recovery = runCatching { recoverOutputPair(root, candidate) }
+                .getOrElse { recoveryError ->
+                    throw IllegalStateException(
+                        "${error.message}; tokenizer output recovery also failed: ${recoveryError.message}",
+                        error
+                    )
+                }
+            throw IllegalStateException("${error.message}; tokenizer output transaction recovered as $recovery", error)
+        }
+    }
+
     private fun writeArtifact(file: File, candidate: Candidate, trainingSha: String, merges: List<PairKey>) {
         val specialStart = BYTE_TOKENS + merges.size
         val text = buildString {
@@ -647,7 +931,7 @@ object RiftTextEncoderTaskRunner {
             for (merge in merges) append(merge.left).append(' ').append(merge.right).append('\n')
             append("merges_end\n")
         }
-        file.writeText(text, Charsets.UTF_8)
+        writeSyncedText(file, text)
     }
 
     private fun selfTest(): JSONObject {
@@ -699,6 +983,9 @@ object RiftTextEncoderTaskRunner {
         .onUnmappableCharacter(CodingErrorAction.REPORT)
         .decode(ByteBuffer.wrap(bytes)).toString()
 
+    private fun sha256Bytes(bytes: ByteArray): String =
+        hex(MessageDigest.getInstance("SHA-256").digest(bytes))
+
     private fun sha256File(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered().use { input ->
@@ -716,11 +1003,11 @@ object RiftTextEncoderTaskRunner {
 
     private fun relativePath(root: File, file: File): String = file.relativeTo(root).invariantSeparatorsPath
 
-    private fun fileInfo(root: File, file: File): JSONObject = JSONObject()
+    private fun fileInfo(root: File, file: File, knownSha256: String? = null): JSONObject = JSONObject()
         .put("path", relativePath(root, file))
         .put("exists", file.isFile)
         .put("size", if (file.isFile) file.length() else 0L)
-        .put("sha256", if (file.isFile) sha256File(file) else JSONObject.NULL)
+        .put("sha256", if (file.isFile) (knownSha256 ?: sha256File(file)) else JSONObject.NULL)
 
     private fun sortedManifest(manifest: JSONObject): String {
         val keys = manifest.keys().asSequence().toList().sorted()

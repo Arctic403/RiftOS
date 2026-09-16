@@ -19,7 +19,7 @@ The build/validation layer catches source-contract regressions before the separa
 - `scripts/test-rift-local-platform.mjs` — local-first repo/vault/build/memory module wiring, provider capability honesty and fail-closed build-executor contract.
 - `scripts/test-riftllm-bridge.mjs` — fixed standalone RiftLLM Binder API identity/allowlist, Keystore pairing, guarded Workspace publication and shell-boundary contract.
 - `scripts/test-riftllm-corpus.mjs` — executable RiftCorpus local-helper contract: deterministic synthesis, finite count/size bounds, synth-to-build composition, build/manifest generation, private-path confinement, no Binder dependency and unfinished-project source exclusion.
-- `scripts/test-rift-text-encoder-task.mjs` — fixed-path experimental native tokenizer task contract, pinned candidate configs, async train/status/cancel wiring, optimized-batch parity hooks, 32K merge arithmetic and generic-process rejection.
+- `scripts/test-rift-text-encoder-task.mjs` — fixed-path experimental native tokenizer task contract, pinned candidate configs, async train/status/cancel wiring, optimized-batch parity hooks, exact-input provenance, streaming status, transactional artifact/manifest recovery, 32K merge arithmetic and generic-process rejection.
 - `scripts/test-rift-app-import.mjs` — `.rift` package import contract.
 - `android/app/build.gradle.kts` — Android source verification and web-asset sync.
 - external `Arctic403/Riftos-builder` — manual Android build/sign/verify worker.
