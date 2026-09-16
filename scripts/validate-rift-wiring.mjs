@@ -282,7 +282,7 @@ if (/\beval\s*\(/.test(riftvm) || /new\s+Function\b/.test(riftvm) || /ProcessBui
 
 // Worker RPCs still use the bounded hostCall controller while native-webview apps use RiftNativeAppHost.
 const hostStart = riftrt.indexOf('async function hostCall(');
-const hostEnd = riftrt.indexOf('async function launchNativeWebView(', hostStart);
+const hostEnd = riftrt.indexOf('const VM_IMPORT_CAPABILITIES=', hostStart);
 const hostSlice = riftrt.slice(hostStart, hostEnd);
 const riftrtHostMethods = new Set([...hostSlice.matchAll(/method===\s*["']([^"']+)["']/g)].map(match => match[1]));
 const workerStart = riftrt.indexOf('const workerBootstrap=');
