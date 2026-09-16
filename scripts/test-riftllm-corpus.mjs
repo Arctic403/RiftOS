@@ -120,6 +120,7 @@ const synthV2=await api.corpusSynthV2(input,undefined,undefined,{countPerCategor
 assert.equal(synthV2.format,'rift-corpus-synth-v2');
 assert.equal(synthV2.generator,'rift-corpus-synthesizer-v2');
 assert.equal(synthV2.generalizationDesign,'compositional-grammar-v2');
+assert.equal(synthV2.templateVersion,'rift-synth-grammar-v2.1');
 assert.equal(synthV2.synthesizedCount,36);
 assert.equal(synthV2.totalCount,216);
 assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synthesized-v2/part-00000.jsonl'));
@@ -129,6 +130,9 @@ assert.equal(resultV2.sampleCount,216);
 assert.equal(resultV2.trainHashMode,'rift-shard-set-v1');
 assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/build-v2/train/part-00000.jsonl'));
 assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/build-v2/heldout.tsv'));
+const collisionProbeV2=await api.corpusSynthV2(input,'/workspace/RiftLLM/tokenizer/private/synthesized-v2-probe','/workspace/RiftLLM/tokenizer/private/synth-v2-probe-manifest.json',{countPerCategory:5600,seed:'rift-corpus-synth-v2-a'});
+assert.equal(collisionProbeV2.synthesizedCount,16800);
+assert.equal(collisionProbeV2.totalCount,16980);
 
 await assert.rejects(()=>api.corpusSynth('/workspace/RiftOS-main/private.jsonl'),/must stay under/);
 await fsMock.mkdir('/workspace/RiftLLM/tokenizer/private/base-dir');
