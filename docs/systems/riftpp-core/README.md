@@ -44,6 +44,8 @@ Compiler failures carry a structured diagnostic with `code`, `message`, source `
 - `src/riftpp-core.js` — lexer, parser, AST, semantic/type checking, `.rxe` lowering and bounded global compiler surface.
 - `src/riftvm.js` — executable validator/runtime; the compiler never bypasses it and validates generated output through `prepareRiftExecutable`.
 - `scripts/test-rift-plus-plus-core-v1.mjs` — source -> compiler -> `.rxe` -> RiftVM executable proof and negative diagnostics.
+- `scripts/test-riftpp-shell.mjs` — normal RiftShell `riftpp` command routing and execution-authority boundary.
+- `src/riftos.js::runRiftppShell` — shell-only adapter for self-test/check/compile/inspect/run/exec; it does not belong to or enable experimental RiftCLI.
 - `examples/riftpp/core-v1-hello.riftpp` — first human-written executable Core source fixture.
 
 ## Invariants
@@ -57,4 +59,4 @@ Compiler failures carry a structured diagnostic with `code`, `message`, source `
 
 ## Validation
 
-Run `scripts/test-rift-plus-plus-core-v1.mjs` in the normal Node validation environment. The test compiles `core-v1-hello.riftpp`, executes the resulting `.rxe` on RiftVM, expects `Hello from Rift++ Core V1`, `42`, and `true`, then verifies version/type/duplicate-name/unsupported-feature failures and absence of dynamic-code/process escape paths.
+Run `scripts/test-rift-plus-plus-core-v1.mjs` and `scripts/test-riftpp-shell.mjs` in the normal Node validation environment. The test compiles `core-v1-hello.riftpp`, executes the resulting `.rxe` on RiftVM, expects `Hello from Rift++ Core V1`, `42`, and `true`, then verifies version/type/duplicate-name/unsupported-feature failures and absence of dynamic-code/process escape paths.

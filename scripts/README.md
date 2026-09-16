@@ -20,6 +20,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-plus-plus-v0.mjs` — locks Rift++ V0 non-executable Swarm IR, workspace-only source confinement, finite role/capability policy, preview-only BrainBackend coordinator and no-new-MCP-tool boundary.
 - `test-rift-ir-v1.mjs` — locks the language-independent `rift.ir/1` swarm-core schema, defense-in-depth graph/policy validation, resource accounting, inspect-only execution policy, experimental CLI adapter and no-new-MCP-tool boundary.
 - `test-rift-plus-plus-core-v1.mjs` — compiles human-written `riftpp 1` Core source through lexer/parser/type checking into `rift-exec-v1`, executes it on RiftVM, and locks structured fail-closed diagnostics for unsupported features.
+- `test-riftpp-shell.mjs` — locks the normal RiftShell Core `riftpp` family, its separation from experimental RiftCLI, no-host-import execution boundary, output/VM limits and atomic-batch exclusion.
 - `test-rift-vm.mjs` — executes/attacks the first `rift-exec-v1` Rift++ executable ABI: bounded opcodes, function calls, declared host imports, checked integer overflow, step limits, no eval/process path and the importable `.rift` + `main.rxe` fixture.
 - `test-rift-app-import.mjs` — `.rift` package import/validation.
 

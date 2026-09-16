@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const shell=readFileSync('src/riftos.js','utf8');
+const batch=readFileSync('src/riftshell-batch.js','utf8');
+const nativeShell=readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt','utf8');
+const start=shell.indexOf('async function runRiftppShell(');
+const end=shell.indexOf('\nasync function runShell(',start);
+assert(start>=0&&end>start,'runRiftppShell must exist before runShell');
+const slice=shell.slice(start,end);
+for(const command of ['help','version','self-test','check','compile','inspect','run','exec']) assert(slice.includes(`sub===\"${command}\"`)||command==='help','missing riftpp shell command: '+command);
+assert(slice.includes('await import("./riftpp-core.js")'));
+assert(slice.includes('await import("./riftvm.js")'));
+assert(slice.includes('riftpp shell execution denies host imports'));
+assert(slice.includes('riftpp shell output limit exceeded (64 KiB / 256 writes)'));
+assert(slice.includes('maxSteps:100000,maxStack:1024,maxCallDepth:32'));
+assert(slice.includes('riftpp-shell-self-test/1'));
+assert(slice.includes('Rift++ shell self-test'));
+assert(slice.includes('core.fs.writeText(output,result.executableText)'));
+assert(!slice.includes('RiftExperimentalCli'));
+assert(!slice.includes('rift-cli'));
+assert(shell.includes('if(cmd==="riftpp")return runRiftppShell(args,print,state);'));
+assert(batch.includes('"rift-cli","riftpp","chat"'),'riftpp must stay outside atomic batch');
+assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / COMPATIBILITY SHELL]'));
+assert(!nativeShell.includes('"riftpp" ->'),'native shell must delegate Core riftpp to the compatibility shell until explicitly ported');
+console.log('ok - normal RiftShell routes riftpp Core independently of experimental RiftCLI');
+console.log('ok - riftpp run/exec deny host imports and bound execution/output');
+console.log('ok - riftpp compile is excluded from atomic batch and writes only explicit .rxe output');

@@ -25,6 +25,7 @@ The build/validation layer catches source-contract regressions before the separa
 - `scripts/test-rift-plus-plus-v0.mjs` — Rift++ V0 compiler/Swarm IR/BrainBackend preview contract, workspace-only source confinement, finite role/capability policy, read-only reviewer/security roles and no generic execution/MCP expansion.
 - `scripts/test-rift-ir-v1.mjs` — language-independent `rift.ir/1` swarm-core lowering/validation contract, canonical task schedules, resource/context accounting, capability defense-in-depth, inspect-only execution metadata and no MCP expansion.
 - `scripts/test-rift-plus-plus-core-v1.mjs` — executable Core V1 bootstrap frontend contract: grammar subset, source spans, deterministic type/name checks, `.rxe` lowering, RiftVM execution and structured negative diagnostics without CLI/MCP expansion.
+- `scripts/test-riftpp-shell.mjs` — normal RiftShell Core command routing (`check/compile/inspect/run/exec`), separation from experimental RiftCLI, no-host-import execution, bounded output/VM budgets and atomic-batch exclusion.
 - `scripts/test-rift-vm.mjs` — executable `rift-exec-v1`/`riftvm-1` validation and execution contract, including checked arithmetic, declared imports, hard step/stack/call limits, fake-prevalidation resistance, no eval/process path and the `.rift` + `main.rxe` package fixture.
 - `scripts/test-rift-app-import.mjs` — `.rift` package import contract.
 - `android/app/build.gradle.kts` — Android source verification and web-asset sync.

@@ -90,6 +90,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "help  pwd  home  drives  df  sysinfo  native  uptime  version\n" +
                     "ls [path]  tree [path]  stat <path>  cat <file>  head <file> [n]  tail <file> [n]\n" +
                     "workspace [cd|info|ls|status]\n" +
+                    "riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / COMPATIBILITY SHELL]\n" +
                     "rift-cli status|team|architecture|enable|disable|plan|riftpp|ir|tokenizer   [EXPERIMENTAL / OFF BY DEFAULT]\n" +
                     "Remaining command families temporarily use the trusted compatibility shell while they migrate.",
                 cwd,

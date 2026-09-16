@@ -143,6 +143,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `scripts/test-rift-plus-plus-v0.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-ir-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-plus-plus-core-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftpp-core/README.md` |
+| `scripts/test-riftpp-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` |
 | `scripts/test-rift-vm.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftrt/engines/rift-vm/README.md` |
 
 ## Rule for new source

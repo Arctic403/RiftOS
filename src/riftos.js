@@ -821,6 +821,59 @@ async function runChatShell(args,print,state){
   }
   throw new Error(`unknown chat command: ${sub}`);
 }
+async function runRiftppShell(args,print,state){
+  const sub=(args.shift()||"help").toLowerCase();
+  const usage=`Rift++ Core shell (independent of experimental RiftCLI)\nriftpp help\nriftpp version\nriftpp self-test\nriftpp check <source.riftpp>\nriftpp compile <source.riftpp> [output.rxe]\nriftpp inspect <source.riftpp|program.rxe>\nriftpp run <source.riftpp>\nriftpp exec <program.rxe>\n\nrun/exec provide no RiftRT host imports and cap program output to 64 KiB / 256 writes.`;
+  if(sub==="help")return print(usage);
+  const compiler=await import("./riftpp-core.js"),vm=await import("./riftvm.js");
+  if(sub==="version")return print(JSON.stringify({language:compiler.RIFTPP_LANGUAGE,compiler:compiler.RIFTPP_CORE_VERSION,targetFormat:vm.RIFT_EXEC_FORMAT,targetAbi:vm.RIFT_VM_ABI},null,2));
+  const sourcePath=value=>{
+    if(!value)throw new Error(`usage: riftpp ${sub} <source.riftpp>`);
+    const path=resolvePath(state.cwd,value);if(!/\.riftpp$/i.test(path))throw new Error(`Rift++ source must end in .riftpp: ${path}`);return path;
+  };
+  const execPath=value=>{
+    if(!value)throw new Error(`usage: riftpp ${sub} <program.rxe>`);
+    const path=resolvePath(state.cwd,value);if(!/\.rxe$/i.test(path))throw new Error(`Rift executable must end in .rxe: ${path}`);return path;
+  };
+  const read=async path=>{const text=await core.fs.readText(path);if(text==null)throw new Error(`file not found: ${path}`);return text;};
+  const execute=async(raw,label)=>{
+    const info=vm.inspectRiftExecutable(raw);if(info.imports.length)throw new Error(`riftpp shell execution denies host imports: ${info.imports.join(", ")}`);
+    let bytes=0,writes=0;const output=[];
+    const host={write:value=>{const text=String(value);bytes+=new TextEncoder().encode(text).byteLength+1;if(++writes>256||bytes>65536)throw new Error("riftpp shell output limit exceeded (64 KiB / 256 writes)");output.push(text);}};
+    const result=await vm.executeRiftExecutable(raw,host,{maxSteps:100000,maxStack:1024,maxCallDepth:32});
+    for(const line of output)print(line);
+    print(JSON.stringify({schema:"riftpp-shell-run/1",label,steps:result.steps,prints:result.prints,result:result.result},null,2));
+    return Object.freeze({result,output:Object.freeze([...output])});
+  };
+  if(sub==="self-test"||sub==="selftest"){
+    const source=`riftpp 1\nmodule shell.selftest\nfn multiply(a: u32, b: u32) -> u32 {\n  return a * b\n}\nfn main() {\n  print("Rift++ shell self-test")\n  print(multiply(6, 7))\n  print(multiply(6, 7) == 42)\n}\n`;
+    const compiled=compiler.compileRiftPlusPlusCoreV1(source),executed=await execute(compiled.executable,"embedded:self-test");
+    const expected=["Rift++ shell self-test","42","true"];if(JSON.stringify(executed.output)!==JSON.stringify(expected))throw new Error(`riftpp self-test output mismatch: ${JSON.stringify(executed.output)}`);
+    return print(JSON.stringify({ok:true,schema:"riftpp-shell-self-test/1",compiler:compiler.RIFTPP_CORE_VERSION,format:compiled.executable.format,abi:compiled.executable.abi,steps:executed.result.steps,prints:executed.result.prints},null,2));
+  }
+  if(sub==="check"){
+    const path=sourcePath(args[0]),source=await read(path),result=compiler.compileRiftPlusPlusCoreV1(source),info=compiler.inspectRiftPlusPlusCoreV1(source);
+    return print(JSON.stringify({ok:true,path,module:result.module,functions:info.functions,bytes:info.bytes,targetFormat:info.targetFormat,targetAbi:info.targetAbi},null,2));
+  }
+  if(sub==="compile"){
+    const path=sourcePath(args[0]),source=await read(path),result=compiler.compileRiftPlusPlusCoreV1(source);const output=args[1]?resolvePath(state.cwd,args[1]):path.replace(/\.riftpp$/i,".rxe");
+    if(!/\.rxe$/i.test(output))throw new Error(`Rift executable output must end in .rxe: ${output}`);await core.fs.writeText(output,result.executableText);
+    return print(JSON.stringify({ok:true,source:path,output,module:result.module,bytes:new TextEncoder().encode(result.executableText).byteLength,format:result.executable.format,abi:result.executable.abi},null,2));
+  }
+  if(sub==="inspect"){
+    if(!args[0])throw new Error("usage: riftpp inspect <source.riftpp|program.rxe>");const path=resolvePath(state.cwd,args[0]),text=await read(path);
+    if(/\.riftpp$/i.test(path))return print(JSON.stringify(compiler.inspectRiftPlusPlusCoreV1(text),null,2));
+    if(/\.rxe$/i.test(path))return print(JSON.stringify(vm.inspectRiftExecutable(text),null,2));
+    throw new Error(`riftpp inspect expects .riftpp or .rxe: ${path}`);
+  }
+  if(sub==="run"){
+    const path=sourcePath(args[0]),source=await read(path),result=compiler.compileRiftPlusPlusCoreV1(source);return execute(result.executable,path);
+  }
+  if(sub==="exec"){
+    const path=execPath(args[0]);return execute(await read(path),path);
+  }
+  throw new Error(`unknown riftpp command: ${sub}\n${usage}`);
+}
 async function runShell(raw,print,state,context={}){
   const batchMatch=String(raw||"").trim().match(/^batch(?:\s+(--dry-run))?\s+([\s\S]+)$/i);
   if(batchMatch){
@@ -837,7 +890,8 @@ async function runShell(raw,print,state,context={}){
   if(cmd==="riftllm-agent"){if(!window.RiftLlmBridge?.run)throw new Error("RiftLLM bridge is not loaded");return window.RiftLlmBridge.run(args,print,{cwd:state.cwd});}
   if(cmd==="chat")return runChatShell(args,print,state);
   if(cmd==="devlab")return runDevLabShell(args,print,state);
-  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  drives  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\nriftos-agent help                 RiftOS-self local Android UI + Dev Lab agent\nriftos-agent devlab help          structured Dev Lab controller\nriftllm-agent help                 standalone RiftLLM Dev API bridge\ndevlab help                       isolated live test/snapshot/local-workspace publish\nchat help                         local .riftchat development-session handoffs\nrift help                         local-first repo/vault/build/memory platform\ngit help\n\nDrives: C:/ = system/programs/toolchains · D:/ = user/workspace/data\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
+  if(cmd==="riftpp")return runRiftppShell(args,print,state);
+  if(cmd==="help")return print(`RiftShell / Android Native\nhelp  sysinfo  drives  mount  umount  df  ps  kill <pid>  apps  permissions  native\npwd  cd <dir>  home  workspace [cd|info|ls|history|rollback|status|push]\nworkspace status | workspace push [message]  compare or publish RiftOS-main to GitHub main\nls [-R] [path]  tree [path]  stat <path>  cat <file>  head <file>  tail <file>\nwrite <file> <text>  touch <file>  mkdir <dir>  cp <from> <to>  mv <from> <to>  rm <path>\nzip <from> <archive.zip>  unzip <archive.zip> <folder>\nbatch <command> ; <command>       atomic local batch\nbatch --dry-run <commands>        validate without changes\nopen <app>  browser [url]  clear  uptime  version\nvortex help                       live Vortex3D debug bridge\nvortex-agent help                 Vortex-only local Android UI agent\nriftos-agent help                 RiftOS-self local Android UI + Dev Lab agent\nriftos-agent devlab help          structured Dev Lab controller\nriftllm-agent help                 standalone RiftLLM Dev API bridge\ndevlab help                       isolated live test/snapshot/local-workspace publish\nchat help                         local .riftchat development-session handoffs\nriftpp help                       Rift++ Core compile/check/run/inspect shell\nrift help                         local-first repo/vault/build/memory platform\ngit help\n\nDrives: C:/ = system/programs/toolchains · D:/ = user/workspace/data\nRoot shortcuts: cd home | workspace | downloads | documents | mounts | apps | system`);
   if(cmd==="sysinfo")return print(JSON.stringify(await core.kernel.info(),null,2));
   if(cmd==="drives")return print((core.fs.volumes?.()||[]).map(volume=>`${volume.letter}  ${volume.label}  /${volume.letter}`).join("\n")||"(no Rift volumes)");
   if(cmd==="mount"){if((args[0]||"").toLowerCase()==="native"){const mount=await core.fs.mountNativeDirectory();return print(`mounted ${mount.path}`);}return print(core.kernel.mounts().map(m=>`${m.path}\t${m.type}\t${m.mode}\t${m.label}`).join("\n"));}
