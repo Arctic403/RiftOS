@@ -15,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "0.11.9-relay-client"
+        versionName = "0.11.10-relay-client"
         buildConfigField("String", "RIFT_SOURCE_SHA", "\"$riftSourceSha\"")
         buildConfigField("String", "RIFT_BUILD_RUN_ID", "\"$riftBuildRunId\"")
         buildConfigField("String", "RIFT_BUILD_RUN_NUMBER", "\"$riftBuildRunNumber\"")
