@@ -66,6 +66,8 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftNativeShell.kt",
         "src/main/java/com/riftos/app/RiftExperimentalCli.kt",
         "src/main/java/com/riftos/app/RiftPlusPlusV0.kt",
+        "src/main/java/com/riftos/app/RiftIrV1.kt",
+        "src/main/java/com/riftos/app/RiftIrCliV1.kt",
         "src/main/java/com/riftos/app/RiftSwarmCoordinatorV0.kt",
         "src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt",
         "src/main/java/com/riftos/app/RiftRendererCrashGuard.kt",

@@ -17,6 +17,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-riftllm-corpus.mjs` — executes V1/V2 local RiftCorpus synth/build helpers against an in-memory RiftFS mock and verifies deterministic 3 MiB shards, shard-set hashes, V2 compositional identity, sharded train/full-heldout composition, bounded Android benchmark output, private-path confinement and unfinished-Rift-source rejection.
 - `test-rift-text-encoder-task.mjs` — locks the experimental fixed-path V1/V2 native RiftTokenizer contract, pinned configs/sources, V2 24-byte learned-token cap, async train/status/cancel surface, optimized-batch parity hooks, provenance, streaming status, transactional artifact/manifest recovery, 32K arithmetic and no-generic-process boundary.
 - `test-rift-plus-plus-v0.mjs` — locks Rift++ V0 non-executable Swarm IR, workspace-only source confinement, finite role/capability policy, preview-only BrainBackend coordinator and no-new-MCP-tool boundary.
+- `test-rift-ir-v1.mjs` — locks the language-independent `rift.ir/1` swarm-core schema, defense-in-depth graph/policy validation, resource accounting, inspect-only execution policy, experimental CLI adapter and no-new-MCP-tool boundary.
 - `test-rift-app-import.mjs` — `.rift` package import/validation.
 
 When behavior intentionally changes, update the owning subsystem code, README and focused test together. Do not weaken a validator only to make an unintended regression pass.

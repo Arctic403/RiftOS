@@ -75,6 +75,8 @@ V0 limits declarations to 64, list values to 64 entries, context budgets to 65,5
 
 Successful compilation returns `rift.swarm-ir/0` containing source SHA-256, backends, brains, agents, swarms, flows, deterministic schedule order and tasks. The IR explicitly carries `experimental=true` and `executable=false`.
 
+`rift.swarm-ir/0` remains the V0 frontend contract. The separate Rift IR V1 core may lower it into language-independent `rift.ir/1` profile `swarm-core`; this lowering does not make the source executable and does not replace V0 compatibility. See `RIFT_IR_V1.md`.
+
 `RiftSwarmCoordinatorV0.preview(...)` consumes this IR and emits `rift.swarm-preview/0`. It resolves a task, its swarm, lead brain/backend and ordered specialist assignments. Preview never invokes a backend or tool.
 
 ## BrainBackend interface

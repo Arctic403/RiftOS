@@ -10,7 +10,10 @@ V1 is deliberately conservative. The model backend is **not connected**. Its bra
 
 ## Source ownership
 
-- `android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt` — process-local manual gate, role catalog, planning scaffold, tokenizer command gate and the one router directly above `RiftOsLocalAgent`.
+- `android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt` — process-local manual gate, role catalog, planning scaffold, Rift++/Rift IR command gates, tokenizer command gate and the one router directly above `RiftOsLocalAgent`.
+- `android/app/src/main/java/com/riftos/app/RiftPlusPlusV0.kt` — bounded Rift++ V0 frontend and workspace compiler that continues to emit `rift.swarm-ir/0`.
+- `android/app/src/main/java/com/riftos/app/RiftIrV1.kt` — pure language-independent `rift.ir/1` swarm-core lowering, defense-in-depth validator, deterministic scheduler contract, resource accounting and inspection surface.
+- `android/app/src/main/java/com/riftos/app/RiftIrCliV1.kt` — thin experimental CLI adapter from workspace Rift++ source to Rift IR compile/validate/inspect; no run/execution command.
 - `android/app/src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt` — fixed native Kotlin RiftTokenizer V1 task executor. It reads the exact validated RiftCorpus training split plus pinned A/B configs and writes only the two ignored tokenizer artifacts/manifests.
 - `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — exposes the native `rift-cli` command family without creating a new MCP tool.
 - `android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt` — sends only `riftos.agent` through `RiftAgentRouter`; other native routes are unchanged.
@@ -36,6 +39,14 @@ V0 recognizes `backend`, `brain`, `agent`, `swarm`, and `task` declarations. It 
 
 Commands are `rift-cli riftpp help|sample|validate|compile|preview`. `help`/`sample` are descriptive; validate/compile/preview require the same explicit process-local experimental enable as the rest of the CLI.
 
+## Rift IR V1 core
+
+Rift IR V1 is the new language-independent runtime-facing spine. Its full contract is [`RIFT_IR_V1.md`](RIFT_IR_V1.md). Rift++ V0 still emits `rift.swarm-ir/0`; `RiftIrV1.lowerFromSwarmIr(...)` then independently revalidates and lowers that representation into `rift.ir/1` with profile `swarm-core`. This preserves V0 compatibility while preventing the future coordinator from depending on parser-private structures.
+
+The V1 IR normalizes backend/brain/agent identity, swarm task graphs, canonical deterministic schedules, task validation gates, capability policy and declared context/resource totals. It recomputes topological schedules and rejects mismatches rather than trusting the frontend. The IR execution policy is deliberately `inspect-only`, `defaultConcurrency=1`, with backend invocation, tool invocation, Local Agent invocation and mutation all false.
+
+The minimal development commands are `rift-cli ir help|compile|validate|inspect`. `help` is descriptive; the other commands require the process-local experimental enable. There is intentionally no `run` command until the separate V1 coordinator/executor phase is implemented and promoted.
+
 ## Brain / swarm boundary
 
 The role graph models a development team, but roles are logical coordination contexts rather than separate always-running models. The intended future backend can let one model serve multiple specialist contexts or can dispatch to multiple backends without changing the CLI command/execution layer.
@@ -50,7 +61,7 @@ V1 `rift-cli plan <goal>` emits the original built-in structured task graph only
 - No relay protocol change is required.
 - The experiment must never expose raw Android/Linux shell execution, arbitrary package control, ADB, `ProcessBuilder`, or `Runtime.exec`.
 - Existing `RiftOsLocalAgent` package scope, password restrictions, semantic ambiguity checks, gesture bounds and user-granted Accessibility boundary remain authoritative.
-- Planning cannot execute or mutate anything in V1. Rift++ V0 compile/preview is also non-executable and cannot invoke a brain backend or tool. Tokenizer tasks are a separate explicit command family and cannot be reached through `plan` or Rift++.
+- Planning cannot execute or mutate anything in V1. Rift++ V0 compile/preview is also non-executable and cannot invoke a brain backend or tool. Rift IR V1 is `inspect-only` and cannot invoke a brain backend, tool, Local Agent or mutation authority. Tokenizer tasks are a separate explicit command family and cannot be reached through `plan`, Rift++, or Rift IR.
 - Rift++ source is confined to `workspace/`, bounded to 128 KiB, finite grammar/capabilities only, and compiles to `rift.swarm-ir/0` with `executable=false`.
 - `review` and `security` Rift++ roles are compile-time read-only; cyclic flow graphs, unknown references/capabilities, permission overlap and unmet task-role requirements are rejected.
 - Tokenizer tasks require the process-local experimental enable, use fixed paths/config hashes, and may write only the pinned ignored tokenizer outputs; at most one background training job may run, and disabling the CLI requests its cancellation.
@@ -66,6 +77,7 @@ V1 `rift-cli plan <goal>` emits the original built-in structured task graph only
 - MCP tool count changes after this subsystem changes -> the experiment leaked above the Local Agent/shell boundary.
 - `rift-cli plan` changes files, Git state, UI, builds or device state -> planning/execution separation regressed.
 - Rift++ compile/preview invokes a backend, tool, Local Agent, Git/build action or writes a workspace file -> V0 non-execution boundary regressed.
+- Rift IR compile/validate/inspect invokes a backend, tool, Local Agent or mutation; accepts a tampered/noncanonical schedule; misstates resource totals; or gives read-only roles mutation authority -> IR spine regressed.
 - Rift++ accepts traversal/outside-workspace scripts, generic code execution, cyclic swarm flow, unknown capabilities or mutation permissions on `review`/`security` -> compiler confinement/policy regressed.
 - `rift-cli tokenizer ...` works while the experimental switch is disabled -> manual gate regressed.
 - tokenizer task accepts a caller-selected script/config/output path -> fixed-task confinement regressed.
@@ -85,6 +97,7 @@ V1 `rift-cli plan <goal>` emits the original built-in structured task graph only
 
 Manual mode, team graph, planning scaffold, Rift++ command gate, tokenizer gate or router behavior -> `RiftExperimentalCli.kt`.
 Rift++ V0 lexer/parser/semantic compiler/Swarm IR -> `RiftPlusPlusV0.kt` + `RIFT_PLUS_PLUS_V0.md`.
+Rift IR V1 lowering/validation/resource/policy/schedule contract -> `RiftIrV1.kt` + `RIFT_IR_V1.md`; CLI adapter only -> `RiftIrCliV1.kt`.
 Brain backend contract and preview coordinator -> `RiftSwarmCoordinatorV0.kt`.
 Tokenizer V1/V2 fixed-path training/status/self-test implementation -> `RiftTextEncoderTaskRunner.kt`.
 Native `rift-cli` parsing/visibility -> `RiftNativeShell.kt`.
@@ -94,6 +107,6 @@ Batch rejection -> `src/riftshell-batch.js`.
 
 ## Validation
 
-Run `npm run check`. Source validation must prove that the subsystem defaults to legacy mode, uses a process-local volatile switch, exposes no new MCP tool, keeps the dispatcher seam to one router, delegates to the existing Local Agent, contains no raw process/shell APIs, labels itself experimental, and is rejected by atomic batch. `scripts/test-rift-plus-plus-v0.mjs` locks the V0 non-executable Swarm IR schema, workspace-only source confinement, finite grammar/capability vocabulary, read-only reviewer/security policy, acyclic flow/schedule behavior, BrainBackend preview-only boundary, sample program and absence of a new MCP tool. `scripts/test-rift-text-encoder-task.mjs` additionally locks the 32K artifact constants, exact candidate/config hashes, fixed paths, structural feasibility guard, asynchronous job/cancel surface, optimized-batch parity hooks, exact-input provenance, streaming status, staged/synced transactional pair publication + recovery, and absence of generic process/Python execution. Any Kotlin change also requires the normal Android APK build before promotion.
+Run `npm run check`. Source validation must prove that the subsystem defaults to legacy mode, uses a process-local volatile switch, exposes no new MCP tool, keeps the dispatcher seam to one router, delegates to the existing Local Agent, contains no raw process/shell APIs, labels itself experimental, and is rejected by atomic batch. `scripts/test-rift-plus-plus-v0.mjs` locks the V0 non-executable Swarm IR schema, workspace-only source confinement, finite grammar/capability vocabulary, read-only reviewer/security policy, acyclic flow/schedule behavior, BrainBackend preview-only boundary, sample program and absence of a new MCP tool. `scripts/test-rift-ir-v1.mjs` locks the `rift.ir/1` schema/profile, V0 lowering compatibility, canonical schedule recomputation, independent capability policy checks, context/resource accounting, inspect-only execution policy, experimental CLI adapter and absence of a new MCP tool. `scripts/test-rift-text-encoder-task.mjs` additionally locks the 32K artifact constants, exact candidate/config hashes, fixed paths, structural feasibility guard, asynchronous job/cancel surface, optimized-batch parity hooks, exact-input provenance, streaming status, staged/synced transactional pair publication + recovery, and absence of generic process/Python execution. Any Kotlin change also requires the normal Android APK build before promotion.
 
 Manual acceptance while the experiment is still unpromoted should cover `rift-cli status`, `team`, `architecture`, explicit enable/disable, non-mutating `plan`, then `rift-cli tokenizer self-test` and `status`. Full V1 `train-a`/`train-b` or V2 `train-a2`/`train-b2` should run only after the intended corpus source satisfies the lower-bound budget; poll with `train-status`, verify the shell remains responsive, and test `train-cancel`/CLI disable before trusting long runs. Actual trainer exhaustion can still require more pair diversity beyond that mathematical minimum.

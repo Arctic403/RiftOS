@@ -82,8 +82,7 @@ object RiftPlusPlusV0 {
             "validate", "compile", "preview" -> {
                 require(args.size >= 2) { "usage: rift-cli riftpp $action <workspace-script.riftpp>${if (action == "preview") " [task-name]" else ""}" }
                 require(args.size <= if (action == "preview") 3 else 2) { "too many Rift++ arguments" }
-                val loaded = loadWorkspaceSource(context, args[1])
-                val ir = compile(loaded.second, loaded.first)
+                val ir = compileWorkspace(context, args[1])
                 when (action) {
                     "validate" -> validationSummary(ir)
                     "preview" -> RiftSwarmCoordinatorV0.preview(ir, args.getOrNull(2))
@@ -92,6 +91,11 @@ object RiftPlusPlusV0 {
             }
             else -> throw IllegalArgumentException("unknown Rift++ V0 command: $action")
         }
+    }
+
+    fun compileWorkspace(context: Context, rawPath: String): JSONObject {
+        val loaded = loadWorkspaceSource(context, rawPath)
+        return compile(loaded.second, loaded.first)
     }
 
     fun compile(source: String, sourceName: String = "inline.riftpp"): JSONObject {

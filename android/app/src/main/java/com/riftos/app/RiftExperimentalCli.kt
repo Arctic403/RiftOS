@@ -69,6 +69,9 @@ object RiftExperimentalCli {
                     .put("flow", "MCP/Relay -> RiftShell -> manual router -> RiftCLI brain -> specialist swarm -> existing Local Agent hands")
                     .put("brainBackend", "scaffold-rule-planner")
                     .put("modelBackendConnected", false)
+                    .put("riftIrSchema", RiftIrV1.SCHEMA)
+                    .put("riftIrProfile", RiftIrV1.PROFILE)
+                    .put("riftIrExecutable", false)
                     .put("newMcpTools", 0)
                     .put("authorityWidened", false)
                     .put("persistentEnable", false)
@@ -104,6 +107,14 @@ object RiftExperimentalCli {
                     require(isEnabled()) { "EXPERIMENTAL RiftCLI is OFF. Rift++ compile/preview requires explicit process-local enable." }
                 }
                 val value = RiftPlusPlusV0.execute(context, tail)
+                result(value.toString(2), value)
+            }
+            "ir" -> {
+                val action = tail.firstOrNull()?.trim()?.lowercase().orEmpty().ifBlank { "help" }
+                if (action != "help") {
+                    require(isEnabled()) { "EXPERIMENTAL RiftCLI is OFF. Rift IR compile/validate/inspect requires explicit process-local enable." }
+                }
+                val value = RiftIrCliV1.execute(context, tail)
                 result(value.toString(2), value)
             }
             "tokenizer" -> {
@@ -188,6 +199,10 @@ object RiftExperimentalCli {
         .put("swarmRoles", roles.size)
         .put("riftPlusPlusV0", true)
         .put("swarmIrSchema", "rift.swarm-ir/0")
+        .put("riftIrV1", true)
+        .put("riftIrSchema", RiftIrV1.SCHEMA)
+        .put("riftIrProfile", RiftIrV1.PROFILE)
+        .put("riftIrExecutable", false)
         .put("brainBackendInterface", "RiftBrainBackend")
         .put("autoMutation", false)
         .put("manualTokenizerTasks", isEnabled())
@@ -210,6 +225,8 @@ object RiftExperimentalCli {
         rift-cli plan <goal>     # planning scaffold only; never executes mutations
         rift-cli riftpp help|sample|validate|compile|preview
                                 # Rift++ V0 declarative swarm DSL -> non-executable Swarm IR
+        rift-cli ir help|compile|validate|inspect
+                                # Rift IR V1 language-independent inspect-only core; no run/execution command
         rift-cli tokenizer status|self-test|train-a|train-b|train-a2|train-b2|train-status|train-cancel
                                 # manual fixed-path RiftTokenizer V1/V2 tasks; training runs as one cancellable background job
 

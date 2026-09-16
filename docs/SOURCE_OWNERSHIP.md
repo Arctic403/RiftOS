@@ -76,6 +76,8 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftPlusPlusV0.kt` | `docs/systems/experimental-cli/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftIrV1.kt` | `docs/systems/experimental-cli/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftIrCliV1.kt` | `docs/systems/experimental-cli/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftSwarmCoordinatorV0.kt` | `docs/systems/experimental-cli/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellBridge.kt` | `docs/systems/shell/README.md` + `docs/systems/dev-lab/README.md` |
@@ -135,6 +137,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `scripts/test-riftllm-corpus.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/test-rift-text-encoder-task.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-plus-plus-v0.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
+| `scripts/test-rift-ir-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 
 ## Rule for new source
 

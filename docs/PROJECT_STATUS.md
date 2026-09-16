@@ -81,6 +81,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - It is OFF on every process start; enable state is not persisted and requires the exact manual confirmation command.
 - The current brain backend is a non-mutating rule-based planning scaffold with a logical development-team role graph. No model backend is connected yet.
 - Rift++ V0 adds a bounded declarative `backend`/`brain`/`agent`/`swarm`/`task` language that compiles workspace-only scripts into non-executable `rift.swarm-ir/0`; `RiftSwarmCoordinatorV0` can preview deterministic assignments through the new `RiftBrainBackend` interface contract without invoking a backend or tool.
+- Rift IR V1 adds the language-independent `rift.ir/1` `swarm-core` contract. Rift++ V0 lowers into it without replacing `rift.swarm-ir/0`; the IR independently revalidates graph schedules, capability policy, task gates and declared context/resource totals. Its execution mode is `inspect-only`, single-concurrency by default, with backend/tool/Local-Agent invocation and mutation all disabled.
 - When manually enabled, the only live Local Agent behavior is compatibility pass-through through a single router directly above the existing fixed-scope `RiftOsLocalAgent`; no package authority or Android permission is widened.
 - It adds zero MCP tools, no relay protocol, no raw Android shell, and no autonomous writes. It is not approved for production/autonomous development until explicitly promoted by the project owner.
 
