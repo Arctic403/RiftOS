@@ -108,7 +108,7 @@ class RiftNativeDispatcher(
         }
         val worker = when {
             method in setOf("fs.copy", "fs.move", "fs.zip", "fs.unzip") -> transferExecutor
-            method in setOf("vortex.agent", "riftos.agent", "riftllm.dev") -> agentExecutor
+            method in setOf("vortex.agent", "riftos.agent", "riftllm.dev", "riftllm.train-data") -> agentExecutor
             else -> executor
         }
         worker.execute {
@@ -227,6 +227,7 @@ class RiftNativeDispatcher(
         "vortex.agent" -> RiftVortexLocalAgent.execute(activity.applicationContext, args)
         "riftos.agent" -> RiftAgentRouter.execute(activity, args)
         "riftllm.dev" -> riftLlmDev.execute(args)
+        "riftllm.train-data" -> RiftTrainDataTaskRunner.execute(activity.applicationContext, riftLlmDev, args)
         "chat.handoff" -> RiftChatHandoff.execute(riftRoot, args)
         "device.vibrate" -> vibrate(args.optLong("milliseconds", 40L))
         "clipboard.read", "clipboard.readText" -> clipboardRead()

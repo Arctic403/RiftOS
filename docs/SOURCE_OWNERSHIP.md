@@ -80,6 +80,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftIrCliV1.kt` | `docs/systems/experimental-cli/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftSwarmCoordinatorV0.kt` | `docs/systems/experimental-cli/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellBridge.kt` | `docs/systems/shell/README.md` + `docs/systems/dev-lab/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftSystemDump.kt` | `docs/systems/diagnostics/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` |
@@ -129,6 +130,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `scripts/test-rift-local-platform.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftrepo/README.md` + `docs/systems/riftvault/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/riftmemory/README.md` |
 | `scripts/test-riftllm-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/test-riftllm-text-encoding-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
+| `scripts/test-riftllm-training-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/validate-rift-wiring.mjs` | `docs/systems/build-validation/README.md` |
 | `scripts/validate-rift-transport.mjs` | `docs/systems/build-validation/README.md` |
 | `scripts/validate-rift-docs.mjs` | `docs/systems/build-validation/README.md` |

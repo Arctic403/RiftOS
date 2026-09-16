@@ -91,6 +91,7 @@ class RiftNativeBridge extends EventTarget{
     if(method==="vortex.session")return 95*1000;
     if(method==="vortex.agent")return 15*1000;
     if(method==="riftos.agent")return 90*1000;
+    if(method==="riftllm.train-data")return 2*60*1000;
     if(method==="chat.handoff")return 55*1000;
     return this.timeout;
   }

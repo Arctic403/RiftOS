@@ -38,6 +38,12 @@ class RiftLlmDevClient(context: Context) {
             "text_encoding_commit" to "text_encoding_commit",
             "text_encoding_start" to "text_encoding_start",
             "text_encoding_status" to "text_encoding_status",
+            "train_data_begin" to "train_data_begin",
+            "train_data_append" to "train_data_append",
+            "train_data_commit" to "train_data_commit",
+            "train_data_status" to "train_data_status",
+            "train_canary_start" to "train_canary_start",
+            "train_canary_status" to "train_canary_status",
             "ack_publish" to "ack_publish"
         )
     }

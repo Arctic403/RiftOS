@@ -436,11 +436,19 @@ async function textEncodingEval(candidateValue,laneValue="heldout"){
   return {candidateId:candidate.candidateId,corpusLane:String(laneValue||"heldout"),artifact,heldout,job};
 }
 async function textEncodingStatus(){return native("text_encoding_status",{});}
+async function trainDataNative(op){return core.native.call("riftllm.train-data",{op});}
+async function trainDataStatus(){return trainDataNative("status");}
+async function trainDataBuild(){return trainDataNative("build");}
+async function trainDataBuildStatus(){return trainDataNative("build-status");}
+async function trainDataUpload(){return trainDataNative("upload");}
+async function trainDataRemoteStatus(){return trainDataNative("remote-status");}
+async function trainCanaryStart(){return trainDataNative("canary-start");}
+async function trainCanaryStatus(){return trainDataNative("canary-status");}
 
 async function run(args,print=console.log,context={}){
   const list=[...args],cmd=(list.shift()||"help").toLowerCase();
   const show=value=>{print(typeof value==="string"?value:JSON.stringify(value,null,2));return value;};
-  if(cmd==="help")return print(`RiftLLM standalone Dev API bridge\nriftllm-agent status\nriftllm-agent pair\nriftllm-agent unpair\nriftllm-agent sync <project-path>\nriftllm-agent sync-missing <project-path>\nriftllm-agent load <project-path>\nriftllm-agent staged\nriftllm-agent stage <project-path> <text>\nriftllm-agent stage-file <project-path> <riftfs-source-file>\nriftllm-agent delete <project-path>\nriftllm-agent unstage <project-path>\nriftllm-agent reset\nriftllm-agent snapshot [note]\nriftllm-agent snapshots [limit]\nriftllm-agent get-snapshot [id|latest]\nriftllm-agent benchmarks [limit]\nriftllm-agent benchmark [record-id|latest]\nriftllm-agent text-encoding-eval <a|b|a2|b2> [heldout|challenge]\nriftllm-agent text-encoding-status\nriftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]\nriftllm-agent corpus-status [output-dir]\nriftllm-agent corpus-synth-v2 [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build-v2 [heldout-permyriad] [seed]\nriftllm-agent corpus-status-v2\nriftllm-agent preview [id|latest]\nriftllm-agent publish [id|latest]\nriftllm-agent ack <id|latest> <workspace-history-id>\nCorpus commands are local-only and confined to /workspace/RiftLLM/tokenizer/private. Text-encoding evaluation is fixed to reviewed A/B/A2/B2 artifacts and heldout/challenge lanes. Pairing token is entered only in the local secure prompt, never as a shell argument.`);
+  if(cmd==="help")return print(`RiftLLM standalone Dev API bridge\nriftllm-agent status\nriftllm-agent pair\nriftllm-agent unpair\nriftllm-agent sync <project-path>\nriftllm-agent sync-missing <project-path>\nriftllm-agent load <project-path>\nriftllm-agent staged\nriftllm-agent stage <project-path> <text>\nriftllm-agent stage-file <project-path> <riftfs-source-file>\nriftllm-agent delete <project-path>\nriftllm-agent unstage <project-path>\nriftllm-agent reset\nriftllm-agent snapshot [note]\nriftllm-agent snapshots [limit]\nriftllm-agent get-snapshot [id|latest]\nriftllm-agent benchmarks [limit]\nriftllm-agent benchmark [record-id|latest]\nriftllm-agent text-encoding-eval <a|b|a2|b2> [heldout|challenge]\nriftllm-agent text-encoding-status\nriftllm-agent train-data-status\nriftllm-agent train-data-build\nriftllm-agent train-data-build-status\nriftllm-agent train-data-upload\nriftllm-agent train-data-remote-status\nriftllm-agent train-canary-start\nriftllm-agent train-canary-status\nriftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]\nriftllm-agent corpus-status [output-dir]\nriftllm-agent corpus-synth-v2 [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build-v2 [heldout-permyriad] [seed]\nriftllm-agent corpus-status-v2\nriftllm-agent preview [id|latest]\nriftllm-agent publish [id|latest]\nriftllm-agent ack <id|latest> <workspace-history-id>\nCorpus commands are local-only and confined to /workspace/RiftLLM/tokenizer/private. Text-encoding evaluation is fixed to reviewed A/B/A2/B2 artifacts and heldout/challenge lanes. Pairing token is entered only in the local secure prompt, never as a shell argument.`);
   if(cmd==="status")return show(await status());
   if(cmd==="pair"){if(list.length)throw new Error("usage: riftllm-agent pair (enter the token only in the secure local prompt)");return show(await pair());}
   if(cmd==="unpair"){if(list.length)throw new Error("usage: riftllm-agent unpair");return show(await unpair());}
@@ -462,6 +470,13 @@ async function run(args,print=console.log,context={}){
   if(cmd==="benchmark")return show(await getBenchmark(list[0]||"latest"));
   if(cmd==="text-encoding-eval"){if(list.length<1||list.length>2)throw new Error("usage: riftllm-agent text-encoding-eval <a|b|a2|b2> [heldout|challenge]");return show(await textEncodingEval(list[0],list[1]||"heldout"));}
   if(cmd==="text-encoding-status"){if(list.length)throw new Error("usage: riftllm-agent text-encoding-status");return show(await textEncodingStatus());}
+  if(cmd==="train-data-status"){if(list.length)throw new Error("usage: riftllm-agent train-data-status");return show(await trainDataStatus());}
+  if(cmd==="train-data-build"){if(list.length)throw new Error("usage: riftllm-agent train-data-build");return show(await trainDataBuild());}
+  if(cmd==="train-data-build-status"){if(list.length)throw new Error("usage: riftllm-agent train-data-build-status");return show(await trainDataBuildStatus());}
+  if(cmd==="train-data-upload"){if(list.length)throw new Error("usage: riftllm-agent train-data-upload");return show(await trainDataUpload());}
+  if(cmd==="train-data-remote-status"){if(list.length)throw new Error("usage: riftllm-agent train-data-remote-status");return show(await trainDataRemoteStatus());}
+  if(cmd==="train-canary-start"){if(list.length)throw new Error("usage: riftllm-agent train-canary-start");return show(await trainCanaryStart());}
+  if(cmd==="train-canary-status"){if(list.length)throw new Error("usage: riftllm-agent train-canary-status");return show(await trainCanaryStatus());}
   if(cmd==="corpus-synth"){
     if(list.length>4)throw new Error("usage: riftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]");
     const base=list[0]||CORPUS_DEFAULT_INPUT,output=list[1]||CORPUS_SYNTH_OUTPUT,manifest=list[2]||CORPUS_SYNTH_MANIFEST,count=list[3]===undefined?CORPUS_SYNTH_DEFAULT_COUNT:Number(list[3]);
@@ -490,4 +505,4 @@ async function run(args,print=console.log,context={}){
   throw new Error(`unknown riftllm-agent command: ${cmd}`);
 }
 
-globalThis.RiftLlmBridge=Object.freeze({version:2,status,pair,unpair,sync,syncMissing,load,listStaged,stage,stageDelete,unstage,reset,snapshot,listSnapshots,getSnapshot,listBenchmarks,getBenchmark,textEncodingEval,textEncodingStatus,corpusSynth,corpusSynthV2,corpusBuild,corpusStatus,preview,publish,acknowledge,run});
+globalThis.RiftLlmBridge=Object.freeze({version:3,status,pair,unpair,sync,syncMissing,load,listStaged,stage,stageDelete,unstage,reset,snapshot,listSnapshots,getSnapshot,listBenchmarks,getBenchmark,textEncodingEval,textEncodingStatus,trainDataStatus,trainDataBuild,trainDataBuildStatus,trainDataUpload,trainDataRemoteStatus,trainCanaryStart,trainCanaryStatus,corpusSynth,corpusSynthV2,corpusBuild,corpusStatus,preview,publish,acknowledge,run});
