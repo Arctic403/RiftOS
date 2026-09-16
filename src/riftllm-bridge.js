@@ -55,6 +55,12 @@ const CORPUS_SYNTH_DEFAULT_COUNT=12000;
 const CORPUS_SYNTH_MAX_COUNT=20000;
 const CORPUS_SYNTH_OUTPUT=`${CORPUS_ROOT}/synthesized`;
 const CORPUS_SYNTH_MANIFEST=`${CORPUS_ROOT}/synth-manifest.json`;
+const TEXT_ENCODING_CHUNK_BYTES=192*1024;
+const TEXT_ENCODING_HELDOUT=`${CORPUS_DEFAULT_OUTPUT}/heldout.tsv`;
+const TEXT_ENCODING_CANDIDATES=Object.freeze({
+  a:{candidateId:"rift-token-a-frequency-v1",path:"/workspace/RiftLLM/tokenizer/output/rift-token-a-frequency-v1.riftbpe"},
+  b:{candidateId:"rift-token-b-balanced-v1",path:"/workspace/RiftLLM/tokenizer/output/rift-token-b-balanced-v1.riftbpe"}
+});
 
 function sortedJsonValue(value){
   if(Array.isArray(value))return value.map(sortedJsonValue);
@@ -332,10 +338,45 @@ async function publish(id="latest"){
   }
 }
 
+function textEncodingCandidate(value){
+  const key=String(value||"").trim().toLowerCase();
+  if(key==="a"||key==="rift-token-a-frequency-v1")return TEXT_ENCODING_CANDIDATES.a;
+  if(key==="b"||key==="rift-token-b-balanced-v1")return TEXT_ENCODING_CANDIDATES.b;
+  throw new Error("Text Encoding Lab candidate must be a or b");
+}
+function base64Bytes(bytes){
+  if(typeof btoa!=="function")throw new Error("Base64 encoder is unavailable in this RiftOS runtime");
+  let binary="";for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,Math.min(bytes.length,offset+0x8000)));
+  return btoa(binary);
+}
+async function uploadTextEncodingSlot(slot,path,maxBytes){
+  const stat=await core.fs.stat(path);if(!stat||stat.kind!=="file")throw new Error(`Text Encoding Lab ${slot} input is missing: ${path}`);
+  const text=await core.fs.readText(path);if(text==null)throw new Error(`Could not read Text Encoding Lab ${slot} input: ${path}`);
+  const bytes=utf8.encode(String(text)),sha256=await sha256Text(text);
+  if(bytes.byteLength<1||bytes.byteLength>maxBytes)throw new Error(`Text Encoding Lab ${slot} input is out of bounds: ${bytes.byteLength} bytes`);
+  const begin=await native("text_encoding_begin",{slot,totalBytes:bytes.byteLength,sha256});
+  if(Number(begin?.maxChunkBytes)!==TEXT_ENCODING_CHUNK_BYTES)throw new Error("RiftLLM Text Encoding Lab chunk contract mismatch");
+  for(let offset=0;offset<bytes.byteLength;offset+=TEXT_ENCODING_CHUNK_BYTES){
+    const end=Math.min(bytes.byteLength,offset+TEXT_ENCODING_CHUNK_BYTES),chunk=bytes.subarray(offset,end);
+    const appended=await native("text_encoding_append",{slot,offset,dataBase64:base64Bytes(chunk)});
+    if(Number(appended?.receivedBytes)!==end)throw new Error(`RiftLLM ${slot} upload acknowledgement drifted at byte ${offset}`);
+  }
+  const committed=await native("text_encoding_commit",{slot});
+  if(committed?.committed!==true||String(committed?.sha256||"").toLowerCase()!==sha256)throw new Error(`RiftLLM ${slot} upload commit verification failed`);
+  return {slot,path,bytes:bytes.byteLength,sha256};
+}
+async function textEncodingEval(candidateValue){
+  const candidate=textEncodingCandidate(candidateValue),artifact=await uploadTextEncodingSlot("artifact",candidate.path,4*1024*1024),heldout=await uploadTextEncodingSlot("heldout",TEXT_ENCODING_HELDOUT,8*1024*1024);
+  const job=await native("text_encoding_start",{artifactSha256:artifact.sha256,corpusSha256:heldout.sha256,expectedCandidateId:candidate.candidateId});
+  if(String(job?.artifactSha256||"")!==artifact.sha256||String(job?.corpusSha256||"")!==heldout.sha256||String(job?.expectedCandidateId||"")!==candidate.candidateId)throw new Error("RiftLLM Text Encoding Lab start provenance mismatch");
+  return {candidateId:candidate.candidateId,artifact,heldout,job};
+}
+async function textEncodingStatus(){return native("text_encoding_status",{});}
+
 async function run(args,print=console.log,context={}){
   const list=[...args],cmd=(list.shift()||"help").toLowerCase();
   const show=value=>{print(typeof value==="string"?value:JSON.stringify(value,null,2));return value;};
-  if(cmd==="help")return print(`RiftLLM standalone Dev API bridge\nriftllm-agent status\nriftllm-agent pair\nriftllm-agent unpair\nriftllm-agent sync <project-path>\nriftllm-agent sync-missing <project-path>\nriftllm-agent load <project-path>\nriftllm-agent staged\nriftllm-agent stage <project-path> <text>\nriftllm-agent stage-file <project-path> <riftfs-source-file>\nriftllm-agent delete <project-path>\nriftllm-agent unstage <project-path>\nriftllm-agent reset\nriftllm-agent snapshot [note]\nriftllm-agent snapshots [limit]\nriftllm-agent get-snapshot [id|latest]\nriftllm-agent benchmarks [limit]\nriftllm-agent benchmark [record-id|latest]\nriftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]\nriftllm-agent corpus-status [output-dir]\nriftllm-agent preview [id|latest]\nriftllm-agent publish [id|latest]\nriftllm-agent ack <id|latest> <workspace-history-id>\nCorpus commands are local-only and confined to /workspace/RiftLLM/tokenizer/private. Pairing token is entered only in the local secure prompt, never as a shell argument.`);
+  if(cmd==="help")return print(`RiftLLM standalone Dev API bridge\nriftllm-agent status\nriftllm-agent pair\nriftllm-agent unpair\nriftllm-agent sync <project-path>\nriftllm-agent sync-missing <project-path>\nriftllm-agent load <project-path>\nriftllm-agent staged\nriftllm-agent stage <project-path> <text>\nriftllm-agent stage-file <project-path> <riftfs-source-file>\nriftllm-agent delete <project-path>\nriftllm-agent unstage <project-path>\nriftllm-agent reset\nriftllm-agent snapshot [note]\nriftllm-agent snapshots [limit]\nriftllm-agent get-snapshot [id|latest]\nriftllm-agent benchmarks [limit]\nriftllm-agent benchmark [record-id|latest]\nriftllm-agent text-encoding-eval <a|b>\nriftllm-agent text-encoding-status\nriftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]\nriftllm-agent corpus-build [input] [output-dir] [heldout-permyriad] [seed]\nriftllm-agent corpus-status [output-dir]\nriftllm-agent preview [id|latest]\nriftllm-agent publish [id|latest]\nriftllm-agent ack <id|latest> <workspace-history-id>\nCorpus commands are local-only and confined to /workspace/RiftLLM/tokenizer/private. Pairing token is entered only in the local secure prompt, never as a shell argument.`);
   if(cmd==="status")return show(await status());
   if(cmd==="pair"){if(list.length)throw new Error("usage: riftllm-agent pair (enter the token only in the secure local prompt)");return show(await pair());}
   if(cmd==="unpair"){if(list.length)throw new Error("usage: riftllm-agent unpair");return show(await unpair());}
@@ -355,6 +396,8 @@ async function run(args,print=console.log,context={}){
   if(cmd==="get-snapshot")return show(await getSnapshot(list[0]||"latest"));
   if(cmd==="benchmarks"){if(list[0]!==undefined&&!Number.isFinite(Number(list[0])))throw new Error("benchmark limit must be numeric");return show(await listBenchmarks(list[0]));}
   if(cmd==="benchmark")return show(await getBenchmark(list[0]||"latest"));
+  if(cmd==="text-encoding-eval"){if(list.length!==1)throw new Error("usage: riftllm-agent text-encoding-eval <a|b>");return show(await textEncodingEval(list[0]));}
+  if(cmd==="text-encoding-status"){if(list.length)throw new Error("usage: riftllm-agent text-encoding-status");return show(await textEncodingStatus());}
   if(cmd==="corpus-synth"){
     if(list.length>4)throw new Error("usage: riftllm-agent corpus-synth [base] [output] [manifest] [count-per-category]");
     const base=list[0]||CORPUS_DEFAULT_INPUT,output=list[1]||CORPUS_SYNTH_OUTPUT,manifest=list[2]||CORPUS_SYNTH_MANIFEST,count=list[3]===undefined?CORPUS_SYNTH_DEFAULT_COUNT:Number(list[3]);
@@ -372,4 +415,4 @@ async function run(args,print=console.log,context={}){
   throw new Error(`unknown riftllm-agent command: ${cmd}`);
 }
 
-globalThis.RiftLlmBridge=Object.freeze({version:1,status,pair,unpair,sync,syncMissing,load,listStaged,stage,stageDelete,unstage,reset,snapshot,listSnapshots,getSnapshot,listBenchmarks,getBenchmark,corpusSynth,corpusBuild,corpusStatus,preview,publish,acknowledge,run});
+globalThis.RiftLlmBridge=Object.freeze({version:1,status,pair,unpair,sync,syncMissing,load,listStaged,stage,stageDelete,unstage,reset,snapshot,listSnapshots,getSnapshot,listBenchmarks,getBenchmark,textEncodingEval,textEncodingStatus,corpusSynth,corpusBuild,corpusStatus,preview,publish,acknowledge,run});

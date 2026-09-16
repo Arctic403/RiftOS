@@ -33,6 +33,11 @@ class RiftLlmDevClient(context: Context) {
             "get_patch" to "get_patch",
             "list_benchmarks" to "list_benchmarks",
             "get_benchmark" to "get_benchmark",
+            "text_encoding_begin" to "text_encoding_begin",
+            "text_encoding_append" to "text_encoding_append",
+            "text_encoding_commit" to "text_encoding_commit",
+            "text_encoding_start" to "text_encoding_start",
+            "text_encoding_status" to "text_encoding_status",
             "ack_publish" to "ack_publish"
         )
     }
