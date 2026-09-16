@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { webcrypto } from 'node:crypto';
+import { createHash, webcrypto } from 'node:crypto';
 
 globalThis.crypto ||= webcrypto;
 
@@ -26,6 +26,12 @@ const fsMock={
   async readText(path){return files.get(normalize(path))??null;},
   async writeText(path,text){path=normalize(path);ensureDir(parent(path));files.set(path,String(text));return {path,kind:'file',size:new TextEncoder().encode(String(text)).byteLength};},
   async mkdir(path){path=normalize(path);ensureDir(path);return {path,kind:'directory',size:0};},
+  async list(path,{recursive=false}={}){
+    path=normalize(path);if(!dirs.has(path))throw new Error(`missing list directory ${path}`);const prefix=path==='/'?'/':path+'/';const rows=[];
+    for(const dir of [...dirs].sort()){if(dir===path||!dir.startsWith(prefix))continue;const tail=dir.slice(prefix.length);if(!recursive&&tail.includes('/'))continue;rows.push({path:dir,kind:'directory',size:0});}
+    for(const [file,text] of [...files.entries()].sort(([a],[b])=>a.localeCompare(b))){if(!file.startsWith(prefix))continue;const tail=file.slice(prefix.length);if(!recursive&&tail.includes('/'))continue;rows.push({path:file,kind:'file',size:new TextEncoder().encode(text).byteLength});}
+    return rows;
+  },
   async move(from,to,{overwrite=false}={}){
     from=normalize(from);to=normalize(to);
     const fromFile=files.has(from),fromDir=dirs.has(from);if(!fromFile&&!fromDir)throw new Error(`missing move source ${from}`);
@@ -53,6 +59,9 @@ const api=globalThis.RiftLlmBridge;
 assert.ok(api?.corpusSynth,'corpusSynth public bridge method missing');
 assert.ok(api?.corpusBuild,'corpusBuild public bridge method missing');
 assert.ok(api?.corpusStatus,'corpusStatus public bridge method missing');
+const shardVectorMaterial=`part-00000.jsonl\t3\t${'a'.repeat(64)}\npart-00001.jsonl\t5\t${'b'.repeat(64)}\n`;
+assert.equal(createHash('sha256').update(shardVectorMaterial,'utf8').digest('hex'),'23eac9b3140464bc1a798481d04a8f40fe78c7246829b8c41ccebd46db051303');
+const descriptorDigest=rows=>createHash('sha256').update([...rows].sort((a,b)=>a.path.localeCompare(b.path)).map(row=>`${row.path.split('/').pop()}\t${row.utf8Bytes}\t${row.sha256}\n`).join(''),'utf8').digest('hex');
 
 const categories=['prose','code','non_ascii'];
 const rows=[];
@@ -74,24 +83,43 @@ assert.equal(synth.generator,'rift-corpus-synthesizer-v1');
 assert.equal(synth.synthesizedCount,36);
 assert.equal(synth.totalCount,216);
 assert.deepEqual(synth.categoryCounts,{code:72,non_ascii:72,prose:72});
-assert.ok(synth.outputUtf8Bytes>0&&synth.outputUtf8Bytes<4*1024*1024);
-assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synthesized.jsonl'));
+assert.equal(synth.outputLayout,'sharded-jsonl');
+assert.equal(synth.outputHashMode,'rift-shard-set-v1');
+assert.ok(synth.outputUtf8Bytes>0);
+assert.ok(synth.outputShards.length>=1&&synth.outputShards.every(row=>row.utf8Bytes<=3*1024*1024));
+assert.ok(dirs.has('/workspace/RiftLLM/tokenizer/private/synthesized'));
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synthesized/part-00000.jsonl'));
 assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/synth-manifest.json'));
-const result=await api.corpusBuild('/workspace/RiftLLM/tokenizer/private/synthesized.jsonl',undefined,{heldoutPermyriad:5000,seed:'rift-corpus-test-seed'});
+const result=await api.corpusBuild('/workspace/RiftLLM/tokenizer/private/synthesized',undefined,{heldoutPermyriad:5000,seed:'rift-corpus-test-seed'});
 assert.equal(result.format,'rift-corpus-v1');
 assert.equal(result.sampleCount,216);
 assert.equal(result.trainCount+result.heldoutCount,216);
 assert.ok(result.trainCount>0&&result.heldoutCount>0);
 assert.equal(result.backupCleanupPending,false);
-for(const path of ['train.jsonl','heldout.jsonl','heldout.tsv','corpus-manifest.json'])assert.ok(files.has(`/workspace/RiftLLM/tokenizer/private/build/${path}`),`missing ${path}`);
+assert.equal(result.trainLayout,'sharded-jsonl');
+assert.equal(result.trainHashMode,'rift-shard-set-v1');
+assert.equal(result.heldoutLayout,'sharded-jsonl');
+assert.equal(result.heldoutHashMode,'rift-shard-set-v1');
+assert.ok(result.trainShards.length>=1&&result.trainShards.every(row=>row.utf8Bytes<=3*1024*1024));
+assert.ok(result.heldoutShards.length>=1&&result.heldoutShards.every(row=>row.utf8Bytes<=3*1024*1024));
+assert.equal(result.trainSha256,descriptorDigest(result.trainShards));
+assert.equal(result.heldoutJsonlSha256,descriptorDigest(result.heldoutShards));
+assert.ok(result.heldoutBenchmarkCount<=4096);
+assert.equal(result.heldoutBenchmarkLimits.maxUtf8Bytes,3*1024*1024);
+assert.equal(result.heldoutBenchmarkLimits.maxSampleUtf8Bytes,4*1024);
+for(const path of ['heldout.tsv','corpus-manifest.json'])assert.ok(files.has(`/workspace/RiftLLM/tokenizer/private/build/${path}`),`missing ${path}`);
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/build/train/part-00000.jsonl'));
+assert.ok(files.has('/workspace/RiftLLM/tokenizer/private/build/heldout/part-00000.jsonl'));
 const status=await api.corpusStatus();
 assert.equal(status.available,true);
 assert.equal(status.manifest.sampleCount,216);
 assert.equal(status.manifest.normalization,'identity-utf8');
 
 await assert.rejects(()=>api.corpusSynth('/workspace/RiftOS-main/private.jsonl'),/must stay under/);
+await fsMock.mkdir('/workspace/RiftLLM/tokenizer/private/base-dir');
+await assert.rejects(()=>api.corpusSynth('/workspace/RiftLLM/tokenizer/private/base-dir'),/base must be one authored JSONL file/);
 await assert.rejects(()=>api.corpusSynth(input,'/workspace/outside.jsonl'),/must stay under/);
-await assert.rejects(()=>api.corpusSynth(input,undefined,undefined,{countPerCategory:2801,seed:'rift-corpus-synth-v1-a'}),/1\.\.2800/);
+await assert.rejects(()=>api.corpusSynth(input,undefined,undefined,{countPerCategory:20001,seed:'rift-corpus-synth-v1-a'}),/1\.\.20000/);
 await assert.rejects(()=>api.corpusBuild('/workspace/RiftOS-main/private.jsonl'),/must stay under/);
 const blocked={...rows[0],id:'blocked:001',text:'blocked source sample',source_project:'RiftOS'};
 await fsMock.writeText(input,[JSON.stringify(blocked),...rows.slice(1).map(row=>JSON.stringify(row))].join('\n')+'\n');

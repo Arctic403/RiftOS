@@ -29,6 +29,10 @@ object RiftTextEncoderTaskRunner {
     private const val BYTE_TOKENS = 256
     private const val MERGE_TARGET = 32504
     private const val MAX_TRAINING_BYTES = 64L * 1024L * 1024L
+    private const val MAX_TRAINING_SHARD_BYTES = 3L * 1024L * 1024L
+    private const val MAX_TRAINING_SHARDS = 128
+    private const val SHARD_SET_ID = "rift-shard-set-v1"
+    private val SHARD_NAME_RE = Regex("[A-Za-z0-9._-]{1,96}\\.jsonl")
     private const val MAX_SAMPLE_BYTES = 16 * 1024
     private val REQUIRED_CATEGORIES = listOf("prose", "code", "non_ascii")
     private val SPECIAL_LITERALS = listOf(
@@ -70,18 +74,40 @@ object RiftTextEncoderTaskRunner {
     private data class TokenSequence(val category: String, var tokens: IntArray)
     private data class PairKey(val left: Int, val right: Int)
     private data class RankedPair(val score: Double, val rawCount: Int, val pair: PairKey)
+    private data class TrainingShard(
+        val name: String,
+        val utf8Bytes: Long,
+        val sha256: String,
+        val sampleCount: Int
+    )
+    private data class TrainingSource(
+        val layout: String,
+        val hashMode: String,
+        val sha256: String,
+        val totalBytes: Long,
+        val files: List<File>,
+        val shards: List<TrainingShard>
+    )
     private data class TrainingInput(
         val sequences: MutableList<TokenSequence>,
         val sampleCount: Int,
         val initialByteTokens: Long,
         val categoryCounts: Map<String, Int>,
-        val sourceSha256: String
+        val sourceSha256: String,
+        val sourceHashMode: String,
+        val sourceLayout: String,
+        val sourceShards: List<TrainingShard>,
+        val sourceTotalBytes: Long
     )
     private data class TrainingMetadata(
         val sampleCount: Int,
         val initialByteTokens: Long,
         val categoryCounts: Map<String, Int>,
-        val sourceSha256: String
+        val sourceSha256: String,
+        val sourceHashMode: String,
+        val sourceLayout: String,
+        val sourceShards: List<TrainingShard>,
+        val sourceTotalBytes: Long
     )
     private data class BatchResult(
         val accepted: List<PairKey>,
@@ -156,32 +182,104 @@ object RiftTextEncoderTaskRunner {
         return project
     }
 
-    private fun exactFile(root: File, relative: String, mustExist: Boolean = true): File {
+    private fun exactPath(root: File, relative: String): File {
         require(relative.isNotBlank() && !relative.startsWith('/') && !relative.contains("..")) { "invalid fixed tokenizer path" }
         val file = File(root, relative).canonicalFile
         require(file.path.startsWith(root.path + File.separator)) { "tokenizer path escaped RiftLLM project" }
+        return file
+    }
+
+    private fun exactFile(root: File, relative: String, mustExist: Boolean = true): File {
+        val file = exactPath(root, relative)
         if (mustExist) require(file.isFile) { "required tokenizer file is missing: $relative" }
         return file
     }
 
+    private fun discoverTrainingFiles(root: File): Pair<String, List<File>> {
+        val legacy = exactPath(root, "tokenizer/private/build/train.jsonl")
+        val shardDir = exactPath(root, "tokenizer/private/build/train")
+        require(!(legacy.exists() && shardDir.exists())) { "training source is ambiguous: both train.jsonl and train/ exist" }
+        if (shardDir.exists()) {
+            require(shardDir.isDirectory) { "tokenizer/private/build/train must be a directory" }
+            val files = (shardDir.listFiles() ?: throw IllegalStateException("could not list tokenizer training shards"))
+                .filter { it.isFile && it.name.lowercase().endsWith(".jsonl") }
+                .also { rows ->
+                    val invalid = rows.firstOrNull { !SHARD_NAME_RE.matches(it.name) }
+                    require(invalid == null) { "invalid tokenizer training shard name: ${invalid?.name}" }
+                }
+                .sortedBy { it.name }
+            require(files.isNotEmpty()) { "tokenizer training shard directory is empty" }
+            require(files.size <= MAX_TRAINING_SHARDS) { "tokenizer training has too many shards: ${files.size}" }
+            files.forEach { file ->
+                require(file.length() in 1..MAX_TRAINING_SHARD_BYTES) {
+                    "tokenizer training shard ${file.name} must be 1..$MAX_TRAINING_SHARD_BYTES bytes"
+                }
+            }
+            require(files.sumOf { it.length() } <= MAX_TRAINING_BYTES) { "tokenizer training shards exceed $MAX_TRAINING_BYTES total bytes" }
+            return "sharded-jsonl" to files
+        }
+        require(legacy.isFile) { "required tokenizer training source is missing: tokenizer/private/build/train or train.jsonl" }
+        require(legacy.length() in 1..MAX_TRAINING_BYTES) { "training split must be 1..$MAX_TRAINING_BYTES bytes" }
+        return "single-jsonl" to listOf(legacy)
+    }
+
+    private fun shardSetSha(shards: List<TrainingShard>): String {
+        val material = buildString {
+            shards.sortedBy { it.name }.forEach { shard ->
+                append(shard.name).append('\t').append(shard.utf8Bytes).append('\t').append(shard.sha256).append('\n')
+            }
+        }
+        return sha256Bytes(material.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun sourceSha(layout: String, shards: List<TrainingShard>): Pair<String, String> =
+        if (layout == "single-jsonl") "file-sha256" to shards.single().sha256
+        else SHARD_SET_ID to shardSetSha(shards)
+
+    private fun resolveTrainingSource(root: File): TrainingSource {
+        val (layout, files) = discoverTrainingFiles(root)
+        val shards = files.map { file -> TrainingShard(file.name, file.length(), sha256File(file), 0) }
+        val (hashMode, sha) = sourceSha(layout, shards)
+        return TrainingSource(layout, hashMode, sha, files.sumOf { it.length() }, files, shards)
+    }
+
     private fun status(context: Context): JSONObject {
         val root = projectRoot(context)
-        val trainFile = exactFile(root, "tokenizer/private/build/train.jsonl", mustExist = false)
+        val legacyTrain = exactPath(root, "tokenizer/private/build/train.jsonl")
+        val shardTrain = exactPath(root, "tokenizer/private/build/train")
         val heldoutFile = exactFile(root, "tokenizer/private/build/heldout.tsv", mustExist = false)
-        val metadata = if (trainFile.isFile) scanTrainingMetadata(trainFile) else null
+        val hasTraining = legacyTrain.isFile || shardTrain.isDirectory
+        val metadata = if (hasTraining) scanTrainingMetadata(root) else null
         val value = JSONObject()
             .put("schema", "rift.experimental-tokenizer-task/1")
             .put("experimental", true)
             .put("processExecution", false)
             .put("pythonRuntimeRequired", false)
             .put("statusLoadsTokenArrays", false)
-            .put("trainingFile", fileInfo(root, trainFile, metadata?.sourceSha256))
+            .put("trainingFile", if (legacyTrain.isFile) fileInfo(root, legacyTrain, metadata?.sourceSha256) else JSONObject.NULL)
             .put("heldoutFile", fileInfo(root, heldoutFile))
             .put("mergeTarget", MERGE_TARGET)
             .put("vocabularySize", VOCAB_SIZE)
 
         if (metadata != null) {
-            value.put("sampleCount", metadata.sampleCount)
+            val shardRows = JSONArray()
+            metadata.sourceShards.forEach { shard ->
+                val relative = if (metadata.sourceLayout == "single-jsonl") "tokenizer/private/build/train.jsonl"
+                    else "tokenizer/private/build/train/${shard.name}"
+                shardRows.put(JSONObject()
+                    .put("path", relative)
+                    .put("sampleCount", shard.sampleCount)
+                    .put("utf8Bytes", shard.utf8Bytes)
+                    .put("sha256", shard.sha256))
+            }
+            value.put("trainingSource", JSONObject()
+                    .put("layout", metadata.sourceLayout)
+                    .put("hashMode", metadata.sourceHashMode)
+                    .put("sha256", metadata.sourceSha256)
+                    .put("utf8Bytes", metadata.sourceTotalBytes)
+                    .put("shardCount", metadata.sourceShards.size)
+                    .put("shards", shardRows))
+                .put("sampleCount", metadata.sampleCount)
                 .put("initialByteTokens", metadata.initialByteTokens)
                 .put("categoryCounts", JSONObject(metadata.categoryCounts))
             val minimumBudget = metadata.sampleCount.toLong() + MERGE_TARGET.toLong()
@@ -325,14 +423,13 @@ object RiftTextEncoderTaskRunner {
 
     private fun trainCandidateBlocking(context: Context, candidate: Candidate, job: TrainingJob, cancel: AtomicBoolean): JSONObject {
         val root = projectRoot(context)
-        val trainFile = exactFile(root, "tokenizer/private/build/train.jsonl")
         val configFile = exactFile(root, candidate.configRelative)
         require(sha256File(configFile) == candidate.configFileSha256) {
             "${candidate.candidateId} config changed; update the fixed native tokenizer task only after reviewing the reference config"
         }
         validateConfig(configFile, candidate)
         ensureNotCancelled(cancel)
-        val input = loadTraining(trainFile)
+        val input = loadTraining(root)
         val minimumPairCount = 2
         val minimumBudget = input.sampleCount.toLong() + MERGE_TARGET.toLong()
         require(input.initialByteTokens >= minimumBudget) {
@@ -342,7 +439,7 @@ object RiftTextEncoderTaskRunner {
             it.sampleCount = input.sampleCount
             it.initialByteTokens = input.initialByteTokens
             it.currentTokens = input.initialByteTokens
-            it.message = "training ${candidate.candidateId} with bounded 64-merge batches"
+            it.message = "training ${candidate.candidateId} with bounded 64-merge batches from ${input.sourceShards.size} source shard(s)"
         }
 
         val merges = train(
@@ -361,19 +458,19 @@ object RiftTextEncoderTaskRunner {
         }
         ensureNotCancelled(cancel)
         require(merges.size == MERGE_TARGET) { "expected $MERGE_TARGET merges, got ${merges.size}" }
-        require(sha256File(trainFile) == input.sourceSha256) {
+        val currentSource = resolveTrainingSource(root)
+        require(currentSource.sha256 == input.sourceSha256 && currentSource.hashMode == input.sourceHashMode) {
             "training corpus changed while ${candidate.candidateId} was training; refusing to publish an artifact from a moving input"
         }
         return commitOutputPair(
             root = root,
-            trainFile = trainFile,
             candidate = candidate,
             trainingSha = input.sourceSha256,
+            trainingHashMode = input.sourceHashMode,
             merges = merges,
             cancel = cancel
         ).put("nativeTaskRunner", true)
     }
-
     private fun validateConfig(file: File, candidate: Candidate) {
         val obj = JSONObject(decodeStrictUtf8(readBounded(file, 256 * 1024L)))
         require(obj.optString("candidate_id") == candidate.candidateId) { "candidate_id mismatch" }
@@ -390,73 +487,106 @@ object RiftTextEncoderTaskRunner {
         }
     }
 
-    private fun loadTraining(file: File): TrainingInput {
-        require(file.length() in 1..MAX_TRAINING_BYTES) { "training split must be 1..$MAX_TRAINING_BYTES bytes" }
-        val sourceBytes = readBounded(file, MAX_TRAINING_BYTES)
-        val sourceSha256 = sha256Bytes(sourceBytes)
-        val text = decodeStrictUtf8(sourceBytes)
+    private fun loadTraining(root: File): TrainingInput {
+        val (layout, files) = discoverTrainingFiles(root)
         val sequences = mutableListOf<TokenSequence>()
         val categories = linkedMapOf("prose" to 0, "code" to 0, "non_ascii" to 0)
+        val shards = mutableListOf<TrainingShard>()
         var byteTokens = 0L
-        text.lineSequence().forEachIndexed { index, line ->
-            if (line.isBlank()) return@forEachIndexed
-            val obj = try { JSONObject(line) } catch (error: Throwable) {
-                throw IllegalArgumentException("line ${index + 1}: invalid training JSON: ${error.message}")
+        for (file in files) {
+            val limit = if (layout == "sharded-jsonl") MAX_TRAINING_SHARD_BYTES else MAX_TRAINING_BYTES
+            val sourceBytes = readBounded(file, limit)
+            val fileSha = sha256Bytes(sourceBytes)
+            val text = decodeStrictUtf8(sourceBytes)
+            var shardSamples = 0
+            text.lineSequence().forEachIndexed { index, line ->
+                if (line.isBlank()) return@forEachIndexed
+                val obj = try { JSONObject(line) } catch (error: Throwable) {
+                    throw IllegalArgumentException("${file.name}:${index + 1}: invalid training JSON: ${error.message}")
+                }
+                val category = obj.optString("category")
+                require(category in REQUIRED_CATEGORIES) { "${file.name}:${index + 1}: invalid category" }
+                val sample = obj.optString("text")
+                require(sample.isNotEmpty()) { "${file.name}:${index + 1}: text must be non-empty" }
+                val bytes = sample.toByteArray(Charsets.UTF_8)
+                require(bytes.size <= MAX_SAMPLE_BYTES) { "${file.name}:${index + 1}: text exceeds $MAX_SAMPLE_BYTES UTF-8 bytes" }
+                val tokens = IntArray(bytes.size) { bytes[it].toInt() and 0xff }
+                sequences += TokenSequence(category, tokens)
+                categories[category] = categories.getValue(category) + 1
+                byteTokens += bytes.size
+                shardSamples++
             }
-            val category = obj.optString("category")
-            require(category in REQUIRED_CATEGORIES) { "line ${index + 1}: invalid category" }
-            val sample = obj.optString("text")
-            require(sample.isNotEmpty()) { "line ${index + 1}: text must be non-empty" }
-            val bytes = sample.toByteArray(Charsets.UTF_8)
-            require(bytes.size <= MAX_SAMPLE_BYTES) { "line ${index + 1}: text exceeds $MAX_SAMPLE_BYTES UTF-8 bytes" }
-            val tokens = IntArray(bytes.size) { bytes[it].toInt() and 0xff }
-            sequences += TokenSequence(category, tokens)
-            categories[category] = categories.getValue(category) + 1
-            byteTokens += bytes.size
+            shards += TrainingShard(file.name, sourceBytes.size.toLong(), fileSha, shardSamples)
         }
         require(sequences.isNotEmpty()) { "training split is empty" }
         for (category in REQUIRED_CATEGORIES) require(categories.getValue(category) > 0) { "training split contains no $category samples" }
-        return TrainingInput(sequences, sequences.size, byteTokens, categories, sourceSha256)
+        val (hashMode, sourceSha256) = sourceSha(layout, shards)
+        return TrainingInput(
+            sequences,
+            sequences.size,
+            byteTokens,
+            categories,
+            sourceSha256,
+            hashMode,
+            layout,
+            shards,
+            shards.sumOf { it.utf8Bytes }
+        )
     }
 
-    private fun scanTrainingMetadata(file: File): TrainingMetadata {
-        require(file.length() in 1..MAX_TRAINING_BYTES) { "training split must be 1..$MAX_TRAINING_BYTES bytes" }
-        val digest = MessageDigest.getInstance("SHA-256")
+    private fun scanTrainingMetadata(root: File): TrainingMetadata {
+        val (layout, files) = discoverTrainingFiles(root)
         val categories = linkedMapOf("prose" to 0, "code" to 0, "non_ascii" to 0)
+        val shards = mutableListOf<TrainingShard>()
         var samples = 0
         var byteTokens = 0L
-        val decoder = Charsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
-        file.inputStream().buffered().use { buffered ->
-            DigestInputStream(buffered, digest).use { digested ->
-                BufferedReader(InputStreamReader(digested, decoder)).use { reader ->
-                    var lineNumber = 0
-                    while (true) {
-                        val line = reader.readLine() ?: break
-                        lineNumber++
-                        if (line.isBlank()) continue
-                        val obj = try { JSONObject(line) } catch (error: Throwable) {
-                            throw IllegalArgumentException("line $lineNumber: invalid training JSON: ${error.message}")
+        for (file in files) {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val decoder = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            var shardSamples = 0
+            file.inputStream().buffered().use { buffered ->
+                DigestInputStream(buffered, digest).use { digested ->
+                    BufferedReader(InputStreamReader(digested, decoder)).use { reader ->
+                        var lineNumber = 0
+                        while (true) {
+                            val line = reader.readLine() ?: break
+                            lineNumber++
+                            if (line.isBlank()) continue
+                            val obj = try { JSONObject(line) } catch (error: Throwable) {
+                                throw IllegalArgumentException("${file.name}:$lineNumber: invalid training JSON: ${error.message}")
+                            }
+                            val category = obj.optString("category")
+                            require(category in REQUIRED_CATEGORIES) { "${file.name}:$lineNumber: invalid category" }
+                            val sample = obj.optString("text")
+                            require(sample.isNotEmpty()) { "${file.name}:$lineNumber: text must be non-empty" }
+                            val sampleBytes = sample.toByteArray(Charsets.UTF_8)
+                            require(sampleBytes.size <= MAX_SAMPLE_BYTES) { "${file.name}:$lineNumber: text exceeds $MAX_SAMPLE_BYTES UTF-8 bytes" }
+                            categories[category] = categories.getValue(category) + 1
+                            samples++
+                            shardSamples++
+                            byteTokens += sampleBytes.size
                         }
-                        val category = obj.optString("category")
-                        require(category in REQUIRED_CATEGORIES) { "line $lineNumber: invalid category" }
-                        val sample = obj.optString("text")
-                        require(sample.isNotEmpty()) { "line $lineNumber: text must be non-empty" }
-                        val sampleBytes = sample.toByteArray(Charsets.UTF_8)
-                        require(sampleBytes.size <= MAX_SAMPLE_BYTES) { "line $lineNumber: text exceeds $MAX_SAMPLE_BYTES UTF-8 bytes" }
-                        categories[category] = categories.getValue(category) + 1
-                        samples++
-                        byteTokens += sampleBytes.size
                     }
                 }
             }
+            shards += TrainingShard(file.name, file.length(), hex(digest.digest()), shardSamples)
         }
         require(samples > 0) { "training split is empty" }
         for (category in REQUIRED_CATEGORIES) require(categories.getValue(category) > 0) { "training split contains no $category samples" }
-        return TrainingMetadata(samples, byteTokens, categories, hex(digest.digest()))
+        val (hashMode, sourceSha256) = sourceSha(layout, shards)
+        return TrainingMetadata(
+            samples,
+            byteTokens,
+            categories,
+            sourceSha256,
+            hashMode,
+            layout,
+            shards,
+            shards.sumOf { it.utf8Bytes }
+        )
     }
-
     private fun train(
         sequences: MutableList<TokenSequence>,
         scoreMode: String,
@@ -757,6 +887,8 @@ object RiftTextEncoderTaskRunner {
         require(manifestObject.optInt("vocabularySize") == VOCAB_SIZE) { "manifest vocabulary mismatch" }
         val trainingSha = manifestObject.optString("trainingCorpusSha256")
         require(trainingSha.matches(Regex("[0-9a-f]{64}"))) { "manifest training hash is invalid" }
+        val trainingHashMode = manifestObject.optString("trainingCorpusHashMode", "file-sha256")
+        require(trainingHashMode == "file-sha256" || trainingHashMode == SHARD_SET_ID) { "manifest training hash mode is invalid" }
         val artifactSha = manifestObject.optString("artifactSha256")
         require(artifactSha.matches(Regex("[0-9a-f]{64}")) && artifactSha == sha256File(artifact)) { "artifact hash mismatch" }
         val artifactText = decodeStrictUtf8(readBounded(artifact, 4L * 1024L * 1024L))
@@ -841,9 +973,9 @@ object RiftTextEncoderTaskRunner {
 
     private fun commitOutputPair(
         root: File,
-        trainFile: File,
         candidate: Candidate,
         trainingSha: String,
+        trainingHashMode: String,
         merges: List<PairKey>,
         cancel: AtomicBoolean
     ): JSONObject {
@@ -872,12 +1004,14 @@ object RiftTextEncoderTaskRunner {
             .put("trainer", TRAINER_ID)
             .put("trainerConfigSha256", candidate.canonicalConfigSha256)
             .put("trainingCorpusSha256", trainingSha)
+            .put("trainingCorpusHashMode", trainingHashMode)
             .put("transactionalPair", true)
             .put("vocabularySize", VOCAB_SIZE)
         writeSyncedText(paths.stagedManifest, sortedManifest(manifest) + "\n")
         require(outputPairValid(candidate, paths.stagedArtifact, paths.stagedManifest)) { "staged tokenizer artifact/manifest verification failed" }
         ensureNotCancelled(cancel)
-        require(sha256File(trainFile) == trainingSha) {
+        val currentSource = resolveTrainingSource(root)
+        require(currentSource.sha256 == trainingSha && currentSource.hashMode == trainingHashMode) {
             "training corpus changed before ${candidate.candidateId} commit; staged output discarded"
         }
 
@@ -886,6 +1020,7 @@ object RiftTextEncoderTaskRunner {
             .put("candidateId", candidate.candidateId)
             .put("format", "rift-tokenizer-output-transaction-v1")
             .put("trainingCorpusSha256", trainingSha)
+            .put("trainingCorpusHashMode", trainingHashMode)
         writeAtomicMarker(paths.marker, sortedManifest(marker) + "\n")
 
         try {
@@ -938,6 +1073,13 @@ object RiftTextEncoderTaskRunner {
         val first = applyMerge(intArrayOf(97, 98, 97, 98), PairKey(97, 98), 256)
         require(first.first.contentEquals(intArrayOf(256, 256)) && first.second == 2) { "native merge self-test failed" }
         require(MERGE_TARGET + BYTE_TOKENS + SPECIAL_LITERALS.size == VOCAB_SIZE) { "vocabulary arithmetic self-test failed" }
+        val shardVector = listOf(
+            TrainingShard("part-00000.jsonl", 3L, "a".repeat(64), 0),
+            TrainingShard("part-00001.jsonl", 5L, "b".repeat(64), 0)
+        )
+        require(shardSetSha(shardVector) == "23eac9b3140464bc1a798481d04a8f40fe78c7246829b8c41ccebd46db051303") {
+            "rift-shard-set-v1 digest self-test failed"
+        }
 
         val ranked = listOf(
             RankedPair(3.0, 4, PairKey(97, 97)),
@@ -966,6 +1108,8 @@ object RiftTextEncoderTaskRunner {
             .put("selfTestPassed", true)
             .put("optimizedBatchParity", true)
             .put("backgroundTraining", true)
+            .put("shardSetParity", true)
+            .put("trainingHashModes", JSONArray(listOf("file-sha256", SHARD_SET_ID)))
             .put("artifactMagic", ARTIFACT_MAGIC)
             .put("trainer", TRAINER_ID)
             .put("vocabularySize", VOCAB_SIZE)

@@ -32,6 +32,12 @@ const CORPUS_DEFAULT_SEED="rift-corpus-v1-split-a";
 const CORPUS_DEFAULT_HELDOUT=1000;
 const CORPUS_MAX_SAMPLES=2000000;
 const CORPUS_MAX_SAMPLE_BYTES=16*1024;
+const CORPUS_SHARD_SET_ID="rift-shard-set-v1";
+const CORPUS_SHARD_NAME_RE=/^[A-Za-z0-9._-]{1,96}\.jsonl$/;
+const CORPUS_MAX_SHARD_BYTES=3*1024*1024;
+const CORPUS_HELDOUT_BENCHMARK_MAX_SAMPLES=4096;
+const CORPUS_HELDOUT_BENCHMARK_MAX_BYTES=3*1024*1024;
+const CORPUS_HELDOUT_BENCHMARK_MAX_SAMPLE_BYTES=4*1024;
 const CORPUS_CATEGORIES=Object.freeze(["prose","code","non_ascii"]);
 const CORPUS_ORIGINS=Object.freeze(["original","public_reference_rewrite"]);
 const CORPUS_BLOCKED_PROJECTS=Object.freeze(["riftllm","riftos","vortex3d","vtxbuilder","vortexscript"]);
@@ -45,11 +51,10 @@ const CORPUS_SYNTH_FORMAT="rift-corpus-synth-v1";
 const CORPUS_SYNTH_GENERATOR="rift-corpus-synthesizer-v1";
 const CORPUS_SYNTH_TEMPLATE="rift-synth-templates-v1";
 const CORPUS_SYNTH_SEED="rift-corpus-synth-v1-a";
-const CORPUS_SYNTH_DEFAULT_COUNT=2800;
-const CORPUS_SYNTH_MAX_COUNT=2800;
-const CORPUS_SYNTH_OUTPUT=`${CORPUS_ROOT}/synthesized.jsonl`;
+const CORPUS_SYNTH_DEFAULT_COUNT=12000;
+const CORPUS_SYNTH_MAX_COUNT=20000;
+const CORPUS_SYNTH_OUTPUT=`${CORPUS_ROOT}/synthesized`;
 const CORPUS_SYNTH_MANIFEST=`${CORPUS_ROOT}/synth-manifest.json`;
-const CORPUS_SYNTH_MAX_OUTPUT_BYTES=4*1024*1024;
 
 function sortedJsonValue(value){
   if(Array.isArray(value))return value.map(sortedJsonValue);
@@ -61,6 +66,10 @@ function canonicalJson(value){
   if(Array.isArray(value))return `[${value.map(canonicalJson).join(",")}]`;
   return `{${Object.keys(value).sort().map(key=>`${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }
+function corpusLeaf(path){return String(path||"").replace(/\\/g,"/").split("/").filter(Boolean).pop()||"";}
+function corpusShardDescriptorMaterial(descriptors){return [...descriptors].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0).map(item=>`${item.name}\t${item.utf8Bytes}\t${item.sha256}\n`).join("");}
+async function corpusShardSetSha(descriptors){return sha256Text(corpusShardDescriptorMaterial(descriptors));}
+function corpusShardRows(descriptors,prefix=""){return descriptors.map(item=>({path:prefix?`${prefix.replace(/\/$/,"")}/${item.name}`:item.name,sampleCount:item.sampleCount,utf8Bytes:item.utf8Bytes,sha256:item.sha256}));}
 function requiredCorpusString(row,key,line){const value=row?.[key];if(typeof value!=="string"||!value.trim())throw new Error(`line ${line}: ${key} must be a non-empty string`);return value;}
 function normalizeCorpusPath(value,fallback){
   const raw=String(value||fallback||"").trim();if(!raw)throw new Error("RiftCorpus path is required");
@@ -89,16 +98,34 @@ async function validateCorpusSample(row,line){
   for(const key of ["reference_uri","reference_title","reference_license","notes"]){const value=row[key];if(typeof value==="string"&&value.trim())out[key]=value.trim();}
   out.text_sha256=await sha256Text(text);return out;
 }
+async function corpusJsonlSources(inputPath){
+  const stat=await core.fs.stat(inputPath);if(!stat)throw new Error(`RiftCorpus input not found: ${inputPath}`);
+  if(stat.kind==="file")return {layout:"file",sources:[{path:inputPath,name:corpusLeaf(inputPath)}]};
+  if(stat.kind!=="directory")throw new Error(`RiftCorpus input must be a JSONL file or shard directory: ${inputPath}`);
+  const listed=await core.fs.list(inputPath,{recursive:false}),sources=(Array.isArray(listed)?listed:[])
+    .filter(row=>row?.kind==="file"&&String(row.path||row.name||"").toLowerCase().endsWith(".jsonl"))
+    .map(row=>{const path=normalizeCorpusPath(row.path||core.path.join(inputPath,row.name),inputPath);return {path,name:corpusLeaf(path)};});
+  const invalid=sources.find(row=>!CORPUS_SHARD_NAME_RE.test(row.name));if(invalid)throw new Error(`invalid RiftCorpus shard name: ${invalid.name}`);
+  sources.sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
+  if(!sources.length)throw new Error(`RiftCorpus shard directory contains no .jsonl files: ${inputPath}`);
+  return {layout:"sharded-jsonl",sources};
+}
 async function loadCorpusSamples(inputPath){
-  const source=await core.fs.readText(inputPath);if(source==null)throw new Error(`RiftCorpus input not found: ${inputPath}`);
-  const samples=[],ids=new Set(),textHashes=new Map(),lines=String(source).split(/\r?\n/);
-  for(let index=0;index<lines.length;index++){
-    const raw=lines[index];if(!raw.trim())continue;let parsed;try{parsed=JSON.parse(raw);}catch(error){throw new Error(`line ${index+1}: invalid JSON: ${error?.message||error}`);}
-    const sample=await validateCorpusSample(parsed,index+1);if(ids.has(sample.id))throw new Error(`line ${index+1}: duplicate sample id ${sample.id}`);ids.add(sample.id);
-    const prior=textHashes.get(sample.text_sha256);if(prior)throw new Error(`line ${index+1}: duplicate text matches sample ${prior}`);textHashes.set(sample.text_sha256,sample.id);
-    samples.push(sample);if(samples.length>CORPUS_MAX_SAMPLES)throw new Error(`corpus exceeds ${CORPUS_MAX_SAMPLES} samples`);
+  const {layout,sources}=await corpusJsonlSources(inputPath),samples=[],ids=new Set(),textHashes=new Map(),descriptors=[];let globalLine=0;
+  for(const sourceInfo of sources){
+    const source=await core.fs.readText(sourceInfo.path);if(source==null)throw new Error(`RiftCorpus shard disappeared: ${sourceInfo.path}`);
+    const text=String(source),lines=text.split(/\r?\n/);let sourceCount=0;
+    for(let index=0;index<lines.length;index++){
+      const raw=lines[index];if(!raw.trim())continue;globalLine++;let parsed;try{parsed=JSON.parse(raw);}catch(error){throw new Error(`${sourceInfo.name}:${index+1}: invalid JSON: ${error?.message||error}`);}
+      const sample=await validateCorpusSample(parsed,globalLine);if(ids.has(sample.id))throw new Error(`${sourceInfo.name}:${index+1}: duplicate sample id ${sample.id}`);ids.add(sample.id);
+      const prior=textHashes.get(sample.text_sha256);if(prior)throw new Error(`${sourceInfo.name}:${index+1}: duplicate text matches sample ${prior}`);textHashes.set(sample.text_sha256,sample.id);
+      samples.push(sample);sourceCount++;if(samples.length>CORPUS_MAX_SAMPLES)throw new Error(`corpus exceeds ${CORPUS_MAX_SAMPLES} samples`);
+    }
+    descriptors.push({name:sourceInfo.name,utf8Bytes:utf8.encode(text).byteLength,sha256:await sha256Text(text),sampleCount:sourceCount});
   }
-  if(!samples.length)throw new Error("corpus contains no samples");return {source,samples};
+  if(!samples.length)throw new Error("corpus contains no samples");
+  const inputHashMode=layout==="file"?"file-sha256":CORPUS_SHARD_SET_ID,inputSha256=layout==="file"?descriptors[0].sha256:await corpusShardSetSha(descriptors);
+  return {samples,inputHashMode,inputSha256,inputShards:corpusShardRows(descriptors),layout};
 }
 async function corpusSplitBucket(sample,seed){
   const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",utf8.encode(`${seed}\0${sample.id}\0${sample.text_sha256}`)));
@@ -113,24 +140,40 @@ async function splitCorpus(samples,seed,heldoutPermyriad){
 function corpusCounts(rows,key){const counts={};for(const row of rows){const value=String(row[key]||"");counts[value]=(counts[value]||0)+1;}return Object.fromEntries(Object.keys(counts).sort().map(key=>[key,counts[key]]));}
 function escapeCorpusTsv(text){return String(text).replace(/\\/g,"\\\\").replace(/\t/g,"\\t").replace(/\r/g,"\\r").replace(/\n/g,"\\n");}
 async function ensureCorpusDir(path){if(!(await core.fs.stat(path)))await core.fs.mkdir(path);const stat=await core.fs.stat(path);if(!stat||stat.kind!=="directory")throw new Error(`RiftCorpus output is not a directory: ${path}`);}
+async function writeCorpusShards(directory,rows){
+  await ensureCorpusDir(directory);const descriptors=[];let text="",bytes=0,count=0,index=0;
+  const flush=async()=>{if(!count)return;const name=`part-${String(index).padStart(5,"0")}.jsonl`,path=`${directory}/${name}`;await core.fs.writeText(path,text);descriptors.push({name,utf8Bytes:bytes,sha256:await sha256Text(text),sampleCount:count});text="";bytes=0;count=0;index++;};
+  for(const row of rows){const line=canonicalJson(row)+"\n",lineBytes=utf8.encode(line).byteLength;if(lineBytes>CORPUS_MAX_SHARD_BYTES)throw new Error(`one canonical JSONL row exceeds shard budget (${lineBytes} > ${CORPUS_MAX_SHARD_BYTES})`);if(count&&bytes+lineBytes>CORPUS_MAX_SHARD_BYTES)await flush();text+=line;bytes+=lineBytes;count++;}
+  await flush();if(!descriptors.length)throw new Error("cannot write an empty shard set");return descriptors;
+}
+function corpusHeldoutBenchmark(rows){
+  const groups=Object.fromEntries([...CORPUS_CATEGORIES].sort().map(category=>[category,rows.filter(row=>row.category===category).sort((a,b)=>a.id.localeCompare(b.id))])),positions=Object.fromEntries(Object.keys(groups).map(category=>[category,0])),selected=[];let text="",bytes=0;
+  while(selected.length<CORPUS_HELDOUT_BENCHMARK_MAX_SAMPLES){let progressed=false;for(const category of Object.keys(groups)){
+    const index=positions[category];if(index>=groups[category].length)continue;const row=groups[category][index];positions[category]++;progressed=true;
+    const sampleBytes=utf8.encode(row.text).byteLength;if(sampleBytes>CORPUS_HELDOUT_BENCHMARK_MAX_SAMPLE_BYTES)continue;
+    const line=`${row.category}\t${escapeCorpusTsv(row.text)}\n`,lineBytes=utf8.encode(line).byteLength;if(bytes+lineBytes>CORPUS_HELDOUT_BENCHMARK_MAX_BYTES)return {rows:selected,text,bytes};
+    selected.push(row);text+=line;bytes+=lineBytes;if(selected.length>=CORPUS_HELDOUT_BENCHMARK_MAX_SAMPLES)break;
+  }if(!progressed)break;}
+  for(const category of CORPUS_CATEGORIES)if(!selected.some(row=>row.category===category))throw new Error(`held-out benchmark contains no ${category} samples`);return {rows:selected,text,bytes};
+}
+async function replaceCorpusDirectory(stage,target){
+  const backup=normalizeCorpusPath(`${target}.backup-${Date.now()}-${Math.random().toString(36).slice(2,10)}`),existing=await core.fs.stat(target);let backedUp=false;
+  if(existing){if(existing.kind!=="directory")throw new Error(`RiftCorpus output exists and is not a directory: ${target}`);await core.fs.move(target,backup,{overwrite:false});backedUp=true;}
+  try{await core.fs.move(stage,target,{overwrite:false});}catch(error){if(backedUp&&await core.fs.stat(backup))await core.fs.move(backup,target,{overwrite:false}).catch(()=>{});throw error;}
+  let backupCleanupPending=false;if(backedUp&&await core.fs.stat(backup))backupCleanupPending=!(await core.fs.remove(backup).catch(()=>false));return backupCleanupPending;
+}
 async function corpusBuild(input=CORPUS_DEFAULT_INPUT,outputDir=CORPUS_DEFAULT_OUTPUT,options={}){
   const inputPath=normalizeCorpusPath(input,CORPUS_DEFAULT_INPUT),target=normalizeCorpusPath(outputDir,CORPUS_DEFAULT_OUTPUT),seed=String(options.seed||CORPUS_DEFAULT_SEED),heldoutPermyriad=options.heldoutPermyriad==null?CORPUS_DEFAULT_HELDOUT:Number(options.heldoutPermyriad);
-  if(target===inputPath||inputPath.startsWith(`${target}/`))throw new Error("RiftCorpus output cannot contain its input file");
-  const {source,samples}=await loadCorpusSamples(inputPath),{train,heldout}=await splitCorpus(samples,seed,heldoutPermyriad);
-  const trainText=train.map(canonicalJson).join("\n")+"\n",heldoutJsonl=heldout.map(canonicalJson).join("\n")+"\n",heldoutTsv=heldout.map(row=>`${row.category}\t${escapeCorpusTsv(row.text)}`).join("\n")+"\n";
-  const manifest={format:CORPUS_FORMAT,builder:CORPUS_BUILDER,splitAlgorithm:"sha256(seed\\0id\\0text_sha256)-u64-mod10000",splitSeed:seed,heldoutPermyriad,inputSha256:await sha256Text(source),sampleCount:samples.length,trainCount:train.length,heldoutCount:heldout.length,categoryCounts:corpusCounts(samples,"category"),domainCounts:corpusCounts(samples,"domain"),originCounts:corpusCounts(samples,"origin"),trainSha256:await sha256Text(trainText),heldoutJsonlSha256:await sha256Text(heldoutJsonl),heldoutTsvSha256:await sha256Text(heldoutTsv),unfinishedRiftSourceExcluded:[...CORPUS_BLOCKED_PROJECTS].sort(),normalization:"identity-utf8"};
-  const manifestText=JSON.stringify(sortedJsonValue(manifest),null,2)+"\n",manifestSha256=await sha256Text(manifestText);
-  const stage=normalizeCorpusPath(`${target}.stage-${Date.now()}-${Math.random().toString(36).slice(2,10)}`),backup=normalizeCorpusPath(`${target}.backup-${Date.now()}-${Math.random().toString(36).slice(2,10)}`);
-  await ensureCorpusDir(stage);
+  if(target===inputPath||inputPath.startsWith(`${target}/`))throw new Error("RiftCorpus output cannot contain its input");
+  const source=await loadCorpusSamples(inputPath),{train,heldout}=await splitCorpus(source.samples,seed,heldoutPermyriad),benchmark=corpusHeldoutBenchmark(heldout);
+  const stage=normalizeCorpusPath(`${target}.stage-${Date.now()}-${Math.random().toString(36).slice(2,10)}`);await ensureCorpusDir(stage);
   try{
-    await core.fs.writeText(`${stage}/train.jsonl`,trainText);await core.fs.writeText(`${stage}/heldout.jsonl`,heldoutJsonl);await core.fs.writeText(`${stage}/heldout.tsv`,heldoutTsv);await core.fs.writeText(`${stage}/corpus-manifest.json`,manifestText);
-    const existing=await core.fs.stat(target);if(existing){if(existing.kind!=="directory")throw new Error(`RiftCorpus output exists and is not a directory: ${target}`);await core.fs.move(target,backup,{overwrite:false});}
-    try{await core.fs.move(stage,target,{overwrite:false});}catch(error){if(await core.fs.stat(backup))await core.fs.move(backup,target,{overwrite:false}).catch(()=>{});throw error;}
-    let backupCleanupPending=false;
-    if(await core.fs.stat(backup))backupCleanupPending=!(await core.fs.remove(backup).catch(()=>false));
-    return {...manifest,manifestSha256,inputPath,outputDir:target,backupCleanupPending};
+    const trainDescriptors=await writeCorpusShards(`${stage}/train`,train),heldoutDescriptors=await writeCorpusShards(`${stage}/heldout`,heldout);
+    await core.fs.writeText(`${stage}/heldout.tsv`,benchmark.text);
+    const manifest={format:CORPUS_FORMAT,builder:CORPUS_BUILDER,splitAlgorithm:"sha256(seed\\0id\\0text_sha256)-u64-mod10000",splitSeed:seed,heldoutPermyriad,inputHashMode:source.inputHashMode,inputSha256:source.inputSha256,inputShards:source.inputShards,sampleCount:source.samples.length,trainCount:train.length,heldoutCount:heldout.length,categoryCounts:corpusCounts(source.samples,"category"),domainCounts:corpusCounts(source.samples,"domain"),originCounts:corpusCounts(source.samples,"origin"),trainLayout:"sharded-jsonl",trainHashMode:CORPUS_SHARD_SET_ID,trainSha256:await corpusShardSetSha(trainDescriptors),trainShards:corpusShardRows(trainDescriptors,"train"),heldoutLayout:"sharded-jsonl",heldoutHashMode:CORPUS_SHARD_SET_ID,heldoutJsonlSha256:await corpusShardSetSha(heldoutDescriptors),heldoutShards:corpusShardRows(heldoutDescriptors,"heldout"),heldoutBenchmarkCount:benchmark.rows.length,heldoutBenchmarkCategoryCounts:corpusCounts(benchmark.rows,"category"),heldoutTsvUtf8Bytes:benchmark.bytes,heldoutTsvSha256:await sha256Text(benchmark.text),heldoutBenchmarkLimits:{maxSamples:CORPUS_HELDOUT_BENCHMARK_MAX_SAMPLES,maxUtf8Bytes:CORPUS_HELDOUT_BENCHMARK_MAX_BYTES,maxSampleUtf8Bytes:CORPUS_HELDOUT_BENCHMARK_MAX_SAMPLE_BYTES},unfinishedRiftSourceExcluded:[...CORPUS_BLOCKED_PROJECTS].sort(),normalization:"identity-utf8"};
+    const manifestText=JSON.stringify(sortedJsonValue(manifest),null,2)+"\n",manifestSha256=await sha256Text(manifestText);await core.fs.writeText(`${stage}/corpus-manifest.json`,manifestText);
+    const backupCleanupPending=await replaceCorpusDirectory(stage,target);return {...manifest,manifestSha256,inputPath,outputDir:target,backupCleanupPending};
   }catch(error){if(await core.fs.stat(stage))await core.fs.remove(stage).catch(()=>{});throw error;}
-
 }
 async function corpusStatus(outputDir=CORPUS_DEFAULT_OUTPUT){
   const target=normalizeCorpusPath(outputDir,CORPUS_DEFAULT_OUTPUT),manifestPath=`${target}/corpus-manifest.json`,stat=await core.fs.stat(manifestPath);if(!stat)return {available:false,outputDir:target};
@@ -183,12 +226,15 @@ function synthNonAscii(index){const [domain,template]=SYNTH_NONASCII[index%SYNTH
 function stripCorpusHash(row){const {text_sha256,...rest}=row;return rest;}
 async function corpusSynth(base=CORPUS_DEFAULT_INPUT,output=CORPUS_SYNTH_OUTPUT,manifestPath=CORPUS_SYNTH_MANIFEST,options={}){
   const basePath=normalizeCorpusPath(base,CORPUS_DEFAULT_INPUT),outputPath=normalizeCorpusPath(output,CORPUS_SYNTH_OUTPUT),manifest=normalizeCorpusPath(manifestPath,CORPUS_SYNTH_MANIFEST),count=options.countPerCategory==null?CORPUS_SYNTH_DEFAULT_COUNT:Number(options.countPerCategory),seed=String(options.seed||CORPUS_SYNTH_SEED);
-  if(seed!==CORPUS_SYNTH_SEED)throw new Error(`RiftCorpus Synthesizer V1 seed is pinned to ${CORPUS_SYNTH_SEED}`);if(!Number.isInteger(count)||count<1||count>CORPUS_SYNTH_MAX_COUNT)throw new Error(`count-per-category must be an integer in 1..${CORPUS_SYNTH_MAX_COUNT}`);if(outputPath===basePath)throw new Error("RiftCorpus synth output must differ from the authored base");if(manifest===basePath||manifest===outputPath)throw new Error("RiftCorpus synth manifest must use a separate private path");
-  const {source,samples}=await loadCorpusSamples(basePath),rows=samples.map(stripCorpusHash),ids=new Set(rows.map(row=>row.id)),texts=new Set(rows.map(row=>row.text)),generated=[];
+  const baseStat=await core.fs.stat(basePath);if(!baseStat||baseStat.kind!=="file")throw new Error("RiftCorpus Synthesizer V1 base must be one authored JSONL file");
+  if(seed!==CORPUS_SYNTH_SEED)throw new Error(`RiftCorpus Synthesizer V1 seed is pinned to ${CORPUS_SYNTH_SEED}`);if(!Number.isInteger(count)||count<1||count>CORPUS_SYNTH_MAX_COUNT)throw new Error(`count-per-category must be an integer in 1..${CORPUS_SYNTH_MAX_COUNT}`);if(outputPath===basePath)throw new Error("RiftCorpus synth output must differ from the authored base");if(manifest===basePath||manifest===outputPath)throw new Error("RiftCorpus synth manifest must use a separate private path");if(/\.jsonl$/i.test(outputPath))throw new Error("RiftCorpus synth output is a shard directory, not one JSONL file");
+  const baseSource=await loadCorpusSamples(basePath),rows=baseSource.samples.map(stripCorpusHash),ids=new Set(rows.map(row=>row.id)),texts=new Set(rows.map(row=>row.text)),generated=[];
   for(let index=1;index<=count;index++)for(const row of [synthProse(index),synthCode(index),synthNonAscii(index)]){if(ids.has(row.id))throw new Error(`synthesized id collides with base: ${row.id}`);if(texts.has(row.text))throw new Error(`synthesized text collides with base/generated data: ${row.id}`);if(utf8.encode(row.text).byteLength>CORPUS_MAX_SAMPLE_BYTES)throw new Error(`synthesized sample exceeds ${CORPUS_MAX_SAMPLE_BYTES} UTF-8 bytes: ${row.id}`);ids.add(row.id);texts.add(row.text);generated.push(row);}
-  const all=[...rows,...generated],outputText=all.map(canonicalJson).join("\n")+"\n",outputBytes=utf8.encode(outputText).byteLength;if(outputBytes>CORPUS_SYNTH_MAX_OUTPUT_BYTES)throw new Error(`synthesized corpus is ${outputBytes} bytes and exceeds the ${CORPUS_SYNTH_MAX_OUTPUT_BYTES}-byte RiftFS bridge ceiling; reduce count or move to a reviewed shard contract`);
-  const result={format:CORPUS_SYNTH_FORMAT,generator:CORPUS_SYNTH_GENERATOR,templateVersion:CORPUS_SYNTH_TEMPLATE,seed,countPerCategory:count,basePresent:true,baseSha256:await sha256Text(source),baseCount:rows.length,synthesizedCount:generated.length,totalCount:all.length,categoryCounts:corpusCounts(all,"category"),domainCounts:corpusCounts(all,"domain"),outputSha256:await sha256Text(outputText),outputUtf8Bytes:outputBytes,origin:"original",unfinishedRiftSourceIncluded:false};
-  const manifestText=JSON.stringify(sortedJsonValue(result),null,2)+"\n";await core.fs.writeText(outputPath,outputText);await core.fs.writeText(manifest,manifestText);return {...result,manifestSha256:await sha256Text(manifestText),basePath,outputPath,manifestPath:manifest};
+  const all=[...rows,...generated],stage=normalizeCorpusPath(`${outputPath}.stage-${Date.now()}-${Math.random().toString(36).slice(2,10)}`);await ensureCorpusDir(stage);
+  try{
+    const descriptors=await writeCorpusShards(stage,all),result={format:CORPUS_SYNTH_FORMAT,generator:CORPUS_SYNTH_GENERATOR,templateVersion:CORPUS_SYNTH_TEMPLATE,seed,countPerCategory:count,basePresent:true,baseSha256:baseSource.inputSha256,baseCount:rows.length,synthesizedCount:generated.length,totalCount:all.length,categoryCounts:corpusCounts(all,"category"),domainCounts:corpusCounts(all,"domain"),outputLayout:"sharded-jsonl",outputHashMode:CORPUS_SHARD_SET_ID,outputSha256:await corpusShardSetSha(descriptors),outputUtf8Bytes:descriptors.reduce((sum,item)=>sum+item.utf8Bytes,0),outputShards:corpusShardRows(descriptors),origin:"original",unfinishedRiftSourceIncluded:false};
+    const backupCleanupPending=await replaceCorpusDirectory(stage,outputPath),manifestText=JSON.stringify(sortedJsonValue(result),null,2)+"\n";await core.fs.writeText(manifest,manifestText);return {...result,manifestSha256:await sha256Text(manifestText),basePath,outputPath,manifestPath:manifest,backupCleanupPending};
+  }catch(error){if(await core.fs.stat(stage))await core.fs.remove(stage).catch(()=>{});throw error;}
 }
 
 async function native(op,request={},extra={}){return core.native.call("riftllm.dev",{op,request,...extra});}
