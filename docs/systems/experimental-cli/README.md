@@ -24,13 +24,23 @@ Inspection commands are safe while disabled: `rift-cli status`, `rift-cli team`,
 
 When experimental mode is enabled, `riftos.agent` calls pass through `RiftAgentRouter` and the experimental CLI records a process-local role classification before delegating the original request to `RiftOsLocalAgent.execute(...)`. V1 does not alter the request, add package targets or add permissions.
 
-`rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel` is also available only after the same explicit process-local enable. This lane is not a Python launcher: Android has no project-owned Python runtime here and the CLI continues to forbid `ProcessBuilder`/`Runtime.exec`. The Kotlin task mirrors `rift-batch-bpe-v1`, pins the exact A/B config file hashes and canonical config hashes, strict-decodes UTF-8, reads only `RiftLLM/tokenizer/private/build/train.jsonl`, and writes only the two fixed files beneath ignored `RiftLLM/tokenizer/output/`. `train-a` / `train-b` start one process-local background job and return immediately; `train-status` reports bounded progress and `train-cancel` requests cancellation. Disabling RiftCLI also cancels any active tokenizer job. The optimized native batch applicator preserves the original ranked 64-merge semantics, including examined-but-destroyed pairs, while replacing repeated full-corpus per-merge scans with bounded priority/overlap passes. `self-test` compares the optimized batch result with the original sequential semantics on overlapping merges. Training hashes the exact byte array that is decoded into token sequences and re-hashes the source before publication; a moving corpus is rejected rather than producing misleading provenance. Artifact and manifest are fsynced to hidden staging files, verified as a pair, then promoted through an atomic-marker + backup transaction; `status` and new training starts recover interrupted promotion before trusting outputs. `status` itself uses a strict streaming metadata/digest pass and never allocates the corpus token arrays just to report counts or the structural 32,504-merge budget.
+`rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel` is also available only after the same explicit process-local enable. This lane is not a Python launcher: Android has no project-owned Python runtime here and the CLI continues to forbid `ProcessBuilder`/`Runtime.exec`. The Kotlin task mirrors `rift-batch-bpe-v1`, pins the exact A/B config file hashes and canonical config hashes, strict-decodes UTF-8, and reads only the fixed RiftCorpus training source: scalable `RiftLLM/tokenizer/private/build/train/part-*.jsonl` shards or the legacy `train.jsonl` fallback, never both. It writes only the two fixed files beneath ignored `RiftLLM/tokenizer/output/`. `train-a` / `train-b` start one process-local background job and return immediately; `train-status` reports bounded progress and `train-cancel` requests cancellation. Disabling RiftCLI also cancels any active tokenizer job. The optimized native batch applicator preserves the original ranked 64-merge semantics, including examined-but-destroyed pairs, while replacing repeated full-corpus per-merge scans with bounded priority/overlap passes. `self-test` compares the optimized batch result with the original sequential semantics on overlapping merges. Training hashes the exact bytes decoded into token sequences. Legacy input uses direct file SHA-256; scalable input uses `rift-shard-set-v1`, SHA-256 over sorted `<name>\t<byte_count>\t<sha256>\n` descriptors for every fixed training shard. The entire source set is re-enumerated/re-hashed before publication, so modifying, adding, removing or renaming a shard rejects publication rather than producing misleading provenance. Artifact and manifest are fsynced to hidden staging files, verified as a pair, then promoted through an atomic-marker + backup transaction; `status` and new training starts recover interrupted promotion before trusting outputs. `status` itself uses a strict streaming metadata/digest pass and never allocates the corpus token arrays just to report counts or the structural 32,504-merge budget.
+
+## Rift++ V0 language / Swarm IR
+
+Rift++ V0 is now the declarative language layer for the experimental swarm design. The native compiler is `RiftPlusPlusV0.kt`; the full language contract is [`RIFT_PLUS_PLUS_V0.md`](RIFT_PLUS_PLUS_V0.md) and a complete sample lives at `examples/riftpp/riftos-dev-team.riftpp`.
+
+V0 recognizes `backend`, `brain`, `agent`, `swarm`, and `task` declarations. It validates references, bounded context/retry/reviewer limits, explicit capability allow/deny lists, read-only `review`/`security` roles and acyclic swarm flow. Successful compilation emits `rift.swarm-ir/0` with a source SHA-256 and `executable=false`. Scripts can only be read from RiftFS `workspace/` and V0 exposes no import, loop, arbitrary expression, shell escape, write primitive or generic process runner.
+
+`RiftBrainBackend` is the native future-facing backend interface and `RiftSwarmCoordinatorV0` is a preview-only coordinator. Preview resolves a task, swarm, lead backend and deterministic specialist assignment order but never invokes `RiftBrainBackend.respond(...)`, tools, Local Agent, Git, build or workspace mutation. The interface exists now so future local/remote/RiftLLM brain implementations can be hot-swapped without changing the Rift++ language or Swarm IR contract.
+
+Commands are `rift-cli riftpp help|sample|validate|compile|preview`. `help`/`sample` are descriptive; validate/compile/preview require the same explicit process-local experimental enable as the rest of the CLI.
 
 ## Brain / swarm boundary
 
 The role graph models a development team, but roles are logical coordination contexts rather than separate always-running models. The intended future backend can let one model serve multiple specialist contexts or can dispatch to multiple backends without changing the CLI command/execution layer.
 
-V1 `rift-cli plan <goal>` emits a structured task graph only. It does not call Git, Workspace, builds, filesystem mutation, Android actions or the Local Agent. `modelBackendConnected=false` and `autoMutation=false` are explicit status fields and must remain truthful.
+V1 `rift-cli plan <goal>` emits the original built-in structured task graph only. Rift++ V0 is the first external declarative graph format, but it is still compile/preview-only. Neither path calls Git, Workspace, builds, filesystem mutation, Android actions or the Local Agent. `modelBackendConnected=false` and `autoMutation=false` remain truthful.
 
 ## Invariants
 
@@ -40,9 +50,11 @@ V1 `rift-cli plan <goal>` emits a structured task graph only. It does not call G
 - No relay protocol change is required.
 - The experiment must never expose raw Android/Linux shell execution, arbitrary package control, ADB, `ProcessBuilder`, or `Runtime.exec`.
 - Existing `RiftOsLocalAgent` package scope, password restrictions, semantic ambiguity checks, gesture bounds and user-granted Accessibility boundary remain authoritative.
-- Planning cannot execute or mutate anything in V1. Tokenizer tasks are a separate explicit command family and cannot be reached through `plan`.
+- Planning cannot execute or mutate anything in V1. Rift++ V0 compile/preview is also non-executable and cannot invoke a brain backend or tool. Tokenizer tasks are a separate explicit command family and cannot be reached through `plan` or Rift++.
+- Rift++ source is confined to `workspace/`, bounded to 128 KiB, finite grammar/capabilities only, and compiles to `rift.swarm-ir/0` with `executable=false`.
+- `review` and `security` Rift++ roles are compile-time read-only; cyclic flow graphs, unknown references/capabilities, permission overlap and unmet task-role requirements are rejected.
 - Tokenizer tasks require the process-local experimental enable, use fixed paths/config hashes, and may write only the pinned ignored tokenizer outputs; at most one background training job may run, and disabling the CLI requests its cancellation.
-- Training provenance is the SHA-256 of the exact bytes decoded into the run; publication fails if the source corpus no longer matches that digest.
+- Training provenance is the exact source digest: `file-sha256` for the legacy single file or `rift-shard-set-v1` for the ordered scalable shard set; publication fails if source membership or bytes no longer match.
 - Artifact/manifest publication is recoverable as one logical transaction: staged pair verification, atomic commit marker, previous-pair backups, pair validation, and marker-last cleanup.
 - Tokenizer `status` may recover an interrupted output transaction but must inspect training metadata by streaming; it must not materialize training token arrays.
 - No generic Python, `ProcessBuilder`, `Runtime.exec`, arbitrary script path or arbitrary output path may be introduced.
@@ -53,6 +65,8 @@ V1 `rift-cli plan <goal>` emits a structured task graph only. It does not call G
 - RiftOS starts in experimental mode without a manual command -> process-local default/reset invariant regressed.
 - MCP tool count changes after this subsystem changes -> the experiment leaked above the Local Agent/shell boundary.
 - `rift-cli plan` changes files, Git state, UI, builds or device state -> planning/execution separation regressed.
+- Rift++ compile/preview invokes a backend, tool, Local Agent, Git/build action or writes a workspace file -> V0 non-execution boundary regressed.
+- Rift++ accepts traversal/outside-workspace scripts, generic code execution, cyclic swarm flow, unknown capabilities or mutation permissions on `review`/`security` -> compiler confinement/policy regressed.
 - `rift-cli tokenizer ...` works while the experimental switch is disabled -> manual gate regressed.
 - tokenizer task accepts a caller-selected script/config/output path -> fixed-task confinement regressed.
 - `train-a` / `train-b` block the shell/relay until the full 32K run finishes instead of returning a background job -> asynchronous execution regressed.
@@ -68,7 +82,9 @@ V1 `rift-cli plan <goal>` emits a structured task graph only. It does not call G
 
 ## Fix map
 
-Manual mode, team graph, planning scaffold, tokenizer gate or router behavior -> `RiftExperimentalCli.kt`.
+Manual mode, team graph, planning scaffold, Rift++ command gate, tokenizer gate or router behavior -> `RiftExperimentalCli.kt`.
+Rift++ V0 lexer/parser/semantic compiler/Swarm IR -> `RiftPlusPlusV0.kt` + `RIFT_PLUS_PLUS_V0.md`.
+Brain backend contract and preview coordinator -> `RiftSwarmCoordinatorV0.kt`.
 Tokenizer V1 fixed-path training/status/self-test implementation -> `RiftTextEncoderTaskRunner.kt`.
 Native `rift-cli` parsing/visibility -> `RiftNativeShell.kt`.
 Native `riftos.agent` entry seam -> `RiftNativeDispatcher.kt` only; do not change MCP/relay/tool schemas to repair a CLI issue.
@@ -77,6 +93,6 @@ Batch rejection -> `src/riftshell-batch.js`.
 
 ## Validation
 
-Run `npm run check`. Source validation must prove that the subsystem defaults to legacy mode, uses a process-local volatile switch, exposes no new MCP tool, keeps the dispatcher seam to one router, delegates to the existing Local Agent, contains no raw process/shell APIs, labels itself experimental, and is rejected by atomic batch. `scripts/test-rift-text-encoder-task.mjs` additionally locks the 32K artifact constants, exact candidate/config hashes, fixed paths, structural feasibility guard, asynchronous job/cancel surface, optimized-batch parity hooks, exact-input provenance, streaming status, staged/synced transactional pair publication + recovery, and absence of generic process/Python execution. Any Kotlin change also requires the normal Android APK build before promotion.
+Run `npm run check`. Source validation must prove that the subsystem defaults to legacy mode, uses a process-local volatile switch, exposes no new MCP tool, keeps the dispatcher seam to one router, delegates to the existing Local Agent, contains no raw process/shell APIs, labels itself experimental, and is rejected by atomic batch. `scripts/test-rift-plus-plus-v0.mjs` locks the V0 non-executable Swarm IR schema, workspace-only source confinement, finite grammar/capability vocabulary, read-only reviewer/security policy, acyclic flow/schedule behavior, BrainBackend preview-only boundary, sample program and absence of a new MCP tool. `scripts/test-rift-text-encoder-task.mjs` additionally locks the 32K artifact constants, exact candidate/config hashes, fixed paths, structural feasibility guard, asynchronous job/cancel surface, optimized-batch parity hooks, exact-input provenance, streaming status, staged/synced transactional pair publication + recovery, and absence of generic process/Python execution. Any Kotlin change also requires the normal Android APK build before promotion.
 
 Manual acceptance while the experiment is still unpromoted should cover `rift-cli status`, `team`, `architecture`, explicit enable/disable, non-mutating `plan`, then `rift-cli tokenizer self-test` and `status`. Full `train-a`/`train-b` should run only after status proves the corpus satisfies the lower-bound budget; poll with `train-status`, verify the shell remains responsive, and test `train-cancel`/CLI disable before trusting long runs. Actual trainer exhaustion can still require more pair diversity beyond that mathematical minimum.

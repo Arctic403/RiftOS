@@ -49,7 +49,7 @@ When behavior changes, update the owning system README in the same patch. Histor
 | RiftRT | [`systems/riftrt/README.md`](systems/riftrt/README.md) | `src/riftrt.js` |
 | Runtime capability report | [`systems/runtime-capabilities/README.md`](systems/runtime-capabilities/README.md) | `src/riftruntime.js` |
 | RiftShell | [`systems/shell/README.md`](systems/shell/README.md) | shell in `riftos.js`, `riftshell-batch.js` |
-| RiftCLI experimental brain/swarm | [`systems/experimental-cli/README.md`](systems/experimental-cli/README.md) | `RiftExperimentalCli.kt`, `RiftNativeShell.kt` |
+| RiftCLI experimental brain/swarm + Rift++ V0 | [`systems/experimental-cli/README.md`](systems/experimental-cli/README.md) | `RiftExperimentalCli.kt`, `RiftPlusPlusV0.kt`, `RiftSwarmCoordinatorV0.kt` |
 | RiftGit | [`systems/git/README.md`](systems/git/README.md) | `src/riftgit.js` |
 | RiftRepo | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | `src/riftrepo.js` |
 | RiftVault | [`systems/riftvault/README.md`](systems/riftvault/README.md) | `src/riftvault.js` |

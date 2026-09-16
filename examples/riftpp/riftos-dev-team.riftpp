@@ -1,0 +1,70 @@
+riftpp 0
+
+backend RulesBrain {
+  type rules
+}
+
+brain MainBrain {
+  backend RulesBrain
+  role lead
+  memory project
+  context 12000
+}
+
+agent Architect {
+  role architect
+  tools [workspace.read, workspace.graph]
+  allow [workspace.read, workspace.graph]
+  deny [workspace.write, git.push]
+  context 8000
+}
+
+agent Debugger {
+  role debug
+  tools [workspace.read, workspace.graph, workspace.diff]
+  allow [workspace.read, workspace.graph, workspace.diff]
+  deny [workspace.write, git.push]
+  context 8000
+}
+
+agent Tester {
+  role tests
+  tools [workspace.read, tests.run]
+  allow [workspace.read, tests.run]
+  deny [workspace.write, git.push]
+  context 6000
+}
+
+agent Security {
+  role security
+  tools [workspace.read, workspace.diff]
+  allow [workspace.read, workspace.diff]
+  deny [workspace.write, git.push, device.control]
+  context 6000
+}
+
+agent Reviewer {
+  role review
+  tools [workspace.read, workspace.diff]
+  allow [workspace.read, workspace.diff]
+  deny [workspace.write, git.push, device.control]
+  context 6000
+}
+
+swarm DevTeam {
+  lead MainBrain
+  workers [Architect, Debugger, Tester, Security, Reviewer]
+  flow Architect -> Debugger
+  flow Debugger -> Tester
+  flow Tester -> Security
+  flow Security -> Reviewer
+  flow Reviewer -> MainBrain
+  review 1
+}
+
+task RepairRiftOS {
+  swarm DevTeam
+  goal "Audit a RiftOS failure and return a tested, security-reviewed repair plan"
+  retry 2
+  require [tests, security, review]
+}

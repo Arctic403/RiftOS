@@ -98,6 +98,14 @@ object RiftExperimentalCli {
                 val value = plan(goal)
                 result(value.toString(2), value)
             }
+            "riftpp" -> {
+                val action = tail.firstOrNull()?.trim()?.lowercase().orEmpty().ifBlank { "help" }
+                if (action !in setOf("help", "sample")) {
+                    require(isEnabled()) { "EXPERIMENTAL RiftCLI is OFF. Rift++ compile/preview requires explicit process-local enable." }
+                }
+                val value = RiftPlusPlusV0.execute(context, tail)
+                result(value.toString(2), value)
+            }
             "tokenizer" -> {
                 require(isEnabled()) { "EXPERIMENTAL RiftCLI is OFF. Tokenizer tasks require explicit process-local enable." }
                 require(tail.size <= 1) { "usage: rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel" }
@@ -178,6 +186,9 @@ object RiftExperimentalCli {
         .put("modelBackendConnected", false)
         .put("brainBackend", "scaffold-rule-planner")
         .put("swarmRoles", roles.size)
+        .put("riftPlusPlusV0", true)
+        .put("swarmIrSchema", "rift.swarm-ir/0")
+        .put("brainBackendInterface", "RiftBrainBackend")
         .put("autoMutation", false)
         .put("manualTokenizerTasks", isEnabled())
         .put("tokenizerTaskExecution", "native-kotlin-fixed-paths-async")
@@ -197,6 +208,8 @@ object RiftExperimentalCli {
         rift-cli enable CONFIRM-EXPERIMENTAL
         rift-cli disable
         rift-cli plan <goal>     # planning scaffold only; never executes mutations
+        rift-cli riftpp help|sample|validate|compile|preview
+                                # Rift++ V0 declarative swarm DSL -> non-executable Swarm IR
         rift-cli tokenizer status|self-test|train-a|train-b|train-status|train-cancel
                                 # manual fixed-path RiftTokenizer V1 tasks; training runs as one cancellable background job
 
