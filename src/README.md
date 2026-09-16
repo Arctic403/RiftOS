@@ -17,6 +17,7 @@ This directory contains the trusted RiftOS shell/runtime JavaScript packaged int
 | `riftapps.js` / `riftapps-files.js` | `../docs/systems/apps/README.md` |
 | `riftrt.js` | `../docs/systems/riftrt/README.md` |
 | `riftvm.js` | `../docs/systems/riftrt/engines/rift-vm/README.md` |
+| `riftpp-core.js` | `../docs/systems/riftpp-core/README.md` |
 | `riftruntime.js` | `../docs/systems/runtime-capabilities/README.md` |
 | `riftshell-batch.js` | `../docs/systems/shell/README.md` |
 | `riftgit.js` | `../docs/systems/git/README.md` |

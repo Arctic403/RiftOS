@@ -273,12 +273,15 @@ if (!appsSource.includes('globalThis.RiftRT.launch(id)')) failures.push('install
 // RiftRT defaults installed HTML programs to the native Android app surface. Legacy iframe specs are translated, never executed as frames.
 const riftrt = read('src/riftrt.js');
 const riftvm = read('src/riftvm.js');
+const riftppCore = read('src/riftpp-core.js');
 if (!riftrt.includes("engine:'native-webview'") || !riftrt.includes("requested==='iframe'?'native-webview':requested")) failures.push('RiftRT does not default/translate installed programs to native-webview');
 if (!riftrt.includes("core.native.call('app.runtime.open'") || !riftrt.includes("core.native.call('app.runtime.close'") || !riftrt.includes("core.native.call('app.runtime.state'")) failures.push('RiftRT native app runtime routes are incomplete');
 if (riftrt.includes('function launchIframe(') || riftrt.includes('function iframeHtml(') || riftrt.includes('messageInstances')) failures.push('retired RiftRT iframe execution machinery remains');
 if (!riftrt.includes("from './riftvm.js'") || !riftrt.includes("'rift-vm'") || !riftrt.includes('launchRiftVm') || !riftrt.includes('validateVmImports')) failures.push('RiftVM executable engine wiring is incomplete');
 if (!riftvm.includes("RIFT_EXEC_FORMAT='rift-exec-v1'") || !riftvm.includes("RIFT_VM_ABI='riftvm-1'") || !riftvm.includes("const PREPARED=Symbol('riftvm.prepared')") || !riftvm.includes('step limit exceeded')) failures.push('RiftVM executable validation/limit contract is incomplete');
 if (/\beval\s*\(/.test(riftvm) || /new\s+Function\b/.test(riftvm) || /ProcessBuilder|Runtime\.getRuntime|child_process/.test(riftvm)) failures.push('RiftVM gained forbidden dynamic-code/process authority');
+if (!entry.includes('import("./riftpp-core.js")') || !riftppCore.includes("RIFTPP_LANGUAGE='riftpp/1'") || !riftppCore.includes('compileRiftPlusPlusCoreV1') || !riftppCore.includes('prepareRiftExecutable(executable)') || !riftppCore.includes('globalThis.RiftPlusPlusCore=Object.freeze')) failures.push('Rift++ Core bootstrap compiler wiring is incomplete');
+if (/\beval\s*\(/.test(riftppCore) || /new\s+Function\b/.test(riftppCore) || /ProcessBuilder|Runtime\.getRuntime|child_process/.test(riftppCore)) failures.push('Rift++ Core compiler gained forbidden dynamic-code/process authority');
 
 // Worker RPCs still use the bounded hostCall controller while native-webview apps use RiftNativeAppHost.
 const hostStart = riftrt.indexOf('async function hostCall(');

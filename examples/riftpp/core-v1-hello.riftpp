@@ -1,0 +1,15 @@
+riftpp 1
+module demo.hello
+
+fn multiply(a: u32, b: u32) -> u32 {
+  return a * b
+}
+
+fn main() {
+  let greeting: string = "Hello from Rift++ Core V1"
+  print(greeting)
+
+  let answer: u32 = multiply(6, 7)
+  print(answer)
+  print(answer == 42)
+}

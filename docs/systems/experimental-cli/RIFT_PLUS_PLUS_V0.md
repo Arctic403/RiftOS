@@ -1,6 +1,6 @@
 # Rift++ V0 Language Contract
 
-Rift++ V0 is the declarative language for the experimental RiftCLI swarm architecture. V0 is intentionally **not** a general-purpose programming language and **not executable**. It parses bounded text, validates a brain/team/task graph and compiles it into `rift.swarm-ir/0` JSON for inspection and coordinator preview.
+Rift++ V0 is the declarative language for the experimental RiftCLI swarm architecture. V0 is intentionally **not** a general-purpose programming language and **not executable**. It parses bounded text, validates a brain/team/task graph and compiles it into `rift.swarm-ir/0` JSON for inspection and coordinator preview. The separate `riftpp 1` Core bootstrap frontend now lives in `src/riftpp-core.js` and targets RiftVM `.rxe`; that executable Core path does **not** make V0 or RiftCLI executable.
 
 ## Design goals
 
