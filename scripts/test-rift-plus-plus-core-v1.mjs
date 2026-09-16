@@ -53,15 +53,15 @@ const shadowPrelude=`riftpp 1\nmodule bad.prelude\nfn main() {\n let print: u32 
 assert.throws(()=>compileRiftPlusPlusCoreV1(shadowPrelude),/reserved by the bootstrap prelude/);
 const immutableAssignment=`riftpp 1\nmodule bad.immutable\nfn main() {\n let x: u32 = 1\n x = 2\n}\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(immutableAssignment),/cannot assign to immutable binding 'x'/);
-const breakOutside=`riftpp 1\nmodule bad.break\nfn main() {\n break\n}\n`;
+const breakOutside=`riftpp 1\nmodule bad.break_case\nfn main() {\n break\n}\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(breakOutside),/break is only valid inside a loop/);
-const continueOutside=`riftpp 1\nmodule bad.continue\nfn main() {\n continue\n}\n`;
+const continueOutside=`riftpp 1\nmodule bad.continue_case\nfn main() {\n continue\n}\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(continueOutside),/continue is only valid inside a loop/);
 const incompleteReturn=`riftpp 1\nmodule bad.return_path\nfn choose(flag: bool) -> u32 {\n if flag { return 1 }\n}\nfn main() { print(choose(true)) }\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(incompleteReturn),/does not return on every reachable path/);
 const unreachable=`riftpp 1\nmodule bad.unreachable\nfn value() -> u32 {\n return 1\n print("never")\n}\nfn main() { print(value()) }\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(unreachable),/unreachable statement/);
-const unsupported=`riftpp 1\nmodule bad.match\nfn main() {\n match true { }\n}\n`;
+const unsupported=`riftpp 1\nmodule bad.match_case\nfn main() {\n match true { }\n}\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(unsupported),/not implemented in the bootstrap slice/);
 
 const sourceCode=readFileSync('src/riftpp-core.js','utf8');
