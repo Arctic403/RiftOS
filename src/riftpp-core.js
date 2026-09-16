@@ -284,6 +284,7 @@ class Codegen{
 
     const resolveEnumPattern=(pattern,enumName)=>{
       const def=this.enums.get(enumName),parts=pattern.path.split('.');let variantName;if(parts.length===1)variantName=parts[0];else if(parts.length===2&&parts[0]===enumName)variantName=parts[1];else semanticFail('E0247',`enum pattern '${pattern.path}' does not name a case of ${enumName}`,pattern,'match pattern');const variant=def.cases.get(variantName);if(!variant)semanticFail('E0248',`enum ${enumName} has no case '${variantName}'`,pattern,'match pattern');if(pattern.args.length!==variant.types.length)semanticFail('E0249',`${enumName}.${variantName} pattern expects ${variant.types.length} payload pattern(s), got ${pattern.args.length}`,pattern,'match pattern');for(const arg of pattern.args)if(!['BindingPattern','WildcardPattern'].includes(arg.kind))semanticFail('E0250','bootstrap enum payload patterns support bindings or _ only',arg,'bootstrap match pattern');return{variantName,variant};
+    };
     const validateMatch=(stmt,type)=>{
       const enumDef=this.enums.get(type),covered=new Set();let catchAll=false;
       if(type!=='bool'&&!enumDef)semanticFail('E0251',`match currently supports bool or enum values; got ${type}`,stmt,'bootstrap match support');
