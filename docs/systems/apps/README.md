@@ -41,7 +41,7 @@ This split is intentional:
 .rift package -> RiftApps installer -> C:/Programs/<id> -> RiftRT -> native RiftDesktop window/surface
 ```
 
-Future R.O.P.E compiler outputs can replace the HTML-compatible payload with a compiled Rift ABI without changing the installer/registry or C:/D: layout.
+Compiled Rift payloads now have an initial path without changing the installer/registry or C:/D: layout: a `.rift` package can select RiftRT `engine: "rift-vm"` and carry a validated `main.rxe` `rift-exec-v1` executable. Future R.O.P.E/Rift++ compilers can target that executable boundary while native/optimized ABIs evolve separately.
 
 ## Package validation
 

@@ -24,6 +24,7 @@ if(globalThis.RiftNativeDesktop?.enabled){
   await import("./riftdesktop-android.js");
 }
 await import("./riftmcp-system.js");
+await import("./riftvm.js");
 await import("./riftrt.js");
 if(!globalThis.RiftNativeDesktop?.enabled)await import("./riftdesktop-android-compat.js");
 // Remove the retired iframe editor's plaintext credential cache after upgrade.

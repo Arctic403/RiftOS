@@ -53,9 +53,18 @@ assert(registered.some(item => item.id === app.id));
 assert(!appsSource.includes('<iframe'));
 assert.match(readFileSync('src/riftrt.js','utf8'), /engine:'native-webview'/);
 assert.match(readFileSync('src/riftrt.js','utf8'), /app\.runtime\.open/);
+assert.match(readFileSync('src/riftrt.js','utf8'), /'rift-vm'/);
+
+const vmFixture=readFileSync('examples/riftpp/hello-rift-executable.rift','utf8');
+const vmFile={name:'RiftExecutable.rift',type:'application/octet-stream',size:Buffer.byteLength(vmFixture),text:async()=>vmFixture};
+const vmApp=await context.window.RiftApps.installPackageFile(vmFile);
+assert.equal(vmApp.manifest.entry,'main.rxe');
+assert(files.has(`/C:/Programs/${vmApp.id}/package.json`));
+assert.equal(JSON.parse(vmApp.files['riftrt.json']).engine,'rift-vm');
 
 await assert.rejects(() => context.window.RiftApps.installPackageFile({ ...file, text: async () => 'not a package' }), /JSON containers/);
 await assert.rejects(() => context.window.RiftApps.installPackageFile({ ...file, text: async () => '{"format":"other"}' }), /Unsupported package format/);
 for (const [source, id] of [['src/riftapps.js', 'riftPackageInput'], ['src/riftrt.js', 'riftrtImport']]) assert.match(readFileSync(source, 'utf8'), new RegExp(`id="${id}" accept="\\.rift,\\*/\\*"`));
 console.log('ok - .rift import installs transactionally under C:/Programs with D:/ AppData separated');
 console.log('ok - installed app launch path is native RiftRT; iframe execution path is absent');
+console.log('ok - .rift installer accepts a RiftVM main.rxe executable payload without a second package format');

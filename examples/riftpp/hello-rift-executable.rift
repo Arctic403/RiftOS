@@ -1,0 +1,16 @@
+{
+  "format": "rift-app-v1",
+  "manifest": {
+    "id": "demo.riftpp.executable",
+    "name": "Rift++ Executable Demo",
+    "version": "1.0.0",
+    "entry": "main.rxe",
+    "icon": "R+",
+    "description": "First data-only Rift executable running through RiftVM.",
+    "permissions": []
+  },
+  "files": {
+    "riftrt.json": "{\n  \"engine\": \"rift-vm\",\n  \"entry\": \"main.rxe\",\n  \"abi\": \"riftvm-1\",\n  \"capabilities\": [],\n  \"window\": { \"width\": 720, \"height\": 480 }\n}\n",
+    "main.rxe": "{\n  \"format\": \"rift-exec-v1\",\n  \"abi\": \"riftvm-1\",\n  \"entry\": \"main\",\n  \"imports\": [\"app.setTitle\"],\n  \"constants\": [\n    { \"type\": \"string\", \"value\": \"Rift++ executable online\" },\n    { \"type\": \"string\", \"value\": \"Rift++ VM Demo\" },\n    { \"type\": \"u32\", \"value\": 6 },\n    { \"type\": \"u32\", \"value\": 7 }\n  ],\n  \"functions\": {\n    \"main\": {\n      \"params\": 0,\n      \"locals\": 0,\n      \"code\": [\n        { \"op\": \"const\", \"index\": 1 },\n        { \"op\": \"host\", \"method\": \"app.setTitle\", \"argc\": 1 },\n        { \"op\": \"pop\" },\n        { \"op\": \"const\", \"index\": 0 },\n        { \"op\": \"print\" },\n        { \"op\": \"const\", \"index\": 2 },\n        { \"op\": \"const\", \"index\": 3 },\n        { \"op\": \"mul\" },\n        { \"op\": \"print\" },\n        { \"op\": \"halt\" }\n      ]\n    }\n  },\n  \"limits\": { \"maxSteps\": 1000, \"maxStack\": 64, \"maxCallDepth\": 8 }\n}\n"
+  }
+}

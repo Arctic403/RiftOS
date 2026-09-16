@@ -1,3 +1,5 @@
+import { executeRiftExecutable, inspectRiftExecutable, prepareRiftExecutable, RIFT_VM_ABI } from './riftvm.js';
+
 const core=globalThis.RiftOSCore;
 const baseApps=globalThis.RiftApps;
 const build=globalThis.RiftBuild;
@@ -49,7 +51,7 @@ function parseRuntime(app){
   const requested=String(spec.engine||'native-webview').toLowerCase();
   const engine=requested==='iframe'?'native-webview':requested;
   return{
-    engine:['native-webview','worker-js','wasm-base64','native-arm64'].includes(engine)?engine:'native-webview',
+    engine:['native-webview','worker-js','wasm-base64','rift-vm','native-arm64'].includes(engine)?engine:'native-webview',
     entry:String(spec.entry||spec.main||app?.manifest?.entry||'main.js').replace(/^\/+/,''),
     capabilities:[...new Set(Array.isArray(spec.capabilities)?spec.capabilities.map(String):[])],
     fps:clamp(num(spec.fps,60),1,120),
@@ -135,6 +137,40 @@ async function hostCall(app,method,args={}){
   throw new Error(`Unsupported RiftRT host call: ${method}`);
 }
 
+const VM_IMPORT_CAPABILITIES=Object.freeze({
+  'storage.get':'storage','storage.set':'storage','storage.remove':'storage',
+  'fs.readText':'fs.read','fs.list':'fs.read','fs.writeText':'fs.write',
+  'clipboard.read':'clipboard.read','clipboard.write':'clipboard.write','share':'share',
+  'build.doctor':'build.local','build.plan':'build.local','build.runs':'build.local','build.artifacts':'build.local'
+});
+const VM_UNPRIVILEGED_IMPORTS=new Set(['app.setTitle']);
+function validateVmImports(app,spec,info){
+  const manifestPermissions=new Set(Array.isArray(app?.manifest?.permissions)?app.manifest.permissions.map(String):[]),runtimeCapabilities=new Set(spec.capabilities);
+  for(const method of info.imports){
+    if(VM_UNPRIVILEGED_IMPORTS.has(method))continue;
+    const capabilityName=VM_IMPORT_CAPABILITIES[method];if(!capabilityName)throw new Error(`RiftVM import is not supported by RiftRT: ${method}`);
+    if(!runtimeCapabilities.has(capabilityName))throw new Error(`RiftVM import ${method} requires ${capabilityName} in riftrt.json`);
+    if(!manifestPermissions.has(capabilityName))throw new Error(`RiftVM import ${method} requires ${capabilityName} in the installed manifest`);
+  }
+}
+async function invokeVmHost(app,record,method,args){
+  if(method==='app.setTitle'){setRecordTitle(record,String(args[0]??app.manifest.name));return true;}
+  if(method==='storage.get')return hostCall(app,method,{key:args[0]});
+  if(method==='storage.set')return hostCall(app,method,{key:args[0],value:args[1]});
+  if(method==='storage.remove')return hostCall(app,method,{key:args[0]});
+  if(method==='fs.readText')return hostCall(app,method,{path:args[0]});
+  if(method==='fs.writeText')return hostCall(app,method,{path:args[0],text:args[1]});
+  if(method==='fs.list')return hostCall(app,method,{path:args[0]});
+  if(method==='clipboard.read')return hostCall(app,method,{});
+  if(method==='clipboard.write')return hostCall(app,method,{text:args[0]});
+  if(method==='share')return hostCall(app,method,{text:args[0]});
+  if(method==='build.doctor')return hostCall(app,method,{project:args[0]??null});
+  if(method==='build.plan')return hostCall(app,method,{project:args[0]??'',target:args[1]??'universal'});
+  if(method==='build.runs')return hostCall(app,method,{limit:Number(args[0])||20});
+  if(method==='build.artifacts')return hostCall(app,method,{project:args[0]??null});
+  throw new Error(`Unsupported RiftVM host import: ${method}`);
+}
+
 async function launchNativeWebView(app,record,body){
   if(!nativeHosted)throw new Error('native-webview requires the Android-native RiftDesktop host');
   body.innerHTML='';body.style.pointerEvents='none';body.style.background='transparent';
@@ -192,6 +228,19 @@ async function launchWasm(app,spec,record,body){
   return()=>{stopped=true;ro?.disconnect();instance=null;};
 }
 
+async function launchRiftVm(app,spec,record,body){
+  const source=app.files[spec.entry];if(typeof source!=='string')throw new Error(`RiftVM executable entry not found: ${spec.entry}`);
+  if(spec.abi!==RIFT_VM_ABI)throw new Error(`RiftVM runtime ABI mismatch: expected ${RIFT_VM_ABI}, got ${spec.abi}`);
+  const program=prepareRiftExecutable(source),info=inspectRiftExecutable(source);validateVmImports(app,spec,info);
+  body.innerHTML=`<div class="riftrt-host"><div class="riftrt-toolbar"><strong>${esc(app.manifest.name)}</strong><span class="riftrt-chip ok">RIFT VM</span><span class="riftrt-chip">${esc(info.abi)}</span><span class="grow"></span><small>${info.instructionCount} OPS · ${info.functions.length} FN</small></div><div class="riftrt-surface-wrap"><pre class="riftrt-log" style="position:absolute;inset:8px;max-width:none;max-height:none;pointer-events:auto">Starting ${esc(spec.entry)}…</pre></div></div>`;
+  const log=body.querySelector('.riftrt-log');let cancelled=false,outputBytes=0;const MAX_OUTPUT_BYTES=256*1024,utf8=new TextEncoder();
+  const append=value=>{const line=String(value),bytes=utf8.encode(line+'\n').byteLength;outputBytes+=bytes;if(outputBytes>MAX_OUTPUT_BYTES)throw new Error('RiftVM output exceeded 256 KiB');log.textContent=(log.textContent+'\n'+line).trimStart().slice(-65536);log.scrollTop=log.scrollHeight;};
+  Promise.resolve().then(()=>executeRiftExecutable(program,{write:async value=>append(value),invoke:(method,args)=>invokeVmHost(app,record,method,args),yield:()=>new Promise(resolve=>setTimeout(resolve,0))},{shouldCancel:()=>cancelled,yieldEvery:512}))
+    .then(result=>{if(!cancelled)append(`\n[exit] steps=${result.steps} prints=${result.prints} result=${JSON.stringify(result.result)}`);})
+    .catch(error=>{if(!cancelled){const line=`[error] ${error?.message||error}`;log.textContent=(log.textContent+'\n'+line).trimStart().slice(-65536);log.scrollTop=log.scrollHeight;}});
+  return()=>{cancelled=true;};
+}
+
 async function launchNative(app,spec,record,body){
   body.innerHTML=`<div class="riftrt-manager"><div class="riftrt-hero"><div><h2>Native ARM64 slot</h2><p>RiftRT recognizes this package as a native target, but Android 10+ does not permit RiftOS to execute arbitrary downloaded ELF code from writable app storage. RiftRT native modules must be compiled and packaged with the APK/approved plugin path. This keeps the runtime fast without creating a dynamic-code security hole.</p></div></div><div class="riftrt-capabilities"><span class="riftrt-chip ok">ARM64 DESIGN</span><span class="riftrt-chip">PACKAGED PLUGIN</span><span class="riftrt-chip">RIFT WINDOW ABI</span></div></div>`;
   return()=>{};
@@ -200,14 +249,14 @@ async function launchNative(app,spec,record,body){
 async function launch(appId){
   await core.ready;const app=await baseApps.get(appId);if(!app)throw new Error(`Rift app not installed: ${appId}`);const id=sessionId(app.id);if(externalWindows.has(id)){focusExternal(id);return sessions.get(id);}
   const spec=parseRuntime(app),created=createWindow(id,app.manifest.name,`RIFTRT · ${spec.engine.toUpperCase()}`),record=created.record,body=created.body;body.style.padding='0';record.process.kind=`riftrt-${spec.engine}`;record.process.appId=app.id;record.process.runtimeEngine=spec.engine;
-  let dispose=()=>{};try{if(spec.engine==='native-webview')dispose=await launchNativeWebView(app,record,body);else if(spec.engine==='worker-js')dispose=await launchWorker(app,spec,record,body);else if(spec.engine==='wasm-base64')dispose=await launchWasm(app,spec,record,body);else if(spec.engine==='native-arm64')dispose=await launchNative(app,spec,record,body);else throw new Error(`Unsupported RiftRT engine: ${spec.engine}`);}catch(error){body.innerHTML=`<div class="riftrt-manager"><div class="riftrt-card"><strong>RiftRT launch failed</strong><p>${esc(error.message||error)}</p></div></div>`;throw error;}
+  let dispose=()=>{};try{if(spec.engine==='native-webview')dispose=await launchNativeWebView(app,record,body);else if(spec.engine==='worker-js')dispose=await launchWorker(app,spec,record,body);else if(spec.engine==='wasm-base64')dispose=await launchWasm(app,spec,record,body);else if(spec.engine==='rift-vm')dispose=await launchRiftVm(app,spec,record,body);else if(spec.engine==='native-arm64')dispose=await launchNative(app,spec,record,body);else throw new Error(`Unsupported RiftRT engine: ${spec.engine}`);}catch(error){body.innerHTML=`<div class="riftrt-manager"><div class="riftrt-card"><strong>RiftRT launch failed</strong><p>${esc(error.message||error)}</p></div></div>`;throw error;}
   const session={id,appId:app.id,engine:spec.engine,record,dispose};sessions.set(id,session);return session;
 }
 
 async function runtimeCapabilities(){
   const canvas=document.createElement('canvas');let webgl2=false;try{webgl2=!!canvas.getContext('webgl2');}catch(_){}
   let device={},appHost=null;try{device=await core.native.call('device.info',{});}catch(_){}try{if(nativeHosted)appHost=await core.native.call('app.runtime.state',{});}catch(_){}
-  return{version:VERSION,platform:'android',device,nativeWebView:nativeHosted,nativeAppHost:appHost,worker:typeof Worker!=='undefined',wasm:typeof WebAssembly!=='undefined',webgl2,canvas2d:!!canvas.getContext('2d'),hardwareConcurrency:navigator.hardwareConcurrency||1,nativeArm64:'packaged-plugin-only',windowHost:true,riftfs:true};
+  return{version:VERSION,platform:'android',device,nativeWebView:nativeHosted,nativeAppHost:appHost,worker:typeof Worker!=='undefined',wasm:typeof WebAssembly!=='undefined',riftVm:true,riftVmAbi:RIFT_VM_ABI,webgl2,canvas2d:!!canvas.getContext('2d'),hardwareConcurrency:navigator.hardwareConcurrency||1,nativeArm64:'packaged-plugin-only',windowHost:true,riftfs:true};
 }
 
 const demoPackage={
@@ -224,7 +273,7 @@ async function installDemo(){const app=await baseApps.installPackageObject(demoP
 
 async function openManager(){
   const id='riftrt:manager',created=createWindow(id,'RiftRT','RUNTIME MANAGER'),body=created.body;body.style.padding='0';const [apps,caps]=await Promise.all([baseApps.list(),runtimeCapabilities()]);
-  body.innerHTML=`<div class="riftrt-manager"><section class="riftrt-hero"><div><h2>RiftRT ${VERSION}</h2><p>RiftOS-native desktop application runtime. Apps stay inside RiftDesktop windows and can target sandboxed HTML, Worker + canvas, or the Rift WASM ABI without carrying a second Linux desktop.</p></div><div class="riftrt-actions"><button class="riftrt-btn primary" id="riftrtDemo">Install RiftRT demo</button><label class="riftrt-btn">Install .rift<input type="file" id="riftrtImport" accept=".rift,*/*" hidden></label></div></section><div class="riftrt-capabilities"><span class="riftrt-chip ${caps.worker?'ok':''}">WORKER ${caps.worker?'ON':'OFF'}</span><span class="riftrt-chip ${caps.wasm?'ok':''}">WASM ${caps.wasm?'ON':'OFF'}</span><span class="riftrt-chip ${caps.webgl2?'ok':''}">WEBGL2 ${caps.webgl2?'ON':'OFF'}</span><span class="riftrt-chip ok">RIFTFS</span><span class="riftrt-chip">${esc(caps.device?.manufacturer||'Android')} ${esc(caps.device?.model||'')}</span><span class="riftrt-chip">${caps.hardwareConcurrency} CPU THREADS</span></div><div class="riftrt-grid">${apps.length?apps.map(app=>{const spec=parseRuntime(app);return`<article class="riftrt-card"><header><div class="riftrt-icon">${esc(app.manifest.icon||'R')}</div><div><strong>${esc(app.manifest.name)}</strong><small>${esc(app.id)} · ${esc(spec.engine)}</small></div></header><p>${esc(app.manifest.description||'Installed Rift application')}</p><footer><button class="riftrt-btn primary" data-rt-launch="${esc(app.id)}">Open</button><button class="riftrt-btn danger" data-rt-remove="${esc(app.id)}">Uninstall</button></footer></article>`}).join(''):`<div class="riftrt-empty">No Rift apps installed.</div>`}</div></div>`;
+  body.innerHTML=`<div class="riftrt-manager"><section class="riftrt-hero"><div><h2>RiftRT ${VERSION}</h2><p>RiftOS-native desktop application runtime. Apps stay inside RiftDesktop windows and can target sandboxed HTML, Worker + canvas, the Rift WASM ABI, or data-only Rift executables through RiftVM without carrying a second Linux desktop.</p></div><div class="riftrt-actions"><button class="riftrt-btn primary" id="riftrtDemo">Install RiftRT demo</button><label class="riftrt-btn">Install .rift<input type="file" id="riftrtImport" accept=".rift,*/*" hidden></label></div></section><div class="riftrt-capabilities"><span class="riftrt-chip ${caps.worker?'ok':''}">WORKER ${caps.worker?'ON':'OFF'}</span><span class="riftrt-chip ${caps.wasm?'ok':''}">WASM ${caps.wasm?'ON':'OFF'}</span><span class="riftrt-chip ${caps.riftVm?'ok':''}">RIFTVM ${caps.riftVm?'ON':'OFF'}</span><span class="riftrt-chip ${caps.webgl2?'ok':''}">WEBGL2 ${caps.webgl2?'ON':'OFF'}</span><span class="riftrt-chip ok">RIFTFS</span><span class="riftrt-chip">${esc(caps.device?.manufacturer||'Android')} ${esc(caps.device?.model||'')}</span><span class="riftrt-chip">${caps.hardwareConcurrency} CPU THREADS</span></div><div class="riftrt-grid">${apps.length?apps.map(app=>{const spec=parseRuntime(app);return`<article class="riftrt-card"><header><div class="riftrt-icon">${esc(app.manifest.icon||'R')}</div><div><strong>${esc(app.manifest.name)}</strong><small>${esc(app.id)} · ${esc(spec.engine)}</small></div></header><p>${esc(app.manifest.description||'Installed Rift application')}</p><footer><button class="riftrt-btn primary" data-rt-launch="${esc(app.id)}">Open</button><button class="riftrt-btn danger" data-rt-remove="${esc(app.id)}">Uninstall</button></footer></article>`}).join(''):`<div class="riftrt-empty">No Rift apps installed.</div>`}</div></div>`;
   body.querySelector('#riftrtDemo').onclick=async()=>{try{await installDemo();await openManager();}catch(error){alert(`Demo install failed: ${error?.message||error}`);}};
   body.querySelector('#riftrtImport').onchange=async event=>{try{await baseApps.installPackageFile(event.target.files?.[0]);await refreshLauncher();await openManager();}catch(error){alert(`Install failed: ${error.message}`);}};
   body.querySelectorAll('[data-rt-launch]').forEach(button=>button.onclick=()=>launch(button.dataset.rtLaunch).catch(error=>alert(`Open failed: ${error?.message||error}`)));

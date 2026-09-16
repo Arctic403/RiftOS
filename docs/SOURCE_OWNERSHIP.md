@@ -43,6 +43,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `src/riftmcp-system.js` | `docs/systems/mcp/README.md` |
 | `src/riftos.js` | `docs/systems/shell-ui/README.md`, `docs/systems/boot/README.md`, `docs/systems/riftllm-bridge/README.md`, `docs/systems/files-app/README.md`, `docs/systems/settings/README.md`, `docs/systems/shell/README.md`, `docs/systems/browser/README.md`, `docs/systems/chat-handoff/README.md`, `docs/systems/dev-lab/README.md`, `docs/systems/vortex-agent/README.md`, `docs/systems/riftrepo/README.md`, `docs/systems/riftvault/README.md`, `docs/systems/riftbuild/README.md`, `docs/systems/riftmemory/README.md` |
 | `src/riftrt.js` | `docs/systems/riftrt/README.md` + `docs/systems/riftrt/engines/README.md` + engine-specific READMEs under `docs/systems/riftrt/engines/` |
+| `src/riftvm.js` | `docs/systems/riftrt/engines/rift-vm/README.md` |
 | `src/riftruntime.js` | `docs/systems/runtime-capabilities/README.md` |
 | `src/riftshell-batch.js` | `docs/systems/shell/README.md` + `docs/systems/chat-handoff/README.md` |
 | `src/riftworkspace-android-adapter.js` | `docs/systems/workspace/README.md` |
@@ -140,6 +141,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `scripts/test-rift-text-encoder-task.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-plus-plus-v0.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-ir-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
+| `scripts/test-rift-vm.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftrt/engines/rift-vm/README.md` |
 
 ## Rule for new source
 

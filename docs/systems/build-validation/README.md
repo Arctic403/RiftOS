@@ -24,6 +24,7 @@ The build/validation layer catches source-contract regressions before the separa
 - `scripts/test-rift-text-encoder-task.mjs` — fixed-path experimental V1/V2 native tokenizer task contract, pinned configs/sources, 24-byte V2 learned-token cap, async train/status/cancel wiring, optimized-batch parity, exact provenance, streaming status, transactional artifact/manifest recovery, 32K merge arithmetic and generic-process rejection.
 - `scripts/test-rift-plus-plus-v0.mjs` — Rift++ V0 compiler/Swarm IR/BrainBackend preview contract, workspace-only source confinement, finite role/capability policy, read-only reviewer/security roles and no generic execution/MCP expansion.
 - `scripts/test-rift-ir-v1.mjs` — language-independent `rift.ir/1` swarm-core lowering/validation contract, canonical task schedules, resource/context accounting, capability defense-in-depth, inspect-only execution metadata and no MCP expansion.
+- `scripts/test-rift-vm.mjs` — executable `rift-exec-v1`/`riftvm-1` validation and execution contract, including checked arithmetic, declared imports, hard step/stack/call limits, fake-prevalidation resistance, no eval/process path and the `.rift` + `main.rxe` package fixture.
 - `scripts/test-rift-app-import.mjs` — `.rift` package import contract.
 - `android/app/build.gradle.kts` — Android source verification and web-asset sync.
 - external `Arctic403/Riftos-builder` — manual Android build/sign/verify worker.

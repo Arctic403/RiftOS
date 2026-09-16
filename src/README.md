@@ -16,6 +16,7 @@ This directory contains the trusted RiftOS shell/runtime JavaScript packaged int
 | `riftdesktop-window-host.js` / `riftdesktop-android-compat.js` | legacy/fallback host compatibility; `../docs/systems/desktop/README.md` |
 | `riftapps.js` / `riftapps-files.js` | `../docs/systems/apps/README.md` |
 | `riftrt.js` | `../docs/systems/riftrt/README.md` |
+| `riftvm.js` | `../docs/systems/riftrt/engines/rift-vm/README.md` |
 | `riftruntime.js` | `../docs/systems/runtime-capabilities/README.md` |
 | `riftshell-batch.js` | `../docs/systems/shell/README.md` |
 | `riftgit.js` | `../docs/systems/git/README.md` |

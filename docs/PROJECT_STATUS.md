@@ -39,7 +39,7 @@ RiftOS provides a local capability layer consumed through independent AI transpo
 - RiftDesktop window manager with focus, move, resize, minimize, maximize and taskbar state.
 - Explorer-style Files app with create, rename, copy, cut/paste, duplicate, move and delete.
 - Settings app with privacy-limited System Dump export and Android Save As picker.
-- RiftRT v2 installed-program runtime: native Android-owned app surfaces by default, Worker/WASM compatibility engines, and no iframe execution path.
+- RiftRT v2 installed-program runtime: native Android-owned app surfaces by default, Worker/WASM compatibility engines, bounded `rift-vm` execution for `rift-exec-v1` `.rxe` payloads, and no iframe execution path.
 - `.rift` transactional installer layout under `C:/Programs` with per-user app state separated under `D:/Users/Default/AppData`.
 - RiftFS virtual `C:/` system/program and `D:/` user/workspace volumes with canonical legacy-path compatibility.
 - Rift MCP system app for local read/write permissions and recent tool activity.

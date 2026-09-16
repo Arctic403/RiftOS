@@ -25,13 +25,14 @@ A package with no runtime spec defaults to `native-webview`. A legacy `engine: "
 - `native-webview` — V1/default Android-owned application surface. A dedicated Android WebView is mounted directly inside the app's native RiftDesktop WindowRecord. It is not nested inside the trusted shell WebView.
 - `worker-js` — compatibility/experimentation Worker runtime using a host-owned canvas and bounded RPC surface.
 - `wasm-base64` — sandboxed WebAssembly compatibility runtime using the existing Rift frame/input ABI.
+- `rift-vm` — data-only Rift executable VM. A `.rift` installer may carry a `main.rxe` payload using `rift-exec-v1` / `riftvm-1`; the VM validates bounded bytecode and declared host imports before execution.
 - `native-arm64` — reserved packaged/plugin direction. Arbitrary downloaded ELF execution from writable storage remains disabled.
 
 ## Native application surface
 
 RiftRT first creates the RiftKernel process and native RiftDesktop window. Once Android confirms that WindowRecord exists, RiftRT calls `app.runtime.open`. `RiftNativeAppHost` loads only the installed package for that app id and attaches its dedicated content View through `RiftNativeDesktop.attachContent`.
 
-This removes the previous iframe-in-shell architecture while keeping the renderer replaceable. R.O.P.E's later compiler can target a stronger compiled Rift ABI without changing installation, permissions, drives, taskbar or native window lifecycle.
+This removes the previous iframe-in-shell architecture while keeping the renderer replaceable. The first compiled/data-only path now exists as `rift-vm`: Rift++ can target `main.rxe` without changing installation, permissions, drives, taskbar or native window lifecycle. Future native/optimized Rift ABIs can evolve beneath the same boundary.
 
 ## Capability ABI
 

@@ -24,6 +24,10 @@ Compatibility/runtime experimentation engine. A Worker receives a constrained Ri
 
 Sandboxed WebAssembly compatibility engine using the existing bounded Rift ABI/frame-command surface.
 
+### rift-vm
+
+First executable target for Rift++. A normal `.rift` installer carries `riftrt.json` with `engine: "rift-vm"` plus a text `main.rxe` payload using `rift-exec-v1` / `riftvm-1`. `src/riftvm.js` validates the executable as data and runs only a finite bounded opcode set; package code is never evaluated as JavaScript. Host imports must be declared by the executable and, when privileged, by both the runtime capability list and installed manifest before the existing RiftRT permission path can run them.
+
 ### native-arm64
 
 Reserved packaged-plugin direction. RiftOS does not execute arbitrary downloaded ELF binaries from writable storage.
@@ -44,7 +48,8 @@ Program-local state lives under D:/Users/Default/AppData/<id>. `build.local` rem
 
 ## Source ownership
 
-- `src/riftrt.js` — engine parsing, kernel process/session lifecycle, native-window coordination, Worker/WASM compatibility engines and runtime manager.
+- `src/riftrt.js` — engine parsing, kernel process/session lifecycle, native-window coordination, Worker/WASM/RiftVM host integration and runtime manager.
+- `src/riftvm.js` — `rift-exec-v1` validation, bounded VM semantics and data-only executable execution.
 - `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` — Android V1 installed-program view/bridge.
 - `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` — window/surface authority.
 - `src/riftapps.js` — installation/registry only.

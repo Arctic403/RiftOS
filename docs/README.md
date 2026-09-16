@@ -46,7 +46,7 @@ When behavior changes, update the owning system README in the same patch. Histor
 | RiftOS Dev Lab | [`systems/dev-lab/README.md`](systems/dev-lab/README.md) | `src/riftdevlab.js`, RiftWorkspace guarded patch publication |
 | RiftLLM standalone Dev API bridge | [`systems/riftllm-bridge/README.md`](systems/riftllm-bridge/README.md) | `src/riftllm-bridge.js`, `RiftLlmDevClient.kt` |
 | App/package system | [`systems/apps/README.md`](systems/apps/README.md) | `src/riftapps*.js` |
-| RiftRT | [`systems/riftrt/README.md`](systems/riftrt/README.md) | `src/riftrt.js` |
+| RiftRT + RiftVM executable runtime | [`systems/riftrt/README.md`](systems/riftrt/README.md) | `src/riftrt.js`, `src/riftvm.js` |
 | Runtime capability report | [`systems/runtime-capabilities/README.md`](systems/runtime-capabilities/README.md) | `src/riftruntime.js` |
 | RiftShell | [`systems/shell/README.md`](systems/shell/README.md) | shell in `riftos.js`, `riftshell-batch.js` |
 | RiftCLI experimental brain/swarm + Rift++ V0 + Rift IR V1 | [`systems/experimental-cli/README.md`](systems/experimental-cli/README.md) | `RiftExperimentalCli.kt`, `RiftPlusPlusV0.kt`, `RiftIrV1.kt`, `RiftIrCliV1.kt`, `RiftSwarmCoordinatorV0.kt` |
