@@ -16,14 +16,14 @@ The frontend runs inside the existing RiftOS JavaScript runtime. The long-term t
 
 ## Implemented bootstrap slice
 
-Installed Core `0.6.0-bootstrap` is device-proven through Gate 5 against RiftOS source commit `972206a0d4446811572aa697e0f69cf46097dc8c`. Local source now stages Core `0.7.0-bootstrap` Gate 6A on top of that proven baseline; CI/build and installed proof remain pending. The combined current source supports the proven Gates 0–5 surface plus the staged Gate 6A additions:
+Installed Core `0.7.0-bootstrap` is device-proven through Gate 6A against RiftOS source commit `c557650e19ed7e9b22edab37848ba36dcefce814`. The current source supports the proven Gates 0–6A surface; Gate 6A performs zero parameter updates and Gate 6B is next:
 
 - functions with explicitly typed parameters/returns;
 - explicit `use module.path [as alias]` declarations with deterministic compile-time module linking; omitted aliases use the module path's final segment, and imported symbols are referenced through that explicit/default alias rather than ambient full-path lookup;
 - qualified imported function/type/struct/enum references, including imported enum patterns;
 - bounded module graphs: 64 modules maximum and 1 MiB aggregate source, with missing modules, identity mismatches, alias collisions, unused supplied dependencies and cycles rejected;
 - one closed linked `.rxe`; Rift++ source modules do not become RiftVM host imports or JavaScript imports;
-- primitive `unit`, `bool`, `u32`, `s32`, `string`, plus staged Gate 6A finite `f64`;
+- primitive `unit`, `bool`, `u32`, `s32`, finite `f64`, and `string`;
 - immutable `let`, mutable `var`, checked assignment and compound assignment;
 - lexical block scopes and inner-scope shadowing;
 - `if/else`, `while`, `break`, `continue`, short-circuit `and/or`;
@@ -38,8 +38,8 @@ Installed Core `0.6.0-bootstrap` is device-proven through Gate 5 against RiftOS 
 - immutable `Vec.len()`, `Vec.get()`, `Vec.push()` and `Vec.set()` operations, where `get` returns `Option` and updates return `Result` replacement values;
 - exhaustive `match` over built-in `Option` and `Result` tagged values using the same enum machinery as user enums;
 - checked integer arithmetic with required-result type enforcement across locals/returns/arguments/struct fields/Vec items, direct `s32` minimum literal lowering for `-2147483648`, strings, comparisons and direct function calls;
-- staged Gate 6A finite `f64` literals/arithmetic/comparisons with no implicit integer↔float coercion, non-finite-result trapping, and canonical negative-zero normalization;
-- staged Gate 6A `value_sha256(value) -> string`, a bounded data-only RiftVM identity primitive that adds no host import or capability;
+- proven Gate 6A finite `f64` literals/arithmetic/comparisons with no implicit integer↔float coercion, non-finite-result trapping, and canonical negative-zero normalization;
+- proven Gate 6A `value_sha256(value) -> string`, a bounded data-only RiftVM identity primitive that adds no host import or capability;
 - reachable-path return analysis and unreachable-code diagnostics;
 - bootstrap prelude `print(value)`;
 - proven Gate 5 function effects `allow [storage]`, with exact transitive effect closure across local/imported calls and compile-time rejection of missing, duplicate, unknown, or unused/widened authority;
@@ -54,7 +54,7 @@ Bootstrap pattern limitations remain deliberate: enum payload patterns currently
 
 ## Still absent
 
-Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability vocabularies beyond Gate 5 `storage`, FFI, general tensor extensions, the reference interpreter and the self-hosted compiler. Gate 5 is installed/device-proven. Gate 6A numeric/parameter primitives is staged locally on Core `0.7.0-bootstrap` but not promoted until CI/build and installed two-launch parameter-state proof pass; Gate 6B then adds an explicit update mechanism. RiftLLM+ parameter-learning promotion requires changed parameter state plus repeated unseen-challenge improvement in Gate 6C, not memory retrieval alone.
+Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability vocabularies beyond Gate 5 `storage`, FFI, general tensor extensions, the reference interpreter and the self-hosted compiler. Gate 5 is installed/device-proven. Gate 6A numeric/parameter primitives is also installed/device-proven on Core `0.7.0-bootstrap` with zero parameter updates; Gate 6B now adds an explicit update mechanism. RiftLLM+ parameter-learning promotion requires changed parameter state plus repeated unseen-challenge improvement in Gate 6C, not memory retrieval alone.
 
 ## Public surface
 
