@@ -6,7 +6,7 @@ const HOST_METHOD=/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*){1,3}$/;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
 const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','jump','jump_if_false','call','host','print','ret','halt']);
 const DEFAULT_LIMITS=Object.freeze({maxSteps:100000,maxStack:1024,maxCallDepth:32});
-const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:64,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536});
+const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:64,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536});
 const INT_BOUNDS=Object.freeze({u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
 const UNIT=Object.freeze({type:'unit',value:null});
 const PREPARED=Symbol('riftvm.prepared');
@@ -83,6 +83,8 @@ function normalizeInstruction(raw,where,ctx){
 function parseInput(raw){
   if(typeof raw==='string'){
     const text=raw.charCodeAt(0)===0xfeff?raw.slice(1):raw;
+    if(text.length>HARD_LIMITS.maxExecutableBytes)fail(`executable JSON exceeds ${HARD_LIMITS.maxExecutableBytes} UTF-8 bytes`);
+    const bytes=encoder.encode(text).byteLength;if(bytes>HARD_LIMITS.maxExecutableBytes)fail(`executable JSON exceeds ${HARD_LIMITS.maxExecutableBytes} UTF-8 bytes`);
     try{return JSON.parse(text);}catch(error){fail(`invalid executable JSON: ${error.message}`);}
   }
   return raw;
@@ -96,7 +98,7 @@ export function prepareRiftExecutable(raw){
   const rawImports=Array.isArray(source.imports)?source.imports:[];if(rawImports.length>HARD_LIMITS.maxImports)fail(`too many imports; max ${HARD_LIMITS.maxImports}`);
   const imports=new Set();for(const item of rawImports){const method=String(item||'');if(!HOST_METHOD.test(method))fail(`invalid import: ${method||'(empty)'}`);if(imports.has(method))fail(`duplicate import: ${method}`);imports.add(method);}
   const rawConstants=Array.isArray(source.constants)?source.constants:[];if(rawConstants.length>HARD_LIMITS.maxConstants)fail(`too many constants; max ${HARD_LIMITS.maxConstants}`);
-  const constants=Object.freeze(rawConstants.map(normalizeConstant));
+  const normalizedConstants=[];let constantStringBytes=0;for(let i=0;i<rawConstants.length;i++){const item=normalizeConstant(rawConstants[i],i);if(item.type==='string'){constantStringBytes+=encoder.encode(item.value).byteLength;if(constantStringBytes>HARD_LIMITS.maxConstantStringBytes)fail(`constant strings exceed ${HARD_LIMITS.maxConstantStringBytes} UTF-8 bytes`);}normalizedConstants.push(item);}const constants=Object.freeze(normalizedConstants);
   const rawFunctions=source.functions;if(!plain(rawFunctions))fail('functions must be an object');
   const names=Object.keys(rawFunctions);if(!names.length||names.length>HARD_LIMITS.maxFunctions)fail(`function count must be 1..${HARD_LIMITS.maxFunctions}`);
   const functionMeta=Object.create(null);let totalInstructions=0;

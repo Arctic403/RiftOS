@@ -839,8 +839,8 @@ async function runRiftppShell(args,print,state){
   const execute=async(raw,label)=>{
     const info=vm.inspectRiftExecutable(raw);if(info.imports.length)throw new Error(`riftpp shell execution denies host imports: ${info.imports.join(", ")}`);
     let bytes=0,writes=0;const output=[];
-    const host={write:value=>{const text=String(value);bytes+=new TextEncoder().encode(text).byteLength+1;if(++writes>256||bytes>65536)throw new Error("riftpp shell output limit exceeded (64 KiB / 256 writes)");output.push(text);}};
-    const result=await vm.executeRiftExecutable(raw,host,{maxSteps:100000,maxStack:1024,maxCallDepth:32});
+    const host={write:value=>{const text=String(value);bytes+=new TextEncoder().encode(text).byteLength+1;if(++writes>256||bytes>65536)throw new Error("riftpp shell output limit exceeded (64 KiB / 256 writes)");output.push(text);},yield:()=>new Promise(resolve=>setTimeout(resolve,0))};
+    const result=await vm.executeRiftExecutable(raw,host,{maxSteps:100000,maxStack:1024,maxCallDepth:32,yieldEvery:512});
     for(const line of output)print(line);
     print(JSON.stringify({schema:"riftpp-shell-run/1",label,steps:result.steps,prints:result.prints,result:result.result},null,2));
     return Object.freeze({result,output:Object.freeze([...output])});

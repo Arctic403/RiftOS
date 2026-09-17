@@ -21,6 +21,13 @@ assert.equal(result.result.type,'unit');
 assert.equal(result.halted,true);
 assert.equal(inspectRiftExecutable(program).instructionCount,12);
 assert.equal(prepareRiftExecutable(JSON.stringify(program)).entry,'main');
+assert.throws(()=>prepareRiftExecutable(' '.repeat(8*1024*1024+1)),/executable JSON exceeds 8388608 UTF-8 bytes/);
+const constantBudgetBomb={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:Array.from({length:65},()=>({type:'string',value:'x'.repeat(65536)})),functions:{main:{params:0,locals:0,code:[{op:'halt'}]}}};
+assert.throws(()=>prepareRiftExecutable(constantBudgetBomb),/constant strings exceed 4194304 UTF-8 bytes/);
+const dottedShare={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['share.text'],constants:[],functions:{main:{params:0,locals:0,code:[{op:'halt'}]}}};
+assert.deepEqual(prepareRiftExecutable(dottedShare).imports,['share.text']);
+const bareShare={...dottedShare,imports:['share']};
+assert.throws(()=>prepareRiftExecutable(bareShare),/invalid import: share/);
 
 const composite={
   format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],

@@ -91,7 +91,7 @@ class Lexer{
 }
 
 class Parser{
-  constructor(tokens){this.tokens=tokens;this.index=0;this.typeDepth=0;this.expressionDepth=0;this.unaryDepth=0;this.patternDepth=0;this.ifDepth=0;}
+  constructor(tokens){this.tokens=tokens;this.index=0;this.typeDepth=0;this.expressionDepth=0;this.unaryDepth=0;this.patternDepth=0;this.ifDepth=0;this.blockDepth=0;}
   current(){return this.tokens[this.index];}
   peek(offset=1){return this.tokens[Math.min(this.tokens.length-1,this.index+offset)];}
   previous(){return this.tokens[Math.max(0,this.index-1)];}
@@ -146,7 +146,7 @@ class Parser{
     if(this.at('allow'))fail('E0108','function capability clauses are not implemented in the bootstrap Core slice',this.current(),'bootstrap feature gate');
     const body=this.block();return this.node('Function',start,{name:name.value,params:Object.freeze(params),returnType,body});
   }
-  block(){const start=this.expect('{'),statements=[];while(!this.at('}')){if(this.current().kind==='eof')fail('E0109','unterminated block',this.current(),'block grammar');statements.push(this.statement());}this.expect('}');return this.node('Block',start,{statements:Object.freeze(statements)});}
+  block(){const token=this.current();if(++this.blockDepth>MAX_PARSE_DEPTH){this.blockDepth--;fail('E0124',`block nesting exceeds ${MAX_PARSE_DEPTH}`,token,'host bounds');}try{const start=this.expect('{'),statements=[];while(!this.at('}')){if(this.current().kind==='eof')fail('E0109','unterminated block',this.current(),'block grammar');statements.push(this.statement());}this.expect('}');return this.node('Block',start,{statements:Object.freeze(statements)});}finally{this.blockDepth--;}}
   statement(){
     if(this.at('let'))return this.bindingStmt(false);
     if(this.at('var'))return this.bindingStmt(true);
@@ -266,7 +266,7 @@ class Codegen{
   }
   run(){this.collectTypes();this.collectSignatures();for(const fn of this.ast.functions)this.compileFunction(fn);const executable={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:this.constants,functions:this.functions,limits:{maxSteps:100000,maxStack:1024,maxCallDepth:32},metadata:{language:RIFTPP_LANGUAGE,module:this.ast.module,compiler:RIFTPP_CORE_VERSION,structs:[...this.structs.keys()],enums:[...this.enums.keys()]}};prepareRiftExecutable(executable);return executable;}
   compileFunction(fn){
-    const sig=this.signatures.get(fn.name),code=[];let nextLocal=0;
+    const sig=this.signatures.get(fn.name),code=[];let nextLocal=0,compileExprDepth=0,compileBlockDepth=0;
     const scopes=[new Map()],loopStack=[];
     const emit=ins=>{code.push(ins);return code.length-1;};
     const patch=(index,target)=>{code[index]={...code[index],target};};
@@ -292,6 +292,8 @@ class Codegen{
       semanticFail('E0269',`Vec has no bootstrap method '${method}'`,expr,'bounded collection method');
     };
     const compileExpr=(expr,expected=null)=>{
+      if(++compileExprDepth>MAX_PARSE_DEPTH){compileExprDepth--;semanticFail('E0272',`compiler expression nesting exceeds ${MAX_PARSE_DEPTH}`,expr,'host bounds');}
+      try{
       if(expr.kind==='IntLiteral'){const type=expected==='s32'?'s32':expected==='u32'?'u32':'u32';if(expected&&!['u32','s32'].includes(expected))semanticFail('E0201',`type mismatch: expected ${expected}, got integer`,expr,'type checking');emit({op:'const',index:this.constant(type,parseInt(expr.raw,expr,type))});return type;}
       if(expr.kind==='StringLiteral'){expectType('string',expected,expr);emit({op:'const',index:this.constant('string',expr.value)});return'string';}
       if(expr.kind==='BoolLiteral'){expectType('bool',expected,expr);emit({op:'const',index:this.constant('bool',expr.value)});return'bool';}
@@ -310,14 +312,14 @@ class Codegen{
       if(expr.kind==='Unary'){
         if(expr.op==='not'){compileExpr(expr.expression,'bool');expectType('bool',expected,expr);emit({op:'not'});return'bool';}
         if(expr.op==='+'){const type=compileExpr(expr.expression,expected);if(!['u32','s32'].includes(type))semanticFail('E0209','unary + requires an integer',expr,'numeric semantics');return type;}
-        const type='s32';if(expected&&expected!=='s32')semanticFail('E0210','unary - currently requires s32',expr,'bootstrap numeric support');compileExpr(expr.expression,type);emit({op:'neg'});return type;
+        const type='s32';if(expected&&expected!=='s32')semanticFail('E0210','unary - currently requires s32',expr,'bootstrap numeric support');if(expr.expression.kind==='IntLiteral'){const magnitude=BigInt(expr.expression.raw.replaceAll('_',''));if(magnitude===2147483648n){emit({op:'const',index:this.constant('s32','-2147483648')});return type;}}compileExpr(expr.expression,type);emit({op:'neg'});return type;
       }
       if(expr.kind==='Binary'){
         if(expr.op==='and'){expectType('bool',expected,expr);compileExpr(expr.left,'bool');emit({op:'dup'});const falseJump=emit({op:'jump_if_false',target:-1});emit({op:'pop'});compileExpr(expr.right,'bool');const end=anchor();patch(falseJump,end);return'bool';}
         if(expr.op==='or'){expectType('bool',expected,expr);compileExpr(expr.left,'bool');emit({op:'dup'});const evalRight=emit({op:'jump_if_false',target:-1}),done=emit({op:'jump',target:-1});const rightTarget=code.length;emit({op:'pop'});patch(evalRight,rightTarget);compileExpr(expr.right,'bool');const end=anchor();patch(done,end);return'bool';}
         if(expr.op==='=='||expr.op==='!='){const left=compileExpr(expr.left,null),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`comparison operands differ: ${left} and ${right}`,expr,'type checking');if(!COMPARABLE_PRIMITIVES.has(left))semanticFail('E0245',`equality for composite type ${left} is not defined in the bootstrap slice`,expr,'bootstrap comparison semantics');expectType('bool',expected,expr);emit({op:expr.op==='=='?'eq':'ne'});return'bool';}
         if(['<','<=','>','>='].includes(expr.op)){const left=compileExpr(expr.left,null),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`comparison operands differ: ${left} and ${right}`,expr,'type checking');if(!ORDERED_PRIMITIVES.has(left))semanticFail('E0246',`ordered comparison requires u32, s32 or string; got ${left}`,expr,'comparison semantics');expectType('bool',expected,expr);emit({op:{'<':'lt','<=':'le','>':'gt','>=':'ge'}[expr.op]});return'bool';}
-        const preferred=expected&&['u32','s32','string'].includes(expected)?expected:null,left=compileExpr(expr.left,preferred),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`binary operands differ: ${left} and ${right}`,expr,'type checking');if(expr.op==='+'&&left==='string'){emit({op:'concat'});return'string';}if(!['u32','s32'].includes(left))semanticFail('E0211',`operator '${expr.op}' requires integer operands`,expr,'numeric semantics');emit({op:{'+':'add','-':'sub','*':'mul','/':'div','%':'mod'}[expr.op]});return left;
+        const preferred=expected&&['u32','s32','string'].includes(expected)?expected:null,left=compileExpr(expr.left,preferred),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`binary operands differ: ${left} and ${right}`,expr,'type checking');if(expr.op==='+'&&left==='string'){expectType('string',expected,expr);emit({op:'concat'});return'string';}if(!['u32','s32'].includes(left))semanticFail('E0211',`operator '${expr.op}' requires integer operands`,expr,'numeric semantics');expectType(left,expected,expr);emit({op:{'+':'add','-':'sub','*':'mul','/':'div','%':'mod'}[expr.op]});return left;
       }
       if(expr.kind==='Call'){
         const constructed=enumConstructor(expr.callee,expr.args,expr,expected);if(constructed)return constructed;if(expr.callee.kind==='Member')return compileVecMethod(expr,expected);
@@ -326,9 +328,10 @@ class Codegen{
         const target=this.signatures.get(name);if(!target)semanticFail('E0214',`unknown function '${name}'`,expr,'name resolution');if(expr.args.length!==target.params.length)semanticFail('E0215',`${name} expects ${target.params.length} arguments, got ${expr.args.length}`,expr,'call semantics');for(let i=0;i<expr.args.length;i++)compileExpr(expr.args[i],target.params[i]);emit({op:'call',name,argc:expr.args.length});expectType(target.returnType,expected,expr);return target.returnType;
       }
       semanticFail('E0299',`unsupported expression node '${expr.kind}'`,expr,'compiler invariant');
+      }finally{compileExprDepth--;}
     };
 
-    const compileBlock=(block,newScope=true)=>{if(newScope)enterScope();let flows=new Set(['normal']);for(const stmt of block.statements){if(!flows.has('normal'))semanticFail('E0227','unreachable statement',stmt,'control-flow analysis');const stmtFlow=compileStatement(stmt),next=new Set([...flows].filter(value=>value!=='normal'));for(const value of stmtFlow)next.add(value);flows=next;}if(newScope)leaveScope();return flows;};
+    const compileBlock=(block,newScope=true)=>{if(++compileBlockDepth>MAX_PARSE_DEPTH){compileBlockDepth--;semanticFail('E0273',`compiler block nesting exceeds ${MAX_PARSE_DEPTH}`,block,'host bounds');}if(newScope)enterScope();try{let flows=new Set(['normal']);for(const stmt of block.statements){if(!flows.has('normal'))semanticFail('E0227','unreachable statement',stmt,'control-flow analysis');const stmtFlow=compileStatement(stmt),next=new Set([...flows].filter(value=>value!=='normal'));for(const value of stmtFlow)next.add(value);flows=next;}return flows;}finally{if(newScope)leaveScope();compileBlockDepth--;}};
     const compileIf=stmt=>{compileExpr(stmt.condition,'bool');const falseJump=emit({op:'jump_if_false',target:-1});const thenFlow=compileBlock(stmt.thenBranch,true);if(!stmt.elseBranch){const end=anchor();patch(falseJump,end);return unionFlows(thenFlow,new Set(['normal']));}let doneJump=null;if(thenFlow.has('normal'))doneJump=emit({op:'jump',target:-1});const elseTarget=anchor();patch(falseJump,elseTarget);const elseFlow=stmt.elseBranch.kind==='If'?compileIf(stmt.elseBranch):compileBlock(stmt.elseBranch,true);const end=anchor();if(doneJump!==null)patch(doneJump,end);return unionFlows(thenFlow,elseFlow);};
     const compileWhile=stmt=>{const conditionTarget=code.length;compileExpr(stmt.condition,'bool');const exitJump=emit({op:'jump_if_false',target:-1});const loop={breaks:[],continueTarget:conditionTarget};loopStack.push(loop);const bodyFlow=compileBlock(stmt.body,true);loopStack.pop();if(bodyFlow.has('normal'))emit({op:'jump',target:conditionTarget});const exitTarget=anchor();patch(exitJump,exitTarget);for(const index of loop.breaks)patch(index,exitTarget);const out=new Set(['normal']);if(bodyFlow.has('return'))out.add('return');return out;};
     const compileAssignment=stmt=>{const local=resolve(stmt.name);if(!local)semanticFail('E0221',`unknown assignment target '${stmt.name}'`,stmt,'name resolution');if(!local.mutable)semanticFail('E0222',`cannot assign to immutable binding '${stmt.name}'`,stmt,'mutability');if(stmt.op==='='){compileExpr(stmt.expression,local.type);emit({op:'store',index:local.slot});return;}emit({op:'load',index:local.slot});compileExpr(stmt.expression,local.type);if(stmt.op==='+='&&local.type==='string')emit({op:'concat'});else{if(!['u32','s32'].includes(local.type))semanticFail('E0223',`compound assignment '${stmt.op}' requires integer operands (or string +=)`,stmt,'numeric semantics');emit({op:{'+=':'add','-=':'sub','*=':'mul','/=':'div','%=':'mod'}[stmt.op]});}emit({op:'store',index:local.slot});};

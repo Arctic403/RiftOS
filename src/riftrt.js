@@ -140,7 +140,7 @@ async function hostCall(app,method,args={}){
 const VM_IMPORT_CAPABILITIES=Object.freeze({
   'storage.get':'storage','storage.set':'storage','storage.remove':'storage',
   'fs.readText':'fs.read','fs.list':'fs.read','fs.writeText':'fs.write',
-  'clipboard.read':'clipboard.read','clipboard.write':'clipboard.write','share':'share',
+  'clipboard.read':'clipboard.read','clipboard.write':'clipboard.write','share.text':'share',
   'build.doctor':'build.local','build.plan':'build.local','build.runs':'build.local','build.artifacts':'build.local'
 });
 const VM_UNPRIVILEGED_IMPORTS=new Set(['app.setTitle']);
@@ -163,7 +163,7 @@ async function invokeVmHost(app,record,method,args){
   if(method==='fs.list')return hostCall(app,method,{path:args[0]});
   if(method==='clipboard.read')return hostCall(app,method,{});
   if(method==='clipboard.write')return hostCall(app,method,{text:args[0]});
-  if(method==='share')return hostCall(app,method,{text:args[0]});
+  if(method==='share.text')return hostCall(app,'share',{text:args[0]});
   if(method==='build.doctor')return hostCall(app,method,{project:args[0]??null});
   if(method==='build.plan')return hostCall(app,method,{project:args[0]??'',target:args[1]??'universal'});
   if(method==='build.runs')return hostCall(app,method,{limit:Number(args[0])||20});

@@ -33,13 +33,13 @@ The current `0.4.0-bootstrap` slice requires `riftpp 1` and a `module` declarati
 - bounded vector literals with compile-time capacity `N` in `1..64`;
 - immutable `Vec.len()`, `Vec.get()`, `Vec.push()` and `Vec.set()` operations, where `get` returns `Option` and updates return `Result` replacement values;
 - exhaustive `match` over built-in `Option` and `Result` tagged values using the same enum machinery as user enums;
-- checked integer arithmetic, strings, comparisons and direct function calls;
+- checked integer arithmetic with required-result type enforcement across locals/returns/arguments/struct fields/Vec items, direct `s32` minimum literal lowering for `-2147483648`, strings, comparisons and direct function calls;
 - reachable-path return analysis and unreachable-code diagnostics;
 - bootstrap prelude `print(value)`.
 
 Struct construction must supply each declared field exactly once. Enum payload arity/types are checked. Struct/enum/vector values can pass through locals, function parameters and returns. `Vec` is deliberately bounded and immutable at runtime: successful `push`/`set` operations return a replacement vector inside `Result.Ok`, while capacity/index failures return `Result.Err(string)` and out-of-range reads return `Option.None`. Composite equality/ordering is intentionally undefined in this bootstrap and fails closed.
 
-Compiler recursion is also bounded: generic type nesting is capped at 32, while recursive expression, unary, pattern, and `else if` parsing is capped at 128. Inputs beyond those ceilings fail with structured diagnostics instead of relying on the JavaScript call-stack limit.
+Compiler recursion is also bounded: generic type nesting is capped at 32; recursive expression, unary, pattern, `else if`, and block parsing is capped at 128; and code-generation expression/block traversal has an independent 128-depth ceiling. Inputs beyond those ceilings fail with structured diagnostics instead of relying on the JavaScript call-stack limit.
 
 Bootstrap pattern limitations remain deliberate: enum payload patterns currently accept bindings or `_`; nested/literal payload patterns are not implemented. Field mutation/place assignment is not implemented yet; rebuild and assign the whole struct instead.
 
@@ -100,4 +100,4 @@ These remain data-only operations. `vec_get` returns the existing runtime `Optio
 
 ## Validation
 
-`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1, Structured Data V1 and Collections V1 fixtures, then attacks duplicate/missing fields, enum payload/type errors, non-exhaustive enum/bool/Option matches, invalid vector capacities/literals/items, composite equality, and parser/type recursion ceilings. `test-rift-vm.mjs` separately executes raw struct/enum/vector bytecode, vector capacity/index failure semantics, composite-depth/render/public-result expansion limits, malformed instructions and the no-composite-host-boundary rule.
+`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1, Structured Data V1 and Collections V1 fixtures, then attacks duplicate/missing fields, enum payload/type errors, non-exhaustive enum/bool/Option matches, invalid vector capacities/literals/items, arithmetic result-type escapes across every typed context, composite equality, parser/codegen recursion ceilings, and the `s32` minimum-literal edge case. `test-rift-vm.mjs` separately executes raw struct/enum/vector bytecode, vector capacity/index failure semantics, composite-depth/render/public-result expansion limits, malformed instructions and the no-composite-host-boundary rule.
