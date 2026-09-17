@@ -42,7 +42,7 @@ The first payload schema is `rift-exec-v1` with ABI `riftvm-1`.
 }
 ```
 
-V1 scalar constants are `unit`, `bool`, `u32`, `s32`, `f64`, and `string`. Runtime values may additionally contain nominal immutable `struct`, tagged `enum`, and bounded immutable `vec` composites constructed only by validated VM instructions. Vector capacity is encoded in `make_vec` and is hard-capped at 64 items. Integer arithmetic is checked; overflow traps. Proven Gate 6A semantics enforce finite `f64` values/results, canonicalize negative zero to positive zero, and reject divide/modulo by zero on the installed Core `0.7.0-bootstrap` runtime. Branch conditions require `bool`. Host calls must be declared in the executable import table before execution, and composite values cannot implicitly cross that host boundary.
+V1 scalar constants are `unit`, `bool`, `u32`, `s32`, `f64`, and `string`. Runtime values may additionally contain nominal immutable `struct`, tagged `enum`, and bounded immutable `vec` composites constructed only by validated VM instructions. Vector capacity is encoded in `make_vec` and is hard-capped at 256 items. Integer arithmetic is checked; overflow traps. Proven Gate 6A semantics enforce finite `f64` values/results, canonicalize negative zero to positive zero, and reject divide/modulo by zero on the installed Core `0.7.0-bootstrap` runtime. Branch conditions require `bool`. Host calls must be declared in the executable import table before execution, and composite values cannot implicitly cross that host boundary.
 
 ## VM instructions
 

@@ -34,7 +34,7 @@ Installed Core `0.7.0-bootstrap` is device-proven through Gate 6A against RiftOS
 - match payload bindings, `_`, whole-value bindings and boolean cases;
 - match guards, with guarded cases not counted as exhaustive coverage;
 - built-in generic `Vec<T, N>`, `Option<T>` and `Result<T, E>` types;
-- bounded vector literals with compile-time capacity `N` in `1..64`;
+- bounded vector literals with compile-time capacity `N` in `1..256`;
 - immutable `Vec.len()`, `Vec.get()`, `Vec.push()` and `Vec.set()` operations, where `get` returns `Option` and updates return `Result` replacement values;
 - exhaustive `match` over built-in `Option` and `Result` tagged values using the same enum machinery as user enums;
 - checked integer arithmetic with required-result type enforcement across locals/returns/arguments/struct fields/Vec items, direct `s32` minimum literal lowering for `-2147483648`, strings, comparisons and direct function calls;
@@ -86,7 +86,7 @@ vec_push
 vec_set
 ```
 
-These remain data-only operations. `vec_get` returns the existing runtime `Option.Some/None` representation; `vec_push` and `vec_set` return `Result.Ok/Err`. Vector capacity is validated before execution and cannot exceed 64. Runtime composite depth is capped at 32, composite rendering is capped at 64 KiB, and public result expansion is bounded to 4096 values plus 64 KiB of aggregate strings. Composite values, including vectors, cannot implicitly cross the RiftVM host-import boundary. There is no generic object/property opcode, reflection API or authority widening.
+These remain data-only operations. `vec_get` returns the existing runtime `Option.Some/None` representation; `vec_push` and `vec_set` return `Result.Ok/Err`. Vector capacity is validated before execution and cannot exceed 256. Runtime composite depth is capped at 32, composite rendering is capped at 64 KiB, and public result expansion is bounded to 4096 values plus 64 KiB of aggregate strings. Composite values, including vectors, cannot implicitly cross the RiftVM host-import boundary. There is no generic object/property opcode, reflection API or authority widening.
 
 `prepareRiftExecutable` independently validates the executable structure, opcode operands, limits, imports, and runtime-safe operation contracts. Rift++ source compilation additionally supplies static generic/element type checking. A hand-authored `.rxe` is not granted source-level generic type soundness merely by passing structural validation; dynamically ill-typed bytecode can fail at runtime, but it cannot use that mismatch to gain host authority.
 

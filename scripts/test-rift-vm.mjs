@@ -117,8 +117,8 @@ const badComposite=structuredClone(composite);badComposite.functions.main.code[2
 assert.throws(()=>prepareRiftExecutable(badComposite),/duplicate x/);
 const wrongEnumRead=structuredClone(composite);wrongEnumRead.functions.main.code[14]={op:'enum_get',name:'Outcome',variant:'Rejected',index:0};
 await assert.rejects(()=>executeRiftExecutable(wrongEnumRead),/enum_get expected Outcome.Rejected/);
-const badVecCapacity=structuredClone(vectors);badVecCapacity.functions.main.code[0]={op:'make_vec',capacity:65,count:0};
-assert.throws(()=>prepareRiftExecutable(badVecCapacity),/capacity must be an integer in 1..64/);
+const badVecCapacity=structuredClone(vectors);badVecCapacity.functions.main.code[0]={op:'make_vec',capacity:257,count:0};
+assert.throws(()=>prepareRiftExecutable(badVecCapacity),/capacity must be an integer in 1\.\.256/);
 const badVecCount=structuredClone(vectors);badVecCount.functions.main.code[0]={op:'make_vec',capacity:1,count:2};
 assert.throws(()=>prepareRiftExecutable(badVecCount),/count exceeds vector capacity/);
 const hostComposite={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['test.echo'],constants:[{type:'u32',value:1}],functions:{main:{params:0,locals:0,code:[{op:'const',index:0},{op:'make_struct',name:'Box',fields:['value']},{op:'host',method:'test.echo',argc:1},{op:'halt'}]}},limits:{maxSteps:20,maxStack:8,maxCallDepth:2}};
