@@ -243,8 +243,8 @@ const compositeEquality=`riftpp 1\nmodule bad.composite_equality\nstruct S { x: 
 assert.throws(()=>compileRiftPlusPlusCoreV1(compositeEquality),/equality for composite type S is not defined/);
 const untypedVec=`riftpp 1\nmodule bad.untyped_vec\nfn main() { let x = [] print(x) }\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(untypedVec),/vector literal requires an expected Vec/);
-const oversizedVec=`riftpp 1\nmodule bad.vec_capacity\nfn main() { let x: Vec<u32, 65> = [] print(x) }\n`;
-assert.throws(()=>compileRiftPlusPlusCoreV1(oversizedVec),/Vec capacity must be 1..64/);
+const oversizedVec=`riftpp 1\nmodule bad.vec_capacity\nfn main() { let x: Vec<u32, 257> = [] print(x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(oversizedVec),/Vec capacity must be 1\.\.256/);
 const vecLiteralOverflow=`riftpp 1\nmodule bad.vec_literal\nfn main() { let x: Vec<u32, 1> = [1, 2] print(x) }\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(vecLiteralOverflow),/vector literal has 2 item/);
 const vecWrongItem=`riftpp 1\nmodule bad.vec_item\nfn main() { let x: Vec<u32, 2> = [] let r: Result<Vec<u32, 2>, string> = x.push("bad") print(r) }\n`;
