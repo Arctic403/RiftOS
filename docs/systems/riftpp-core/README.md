@@ -16,7 +16,7 @@ The frontend runs inside the existing RiftOS JavaScript runtime. The long-term t
 
 ## Implemented bootstrap slice
 
-Installed Core `0.7.0-bootstrap` is device-proven through Gate 6A against RiftOS source commit `c557650e19ed7e9b22edab37848ba36dcefce814`. The current source supports the proven Gates 0–6A surface; Gate 6A performs zero parameter updates and Gate 6B is next:
+Installed Core `0.7.0-bootstrap` is device-proven through Gate 6A against RiftOS source commit `c557650e19ed7e9b22edab37848ba36dcefce814`. The current source supports the proven Gates 0–6A language surface. Core Gate 6A itself performs zero updates; RiftLLM+ Gate 6B is now proven as an application/training-layer parameter update using this unchanged surface:
 
 - functions with explicitly typed parameters/returns;
 - explicit `use module.path [as alias]` declarations with deterministic compile-time module linking; omitted aliases use the module path's final segment, and imported symbols are referenced through that explicit/default alias rather than ambient full-path lookup;
@@ -54,7 +54,7 @@ Bootstrap pattern limitations remain deliberate: enum payload patterns currently
 
 ## Still absent
 
-Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability vocabularies beyond Gate 5 `storage`, FFI, general tensor extensions, the reference interpreter and the self-hosted compiler. Gate 5 is installed/device-proven. Gate 6A numeric/parameter primitives is also installed/device-proven on Core `0.7.0-bootstrap` with zero parameter updates; Gate 6B now adds an explicit update mechanism. RiftLLM+ parameter-learning promotion requires changed parameter state plus repeated unseen-challenge improvement in Gate 6C, not memory retrieval alone.
+Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability vocabularies beyond Gate 5 `storage`, FFI, general tensor extensions, the reference interpreter and the self-hosted compiler. Gate 5 is installed/device-proven. Gate 6A numeric/parameter primitives is also installed/device-proven on Core `0.7.0-bootstrap`; the Core gate itself performs zero updates. RiftLLM+ Gate 6B is now proven without a new Core feature, using the existing `f64`, bounded Vec, hash, and checkpoint surface. Parameter-learning/generalization promotion still requires repeated unseen-challenge improvement in Gate 6C, not training-example loss reduction or memory retrieval alone.
 
 ## Public surface
 

@@ -60,7 +60,7 @@ The VM validates executable structure and runtime operation safety, not the full
 
 ## Bootstrap boundary
 
-`rift-exec-v1` is a bootstrap executable ABI, not a claim that Rift++ Core V1 is already complete. Installed `0.7.0-bootstrap` lowers its proven Gates 0–6A subset into this format. Gate 5 state/effect support has cross-launch persistence evidence, and Gate 6A finite numeric/parameter identity has installed two-launch proof on the same ABI with zero parameter updates. If later Core semantics need a stronger typed/optimized ABI, that evolution happens as a named compatible executable version rather than silently changing `rift-exec-v1`.
+`rift-exec-v1` is a bootstrap executable ABI, not a claim that Rift++ Core V1 is already complete. Installed `0.7.0-bootstrap` lowers its proven Gates 0–6A subset into this format. Gate 5 state/effect support has cross-launch persistence evidence, and Gate 6A finite numeric/parameter identity has installed proof on the same ABI. RiftLLM+ Gate 6B has now performed a real parameter update, persisted it across restart, and preserved verified memory without requiring any new opcode, import, capability, or ABI change. If later Core semantics need a stronger typed/optimized ABI, that evolution happens as a named compatible executable version rather than silently changing `rift-exec-v1`.
 
 ## Source ownership
 
