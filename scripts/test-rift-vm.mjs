@@ -41,7 +41,7 @@ assert.equal(inspectRiftExecutable(composite).instructionCount,21);
 
 const vectors={
   format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],
-  constants:[{type:'u32',value:7},{type:'u32',value:9},{type:'u32',value:0},{type:'u32',value:42},{type:'u32',value:99}],
+  constants:[{type:'u32',value:7},{type:'u32',value:9},{type:'u32',value:0},{type:'u32',value:42},{type:'u32',value:99},{type:'u32',value:1}],
   functions:{main:{params:0,locals:2,code:[
     {op:'make_vec',capacity:2,count:0},{op:'store',index:0},
     {op:'load',index:0},{op:'const',index:0},{op:'vec_push'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:0},
@@ -50,8 +50,8 @@ const vectors={
     {op:'load',index:0},{op:'const',index:2},{op:'vec_get'},{op:'store',index:1},
     {op:'load',index:1},{op:'enum_is',name:'Option',variant:'Some'},{op:'print'},
     {op:'load',index:1},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
-    {op:'load',index:0},{op:'const',index:1},{op:'const',index:3},{op:'vec_set'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:0},
-    {op:'load',index:0},{op:'const',index:1},{op:'vec_get'},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
+    {op:'load',index:0},{op:'const',index:5},{op:'const',index:3},{op:'vec_set'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:0},
+    {op:'load',index:0},{op:'const',index:5},{op:'vec_get'},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
     {op:'load',index:0},{op:'const',index:4},{op:'vec_push'},{op:'enum_get',name:'Result',variant:'Err',index:0},{op:'print'},
     {op:'load',index:0},{op:'const',index:1},{op:'const',index:4},{op:'add'},{op:'vec_get'},{op:'enum_is',name:'Option',variant:'None'},{op:'print'},
     {op:'load',index:0},{op:'const',index:1},{op:'const',index:4},{op:'add'},{op:'const',index:4},{op:'vec_set'},{op:'enum_get',name:'Result',variant:'Err',index:0},{op:'print'},
