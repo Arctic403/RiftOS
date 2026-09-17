@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.5.0-bootstrap');
+assert.equal(compiled.compiler,'0.6.0-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -101,6 +101,33 @@ assert.equal(compileRiftPlusPlusCoreProgramV1(chainRoot,chainModules).modules.le
 chainModules['limit.m63']=`riftpp 1\nmodule limit.m63\nuse limit.m64 as next\nfn value() -> u32 { return 63 }\n`;
 chainModules['limit.m64']=`riftpp 1\nmodule limit.m64\nfn value() -> u32 { return 64 }\n`;
 assert.throws(()=>compileRiftPlusPlusCoreProgramV1(chainRoot,chainModules),/module graph exceeds 64 modules/);
+
+const persistenceSource=`riftpp 1\nmodule proof.persistence\nstruct State { value: u32 }\nfn save(state: State) -> bool allow [storage] { return checkpoint_save("brain-state", state) }\nfn load(fallback: State) -> State allow [storage] { return checkpoint_load("brain-state", fallback) }\nfn clear() -> bool allow [storage] { return checkpoint_remove("brain-state") }\nfn main() allow [storage] {\n let seed: State = State { value: 42 }\n print(save(seed))\n let restored: State = load(State { value: 0 })\n print(restored.value)\n print(clear())\n let missing: State = load(State { value: 9 })\n print(missing.value)\n}\n`;
+const persistenceCompiled=compileRiftPlusPlusCoreV1(persistenceSource),persistenceOutput=[],stateMap=new Map();
+assert.deepEqual(persistenceCompiled.executable.imports,['state.load','state.remove','state.save']);
+assert.deepEqual(persistenceCompiled.executable.metadata.effects.main,['storage']);
+await executeRiftExecutable(persistenceCompiled.executable,{write:value=>persistenceOutput.push(value),invoke:async(method,args)=>{if(method==='state.save'){stateMap.set(args[0],args[1]);return true;}if(method==='state.load')return stateMap.get(args[0])??null;if(method==='state.remove')return stateMap.delete(args[0]);throw new Error(`unexpected host method ${method}`);}});
+assert.deepEqual(persistenceOutput,['true','42','true','9']);
+const persistenceOps=Object.values(persistenceCompiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));for(const op of ['state_save','state_load','state_remove'])assert(persistenceOps.includes(op),`Gate 5 must lower ${op}`);
+const missingDirectEffect=`riftpp 1\nmodule bad.effect_direct\nstruct S { x: u32 }\nfn main() { let s: S = S { x: 1 } print(checkpoint_save("s", s)) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(missingDirectEffect),/missing required capability storage/);
+const widenedEffect=`riftpp 1\nmodule bad.effect_widen\nfn main() allow [storage] { print(1) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(widenedEffect),/declares unused\/widened capability storage/);
+const unknownEffect=`riftpp 1\nmodule bad.effect_unknown\nfn main() allow [network] { }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(unknownEffect),/unknown capability 'network'/);
+const duplicateEffect=`riftpp 1\nmodule bad.effect_duplicate\nfn main() allow [storage, storage] { }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(duplicateEffect),/duplicate capability 'storage'/);
+const transitiveMissing=`riftpp 1\nmodule bad.effect_transitive\nstruct S { x: u32 }\nfn save(s: S) -> bool allow [storage] { return checkpoint_save("s", s) }\nfn main() { let s: S = S { x: 1 } print(save(s)) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(transitiveMissing),/function 'main' is missing required capability storage/);
+const transitiveOk=transitiveMissing.replace('fn main() {','fn main() allow [storage] {').replace('module bad.effect_transitive','module proof.effect_transitive');
+assert.deepEqual(compileRiftPlusPlusCoreV1(transitiveOk).executable.imports,['state.save']);
+const effectModuleRoot=`riftpp 1\nmodule effect.root\nuse effect.persistence as persist\nstruct S { x: u32 }\nfn main() allow [storage] { let s: S = S { x: 1 } print(persist.save(s.x)) }\n`;
+const effectModuleDep=`riftpp 1\nmodule effect.persistence\nfn save(value: u32) -> bool allow [storage] { return checkpoint_save("value", value) }\n`;
+const effectModuleCompiled=compileRiftPlusPlusCoreProgramV1(effectModuleRoot,{'effect.persistence':effectModuleDep});assert.deepEqual(effectModuleCompiled.executable.imports,['state.save']);assert.deepEqual(effectModuleCompiled.executable.metadata.effects.main,['storage']);
+const stateSaveIns=Object.values(persistenceCompiled.executable.functions).flatMap(fn=>fn.code).find(ins=>ins.op==='state_save');assert(stateSaveIns?.schema,'Gate 5 state_save must carry a schema descriptor');const stateDescriptor=JSON.parse(stateSaveIns.schema);assert.equal(stateDescriptor.k,'s');assert.equal(stateDescriptor.n,'State');assert.equal(JSON.stringify(stateDescriptor),stateSaveIns.schema,'checkpoint descriptor must use canonical compact JSON');
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(effectModuleRoot.replace('fn main() allow [storage] {','fn main() {'),{'effect.persistence':effectModuleDep}),/function 'main' is missing required capability storage/);
+const recursiveState=`riftpp 1\nmodule bad.recursive_checkpoint\nstruct Node { next: Option<Node> }\nfn main() allow [storage] { let n: Node = checkpoint_load("node", Node { next: Option.None }) print(n) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(recursiveState),/recursive checkpoint type 'Node'/);
 
 const shortCircuit=`riftpp 1\nmodule proof.short_circuit\nfn main() {\n print(false and (1 / 0 == 0))\n print(true or (1 / 0 == 0))\n}\n`;
 assert.deepEqual((await execute(shortCircuit)).output,['false','true'],'and/or must skip a RHS that would trap');
@@ -200,4 +227,5 @@ console.log('ok - Control Flow V1 executes var/assignment, scopes, if/else, whil
 console.log('ok - Structured Data V1 executes nominal struct/enum values, field reads, payload binding and exhaustive match');
 console.log('ok - Collections V1 executes bounded Vec values with Option/Result match semantics and no host imports');
 console.log('ok - Module Graph V1 links explicit/default aliases and transitive types/functions, caps graphs at 64 modules, bounds linker recursion, and rejects cycles/missing/ambient modules');
+console.log('ok - Gate 5 effects require exact transitive storage authority and lower bounded checkpoint state imports');
 console.log('ok - mutability, reachability, structured-data/collection correctness and match exhaustiveness fail closed');

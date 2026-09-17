@@ -4,9 +4,9 @@ export const RIFT_VM_ABI='riftvm-1';
 const NAME=/^[A-Za-z_][A-Za-z0-9_.:$-]{0,95}$/;
 const HOST_METHOD=/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*){1,3}$/;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
-const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','jump','jump_if_false','call','host','print','ret','halt']);
+const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','state_save','state_load','state_remove','jump','jump_if_false','call','host','print','ret','halt']);
 const DEFAULT_LIMITS=Object.freeze({maxSteps:100000,maxStack:1024,maxCallDepth:32});
-const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:64,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536});
+const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:64,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536,maxStateBytes:65536,maxStateSchemaBytes:4096});
 const INT_BOUNDS=Object.freeze({u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
 const UNIT=Object.freeze({type:'unit',value:null});
 const PREPARED=Symbol('riftvm.prepared');
@@ -56,6 +56,31 @@ function normalizeFieldList(raw,where){
   for(let i=0;i<raw.length;i++){const name=safeName(raw[i],`${where}.fields[${i}]`);if(seen.has(name))fail(`${where}.fields contains duplicate ${name}`);seen.add(name);fields.push(name);}
   return Object.freeze(fields);
 }
+function normalizeStateDescriptor(raw,where,depth=0){
+  if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${where} exceeds state descriptor depth ${HARD_LIMITS.maxCompositeDepth}`);if(!plain(raw))fail(`${where} must be an object`);const kind=String(raw.k||'');
+  if(kind==='p'){const type=String(raw.t||'');if(!['unit','bool','u32','s32','string'].includes(type))fail(`${where} primitive type is invalid: ${type||'(empty)'}`);return Object.freeze({k:'p',t:type});}
+  if(kind==='v')return Object.freeze({k:'v',c:integer(raw.c,`${where}.c`,1,HARD_LIMITS.maxVecCapacity),i:normalizeStateDescriptor(raw.i,`${where}.i`,depth+1)});
+  if(kind==='o')return Object.freeze({k:'o',i:normalizeStateDescriptor(raw.i,`${where}.i`,depth+1)});
+  if(kind==='r')return Object.freeze({k:'r',o:normalizeStateDescriptor(raw.o,`${where}.o`,depth+1),e:normalizeStateDescriptor(raw.e,`${where}.e`,depth+1)});
+  if(kind==='s'){
+    const name=safeName(raw.n,`${where}.n`);if(!Array.isArray(raw.f)||raw.f.length<1||raw.f.length>HARD_LIMITS.maxCompositeItems)fail(`${where}.f must contain 1..${HARD_LIMITS.maxCompositeItems} fields`);const seen=new Set(),fields=[];
+    for(let i=0;i<raw.f.length;i++){const pair=raw.f[i];if(!Array.isArray(pair)||pair.length!==2)fail(`${where}.f[${i}] must be [name,descriptor]`);const field=safeName(pair[0],`${where}.f[${i}][0]`);if(seen.has(field))fail(`${where} has duplicate field ${field}`);seen.add(field);fields.push(Object.freeze([field,normalizeStateDescriptor(pair[1],`${where}.f[${i}][1]`,depth+1)]));}return Object.freeze({k:'s',n:name,f:Object.freeze(fields)});
+  }
+  if(kind==='e'){
+    const name=safeName(raw.n,`${where}.n`);if(!Array.isArray(raw.c)||raw.c.length<1||raw.c.length>HARD_LIMITS.maxCompositeItems)fail(`${where}.c must contain 1..${HARD_LIMITS.maxCompositeItems} cases`);const seen=new Set(),cases=[];
+    for(let i=0;i<raw.c.length;i++){const pair=raw.c[i];if(!Array.isArray(pair)||pair.length!==2||!Array.isArray(pair[1])||pair[1].length>HARD_LIMITS.maxCompositeItems)fail(`${where}.c[${i}] is invalid`);const variant=safeName(pair[0],`${where}.c[${i}][0]`);if(seen.has(variant))fail(`${where} has duplicate case ${variant}`);seen.add(variant);cases.push(Object.freeze([variant,Object.freeze(pair[1].map((item,index)=>normalizeStateDescriptor(item,`${where}.c[${i}][1][${index}]`,depth+1)))]));}return Object.freeze({k:'e',n:name,c:Object.freeze(cases)});
+  }
+  fail(`${where} has unsupported descriptor kind: ${kind||'(empty)'}`);
+}
+function validateStateValue(value,descriptor,where='state'){
+  if(descriptor.k==='p'){if(!value||value.type!==descriptor.t)fail(`${where} expected ${descriptor.t}, got ${value?.type||'(missing)'}`);return value;}
+  if(descriptor.k==='v'){if(!value||value.type!=='vec'||value.capacity!==descriptor.c)fail(`${where} expected Vec capacity ${descriptor.c}`);for(let i=0;i<value.items.length;i++)validateStateValue(value.items[i],descriptor.i,`${where}[${i}]`);return value;}
+  if(descriptor.k==='o'){if(!value||value.type!=='enum'||value.name!=='Option')fail(`${where} expected Option`);if(value.variant==='None'){if(value.values.length)fail(`${where} Option.None payload is invalid`);return value;}if(value.variant==='Some'){if(value.values.length!==1)fail(`${where} Option.Some payload is invalid`);validateStateValue(value.values[0],descriptor.i,`${where}.Some`);return value;}fail(`${where} Option variant is invalid: ${value.variant}`);}
+  if(descriptor.k==='r'){if(!value||value.type!=='enum'||value.name!=='Result')fail(`${where} expected Result`);if(value.variant==='Ok'){if(value.values.length!==1)fail(`${where} Result.Ok payload is invalid`);validateStateValue(value.values[0],descriptor.o,`${where}.Ok`);return value;}if(value.variant==='Err'){if(value.values.length!==1)fail(`${where} Result.Err payload is invalid`);validateStateValue(value.values[0],descriptor.e,`${where}.Err`);return value;}fail(`${where} Result variant is invalid: ${value.variant}`);}
+  if(descriptor.k==='s'){if(!value||value.type!=='struct'||value.name!==descriptor.n)fail(`${where} expected struct ${descriptor.n}`);const keys=Object.keys(value.fields);if(keys.length!==descriptor.f.length)fail(`${where} struct ${descriptor.n} field count mismatch`);for(const [name,child] of descriptor.f){if(!Object.prototype.hasOwnProperty.call(value.fields,name))fail(`${where} struct ${descriptor.n} is missing field ${name}`);validateStateValue(value.fields[name],child,`${where}.${name}`);}return value;}
+  if(descriptor.k==='e'){if(!value||value.type!=='enum'||value.name!==descriptor.n)fail(`${where} expected enum ${descriptor.n}`);const item=descriptor.c.find(([variant])=>variant===value.variant);if(!item)fail(`${where} enum ${descriptor.n} variant is invalid: ${value.variant}`);if(value.values.length!==item[1].length)fail(`${where} enum ${descriptor.n}.${value.variant} payload count mismatch`);for(let i=0;i<item[1].length;i++)validateStateValue(value.values[i],item[1][i],`${where}.${value.variant}[${i}]`);return value;}
+  fail(`${where} descriptor is invalid`);
+}
 function normalizeInstruction(raw,where,ctx){
   if(!plain(raw))fail(`${where} instruction must be an object`);
   const op=String(raw.op||'');if(!OPS.has(op))fail(`${where} has unsupported opcode: ${op||'(empty)'}`);
@@ -74,6 +99,10 @@ function normalizeInstruction(raw,where,ctx){
     if(!target)fail(`${where} calls unknown function: ${name}`);if(argc!==target.params)fail(`${where} argc ${argc} does not match ${name} params ${target.params}`);
     return Object.freeze({op,name,argc});
   }
+  if(op==='state_save'||op==='state_load'){
+    const method=op==='state_save'?'state.save':'state.load';if(!ctx.imports.has(method))fail(`${where} ${op} requires declared import ${method}`);const schema=stringBytes(raw.schema,`${where}.schema`,HARD_LIMITS.maxStateSchemaBytes);if(!schema)fail(`${where}.schema must not be empty`);let parsed;try{parsed=JSON.parse(schema);}catch(error){fail(`${where}.schema is invalid JSON: ${error.message}`);}const descriptor=normalizeStateDescriptor(parsed,`${where}.schema`);if(JSON.stringify(descriptor)!==schema)fail(`${where}.schema must use canonical descriptor JSON`);return Object.freeze({op,schema,descriptor});
+  }
+  if(op==='state_remove'){if(!ctx.imports.has('state.remove'))fail(`${where} state_remove requires declared import state.remove`);return Object.freeze({op});}
   if(op==='host'){
     const method=String(raw.method||'');if(!HOST_METHOD.test(method)||!ctx.imports.has(method))fail(`${where} host method is not declared in imports: ${method||'(empty)'}`);
     return Object.freeze({op,method,argc:integer(raw.argc??0,`${where}.argc`,0,16)});
@@ -123,6 +152,20 @@ function valueToPublic(value){return publicValue(value);}
 function isCompositeValue(value){return value?.type==='struct'||value?.type==='enum'||value?.type==='vec';}
 function valueToHost(value){if(!value||value.type==='unit')return null;if(isCompositeValue(value))fail('composite values cannot cross the host import boundary');if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
 function hostToValue(raw){if(raw===null||raw===undefined)return UNIT;if(typeof raw==='boolean')return Object.freeze({type:'bool',value:raw});if(typeof raw==='string')return Object.freeze({type:'string',value:stringBytes(raw,'host string')});if(typeof raw==='number'){if(!Number.isFinite(raw))fail('host returned a non-finite number');return Object.freeze({type:'f64',value:raw});}const text=JSON.stringify(raw);return Object.freeze({type:'string',value:stringBytes(text,'host JSON result')});}
+function statePublicToValue(raw,state={values:0,stringBytes:0}){
+  if(++state.values>HARD_LIMITS.maxPublicValues)fail(`state payload exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!plain(raw))fail('state payload value must be an object');const type=String(raw.type||'');
+  if(type==='unit')return UNIT;
+  if(type==='bool'){if(typeof raw.value!=='boolean')fail('state bool is invalid');return Object.freeze({type,value:raw.value});}
+  if(type==='string'){if(typeof raw.value!=='string')fail('state string is invalid');state.stringBytes+=encoder.encode(raw.value).byteLength;if(state.stringBytes>HARD_LIMITS.maxPublicStringBytes)fail(`state strings exceed ${HARD_LIMITS.maxPublicStringBytes} UTF-8 bytes`);return Object.freeze({type,value:stringBytes(raw.value,'state string')});}
+  if(type==='u32'||type==='s32'){const value=parseIntegerConstant(raw.value,`state ${type}`),bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])fail(`state ${type} is out of range`);return Object.freeze({type,value});}
+  if(type==='f64'){const value=Number(raw.value);if(!Number.isFinite(value))fail('state f64 must be finite');return Object.freeze({type,value});}
+  if(type==='struct'){const name=safeName(raw.name,'state struct name');if(!plain(raw.fields))fail(`state struct ${name} fields must be an object`);const entries=Object.entries(raw.fields);if(!entries.length||entries.length>HARD_LIMITS.maxCompositeItems)fail(`state struct ${name} field count is invalid`);const values=[],fields=Object.create(null);for(const [key,item] of entries){safeName(key,`state struct ${name} field`);const value=statePublicToValue(item,state);fields[key]=value;values.push(value);}return Object.freeze({type:'struct',name,fields:Object.freeze(fields),depth:checkedCompositeDepth(values,`state struct ${name}`)});}
+  if(type==='enum'){const name=safeName(raw.name,'state enum name'),variant=safeName(raw.variant,'state enum variant');if(!Array.isArray(raw.values)||raw.values.length>HARD_LIMITS.maxCompositeItems)fail(`state enum ${name}.${variant} values are invalid`);const values=raw.values.map(item=>statePublicToValue(item,state));return Object.freeze({type:'enum',name,variant,values:Object.freeze(values),depth:checkedCompositeDepth(values,`state enum ${name}.${variant}`)});}
+  if(type==='vec'){const capacity=integer(raw.capacity,'state vec capacity',1,HARD_LIMITS.maxVecCapacity);if(!Array.isArray(raw.items)||raw.items.length>capacity)fail('state vec items exceed capacity');return makeVecValue(capacity,raw.items.map(item=>statePublicToValue(item,state)),'state vec');}
+  fail(`state payload uses unsupported type: ${type||'(empty)'}`);
+}
+function serializeStateValue(value,schema,descriptor){validateStateValue(value,descriptor,'state.save');const envelope={format:'riftvm-state-v1',schema:String(schema),value:valueToPublic(value)};const text=JSON.stringify(envelope),bytes=encoder.encode(text).byteLength;if(bytes>HARD_LIMITS.maxStateBytes)fail(`state payload exceeds ${HARD_LIMITS.maxStateBytes} UTF-8 bytes`);return text;}
+function deserializeStateValue(text,schema,descriptor){const raw=stringBytes(text,'state payload',HARD_LIMITS.maxStateBytes);let envelope;try{envelope=JSON.parse(raw);}catch(error){fail(`invalid state payload JSON: ${error.message}`);}if(!plain(envelope)||envelope.format!=='riftvm-state-v1')fail('invalid state payload format');if(envelope.schema!==schema)fail(`state schema mismatch: expected ${schema}`);const value=statePublicToValue(envelope.value);validateStateValue(value,descriptor,'state.load');return value;}
 function displayValue(value){
   const state={bytes:0,values:0,parts:[]};
   const append=text=>{const part=String(text),bytes=encoder.encode(part).byteLength;state.bytes+=bytes;if(state.bytes>HARD_LIMITS.maxDisplayBytes)fail(`display value exceeds ${HARD_LIMITS.maxDisplayBytes} UTF-8 bytes`);state.parts.push(part);};
@@ -177,6 +220,9 @@ export async function executeRiftExecutable(raw,host={},options={}){
       case'jump':frame.ip=ins.target;break;
       case'jump_if_false':{const condition=pop(frame,'jump_if_false');if(condition.type!=='bool')fail('jump_if_false requires bool');if(!condition.value)frame.ip=ins.target;break;}
       case'call':{const args=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)args[i]=pop(frame,'call');frames.push(makeFrame(ins.name,args));break;}
+      case'state_save':{if(typeof host.invoke!=='function')fail('host import unavailable: state.save');const value=pop(frame,'state_save'),key=pop(frame,'state_save');if(key.type!=='string')fail('state_save key must be string');const ok=await host.invoke('state.save',[key.value,serializeStateValue(value,ins.schema,ins.descriptor)]);push(frame,Object.freeze({type:'bool',value:ok===true}));break;}
+      case'state_load':{if(typeof host.invoke!=='function')fail('host import unavailable: state.load');const fallback=pop(frame,'state_load'),key=pop(frame,'state_load');if(key.type!=='string')fail('state_load key must be string');validateStateValue(fallback,ins.descriptor,'state.load fallback');const raw=await host.invoke('state.load',[key.value]);push(frame,raw===null||raw===undefined?fallback:deserializeStateValue(raw,ins.schema,ins.descriptor));break;}
+      case'state_remove':{if(typeof host.invoke!=='function')fail('host import unavailable: state.remove');const key=pop(frame,'state_remove');if(key.type!=='string')fail('state_remove key must be string');const ok=await host.invoke('state.remove',[key.value]);push(frame,Object.freeze({type:'bool',value:ok===true}));break;}
       case'host':{if(typeof host.invoke!=='function')fail(`host import unavailable: ${ins.method}`);const args=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)args[i]=valueToHost(pop(frame,'host'));push(frame,hostToValue(await host.invoke(ins.method,args)));break;}
       case'print':{const value=pop(frame,'print');prints++;if(host.write)await host.write(displayValue(value));break;}
       case'ret':{const returned=frame.stack.length?pop(frame,'ret'):UNIT;frames.pop();if(frames.length)push(frames[frames.length-1],returned);else result=returned;break;}

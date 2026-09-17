@@ -1,6 +1,6 @@
 import { RIFT_EXEC_FORMAT, RIFT_VM_ABI, prepareRiftExecutable } from './riftvm.js';
 
-export const RIFTPP_CORE_VERSION='0.5.0-bootstrap';
+export const RIFTPP_CORE_VERSION='0.6.0-bootstrap';
 export const RIFTPP_LANGUAGE='riftpp/1';
 
 const MAX_SOURCE_BYTES=256*1024;
@@ -17,12 +17,16 @@ const MAX_MODULES=64;
 const MAX_USES=64;
 const MAX_PROGRAM_SOURCE_BYTES=1024*1024;
 const MAX_LINKED_NAME_BYTES=96;
+const MAX_EFFECTS=16;
+const MAX_STATE_SCHEMA_BYTES=4096;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
 const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','string']);
+const SUPPORTED_EFFECTS=new Set(['storage']);
+const CHECKPOINT_BUILTINS=new Set(['checkpoint_save','checkpoint_load','checkpoint_remove']);
 const BUILTIN_GENERIC_TYPES=new Set(['Vec','Option','Result']);
 const COMPARABLE_PRIMITIVES=new Set(['unit','bool','u32','s32','string']);
 const ORDERED_PRIMITIVES=new Set(['u32','s32','string']);
-const PRELUDE_NAMES=new Set(['print']);
+const PRELUDE_NAMES=new Set(['print',...CHECKPOINT_BUILTINS]);
 const KEYWORDS=new Set(['riftpp','module','use','as','const','struct','enum','fn','let','var','if','else','match','for','in','while','loop','return','break','continue','true','false','and','or','not','allow']);
 const RESERVED_FUTURE=new Set(['task','brain','agent','swarm','backend','budget','constraint','optimize','require','unsafe','extern','kernel','tensor','model','train']);
 const ASSIGNMENT_OPS=new Set(['=','+=','-=','*=','/=','%=']);
@@ -149,8 +153,8 @@ class Parser{
     const start=this.expect('fn'),name=this.expectKind('ident','function name');this.expect('(');const params=[];
     if(!this.at(')'))for(;;){const p=this.expectKind('ident','parameter name');this.expect(':');params.push(Object.freeze({kind:'Param',name:p.value,type:this.typeRef(),span:spanOf(p)}));if(params.length>MAX_PARAMS)fail('E0107',`parameter count exceeds ${MAX_PARAMS}`,p,'host bounds');if(!this.consume(','))break;}
     this.expect(')');let returnType=Object.freeze({kind:'TypeRef',name:'unit',span:spanOf(name)});if(this.consume('->'))returnType=this.typeRef();
-    if(this.at('allow'))fail('E0108','function capability clauses are not implemented in the bootstrap Core slice',this.current(),'bootstrap feature gate');
-    const body=this.block();return this.node('Function',start,{name:name.value,params:Object.freeze(params),returnType,body});
+    const effects=[];if(this.consume('allow')){this.expect('[');const seen=new Set();if(!this.at(']'))for(;;){const effect=this.expectKind('ident','capability name','E0108');if(seen.has(effect.value))fail('E0108',`duplicate capability '${effect.value}'`,effect,'effect clause');seen.add(effect.value);effects.push(effect.value);if(effects.length>MAX_EFFECTS)fail('E0108',`effect count exceeds ${MAX_EFFECTS}`,effect,'host bounds');if(!this.consume(','))break;}this.expect(']');}
+    const body=this.block();return this.node('Function',start,{name:name.value,params:Object.freeze(params),returnType,effects:Object.freeze(effects),body});
   }
   block(){const token=this.current();if(++this.blockDepth>MAX_PARSE_DEPTH){this.blockDepth--;fail('E0124',`block nesting exceeds ${MAX_PARSE_DEPTH}`,token,'host bounds');}try{const start=this.expect('{'),statements=[];while(!this.at('}')){if(this.current().kind==='eof')fail('E0109','unterminated block',this.current(),'block grammar');statements.push(this.statement());}this.expect('}');return this.node('Block',start,{statements:Object.freeze(statements)});}finally{this.blockDepth--;}}
   statement(){
@@ -283,7 +287,7 @@ function linkRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){
 }
 
 class Codegen{
-  constructor(ast){this.ast=ast;this.constants=[];this.constantMap=new Map();this.structs=new Map();this.enums=new Map();this.genericTypes=new Map();this.topNames=new Set();this.signatures=new Map();this.functions=Object.create(null);}
+  constructor(ast){this.ast=ast;this.constants=[];this.constantMap=new Map();this.structs=new Map();this.enums=new Map();this.genericTypes=new Map();this.topNames=new Set();this.signatures=new Map();this.functions=Object.create(null);this.imports=new Set();this.functionEffects=new Map();}
   constant(type,value){const serialized=type==='unit'?'':String(value),key=`${type}:${serialized}`;if(this.constantMap.has(key))return this.constantMap.get(key);const index=this.constants.length;this.constants.push(type==='unit'?{type:'unit'}:{type,value});this.constantMap.set(key,index);return index;}
   internGeneric(kind,args,capacity=null){const key=kind==='Vec'?`Vec<${args[0]},${capacity}>`:`${kind}<${args.join(',')}>`;if(!this.genericTypes.has(key))this.genericTypes.set(key,Object.freeze({kind,args:Object.freeze([...args]),capacity}));return key;}
   genericInfo(type){return this.genericTypes.get(type)||null;}
@@ -294,6 +298,26 @@ class Codegen{
     return null;
   }
   typeExists(name){return SUPPORTED_PRIMITIVES.has(name)||this.structs.has(name)||this.enums.has(name)||this.genericTypes.has(name);}
+  stateDescriptor(type,node,seen=new Set(),depth=0){
+    if(depth>MAX_TYPE_DEPTH)semanticFail('E0284',`checkpoint type nesting exceeds ${MAX_TYPE_DEPTH}`,node,'Gate 5 persistence');
+    const generic=this.genericInfo(type);
+    if(generic?.kind==='Vec')return Object.freeze({k:'v',c:generic.capacity,i:this.stateDescriptor(generic.args[0],node,seen,depth+1)});
+    if(generic?.kind==='Option')return Object.freeze({k:'o',i:this.stateDescriptor(generic.args[0],node,seen,depth+1)});
+    if(generic?.kind==='Result')return Object.freeze({k:'r',o:this.stateDescriptor(generic.args[0],node,seen,depth+1),e:this.stateDescriptor(generic.args[1],node,seen,depth+1)});
+    if(SUPPORTED_PRIMITIVES.has(type))return Object.freeze({k:'p',t:type});
+    if(this.structs.has(type)){
+      if(seen.has(type))semanticFail('E0285',`recursive checkpoint type '${type}' is not supported in Gate 5`,node,'Gate 5 persistence');
+      const next=new Set(seen);next.add(type);const def=this.structs.get(type);
+      return Object.freeze({k:'s',n:type,f:Object.freeze(def.order.map(name=>Object.freeze([name,this.stateDescriptor(def.fields.get(name).type,node,next,depth+1)])))});
+    }
+    if(this.enums.has(type)){
+      if(seen.has(type))semanticFail('E0285',`recursive checkpoint type '${type}' is not supported in Gate 5`,node,'Gate 5 persistence');
+      const next=new Set(seen);next.add(type);const def=this.enums.get(type);
+      return Object.freeze({k:'e',n:type,c:Object.freeze(def.order.map(name=>Object.freeze([name,Object.freeze(def.cases.get(name).types.map(item=>this.stateDescriptor(item,node,next,depth+1)))])))});
+    }
+    semanticFail('E0286',`checkpoint type '${type}' is unsupported`,node,'Gate 5 persistence');
+  }
+  stateSchema(type,node){const schema=JSON.stringify(this.stateDescriptor(type,node));if(encoder.encode(schema).byteLength>MAX_STATE_SCHEMA_BYTES)semanticFail('E0287',`checkpoint schema exceeds ${MAX_STATE_SCHEMA_BYTES} UTF-8 bytes`,node,'host bounds');return schema;}
   ensureType(typeRef){
     if(typeRef.name==='Vec'){
       if(typeRef.args?.length!==1||typeRef.capacityRaw==null)semanticFail('E0260','Vec requires Vec<T, N>',typeRef,'bounded collection type');
@@ -315,14 +339,19 @@ class Codegen{
     for(const fn of this.ast.functions){
       if(PRELUDE_NAMES.has(fn.name)||SUPPORTED_PRIMITIVES.has(fn.name)||BUILTIN_GENERIC_TYPES.has(fn.name)||POISON_NAMES.has(fn.name)||this.topNames.has(fn.name))semanticFail('E0204',`duplicate or reserved top-level name '${fn.name}'`,fn,'name resolution');
       if(this.signatures.has(fn.name))semanticFail('E0204',`duplicate function '${fn.name}'`,fn,'name resolution');
-      const params=fn.params.map(p=>this.ensureType(p.type)),returnType=this.ensureType(fn.returnType);this.signatures.set(fn.name,Object.freeze({params:Object.freeze(params),returnType,node:fn}));
+      const params=fn.params.map(p=>this.ensureType(p.type)),returnType=this.ensureType(fn.returnType),effects=Object.freeze([...(fn.effects||[])]);for(const effect of effects)if(!SUPPORTED_EFFECTS.has(effect))semanticFail('E0280',`unknown capability '${effect}'`,fn,'effect checking',`Supported Gate 5 capabilities: ${[...SUPPORTED_EFFECTS].join(', ')}`);this.signatures.set(fn.name,Object.freeze({params:Object.freeze(params),returnType,effects,node:fn}));
     }
     const main=this.signatures.get('main');if(!main)semanticFail('E0205',"entry function 'main' is required",this.ast,'entrypoint');if(main.params.length!==0||main.returnType!=='unit')semanticFail('E0206',"main must have signature fn main() with unit return",main.node,'entrypoint');
   }
-  run(){this.collectTypes();this.collectSignatures();for(const fn of this.ast.functions)this.compileFunction(fn);const executable={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:this.constants,functions:this.functions,limits:{maxSteps:100000,maxStack:1024,maxCallDepth:32},metadata:{language:RIFTPP_LANGUAGE,module:this.ast.module,compiler:RIFTPP_CORE_VERSION,modules:this.ast.moduleGraph||Object.freeze([{name:this.ast.module,uses:Object.freeze([])}]),structs:[...this.structs.keys()],enums:[...this.enums.keys()]}};prepareRiftExecutable(executable);return executable;}
+  validateEffects(){
+    const required=new Map();for(const [name,info] of this.functionEffects)required.set(name,new Set(info.direct));let changed=true;while(changed){changed=false;for(const [name,info] of this.functionEffects){const set=required.get(name);for(const callee of info.calls){for(const effect of required.get(callee)||[]){if(!set.has(effect)){set.add(effect);changed=true;}}}}}
+    for(const [name,info] of this.functionEffects){const need=required.get(name),declared=new Set(info.declared),missing=[...need].filter(effect=>!declared.has(effect)),extra=[...declared].filter(effect=>!need.has(effect));if(missing.length)semanticFail('E0281',`function '${name}' is missing required capability ${missing.join(', ')}`,info.node,'effect checking');if(extra.length)semanticFail('E0282',`function '${name}' declares unused/widened capability ${extra.join(', ')}`,info.node,'effect checking');}
+    return Object.fromEntries([...required].map(([name,set])=>[name,[...set].sort()]));
+  }
+  run(){this.collectTypes();this.collectSignatures();for(const fn of this.ast.functions)this.compileFunction(fn);const effects=this.validateEffects();const executable={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[...this.imports].sort(),constants:this.constants,functions:this.functions,limits:{maxSteps:100000,maxStack:1024,maxCallDepth:32},metadata:{language:RIFTPP_LANGUAGE,module:this.ast.module,compiler:RIFTPP_CORE_VERSION,modules:this.ast.moduleGraph||Object.freeze([{name:this.ast.module,uses:Object.freeze([])}]),structs:[...this.structs.keys()],enums:[...this.enums.keys()],effects}};prepareRiftExecutable(executable);return executable;}
   compileFunction(fn){
     const sig=this.signatures.get(fn.name),code=[];let nextLocal=0,compileExprDepth=0,compileBlockDepth=0;
-    const scopes=[new Map()],loopStack=[];
+    const scopes=[new Map()],loopStack=[],directEffects=new Set(),calls=new Set();
     const emit=ins=>{code.push(ins);return code.length-1;};
     const patch=(index,target)=>{code[index]={...code[index],target};};
     const anchor=()=>{const target=code.length;emit({op:'const',index:this.constant('unit',null)});emit({op:'pop'});return target;};
@@ -380,7 +409,10 @@ class Codegen{
         const constructed=enumConstructor(expr.callee,expr.args,expr,expected);if(constructed)return constructed;if(expr.callee.kind==='Member')return compileVecMethod(expr,expected);
         if(expr.callee.kind!=='Name')semanticFail('E0212','bootstrap calls require a direct function name, enum case constructor or Vec method',expr,'call semantics');const name=expr.callee.name;
         if(name==='print'){if(expr.args.length!==1)semanticFail('E0213','print expects exactly one argument',expr,'bootstrap prelude');compileExpr(expr.args[0],null);emit({op:'print'});emit({op:'const',index:this.constant('unit',null)});expectType('unit',expected,expr);return'unit';}
-        const target=this.signatures.get(name);if(!target)semanticFail('E0214',`unknown function '${name}'`,expr,'name resolution');if(expr.args.length!==target.params.length)semanticFail('E0215',`${name} expects ${target.params.length} arguments, got ${expr.args.length}`,expr,'call semantics');for(let i=0;i<expr.args.length;i++)compileExpr(expr.args[i],target.params[i]);emit({op:'call',name,argc:expr.args.length});expectType(target.returnType,expected,expr);return target.returnType;
+        if(name==='checkpoint_save'){if(expr.args.length!==2)semanticFail('E0283','checkpoint_save expects key and value',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');const valueType=compileExpr(expr.args[1],null);directEffects.add('storage');this.imports.add('state.save');emit({op:'state_save',schema:this.stateSchema(valueType,expr)});expectType('bool',expected,expr);return'bool';}
+        if(name==='checkpoint_load'){if(expr.args.length!==2)semanticFail('E0283','checkpoint_load expects key and fallback',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');const fallbackType=compileExpr(expr.args[1],expected);directEffects.add('storage');this.imports.add('state.load');emit({op:'state_load',schema:this.stateSchema(fallbackType,expr)});return fallbackType;}
+        if(name==='checkpoint_remove'){if(expr.args.length!==1)semanticFail('E0283','checkpoint_remove expects one key',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');directEffects.add('storage');this.imports.add('state.remove');emit({op:'state_remove'});expectType('bool',expected,expr);return'bool';}
+        const target=this.signatures.get(name);if(!target)semanticFail('E0214',`unknown function '${name}'`,expr,'name resolution');if(expr.args.length!==target.params.length)semanticFail('E0215',`${name} expects ${target.params.length} arguments, got ${expr.args.length}`,expr,'call semantics');for(let i=0;i<expr.args.length;i++)compileExpr(expr.args[i],target.params[i]);calls.add(name);emit({op:'call',name,argc:expr.args.length});expectType(target.returnType,expected,expr);return target.returnType;
       }
       semanticFail('E0299',`unsupported expression node '${expr.kind}'`,expr,'compiler invariant');
       }finally{compileExprDepth--;}
@@ -436,7 +468,7 @@ class Codegen{
       if(stmt.kind==='ExprStmt'){compileExpr(stmt.expression,null);emit({op:'pop'});return new Set(['normal']);}
       semanticFail('E0298',`unsupported statement '${stmt.kind}'`,stmt,'compiler invariant');
     };
-    const flows=compileBlock(fn.body,false);if(flows.has('break')||flows.has('continue'))semanticFail('E0226',`loop control escaped function '${fn.name}'`,fn,'compiler invariant');if(sig.returnType==='unit'){if(flows.has('normal'))emit({op:'ret'});}else if(flows.has('normal'))semanticFail('E0220',`non-unit function '${fn.name}' does not return on every reachable path`,fn,'return completeness');if(!code.length)emit({op:'ret'});this.functions[fn.name]={params:fn.params.length,locals:nextLocal,code};
+    const flows=compileBlock(fn.body,false);if(flows.has('break')||flows.has('continue'))semanticFail('E0226',`loop control escaped function '${fn.name}'`,fn,'compiler invariant');if(sig.returnType==='unit'){if(flows.has('normal'))emit({op:'ret'});}else if(flows.has('normal'))semanticFail('E0220',`non-unit function '${fn.name}' does not return on every reachable path`,fn,'return completeness');if(!code.length)emit({op:'ret'});this.functions[fn.name]={params:fn.params.length,locals:nextLocal,code};this.functionEffects.set(fn.name,Object.freeze({declared:Object.freeze([...(sig.effects||[])]),direct:Object.freeze([...directEffects]),calls:Object.freeze([...calls]),node:fn}));
   }
 }
 
@@ -444,7 +476,7 @@ export function lexRiftPlusPlusCoreV1(source){const text=String(source??'');if(e
 export function parseRiftPlusPlusCoreV1(source){return new Parser(lexRiftPlusPlusCoreV1(source)).parseFile();}
 export function compileRiftPlusPlusCoreV1(source){const ast=parseRiftPlusPlusCoreV1(source);if(ast.uses.length)semanticFail('E0314','source declares use imports; compile through the bounded module-graph API',ast.uses[0],'module graph');const executable=new Codegen(ast).run(),executableText=JSON.stringify(executable,null,2)+'\n';return Object.freeze({schema:'riftpp-core-compile-result/1',language:RIFTPP_LANGUAGE,compiler:RIFTPP_CORE_VERSION,module:ast.module,modules:Object.freeze([ast.module]),ast,executable,executableText});}
 export function compileRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){const ast=linkRiftPlusPlusCoreProgramV1(rootSource,moduleSources),executable=new Codegen(ast).run(),executableText=JSON.stringify(executable,null,2)+'\n',modules=Object.freeze(ast.moduleGraph.map(item=>item.name));return Object.freeze({schema:'riftpp-core-program-compile-result/1',language:RIFTPP_LANGUAGE,compiler:RIFTPP_CORE_VERSION,module:ast.module,modules,ast,executable,executableText});}
-function inspectCompileResult(result){return Object.freeze({schema:result.schema,language:result.language,compiler:result.compiler,module:result.module,modules:result.modules,structs:result.ast.structs.map(item=>item.name),enums:result.ast.enums.map(item=>item.name),functions:result.ast.functions.map(fn=>fn.name),bytes:encoder.encode(result.executableText).byteLength,targetFormat:RIFT_EXEC_FORMAT,targetAbi:RIFT_VM_ABI});}
+function inspectCompileResult(result){return Object.freeze({schema:result.schema,language:result.language,compiler:result.compiler,module:result.module,modules:result.modules,structs:result.ast.structs.map(item=>item.name),enums:result.ast.enums.map(item=>item.name),functions:result.ast.functions.map(fn=>fn.name),imports:[...result.executable.imports],effects:result.executable.metadata.effects||{},bytes:encoder.encode(result.executableText).byteLength,targetFormat:RIFT_EXEC_FORMAT,targetAbi:RIFT_VM_ABI});}
 export function inspectRiftPlusPlusCoreV1(source){return inspectCompileResult(compileRiftPlusPlusCoreV1(source));}
 export function inspectRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){return inspectCompileResult(compileRiftPlusPlusCoreProgramV1(rootSource,moduleSources));}
 

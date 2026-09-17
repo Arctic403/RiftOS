@@ -1,0 +1,28 @@
+riftpp 1
+module demo.persistence
+
+struct State {
+  value: u32
+}
+
+fn save(state: State) -> bool allow [storage] {
+  return checkpoint_save("demo-state", state)
+}
+
+fn load(fallback: State) -> State allow [storage] {
+  return checkpoint_load("demo-state", fallback)
+}
+
+fn clear() -> bool allow [storage] {
+  return checkpoint_remove("demo-state")
+}
+
+fn main() allow [storage] {
+  let seed: State = State { value: 42 }
+  print(save(seed))
+  let restored: State = load(State { value: 0 })
+  print(restored.value)
+  print(clear())
+  let missing: State = load(State { value: 9 })
+  print(missing.value)
+}

@@ -8,6 +8,13 @@ if(!core||!baseApps||!build)throw new Error('RiftRT requires RiftOSCore, RiftApp
 const VERSION='2.0.0';
 const RUNTIME_FILE='riftrt.json';
 const DATA_ROOT='/D:/Users/Default/AppData';
+const VM_STATE_FILE='riftvm-state.json';
+const VM_STATE_KEY=/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/;
+const VM_STATE_POISON_KEYS=new Set(['__proto__','prototype','constructor']);
+const MAX_VM_STATE_ENTRIES=16;
+const MAX_VM_STATE_PAYLOAD_BYTES=64*1024;
+const MAX_VM_STATE_STORE_BYTES=512*1024;
+const utf8Encoder=new TextEncoder();
 const externalWindows=new Map();
 const sessions=new Map();
 const originalWM=globalThis.RiftOSWindowManager;
@@ -118,6 +125,12 @@ async function appStorage(app){return core.fs.readJSON(`${DATA_ROOT}/${app.id}/r
 async function storageGet(app,key){return(await appStorage(app))[String(key)]??null;}
 async function storageSet(app,key,value){const path=`${DATA_ROOT}/${app.id}`;await core.fs.mkdir(path);const data=await appStorage(app);data[String(key).slice(0,160)]=value;const encoded=JSON.stringify(data);if(encoded.length>1024*1024)throw new Error('RiftRT app storage exceeds 1 MB');await core.fs.writeJSON(`${path}/riftrt-storage.json`,data);return true;}
 async function storageRemove(app,key){const path=`${DATA_ROOT}/${app.id}`;await core.fs.mkdir(path);const data=await appStorage(app);delete data[String(key)];await core.fs.writeJSON(`${path}/riftrt-storage.json`,data);return true;}
+function vmStateKey(value){const key=String(value||'');if(!VM_STATE_KEY.test(key)||VM_STATE_POISON_KEYS.has(key))throw new Error('RiftVM state key must match [A-Za-z0-9][A-Za-z0-9_.-]{0,79} and not be reserved');return key;}
+async function vmStateObject(app){
+  const path=`${DATA_ROOT}/${app.id}/${VM_STATE_FILE}`,stat=await core.fs.stat(path);if(!stat)return{};if(stat.kind!=='file')throw new Error('RiftVM state store is corrupt');if(Number(stat.size??0)>MAX_VM_STATE_STORE_BYTES)throw new Error(`RiftVM state store exceeds ${MAX_VM_STATE_STORE_BYTES} bytes`);const text=await core.fs.readText(path);if(text==null)throw new Error('RiftVM state store is corrupt');if(utf8Encoder.encode(text).byteLength>MAX_VM_STATE_STORE_BYTES)throw new Error(`RiftVM state store exceeds ${MAX_VM_STATE_STORE_BYTES} bytes`);let data;try{data=JSON.parse(text);}catch(_){throw new Error('RiftVM state store is corrupt');}if(!data||typeof data!=='object'||Array.isArray(data))throw new Error('RiftVM state store is corrupt');const keys=Object.keys(data);if(keys.length>MAX_VM_STATE_ENTRIES)throw new Error(`RiftVM state store exceeds ${MAX_VM_STATE_ENTRIES} entries`);for(const keyValue of keys){const key=vmStateKey(keyValue);if(typeof data[key]!=='string')throw new Error(`RiftVM state entry '${key}' is corrupt`);if(utf8Encoder.encode(data[key]).byteLength>MAX_VM_STATE_PAYLOAD_BYTES)throw new Error(`RiftVM state entry '${key}' exceeds ${MAX_VM_STATE_PAYLOAD_BYTES} bytes`);}return data;}
+async function vmStateLoad(app,keyValue){const key=vmStateKey(keyValue),data=await vmStateObject(app);if(!Object.prototype.hasOwnProperty.call(data,key))return null;if(typeof data[key]!=='string')throw new Error(`RiftVM state entry '${key}' is corrupt`);if(utf8Encoder.encode(data[key]).byteLength>MAX_VM_STATE_PAYLOAD_BYTES)throw new Error(`RiftVM state entry '${key}' exceeds ${MAX_VM_STATE_PAYLOAD_BYTES} bytes`);return data[key];}
+async function vmStateSave(app,keyValue,payloadValue){const key=vmStateKey(keyValue),payload=String(payloadValue??'');if(utf8Encoder.encode(payload).byteLength>MAX_VM_STATE_PAYLOAD_BYTES)throw new Error(`RiftVM state payload exceeds ${MAX_VM_STATE_PAYLOAD_BYTES} bytes`);const path=`${DATA_ROOT}/${app.id}`,data=await vmStateObject(app),exists=Object.prototype.hasOwnProperty.call(data,key);if(!exists&&Object.keys(data).length>=MAX_VM_STATE_ENTRIES)throw new Error(`RiftVM state store exceeds ${MAX_VM_STATE_ENTRIES} entries`);data[key]=payload;const encoded=JSON.stringify(data);if(utf8Encoder.encode(encoded).byteLength>MAX_VM_STATE_STORE_BYTES)throw new Error(`RiftVM state store exceeds ${MAX_VM_STATE_STORE_BYTES} bytes`);await core.fs.mkdir(path);await core.fs.writeJSON(`${path}/${VM_STATE_FILE}`,data);return true;}
+async function vmStateRemove(app,keyValue){const key=vmStateKey(keyValue),path=`${DATA_ROOT}/${app.id}`,data=await vmStateObject(app);if(!Object.prototype.hasOwnProperty.call(data,key))return false;delete data[key];await core.fs.mkdir(path);await core.fs.writeJSON(`${path}/${VM_STATE_FILE}`,data);return true;}
 
 async function hostCall(app,method,args={}){
   if(method==='storage.get')return storageGet(app,args.key);
@@ -138,7 +151,7 @@ async function hostCall(app,method,args={}){
 }
 
 const VM_IMPORT_CAPABILITIES=Object.freeze({
-  'storage.get':'storage','storage.set':'storage','storage.remove':'storage',
+  'storage.get':'storage','storage.set':'storage','storage.remove':'storage','state.load':'storage','state.save':'storage','state.remove':'storage',
   'fs.readText':'fs.read','fs.list':'fs.read','fs.writeText':'fs.write',
   'clipboard.read':'clipboard.read','clipboard.write':'clipboard.write','share.text':'share',
   'build.doctor':'build.local','build.plan':'build.local','build.runs':'build.local','build.artifacts':'build.local'
@@ -155,6 +168,9 @@ function validateVmImports(app,spec,info){
 }
 async function invokeVmHost(app,record,method,args){
   if(method==='app.setTitle'){setRecordTitle(record,String(args[0]??app.manifest.name));return true;}
+  if(method==='state.load')return vmStateLoad(app,args[0]);
+  if(method==='state.save')return vmStateSave(app,args[0],args[1]);
+  if(method==='state.remove')return vmStateRemove(app,args[0]);
   if(method==='storage.get')return hostCall(app,method,{key:args[0]});
   if(method==='storage.set')return hostCall(app,method,{key:args[0],value:args[1]});
   if(method==='storage.remove')return hostCall(app,method,{key:args[0]});
