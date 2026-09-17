@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { compileRiftPlusPlusCoreV1, inspectRiftPlusPlusCoreV1, parseRiftPlusPlusCoreV1, RiftCoreCompileError } from '../src/riftpp-core.js';
+import { compileRiftPlusPlusCoreV1, compileRiftPlusPlusCoreProgramV1, inspectRiftPlusPlusCoreV1, inspectRiftPlusPlusCoreProgramV1, parseRiftPlusPlusCoreV1, RiftCoreCompileError } from '../src/riftpp-core.js';
 import { executeRiftExecutable, inspectRiftExecutable } from '../src/riftvm.js';
 
 async function execute(source){
@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.4.0-bootstrap');
+assert.equal(compiled.compiler,'0.5.0-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -52,6 +52,55 @@ assert.deepEqual(collections.output,['2','42','56','0','none','vec capacity exce
 const collectionOps=Object.values(collections.compiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));
 for(const op of ['make_vec','vec_len','vec_get','vec_push','vec_set'])assert(collectionOps.includes(op),`collections must lower ${op}`);
 assert(collections.compiled.executable.imports.length===0,'collections must not add host imports');
+
+const moduleMain=readFileSync('examples/riftpp/modules/demo/main.riftpp','utf8');
+const moduleSources={
+  'demo.math':readFileSync('examples/riftpp/modules/demo/math.riftpp','utf8'),
+  'demo.types':readFileSync('examples/riftpp/modules/demo/types.riftpp','utf8'),
+};
+const moduleAst=parseRiftPlusPlusCoreV1(moduleMain);
+assert.deepEqual(moduleAst.uses.map(use=>[use.module,use.alias]),[['demo.math','math'],['demo.types','types']]);
+const moduleCompiled=compileRiftPlusPlusCoreProgramV1(moduleMain,moduleSources),moduleOutput=[];
+const moduleRun=await executeRiftExecutable(moduleCompiled.executable,{write:value=>moduleOutput.push(value)});
+assert.deepEqual(moduleOutput,['42','42']);
+assert.deepEqual(moduleCompiled.modules,['demo.types','demo.math','demo.main']);
+assert.equal(moduleCompiled.executable.imports.length,0,'module linking must not create RiftVM host imports');
+assert(moduleCompiled.executable.functions['demo.math::sum_pair'],'imported function must use a collision-proof linked name');
+assert(moduleCompiled.executable.functions['demo.types::make_outcome'],'transitive module function must be linked');
+assert(moduleCompiled.executable.functions.main,'root main must remain the only executable entry name');
+assert.equal(moduleRun.result.type,'unit');
+const moduleInspect=inspectRiftPlusPlusCoreProgramV1(moduleMain,moduleSources);
+assert.deepEqual(moduleInspect.modules,['demo.types','demo.math','demo.main']);
+assert(moduleInspect.structs.includes('demo.types::Pair'));
+assert(moduleInspect.enums.includes('demo.types::Outcome'));
+assert.throws(()=>compileRiftPlusPlusCoreV1(moduleMain),error=>error instanceof RiftCoreCompileError&&error.diagnostic.code==='E0314');
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(moduleMain,{'demo.math':moduleSources['demo.math']}),/missing imported module 'demo.types'/);
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(moduleMain,{...moduleSources,'demo.extra':'riftpp 1\nmodule demo.extra\nfn helper() {}\n'}),/unused dependency module 'demo.extra'/);
+const identityRoot=`riftpp 1\nmodule identity.root\nuse identity.dep as dep\nfn main() { }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(identityRoot,{'identity.dep':'riftpp 1\nmodule identity.wrong\nfn value() -> u32 { return 1 }\n'}),/declares 'identity.wrong'/);
+const cycleRoot=`riftpp 1\nmodule cycle.root\nuse cycle.a as a\nfn main() { }\n`;
+const cycleModules={'cycle.a':`riftpp 1\nmodule cycle.a\nuse cycle.b as b\nfn a() { }\n`,'cycle.b':`riftpp 1\nmodule cycle.b\nuse cycle.a as a\nfn b() { }\n`};
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(cycleRoot,cycleModules),/cyclic module import/);
+const aliasRoot=`riftpp 1\nmodule alias.root\nuse alias.a as dep\nuse alias.b as dep\nfn main() { }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(aliasRoot,{'alias.a':'riftpp 1\nmodule alias.a\nfn a() { }\n','alias.b':'riftpp 1\nmodule alias.b\nfn b() { }\n'}),/module alias 'dep' conflicts/);
+const hiddenRoot=`riftpp 1\nmodule hidden.root\nuse hidden.dep as dep\nfn main() { print(value()) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(hiddenRoot,{'hidden.dep':'riftpp 1\nmodule hidden.dep\nfn value() -> u32 { return 7 }\n'}),/unknown function 'value'/);
+const defaultAliasRoot=`riftpp 1\nmodule default_alias.root\nuse default_alias.dep\nfn main() { print(dep.value()) }\n`;
+const defaultAliasCompiled=compileRiftPlusPlusCoreProgramV1(defaultAliasRoot,{'default_alias.dep':'riftpp 1\nmodule default_alias.dep\nfn value() -> u32 { return 9 }\n'}),defaultAliasOutput=[];
+await executeRiftExecutable(defaultAliasCompiled.executable,{write:value=>defaultAliasOutput.push(value)});
+assert.deepEqual(defaultAliasOutput,['9'],'use without as must expose the imported module by its final path segment');
+const canonicalBypassRoot=`riftpp 1\nmodule canonical.root\nuse canonical.dep as dep\nfn main() { print(canonical.dep.value()) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(canonicalBypassRoot,{'canonical.dep':'riftpp 1\nmodule canonical.dep\nfn value() -> u32 { return 9 }\n'}),/unknown/,'imported symbols must resolve through the explicit alias, not ambient full-path lookup');
+const linkedLongArithmetic=Array.from({length:160},()=> '1').join(' + ');
+const linkedDeepRoot=`riftpp 1\nmodule linked_deep.root\nuse linked_deep.dep as dep\nfn main() { print(${linkedLongArithmetic}) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(linkedDeepRoot,{'linked_deep.dep':'riftpp 1\nmodule linked_deep.dep\nfn value() -> u32 { return 1 }\n'}),/module linker expression nesting exceeds 128/);
+const chainModules={};
+for(let i=1;i<64;i++){const next=i<63?`use limit.m${i+1} as next\n`:'';chainModules[`limit.m${i}`]=`riftpp 1\nmodule limit.m${i}\n${next}fn value() -> u32 { return ${i} }\n`;}
+const chainRoot=`riftpp 1\nmodule limit.root\nuse limit.m1 as first\nfn main() { print(first.value()) }\n`;
+assert.equal(compileRiftPlusPlusCoreProgramV1(chainRoot,chainModules).modules.length,64,'module graph must allow exactly 64 total modules');
+chainModules['limit.m63']=`riftpp 1\nmodule limit.m63\nuse limit.m64 as next\nfn value() -> u32 { return 63 }\n`;
+chainModules['limit.m64']=`riftpp 1\nmodule limit.m64\nfn value() -> u32 { return 64 }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreProgramV1(chainRoot,chainModules),/module graph exceeds 64 modules/);
 
 const shortCircuit=`riftpp 1\nmodule proof.short_circuit\nfn main() {\n print(false and (1 / 0 == 0))\n print(true or (1 / 0 == 0))\n}\n`;
 assert.deepEqual((await execute(shortCircuit)).output,['false','true'],'and/or must skip a RHS that would trap');
@@ -150,4 +199,5 @@ console.log('ok - Rift++ Core V1 source parses, type-checks, lowers to rift-exec
 console.log('ok - Control Flow V1 executes var/assignment, scopes, if/else, while, break/continue and short-circuit and/or');
 console.log('ok - Structured Data V1 executes nominal struct/enum values, field reads, payload binding and exhaustive match');
 console.log('ok - Collections V1 executes bounded Vec values with Option/Result match semantics and no host imports');
+console.log('ok - Module Graph V1 links explicit/default aliases and transitive types/functions, caps graphs at 64 modules, bounds linker recursion, and rejects cycles/missing/ambient modules');
 console.log('ok - mutability, reachability, structured-data/collection correctness and match exhaustiveness fail closed');

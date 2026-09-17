@@ -1,6 +1,6 @@
 import { RIFT_EXEC_FORMAT, RIFT_VM_ABI, prepareRiftExecutable } from './riftvm.js';
 
-export const RIFTPP_CORE_VERSION='0.4.0-bootstrap';
+export const RIFTPP_CORE_VERSION='0.5.0-bootstrap';
 export const RIFTPP_LANGUAGE='riftpp/1';
 
 const MAX_SOURCE_BYTES=256*1024;
@@ -13,6 +13,10 @@ const MAX_NAMED_TYPES=256;
 const MAX_VEC_CAPACITY=64;
 const MAX_TYPE_DEPTH=32;
 const MAX_PARSE_DEPTH=128;
+const MAX_MODULES=64;
+const MAX_USES=64;
+const MAX_PROGRAM_SOURCE_BYTES=1024*1024;
+const MAX_LINKED_NAME_BYTES=96;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
 const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','string']);
 const BUILTIN_GENERIC_TYPES=new Set(['Vec','Option','Result']);
@@ -100,12 +104,14 @@ class Parser{
   expect(value,code='E0100'){const token=this.current();if(!this.at(value))fail(code,`expected '${value}', found '${token.value}'`,token,'grammar');this.index++;return token;}
   expectKind(kind,label,code='E0101'){const token=this.current();if(token.kind!==kind)fail(code,`expected ${label}, found '${token.value}'`,token,'grammar');this.index++;return token;}
   node(kind,start,fields={}){const end=this.previous();return Object.freeze({kind,...fields,span:Object.freeze({start:start.start,end:end.end,line:start.line,column:start.column})});}
-  modulePath(){const first=this.expectKind('ident','module identifier'),parts=[first.value];while(this.consume('.'))parts.push(this.expectKind('ident','module identifier').value);return parts.join('.');}
+  modulePath(){const first=this.expectKind('ident','module identifier'),parts=[first.value];while(this.consume('.'))parts.push(this.expectKind('ident','module identifier').value);for(const part of parts)if(POISON_NAMES.has(part))fail('E0125',`reserved module path segment '${part}'`,first,'module grammar');return parts.join('.');}
+  useDecl(){const start=this.expect('use'),module=this.modulePath();let alias=null;if(this.consume('as'))alias=this.expectKind('ident','module alias').value;if(alias&&POISON_NAMES.has(alias))fail('E0126',`reserved module alias '${alias}'`,start,'module grammar');return this.node('Use',start,{module,alias});}
   typeRef(){
     const token=this.current();if(++this.typeDepth>MAX_TYPE_DEPTH){this.typeDepth--;fail('E0119',`type nesting exceeds ${MAX_TYPE_DEPTH}`,token,'host bounds');}
     try{
-      if(token.kind!=='ident'&&token.kind!=='keyword')fail('E0102','expected type name',token,'type grammar');this.index++;const name=token.value,args=[];let capacityRaw=null;
+      if(token.kind!=='ident'&&token.kind!=='keyword')fail('E0102','expected type name',token,'type grammar');this.index++;const parts=[token.value];while(this.consume('.'))parts.push(this.expectKind('ident','type path segment').value);const name=parts.join('.'),args=[];let capacityRaw=null;
       if(this.consume('<')){
+        if(parts.length!==1)fail('E0127',`qualified generic type '${name}' is not supported`,token,'type grammar');
         if(name==='Vec'){args.push(this.typeRef());this.expect(',');capacityRaw=this.expectKind('number','Vec capacity','E0118').value;this.expect('>');}
         else if(name==='Option'){args.push(this.typeRef());this.expect('>');}
         else if(name==='Result'){args.push(this.typeRef());this.expect(',');args.push(this.typeRef());this.expect('>');}
@@ -118,7 +124,7 @@ class Parser{
   parseFile(){
     const start=this.expect('riftpp'),version=this.expectKind('number','language version');if(version.value.replaceAll('_','')!=='1')fail('E0103',`unsupported Rift++ version ${version.value}; expected 1`,version,'file header');
     this.expect('module');const moduleName=this.modulePath();
-    if(this.at('use'))fail('E0104','use declarations are not implemented in the bootstrap Core slice',this.current(),'bootstrap feature gate');
+    const uses=[];while(this.at('use')){uses.push(this.useDecl());if(uses.length>MAX_USES)fail('E0128',`use declaration count exceeds ${MAX_USES}`,this.current(),'host bounds');}
     const structs=[],enums=[],functions=[];
     while(this.current().kind!=='eof'){
       if(this.at('struct')){structs.push(this.structDecl());continue;}
@@ -127,7 +133,7 @@ class Parser{
       if(this.at('const'))fail('E0105','top-level const is valid Core syntax but not implemented in the bootstrap slice',this.current(),'bootstrap feature gate');
       fail('E0105',`top-level '${this.current().value}' is not implemented in the bootstrap Core slice`,this.current(),'bootstrap feature gate');
     }
-    return this.node('File',start,{version:1,module:moduleName,structs:Object.freeze(structs),enums:Object.freeze(enums),functions:Object.freeze(functions)});
+    return this.node('File',start,{version:1,module:moduleName,uses:Object.freeze(uses),structs:Object.freeze(structs),enums:Object.freeze(enums),functions:Object.freeze(functions)});
   }
   structDecl(){
     const start=this.expect('struct'),name=this.expectKind('ident','struct name');this.expect('{');const fields=[];
@@ -191,11 +197,13 @@ class Parser{
   additive(){let expr=this.multiplicative();while(this.at('+')||this.at('-')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.multiplicative(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   multiplicative(){let expr=this.unary();while(this.at('*')||this.at('/')||this.at('%')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.unary(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   unary(){const token=this.current();if(++this.unaryDepth>MAX_PARSE_DEPTH){this.unaryDepth--;fail('E0123',`unary nesting exceeds ${MAX_PARSE_DEPTH}`,token,'host bounds');}try{if(this.at('-')||this.at('+')||this.at('not')){const op=this.current();this.index++;const expression=this.unary();return Object.freeze({kind:'Unary',op:op.value,expression,span:Object.freeze({start:op.start,end:expression.span.end,line:op.line,column:op.column})});}return this.postfix();}finally{this.unaryDepth--;}}
+  expressionPath(expr){if(expr?.kind==='Name')return expr.name;if(expr?.kind==='Member'){const base=this.expressionPath(expr.object);return base?`${base}.${expr.member}`:null;}return null;}
   postfix(){
     let expr=this.primary();
     for(;;){
       if(this.consume('(')){const args=[];if(!this.at(')'))for(;;){args.push(this.expression());if(!this.consume(','))break;}const close=this.expect(')');expr=Object.freeze({kind:'Call',callee:expr,args:Object.freeze(args),span:Object.freeze({start:expr.span.start,end:close.end,line:expr.span.line,column:expr.span.column})});continue;}
       if(this.consume('.')){const member=this.expectKind('ident','field or enum case');expr=Object.freeze({kind:'Member',object:expr,member:member.value,span:Object.freeze({start:expr.span.start,end:member.end,line:expr.span.line,column:expr.span.column})});continue;}
+      if(this.at('{')&&this.peek().kind==='ident'&&this.peek(2).value===':'){const typeName=this.expressionPath(expr);if(!typeName)fail('E0129','struct literal requires a type path',this.current(),'struct literal grammar');expr=this.structLiteral(typeName,expr.span);continue;}
       break;
     }
     return expr;
@@ -206,18 +214,14 @@ class Parser{
     if(token.kind==='string'){this.index++;return Object.freeze({kind:'StringLiteral',value:token.value,span:spanOf(token)});}
     if(token.value==='true'||token.value==='false'){this.index++;return Object.freeze({kind:'BoolLiteral',value:token.value==='true',span:spanOf(token)});}
     if(this.at('[')){const start=this.expect('['),items=[];if(!this.at(']'))for(;;){items.push(this.expression());if(!this.consume(','))break;if(this.at(']'))break;}const end=this.expect(']');return Object.freeze({kind:'VecLiteral',items:Object.freeze(items),span:Object.freeze({start:start.start,end:end.end,line:start.line,column:start.column})});}
-    if(token.kind==='ident'){
-      this.index++;const name=Object.freeze({kind:'Name',name:token.value,span:spanOf(token)});
-      if(this.at('{')&&this.peek().kind==='ident'&&this.peek(2).value===':')return this.structLiteral(name,token);
-      return name;
-    }
+    if(token.kind==='ident'){this.index++;return Object.freeze({kind:'Name',name:token.value,span:spanOf(token)});}
     if(this.consume('(')){const expr=this.expression();this.expect(')');return expr;}
     fail('E0111',`expected expression, found '${token.value}'`,token,'expression grammar');
   }
-  structLiteral(name,start){
+  structLiteral(typeName,startSpan){
     this.expect('{');const fields=[];
     while(!this.at('}')){const field=this.expectKind('ident','struct initializer field');this.expect(':');fields.push(Object.freeze({name:field.value,expression:this.expression(),span:spanOf(field)}));if(!this.consume(','))break;if(this.at('}'))break;}
-    this.expect('}');return this.node('StructLiteral',start,{typeName:name.name,fields:Object.freeze(fields)});
+    const end=this.expect('}');return Object.freeze({kind:'StructLiteral',typeName,fields:Object.freeze(fields),span:Object.freeze({start:startSpan.start,end:end.end,line:startSpan.line,column:startSpan.column})});
   }
 }
 
@@ -226,6 +230,57 @@ function semanticFail(code,message,node,rule,help=''){fail(code,message,spanToke
 function expectType(actual,expected,node){if(expected&&actual!==expected)semanticFail('E0201',`type mismatch: expected ${expected}, got ${actual}`,node,'type checking');return actual;}
 function parseInt(raw,node,type){const clean=raw.replaceAll('_','');let value;try{value=BigInt(clean);}catch{semanticFail('E0202',`invalid integer literal '${raw}'`,node,'numeric semantics');}const bounds=type==='s32'?[-2147483648n,2147483647n]:[0n,4294967295n];if(value<bounds[0]||value>bounds[1])semanticFail('E0203',`${type} literal is out of range`,node,'checked integer semantics');return value.toString();}
 function unionFlows(...sets){const out=new Set();for(const set of sets)for(const value of set)out.add(value);return out;}
+function expressionPath(expr){if(expr?.kind==='Name')return expr.name;if(expr?.kind==='Member'){const base=expressionPath(expr.object);return base?`${base}.${expr.member}`:null;}return null;}
+function linkedName(module,name,node){const value=module&&name?`${module}::${name}`:'';if(!/^[A-Za-z_][A-Za-z0-9_.:$-]*$/.test(value)||encoder.encode(value).byteLength>MAX_LINKED_NAME_BYTES)semanticFail('E0309',`linked symbol '${value}' is invalid or exceeds ${MAX_LINKED_NAME_BYTES} bytes`,node,'module linking');return value;}
+function linkRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){
+  if(!moduleSources||typeof moduleSources!=='object'||Array.isArray(moduleSources))fail('E0300','moduleSources must be a module-name to source-text object',{start:0,end:0,line:1,column:1},'module graph');
+  const rootText=String(rootSource??''),rootAst=parseRiftPlusPlusCoreV1(rootText),provided=new Map(Object.keys(moduleSources).map(name=>[name,String(moduleSources[name]??'')]));
+  if(provided.has(rootAst.module))semanticFail('E0301',`root module '${rootAst.module}' must not also be supplied as a dependency`,rootAst,'module graph');
+  let totalBytes=encoder.encode(rootText).byteLength;const records=new Map([[rootAst.module,{ast:rootAst,source:rootText,aliases:new Map()}]]),state=new Map(),order=[];
+  const load=(name,node)=>{if(records.has(name))return records.get(name);if(records.size>=MAX_MODULES)semanticFail('E0302',`module graph exceeds ${MAX_MODULES} modules`,node,'module graph');if(!provided.has(name))semanticFail('E0303',`missing imported module '${name}'`,node,'module resolution');const source=provided.get(name);totalBytes+=encoder.encode(source).byteLength;if(totalBytes>MAX_PROGRAM_SOURCE_BYTES)semanticFail('E0304',`aggregate module source exceeds ${MAX_PROGRAM_SOURCE_BYTES} UTF-8 bytes`,node,'host bounds');const ast=parseRiftPlusPlusCoreV1(source);if(ast.module!==name)semanticFail('E0305',`module source for '${name}' declares '${ast.module}'`,ast,'module identity');const rec={ast,source,aliases:new Map()};records.set(name,rec);return rec;};
+  const visit=(name,via=null)=>{const status=state.get(name);if(status==='done')return;if(status==='visiting')semanticFail('E0306',`cyclic module import detected at '${name}'`,via||records.get(name).ast,'module graph');state.set(name,'visiting');const rec=records.get(name);const imported=new Set(),topNames=new Set([...rec.ast.structs.map(x=>x.name),...rec.ast.enums.map(x=>x.name),...rec.ast.functions.map(x=>x.name)]);for(const use of rec.ast.uses){if(imported.has(use.module))semanticFail('E0307',`duplicate import of module '${use.module}'`,use,'module resolution');imported.add(use.module);const aliasParts=use.module.split('.'),alias=use.alias||aliasParts[aliasParts.length-1];if(rec.aliases.has(alias)||topNames.has(alias)||PRELUDE_NAMES.has(alias)||SUPPORTED_PRIMITIVES.has(alias)||BUILTIN_GENERIC_TYPES.has(alias))semanticFail('E0308',`module alias '${alias}' conflicts in module ${name}`,use,'module resolution');rec.aliases.set(alias,use.module);const dep=load(use.module,use);visit(use.module,use);}state.set(name,'done');order.push(name);};
+  visit(rootAst.module);for(const name of provided.keys())if(!records.has(name))semanticFail('E0310',`unused dependency module '${name}' was supplied`,rootAst,'module graph');
+  const typeMaps=new Map(),fnMaps=new Map();for(const name of order){const rec=records.get(name),types=new Map(),fns=new Map(),seen=new Set();for(const decl of [...rec.ast.structs,...rec.ast.enums,...rec.ast.functions]){if(PRELUDE_NAMES.has(decl.name)||SUPPORTED_PRIMITIVES.has(decl.name)||BUILTIN_GENERIC_TYPES.has(decl.name)||POISON_NAMES.has(decl.name))semanticFail('E0315',`reserved top-level name '${decl.name}' in module ${name}`,decl,'module name resolution');if(seen.has(decl.name))semanticFail('E0316',`duplicate top-level name '${decl.name}' in module ${name}`,decl,'module name resolution');seen.add(decl.name);}for(const decl of [...rec.ast.structs,...rec.ast.enums])types.set(decl.name,linkedName(name,decl.name,decl));for(const fn of rec.ast.functions)fns.set(fn.name,name===rootAst.module&&fn.name==='main'?'main':linkedName(name,fn.name,fn));typeMaps.set(name,types);fnMaps.set(name,fns);}
+  const importTarget=(rec,path,mapSet)=>{const parts=String(path).split('.');if(parts.length===1)return mapSet.get(rec.ast.module)?.get(path)||null;if(parts.length!==2)return null;const aliasModule=rec.aliases.get(parts[0]);return aliasModule?mapSet.get(aliasModule)?.get(parts[1])||null:null;};
+  const resolveType=(rec,path,node,required=true)=>{if(SUPPORTED_PRIMITIVES.has(path)||BUILTIN_GENERIC_TYPES.has(path))return path;const value=importTarget(rec,path,typeMaps);if(value)return value;if(required)semanticFail('E0311',`unknown or unimported type '${path}' in module ${rec.ast.module}`,node,'module name resolution');return null;};
+  const resolveFunction=(rec,path,node,required=true)=>{if(path==='print')return'print';const value=importTarget(rec,path,fnMaps);if(value)return value;if(required)semanticFail('E0312',`unknown or unimported function '${path}' in module ${rec.ast.module}`,node,'module name resolution');return null;};
+  const aliasGuard=(rec,name,node)=>{if(rec.aliases.has(name))semanticFail('E0313',`local name '${name}' shadows a module alias in module ${rec.ast.module}`,node,'module name resolution');if(typeMaps.get(rec.ast.module)?.has(name))semanticFail('E0216',`'${name}' is reserved by the module type namespace`,node,'name resolution');};
+  const rewriteType=(rec,type)=>{if(!type)return null;const args=(type.args||[]).map(item=>rewriteType(rec,item));const name=['Vec','Option','Result'].includes(type.name)?type.name:resolveType(rec,type.name,type);return Object.freeze({...type,name,args:Object.freeze(args)});};
+  let linkExprDepth=0,linkBlockDepth=0,linkPatternDepth=0,linkStmtDepth=0;
+  const rewritePattern=(rec,pattern)=>{if(++linkPatternDepth>MAX_PARSE_DEPTH){linkPatternDepth--;semanticFail('E0317',`module linker pattern nesting exceeds ${MAX_PARSE_DEPTH}`,pattern,'host bounds');}try{if(pattern.kind==='EnumPattern'){const parts=pattern.path.split('.'),variant=parts[parts.length-1],typePath=parts.slice(0,-1).join('.');let path=pattern.path;if(typePath){const resolved=resolveType(rec,typePath,pattern,false);if(resolved)path=`${resolved}.${variant}`;}return Object.freeze({...pattern,path,args:Object.freeze(pattern.args.map(item=>rewritePattern(rec,item)))});}if(pattern.kind==='BindingPattern')aliasGuard(rec,pattern.name,pattern);return pattern;}finally{linkPatternDepth--;}};
+  const rewriteExpr=(rec,expr)=>{
+    if(++linkExprDepth>MAX_PARSE_DEPTH){linkExprDepth--;semanticFail('E0318',`module linker expression nesting exceeds ${MAX_PARSE_DEPTH}`,expr,'host bounds');}
+    try{
+    if(['IntLiteral','StringLiteral','BoolLiteral','Name'].includes(expr.kind))return expr;
+    if(expr.kind==='VecLiteral')return Object.freeze({...expr,items:Object.freeze(expr.items.map(item=>rewriteExpr(rec,item)))});
+    if(expr.kind==='StructLiteral')return Object.freeze({...expr,typeName:resolveType(rec,expr.typeName,expr),fields:Object.freeze(expr.fields.map(field=>Object.freeze({...field,expression:rewriteExpr(rec,field.expression)})))});
+    if(expr.kind==='Unary')return Object.freeze({...expr,expression:rewriteExpr(rec,expr.expression)});
+    if(expr.kind==='Binary')return Object.freeze({...expr,left:rewriteExpr(rec,expr.left),right:rewriteExpr(rec,expr.right)});
+    if(expr.kind==='Call'){
+      const args=Object.freeze(expr.args.map(item=>rewriteExpr(rec,item))),path=expressionPath(expr.callee);if(path){if(path==='print')return Object.freeze({...expr,callee:expr.callee,args});const parts=path.split('.');if(parts.length>=2){const typePath=parts.slice(0,-1).join('.'),resolvedType=resolveType(rec,typePath,expr.callee,false);if(resolvedType){const callee=Object.freeze({kind:'Member',object:Object.freeze({kind:'Name',name:resolvedType,span:expr.callee.span}),member:parts[parts.length-1],span:expr.callee.span});return Object.freeze({...expr,callee,args});}}const target=resolveFunction(rec,path,expr.callee,false);if(target)return Object.freeze({...expr,callee:Object.freeze({kind:'Name',name:target,span:expr.callee.span}),args});}return Object.freeze({...expr,callee:rewriteExpr(rec,expr.callee),args});
+    }
+    if(expr.kind==='Member'){const path=expressionPath(expr),parts=path?.split('.')||[];if(parts.length>=2){const typePath=parts.slice(0,-1).join('.'),resolvedType=resolveType(rec,typePath,expr,false);if(resolvedType)return Object.freeze({kind:'Member',object:Object.freeze({kind:'Name',name:resolvedType,span:expr.span}),member:parts[parts.length-1],span:expr.span});}return Object.freeze({...expr,object:rewriteExpr(rec,expr.object)});}
+    return expr;
+    }finally{linkExprDepth--;}
+  };
+  const rewriteBlock=(rec,block)=>{if(++linkBlockDepth>MAX_PARSE_DEPTH){linkBlockDepth--;semanticFail('E0319',`module linker block nesting exceeds ${MAX_PARSE_DEPTH}`,block,'host bounds');}try{return Object.freeze({...block,statements:Object.freeze(block.statements.map(stmt=>rewriteStmt(rec,stmt)))});}finally{linkBlockDepth--;}};
+  const rewriteStmt=(rec,stmt)=>{
+    if(++linkStmtDepth>MAX_PARSE_DEPTH){linkStmtDepth--;semanticFail('E0320',`module linker statement nesting exceeds ${MAX_PARSE_DEPTH}`,stmt,'host bounds');}
+    try{
+    if(stmt.kind==='Let'||stmt.kind==='Var'){aliasGuard(rec,stmt.name,stmt);return Object.freeze({...stmt,type:rewriteType(rec,stmt.type),initializer:rewriteExpr(rec,stmt.initializer)});}
+    if(stmt.kind==='Assign')return Object.freeze({...stmt,expression:rewriteExpr(rec,stmt.expression)});
+    if(stmt.kind==='If')return Object.freeze({...stmt,condition:rewriteExpr(rec,stmt.condition),thenBranch:rewriteBlock(rec,stmt.thenBranch),elseBranch:stmt.elseBranch?(stmt.elseBranch.kind==='If'?rewriteStmt(rec,stmt.elseBranch):rewriteBlock(rec,stmt.elseBranch)):null});
+    if(stmt.kind==='While')return Object.freeze({...stmt,condition:rewriteExpr(rec,stmt.condition),body:rewriteBlock(rec,stmt.body)});
+    if(stmt.kind==='Return')return Object.freeze({...stmt,expression:stmt.expression?rewriteExpr(rec,stmt.expression):null});
+    if(stmt.kind==='ExprStmt')return Object.freeze({...stmt,expression:rewriteExpr(rec,stmt.expression)});
+    if(stmt.kind==='Match')return Object.freeze({...stmt,expression:rewriteExpr(rec,stmt.expression),arms:Object.freeze(stmt.arms.map(arm=>Object.freeze({...arm,pattern:rewritePattern(rec,arm.pattern),guard:arm.guard?rewriteExpr(rec,arm.guard):null,body:arm.bodyIsBlock?rewriteBlock(rec,arm.body):rewriteExpr(rec,arm.body)})))});
+    return stmt;
+    }finally{linkStmtDepth--;}
+  };
+  const structs=[],enums=[],functions=[];for(const module of order){const rec=records.get(module),typeMap=typeMaps.get(module),fnMap=fnMaps.get(module);for(const decl of rec.ast.structs)structs.push(Object.freeze({...decl,name:typeMap.get(decl.name),fields:Object.freeze(decl.fields.map(field=>Object.freeze({...field,type:rewriteType(rec,field.type)})))}));for(const decl of rec.ast.enums)enums.push(Object.freeze({...decl,name:typeMap.get(decl.name),cases:Object.freeze(decl.cases.map(item=>Object.freeze({...item,types:Object.freeze(item.types.map(type=>rewriteType(rec,type)))})))}));for(const fn of rec.ast.functions){for(const param of fn.params)aliasGuard(rec,param.name,param);functions.push(Object.freeze({...fn,name:fnMap.get(fn.name),params:Object.freeze(fn.params.map(param=>Object.freeze({...param,type:rewriteType(rec,param.type)}))),returnType:rewriteType(rec,fn.returnType),body:rewriteBlock(rec,fn.body)}));}}
+  const moduleGraph=Object.freeze(order.map(name=>Object.freeze({name,uses:Object.freeze(records.get(name).ast.uses.map(use=>Object.freeze({module:use.module,alias:use.alias||use.module.split('.').slice(-1)[0]})))})));
+  return Object.freeze({kind:'File',version:1,module:rootAst.module,uses:Object.freeze([]),structs:Object.freeze(structs),enums:Object.freeze(enums),functions:Object.freeze(functions),moduleGraph,span:rootAst.span});
+}
 
 class Codegen{
   constructor(ast){this.ast=ast;this.constants=[];this.constantMap=new Map();this.structs=new Map();this.enums=new Map();this.genericTypes=new Map();this.topNames=new Set();this.signatures=new Map();this.functions=Object.create(null);}
@@ -264,7 +319,7 @@ class Codegen{
     }
     const main=this.signatures.get('main');if(!main)semanticFail('E0205',"entry function 'main' is required",this.ast,'entrypoint');if(main.params.length!==0||main.returnType!=='unit')semanticFail('E0206',"main must have signature fn main() with unit return",main.node,'entrypoint');
   }
-  run(){this.collectTypes();this.collectSignatures();for(const fn of this.ast.functions)this.compileFunction(fn);const executable={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:this.constants,functions:this.functions,limits:{maxSteps:100000,maxStack:1024,maxCallDepth:32},metadata:{language:RIFTPP_LANGUAGE,module:this.ast.module,compiler:RIFTPP_CORE_VERSION,structs:[...this.structs.keys()],enums:[...this.enums.keys()]}};prepareRiftExecutable(executable);return executable;}
+  run(){this.collectTypes();this.collectSignatures();for(const fn of this.ast.functions)this.compileFunction(fn);const executable={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:this.constants,functions:this.functions,limits:{maxSteps:100000,maxStack:1024,maxCallDepth:32},metadata:{language:RIFTPP_LANGUAGE,module:this.ast.module,compiler:RIFTPP_CORE_VERSION,modules:this.ast.moduleGraph||Object.freeze([{name:this.ast.module,uses:Object.freeze([])}]),structs:[...this.structs.keys()],enums:[...this.enums.keys()]}};prepareRiftExecutable(executable);return executable;}
   compileFunction(fn){
     const sig=this.signatures.get(fn.name),code=[];let nextLocal=0,compileExprDepth=0,compileBlockDepth=0;
     const scopes=[new Map()],loopStack=[];
@@ -337,7 +392,7 @@ class Codegen{
     const compileAssignment=stmt=>{const local=resolve(stmt.name);if(!local)semanticFail('E0221',`unknown assignment target '${stmt.name}'`,stmt,'name resolution');if(!local.mutable)semanticFail('E0222',`cannot assign to immutable binding '${stmt.name}'`,stmt,'mutability');if(stmt.op==='='){compileExpr(stmt.expression,local.type);emit({op:'store',index:local.slot});return;}emit({op:'load',index:local.slot});compileExpr(stmt.expression,local.type);if(stmt.op==='+='&&local.type==='string')emit({op:'concat'});else{if(!['u32','s32'].includes(local.type))semanticFail('E0223',`compound assignment '${stmt.op}' requires integer operands (or string +=)`,stmt,'numeric semantics');emit({op:{'+=':'add','-=':'sub','*=':'mul','/=':'div','%=':'mod'}[stmt.op]});}emit({op:'store',index:local.slot});};
 
     const resolveEnumPattern=(pattern,enumType)=>{
-      const info=this.enumTypeInfo(enumType);if(!info)semanticFail('E0251',`match currently supports bool or enum values; got ${enumType}`,pattern,'bootstrap match support');const def=info.def,parts=pattern.path.split('.');let variantName;if(parts.length===1)variantName=parts[0];else if(parts.length===2&&parts[0]===info.displayName)variantName=parts[1];else semanticFail('E0247',`enum pattern '${pattern.path}' does not name a case of ${enumType}`,pattern,'match pattern');const variant=def.cases.get(variantName);if(!variant)semanticFail('E0248',`enum ${enumType} has no case '${variantName}'`,pattern,'match pattern');if(pattern.args.length!==variant.types.length)semanticFail('E0249',`${info.displayName}.${variantName} pattern expects ${variant.types.length} payload pattern(s), got ${pattern.args.length}`,pattern,'match pattern');for(const arg of pattern.args)if(!['BindingPattern','WildcardPattern'].includes(arg.kind))semanticFail('E0250','bootstrap enum payload patterns support bindings or _ only',arg,'bootstrap match pattern');return{variantName,variant,runtimeName:info.runtimeName};
+      const info=this.enumTypeInfo(enumType);if(!info)semanticFail('E0251',`match currently supports bool or enum values; got ${enumType}`,pattern,'bootstrap match support');const def=info.def,parts=pattern.path.split('.');let variantName;const linkedPrefix=`${enumType}.`;if(pattern.path.startsWith(linkedPrefix))variantName=pattern.path.slice(linkedPrefix.length);else if(parts.length===1)variantName=parts[0];else if(parts.length===2&&parts[0]===info.displayName)variantName=parts[1];else semanticFail('E0247',`enum pattern '${pattern.path}' does not name a case of ${enumType}`,pattern,'match pattern');const variant=def.cases.get(variantName);if(!variant)semanticFail('E0248',`enum ${enumType} has no case '${variantName}'`,pattern,'match pattern');if(pattern.args.length!==variant.types.length)semanticFail('E0249',`${info.displayName}.${variantName} pattern expects ${variant.types.length} payload pattern(s), got ${pattern.args.length}`,pattern,'match pattern');for(const arg of pattern.args)if(!['BindingPattern','WildcardPattern'].includes(arg.kind))semanticFail('E0250','bootstrap enum payload patterns support bindings or _ only',arg,'bootstrap match pattern');return{variantName,variant,runtimeName:info.runtimeName};
     };
     const validateMatch=(stmt,type)=>{
       const enumInfo=this.enumTypeInfo(type),enumDef=enumInfo?.def,covered=new Set();let catchAll=false;
@@ -387,7 +442,10 @@ class Codegen{
 
 export function lexRiftPlusPlusCoreV1(source){const text=String(source??'');if(encoder.encode(text).byteLength>MAX_SOURCE_BYTES)fail('E0001',`source exceeds ${MAX_SOURCE_BYTES} UTF-8 bytes`,{start:0,end:0,line:1,column:1},'host bounds');return new Lexer(text.charCodeAt(0)===0xfeff?text.slice(1):text).run();}
 export function parseRiftPlusPlusCoreV1(source){return new Parser(lexRiftPlusPlusCoreV1(source)).parseFile();}
-export function compileRiftPlusPlusCoreV1(source){const ast=parseRiftPlusPlusCoreV1(source),executable=new Codegen(ast).run(),executableText=JSON.stringify(executable,null,2)+'\n';return Object.freeze({schema:'riftpp-core-compile-result/1',language:RIFTPP_LANGUAGE,compiler:RIFTPP_CORE_VERSION,module:ast.module,ast,executable,executableText});}
-export function inspectRiftPlusPlusCoreV1(source){const result=compileRiftPlusPlusCoreV1(source);return Object.freeze({schema:result.schema,language:result.language,compiler:result.compiler,module:result.module,structs:result.ast.structs.map(item=>item.name),enums:result.ast.enums.map(item=>item.name),functions:result.ast.functions.map(fn=>fn.name),bytes:encoder.encode(result.executableText).byteLength,targetFormat:RIFT_EXEC_FORMAT,targetAbi:RIFT_VM_ABI});}
+export function compileRiftPlusPlusCoreV1(source){const ast=parseRiftPlusPlusCoreV1(source);if(ast.uses.length)semanticFail('E0314','source declares use imports; compile through the bounded module-graph API',ast.uses[0],'module graph');const executable=new Codegen(ast).run(),executableText=JSON.stringify(executable,null,2)+'\n';return Object.freeze({schema:'riftpp-core-compile-result/1',language:RIFTPP_LANGUAGE,compiler:RIFTPP_CORE_VERSION,module:ast.module,modules:Object.freeze([ast.module]),ast,executable,executableText});}
+export function compileRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){const ast=linkRiftPlusPlusCoreProgramV1(rootSource,moduleSources),executable=new Codegen(ast).run(),executableText=JSON.stringify(executable,null,2)+'\n',modules=Object.freeze(ast.moduleGraph.map(item=>item.name));return Object.freeze({schema:'riftpp-core-program-compile-result/1',language:RIFTPP_LANGUAGE,compiler:RIFTPP_CORE_VERSION,module:ast.module,modules,ast,executable,executableText});}
+function inspectCompileResult(result){return Object.freeze({schema:result.schema,language:result.language,compiler:result.compiler,module:result.module,modules:result.modules,structs:result.ast.structs.map(item=>item.name),enums:result.ast.enums.map(item=>item.name),functions:result.ast.functions.map(fn=>fn.name),bytes:encoder.encode(result.executableText).byteLength,targetFormat:RIFT_EXEC_FORMAT,targetAbi:RIFT_VM_ABI});}
+export function inspectRiftPlusPlusCoreV1(source){return inspectCompileResult(compileRiftPlusPlusCoreV1(source));}
+export function inspectRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){return inspectCompileResult(compileRiftPlusPlusCoreProgramV1(rootSource,moduleSources));}
 
-if(typeof globalThis!=='undefined')globalThis.RiftPlusPlusCore=Object.freeze({version:RIFTPP_CORE_VERSION,language:RIFTPP_LANGUAGE,targetFormat:RIFT_EXEC_FORMAT,targetAbi:RIFT_VM_ABI,lex:lexRiftPlusPlusCoreV1,parse:parseRiftPlusPlusCoreV1,compile:compileRiftPlusPlusCoreV1,inspect:inspectRiftPlusPlusCoreV1});
+if(typeof globalThis!=='undefined')globalThis.RiftPlusPlusCore=Object.freeze({version:RIFTPP_CORE_VERSION,language:RIFTPP_LANGUAGE,targetFormat:RIFT_EXEC_FORMAT,targetAbi:RIFT_VM_ABI,lex:lexRiftPlusPlusCoreV1,parse:parseRiftPlusPlusCoreV1,compile:compileRiftPlusPlusCoreV1,compileProgram:compileRiftPlusPlusCoreProgramV1,inspect:inspectRiftPlusPlusCoreV1,inspectProgram:inspectRiftPlusPlusCoreProgramV1});

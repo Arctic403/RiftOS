@@ -16,9 +16,13 @@ The frontend runs inside the existing RiftOS JavaScript runtime. The long-term t
 
 ## Implemented bootstrap slice
 
-The current `0.4.0-bootstrap` slice requires `riftpp 1` and a `module` declaration. It supports:
+The current `0.5.0-bootstrap` source slice requires `riftpp 1` and a `module` declaration. Gate 4 module linking is implemented in source/tests and remains pending CI + installed-device proof. It supports:
 
 - functions with explicitly typed parameters/returns;
+- explicit `use module.path [as alias]` declarations with deterministic compile-time module linking; omitted aliases use the module path's final segment, and imported symbols are referenced through that explicit/default alias rather than ambient full-path lookup;
+- qualified imported function/type/struct/enum references, including imported enum patterns;
+- bounded module graphs: 64 modules maximum and 1 MiB aggregate source, with missing modules, identity mismatches, alias collisions, unused supplied dependencies and cycles rejected;
+- one closed linked `.rxe`; Rift++ source modules do not become RiftVM host imports or JavaScript imports;
 - primitive `unit`, `bool`, `u32`, `s32`, `string`;
 - immutable `let`, mutable `var`, checked assignment and compound assignment;
 - lexical block scopes and inner-scope shadowing;
@@ -39,13 +43,13 @@ The current `0.4.0-bootstrap` slice requires `riftpp 1` and a `module` declarati
 
 Struct construction must supply each declared field exactly once. Enum payload arity/types are checked. Struct/enum/vector values can pass through locals, function parameters and returns. `Vec` is deliberately bounded and immutable at runtime: successful `push`/`set` operations return a replacement vector inside `Result.Ok`, while capacity/index failures return `Result.Err(string)` and out-of-range reads return `Option.None`. Composite equality/ordering is intentionally undefined in this bootstrap and fails closed.
 
-Compiler recursion is also bounded: generic type nesting is capped at 32; recursive expression, unary, pattern, `else if`, and block parsing is capped at 128; and code-generation expression/block traversal has an independent 128-depth ceiling. Inputs beyond those ceilings fail with structured diagnostics instead of relying on the JavaScript call-stack limit.
+Compiler recursion is also bounded: generic type nesting is capped at 32; recursive expression, unary, pattern, `else if`, and block parsing is capped at 128; module-linker expression/pattern/statement/block rewriting is independently capped at 128; and code-generation expression/block traversal has its own 128-depth ceiling. Inputs beyond those ceilings fail with structured diagnostics instead of relying on the JavaScript call-stack limit.
 
 Bootstrap pattern limitations remain deliberate: enum payload patterns currently accept bindings or `_`; nested/literal payload patterns are not implemented. Field mutation/place assignment is not implemented yet; rebuild and assign the whole struct instead.
 
 ## Still absent
 
-Valid Core syntax not implemented by this slice fails closed. Major missing pieces include imports/module graphs, top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler.
+Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler.
 
 ## Public surface
 
@@ -54,7 +58,9 @@ Valid Core syntax not implemented by this slice fails closed. Major missing piec
 - `lex(source)`
 - `parse(source)`
 - `compile(source)`
+- `compileProgram(rootSource, moduleSources)`
 - `inspect(source)`
+- `inspectProgram(rootSource, moduleSources)`
 
 It has no filesystem, network, shell, process, Android, MCP or mutation authority. Generated output is independently passed through `prepareRiftExecutable` before compile succeeds.
 
@@ -88,6 +94,7 @@ These remain data-only operations. `vec_get` returns the existing runtime `Optio
 - `scripts/test-riftpp-shell.mjs` — normal RiftShell `riftpp` routing and execution-authority boundary.
 - `examples/riftpp/core-v1-structured-data.riftpp` — Gate 2 struct/enum/match proof fixture.
 - `examples/riftpp/core-v1-collections.riftpp` — Gate 3 bounded Vec + Option/Result proof fixture.
+- `examples/riftpp/modules/demo/{main,math,types}.riftpp` — Gate 4 transitive module/type/function/enum linking proof fixture.
 
 ## Invariants
 
@@ -100,4 +107,4 @@ These remain data-only operations. `vec_get` returns the existing runtime `Optio
 
 ## Validation
 
-`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1, Structured Data V1 and Collections V1 fixtures, then attacks duplicate/missing fields, enum payload/type errors, non-exhaustive enum/bool/Option matches, invalid vector capacities/literals/items, arithmetic result-type escapes across every typed context, composite equality, parser/codegen recursion ceilings, and the `s32` minimum-literal edge case. `test-rift-vm.mjs` separately executes raw struct/enum/vector bytecode, vector capacity/index failure semantics, composite-depth/render/public-result expansion limits, malformed instructions and the no-composite-host-boundary rule.
+`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1, Structured Data V1, Collections V1 and Gate 4 module-graph fixtures, then attacks missing/identity-mismatched/cyclic modules, alias collisions, ambient/unqualified imported names, unused supplied dependencies, duplicate/missing fields, enum payload/type errors, non-exhaustive enum/bool/Option matches, invalid vector capacities/literals/items, arithmetic result-type escapes across every typed context, composite equality, parser/codegen recursion ceilings, and the `s32` minimum-literal edge case. `test-rift-vm.mjs` separately executes raw struct/enum/vector bytecode, vector capacity/index failure semantics, composite-depth/render/public-result expansion limits, malformed instructions and the no-composite-host-boundary rule.

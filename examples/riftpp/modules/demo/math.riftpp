@@ -1,0 +1,7 @@
+riftpp 1
+module demo.math
+use demo.types as types
+
+fn sum_pair(pair: types.Pair) -> u32 {
+  return pair.left + pair.right
+}

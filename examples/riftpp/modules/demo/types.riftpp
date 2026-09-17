@@ -1,0 +1,16 @@
+riftpp 1
+module demo.types
+
+struct Pair {
+  left: u32
+  right: u32
+}
+
+enum Outcome {
+  Ok(u32)
+  Err(string)
+}
+
+fn make_outcome(value: u32) -> Outcome {
+  return Outcome.Ok(value)
+}

@@ -823,7 +823,7 @@ async function runChatShell(args,print,state){
 }
 async function runRiftppShell(args,print,state){
   const sub=(args.shift()||"help").toLowerCase();
-  const usage=`Rift++ Core shell (independent of experimental RiftCLI)\nriftpp help\nriftpp version\nriftpp self-test\nriftpp check <source.riftpp>\nriftpp compile <source.riftpp> [output.rxe]\nriftpp inspect <source.riftpp|program.rxe>\nriftpp run <source.riftpp>\nriftpp exec <program.rxe>\n\nrun/exec provide no RiftRT host imports and cap program output to 64 KiB / 256 writes.`;
+  const usage=`Rift++ Core shell (independent of experimental RiftCLI)\nriftpp help\nriftpp version\nriftpp self-test\nriftpp check <source.riftpp>\nriftpp compile <source.riftpp> [output.rxe]\nriftpp inspect <source.riftpp|program.rxe>\nriftpp run <source.riftpp>\nriftpp exec <program.rxe>\n\nGate 4 use-imports resolve only inside the source module root using <module/path>.riftpp. run/exec provide no RiftRT host imports and cap program output to 64 KiB / 256 writes.`;
   if(sub==="help")return print(usage);
   const compiler=await import("./riftpp-core.js"),vm=await import("./riftvm.js");
   if(sub==="version")return print(JSON.stringify({language:compiler.RIFTPP_LANGUAGE,compiler:compiler.RIFTPP_CORE_VERSION,targetFormat:vm.RIFT_EXEC_FORMAT,targetAbi:vm.RIFT_VM_ABI},null,2));
@@ -836,6 +836,13 @@ async function runRiftppShell(args,print,state){
     const path=resolvePath(state.cwd,value);if(!/\.rxe$/i.test(path))throw new Error(`Rift executable must end in .rxe: ${path}`);return path;
   };
   const read=async path=>{const text=await core.fs.readText(path);if(text==null)throw new Error(`file not found: ${path}`);return text;};
+  const compileSource=async(path,source)=>{
+    const ast=compiler.parseRiftPlusPlusCoreV1(source);if(!ast.uses?.length)return compiler.compileRiftPlusPlusCoreV1(source);
+    const normalized=String(path).replaceAll('\\','/'),suffix=`${ast.module.replaceAll('.','/')}.riftpp`;if(!normalized.endsWith(suffix))throw new Error(`Rift++ imported source path must mirror module '${ast.module}' as ${suffix}`);const moduleRoot=normalized.slice(0,normalized.length-suffix.length),modules=Object.create(null),loaded=new Set();
+    const loadModule=async name=>{if(name===ast.module)throw new Error(`Rift++ cyclic module import returns to root '${name}'`);if(loaded.has(name))return;if(loaded.size>=63)throw new Error('Rift++ module graph exceeds 64 total modules');const modulePath=`${moduleRoot}${name.replaceAll('.','/')}.riftpp`,text=await read(modulePath),depAst=compiler.parseRiftPlusPlusCoreV1(text);if(depAst.module!==name)throw new Error(`Rift++ module identity mismatch: expected ${name}, found ${depAst.module} in ${modulePath}`);modules[name]=text;loaded.add(name);for(const use of depAst.uses||[])await loadModule(use.module);};
+    for(const use of ast.uses)await loadModule(use.module);return compiler.compileRiftPlusPlusCoreProgramV1(source,modules);
+  };
+  const inspectCompiled=result=>Object.freeze({schema:result.schema,language:result.language,compiler:result.compiler,module:result.module,modules:result.modules,structs:result.ast.structs.map(item=>item.name),enums:result.ast.enums.map(item=>item.name),functions:result.ast.functions.map(fn=>fn.name),bytes:new TextEncoder().encode(result.executableText).byteLength,targetFormat:result.executable.format,targetAbi:result.executable.abi});
   const execute=async(raw,label)=>{
     const info=vm.inspectRiftExecutable(raw);if(info.imports.length)throw new Error(`riftpp shell execution denies host imports: ${info.imports.join(", ")}`);
     let bytes=0,writes=0;const output=[];
@@ -852,22 +859,22 @@ async function runRiftppShell(args,print,state){
     return print(JSON.stringify({ok:true,schema:"riftpp-shell-self-test/1",compiler:compiler.RIFTPP_CORE_VERSION,format:compiled.executable.format,abi:compiled.executable.abi,steps:executed.result.steps,prints:executed.result.prints},null,2));
   }
   if(sub==="check"){
-    const path=sourcePath(args[0]),source=await read(path),result=compiler.compileRiftPlusPlusCoreV1(source),info=compiler.inspectRiftPlusPlusCoreV1(source);
-    return print(JSON.stringify({ok:true,path,module:result.module,functions:info.functions,bytes:info.bytes,targetFormat:info.targetFormat,targetAbi:info.targetAbi},null,2));
+    const path=sourcePath(args[0]),source=await read(path),result=await compileSource(path,source),info=inspectCompiled(result);
+    return print(JSON.stringify({ok:true,path,module:result.module,modules:result.modules,functions:info.functions,bytes:info.bytes,targetFormat:info.targetFormat,targetAbi:info.targetAbi},null,2));
   }
   if(sub==="compile"){
-    const path=sourcePath(args[0]),source=await read(path),result=compiler.compileRiftPlusPlusCoreV1(source);const output=args[1]?resolvePath(state.cwd,args[1]):path.replace(/\.riftpp$/i,".rxe");
+    const path=sourcePath(args[0]),source=await read(path),result=await compileSource(path,source);const output=args[1]?resolvePath(state.cwd,args[1]):path.replace(/\.riftpp$/i,".rxe");
     if(!/\.rxe$/i.test(output))throw new Error(`Rift executable output must end in .rxe: ${output}`);await core.fs.writeText(output,result.executableText);
-    return print(JSON.stringify({ok:true,source:path,output,module:result.module,bytes:new TextEncoder().encode(result.executableText).byteLength,format:result.executable.format,abi:result.executable.abi},null,2));
+    return print(JSON.stringify({ok:true,source:path,output,module:result.module,modules:result.modules,bytes:new TextEncoder().encode(result.executableText).byteLength,format:result.executable.format,abi:result.executable.abi},null,2));
   }
   if(sub==="inspect"){
     if(!args[0])throw new Error("usage: riftpp inspect <source.riftpp|program.rxe>");const path=resolvePath(state.cwd,args[0]),text=await read(path);
-    if(/\.riftpp$/i.test(path))return print(JSON.stringify(compiler.inspectRiftPlusPlusCoreV1(text),null,2));
+    if(/\.riftpp$/i.test(path))return print(JSON.stringify(inspectCompiled(await compileSource(path,text)),null,2));
     if(/\.rxe$/i.test(path))return print(JSON.stringify(vm.inspectRiftExecutable(text),null,2));
     throw new Error(`riftpp inspect expects .riftpp or .rxe: ${path}`);
   }
   if(sub==="run"){
-    const path=sourcePath(args[0]),source=await read(path),result=compiler.compileRiftPlusPlusCoreV1(source);return execute(result.executable,path);
+    const path=sourcePath(args[0]),source=await read(path),result=await compileSource(path,source);return execute(result.executable,path);
   }
   if(sub==="exec"){
     const path=execPath(args[0]);return execute(await read(path),path);

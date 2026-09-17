@@ -16,6 +16,10 @@ assert(slice.includes('riftpp shell output limit exceeded (64 KiB / 256 writes)'
 assert(slice.includes('maxSteps:100000,maxStack:1024,maxCallDepth:32,yieldEvery:512'));
 assert(slice.includes('yield:()=>new Promise(resolve=>setTimeout(resolve,0))'),'riftpp shell execution must yield through a timer/macrotask');
 assert(slice.includes('riftpp-shell-self-test/1'));
+assert(slice.includes('compileRiftPlusPlusCoreProgramV1'),'Gate 4 shell must invoke the bounded program compiler');
+assert(slice.includes("ast.module.replaceAll('.','/')"),'module imports must map deterministically to module-path files');
+assert(slice.includes("loaded.size>=63"),'shell module loading must remain bounded to 64 total modules including the root');
+assert(slice.includes("module identity mismatch"),'shell must reject module/file identity drift');
 assert(slice.includes('Rift++ shell self-test'));
 assert(slice.includes('core.fs.writeText(output,result.executableText)'));
 assert(!slice.includes('RiftExperimentalCli'));
@@ -27,3 +31,4 @@ assert(!nativeShell.includes('"riftpp" ->'),'native shell must delegate Core rif
 console.log('ok - normal RiftShell routes riftpp Core independently of experimental RiftCLI');
 console.log('ok - riftpp run/exec deny host imports and bound execution/output');
 console.log('ok - riftpp compile is excluded from atomic batch and writes only explicit .rxe output');
+console.log('ok - Gate 4 shell module loading is root-confined, deterministic, identity-checked and bounded');

@@ -1,0 +1,18 @@
+riftpp 1
+module demo.main
+use demo.math as math
+use demo.types as types
+
+fn main() {
+  let pair: types.Pair = types.Pair { left: 20, right: 22 }
+  print(math.sum_pair(pair))
+  let outcome: types.Outcome = types.make_outcome(42)
+  match outcome {
+    types.Outcome.Ok(value) => {
+      print(value)
+    }
+    types.Outcome.Err(reason) => {
+      print(reason)
+    }
+  }
+}
