@@ -4,9 +4,9 @@ export const RIFT_VM_ABI='riftvm-1';
 const NAME=/^[A-Za-z_][A-Za-z0-9_.:$-]{0,95}$/;
 const HOST_METHOD=/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*){1,3}$/;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
-const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','make_struct','get_field','make_enum','enum_is','enum_get','jump','jump_if_false','call','host','print','ret','halt']);
+const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','jump','jump_if_false','call','host','print','ret','halt']);
 const DEFAULT_LIMITS=Object.freeze({maxSteps:100000,maxStack:1024,maxCallDepth:32});
-const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536});
+const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:64,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536});
 const INT_BOUNDS=Object.freeze({u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
 const UNIT=Object.freeze({type:'unit',value:null});
 const PREPARED=Symbol('riftvm.prepared');
@@ -63,6 +63,8 @@ function normalizeInstruction(raw,where,ctx){
   if(op==='make_enum')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),variant:safeName(raw.variant,`${where}.variant`),argc:integer(raw.argc??0,`${where}.argc`,0,HARD_LIMITS.maxCompositeItems)});
   if(op==='enum_is')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),variant:safeName(raw.variant,`${where}.variant`)});
   if(op==='enum_get')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),variant:safeName(raw.variant,`${where}.variant`),index:integer(raw.index,`${where}.index`,0,HARD_LIMITS.maxCompositeItems-1)});
+  if(op==='make_vec'){const capacity=integer(raw.capacity,`${where}.capacity`,1,HARD_LIMITS.maxVecCapacity),count=integer(raw.count??0,`${where}.count`,0,HARD_LIMITS.maxVecCapacity);if(count>capacity)fail(`${where}.count exceeds vector capacity`);return Object.freeze({op,capacity,count});}
+  if(op==='vec_len'||op==='vec_get'||op==='vec_push'||op==='vec_set')return Object.freeze({op});
   if(op==='jump'||op==='jump_if_false')return Object.freeze({op,target:integer(raw.target,`${where}.target`,0,ctx.codeLength-1)});
   if(op==='call'){
     const name=safeName(raw.name,`${where}.name`),argc=integer(raw.argc??0,`${where}.argc`,0,HARD_LIMITS.maxParams),target=ctx.functions[name];
@@ -107,26 +109,29 @@ function publicValue(value){
   if(value.type==='u32'||value.type==='s32')return{type:value.type,value:value.value.toString()};
   if(value.type==='struct'){const fields={};for(const [key,item] of Object.entries(value.fields))fields[key]=publicValue(item);return{type:'struct',name:value.name,fields};}
   if(value.type==='enum')return{type:'enum',name:value.name,variant:value.variant,values:value.values.map(publicValue)};
+  if(value.type==='vec')return{type:'vec',capacity:value.capacity,items:value.items.map(publicValue)};
   return{type:value.type,value:value.value};
 }
 function valueToPublic(value){return publicValue(value);}
-function valueToHost(value){if(!value||value.type==='unit')return null;if(value.type==='struct'||value.type==='enum')fail('composite values cannot cross the host import boundary');if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
+function isCompositeValue(value){return value?.type==='struct'||value?.type==='enum'||value?.type==='vec';}
+function valueToHost(value){if(!value||value.type==='unit')return null;if(isCompositeValue(value))fail('composite values cannot cross the host import boundary');if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
 function hostToValue(raw){if(raw===null||raw===undefined)return UNIT;if(typeof raw==='boolean')return Object.freeze({type:'bool',value:raw});if(typeof raw==='string')return Object.freeze({type:'string',value:stringBytes(raw,'host string')});if(typeof raw==='number'){if(!Number.isFinite(raw))fail('host returned a non-finite number');return Object.freeze({type:'f64',value:raw});}const text=JSON.stringify(raw);return Object.freeze({type:'string',value:stringBytes(text,'host JSON result')});}
 function displayValue(value){
   if(!value||value.type==='unit')return'unit';
   if(value.type==='u32'||value.type==='s32')return value.value.toString();
   if(value.type==='struct')return `${value.name}{${Object.entries(value.fields).map(([key,item])=>`${key}=${displayValue(item)}`).join(',')}}`;
   if(value.type==='enum')return `${value.name}.${value.variant}${value.values.length?`(${value.values.map(displayValue).join(',')})`:''}`;
+  if(value.type==='vec')return `[${value.items.map(displayValue).join(',')}]`;
   return String(value.value);
 }
-function sameType(a,b,op){if(!a||!b||a.type!==b.type)fail(`${op} requires operands of the same type`);if(a.type==='struct'||a.type==='enum')fail(`${op} does not support composite values`);}
+function sameType(a,b,op){if(!a||!b||a.type!==b.type)fail(`${op} requires operands of the same type`);if(isCompositeValue(a)||isCompositeValue(b))fail(`${op} does not support composite values`);}
 function checkedInteger(type,value,op){const bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])fail(`${op} ${type} overflow`);return Object.freeze({type,value});}
 function numericBinary(op,a,b){
   sameType(a,b,op);if(a.type==='f64'){let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);if(!Number.isFinite(value))fail(`${op} produced non-finite f64`);return Object.freeze({type:'f64',value});}
   if(a.type!=='u32'&&a.type!=='s32')fail(`${op} requires numeric operands`);let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0n)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0n)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);return checkedInteger(a.type,value,op);
 }
 function compare(op,a,b){
-  if(a?.type==='struct'||a?.type==='enum'||b?.type==='struct'||b?.type==='enum')fail(`${op} does not support composite values`);
+  if(isCompositeValue(a)||isCompositeValue(b))fail(`${op} does not support composite values`);
   if(op==='eq'||op==='ne'){const equal=a?.type===b?.type&&(a?.type==='unit'||a?.value===b?.value);return Object.freeze({type:'bool',value:op==='eq'?equal:!equal});}
   sameType(a,b,op);if(!['u32','s32','f64','string'].includes(a.type))fail(`${op} requires ordered operands`);let value;if(op==='lt')value=a.value<b.value;else if(op==='le')value=a.value<=b.value;else if(op==='gt')value=a.value>b.value;else value=a.value>=b.value;return Object.freeze({type:'bool',value});
 }
@@ -159,6 +164,11 @@ export async function executeRiftExecutable(raw,host={},options={}){
       case'make_enum':{const values=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)values[i]=pop(frame,'make_enum');push(frame,Object.freeze({type:'enum',name:ins.name,variant:ins.variant,values:Object.freeze(values)}));break;}
       case'enum_is':{const value=pop(frame,'enum_is');if(value.type!=='enum'||value.name!==ins.name)fail(`enum_is expected enum ${ins.name}`);push(frame,Object.freeze({type:'bool',value:value.variant===ins.variant}));break;}
       case'enum_get':{const value=pop(frame,'enum_get');if(value.type!=='enum'||value.name!==ins.name)fail(`enum_get expected enum ${ins.name}`);if(value.variant!==ins.variant)fail(`enum_get expected ${ins.name}.${ins.variant}, got ${value.name}.${value.variant}`);if(ins.index>=value.values.length)fail(`enum_get payload index ${ins.index} is out of range`);push(frame,value.values[ins.index]);break;}
+      case'make_vec':{const items=Array(ins.count);for(let i=ins.count-1;i>=0;i--)items[i]=pop(frame,'make_vec');push(frame,Object.freeze({type:'vec',capacity:ins.capacity,items:Object.freeze(items)}));break;}
+      case'vec_len':{const value=pop(frame,'vec_len');if(value.type!=='vec')fail('vec_len expected vec');push(frame,Object.freeze({type:'u32',value:BigInt(value.items.length)}));break;}
+      case'vec_get':{const indexValue=pop(frame,'vec_get'),value=pop(frame,'vec_get');if(value.type!=='vec')fail('vec_get expected vec');if(indexValue.type!=='u32')fail('vec_get index must be u32');const index=Number(indexValue.value);if(index<0||index>=value.items.length)push(frame,Object.freeze({type:'enum',name:'Option',variant:'None',values:Object.freeze([])}));else push(frame,Object.freeze({type:'enum',name:'Option',variant:'Some',values:Object.freeze([value.items[index]])}));break;}
+      case'vec_push':{const item=pop(frame,'vec_push'),value=pop(frame,'vec_push');if(value.type!=='vec')fail('vec_push expected vec');if(value.items.length>=value.capacity){push(frame,Object.freeze({type:'enum',name:'Result',variant:'Err',values:Object.freeze([Object.freeze({type:'string',value:'vec capacity exceeded'})])}));break;}const items=Object.freeze([...value.items,item]);push(frame,Object.freeze({type:'enum',name:'Result',variant:'Ok',values:Object.freeze([Object.freeze({type:'vec',capacity:value.capacity,items})])}));break;}
+      case'vec_set':{const item=pop(frame,'vec_set'),indexValue=pop(frame,'vec_set'),value=pop(frame,'vec_set');if(value.type!=='vec')fail('vec_set expected vec');if(indexValue.type!=='u32')fail('vec_set index must be u32');const index=Number(indexValue.value);if(index<0||index>=value.items.length){push(frame,Object.freeze({type:'enum',name:'Result',variant:'Err',values:Object.freeze([Object.freeze({type:'string',value:'vec index out of range'})])}));break;}const items=value.items.slice();items[index]=item;push(frame,Object.freeze({type:'enum',name:'Result',variant:'Ok',values:Object.freeze([Object.freeze({type:'vec',capacity:value.capacity,items:Object.freeze(items)})])}));break;}
       case'jump':frame.ip=ins.target;break;
       case'jump_if_false':{const condition=pop(frame,'jump_if_false');if(condition.type!=='bool')fail('jump_if_false requires bool');if(!condition.value)frame.ip=ins.target;break;}
       case'call':{const args=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)args[i]=pop(frame,'call');frames.push(makeFrame(ins.name,args));break;}

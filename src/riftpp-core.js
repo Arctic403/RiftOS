@@ -1,6 +1,6 @@
 import { RIFT_EXEC_FORMAT, RIFT_VM_ABI, prepareRiftExecutable } from './riftvm.js';
 
-export const RIFTPP_CORE_VERSION='0.3.0-bootstrap';
+export const RIFTPP_CORE_VERSION='0.4.0-bootstrap';
 export const RIFTPP_LANGUAGE='riftpp/1';
 
 const MAX_SOURCE_BYTES=256*1024;
@@ -10,8 +10,10 @@ const MAX_PARAMS=64;
 const MAX_LOCALS=512;
 const MAX_TYPE_ITEMS=64;
 const MAX_NAMED_TYPES=256;
+const MAX_VEC_CAPACITY=64;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
 const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','string']);
+const BUILTIN_GENERIC_TYPES=new Set(['Vec','Option','Result']);
 const COMPARABLE_PRIMITIVES=new Set(['unit','bool','u32','s32','string']);
 const ORDERED_PRIMITIVES=new Set(['u32','s32','string']);
 const PRELUDE_NAMES=new Set(['print']);
@@ -97,7 +99,17 @@ class Parser{
   expectKind(kind,label,code='E0101'){const token=this.current();if(token.kind!==kind)fail(code,`expected ${label}, found '${token.value}'`,token,'grammar');this.index++;return token;}
   node(kind,start,fields={}){const end=this.previous();return Object.freeze({kind,...fields,span:Object.freeze({start:start.start,end:end.end,line:start.line,column:start.column})});}
   modulePath(){const first=this.expectKind('ident','module identifier'),parts=[first.value];while(this.consume('.'))parts.push(this.expectKind('ident','module identifier').value);return parts.join('.');}
-  typeRef(){const token=this.current();if(token.kind!=='ident'&&token.kind!=='keyword')fail('E0102','expected type name',token,'type grammar');this.index++;return Object.freeze({kind:'TypeRef',name:token.value,span:spanOf(token)});}
+  typeRef(){
+    const token=this.current();if(token.kind!=='ident'&&token.kind!=='keyword')fail('E0102','expected type name',token,'type grammar');this.index++;const name=token.value,args=[];let capacityRaw=null;
+    if(this.consume('<')){
+      if(name==='Vec'){args.push(this.typeRef());this.expect(',');capacityRaw=this.expectKind('number','Vec capacity','E0118').value;this.expect('>');}
+      else if(name==='Option'){args.push(this.typeRef());this.expect('>');}
+      else if(name==='Result'){args.push(this.typeRef());this.expect(',');args.push(this.typeRef());this.expect('>');}
+      else fail('E0118',`generic type '${name}' is not implemented in the bootstrap slice`,token,'bootstrap generic types');
+      const end=this.previous();return Object.freeze({kind:'TypeRef',name,args:Object.freeze(args),capacityRaw,span:Object.freeze({start:token.start,end:end.end,line:token.line,column:token.column})});
+    }
+    return Object.freeze({kind:'TypeRef',name,args:Object.freeze(args),capacityRaw,span:spanOf(token)});
+  }
   parseFile(){
     const start=this.expect('riftpp'),version=this.expectKind('number','language version');if(version.value.replaceAll('_','')!=='1')fail('E0103',`unsupported Rift++ version ${version.value}; expected 1`,version,'file header');
     this.expect('module');const moduleName=this.modulePath();
@@ -186,6 +198,7 @@ class Parser{
     if(token.kind==='number'){this.index++;return Object.freeze({kind:'IntLiteral',raw:token.value,span:spanOf(token)});}
     if(token.kind==='string'){this.index++;return Object.freeze({kind:'StringLiteral',value:token.value,span:spanOf(token)});}
     if(token.value==='true'||token.value==='false'){this.index++;return Object.freeze({kind:'BoolLiteral',value:token.value==='true',span:spanOf(token)});}
+    if(this.at('[')){const start=this.expect('['),items=[];if(!this.at(']'))for(;;){items.push(this.expression());if(!this.consume(','))break;if(this.at(']'))break;}const end=this.expect(']');return Object.freeze({kind:'VecLiteral',items:Object.freeze(items),span:Object.freeze({start:start.start,end:end.end,line:start.line,column:start.column})});}
     if(token.kind==='ident'){
       this.index++;const name=Object.freeze({kind:'Name',name:token.value,span:spanOf(token)});
       if(this.at('{')&&this.peek().kind==='ident'&&this.peek(2).value===':')return this.structLiteral(name,token);
@@ -208,20 +221,37 @@ function parseInt(raw,node,type){const clean=raw.replaceAll('_','');let value;tr
 function unionFlows(...sets){const out=new Set();for(const set of sets)for(const value of set)out.add(value);return out;}
 
 class Codegen{
-  constructor(ast){this.ast=ast;this.constants=[];this.constantMap=new Map();this.structs=new Map();this.enums=new Map();this.topNames=new Set();this.signatures=new Map();this.functions=Object.create(null);}
+  constructor(ast){this.ast=ast;this.constants=[];this.constantMap=new Map();this.structs=new Map();this.enums=new Map();this.genericTypes=new Map();this.topNames=new Set();this.signatures=new Map();this.functions=Object.create(null);}
   constant(type,value){const serialized=type==='unit'?'':String(value),key=`${type}:${serialized}`;if(this.constantMap.has(key))return this.constantMap.get(key);const index=this.constants.length;this.constants.push(type==='unit'?{type:'unit'}:{type,value});this.constantMap.set(key,index);return index;}
-  typeExists(name){return SUPPORTED_PRIMITIVES.has(name)||this.structs.has(name)||this.enums.has(name);}
-  ensureType(typeRef){if(!this.typeExists(typeRef.name))semanticFail('E0200',`type '${typeRef.name}' is not implemented or declared in this Core module`,typeRef,'bootstrap type support',`Primitive types supported now: ${[...SUPPORTED_PRIMITIVES].join(', ')}; local struct/enum types are also supported.`);return typeRef.name;}
+  internGeneric(kind,args,capacity=null){const key=kind==='Vec'?`Vec<${args[0]},${capacity}>`:`${kind}<${args.join(',')}>`;if(!this.genericTypes.has(key))this.genericTypes.set(key,Object.freeze({kind,args:Object.freeze([...args]),capacity}));return key;}
+  genericInfo(type){return this.genericTypes.get(type)||null;}
+  enumTypeInfo(type){
+    const local=this.enums.get(type);if(local)return{def:local,runtimeName:type,displayName:type};const info=this.genericInfo(type);if(!info)return null;
+    if(info.kind==='Option')return{def:{order:['Some','None'],cases:new Map([['Some',{types:Object.freeze([info.args[0]])}],['None',{types:Object.freeze([])}]])},runtimeName:'Option',displayName:'Option'};
+    if(info.kind==='Result')return{def:{order:['Ok','Err'],cases:new Map([['Ok',{types:Object.freeze([info.args[0]])}],['Err',{types:Object.freeze([info.args[1]])}]])},runtimeName:'Result',displayName:'Result'};
+    return null;
+  }
+  typeExists(name){return SUPPORTED_PRIMITIVES.has(name)||this.structs.has(name)||this.enums.has(name)||this.genericTypes.has(name);}
+  ensureType(typeRef){
+    if(typeRef.name==='Vec'){
+      if(typeRef.args?.length!==1||typeRef.capacityRaw==null)semanticFail('E0260','Vec requires Vec<T, N>',typeRef,'bounded collection type');
+      const item=this.ensureType(typeRef.args[0]),raw=String(typeRef.capacityRaw).replaceAll('_','');if(!/^[1-9][0-9]*$/.test(raw))semanticFail('E0261','Vec capacity must be a positive decimal integer',typeRef,'bounded collection type');const capacity=Number(raw);if(!Number.isInteger(capacity)||capacity<1||capacity>MAX_VEC_CAPACITY)semanticFail('E0262',`Vec capacity must be 1..${MAX_VEC_CAPACITY}`,typeRef,'bounded collection type');return this.internGeneric('Vec',[item],capacity);
+    }
+    if(typeRef.name==='Option'){if(typeRef.args?.length!==1)semanticFail('E0263','Option requires Option<T>',typeRef,'bootstrap generic type');return this.internGeneric('Option',[this.ensureType(typeRef.args[0])]);}
+    if(typeRef.name==='Result'){if(typeRef.args?.length!==2)semanticFail('E0264','Result requires Result<T, E>',typeRef,'bootstrap generic type');return this.internGeneric('Result',[this.ensureType(typeRef.args[0]),this.ensureType(typeRef.args[1])]);}
+    if(typeRef.args?.length)semanticFail('E0265',`generic type '${typeRef.name}' is not implemented`,typeRef,'bootstrap generic type');
+    if(!this.typeExists(typeRef.name))semanticFail('E0200',`type '${typeRef.name}' is not implemented or declared in this Core module`,typeRef,'bootstrap type support',`Primitive types supported now: ${[...SUPPORTED_PRIMITIVES].join(', ')}; local struct/enum and Vec/Option/Result types are also supported.`);return typeRef.name;
+  }
   collectTypes(){
     if(this.ast.structs.length+this.ast.enums.length>MAX_NAMED_TYPES)semanticFail('E0230',`named type count exceeds ${MAX_NAMED_TYPES}`,this.ast,'host bounds');
-    const register=(name,node,kind)=>{if(PRELUDE_NAMES.has(name)||SUPPORTED_PRIMITIVES.has(name)||POISON_NAMES.has(name)||this.topNames.has(name))semanticFail('E0230',`duplicate or reserved top-level name '${name}'`,node,'type declaration');this.topNames.add(name);if(kind==='struct')this.structs.set(name,{node,fields:new Map(),order:[]});else this.enums.set(name,{node,cases:new Map(),order:[]});};
+    const register=(name,node,kind)=>{if(PRELUDE_NAMES.has(name)||SUPPORTED_PRIMITIVES.has(name)||BUILTIN_GENERIC_TYPES.has(name)||POISON_NAMES.has(name)||this.topNames.has(name))semanticFail('E0230',`duplicate or reserved top-level name '${name}'`,node,'type declaration');this.topNames.add(name);if(kind==='struct')this.structs.set(name,{node,fields:new Map(),order:[]});else this.enums.set(name,{node,cases:new Map(),order:[]});};
     for(const decl of this.ast.structs)register(decl.name,decl,'struct');for(const decl of this.ast.enums)register(decl.name,decl,'enum');
     for(const decl of this.ast.structs){const def=this.structs.get(decl.name);if(!decl.fields.length)semanticFail('E0231',`empty struct '${decl.name}' is not implemented in the bootstrap slice`,decl,'bootstrap structured data');for(const field of decl.fields){if(POISON_NAMES.has(field.name))semanticFail('E0232',`reserved field name '${field.name}' in struct ${decl.name}`,field,'struct declaration');if(def.fields.has(field.name))semanticFail('E0232',`duplicate field '${field.name}' in struct ${decl.name}`,field,'struct declaration');const type=this.ensureType(field.type);def.fields.set(field.name,Object.freeze({type,node:field}));def.order.push(field.name);}}
     for(const decl of this.ast.enums){const def=this.enums.get(decl.name);if(!decl.cases.length)semanticFail('E0233',`enum '${decl.name}' must declare at least one case`,decl,'enum declaration');for(const item of decl.cases){if(POISON_NAMES.has(item.name))semanticFail('E0234',`reserved case name '${item.name}' in enum ${decl.name}`,item,'enum declaration');if(def.cases.has(item.name))semanticFail('E0234',`duplicate case '${item.name}' in enum ${decl.name}`,item,'enum declaration');const types=item.types.map(type=>this.ensureType(type));def.cases.set(item.name,Object.freeze({types:Object.freeze(types),node:item}));def.order.push(item.name);}}
   }
   collectSignatures(){
     for(const fn of this.ast.functions){
-      if(PRELUDE_NAMES.has(fn.name)||SUPPORTED_PRIMITIVES.has(fn.name)||POISON_NAMES.has(fn.name)||this.topNames.has(fn.name))semanticFail('E0204',`duplicate or reserved top-level name '${fn.name}'`,fn,'name resolution');
+      if(PRELUDE_NAMES.has(fn.name)||SUPPORTED_PRIMITIVES.has(fn.name)||BUILTIN_GENERIC_TYPES.has(fn.name)||POISON_NAMES.has(fn.name)||this.topNames.has(fn.name))semanticFail('E0204',`duplicate or reserved top-level name '${fn.name}'`,fn,'name resolution');
       if(this.signatures.has(fn.name))semanticFail('E0204',`duplicate function '${fn.name}'`,fn,'name resolution');
       const params=fn.params.map(p=>this.ensureType(p.type)),returnType=this.ensureType(fn.returnType);this.signatures.set(fn.name,Object.freeze({params:Object.freeze(params),returnType,node:fn}));
     }
@@ -238,22 +268,36 @@ class Codegen{
     const leaveScope=()=>scopes.pop();
     const resolve=name=>{for(let i=scopes.length-1;i>=0;i--){const value=scopes[i].get(name);if(value)return value;}return null;};
     const allocate=(type,node)=>{if(nextLocal>=MAX_LOCALS)semanticFail('E0217',`local count exceeds ${MAX_LOCALS}`,node,'host bounds');return Object.freeze({slot:nextLocal++,type,mutable:false});};
-    const declare=(name,type,mutable,node)=>{if(PRELUDE_NAMES.has(name)||SUPPORTED_PRIMITIVES.has(name)||this.structs.has(name)||this.enums.has(name)||POISON_NAMES.has(name))semanticFail('E0216',`'${name}' is reserved by the bootstrap prelude/type namespace`,node,'name resolution');const scope=scopes[scopes.length-1];if(scope.has(name))semanticFail('E0216',`duplicate local '${name}' in the same scope`,node,'name resolution');const local=allocate(type,node);const value=Object.freeze({slot:local.slot,type,mutable});scope.set(name,value);return value;};
-    for(let i=0;i<fn.params.length;i++){const p=fn.params[i];if(PRELUDE_NAMES.has(p.name)||SUPPORTED_PRIMITIVES.has(p.name)||this.structs.has(p.name)||this.enums.has(p.name)||POISON_NAMES.has(p.name))semanticFail('E0207',`'${p.name}' is reserved by the bootstrap prelude/type namespace`,p,'name resolution');if(scopes[0].has(p.name))semanticFail('E0207',`duplicate parameter '${p.name}'`,p,'name resolution');scopes[0].set(p.name,Object.freeze({slot:nextLocal++,type:sig.params[i],mutable:false}));}
+    const declare=(name,type,mutable,node)=>{if(PRELUDE_NAMES.has(name)||SUPPORTED_PRIMITIVES.has(name)||BUILTIN_GENERIC_TYPES.has(name)||this.structs.has(name)||this.enums.has(name)||POISON_NAMES.has(name))semanticFail('E0216',`'${name}' is reserved by the bootstrap prelude/type namespace`,node,'name resolution');const scope=scopes[scopes.length-1];if(scope.has(name))semanticFail('E0216',`duplicate local '${name}' in the same scope`,node,'name resolution');const local=allocate(type,node);const value=Object.freeze({slot:local.slot,type,mutable});scope.set(name,value);return value;};
+    for(let i=0;i<fn.params.length;i++){const p=fn.params[i];if(PRELUDE_NAMES.has(p.name)||SUPPORTED_PRIMITIVES.has(p.name)||BUILTIN_GENERIC_TYPES.has(p.name)||this.structs.has(p.name)||this.enums.has(p.name)||POISON_NAMES.has(p.name))semanticFail('E0207',`'${p.name}' is reserved by the bootstrap prelude/type namespace`,p,'name resolution');if(scopes[0].has(p.name))semanticFail('E0207',`duplicate parameter '${p.name}'`,p,'name resolution');scopes[0].set(p.name,Object.freeze({slot:nextLocal++,type:sig.params[i],mutable:false}));}
 
     const enumConstructor=(callee,args,node,expected)=>{
-      if(callee.kind!=='Member'||callee.object.kind!=='Name')return null;const enumDef=this.enums.get(callee.object.name);if(!enumDef)return null;const variant=enumDef.cases.get(callee.member);if(!variant)semanticFail('E0235',`enum ${callee.object.name} has no case '${callee.member}'`,callee,'enum construction');if(args.length!==variant.types.length)semanticFail('E0236',`${callee.object.name}.${callee.member} expects ${variant.types.length} payload value(s), got ${args.length}`,node,'enum construction');for(let i=0;i<args.length;i++)compileExpr(args[i],variant.types[i]);emit({op:'make_enum',name:callee.object.name,variant:callee.member,argc:args.length});expectType(callee.object.name,expected,node);return callee.object.name;
+      if(callee.kind!=='Member'||callee.object.kind!=='Name')return null;const base=callee.object.name;let type=base,info=this.enumTypeInfo(base);
+      if(!info&&['Option','Result'].includes(base)){const generic=this.genericInfo(expected);if(!generic||generic.kind!==base)semanticFail('E0266',`${base}.${callee.member} requires an expected ${base}<...> type`,node,'generic enum construction');type=expected;info=this.enumTypeInfo(type);}
+      if(!info)return null;const variant=info.def.cases.get(callee.member);if(!variant)semanticFail('E0235',`enum ${type} has no case '${callee.member}'`,callee,'enum construction');if(args.length!==variant.types.length)semanticFail('E0236',`${base}.${callee.member} expects ${variant.types.length} payload value(s), got ${args.length}`,node,'enum construction');for(let i=0;i<args.length;i++)compileExpr(args[i],variant.types[i]);emit({op:'make_enum',name:info.runtimeName,variant:callee.member,argc:args.length});expectType(type,expected,node);return type;
+    };
+    const compileVecMethod=(expr,expected)=>{
+      if(expr.callee.kind!=='Member')return null;const method=expr.callee.member,receiverType=compileExpr(expr.callee.object,null),info=this.genericInfo(receiverType);if(!info||info.kind!=='Vec')semanticFail('E0267',`method '${method}' requires a Vec receiver; got ${receiverType}`,expr,'bounded collection method');const itemType=info.args[0];
+      if(method==='len'){if(expr.args.length)semanticFail('E0268','Vec.len expects no arguments',expr,'bounded collection method');emit({op:'vec_len'});expectType('u32',expected,expr);return'u32';}
+      if(method==='get'){if(expr.args.length!==1)semanticFail('E0268','Vec.get expects one u32 index',expr,'bounded collection method');compileExpr(expr.args[0],'u32');emit({op:'vec_get'});const type=this.internGeneric('Option',[itemType]);expectType(type,expected,expr);return type;}
+      if(method==='push'){if(expr.args.length!==1)semanticFail('E0268','Vec.push expects one item',expr,'bounded collection method');compileExpr(expr.args[0],itemType);emit({op:'vec_push'});const type=this.internGeneric('Result',[receiverType,'string']);expectType(type,expected,expr);return type;}
+      if(method==='set'){if(expr.args.length!==2)semanticFail('E0268','Vec.set expects index and item',expr,'bounded collection method');compileExpr(expr.args[0],'u32');compileExpr(expr.args[1],itemType);emit({op:'vec_set'});const type=this.internGeneric('Result',[receiverType,'string']);expectType(type,expected,expr);return type;}
+      semanticFail('E0269',`Vec has no bootstrap method '${method}'`,expr,'bounded collection method');
     };
     const compileExpr=(expr,expected=null)=>{
       if(expr.kind==='IntLiteral'){const type=expected==='s32'?'s32':expected==='u32'?'u32':'u32';if(expected&&!['u32','s32'].includes(expected))semanticFail('E0201',`type mismatch: expected ${expected}, got integer`,expr,'type checking');emit({op:'const',index:this.constant(type,parseInt(expr.raw,expr,type))});return type;}
       if(expr.kind==='StringLiteral'){expectType('string',expected,expr);emit({op:'const',index:this.constant('string',expr.value)});return'string';}
       if(expr.kind==='BoolLiteral'){expectType('bool',expected,expr);emit({op:'const',index:this.constant('bool',expr.value)});return'bool';}
-      if(expr.kind==='Name'){const local=resolve(expr.name);if(local){expectType(local.type,expected,expr);emit({op:'load',index:local.slot});return local.type;}if(this.structs.has(expr.name)||this.enums.has(expr.name))semanticFail('E0237',`type '${expr.name}' cannot be used as a value without construction`,expr,'structured value construction');semanticFail('E0208',`unknown name '${expr.name}'`,expr,'name resolution');}
+      if(expr.kind==='VecLiteral'){const info=this.genericInfo(expected);if(!info||info.kind!=='Vec')semanticFail('E0270','vector literal requires an expected Vec<T, N> type annotation',expr,'bounded collection literal');if(expr.items.length>info.capacity)semanticFail('E0271',`vector literal has ${expr.items.length} item(s), capacity is ${info.capacity}`,expr,'bounded collection literal');for(const item of expr.items)compileExpr(item,info.args[0]);emit({op:'make_vec',capacity:info.capacity,count:expr.items.length});return expected;}
+      if(expr.kind==='Name'){const local=resolve(expr.name);if(local){expectType(local.type,expected,expr);emit({op:'load',index:local.slot});return local.type;}if(this.structs.has(expr.name)||this.enums.has(expr.name)||BUILTIN_GENERIC_TYPES.has(expr.name))semanticFail('E0237',`type '${expr.name}' cannot be used as a value without construction`,expr,'structured value construction');semanticFail('E0208',`unknown name '${expr.name}'`,expr,'name resolution');}
       if(expr.kind==='StructLiteral'){
         const def=this.structs.get(expr.typeName);if(!def)semanticFail('E0238',`unknown struct type '${expr.typeName}'`,expr,'struct construction');expectType(expr.typeName,expected,expr);const seen=new Set();for(const field of expr.fields){if(seen.has(field.name))semanticFail('E0239',`duplicate initializer for field '${field.name}'`,field,'struct construction');seen.add(field.name);const declared=def.fields.get(field.name);if(!declared)semanticFail('E0240',`struct ${expr.typeName} has no field '${field.name}'`,field,'struct construction');compileExpr(field.expression,declared.type);}for(const name of def.order)if(!seen.has(name))semanticFail('E0241',`struct ${expr.typeName} is missing field '${name}'`,expr,'struct construction');emit({op:'make_struct',name:expr.typeName,fields:expr.fields.map(field=>field.name)});return expr.typeName;
       }
       if(expr.kind==='Member'){
-        if(expr.object.kind==='Name'&&this.enums.has(expr.object.name)){const enumDef=this.enums.get(expr.object.name),variant=enumDef.cases.get(expr.member);if(!variant)semanticFail('E0235',`enum ${expr.object.name} has no case '${expr.member}'`,expr,'enum construction');if(variant.types.length)semanticFail('E0242',`${expr.object.name}.${expr.member} carries ${variant.types.length} payload value(s); call the case constructor`,expr,'enum construction');emit({op:'make_enum',name:expr.object.name,variant:expr.member,argc:0});expectType(expr.object.name,expected,expr);return expr.object.name;}
+        if(expr.object.kind==='Name'){
+          const base=expr.object.name;if(this.enums.has(base)){const enumDef=this.enums.get(base),variant=enumDef.cases.get(expr.member);if(!variant)semanticFail('E0235',`enum ${base} has no case '${expr.member}'`,expr,'enum construction');if(variant.types.length)semanticFail('E0242',`${base}.${expr.member} carries ${variant.types.length} payload value(s); call the case constructor`,expr,'enum construction');emit({op:'make_enum',name:base,variant:expr.member,argc:0});expectType(base,expected,expr);return base;}
+          if(['Option','Result'].includes(base)){const generic=this.genericInfo(expected);if(!generic||generic.kind!==base)semanticFail('E0266',`${base}.${expr.member} requires an expected ${base}<...> type`,expr,'generic enum construction');const info=this.enumTypeInfo(expected),variant=info.def.cases.get(expr.member);if(!variant)semanticFail('E0235',`enum ${expected} has no case '${expr.member}'`,expr,'enum construction');if(variant.types.length)semanticFail('E0242',`${base}.${expr.member} carries ${variant.types.length} payload value(s); call the case constructor`,expr,'enum construction');emit({op:'make_enum',name:info.runtimeName,variant:expr.member,argc:0});return expected;}
+        }
         const objectType=compileExpr(expr.object,null),def=this.structs.get(objectType);if(!def)semanticFail('E0243',`field access requires a struct value; got ${objectType}`,expr,'struct field access');const field=def.fields.get(expr.member);if(!field)semanticFail('E0244',`struct ${objectType} has no field '${expr.member}'`,expr,'struct field access');emit({op:'get_field',name:objectType,field:expr.member});expectType(field.type,expected,expr);return field.type;
       }
       if(expr.kind==='Unary'){
@@ -269,8 +313,8 @@ class Codegen{
         const preferred=expected&&['u32','s32','string'].includes(expected)?expected:null,left=compileExpr(expr.left,preferred),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`binary operands differ: ${left} and ${right}`,expr,'type checking');if(expr.op==='+'&&left==='string'){emit({op:'concat'});return'string';}if(!['u32','s32'].includes(left))semanticFail('E0211',`operator '${expr.op}' requires integer operands`,expr,'numeric semantics');emit({op:{'+':'add','-':'sub','*':'mul','/':'div','%':'mod'}[expr.op]});return left;
       }
       if(expr.kind==='Call'){
-        const constructed=enumConstructor(expr.callee,expr.args,expr,expected);if(constructed)return constructed;
-        if(expr.callee.kind!=='Name')semanticFail('E0212','bootstrap calls require a direct function name or enum case constructor',expr,'call semantics');const name=expr.callee.name;
+        const constructed=enumConstructor(expr.callee,expr.args,expr,expected);if(constructed)return constructed;if(expr.callee.kind==='Member')return compileVecMethod(expr,expected);
+        if(expr.callee.kind!=='Name')semanticFail('E0212','bootstrap calls require a direct function name, enum case constructor or Vec method',expr,'call semantics');const name=expr.callee.name;
         if(name==='print'){if(expr.args.length!==1)semanticFail('E0213','print expects exactly one argument',expr,'bootstrap prelude');compileExpr(expr.args[0],null);emit({op:'print'});emit({op:'const',index:this.constant('unit',null)});expectType('unit',expected,expr);return'unit';}
         const target=this.signatures.get(name);if(!target)semanticFail('E0214',`unknown function '${name}'`,expr,'name resolution');if(expr.args.length!==target.params.length)semanticFail('E0215',`${name} expects ${target.params.length} arguments, got ${expr.args.length}`,expr,'call semantics');for(let i=0;i<expr.args.length;i++)compileExpr(expr.args[i],target.params[i]);emit({op:'call',name,argc:expr.args.length});expectType(target.returnType,expected,expr);return target.returnType;
       }
@@ -282,14 +326,14 @@ class Codegen{
     const compileWhile=stmt=>{const conditionTarget=code.length;compileExpr(stmt.condition,'bool');const exitJump=emit({op:'jump_if_false',target:-1});const loop={breaks:[],continueTarget:conditionTarget};loopStack.push(loop);const bodyFlow=compileBlock(stmt.body,true);loopStack.pop();if(bodyFlow.has('normal'))emit({op:'jump',target:conditionTarget});const exitTarget=anchor();patch(exitJump,exitTarget);for(const index of loop.breaks)patch(index,exitTarget);const out=new Set(['normal']);if(bodyFlow.has('return'))out.add('return');return out;};
     const compileAssignment=stmt=>{const local=resolve(stmt.name);if(!local)semanticFail('E0221',`unknown assignment target '${stmt.name}'`,stmt,'name resolution');if(!local.mutable)semanticFail('E0222',`cannot assign to immutable binding '${stmt.name}'`,stmt,'mutability');if(stmt.op==='='){compileExpr(stmt.expression,local.type);emit({op:'store',index:local.slot});return;}emit({op:'load',index:local.slot});compileExpr(stmt.expression,local.type);if(stmt.op==='+='&&local.type==='string')emit({op:'concat'});else{if(!['u32','s32'].includes(local.type))semanticFail('E0223',`compound assignment '${stmt.op}' requires integer operands (or string +=)`,stmt,'numeric semantics');emit({op:{'+=':'add','-=':'sub','*=':'mul','/=':'div','%=':'mod'}[stmt.op]});}emit({op:'store',index:local.slot});};
 
-    const resolveEnumPattern=(pattern,enumName)=>{
-      const def=this.enums.get(enumName),parts=pattern.path.split('.');let variantName;if(parts.length===1)variantName=parts[0];else if(parts.length===2&&parts[0]===enumName)variantName=parts[1];else semanticFail('E0247',`enum pattern '${pattern.path}' does not name a case of ${enumName}`,pattern,'match pattern');const variant=def.cases.get(variantName);if(!variant)semanticFail('E0248',`enum ${enumName} has no case '${variantName}'`,pattern,'match pattern');if(pattern.args.length!==variant.types.length)semanticFail('E0249',`${enumName}.${variantName} pattern expects ${variant.types.length} payload pattern(s), got ${pattern.args.length}`,pattern,'match pattern');for(const arg of pattern.args)if(!['BindingPattern','WildcardPattern'].includes(arg.kind))semanticFail('E0250','bootstrap enum payload patterns support bindings or _ only',arg,'bootstrap match pattern');return{variantName,variant};
+    const resolveEnumPattern=(pattern,enumType)=>{
+      const info=this.enumTypeInfo(enumType);if(!info)semanticFail('E0251',`match currently supports bool or enum values; got ${enumType}`,pattern,'bootstrap match support');const def=info.def,parts=pattern.path.split('.');let variantName;if(parts.length===1)variantName=parts[0];else if(parts.length===2&&parts[0]===info.displayName)variantName=parts[1];else semanticFail('E0247',`enum pattern '${pattern.path}' does not name a case of ${enumType}`,pattern,'match pattern');const variant=def.cases.get(variantName);if(!variant)semanticFail('E0248',`enum ${enumType} has no case '${variantName}'`,pattern,'match pattern');if(pattern.args.length!==variant.types.length)semanticFail('E0249',`${info.displayName}.${variantName} pattern expects ${variant.types.length} payload pattern(s), got ${pattern.args.length}`,pattern,'match pattern');for(const arg of pattern.args)if(!['BindingPattern','WildcardPattern'].includes(arg.kind))semanticFail('E0250','bootstrap enum payload patterns support bindings or _ only',arg,'bootstrap match pattern');return{variantName,variant,runtimeName:info.runtimeName};
     };
     const validateMatch=(stmt,type)=>{
-      const enumDef=this.enums.get(type),covered=new Set();let catchAll=false;
+      const enumInfo=this.enumTypeInfo(type),enumDef=enumInfo?.def,covered=new Set();let catchAll=false;
       if(type!=='bool'&&!enumDef)semanticFail('E0251',`match currently supports bool or enum values; got ${type}`,stmt,'bootstrap match support');
       for(const arm of stmt.arms){if(catchAll)semanticFail('E0252','unreachable match arm after unconditional catch-all',arm,'match reachability');const p=arm.pattern,unguarded=!arm.guard;
-        if(type!=='bool'&&p.kind==='BindingPattern'&&enumDef.cases.has(p.name)){const variant=enumDef.cases.get(p.name);if(variant.types.length)semanticFail('E0249',`${type}.${p.name} pattern expects ${variant.types.length} payload pattern(s)`,p,'match pattern');if(unguarded&&covered.has(p.name))semanticFail('E0254',`duplicate unconditional match arm '${p.name}'`,p,'match reachability');if(unguarded)covered.add(p.name);continue;}
+        if(type!=='bool'&&p.kind==='BindingPattern'&&enumDef.cases.has(p.name)){const variant=enumDef.cases.get(p.name);if(variant.types.length)semanticFail('E0249',`${enumInfo.displayName}.${p.name} pattern expects ${variant.types.length} payload pattern(s)`,p,'match pattern');if(unguarded&&covered.has(p.name))semanticFail('E0254',`duplicate unconditional match arm '${p.name}'`,p,'match reachability');if(unguarded)covered.add(p.name);continue;}
         if(p.kind==='WildcardPattern'||p.kind==='BindingPattern'){if(unguarded)catchAll=true;continue;}
         if(type==='bool'){
           if(p.kind!=='BoolPattern')semanticFail('E0253','bool match arms must use true, false, a binding, or _',p,'match pattern');const key=String(p.value);if(unguarded&&covered.has(key))semanticFail('E0254',`duplicate unconditional match arm '${key}'`,p,'match reachability');if(unguarded)covered.add(key);continue;
@@ -299,16 +343,16 @@ class Codegen{
       if(!catchAll){const missing=type==='bool'?['true','false'].filter(v=>!covered.has(v)):enumDef.order.filter(v=>!covered.has(v));if(missing.length)semanticFail('E0256',`non-exhaustive match on ${type}; missing ${missing.join(', ')}`,stmt,'match exhaustiveness','Add the missing cases or an unconditional _ arm.');}
     };
     const compileMatch=stmt=>{
-      const scrutineeType=compileExpr(stmt.expression,null);validateMatch(stmt,scrutineeType);const temp=allocate(scrutineeType,stmt);emit({op:'store',index:temp.slot});const endJumps=[],allFlows=[],enumDef=this.enums.get(scrutineeType);
+      const scrutineeType=compileExpr(stmt.expression,null);validateMatch(stmt,scrutineeType);const temp=allocate(scrutineeType,stmt);emit({op:'store',index:temp.slot});const endJumps=[],allFlows=[],enumInfo=this.enumTypeInfo(scrutineeType),enumDef=enumInfo?.def,runtimeName=enumInfo?.runtimeName;
       for(const arm of stmt.arms){const p=arm.pattern,failJumps=[];let resolved=null;const bareEnumCase=Boolean(enumDef&&p.kind==='BindingPattern'&&enumDef.cases.has(p.name)&&enumDef.cases.get(p.name).types.length===0);
-        if(bareEnumCase){emit({op:'load',index:temp.slot});emit({op:'enum_is',name:scrutineeType,variant:p.name});}
+        if(bareEnumCase){emit({op:'load',index:temp.slot});emit({op:'enum_is',name:runtimeName,variant:p.name});}
         else if(p.kind==='WildcardPattern'||p.kind==='BindingPattern')emit({op:'const',index:this.constant('bool',true)});
         else if(p.kind==='BoolPattern'){emit({op:'load',index:temp.slot});emit({op:'const',index:this.constant('bool',p.value)});emit({op:'eq'});}
-        else if(p.kind==='EnumPattern'){resolved=resolveEnumPattern(p,scrutineeType);emit({op:'load',index:temp.slot});emit({op:'enum_is',name:scrutineeType,variant:resolved.variantName});}
+        else if(p.kind==='EnumPattern'){resolved=resolveEnumPattern(p,scrutineeType);emit({op:'load',index:temp.slot});emit({op:'enum_is',name:resolved.runtimeName,variant:resolved.variantName});}
         else semanticFail('E0257','pattern passed validation but has no lowering',p,'compiler invariant');
         failJumps.push(emit({op:'jump_if_false',target:-1}));enterScope();
         if(p.kind==='BindingPattern'&&!bareEnumCase){const local=declare(p.name,scrutineeType,false,p);emit({op:'load',index:temp.slot});emit({op:'store',index:local.slot});}
-        if(p.kind==='EnumPattern'){for(let i=0;i<p.args.length;i++){const arg=p.args[i];if(arg.kind==='BindingPattern'){const local=declare(arg.name,resolved.variant.types[i],false,arg);emit({op:'load',index:temp.slot});emit({op:'enum_get',name:scrutineeType,variant:resolved.variantName,index:i});emit({op:'store',index:local.slot});}}}
+        if(p.kind==='EnumPattern'){for(let i=0;i<p.args.length;i++){const arg=p.args[i];if(arg.kind==='BindingPattern'){const local=declare(arg.name,resolved.variant.types[i],false,arg);emit({op:'load',index:temp.slot});emit({op:'enum_get',name:resolved.runtimeName,variant:resolved.variantName,index:i});emit({op:'store',index:local.slot});}}}
         if(arm.guard){compileExpr(arm.guard,'bool');failJumps.push(emit({op:'jump_if_false',target:-1}));}
         let flow;if(arm.bodyIsBlock)flow=compileBlock(arm.body,false);else{compileExpr(arm.body,null);emit({op:'pop'});flow=new Set(['normal']);}leaveScope();allFlows.push(flow);if(flow.has('normal'))endJumps.push(emit({op:'jump',target:-1}));const next=anchor();for(const jump of failJumps)patch(jump,next);
       }

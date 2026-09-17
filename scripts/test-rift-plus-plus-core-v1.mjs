@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.3.0-bootstrap');
+assert.equal(compiled.compiler,'0.4.0-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -45,6 +45,13 @@ assert.deepEqual(structuredInspect.structs,['BrainState']);
 assert.deepEqual(structuredInspect.enums,['Outcome']);
 const structuredOps=Object.values(structured.compiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));
 for(const op of ['make_struct','get_field','make_enum','enum_is','enum_get'])assert(structuredOps.includes(op),`structured data must lower ${op}`);
+
+const collectionsSource=readFileSync('examples/riftpp/core-v1-collections.riftpp','utf8');
+const collections=await execute(collectionsSource);
+assert.deepEqual(collections.output,['2','42','56','0','none','vec capacity exceeded','64','vec index out of range']);
+const collectionOps=Object.values(collections.compiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));
+for(const op of ['make_vec','vec_len','vec_get','vec_push','vec_set'])assert(collectionOps.includes(op),`collections must lower ${op}`);
+assert(collections.compiled.executable.imports.length===0,'collections must not add host imports');
 
 const shortCircuit=`riftpp 1\nmodule proof.short_circuit\nfn main() {\n print(false and (1 / 0 == 0))\n print(true or (1 / 0 == 0))\n}\n`;
 assert.deepEqual((await execute(shortCircuit)).output,['false','true'],'and/or must skip a RHS that would trap');
@@ -94,6 +101,18 @@ const guardedNotExhaustive=`riftpp 1\nmodule bad.guarded_match\nenum E { A B }\n
 assert.throws(()=>compileRiftPlusPlusCoreV1(guardedNotExhaustive),/non-exhaustive match on E; missing A/);
 const compositeEquality=`riftpp 1\nmodule bad.composite_equality\nstruct S { x: u32 }\nfn main() { let a: S = S { x: 1 } let b: S = S { x: 1 } print(a == b) }\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(compositeEquality),/equality for composite type S is not defined/);
+const untypedVec=`riftpp 1\nmodule bad.untyped_vec\nfn main() { let x = [] print(x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(untypedVec),/vector literal requires an expected Vec/);
+const oversizedVec=`riftpp 1\nmodule bad.vec_capacity\nfn main() { let x: Vec<u32, 65> = [] print(x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(oversizedVec),/Vec capacity must be 1..64/);
+const vecLiteralOverflow=`riftpp 1\nmodule bad.vec_literal\nfn main() { let x: Vec<u32, 1> = [1, 2] print(x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(vecLiteralOverflow),/vector literal has 2 item/);
+const vecWrongItem=`riftpp 1\nmodule bad.vec_item\nfn main() { let x: Vec<u32, 2> = [] let r: Result<Vec<u32, 2>, string> = x.push("bad") print(r) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(vecWrongItem),/type mismatch/);
+const optionNonExhaustive=`riftpp 1\nmodule bad.option_match\nfn main() { let x: Vec<u32, 2> = [1] match x.get(0) { Option.Some(v) => { print(v) } } }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(optionNonExhaustive),/non-exhaustive match on Option<u32>; missing None/);
+const genericConstructor=`riftpp 1\nmodule proof.generic_constructor\nfn main() { let x: Option<u32> = Option.Some(7) match x { Option.Some(v) => { print(v) } Option.None => { print(0) } } }\n`;
+assert.deepEqual((await execute(genericConstructor)).output,['7']);
 const unsupported=`riftpp 1\nmodule bad.loop_case\nfn main() {\n loop { }\n}\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(unsupported),/not implemented in the bootstrap slice/);
 
@@ -104,4 +123,5 @@ assert(!/ProcessBuilder|Runtime\.getRuntime|child_process/.test(sourceCode));
 console.log('ok - Rift++ Core V1 source parses, type-checks, lowers to rift-exec-v1 and executes on RiftVM');
 console.log('ok - Control Flow V1 executes var/assignment, scopes, if/else, while, break/continue and short-circuit and/or');
 console.log('ok - Structured Data V1 executes nominal struct/enum values, field reads, payload binding and exhaustive match');
-console.log('ok - mutability, reachability, structured-data correctness and match exhaustiveness fail closed');
+console.log('ok - Collections V1 executes bounded Vec values with Option/Result match semantics and no host imports');
+console.log('ok - mutability, reachability, structured-data/collection correctness and match exhaustiveness fail closed');

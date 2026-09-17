@@ -16,7 +16,7 @@ The frontend runs inside the existing RiftOS JavaScript runtime. The long-term t
 
 ## Implemented bootstrap slice
 
-The current `0.3.0-bootstrap` slice requires `riftpp 1` and a `module` declaration. It supports:
+The current `0.4.0-bootstrap` slice requires `riftpp 1` and a `module` declaration. It supports:
 
 - functions with explicitly typed parameters/returns;
 - primitive `unit`, `bool`, `u32`, `s32`, `string`;
@@ -29,17 +29,21 @@ The current `0.3.0-bootstrap` slice requires `riftpp 1` and a `module` declarati
 - exhaustive `match` on closed enums and `bool`;
 - match payload bindings, `_`, whole-value bindings and boolean cases;
 - match guards, with guarded cases not counted as exhaustive coverage;
+- built-in generic `Vec<T, N>`, `Option<T>` and `Result<T, E>` types;
+- bounded vector literals with compile-time capacity `N` in `1..64`;
+- immutable `Vec.len()`, `Vec.get()`, `Vec.push()` and `Vec.set()` operations, where `get` returns `Option` and updates return `Result` replacement values;
+- exhaustive `match` over built-in `Option` and `Result` tagged values using the same enum machinery as user enums;
 - checked integer arithmetic, strings, comparisons and direct function calls;
 - reachable-path return analysis and unreachable-code diagnostics;
 - bootstrap prelude `print(value)`.
 
-Struct construction must supply each declared field exactly once. Enum payload arity/types are checked. Struct/enum values are nominal and can pass through locals, function parameters and returns. Composite equality/ordering is intentionally undefined in this bootstrap and fails closed.
+Struct construction must supply each declared field exactly once. Enum payload arity/types are checked. Struct/enum/vector values can pass through locals, function parameters and returns. `Vec` is deliberately bounded and immutable at runtime: successful `push`/`set` operations return a replacement vector inside `Result.Ok`, while capacity/index failures return `Result.Err(string)` and out-of-range reads return `Option.None`. Composite equality/ordering is intentionally undefined in this bootstrap and fails closed.
 
 Bootstrap pattern limitations remain deliberate: enum payload patterns currently accept bindings or `_`; nested/literal payload patterns are not implemented. Field mutation/place assignment is not implemented yet; rebuild and assign the whole struct instead.
 
 ## Still absent
 
-Valid Core syntax not implemented by this slice fails closed. Major missing pieces include imports/module graphs, top-level const, `for`, `loop`, bit operations, field/index assignment, nested match payload patterns, arrays/slices/vec, option/result/`?`, ownership/borrowing, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler.
+Valid Core syntax not implemented by this slice fails closed. Major missing pieces include imports/module graphs, top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler.
 
 ## Public surface
 
@@ -52,9 +56,9 @@ Valid Core syntax not implemented by this slice fails closed. Major missing piec
 
 It has no filesystem, network, shell, process, Android, MCP or mutation authority. Generated output is independently passed through `prepareRiftExecutable` before compile succeeds.
 
-## Structured-data runtime boundary
+## Structured-data / collection runtime boundary
 
-RiftVM now provides only five finite composite operations used by Core:
+RiftVM provides the five nominal struct/enum operations plus five bounded vector operations used by Core:
 
 ```text
 make_struct
@@ -62,9 +66,14 @@ get_field
 make_enum
 enum_is
 enum_get
+make_vec
+vec_len
+vec_get
+vec_push
+vec_set
 ```
 
-These are data-only operations. Composite values cannot implicitly cross the RiftVM host-import boundary. There is no generic object/property opcode, reflection API or authority widening.
+These remain data-only operations. `vec_get` returns the existing runtime `Option.Some/None` representation; `vec_push` and `vec_set` return `Result.Ok/Err`. Vector capacity is validated before execution and cannot exceed 64. Composite values, including vectors, cannot implicitly cross the RiftVM host-import boundary. There is no generic object/property opcode, reflection API or authority widening.
 
 ## Source ownership
 
@@ -74,6 +83,7 @@ These are data-only operations. Composite values cannot implicitly cross the Rif
 - `scripts/test-rift-vm.mjs` — independent raw-VM opcode/value/security proof.
 - `scripts/test-riftpp-shell.mjs` — normal RiftShell `riftpp` routing and execution-authority boundary.
 - `examples/riftpp/core-v1-structured-data.riftpp` — Gate 2 struct/enum/match proof fixture.
+- `examples/riftpp/core-v1-collections.riftpp` — Gate 3 bounded Vec + Option/Result proof fixture.
 
 ## Invariants
 
@@ -86,4 +96,4 @@ These are data-only operations. Composite values cannot implicitly cross the Rif
 
 ## Validation
 
-`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1 and Structured Data V1 fixtures, then attacks duplicate/missing fields, duplicate enum cases, wrong payload arity/type, non-exhaustive enum/bool matches, guarded exhaustiveness and composite equality. `test-rift-vm.mjs` separately executes raw struct/enum bytecode, malformed composite instructions and the no-composite-host-boundary rule.
+`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1, Structured Data V1 and Collections V1 fixtures, then attacks duplicate/missing fields, enum payload/type errors, non-exhaustive enum/bool/Option matches, invalid vector capacities/literals/items and composite equality. `test-rift-vm.mjs` separately executes raw struct/enum/vector bytecode, vector capacity/index failure semantics, malformed instructions and the no-composite-host-boundary rule.

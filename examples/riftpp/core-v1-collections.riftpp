@@ -1,0 +1,62 @@
+riftpp 1
+module demo.collections
+
+struct Memory {
+  id: u32
+  value: u32
+}
+
+fn lookup(memories: Vec<Memory, 2>, id: u32) -> u32 {
+  var i: u32 = 0
+  while i < memories.len() {
+    match memories.get(i) {
+      Option.Some(item) => {
+        if item.id == id {
+          return item.value
+        }
+      }
+      Option.None => { }
+    }
+    i += 1
+  }
+  return 0
+}
+
+fn main() {
+  var memories: Vec<Memory, 2> = []
+
+  match memories.push(Memory { id: 1, value: 42 }) {
+    Result.Ok(next) => { memories = next }
+    Result.Err(reason) => { print(reason) }
+  }
+  match memories.push(Memory { id: 2, value: 56 }) {
+    Result.Ok(next) => { memories = next }
+    Result.Err(reason) => { print(reason) }
+  }
+
+  print(memories.len())
+  print(lookup(memories, 1))
+  print(lookup(memories, 2))
+  print(lookup(memories, 3))
+
+  match memories.get(9) {
+    Option.Some(item) => { print(item.value) }
+    Option.None => { print("none") }
+  }
+
+  match memories.push(Memory { id: 3, value: 99 }) {
+    Result.Ok(next) => { print(next.len()) }
+    Result.Err(reason) => { print(reason) }
+  }
+
+  match memories.set(1, Memory { id: 2, value: 64 }) {
+    Result.Ok(next) => { memories = next }
+    Result.Err(reason) => { print(reason) }
+  }
+  print(lookup(memories, 2))
+
+  match memories.set(9, Memory { id: 9, value: 9 }) {
+    Result.Ok(next) => { print(next.len()) }
+    Result.Err(reason) => { print(reason) }
+  }
+}
