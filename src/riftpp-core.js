@@ -1,6 +1,6 @@
 import { RIFT_EXEC_FORMAT, RIFT_VM_ABI, prepareRiftExecutable } from './riftvm.js';
 
-export const RIFTPP_CORE_VERSION='0.6.0-bootstrap';
+export const RIFTPP_CORE_VERSION='0.7.0-bootstrap';
 export const RIFTPP_LANGUAGE='riftpp/1';
 
 const MAX_SOURCE_BYTES=256*1024;
@@ -20,13 +20,13 @@ const MAX_LINKED_NAME_BYTES=96;
 const MAX_EFFECTS=16;
 const MAX_STATE_SCHEMA_BYTES=4096;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
-const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','string']);
+const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string']);
 const SUPPORTED_EFFECTS=new Set(['storage']);
 const CHECKPOINT_BUILTINS=new Set(['checkpoint_save','checkpoint_load','checkpoint_remove']);
 const BUILTIN_GENERIC_TYPES=new Set(['Vec','Option','Result']);
-const COMPARABLE_PRIMITIVES=new Set(['unit','bool','u32','s32','string']);
-const ORDERED_PRIMITIVES=new Set(['u32','s32','string']);
-const PRELUDE_NAMES=new Set(['print',...CHECKPOINT_BUILTINS]);
+const COMPARABLE_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string']);
+const ORDERED_PRIMITIVES=new Set(['u32','s32','f64','string']);
+const PRELUDE_NAMES=new Set(['print','value_sha256',...CHECKPOINT_BUILTINS]);
 const KEYWORDS=new Set(['riftpp','module','use','as','const','struct','enum','fn','let','var','if','else','match','for','in','while','loop','return','break','continue','true','false','and','or','not','allow']);
 const RESERVED_FUTURE=new Set(['task','brain','agent','swarm','backend','budget','constraint','optimize','require','unsafe','extern','kernel','tensor','model','train']);
 const ASSIGNMENT_OPS=new Set(['=','+=','-=','*=','/=','%=']);
@@ -72,16 +72,22 @@ class Lexer{
     if(this.peek()!=='"')fail('E0009','unterminated string literal',{start,end:this.pos,line,column},'string literal');this.advance();this.token('string',value,start,line,column);
   }
   lexNumber(){
-    const start=this.pos,line=this.line,column=this.column;let text='';
+    const start=this.pos,line=this.line,column=this.column;let text='',kind='number';
     if(this.peek()==='0'&&(this.peek(1)==='x'||this.peek(1)==='X')){
       text+=this.advance()+this.advance();while(/[0-9a-fA-F_]/.test(this.peek()))text+=this.advance();const digits=text.slice(2);
       if(!/^[0-9a-fA-F](?:[0-9a-fA-F_]*[0-9a-fA-F])?$/.test(digits)||digits.includes('__'))fail('E0010','invalid hexadecimal integer literal',{start,end:this.pos,line,column},'integer literal');
     }else{
       while(/[0-9_]/.test(this.peek()))text+=this.advance();
-      if(text.endsWith('_')||text.includes('__'))fail('E0011','invalid underscore placement in integer literal',{start,end:this.pos,line,column},'integer literal');
-      if(this.peek()==='.'||this.peek()==='e'||this.peek()==='E')fail('E0012','floating-point literals are not implemented in the bootstrap Core slice',{start,end:this.pos,line,column},'bootstrap feature gate');
+      if(text.endsWith('_')||text.includes('__'))fail('E0011','invalid underscore placement in numeric literal',{start,end:this.pos,line,column},'numeric literal');
+      if(this.peek()==='.'){
+        kind='float';text+=this.advance();if(!/[0-9]/.test(this.peek()))fail('E0012','f64 literal requires digits after the decimal point',{start,end:this.pos,line,column},'Gate 6A numeric literal');
+        const fractionStart=text.length;while(/[0-9_]/.test(this.peek()))text+=this.advance();const fraction=text.slice(fractionStart);if(fraction.endsWith('_')||fraction.includes('__'))fail('E0012','invalid underscore placement in f64 fractional digits',{start,end:this.pos,line,column},'Gate 6A numeric literal');
+        if(this.peek()==='e'||this.peek()==='E'){
+          text+=this.advance();if(this.peek()==='+'||this.peek()==='-')text+=this.advance();const exponentStart=text.length;if(!/[0-9]/.test(this.peek()))fail('E0012','f64 exponent requires decimal digits',{start,end:this.pos,line,column},'Gate 6A numeric literal');while(/[0-9_]/.test(this.peek()))text+=this.advance();const exponent=text.slice(exponentStart);if(exponent.endsWith('_')||exponent.includes('__'))fail('E0012','invalid underscore placement in f64 exponent',{start,end:this.pos,line,column},'Gate 6A numeric literal');
+        }
+      }else if(this.peek()==='e'||this.peek()==='E')fail('E0012','bootstrap f64 exponent syntax requires a decimal point',{start,end:this.pos,line,column},'Gate 6A numeric literal');
     }
-    this.token('number',text,start,line,column);
+    this.token(kind,text,start,line,column);
   }
   lexIdent(){const start=this.pos,line=this.line,column=this.column;let text='';while(/[A-Za-z0-9_]/.test(this.peek()))text+=this.advance();this.token(KEYWORDS.has(text)||RESERVED_FUTURE.has(text)?'keyword':'ident',text,start,line,column);}
   run(){
@@ -215,6 +221,7 @@ class Parser{
   primary(){
     const token=this.current();
     if(token.kind==='number'){this.index++;return Object.freeze({kind:'IntLiteral',raw:token.value,span:spanOf(token)});}
+    if(token.kind==='float'){this.index++;return Object.freeze({kind:'FloatLiteral',raw:token.value,span:spanOf(token)});}
     if(token.kind==='string'){this.index++;return Object.freeze({kind:'StringLiteral',value:token.value,span:spanOf(token)});}
     if(token.value==='true'||token.value==='false'){this.index++;return Object.freeze({kind:'BoolLiteral',value:token.value==='true',span:spanOf(token)});}
     if(this.at('[')){const start=this.expect('['),items=[];if(!this.at(']'))for(;;){items.push(this.expression());if(!this.consume(','))break;if(this.at(']'))break;}const end=this.expect(']');return Object.freeze({kind:'VecLiteral',items:Object.freeze(items),span:Object.freeze({start:start.start,end:end.end,line:start.line,column:start.column})});}
@@ -233,6 +240,7 @@ function spanToken(span){return {start:span.start,end:span.end,line:span.line,co
 function semanticFail(code,message,node,rule,help=''){fail(code,message,spanToken(node.span),rule,help);}
 function expectType(actual,expected,node){if(expected&&actual!==expected)semanticFail('E0201',`type mismatch: expected ${expected}, got ${actual}`,node,'type checking');return actual;}
 function parseInt(raw,node,type){const clean=raw.replaceAll('_','');let value;try{value=BigInt(clean);}catch{semanticFail('E0202',`invalid integer literal '${raw}'`,node,'numeric semantics');}const bounds=type==='s32'?[-2147483648n,2147483647n]:[0n,4294967295n];if(value<bounds[0]||value>bounds[1])semanticFail('E0203',`${type} literal is out of range`,node,'checked integer semantics');return value.toString();}
+function parseF64(raw,node){const clean=raw.replaceAll('_',''),value=Number(clean);if(!Number.isFinite(value))semanticFail('E0203',`f64 literal is non-finite or out of range: ${raw}`,node,'Gate 6A finite numeric semantics');return Object.is(value,-0)?0:value;}
 function unionFlows(...sets){const out=new Set();for(const set of sets)for(const value of set)out.add(value);return out;}
 function expressionPath(expr){if(expr?.kind==='Name')return expr.name;if(expr?.kind==='Member'){const base=expressionPath(expr.object);return base?`${base}.${expr.member}`:null;}return null;}
 function linkedName(module,name,node){const value=module&&name?`${module}::${name}`:'';if(!/^[A-Za-z_][A-Za-z0-9_.:$-]*$/.test(value)||encoder.encode(value).byteLength>MAX_LINKED_NAME_BYTES)semanticFail('E0309',`linked symbol '${value}' is invalid or exceeds ${MAX_LINKED_NAME_BYTES} bytes`,node,'module linking');return value;}
@@ -255,7 +263,7 @@ function linkRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){
   const rewriteExpr=(rec,expr)=>{
     if(++linkExprDepth>MAX_PARSE_DEPTH){linkExprDepth--;semanticFail('E0318',`module linker expression nesting exceeds ${MAX_PARSE_DEPTH}`,expr,'host bounds');}
     try{
-    if(['IntLiteral','StringLiteral','BoolLiteral','Name'].includes(expr.kind))return expr;
+    if(['IntLiteral','FloatLiteral','StringLiteral','BoolLiteral','Name'].includes(expr.kind))return expr;
     if(expr.kind==='VecLiteral')return Object.freeze({...expr,items:Object.freeze(expr.items.map(item=>rewriteExpr(rec,item)))});
     if(expr.kind==='StructLiteral')return Object.freeze({...expr,typeName:resolveType(rec,expr.typeName,expr),fields:Object.freeze(expr.fields.map(field=>Object.freeze({...field,expression:rewriteExpr(rec,field.expression)})))});
     if(expr.kind==='Unary')return Object.freeze({...expr,expression:rewriteExpr(rec,expr.expression)});
@@ -379,6 +387,7 @@ class Codegen{
       if(++compileExprDepth>MAX_PARSE_DEPTH){compileExprDepth--;semanticFail('E0272',`compiler expression nesting exceeds ${MAX_PARSE_DEPTH}`,expr,'host bounds');}
       try{
       if(expr.kind==='IntLiteral'){const type=expected==='s32'?'s32':expected==='u32'?'u32':'u32';if(expected&&!['u32','s32'].includes(expected))semanticFail('E0201',`type mismatch: expected ${expected}, got integer`,expr,'type checking');emit({op:'const',index:this.constant(type,parseInt(expr.raw,expr,type))});return type;}
+      if(expr.kind==='FloatLiteral'){if(expected&&expected!=='f64')semanticFail('E0201',`type mismatch: expected ${expected}, got f64`,expr,'type checking');emit({op:'const',index:this.constant('f64',parseF64(expr.raw,expr))});return'f64';}
       if(expr.kind==='StringLiteral'){expectType('string',expected,expr);emit({op:'const',index:this.constant('string',expr.value)});return'string';}
       if(expr.kind==='BoolLiteral'){expectType('bool',expected,expr);emit({op:'const',index:this.constant('bool',expr.value)});return'bool';}
       if(expr.kind==='VecLiteral'){const info=this.genericInfo(expected);if(!info||info.kind!=='Vec')semanticFail('E0270','vector literal requires an expected Vec<T, N> type annotation',expr,'bounded collection literal');if(expr.items.length>info.capacity)semanticFail('E0271',`vector literal has ${expr.items.length} item(s), capacity is ${info.capacity}`,expr,'bounded collection literal');for(const item of expr.items)compileExpr(item,info.args[0]);emit({op:'make_vec',capacity:info.capacity,count:expr.items.length});return expected;}
@@ -395,20 +404,26 @@ class Codegen{
       }
       if(expr.kind==='Unary'){
         if(expr.op==='not'){compileExpr(expr.expression,'bool');expectType('bool',expected,expr);emit({op:'not'});return'bool';}
-        if(expr.op==='+'){const type=compileExpr(expr.expression,expected);if(!['u32','s32'].includes(type))semanticFail('E0209','unary + requires an integer',expr,'numeric semantics');return type;}
-        const type='s32';if(expected&&expected!=='s32')semanticFail('E0210','unary - currently requires s32',expr,'bootstrap numeric support');if(expr.expression.kind==='IntLiteral'){const magnitude=BigInt(expr.expression.raw.replaceAll('_',''));if(magnitude===2147483648n){emit({op:'const',index:this.constant('s32','-2147483648')});return type;}}compileExpr(expr.expression,type);emit({op:'neg'});return type;
+        if(expr.op==='+'){const type=compileExpr(expr.expression,expected);if(!['u32','s32','f64'].includes(type))semanticFail('E0209','unary + requires a numeric value',expr,'numeric semantics');return type;}
+        if(expr.expression.kind==='IntLiteral'){
+          const magnitude=BigInt(expr.expression.raw.replaceAll('_',''));if(magnitude===2147483648n){if(expected&&expected!=='s32')semanticFail('E0210','unary - s32 result conflicts with expected type',expr,'numeric semantics');emit({op:'const',index:this.constant('s32','-2147483648')});return's32';}
+          if(!expected||expected==='s32'){compileExpr(expr.expression,'s32');emit({op:'neg'});return's32';}
+          semanticFail('E0210','unary - integer literal requires s32; implicit integer-to-f64 conversion is not allowed',expr,'Gate 6A numeric support');
+        }
+        const operandType=compileExpr(expr.expression,expected||null);if(!['s32','f64'].includes(operandType))semanticFail('E0210','unary - requires s32 or f64',expr,'numeric semantics');expectType(operandType,expected,expr);emit({op:'neg'});return operandType;
       }
       if(expr.kind==='Binary'){
         if(expr.op==='and'){expectType('bool',expected,expr);compileExpr(expr.left,'bool');emit({op:'dup'});const falseJump=emit({op:'jump_if_false',target:-1});emit({op:'pop'});compileExpr(expr.right,'bool');const end=anchor();patch(falseJump,end);return'bool';}
         if(expr.op==='or'){expectType('bool',expected,expr);compileExpr(expr.left,'bool');emit({op:'dup'});const evalRight=emit({op:'jump_if_false',target:-1}),done=emit({op:'jump',target:-1});const rightTarget=code.length;emit({op:'pop'});patch(evalRight,rightTarget);compileExpr(expr.right,'bool');const end=anchor();patch(done,end);return'bool';}
         if(expr.op==='=='||expr.op==='!='){const left=compileExpr(expr.left,null),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`comparison operands differ: ${left} and ${right}`,expr,'type checking');if(!COMPARABLE_PRIMITIVES.has(left))semanticFail('E0245',`equality for composite type ${left} is not defined in the bootstrap slice`,expr,'bootstrap comparison semantics');expectType('bool',expected,expr);emit({op:expr.op==='=='?'eq':'ne'});return'bool';}
-        if(['<','<=','>','>='].includes(expr.op)){const left=compileExpr(expr.left,null),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`comparison operands differ: ${left} and ${right}`,expr,'type checking');if(!ORDERED_PRIMITIVES.has(left))semanticFail('E0246',`ordered comparison requires u32, s32 or string; got ${left}`,expr,'comparison semantics');expectType('bool',expected,expr);emit({op:{'<':'lt','<=':'le','>':'gt','>=':'ge'}[expr.op]});return'bool';}
-        const preferred=expected&&['u32','s32','string'].includes(expected)?expected:null,left=compileExpr(expr.left,preferred),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`binary operands differ: ${left} and ${right}`,expr,'type checking');if(expr.op==='+'&&left==='string'){expectType('string',expected,expr);emit({op:'concat'});return'string';}if(!['u32','s32'].includes(left))semanticFail('E0211',`operator '${expr.op}' requires integer operands`,expr,'numeric semantics');expectType(left,expected,expr);emit({op:{'+':'add','-':'sub','*':'mul','/':'div','%':'mod'}[expr.op]});return left;
+        if(['<','<=','>','>='].includes(expr.op)){const left=compileExpr(expr.left,null),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`comparison operands differ: ${left} and ${right}`,expr,'type checking');if(!ORDERED_PRIMITIVES.has(left))semanticFail('E0246',`ordered comparison requires u32, s32, f64 or string; got ${left}`,expr,'comparison semantics');expectType('bool',expected,expr);emit({op:{'<':'lt','<=':'le','>':'gt','>=':'ge'}[expr.op]});return'bool';}
+        const preferred=expected&&['u32','s32','f64','string'].includes(expected)?expected:null,left=compileExpr(expr.left,preferred),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`binary operands differ: ${left} and ${right}`,expr,'type checking');if(expr.op==='+'&&left==='string'){expectType('string',expected,expr);emit({op:'concat'});return'string';}if(!['u32','s32','f64'].includes(left))semanticFail('E0211',`operator '${expr.op}' requires numeric operands`,expr,'numeric semantics');expectType(left,expected,expr);emit({op:{'+':'add','-':'sub','*':'mul','/':'div','%':'mod'}[expr.op]});return left;
       }
       if(expr.kind==='Call'){
         const constructed=enumConstructor(expr.callee,expr.args,expr,expected);if(constructed)return constructed;if(expr.callee.kind==='Member')return compileVecMethod(expr,expected);
         if(expr.callee.kind!=='Name')semanticFail('E0212','bootstrap calls require a direct function name, enum case constructor or Vec method',expr,'call semantics');const name=expr.callee.name;
         if(name==='print'){if(expr.args.length!==1)semanticFail('E0213','print expects exactly one argument',expr,'bootstrap prelude');compileExpr(expr.args[0],null);emit({op:'print'});emit({op:'const',index:this.constant('unit',null)});expectType('unit',expected,expr);return'unit';}
+        if(name==='value_sha256'){if(expr.args.length!==1)semanticFail('E0290','value_sha256 expects exactly one bounded value',expr,'Gate 6A parameter identity');compileExpr(expr.args[0],null);emit({op:'value_sha256'});expectType('string',expected,expr);return'string';}
         if(name==='checkpoint_save'){if(expr.args.length!==2)semanticFail('E0283','checkpoint_save expects key and value',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');const valueType=compileExpr(expr.args[1],null);directEffects.add('storage');this.imports.add('state.save');emit({op:'state_save',schema:this.stateSchema(valueType,expr)});expectType('bool',expected,expr);return'bool';}
         if(name==='checkpoint_load'){if(expr.args.length!==2)semanticFail('E0283','checkpoint_load expects key and fallback',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');const fallbackType=compileExpr(expr.args[1],expected);directEffects.add('storage');this.imports.add('state.load');emit({op:'state_load',schema:this.stateSchema(fallbackType,expr)});return fallbackType;}
         if(name==='checkpoint_remove'){if(expr.args.length!==1)semanticFail('E0283','checkpoint_remove expects one key',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');directEffects.add('storage');this.imports.add('state.remove');emit({op:'state_remove'});expectType('bool',expected,expr);return'bool';}
@@ -421,7 +436,7 @@ class Codegen{
     const compileBlock=(block,newScope=true)=>{if(++compileBlockDepth>MAX_PARSE_DEPTH){compileBlockDepth--;semanticFail('E0273',`compiler block nesting exceeds ${MAX_PARSE_DEPTH}`,block,'host bounds');}if(newScope)enterScope();try{let flows=new Set(['normal']);for(const stmt of block.statements){if(!flows.has('normal'))semanticFail('E0227','unreachable statement',stmt,'control-flow analysis');const stmtFlow=compileStatement(stmt),next=new Set([...flows].filter(value=>value!=='normal'));for(const value of stmtFlow)next.add(value);flows=next;}return flows;}finally{if(newScope)leaveScope();compileBlockDepth--;}};
     const compileIf=stmt=>{compileExpr(stmt.condition,'bool');const falseJump=emit({op:'jump_if_false',target:-1});const thenFlow=compileBlock(stmt.thenBranch,true);if(!stmt.elseBranch){const end=anchor();patch(falseJump,end);return unionFlows(thenFlow,new Set(['normal']));}let doneJump=null;if(thenFlow.has('normal'))doneJump=emit({op:'jump',target:-1});const elseTarget=anchor();patch(falseJump,elseTarget);const elseFlow=stmt.elseBranch.kind==='If'?compileIf(stmt.elseBranch):compileBlock(stmt.elseBranch,true);const end=anchor();if(doneJump!==null)patch(doneJump,end);return unionFlows(thenFlow,elseFlow);};
     const compileWhile=stmt=>{const conditionTarget=code.length;compileExpr(stmt.condition,'bool');const exitJump=emit({op:'jump_if_false',target:-1});const loop={breaks:[],continueTarget:conditionTarget};loopStack.push(loop);const bodyFlow=compileBlock(stmt.body,true);loopStack.pop();if(bodyFlow.has('normal'))emit({op:'jump',target:conditionTarget});const exitTarget=anchor();patch(exitJump,exitTarget);for(const index of loop.breaks)patch(index,exitTarget);const out=new Set(['normal']);if(bodyFlow.has('return'))out.add('return');return out;};
-    const compileAssignment=stmt=>{const local=resolve(stmt.name);if(!local)semanticFail('E0221',`unknown assignment target '${stmt.name}'`,stmt,'name resolution');if(!local.mutable)semanticFail('E0222',`cannot assign to immutable binding '${stmt.name}'`,stmt,'mutability');if(stmt.op==='='){compileExpr(stmt.expression,local.type);emit({op:'store',index:local.slot});return;}emit({op:'load',index:local.slot});compileExpr(stmt.expression,local.type);if(stmt.op==='+='&&local.type==='string')emit({op:'concat'});else{if(!['u32','s32'].includes(local.type))semanticFail('E0223',`compound assignment '${stmt.op}' requires integer operands (or string +=)`,stmt,'numeric semantics');emit({op:{'+=':'add','-=':'sub','*=':'mul','/=':'div','%=':'mod'}[stmt.op]});}emit({op:'store',index:local.slot});};
+    const compileAssignment=stmt=>{const local=resolve(stmt.name);if(!local)semanticFail('E0221',`unknown assignment target '${stmt.name}'`,stmt,'name resolution');if(!local.mutable)semanticFail('E0222',`cannot assign to immutable binding '${stmt.name}'`,stmt,'mutability');if(stmt.op==='='){compileExpr(stmt.expression,local.type);emit({op:'store',index:local.slot});return;}emit({op:'load',index:local.slot});compileExpr(stmt.expression,local.type);if(stmt.op==='+='&&local.type==='string')emit({op:'concat'});else{if(!['u32','s32','f64'].includes(local.type))semanticFail('E0223',`compound assignment '${stmt.op}' requires numeric operands (or string +=)`,stmt,'numeric semantics');emit({op:{'+=':'add','-=':'sub','*=':'mul','/=':'div','%=':'mod'}[stmt.op]});}emit({op:'store',index:local.slot});};
 
     const resolveEnumPattern=(pattern,enumType)=>{
       const info=this.enumTypeInfo(enumType);if(!info)semanticFail('E0251',`match currently supports bool or enum values; got ${enumType}`,pattern,'bootstrap match support');const def=info.def,parts=pattern.path.split('.');let variantName;const linkedPrefix=`${enumType}.`;if(pattern.path.startsWith(linkedPrefix))variantName=pattern.path.slice(linkedPrefix.length);else if(parts.length===1)variantName=parts[0];else if(parts.length===2&&parts[0]===info.displayName)variantName=parts[1];else semanticFail('E0247',`enum pattern '${pattern.path}' does not name a case of ${enumType}`,pattern,'match pattern');const variant=def.cases.get(variantName);if(!variant)semanticFail('E0248',`enum ${enumType} has no case '${variantName}'`,pattern,'match pattern');if(pattern.args.length!==variant.types.length)semanticFail('E0249',`${info.displayName}.${variantName} pattern expects ${variant.types.length} payload pattern(s), got ${pattern.args.length}`,pattern,'match pattern');for(const arg of pattern.args)if(!['BindingPattern','WildcardPattern'].includes(arg.kind))semanticFail('E0250','bootstrap enum payload patterns support bindings or _ only',arg,'bootstrap match pattern');return{variantName,variant,runtimeName:info.runtimeName};

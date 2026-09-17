@@ -4,7 +4,7 @@ export const RIFT_VM_ABI='riftvm-1';
 const NAME=/^[A-Za-z_][A-Za-z0-9_.:$-]{0,95}$/;
 const HOST_METHOD=/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*){1,3}$/;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
-const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','state_save','state_load','state_remove','jump','jump_if_false','call','host','print','ret','halt']);
+const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','state_save','state_load','state_remove','value_sha256','jump','jump_if_false','call','host','print','ret','halt']);
 const DEFAULT_LIMITS=Object.freeze({maxSteps:100000,maxStack:1024,maxCallDepth:32});
 const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:64,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536,maxStateBytes:65536,maxStateSchemaBytes:4096});
 const INT_BOUNDS=Object.freeze({u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
@@ -19,6 +19,7 @@ function integer(value,label,min,max){const n=Number(value);if(!Number.isInteger
 function stringBytes(value,label,max=HARD_LIMITS.maxStringBytes){const text=String(value);if(encoder.encode(text).byteLength>max)fail(`${label} exceeds ${max} UTF-8 bytes`);return text;}
 function valueDepth(value){return value&&Number.isInteger(value.depth)?value.depth:0;}
 function checkedCompositeDepth(values,label){let depth=1;for(const value of values)depth=Math.max(depth,valueDepth(value)+1);if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${label} exceeds composite depth limit ${HARD_LIMITS.maxCompositeDepth}`);return depth;}
+function finiteF64(value,label){if(typeof value!=='number'||!Number.isFinite(value))fail(`${label} must be a finite JSON number`);return Object.is(value,-0)?0:value;}
 function makeVecValue(capacity,items,label='vec'){return Object.freeze({type:'vec',capacity,items:Object.freeze(items),depth:checkedCompositeDepth(items,label)});}
 function parseIntegerConstant(value,label){
   try{
@@ -34,7 +35,7 @@ function normalizeConstant(raw,index){
   if(type==='unit')return UNIT;
   if(type==='bool'){if(typeof raw.value!=='boolean')fail(`constant ${index} bool value is invalid`);return Object.freeze({type,value:raw.value});}
   if(type==='string'){if(typeof raw.value!=='string')fail(`constant ${index} string value is invalid`);return Object.freeze({type,value:stringBytes(raw.value,`constant ${index}`)});}
-  if(type==='f64'){const value=Number(raw.value);if(!Number.isFinite(value))fail(`constant ${index} f64 must be finite`);return Object.freeze({type,value});}
+  if(type==='f64')return Object.freeze({type,value:finiteF64(raw.value,`constant ${index} f64`)});
   if(type==='u32'||type==='s32'){
     const value=parseIntegerConstant(raw.value,`constant ${index} ${type}`),bounds=INT_BOUNDS[type];
     if(value<bounds[0]||value>bounds[1])fail(`constant ${index} ${type} is out of range`);
@@ -58,7 +59,7 @@ function normalizeFieldList(raw,where){
 }
 function normalizeStateDescriptor(raw,where,depth=0){
   if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${where} exceeds state descriptor depth ${HARD_LIMITS.maxCompositeDepth}`);if(!plain(raw))fail(`${where} must be an object`);const kind=String(raw.k||'');
-  if(kind==='p'){const type=String(raw.t||'');if(!['unit','bool','u32','s32','string'].includes(type))fail(`${where} primitive type is invalid: ${type||'(empty)'}`);return Object.freeze({k:'p',t:type});}
+  if(kind==='p'){const type=String(raw.t||'');if(!['unit','bool','u32','s32','f64','string'].includes(type))fail(`${where} primitive type is invalid: ${type||'(empty)'}`);return Object.freeze({k:'p',t:type});}
   if(kind==='v')return Object.freeze({k:'v',c:integer(raw.c,`${where}.c`,1,HARD_LIMITS.maxVecCapacity),i:normalizeStateDescriptor(raw.i,`${where}.i`,depth+1)});
   if(kind==='o')return Object.freeze({k:'o',i:normalizeStateDescriptor(raw.i,`${where}.i`,depth+1)});
   if(kind==='r')return Object.freeze({k:'r',o:normalizeStateDescriptor(raw.o,`${where}.o`,depth+1),e:normalizeStateDescriptor(raw.e,`${where}.e`,depth+1)});
@@ -149,16 +150,29 @@ function publicValue(value,state={values:0,stringBytes:0}){
   return{type:value.type,value:value.value};
 }
 function valueToPublic(value){return publicValue(value);}
+function hashPublicValue(value,state={values:0,stringBytes:0}){
+  if(++state.values>HARD_LIMITS.maxPublicValues)fail(`hash input exceeds ${HARD_LIMITS.maxPublicValues} values`);
+  if(!value||value.type==='unit')return{type:'unit'};
+  if(value.type==='u32'||value.type==='s32')return{type:value.type,value:value.value.toString()};
+  if(value.type==='f64')return{type:'f64',value:finiteF64(value.value,'hash input f64')};
+  if(value.type==='bool')return{type:'bool',value:value.value===true};
+  if(value.type==='string'){state.stringBytes+=encoder.encode(value.value).byteLength;if(state.stringBytes>HARD_LIMITS.maxPublicStringBytes)fail(`hash input strings exceed ${HARD_LIMITS.maxPublicStringBytes} UTF-8 bytes`);return{type:'string',value:value.value};}
+  if(value.type==='struct'){const fields={};for(const key of Object.keys(value.fields).sort())fields[key]=hashPublicValue(value.fields[key],state);return{type:'struct',name:value.name,fields};}
+  if(value.type==='enum')return{type:'enum',name:value.name,variant:value.variant,values:value.values.map(item=>hashPublicValue(item,state))};
+  if(value.type==='vec')return{type:'vec',capacity:value.capacity,items:value.items.map(item=>hashPublicValue(item,state))};
+  fail(`hash input uses unsupported type: ${value.type||'(missing)'}`);
+}
+async function valueSha256(value){const text=JSON.stringify(hashPublicValue(value)),bytes=encoder.encode(text);if(bytes.byteLength>HARD_LIMITS.maxStateBytes)fail(`hash input exceeds ${HARD_LIMITS.maxStateBytes} UTF-8 bytes`);const subtle=globalThis.crypto?.subtle;if(!subtle)fail('SHA-256 is unavailable in this runtime');const digest=new Uint8Array(await subtle.digest('SHA-256',bytes));return Object.freeze({type:'string',value:[...digest].map(byte=>byte.toString(16).padStart(2,'0')).join('')});}
 function isCompositeValue(value){return value?.type==='struct'||value?.type==='enum'||value?.type==='vec';}
 function valueToHost(value){if(!value||value.type==='unit')return null;if(isCompositeValue(value))fail('composite values cannot cross the host import boundary');if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
-function hostToValue(raw){if(raw===null||raw===undefined)return UNIT;if(typeof raw==='boolean')return Object.freeze({type:'bool',value:raw});if(typeof raw==='string')return Object.freeze({type:'string',value:stringBytes(raw,'host string')});if(typeof raw==='number'){if(!Number.isFinite(raw))fail('host returned a non-finite number');return Object.freeze({type:'f64',value:raw});}const text=JSON.stringify(raw);return Object.freeze({type:'string',value:stringBytes(text,'host JSON result')});}
+function hostToValue(raw){if(raw===null||raw===undefined)return UNIT;if(typeof raw==='boolean')return Object.freeze({type:'bool',value:raw});if(typeof raw==='string')return Object.freeze({type:'string',value:stringBytes(raw,'host string')});if(typeof raw==='number')return Object.freeze({type:'f64',value:finiteF64(raw,'host f64')});const text=JSON.stringify(raw);return Object.freeze({type:'string',value:stringBytes(text,'host JSON result')});}
 function statePublicToValue(raw,state={values:0,stringBytes:0}){
   if(++state.values>HARD_LIMITS.maxPublicValues)fail(`state payload exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!plain(raw))fail('state payload value must be an object');const type=String(raw.type||'');
   if(type==='unit')return UNIT;
   if(type==='bool'){if(typeof raw.value!=='boolean')fail('state bool is invalid');return Object.freeze({type,value:raw.value});}
   if(type==='string'){if(typeof raw.value!=='string')fail('state string is invalid');state.stringBytes+=encoder.encode(raw.value).byteLength;if(state.stringBytes>HARD_LIMITS.maxPublicStringBytes)fail(`state strings exceed ${HARD_LIMITS.maxPublicStringBytes} UTF-8 bytes`);return Object.freeze({type,value:stringBytes(raw.value,'state string')});}
   if(type==='u32'||type==='s32'){const value=parseIntegerConstant(raw.value,`state ${type}`),bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])fail(`state ${type} is out of range`);return Object.freeze({type,value});}
-  if(type==='f64'){const value=Number(raw.value);if(!Number.isFinite(value))fail('state f64 must be finite');return Object.freeze({type,value});}
+  if(type==='f64')return Object.freeze({type,value:finiteF64(raw.value,'state f64')});
   if(type==='struct'){const name=safeName(raw.name,'state struct name');if(!plain(raw.fields))fail(`state struct ${name} fields must be an object`);const entries=Object.entries(raw.fields);if(!entries.length||entries.length>HARD_LIMITS.maxCompositeItems)fail(`state struct ${name} field count is invalid`);const values=[],fields=Object.create(null);for(const [key,item] of entries){safeName(key,`state struct ${name} field`);const value=statePublicToValue(item,state);fields[key]=value;values.push(value);}return Object.freeze({type:'struct',name,fields:Object.freeze(fields),depth:checkedCompositeDepth(values,`state struct ${name}`)});}
   if(type==='enum'){const name=safeName(raw.name,'state enum name'),variant=safeName(raw.variant,'state enum variant');if(!Array.isArray(raw.values)||raw.values.length>HARD_LIMITS.maxCompositeItems)fail(`state enum ${name}.${variant} values are invalid`);const values=raw.values.map(item=>statePublicToValue(item,state));return Object.freeze({type:'enum',name,variant,values:Object.freeze(values),depth:checkedCompositeDepth(values,`state enum ${name}.${variant}`)});}
   if(type==='vec'){const capacity=integer(raw.capacity,'state vec capacity',1,HARD_LIMITS.maxVecCapacity);if(!Array.isArray(raw.items)||raw.items.length>capacity)fail('state vec items exceed capacity');return makeVecValue(capacity,raw.items.map(item=>statePublicToValue(item,state)),'state vec');}
@@ -175,7 +189,7 @@ function displayValue(value){
 function sameType(a,b,op){if(!a||!b||a.type!==b.type)fail(`${op} requires operands of the same type`);if(isCompositeValue(a)||isCompositeValue(b))fail(`${op} does not support composite values`);}
 function checkedInteger(type,value,op){const bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])fail(`${op} ${type} overflow`);return Object.freeze({type,value});}
 function numericBinary(op,a,b){
-  sameType(a,b,op);if(a.type==='f64'){let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);if(!Number.isFinite(value))fail(`${op} produced non-finite f64`);return Object.freeze({type:'f64',value});}
+  sameType(a,b,op);if(a.type==='f64'){let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);return Object.freeze({type:'f64',value:finiteF64(value,`${op} f64 result`)});}
   if(a.type!=='u32'&&a.type!=='s32')fail(`${op} requires numeric operands`);let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0n)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0n)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);return checkedInteger(a.type,value,op);
 }
 function compare(op,a,b){
@@ -203,7 +217,7 @@ export async function executeRiftExecutable(raw,host={},options={}){
       case'pop':pop(frame,'pop');break;
       case'dup':{const value=pop(frame,'dup');push(frame,value);push(frame,value);break;}
       case'add':case'sub':case'mul':case'div':case'mod':{const b=pop(frame,ins.op),a=pop(frame,ins.op);push(frame,numericBinary(ins.op,a,b));break;}
-      case'neg':{const a=pop(frame,'neg');if(a.type==='f64'){const value=-a.value;if(!Number.isFinite(value))fail('neg produced non-finite f64');push(frame,Object.freeze({type:'f64',value}));}else if(a.type==='s32')push(frame,checkedInteger('s32',-a.value,'neg'));else fail('neg requires s32 or f64');break;}
+      case'neg':{const a=pop(frame,'neg');if(a.type==='f64')push(frame,Object.freeze({type:'f64',value:finiteF64(-a.value,'neg f64 result')}));else if(a.type==='s32')push(frame,checkedInteger('s32',-a.value,'neg'));else fail('neg requires s32 or f64');break;}
       case'eq':case'ne':case'lt':case'le':case'gt':case'ge':{const b=pop(frame,ins.op),a=pop(frame,ins.op);push(frame,compare(ins.op,a,b));break;}
       case'not':{const a=pop(frame,'not');if(a.type!=='bool')fail('not requires bool');push(frame,Object.freeze({type:'bool',value:!a.value}));break;}
       case'concat':{const b=pop(frame,'concat'),a=pop(frame,'concat');if(a.type!=='string'||b.type!=='string')fail('concat requires strings');push(frame,Object.freeze({type:'string',value:stringBytes(a.value+b.value,'concat result')}));break;}
@@ -223,6 +237,7 @@ export async function executeRiftExecutable(raw,host={},options={}){
       case'state_save':{if(typeof host.invoke!=='function')fail('host import unavailable: state.save');const value=pop(frame,'state_save'),key=pop(frame,'state_save');if(key.type!=='string')fail('state_save key must be string');const ok=await host.invoke('state.save',[key.value,serializeStateValue(value,ins.schema,ins.descriptor)]);push(frame,Object.freeze({type:'bool',value:ok===true}));break;}
       case'state_load':{if(typeof host.invoke!=='function')fail('host import unavailable: state.load');const fallback=pop(frame,'state_load'),key=pop(frame,'state_load');if(key.type!=='string')fail('state_load key must be string');validateStateValue(fallback,ins.descriptor,'state.load fallback');const raw=await host.invoke('state.load',[key.value]);push(frame,raw===null||raw===undefined?fallback:deserializeStateValue(raw,ins.schema,ins.descriptor));break;}
       case'state_remove':{if(typeof host.invoke!=='function')fail('host import unavailable: state.remove');const key=pop(frame,'state_remove');if(key.type!=='string')fail('state_remove key must be string');const ok=await host.invoke('state.remove',[key.value]);push(frame,Object.freeze({type:'bool',value:ok===true}));break;}
+      case'value_sha256':{push(frame,await valueSha256(pop(frame,'value_sha256')));break;}
       case'host':{if(typeof host.invoke!=='function')fail(`host import unavailable: ${ins.method}`);const args=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)args[i]=valueToHost(pop(frame,'host'));push(frame,hostToValue(await host.invoke(ins.method,args)));break;}
       case'print':{const value=pop(frame,'print');prints++;if(host.write)await host.write(displayValue(value));break;}
       case'ret':{const returned=frame.stack.length?pop(frame,'ret'):UNIT;frames.pop();if(frames.length)push(frames[frames.length-1],returned);else result=returned;break;}

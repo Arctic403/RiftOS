@@ -69,6 +69,23 @@ const vectorOutput=[];
 await executeRiftExecutable(vectors,{write:value=>vectorOutput.push(value)});
 assert.deepEqual(vectorOutput,['2','true','7','42','vec capacity exceeded','true','vec index out of range']);
 
+const numericParameters={
+  format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],
+  constants:[{type:'f64',value:0.5},{type:'f64',value:-1.0},{type:'f64',value:2.0},{type:'f64',value:0.25}],
+  functions:{main:{params:0,locals:0,code:[
+    {op:'const',index:0},{op:'const',index:1},{op:'const',index:2},{op:'const',index:3},{op:'make_vec',capacity:4,count:4},
+    {op:'dup'},{op:'value_sha256'},{op:'print'},{op:'value_sha256'},{op:'print'},{op:'halt'}
+  ]}},limits:{maxSteps:50,maxStack:8,maxCallDepth:2}
+};
+const numericParameterOutput=[];await executeRiftExecutable(numericParameters,{write:value=>numericParameterOutput.push(value)});
+assert.equal(numericParameterOutput.length,2);assert.match(numericParameterOutput[0],/^[a-f0-9]{64}$/);assert.equal(numericParameterOutput[0],numericParameterOutput[1],'value_sha256 must be deterministic for the same bounded VM value');
+const badF64Null=structuredClone(numericParameters);badF64Null.constants[0]={type:'f64',value:null};assert.throws(()=>prepareRiftExecutable(badF64Null),/f64 must be a finite JSON number/);
+const badF64Infinity=structuredClone(numericParameters);badF64Infinity.constants[0]={type:'f64',value:Infinity};assert.throws(()=>prepareRiftExecutable(badF64Infinity),/f64 must be a finite JSON number/);
+const negativeZero=structuredClone(numericParameters);negativeZero.constants[0]={type:'f64',value:-0};const preparedNegativeZero=prepareRiftExecutable(negativeZero);assert.equal(Object.is(preparedNegativeZero.constants[0].value,-0),false,'Gate 6A must canonicalize f64 negative zero before hashing/checkpointing');assert.equal(preparedNegativeZero.constants[0].value,0);
+const f64StateSchema=JSON.stringify({k:'p',t:'f64'}),f64StateProgram={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['state.load'],constants:[{type:'string',value:'parameter'},{type:'f64',value:0.0}],functions:{main:{params:0,locals:0,code:[{op:'const',index:0},{op:'const',index:1},{op:'state_load',schema:f64StateSchema},{op:'print'},{op:'halt'}]}},limits:{maxSteps:20,maxStack:4,maxCallDepth:2}};
+const f64StateOutput=[];await executeRiftExecutable(f64StateProgram,{write:value=>f64StateOutput.push(value),invoke:async()=>JSON.stringify({format:'riftvm-state-v1',schema:f64StateSchema,value:{type:'f64',value:1.5}})});assert.deepEqual(f64StateOutput,['1.5']);
+await assert.rejects(()=>executeRiftExecutable(f64StateProgram,{invoke:async()=>JSON.stringify({format:'riftvm-state-v1',schema:f64StateSchema,value:{type:'f64',value:null}})}),/state f64 must be a finite JSON number/);
+
 const stateSchema=JSON.stringify({k:'s',n:'BrainState',f:[['value',{k:'p',t:'u32'}]]});
 const stateProgram={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['state.load','state.save','state.remove'],constants:[{type:'string',value:'brain'},{type:'u32',value:42},{type:'u32',value:0}],functions:{main:{params:0,locals:2,code:[{op:'const',index:0},{op:'const',index:1},{op:'make_struct',name:'BrainState',fields:['value']},{op:'state_save',schema:stateSchema},{op:'print'},{op:'const',index:0},{op:'const',index:2},{op:'make_struct',name:'BrainState',fields:['value']},{op:'state_load',schema:stateSchema},{op:'store',index:0},{op:'load',index:0},{op:'get_field',name:'BrainState',field:'value'},{op:'print'},{op:'const',index:0},{op:'state_remove'},{op:'print'},{op:'const',index:0},{op:'const',index:2},{op:'make_struct',name:'BrainState',fields:['value']},{op:'state_load',schema:stateSchema},{op:'store',index:1},{op:'load',index:1},{op:'get_field',name:'BrainState',field:'value'},{op:'print'},{op:'halt'}]}},limits:{maxSteps:100,maxStack:16,maxCallDepth:2}};
 const stateStore=new Map(),stateOutput=[];await executeRiftExecutable(stateProgram,{write:value=>stateOutput.push(value),invoke:async(method,args)=>{if(method==='state.save'){assert.equal(typeof args[1],'string');stateStore.set(args[0],args[1]);return true;}if(method==='state.load')return stateStore.get(args[0])??null;if(method==='state.remove')return stateStore.delete(args[0]);throw new Error(`unexpected ${method}`);}});assert.deepEqual(stateOutput,['true','42','true','0']);
@@ -123,5 +140,6 @@ assert.equal(JSON.parse(packageFixture.files['riftrt.json']).engine,'rift-vm');
 assert.equal(inspectRiftExecutable(packageFixture.files['main.rxe']).format,RIFT_EXEC_FORMAT);
 console.log('ok - RiftVM validates and executes bounded rift-exec-v1 programs without eval/native shell');
 console.log('ok - RiftVM nominal struct/enum and bounded Vec operations stay data-only and cannot cross the host boundary implicitly');
+console.log('ok - RiftVM Gate 6A accepts only finite JSON f64 values and computes deterministic bounded value_sha256 identities without host imports');
 console.log('ok - RiftVM Gate 5 state opcodes validate canonical type descriptors and reject undeclared/corrupt/schema/shape-mismatched state');
 console.log('ok - .rift package can carry a main.rxe executable for the rift-vm RiftRT engine');

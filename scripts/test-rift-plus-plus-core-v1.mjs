@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.6.0-bootstrap');
+assert.equal(compiled.compiler,'0.7.0-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -52,6 +52,33 @@ assert.deepEqual(collections.output,['2','42','56','0','none','vec capacity exce
 const collectionOps=Object.values(collections.compiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));
 for(const op of ['make_vec','vec_len','vec_get','vec_push','vec_set'])assert(collectionOps.includes(op),`collections must lower ${op}`);
 assert(collections.compiled.executable.imports.length===0,'collections must not add host imports');
+
+const numericParametersSource=readFileSync('examples/riftpp/core-v1-numeric-parameters.riftpp','utf8');
+const numericParameters=await execute(numericParametersSource);
+assert.equal(numericParameters.compiled.compiler,'0.7.0-bootstrap');
+assert.equal(numericParameters.output[0],'9.5');
+assert.match(numericParameters.output[1],/^[a-f0-9]{64}$/,'Gate 6A parameter identity must be a lowercase SHA-256 digest');
+assert.deepEqual(numericParameters.output.slice(2),['true','true']);
+assert.equal(numericParameters.compiled.executable.imports.length,0,'Gate 6A numeric/hash compute must not add host imports');
+const numericParameterOps=Object.values(numericParameters.compiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));
+assert(numericParameterOps.includes('value_sha256'),'Gate 6A parameter identity must lower to value_sha256');
+assert(numericParameters.compiled.executable.constants.some(item=>item.type==='f64'),'Gate 6A executable must carry finite f64 constants');
+const unaryF64=`riftpp 1\nmodule proof.unary_f64\nfn value() -> f64 { return 1.5 }\nfn main() { print(-value()) }\n`;
+assert.deepEqual((await execute(unaryF64)).output,['-1.5'],'unary minus must infer f64 from a non-literal f64 operand');
+const implicitIntToF64=`riftpp 1\nmodule bad.int_to_f64\nfn main() { let x: f64 = 1 print(x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(implicitIntToF64),/type mismatch: expected f64, got integer/);
+const implicitF64ToInt=`riftpp 1\nmodule bad.f64_to_int\nfn main() { let x: u32 = 1.0 print(x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(implicitF64ToInt),/type mismatch: expected u32, got f64/);
+const nonFiniteF64=`riftpp 1\nmodule bad.nonfinite_f64\nfn main() { let x: f64 = 1.0e309 print(x) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(nonFiniteF64),/f64 literal is non-finite or out of range/);
+const f64DivisionZero=`riftpp 1\nmodule bad.f64_div_zero\nfn main() { print(1.0 / 0.0) }\n`;
+await assert.rejects(()=>execute(f64DivisionZero),/division by zero/);
+const parameterCheckpointSource=`riftpp 1\nmodule proof.parameter_checkpoint\nstruct ParameterState { weights: Vec<f64, 4> bias: f64 }\nfn main() allow [storage] {\n let seed: ParameterState = ParameterState { weights: [0.5, -1.0, 2.0, 0.25], bias: 1.5 }\n let before: string = value_sha256(seed)\n print(checkpoint_save("gate6a-params", seed))\n let restored: ParameterState = checkpoint_load("gate6a-params", ParameterState { weights: [0.0, 0.0, 0.0, 0.0], bias: 0.0 })\n print(before == value_sha256(restored))\n print(restored.bias)\n print(checkpoint_remove("gate6a-params"))\n}\n`;
+const parameterCheckpointCompiled=compileRiftPlusPlusCoreV1(parameterCheckpointSource),parameterCheckpointOutput=[],parameterStateMap=new Map();
+await executeRiftExecutable(parameterCheckpointCompiled.executable,{write:value=>parameterCheckpointOutput.push(value),invoke:async(method,args)=>{if(method==='state.save'){parameterStateMap.set(args[0],args[1]);return true;}if(method==='state.load')return parameterStateMap.get(args[0])??null;if(method==='state.remove')return parameterStateMap.delete(args[0]);throw new Error(`unexpected host method ${method}`);}});
+assert.deepEqual(parameterCheckpointOutput,['true','true','1.5','true']);
+const parameterStateSave=Object.values(parameterCheckpointCompiled.executable.functions).flatMap(fn=>fn.code).find(ins=>ins.op==='state_save');
+assert(parameterStateSave?.schema.includes('"t":"f64"'),'Gate 6A f64 parameter checkpoint descriptor must preserve f64 types');
 
 const moduleMain=readFileSync('examples/riftpp/modules/demo/main.riftpp','utf8');
 const moduleSources={
@@ -226,6 +253,7 @@ console.log('ok - Rift++ Core V1 source parses, type-checks, lowers to rift-exec
 console.log('ok - Control Flow V1 executes var/assignment, scopes, if/else, while, break/continue and short-circuit and/or');
 console.log('ok - Structured Data V1 executes nominal struct/enum values, field reads, payload binding and exhaustive match');
 console.log('ok - Collections V1 executes bounded Vec values with Option/Result match semantics and no host imports');
+console.log('ok - Gate 6A executes finite f64 and bounded Vec<f64,N> parameter compute, deterministic SHA-256 identity and checkpoint parity without implicit numeric coercion');
 console.log('ok - Module Graph V1 links explicit/default aliases and transitive types/functions, caps graphs at 64 modules, bounds linker recursion, and rejects cycles/missing/ambient modules');
 console.log('ok - Gate 5 effects require exact transitive storage authority and lower bounded checkpoint state imports');
 console.log('ok - mutability, reachability, structured-data/collection correctness and match exhaustiveness fail closed');

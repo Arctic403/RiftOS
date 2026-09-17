@@ -1,0 +1,45 @@
+riftpp 1
+module demo.numeric_parameters
+
+struct ParameterState {
+  weights: Vec<f64, 4>
+  bias: f64
+}
+
+fn item_or_zero(values: Vec<f64, 4>, index: u32) -> f64 {
+  match values.get(index) {
+    Option.Some(value) => {
+      return value
+    }
+    Option.None => {
+      return 0.0
+    }
+  }
+}
+
+fn dot4(left: Vec<f64, 4>, right: Vec<f64, 4>) -> f64 {
+  return item_or_zero(left, 0) * item_or_zero(right, 0) + item_or_zero(left, 1) * item_or_zero(right, 1) + item_or_zero(left, 2) * item_or_zero(right, 2) + item_or_zero(left, 3) * item_or_zero(right, 3)
+}
+
+fn forward(parameters: ParameterState, input: Vec<f64, 4>) -> f64 {
+  return dot4(parameters.weights, input) + parameters.bias
+}
+
+fn main() {
+  let parameters: ParameterState = ParameterState {
+    weights: [0.5, -1.0, 2.0, 0.25],
+    bias: 1.5
+  }
+  let input: Vec<f64, 4> = [2.0, 3.0, 4.0, 8.0]
+  let score: f64 = forward(parameters, input)
+  let parameter_hash: string = value_sha256(parameters)
+  let changed: ParameterState = ParameterState {
+    weights: [0.5, -1.0, 2.0, 0.5],
+    bias: 1.5
+  }
+
+  print(score)
+  print(parameter_hash)
+  print(parameter_hash == value_sha256(parameters))
+  print(parameter_hash != value_sha256(changed))
+}
