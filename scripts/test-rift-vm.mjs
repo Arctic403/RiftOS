@@ -82,6 +82,15 @@ const hostComposite={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',import
 await assert.rejects(()=>executeRiftExecutable(hostComposite,{invoke:async()=>null}),/composite values cannot cross the host import boundary/);
 const hostVec={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['test.echo'],constants:[],functions:{main:{params:0,locals:0,code:[{op:'make_vec',capacity:2,count:0},{op:'host',method:'test.echo',argc:1},{op:'halt'}]}},limits:{maxSteps:20,maxStack:8,maxCallDepth:2}};
 await assert.rejects(()=>executeRiftExecutable(hostVec,{invoke:async()=>null}),/composite values cannot cross the host import boundary/);
+const deepCompositeCode=[{op:'const',index:0}];for(let i=0;i<33;i++)deepCompositeCode.push({op:'make_vec',capacity:1,count:1});deepCompositeCode.push({op:'halt'});
+const deepComposite={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:[{type:'u32',value:1}],functions:{main:{params:0,locals:0,code:deepCompositeCode}},limits:{maxSteps:100,maxStack:4,maxCallDepth:2}};
+await assert.rejects(()=>executeRiftExecutable(deepComposite),/composite depth limit 32/);
+const displayBombCode=Array.from({length:32},()=>({op:'const',index:0}));displayBombCode.push({op:'make_vec',capacity:32,count:32},{op:'print'},{op:'halt'});
+const displayBomb={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:[{type:'string',value:'x'.repeat(4096)}],functions:{main:{params:0,locals:0,code:displayBombCode}},limits:{maxSteps:100,maxStack:64,maxCallDepth:2}};
+await assert.rejects(()=>executeRiftExecutable(displayBomb,{write:()=>{}}),/display value exceeds 65536 UTF-8 bytes/);
+const publicBombCode=Array.from({length:64},()=>({op:'const',index:0}));publicBombCode.push({op:'make_vec',capacity:64,count:64});for(let i=0;i<63;i++)publicBombCode.push({op:'dup'});publicBombCode.push({op:'make_vec',capacity:64,count:64},{op:'halt'});
+const publicBomb={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:[{type:'unit'}],functions:{main:{params:0,locals:0,code:publicBombCode}},limits:{maxSteps:200,maxStack:128,maxCallDepth:2}};
+await assert.rejects(()=>executeRiftExecutable(publicBomb),/public result exceeds 4096 values/);
 const overflow={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',constants:[{type:'u32',value:'4294967295'},{type:'u32',value:1}],functions:{main:{params:0,locals:0,code:[{op:'const',index:0},{op:'const',index:1},{op:'add'},{op:'halt'}]}},limits:{maxSteps:20,maxStack:8,maxCallDepth:2}};
 await assert.rejects(()=>executeRiftExecutable(overflow),/u32 overflow/);
 const loop={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',constants:[],functions:{main:{params:0,locals:0,code:[{op:'jump',target:0}]}},limits:{maxSteps:25,maxStack:8,maxCallDepth:2}};

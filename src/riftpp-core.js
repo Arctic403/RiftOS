@@ -11,6 +11,8 @@ const MAX_LOCALS=512;
 const MAX_TYPE_ITEMS=64;
 const MAX_NAMED_TYPES=256;
 const MAX_VEC_CAPACITY=64;
+const MAX_TYPE_DEPTH=32;
+const MAX_PARSE_DEPTH=128;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
 const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','string']);
 const BUILTIN_GENERIC_TYPES=new Set(['Vec','Option','Result']);
@@ -89,7 +91,7 @@ class Lexer{
 }
 
 class Parser{
-  constructor(tokens){this.tokens=tokens;this.index=0;}
+  constructor(tokens){this.tokens=tokens;this.index=0;this.typeDepth=0;this.expressionDepth=0;this.unaryDepth=0;this.patternDepth=0;this.ifDepth=0;}
   current(){return this.tokens[this.index];}
   peek(offset=1){return this.tokens[Math.min(this.tokens.length-1,this.index+offset)];}
   previous(){return this.tokens[Math.max(0,this.index-1)];}
@@ -100,15 +102,18 @@ class Parser{
   node(kind,start,fields={}){const end=this.previous();return Object.freeze({kind,...fields,span:Object.freeze({start:start.start,end:end.end,line:start.line,column:start.column})});}
   modulePath(){const first=this.expectKind('ident','module identifier'),parts=[first.value];while(this.consume('.'))parts.push(this.expectKind('ident','module identifier').value);return parts.join('.');}
   typeRef(){
-    const token=this.current();if(token.kind!=='ident'&&token.kind!=='keyword')fail('E0102','expected type name',token,'type grammar');this.index++;const name=token.value,args=[];let capacityRaw=null;
-    if(this.consume('<')){
-      if(name==='Vec'){args.push(this.typeRef());this.expect(',');capacityRaw=this.expectKind('number','Vec capacity','E0118').value;this.expect('>');}
-      else if(name==='Option'){args.push(this.typeRef());this.expect('>');}
-      else if(name==='Result'){args.push(this.typeRef());this.expect(',');args.push(this.typeRef());this.expect('>');}
-      else fail('E0118',`generic type '${name}' is not implemented in the bootstrap slice`,token,'bootstrap generic types');
-      const end=this.previous();return Object.freeze({kind:'TypeRef',name,args:Object.freeze(args),capacityRaw,span:Object.freeze({start:token.start,end:end.end,line:token.line,column:token.column})});
-    }
-    return Object.freeze({kind:'TypeRef',name,args:Object.freeze(args),capacityRaw,span:spanOf(token)});
+    const token=this.current();if(++this.typeDepth>MAX_TYPE_DEPTH){this.typeDepth--;fail('E0119',`type nesting exceeds ${MAX_TYPE_DEPTH}`,token,'host bounds');}
+    try{
+      if(token.kind!=='ident'&&token.kind!=='keyword')fail('E0102','expected type name',token,'type grammar');this.index++;const name=token.value,args=[];let capacityRaw=null;
+      if(this.consume('<')){
+        if(name==='Vec'){args.push(this.typeRef());this.expect(',');capacityRaw=this.expectKind('number','Vec capacity','E0118').value;this.expect('>');}
+        else if(name==='Option'){args.push(this.typeRef());this.expect('>');}
+        else if(name==='Result'){args.push(this.typeRef());this.expect(',');args.push(this.typeRef());this.expect('>');}
+        else fail('E0118',`generic type '${name}' is not implemented in the bootstrap slice`,token,'bootstrap generic types');
+        const end=this.previous();return Object.freeze({kind:'TypeRef',name,args:Object.freeze(args),capacityRaw,span:Object.freeze({start:token.start,end:end.end,line:token.line,column:token.column})});
+      }
+      return Object.freeze({kind:'TypeRef',name,args:Object.freeze(args),capacityRaw,span:spanOf(token)});
+    }finally{this.typeDepth--;}
   }
   parseFile(){
     const start=this.expect('riftpp'),version=this.expectKind('number','language version');if(version.value.replaceAll('_','')!=='1')fail('E0103',`unsupported Rift++ version ${version.value}; expected 1`,version,'file header');
@@ -157,11 +162,12 @@ class Parser{
   }
   bindingStmt(mutable){const start=this.expect(mutable?'var':'let'),name=this.expectKind('ident','binding name');let type=null;if(this.consume(':'))type=this.typeRef();this.expect('=');const initializer=this.expression();return this.node(mutable?'Var':'Let',start,{name:name.value,type,initializer});}
   assignmentStmt(){const start=this.expectKind('ident','assignment target'),op=this.current();if(!ASSIGNMENT_OPS.has(op.value))fail('E0112',`expected assignment operator, found '${op.value}'`,op,'assignment grammar');this.index++;const expression=this.expression();return this.node('Assign',start,{name:start.value,op:op.value,expression});}
-  ifStmt(){const start=this.expect('if'),condition=this.expression(),thenBranch=this.block();let elseBranch=null;if(this.consume('else'))elseBranch=this.at('if')?this.ifStmt():this.block();return this.node('If',start,{condition,thenBranch,elseBranch});}
+  ifStmt(){const token=this.current();if(++this.ifDepth>MAX_PARSE_DEPTH){this.ifDepth--;fail('E0120',`if/else nesting exceeds ${MAX_PARSE_DEPTH}`,token,'host bounds');}try{const start=this.expect('if'),condition=this.expression(),thenBranch=this.block();let elseBranch=null;if(this.consume('else'))elseBranch=this.at('if')?this.ifStmt():this.block();return this.node('If',start,{condition,thenBranch,elseBranch});}finally{this.ifDepth--;}}
   matchStmt(){const start=this.expect('match'),expression=this.expression();this.expect('{');const arms=[];while(!this.at('}')){if(this.current().kind==='eof')fail('E0116','unterminated match',this.current(),'match grammar');arms.push(this.matchArm());}this.expect('}');return this.node('Match',start,{expression,arms:Object.freeze(arms)});}
   matchArm(){const start=this.current(),pattern=this.pattern();let guard=null;if(this.consume('if'))guard=this.expression();this.expect('=>');const body=this.at('{')?this.block():this.expression();return this.node('MatchArm',start,{pattern,guard,body,bodyIsBlock:body.kind==='Block'});}
   pattern(){
-    const token=this.current();
+    const token=this.current();if(++this.patternDepth>MAX_PARSE_DEPTH){this.patternDepth--;fail('E0121',`pattern nesting exceeds ${MAX_PARSE_DEPTH}`,token,'host bounds');}
+    try{
     if(token.kind==='ident'&&token.value==='_'){this.index++;return Object.freeze({kind:'WildcardPattern',span:spanOf(token)});}
     if(token.value==='true'||token.value==='false'){this.index++;return Object.freeze({kind:'BoolPattern',value:token.value==='true',span:spanOf(token)});}
     if(token.kind==='number'){this.index++;return Object.freeze({kind:'IntPattern',raw:token.value,span:spanOf(token)});}
@@ -173,17 +179,18 @@ class Parser{
       return Object.freeze({kind:'BindingPattern',name:token.value,span:spanOf(token)});
     }
     fail('E0117',`unsupported match pattern '${token.value}'`,token,'match grammar');
+    }finally{this.patternDepth--;}
   }
   whileStmt(){const start=this.expect('while'),condition=this.expression(),body=this.block();return this.node('While',start,{condition,body});}
   returnStmt(){const start=this.expect('return'),expression=this.at('}')?null:this.expression();return this.node('Return',start,{expression});}
-  expression(){return this.logicalOr();}
+  expression(){const token=this.current();if(++this.expressionDepth>MAX_PARSE_DEPTH){this.expressionDepth--;fail('E0122',`expression nesting exceeds ${MAX_PARSE_DEPTH}`,token,'host bounds');}try{return this.logicalOr();}finally{this.expressionDepth--;}}
   logicalOr(){let expr=this.logicalAnd();while(this.at('or')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.logicalAnd(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   logicalAnd(){let expr=this.equality();while(this.at('and')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.equality(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   equality(){let expr=this.comparison();while(this.at('==')||this.at('!=')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.comparison(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   comparison(){let expr=this.additive();while(['<','<=','>','>='].includes(this.current().value)){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.additive(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   additive(){let expr=this.multiplicative();while(this.at('+')||this.at('-')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.multiplicative(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   multiplicative(){let expr=this.unary();while(this.at('*')||this.at('/')||this.at('%')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.unary(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
-  unary(){if(this.at('-')||this.at('+')||this.at('not')){const op=this.current();this.index++;const expression=this.unary();return Object.freeze({kind:'Unary',op:op.value,expression,span:Object.freeze({start:op.start,end:expression.span.end,line:op.line,column:op.column})});}return this.postfix();}
+  unary(){const token=this.current();if(++this.unaryDepth>MAX_PARSE_DEPTH){this.unaryDepth--;fail('E0123',`unary nesting exceeds ${MAX_PARSE_DEPTH}`,token,'host bounds');}try{if(this.at('-')||this.at('+')||this.at('not')){const op=this.current();this.index++;const expression=this.unary();return Object.freeze({kind:'Unary',op:op.value,expression,span:Object.freeze({start:op.start,end:expression.span.end,line:op.line,column:op.column})});}return this.postfix();}finally{this.unaryDepth--;}}
   postfix(){
     let expr=this.primary();
     for(;;){

@@ -48,13 +48,15 @@ V1 scalar constants are `unit`, `bool`, `u32`, `s32`, `f64`, and `string`. Runti
 
 V1 supports bounded constants/locals/stack operations, checked arithmetic/comparison, string concatenation, nominal structured operations (`make_struct`, `get_field`, `make_enum`, `enum_is`, `enum_get`), bounded collection operations (`make_vec`, `vec_len`, `vec_get`, `vec_push`, `vec_set`), jumps, calls/returns, declared host imports, output, and halt. `vec_get` returns `Option.Some/None`; `vec_push` and `vec_set` return `Result.Ok/Err` replacement values instead of mutating the original vector. Unsupported opcodes fail validation before execution.
 
-The VM has hard ceilings for function count, constants, instructions, locals, parameters, stack depth, call depth, string size and executed steps. A program can request smaller limits but cannot raise the runtime hard ceilings.
+The VM has hard ceilings for function count, constants, instructions, locals, parameters, stack depth, call depth, string size and executed steps. Composite values are additionally capped at depth 32; rendered `print` values are capped at 64 KiB; public result conversion is capped at 4096 visited values and 64 KiB of aggregate string payload. A program can request smaller execution limits but cannot raise the runtime hard ceilings.
 
 ## Host boundary
 
 `src/riftrt.js` owns the host adapter. RiftVM itself receives only an `invoke(method,args)` callback and cannot discover RiftOS globals. The adapter exposes a finite method map. Capability-bearing imports are checked against both `riftrt.json` declarations and installed manifest permissions, then routed through the existing RiftRT `hostCall` permission path.
 
 There is no `eval`, `new Function`, generic JS import, raw native dispatcher, process creation or shell opcode.
+
+The VM validates executable structure and runtime operation safety, not the full Rift++ source type system. Compiler-produced `.rxe` carries the compiler's static generic/element type guarantees; hand-authored `.rxe` may still be dynamically ill-typed and trap at runtime. This does not widen capability or host authority.
 
 ## Bootstrap boundary
 
@@ -74,7 +76,7 @@ There is no `eval`, `new Function`, generic JS import, raw native dispatcher, pr
 - Guest instructions are data, never evaluated as JavaScript.
 - Unsupported/malformed executables fail before execution.
 - Program authority cannot exceed package + `riftrt.json` declarations and persisted user grants.
-- Runtime limits are fail-closed, including vector capacity and index semantics.
+- Runtime limits are fail-closed, including vector capacity/index semantics, composite depth, rendered output size and public-result expansion.
 - RiftVM adds no MCP tool family and no shell/process authority.
 
 ## Validation

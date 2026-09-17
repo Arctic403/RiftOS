@@ -39,6 +39,8 @@ The current `0.4.0-bootstrap` slice requires `riftpp 1` and a `module` declarati
 
 Struct construction must supply each declared field exactly once. Enum payload arity/types are checked. Struct/enum/vector values can pass through locals, function parameters and returns. `Vec` is deliberately bounded and immutable at runtime: successful `push`/`set` operations return a replacement vector inside `Result.Ok`, while capacity/index failures return `Result.Err(string)` and out-of-range reads return `Option.None`. Composite equality/ordering is intentionally undefined in this bootstrap and fails closed.
 
+Compiler recursion is also bounded: generic type nesting is capped at 32, while recursive expression, unary, pattern, and `else if` parsing is capped at 128. Inputs beyond those ceilings fail with structured diagnostics instead of relying on the JavaScript call-stack limit.
+
 Bootstrap pattern limitations remain deliberate: enum payload patterns currently accept bindings or `_`; nested/literal payload patterns are not implemented. Field mutation/place assignment is not implemented yet; rebuild and assign the whole struct instead.
 
 ## Still absent
@@ -73,7 +75,9 @@ vec_push
 vec_set
 ```
 
-These remain data-only operations. `vec_get` returns the existing runtime `Option.Some/None` representation; `vec_push` and `vec_set` return `Result.Ok/Err`. Vector capacity is validated before execution and cannot exceed 64. Composite values, including vectors, cannot implicitly cross the RiftVM host-import boundary. There is no generic object/property opcode, reflection API or authority widening.
+These remain data-only operations. `vec_get` returns the existing runtime `Option.Some/None` representation; `vec_push` and `vec_set` return `Result.Ok/Err`. Vector capacity is validated before execution and cannot exceed 64. Runtime composite depth is capped at 32, composite rendering is capped at 64 KiB, and public result expansion is bounded to 4096 values plus 64 KiB of aggregate strings. Composite values, including vectors, cannot implicitly cross the RiftVM host-import boundary. There is no generic object/property opcode, reflection API or authority widening.
+
+`prepareRiftExecutable` independently validates the executable structure, opcode operands, limits, imports, and runtime-safe operation contracts. Rift++ source compilation additionally supplies static generic/element type checking. A hand-authored `.rxe` is not granted source-level generic type soundness merely by passing structural validation; dynamically ill-typed bytecode can fail at runtime, but it cannot use that mismatch to gain host authority.
 
 ## Source ownership
 
@@ -96,4 +100,4 @@ These remain data-only operations. `vec_get` returns the existing runtime `Optio
 
 ## Validation
 
-`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1, Structured Data V1 and Collections V1 fixtures, then attacks duplicate/missing fields, enum payload/type errors, non-exhaustive enum/bool/Option matches, invalid vector capacities/literals/items and composite equality. `test-rift-vm.mjs` separately executes raw struct/enum/vector bytecode, vector capacity/index failure semantics, malformed instructions and the no-composite-host-boundary rule.
+`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1, Structured Data V1 and Collections V1 fixtures, then attacks duplicate/missing fields, enum payload/type errors, non-exhaustive enum/bool/Option matches, invalid vector capacities/literals/items, composite equality, and parser/type recursion ceilings. `test-rift-vm.mjs` separately executes raw struct/enum/vector bytecode, vector capacity/index failure semantics, composite-depth/render/public-result expansion limits, malformed instructions and the no-composite-host-boundary rule.

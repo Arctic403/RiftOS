@@ -113,6 +113,16 @@ const optionNonExhaustive=`riftpp 1\nmodule bad.option_match\nfn main() { let x:
 assert.throws(()=>compileRiftPlusPlusCoreV1(optionNonExhaustive),/non-exhaustive match on Option<u32>; missing None/);
 const genericConstructor=`riftpp 1\nmodule proof.generic_constructor\nfn main() { let x: Option<u32> = Option.Some(7) match x { Option.Some(v) => { print(v) } Option.None => { print(0) } } }\n`;
 assert.deepEqual((await execute(genericConstructor)).output,['7']);
+const deepType='Option<'.repeat(33)+'u32'+'>'.repeat(33);
+assert.throws(()=>compileRiftPlusPlusCoreV1(`riftpp 1\nmodule bad.deep_type\nfn main() { let x: ${deepType} = Option.None }\n`),/type nesting exceeds 32/);
+const deepExpression='('.repeat(129)+'1'+')'.repeat(129);
+assert.throws(()=>compileRiftPlusPlusCoreV1(`riftpp 1\nmodule bad.deep_expression\nfn main() { print(${deepExpression}) }\n`),/expression nesting exceeds 128/);
+const deepUnary='not '.repeat(129)+'true';
+assert.throws(()=>compileRiftPlusPlusCoreV1(`riftpp 1\nmodule bad.deep_unary\nfn main() { print(${deepUnary}) }\n`),/unary nesting exceeds 128/);
+const nestedPattern='E.A('.repeat(129)+'E.Z'+')'.repeat(129);
+assert.throws(()=>compileRiftPlusPlusCoreV1(`riftpp 1\nmodule bad.deep_pattern\nenum E { A(E) Z }\nfn check(x: E) { match x { ${nestedPattern} => { } _ => { } } }\nfn main() { }\n`),/pattern nesting exceeds 128/);
+const deepIfSource=`riftpp 1\nmodule bad.deep_if\nfn main() { ${'if true { print(1) } else '.repeat(129)}{ print(0) } }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(deepIfSource),/if\/else nesting exceeds 128/);
 const unsupported=`riftpp 1\nmodule bad.loop_case\nfn main() {\n loop { }\n}\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(unsupported),/not implemented in the bootstrap slice/);
 
