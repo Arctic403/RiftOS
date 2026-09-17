@@ -154,6 +154,7 @@ class RiftNativeDispatcher(
         "fs.mkdir" -> mkdir(args.getString("mountId"), args.optString("path"))
         "fs.remove" -> remove(args.getString("mountId"), args.optString("path"))
         "build.execute" -> throw UnsupportedOperationException("Local RiftBuild executor is not installed in this APK")
+        "software.verify" -> throw UnsupportedOperationException("Software verifier backend is not installed in this APK")
         "fs.zip" -> {
             val progress = TransferProgress(args.optString("transferId").ifBlank { UUID.randomUUID().toString() }, "zip")
             val manifest = buildTransferManifest(args.getString("fromMountId"), args.optString("from"))

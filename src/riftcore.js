@@ -115,6 +115,7 @@ class RiftNativeBridge extends EventTarget{
       browser:true,
       workspace:true,
       localBuildExecutor:false,
+      softwareVerifier:false,
       jsonPatches:true,
       patchRollback:true,
       vortexDevBridge:true,
