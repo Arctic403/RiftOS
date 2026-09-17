@@ -16,7 +16,7 @@ The frontend runs inside the existing RiftOS JavaScript runtime. The long-term t
 
 ## Implemented bootstrap slice
 
-The current `0.5.0-bootstrap` source slice requires `riftpp 1` and a `module` declaration. Gate 4 module linking is implemented in source/tests and remains pending CI + installed-device proof. It supports:
+The current `0.5.0-bootstrap` source slice requires `riftpp 1` and a `module` declaration. Gate 4 module linking is installed/device-proven against RiftOS source commit `cc347e042bcac2f7953a7a5f1298c83a00fbea69`. It supports:
 
 - functions with explicitly typed parameters/returns;
 - explicit `use module.path [as alias]` declarations with deterministic compile-time module linking; omitted aliases use the module path's final segment, and imported symbols are referenced through that explicit/default alias rather than ambient full-path lookup;
@@ -49,7 +49,7 @@ Bootstrap pattern limitations remain deliberate: enum payload patterns currently
 
 ## Still absent
 
-Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler.
+Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler. The next project gate is Gate 5: explicit capability/effect semantics plus bounded persistence/checkpoint authority.
 
 ## Public surface
 

@@ -60,7 +60,7 @@ The VM validates executable structure and runtime operation safety, not the full
 
 ## Bootstrap boundary
 
-`rift-exec-v1` is a bootstrap executable ABI, not a claim that Rift++ Core V1 is already complete. The next Rift++ compiler can lower its first stable Core slice into this executable format. If later Core semantics need a stronger typed/optimized ABI, that evolution happens as a named compatible executable version rather than silently changing `rift-exec-v1`.
+`rift-exec-v1` is a bootstrap executable ABI, not a claim that Rift++ Core V1 is already complete. The live `0.5.0-bootstrap` Core compiler already lowers its proven Gates 0–4 subset into this executable format, including compile-time module graphs linked into one closed `.rxe`. If later Core semantics need a stronger typed/optimized ABI, that evolution happens as a named compatible executable version rather than silently changing `rift-exec-v1`.
 
 ## Source ownership
 

@@ -38,7 +38,7 @@ This inventory documents deliberate `Rift*` globals/bridge names. A zero-consume
 | `RiftWorkspaceNative` | `riftworkspace-live-host.js` | Trusted-shell callback surface receiving native workspace watcher events. |
 | `RiftRuntime` | `riftruntime.js` | Read-only runtime/capability report. |
 | `RiftRT` | `riftrt.js` | RiftRT launch/session/manager API. |
-| `RiftPlusPlusCore` | `riftpp-core.js` | Pure bounded Rift++ Core V1 bootstrap compiler surface (`lex`/`parse`/`compile`/`inspect`) targeting `rift-exec-v1`; carries no filesystem, network, shell, Android or MCP authority. |
+| `RiftPlusPlusCore` | `riftpp-core.js` | Pure bounded Rift++ Core V1 bootstrap compiler surface (`lex`/`parse`/`compile`/`compileProgram`/`inspect`/`inspectProgram`) targeting `rift-exec-v1`; Gate 4 module graphs are supplied explicitly in memory and the compiler carries no filesystem, network, shell, Android or MCP authority. |
 | `RiftMcp` | `riftmcp-system.js` | Launcher surface for the native Rift MCP Activity (`riftos://mcp`). |
 | `RiftBrowserNative` | `riftos.js` | Native browser-state callback consumed by `MainActivity`/`RiftBrowserWindow`. |
 | `RiftTransferUI` | `riftos.js` | Native transfer progress callback consumed by `MainActivity.sendNativeProgress`. |
