@@ -275,6 +275,7 @@ if (!appsSource.includes('globalThis.RiftRT.launch(id)')) failures.push('install
 const riftrt = read('src/riftrt.js');
 const riftvm = read('src/riftvm.js');
 const riftppCore = read('src/riftpp-core.js');
+const riftcore = read('src/riftcore.js');
 if (!riftrt.includes("engine:'native-webview'") || !riftrt.includes("requested==='iframe'?'native-webview':requested")) failures.push('RiftRT does not default/translate installed programs to native-webview');
 if (!riftrt.includes("core.native.call('app.runtime.open'") || !riftrt.includes("core.native.call('app.runtime.close'") || !riftrt.includes("core.native.call('app.runtime.state'")) failures.push('RiftRT native app runtime routes are incomplete');
 if (riftrt.includes('function launchIframe(') || riftrt.includes('function iframeHtml(') || riftrt.includes('messageInstances')) failures.push('retired RiftRT iframe execution machinery remains');
