@@ -49,7 +49,7 @@ Bootstrap pattern limitations remain deliberate: enum payload patterns currently
 
 ## Still absent
 
-Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler. The next project gate is Gate 5: explicit capability/effect semantics plus bounded persistence/checkpoint authority.
+Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability/effect lowering, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler. The next project gate is Gate 5: explicit capability/effect semantics plus bounded persistence/checkpoint authority. Gate 6 follows with numeric/parameter primitives and an explicit update mechanism; RiftLLM+ promotion requires changed parameter state plus repeated unseen-challenge improvement, not memory retrieval alone.
 
 ## Public surface
 
