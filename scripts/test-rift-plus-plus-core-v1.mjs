@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.7.1-bootstrap');
+assert.equal(compiled.compiler,'0.7.2-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -62,9 +62,17 @@ const directFindMatch=`riftpp 1\nmodule proof.direct_find\nfn main() {\n match s
 assert.deepEqual((await execute(directFindMatch)).output,['0']);
 assert.throws(()=>compileRiftPlusPlusCoreV1(repairNativeSource.replace('fn main() allow [repair_eval] {','fn main() {')),/missing required capability repair_eval/);
 
+const softwareEvalSource=`riftpp 1\nmodule proof.software_eval\nfn main() allow [software_eval] {\n print(software_case_language())\n print(software_specification())\n print(software_project_context())\n print(software_case_id())\n let source: string = software_input_source()\n print(software_compile_test(source))\n}\n`;
+const softwareEvalCompiled=compileRiftPlusPlusCoreV1(softwareEvalSource),softwareEvalOutput=[];
+assert.deepEqual(softwareEvalCompiled.executable.imports,['software.caseId','software.compileTest','software.context','software.language','software.source','software.spec']);
+await executeRiftExecutable(softwareEvalCompiled.executable,{write:value=>softwareEvalOutput.push(String(value)),invoke:async(method,args)=>{if(method==='software.language')return'riftpp';if(method==='software.spec')return'produce five';if(method==='software.context')return'helper module is read-only';if(method==='software.caseId')return'se-case-1';if(method==='software.source')return'riftpp 1\\nmodule demo\\nfn main(){print(5)}\\n';if(method==='software.compileTest'){assert.equal(args.length,1);assert.match(args[0],/print\\(5\\)/);return'correct';}throw new Error('unexpected software host method '+method);}});
+assert.deepEqual(softwareEvalOutput,['riftpp','produce five','helper module is read-only','se-case-1','correct']);
+assert.throws(()=>compileRiftPlusPlusCoreV1(softwareEvalSource.replace('fn main() allow [software_eval] {','fn main() {')),/missing required capability software_eval/);
+assert(!softwareEvalCompiled.executable.imports.includes('software.expected'),'Gate 6D.3 expected result must remain host-private');
+
 const numericParametersSource=readFileSync('examples/riftpp/core-v1-numeric-parameters.riftpp','utf8');
 const numericParameters=await execute(numericParametersSource);
-assert.equal(numericParameters.compiled.compiler,'0.7.1-bootstrap');
+assert.equal(numericParameters.compiled.compiler,'0.7.2-bootstrap');
 assert.equal(numericParameters.output[0],'9.5');
 assert.match(numericParameters.output[1],/^[a-f0-9]{64}$/,'Gate 6A parameter identity must be a lowercase SHA-256 digest');
 assert.deepEqual(numericParameters.output.slice(2),['true','true']);
@@ -88,6 +96,12 @@ await executeRiftExecutable(parameterCheckpointCompiled.executable,{write:value=
 assert.deepEqual(parameterCheckpointOutput,['true','true','1.5','true']);
 const parameterStateSave=Object.values(parameterCheckpointCompiled.executable.functions).flatMap(fn=>fn.code).find(ins=>ins.op==='state_save');
 assert(parameterStateSave?.schema.includes('"t":"f64"'),'Gate 6A f64 parameter checkpoint descriptor must preserve f64 types');
+const wideParameterValues=Array.from({length:144},()=>"0.0").join(',');
+const wideParameterSource=`riftpp 1\\nmodule proof.wide_parameters\\nfn main() { let weights: Vec<f64, 144> = [${wideParameterValues}] print(weights.len()) print(value_sha256(weights)) }\\n`;
+const wideParameters=await execute(wideParameterSource);
+assert.equal(wideParameters.output[0],'144','Gate 6D.3 requires first-class Vec<f64,144> execution');
+assert.match(wideParameters.output[1],/^[a-f0-9]{64}$/,'wide parameter identity must remain deterministic');
+assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\\nmodule bad.wide_parameters\\nfn main() { let weights: Vec<f64, 257> = [] print(weights.len()) }\\n'),/Vec capacity must be 1\\.\\.256/);
 
 const moduleMain=readFileSync('examples/riftpp/modules/demo/main.riftpp','utf8');
 const moduleSources={

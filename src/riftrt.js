@@ -137,6 +137,39 @@ const MAX_REPAIR_SOURCE_BYTES=16*1024;
 const MAX_REPAIR_EXPECTED_BYTES=4*1024;
 const MAX_REPAIR_CASE_ID_BYTES=128;
 function repairAsset(app,name,maxBytes){const value=String(app?.files?.[name]??'');if(!value)throw new Error(`Repair evaluation asset is missing: ${name}`);if(utf8Encoder.encode(value).byteLength>maxBytes)throw new Error(`Repair evaluation asset ${name} exceeds ${maxBytes} bytes`);return value;}
+
+const MAX_SOFTWARE_SOURCE_BYTES=32*1024;
+const MAX_SOFTWARE_CONTEXT_BYTES=64*1024;
+const MAX_SOFTWARE_SPEC_BYTES=8*1024;
+const MAX_SOFTWARE_EXPECTED_BYTES=4*1024;
+const MAX_SOFTWARE_CASE_ID_BYTES=128;
+const MAX_SOFTWARE_LANGUAGE_BYTES=24;
+const SOFTWARE_LANGUAGES=new Set(['riftpp','cpp','kotlin','javascript']);
+const SOFTWARE_STATUSES=new Set(['compile-fail','wrong','correct']);
+function softwareAsset(app,name,maxBytes,allowEmpty=false){const value=String(app?.files?.[name]??'');if(!allowEmpty&&!value)throw new Error(`Software evaluation asset is missing: ${name}`);if(utf8Encoder.encode(value).byteLength>maxBytes)throw new Error(`Software evaluation asset ${name} exceeds ${maxBytes} bytes`);return value;}
+async function softwareCompileTest(app,sourceValue){
+  if(!(await capability(app,'software.eval')))throw new Error('software.eval denied');
+  const language=softwareAsset(app,'software-language.txt',MAX_SOFTWARE_LANGUAGE_BYTES).toLowerCase();
+  if(!SOFTWARE_LANGUAGES.has(language))throw new Error(`Unsupported software evaluation language: ${language}`);
+  const source=String(sourceValue??'');
+  if(!source||utf8Encoder.encode(source).byteLength>MAX_SOFTWARE_SOURCE_BYTES)throw new Error('software source is empty or exceeds the bounded source limit');
+  const expected=softwareAsset(app,'software-expected.txt',MAX_SOFTWARE_EXPECTED_BYTES,true);
+  const context=softwareAsset(app,'software-context.txt',MAX_SOFTWARE_CONTEXT_BYTES,true);
+  const caseId=softwareAsset(app,'software-case-id.txt',MAX_SOFTWARE_CASE_ID_BYTES);
+  if(language==='riftpp'){
+    let compiled;try{compiled=compileRiftPlusPlusCoreV1(source);}catch(_){return'compile-fail';}
+    if(compiled.executable.imports.length)throw new Error('software.compileTest rejects Rift++ challenge source with host imports');
+    const output=[];try{await executeRiftExecutable(compiled.executable,{write:value=>{if(output.length>=64)throw new Error('software output count exceeded');output.push(String(value));}},{maxSteps:20000,maxStack:256,maxCallDepth:16,yieldEvery:512});}catch(_){return'wrong';}
+    return output.join('\n')===expected?'correct':'wrong';
+  }
+  const nativeCaps=core.native.capabilities?.()||{};
+  if(nativeCaps.softwareVerifier!==true)throw new Error(`software verifier backend unavailable for ${language}`);
+  const result=await core.native.call('software.verify',{language,source,context,expected,caseId});
+  const status=String(result?.status??result??'');
+  if(!SOFTWARE_STATUSES.has(status))throw new Error('software verifier returned an invalid status');
+  return status;
+}
+
 async function repairCompileTest(app,sourceValue,expectedValue){if(!(await capability(app,'repair.eval')))throw new Error('repair.eval denied');const source=String(sourceValue??''),expected=String(expectedValue??'');if(!source||utf8Encoder.encode(source).byteLength>MAX_REPAIR_SOURCE_BYTES)throw new Error('repair source is empty or exceeds the bounded source limit');if(utf8Encoder.encode(expected).byteLength>MAX_REPAIR_EXPECTED_BYTES)throw new Error('repair expected output exceeds the bounded output limit');let compiled;try{compiled=compileRiftPlusPlusCoreV1(source);}catch(_){return'compile-fail';}if(compiled.executable.imports.length)throw new Error('repair.compileTest rejects challenge source with host imports');const output=[];try{await executeRiftExecutable(compiled.executable,{write:value=>{if(output.length>=64)throw new Error('repair output count exceeded');output.push(String(value));}},{maxSteps:20000,maxStack:256,maxCallDepth:16,yieldEvery:512});}catch(_){return'wrong';}return output.join('\n')===expected?'correct':'wrong';}
 async function hostCall(app,method,args={}){
   if(method==='storage.get')return storageGet(app,args.key);
@@ -152,6 +185,12 @@ async function hostCall(app,method,args={}){
   if(method==='repair.expected'){if(!(await capability(app,'repair.eval')))throw new Error('repair.eval denied');return repairAsset(app,'repair-expected.txt',MAX_REPAIR_EXPECTED_BYTES);}
   if(method==='repair.caseId'){if(!(await capability(app,'repair.eval')))throw new Error('repair.eval denied');return repairAsset(app,'repair-case-id.txt',MAX_REPAIR_CASE_ID_BYTES);}
   if(method==='repair.compileTest')return repairCompileTest(app,args.source,args.expected);
+  if(method==='software.source'){if(!(await capability(app,'software.eval')))throw new Error('software.eval denied');return softwareAsset(app,'software-case.txt',MAX_SOFTWARE_SOURCE_BYTES);}
+  if(method==='software.context'){if(!(await capability(app,'software.eval')))throw new Error('software.eval denied');return softwareAsset(app,'software-context.txt',MAX_SOFTWARE_CONTEXT_BYTES,true);}
+  if(method==='software.spec'){if(!(await capability(app,'software.eval')))throw new Error('software.eval denied');return softwareAsset(app,'software-spec.txt',MAX_SOFTWARE_SPEC_BYTES);}
+  if(method==='software.caseId'){if(!(await capability(app,'software.eval')))throw new Error('software.eval denied');return softwareAsset(app,'software-case-id.txt',MAX_SOFTWARE_CASE_ID_BYTES);}
+  if(method==='software.language'){if(!(await capability(app,'software.eval')))throw new Error('software.eval denied');return softwareAsset(app,'software-language.txt',MAX_SOFTWARE_LANGUAGE_BYTES).toLowerCase();}
+  if(method==='software.compileTest')return softwareCompileTest(app,args.source);
   if(method==='build.doctor'){if(!(await capability(app,'build.local')))throw new Error('build.local denied');return build.doctor(args.project||null,'/workspace');}
   if(method==='build.plan'){if(!(await capability(app,'build.local')))throw new Error('build.local denied');return build.plan(String(args.project||''),String(args.target||'universal'),'/workspace');}
   if(method==='build.submit'){if(!(await capability(app,'build.local')))throw new Error('build.local denied');return build.submit(args.job,'/workspace');}
@@ -165,6 +204,7 @@ const VM_IMPORT_CAPABILITIES=Object.freeze({
   'fs.readText':'fs.read','fs.list':'fs.read','fs.writeText':'fs.write',
   'clipboard.read':'clipboard.read','clipboard.write':'clipboard.write','share.text':'share',
   'repair.source':'repair.eval','repair.expected':'repair.eval','repair.caseId':'repair.eval','repair.compileTest':'repair.eval',
+  'software.source':'software.eval','software.context':'software.eval','software.spec':'software.eval','software.caseId':'software.eval','software.language':'software.eval','software.compileTest':'software.eval',
   'build.doctor':'build.local','build.plan':'build.local','build.runs':'build.local','build.artifacts':'build.local'
 });
 const VM_UNPRIVILEGED_IMPORTS=new Set(['app.setTitle']);
@@ -195,6 +235,12 @@ async function invokeVmHost(app,record,method,args){
   if(method==='repair.expected')return hostCall(app,method,{});
   if(method==='repair.caseId')return hostCall(app,method,{});
   if(method==='repair.compileTest')return hostCall(app,method,{source:args[0],expected:args[1]});
+  if(method==='software.source')return hostCall(app,method,{});
+  if(method==='software.context')return hostCall(app,method,{});
+  if(method==='software.spec')return hostCall(app,method,{});
+  if(method==='software.caseId')return hostCall(app,method,{});
+  if(method==='software.language')return hostCall(app,method,{});
+  if(method==='software.compileTest')return hostCall(app,method,{source:args[0]});
   if(method==='build.doctor')return hostCall(app,method,{project:args[0]??null});
   if(method==='build.plan')return hostCall(app,method,{project:args[0]??'',target:args[1]??'universal'});
   if(method==='build.runs')return hostCall(app,method,{limit:Number(args[0])||20});
@@ -215,7 +261,7 @@ const workerBootstrap=`
 let inputHandler=()=>{},resizeHandler=()=>{};let seq=0;const pending=new Map();
 const rpc=(method,args={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});postMessage({type:'rpc',id,method,args})});
 try{self.XMLHttpRequest=undefined;self.WebSocket=undefined;self.EventSource=undefined;self.importScripts=undefined}catch(_){}
-self.Rift=Object.freeze({version:'${VERSION}',log:(...values)=>postMessage({type:'log',values:values.map(String)}),window:Object.freeze({setTitle:title=>postMessage({type:'title',title:String(title)})}),surface:Object.freeze({frame:commands=>postMessage({type:'frame',commands:Array.isArray(commands)?commands:[]}),onResize:fn=>{resizeHandler=typeof fn==='function'?fn:()=>{}}}),input:Object.freeze({on:fn=>{inputHandler=typeof fn==='function'?fn:()=>{}}}),storage:Object.freeze({get:key=>rpc('storage.get',{key}),set:(key,value)=>rpc('storage.set',{key,value}),remove:key=>rpc('storage.remove',{key})}),fs:Object.freeze({readText:path=>rpc('fs.readText',{path}),writeText:(path,text)=>rpc('fs.writeText',{path,text}),list:path=>rpc('fs.list',{path})}),clipboard:Object.freeze({readText:()=>rpc('clipboard.read'),writeText:text=>rpc('clipboard.write',{text})}),share:Object.freeze({text:text=>rpc('share',{text})}),repair:Object.freeze({source:()=>rpc('repair.source'),expected:()=>rpc('repair.expected'),caseId:()=>rpc('repair.caseId'),compileTest:(source,expected)=>rpc('repair.compileTest',{source,expected})}),build:Object.freeze({nativeExecutor:${buildExecutor},doctor:project=>rpc('build.doctor',{project}),plan:(project,target='universal')=>rpc('build.plan',{project,target}),submit:job=>rpc('build.submit',{job}),runs:(limit=20)=>rpc('build.runs',{limit}),artifacts:project=>rpc('build.artifacts',{project})})});
+self.Rift=Object.freeze({version:'${VERSION}',log:(...values)=>postMessage({type:'log',values:values.map(String)}),window:Object.freeze({setTitle:title=>postMessage({type:'title',title:String(title)})}),surface:Object.freeze({frame:commands=>postMessage({type:'frame',commands:Array.isArray(commands)?commands:[]}),onResize:fn=>{resizeHandler=typeof fn==='function'?fn:()=>{}}}),input:Object.freeze({on:fn=>{inputHandler=typeof fn==='function'?fn:()=>{}}}),storage:Object.freeze({get:key=>rpc('storage.get',{key}),set:(key,value)=>rpc('storage.set',{key,value}),remove:key=>rpc('storage.remove',{key})}),fs:Object.freeze({readText:path=>rpc('fs.readText',{path}),writeText:(path,text)=>rpc('fs.writeText',{path,text}),list:path=>rpc('fs.list',{path})}),clipboard:Object.freeze({readText:()=>rpc('clipboard.read'),writeText:text=>rpc('clipboard.write',{text})}),share:Object.freeze({text:text=>rpc('share',{text})}),repair:Object.freeze({source:()=>rpc('repair.source'),expected:()=>rpc('repair.expected'),caseId:()=>rpc('repair.caseId'),compileTest:(source,expected)=>rpc('repair.compileTest',{source,expected})}),software:Object.freeze({source:()=>rpc('software.source'),context:()=>rpc('software.context'),spec:()=>rpc('software.spec'),caseId:()=>rpc('software.caseId'),language:()=>rpc('software.language'),compileTest:source=>rpc('software.compileTest',{source})}),build:Object.freeze({nativeExecutor:${buildExecutor},doctor:project=>rpc('build.doctor',{project}),plan:(project,target='universal')=>rpc('build.plan',{project,target}),submit:job=>rpc('build.submit',{job}),runs:(limit=20)=>rpc('build.runs',{limit}),artifacts:project=>rpc('build.artifacts',{project})})});
 self.onmessage=event=>{const msg=event.data||{};if(msg.type==='input')try{inputHandler(msg.event)}catch(error){Rift.log(error.stack||error.message)}else if(msg.type==='resize')try{resizeHandler(msg)}catch(error){Rift.log(error.stack||error.message)}else if(msg.type==='rpc-result'){const p=pending.get(msg.id);if(p){pending.delete(msg.id);msg.ok?p.resolve(msg.value):p.reject(new Error(msg.error||'RiftRT host error'))}}};
 `;
 function fitCanvas(canvas){const rect=canvas.getBoundingClientRect(),scale=Math.min(devicePixelRatio||1,2);const w=Math.max(1,Math.round(rect.width*scale)),h=Math.max(1,Math.round(rect.height*scale));if(canvas.width!==w)canvas.width=w;if(canvas.height!==h)canvas.height=h;return{width:w,height:h,cssWidth:rect.width,cssHeight:rect.height,scale};}

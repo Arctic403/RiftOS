@@ -23,7 +23,7 @@ const SYSTEM_APPS = [
 
 const CAPABILITIES = Object.freeze([
   "fs.read","fs.write","network",
-  "clipboard.read","clipboard.write","share","notifications","build.local","repair.eval",
+  "clipboard.read","clipboard.write","share","notifications","build.local","repair.eval","software.eval",
   "process.read","process.manage","system.settings",
   "native.read","native.files","native.background"
 ]);
@@ -33,6 +33,7 @@ const RIFT_CAPABILITY_REGISTRY = Object.freeze({
   process:["process.read","process.manage"],
   build:["build.local"],
   repair:["repair.eval"],
+  software:["software.eval"],
   native:["native.read","native.files","native.background"],
   system:["system.settings"]
 });

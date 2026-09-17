@@ -1,6 +1,6 @@
 import { RIFT_EXEC_FORMAT, RIFT_VM_ABI, prepareRiftExecutable } from './riftvm.js';
 
-export const RIFTPP_CORE_VERSION='0.7.1-bootstrap';
+export const RIFTPP_CORE_VERSION='0.7.2-bootstrap';
 export const RIFTPP_LANGUAGE='riftpp/1';
 
 const MAX_SOURCE_BYTES=256*1024;
@@ -10,7 +10,7 @@ const MAX_PARAMS=64;
 const MAX_LOCALS=512;
 const MAX_TYPE_ITEMS=64;
 const MAX_NAMED_TYPES=256;
-const MAX_VEC_CAPACITY=64;
+const MAX_VEC_CAPACITY=256;
 const MAX_TYPE_DEPTH=32;
 const MAX_PARSE_DEPTH=128;
 const MAX_MODULES=64;
@@ -21,14 +21,15 @@ const MAX_EFFECTS=16;
 const MAX_STATE_SCHEMA_BYTES=4096;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
 const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string']);
-const SUPPORTED_EFFECTS=new Set(['storage','repair_eval']);
+const SUPPORTED_EFFECTS=new Set(['storage','repair_eval','software_eval']);
 const CHECKPOINT_BUILTINS=new Set(['checkpoint_save','checkpoint_load','checkpoint_remove']);
 const BUILTIN_GENERIC_TYPES=new Set(['Vec','Option','Result']);
 const COMPARABLE_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string']);
 const ORDERED_PRIMITIVES=new Set(['u32','s32','f64','string']);
 const REPAIR_BUILTINS=new Set(['repair_input_source','repair_expected_output','repair_case_id','repair_compile_test']);
+const SOFTWARE_BUILTINS=new Set(['software_input_source','software_project_context','software_specification','software_case_id','software_case_language','software_compile_test']);
 const STRING_BUILTINS=new Set(['string_len','string_find','string_slice','string_replace']);
-const PRELUDE_NAMES=new Set(['print','value_sha256',...CHECKPOINT_BUILTINS,...STRING_BUILTINS,...REPAIR_BUILTINS]);
+const PRELUDE_NAMES=new Set(['print','value_sha256',...CHECKPOINT_BUILTINS,...STRING_BUILTINS,...REPAIR_BUILTINS,...SOFTWARE_BUILTINS]);
 const KEYWORDS=new Set(['riftpp','module','use','as','const','struct','enum','fn','let','var','if','else','match','for','in','while','loop','return','break','continue','true','false','and','or','not','allow']);
 const RESERVED_FUTURE=new Set(['task','brain','agent','swarm','backend','budget','constraint','optimize','require','unsafe','extern','kernel','tensor','model','train']);
 const ASSIGNMENT_OPS=new Set(['=','+=','-=','*=','/=','%=']);
@@ -434,6 +435,12 @@ class Codegen{
         if(name==='repair_expected_output'){if(expr.args.length!==0)semanticFail('E0296','repair_expected_output expects no arguments',expr,'Gate 6D.2 repair evaluation');directEffects.add('repair_eval');this.imports.add('repair.expected');emit({op:'host',method:'repair.expected',argc:0});expectType('string',expected,expr);return'string';}
         if(name==='repair_case_id'){if(expr.args.length!==0)semanticFail('E0297','repair_case_id expects no arguments',expr,'Gate 6D.2 repair evaluation');directEffects.add('repair_eval');this.imports.add('repair.caseId');emit({op:'host',method:'repair.caseId',argc:0});expectType('string',expected,expr);return'string';}
         if(name==='repair_compile_test'){if(expr.args.length!==2)semanticFail('E0298','repair_compile_test expects source and expected output',expr,'Gate 6D.2 repair evaluation');compileExpr(expr.args[0],'string');compileExpr(expr.args[1],'string');directEffects.add('repair_eval');this.imports.add('repair.compileTest');emit({op:'host',method:'repair.compileTest',argc:2});expectType('string',expected,expr);return'string';}
+        if(name==='software_input_source'){if(expr.args.length!==0)semanticFail('E0340','software_input_source expects no arguments',expr,'Gate 6D.3 software evaluation');directEffects.add('software_eval');this.imports.add('software.source');emit({op:'host',method:'software.source',argc:0});expectType('string',expected,expr);return'string';}
+        if(name==='software_project_context'){if(expr.args.length!==0)semanticFail('E0341','software_project_context expects no arguments',expr,'Gate 6D.3 software evaluation');directEffects.add('software_eval');this.imports.add('software.context');emit({op:'host',method:'software.context',argc:0});expectType('string',expected,expr);return'string';}
+        if(name==='software_specification'){if(expr.args.length!==0)semanticFail('E0342','software_specification expects no arguments',expr,'Gate 6D.3 software evaluation');directEffects.add('software_eval');this.imports.add('software.spec');emit({op:'host',method:'software.spec',argc:0});expectType('string',expected,expr);return'string';}
+        if(name==='software_case_id'){if(expr.args.length!==0)semanticFail('E0343','software_case_id expects no arguments',expr,'Gate 6D.3 software evaluation');directEffects.add('software_eval');this.imports.add('software.caseId');emit({op:'host',method:'software.caseId',argc:0});expectType('string',expected,expr);return'string';}
+        if(name==='software_case_language'){if(expr.args.length!==0)semanticFail('E0344','software_case_language expects no arguments',expr,'Gate 6D.3 software evaluation');directEffects.add('software_eval');this.imports.add('software.language');emit({op:'host',method:'software.language',argc:0});expectType('string',expected,expr);return'string';}
+        if(name==='software_compile_test'){if(expr.args.length!==1)semanticFail('E0345','software_compile_test expects candidate source only',expr,'Gate 6D.3 software evaluation');compileExpr(expr.args[0],'string');directEffects.add('software_eval');this.imports.add('software.compileTest');emit({op:'host',method:'software.compileTest',argc:1});expectType('string',expected,expr);return'string';}
         if(name==='checkpoint_save'){if(expr.args.length!==2)semanticFail('E0283','checkpoint_save expects key and value',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');const valueType=compileExpr(expr.args[1],null);directEffects.add('storage');this.imports.add('state.save');emit({op:'state_save',schema:this.stateSchema(valueType,expr)});expectType('bool',expected,expr);return'bool';}
         if(name==='checkpoint_load'){if(expr.args.length!==2)semanticFail('E0283','checkpoint_load expects key and fallback',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');const fallbackType=compileExpr(expr.args[1],expected);directEffects.add('storage');this.imports.add('state.load');emit({op:'state_load',schema:this.stateSchema(fallbackType,expr)});return fallbackType;}
         if(name==='checkpoint_remove'){if(expr.args.length!==1)semanticFail('E0283','checkpoint_remove expects one key',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');directEffects.add('storage');this.imports.add('state.remove');emit({op:'state_remove'});expectType('bool',expected,expr);return'bool';}
