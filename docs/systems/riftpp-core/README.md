@@ -16,7 +16,7 @@ The frontend runs inside the existing RiftOS JavaScript runtime. The long-term t
 
 ## Implemented bootstrap slice
 
-Installed Core `0.5.0-bootstrap` is device-proven through Gate 4 against RiftOS source commit `cc347e042bcac2f7953a7a5f1298c83a00fbea69`. The current local source is `0.6.0-bootstrap`, which preserves that proven slice and stages Gate 5 capability/effect + bounded checkpoint support. Gate 5 still requires CI/build and installed-device proof before promotion. The bootstrap supports:
+Installed Core `0.6.0-bootstrap` is device-proven through Gate 5 against RiftOS source commit `972206a0d4446811572aa697e0f69cf46097dc8c`. It preserves the proven Gates 0–4 slice and promotes Gate 5 capability/effect + bounded checkpoint support after CI/build and installed cross-launch proof. The bootstrap supports:
 
 - functions with explicitly typed parameters/returns;
 - explicit `use module.path [as alias]` declarations with deterministic compile-time module linking; omitted aliases use the module path's final segment, and imported symbols are referenced through that explicit/default alias rather than ambient full-path lookup;
@@ -40,8 +40,8 @@ Installed Core `0.5.0-bootstrap` is device-proven through Gate 4 against RiftOS 
 - checked integer arithmetic with required-result type enforcement across locals/returns/arguments/struct fields/Vec items, direct `s32` minimum literal lowering for `-2147483648`, strings, comparisons and direct function calls;
 - reachable-path return analysis and unreachable-code diagnostics;
 - bootstrap prelude `print(value)`;
-- staged Gate 5 function effects `allow [storage]`, with exact transitive effect closure across local/imported calls and compile-time rejection of missing, duplicate, unknown, or unused/widened authority;
-- staged Gate 5 `checkpoint_save`, `checkpoint_load`, and `checkpoint_remove`, lowered only to `state.save`, `state.load`, and `state.remove` imports;
+- proven Gate 5 function effects `allow [storage]`, with exact transitive effect closure across local/imported calls and compile-time rejection of missing, duplicate, unknown, or unused/widened authority;
+- proven Gate 5 `checkpoint_save`, `checkpoint_load`, and `checkpoint_remove`, lowered only to `state.save`, `state.load`, and `state.remove` imports;
 - canonical compiler-generated checkpoint type descriptors capped at 4 KiB; recursive checkpoint schemas are rejected in this bootstrap.
 
 Struct construction must supply each declared field exactly once. Enum payload arity/types are checked. Struct/enum/vector values can pass through locals, function parameters and returns. `Vec` is deliberately bounded and immutable at runtime: successful `push`/`set` operations return a replacement vector inside `Result.Ok`, while capacity/index failures return `Result.Err(string)` and out-of-range reads return `Option.None`. Composite equality/ordering is intentionally undefined in this bootstrap and fails closed.
@@ -52,7 +52,7 @@ Bootstrap pattern limitations remain deliberate: enum payload patterns currently
 
 ## Still absent
 
-Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability vocabularies beyond Gate 5 `storage`, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler. Gate 5 source is staged but not promoted until CI/build and cross-launch RiftRT proof pass. Gate 6 follows only after that with numeric/parameter primitives and an explicit update mechanism; RiftLLM+ promotion requires changed parameter state plus repeated unseen-challenge improvement, not memory retrieval alone.
+Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability vocabularies beyond Gate 5 `storage`, FFI, compute/tensor extensions, the reference interpreter and the self-hosted compiler. Gate 5 is installed/device-proven after CI/build and cross-launch RiftRT proof passed. Gate 6A follows with numeric/parameter primitives, then Gate 6B adds an explicit update mechanism; RiftLLM+ parameter-learning promotion requires changed parameter state plus repeated unseen-challenge improvement in Gate 6C, not memory retrieval alone.
 
 ## Public surface
 

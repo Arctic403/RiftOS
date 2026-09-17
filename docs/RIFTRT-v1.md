@@ -40,7 +40,7 @@ The native app host exposes a frozen bounded `Rift` object covering application 
 
 `build.local` stays honest: planning/controller APIs can exist while `Rift.build.nativeExecutor` remains false until the APK actually ships a trusted compiler/toolchain executor.
 
-For the staged Rift++ Gate 5 path, the `rift-vm` engine also recognizes `state.load`, `state.save`, and `state.remove`. These methods require `storage` in both the installed manifest and `riftrt.json`; they do not accept filesystem paths. State is stored under the installed app's private AppData in `riftvm-state.json`, stat-checked as a bounded regular file before read, strictly parsed, bounded to 16 validated non-poison keys, 64 KiB per serialized checkpoint, and 512 KiB total. The internal RiftFS write path uses staged/fsynced atomic replacement. RiftVM itself owns typed checkpoint serialization/validation, so composite VM values still never cross the ordinary host-import boundary as host objects.
+For the proven Rift++ Gate 5 path, the `rift-vm` engine recognizes `state.load`, `state.save`, and `state.remove`. These methods require `storage` in both the installed manifest and `riftrt.json`; they do not accept filesystem paths. State is stored under the installed app's private AppData in `riftvm-state.json`, stat-checked as a bounded regular file before read, strictly parsed, bounded to 16 validated non-poison keys, 64 KiB per serialized checkpoint, and 512 KiB total. The internal RiftFS write path uses staged/fsynced atomic replacement. RiftVM itself owns typed checkpoint serialization/validation, so composite VM values still never cross the ordinary host-import boundary as host objects.
 
 ## Worker/WASM compatibility
 

@@ -46,7 +46,7 @@ V1 scalar constants are `unit`, `bool`, `u32`, `s32`, `f64`, and `string`. Runti
 
 ## VM instructions
 
-V1 supports bounded constants/locals/stack operations, checked arithmetic/comparison, string concatenation, nominal structured operations (`make_struct`, `get_field`, `make_enum`, `enum_is`, `enum_get`), bounded collection operations (`make_vec`, `vec_len`, `vec_get`, `vec_push`, `vec_set`), staged Gate 5 state operations (`state_save`, `state_load`, `state_remove`), jumps, calls/returns, declared host imports, output, and halt. `vec_get` returns `Option.Some/None`; `vec_push` and `vec_set` return `Result.Ok/Err` replacement values instead of mutating the original vector. Unsupported opcodes fail validation before execution.
+V1 supports bounded constants/locals/stack operations, checked arithmetic/comparison, string concatenation, nominal structured operations (`make_struct`, `get_field`, `make_enum`, `enum_is`, `enum_get`), bounded collection operations (`make_vec`, `vec_len`, `vec_get`, `vec_push`, `vec_set`), proven Gate 5 state operations (`state_save`, `state_load`, `state_remove`), jumps, calls/returns, declared host imports, output, and halt. `vec_get` returns `Option.Some/None`; `vec_push` and `vec_set` return `Result.Ok/Err` replacement values instead of mutating the original vector. Unsupported opcodes fail validation before execution.
 
 The VM has hard ceilings for function count, constants, instructions, locals, parameters, stack depth, call depth, string size and executed steps. Serialized executable input is capped at 8 MiB before JSON parsing, and aggregate normalized constant-string payload is capped at 4 MiB. Composite values are additionally capped at depth 32; rendered `print` values are capped at 64 KiB; public result conversion is capped at 4096 visited values and 64 KiB of aggregate string payload. Gate 5 state payloads are capped at 64 KiB and canonical type descriptors at 4 KiB. A program can request smaller execution limits but cannot raise the runtime hard ceilings.
 
@@ -60,7 +60,7 @@ The VM validates executable structure and runtime operation safety, not the full
 
 ## Bootstrap boundary
 
-`rift-exec-v1` is a bootstrap executable ABI, not a claim that Rift++ Core V1 is already complete. Installed `0.5.0-bootstrap` lowers its proven Gates 0–4 subset into this format. Local `0.6.0-bootstrap` stages Gate 5 state/effect support on the same ABI; that source is not called device-proven until CI/build and installed persistence evidence pass. If later Core semantics need a stronger typed/optimized ABI, that evolution happens as a named compatible executable version rather than silently changing `rift-exec-v1`.
+`rift-exec-v1` is a bootstrap executable ABI, not a claim that Rift++ Core V1 is already complete. Installed `0.6.0-bootstrap` lowers its proven Gates 0–5 subset into this format, including Gate 5 state/effect support on the same ABI after installed cross-launch persistence evidence passed. If later Core semantics need a stronger typed/optimized ABI, that evolution happens as a named compatible executable version rather than silently changing `rift-exec-v1`.
 
 ## Source ownership
 
