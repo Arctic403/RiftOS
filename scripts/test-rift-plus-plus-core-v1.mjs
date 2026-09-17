@@ -97,11 +97,11 @@ assert.deepEqual(parameterCheckpointOutput,['true','true','1.5','true']);
 const parameterStateSave=Object.values(parameterCheckpointCompiled.executable.functions).flatMap(fn=>fn.code).find(ins=>ins.op==='state_save');
 assert(parameterStateSave?.schema.includes('"t":"f64"'),'Gate 6A f64 parameter checkpoint descriptor must preserve f64 types');
 const wideParameterValues=Array.from({length:144},()=>"0.0").join(',');
-const wideParameterSource=`riftpp 1\\nmodule proof.wide_parameters\\nfn main() { let weights: Vec<f64, 144> = [${wideParameterValues}] print(weights.len()) print(value_sha256(weights)) }\\n`;
+const wideParameterSource=`riftpp 1\nmodule proof.wide_parameters\nfn main() { let weights: Vec<f64, 144> = [${wideParameterValues}] print(weights.len()) print(value_sha256(weights)) }\n`;
 const wideParameters=await execute(wideParameterSource);
 assert.equal(wideParameters.output[0],'144','Gate 6D.3 requires first-class Vec<f64,144> execution');
 assert.match(wideParameters.output[1],/^[a-f0-9]{64}$/,'wide parameter identity must remain deterministic');
-assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\\nmodule bad.wide_parameters\\nfn main() { let weights: Vec<f64, 257> = [] print(weights.len()) }\\n'),/Vec capacity must be 1\\.\\.256/);
+assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\nmodule bad.wide_parameters\nfn main() { let weights: Vec<f64, 257> = [] print(weights.len()) }\n'),/Vec capacity must be 1\.\.256/);
 
 const moduleMain=readFileSync('examples/riftpp/modules/demo/main.riftpp','utf8');
 const moduleSources={
