@@ -69,6 +69,15 @@ const vectorOutput=[];
 await executeRiftExecutable(vectors,{write:value=>vectorOutput.push(value)});
 assert.deepEqual(vectorOutput,['2','true','7','42','vec capacity exceeded','true','vec index out of range']);
 
+const stringOps={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:[{type:'string',value:'retrun 7'},{type:'string',value:'retrun'},{type:'u32',value:0},{type:'u32',value:6},{type:'string',value:'return'}],functions:{main:{params:0,locals:0,code:[
+  {op:'const',index:0},{op:'string_len'},{op:'print'},
+  {op:'const',index:0},{op:'const',index:1},{op:'const',index:2},{op:'string_find'},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
+  {op:'const',index:0},{op:'const',index:2},{op:'const',index:3},{op:'string_slice'},{op:'print'},
+  {op:'const',index:0},{op:'const',index:2},{op:'const',index:3},{op:'const',index:4},{op:'string_replace'},{op:'print'},{op:'halt'}
+]}},limits:{maxSteps:50,maxStack:8,maxCallDepth:2}};
+const stringOutput=[];await executeRiftExecutable(stringOps,{write:value=>stringOutput.push(value)});assert.deepEqual(stringOutput,['8','0','retrun','return 7']);
+const badStringRange=structuredClone(stringOps);badStringRange.constants[3]={type:'u32',value:99};await assert.rejects(()=>executeRiftExecutable(badStringRange,{write:()=>{}}),/string_slice range is out of bounds/);
+
 const numericParameters={
   format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],
   constants:[{type:'f64',value:0.5},{type:'f64',value:-1.0},{type:'f64',value:2.0},{type:'f64',value:0.25}],
@@ -141,5 +150,6 @@ assert.equal(inspectRiftExecutable(packageFixture.files['main.rxe']).format,RIFT
 console.log('ok - RiftVM validates and executes bounded rift-exec-v1 programs without eval/native shell');
 console.log('ok - RiftVM nominal struct/enum and bounded Vec operations stay data-only and cannot cross the host boundary implicitly');
 console.log('ok - RiftVM Gate 6A accepts only finite JSON f64 values and computes deterministic bounded value_sha256 identities without host imports');
+console.log('ok - RiftVM Gate 6D.2 bounded string locate/slice/replace primitives execute without host authority');
 console.log('ok - RiftVM Gate 5 state opcodes validate canonical type descriptors and reject undeclared/corrupt/schema/shape-mismatched state');
 console.log('ok - .rift package can carry a main.rxe executable for the rift-vm RiftRT engine');

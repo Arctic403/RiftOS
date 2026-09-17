@@ -42,7 +42,7 @@ class RiftNativeAppHost(
         private val APP_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
         private val ALLOWED_CAPABILITIES = setOf(
             "fs.read", "fs.write", "network", "clipboard.read", "clipboard.write",
-            "share", "notifications", "build.local", "native.files", "native.background"
+            "share", "notifications", "build.local", "repair.eval", "native.files", "native.background"
         )
     }
 

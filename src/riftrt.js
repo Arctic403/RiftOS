@@ -1,4 +1,5 @@
 import { executeRiftExecutable, inspectRiftExecutable, prepareRiftExecutable, RIFT_VM_ABI } from './riftvm.js';
+import { compileRiftPlusPlusCoreV1 } from './riftpp-core.js';
 
 const core=globalThis.RiftOSCore;
 const baseApps=globalThis.RiftApps;
@@ -132,6 +133,11 @@ async function vmStateLoad(app,keyValue){const key=vmStateKey(keyValue),data=awa
 async function vmStateSave(app,keyValue,payloadValue){const key=vmStateKey(keyValue),payload=String(payloadValue??'');if(utf8Encoder.encode(payload).byteLength>MAX_VM_STATE_PAYLOAD_BYTES)throw new Error(`RiftVM state payload exceeds ${MAX_VM_STATE_PAYLOAD_BYTES} bytes`);const path=`${DATA_ROOT}/${app.id}`,data=await vmStateObject(app),exists=Object.prototype.hasOwnProperty.call(data,key);if(!exists&&Object.keys(data).length>=MAX_VM_STATE_ENTRIES)throw new Error(`RiftVM state store exceeds ${MAX_VM_STATE_ENTRIES} entries`);data[key]=payload;const encoded=JSON.stringify(data);if(utf8Encoder.encode(encoded).byteLength>MAX_VM_STATE_STORE_BYTES)throw new Error(`RiftVM state store exceeds ${MAX_VM_STATE_STORE_BYTES} bytes`);await core.fs.mkdir(path);await core.fs.writeJSON(`${path}/${VM_STATE_FILE}`,data);return true;}
 async function vmStateRemove(app,keyValue){const key=vmStateKey(keyValue),path=`${DATA_ROOT}/${app.id}`,data=await vmStateObject(app);if(!Object.prototype.hasOwnProperty.call(data,key))return false;delete data[key];await core.fs.mkdir(path);await core.fs.writeJSON(`${path}/${VM_STATE_FILE}`,data);return true;}
 
+const MAX_REPAIR_SOURCE_BYTES=16*1024;
+const MAX_REPAIR_EXPECTED_BYTES=4*1024;
+const MAX_REPAIR_CASE_ID_BYTES=128;
+function repairAsset(app,name,maxBytes){const value=String(app?.files?.[name]??'');if(!value)throw new Error(`Repair evaluation asset is missing: ${name}`);if(utf8Encoder.encode(value).byteLength>maxBytes)throw new Error(`Repair evaluation asset ${name} exceeds ${maxBytes} bytes`);return value;}
+async function repairCompileTest(app,sourceValue,expectedValue){if(!(await capability(app,'repair.eval')))throw new Error('repair.eval denied');const source=String(sourceValue??''),expected=String(expectedValue??'');if(!source||utf8Encoder.encode(source).byteLength>MAX_REPAIR_SOURCE_BYTES)throw new Error('repair source is empty or exceeds the bounded source limit');if(utf8Encoder.encode(expected).byteLength>MAX_REPAIR_EXPECTED_BYTES)throw new Error('repair expected output exceeds the bounded output limit');let compiled;try{compiled=compileRiftPlusPlusCoreV1(source);}catch(_){return'compile-fail';}if(compiled.executable.imports.length)throw new Error('repair.compileTest rejects challenge source with host imports');const output=[];try{await executeRiftExecutable(compiled.executable,{write:value=>{if(output.length>=64)throw new Error('repair output count exceeded');output.push(String(value));}},{maxSteps:20000,maxStack:256,maxCallDepth:16,yieldEvery:512});}catch(_){return'wrong';}return output.join('\n')===expected?'correct':'wrong';}
 async function hostCall(app,method,args={}){
   if(method==='storage.get')return storageGet(app,args.key);
   if(method==='storage.set')return storageSet(app,args.key,args.value);
@@ -142,6 +148,10 @@ async function hostCall(app,method,args={}){
   if(method==='clipboard.read'){if(!(await capability(app,'clipboard.read')))throw new Error('clipboard.read denied');return core.native.call('clipboard.readText',{});}
   if(method==='clipboard.write'){if(!(await capability(app,'clipboard.write')))throw new Error('clipboard.write denied');return core.native.call('clipboard.writeText',{text:String(args.text??'')});}
   if(method==='share'){if(!(await capability(app,'share')))throw new Error('share denied');return core.native.call('share.text',{text:String(args.text??''),title:app.manifest.name});}
+  if(method==='repair.source'){if(!(await capability(app,'repair.eval')))throw new Error('repair.eval denied');return repairAsset(app,'repair-case.riftpp',MAX_REPAIR_SOURCE_BYTES);}
+  if(method==='repair.expected'){if(!(await capability(app,'repair.eval')))throw new Error('repair.eval denied');return repairAsset(app,'repair-expected.txt',MAX_REPAIR_EXPECTED_BYTES);}
+  if(method==='repair.caseId'){if(!(await capability(app,'repair.eval')))throw new Error('repair.eval denied');return repairAsset(app,'repair-case-id.txt',MAX_REPAIR_CASE_ID_BYTES);}
+  if(method==='repair.compileTest')return repairCompileTest(app,args.source,args.expected);
   if(method==='build.doctor'){if(!(await capability(app,'build.local')))throw new Error('build.local denied');return build.doctor(args.project||null,'/workspace');}
   if(method==='build.plan'){if(!(await capability(app,'build.local')))throw new Error('build.local denied');return build.plan(String(args.project||''),String(args.target||'universal'),'/workspace');}
   if(method==='build.submit'){if(!(await capability(app,'build.local')))throw new Error('build.local denied');return build.submit(args.job,'/workspace');}
@@ -154,6 +164,7 @@ const VM_IMPORT_CAPABILITIES=Object.freeze({
   'storage.get':'storage','storage.set':'storage','storage.remove':'storage','state.load':'storage','state.save':'storage','state.remove':'storage',
   'fs.readText':'fs.read','fs.list':'fs.read','fs.writeText':'fs.write',
   'clipboard.read':'clipboard.read','clipboard.write':'clipboard.write','share.text':'share',
+  'repair.source':'repair.eval','repair.expected':'repair.eval','repair.caseId':'repair.eval','repair.compileTest':'repair.eval',
   'build.doctor':'build.local','build.plan':'build.local','build.runs':'build.local','build.artifacts':'build.local'
 });
 const VM_UNPRIVILEGED_IMPORTS=new Set(['app.setTitle']);
@@ -180,6 +191,10 @@ async function invokeVmHost(app,record,method,args){
   if(method==='clipboard.read')return hostCall(app,method,{});
   if(method==='clipboard.write')return hostCall(app,method,{text:args[0]});
   if(method==='share.text')return hostCall(app,'share',{text:args[0]});
+  if(method==='repair.source')return hostCall(app,method,{});
+  if(method==='repair.expected')return hostCall(app,method,{});
+  if(method==='repair.caseId')return hostCall(app,method,{});
+  if(method==='repair.compileTest')return hostCall(app,method,{source:args[0],expected:args[1]});
   if(method==='build.doctor')return hostCall(app,method,{project:args[0]??null});
   if(method==='build.plan')return hostCall(app,method,{project:args[0]??'',target:args[1]??'universal'});
   if(method==='build.runs')return hostCall(app,method,{limit:Number(args[0])||20});

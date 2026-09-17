@@ -12,7 +12,7 @@ const LEGACY_PACKAGE_ROOT="/apps/packages";
 const LEGACY_DATA_ROOT="/apps/data";
 const LEGACY_INDEXED_DB_KEY="riftapps.fs-migration-v1";
 const DRIVE_LAYOUT_MIGRATION_KEY="riftapps.drive-layout-v1";
-const ALLOWED_DECLARED_PERMISSIONS=new Set(["storage","fs.read","fs.write","network","clipboard.read","clipboard.write","share","notifications","build.local","native.files","native.background"]);
+const ALLOWED_DECLARED_PERMISSIONS=new Set(["storage","fs.read","fs.write","network","clipboard.read","clipboard.write","share","notifications","build.local","repair.eval","native.files","native.background"]);
 
 const escapeHtml=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));
 const normalizeAssetPath=value=>String(value||"").replace(/^\.\//,"").replace(/^\/+/,"").split("/").filter(part=>part&&part!=="."&&part!=="..").join("/");

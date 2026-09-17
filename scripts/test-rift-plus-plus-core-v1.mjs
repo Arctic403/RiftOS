@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.7.0-bootstrap');
+assert.equal(compiled.compiler,'0.7.1-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -53,9 +53,18 @@ const collectionOps=Object.values(collections.compiled.executable.functions).fla
 for(const op of ['make_vec','vec_len','vec_get','vec_push','vec_set'])assert(collectionOps.includes(op),`collections must lower ${op}`);
 assert(collections.compiled.executable.imports.length===0,'collections must not add host imports');
 
+const repairNativeSource=`riftpp 1\nmodule proof.repair_native\nfn main() allow [repair_eval] {\n let source: string = repair_input_source()\n print(string_len(source))\n let found: Option<u32> = string_find(source, "retrun", 0)\n match found { Option.Some(index) => { print(index) } Option.None => { print(999) } }\n let fixed: string = string_replace(source, 0, 6, "return")\n print(string_slice(fixed, 0, 6))\n print(repair_compile_test(fixed, repair_expected_output()))\n print(repair_case_id())\n}\n`;
+const repairNativeCompiled=compileRiftPlusPlusCoreV1(repairNativeSource),repairNativeOutput=[];
+assert.deepEqual(repairNativeCompiled.executable.imports,['repair.caseId','repair.compileTest','repair.expected','repair.source']);
+const repairOps=Object.values(repairNativeCompiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));for(const op of ['string_len','string_find','string_slice','string_replace','host'])assert(repairOps.includes(op),`Gate 6D.2 native repair must lower ${op}`);
+await executeRiftExecutable(repairNativeCompiled.executable,{write:value=>repairNativeOutput.push(value),invoke:async(method,args)=>{if(method==='repair.source')return'retrun 7';if(method==='repair.expected')return'7';if(method==='repair.caseId')return'case-1';if(method==='repair.compileTest'){assert.deepEqual(args,['return 7','7']);return'correct';}throw new Error(`unexpected host method ${method}`);}});assert.deepEqual(repairNativeOutput,['8','0','return','correct','case-1']);
+const directFindMatch=`riftpp 1\nmodule proof.direct_find\nfn main() {\n match string_find("retrun", "retrun", 0) { Option.Some(index) => { print(index) } Option.None => { print(999) } }\n}\n`;
+assert.deepEqual((await execute(directFindMatch)).output,['0']);
+assert.throws(()=>compileRiftPlusPlusCoreV1(repairNativeSource.replace('fn main() allow [repair_eval] {','fn main() {')),/missing required capability repair_eval/);
+
 const numericParametersSource=readFileSync('examples/riftpp/core-v1-numeric-parameters.riftpp','utf8');
 const numericParameters=await execute(numericParametersSource);
-assert.equal(numericParameters.compiled.compiler,'0.7.0-bootstrap');
+assert.equal(numericParameters.compiled.compiler,'0.7.1-bootstrap');
 assert.equal(numericParameters.output[0],'9.5');
 assert.match(numericParameters.output[1],/^[a-f0-9]{64}$/,'Gate 6A parameter identity must be a lowercase SHA-256 digest');
 assert.deepEqual(numericParameters.output.slice(2),['true','true']);
@@ -160,6 +169,8 @@ const shortCircuit=`riftpp 1\nmodule proof.short_circuit\nfn main() {\n print(fa
 assert.deepEqual((await execute(shortCircuit)).output,['false','true'],'and/or must skip a RHS that would trap');
 const stringCompound=`riftpp 1\nmodule proof.string_compound\nfn main() {\n var text: string = "Rift"\n text += "++"\n print(text)\n}\n`;
 assert.deepEqual((await execute(stringCompound)).output,['Rift++']);
+const operatorStrings=`riftpp 1\nmodule proof.operator_strings\nfn main() {\n print("+")\n print("-")\n print("*")\n print("<")\n print(">")\n print("or")\n print("and")\n print("not")\n print("return")\n print("}")\n}\n`;
+assert.deepEqual((await execute(operatorStrings)).output,['+','-','*','<','>','or','and','not','return','}']);
 
 const badVersion=source.replace('riftpp 1','riftpp 2');
 assert.throws(()=>compileRiftPlusPlusCoreV1(badVersion),error=>error instanceof RiftCoreCompileError&&error.diagnostic.code==='E0103');
@@ -253,6 +264,7 @@ console.log('ok - Rift++ Core V1 source parses, type-checks, lowers to rift-exec
 console.log('ok - Control Flow V1 executes var/assignment, scopes, if/else, while, break/continue and short-circuit and/or');
 console.log('ok - Structured Data V1 executes nominal struct/enum values, field reads, payload binding and exhaustive match');
 console.log('ok - Collections V1 executes bounded Vec values with Option/Result match semantics and no host imports');
+console.log('ok - Gate 6D.2 Core lowers bounded string repair primitives and capability-gated repair.eval imports while enforcing the effect clause');
 console.log('ok - Gate 6A executes finite f64 and bounded Vec<f64,N> parameter compute, deterministic SHA-256 identity and checkpoint parity without implicit numeric coercion');
 console.log('ok - Module Graph V1 links explicit/default aliases and transitive types/functions, caps graphs at 64 modules, bounds linker recursion, and rejects cycles/missing/ambient modules');
 console.log('ok - Gate 5 effects require exact transitive storage authority and lower bounded checkpoint state imports');

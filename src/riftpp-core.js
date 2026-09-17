@@ -1,6 +1,6 @@
 import { RIFT_EXEC_FORMAT, RIFT_VM_ABI, prepareRiftExecutable } from './riftvm.js';
 
-export const RIFTPP_CORE_VERSION='0.7.0-bootstrap';
+export const RIFTPP_CORE_VERSION='0.7.1-bootstrap';
 export const RIFTPP_LANGUAGE='riftpp/1';
 
 const MAX_SOURCE_BYTES=256*1024;
@@ -21,12 +21,14 @@ const MAX_EFFECTS=16;
 const MAX_STATE_SCHEMA_BYTES=4096;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
 const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string']);
-const SUPPORTED_EFFECTS=new Set(['storage']);
+const SUPPORTED_EFFECTS=new Set(['storage','repair_eval']);
 const CHECKPOINT_BUILTINS=new Set(['checkpoint_save','checkpoint_load','checkpoint_remove']);
 const BUILTIN_GENERIC_TYPES=new Set(['Vec','Option','Result']);
 const COMPARABLE_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string']);
 const ORDERED_PRIMITIVES=new Set(['u32','s32','f64','string']);
-const PRELUDE_NAMES=new Set(['print','value_sha256',...CHECKPOINT_BUILTINS]);
+const REPAIR_BUILTINS=new Set(['repair_input_source','repair_expected_output','repair_case_id','repair_compile_test']);
+const STRING_BUILTINS=new Set(['string_len','string_find','string_slice','string_replace']);
+const PRELUDE_NAMES=new Set(['print','value_sha256',...CHECKPOINT_BUILTINS,...STRING_BUILTINS,...REPAIR_BUILTINS]);
 const KEYWORDS=new Set(['riftpp','module','use','as','const','struct','enum','fn','let','var','if','else','match','for','in','while','loop','return','break','continue','true','false','and','or','not','allow']);
 const RESERVED_FUTURE=new Set(['task','brain','agent','swarm','backend','budget','constraint','optimize','require','unsafe','extern','kernel','tensor','model','train']);
 const ASSIGNMENT_OPS=new Set(['=','+=','-=','*=','/=','%=']);
@@ -109,7 +111,7 @@ class Parser{
   current(){return this.tokens[this.index];}
   peek(offset=1){return this.tokens[Math.min(this.tokens.length-1,this.index+offset)];}
   previous(){return this.tokens[Math.max(0,this.index-1)];}
-  at(value){return this.current().value===value;}
+  at(value){const token=this.current();return token.kind!=='string'&&token.value===value;}
   consume(value){if(this.at(value)){const token=this.current();this.index++;return token;}return null;}
   expect(value,code='E0100'){const token=this.current();if(!this.at(value))fail(code,`expected '${value}', found '${token.value}'`,token,'grammar');this.index++;return token;}
   expectKind(kind,label,code='E0101'){const token=this.current();if(token.kind!==kind)fail(code,`expected ${label}, found '${token.value}'`,token,'grammar');this.index++;return token;}
@@ -203,7 +205,7 @@ class Parser{
   logicalOr(){let expr=this.logicalAnd();while(this.at('or')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.logicalAnd(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   logicalAnd(){let expr=this.equality();while(this.at('and')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.equality(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   equality(){let expr=this.comparison();while(this.at('==')||this.at('!=')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.comparison(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
-  comparison(){let expr=this.additive();while(['<','<=','>','>='].includes(this.current().value)){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.additive(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
+  comparison(){let expr=this.additive();while(this.current().kind==='symbol'&&['<','<=','>','>='].includes(this.current().value)){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.additive(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   additive(){let expr=this.multiplicative();while(this.at('+')||this.at('-')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.multiplicative(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   multiplicative(){let expr=this.unary();while(this.at('*')||this.at('/')||this.at('%')){const op=this.current();this.index++;expr=Object.freeze({kind:'Binary',op:op.value,left:expr,right:this.unary(),span:Object.freeze({start:expr.span.start,end:this.previous().end,line:expr.span.line,column:expr.span.column})});}return expr;}
   unary(){const token=this.current();if(++this.unaryDepth>MAX_PARSE_DEPTH){this.unaryDepth--;fail('E0123',`unary nesting exceeds ${MAX_PARSE_DEPTH}`,token,'host bounds');}try{if(this.at('-')||this.at('+')||this.at('not')){const op=this.current();this.index++;const expression=this.unary();return Object.freeze({kind:'Unary',op:op.value,expression,span:Object.freeze({start:op.start,end:expression.span.end,line:op.line,column:op.column})});}return this.postfix();}finally{this.unaryDepth--;}}
@@ -424,6 +426,14 @@ class Codegen{
         if(expr.callee.kind!=='Name')semanticFail('E0212','bootstrap calls require a direct function name, enum case constructor or Vec method',expr,'call semantics');const name=expr.callee.name;
         if(name==='print'){if(expr.args.length!==1)semanticFail('E0213','print expects exactly one argument',expr,'bootstrap prelude');compileExpr(expr.args[0],null);emit({op:'print'});emit({op:'const',index:this.constant('unit',null)});expectType('unit',expected,expr);return'unit';}
         if(name==='value_sha256'){if(expr.args.length!==1)semanticFail('E0290','value_sha256 expects exactly one bounded value',expr,'Gate 6A parameter identity');compileExpr(expr.args[0],null);emit({op:'value_sha256'});expectType('string',expected,expr);return'string';}
+        if(name==='string_len'){if(expr.args.length!==1)semanticFail('E0291','string_len expects string',expr,'Gate 6D.2 bounded string support');compileExpr(expr.args[0],'string');emit({op:'string_len'});expectType('u32',expected,expr);return'u32';}
+        if(name==='string_find'){if(expr.args.length!==3)semanticFail('E0292','string_find expects text, needle, start',expr,'Gate 6D.2 bounded string support');compileExpr(expr.args[0],'string');compileExpr(expr.args[1],'string');compileExpr(expr.args[2],'u32');emit({op:'string_find'});const result=this.internGeneric('Option',['u32']);expectType(result,expected,expr);return result;}
+        if(name==='string_slice'){if(expr.args.length!==3)semanticFail('E0293','string_slice expects text, start, end',expr,'Gate 6D.2 bounded string support');compileExpr(expr.args[0],'string');compileExpr(expr.args[1],'u32');compileExpr(expr.args[2],'u32');emit({op:'string_slice'});expectType('string',expected,expr);return'string';}
+        if(name==='string_replace'){if(expr.args.length!==4)semanticFail('E0294','string_replace expects text, start, end, replacement',expr,'Gate 6D.2 bounded string support');compileExpr(expr.args[0],'string');compileExpr(expr.args[1],'u32');compileExpr(expr.args[2],'u32');compileExpr(expr.args[3],'string');emit({op:'string_replace'});expectType('string',expected,expr);return'string';}
+        if(name==='repair_input_source'){if(expr.args.length!==0)semanticFail('E0295','repair_input_source expects no arguments',expr,'Gate 6D.2 repair evaluation');directEffects.add('repair_eval');this.imports.add('repair.source');emit({op:'host',method:'repair.source',argc:0});expectType('string',expected,expr);return'string';}
+        if(name==='repair_expected_output'){if(expr.args.length!==0)semanticFail('E0296','repair_expected_output expects no arguments',expr,'Gate 6D.2 repair evaluation');directEffects.add('repair_eval');this.imports.add('repair.expected');emit({op:'host',method:'repair.expected',argc:0});expectType('string',expected,expr);return'string';}
+        if(name==='repair_case_id'){if(expr.args.length!==0)semanticFail('E0297','repair_case_id expects no arguments',expr,'Gate 6D.2 repair evaluation');directEffects.add('repair_eval');this.imports.add('repair.caseId');emit({op:'host',method:'repair.caseId',argc:0});expectType('string',expected,expr);return'string';}
+        if(name==='repair_compile_test'){if(expr.args.length!==2)semanticFail('E0298','repair_compile_test expects source and expected output',expr,'Gate 6D.2 repair evaluation');compileExpr(expr.args[0],'string');compileExpr(expr.args[1],'string');directEffects.add('repair_eval');this.imports.add('repair.compileTest');emit({op:'host',method:'repair.compileTest',argc:2});expectType('string',expected,expr);return'string';}
         if(name==='checkpoint_save'){if(expr.args.length!==2)semanticFail('E0283','checkpoint_save expects key and value',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');const valueType=compileExpr(expr.args[1],null);directEffects.add('storage');this.imports.add('state.save');emit({op:'state_save',schema:this.stateSchema(valueType,expr)});expectType('bool',expected,expr);return'bool';}
         if(name==='checkpoint_load'){if(expr.args.length!==2)semanticFail('E0283','checkpoint_load expects key and fallback',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');const fallbackType=compileExpr(expr.args[1],expected);directEffects.add('storage');this.imports.add('state.load');emit({op:'state_load',schema:this.stateSchema(fallbackType,expr)});return fallbackType;}
         if(name==='checkpoint_remove'){if(expr.args.length!==1)semanticFail('E0283','checkpoint_remove expects one key',expr,'Gate 5 persistence');compileExpr(expr.args[0],'string');directEffects.add('storage');this.imports.add('state.remove');emit({op:'state_remove'});expectType('bool',expected,expr);return'bool';}
