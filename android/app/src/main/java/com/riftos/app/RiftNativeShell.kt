@@ -44,14 +44,25 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         }
         val requestedCwd = normalizeDisplay(cwd ?: "/")
         worker.execute {
+            val operation = runCatching { tokenize(command).firstOrNull()?.lowercase().orEmpty() }.getOrDefault("")
+            val patchSession = RiftPatchSessions.begin(
+                appContext,
+                origin = "native-shell",
+                operation = operation.ifBlank { "shell" },
+                intent = operation.takeIf { it.isNotBlank() },
+                requestId = null,
+                rawPaths = shellMutationPaths(command, requestedCwd)
+            )
             try {
                 val outcome = executeNative(command, requestedCwd)
+                patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
                 reply(JSONObject()
                     .put("ok", true)
                     .put("output", outcome.output)
                     .put("cwd", outcome.cwd)
                     .put("result", outcome.result ?: JSONObject.NULL))
             } catch (error: Throwable) {
+                patchSession?.let(RiftPatchSessions::abort)
                 reply(errorResult(requestedCwd, error.message ?: error.javaClass.simpleName))
             }
         }
@@ -61,6 +72,19 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         closed = true
         worker.shutdownNow()
     }
+
+    private fun shellMutationPaths(raw: String, cwd: String): List<String> = runCatching {
+        val args = tokenize(raw)
+        val command = args.removeFirstOrNull()?.lowercase().orEmpty()
+        when (command) {
+            "write", "touch", "mkdir", "rm" -> args.firstOrNull()?.let { listOf(resolveDisplay(cwd, it)) }.orEmpty()
+            "cp" -> if (args.size >= 2) listOf(resolveDisplay(cwd, args[1])) else emptyList()
+            "mv" -> if (args.size >= 2) listOf(resolveDisplay(cwd, args[0]), resolveDisplay(cwd, args[1])) else emptyList()
+            "zip" -> if (args.size >= 2) listOf(resolveDisplay(cwd, args[1])) else emptyList()
+            "unzip" -> if (args.size >= 2) listOf(resolveDisplay(cwd, args[1])) else emptyList()
+            else -> emptyList()
+        }
+    }.getOrDefault(emptyList())
 
     private fun executeNative(raw: String, cwd: String): ShellOutcome {
         require(raw.toByteArray(Charsets.UTF_8).size <= MAX_COMMAND_BYTES) { "native shell command exceeds $MAX_COMMAND_BYTES UTF-8 bytes" }
@@ -78,6 +102,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
+                    "rift-tool gate0-verify   [FIXED TRUSTED DEV TOOL / NO GENERIC JS]\n" +
                     "rift-cli status|team|architecture|enable|disable|plan|riftpp|ir|tokenizer   [EXPERIMENTAL / OFF BY DEFAULT]\n" +
                     "Legacy shell-only services fail explicitly; no renderer compatibility fallback exists.",
                 cwd,
@@ -125,7 +150,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftpp", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftpp", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -168,6 +193,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftpp" -> {
                 val value = headlessJs.executeRiftpp(args, cwd)
+                ShellOutcome(value.output, cwd, value.result)
+            }
+            "rift-tool" -> {
+                val value = headlessJs.executeDeveloperTool(args)
                 ShellOutcome(value.output, cwd, value.result)
             }
             "rift-cli" -> {

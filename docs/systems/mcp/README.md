@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -80,6 +80,8 @@ Workspace tools never widen beyond the sandbox merely because the caller is Brow
 `rift_shell_exec` is the stronger process-owned RiftShell capability and is permission-gated by ToolHost; it is not Android/Linux `/system/bin/sh`.
 
 `rift_workspace_exec` requires write permission only when the requested batch mutates.
+
+`rift_workspace_diff` remains read-only and now returns bounded checkpoint-relative structural identity evidence in addition to raw file/event diffs. Exact SHA relations are labeled exact; heuristic similarity relations are labeled non-exact and expose whether the bounded comparison budget prevented exhaustive correlation.
 
 Exact details are verified in the Tool Host/Sandbox audits.
 

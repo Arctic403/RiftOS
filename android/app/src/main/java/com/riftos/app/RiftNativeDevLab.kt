@@ -306,6 +306,17 @@ object RiftNativeDevLab {
         val preview = previewSnapshot(context, id)
         require(preview.optBoolean("safeToPublish")) { "Dev Lab publish aborted: project changed since staging" }
         val entries = snapshot.getJSONArray("entries")
+        val provenancePaths = (0 until entries.length()).map { index ->
+            "workspace/RiftOS-main/" + sourcePath(entries.getJSONObject(index).getString("path"))
+        }
+        val patchSession = RiftPatchSessions.begin(
+            context,
+            origin = "devlab",
+            operation = "publish",
+            intent = "snapshot:$id",
+            requestId = id,
+            rawPaths = provenancePaths
+        )
         val tx = File(r.transactions, "tx-${System.currentTimeMillis()}-${UUID.randomUUID()}").apply { mkdirs() }
         val applied = ArrayList<String>()
         try {
@@ -349,14 +360,17 @@ object RiftNativeDevLab {
                 )
             }
             tx.deleteRecursively()
+            patchSession?.let(RiftPatchSessions::abort)
             throw IllegalStateException("Dev Lab publish rolled back: ${error.message}", error)
         }
 
+        val patchReceipt = patchSession?.let { runCatching { RiftPatchSessions.commit(context, it) }.getOrNull() }
         val receiptId = "publish-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(12)}"
         val receipt = JSONObject()
             .put("format", "riftos-devlab-publication-native").put("version", 2)
             .put("id", receiptId).put("snapshotId", id).put("publishedAt", System.currentTimeMillis())
             .put("changes", entries.length()).put("preview", preview)
+            .put("patchId", patchReceipt?.optString("patchId") ?: JSONObject.NULL)
         atomicWrite(File(r.publications, "$receiptId.json"), receipt.toString(2).toByteArray())
         tx.deleteRecursively()
 
@@ -369,7 +383,9 @@ object RiftNativeDevLab {
         if (staged.length() == 0) state.put("baselineHeadSha", JSONObject.NULL)
         state.put("lastPublished", JSONObject().put("snapshotId", id).put("receiptId", receiptId).put("publishedAt", System.currentTimeMillis()))
         saveState(r, state)
-        return JSONObject().put("published", true).put("snapshotId", id).put("receiptId", receiptId).put("changes", entries.length())
+        return JSONObject().put("published", true).put("snapshotId", id).put("receiptId", receiptId)
+            .put("changes", entries.length())
+            .put("patchId", patchReceipt?.optString("patchId") ?: JSONObject.NULL)
     }
 
     private fun status(context: Context): JSONObject {

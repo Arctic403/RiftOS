@@ -75,7 +75,7 @@ rift_workspace_diff
 rift_workspace_exec
 ```
 
-Read defaults enabled. Write defaults disabled. `rift_workspace_diff` is read-only and exposes bounded private workspace records/checkpoint diffs. `rift_workspace_exec` is always read-gated and becomes write-gated only when its operation list contains a mutation. Grants are changed through the local **Rift MCP** system app.
+Read defaults enabled. Write defaults disabled. `rift_workspace_diff` is read-only and exposes bounded private workspace records/checkpoint diffs plus checkpoint-relative rename/copy/rewrite identity evidence with explicit exact-vs-heuristic metadata and bounded similarity work. `rift_workspace_exec` is always read-gated and becomes write-gated only when its operation list contains a mutation. Grants are changed through the local **Rift MCP** system app.
 
 ## Sandbox
 

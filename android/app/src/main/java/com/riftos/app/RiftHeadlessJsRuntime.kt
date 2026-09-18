@@ -111,6 +111,133 @@ class RiftHeadlessJsRuntime(context: Context) {
     }
 
 
+    fun executeDeveloperTool(args: List<String>): CommandResult {
+        val subcommand = args.firstOrNull()?.trim()?.lowercase().orEmpty()
+        return when (subcommand) {
+            "", "help" -> {
+                val value = JSONObject()
+                    .put("schema", "rift-developer-tool/1")
+                    .put("commands", org.json.JSONArray(listOf("rift-tool gate0-verify")))
+                    .put("genericJavaScript", false)
+                    .put("processAuthority", false)
+                    .put("networkAuthority", false)
+                CommandResult(
+                    output = "Rift developer tools\nrift-tool gate0-verify",
+                    result = value
+                )
+            }
+            "gate0-verify" -> executeGate0Verifier()
+            else -> throw IllegalArgumentException("unsupported fixed Rift developer tool: $subcommand")
+        }
+    }
+
+    private fun executeGate0Verifier(): CommandResult {
+        val bundle = gate0Bundle()
+        val verifierSource = readGate0File("/workspace/rift++/tools/semantic-verifier-core.js")
+        var resultJson: String? = null
+
+        runBlocking {
+            quickJs {
+                evaluationTimeoutMillis = EVALUATION_TIMEOUT_MS
+
+                function("__rift_gate0_bundle") { bundle.toString() }
+                function("__rift_gate0_result") { values ->
+                    resultJson = values.firstOrNull()?.toString()
+                    Unit
+                }
+                function("__rift_utf8") { values ->
+                    values.firstOrNull()?.toString().orEmpty().toByteArray(Charsets.UTF_8)
+                }
+                function("__rift_sha256") { values ->
+                    val value = values.firstOrNull()
+                    val bytes = when (value) {
+                        is ByteArray -> value
+                        is List<*> -> ByteArray(value.size) { index -> (value[index] as Number).toByte() }
+                        else -> throw IllegalArgumentException("SHA-256 input must be a byte array")
+                    }
+                    MessageDigest.getInstance("SHA-256").digest(bytes)
+                }
+
+                evaluate<Any?>(Scripts.POLYFILLS, filename = "rift-tool-polyfills.js")
+                evaluate<Any?>(preparedVmSource(), filename = "riftvm.gate0.js")
+                evaluate<Any?>(preparedCoreSource(), filename = "riftpp-core.gate0.js")
+                evaluate<Any?>(verifierSource, filename = "semantic-verifier-core.js")
+                evaluate<Any?>(Scripts.GATE0_VERIFY_ENTRY, filename = "gate0-verify.js")
+            }
+        }
+
+        val payload = resultJson?.let(::JSONObject)
+            ?: throw IllegalStateException("Gate 0 verifier returned no result")
+        require(payload.optString("status") == "PASS") { "Gate 0 semantic verifier did not pass" }
+        return CommandResult(payload.toString(2), payload)
+    }
+
+    private fun gate0Bundle(): JSONObject {
+        val manifestText = readGate0File("/workspace/rift++/tests/FIXTURE-MANIFEST.json")
+        val expectationsText = readGate0File("/workspace/rift++/tests/compat/EXPECTATIONS.json")
+        val manifest = JSONObject(manifestText)
+        val expectations = JSONObject(expectationsText)
+        require(manifest.optString("schema") == "riftpp-gate0-fixture-manifest/2") {
+            "Gate 0 fixture manifest schema is not supported"
+        }
+        val rows = manifest.optJSONArray("files")
+            ?: throw IllegalArgumentException("Gate 0 fixture manifest has no files array")
+        require(rows.length() in 1..256) { "Gate 0 fixture manifest exceeds fixed file-count bounds" }
+
+        val files = JSONObject()
+        val hashes = JSONObject()
+        val fixturePath = Regex("^(compat|reference-bootstrap)/[A-Za-z0-9._+/-]+\\.riftpp$")
+        for (index in 0 until rows.length()) {
+            val row = rows.optJSONObject(index)
+                ?: throw IllegalArgumentException("Gate 0 fixture manifest row $index is invalid")
+            val relative = row.optString("path").trim()
+            require(fixturePath.matches(relative) && relative.split('/').none { it == ".." }) {
+                "Gate 0 fixture path is outside the allowlist: $relative"
+            }
+            val text = readGate0File("/workspace/rift++/tests/$relative")
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            val expectedBytes = row.optInt("bytes", -1)
+            require(expectedBytes == bytes.size) { "Gate 0 fixture byte-length drift: $relative" }
+            val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            require(digest == row.optString("sha256")) { "Gate 0 fixture hash drift: $relative" }
+            files.put(relative, text)
+            hashes.put(relative, digest)
+        }
+
+        listOf(
+            "/workspace/RiftLLM+/src/riftllm_plus/riftbrain.riftpp",
+            "/workspace/RiftLLM+/src/riftllm_plus/native_repair.riftpp"
+        ).forEach { path -> files.put(path, readGate0File(path)) }
+
+        val bundle = JSONObject()
+            .put("expectations", expectations)
+            .put("manifest", manifest)
+            .put("files", files)
+            .put("fixtureHashes", hashes)
+        require(bundle.toString().toByteArray(Charsets.UTF_8).size <= MAX_TEXT_BYTES) {
+            "Gate 0 verifier bundle exceeds headless runtime text limit"
+        }
+        return bundle
+    }
+
+    private fun readGate0File(path: String): String {
+        val allowed = path == "/workspace/rift++/tools/semantic-verifier-core.js" ||
+            path == "/workspace/rift++/tests/FIXTURE-MANIFEST.json" ||
+            path == "/workspace/rift++/tests/compat/EXPECTATIONS.json" ||
+            path == "/workspace/RiftLLM+/src/riftllm_plus/riftbrain.riftpp" ||
+            path == "/workspace/RiftLLM+/src/riftllm_plus/native_repair.riftpp" ||
+            path.startsWith("/workspace/rift++/tests/compat/") ||
+            path.startsWith("/workspace/rift++/tests/reference-bootstrap/")
+        require(allowed && !path.contains("/../") && !path.contains("\\")) {
+            "Gate 0 verifier path is outside the fixed allowlist"
+        }
+        val file = resolveFile(path, "/")
+        require(file.isFile) { "Gate 0 verifier file not found: $path" }
+        require(file.length() <= MAX_TEXT_BYTES) { "Gate 0 verifier file exceeds text limit: $path" }
+        return file.readText(Charsets.UTF_8)
+    }
+
     private fun preparedVmSource(): String {
         vmSourceCache?.let { return it }
         val source = readAsset("www/src/riftvm.js")
@@ -237,6 +364,38 @@ class RiftHeadlessJsRuntime(context: Context) {
             });
         """
 
+
+        const val GATE0_VERIFY_ENTRY = """
+            (async function() {
+              const bundle = JSON.parse(__rift_gate0_bundle());
+              const compiler = globalThis.RiftPlusPlusCore;
+              const vm = globalThis.RiftVMHeadless;
+              const verifier = globalThis.RiftSemanticVerifier;
+              if (!compiler || !vm || !verifier) throw new Error('Gate 0 verifier runtime is incomplete');
+              const files = bundle.files || {};
+              const hashes = bundle.fixtureHashes || {};
+              const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+              const loadText = async path => {
+                const key = String(path || '');
+                if (!has(files, key)) throw new Error('Gate 0 verifier denied file: ' + key);
+                return String(files[key]);
+              };
+              const hashFixture = async path => {
+                const key = String(path || '');
+                if (!has(hashes, key)) throw new Error('Gate 0 verifier denied fixture hash: ' + key);
+                return String(hashes[key]);
+              };
+              const result = await verifier.run({
+                compiler: compiler,
+                vm: vm,
+                loadText: loadText,
+                hashFixture: hashFixture,
+                expectations: bundle.expectations,
+                fixtureManifest: bundle.manifest
+              });
+              __rift_gate0_result(JSON.stringify(result));
+            })();
+        """
 
         const val RIFTPP_COMMAND_ENTRY = """
             (async function() {

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -69,9 +69,9 @@ This is a static reachability guard, not Kotlin compilation/type resolution.
 
 ## Exact mandatory Kotlin snapshot
 
-Current Android source directory contains 40 Kotlin files.
+Current Android source directory contains 42 Kotlin files.
 
-android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists all 40.
+android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists all 42.
 
 During this audit the old list was found to protect only 32 files.
 
@@ -214,7 +214,7 @@ It also explicitly requires private top-level RiftDevLabLocalAgent and embedded 
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
-Because the Gradle list is now exact 40/40, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
+Because the Gradle list is now exact 42/42, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
 
 ## Final APK asset verification
 
@@ -286,11 +286,13 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 
 ## Source fixes in this audit
 
-- expanded Gradle mandatory Kotlin snapshot from partial 32-file list to exact current 40 files;
+- expanded Gradle mandatory Kotlin snapshot from partial 32-file list to the exact current source set;
 - source validator now compares Gradle list exactly to actual Kotlin tree;
 - fixed Android README wording that still described a packaged web shell/runtime;
 - docs validator now auto-discovers all subsystem READMEs;
 - wiring validator now requires every test-*.mjs to be executed by package scripts;
+- Patch 1 added `test-rift-diff-engine-v2.mjs`, which locks the bounded adaptive multi-hunk engine, Workspace Records delegation, source declaration and documentation ownership;
+- Patch 2 added `test-rift-file-identity-v2.mjs`, which locks exact SHA identity semantics, bounded heuristic correlation, Workspace Records/query integration and ownership;
 - retained-reference tests now assert their JS implementations remain un-packaged/unwired;
 - script index labels retained tests honestly;
 - external Builder APK verifier replaced obsolete full-web-shell requirements with exact Rift++ Core/RiftVM asset verification;

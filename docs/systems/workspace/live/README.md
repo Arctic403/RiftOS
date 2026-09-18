@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -13,7 +13,9 @@ It records local workspace changes, maintains an explicit checkpoint baseline, e
 ## Source ownership
 
 Live:
-- `RiftWorkspaceRecords.kt` — process-wide record/checkpoint state.
+- `RiftWorkspaceRecords.kt` — process-wide record/checkpoint state and Diff Engine V2 adapter.
+- `RiftDiffEngineV2.kt` — Android-framework-independent adaptive exact-LCS / patience-style multi-hunk engine.
+- `RiftFileIdentityV2.kt` — bounded deterministic rename/copy/rewrite correlation and similarity evidence.
 - `RiftWorkspaceWatcher.kt` — recursive `FileObserver` tree.
 - `RiftNativeWorkspaceApps.kt` — native Workspace Records window.
 - `RiftToolSandbox.kt` — read-only `workspace.diff` dispatch.
@@ -111,19 +113,54 @@ Actions:
 - created;
 - deleted;
 - type-changed;
-- modified.
+- modified;
+- renamed;
+- copied;
+- rewritten.
+
+Identity-aware records also carry a bounded `identity` object containing version, relation kind, source/destination paths, similarity score, method and whether the relation is exact.
 
 Event JSON is written atomically.
 
 Maximum stored event records: 2000; older files are pruned.
 
-## Diff bounds
+## Diff Engine V2 and bounds
 
-Text diff:
+Text diffs are produced by `RiftDiffEngineV2`, not by the recorder itself.
+
+The engine is deterministic and emits independent unified-style hunks with three context lines. It normalizes CRLF/CR to LF for comparison and uses an adaptive strategy:
+- exact LCS for bounded regions up to 250000 matrix cells;
+- patience-style unique-line anchors plus longest-increasing-subsequence ordering for larger regions;
+- recursive bounded sub-diffs around those anchors;
+- replacement-block fallback for huge ambiguous regions with no safe unique anchors or after the recursion bound.
+
+The exact-matrix threshold applies to the actually allocated `(n+1) x (m+1)` matrix, preventing unbounded quadratic memory use on low-RAM Android devices while still giving minimal LCS behavior to normal edits. Widely separated edits therefore remain separate hunks instead of collapsing the entire middle of a file into one replacement. Empty-file creation/deletion and byte-only changes such as line-ending normalization remain visible even when the normalized line delta is zero.
+
+Rendered diff bounds remain:
 - maximum 64000 characters;
-- maximum changed lines represented: 420, split between removals/additions plus small context.
+- maximum changed lines represented: 420 across all hunks;
+- three context lines around represented change groups.
 
-Binary/oversized changes produce metadata/hash summaries rather than file contents.
+Text output identifies `Rift-Diff-Version: 2` and the adaptive strategy. Rename/copy evidence can supply distinct before/after paths so diff headers preserve structural movement. Binary/oversized changes remain metadata/hash summaries rather than file contents.
+
+## File Identity V2
+
+`RiftFileIdentityV2` adds structural identity evidence without turning Workspace Records into mutation authority.
+
+Exact SHA-256 matches are authoritative **content identity evidence, not proof of user intent**:
+- a removed path plus a newly-added path with the same SHA can be correlated as an exact rename;
+- a newly-added path matching an unchanged surviving source can be correlated as an exact copy.
+
+Unmatched text candidates use a deterministic bounded heuristic:
+- maximum 64 candidates per side;
+- maximum 1024 line-similarity comparisons total during a full correlation/reconciliation pass;
+- a cheap size-similarity prefilter runs before line comparison;
+- rename threshold: 60%;
+- same-path major-rewrite threshold: 25% or lower;
+- major-rewrite classification is disabled below 512 bytes;
+- similarity is a weighted normalized-line multiset Dice score plus size similarity.
+
+Heuristic relations are marked `exact=false` and method `bounded-line-dice`; consumers must not treat them as cryptographic proof. Exact relations are marked `exact=true` and method `sha256`. If candidate/comparison bounds are reached, the query exposes `similaritySkipped=true` rather than pretending correlation was exhaustive.
 
 ## Query
 
@@ -139,9 +176,12 @@ A leading `workspace/` is normalized away. `..` is rejected.
 Query bounds:
 - requested recent-record limit clamped to 1..250;
 - changed-file rows capped at 500;
-- combined raw query payload budget: 96000 characters;
+- identity relations capped at the same 250-row query bound;
+- combined raw query payload budget: 96000 characters across files, records and identity relations;
 - diffs are omitted first when needed;
-- omitted file/record counts and `responseTruncated` are reported.
+- omitted file/record/relation counts and `responseTruncated` are reported.
+
+The response also includes `identity.version`, `similarityComparisons`, `similaritySkipped` and bounded `identity.relations` computed between checkpoint and observed state. The existing `files` array is retained for compatibility; identity relations are additional structural evidence rather than replacements for raw path changes.
 
 ## MCP
 
@@ -213,6 +253,9 @@ It observes and reports.
 
 ## Source fixes in this audit
 
+- Patch 2 introduced `RiftFileIdentityV2`, exact SHA rename/copy correlation, bounded heuristic rename/rewrite evidence, relation-aware diff headers and checkpoint-query identity summaries;
+- Patch 1 introduced `RiftDiffEngineV2` and removed the recorder's legacy single-prefix/suffix middle-block diff implementation;
+- separate edits now produce independent bounded hunks while large ambiguous files avoid unbounded exact-LCS allocation;
 - native Workspace Records UI now reads the real `action` field;
 - query path filters now accept the standard `workspace/...` MCP prefix while remaining workspace-relative internally;
 - historical HTML/shadow-root UI claims were purged from the retained workspace-live README during the parent Workspace audit.
@@ -228,6 +271,11 @@ It observes and reports.
 - query recent-record limit <=250;
 - raw query payload <=96000 chars;
 - diff <=64000 chars / 420 changed lines;
+- exact LCS allocation is bounded to 250000 matrix cells and larger regions use patience-style anchors/fallback;
+- text diff output is deterministic Rift Diff V2, preserves independent change hunks, and reports existence/byte-only changes even when normalized lines are equal;
+- exact rename/copy relations require SHA-256 identity; heuristic identity is explicitly non-exact;
+- full-reconciliation similarity work is bounded to 64 candidates per side and 1024 line comparisons, with incompleteness exposed; reconciliation records reuse those budgeted results instead of rescoring every file;
+- identity evidence never claims user intent or grants mutation/approval authority;
 - checkpoint only advances baseline;
 - MCP access is query/read-only;
 - Git checkpoint occurs only after successful workspace Git operations.
@@ -239,12 +287,21 @@ It observes and reports.
 - records files appear under workspace -> integrity regression;
 - MCP can call checkpoint -> authority regression;
 - query returns unbounded records/diffs -> bound regression;
+- distant edits collapse into one giant middle replacement despite stable intervening lines -> Diff Engine V2 regression;
+- large ambiguous text allocates an unbounded quadratic matrix -> low-memory safety regression;
+- heuristic correlation exceeds 64 candidates per side / 1024 line comparisons -> identity bound regression;
+- heuristic rename is exposed as exact or treated as proof of user intent -> evidence-semantics regression;
+- exact copy/rename SHA identity is omitted from checkpoint relation evidence -> identity regression;
 - changed workspace content disappears because recorder altered files -> ownership violation;
 - watcher accepts path outside workspace -> containment failure.
 
 ## Fix map
 
-Persistence/diff/checkpoint/query -> `RiftWorkspaceRecords.kt`.
+Persistence/checkpoint/query -> `RiftWorkspaceRecords.kt`.
+
+Text diff computation -> `RiftDiffEngineV2.kt`.
+
+Rename/copy/rewrite identity evidence -> `RiftFileIdentityV2.kt`.
 
 Filesystem events -> `RiftWorkspaceWatcher.kt`.
 
@@ -256,6 +313,6 @@ Git baseline hooks -> `RiftNativeGit.kt`.
 
 ## Validation
 
-Second source audit must verify roots, observer containment/lifecycle, event settlement/reconciliation, text/diff/event/query bounds, atomic private writes, query prefix normalization, read-only MCP mapping, native UI action field, Git push/pull checkpoint call sites, and absence of approval/rollback APIs.
+Second source audit must verify roots, observer containment/lifecycle, event settlement/reconciliation, Diff Engine V2 multi-hunk behavior and 250000-cell exact-LCS bound, File Identity V2 exact/heuristic semantics and 64/1024 bounds, relation-aware path headers, text/diff/event/query bounds, atomic private writes, query prefix normalization, read-only MCP mapping, native UI action field, Git push/pull checkpoint call sites, and absence of approval/rollback APIs.
 
 Device testing should mutate files through Editor, MCP, Shell, Git and Dev Lab and confirm one consistent record stream and expected checkpoint changes.

@@ -36,7 +36,7 @@ Changing relevant source invalidates the affected document's trusted status unti
 | MCP relay | **VERIFIED** | [`systems/mcp/relay/README.md`](systems/mcp/relay/README.md) | WSS transport/config/reconnect/authority audit |
 | Project exporter | **VERIFIED** | [`systems/mcp/project-exporter/README.md`](systems/mcp/project-exporter/README.md) | deterministic paging/snapshot/filter/cursor audit |
 | Workspace | **VERIFIED** | [`systems/workspace/README.md`](systems/workspace/README.md) | canonical-root/writer/watcher/live-vs-retained audit |
-| Workspace Records | **VERIFIED** | [`systems/workspace/live/README.md`](systems/workspace/live/README.md) | watcher/persistence/checkpoint/read-only diff audit |
+| Workspace Records | **VERIFIED** | [`systems/workspace/live/README.md`](systems/workspace/live/README.md) | watcher/persistence/checkpoint/read-only diff + file-identity audit |
 | Dev Lab | **VERIFIED** | [`systems/dev-lab/README.md`](systems/dev-lab/README.md) | staging/snapshot/publish/recovery audit |
 | RiftLLM bridge | **VERIFIED** | [`systems/riftllm-bridge/README.md`](systems/riftllm-bridge/README.md) | fixed Provider/pairing/canary-controller audit |
 | Apps/package host | **VERIFIED** | [`systems/apps/README.md`](systems/apps/README.md) | package/origin/capability/lifecycle audit |
@@ -90,7 +90,7 @@ Every subsystem not listed in the verified set above remains **UNVERIFIED** unti
 | MCP relay | **VERIFIED** | [`systems/mcp/relay/README.md`](systems/mcp/relay/README.md) | WSS transport/config/reconnect/authority audit |
 | Project exporter | **VERIFIED** | [`systems/mcp/project-exporter/README.md`](systems/mcp/project-exporter/README.md) | deterministic paging/snapshot/filter/cursor audit |
 | Workspace | **VERIFIED** | [`systems/workspace/README.md`](systems/workspace/README.md) | canonical-root/writer/watcher/live-vs-retained audit |
-| Workspace Records | **VERIFIED** | [`systems/workspace/live/README.md`](systems/workspace/live/README.md) | watcher/persistence/checkpoint/read-only diff audit |
+| Workspace Records | **VERIFIED** | [`systems/workspace/live/README.md`](systems/workspace/live/README.md) | watcher/persistence/checkpoint/read-only diff + file-identity audit |
 | Dev Lab | **VERIFIED** | [`systems/dev-lab/README.md`](systems/dev-lab/README.md) | staging/snapshot/publish/recovery audit |
 | RiftLLM bridge | **VERIFIED** | [`systems/riftllm-bridge/README.md`](systems/riftllm-bridge/README.md) | fixed Provider/pairing/canary-controller audit |
 | Apps/package host | **VERIFIED** | [`systems/apps/README.md`](systems/apps/README.md) | package/origin/capability/lifecycle audit |

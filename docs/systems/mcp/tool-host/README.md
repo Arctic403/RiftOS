@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -52,8 +52,10 @@ Read-gated tools:
 - info/stat/hash/list/read;
 - audit/scan;
 - project export;
-- workspace diff;
+- workspace diff, including bounded checkpoint file-identity evidence;
 - workspace exec even when read-only.
+
+`rift_workspace_diff` remains one read-only tool; Patch 2 expands its result evidence with bounded `identity.relations` and similarity-budget metadata without adding mutation authority or another tool.
 
 Write-gated fixed tools:
 - writeText;

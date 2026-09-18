@@ -220,6 +220,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
                     )
                     .put("finish", booleanProperty("Set true only when this mutating batch is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session."))
                     .put("dryRun", booleanProperty("Execute and validate read/content-edit operations transactionally, then restore mutations instead of committing. Structural mkdir/remove/move/copy/archive/extract operations are rejected in dry-run mode."))
+                    .put("intent", stringProperty("Optional bounded human/model intent for local patch-session provenance. It is evidence only and never authorizes a mutation."))
                     .put("expectedSnapshot", stringProperty("Optional project/workspace snapshot id. Reject the batch if that snapshot scope changed."))
                     .put("expectedExportSnapshot", stringProperty("Optional snapshotId from rift_project_export. Reject the entire batch if exported source changed after the audit."))
                     .put("snapshotPath", stringProperty("Optional workspace path used for expectedSnapshot/returnSnapshot. Defaults to workspace/."))

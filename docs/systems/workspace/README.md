@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -29,6 +29,8 @@ Core live owners:
 - `RiftNativeWorkspaceApps.kt` — native Files/Editor UI that can browse/edit RiftFS including D:/Workspace.
 - `RiftWorkspaceWatcher.kt` — recursive observer of the physical workspace.
 - `RiftWorkspaceRecords.kt` — private change/checkpoint store outside workspace.
+- `RiftDiffEngineV2.kt` — deterministic bounded multi-hunk text diff engine consumed by Workspace Records.
+- `RiftFileIdentityV2.kt` — deterministic bounded structural identity evidence for rename/copy/rewrite correlation.
 - `RiftNativeGit.kt` — Git/project synchronization, including `/workspace/RiftOS-main`.
 - `RiftNativeDevLab.kt` — staged development/publish flow targeting the RiftOS workspace project.
 - `RiftNativeShell.kt`, `RiftHeadlessJsRuntime.kt`, and native shell services — additional bounded app-private writers where their command/capability allows workspace paths.
@@ -150,6 +152,7 @@ Workspace does not own:
 - normal MCP tools cannot escape workspace;
 - Workspace Records state stays outside workspace;
 - watcher observes the canonical tree rather than a shadow copy;
+- structural identity evidence stays observational, bounded and explicit about exact versus heuristic matches;
 - Git/Dev Lab target workspace subtrees without redefining root;
 - retained workspace web code is not treated as packaged/live.
 
@@ -170,6 +173,10 @@ MCP/Code Mode -> `RiftToolSandbox.kt`.
 Native Editor/Files -> `RiftNativeWorkspaceApps.kt`.
 
 Observation/records -> `RiftWorkspaceWatcher.kt`, `RiftWorkspaceRecords.kt`.
+
+Text diff computation -> `RiftDiffEngineV2.kt`.
+
+File identity correlation -> `RiftFileIdentityV2.kt`.
 
 Git -> `RiftNativeGit.kt`.
 

@@ -1,7 +1,7 @@
 const core=window.RiftOSCore;
 if(!core)throw new Error("RiftOSCore must load before RiftShellBatch");
 
-const NON_REVERSIBLE=new Set(["git","gh","github","mount","umount","kill","open","browser","batch","vortex","vortex-agent","riftos-agent","riftllm-agent","rift-cli","riftpp","chat","devlab","rift"]);
+const NON_REVERSIBLE=new Set(["git","gh","github","mount","umount","kill","open","browser","batch","vortex","vortex-agent","riftos-agent","riftllm-agent","rift-cli","riftpp","rift-tool","chat","devlab","rift"]);
 const PROTECTED_ROOTS=new Set(["/","/home","/apps","/system","/workspace","/downloads","/documents","/mounts","/system/riftos","/system/programs","/system/program-data","/system/toolchains","/home/users","/home/projects","/home/temp","/documents/packages","/documents/builds","/documents/vault","/C:","/D:","/C:/RiftOS","/C:/Programs","/C:/ProgramData","/C:/Toolchains","/D:/Users","/D:/Workspace","/D:/Projects","/D:/Packages","/D:/Builds","/D:/Documents","/D:/Downloads","/D:/Vault","/D:/Temp"]);
 function isProtectedRoot(path){const display=core.path?.normalize?core.path.normalize(path):String(path||"");const canonical=core.path?.canonical?core.path.canonical(display):display;return PROTECTED_ROOTS.has(display)||PROTECTED_ROOTS.has(canonical);}
 

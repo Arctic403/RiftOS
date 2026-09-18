@@ -23,11 +23,14 @@ assert(slice.includes('riftpp shell execution denies host imports'));
 assert(slice.includes('maxSteps:100000,maxStack:1024,maxCallDepth:32,yieldEvery:512'));
 assert(slice.includes('riftpp-shell-self-test/1'));
 assert(slice.includes('compileRiftPlusPlusCoreProgramV1'));
-assert(batch.includes('"rift-cli","riftpp","chat"'), 'riftpp must stay outside atomic batch');
+assert(batch.includes('"rift-cli","riftpp","rift-tool","chat"'), 'riftpp and fixed developer tools must stay outside atomic batch');
 
 assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]'));
+assert(nativeShell.includes('rift-tool gate0-verify   [FIXED TRUSTED DEV TOOL / NO GENERIC JS]'));
 assert(nativeShell.includes('"riftpp" -> {'));
 assert(nativeShell.includes('headlessJs.executeRiftpp(args, cwd)'));
+assert(nativeShell.includes('"rift-tool" -> {'));
+assert(nativeShell.includes('headlessJs.executeDeveloperTool(args)'));
 assert.equal((nativeShell.match(/private fun tokenize\(/g) || []).length, 1, 'native shell helper scope must remain structurally intact');
 assert.equal((nativeShell.match(/private fun resolveFile\(/g) || []).length, 1, 'native shell file resolver must remain present exactly once');
 assert(nativeShell.includes('private fun joinDisplay(base: String, child: String): String'));
@@ -48,6 +51,19 @@ assert(headless.includes("if (sub === 'exec-stateful')"));
 assert(headless.includes('private fun stateSave(namespace: String, key: String, value: String): Boolean'));
 assert(headless.includes('private fun stateLoad(namespace: String, key: String): String?'));
 assert(headless.includes('private fun stateRemove(namespace: String, key: String): Boolean'));
+assert(headless.includes('fun executeDeveloperTool(args: List<String>): CommandResult'));
+assert(headless.includes('"gate0-verify" -> executeGate0Verifier()'));
+assert(headless.includes('const val GATE0_VERIFY_ENTRY = """'));
+assert(headless.includes('function("__rift_gate0_bundle")'));
+assert(headless.includes('function("__rift_gate0_result")'));
+assert(headless.includes('Gate 0 verifier path is outside the fixed allowlist'));
+const devStart = headless.indexOf('private fun executeGate0Verifier()');
+const devEnd = headless.indexOf('\n    private fun gate0Bundle()', devStart);
+assert(devStart >= 0 && devEnd > devStart, 'fixed Gate 0 verifier method must remain present');
+const devSlice = headless.slice(devStart, devEnd);
+for (const forbidden of ['__rift_read_text','__rift_write_text','__rift_state_load','__rift_state_save','__rift_state_remove','ProcessBuilder']) {
+  assert(!devSlice.includes(forbidden), 'Gate 0 verifier must not expose authority: ' + forbidden);
+}
 assert(headless.includes('Rift++ state namespace exceeds $MAX_STATE_FILES records'));
 assert.equal(hasWebKitDependency(headless), false);
 assert(!headless.includes('ProcessBuilder'));

@@ -72,6 +72,28 @@ Next improvements should stay lightweight:
 
 The project should never be injected wholesale into ChatGPT. RiftOS exposes full project reachability through the local executor; only bounded search/read results needed for reasoning cross the existing ChatGPT Web transport.
 
+## Workspace trust and validation hardening — observe-first
+
+A 14-patch closed-circuit validation program is now active as planned development work. Until the full system survives adversarial validation, its eventual Local Agent gate defaults to **OBSERVE**: it may compute WOULD_ACCEPT / WOULD_DENY evidence but must not block existing patch, Git, Dev Lab or build workflows. ENFORCE remains manual-only until graduation.
+
+Current sequence/status:
+1. **Diff Engine V2 — implemented in current source.** Workspace Records delegates text rendering to a bounded deterministic adaptive exact-LCS/patience engine with independent hunks.
+2. **File identity intelligence — implemented in current source.** Exact SHA rename/copy content identity, bounded heuristic rename/rewrite correlation and checkpoint identity summaries.
+3. Patch sessions and provenance.
+4. Immutable patch manifest and tamper-evident evidence.
+5. Semantic diff + Project Intelligence impact mapping.
+6. Local Agent validation state machine/policy core.
+7. Independent research-verification ledger.
+8. Documentation/README/roadmap/patch-note parity gate.
+9. Impact-derived tests/security/dependency verification planner.
+10. Hermetic/reproducible evidence and stale-result invalidation.
+11. Trust-boundary enforcement and bypass closure.
+12. Immutable verification bundle and decision trail.
+13. Builder provenance handshake from accepted source identity to APK artifact identity.
+14. Adversarial torture/re-audit before ENFORCE can be considered normal.
+
+OBSERVE and ENFORCE must execute the same verification pipeline; only authority differs. A candidate or trusted-base byte change invalidates previous acceptance evidence rather than inheriting stale approval.
+
 ## RiftEngine
 
 Move RiftBrowser toward a lightweight Rust-native engine based on Servo:

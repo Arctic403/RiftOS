@@ -339,7 +339,16 @@ class RiftNativeGit(context: Context) {
         }
         meta.put("headSha", commitSha)
         meta.remove("pendingMessage")
+        val patchSession = RiftPatchSessions.begin(
+            appContext,
+            origin = "native-git",
+            operation = "push-metadata",
+            intent = "commit:$commitSha",
+            requestId = commitSha,
+            rawPaths = listOf(meta.optString("root").trimEnd('/') + "/.riftgit.json")
+        )
         if (suppliedMeta != null) refreshAttachedMeta(meta) else saveMeta(meta)
+        patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
         checkpoint(meta.optString("root"), "git:push", commitSha)
         print("Push complete: " + commitSha.take(12) + " · one Git commit.")
         return JSONObject().put("pushed", true).put("commitSha", commitSha).put("changes", changes.size)
@@ -544,6 +553,14 @@ class RiftNativeGit(context: Context) {
         require(parent == root || parent.path.startsWith(root.path + File.separator)) {
             "Repository parent escaped RiftFS"
         }
+        val patchSession = RiftPatchSessions.begin(
+            appContext,
+            origin = "native-git",
+            operation = "import",
+            intent = "branch:$branch",
+            requestId = headSha,
+            rawPaths = listOf(rootDisplay)
+        )
 
         val suffix = System.currentTimeMillis().toString() + "-" + UUID.randomUUID().toString()
         val stage = File(parent, "." + repoRoot.name + ".riftgit-stage-" + suffix)
@@ -602,10 +619,12 @@ class RiftNativeGit(context: Context) {
                 val backupCleanupPending =
                     backedUp && backup.exists() && !runCatching { backup.deleteRecursively() }.getOrDefault(false)
 
+                val patchReceipt = patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) }.getOrNull() }
                 checkpoint(rootDisplay, "git:pull", headSha)
                 return JSONObject()
                     .put("imported", tree.length())
                     .put("headSha", headSha)
+                    .put("patchId", patchReceipt?.optString("patchId") ?: JSONObject.NULL)
                     .put("backupCleanupPending", backupCleanupPending)
                     .put("backupPath", if (backupCleanupPending) backup.absolutePath else JSONObject.NULL)
             } catch (error: Throwable) {
@@ -645,6 +664,7 @@ class RiftNativeGit(context: Context) {
                 )
             }
         } catch (error: Throwable) {
+            patchSession?.let(RiftPatchSessions::abort)
             if (!retainRecovery && stage.exists()) {
                 val removed = runCatching { stage.deleteRecursively() }.getOrDefault(false)
                 if (!removed) {

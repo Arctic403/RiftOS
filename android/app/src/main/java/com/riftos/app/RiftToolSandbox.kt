@@ -99,6 +99,7 @@ internal class RiftToolSandbox(context: Context) {
     fun handleAsync(raw: String, reply: (String) -> Unit) {
         executor.execute {
             val id = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
+            var patchSession: RiftPatchSessions.Handle? = null
             val response = try {
                 val request = JSONObject(raw)
                 val requestId = request.optString("id")
@@ -106,11 +107,22 @@ internal class RiftToolSandbox(context: Context) {
                 require(requestId.isNotBlank()) { "Missing tool request id" }
                 require(method.isNotBlank()) { "Missing tool method" }
                 val args = request.optJSONObject("args") ?: JSONObject()
+                patchSession = RiftPatchSessions.begin(
+                    appContext,
+                    origin = "mcp",
+                    operation = method,
+                    intent = args.optString("intent").takeIf { it.isNotBlank() },
+                    requestId = requestId,
+                    rawPaths = provenanceMutationPaths(method, args)
+                )
+                val value = dispatch(method, args) ?: JSONObject.NULL
+                patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
                 JSONObject()
                     .put("id", requestId)
                     .put("ok", true)
-                    .put("value", dispatch(method, args) ?: JSONObject.NULL)
+                    .put("value", value)
             } catch (error: Throwable) {
+                patchSession?.let(RiftPatchSessions::abort)
                 JSONObject()
                     .put("id", id)
                     .put("ok", false)
@@ -172,6 +184,30 @@ internal class RiftToolSandbox(context: Context) {
         source.listFiles()?.forEach { child ->
             mergeMissingTree(child, File(destination, child.name))
         }
+    }
+
+    private fun provenanceMutationPaths(method: String, args: JSONObject): List<String> {
+        val paths = LinkedHashSet<String>()
+        fun add(value: String) { value.trim().takeIf { it.isNotBlank() }?.let(paths::add) }
+        when (method) {
+            "fs.writeText", "fs.mkdir", "fs.remove" -> add(args.optString("path"))
+            "fs.move" -> { add(args.optString("from")); add(args.optString("to")) }
+            "fs.copy", "fs.archive", "fs.extract" -> add(args.optString("to"))
+            "workspace.exec" -> {
+                if (args.optBoolean("dryRun", false)) return emptyList()
+                val operations = args.optJSONArray("operations") ?: return emptyList()
+                for (index in 0 until operations.length()) {
+                    val raw = operations.optJSONObject(index) ?: continue
+                    val operation = normalizeWorkspaceOperation(raw)
+                    when (operation.optString("op").trim().lowercase()) {
+                        "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove" -> add(operation.optString("path"))
+                        "move", "rename" -> { add(operation.optString("from")); add(operation.optString("to")) }
+                        "copy", "archive", "extract" -> add(operation.optString("to"))
+                    }
+                }
+            }
+        }
+        return paths.toList()
     }
 
     private fun dispatch(method: String, args: JSONObject): Any? = when (method) {

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-17.**
+**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-18.**
 
 This file reports what the current local source implements. It does not claim the unpushed native migration has passed Android Builder or installed-device acceptance.
 
@@ -29,6 +29,8 @@ From `android/app/build.gradle.kts`:
 - `RiftToolSandbox` is hard-scoped to `filesDir/riftfs/workspace`.
 - the current model-visible MCP catalog is exactly 18 tools.
 - `RiftWorkspaceRecords` is native/shared; `RiftWorkspaceWatcher` is Activity-owned and is recreated with `MainActivity`.
+- `RiftDiffEngineV2` provides bounded adaptive exact-LCS/patience multi-hunk text diffs to Workspace Records; it is evidence formatting only and does not approve patches.
+- `RiftFileIdentityV2` adds exact SHA rename/copy content identity plus bounded non-exact rename/rewrite similarity evidence; it does not infer user intent or authorize mutations.
 - `RiftSecretStore` is the Android Keystore-backed secret owner.
 - Native Files owns persisted Android SAF document-tree mounts.
 - `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.

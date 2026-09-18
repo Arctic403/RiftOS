@@ -143,21 +143,64 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     private fun reconcileAll(source: String) {
         val current = scanCurrentFiles()
         val currentPaths = current.keys.toSet()
+        val candidates = LinkedHashMap<String, Snapshot>()
         var metadataDirty = false
+
         for ((path, file) in current) {
             val previous = observed[path]
-            // Watch events capture ordinary edits. A periodic reconciliation should not
-            // rehash every byte of an unchanged multi-gigabyte workspace on each query.
             if (previous != null && previous.kind == "file" &&
                 previous.size == file.length() && previous.modified == file.lastModified()) continue
-            val next = snapshot(file)
+            candidates[path] = snapshot(file)
+        }
+
+        val beforeViews = observed.map { (path, entry) ->
+            val candidate = candidates[path]
+            val changed = path !in currentPaths || candidate?.entry?.sha256?.let { it != entry.sha256 } == true
+            identityView(path, entry, if (changed && entry.textStored) readSnapshot(observedRoot, path) else null)
+        }
+        val afterViews = current.keys.mapNotNull { path ->
+            val next = candidates[path]
+            val entry = next?.entry ?: observed[path] ?: return@mapNotNull null
+            identityView(path, entry, next?.text)
+        }
+        val correlation = RiftFileIdentityV2.correlate(beforeViews, afterViews)
+        val handledTargets = HashSet<String>()
+        val rewriteRelations = correlation.relations
+            .filter { it.kind == "rewritten" && it.fromPath == it.toPath }
+            .associateBy { it.toPath }
+
+        for (relation in correlation.relations) {
+            if (relation.kind !in setOf("renamed", "copied")) continue
+            val target = candidates[relation.toPath] ?: continue
+            val sourceEntry = observed[relation.fromPath] ?: continue
+            val valid = when (relation.kind) {
+                "renamed" -> relation.fromPath !in currentPaths && relation.toPath !in observed
+                "copied" -> relation.fromPath in currentPaths && relation.toPath !in observed
+                else -> false
+            }
+            if (!valid) continue
+            recordIdentityRelation(relation, sourceEntry, target, source)
+            handledTargets += relation.toPath
+        }
+
+        for ((path, next) in candidates) {
+            if (path in handledTargets) continue
+            val previous = observed[path]
             if (previous == null || previous.sha256 != next.entry.sha256 || previous.kind != next.entry.kind) {
-                recordChange(path, previous, next, source)
+                recordChange(
+                    path,
+                    previous,
+                    next,
+                    source,
+                    rewriteRelation = rewriteRelations[path],
+                    allowRewriteHeuristic = false
+                )
             } else if (previous.modified != next.entry.modified || previous.size != next.entry.size) {
                 observed[path] = next.entry
                 metadataDirty = true
             }
         }
+
         for (path in observed.keys.filter { it !in currentPaths }.toList()) {
             val previous = observed[path]
             recordChange(path, previous, null, source)
@@ -178,23 +221,61 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             }
             return
         }
+
+        if (previous == null && next != null) {
+            val exactSource = observed.entries
+                .asSequence()
+                .filter { (candidatePath, entry) ->
+                    candidatePath != path && entry.kind == next.entry.kind && entry.sha256 == next.entry.sha256
+                }
+                .sortedBy { it.key }
+                .firstOrNull()
+            if (exactSource != null) {
+                recordIdentityRelation(
+                    RiftFileIdentityV2.Relation("copied", exactSource.key, path, 100, "sha256", true),
+                    exactSource.value,
+                    next,
+                    source
+                )
+                return
+            }
+        }
         recordChange(path, previous, next, source)
     }
 
-    private fun recordChange(path: String, before: Entry?, after: Snapshot?, source: String) {
+    private fun recordChange(
+        path: String,
+        before: Entry?,
+        after: Snapshot?,
+        source: String,
+        rewriteRelation: RiftFileIdentityV2.Relation? = null,
+        allowRewriteHeuristic: Boolean = true
+    ) {
         val beforeText = before?.takeIf { it.textStored }?.let { readSnapshot(observedRoot, path) }
         val afterText = after?.text
+        val rewriteSimilarity = when {
+            rewriteRelation?.kind == "rewritten" -> rewriteRelation.similarity
+            allowRewriteHeuristic && before != null && after != null && before.kind == after.entry.kind ->
+                RiftFileIdentityV2.majorRewriteSimilarity(beforeText, afterText, before.size, after.entry.size)
+            else -> null
+        }
         val action = when {
             before == null && after != null -> "created"
             before != null && after == null -> "deleted"
             before?.kind != after?.entry?.kind -> "type-changed"
+            rewriteSimilarity != null -> "rewritten"
             else -> "modified"
         }
         val at = System.currentTimeMillis()
         val seq = sequence.incrementAndGet()
+        val recordId = "rec-$seq-$at"
+        val provenance = RiftPatchSessions.resolve(path, after != null, after?.entry?.sha256)
+            ?: RiftPatchSessions.unattributed(recordId, path, source, at)
         val record = JSONObject()
             .put("format", FORMAT)
-            .put("id", "rec-$seq-$at")
+            .put("id", recordId)
+            .put("patchId", provenance.getString("patchId"))
+            .put("provenance", provenance)
             .put("sequence", seq)
             .put("at", at)
             .put("path", path)
@@ -204,6 +285,20 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             .put("after", entryJson(after?.entry))
             .put("textDiffAvailable", beforeText != null || afterText != null)
             .put("diff", buildDiff(path, beforeText, afterText, before, after?.entry))
+        if (rewriteSimilarity != null) {
+            record.put(
+                "identity",
+                rewriteRelation?.let(::relationJson)
+                    ?: JSONObject()
+                        .put("version", RiftFileIdentityV2.VERSION)
+                        .put("kind", "rewritten")
+                        .put("fromPath", path)
+                        .put("toPath", path)
+                        .put("similarity", rewriteSimilarity)
+                        .put("method", "bounded-line-dice")
+                        .put("exact", false)
+            )
+        }
         val file = File(eventRoot, "%012d-%013d.json".format(seq, at))
         writeJsonAtomic(file, record)
 
@@ -215,6 +310,60 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             observed[path] = after.entry
             writeSnapshot(observedRoot, path, after.text)
         }
+        pruneRecords()
+        saveState()
+    }
+
+    private fun recordIdentityRelation(
+        relation: RiftFileIdentityV2.Relation,
+        before: Entry,
+        after: Snapshot,
+        source: String
+    ) {
+        val beforeText = before.takeIf { it.textStored }?.let { readSnapshot(observedRoot, relation.fromPath) }
+        val afterText = after.text
+        val at = System.currentTimeMillis()
+        val seq = sequence.incrementAndGet()
+        val recordId = "rec-$seq-$at"
+        val provenance = RiftPatchSessions.resolve(relation.toPath, true, after.entry.sha256)
+            ?: RiftPatchSessions.unattributed(recordId, relation.toPath, source, at)
+        val record = JSONObject()
+            .put("format", FORMAT)
+            .put("id", recordId)
+            .put("patchId", provenance.getString("patchId"))
+            .put("provenance", provenance)
+            .put("sequence", seq)
+            .put("at", at)
+            .put("path", relation.toPath)
+            .put("action", relation.kind)
+            .put("source", source)
+            .put("identity", relationJson(relation))
+            .put("before", entryJson(before))
+            .put("after", entryJson(after.entry))
+            .put("textDiffAvailable", beforeText != null || afterText != null)
+            .put(
+                "diff",
+                buildDiff(
+                    relation.toPath,
+                    beforeText,
+                    afterText,
+                    before,
+                    after.entry,
+                    beforePath = relation.fromPath,
+                    afterPath = relation.toPath
+                )
+            )
+        val file = File(eventRoot, "%012d-%013d.json".format(seq, at))
+        writeJsonAtomic(file, record)
+
+        if (relation.kind == "renamed" && relation.fromPath != relation.toPath) {
+            observed.remove(relation.fromPath)
+            val oldSnapshot = snapshotFile(observedRoot, relation.fromPath)
+            oldSnapshot.delete()
+            pruneEmptyParents(oldSnapshot.parentFile, observedRoot)
+        }
+        observed[relation.toPath] = after.entry
+        writeSnapshot(observedRoot, relation.toPath, after.text)
         pruneRecords()
         saveState()
     }
@@ -244,6 +393,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         val includeDiff = !args.has("includeDiff") || args.optBoolean("includeDiff", true)
         val limit = args.optInt("limit", 120).coerceIn(1, MAX_QUERY_RECORDS)
         val allPaths = (checkpoint.keys + observed.keys).toSortedSet()
+        val correlation = identityCorrelation(checkpoint, checkpointRoot, observed, observedRoot)
         val changed = JSONArray()
         var changedCount = 0
         var payloadChars = 0
@@ -303,6 +453,20 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             } else omittedRecords++
         }
 
+        val identityRows = JSONArray()
+        var matchingRelations = 0
+        var omittedRelations = 0
+        for (relation in correlation.relations) {
+            if (!matchesPrefix(relation.fromPath, prefix) && !matchesPrefix(relation.toPath, prefix)) continue
+            matchingRelations++
+            val row = relationJson(relation)
+            val size = row.toString().length
+            if (identityRows.length() < MAX_QUERY_RECORDS && payloadChars + size <= MAX_QUERY_PAYLOAD_CHARS) {
+                identityRows.put(row)
+                payloadChars += size
+            } else omittedRelations++
+        }
+
         return JSONObject()
             .put("format", FORMAT)
             .put("scope", "riftfs/workspace")
@@ -310,12 +474,20 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             .put("summary", JSONObject()
                 .put("changedFiles", changedCount)
                 .put("records", matchingRecords)
+                .put("identityRelations", matchingRelations)
+                .put("returnedRelations", identityRows.length())
                 .put("returnedRecords", records.length())
                 .put("returnedFiles", changed.length())
                 .put("omittedFiles", omittedFiles)
                 .put("omittedRecords", omittedRecords)
-                .put("responseTruncated", omittedFiles > 0 || omittedRecords > 0)
+                .put("omittedRelations", omittedRelations)
+                .put("responseTruncated", omittedFiles > 0 || omittedRecords > 0 || omittedRelations > 0)
                 .put("recordLimit", limit))
+            .put("identity", JSONObject()
+                .put("version", RiftFileIdentityV2.VERSION)
+                .put("similarityComparisons", correlation.similarityComparisons)
+                .put("similaritySkipped", correlation.similaritySkipped)
+                .put("relations", identityRows))
             .put("files", changed)
             .put("records", records)
     }
@@ -363,36 +535,55 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         return sample.none { it == 0.toByte() }
     }
 
-    private fun buildDiff(path: String, before: String?, after: String?, beforeEntry: Entry?, afterEntry: Entry?): String {
-        if (before == null && after == null) {
-            val left = beforeEntry?.let { "${it.size} bytes ${it.sha256.take(12)}" } ?: "missing"
-            val right = afterEntry?.let { "${it.size} bytes ${it.sha256.take(12)}" } ?: "missing"
-            return "diff --rift a/$path b/$path\nBinary/oversized change: $left -> $right"
+    private fun buildDiff(
+        path: String,
+        before: String?,
+        after: String?,
+        beforeEntry: Entry?,
+        afterEntry: Entry?,
+        beforePath: String? = null,
+        afterPath: String? = null
+    ): String =
+        RiftDiffEngineV2.render(
+            path = path,
+            beforeText = before,
+            afterText = after,
+            before = beforeEntry?.let { RiftDiffEngineV2.Descriptor(it.size, it.sha256) },
+            after = afterEntry?.let { RiftDiffEngineV2.Descriptor(it.size, it.sha256) },
+            beforePath = beforePath,
+            afterPath = afterPath,
+            maxChars = MAX_DIFF_CHARS,
+            maxChangedLines = MAX_DIFF_LINES
+        )
+
+    private fun identityView(path: String, entry: Entry, text: String?): RiftFileIdentityV2.FileView =
+        RiftFileIdentityV2.FileView(path, entry.size, entry.sha256, text)
+
+    private fun identityCorrelation(
+        before: Map<String, Entry>,
+        beforeRoot: File,
+        after: Map<String, Entry>,
+        afterRoot: File
+    ): RiftFileIdentityV2.Correlation {
+        val beforeViews = before.map { (path, entry) ->
+            val changed = !sameEntry(entry, after[path])
+            identityView(path, entry, if (changed && entry.textStored) readSnapshot(beforeRoot, path) else null)
         }
-        val a = (before ?: "").split('\n')
-        val b = (after ?: "").split('\n')
-        var prefix = 0
-        while (prefix < a.size && prefix < b.size && a[prefix] == b[prefix]) prefix++
-        var suffix = 0
-        while (suffix < a.size - prefix && suffix < b.size - prefix && a[a.size - 1 - suffix] == b[b.size - 1 - suffix]) suffix++
-        val removed = a.subList(prefix, a.size - suffix)
-        val added = b.subList(prefix, b.size - suffix)
-        val contextBefore = a.subList((prefix - 3).coerceAtLeast(0), prefix)
-        val contextAfterStart = b.size - suffix
-        val contextAfter = b.subList(contextAfterStart, (contextAfterStart + 3).coerceAtMost(b.size))
-        val lines = ArrayList<String>()
-        lines += "diff --rift a/$path b/$path"
-        lines += if (beforeEntry == null) "--- /dev/null" else "--- a/$path"
-        lines += if (afterEntry == null) "+++ /dev/null" else "+++ b/$path"
-        lines += "@@ -${prefix + 1},${removed.size} +${prefix + 1},${added.size} @@"
-        contextBefore.forEach { lines += " $it" }
-        removed.take(MAX_DIFF_LINES / 2).forEach { lines += "-$it" }
-        added.take(MAX_DIFF_LINES / 2).forEach { lines += "+$it" }
-        contextAfter.forEach { lines += " $it" }
-        if (removed.size + added.size > MAX_DIFF_LINES) lines += "... diff truncated (${removed.size} removed / ${added.size} added lines)"
-        val rendered = lines.joinToString("\n")
-        return if (rendered.length <= MAX_DIFF_CHARS) rendered else rendered.take(MAX_DIFF_CHARS) + "\n... diff truncated"
+        val afterViews = after.map { (path, entry) ->
+            val changed = !sameEntry(before[path], entry)
+            identityView(path, entry, if (changed && entry.textStored) readSnapshot(afterRoot, path) else null)
+        }
+        return RiftFileIdentityV2.correlate(beforeViews, afterViews)
     }
+
+    private fun relationJson(relation: RiftFileIdentityV2.Relation): JSONObject = JSONObject()
+        .put("version", RiftFileIdentityV2.VERSION)
+        .put("kind", relation.kind)
+        .put("fromPath", relation.fromPath)
+        .put("toPath", relation.toPath)
+        .put("similarity", relation.similarity)
+        .put("method", relation.method)
+        .put("exact", relation.exact)
 
     private fun status(before: Entry?, after: Entry?): String = when {
         before == null && after != null -> "added"

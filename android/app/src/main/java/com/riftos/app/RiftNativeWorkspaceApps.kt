@@ -312,11 +312,22 @@ class RiftNativeWorkspaceApps(
     }
 
     private fun saveEditor(state: EditorState) {
+        var patchSession: RiftPatchSessions.Handle? = null
         runCatching {
             val display = RiftVolumePaths.normalizeDisplay(state.pathInput.text.toString())
             require(display != "/" && !RiftVolumePaths.isVolumeRoot(display) && display != ANDROID_FILES_ROOT) { "A file path is required" }
             val bytes = state.body.text.toString().toByteArray(Charsets.UTF_8)
             require(bytes.size <= MAX_EDITOR_BYTES) { "editor content exceeds native editor limit" }
+            if (!isAndroidPath(display)) {
+                patchSession = RiftPatchSessions.begin(
+                    activity,
+                    origin = "native-editor",
+                    operation = "save",
+                    intent = "editor-save",
+                    requestId = null,
+                    rawPaths = listOf(display)
+                )
+            }
             if (isAndroidPath(display)) {
                 val document = resolveDocument(display)
                 require(document.isFile && document.canWrite()) { "Android file is not writable: $display" }
@@ -365,9 +376,14 @@ class RiftNativeWorkspaceApps(
                     throw error
                 }
             }
+            patchSession?.let { runCatching { RiftPatchSessions.commit(activity, it) } }
+            patchSession = null
             state.displayPath = display
             state.status.text = "Saved $display · ${humanBytes(bytes.size.toLong())}"
-        }.onFailure { state.status.text = "Save error: ${it.message}" }
+        }.onFailure {
+            patchSession?.let(RiftPatchSessions::abort)
+            state.status.text = "Save error: ${it.message}"
+        }
     }
 
 
