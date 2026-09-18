@@ -156,6 +156,22 @@ const verifiedSystemDocs = [
 ];
 const repairHeadings = [/^## Source ownership$/m, /^## Failure signatures$/m, /^## Fix map$/m, /^## Validation\b/m];
 
+const VERIFIED_SYSTEM_MARKER =
+  /\*\*VERIFIED AGAINST CURRENT (?:SOURCE|GRADLE\/SOURCE) — (\d{4}-\d{2}-\d{2})\.\*\*/;
+const ROOT_ENGINE_MARKER =
+  /\*\*ENGINE DOCUMENTATION VERIFIED AGAINST CURRENT SOURCE — (\d{4}-\d{2}-\d{2})\.\*\*/;
+const PROJECT_STATUS_MARKER =
+  /\*\*CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — (\d{4}-\d{2}-\d{2})\.\*\*/;
+
+function hasValidVerificationMarker(text, pattern) {
+  const match = text.match(pattern);
+  if (!match) return false;
+  const isoDate = match[1];
+  const parsed = new Date(`${isoDate}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== isoDate) return false;
+  return parsed.getTime() <= Date.now();
+}
+
 for (const doc of requiredDocs) {
   const full = path.join(root, doc);
   if (!fs.existsSync(full)) {
@@ -173,8 +189,8 @@ for (const doc of requiredDocs) {
 
 for (const doc of verifiedSystemDocs) {
   const text = fs.readFileSync(path.join(root, doc), 'utf8');
-  if (!/^## Verification status$/m.test(text) || !/\*\*VERIFIED AGAINST CURRENT (?:SOURCE|GRADLE\/SOURCE) — 2026-09-17\.\*\*/.test(text)) {
-    failures.push(`verified engine document lacks current verification marker: ${doc}`);
+  if (!/^## Verification status$/m.test(text) || !hasValidVerificationMarker(text, VERIFIED_SYSTEM_MARKER)) {
+    failures.push(`verified engine document lacks a valid source-verification marker: ${doc}`);
   }
 }
 for (const doc of systemDocs) {
@@ -186,12 +202,12 @@ for (const doc of systemDocs) {
 }
 
 const rootReadme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-if (!rootReadme.includes('ENGINE DOCUMENTATION VERIFIED AGAINST CURRENT SOURCE — 2026-09-17')) {
-  failures.push('root README does not carry current engine verification status');
+if (!hasValidVerificationMarker(rootReadme, ROOT_ENGINE_MARKER)) {
+  failures.push('root README does not carry a valid engine verification status');
 }
 const projectStatus = fs.readFileSync(path.join(root, 'docs/PROJECT_STATUS.md'), 'utf8');
-if (!projectStatus.includes('CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-17')) {
-  failures.push('PROJECT_STATUS does not carry current engine verification status');
+if (!hasValidVerificationMarker(projectStatus, PROJECT_STATUS_MARKER)) {
+  failures.push('PROJECT_STATUS does not carry a valid engine verification status');
 }
 const docsTrust = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');
 if (!docsTrust.includes('Documentation is **UNVERIFIED by default**')) {

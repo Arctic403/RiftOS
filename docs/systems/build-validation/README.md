@@ -284,6 +284,12 @@ Gradle itself is pinned to 9.5.0 and Android build tools to 36.0.0.
 
 The mutable Action-tag trust surface is a current external supply-chain limitation; this audit does not claim byte-for-byte reproducible Builder infrastructure.
 
+## Verification-marker contract
+
+The documentation validator no longer hard-codes one calendar day as the only valid meaning of `CURRENT`. A verified subsystem may retain the date on which that subsystem was actually source-audited while another subsystem advances independently. The validator requires the correct verification heading/marker class, a real ISO date, and rejects future-dated markers.
+
+Stale-document detection belongs to source ownership, changed-source impact, roadmap/patch-history synchronization and later Local Agent policy evidence—not a global `YYYY-MM-DD` constant that invalidates correctly re-verified docs or forces untouched docs to lie about their audit date.
+
 ## Source fixes in this audit
 
 - expanded Gradle mandatory Kotlin snapshot from partial 32-file list to the exact current source set;
