@@ -1,6 +1,7 @@
 package com.riftos.app
 
 import android.content.Context
+import java.lang.ref.WeakReference
 
 /** Process-wide Rift MCP runtime. */
 object RiftMcpRuntime {
@@ -8,8 +9,20 @@ object RiftMcpRuntime {
     @Volatile private var server: RiftMcpServer? = null
     @Volatile private var relay: RiftMcpRelayClient? = null
     @Volatile private var nativeShell: RiftNativeShell? = null
-    @Volatile private var compatibilityShell: RiftShellBridge? = null
     @Volatile private var vortexBridge: RiftVortexBridgeClient? = null
+    @Volatile private var nativeGit: RiftNativeGit? = null
+    @Volatile private var activityRef: WeakReference<MainActivity>? = null
+
+    fun registerActivity(activity: MainActivity) {
+        activityRef = WeakReference(activity)
+    }
+
+    fun unregisterActivity(activity: MainActivity) {
+        val current = activityRef?.get()
+        if (current === activity) activityRef = null
+    }
+
+    fun activeActivity(): MainActivity? = activityRef?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
 
     /** Native process-owned shell authority. This remains available without any WebView. */
     fun shellExecutor(): RiftShellExecutor? = nativeShell
@@ -18,29 +31,8 @@ object RiftMcpRuntime {
         nativeShell?.let { return it }
         return synchronized(this) {
             nativeShell ?: RiftNativeShell(context.applicationContext).also { shell ->
-                compatibilityShell?.let(shell::setCompatibilityFallback)
                 nativeShell = shell
                 host?.setShellExecutor(shell)
-            }
-        }
-    }
-
-    /** Attach the temporary trusted-shell compatibility executor without making MCP depend on it. */
-    fun registerShellBridge(context: Context, bridge: RiftShellBridge) {
-        synchronized(this) {
-            compatibilityShell = bridge
-            val shell = nativeShell(context)
-            shell.setCompatibilityFallback(bridge)
-            host?.setShellExecutor(shell)
-        }
-    }
-
-    /** Detach only the matching compatibility executor; native RiftShell stays process-owned. */
-    fun unregisterShellBridge(bridge: RiftShellBridge) {
-        synchronized(this) {
-            if (compatibilityShell === bridge) {
-                compatibilityShell = null
-                nativeShell?.clearCompatibilityFallback(bridge)
             }
         }
     }
@@ -66,7 +58,14 @@ object RiftMcpRuntime {
         }
     }
 
-    /** Process-wide Vortex Binder client so Activity recreation cannot tear down a live dev session/job. */
+    fun nativeGit(context: Context): RiftNativeGit {
+        nativeGit?.let { return it }
+        return synchronized(this) {
+            nativeGit ?: RiftNativeGit(context.applicationContext).also { nativeGit = it }
+        }
+    }
+
+    /** Process-wide Vortex Binder client so same-process Activity recreation cannot tear down a live dev session/job. Android process death still resets this singleton. */
     fun vortexBridge(context: Context): RiftVortexBridgeClient {
         vortexBridge?.let { return it }
         return synchronized(this) {

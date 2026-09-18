@@ -1,6 +1,8 @@
 const PROTOCOL = "rift-mcp-relay-v1";
 const MAX_BODY_BYTES = 1_000_000;
 const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_PENDING_REQUESTS = 128;
+const encoder = new TextEncoder();
 
 function json(value, status = 200, headers = {}) {
   return new Response(JSON.stringify(value), {
@@ -26,6 +28,38 @@ function isValidMcpPath(pathname, secret) {
   return Boolean(secret) && pathname === `/mcp/${secret}`;
 }
 
+async function readBoundedText(request, maxBytes = MAX_BODY_BYTES) {
+  const declaredRaw = request.headers.get("content-length");
+  if (declaredRaw != null) {
+    const declared = Number(declaredRaw);
+    if (!Number.isFinite(declared) || declared < 0 || declared > maxBytes) {
+      throw new RangeError("request body too large");
+    }
+  }
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) throw new RangeError("request body too large");
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -46,7 +80,7 @@ export default {
         return json({ error: "Unsupported relay protocol" }, 400);
       }
       const deviceId = request.headers.get("x-rift-device-id")?.trim();
-      if (!deviceId || deviceId.length > 160) {
+      if (!deviceId || !/^[A-Za-z0-9._:-]{1,160}$/.test(deviceId)) {
         return json({ error: "Invalid device ID" }, 400);
       }
       const room = env.RIFT_RELAY.getByName("primary");
@@ -72,11 +106,12 @@ export default {
       if (request.method !== "POST") {
         return new Response(null, { status: 405, headers: { allow: "POST, GET, DELETE, OPTIONS" } });
       }
-      const declared = Number(request.headers.get("content-length") || "0");
-      if (declared > MAX_BODY_BYTES) return rpcError(null, -32001, "MCP request too large", 413);
-      const text = await request.text();
-      if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
-        return rpcError(null, -32001, "MCP request too large", 413);
+      let text;
+      try {
+        text = await readBoundedText(request);
+      } catch (error) {
+        if (error instanceof RangeError) return rpcError(null, -32001, "MCP request too large", 413);
+        return rpcError(null, -32700, "Invalid UTF-8 request body", 400);
       }
       let message;
       try {
@@ -90,10 +125,16 @@ export default {
       if (message.jsonrpc !== "2.0" || typeof message.method !== "string") {
         return rpcError(message.id, -32600, "Invalid JSON-RPC request", 400);
       }
-      if (message.id === undefined && message.method.startsWith("notifications/")) {
-        return new Response(null, { status: 202 });
-      }
       const room = env.RIFT_RELAY.getByName("primary");
+      if (message.id === undefined && message.method.startsWith("notifications/")) {
+        return room.fetch(
+          new Request("https://relay.internal/notification", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: text,
+          }),
+        );
+      }
       return room.fetch(
         new Request("https://relay.internal/mcp", {
           method: "POST",
@@ -124,6 +165,10 @@ export class RiftRelayRoom {
       const payload = await request.json();
       return this.forwardMcp(payload);
     }
+    if (url.pathname === "/notification" && request.method === "POST") {
+      const payload = await request.json();
+      return this.forwardNotification(payload);
+    }
     return json({ error: "Not found" }, 404);
   }
 
@@ -131,15 +176,32 @@ export class RiftRelayRoom {
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    if (this.socket) this.socket.close(1012, "Replaced by a newer RiftOS connection");
+    if (this.socket) {
+      this.failPending("RiftOS device connection was replaced");
+      this.socket.close(1012, "Replaced by a newer RiftOS connection");
+    }
     this.ctx.acceptWebSocket(server);
     this.socket = server;
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  forwardNotification(payload) {
+    const socket = this.socket;
+    if (!socket) return new Response(null, { status: 503 });
+    try {
+      socket.send(JSON.stringify({ type: "mcp.notification", payload }));
+      return new Response(null, { status: 202 });
+    } catch {
+      return new Response(null, { status: 503 });
+    }
+  }
+
   async forwardMcp(payload) {
     const socket = this.socket;
     if (!socket) return rpcError(payload?.id, -32002, "RiftOS device is offline", 503);
+    if (this.pending.size >= MAX_PENDING_REQUESTS) {
+      return rpcError(payload?.id, -32005, "RiftOS relay is busy", 503);
+    }
     const requestId = crypto.randomUUID();
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -159,7 +221,7 @@ export class RiftRelayRoom {
 
   webSocketMessage(socket, raw) {
     if (socket !== this.socket) return;
-    if (typeof raw !== "string" || raw.length > MAX_BODY_BYTES) {
+    if (typeof raw !== "string" || encoder.encode(raw).byteLength > MAX_BODY_BYTES) {
       socket.close(1009, "Message too large");
       return;
     }
@@ -184,10 +246,16 @@ export class RiftRelayRoom {
     if (!pending) return;
     clearTimeout(pending.timer);
     this.pending.delete(message.requestId);
-    if (message.type === "mcp.response" && message.payload) {
-      pending.resolve(json(message.payload));
+    if (message.type === "mcp.response" && message.payload && !Array.isArray(message.payload) && typeof message.payload === "object") {
+      const payload = message.payload;
+      const idMatches = JSON.stringify(payload.id ?? null) === JSON.stringify(pending.rpcId ?? null);
+      if (payload.jsonrpc !== "2.0" || !idMatches || (payload.result === undefined && payload.error === undefined)) {
+        pending.resolve(rpcError(pending.rpcId, -32004, "Malformed RiftOS MCP response", 502));
+        return;
+      }
+      pending.resolve(json(payload));
     } else {
-      pending.resolve(rpcError(pending.rpcId, -32004, message.message || "RiftOS relay error", 502));
+      pending.resolve(rpcError(pending.rpcId, -32004, String(message.message || "RiftOS relay error").slice(0, 240), 502));
     }
   }
 

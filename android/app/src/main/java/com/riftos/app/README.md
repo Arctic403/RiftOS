@@ -7,13 +7,13 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `MainActivity.kt` | [`android-host`](../../../../../../../../docs/systems/android-host/README.md) |
 | `RiftNativeDesktop.kt` | [`desktop`](../../../../../../../../docs/systems/desktop/README.md) |
 | `RiftNativeSystemApps.kt` | [`shell-ui`](../../../../../../../../docs/systems/shell-ui/README.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
-| `RiftNativeAppHost.kt` | [`riftrt`](../../../../../../../../docs/systems/riftrt/README.md) + [`apps`](../../../../../../../../docs/systems/apps/README.md) |
-| `RiftRendererCrashGuard.kt` | [`android-host`](../../../../../../../../docs/systems/android-host/README.md) + [`diagnostics`](../../../../../../../../docs/systems/diagnostics/README.md) |
+| `RiftBrowserAppHost.kt` | [`riftrt`](../../../../../../../../docs/systems/riftrt/README.md) + [`apps`](../../../../../../../../docs/systems/apps/README.md) |
+| `RiftBrowserRendererCrashGuard.kt` | [`browser`](../../../../../../../../docs/systems/browser/README.md) + [`diagnostics`](../../../../../../../../docs/systems/diagnostics/README.md) |
 | `RiftVolumePaths.kt` | [`riftfs`](../../../../../../../../docs/systems/riftfs/README.md) |
-| `RiftNativeDispatcher.kt` | [`native-dispatcher`](../../../../../../../../docs/systems/native-dispatcher/README.md) |
-| `RiftTransferManifest.kt` + transfer logic in `RiftNativeDispatcher.kt` | [`transfers`](../../../../../../../../docs/systems/transfers/README.md) |
+| `RiftNativeWorkspaceApps.kt`, `RiftNativeDevLab.kt` | [`files-app`](../../../../../../../../docs/systems/files-app/README.md) + [`dev-lab`](../../../../../../../../docs/systems/dev-lab/README.md) + [`settings`](../../../../../../../../docs/systems/settings/README.md) + [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) |
+| `RiftNativeGit.kt` | [`git`](../../../../../../../../docs/systems/git/README.md) + [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |
 | `RiftBrowserWindow.kt` | [`browser`](../../../../../../../../docs/systems/browser/README.md) |
-| `RiftBrowserEngine.kt`, `AndroidWebViewBrowserEngine.kt` | [`browser/engine`](../../../../../../../../docs/systems/browser/engine/README.md) |
+| `RiftBrowserEngine.kt`, `RiftBrowserAndroidWebViewEngine.kt` | [`browser/engine`](../../../../../../../../docs/systems/browser/engine/README.md) |
 | `RiftBrowserMcpAppBridge.kt` | [`browser/mcp-compat`](../../../../../../../../docs/systems/browser/mcp-compat/README.md) |
 | `RiftMcpRuntime.kt`, `RiftMcpActivity.kt` | [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
 | `RiftMcpServer.kt` | [`mcp/server`](../../../../../../../../docs/systems/mcp/server/README.md) |
@@ -21,12 +21,10 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftToolSandbox.kt` | [`mcp/sandbox`](../../../../../../../../docs/systems/mcp/sandbox/README.md) |
 | `RiftMcpRelayClient.kt`, `RiftRelaySettings.kt` | [`mcp/relay`](../../../../../../../../docs/systems/mcp/relay/README.md) |
 | `RiftProjectExporter.kt` | [`mcp/project-exporter`](../../../../../../../../docs/systems/mcp/project-exporter/README.md) |
-| `RiftNativeShell.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
+| `RiftNativeShell.kt`, `RiftShellExecutor.kt`, `RiftHeadlessJsRuntime.kt`, `RiftNativeShellServices.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) + [`riftpp-core`](../../../../../../../../docs/systems/riftpp-core/README.md) |
 | `RiftExperimentalCli.kt`, `RiftPlusPlusV0.kt`, `RiftIrV1.kt`, `RiftIrCliV1.kt`, `RiftSwarmCoordinatorV0.kt`, `RiftTextEncoderTaskRunner.kt` | [`experimental-cli`](../../../../../../../../docs/systems/experimental-cli/README.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
-| `RiftShellBridge.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) |
 | `RiftWorkspaceRecords.kt`, `RiftWorkspaceWatcher.kt` | [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) |
-| `RiftPreviewActivity.kt` | [`preview`](../../../../../../../../docs/systems/preview/README.md) |
-| `RiftSystemDump.kt` | [`diagnostics`](../../../../../../../../docs/systems/diagnostics/README.md) |
+| `RiftBrowserPreviewActivity.kt` | [`preview`](../../../../../../../../docs/systems/preview/README.md) |
 | `RiftSecretStore.kt` | [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |
 | `RiftVortexBridgeClient.kt` | [`vortex-bridge`](../../../../../../../../docs/systems/vortex-bridge/README.md) |
 | `RiftVortexLocalAgent.kt` | [`vortex-agent` + `riftos-agent`](../../../../../../../../docs/systems/vortex-agent/README.md) |

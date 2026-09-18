@@ -1,7 +1,6 @@
 package com.riftos.app
 
 import android.app.Activity
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
@@ -20,11 +19,11 @@ import org.json.JSONObject
 import kotlin.math.roundToInt
 
 /**
- * Android-owned built-in RiftOS surfaces that no longer need the trusted shell WebView.
+ * Android-native system-window bodies for RiftShell Terminal and Task Manager.
  *
- * Patch 2A migrates RiftShell Terminal and Task Manager first. The host is deliberately small:
- * window chrome/lifecycle stays in RiftNativeDesktop and shell execution stays in the process-owned
- * RiftNativeShell contract. No WebView/Chromium object is created or referenced here.
+ * Window chrome/lifecycle stays in RiftNativeDesktop and command execution stays in the
+ * process-owned RiftShellExecutor contract. No WebView/Chromium object is created or referenced
+ * here.
  */
 class RiftNativeSystemApps(
     private val activity: Activity,
@@ -33,10 +32,9 @@ class RiftNativeSystemApps(
 ) {
     companion object {
         private const val MAX_TERMINAL_CHARS = 200_000
-        private val MIGRATED_IDS = setOf("terminal", "tasks")
+        private val NATIVE_IDS = setOf("terminal", "tasks")
         private const val BG = 0xff0b1118.toInt()
         private const val PANEL = 0xff111a23.toInt()
-        private const val BORDER = 0xff2a3640.toInt()
         private const val TEXT = 0xffe7eef5.toInt()
         private const val MUTED = 0xff9aa8b5.toInt()
         private const val ACCENT = 0xff78f6c7.toInt()
@@ -56,28 +54,20 @@ class RiftNativeSystemApps(
         val root: LinearLayout,
         val summary: TextView,
         val rows: LinearLayout,
-        val handler: Handler,
-        var refresh: Runnable? = null
+        val handler: Handler
     )
 
     private var terminal: TerminalState? = null
     private var tasks: TaskState? = null
 
-    fun handles(id: String): Boolean = id.trim().lowercase() in MIGRATED_IDS
+    private fun handles(id: String): Boolean = id.trim().lowercase() in NATIVE_IDS
 
-    /** Called by the native launcher before any compatibility-WebView dispatch. */
+    /** Called by the native launcher before browser-backed installed-program dispatch. */
     fun openFromLauncher(id: String): Boolean {
         val normalized = id.trim().lowercase()
         if (!handles(normalized)) return false
         open(normalized)
         return true
-    }
-
-    fun handle(method: String, args: JSONObject): JSONObject = when (method) {
-        "system.app.open" -> open(args.optString("id"))
-        "system.app.close" -> close(args.optString("id"))
-        "system.app.state" -> state()
-        else -> throw IllegalArgumentException("Unsupported native system-app method: $method")
     }
 
     fun onDesktopClosed(id: String): Boolean {
@@ -99,38 +89,23 @@ class RiftNativeSystemApps(
         stopTasks()
     }
 
-    private fun open(rawId: String): JSONObject {
+    private fun open(rawId: String) {
         val id = rawId.trim().lowercase()
-        require(handles(id)) { "Native system app is not migrated: $rawId" }
-        return when (id) {
+        require(handles(id)) { "Native system app is unavailable: $rawId" }
+        when (id) {
             "terminal" -> openTerminal()
             "tasks" -> openTasks()
-            else -> throw IllegalArgumentException("Native system app is not migrated: $id")
+            else -> throw IllegalArgumentException("Native system app is unavailable: $id")
         }
     }
 
-    private fun close(rawId: String): JSONObject {
-        val id = rawId.trim().lowercase()
-        require(handles(id)) { "Native system app is not migrated: $rawId" }
-        desktop.handle("desktop.window.close", JSONObject().put("id", id))
-        onDesktopClosed(id)
-        return state()
-    }
-
-    private fun state(): JSONObject = JSONObject()
-        .put("backend", "android-native-system-apps")
-        .put("webViewRequired", false)
-        .put("migrated", JSONArray(MIGRATED_IDS.toList()))
-        .put("terminalOpen", terminal != null)
-        .put("tasksOpen", tasks != null)
-
-    private fun openTerminal(): JSONObject {
+    private fun openTerminal() {
         openWindow("terminal", "RiftShell", "ANDROID NATIVE SHELL")
         val existing = terminal
         if (existing != null) {
             desktop.attachContent("terminal", existing.root)
             existing.input.requestFocus()
-            return state()
+            return
         }
 
         val root = LinearLayout(activity).apply {
@@ -195,7 +170,6 @@ class RiftNativeSystemApps(
 
         desktop.attachContent("terminal", root)
         input.post { input.requestFocus() }
-        return state()
     }
 
     private fun submitTerminal(state: TerminalState) {
@@ -235,19 +209,20 @@ class RiftNativeSystemApps(
         val before = state.output.text?.toString().orEmpty()
         var next = if (before.isBlank()) value else "$before\n$value"
         if (next.length > MAX_TERMINAL_CHARS) {
-            next = "… older terminal output trimmed …\n" + next.takeLast(MAX_TERMINAL_CHARS)
+            val marker = "… older terminal output trimmed …\n"
+            next = marker + next.takeLast((MAX_TERMINAL_CHARS - marker.length).coerceAtLeast(0))
         }
         state.output.text = next
         state.scroll.post { state.scroll.fullScroll(View.FOCUS_DOWN) }
     }
 
-    private fun openTasks(): JSONObject {
+    private fun openTasks() {
         openWindow("tasks", "Task Manager", "ANDROID NATIVE TASKS")
         val existing = tasks
         if (existing != null) {
             desktop.attachContent("tasks", existing.root)
             refreshTasks(existing)
-            return state()
+            return
         }
 
         val root = LinearLayout(activity).apply {
@@ -281,19 +256,17 @@ class RiftNativeSystemApps(
                 taskState.handler.postDelayed(this, 1_000L)
             }
         }
-        taskState.refresh = refresh
         tasks = taskState
         desktop.attachContent("tasks", root)
         refreshTasks(taskState)
         taskState.handler.postDelayed(refresh, 1_000L)
-        return state()
     }
 
     private fun refreshTasks(state: TaskState) {
         if (tasks !== state) return
         val desktopState = desktop.handle("desktop.window.state", JSONObject())
         val windows = desktopState.optJSONArray("windows") ?: JSONArray()
-        state.summary.text = "RiftOS runtime · ${windows.length()} window task(s) · WebView not required"
+        state.summary.text = "Native Task Manager · ${windows.length()} desktop window task(s)"
         state.rows.removeAllViews()
 
         addTaskRow(state, "RiftKernel", "system · protected", null)
@@ -310,11 +283,23 @@ class RiftNativeSystemApps(
                 if (row.optBoolean("minimized")) add("minimized")
                 if (row.optBoolean("maximized")) add("maximized")
             }.joinToString(" · ")
-            addTaskRow(state, title, "$id · $flags", id.takeUnless { it == "tasks" })
+            addTaskRow(
+                state,
+                title,
+                "$id · $flags",
+                id.takeUnless { it == "tasks" },
+                passiveLabel = if (id == "tasks") "current" else "system"
+            )
         }
     }
 
-    private fun addTaskRow(state: TaskState, title: String, detail: String, closableId: String?) {
+    private fun addTaskRow(
+        state: TaskState,
+        title: String,
+        detail: String,
+        closableId: String?,
+        passiveLabel: String = "system"
+    ) {
         val row = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -354,7 +339,7 @@ class RiftNativeSystemApps(
             }, LinearLayout.LayoutParams(dp(94), dp(40)))
         } else {
             row.addView(TextView(activity).apply {
-                text = "system"
+                text = passiveLabel
                 setTextColor(ACCENT)
                 textSize = 10f
                 gravity = Gravity.CENTER

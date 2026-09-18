@@ -1,6 +1,5 @@
 package com.riftos.app
 
-import android.app.Activity
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
@@ -11,26 +10,20 @@ import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Process-safe renderer crash containment and diagnostics for every RiftOS WebView surface.
  *
  * A Chromium renderer may be shared by several WebView instances. Every affected WebView
  * must report the renderer loss as handled or Android may terminate the RiftOS app process.
- * This helper records a privacy-limited ring buffer and coordinates one trusted-shell
- * Activity recreation when the shell/browser renderer itself has to be rebuilt.
+ * This helper records a privacy-limited ring buffer and destroys only the dead browser-owned
+ * renderer surface. Native desktop/activity lifecycle is never tied to Chromium recovery.
  */
-object RiftRendererCrashGuard {
+object RiftBrowserRendererCrashGuard {
     private const val PREFS = "rift-renderer-crash-guard"
     private const val EVENTS_KEY = "renderer-events"
     private const val MAX_EVENTS = 16
-    private val shellRecoveryScheduled = AtomicBoolean(false)
-
-    fun resetRecoveryGate() {
-        shellRecoveryScheduled.set(false)
-    }
-
+    private const val MAX_EVENT_STORE_BYTES = 32 * 1024
     fun record(context: Context, surface: String, detail: RenderProcessGoneDetail): JSONObject {
         val event = JSONObject()
             .put("surface", surface.take(48))
@@ -41,7 +34,10 @@ object RiftRendererCrashGuard {
 
         synchronized(this) {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val previous = runCatching { JSONArray(prefs.getString(EVENTS_KEY, "[]") ?: "[]") }.getOrElse { JSONArray() }
+            val raw = prefs.getString(EVENTS_KEY, "[]") ?: "[]"
+            val previous = if (raw.toByteArray(Charsets.UTF_8).size <= MAX_EVENT_STORE_BYTES) {
+                runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
+            } else JSONArray()
             val next = JSONArray()
             val start = (previous.length() - (MAX_EVENTS - 1)).coerceAtLeast(0)
             for (index in start until previous.length()) next.put(previous.opt(index))
@@ -53,6 +49,7 @@ object RiftRendererCrashGuard {
 
     fun recent(context: Context): JSONArray {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(EVENTS_KEY, "[]") ?: "[]"
+        if (raw.toByteArray(Charsets.UTF_8).size > MAX_EVENT_STORE_BYTES) return JSONArray()
         return runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
     }
 
@@ -60,15 +57,6 @@ object RiftRendererCrashGuard {
         runCatching { (view.parent as? ViewGroup)?.removeView(view) }
         runCatching { view.removeAllViews() }
         runCatching { view.destroy() }
-    }
-
-    fun requestShellRecovery(activity: Activity) {
-        if (!shellRecoveryScheduled.compareAndSet(false, true)) return
-        activity.window.decorView.postDelayed({
-            if (!activity.isFinishing && (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1 || !activity.isDestroyed)) {
-                activity.recreate()
-            }
-        }, 75L)
     }
 
     fun currentProcessUptimeMs(): Long =

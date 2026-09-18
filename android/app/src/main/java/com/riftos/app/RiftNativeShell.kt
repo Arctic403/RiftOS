@@ -9,17 +9,21 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 /**
  * Process-owned RiftShell foundation that does not depend on Chromium/WebView.
  *
- * Patch-1 intentionally ports the read/control commands needed to diagnose and inspect RiftOS
- * while the legacy JS shell remains an optional compatibility fallback for command families that
- * have not migrated yet. Unsupported commands never execute Android/Linux shell commands.
+ * All supported command families execute through Android-native services or the bounded trusted
+ * headless Rift++ runtime. There is no renderer fallback and no Android/Linux shell escape hatch.
  */
 class RiftNativeShell(context: Context) : RiftShellExecutor {
     companion object {
         private const val MAX_TEXT_BYTES = 1024 * 1024L
+        private const val MAX_COMMAND_BYTES = 2 * 1024 * 1024
+        private const val MAX_ARGUMENTS = 16_384
         private const val MAX_TREE_ROWS = 5_000
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
     }
@@ -27,22 +31,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private val appContext = context.applicationContext
     private val riftRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
     private val worker = Executors.newSingleThreadExecutor()
-    @Volatile private var compatibilityFallback: RiftShellExecutor? = null
+    private val headlessJs = RiftHeadlessJsRuntime(appContext)
+    private val services = RiftNativeShellServices(appContext)
+    private val nativeGit = RiftMcpRuntime.nativeGit(appContext)
     @Volatile private var closed = false
 
     private data class ShellOutcome(val output: String, val cwd: String, val result: Any? = null)
-    private class UnsupportedNativeCommand : RuntimeException()
-
-    fun setCompatibilityFallback(executor: RiftShellExecutor) {
-        compatibilityFallback = executor
-    }
-
-    fun clearCompatibilityFallback(executor: RiftShellExecutor) {
-        if (compatibilityFallback === executor) compatibilityFallback = null
-    }
-
-    fun compatibilityAvailable(): Boolean = compatibilityFallback != null
-
     override fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit) {
         if (closed) {
             reply(errorResult(cwd ?: "/", "Native RiftShell is closed"))
@@ -57,16 +51,6 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("output", outcome.output)
                     .put("cwd", outcome.cwd)
                     .put("result", outcome.result ?: JSONObject.NULL))
-            } catch (_: UnsupportedNativeCommand) {
-                val fallback = compatibilityFallback
-                if (fallback != null) {
-                    fallback.execute(command, requestedCwd, reply)
-                } else {
-                    reply(errorResult(
-                        requestedCwd,
-                        "Command is not native yet and the compatibility shell is unavailable. Native RiftShell core remains online."
-                    ))
-                }
             } catch (error: Throwable) {
                 reply(errorResult(requestedCwd, error.message ?: error.javaClass.simpleName))
             }
@@ -75,11 +59,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
     override fun close() {
         closed = true
-        compatibilityFallback = null
         worker.shutdownNow()
     }
 
     private fun executeNative(raw: String, cwd: String): ShellOutcome {
+        require(raw.toByteArray(Charsets.UTF_8).size <= MAX_COMMAND_BYTES) { "native shell command exceeds $MAX_COMMAND_BYTES UTF-8 bytes" }
         val args = tokenize(raw)
         val command = args.removeFirstOrNull()?.lowercase().orEmpty()
         if (command.isBlank()) return ShellOutcome("", cwd, nativeResult(command))
@@ -87,17 +71,25 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         return when (command) {
             "help" -> ShellOutcome(
                 "Native RiftShell core\n" +
-                    "help  pwd  home  drives  df  sysinfo  native  uptime  version\n" +
+                    "help  pwd  cd  home  drives  df  sysinfo  native  uptime  version\n" +
+                    "ps  kill <window-id>  apps  permissions [list|revoke <app-id> [capability|all]]\n" +
                     "ls [path]  tree [path]  stat <path>  cat <file>  head <file> [n]  tail <file> [n]\n" +
-                    "workspace [cd|info|ls|status]\n" +
-                    "riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / COMPATIBILITY SHELL]\n" +
+                    "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
+                    "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
+                    "workspace [cd|info|ls|status|push]\n" +
+                    "riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "rift-cli status|team|architecture|enable|disable|plan|riftpp|ir|tokenizer   [EXPERIMENTAL / OFF BY DEFAULT]\n" +
-                    "Remaining command families temporarily use the trusted compatibility shell while they migrate.",
+                    "Legacy shell-only services fail explicitly; no renderer compatibility fallback exists.",
                 cwd,
                 nativeResult(command)
             )
             "pwd" -> ShellOutcome(cwd, cwd, nativeResult(command))
+            "cd" -> cdCommand(cwd, args)
             "home" -> ShellOutcome("/D:/Users/Default", "/D:/Users/Default", nativeResult(command))
+            "ps" -> processListCommand(cwd)
+            "kill" -> killCommand(cwd, args)
+            "apps" -> appsCommand(cwd)
+            "permissions" -> permissionsCommand(cwd, args)
             "drives" -> ShellOutcome(
                 RiftVolumePaths.volumes.values.joinToString("\n") { "${it.letter}  ${it.label}  /${it.letter}" },
                 cwd,
@@ -123,17 +115,17 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("processors", Runtime.getRuntime().availableProcessors())
                     .put("nativeShell", true)
                     .put("webViewRequired", false)
-                    .put("compatibilityFallback", compatibilityAvailable())
+                    .put("rendererFallback", false)
                 ShellOutcome(info.toString(2), cwd, info)
             }
             "native" -> {
                 val info = nativeResult(command)
                     .put("webViewRequired", false)
-                    .put("compatibilityFallback", compatibilityAvailable())
+                    .put("rendererFallback", false)
                     .put("nativeCommands", JSONArray(listOf(
-                        "help", "pwd", "home", "drives", "df", "sysinfo", "native", "uptime", "version",
-                        "ls", "tree", "stat", "cat", "head", "tail", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "rift-cli"
+                        "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
+                        "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftpp", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -155,13 +147,199 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "cat" -> textCommand(cwd, args, "cat")
             "head" -> textCommand(cwd, args, "head")
             "tail" -> textCommand(cwd, args, "tail")
+            "write" -> writeCommand(cwd, args)
+            "touch" -> touchCommand(cwd, args)
+            "mkdir" -> mkdirCommand(cwd, args)
+            "cp" -> copyMoveCommand(cwd, args, move = false)
+            "mv" -> copyMoveCommand(cwd, args, move = true)
+            "rm" -> removeCommand(cwd, args)
+            "zip" -> zipCommand(cwd, args)
+            "unzip" -> unzipCommand(cwd, args)
+            "browser" -> browserCommand(cwd, args)
+            "open" -> openCommand(cwd, args)
+            "clear" -> ShellOutcome("", cwd, nativeResult("clear").put("clear", true))
             "workspace" -> workspaceCommand(cwd, args)
+            "git" -> nativeGit.execute(args, cwd).let { ShellOutcome(it.output, cwd, it.result) }
+            "chat" -> services.chat(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
+            "devlab" -> services.devLab(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
+            "vortex" -> services.vortex(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
+            "vortex-agent" -> services.vortexAgent(args).let { ShellOutcome(it.output, cwd, it.value) }
+            "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
+            "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
+            "riftpp" -> {
+                val value = headlessJs.executeRiftpp(args, cwd)
+                ShellOutcome(value.output, cwd, value.result)
+            }
             "rift-cli" -> {
                 val cli = RiftExperimentalCli.executeShell(appContext, args)
                 ShellOutcome(cli.output, cwd, cli.result)
             }
-            else -> throw UnsupportedNativeCommand()
+            "mount", "umount" -> throw IllegalStateException("Legacy shell mount entry point is retired during native Files migration; no renderer fallback exists.")
+            "rift" -> throw IllegalStateException("Legacy RiftLocalPlatform shell wrapper is retired; use native Git, Workspace Records, Dev Lab and fixed native build/training services.")
+            else -> throw IllegalArgumentException("unsupported native RiftShell command: $command")
         }
+    }
+
+    private fun cdCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val target = resolveDisplay(cwd, args.firstOrNull() ?: "/D:/Users/Default")
+        val file = resolveFile(target)
+        require(file.isDirectory || RiftVolumePaths.isVolumeRoot(target)) { "not a directory: $target" }
+        return ShellOutcome(target, target, nativeResult("cd").put("path", target))
+    }
+
+    private fun processListCommand(cwd: String): ShellOutcome {
+        val rows = ArrayList<String>()
+        val processes = JSONArray()
+        fun protectedProcess(id: String, name: String) {
+            rows += "protected\t$id\t$name"
+            processes.put(JSONObject().put("id", id).put("name", name).put("protected", true))
+        }
+        protectedProcess("kernel", "RiftKernel")
+        protectedProcess("desktop", "Rift Desktop")
+        protectedProcess("shell", "Native RiftShell")
+
+        val activity = RiftMcpRuntime.activeActivity()
+        val state = activity?.nativeDesktopStateForShell()
+        val windows = state?.optJSONArray("windows") ?: JSONArray()
+        for (index in 0 until windows.length()) {
+            val row = windows.optJSONObject(index) ?: continue
+            val id = row.optString("id")
+            if (id.isBlank()) continue
+            val title = row.optString("title", id).ifBlank { id }
+            val status = buildList {
+                if (row.optBoolean("focused")) add("focused")
+                if (row.optBoolean("minimized")) add("minimized")
+                if (row.optBoolean("maximized")) add("maximized")
+            }.ifEmpty { listOf("running") }.joinToString(",")
+            rows += "$status\t$id\t$title"
+            processes.put(
+                JSONObject()
+                    .put("id", id)
+                    .put("name", title)
+                    .put("protected", false)
+                    .put("focused", row.optBoolean("focused"))
+                    .put("minimized", row.optBoolean("minimized"))
+                    .put("maximized", row.optBoolean("maximized"))
+            )
+        }
+        return ShellOutcome(
+            rows.joinToString("\n"),
+            cwd,
+            nativeResult("ps")
+                .put("processes", processes)
+                .put("activityAvailable", activity != null)
+        )
+    }
+
+    private fun killCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val id = args.firstOrNull()?.trim().orEmpty()
+        require(id.isNotBlank()) { "usage: kill <window-id>" }
+        require(id !in setOf("kernel", "desktop", "shell")) { "protected native process cannot be terminated: $id" }
+        val activity = RiftMcpRuntime.activeActivity()
+            ?: throw IllegalStateException("RiftOS activity is not available")
+        val before = activity.nativeDesktopStateForShell().optJSONArray("windows") ?: JSONArray()
+        require((0 until before.length()).any { before.optJSONObject(it)?.optString("id") == id }) {
+            "window task not found: $id"
+        }
+        activity.closeNativeWindowFromShell(id)
+        return ShellOutcome(
+            "terminated $id",
+            cwd,
+            nativeResult("kill").put("id", id).put("terminated", true)
+        )
+    }
+
+    private fun appsCommand(cwd: String): ShellOutcome {
+        val apps = JSONArray()
+        val builtins = listOf(
+            Triple("files", "Files", "native"),
+            Triple("workspace-live", "Workspace Records", "native"),
+            Triple("terminal", "RiftShell", "native"),
+            Triple("browser", "RiftBrowser", "riftbrowser"),
+            Triple("editor", "Editor", "native"),
+            Triple("devlab", "Dev Lab", "native"),
+            Triple("tasks", "Tasks", "native"),
+            Triple("settings", "Settings", "native")
+        )
+        builtins.forEach { (id, name, owner) ->
+            apps.put(JSONObject().put("id", id).put("name", name).put("owner", owner).put("installed", false))
+        }
+
+        val programs = resolveFile("/C:/Programs")
+        programs.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name.lowercase() }?.forEach { directory ->
+            val packageFile = File(directory, "package.json")
+            if (!packageFile.isFile || packageFile.length() !in 1..(8L * 1024L * 1024L)) return@forEach
+            val manifest = runCatching {
+                JSONObject(packageFile.readText(Charsets.UTF_8)).optJSONObject("manifest")
+            }.getOrNull() ?: return@forEach
+            val id = manifest.optString("id").trim()
+            if (id.isBlank() || directory.name != id || !id.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$"))) return@forEach
+            apps.put(
+                JSONObject()
+                    .put("id", id)
+                    .put("name", manifest.optString("name", id).ifBlank { id })
+                    .put("owner", "riftbrowser-app")
+                    .put("installed", true)
+            )
+        }
+
+        val lines = ArrayList<String>()
+        for (index in 0 until apps.length()) {
+            val app = apps.getJSONObject(index)
+            lines += "${app.optString("id")}\t${app.optString("name")}\t${app.optString("owner")}"
+        }
+        return ShellOutcome(lines.joinToString("\n"), cwd, nativeResult("apps").put("apps", apps))
+    }
+
+    private fun permissionsCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val prefs = appContext.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
+        val sub = args.removeFirstOrNull()?.lowercase() ?: "list"
+        if (sub == "revoke") {
+            val appId = args.removeFirstOrNull()?.trim().orEmpty()
+            require(appId.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$"))) {
+                "usage: permissions revoke <app-id> [capability|all]"
+            }
+            val capability = args.removeFirstOrNull()?.trim().orEmpty().ifBlank { "all" }
+            require(args.isEmpty()) { "usage: permissions revoke <app-id> [capability|all]" }
+            val key = "setting:permissions:$appId"
+            if (capability.equals("all", ignoreCase = true)) {
+                val existed = prefs.contains(key)
+                prefs.edit().remove(key).apply()
+                RiftMcpRuntime.activeActivity()?.onInstalledAppGrantRevokedFromShell(appId, "all")
+                val value = nativeResult("permissions revoke").put("appId", appId).put("capability", "all").put("revoked", existed)
+                return ShellOutcome(value.toString(2), cwd, value)
+            }
+            require(capability.matches(Regex("^[A-Za-z0-9._-]{1,64}$"))) { "Invalid capability name" }
+            val raw = prefs.getString(key, null)
+            val current = runCatching { JSONObject(raw ?: "{}").optJSONArray("value") }.getOrNull() ?: JSONArray()
+            val next = linkedSetOf<String>()
+            var removed = false
+            for (index in 0 until current.length()) {
+                val item = current.optString(index)
+                if (item == capability) removed = true else if (item.isNotBlank()) next += item
+            }
+            if (next.isEmpty()) prefs.edit().remove(key).apply()
+            else prefs.edit().putString(key, JSONObject().put("value", JSONArray(next.sorted())).put("modified", System.currentTimeMillis()).toString()).apply()
+            if (removed) RiftMcpRuntime.activeActivity()?.onInstalledAppGrantRevokedFromShell(appId, capability)
+            val value = nativeResult("permissions revoke").put("appId", appId).put("capability", capability).put("revoked", removed)
+            return ShellOutcome(value.toString(2), cwd, value)
+        }
+        require(sub == "list") { "usage: permissions [list|revoke <app-id> [capability|all]]" }
+        require(args.isEmpty()) { "usage: permissions [list|revoke <app-id> [capability|all]]" }
+        val grants = JSONArray()
+        prefs.all.keys.filter { it.startsWith("setting:permissions:") }.sorted().forEach { key ->
+            val appId = key.removePrefix("setting:permissions:")
+            val raw = prefs.getString(key, null) ?: return@forEach
+            val value = runCatching { JSONObject(raw).optJSONArray("value") }.getOrNull() ?: JSONArray()
+            grants.put(JSONObject().put("appId", appId).put("grants", value))
+        }
+        val value = nativeResult("permissions")
+            .put("filesystemScope", "riftfs")
+            .put("workspaceMcpScope", "workspace/")
+            .put("gitCredentialStore", "android-keystore")
+            .put("browserRendererOwner", "RiftBrowser")
+            .put("installedAppGrants", grants)
+        return ShellOutcome(value.toString(2), cwd, value)
     }
 
     private fun workspaceCommand(cwd: String, args: MutableList<String>): ShellOutcome {
@@ -185,7 +363,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 listCommand(cwd, path, recursive = false, alreadyResolved = true)
             }
             "status" -> workspaceStatus(cwd)
-            "push" -> throw UnsupportedNativeCommand()
+            "push" -> {
+                val gitArgs = mutableListOf("workspace", "push")
+                gitArgs.addAll(args)
+                val value = nativeGit.execute(gitArgs, cwd)
+                ShellOutcome(value.output, cwd, value.result)
+            }
             else -> throw IllegalArgumentException("usage: workspace [cd|info|ls [path]|status]")
         }
     }
@@ -318,6 +501,270 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         return ShellOutcome(output, cwd, nativeResult(mode).put("path", path).put("bytes", file.length()))
     }
 
+    private fun writeCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val raw = args.removeFirstOrNull() ?: throw IllegalArgumentException("usage: write <file> <text>")
+        val path = resolveDisplay(cwd, raw)
+        val file = resolveFile(path)
+        require(file != riftRoot && !RiftVolumePaths.isVolumeRoot(path)) { "write requires a file path" }
+        val bytes = args.joinToString(" ").toByteArray(Charsets.UTF_8)
+        require(bytes.size <= MAX_TEXT_BYTES) { "native shell write exceeds $MAX_TEXT_BYTES bytes" }
+        atomicWrite(file, bytes)
+        return ShellOutcome("wrote $path", cwd, nativeResult("write").put("path", path).put("bytes", bytes.size))
+    }
+
+    private fun touchCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val path = resolveDisplay(cwd, args.firstOrNull() ?: throw IllegalArgumentException("usage: touch <file>"))
+        val file = resolveFile(path)
+        require(file != riftRoot && !RiftVolumePaths.isVolumeRoot(path)) { "touch requires a file path" }
+        if (!file.exists()) atomicWrite(file, ByteArray(0))
+        else require(file.isFile) { "touch target is not a file: $path" }
+        return ShellOutcome("touched $path", cwd, nativeResult("touch").put("path", path))
+    }
+
+    private fun mkdirCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val path = resolveDisplay(cwd, args.firstOrNull() ?: throw IllegalArgumentException("usage: mkdir <dir>"))
+        val file = resolveFile(path)
+        require(file == riftRoot || file.mkdirs() || file.isDirectory) { "could not create directory: $path" }
+        return ShellOutcome("created $path", cwd, nativeResult("mkdir").put("path", path))
+    }
+
+    private fun copyMoveCommand(cwd: String, args: MutableList<String>, move: Boolean): ShellOutcome {
+        val force = args.remove("--force") || args.remove("-f")
+        require(args.size == 2) { "usage: ${if (move) "mv" else "cp"} <from> <to> [--force]" }
+        val fromPath = resolveDisplay(cwd, args[0])
+        val toPath = resolveDisplay(cwd, args[1])
+        val source = resolveFile(fromPath)
+        val target = resolveFile(toPath)
+        require(source.exists()) { "source not found: $fromPath" }
+        require(source != riftRoot && !RiftVolumePaths.isVolumeRoot(fromPath)) { "cannot move/copy a RiftFS volume root" }
+        require(target != riftRoot && !RiftVolumePaths.isVolumeRoot(toPath)) { "destination must not be a RiftFS volume root" }
+        val sourceCanonical = source.canonicalFile
+        val targetCanonical = target.canonicalFile
+        require(sourceCanonical != targetCanonical) { "source and destination are the same path" }
+        if (sourceCanonical.isDirectory) {
+            require(!targetCanonical.path.startsWith(sourceCanonical.path + File.separator)) { "destination cannot be inside source directory" }
+        }
+
+        target.parentFile?.mkdirs()
+        var backup: File? = null
+        if (target.exists()) {
+            require(force) { "destination exists: $toPath (use --force)" }
+            backup = File(target.parentFile, ".${target.name}.shell-replace-${System.nanoTime()}")
+            require(target.renameTo(backup)) { "could not stage existing destination: $toPath" }
+        }
+
+        try {
+            if (move && source.renameTo(target)) {
+                backup?.deleteRecursively()
+                return ShellOutcome("moved $fromPath -> $toPath", cwd, nativeResult("mv").put("from", fromPath).put("to", toPath))
+            }
+
+            copyConfined(source, target)
+            if (move) require(deleteConfined(source)) { "copy succeeded but source cleanup failed" }
+
+            backup?.deleteRecursively()
+            val verb = if (move) "moved" else "copied"
+            return ShellOutcome("$verb $fromPath -> $toPath", cwd, nativeResult(if (move) "mv" else "cp").put("from", fromPath).put("to", toPath))
+        } catch (error: Throwable) {
+            runCatching {
+                if (target.exists()) deleteConfined(target)
+                if (backup != null && backup.exists()) {
+                    require(backup.renameTo(target)) { "could not restore original destination" }
+                }
+            }.onFailure { rollback ->
+                throw IllegalStateException(
+                    "copy/move failed and destination rollback was incomplete: ${rollback.message}",
+                    error
+                )
+            }
+            throw error
+        }
+    }
+
+    private fun removeCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val path = resolveDisplay(cwd, args.firstOrNull() ?: throw IllegalArgumentException("usage: rm <path>"))
+        val file = resolveFile(path)
+        require(file != riftRoot && !RiftVolumePaths.isVolumeRoot(path)) { "refusing to remove a RiftFS root" }
+        require(file.exists()) { "path not found: $path" }
+        require(deleteConfined(file)) { "could not remove $path" }
+        return ShellOutcome("removed $path", cwd, nativeResult("rm").put("path", path))
+    }
+
+    private fun zipCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        require(args.size >= 2) { "usage: zip <from> <archive.zip>" }
+        val fromPath = resolveDisplay(cwd, args[0])
+        val archivePath = resolveDisplay(cwd, args[1])
+        val source = resolveFile(fromPath)
+        val archive = resolveFile(archivePath)
+        require(source.exists()) { "source not found: $fromPath" }
+        require(source != riftRoot && !RiftVolumePaths.isVolumeRoot(fromPath)) { "archive a directory inside RiftFS, not a volume root" }
+        require(archive.extension.equals("zip", true)) { "archive output must end in .zip" }
+        require(!archive.exists()) { "archive already exists: $archivePath" }
+        if (source.isDirectory) {
+            val sourceCanonical = source.canonicalFile
+            val archiveCanonical = archive.canonicalFile
+            require(!archiveCanonical.path.startsWith(sourceCanonical.path + File.separator)) { "archive output cannot be inside source directory" }
+        }
+        archive.parentFile?.mkdirs()
+        val temp = File(archive.parentFile, ".${archive.name}.tmp-${System.nanoTime()}")
+        var entries = 0
+        var total = 0L
+        try {
+            ZipOutputStream(temp.outputStream().buffered()).use { out ->
+                val base = if (source.isDirectory) source else source.parentFile
+                val files = if (source.isDirectory) source.walkTopDown().toList() else listOf(source)
+                for (file in files) {
+                    if (file == source && file.isDirectory) continue
+                    val canonical = file.canonicalFile
+                    require(canonical == source.canonicalFile || canonical.path.startsWith(source.canonicalPath + File.separator) || !source.isDirectory) { "archive source escaped root" }
+                    val name = canonical.relativeTo(base).invariantSeparatorsPath
+                    require(name.isNotBlank() && !name.startsWith("/") && name.split('/').none { it == ".." }) { "unsafe archive entry: $name" }
+                    require(++entries <= 10_000) { "archive exceeds 10,000-entry limit" }
+                    out.putNextEntry(ZipEntry(if (file.isDirectory) "$name/" else name))
+                    if (file.isFile) {
+                        total += file.length()
+                        require(total <= 256L * 1024L * 1024L) { "archive input exceeds 256 MiB limit" }
+                        file.inputStream().buffered().use { it.copyTo(out) }
+                    }
+                    out.closeEntry()
+                }
+            }
+            require(temp.renameTo(archive)) { "could not publish archive" }
+        } catch (error: Throwable) {
+            temp.delete()
+            throw error
+        }
+        return ShellOutcome("archived $fromPath -> $archivePath", cwd, nativeResult("zip").put("from", fromPath).put("to", archivePath).put("entries", entries))
+    }
+
+    private fun unzipCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        require(args.size >= 2) { "usage: unzip <archive.zip> <folder>" }
+        val archivePath = resolveDisplay(cwd, args[0])
+        val folderPath = resolveDisplay(cwd, args[1])
+        val archive = resolveFile(archivePath)
+        val destination = resolveFile(folderPath)
+        require(archive.isFile) { "archive not found: $archivePath" }
+        require(!destination.exists()) { "destination exists: $folderPath" }
+        val stage = File(destination.parentFile, ".${destination.name}.rift-unzip-${System.nanoTime()}")
+        require(stage.mkdirs()) { "could not create extraction stage" }
+        var count = 0
+        var total = 0L
+        val seen = HashSet<String>()
+        try {
+            ZipFile(archive).use { zip ->
+                val enumeration = zip.entries()
+                while (enumeration.hasMoreElements()) {
+                    val entry = enumeration.nextElement()
+                    val name = entry.name.replace('\\', '/')
+                    require(name.isNotBlank() && !name.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(name)) { "unsafe ZIP entry: $name" }
+                    val parts = name.split('/').filter { it.isNotBlank() }
+                    require(parts.none { it == "." || it == ".." }) { "ZIP traversal rejected: $name" }
+                    require(seen.add(name)) { "duplicate ZIP entry rejected: $name" }
+                    require(++count <= 10_000) { "ZIP exceeds 10,000-entry limit" }
+                    val target = File(stage, parts.joinToString(File.separator)).canonicalFile
+                    require(target == stage.canonicalFile || target.path.startsWith(stage.canonicalPath + File.separator)) { "ZIP entry escaped extraction stage" }
+                    if (entry.isDirectory) target.mkdirs()
+                    else {
+                        target.parentFile?.mkdirs()
+                        zip.getInputStream(entry).use { input ->
+                            target.outputStream().buffered().use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    val read = input.read(buffer)
+                                    if (read < 0) break
+                                    if (read > 0) {
+                                        total += read
+                                        require(total <= 256L * 1024L * 1024L) { "ZIP extraction exceeds 256 MiB limit" }
+                                        output.write(buffer, 0, read)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            require(stage.renameTo(destination)) { "could not publish extracted folder" }
+        } catch (error: Throwable) {
+            stage.deleteRecursively()
+            throw error
+        }
+        return ShellOutcome("extracted $archivePath -> $folderPath", cwd, nativeResult("unzip").put("from", archivePath).put("to", folderPath).put("entries", count).put("bytes", total))
+    }
+
+    private fun browserCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val url = args.joinToString(" ").trim().ifBlank { "https://chatgpt.com" }
+        val activity = RiftMcpRuntime.activeActivity() ?: throw IllegalStateException("RiftOS activity is not available")
+        activity.openBrowserFromNativeShell(url)
+        return ShellOutcome("opened RiftBrowser window · $url", cwd, nativeResult("browser").put("url", url))
+    }
+
+    private fun openCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val rawId = args.firstOrNull()?.trim().orEmpty()
+        require(rawId.isNotBlank() && args.size == 1) { "usage: open <app-id>" }
+        val builtins = setOf("files", "workspace-live", "terminal", "browser", "editor", "devlab", "tasks", "settings")
+        val normalized = rawId.lowercase()
+        val id = if (normalized in builtins) normalized else rawId
+        val activity = RiftMcpRuntime.activeActivity() ?: throw IllegalStateException("RiftOS activity is not available")
+        activity.openAppFromNativeShell(id)
+        return ShellOutcome("opened $id", cwd, nativeResult("open").put("id", id))
+    }
+
+    private fun copyConfined(source: File, target: File) {
+        var total = 0L
+        var count = 0
+        if (source.isFile) {
+            target.parentFile?.mkdirs()
+            total = source.length()
+            require(total <= 256L * 1024L * 1024L) { "copy exceeds 256 MiB limit" }
+            source.copyTo(target, overwrite = false)
+            return
+        }
+        require(source.isDirectory) { "unsupported source type" }
+        val sourceRoot = source.canonicalFile
+        for (file in source.walkTopDown()) {
+            require(++count <= 10_000) { "copy exceeds 10,000-entry limit" }
+            val canonicalSource = file.canonicalFile
+            require(canonicalSource == sourceRoot || canonicalSource.path.startsWith(sourceRoot.path + File.separator)) { "copy source escaped root" }
+            val relative = file.relativeTo(source)
+            val out = File(target, relative.path).canonicalFile
+            require(out == target.canonicalFile || out.path.startsWith(target.canonicalPath + File.separator)) { "copy path escaped destination" }
+            if (file.isDirectory) out.mkdirs()
+            else {
+                total += file.length()
+                require(total <= 256L * 1024L * 1024L) { "copy exceeds 256 MiB limit" }
+                out.parentFile?.mkdirs()
+                file.copyTo(out, overwrite = false)
+            }
+        }
+    }
+
+    private fun deleteConfined(file: File): Boolean {
+        val canonical = file.canonicalFile
+        require(canonical != riftRoot && canonical.path.startsWith(riftRoot.path + File.separator)) { "refusing to delete outside confined RiftFS" }
+        return if (canonical.isDirectory) canonical.deleteRecursively() else canonical.delete()
+    }
+
+    private fun atomicWrite(target: File, bytes: ByteArray) {
+        target.parentFile?.mkdirs()
+        val temp = File(target.parentFile, ".${target.name}.tmp-${System.nanoTime()}")
+        val backup = File(target.parentFile, ".${target.name}.backup-${System.nanoTime()}")
+        temp.writeBytes(bytes)
+        var backedUp = false
+        try {
+            if (target.exists()) {
+                require(target.isFile) { "atomic write target is not a file" }
+                require(target.renameTo(backup)) { "could not stage existing file for replacement" }
+                backedUp = true
+            }
+            require(temp.renameTo(target)) { "atomic write publish failed" }
+            if (backedUp) backup.delete()
+        } catch (error: Throwable) {
+            temp.delete()
+            if (backedUp && !target.exists()) backup.renameTo(target)
+            throw error
+        }
+    }
+
     private fun fileStat(path: String, file: File): JSONObject = JSONObject()
         .put("path", path)
         .put("kind", if (file.isDirectory) "directory" else "file")
@@ -344,14 +791,15 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             if (piece == "..") {
                 if (parts.isNotEmpty()) parts.removeAt(parts.lastIndex)
                 continue
-            }
-            parts += if (parts.isEmpty() && piece.matches(Regex("[A-Za-z]:"))) piece.uppercase() else piece
+    private fun tokenize(raw: String): MutableList<String> {
+        val out = ArrayList<String>()
+        val regex = Regex("\"([^\"]*)\"|'([^']*)'|([^\\s]+)")
+        regex.findAll(raw).forEach { match ->
+            require(out.size < MAX_ARGUMENTS) { "native shell argument count exceeds $MAX_ARGUMENTS" }
+            out += match.groups[1]?.value ?: match.groups[2]?.value ?: match.groups[3]?.value.orEmpty()
         }
-        return "/" + parts.joinToString("/")
+        return out
     }
-
-    private fun resolveFile(displayPath: String): File {
-        val normalized = normalizeDisplay(displayPath)
         val relative = when {
             normalized == "/" -> ""
             normalized.startsWith("/C:", ignoreCase = true) || normalized.startsWith("/D:", ignoreCase = true) ->
@@ -372,6 +820,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val out = ArrayList<String>()
         val regex = Regex("\"([^\"]*)\"|'([^']*)'|([^\\s]+)")
         regex.findAll(raw).forEach { match ->
+            require(out.size < MAX_ARGUMENTS) { "native shell argument count exceeds $MAX_ARGUMENTS" }
             out += match.groups[1]?.value ?: match.groups[2]?.value ?: match.groups[3]?.value.orEmpty()
         }
         return out

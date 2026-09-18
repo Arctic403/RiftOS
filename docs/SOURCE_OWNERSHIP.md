@@ -1,6 +1,8 @@
-# RiftOS Active Source Ownership
+# RiftOS Source Documentation Ownership
 
-This ledger assigns every active implementation/build/test source file to the README that owns its behavior. `scripts/validate-rift-docs.mjs` checks this file so newly added active source cannot silently become undocumented.
+This ledger assigns implementation/build/test/reference source files to the README responsible for documenting them. **Ownership does not imply that a source is packaged, live, verified, trusted or device-proven.** Runtime activation must be established from current build/source wiring.
+
+For the current Android engine, Gradle packages only `src/riftpp-core.js` and `src/riftvm.js` from the `src/` tree. Other `src/` entries are retained reference/test/migration sources unless a later audit proves otherwise. `scripts/validate-rift-docs.mjs` checks that every maintained source has a documentation owner.
 
 ## Root/build sources
 
@@ -12,12 +14,13 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/build.gradle.kts` | `docs/systems/build-validation/README.md` |
 | `android/settings.gradle.kts` | `docs/systems/build-validation/README.md` |
 | `android/gradle.properties` | `docs/systems/build-validation/README.md` |
-| `android/app/build.gradle.kts` | `docs/systems/build-validation/README.md` |
-| `android/app/src/main/AndroidManifest.xml` | `docs/systems/android-host/README.md` + `docs/systems/riftllm-bridge/README.md` |
+| `android/app/build.gradle.kts` | `docs/systems/build-validation/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/AndroidManifest.xml` | `docs/systems/android-host/README.md` + `docs/systems/riftllm-bridge/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/res/values/styles.xml` | `docs/systems/android-host/README.md` + `docs/systems/shell-ui/README.md` |
+| `android/app/src/main/res/xml/vortex_agent_accessibility.xml` | `docs/systems/android-host/README.md` + `docs/systems/vortex-agent/README.md` |
 | `android/riftos-debug.keystore.b64` | `docs/systems/build-validation/README.md` (legacy signing input; policy-controlled) |
 
-## Web runtime (`src/`)
+## JavaScript source (`src/`; ownership is separate from APK packaging)
 
 | Source | Owner |
 | --- | --- |
@@ -26,7 +29,7 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `src/riftandroid-preload.js` | `docs/systems/boot/README.md` |
 | `src/riftapps-files.js` | `docs/systems/apps/README.md` |
 | `src/riftapps.js` | `docs/systems/apps/README.md` |
-| `src/riftcore.js` | `docs/systems/kernel/README.md` + `docs/systems/riftfs/README.md` + `docs/systems/chat-handoff/README.md` + `docs/systems/dev-lab/README.md` |
+| `src/riftcore.js` | `docs/systems/kernel/README.md` + `docs/systems/engine/README.md` + `docs/systems/riftfs/README.md` + `docs/systems/chat-handoff/README.md` + `docs/systems/dev-lab/README.md` |
 | `src/riftdesktop-android-compat.js` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-native-compat.js` | `docs/systems/desktop/README.md` |
 | `src/riftdesktop-android.css` | `docs/systems/desktop/README.md` |
@@ -43,9 +46,9 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `src/riftmcp-system.js` | `docs/systems/mcp/README.md` |
 | `src/riftos.js` | `docs/systems/shell-ui/README.md`, `docs/systems/boot/README.md`, `docs/systems/riftllm-bridge/README.md`, `docs/systems/files-app/README.md`, `docs/systems/settings/README.md`, `docs/systems/shell/README.md`, `docs/systems/browser/README.md`, `docs/systems/chat-handoff/README.md`, `docs/systems/dev-lab/README.md`, `docs/systems/vortex-agent/README.md`, `docs/systems/riftrepo/README.md`, `docs/systems/riftvault/README.md`, `docs/systems/riftbuild/README.md`, `docs/systems/riftmemory/README.md` |
 | `src/riftrt.js` | `docs/systems/riftrt/README.md` + `docs/systems/riftrt/engines/README.md` + engine-specific READMEs under `docs/systems/riftrt/engines/` |
-| `src/riftvm.js` | `docs/systems/riftrt/engines/rift-vm/README.md` |
-| `src/riftpp-core.js` | `docs/systems/riftpp-core/README.md` |
-| `src/riftruntime.js` | `docs/systems/runtime-capabilities/README.md` |
+| `src/riftvm.js` | `docs/systems/riftrt/engines/rift-vm/README.md` + `docs/systems/engine/README.md` |
+| `src/riftpp-core.js` | `docs/systems/riftpp-core/README.md` + `docs/systems/engine/README.md` |
+| `src/riftruntime.js` | `docs/systems/runtime-capabilities/README.md` + `docs/systems/engine/README.md` |
 | `src/riftshell-batch.js` | `docs/systems/shell/README.md` + `docs/systems/chat-handoff/README.md` |
 | `src/riftworkspace-android-adapter.js` | `docs/systems/workspace/README.md` |
 | `src/riftworkspace-live-host.js` | `docs/systems/workspace/live/README.md` |
@@ -55,27 +58,32 @@ This ledger assigns every active implementation/build/test source file to the RE
 
 | Source | Owner |
 | --- | --- |
-| `android/app/src/main/java/com/riftos/app/AndroidWebViewBrowserEngine.kt` | `docs/systems/browser/engine/README.md` + `docs/systems/browser/engine/android-webview/README.md` |
-| `android/app/src/main/java/com/riftos/app/MainActivity.kt` | `docs/systems/android-host/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftBrowserAndroidWebViewEngine.kt` | `docs/systems/browser/engine/README.md` + `docs/systems/browser/engine/android-webview/README.md` |
+| `android/app/src/main/java/com/riftos/app/MainActivity.kt` | `docs/systems/android-host/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserEngine.kt` | `docs/systems/browser/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt` | `docs/systems/browser/mcp-compat/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserWindow.kt` | `docs/systems/browser/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpActivity.kt` | `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt` | `docs/systems/mcp/relay/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` | `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt` | `docs/systems/shell-ui/README.md` + `docs/systems/shell/README.md` + `docs/systems/desktop/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` | `docs/systems/riftrt/README.md` + `docs/systems/apps/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRendererCrashGuard.kt` | `docs/systems/android-host/README.md` + `docs/systems/diagnostics/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt` | `docs/systems/riftfs/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt` | `docs/systems/native-dispatcher/README.md` + `docs/systems/chat-handoff/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/riftllm-bridge/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` | `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt` | `docs/systems/shell-ui/README.md` + `docs/systems/shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt` | `docs/systems/riftrt/README.md` + `docs/systems/apps/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftBrowserRendererCrashGuard.kt` | `docs/systems/android-host/README.md` + `docs/systems/diagnostics/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt` | `docs/systems/riftfs/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftLlmDevClient.kt` | `docs/systems/riftllm-bridge/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftPreviewActivity.kt` | `docs/systems/preview/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftBrowserPreviewActivity.kt` | `docs/systems/preview/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftProjectExporter.kt` | `docs/systems/mcp/project-exporter/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRelaySettings.kt` | `docs/systems/mcp/relay/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftSecretStore.kt` | `docs/systems/secrets/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/kernel/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftShellExecutor.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt` | `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt` | `docs/systems/shell/README.md` + `docs/systems/riftllm-bridge/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeGit.kt` | `docs/systems/git/README.md` + `docs/systems/secrets/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftPlusPlusV0.kt` | `docs/systems/experimental-cli/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftIrV1.kt` | `docs/systems/experimental-cli/README.md` |
@@ -83,16 +91,13 @@ This ledger assigns every active implementation/build/test source file to the RE
 | `android/app/src/main/java/com/riftos/app/RiftSwarmCoordinatorV0.kt` | `docs/systems/experimental-cli/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftShellBridge.kt` | `docs/systems/shell/README.md` + `docs/systems/dev-lab/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftSystemDump.kt` | `docs/systems/diagnostics/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt` | `docs/systems/mcp/sandbox/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftTransferManifest.kt` | `docs/systems/transfers/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` | `docs/systems/vortex-bridge/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` | `docs/systems/vortex-agent/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftChatHandoff.kt` | `docs/systems/chat-handoff/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/mcp/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt` | `docs/systems/workspace/live/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` |
 
 ## Browser-injected assets
 
@@ -148,4 +153,4 @@ This ledger assigns every active implementation/build/test source file to the RE
 
 ## Rule for new source
 
-When a new active implementation, browser asset, relay source, Workspace Records source or validation script is added, add its exact repository-relative path here and either assign it to an existing system README or create a new system/subsystem README. Documentation validation is intentionally strict so ownership cannot silently decay.
+When a new maintained implementation/reference source, browser asset, relay source, Workspace Records source or validation script is added, add its exact repository-relative path here and either assign it to an existing system README or create a new system/subsystem README. Runtime activation is a separate question. Documentation validation is intentionally strict so ownership cannot silently decay.

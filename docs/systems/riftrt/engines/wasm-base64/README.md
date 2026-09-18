@@ -1,42 +1,66 @@
-# RiftRT wasm-base64 Engine
+# RiftRT WASM-base64 Reference Engine
 
-## Purpose
+## Verification status
 
-The `wasm-base64` engine loads a base64-encoded WebAssembly module from a Rift package and connects it to the RiftRT surface/input ABI without giving the module general Android or DOM access.
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
+## Status
+
+WASM-base64 is a **retained inactive engine design** inside the un-packaged legacy RiftRT manager.
 
 ## Source ownership
 
-Implementation: `decodeBase64`, `launchWasm`, host imports, exported `rift_*` callback handling and frame-buffer decoding in `src/riftrt.js`.
+Retained only:
+- `src/riftrt.js` WASM branch/launcher.
 
-## Runtime flow
+Current Android code has:
+- no Kotlin WASM-base64 runtime owner;
+- no manifest component;
+- no Gradle packaging of `riftrt.js`;
+- no live caller selecting the engine.
 
-```text
-base64 WASM package asset
-  -> decode + WebAssembly.instantiate
-  -> small Rift host import surface
-  -> rift_init/tick/resize/input exports
-  -> bounded JSON frame-command buffer
-  -> host-owned canvas
-```
+## Current reachability
+
+The string/branch still appears in retained RiftRT parsing and launch dispatch.
+
+Because the entire manager is inactive, that branch is not current APK capability evidence.
+
+The packaged `riftvm.js` is unrelated to WebAssembly and must not be conflated with this engine.
+
+## Future activation boundary
+
+Any future WASM engine requires a new explicit owner and review of:
+- module provenance;
+- maximum memory/pages;
+- import allowlist;
+- filesystem/network/native capabilities;
+- execution interruption/yield limits;
+- lifecycle/crash handling;
+- package trust.
+
+Retained historical implementation is not a promise that those guarantees hold today.
 
 ## Critical invariants
 
-- Frame pointer/length must stay inside WASM memory.
-- Frame length remains bounded before decode/render.
-- WASM receives only the defined import surface.
-- Missing optional exports must not crash unrelated runtime state.
+- WASM-base64 remains inactive until a current packaged caller exists;
+- no arbitrary native/system imports;
+- no docs call it a fallback/default engine;
+- packaged RiftVM does not imply WASM activation.
 
 ## Failure signatures
 
-- Instantiation fails -> invalid base64/WASM/import contract.
-- Module runs but no frame -> missing/wrong `rift_frame`/`rift_frame_len` or memory bounds.
-- Resize/input ignored -> missing exports or host forwarding.
-- Corrupt frame data -> ABI/encoding mismatch.
+- current APK begins selecting wasm-base64 without this status changing -> documentation drift;
+- retained riftrt.js is treated as packaged because riftvm.js is packaged -> source-boundary error;
+- future WASM imports expose broad native authority -> architecture regression.
 
 ## Fix map
 
-Decode/instantiate/imports -> `launchWasm`. Memory/frame bounds -> frame loop. Drawing semantics -> shared `drawCommands`. Package data errors -> app/package system.
+Retained design -> `src/riftrt.js`.
+
+Future live WASM runtime -> new audited Android/headless owner.
 
 ## Validation
 
-Test valid and invalid modules, missing optional exports, memory bounds, oversized frame length, resize/input callbacks, repeated launch/close and malformed frame JSON without destabilizing the shell.
+Second audit proves retained branch presence plus zero current Android/Gradle/manifest activation.
+
+VERIFIED status here means the **inactive classification** is verified, not that retained WASM execution is device-tested.

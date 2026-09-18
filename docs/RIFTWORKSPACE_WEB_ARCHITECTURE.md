@@ -1,89 +1,23 @@
-# RiftWorkspace Architecture
+# RiftWorkspace Web Architecture — Retained Reference
 
-RiftWorkspace is the controlled project/workspace boundary between RiftOS apps, MCP tools, local filesystem writers, and RiftFS.
+## Status
 
-## Android runtime path
+**HISTORICAL / UNVERIFIED REFERENCE — NOT THE CURRENT BUILT-IN WORKSPACE RECORDS ARCHITECTURE.**
 
-```text
-RiftOS app / Workspace Records
-      |
-RiftWorkspace API / narrow records RPC
-      |
-riftworkspace-android-adapter.js
-      |
-RiftAndroid fs.* native calls
-      |
-filesDir/riftfs/workspace
-```
+The old web workspace modules and `workspace-live/` assets remain in the repository for tests/reference. Gradle does not package them as the RiftOS shell.
 
-`src/riftworkspace-web.js` remains the common high-level workspace contract; `src/riftworkspace-android-adapter.js` redirects storage to native RiftFS on Android.
+## Current source-proven boundary
 
-## Workspace Records surface
+The current native engine uses:
+- `RiftToolSandbox.kt` for MCP workspace operations and Project Intelligence;
+- `RiftWorkspaceRecords.kt` for persistent private records/checkpoints;
+- `RiftWorkspaceWatcher.kt` for recursive workspace observation;
+- `RiftNativeWorkspaceApps.kt` for the visible native Workspace Records built-in.
 
-The historical `workspace-live/` asset folder ships the **Workspace Records** dashboard. It is mounted as a trusted-shell component inside a shadow root and observes the same canonical `filesDir/riftfs/workspace` tree used by Files, RiftWorkspace and the MCP tool sandbox.
+The canonical workspace backing tree is `filesDir/riftfs/workspace`. The records store is outside that tree.
 
-```text
-                    filesDir/riftfs/workspace
-                       ^            ^
-                       |            |
-                RiftToolSandbox  RiftWorkspace / Files / Git / shell
-                       |            |
-                       +-----+------+
-                             |
-                    RiftWorkspaceWatcher
-                             |
-                    RiftWorkspaceRecords
-                     /                 \
-         rift_workspace_diff       trusted shell host
-                                         |
-                                 direct local records calls
-                                         |
-                              trusted Records component
-```
+`src/riftworkspace-web.js`, `src/riftworkspace-android-adapter.js`, `src/riftworkspace-live-host.js` and `workspace-live/*` are retained reference/test sources unless a later source audit explicitly promotes them.
 
-The dashboard is trusted code in the main shell realm, not a guest page. `RiftWorkspaceLiveHost` mounts its packaged template and module directly, subscribes to local native watcher events, and calls the records/info/Git-diff APIs without a server or iframe messaging. The shadow root isolates its styles and element IDs, **not its authority**: dashboard code can access the same trusted globals as other RiftOS shell modules. Installed app and browser guest isolation remains separate.
+## Trust rule
 
-## Persistent filesystem observation
-
-`RiftWorkspaceWatcher.kt` recursively observes only `filesDir/riftfs/workspace` and starts with the RiftOS shell session. It catches changes regardless of which local component made them, including:
-
-- MCP through `RiftToolSandbox`;
-- RiftFS / Files / RiftWorkspace writes;
-- RiftGit operations;
-- RiftShell/process-backed local work;
-- other local writers inside the canonical workspace.
-
-`RiftWorkspaceRecords.kt` persists records under app-private `filesDir/rift-workspace-records`, outside the project tree. It keeps rolling observed state for event-to-event history and a separate checkpoint state for the complete current local working diff. Text files within the recorder limit receive bounded git-style diffs; binary/oversized files are represented by hashes and metadata transitions.
-
-Directory move/delete events trigger full reconciliation so descendant changes are not lost when Android can no longer stat the removed path as a directory.
-
-## Local diff and Git diff are separate
-
-The local records/checkpoint diff is private and network-independent. It is exposed to MCP through read-only `rift_workspace_diff` and to the dashboard through the trusted records host.
-
-The dashboard's Git tab uses `RiftGit.workspaceDiff()` to compare `/workspace/RiftOS-main` against the current remote `Arctic403/RiftOS#main` tree. Successful workspace Git push/pull creates a new records checkpoint tagged with the resulting Git head SHA.
-
-The UI no longer offers a manual checkpoint button. A Git sync updates only the comparison baseline, never the persistent activity history.
-
-## Public workspace operations
-
-RiftWorkspace still supports controlled list/stat/read/write/mkdir/remove/move/copy plus snapshot and project patch/history surfaces used by other trusted RiftOS tooling. The Records UI calls only observational APIs, but it is no longer an isolation boundary against other shell globals.
-
-Path normalization prevents escaping the workspace/RiftFS boundary.
-
-## MCP separation
-
-RiftWorkspace and RiftBrowser remain separate capabilities:
-
-```text
-RiftKernel
-  |-- RiftWorkspace -> RiftFS/native storage
-  |
-  `-- RiftBrowser -> renderer -> guest web content
-```
-
-Normal guest webpages never receive RiftWorkspace or unrestricted RiftFS authority. MCP receives only its fixed capability registry and workspace-scoped paths. The records store itself is outside the ordinary workspace namespace and is readable only through the dedicated bounded `rift_workspace_diff` query.
-
-## Why no localhost server
-
-The records UI is packaged with RiftOS and executes in the trusted shell, so it needs no TCP listener, LAN port, remote service, API key, or cloud file service. Persistent records remain app-private on the device.
+Do not use this historical file as evidence for current workspace behavior. Use the native workspace/records owners and their verified subsystem documentation after that subsystem audit is completed.

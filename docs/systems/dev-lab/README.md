@@ -1,88 +1,293 @@
-# RiftOS Dev Lab
+# RiftOS Native Dev Lab
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-RiftOS Dev Lab is the trusted in-house development workspace for changing and abusing the running OS without writing experiments directly into the canonical project. It mirrors the Vortex3D Dev Lab model: experiment first, freeze a known-good snapshot with evidence, then publish the approved source delta into the local project. The installed APK is never silently rewritten.
+Dev Lab is RiftOS's native staged-edit control plane for the local `workspace/RiftOS-main` source project.
 
-The Dev Lab stores its private state under `/system/devlab`. The canonical source target remains `/workspace/RiftOS-main`. Staging, live experimentation and evidence capture happen outside the project tree; only **Publish snapshot** may mutate the project, and publication must go through RiftWorkspace's guarded atomic patch path.
+It separates staging/snapshot review from publication so ordinary editing does not immediately overwrite the canonical project.
 
 ## Source ownership
 
-- `src/riftdevlab.js` — state/provenance, source staging, live CSS overrides, trusted Live Script runner, evidence journals, snapshots, guarded publication and the built-in Dev Lab UI.
-- `src/riftcore.js` — registers Dev Lab as a trusted built-in system app with filesystem permissions.
-- `src/riftos.js` — launcher/open-app route only; Dev Lab implementation does not live in the desktop manager.
-- `src/riftworkspace-web.js` — existing patch preview/apply/history/rollback transaction authority used by Dev Lab publication.
-- `src/riftandroid-entry.js` — imports the Dev Lab after Workspace/Git are available and before desktop launch routing is used.
+Primary authority:
+- `RiftNativeDevLab.kt`
 
-## Storage and provenance
+Live callers:
+- `RiftNativeWorkspaceApps.kt` — native Dev Lab window.
+- `RiftNativeShellServices.kt` — finite `devlab` command family.
+- `RiftNativeShell.kt` — routes shell command to services.
+- `RiftVortexLocalAgent.kt` — bounded local-agent Dev Lab operation forwarding.
 
-Private lab data:
+Retained/non-authoritative:
+- `src/riftdevlab.js`
+- historical web/shell Dev Lab execution flows.
 
-- `/system/devlab/state.json` — current staging manifest, baseline Git head, latest snapshot/publication pointers.
-- `/system/devlab/stage/**` — staged source contents. These are not project files.
-- `/system/devlab/snapshots/*.json` — frozen source snapshots containing exact staged contents, per-file `base_sha256`, baseline/captured Git head and recent run evidence references.
-- `/system/devlab/runs/*.json` — Live Script evidence journals.
-- `/system/devlab/publications/*.json` — publication receipts that point at the RiftWorkspace history id created by the atomic project patch.
+The zero-caller `RiftHeadlessJsRuntime.executeDevLab()` execution island and its Dev Lab QuickJS wrapper were removed during this audit.
 
-The attached RiftGit metadata at `RiftOS-main/.riftgit.json` supplies the repository `headSha`. More importantly, every staged project file captures a SHA-256 of its exact workspace baseline. A later publication uses those hashes as RiftWorkspace v2 `base_sha256` guards. If any project target has changed since staging/snapshot, patch preview fails and **nothing is published**.
+## Storage
 
-## Live experimentation contract
+App-private RiftFS root:
+`filesDir/riftfs`
 
-Source staging is separate from runtime execution:
+Dev Lab root:
+`riftfs/system/devlab`
 
-- CSS source can be applied as a reversible in-document `<style>` override and removed without touching the project or APK.
-- JavaScript behavior can be prototyped with **Live Script**, an async trusted development script surface receiving read-only `core`/`workspace` views, runtime `desktop`/`windowManager` controls and a bounded helper object (`lab.log`, `lab.assert`, `lab.sleep`, `lab.status`, `lab.staged`). Runs are journaled as evidence. The default script API deliberately omits filesystem/workspace write methods so source mutation still flows through stage/snapshot/publish.
-- JavaScript source files can still be staged for publication, but Dev Lab does not pretend re-executing arbitrary boot modules is equivalent to replacing their existing lexical state/listeners.
-- HTML, Kotlin/Java, Android manifest/XML, Gradle and native C/C++ source are staging-only in the running APK and are explicitly classified as rebuild/reload-required.
+Subtrees:
+- `stage/`
+- `snapshots/`
+- `publications/`
+- `transactions/`
+- `state.json`
 
-All source publications still require a later APK build/install before the installed package permanently uses the changed files. Dev Lab reduces rebuild iteration by letting runtime behavior/CSS be tested and evidence collected first; it does not claim compiled Android code changed live.
+Canonical publication target:
+`riftfs/workspace/RiftOS-main`
 
-## Snapshot and publication flow
+displayed internally as `workspace/RiftOS-main`.
 
-1. Load a project-relative text source path.
-2. Stage an edit or deletion. The first stage captures the current RiftGit head plus the exact file baseline hash.
-3. Apply reversible live CSS overrides and/or use Live Script to abuse the current runtime; run evidence is retained.
-4. Create a snapshot. Snapshot content is immutable and independent of later editor changes. Independent staged-file and evidence reads are queued together so large multi-file snapshots do not pay one WebView/native round trip at a time; ordering, copied bytes and hash guards remain unchanged.
-5. Preview publication. Dev Lab converts the snapshot into one `riftcity-ai-patch` v2 patch targeting `RiftOS-main/**` with `base_sha256` on every source.
-6. Publish. RiftWorkspace validates every baseline, snapshots affected paths, applies the entire patch, creates one rollback history entry, and restores all affected files if any write fails.
-7. Dev Lab stores a publication receipt and clears only staged entries that still exactly match the published snapshot. Newer edits remain staged.
+## Limits
 
-Snapshots and run evidence survive `Reset staged` so a failed experiment can be discarded without erasing the evidence trail.
+- staged source text: <=2 MiB per file;
+- maximum staged paths: 256;
+- snapshot list query: 1..200;
+- stage reason: <=500 characters;
+- snapshot note: <=1000 characters.
 
-RiftShell exposes the same workflow for automated abuse: `devlab status`, `staged`, `stage`, `stage-file`, `delete`, `unstage`, `css`, `css-off`, `run`, `run-file`, `snapshot`, `snapshots`, `preview`, `publish`, `reset`, and `open`. `latest` resolves the newest snapshot for preview/publish. The `devlab` command family is explicitly rejected inside RiftShell atomic `batch`; Dev Lab publication already has its own guarded Workspace transaction and live/runtime actions are not reversible filesystem batch operations.
+Only explicit text/source extensions and a small set of extensionless source filenames are stageable.
 
-### RiftFS source-path compatibility
+Project-relative paths reject blank, `.`, `..`, NUL and traversal.
 
-`stage-file` / `run-file` source arguments use `RiftOSCore.path.isAbsolute()`, so bare `C:/...` and `D:/...` inputs are treated as absolute RiftFS paths. This changes only where Dev Lab reads an exact staging payload from; project publication remains project-relative and guarded through RiftWorkspace.
+## State
 
-### Local-agent tool layer
+Native state format/version:
+- `riftos-devlab-state-native`
+- version 2.
 
-`riftos-agent devlab ...` is the automation-safe controller intended for ChatGPT/MCP acceptance work. Shell parsing produces a structured request (`action`, paths/content/snapshot id, cwd); native `RiftDevLabLocalAgent` accepts only the fixed Dev Lab action set, encodes the request as base64 JSON, and sends only `devlab rpc <payload>` through the process-owned shell executor. In Patch 1 that not-yet-native Dev Lab family intentionally delegates to the currently attached trusted `RiftShellBridge` compatibility executor. The Dev Lab runtime then calls `executeAgentRequest()` and therefore uses the same staging metadata, per-file baselines, evidence, immutable snapshots and guarded Workspace publication as the UI/direct `devlab` shell family. There is no arbitrary command passthrough and no direct stage-folder mutation. `stage-file` and `run-file` are the preferred exact-payload paths for multi-line or heavily quoted code.
+State tracks:
+- project;
+- baseline Git head;
+- staged path metadata;
+- latest snapshot id;
+- last publication receipt;
+- updated timestamp.
 
-The native dispatcher runs agent calls on a dedicated worker so this synchronous agent-to-shell round trip cannot block the ordinary native worker that nested RiftFS/workspace operations require.
+State is written through native atomic replacement.
+
+## Staging
+
+First staged path captures the current project Git head as `baselineHeadSha`.
+
+For each staged path Dev Lab records the original:
+- existence;
+- SHA-256, when a file existed.
+
+Write staging additionally stores the staged SHA-256.
+
+Deletion can only be staged for an existing baseline file.
+
+A baseline file larger than the 2 MiB source limit cannot be staged through this text/source workflow.
+
+Staging mutates only `system/devlab/stage`, not the canonical project.
+
+## stage-file
+
+`stage-file` may read a bounded text file from RiftFS using the current shell cwd/path mapping, then stage its text under an independently validated project-relative destination.
+
+The source file may come from elsewhere in RiftFS; that does not change the publication target or target-path confinement.
+
+## Snapshot
+
+`snapshot` requires at least one staged path.
+
+The snapshot JSON contains:
+- unique snapshot id;
+- baseline and captured Git heads;
+- sorted staged entries;
+- staged content for write entries;
+- base hashes/existence and action metadata.
+
+Snapshots are not modified through the Dev Lab API after creation.
+
+They are still stored under trusted app-private RiftFS and are therefore not a cryptographic/tamper-proof boundary against stronger native RiftShell authority.
+
+## Preview
+
+Preview revalidates every snapshot entry against the current canonical project.
+
+A publish conflict now includes:
+- file existence changed;
+- file SHA changed;
+- a non-file object appeared at a staged file path;
+- known baseline Git head differs from the current known Git head.
+
+`safeToPublish=true` only when there are no path conflicts and no Git-head conflict.
+
+The Git-head check was added during this audit because the previous source recorded baseline head metadata but did not enforce it.
+
+## Publish transaction
+
+Publish first runs preview and refuses unsafe snapshots.
+
+For each entry:
+1. current file is copied into a per-publication transaction directory when it exists;
+2. write action publishes through atomic file replacement;
+3. delete removes the target;
+4. path is added to the applied list.
+
+On failure:
+- applied paths are restored in reverse order;
+- newly created targets are removed when no backup existed;
+- each rollback failure is collected.
+
+If rollback fully succeeds, the transaction directory is deleted and the call reports that publish failed but rolled back.
+
+If any rollback step fails:
+- source does **not** claim a successful rollback;
+- transaction data is retained;
+- error reports that rollback was incomplete and includes the recovery path/details.
+
+On successful publication:
+- a version-2 publication receipt is written;
+- transaction directory is deleted;
+- published paths are removed from staging;
+- baseline head is cleared when staging becomes empty;
+- lastPublished is persisted.
+
+## Atomic writes
+
+Dev Lab state, staged files, snapshots, receipts and canonical write publication use a temp + backup + rename replacement helper.
+
+If replacement fails, the previous target is restored when possible.
+
+## Native UI
+
+The native Dev Lab window exposes:
+- Load
+- Stage
+- Snapshot
+- Publish
+- Reset
+
+Publish first obtains a preview and only proceeds through the native publish action when the snapshot reports safe-to-publish.
+
+The UI is Android-native; it does not require WebView.
+
+## Shell
+
+Native shell routes:
+- status
+- load
+- staged
+- stage
+- stage-file
+- delete
+- unstage
+- reset
+- snapshot
+- snapshots
+- load-snapshot
+- preview
+- publish
+
+Historical web execution actions:
+- run
+- run-file
+- css
+- css-off
+- open
+
+fail closed with a message that execution moved out of the Dev Lab control plane.
+
+`runs` returns an empty run list.
+
+## Generic batch status
+
+The current native RiftShell has **no generic shell `batch` command**.
+
+The old `src/riftshell-batch.js` is retained/unpackaged.
+
+Therefore current Dev Lab does not need a special live “cannot run inside batch” check; there is no live generic shell batch authority to enter.
+
+Rift MCP Code Mode transactions are a separate workspace subsystem and do not call Dev Lab.
+
+## Local agent
+
+The Vortex/RiftOS local-agent command router can forward a bounded `devlab` operation to the same `RiftNativeDevLab.execute()` authority.
+
+It does not implement an alternate staging/publish engine.
+
+## Browser/headless execution
+
+Dev Lab itself does not execute arbitrary staged JavaScript/HTML.
+
+The dead headless Dev Lab runner was removed during this audit.
+
+Any future preview/execution runtime must be introduced under an explicitly audited owner rather than silently restoring the old web Dev Lab path.
+
+## Workspace Records
+
+Dev Lab publish changes canonical workspace files, so the shared workspace watcher can observe them like changes from other local writers.
+
+Dev Lab does not directly mutate Workspace Records state.
+
+## Non-ownership boundaries
+
+Dev Lab does not own:
+- Git remote push/pull;
+- Builder/install;
+- generic workspace MCP transactions;
+- browser renderer execution;
+- Workspace Records;
+- Android shell/process execution.
+
+## Source fixes in this audit
+
+- enforced staged baseline Git-head conflict during preview/publish;
+- reject non-file path-type changes before publish;
+- rollback now reports incomplete recovery honestly and retains transaction evidence;
+- successfully rolled-back failed transactions are cleaned;
+- dead zero-caller headless Dev Lab JavaScript runner removed;
+- stale generic shell-batch claim corrected to current native architecture.
+
+## Critical invariants
+
+- staging never mutates canonical project;
+- stage paths stay project-relative and source-type allowlisted;
+- <=2 MiB per staged source;
+- <=256 staged paths;
+- preview verifies file baselines and known Git-head baseline;
+- publish cannot replace a newly appeared directory/non-file;
+- publication rollback failure is never hidden;
+- no arbitrary Dev Lab process/shell/browser execution;
+- UI, shell and local agent share one native authority;
+- snapshots are immutable through Dev Lab API but not claimed as cryptographically tamper-proof.
 
 ## Failure signatures
 
-- **Publish aborted: Workspace file changed since the patch was created** -> the canonical project drifted after staging/snapshot. Reload/re-stage against the current project; never bypass the hash guard.
-- Source editor shows missing/empty unexpectedly -> verify the path is project-relative and exists under `RiftOS-main`; binary/directory editing is intentionally unsupported.
-- Live CSS appears wrong after restaging -> re-apply the CSS override; staging and live application are intentionally separate actions.
-- Live Script throws -> inspect the run journal/output; scripts use trusted shell APIs but do not gain raw Android shell/ADB authority.
-- Native/Kotlin/manifest edit does not change the running APK -> expected. It is staged source and requires the next Android build/install.
-- Publish succeeds but Git is dirty -> expected. Dev Lab publishes to the **local workspace**, not GitHub. Review Workspace Records/diff, update the project patch ledger, then push/build according to project policy.
+- staging changes workspace before publish -> isolation regression;
+- Git head changes but preview stays safe -> baseline-head regression;
+- directory at staged file path is replaced -> path-type regression;
+- failed restore still says “rolled back” -> recovery-reporting regression;
+- old headless `executeDevLab` returns -> dead execution-surface regression;
+- web run/css/open action executes natively -> execution-boundary regression;
+- docs claim live generic shell batch exclusion -> stale architecture.
 
 ## Fix map
 
-Staging/snapshot/live-script/publication behavior -> `src/riftdevlab.js`.
-Atomic conflict detection/rollback/history -> `src/riftworkspace-web.js`; do not duplicate it in Dev Lab.
-Launcher/window routing -> `src/riftos.js`.
-Trusted app permissions -> `src/riftcore.js`.
-Load order -> `src/riftandroid-entry.js`.
-Source/build checks -> `scripts/test-rift-dev-lab.mjs`, `scripts/validate-rift-transport.mjs`, `scripts/validate-rift-wiring.mjs`.
+Staging/snapshot/preview/publish/recovery -> `RiftNativeDevLab.kt`.
+
+Native UI -> `RiftNativeWorkspaceApps.kt`.
+
+Shell parsing -> `RiftNativeShellServices.kt`.
+
+Local-agent forwarding -> `RiftVortexLocalAgent.kt`.
+
+Builder/device activation -> Build/validation subsystem.
 
 ## Validation
 
-Source validation must prove that the Dev Lab is imported, registered as a built-in app, targets `/system/devlab` for experiments, targets only `RiftOS-main/**` for publication, emits Workspace patch v2 changes with `base_sha256`, previews before applying, and does not directly write project source through raw RiftFS.
+Second source audit must recheck storage roots, allowed source paths, 2 MiB/256 bounds, baseline capture, snapshot contents, file/head/type conflict detection, publish backup/rollback behavior, transaction cleanup/retention, UI/shell/local-agent callers, dead headless runner absence and absence of live shell batch.
 
-The focused test must prove that staging leaves the project unchanged, snapshots freeze exact staged content, later project drift causes publication to fail before mutation, successful publication uses the guarded Workspace patch, and reset clears only active staging while retained snapshots/runs remain available.
-
-On device, abuse source staging, CSS hot apply/remove, Live Script pass/fail evidence, snapshot creation, post-snapshot restaging, conflict abort, successful publish, Workspace Records visibility, rollback, and the next manual APK build. Compiled-source changes must never be reported as live until that APK is installed.
+Device proof should stage/edit/snapshot, introduce file and Git-head drift, test successful publication, force a publication failure, verify Workspace Records observation, then Builder/install before treating Kotlin changes as active.

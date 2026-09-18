@@ -1,144 +1,122 @@
 # RiftOS Project Status
 
-## Active target
+## Verification status
 
-RiftOS ships as an Android APK targeting Android 8.0 / API 26+ with Samsung/DeX-friendly resizing. `main` is the authoritative source branch.
+**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-17.**
 
-## Active foundation
+This file reports what the current local source implements. It does not claim the unpushed native migration has passed Android Builder or installed-device acceptance.
 
-```text
-RiftOS shell
-  -> RiftBrowser
-  -> AI client transports
-      -> MCP compatibility path
-      -> Browser injector adapters
-  -> RiftOS native capability layer
-  -> RiftToolHost
-  -> RiftToolSandbox
-  -> riftfs/workspace
-```
+## Android target
 
-RiftOS provides a local capability layer consumed through independent AI transports. ChatGPT Web uses the MCP compatibility path. Other supported browser AI clients use isolated injector adapters that expose the same RiftOS capability model without sharing MCP transport state.
+From `android/app/build.gradle.kts`:
+- application id `com.riftos.app`;
+- min SDK 26;
+- target/compile SDK 36;
+- Java 17;
+- version `0.11.11-relay-client`;
+- release minification disabled.
 
-## Implemented
+## Engine state
 
-### Kernel and filesystem
+### Source-verified live architecture
 
-- RiftKernel JavaScript runtime hosted by `MainActivity`.
-- RiftShell 2.1 with cwd-aware paths across `/home`, `/workspace`, and Android mounts.
-- RiftGit existing-folder attachment, explicit clone destinations, and atomic binary-safe tree synchronization.
-- Atomic RiftShell command batches with guarded local backups, failure rollback, dry-run validation, and one-command Git synchronization.
-- Exact-origin `RiftAndroid` WebMessage bridge for the RiftOS shell.
-- App-private RiftFS at `filesDir/riftfs`.
-- SAF external-folder mounts with persisted permissions.
-- RiftWorkspace Android adapter and JSON-safe workspace surface.
-- Android Keystore secret storage.
+- `MainActivity` is an Android-native desktop host with no WebKit imports.
+- `RiftNativeDesktop` owns launcher, taskbar, native window records, z-order and window geometry/state.
+- Terminal and Task Manager are native through `RiftNativeSystemApps`.
+- Files, Editor, Dev Lab, Workspace Records and Settings are native through `RiftNativeWorkspaceApps`.
+- `RiftMcpRuntime` owns process-wide native shell, MCP host/server/relay, native Git and Vortex bridge.
+- `RiftNativeShell` is the live shell executor and has no renderer fallback.
+- `RiftToolSandbox` is hard-scoped to `filesDir/riftfs/workspace`.
+- the current model-visible MCP catalog is exactly 18 tools.
+- `RiftWorkspaceRecords` is native/shared; `RiftWorkspaceWatcher` is Activity-owned and is recreated with `MainActivity`.
+- `RiftSecretStore` is the Android Keystore-backed secret owner.
+- Native Files owns persisted Android SAF document-tree mounts.
+- `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.
+- installed HTML/JS programs already present under `C:/Programs` can be launched by `RiftBrowserAppHost`.
+- production `riftpp` routes through `RiftHeadlessJsRuntime` / QuickJS.
+- Gradle packages only `src/riftpp-core.js` and `src/riftvm.js` from `src/`.
 
-### Desktop and applications
+### Logical RiftKernel
 
-- RiftDesktop window manager with focus, move, resize, minimize, maximize and taskbar state.
-- Explorer-style Files app with create, rename, copy, cut/paste, duplicate, move and delete.
-- Settings app with privacy-limited System Dump export and Android Save As picker.
-- RiftRT v2 installed-program runtime: native Android-owned app surfaces by default, Worker/WASM compatibility engines, bounded `rift-vm` execution for `rift-exec-v1` `.rxe` payloads, and no iframe execution path.
-- Rift++ Core `0.6.0-bootstrap` remains installed/device-proven through Gate 5 on RiftOS source commit `972206a0d4446811572aa697e0f69cf46097dc8c`: exact transitive `allow [storage]` effects, bounded `checkpoint_save/load/remove`, canonical checkpoint type descriptors, and explicit `state.save/state.load/state.remove` RiftVM imports. The installed RiftLLM+ two-launch proof restored complete BrainState across a real RiftRT close/relaunch boundary and verified post-clear fallback. State authority remains app-private behind the existing RiftApp/RiftRT `storage` declaration; no global kernel capability, MCP tool, generic filesystem authority, or RiftCLI route was added. RiftLLM+ Gate 5.5 then stress-tested verified memory across 33 RiftRT sessions without changing the language. Core `0.7.0-bootstrap` Gate 6A is now installed/device-proven on RiftOS source commit `c557650e19ed7e9b22edab37848ba36dcefce814`: finite `f64`, bounded `Vec<f64,N>` parameter state, deterministic numeric compute, canonical negative-zero handling, and data-only `value_sha256` parameter identity with no new host import/capability. The installed two-launch RiftLLM+ parameter proof reproduced forward output `3.875` and the same parameter SHA-256 across restart with zero leaked sessions. Core Gate 6A itself performs zero parameter updates. RiftLLM+ Gate 6B is now proven on that unchanged Core `0.7.0-bootstrap` surface: one deterministic bounded update changed parameter SHA-256 identity, reduced training-example loss from `0.375` to `0.0`, survived a full RiftRT restart, preserved verified-memory retries, and leaked zero sessions. Parameter learning/generalization remains unproven until Gate 6C. Core stays separate from the non-executable RiftCLI/V0 swarm DSL.
-- `.rift` transactional installer layout under `C:/Programs` with per-user app state separated under `D:/Users/Default/AppData`.
-- RiftFS virtual `C:/` system/program and `D:/` user/workspace volumes with canonical legacy-path compatibility.
-- Rift MCP system app for local read/write permissions and recent tool activity.
-- RiftBrowser-owned renderer surface with a swappable `RiftBrowserEngine` backend.
-- Workspace Records trusted-shell dashboard with persistent writer-agnostic history, local checkpoint diffs and optional remote Git comparison.
+`RiftKernel` remains the protected logical engine identity reported by the native shell. It is implemented across native owners; `src/riftcore.js` is not the live installed kernel.
 
-### RiftBrowser
+The native logical task model protects:
+- `kernel`;
+- `desktop`;
+- `shell`.
 
-- RiftOS-owned browser surface/container; Android System WebView is the current `RiftBrowserEngine` compatibility backend.
-- RiftOS-owned browser chrome and desktop window state.
-- ChatGPT/OpenAI authentication handling, cookies and file chooser support.
-- Exact-origin ChatGPT Web compatibility adapter.
-- No hidden Rift AI task runner, target picker, session controller or AI event channel.
-- ChatGPT receives no unrestricted filesystem JavaScript object or general native dispatcher.
-- Browser file/content access is disabled at the WebView settings layer.
+Visible desktop windows are user tasks, not Android/Linux PIDs.
 
-### Workspace Records
+## Browser state
 
-- Packaged local HTML records dashboard; no localhost TCP server or cloud file service.
-- Direct trusted-shell component mounts in a shadow root, reads local records via native calls, and makes the optional Git comparison only on demand. The shadow root separates styles, not shell privileges.
-- Recursive native watcher starts with the RiftOS shell and is scoped to `filesDir/riftfs/workspace`.
-- `RiftWorkspaceRecords` persists event history and local checkpoint state outside the workspace tree.
-- Files, MCP, RiftWorkspace, RiftGit, shell/process and other local writers converge into the same record stream.
-- `rift_workspace_diff` exposes the local checkpoint diff/records read-only to MCP.
-- RiftGit provides the separate remote Git comparison and checkpoints records after successful workspace push/pull.
-- Open files refresh automatically when clean; unsaved local edits trigger a conflict warning instead of being overwritten.
-- Workspace Records is observational; it does not own file-save/approval semantics or mutate project files.
+`RiftBrowserEngine` is the renderer interface. `RiftBrowserAndroidWebViewEngine` is the current backend.
 
-### Vortex3D local development bridge
+The live native composition reaches browser open, Android Back, state query and the bounded active-page inspector. `RiftBrowserWindow` also implements forward/reload/direct navigation/desktop-mode/new/select/close-tab/visibility/bounds APIs, but the source audit found no current Kotlin callers for those methods, and MainActivity passes a no-op browser state sink. They are therefore implemented-but-unwired, not active UI features.
 
-- Explicit local Binder IPC connects the trusted RiftShell `vortex` command family to a co-installed Vortex3D debug APK; there is no localhost/network listener.
-- The bridge reuses the existing `rift_shell_exec` MCP tool, so the model-visible tool catalog remains 18 tools.
-- Live status/catalog/state/UI/screenshot calls, asynchronous validation/VTXScript jobs, semantic UI clicks/touch replay, bounded screenshot image attachment and evidence pulls into `workspace/.vortex-bridge/` are supported by the source contract.
-- Vortex3D's own validation suites/VTXScript/capture runtime remain authoritative; RiftOS is transport/orchestration only.
+File chooser ownership, renderer crash containment and the exact-origin MCP compatibility bridge remain RiftBrowser-owned. A hard Gradle preBuild validator rejects WebKit imports/renderer code outside explicit `RiftBrowser*` sources.
 
-### Experimental RiftCLI brain / development swarm
+## Rift++ / executable state
 
-- A native `rift-cli` scaffold now exists strictly as an **experimental, manual-only** subsystem below the stable MCP/relay surface.
-- It is OFF on every process start; enable state is not persisted and requires the exact manual confirmation command.
-- The current brain backend is a non-mutating rule-based planning scaffold with a logical development-team role graph. No model backend is connected yet.
-- Rift++ V0 adds a bounded declarative `backend`/`brain`/`agent`/`swarm`/`task` language that compiles workspace-only scripts into non-executable `rift.swarm-ir/0`; `RiftSwarmCoordinatorV0` can preview deterministic assignments through the new `RiftBrainBackend` interface contract without invoking a backend or tool.
-- Rift IR V1 adds the language-independent `rift.ir/1` `swarm-core` contract. Rift++ V0 lowers into it without replacing `rift.swarm-ir/0`; the IR independently revalidates graph schedules, capability policy, task gates and declared context/resource totals. Its execution mode is `inspect-only`, single-concurrency by default, with backend/tool/Local-Agent invocation and mutation all disabled.
-- When manually enabled, the only live Local Agent behavior is compatibility pass-through through a single router directly above the existing fixed-scope `RiftOsLocalAgent`; no package authority or Android permission is widened.
-- It adds zero MCP tools, no relay protocol, no raw Android shell, and no autonomous writes. It is not approved for production/autonomous development until explicitly promoted by the project owner.
+The active production language path is native shell → headless QuickJS → Rift++ Core/RiftVM assets.
 
-### Rift MCP
+`.rxe` compile/inspect/run/exec behavior is implemented inside the bounded headless runtime. There is no live Kotlin `RiftRT` class.
 
-- `RiftToolHost` is the canonical device-side capability registry.
-- `RiftMcpServer` is an in-process MCP JSON-RPC server with no listening socket.
-- Filesystem scope is exactly `filesDir/riftfs/workspace`.
-- Read/write permission gates are authoritative on-device.
-- `rift_workspace_exec` supports bounded project inspection, Project Intelligence v2 restart-persistent symbol/dependency indexing, focused graph/impact/validation views through the existing `project` operation, symbol/reference lookup, surgical reads, guarded patches, transactional multi-file edits, full file/tree hashing, atomic local archive creation and traversal-safe bounded ZIP extraction.
-- ChatGPT compatibility calls use bounded plain-text `[RIFT_CALL]` / `[RIFT_END]` blocks with unique call IDs and `[RIFT_RESULT]` continuations.
-- MCP JSON-RPC remains private to the trusted browser/native and relay transports; older chat-facing JSON/XML-like envelope formats are removed from the active protocol.
-- Optional outbound-only WSS relay client, disabled until the user supplies a secure endpoint and pairing token.
-- Relay credentials are encrypted through Android Keystore; the relay receives no filesystem authority.
+Historical `src/riftrt.js` and its Worker/WASM/application-runtime architecture are retained source/reference unless a current native owner explicitly uses them.
 
-## Removed / inactive
+## Installed-program state
 
-The following are not active RiftOS Android architecture:
+The current source can discover and host packages already present in `C:/Programs/<id>/package.json`.
 
-- Rift AI workspace app (`src/riftai-workspace.js`), task controller and persistent AI-session journal (`RiftAiJournal.kt`),
-- native `ai.*` shell command surface,
-- hidden ChatGPT task/target/session orchestration in `RiftBrowserWindow`,
-- Rift AI event channel in the MCP bridge,
-- remote `services/rift-mcp-relay`,
-- `RiftMcpInitProvider`,
-- `RiftMcpBridgeActivity`,
-- `riftbridge-system.js`,
-- pairing-key MCP endpoint URLs,
-- local gpt-oss/llama.cpp runtime and `libllamaserver.so`,
-- Rift Agent V1/V2/V3 DOM-agent runtime,
-- direct `RiftSandbox` / `RiftSandboxFS` WebMessage access from `chatgpt.com`.
+**Not currently source-proven as live:** a native package installer. The old JavaScript installer (`src/riftapps.js`) is not packaged by Gradle.
 
-Historical Git commits and documents may describe removed experiments. They are not current runtime claims.
+## Retired/non-live engine paths
 
-## Build and verification
+The following must not be described as current APK engine authority:
+- shell WebView / trusted compatibility renderer;
+- `RiftShellBridge`;
+- `RiftNativeDispatcher`;
+- `RiftSystemDump`;
+- JavaScript `RiftOSCore` as installed kernel authority;
+- `RiftAndroid` web-shell boot bridge;
+- `index.html` as the OS bootstrap;
+- `riftandroid-entry.js` as the APK boot chain;
+- `src/riftgit.js` as live Git owner;
+- `src/riftdevlab.js` as live Dev Lab owner;
+- `workspace-live` HTML dashboard as the live Workspace Records UI;
+- `src/riftruntime.js` as live capability truth;
+- generic RiftShell `mount`/`umount` compatibility route;
+- generic `rift` local-platform wrapper.
 
-The RiftOS source repository is intentionally Actions-free. The public `Arctic403/Riftos-builder` worker builds exact RiftOS commits and returns results through RiftOS releases.
+## Known source/documentation gaps found by this audit
 
-Current builder policy:
+- Previous docs incorrectly described the old web runtime as the active RiftKernel.
+- Previous boot docs described HTML/JS module boot even though Gradle no longer packages it.
+- Previous status docs claimed the old exact-origin `RiftAndroid` shell bridge was active.
+- Previous status/root docs claimed System Dump remained in Settings; its source was removed.
+- Previous docs claimed web Workspace Records was the live UI; the built-in is now native.
+- Previous docs described the JavaScript RiftRT/app installer as active despite Gradle not packaging those modules.
+- Previous `src/README.md` incorrectly called the whole folder packaged runtime source.
+- Previous runtime-capability docs treated `window.RiftRuntime` as live even though it is not packaged.
 
-- rejects the removed Rift AI workspace source;
-- runs the repository source checks before Gradle;
-- builds the optional native MCP relay transport without adding a model API path;
-- builds, aligns, signs and verifies the APK;
-- verifies Android 8+ package/signature requirements;
-- verifies the packaged ChatGPT Web/MCP adapter and local workspace tooling;
-- rejects reintroduction of removed AI assets.
+These claims are being purged during the current code-first documentation audit.
 
-## Known limitations
+## Build/device proof status
 
-- The compatibility adapter depends on ChatGPT Web DOM semantics and can require updates after major ChatGPT UI changes.
-- Write tools are disabled by default until explicitly enabled in Rift MCP settings.
-- Android System WebView remains memory-heavy on long browser sessions.
-- Embedded identity providers may independently reject Android WebView login.
-- Native Kotlin/DEX changes require an APK rebuild.
+The current migration is **source-audited, not yet promoted**.
 
-## Planned
+Still required before calling the runtime proven:
+- execute updated repository source checks;
+- push only with explicit authorization;
+- external Android Builder compile/package/sign verification;
+- install the exact artifact;
+- cold start;
+- native window/task abuse;
+- background/foreground and Activity lifecycle abuse;
+- Files SAF mount/edit abuse;
+- browser/app/preview renderer loss tests;
+- MCP/native shell survival;
+- final Builder/regression pass.
 
-See [`../ROADMAP.md`](../ROADMAP.md) for RiftEngine/Servo work, project tooling, RiftScript Studio and capability-gated expansion of the local tool registry.
+## Next documentation sequence
+
+The engine/core pass is followed by a second engine re-audit. After the engine is clean, each subsystem is audited independently from source and only then marked verified/trusted.

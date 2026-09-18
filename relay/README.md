@@ -26,4 +26,4 @@ Never reuse either token and never commit their values.
 5. Confirm `/health` reports `deviceConnected: true`.
 6. In ChatGPT Developer mode, register the private HTTPS MCP URL.
 
-This secret-path authentication is intended only for personal Developer mode testing. Add standards-compliant OAuth 2.1 before sharing or publishing the MCP server.
+This secret-path authentication is intended only for personal Developer mode testing. Worker invocation logs are disabled because the MCP secret is embedded in the URL path. Add standards-compliant OAuth 2.1 before sharing or publishing the MCP server.

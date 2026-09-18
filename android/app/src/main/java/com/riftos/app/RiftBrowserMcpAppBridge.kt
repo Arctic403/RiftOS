@@ -23,9 +23,9 @@ class RiftBrowserMcpAppBridge(
         private const val MAX_MESSAGE_BYTES = 9 * 1024 * 1024
         private val AI_ORIGINS = setOf(
             "https://chatgpt.com", "https://www.chatgpt.com",
-            "https://github.com", "https://copilot.microsoft.com",
+            "https://github.com", "https://www.github.com", "https://copilot.microsoft.com",
             "https://gemini.google.com", "https://google.com", "https://www.google.com",
-            "https://claude.ai"
+            "https://claude.ai", "https://www.claude.ai"
         )
     }
 
@@ -38,8 +38,10 @@ class RiftBrowserMcpAppBridge(
     }
     private var installed = false
     private var documentStartInstalled = false
+    private var destroyed = false
 
     fun install() {
+        check(!destroyed) { "Rift MCP browser bridge is destroyed" }
         if (installed) return
         require(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             "Android System WebView is too old for Rift MCP App messaging"
@@ -80,30 +82,32 @@ class RiftBrowserMcpAppBridge(
     }
 
     fun ensureInjected(url: String?) {
-        if (!installed || documentStartInstalled || !isAiUrl(url)) return
+        if (destroyed || !installed || documentStartInstalled || !isAiUrl(url)) return
         webView.evaluateJavascript(script, null)
     }
 
     fun state(): JSONObject = JSONObject()
         .put("installed", installed)
         .put("mode", "rift-mcp-app-v2")
-        .put("origin", "chatgpt.com")
+        .put("origin", "allowlisted-ai-origins")
         .put("transport", "in-process MCP JSON-RPC")
         .put("remoteRelay", false)
         .put("tools", toolHost.tools().length())
         .put("access", toolHost.access())
 
     fun destroy() {
-        if (!installed) return
-        runCatching { WebViewCompat.removeWebMessageListener(webView, BRIDGE_NAME) }
+        if (destroyed) return
+        destroyed = true
+        if (installed) runCatching { WebViewCompat.removeWebMessageListener(webView, BRIDGE_NAME) }
         installed = false
     }
 
     private fun deliver(response: JSONObject) {
+        if (destroyed) return
         val payload = response.toString()
         webView.post {
-            if (activity.isFinishing) return@post
-            webView.evaluateJavascript("window.RiftMcpAppNative?.__receive($payload);", null)
+            if (destroyed || activity.isFinishing || activity.isDestroyed) return@post
+            runCatching { webView.evaluateJavascript("window.RiftMcpAppNative?.__receive($payload);", null) }
         }
     }
 

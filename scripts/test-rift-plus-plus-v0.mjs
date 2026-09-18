@@ -4,6 +4,7 @@ const compiler = readFileSync('android/app/src/main/java/com/riftos/app/RiftPlus
 const coordinator = readFileSync('android/app/src/main/java/com/riftos/app/RiftSwarmCoordinatorV0.kt', 'utf8');
 const cli = readFileSync('android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt', 'utf8');
 const shell = readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt', 'utf8');
+const shellServices = readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt', 'utf8');
 const host = readFileSync('android/app/src/main/java/com/riftos/app/RiftToolHost.kt', 'utf8');
 const gradle = readFileSync('android/app/build.gradle.kts', 'utf8');
 const sample = readFileSync('examples/riftpp/riftos-dev-team.riftpp', 'utf8');
@@ -24,6 +25,7 @@ check('V0 has no generic process or network execution path', !compiler.includes(
 check('BrainBackend interface exists but V0 coordinator is preview-only', coordinator.includes('interface RiftBrainBackend') && coordinator.includes('fun respond(request: RiftBrainRequest): RiftBrainResponse') && coordinator.includes('object RiftSwarmCoordinatorV0') && coordinator.includes('backendInvoked", false') && coordinator.includes('execution", false'));
 check('coordinator never invokes BrainBackend respond', !coordinator.includes('.respond('));
 check('RiftCLI exposes Rift++ behind experimental gate', cli.includes('"riftpp" ->') && cli.includes('RiftPlusPlusV0.execute(context, tail)') && cli.includes('Rift++ compile/preview requires explicit process-local enable'));
+check('experimental Local Agent router is actually wired but preserves existing authority', shellServices.includes('RiftAgentRouter.execute(context,request)') && cli.includes('return RiftOsLocalAgent.execute(context, args)'));
 check('native shell advertises Rift++ without a new MCP tool', shell.includes('riftpp') && !host.includes('riftpp') && !host.includes('rift_plus_plus'));
 check('Android source verification includes Rift++ compiler/coordinator', gradle.includes('RiftPlusPlusV0.kt') && gradle.includes('RiftSwarmCoordinatorV0.kt'));
 check('sample is a complete V0 swarm', sample.startsWith('riftpp 0') && /backend\s+RulesBrain\s*\{/.test(sample) && /brain\s+MainBrain\s*\{/.test(sample) && /agent\s+Reviewer\s*\{/.test(sample) && /swarm\s+DevTeam\s*\{/.test(sample) && /task\s+RepairRiftOS\s*\{/.test(sample));

@@ -9,6 +9,7 @@ const requiredDocs = [
   'docs/README.md',
   'docs/PUBLIC_SURFACES.md',
   'docs/systems/README.md',
+  'docs/systems/engine/README.md',
   'docs/systems/boot/README.md',
   'docs/systems/shell-ui/README.md',
   'docs/systems/android-host/README.md',
@@ -39,6 +40,8 @@ const requiredDocs = [
   'docs/systems/riftrt/engines/worker-js/README.md',
   'docs/systems/riftrt/engines/wasm-base64/README.md',
   'docs/systems/riftrt/engines/native-arm64/README.md',
+  'docs/systems/riftrt/engines/rift-vm/README.md',
+  'docs/systems/riftpp-core/README.md',
   'docs/systems/runtime-capabilities/README.md',
   'docs/systems/shell/README.md',
   'docs/systems/experimental-cli/README.md',
@@ -66,11 +69,11 @@ const localIndexes = [
   'workspace-live/README.md', 'relay/README.md',
 ];
 
-const activeSources = [
+const ownedSources = [
   'index.html', 'styles.css', 'package.json',
   'android/build.gradle.kts', 'android/settings.gradle.kts', 'android/gradle.properties',
   'android/app/build.gradle.kts', 'android/app/src/main/AndroidManifest.xml',
-  'android/app/src/main/res/values/styles.xml', 'android/riftos-debug.keystore.b64',
+  'android/app/src/main/res/values/styles.xml', 'android/app/src/main/res/xml/vortex_agent_accessibility.xml', 'android/riftos-debug.keystore.b64',
   ...fs.readdirSync(path.join(root, 'src')).filter(name => /\.(?:js|css)$/.test(name)).map(name => `src/${name}`),
   ...fs.readdirSync(path.join(root, 'android/app/src/main/java/com/riftos/app')).filter(name => name.endsWith('.kt')).map(name => `android/app/src/main/java/com/riftos/app/${name}`),
   ...walk('android/app/src/main/assets').filter(file => file.endsWith('.js')),
@@ -91,8 +94,66 @@ function walk(relative) {
   return out;
 }
 
+for (const discovered of walk('docs/systems').filter(file => /\/README\.md$/.test(file))) {
+  if (!requiredDocs.includes(discovered)) requiredDocs.push(discovered);
+}
+requiredDocs.sort();
+
 const failures = [];
 const systemDocs = requiredDocs.filter(doc => /^docs\/systems\/.+\/README\.md$/.test(doc));
+const verifiedSystemDocs = [
+  'docs/systems/engine/README.md',
+  'docs/systems/boot/README.md',
+  'docs/systems/kernel/README.md',
+  'docs/systems/runtime-capabilities/README.md',
+  'docs/systems/android-host/README.md',
+  'docs/systems/desktop/README.md',
+  'docs/systems/shell-ui/README.md',
+  'docs/systems/riftfs/README.md',
+  'docs/systems/native-dispatcher/README.md',
+  'docs/systems/transfers/README.md',
+  'docs/systems/browser/README.md',
+  'docs/systems/browser/engine/README.md',
+  'docs/systems/browser/engine/android-webview/README.md',
+  'docs/systems/browser/mcp-compat/README.md',
+  'docs/systems/browser/ai-adapters/README.md',
+  'docs/systems/mcp/README.md',
+  'docs/systems/mcp/server/README.md',
+  'docs/systems/mcp/tool-host/README.md',
+  'docs/systems/mcp/sandbox/README.md',
+  'docs/systems/mcp/relay/README.md',
+  'docs/systems/mcp/project-exporter/README.md',
+  'docs/systems/workspace/README.md',
+  'docs/systems/workspace/live/README.md',
+  'docs/systems/dev-lab/README.md',
+  'docs/systems/riftllm-bridge/README.md',
+  'docs/systems/apps/README.md',
+  'docs/systems/riftrt/README.md',
+  'docs/systems/riftrt/engines/README.md',
+  'docs/systems/riftrt/engines/native-webview/README.md',
+  'docs/systems/riftrt/engines/worker-js/README.md',
+  'docs/systems/riftrt/engines/wasm-base64/README.md',
+  'docs/systems/riftrt/engines/native-arm64/README.md',
+  'docs/systems/riftrt/engines/rift-vm/README.md',
+  'docs/systems/riftpp-core/README.md',
+  'docs/systems/shell/README.md',
+  'docs/systems/experimental-cli/README.md',
+  'docs/systems/git/README.md',
+  'docs/systems/riftrepo/README.md',
+  'docs/systems/riftvault/README.md',
+  'docs/systems/riftbuild/README.md',
+  'docs/systems/riftmemory/README.md',
+  'docs/systems/files-app/README.md',
+  'docs/systems/settings/README.md',
+  'docs/systems/preview/README.md',
+  'docs/systems/diagnostics/README.md',
+  'docs/systems/secrets/README.md',
+  'docs/systems/relay-service/README.md',
+  'docs/systems/build-validation/README.md',
+  'docs/systems/vortex-agent/README.md',
+  'docs/systems/vortex-bridge/README.md',
+  'docs/systems/chat-handoff/README.md',
+];
 const repairHeadings = [/^## Source ownership$/m, /^## Failure signatures$/m, /^## Fix map$/m, /^## Validation\b/m];
 
 for (const doc of requiredDocs) {
@@ -110,16 +171,51 @@ for (const doc of requiredDocs) {
   }
 }
 
+for (const doc of verifiedSystemDocs) {
+  const text = fs.readFileSync(path.join(root, doc), 'utf8');
+  if (!/^## Verification status$/m.test(text) || !/\*\*VERIFIED AGAINST CURRENT (?:SOURCE|GRADLE\/SOURCE) — 2026-09-17\.\*\*/.test(text)) {
+    failures.push(`verified engine document lacks current verification marker: ${doc}`);
+  }
+}
+for (const doc of systemDocs) {
+  if (verifiedSystemDocs.includes(doc)) continue;
+  const text = fs.readFileSync(path.join(root, doc), 'utf8');
+  if (/\*\*VERIFIED AGAINST CURRENT/.test(text)) {
+    failures.push(`unaudited subsystem document claims VERIFIED status: ${doc}`);
+  }
+}
+
+const rootReadme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+if (!rootReadme.includes('ENGINE DOCUMENTATION VERIFIED AGAINST CURRENT SOURCE — 2026-09-17')) {
+  failures.push('root README does not carry current engine verification status');
+}
+const projectStatus = fs.readFileSync(path.join(root, 'docs/PROJECT_STATUS.md'), 'utf8');
+if (!projectStatus.includes('CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-17')) {
+  failures.push('PROJECT_STATUS does not carry current engine verification status');
+}
+const docsTrust = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');
+if (!docsTrust.includes('Documentation is **UNVERIFIED by default**')) {
+  failures.push('docs/README.md does not enforce unverified-by-default trust policy');
+}
+const ownershipLedger = fs.readFileSync(path.join(root, 'docs/SOURCE_OWNERSHIP.md'), 'utf8');
+if (!ownershipLedger.includes('Ownership does **not** imply that a source is packaged, live, verified, trusted or device-proven.')) {
+  failures.push('SOURCE_OWNERSHIP does not separate documentation ownership from runtime activation/trust');
+}
+const srcIndex = fs.readFileSync(path.join(root, 'src/README.md'), 'utf8');
+if (!srcIndex.includes('This directory is **not** the active Android shell source tree.') || !srcIndex.includes('riftpp-core.js') || !srcIndex.includes('riftvm.js')) {
+  failures.push('src/README.md does not document the current packaged-vs-retained JavaScript boundary');
+}
+
 for (const index of localIndexes) {
   const full = path.join(root, index);
   if (!fs.existsSync(full)) failures.push(`missing local source-area README: ${index}`);
   else if (fs.readFileSync(full, 'utf8').trim().length < 120) failures.push(`local source-area README is too small: ${index}`);
 }
 
-const active = [...new Set(activeSources)].sort();
+const owned = [...new Set(ownedSources)].sort();
 const ledgerSources = new Set([...ownership.matchAll(/^\| `([^`]+)` \|/gm)].map(match => match[1]));
-for (const source of active) {
-  if (!ledgerSources.has(source)) failures.push(`active source has no ownership entry: ${source}`);
+for (const source of owned) {
+  if (!ledgerSources.has(source)) failures.push(`maintained source has no ownership entry: ${source}`);
 }
 for (const source of ledgerSources) {
   if (!fs.existsSync(path.join(root, source))) failures.push(`ownership ledger points to missing source: ${source}`);
@@ -167,4 +263,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`RiftOS documentation OK: ${requiredDocs.length} required docs; ${systemDocs.length} repair READMEs; ${active.length} active source files owned.`);
+console.log(`RiftOS documentation OK: ${requiredDocs.length} required docs; ${systemDocs.length} repair READMEs; ${owned.length} maintained source files owned.`);

@@ -1,73 +1,63 @@
 # RiftKernel
 
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
 ## Purpose
 
-RiftKernel is the JavaScript-side operating authority that connects RiftOS process/app concepts to RiftFS, permissions and the native Android bridge.
+`RiftKernel` is the logical name of RiftOS's protected engine authority. In the current Android architecture it is **not a standalone JavaScript kernel** and it is not hosted by a WebView.
+
+The live engine is split across native owners documented in [`../engine/README.md`](../engine/README.md).
 
 ## Source ownership
 
-Primary source: `src/riftcore.js`.
+The logical kernel identity is represented by:
+- `RiftNativeShell.kt` — reports/protects the logical `kernel` task and owns shell/path/process-facing behavior;
+- `RiftMcpRuntime.kt` — process-owned shell/MCP/Git/Vortex services;
+- `MainActivity.kt` — visible native OS composition;
+- `RiftNativeDesktop.kt` — native window/task authority;
+- `RiftVolumePaths.kt` — native RiftFS display-path mapping;
+- `RiftToolHost.kt` / `RiftToolSandbox.kt` — model capability/workspace authority.
 
-Important types in that file:
-
-- `RiftNativeBridge` — request/response transport to the native `RiftAndroid` host.
-- `RiftTransferQueue` — serializes filesystem transfer work at the JS layer.
-- `RiftFS` — logical filesystem API and mount routing.
-- `ProcessTable` — RiftOS process records.
-- `PermissionBroker` — app/capability grants.
-- `AndroidKernel` — aggregates the runtime into the exported RiftOS core.
-
-The initialized core is exposed through `globalThis.RiftOSCore` and consumed by shell, apps, desktop, workspace, RiftRT, RiftGit and MCP launcher integration.
-
-## Why this boundary exists
-
-Android provides the real process sandbox and hardware APIs, but RiftOS needs a stable user-space model independent of any one Android API. The kernel gives web-side systems one coherent interface instead of teaching each app how to call Android directly.
+`src/riftcore.js` still contains the historical `AndroidKernel`, `RiftOSCore`, `RiftFS`, `ProcessTable` and `PermissionBroker` implementation used by retained reference/tests. Gradle does **not** package that file into the current APK.
 
 ## Runtime flow
 
 ```text
-RiftOS module/app
-  -> RiftOSCore kernel/fs/processes/permissions/native
-  -> RiftNativeBridge where native authority is needed
-  -> MainActivity / native service
+Android process
+ -> process-owned RiftMcpRuntime
+ -> RiftNativeShell / MCP / native services
+ -> app-private RiftFS
+
+MainActivity
+ -> RiftNativeDesktop
+ -> native built-ins / explicit RiftBrowser renderers
 ```
 
-Local bookkeeping such as process records or permission decisions stays in the kernel layer; Android-specific IO remains behind native calls.
+The name `RiftKernel` therefore refers to this logical native engine boundary, not to one JS object.
 
 ## Critical invariants
 
-- `RiftOSCore` is created once and must be available before consumer modules execute.
-- Native requests need unique IDs and bounded pending-request lifecycle; unmatched results must not resolve unrelated requests.
-- Filesystem paths must be normalized before routing.
-- Permission decisions must be checked before capability use, not after the native side-effect.
-- `build.local` is the explicit guest capability for the bounded RiftBuild controller. It does not imply that a native compiler exists; `localBuildExecutor` remains a separate host capability and may be false.
-- UI-backed process records must register termination cleanup. A process kill from RiftShell, Task Manager or another control path must remove the corresponding window exactly once; UI-close and process-close paths must be idempotent.
-- A missing class/reference at module evaluation time stops the entire Android import chain.
+- do not document `globalThis.RiftOSCore` as live APK authority;
+- do not reintroduce a shell WebView to host kernel state;
+- logical protected tasks (`kernel`, `desktop`, `shell`) must remain non-killable through RiftShell;
+- Android/Linux remains the actual process/security kernel;
+- native subsystem policy stays in narrow owners rather than a replacement catch-all kernel object.
 
 ## Failure signatures
 
-**Boot loop:** syntax/reference failure while `riftcore.js` evaluates.
-
-**All native calls time out/fail:** `RiftNativeBridge` connection/result handling or Android host bridge.
-
-**Apps launch but capability operations fail:** `PermissionBroker`, app permission declaration, or downstream subsystem.
-
-**Task list wrong/stale or `kill <pid>` leaves a window behind:** `ProcessTable` / UI `onTerminate` lifecycle rather than desktop DOM state.
+- code expects `RiftOSCore` during normal APK boot → old web runtime leaked back into active architecture;
+- `kernel` logical task can be terminated → native process model regression;
+- browser crash takes down shell/MCP → logical kernel authority incorrectly depends on renderer lifecycle;
+- docs point kernel fixes at `src/riftcore.js` for live Android behavior → stale documentation.
 
 ## Fix map
 
-- Transport/request correlation -> `RiftNativeBridge`.
-- Logical path/mount/filesystem behavior -> `RiftFS`.
-- Transfer sequencing -> `RiftTransferQueue` or native transfer system depending on where the stall occurs.
-- App/process lifecycle bookkeeping -> `ProcessTable` / `AndroidKernel`.
-- Capability grants -> `PermissionBroker`.
+Live kernel/engine behavior → [`../engine/README.md`](../engine/README.md) and its narrow native owners.
 
-Do not add Android framework logic directly to consumer apps to bypass a kernel problem.
+Historical/reference JS semantics → `src/riftcore.js` only when a test or migration task explicitly targets that retained source.
 
 ## Validation
 
-`package.json` runs `node --check src/riftcore.js` as part of `npm run check`. Because most kernel regressions are integration regressions, also test cold boot, native request/response, Files, Settings, app launch and terminal after a kernel change. Open a built-in window and terminate its PID from RiftShell; verify both the process record and window disappear once, without a duplicate close/focus event.
-
-## Safe extension points
-
-Add stable capabilities to the kernel only when multiple systems need them. Keep Android-specific implementation behind native bridge methods and keep subsystem-specific policy inside the subsystem rather than turning the kernel into a catch-all.
+Verify Gradle does not package `src/riftcore.js`, inspect the native protected-process list, verify process-owned `RiftMcpRuntime`, and run the WebView ownership/native wiring validators. Device acceptance must prove native shell/MCP survives browser renderer and Activity lifecycle changes.

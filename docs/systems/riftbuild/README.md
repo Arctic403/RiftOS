@@ -1,34 +1,110 @@
-# RiftBuild
+# RiftBuild — Retained Local Build Controller Design
 
-## Purpose
+## Verification status
 
-RiftBuild is RiftOS's local build controller. The MVP provides deterministic project detection, build planning, target selection, run/artifact history, cache integration and a strict build doctor. It does not claim local APK compilation unless the native host explicitly advertises a trusted `localBuildExecutor` capability.
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
+## Classification
+
+The JavaScript RiftBuild controller in src/riftbuild.js is retained/inactive.
+
+Current Gradle does not package it and native RiftShell exposes no `rift build` command.
 
 ## Source ownership
 
-- `src/riftbuild.js` owns doctor/plan/build/submit/run/artifact/cache orchestration and validates the finite `rope-build-job-v1` contract used by R.O.P.E.
-- `src/riftmemory-control.js` owns warm-cache controls.
-- `src/riftrepo.js` owns checkpoint identity used by future reproducible builds.
-- the existing external Builder remains the compile/sign gate until a native local executor is implemented and proven.
+Retained controller source:
+- `src/riftbuild.js`
 
-## Capability contract
+Separate live non-executing installed-app façade:
+- `RiftBrowserAppHost.kt`
 
-`rift build doctor` must fail closed. Missing Java/Gradle/SDK/NDK/signing execution is a blocker, not a warning that can be bypassed. The current Android host explicitly reports `localBuildExecutor:false`; the finite `build.execute` native route exists only as a fail-closed placeholder and throws if a caller bypasses the doctor. `rift build plan` remains useful offline and reports project shape, source count, working-set size, target and artifact destination without mutating source.
+Build/Builder execution authority is documented separately under `../build-validation/README.md` and is not owned by retained RiftBuild.
 
-RiftRT may expose this controller to an installed app only through the declared/granted `build.local` capability. The guest API is finite: `doctor`, `plan`, `submit`, `runs`, and `artifacts`. `submit` accepts only `rope-build-job-v1`, requires `engine:"gradle"`, restricts the project to the canonical `/workspace` backing tree, restricts target to the existing RiftBuild target set, and only accepts Gradle task paths ending in `assembleDebug`, `assembleRelease`, `bundleDebug`, or `bundleRelease`. User-facing `D:/Workspace/...` paths are accepted and canonicalized to `/workspace/...` before this containment check, so R.O.P.E can use the OS drive namespace without weakening the build sandbox. Task strings are passed as structured arguments; no shell command text is accepted.
+## Retained design
+
+The retained controller defines:
+- /system/riftbuild/v1;
+- doctor;
+- plan;
+- build/run records;
+- artifact listing;
+- build job submission;
+- RiftMemory cache helpers.
+
+It only calls `core.native.call("build.execute", ...)` after doctor proves a capability named `localBuildExecutor`.
+
+Its own doctor explicitly fails closed when that capability is absent.
+
+That design is retained reference code, not current APK build execution.
+
+## Separate live installed-app façade
+
+RiftBrowserAppHost exposes a distinct capability-gated installed-app API under `build.local`:
+- build.doctor -> reports available=true but ready=false/nativeExecutor=false;
+- build.plan -> returns a non-executing plan shape;
+- build.submit -> throws because no local RiftBuild executor is installed;
+- build.runs -> empty array;
+- build.artifacts -> lists /D:/Builds.
+
+This live façade is **not** execution of src/riftbuild.js.
+
+It does not make the retained RiftBuild controller active.
+
+## Activation proof
+
+Current source proves:
+- zero native `rift build` shell command;
+- zero Gradle include for src/riftbuild.js;
+- no wildcard src/** packaging;
+- retained globalThis.RiftBuild exists only in JS reference family;
+- RiftBrowserAppHost explicitly reports no local compiler executor;
+- legacy generic RiftLocalPlatform shell wrapper is retired.
+
+## Retained dependencies
+
+src/riftbuild.js depends on retained:
+- RiftOSCore;
+- RiftRepo;
+- RiftVault;
+- RiftMemory.
+
+That dependency graph is another reason it cannot be treated as independently live.
+
+## Trust rule
+
+VERIFIED status for this README means the current **inactive controller + live non-executing façade split** is verified.
+
+It does not certify local Java/Gradle/SDK/NDK execution.
+
+## Critical invariants
+
+- src/riftbuild.js remains unpackaged;
+- build.submit continues to fail closed while no native executor exists;
+- build.doctor/plan must not imply compilation occurred;
+- retained controller must not be described as current APK authority;
+- any real local compiler executor requires its own bounded capability/security/build audit.
 
 ## Failure signatures
 
-- `doctor blocked local execution` -> expected when this APK has no trusted local build executor.
-- missing Gradle markers -> planning can continue but Android APK capability is not implied.
-- low storage warning -> free local storage is below the conservative floor.
+- build.submit starts executing arbitrary local commands without an audited executor;
+- docs claim RiftBuild can currently compile/sign APKs;
+- Gradle packages riftbuild.js silently;
+- native Shell exposes retained `rift build` family;
+- app façade reports nativeExecutor=true without a proven executor owner.
 
 ## Fix map
 
-Doctor/planner/run records -> `src/riftbuild.js`.
-Build cache -> `src/riftmemory-control.js`.
-Compiled native executor -> future Android-native build subsystem; do not fake it in JavaScript.
+Retained controller -> src/riftbuild.js.
+
+Live installed-app build façade -> RiftBrowserAppHost.kt.
+
+Future real local executor -> requires explicit native owner and separate audit.
 
 ## Validation
 
-Verify doctor is honest, plan is read-only, invalid targets reject, malformed/foreign build jobs reject, unsafe Gradle task names reject, RiftRT requires `build.local`, build refuses before mutation when executor capability is absent, run records are durable when execution exists, and artifacts stay under `/documents/builds`.
+Second audit must prove:
+- src/riftbuild.js remains retained;
+- no Gradle packaging/native shell activation;
+- live build.local methods are fixed and capability-gated;
+- build.submit still refuses execution;
+- no current native localBuildExecutor implementation is reachable.

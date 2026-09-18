@@ -1,108 +1,43 @@
-# RiftOS Android Native Architecture
+# RiftOS Android-Native Architecture
 
-The active RiftOS distribution is a native Android APK targeting Android 8.0 / API 26+.
+## Current architecture
 
-## Runtime stack
-
-```text
-Android MainActivity
-    -> RiftNativeDesktop (desktop / launcher / taskbar / native window authority)
-    -> RiftNativeShell (process-owned MCP/RiftShell core; no WebView)
-         -> optional trusted compatibility shell fallback for not-yet-ported command families
-    -> RiftNativeSystemApps (native Terminal + Task Manager Views; no WebView)
-    -> trusted compatibility WebView (unmigrated built-in bodies + remaining JS runtime)
-         -> RiftNativeTransport
-         -> exact-origin RiftAndroid WebMessage
-    -> RiftNativeDispatcher / Android APIs
-    -> RiftBrowserWindow focused native renderer surface
-```
-
-`MainActivity` hosts `RiftNativeDesktop` as the visible shell and is declared Android `singleTask`: one APK process must expose one authoritative RiftOS desktop/kernel runtime, not multiple independent ProcessTables. The trusted RiftOS WebView is still served through `WebViewAssetLoader`, but it is now only the compatibility plane for built-in surfaces that have not migrated. Installed Rift programs no longer render inside that shell WebView: `RiftNativeAppHost` creates a dedicated Android-owned app View for the installed program and mounts it directly into the native window content rectangle. Native Android owns launcher/taskbar/window chrome, app-surface placement, bounds, focus, move/resize, minimize/maximize/restore/close and Accessibility controls.
-
-## Storage
-
-RiftFS lives in `filesDir/riftfs`. Android initializes `home`, `apps`, `system`, `workspace`, `downloads` and `documents`.
-
-External user folders mount through Storage Access Framework with persisted URI permissions. RiftWorkspace maps its common JSON API onto the native `/workspace` tree.
-
-The canonical project workspace lives at `filesDir/riftfs/workspace` and is shared by Files and workspace tooling. It is also the **only** filesystem root exposed through MCP. Legacy `tool-sandbox/workspace` and `browser-sandbox/workspace` trees are migration input only; unique entries are merged into the canonical workspace without overwriting newer user files. No transfer, system, downloads, documents or SAF-mount root is MCP-addressable.
-
-## Native services
-
-- RiftFS and SAF mounts,
-- Android Keystore encrypted secrets,
-- clipboard/share/vibration/notifications,
-- notification permission request,
-- Android file chooser,
-- DownloadManager,
-- preview Activity for workspace files,
-- privacy-limited System Dump + Save As picker,
-- `RiftNativeDesktop` desktop/window/taskbar/launcher authority,
-- `RiftNativeSystemApps` Android-native Terminal and Task Manager bodies,
-- trusted compatibility WebView for unmigrated built-in app bodies,
-- `RiftNativeAppHost` dedicated installed-program Android content surfaces,
-- `RiftBrowserWindow` native WebView content plane,
-- local `RiftMcpServer` + `RiftToolHost` + process-owned `RiftNativeShell`,
-- optional outbound `RiftMcpRelayClient`,
-- `RiftMcpActivity` for local grants, audit and relay configuration.
-
-The APK never opens an MCP listening socket. When explicitly enabled, its WSS client authenticates to the configured public relay and forwards MCP JSON-RPC into the same local server.
-
-## Native desktop and browser host
-
-`RiftNativeDesktop` is created inside `MainActivity` before the trusted runtime page loads. It owns the Android-visible desktop, launcher, Start menu, taskbar, native window chrome, geometry/focus state, native content attachment and Back behavior. `RiftNativeSystemApps` attaches the migrated Terminal and Task Manager directly as Android Views to those WindowRecords. Built-in RiftOS bodies that have not migrated still use the trusted compatibility WebView; the JS compatibility layer mirrors Android-published content rectangles but does not own frame geometry or chrome. Installed Rift programs are different: RiftRT opens the native frame, then `RiftNativeAppHost` attaches the program's dedicated Android content View through `RiftNativeDesktop.attachContent`. Dynamic RiftRT/installed/system launcher entries are mirrored into Android controls.
-
-`RiftBrowserWindow` is mounted inside the native desktop content layer. The compatibility app body owns the tab/address/navigation controls while Android positions one dedicated renderer container over that browser body rectangle. The container may hold up to eight per-tab engines, but exactly one selected renderer is visible/clickable at a time; inactive tabs are paused and `View.GONE`. Every renderer is hidden immediately when browser visibility/focus changes.
-
-The obsolete standalone `RiftBrowserActivity` is not part of the current source/build.
-
-On exact ChatGPT Web origins, `RiftBrowserMcpAppBridge` exposes only MCP JSON-RPC messaging to the in-process local server. It does not expose a filesystem JavaScript API or the wider native dispatcher.
-
-## Rift MCP
+RiftOS is an Android-native desktop/runtime with Chromium restricted to explicit RiftBrowser-owned surfaces.
 
 ```text
-ChatGPT Web compatibility asset
-        |
- exact-origin WebMessage
-        |
-RiftBrowserMcpAppBridge
-        |
-   RiftMcpServer
-        |
-   RiftToolHost
-      /       \
-RiftToolSandbox  RiftNativeShell
-                    |
-             optional trusted-shell
-             compatibility fallback
+MainActivity
+ -> RiftNativeDesktop
+    -> RiftNativeSystemApps
+    -> RiftNativeWorkspaceApps
+ -> RiftMcpRuntime
+    -> RiftNativeShell
+    -> RiftNativeGit / fixed native services
+ -> RiftBrowserWindow / RiftBrowserAppHost / RiftBrowserPreviewActivity
 ```
 
-`RiftToolHost` owns tool schemas, local read/write grants and the bounded audit log. `RiftToolSandbox` enforces canonical-path containment and payload/listing limits. `rift_shell_exec` targets process-owned `RiftNativeShell`; only command families not yet ported native may temporarily delegate to the trusted compatibility shell. Native core commands therefore do not depend on Chromium lifetime.
+There is no trusted shell WebView, `RiftShellBridge`, or general `RiftNativeDispatcher`.
 
-`RiftMcpRelayClient` is transport-only. It stores its bearer token using Android Keystore, requires TLS (`wss://`) and reconnects with bounded backoff. The existing exact-origin WebMessage route remains available as a fallback during migration.
+## Native authority
 
-Read access defaults on. Write access defaults off. The `Rift MCP` system app is the only current settings surface for those grants.
+Android-native code owns desktop/window state, Terminal, Task Manager, Files, Editor, Dev Lab, Workspace Records, Settings, Git, MCP, native shell, local agents and fixed RiftLLM/Vortex service routes.
 
-## RiftBrowser engine ownership
+`RiftNativeShell` is process-owned by `RiftMcpRuntime` while the Android process is alive; Activity recreation does not explicitly destroy it, but Android process death does. Current Rift++ Core execution is hosted by `RiftHeadlessJsRuntime` using bounded QuickJS and only the packaged `riftpp-core.js` / `riftvm.js` assets.
 
-`RiftBrowserWindow` owns a dedicated native renderer container plus the bounded browser-tab registry. Each tab is created behind the same `RiftBrowserEngine` contract; `AndroidWebViewBrowserEngine` is the current compatibility backend. Switching tabs pauses/hides the previous engine and exposes only the selected renderer. Browser minimize/unfocus makes every tab renderer and the container Android `GONE` while tab engine/session/history state remains allocated.
+Native Files owns user-granted Android document-tree access through persisted SAF permissions. The legacy shell mount entry point is retired.
 
-The WebView backend owns per-tab rendering, navigation history, downloads, popup/auth handling, callbacks and exact-origin MCP injection; cookies remain the normal shared WebView cookie jar. This keeps `RiftBrowserWindow` responsible for RiftOS browser-window geometry/visibility/tab lifecycle and makes a future renderer swap possible without changing the desktop/tab contract.
+## Chromium boundary
 
-## System Dump
+Only explicit `RiftBrowser*` classes may import WebKit APIs. The Gradle `validateRiftBrowserWebViewOwnership` preBuild task enforces this and fails a build if WebKit ownership escapes the allowlist.
 
-Settings invokes `system.dump.save`. Android generates a JSON diagnostic snapshot and opens `ACTION_CREATE_DOCUMENT`, allowing the user to choose the provider, folder and filename.
+RiftBrowser owns:
+- main browser tabs/window;
+- installed HTML application surfaces;
+- preview Activity;
+- exact-origin browser MCP compatibility;
+- renderer crash containment.
 
-The dump includes app/build, Android/WebView, memory/heap/storage and aggregate RiftFS metrics. It excludes file names/content, secrets, account data, Android IDs and installed-app lists.
+Browser content does not receive native desktop, filesystem, shell, Keystore or general Android authority.
 
-## Editor removal
+## Validation order
 
-RiftDev and its iframe, CDN assets, and credential cache have been removed. An in-house IDE is planned.
-
-## Build/signing
-
-The separate `Arctic403/Riftos-builder` repository builds only through manual dispatch. Signing uses the configured release secrets when present, otherwise the bundled legacy debug identity. The fallback key is public and is unsuitable for trusted production updates.
-
-**Signing policy:** Moving to a private signing key is planned for a future release. Do not rotate or replace the signing key, remove the existing fallback, or require signing secrets until the project owner explicitly requests the change. Keep manual builds and the current signing behavior in place until then.
-
-CI builds the native relay transport and continues to reject the removed DOM Agent, expensive whole-chat MCP scanner and removed local-AI binaries.
+Source validators -> explicit push -> external Builder -> install -> live abuse. Source validation is not a substitute for Kotlin/Gradle compilation or device lifecycle testing.

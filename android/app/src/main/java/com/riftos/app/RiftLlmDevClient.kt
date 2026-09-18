@@ -17,6 +17,7 @@ class RiftLlmDevClient(context: Context) {
         private const val EXTRA_JSON = "json"
         private const val RESULT_JSON = "json"
         private const val MAX_REQUEST_JSON_BYTES = 512 * 1024
+        private const val MAX_RESPONSE_JSON_BYTES = 512 * 1024
         private val URI: Uri = Uri.parse("content://$AUTHORITY")
         private val METHODS = mapOf(
             "sync_source" to "sync_source",
@@ -113,6 +114,9 @@ class RiftLlmDevClient(context: Context) {
             ?: throw IllegalStateException("RiftLLM Dev API returned no Bundle")
         val raw = reply.getString(RESULT_JSON)
             ?: throw IllegalStateException("RiftLLM Dev API returned no JSON")
+        require(raw.toByteArray(Charsets.UTF_8).size <= MAX_RESPONSE_JSON_BYTES) {
+            "RiftLLM Dev API response exceeds 512 KiB V1 IPC limit"
+        }
         return JSONTokener(raw).nextValue()
             ?: throw IllegalStateException("RiftLLM Dev API returned an empty JSON value")
     }

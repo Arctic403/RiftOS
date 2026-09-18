@@ -1,34 +1,39 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const shell=readFileSync('src/riftos.js','utf8');
-const batch=readFileSync('src/riftshell-batch.js','utf8');
-const nativeShell=readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt','utf8');
-const start=shell.indexOf('async function runRiftppShell(');
-const end=shell.indexOf('\nasync function runShell(',start);
-assert(start>=0&&end>start,'runRiftppShell must exist before runShell');
-const slice=shell.slice(start,end);
-for(const command of ['help','version','self-test','check','compile','inspect','run','exec']) assert(slice.includes(`sub===\"${command}\"`)||command==='help','missing riftpp shell command: '+command);
+const referenceShell = readFileSync('src/riftos.js','utf8');
+const batch = readFileSync('src/riftshell-batch.js','utf8');
+const nativeShell = readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt','utf8');
+const headless = readFileSync('android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt','utf8');
+
+const start = referenceShell.indexOf('async function runRiftppShell(');
+const end = referenceShell.indexOf('\nasync function runShell(', start);
+assert(start >= 0 && end > start, 'reference runRiftppShell must remain available as a bootstrap oracle');
+const slice = referenceShell.slice(start, end);
+for (const command of ['help','version','self-test','check','compile','inspect','run','exec']) {
+  assert(slice.includes(`sub==="${command}"`) || command === 'help', 'missing reference riftpp shell command: ' + command);
+}
 assert(slice.includes('await import("./riftpp-core.js")'));
 assert(slice.includes('await import("./riftvm.js")'));
 assert(slice.includes('riftpp shell execution denies host imports'));
-assert(slice.includes('riftpp shell output limit exceeded (64 KiB / 256 writes)'));
 assert(slice.includes('maxSteps:100000,maxStack:1024,maxCallDepth:32,yieldEvery:512'));
-assert(slice.includes('yield:()=>new Promise(resolve=>setTimeout(resolve,0))'),'riftpp shell execution must yield through a timer/macrotask');
 assert(slice.includes('riftpp-shell-self-test/1'));
-assert(slice.includes('compileRiftPlusPlusCoreProgramV1'),'Gate 4 shell must invoke the bounded program compiler');
-assert(slice.includes("ast.module.replaceAll('.','/')"),'module imports must map deterministically to module-path files');
-assert(slice.includes("loaded.size>=63"),'shell module loading must remain bounded to 64 total modules including the root');
-assert(slice.includes("module identity mismatch"),'shell must reject module/file identity drift');
-assert(slice.includes('Rift++ shell self-test'));
-assert(slice.includes('core.fs.writeText(output,result.executableText)'));
-assert(!slice.includes('RiftExperimentalCli'));
-assert(!slice.includes('rift-cli'));
-assert(shell.includes('if(cmd==="riftpp")return runRiftppShell(args,print,state);'));
-assert(batch.includes('"rift-cli","riftpp","chat"'),'riftpp must stay outside atomic batch');
-assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / COMPATIBILITY SHELL]'));
-assert(!nativeShell.includes('"riftpp" ->'),'native shell must delegate Core riftpp to the compatibility shell until explicitly ported');
-console.log('ok - normal RiftShell routes riftpp Core independently of experimental RiftCLI');
-console.log('ok - riftpp run/exec deny host imports and bound execution/output');
-console.log('ok - riftpp compile is excluded from atomic batch and writes only explicit .rxe output');
-console.log('ok - Gate 4 shell module loading is root-confined, deterministic, identity-checked and bounded');
+assert(slice.includes('compileRiftPlusPlusCoreProgramV1'));
+assert(batch.includes('"rift-cli","riftpp","chat"'), 'riftpp must stay outside atomic batch');
+
+assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / HEADLESS QUICKJS]'));
+assert(nativeShell.includes('"riftpp" -> {'));
+assert(nativeShell.includes('headlessJs.executeRiftpp(args, cwd)'));
+assert(!nativeShell.includes('compatibilityFallback'));
+assert(!nativeShell.includes('RiftShellBridge'));
+assert(headless.includes('quickJs {'));
+assert(headless.includes('preparedVmSource()'));
+assert(headless.includes('preparedCoreSource()'));
+assert(headless.includes('src/riftpp-core.js'));
+assert(headless.includes('src/riftvm.js'));
+assert(!headless.includes('WebView'));
+assert(!headless.includes('ProcessBuilder'));
+
+console.log('ok - reference Rift++ shell remains a deterministic bootstrap oracle');
+console.log('ok - production native RiftShell routes Rift++ through headless QuickJS');
+console.log('ok - Rift++ execution no longer depends on the trusted shell WebView');

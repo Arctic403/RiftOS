@@ -1,68 +1,217 @@
 # RiftToolHost
 
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
 ## Purpose
 
-`RiftToolHost` is the canonical device-side capability registry for Rift MCP. It is the single place that defines model-visible tool names/schemas, aliases, method mapping, read/write classification, local grants and bounded audit metadata.
+`RiftToolHost` is the canonical device-side MCP capability registry. It owns model-visible tool schemas, aliases, local read/write grants, permission classification, backend routing and bounded tool-call audit metadata.
 
 ## Source ownership
 
-`android/app/src/main/java/com/riftos/app/RiftToolHost.kt`.
+- `RiftToolHost.kt`
+- workspace backend: `RiftToolSandbox.kt`
+- shell backend: process-owned `RiftShellExecutor`
+- preferences: `rift-mcp-tools`
 
-## Registry contract
+## Canonical catalog
 
-`tools()` constructs the live MCP tool array. `manifest()` derives the canonical name list, count and SHA-256 directly from that array. If a tool is executable but absent from `tools()`, clients cannot discover it; if a tool is advertised but lacks a mapping/backend, calls fail. Registration and dispatch must therefore change together.
+`tools()` is authoritative. The current published set is exactly 18 tools:
 
-## Call flow
+1. rift_shell_exec
+2. rift_info
+3. rift_stat
+4. rift_hash
+5. rift_list
+6. rift_read_text
+7. rift_write_text
+8. rift_mkdir
+9. rift_remove
+10. rift_move
+11. rift_copy
+12. rift_archive
+13. rift_extract
+14. rift_audit
+15. rift_scan
+16. rift_project_export
+17. rift_workspace_diff
+18. rift_workspace_exec
 
-```text
-tool name + args
-  -> canonicalName()
-  -> methodFor() / shell special case
-  -> normalize arguments
-  -> classify mutation (`requiresWrite`)
-  -> check local grants
-  -> sandbox.handleAsync() OR RiftNativeShell.execute()
-       -> optional RiftShellBridge compatibility fallback
-  -> record bounded audit metadata
-  -> host result
-```
+`manifest()` hashes the complete definitions JSON with SHA-256 and reports count/names/scope.
 
-`rift_workspace_exec` accepts canonical flat operations and defensively normalizes an unambiguous legacy shorthand before permission classification and dispatch, preventing shorthand writes from bypassing write gating. Project Intelligence v2 intentionally evolves behind this existing operation and its already-published `kind`/`query` fields. The legacy “Project Intelligence v1” phrase in the tool description is temporarily retained as manifest-compatibility text: changing a tool description changes `manifest().sha256` just like changing its name/schema, which can force cached MCP clients to rescan actions.
+The `rift_workspace_exec` public description now correctly identifies Project Intelligence **v2**. That intentional schema text change changes the manifest hash and requires cached clients to rescan actions.
 
-## Permission model
+## Local grants
 
-Preferences live in `rift-mcp-tools`. `allowRead` defaults true; `allowWrite` defaults false. Mutating single-operation filesystem tools require write. Code Mode requires read and write only when its operation list mutates. Shell exec requires read and write.
+Preference defaults:
+- read: true;
+- write: false.
+
+Read-gated tools:
+- info/stat/hash/list/read;
+- audit/scan;
+- project export;
+- workspace diff;
+- workspace exec even when read-only.
+
+Write-gated fixed tools:
+- writeText;
+- mkdir;
+- remove;
+- move;
+- copy;
+- archive;
+- extract.
+
+`rift_workspace_exec` is always read-gated and additionally write-gated when any normalized operation mutates.
+
+`rift_shell_exec` requires **both read and write** because it has broader native RiftOS authority than the workspace sandbox.
+
+Shell denial messages now identify whether read, write, or both grants are missing.
+
+## Workspace-operation normalization
+
+Canonical Code Mode operation objects are flat:
+`{"op":"stat","path":"workspace/..."}`.
+
+ToolHost also accepts the unambiguous legacy/model shorthand:
+`{"stat":{"path":"workspace/..."}}`.
+
+Normalization occurs **before** write classification, audit and sandbox execution.
+
+Only known `WORKSPACE_OPS` shorthand is flattened.
+
+This prevents a shorthand mutating operation from bypassing write-permission detection.
+
+## Workspace mutation classification
+
+Workspace operations considered mutating:
+- write;
+- replace;
+- patch;
+- patch_range;
+- apply_hunks;
+- mkdir;
+- remove;
+- move;
+- rename;
+- copy;
+- archive;
+- extract.
+
+Project/search/read/snapshot/reference operations remain read-only.
+
+## Aliases
+
+ToolHost accepts compatibility aliases such as:
+- shell -> rift_shell_exec;
+- info/stat/hash/list;
+- readText/writeText;
+- unzip -> rift_extract;
+- workspaceExec;
+- projectExport;
+- workspaceDiff.
+
+Aliases canonicalize before backend mapping and grant classification, so an alias cannot lower permission requirements.
+
+Aliases are not additional entries in `tools()`.
+
+## Backend mapping
+
+`rift_shell_exec` executes through the process-owned shell executor.
+
+Every other canonical tool maps to one fixed sandbox method:
+- sandbox.info;
+- fs.*;
+- workspace.audit/scan/exportProject/diff/exec.
+
+Unknown tools fail before sandbox execution.
 
 ## Audit
 
-A bounded recent audit list records tool, target, success/failure and error metadata without turning the log into a copy of file contents. The MCP settings Activity can clear it.
+Audit preference key: `audit`.
+
+Maximum returned/stored audit entries: **100**.
+
+Each record contains:
+- timestamp;
+- canonical tool;
+- bounded/redacted target;
+- optional duration;
+- ok/error.
+
+Shell audit records only the first command token (sanitized, max 48) plus `[arguments omitted]`; full shell arguments are not written into the ToolHost audit log.
+
+Workspace batch audit records only operation count.
+
+Audit reads are now explicitly clamped to the last 100 entries even if oversized legacy state was migrated.
+
+## Legacy state migration
+
+Once per install state, ToolHost migrates missing read/write/audit preferences from legacy `rift-bridge`.
+
+After migration:
+- legacy preference file is cleared;
+- old `rift.bridge.pairingKey` secret is removed;
+- `legacyStateMigrated` prevents repeated migration.
+
+## Shell lifecycle
+
+ToolHost receives the process-owned shell executor at construction or through `setShellExecutor`.
+
+The unused `clearShellExecutor` API was removed during this audit because no process-lifecycle path detached that singleton.
+
+If shell executor is unexpectedly absent, `rift_shell_exec` fails explicitly rather than falling back to WebView or Android shell.
+
+## Non-ownership boundaries
+
+ToolHost does not own:
+- workspace path enforcement/operation implementation -> Sandbox;
+- JSON-RPC -> Server;
+- relay/browser transport;
+- RiftShell command semantics;
+- Android UI.
+
+## Source fixes in this audit
+
+- removed obsolete renderer-fallback language from shell tool schema;
+- changed Code Mode description from Project Intelligence v1 to v2;
+- corrected shell missing-grant errors;
+- removed dead `clearShellExecutor`;
+- hard-bounded audit reads to 100 entries.
 
 ## Critical invariants
 
-- `tools()`, alias mapping, method mapping and permission classification must stay synchronized.
-- Treat model-visible names, descriptions and schemas as a versioned connector contract; internal intelligence upgrades should stay behind existing fields when possible.
-- Normalize before permission checks.
-- Never let a client-supplied alias change read/write classification.
-- The host is authoritative even if a browser/relay client claims a different schema.
-- Do not move workspace containment checks out of the sandbox.
+- exactly 18 published definitions;
+- aliases never appear as additional catalog tools;
+- manifest derives from live definitions;
+- normalization precedes permission classification;
+- shell requires read + write;
+- mutating workspace batches require write;
+- sandbox remains workspace-only;
+- audit never logs full shell arguments;
+- audit max remains 100;
+- no renderer/native-dispatcher fallback.
 
 ## Failure signatures
 
-- Tool absent from client after a real action rescan -> check `tools()` first.
-- Tool listed but unsupported at call time -> `canonicalName`/`methodFor` mismatch.
-- Write unexpectedly allowed/denied -> `requiresWrite`, `workspaceBatchMutates`, preference state.
-- Audit target wrong -> `auditTarget` mapping.
-- Native shell core says unavailable -> process-owned `RiftNativeShell`/`RiftMcpRuntime` regression, not sandbox.
-- Only a not-yet-ported shell family says compatibility unavailable -> expected `RiftShellBridge` fallback boundary.
+- manifest count differs from 18 without intentional catalog change -> registry drift;
+- alias write succeeds with write disabled -> classification regression;
+- shorthand write bypasses write grant -> normalization-order regression;
+- shell succeeds with only one grant -> authority regression;
+- audit includes shell secrets/arguments -> redaction failure;
+- audit grows beyond 100 -> bound regression;
+- source schema says PI v1 -> stale client contract.
 
 ## Fix map
 
-Tool schemas, aliases, backend method mapping, permission classification, manifest generation and bounded host audit metadata belong in `RiftToolHost`. Workspace filesystem semantics and transactional rollback belong in `RiftToolSandbox`; MCP framing/idempotency belongs in `RiftMcpServer`; native shell execution belongs in `RiftNativeShell`, with `RiftShellBridge` only for temporary compatibility delegation.
+Schemas/catalog/aliases/grants/audit -> `RiftToolHost.kt`.
 
-## Change checklist
+Workspace implementation -> Sandbox.
 
-When adding a tool: add its schema to `tools()`, canonical alias if needed, backend method mapping, read/write classification, audit target and tests/docs, then verify manifest count/hash through `rift_info`.
+Shell command implementation -> RiftNativeShell.
 
 ## Validation
 
-Transport validation checks important mappings. For any catalog change, inspect `tools()` count, call the tool through MCP, confirm permission denial/success cases and ensure `rift_info.mcpManifest.names` includes it.
+Second source audit must count tool definitions, compare aliases/method map, verify permission functions, normalized workspace mutation detection, audit target redaction/bound, legacy migration and shell executor behavior.

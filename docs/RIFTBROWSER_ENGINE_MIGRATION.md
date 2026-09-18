@@ -4,7 +4,7 @@ RiftBrowser no longer treats Android System WebView as the browser architecture.
 
 ## Current backend
 
-`AndroidWebViewBrowserEngine` is the compatibility backend because it currently satisfies ChatGPT Web, cookies/auth, file chooser/downloads and the exact-origin MCP bridge on the existing Android floor.
+`RiftBrowserAndroidWebViewEngine` is the compatibility backend because it currently satisfies ChatGPT Web, cookies/auth, file chooser/downloads and the exact-origin MCP bridge on the existing Android floor.
 
 The backend is **never parked as a full-host visible view**. When the RiftBrowser window is not the active visible window, its owned native surface is removed from layout (`View.GONE`) while the engine object remains alive.
 
@@ -20,7 +20,7 @@ RiftBrowser chrome/window
 RiftBrowserWindow
     |
 RiftBrowserEngine
-    |-- AndroidWebViewBrowserEngine (compatibility)
+    |-- RiftBrowserAndroidWebViewEngine (compatibility)
     `-- future RiftEngine/other backend
 
 Rift MCP App

@@ -25,6 +25,8 @@ class RiftVortexBridgeClient(context: Context) {
         private const val TRANSACTION_EXECUTE = IBinder.FIRST_CALL_TRANSACTION
         private const val BIND_TIMEOUT_MS = 8_000L
         private const val REMOTE_CHUNK_BYTES = 192 * 1024
+        private const val MAX_REQUEST_JSON_BYTES = 256 * 1024
+        private const val MAX_RESPONSE_JSON_BYTES = 512 * 1024
         private const val MAX_IMAGE_BYTES = 512 * 1024
         private const val MAX_PULL_BYTES = 128L * 1024L * 1024L
         private const val SESSION_READY_TIMEOUT_MS = 12_000L
@@ -200,6 +202,10 @@ class RiftVortexBridgeClient(context: Context) {
     }
 
     private fun transactWithReconnect(request: JSONObject): JSONObject {
+        val requestBytes = request.toString().toByteArray(Charsets.UTF_8).size
+        require(requestBytes <= MAX_REQUEST_JSON_BYTES) {
+            "Vortex3D bridge request exceeds ${MAX_REQUEST_JSON_BYTES / 1024} KiB UTF-8 limit"
+        }
         return try {
             transact(ensureRemote(), request)
         } catch (error: Throwable) {
@@ -213,14 +219,21 @@ class RiftVortexBridgeClient(context: Context) {
     }
 
     private fun transact(service: IBinder, request: JSONObject): JSONObject {
+        val requestText = request.toString()
+        require(requestText.toByteArray(Charsets.UTF_8).size <= MAX_REQUEST_JSON_BYTES) {
+            "Vortex3D bridge request exceeds ${MAX_REQUEST_JSON_BYTES / 1024} KiB UTF-8 limit"
+        }
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
             data.writeInterfaceToken(DESCRIPTOR)
-            data.writeString(request.toString())
+            data.writeString(requestText)
             require(service.transact(TRANSACTION_EXECUTE, data, reply, 0)) { "Vortex3D bridge rejected Binder transaction" }
             reply.readException()
             val raw = reply.readString() ?: throw IllegalStateException("Vortex3D bridge returned an empty response")
+            require(raw.toByteArray(Charsets.UTF_8).size <= MAX_RESPONSE_JSON_BYTES) {
+                "Vortex3D bridge response exceeds ${MAX_RESPONSE_JSON_BYTES / 1024} KiB UTF-8 limit"
+            }
             return JSONObject(raw)
         } finally {
             reply.recycle()
@@ -238,9 +251,11 @@ class RiftVortexBridgeClient(context: Context) {
         val id = artifact.optString("id").trim()
         if (id.isBlank()) return
         val bytes = readArtifactBytes(id, MAX_IMAGE_BYTES)
+        val mime = artifact.optString("mime", "image/jpeg").trim().lowercase()
+        require(mime in setOf("image/jpeg", "image/png", "image/webp")) { "Unsupported Vortex preview MIME type" }
         val image = JSONObject()
-            .put("mimeType", artifact.optString("mime", "image/jpeg"))
-            .put("name", artifact.optString("name", "vortex-preview.jpg"))
+            .put("mimeType", mime)
+            .put("name", safeName(artifact.optString("name", "vortex-preview.jpg")))
             .put("bytes", bytes.size)
             .put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))
         response.put("_riftImage", image)
@@ -252,6 +267,7 @@ class RiftVortexBridgeClient(context: Context) {
     private fun readArtifactBytes(id: String, maxBytes: Int): ByteArray {
         val output = java.io.ByteArrayOutputStream()
         var offset = 0L
+        var expectedTotal = -1L
         while (true) {
             val chunk = transactWithReconnect(JSONObject()
                 .put("op", "artifact_read")
@@ -260,13 +276,29 @@ class RiftVortexBridgeClient(context: Context) {
                 .put("maxBytes", REMOTE_CHUNK_BYTES))
             require(chunk.optBoolean("ok", false)) { chunk.optString("error", "Vortex artifact read failed") }
             val value = chunk.getJSONObject("value")
+            val total = value.optLong("size", -1L)
+            require(total in 0L..maxBytes.toLong()) { "Vortex artifact exceeds the local read limit" }
+            if (expectedTotal < 0L) expectedTotal = total else require(total == expectedTotal) { "Vortex artifact size changed during transfer" }
+            require(value.optLong("offset", -1L) == offset) { "Vortex artifact chunk offset mismatch" }
+
             val decoded = Base64.decode(value.optString("data"), Base64.DEFAULT)
-            require(output.size() + decoded.size <= maxBytes) { "Vortex image exceeded the RiftOS MCP image limit" }
+            require(value.optInt("bytes", -1) == decoded.size) { "Vortex artifact chunk byte count mismatch" }
+            val next = value.optLong("next_offset", -1L)
+            require(next == offset + decoded.size) { "Vortex artifact next_offset mismatch" }
+            require(next <= total) { "Vortex artifact chunk exceeds declared size" }
+            require(output.size().toLong() + decoded.size <= maxBytes.toLong()) { "Vortex image exceeded the RiftOS MCP image limit" }
+
             output.write(decoded)
-            offset = value.optLong("next_offset", offset + decoded.size)
-            if (value.optBoolean("eof", false)) break
-            require(decoded.isNotEmpty()) { "Vortex artifact read made no progress" }
+            val eof = value.optBoolean("eof", false)
+            if (eof) {
+                require(next == total) { "Vortex artifact EOF arrived before declared size" }
+                offset = next
+                break
+            }
+            require(decoded.isNotEmpty() && next < total) { "Vortex artifact read made no progress" }
+            offset = next
         }
+        require(offset == expectedTotal && output.size().toLong() == expectedTotal) { "Vortex artifact transfer length mismatch" }
         return output.toByteArray()
     }
 
@@ -281,6 +313,7 @@ class RiftVortexBridgeClient(context: Context) {
         val committedName = destination.name
         val temporary = File(root, ".${committedName}.tmp-${UUID.randomUUID()}")
         var offset = 0L
+        var expectedTotal = -1L
         val digest = MessageDigest.getInstance("SHA-256")
         try {
             FileOutputStream(temporary, false).use { output ->
@@ -293,17 +326,31 @@ class RiftVortexBridgeClient(context: Context) {
                     require(chunk.optBoolean("ok", false)) { chunk.optString("error", "Vortex artifact read failed") }
                     val value = chunk.getJSONObject("value")
                     val total = value.optLong("size", -1L)
-                    require(total >= 0L && total <= MAX_PULL_BYTES) { "Vortex artifact exceeds ${MAX_PULL_BYTES / 1048576} MiB pull limit" }
+                    require(total in 0L..MAX_PULL_BYTES) { "Vortex artifact exceeds ${MAX_PULL_BYTES / 1048576} MiB pull limit" }
+                    if (expectedTotal < 0L) expectedTotal = total else require(total == expectedTotal) { "Vortex artifact size changed during transfer" }
+                    require(value.optLong("offset", -1L) == offset) { "Vortex artifact chunk offset mismatch" }
+
                     val decoded = Base64.decode(value.optString("data"), Base64.DEFAULT)
+                    require(value.optInt("bytes", -1) == decoded.size) { "Vortex artifact chunk byte count mismatch" }
+                    val next = value.optLong("next_offset", -1L)
+                    require(next == offset + decoded.size) { "Vortex artifact next_offset mismatch" }
+                    require(next <= total && next <= MAX_PULL_BYTES) { "Vortex artifact chunk exceeds declared/pull limit" }
+
                     output.write(decoded)
                     digest.update(decoded)
-                    offset = value.optLong("next_offset", offset + decoded.size)
-                    require(offset <= MAX_PULL_BYTES) { "Vortex artifact exceeded pull limit" }
-                    if (value.optBoolean("eof", false)) break
-                    require(decoded.isNotEmpty()) { "Vortex artifact read made no progress" }
+                    val eof = value.optBoolean("eof", false)
+                    if (eof) {
+                        require(next == total) { "Vortex artifact EOF arrived before declared size" }
+                        offset = next
+                        break
+                    }
+                    require(decoded.isNotEmpty() && next < total) { "Vortex artifact read made no progress" }
+                    offset = next
                 }
             }
+            require(expectedTotal >= 0L && temporary.length() == expectedTotal) { "Vortex artifact transfer length mismatch" }
             if (!temporary.renameTo(destination)) throw IllegalStateException("Could not commit Vortex artifact: $committedName")
+            require(destination.length() == expectedTotal) { "Committed Vortex artifact length mismatch" }
             return JSONObject()
                 .put("ok", true)
                 .put("op", "pull_artifact")

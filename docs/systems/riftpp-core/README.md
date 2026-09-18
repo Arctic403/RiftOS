@@ -1,115 +1,299 @@
 # Rift++ Core Bootstrap Frontend
 
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
 ## Purpose
 
-`src/riftpp-core.js` is the first executable Rift++ Core frontend. It is independent of the experimental RiftCLI/V0 swarm DSL. It accepts a deliberately bounded subset of `riftpp 1`, produces a source-spanned AST, performs deterministic semantic/type/control-flow checks, and lowers successful programs into the data-only `rift-exec-v1` format consumed by RiftVM.
+src/riftpp-core.js is the current packaged Rift++ bootstrap compiler frontend.
 
-```text
-.riftpp source
- -> Rift++ Core bootstrap frontend
- -> .rxe / rift-exec-v1
- -> RiftVM
- -> RiftRT / RiftOS
-```
+It accepts bounded riftpp/1 source, produces a source-spanned AST, performs semantic/type/control-flow/effect checks, links bounded source modules, and lowers successful programs to rift-exec-v1 / riftvm-1 executables.
 
-The frontend runs inside the existing RiftOS JavaScript runtime. The long-term target remains self-hosting in Rift++ after the language/runtime are capable enough.
+Current compiler version:
+0.7.2-bootstrap.
 
-## Implemented bootstrap slice
+## Live activation
 
-Installed Core `0.7.0-bootstrap` is device-proven through Gate 6A against RiftOS source commit `c557650e19ed7e9b22edab37848ba36dcefce814`. The current source supports the proven Gates 0–6A language surface. Core Gate 6A itself performs zero updates; RiftLLM+ Gate 6B is now proven as an application/training-layer parameter update using this unchanged surface:
+Gradle packages:
+- src/riftpp-core.js
+- src/riftvm.js
 
-- functions with explicitly typed parameters/returns;
-- explicit `use module.path [as alias]` declarations with deterministic compile-time module linking; omitted aliases use the module path's final segment, and imported symbols are referenced through that explicit/default alias rather than ambient full-path lookup;
-- qualified imported function/type/struct/enum references, including imported enum patterns;
-- bounded module graphs: 64 modules maximum and 1 MiB aggregate source, with missing modules, identity mismatches, alias collisions, unused supplied dependencies and cycles rejected;
-- one closed linked `.rxe`; Rift++ source modules do not become RiftVM host imports or JavaScript imports;
-- primitive `unit`, `bool`, `u32`, `s32`, finite `f64`, and `string`;
-- immutable `let`, mutable `var`, checked assignment and compound assignment;
-- lexical block scopes and inner-scope shadowing;
-- `if/else`, `while`, `break`, `continue`, short-circuit `and/or`;
-- local nominal `struct` declarations, exact struct construction and field reads;
-- local nominal tagged-union `enum` declarations with zero/payload cases;
-- enum construction through `Type.Case(...)` / `Type.Case`;
-- exhaustive `match` on closed enums and `bool`;
-- match payload bindings, `_`, whole-value bindings and boolean cases;
-- match guards, with guarded cases not counted as exhaustive coverage;
-- built-in generic `Vec<T, N>`, `Option<T>` and `Result<T, E>` types;
-- bounded vector literals with compile-time capacity `N` in `1..256`;
-- immutable `Vec.len()`, `Vec.get()`, `Vec.push()` and `Vec.set()` operations, where `get` returns `Option` and updates return `Result` replacement values;
-- exhaustive `match` over built-in `Option` and `Result` tagged values using the same enum machinery as user enums;
-- checked integer arithmetic with required-result type enforcement across locals/returns/arguments/struct fields/Vec items, direct `s32` minimum literal lowering for `-2147483648`, strings, comparisons and direct function calls;
-- proven Gate 6A finite `f64` literals/arithmetic/comparisons with no implicit integer↔float coercion, non-finite-result trapping, and canonical negative-zero normalization;
-- proven Gate 6A `value_sha256(value) -> string`, a bounded data-only RiftVM identity primitive that adds no host import or capability;
-- reachable-path return analysis and unreachable-code diagnostics;
-- bootstrap prelude `print(value)`;
-- proven Gate 5 function effects `allow [storage]`, with exact transitive effect closure across local/imported calls and compile-time rejection of missing, duplicate, unknown, or unused/widened authority;
-- proven Gate 5 `checkpoint_save`, `checkpoint_load`, and `checkpoint_remove`, lowered only to `state.save`, `state.load`, and `state.remove` imports;
-- canonical compiler-generated checkpoint type descriptors capped at 4 KiB; recursive checkpoint schemas are rejected in this bootstrap.
+RiftHeadlessJsRuntime loads both into QuickJS for the native RiftShell riftpp command.
 
-Struct construction must supply each declared field exactly once. Enum payload arity/types are checked. Struct/enum/vector values can pass through locals, function parameters and returns. `Vec` is deliberately bounded and immutable at runtime: successful `push`/`set` operations return a replacement vector inside `Result.Ok`, while capacity/index failures return `Result.Err(string)` and out-of-range reads return `Option.None`. Composite equality/ordering is intentionally undefined in this bootstrap and fails closed.
+Source compilation is live.
 
-Compiler recursion is also bounded: generic type nesting is capped at 32; recursive expression, unary, pattern, `else if`, and block parsing is capped at 128; module-linker expression/pattern/statement/block rewriting is independently capped at 128; and code-generation expression/block traversal has its own 128-depth ceiling. Inputs beyond those ceilings fail with structured diagnostics instead of relying on the JavaScript call-stack limit.
-
-Bootstrap pattern limitations remain deliberate: enum payload patterns currently accept bindings or `_`; nested/literal payload patterns are not implemented. Field mutation/place assignment is not implemented yet; rebuild and assign the whole struct instead.
-
-## Still absent
-
-Valid Core syntax not implemented by this slice fails closed. Major missing pieces include top-level const, `for`, `loop`, bit operations, field/index assignment syntax, nested match payload patterns, dedicated arrays/slices, `?` propagation, ownership/borrowing, module privacy/export controls, capability vocabularies beyond Gate 5 `storage`, FFI, general tensor extensions, the reference interpreter and the self-hosted compiler. Gate 5 is installed/device-proven. Gate 6A numeric/parameter primitives is also installed/device-proven on Core `0.7.0-bootstrap`; the Core gate itself performs zero updates. RiftLLM+ Gate 6B is now proven without a new Core feature, using the existing `f64`, bounded Vec, hash, and checkpoint surface. Parameter-learning/generalization promotion still requires repeated unseen-challenge improvement in Gate 6C, not training-example loss reduction or memory retrieval alone.
-
-## Public surface
-
-`globalThis.RiftPlusPlusCore` exposes only pure bounded compiler operations:
-
-- `lex(source)`
-- `parse(source)`
-- `compile(source)`
-- `compileProgram(rootSource, moduleSources)`
-- `inspect(source)`
-- `inspectProgram(rootSource, moduleSources)`
-
-It has no filesystem, network, shell, process, Android, MCP or mutation authority. Generated output is independently passed through `prepareRiftExecutable` before compile succeeds.
-
-## Structured-data / collection runtime boundary
-
-RiftVM provides the five nominal struct/enum operations plus five bounded vector operations used by Core:
-
-```text
-make_struct
-get_field
-make_enum
-enum_is
-enum_get
-make_vec
-vec_len
-vec_get
-vec_push
-vec_set
-```
-
-These remain data-only operations. `vec_get` returns the existing runtime `Option.Some/None` representation; `vec_push` and `vec_set` return `Result.Ok/Err`. Vector capacity is validated before execution and cannot exceed 256. Runtime composite depth is capped at 32, composite rendering is capped at 64 KiB, and public result expansion is bounded to 4096 values plus 64 KiB of aggregate strings. Composite values, including vectors, cannot implicitly cross the RiftVM host-import boundary. There is no generic object/property opcode, reflection API or authority widening.
-
-`prepareRiftExecutable` independently validates the executable structure, opcode operands, limits, imports, and runtime-safe operation contracts. Rift++ source compilation additionally supplies static generic/element type checking. A hand-authored `.rxe` is not granted source-level generic type soundness merely by passing structural validation; dynamically ill-typed bytecode can fail at runtime, but it cannot use that mismatch to gain host authority.
+Effectful executable imports are a separate activation question: normal production riftpp run/exec rejects any executable whose imports list is non-empty.
 
 ## Source ownership
 
-- `src/riftpp-core.js` — lexer/parser/AST, name/type/control-flow checks and `.rxe` lowering.
-- `src/riftvm.js` — executable validator/runtime including nominal composite value operations.
-- `scripts/test-rift-plus-plus-core-v1.mjs` — source/compiler/runtime proof plus negative language diagnostics.
-- `scripts/test-rift-vm.mjs` — independent raw-VM opcode/value/security proof.
-- `scripts/test-riftpp-shell.mjs` — normal RiftShell `riftpp` routing and execution-authority boundary.
-- `examples/riftpp/core-v1-structured-data.riftpp` — Gate 2 struct/enum/match proof fixture.
-- `examples/riftpp/core-v1-collections.riftpp` — Gate 3 bounded Vec + Option/Result proof fixture.
-- `examples/riftpp/modules/demo/{main,math,types}.riftpp` — Gate 4 transitive module/type/function/enum linking proof fixture.
+Primary:
+- src/riftpp-core.js
 
-## Invariants
+Runtime validator/executor:
+- src/riftvm.js
 
-- V0 swarm syntax remains separate and non-executable.
-- Core source never executes through `eval`, `Function`, shell or host-language code generation.
-- Generated output must pass independent RiftVM validation before compile succeeds.
-- Runtime authority is not inferred from structured values.
-- Unsupported Core syntax/semantics fail closed.
-- Same source and compiler version produce deterministic executable structure.
+Live Android host:
+- RiftHeadlessJsRuntime.kt
+- RiftNativeShell.kt
+
+Focused tests:
+- scripts/test-rift-plus-plus-core-v1.mjs
+- scripts/test-rift-vm.mjs
+- scripts/test-riftpp-shell.mjs
+- scripts/validate-rift-wiring.mjs
+
+## Public API
+
+globalThis.RiftPlusPlusCore exposes:
+- version
+- language
+- targetFormat
+- targetAbi
+- lex
+- parse
+- compile
+- compileProgram
+- inspect
+- inspectProgram
+
+The compiler module itself has no filesystem, network, Android, MCP or process authority.
+
+## Core source limits
+
+- source: 256 KiB UTF-8 per module
+- tokens: 50000
+- functions: 256
+- parameters/function: 64
+- locals/function: 512
+- struct fields / enum payload/cases: 64
+- named local types: 256
+- Vec capacity: 1..256
+- generic/type nesting: 32
+- parser recursion families: 128
+- use declarations/module: 64
+- linked modules: 64 total
+- aggregate linked source: 1 MiB
+- linked symbol name: 96 UTF-8 bytes
+- declared effects/function: 16
+- generated checkpoint schema: 4096 UTF-8 bytes
+
+Module linker expression/pattern/statement/block rewrites and codegen expression/block traversal have independent 128-depth guards.
+
+## Current language surface
+
+Implemented bootstrap constructs include:
+- module declaration and bounded use module.path [as alias]
+- typed functions and unit main entrypoint
+- unit, bool, u32, s32, finite f64 and string
+- immutable let and mutable var
+- checked assignment and compound assignment
+- lexical block scope and shadowing
+- if/else and while
+- break and continue
+- return completeness and unreachable-code rejection
+- and/or/not with short-circuit lowering
+- local nominal struct and enum declarations
+- exact struct construction and field reads
+- enum construction
+- exhaustive match over bool, enums, Option and Result
+- match guards
+- Vec<T,N>, Option<T>, Result<T,E>
+- bounded Vec literals and len/get/push/set
+- checked numeric arithmetic
+- string concatenation
+- string_len, string_find, string_slice, string_replace
+- value_sha256
+- checkpoint_save/load/remove compiler built-ins
+- repair evaluation compiler built-ins
+- software evaluation compiler built-ins
+- print
+
+for and loop are recognized Core syntax but deliberately fail as not implemented.
+
+Top-level const is reserved grammar/future syntax, not implemented by this bootstrap.
+
+Field/index place mutation is not implemented.
+
+## Module linking
+
+compile() rejects source containing use declarations and requires compileProgram() for linked programs.
+
+compileProgram():
+- rejects root duplicated in dependency map
+- requires every imported module to be supplied
+- requires supplied module identity to match its declared module name
+- rejects duplicate imports
+- rejects alias collisions
+- rejects cycles
+- rejects unused supplied dependency modules
+- rewrites linked symbols deterministically
+- closes the source module graph into one executable
+
+Rift++ source modules do not become JavaScript imports or RiftVM host imports.
+
+## Effect system
+
+Current supported effect vocabulary is exactly:
+- storage
+- repair_eval
+- software_eval
+
+Function effects are explicit with allow [...].
+
+The compiler computes direct plus transitive required effects through the call graph.
+
+It rejects:
+- unknown effects
+- duplicate effect names
+- missing required effects
+- unused/widened declared effects
+
+This is exact-effect checking, not a permissive maximum-authority declaration.
+
+### storage
+
+checkpoint_save/load/remove lower only to:
+- state.save
+- state.load
+- state.remove
+
+Generated state schemas are canonical bounded descriptors.
+
+Recursive checkpoint types are rejected.
+
+### repair_eval
+
+Current compiler built-ins:
+- repair_input_source
+- repair_expected_output
+- repair_case_id
+- repair_compile_test
+
+They lower to fixed repair.* host imports.
+
+### software_eval
+
+Current compiler built-ins:
+- software_input_source
+- software_project_context
+- software_specification
+- software_case_id
+- software_case_language
+- software_compile_test
+
+They lower to fixed software.* host imports.
+
+## Activation boundary for effects
+
+The compiler can produce executables with those imports and the focused tests can execute them with explicit test hosts.
+
+The ordinary native RiftShell production path does not provide host.invoke and rejects every executable with imports before execution.
+
+Therefore:
+- the compiler effect system is live;
+- general production shell storage/repair/software authority is not live merely because the compiler can lower those built-ins.
+
+Any specialized host that executes these imports must be audited separately.
+
+## Type/runtime safety relationship
+
+Core performs source-level generic and type checking.
+
+It always sends generated executable data through prepareRiftExecutable before compile succeeds.
+
+RiftVM independently validates executable structure and runtime bounds.
+
+A hand-authored .rxe does not inherit Core source-level type soundness, but malformed bytecode still cannot widen native authority through the VM.
+
+## Determinism and bounded data
+
+Vec capacity is compile-time fixed and <=256.
+
+Composite runtime operations remain data-only.
+
+value_sha256 lowers to a VM data primitive and introduces no host import.
+
+Finite f64 rejects non-finite values; negative zero is canonicalized.
+
+No implicit integer/f64 coercion exists.
+
+## Deliberate bootstrap gaps
+
+Not implemented include:
+- top-level const
+- for / loop execution
+- bit operations
+- field/index assignment
+- nested/literal enum payload patterns
+- dedicated arrays/slices
+- ? propagation
+- ownership/borrowing
+- module privacy/export controls
+- arbitrary FFI
+- generic tensor/model/train language primitives
+- self-hosted compiler
+
+Unsupported syntax fails closed.
+
+## Current proof status
+
+Older README text tied device proof to previous Core versions/commits. That is historical and is not used as proof for the current 0.7.2 source tree.
+
+This audit verifies current source/packaging/wiring only.
+
+Current Builder/APK/device proof remains a separate gate.
+
+## Critical invariants
+
+- compiler version and docs stay aligned
+- only bounded riftpp/1 source is accepted
+- source modules close into one deterministic executable
+- generated executable must pass RiftVM validation
+- effects are exact and transitive
+- compiler effect support never implies production host authority
+- Vec remains <=256
+- recursive/deep parser/linker/codegen inputs fail within explicit bounds
+- unsupported syntax fails closed
+- no eval/new Function/native shell code generation is introduced
+
+## Failure signatures
+
+- README says 0.7.0 while source exports 0.7.2 -> version drift
+- docs say storage is the only effect -> effect-surface drift
+- imported/effectful executable runs through ordinary riftpp shell -> host-boundary regression
+- module dependency becomes ambient/unqualified -> linker regression
+- extra dependency is silently accepted -> deterministic graph regression
+- missing/extra effects compile -> exact-effect regression
+- Vec capacity >256 -> resource regression
+- compiler output bypasses prepareRiftExecutable -> validation regression
+- historical Gate/device proof is presented as proof of current source -> trust regression
+
+## Fix map
+
+Lexer/parser/linker/type/effect/codegen -> src/riftpp-core.js.
+
+VM validation/runtime -> src/riftvm.js.
+
+Live QuickJS packaging/command host -> RiftHeadlessJsRuntime.kt.
+
+RiftShell routing -> RiftNativeShell.kt.
+
+Specialized repair/software/state execution hosts -> their owning subsystem, not Core.
 
 ## Validation
 
-`test-rift-plus-plus-core-v1.mjs` executes the base, Control Flow V1, Structured Data V1, Collections V1 and Gate 4 module-graph fixtures, then attacks missing/identity-mismatched/cyclic modules, alias collisions, ambient/unqualified imported names, unused supplied dependencies, duplicate/missing fields, enum payload/type errors, non-exhaustive enum/bool/Option matches, invalid vector capacities/literals/items, arithmetic result-type escapes across every typed context, composite equality, parser/codegen recursion ceilings, and the `s32` minimum-literal edge case. `test-rift-vm.mjs` separately executes raw struct/enum/vector bytecode, vector capacity/index failure semantics, composite-depth/render/public-result expansion limits, malformed instructions and the no-composite-host-boundary rule.
+Second source audit must verify:
+- 0.7.2 version
+- Gradle packaging and QuickJS loading
+- public API
+- source/token/type/module/effect/depth bounds
+- module graph identity/cycle/unused dependency checks
+- exact three-effect vocabulary
+- transitive missing/extra effect rejection
+- fixed repair/software/state import lowering
+- production shell import rejection
+- prepareRiftExecutable validation
+- test coverage for current version/effects/modules/collections/numeric/string/state behavior
+
+Node/Builder/device execution is a later global gate.

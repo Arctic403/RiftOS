@@ -1,93 +1,230 @@
-# RiftBrowser
+# RiftBrowser Window Coordinator
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-RiftBrowser is a RiftOS-owned desktop browser window with native multi-tab rendering. RiftOS owns window/tab chrome and lifecycle; each tab owns an independent replaceable native engine with its own URL/history/title/session state.
+`RiftBrowserWindow` is the native coordinator for the single RiftBrowser desktop window and its bounded internal renderer-tab set.
+
+It owns:
+- browser surface container;
+- active-tab selection;
+- maximum tab count;
+- browser navigation delegation;
+- file-chooser request/result lifecycle;
+- renderer Activity pause/resume coordination;
+- current browser state aggregation.
+
+It does not own Desktop window geometry/minimize/maximize/z-order and it does not own WebView policy.
 
 ## Source ownership
 
-- `src/riftos.js` `openBrowser()` — HTML chrome, address controls and synchronization with native bounds/state.
-- `RiftBrowserWindow.kt` — native renderer container, geometry, visibility and engine lifecycle.
-- `RiftBrowserEngine.kt` — renderer interface.
-- `AndroidWebViewBrowserEngine.kt` — current engine.
-- `RiftBrowserMcpAppBridge.kt` + browser compatibility assets — exact-origin AI/MCP integration.
-- `src/riftdesktop-android.js` — window visibility/focus signals.
+Primary:
+- `RiftBrowserWindow.kt`
 
-## Ownership split
+Direct composition:
+- `MainActivity.kt` opens/attaches/closes the browser, routes Back, Activity results and inspector calls.
+- `RiftNativeDesktop.kt` owns the browser WindowRecord and attached content View visibility/geometry.
+- `RiftBrowserEngine.kt` defines per-tab renderer operations.
+- `RiftBrowserAndroidWebViewEngine.kt` is the current per-tab backend.
 
-RiftOS HTML owns title/tab/address/taskbar chrome, desktop move/resize/minimize/maximize and user-visible window state. `RiftBrowserWindow` owns the native content surface rectangle, the bounded tab registry, active-tab selection and renderer visibility. Each tab owns one `RiftBrowserEngine`; only the selected tab may be visible/clickable while inactive tab engines are paused and `View.GONE`. Desktop Site is per-tab and is applied by that tab's renderer, not globally. `RiftBrowserEngine` still owns navigation/rendering implementation.
+Retained `src/riftos.js` browser chrome is not the current packaged browser UI.
 
-This split is intentional so Android System WebView can later be replaced without rewriting the desktop contract.
+## Live open path
 
-## Runtime flow
+`MainActivity.openBrowserWindow(url)`:
+1. opens/focuses Desktop window id `browser`;
+2. attaches `browserWindow.nativeWindowView()` through Desktop;
+3. calls `browserWindow.open(url)`.
 
-```text
-openBrowser()
-  -> create desktop window/chrome
-  -> browser.window.open via native bridge
-  -> RiftBrowserWindow.open()
-  -> active tab engine.loadUrl()
-  -> engine state callback
-  -> shell updates tab/address/loading controls
+Desktop therefore owns the outer content View's bounds and visibility.
 
-New tab / switch / close
-  -> browser.window.tab.new/select/close
-  -> RiftBrowserWindow updates its bounded tab registry
-  -> previous renderer is paused + hidden
-  -> selected renderer becomes the only visible native child
-  -> pushed state refreshes the tab strip + active address/history controls
+BrowserWindow owns only renderer children inside that attached View.
 
-Desktop Site toggle
-  -> browser.window.desktop-mode
-  -> RiftBrowserWindow targets only the active tab engine
-  -> engine switches desktop/mobile UA + supported UA Client Hints + viewport/zoom behavior
-  -> current history entry reloads with the new request identity
-  -> tab state preserves its own desktopMode flag while other tabs are unchanged
+## Corrected visibility ownership
 
-Live inspector
-  -> `riftos-agent browser-inspect ...`
-  -> fixed RiftOS local-agent operation
-  -> MainActivity marshals the request to the active browser tab on the UI thread
-  -> RiftBrowserWindow targets only the active engine
-  -> engine returns structural metadata or applies bounded temporary DOM/layout mutations
-  -> reload/navigation/reset removes temporary changes
+The old BrowserWindow kept private `requestedVisible`/bounds state and could re-show its surface during Activity resume even after Desktop minimized it.
 
-Resize/focus/minimize
-  -> JS syncBounds/visibility event
-  -> browser.window.bounds/visible
-  -> RiftBrowserWindow positions or hides native surface
-```
+That parallel visibility/geometry path was removed during this audit.
 
-The native host also keeps `browser.window.state` as an intentional diagnostic/query command even though normal shell updates arrive through the pushed browser-state callback. The obsolete dispatcher-only `browser.open` alias was removed; browser opening goes through the `browser.window.*` host surface.
+Current behavior:
+- Desktop sets the outer browser content View VISIBLE/GONE and its bounds.
+- BrowserWindow observes actual attach/detach/visibility.
+- hidden or detached surface -> all renderer engines receive `onPause()`;
+- visible + attached + Activity resumed -> only the active engine receives `onResume()`;
+- inactive engines remain paused;
+- Activity resume no longer makes a minimized Desktop window visible.
+
+The old `setVisible()`, `setBounds()` and state-push sink were removed.
+
+## Tabs
+
+BrowserWindow creates one blank initial tab.
+
+Each tab owns one `RiftBrowserEngine`.
+
+Maximum tabs: 8.
+
+Internal tab functions implement:
+- new tab;
+- select tab;
+- close tab.
+
+Closing the final tab immediately creates a fresh blank tab so the coordinator always has one active tab while alive.
+
+When the active tab closes, selection falls back to a neighboring remaining tab.
+
+Only the active engine View is VISIBLE inside the browser surface; inactive tab Views are GONE and paused.
+
+## Implemented versus wired
+
+Current external Kotlin call sites:
+- `nativeWindowView()` -> MainActivity attachment;
+- `open()` -> MainActivity open path;
+- `close()` -> Desktop-close owner callback;
+- `inspect()` -> fixed local-agent inspector;
+- `onActivityResult()` -> MainActivity;
+- `state()` -> Android Back routing;
+- `back()` -> Android Back routing;
+- `onResume()/onPause()/destroy()` -> MainActivity lifecycle.
+
+Implemented but with no current external Kotlin UI caller:
+- `navigate()`;
+- `forward()`;
+- `reload()`;
+- `setDesktopMode()`;
+- `newTab()`;
+- `selectTab()`;
+- `closeTab()`.
+
+Those capabilities are not proof that native address/tab/desktop-mode controls currently exist.
+
+## URL normalization
+
+Start/navigation input:
+- blank -> caller-specific default;
+- `https://...` -> retained;
+- `http://...` -> upgraded to `https://...`;
+- dotted token without spaces -> prefixed with `https://`;
+- otherwise -> Google HTTPS search query.
+
+Default first browser URL: `https://chatgpt.com`.
+
+Default explicit new-tab URL: `https://www.google.com`.
+
+## File chooser
+
+BrowserWindow owns request code 7002.
+
+Only one chooser callback is retained at a time; starting a new chooser cancels the previous callback with null.
+
+For `*/*` or `.rift` accepts it uses a generic `ACTION_OPEN_DOCUMENT` / OPENABLE picker with read grant.
+
+Otherwise it uses WebView's supplied chooser intent where available.
+
+Multiple selection is enabled when requested by FileChooserParams.
+
+MainActivity routes Activity results to BrowserWindow before Files' SAF picker.
+
+Destroy cancels any outstanding chooser callback.
+
+## Back behavior
+
+MainActivity first obtains browser state.
+
+If RiftBrowser is actually visible and active engine can go back, BrowserWindow `back()` consumes Android Back.
+
+If the browser is minimized/hidden, browser history does not consume Back.
+
+Desktop then receives Back for window/menu behavior.
+
+## Close versus destroy
+
+`close()` hides/pauses the surface but retains tab engines/history for a later reopen during the same Activity instance.
+
+`destroy()`:
+- marks the coordinator destroyed;
+- pauses renderers;
+- destroys every engine;
+- cancels file chooser callback;
+- removes the surface from any parent;
+- removes child Views.
+
+Activity destruction calls `destroy()`.
+
+## State
+
+`state()` merges active engine state with:
+- `open`;
+- actual `visible` derived from parent attachment + `isShown`;
+- surface id;
+- active tab id;
+- tab count;
+- max tabs;
+- per-tab title/url/progress/crash/history/desktop-mode/active flags.
+
+State is pull-based. The old no-op state sink was removed.
+
+## Non-ownership boundaries
+
+BrowserWindow does not own:
+- outer window geometry/minimize/maximize/z-order -> Desktop;
+- WebView settings/network/auth/download/security -> browser backend;
+- exact-origin MCP injection -> browser MCP compatibility;
+- renderer crash logging and concrete failure detection -> crash guard/backend;
+- one bounded same-tab engine replacement after main-renderer loss -> BrowserWindow;
+- native browser chrome controls -> none currently wired.
 
 ## Critical invariants
 
-- The native renderer is not a second full-screen activity.
-- One RiftBrowser desktop window owns at most 8 live native tabs to bound memory use on low-end/32-bit Android.
-- Desktop Site mode is scoped to one tab; toggling it must not change the identity or history of sibling tabs.
-- Desktop identity changes request presentation only; it never broadens guest access to RiftAndroid, RiftFS or native capabilities.
-- Exactly one tab renderer may be visible/clickable at a time; inactive renderers are paused and `View.GONE` while preserving their navigation/session state.
-- Hidden/minimized/unfocused/show-desktop browser surfaces make every tab renderer `View.GONE`.
-- Browser guest content never receives general `RiftAndroid`/RiftFS authority.
-- The shell live inspector is active-tab-only, HTTPS-only, temporary, structural rather than content-dumping, and never becomes arbitrary JavaScript/DevTools authority.
-- Exact-origin MCP integration stays behind a separate WebMessage bridge.
-- Browser engine swap must not change MCP tool schemas or desktop window APIs.
+- Desktop is sole outer browser View geometry/visibility authority;
+- Activity resume cannot override Desktop minimize state;
+- hidden/detached browser pauses every renderer;
+- only active visible tab is resumed;
+- max 8 tabs;
+- at least one tab exists while alive;
+- file chooser callback is single-owner and cleared on result/destroy;
+- Back uses actual visible state;
+- retained web browser chrome is not treated as live;
+- implemented-but-unwired controls remain documented as unwired.
 
 ## Failure signatures
 
-- Page renders outside/over chrome -> native bounds calculation/sync.
-- Invisible browser steals taps -> native surface was not hidden.
-- Back/forward/address state wrong -> engine state callback or shell `updateState`.
-- Auth popup/file chooser/download issue -> WebView engine.
-- Local MCP fails only inside ChatGPT Web -> browser MCP bridge/compat asset, not browser rendering generally.
+- minimized browser becomes visible after Activity resume -> visibility-ownership regression;
+- hidden/minimized browser engine remains resumed -> lifecycle regression;
+- BrowserWindow starts setting Desktop pixel bounds -> geometry ownership regression;
+- more than 8 tabs created -> bound regression;
+- inactive tab stays interactive/resumed -> tab isolation regression;
+- chooser callback leaks across destroy -> Activity-result lifecycle regression;
+- docs claim native address/tab controls exist without callers -> reachability documentation error.
 
 ## Fix map
 
-Window/native-surface lifecycle -> `RiftBrowserWindow`.
-Web rendering/network/auth/download -> engine.
-HTML chrome/desktop synchronization -> `openBrowser()` in `riftos.js`.
-ChatGPT tool-loop behavior -> browser MCP compatibility subsystem.
+Window/tab/lifecycle/file chooser -> `RiftBrowserWindow.kt`.
+
+Outer geometry/visibility -> `RiftNativeDesktop.kt`.
+
+Composition/Back/result routing -> `MainActivity.kt`.
+
+Renderer policy -> browser engine/backend subsystem.
+
+MCP page compatibility -> browser MCP compatibility subsystem.
 
 ## Validation
 
-Test navigation, redirect/auth popup, file chooser, downloads, back/forward/reload, resize, minimize/restore, show desktop, background/foreground and renderer crash handling. Create multiple tabs, verify independent URL/history/title/Desktop Site state, switch repeatedly, close active/background tabs, hit the 8-tab limit, and verify only the selected WebView is visible/clickable. Toggle Desktop Site on one tab and confirm a UA/client-hint inspection page reports non-mobile Windows/Desktop identity while a sibling tab remains on the normal Android identity; confirm the current page reloads once and downloads use the active identity. Test Ctrl+T, Ctrl+W and Ctrl+L. Confirm no guest page can call the general native dispatcher.
+Source verification must recheck:
+- all public methods and callers;
+- actual Desktop attach/visibility ownership;
+- removed `setVisible/setBounds/stateSink`;
+- tab limit/fallback behavior;
+- active/inactive renderer visibility/lifecycle;
+- Activity pause/resume;
+- close versus destroy;
+- file chooser request/result/cancellation;
+- Back visibility predicate;
+- URL normalization;
+- retained versus packaged browser UI.
+
+Installed-device validation must abuse minimize/restore/background/resume, tab operations once wired, file chooser, renderer crash, auth, and Back.

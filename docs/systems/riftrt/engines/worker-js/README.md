@@ -1,43 +1,76 @@
-# RiftRT worker-js Engine
+# RiftRT Worker-JS Reference Engine
 
-## Purpose
+## Verification status
 
-The `worker-js` engine executes app JavaScript in a Web Worker and renders through a host-owned canvas. The worker receives a constrained Rift API rather than direct DOM or Android authority.
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
+## Status
+
+Worker-JS is a **retained inactive engine design**.
+
+Implementation remains inside `src/riftrt.js`, but current Android Gradle does not package `riftrt.js`, and no Kotlin caller activates a Worker-JS runtime.
 
 ## Source ownership
 
-Implementation: `launchWorker`, worker RPC/message plumbing, `drawCommands`, `fitCanvas` and normalized input handling in `src/riftrt.js`.
+Retained only:
+- `src/riftrt.js` `launchWorker(...)` branch.
 
-## Runtime flow
+There is no current Android-side Worker engine class/service/activity.
 
-```text
-worker entry asset
-  -> Worker
-  -> constrained Rift RPC/messages
-  -> host capability broker
-  -> host-owned canvas frame commands
-```
+## Current reachability
 
-Resize plus pointer/key/wheel input are normalized by the host and forwarded to the worker.
+No live path exists from:
+- MainActivity;
+- RiftNativeShell;
+- RiftHeadlessJsRuntime;
+- RiftBrowserAppHost;
+- Android manifest;
+- Gradle asset sync
+
+to the retained Worker-JS branch.
+
+Therefore it must not be counted as an APK capability.
+
+## Retained design boundary
+
+The old implementation may still be useful as design/reference code.
+
+Any future reactivation must separately audit:
+- worker source provenance;
+- message/RPC schema;
+- canvas/surface ownership;
+- capability bridge;
+- termination/lifecycle;
+- resource limits;
+- crash behavior.
+
+Those retained implementation details are not current runtime promises.
 
 ## Critical invariants
 
-- Worker code does not own the desktop DOM.
-- Capability calls remain brokered and permission-checked.
-- Canvas commands are interpreted by the host, not evaluated as code.
-- Worker termination/disposal must clear handlers and pending state.
+- Worker-JS remains labeled inactive until current packaging + caller exists;
+- source presence never equals activation;
+- future Worker activation may not inherit raw shell/filesystem/native authority;
+- no docs call it a fallback/default current engine.
 
 ## Failure signatures
 
-- Worker starts but canvas stays blank -> message/frame command path or resize dimensions.
-- RPC promises never resolve -> message ID/correlation path.
-- Input is offset -> normalized input/canvas scaling.
-- Closed app keeps running -> Worker disposal lifecycle.
+- Gradle starts packaging riftrt.js or another Worker engine without audit -> activation change;
+- Kotlin gains Worker runtime caller but this doc still says inactive -> documentation drift;
+- docs advertise Worker-JS to installed apps today -> capability overclaim.
 
 ## Fix map
 
-Worker creation/message plumbing -> `launchWorker`. Drawing -> `drawCommands`. Resize/input -> `fitCanvas`/normalized input. Shared capability denial -> parent RiftRT broker.
+Retained design -> `src/riftrt.js`.
+
+Future live engine -> requires a new explicit owner and child audit.
 
 ## Validation
 
-Launch/terminate repeatedly, draw each supported frame command, resize, pointer/key/wheel input, allowed/denied RPC, worker exception handling and pending-call cleanup.
+Second audit proves:
+- retained `launchWorker` exists;
+- no current Gradle packaging of riftrt.js;
+- zero current Kotlin Worker-JS activation path;
+- no manifest component.
+
+VERIFIED status for this README means its **inactive classification** is verified, not that the retained engine has passed device execution tests.

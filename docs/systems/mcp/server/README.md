@@ -1,53 +1,131 @@
 # RiftMcpServer
 
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
 ## Purpose
 
-`RiftMcpServer` is the in-process MCP JSON-RPC server. It accepts MCP requests from trusted RiftOS transports and delegates tool behavior to `RiftToolHost`.
+`RiftMcpServer` is RiftOS's in-process MCP JSON-RPC framing layer. It has no listening socket and owns no filesystem/tool permission policy.
 
 ## Source ownership
 
-`android/app/src/main/java/com/riftos/app/RiftMcpServer.kt`.
+- `RiftMcpServer.kt`
+- callers: Browser MCP bridge and outbound Relay client
+- execution authority: `RiftToolHost`
 
-Supported methods:
+## Supported protocol
+
+Requests:
 - `initialize`
 - `ping`
 - `tools/list`
 - `tools/call`
 
-There is no listening socket in this class.
+Notification:
+- `notifications/initialized` — accepted with no response.
 
-## Request flow
+Unknown methods return JSON-RPC -32601.
 
-`handleAsync()` has two modes. Direct/local MCP calls dispatch immediately and always execute fresh, even when tool name and arguments are identical to a recent call. The remote relay uses the overload that supplies its transport `requestId`; only that path enables retry coalescing/completed-response replay. The retry key combines the relay request ID with a canonical hash of the JSON-RPC request, so a lost relay response can be retried without executing the same mutation twice while a genuinely new repeated command is never mistaken for a retry.
+## Initialization
 
-Other methods dispatch immediately.
+Protocol version: `2025-06-18`.
 
-`tools/list` returns `toolHost.tools()` plus RiftOS manifest count/hash metadata. `initialize` returns protocol/server identity, capabilities, the same manifest metadata and the generated source/build fingerprint (`sourceSha`, build run id/number). The tool catalog is static for a running process, so `tools.listChanged` is false.
+Initialize reports:
+- server name/version;
+- static tools capability (`listChanged=false`);
+- tool count/manifest SHA;
+- source/build identifiers;
+- workspace/Code Mode operating instructions.
 
-## Tool call framing
+## Tool listing
 
-`handleToolCall()` extracts `name`, JSON arguments and the private correlation metadata `riftos/callId`. It calls the tool host and wraps results into MCP `content`, `structuredContent`, `_meta`, and `isError` fields. Project-export responses are summarized in structured content so large raw source pages do not duplicate themselves unnecessarily. A successful `rift_shell_exec` result may carry a private `_riftImage` produced by the Vortex local bridge; the server extracts its bounded Base64 once into MCP `content[type=image]` and replaces the structured/text copy with compact attachment metadata so the relay payload is not duplicated. This does not add or alter any MCP tool schema.
+`tools/list` returns the exact `RiftToolHost.tools()` definitions plus count/hash metadata from that same host manifest.
+
+## Tool calls
+
+Server extracts:
+- tool name;
+- object arguments;
+- optional private `_meta["riftos/callId"]`.
+
+ToolHost executes the call.
+
+Server frames:
+- MCP text content;
+- structuredContent with ok/value or error;
+- `isError`;
+- echoed private call-id metadata when supplied.
+
+Project-export pages are summarized in structured content to avoid duplicating large source payloads.
+
+A private bounded Vortex image attachment from `rift_shell_exec` is emitted once as MCP image content while structured shell output is replaced with compact image metadata.
+
+## Relay retry idempotency
+
+Direct/browser calls use `handleAsync(request, reply)` and always execute fresh.
+
+Only Relay supplies a stable retry key.
+
+For Relay `tools/call`:
+- retry key is combined with SHA-256 of canonical request JSON;
+- identical in-flight retries join one execution;
+- completed response can replay for 2 minutes;
+- completed cache is capped at 128 entries;
+- distinct request JSON or retry id executes separately.
+
+Canonical JSON sorts object keys recursively; array order remains significant.
+
+## Error behavior
+
+Missing tool name -> -32602.
+
+Unknown method -> -32601.
+
+Unexpected relay-deduped execution exception -> -32603.
+
+Tool-level failures remain successful JSON-RPC envelopes whose MCP result has `isError=true` and structured error content.
+
+## Non-ownership boundaries
+
+Server does not own:
+- read/write grants;
+- tool schemas/implementation;
+- workspace containment;
+- socket transport;
+- browser origin policy.
+
+## Source change in this audit
+
+Added standard `notifications/initialized` handling as a no-response notification.
 
 ## Critical invariants
 
-- The server never owns filesystem permission policy; the host does.
-- Duplicate retry coalescing is relay-scoped and must never merge non-identical canonical requests or distinct fresh invocations.
-- Client-provided tool names/arguments are not trusted until host validation.
-- Private call-correlation metadata is not part of model-visible tool schemas.
-- `tools/list` must be generated from the same host registry used for execution.
+- direct calls never enter completed-response retry cache;
+- only relay tools/call uses retry dedupe;
+- retry cache max 128 / TTL 2 minutes;
+- request hash is canonical;
+- tools/list and execution use same ToolHost;
+- private call correlation is echoed, not published as a tool schema;
+- initialized notification gets no response.
 
 ## Failure signatures
 
-- `tools/list` count differs from host manifest in the same process -> server regression.
-- Duplicate mutation occurs after relay retry -> relay request-id/cache path.
-- Repeating the same successful tool call returns old live state -> local/direct call accidentally entered the completed retry cache.
-- Tool executed but MCP client sees malformed result -> result framing here.
-- Method-not-found for valid MCP method -> dispatch table.
+- identical direct read returns stale result -> retry-scope regression;
+- relay retry duplicates mutation -> idempotency regression;
+- different requests collapse together -> canonical key regression;
+- tools/list differs from execution registry -> host/server drift;
+- client gets method-not-found for initialized notification -> lifecycle regression;
+- image Base64 duplicated in structured text and image content -> payload regression.
 
 ## Fix map
 
-Patch this class for MCP protocol framing, request correlation, idempotency or server metadata. Do not implement a tool here; register/map it in `RiftToolHost` and implement its authority in the proper backend.
+Protocol framing/idempotency/metadata -> `RiftMcpServer.kt`.
+
+Tool behavior/grants -> Tool Host.
+
+Transport request ids -> Relay.
 
 ## Validation
 
-`validate-rift-transport.mjs` checks relay-scoped retry idempotency and manifest metadata. For runtime validation, repeat an identical direct/local live command and verify it executes fresh, then retry one relay envelope with the same relay request ID and verify one underlying mutation with multiple matching replies.
+Second source audit must verify dispatch table, notification behavior, TTL/cache bound, relay-only retry path, canonical hashing, call-id echo, export/image sanitization and JSON-RPC error codes.

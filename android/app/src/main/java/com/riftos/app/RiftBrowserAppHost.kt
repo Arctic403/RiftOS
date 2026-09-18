@@ -8,12 +8,14 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
+import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.View
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONArray
@@ -21,28 +23,30 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.URLConnection
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 /**
  * Android-owned execution surface for installed RiftOS programs.
  *
  * Installed HTML/JS programs run in a dedicated WebView View attached directly to the
- * Android-native RiftDesktop window. They never run in an iframe or inside the trusted
- * shell WebView. The bridge is fixed and capability-gated; there is no arbitrary native call.
+ * Android-native RiftDesktop window. They never run in an iframe or inside a shell renderer.
+ * The bridge is fixed and capability-gated; there is no arbitrary native call.
  */
-class RiftNativeAppHost(
+class RiftBrowserAppHost(
     private val activity: Activity,
     private val desktop: RiftNativeDesktop
 ) {
     companion object {
-        private const val APP_ORIGIN = "https://app.riftos.local"
         private const val BRIDGE_NAME = "RiftNativeApp"
         private const val MAX_TEXT_BYTES = 8 * 1024 * 1024
         private const val MAX_MESSAGE_BYTES = 1024 * 1024
+        private const val MAX_LIST_ENTRIES = 5_000
+        private const val MAX_CLIPBOARD_CHARS = 64_000
+        private const val MAX_SHARE_CHARS = 256_000
         private val APP_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
         private val ALLOWED_CAPABILITIES = setOf(
-            "fs.read", "fs.write", "network", "clipboard.read", "clipboard.write",
-            "share", "notifications", "build.local", "repair.eval", "native.files", "native.background"
+            "fs.read", "fs.write", "network", "clipboard.read", "clipboard.write", "share", "build.local"
         )
     }
 
@@ -60,8 +64,33 @@ class RiftNativeAppHost(
         val webView: WebView
     )
 
+    private inner class ManagedAppWebView(context: Context) : WebView(context) {
+        private var lifecycleArmed = false
+
+        fun armLifecycle() {
+            lifecycleArmed = true
+            syncWebViewLifecycle(this)
+        }
+
+        override fun onVisibilityChanged(changedView: View, visibility: Int) {
+            super.onVisibilityChanged(changedView, visibility)
+            if (lifecycleArmed) syncWebViewLifecycle(this)
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            if (lifecycleArmed) syncWebViewLifecycle(this)
+        }
+
+        override fun onDetachedFromWindow() {
+            if (lifecycleArmed) runCatching { onPause() }
+            super.onDetachedFromWindow()
+        }
+    }
+
     private val instances = LinkedHashMap<String, Instance>()
     private var lastRendererCrash: JSONObject? = null
+    @Volatile private var resumed = false
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val executor = Executors.newSingleThreadExecutor()
     private val riftRoot = File(activity.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
@@ -74,9 +103,11 @@ class RiftNativeAppHost(
         instances[windowId]?.let { return instanceState(it) }
 
         val app = loadPackage(appId)
+        val origin = appOrigin(app.id)
+        val originHost = Uri.parse(origin).host ?: throw IllegalStateException("Invalid Rift app origin")
         val networkDeclared = app.permissions.contains("network")
         val networkEnabled = networkDeclared && hasGrant(app.id, "network")
-        val webView = WebView(activity).apply {
+        val webView = ManagedAppWebView(activity).apply {
             setBackgroundColor(Color.rgb(11, 17, 24))
             isHorizontalScrollBarEnabled = false
             isVerticalScrollBarEnabled = true
@@ -95,11 +126,13 @@ class RiftNativeAppHost(
             }
         }
 
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
+
         val instance = Instance(windowId, app, webView)
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
                 val uri = request.url
-                if (uri.scheme.equals("https", true) && uri.host.equals("app.riftos.local", true)) {
+                if (uri.scheme.equals("https", true) && uri.host.equals(originHost, true)) {
                     return localAssetResponse(app, uri)
                 }
                 return if (webView.settings.blockNetworkLoads) blockedResponse() else null
@@ -107,11 +140,11 @@ class RiftNativeAppHost(
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val uri = request.url
-                return !(uri.scheme.equals("https", true) && uri.host.equals("app.riftos.local", true))
+                return !(uri.scheme.equals("https", true) && uri.host.equals(originHost, true))
             }
 
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                RiftRendererCrashGuard.record(activity, "installed-app", detail)
+                RiftBrowserRendererCrashGuard.record(activity, "installed-app", detail)
                 lastRendererCrash = JSONObject()
                     .put("windowId", windowId)
                     .put("appId", app.id)
@@ -121,7 +154,7 @@ class RiftNativeAppHost(
                 instances.remove(windowId)
                 runCatching { desktop.detachContent(windowId, view) }
                 runCatching { WebViewCompat.removeWebMessageListener(view, BRIDGE_NAME) }
-                RiftRendererCrashGuard.destroyDeadWebView(view)
+                RiftBrowserRendererCrashGuard.destroyDeadWebView(view)
                 runCatching { desktop.handle("desktop.window.close", JSONObject().put("id", windowId)) }
                 return true
             }
@@ -130,8 +163,8 @@ class RiftNativeAppHost(
         require(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             "Android System WebView is too old for Rift native app messaging"
         }
-        WebViewCompat.addWebMessageListener(webView, BRIDGE_NAME, setOf(APP_ORIGIN)) { _, message, sourceOrigin, isMainFrame, _ ->
-            if (!isMainFrame || !sourceOrigin.scheme.equals("https", true) || !sourceOrigin.host.equals("app.riftos.local", true)) return@addWebMessageListener
+        WebViewCompat.addWebMessageListener(webView, BRIDGE_NAME, setOf(origin)) { _, message, sourceOrigin, isMainFrame, _ ->
+            if (!isMainFrame || !sourceOrigin.scheme.equals("https", true) || !sourceOrigin.host.equals(originHost, true)) return@addWebMessageListener
             val raw = message.data ?: return@addWebMessageListener
             if (raw.toByteArray(Charsets.UTF_8).size > MAX_MESSAGE_BYTES) {
                 deliver(instance, JSONObject().put("id", JSONObject.NULL).put("ok", false).put("error", "Rift app message too large"))
@@ -146,8 +179,9 @@ class RiftNativeAppHost(
 
         instances[windowId] = instance
         desktop.attachContent(windowId, webView)
-        val html = prepareHtml(app, networkDeclared)
-        val baseUrl = "$APP_ORIGIN/${Uri.encode(app.id)}/"
+        webView.armLifecycle()
+        val html = prepareHtml(app, networkDeclared, origin)
+        val baseUrl = "$origin/${Uri.encode(app.id)}/"
         webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", null)
         return instanceState(instance)
     }
@@ -173,8 +207,26 @@ class RiftNativeAppHost(
             for (instance in instances.values) put(instanceState(instance))
         })
 
-    fun onResume() { instances.values.forEach { it.webView.onResume() } }
-    fun onPause() { instances.values.forEach { it.webView.onPause() } }
+    fun onResume() {
+        resumed = true
+        instances.values.forEach { syncWebViewLifecycle(it.webView) }
+    }
+    fun onPause() {
+        resumed = false
+        instances.values.forEach { runCatching { it.webView.onPause() } }
+    }
+
+    fun onGrantRevoked(appId: String, capability: String) {
+        if (capability != "network" && capability != "all") return
+        instances.values.filter { it.app.id == appId }.forEach { instance ->
+            runCatching { instance.webView.settings.blockNetworkLoads = true }
+        }
+    }
+
+    private fun syncWebViewLifecycle(webView: WebView) {
+        if (resumed && webView.parent != null && webView.isShown) runCatching { webView.onResume() }
+        else runCatching { webView.onPause() }
+    }
     fun destroy() { instances.keys.toList().forEach(::closeWindow); executor.shutdownNow() }
 
     private fun handle(instance: Instance, request: JSONObject) {
@@ -227,7 +279,12 @@ class RiftNativeAppHost(
         AlertDialog.Builder(activity)
             .setTitle("RiftOS permission")
             .setMessage("${instance.app.manifest.optString("name", instance.app.id)} wants permission: $capability")
-            .setPositiveButton("Allow") { _, _ -> grant(instance.app.id, capability); if (capability == "network") instance.webView.settings.blockNetworkLoads = false; run() }
+            .setPositiveButton("Allow") { _, _ ->
+                if (instances[instance.windowId] !== instance) return@setPositiveButton
+                grant(instance.app.id, capability)
+                if (capability == "network") instance.webView.settings.blockNetworkLoads = false
+                run()
+            }
             .setNegativeButton("Deny") { _, _ -> reply(instance, id, false, null, "$capability permission denied") }
             .setOnCancelListener { reply(instance, id, false, null, "$capability permission denied") }
             .show()
@@ -264,20 +321,29 @@ class RiftNativeAppHost(
         require(files.has(entry) && files.opt(entry) is String) { "Installed package entry missing: $entry" }
         val permissions = linkedSetOf<String>()
         val declared = manifest.optJSONArray("permissions") ?: JSONArray()
-        for (index in 0 until declared.length()) declared.optString(index).takeIf { it.isNotBlank() }?.let(permissions::add)
+        for (index in 0 until declared.length()) declared.optString(index).trim().takeIf { it.isNotBlank() }?.let { capability ->
+            require(capability in ALLOWED_CAPABILITIES) { "Installed package declares unsupported capability: $capability" }
+            permissions += capability
+        }
         return PackageInfo(appId, manifest, files, entry, permissions)
     }
 
-    private fun prepareHtml(app: PackageInfo, networkEnabled: Boolean): String {
+    private fun prepareHtml(app: PackageInfo, networkDeclared: Boolean, origin: String): String {
         var html = app.files.getString(app.entry)
-        val network = if (networkEnabled) " https: http:" else ""
-        val policy = "default-src 'none'; script-src 'unsafe-inline' $APP_ORIGIN blob:$network; style-src 'unsafe-inline' $APP_ORIGIN blob:$network; img-src $APP_ORIGIN data: blob:$network; font-src $APP_ORIGIN data: blob:$network; connect-src ${if (networkEnabled) "https: http:" else "'none'"}; media-src $APP_ORIGIN data: blob:$network; frame-src 'none'; object-src 'none'; base-uri 'self'"
+        val network = if (networkDeclared) " https: http:" else ""
+        val policy = "default-src 'none'; script-src 'unsafe-inline' $origin blob:; style-src 'unsafe-inline' $origin blob:$network; img-src $origin data: blob:$network; font-src $origin data: blob:$network; connect-src ${if (networkDeclared) "https: http:" else "'none'"}; media-src $origin data: blob:$network; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
         val meta = "<meta http-equiv=\"Content-Security-Policy\" content=\"${policy.replace("\"", "&quot;")}\">"
         val manifestJson = JSONObject.quote(app.manifest.toString())
         val bridge = """<script>(()=>{const MANIFEST=JSON.parse($manifestJson);let seq=0;const pending=new Map();window.__RiftNativeReceive=raw=>{let msg;try{msg=JSON.parse(raw)}catch{return}const p=pending.get(msg.id);if(!p)return;pending.delete(msg.id);msg.ok?p.resolve(msg.value):p.reject(new Error(msg.error||'RiftOS app host error'))};const call=(method,args={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});RiftNativeApp.postMessage(JSON.stringify({id,method,args}))});Object.defineProperty(window,'Rift',{value:Object.freeze({version:'2.0-native',app:Object.freeze({info:()=>MANIFEST,close:()=>call('app.close'),setTitle:title=>call('app.setTitle',{title})}),storage:Object.freeze({get:key=>call('storage.get',{key}),set:(key,value)=>call('storage.set',{key,value}),remove:key=>call('storage.remove',{key})}),permissions:Object.freeze({request:capability=>call('permissions.request',{capability})}),fs:Object.freeze({readText:path=>call('fs.readText',{path}),writeText:(path,text)=>call('fs.writeText',{path,text}),list:path=>call('fs.list',{path})}),clipboard:Object.freeze({readText:()=>call('clipboard.read'),writeText:text=>call('clipboard.write',{text})}),share:Object.freeze({text:text=>call('share',{text})}),build:Object.freeze({nativeExecutor:false,doctor:project=>call('build.doctor',{project}),plan:(project,target='universal')=>call('build.plan',{project,target}),submit:job=>call('build.submit',{job}),runs:(limit=20)=>call('build.runs',{limit}),artifacts:project=>call('build.artifacts',{project})})}),writable:false});RiftNativeApp.postMessage(JSON.stringify({method:'app.ready',args:{}}))})();</script>"""
         val injection = meta + bridge
         html = if (Regex("<head[^>]*>", RegexOption.IGNORE_CASE).containsMatchIn(html)) html.replaceFirst(Regex("<head([^>]*)>", RegexOption.IGNORE_CASE), "<head$1>$injection") else injection + html
         return html
+    }
+
+    private fun appOrigin(appId: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(appId.toByteArray(Charsets.UTF_8))
+        val token = digest.joinToString("") { "%02x".format(it) }.take(32)
+        return "https://app-$token.riftos.local"
     }
 
     private fun localAssetResponse(app: PackageInfo, uri: Uri): WebResourceResponse {
@@ -333,7 +399,7 @@ class RiftNativeAppHost(
     private fun writeTextForApp(appId: String, path: String, text: String): JSONObject {
         val display = enforceProgramPath(appId, path, true)
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_TEXT_BYTES) { "Text exceeds native app write limit" }
-        val file = safeFile(display); file.parentFile?.mkdirs(); file.writeText(text)
+        val file = safeFile(display); atomicWrite(file, text.toByteArray(Charsets.UTF_8))
         return statJson(file, display)
     }
 
@@ -344,13 +410,27 @@ class RiftNativeAppHost(
         if (RiftVolumePaths.isVolumeRoot(display)) {
             val volume = RiftVolumePaths.volume(display) ?: return JSONArray()
             val out = JSONArray(); val seen = linkedSetOf<String>()
-            for (name in volume.roots.keys) { val child = "$display/$name"; seen += child; out.put(JSONObject().put("path", child).put("name", name).put("kind", "directory").put("size", 0).put("modified", 0).put("backend", "rift-volume")) }
+            for (name in volume.roots.keys) {
+                require(out.length() < MAX_LIST_ENTRIES) { "Program directory listing exceeds $MAX_LIST_ENTRIES entries" }
+                val child = "$display/$name"; seen += child; out.put(JSONObject().put("path", child).put("name", name).put("kind", "directory").put("size", 0).put("modified", 0).put("backend", "rift-volume"))
+            }
             val backing = safeFile(display)
-            backing.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { child -> val childPath = "$display/${child.name}"; if (seen.add(childPath)) out.put(statJson(child, childPath)) }
+            backing.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { child ->
+                val childPath = "$display/${child.name}"
+                if (seen.add(childPath)) {
+                    require(out.length() < MAX_LIST_ENTRIES) { "Program directory listing exceeds $MAX_LIST_ENTRIES entries" }
+                    out.put(statJson(child, childPath))
+                }
+            }
             return out
         }
         val dir = safeFile(display); require(dir.isDirectory) { "Directory not found: $path" }
-        val out = JSONArray(); dir.listFiles()?.sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })?.forEach { child -> out.put(statJson(child, "$display/${child.name}".replace("//", "/"))) }; return out
+        val out = JSONArray()
+        dir.listFiles()?.sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })?.forEach { child ->
+            require(out.length() < MAX_LIST_ENTRIES) { "Program directory listing exceeds $MAX_LIST_ENTRIES entries" }
+            out.put(statJson(child, "$display/${child.name}".replace("//", "/")))
+        }
+        return out
     }
 
     private fun statJson(file: File, displayPath: String): JSONObject = JSONObject()
@@ -370,7 +450,28 @@ class RiftNativeAppHost(
 
     private fun writeStorage(appId: String, value: JSONObject) {
         val encoded = value.toString(); require(encoded.toByteArray(Charsets.UTF_8).size <= 1024 * 1024) { "App storage exceeds 1 MB" }
-        val file = safeFile("/D:/Users/Default/AppData/$appId/storage.json"); file.parentFile?.mkdirs(); file.writeText(encoded)
+        val file = safeFile("/D:/Users/Default/AppData/$appId/storage.json"); atomicWrite(file, encoded.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun atomicWrite(target: File, bytes: ByteArray) {
+        target.parentFile?.mkdirs()
+        val temporary = File(target.parentFile, ".${target.name}.app-${System.nanoTime()}.tmp")
+        val backup = File(target.parentFile, ".${target.name}.app-${System.nanoTime()}.backup")
+        temporary.writeBytes(bytes)
+        var backedUp = false
+        try {
+            if (target.exists()) {
+                require(target.isFile) { "App write target is not a file" }
+                require(target.renameTo(backup)) { "Could not stage existing app file for replacement" }
+                backedUp = true
+            }
+            require(temporary.renameTo(target)) { "Could not publish app file" }
+            if (backedUp) backup.delete()
+        } catch (error: Throwable) {
+            temporary.delete()
+            if (backedUp && !target.exists()) backup.renameTo(target)
+            throw error
+        }
     }
 
     private fun hasGrant(appId: String, capability: String): Boolean = grants(appId).contains(capability)
@@ -386,9 +487,17 @@ class RiftNativeAppHost(
         prefs.edit().putString("setting:permissions:$appId", JSONObject().put("value", JSONArray(set.sorted())).put("modified", System.currentTimeMillis()).toString()).apply()
     }
 
-    private fun clipboardRead(): String = (activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip?.getItemAt(0)?.coerceToText(activity)?.toString().orEmpty()
-    private fun clipboardWrite(text: String): Boolean { (activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("RiftOS program", text)); return true }
-    private fun share(text: String, title: String) { activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }, title)) }
+    private fun clipboardRead(): String = (activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+        .primaryClip?.getItemAt(0)?.coerceToText(activity)?.toString().orEmpty().take(MAX_CLIPBOARD_CHARS)
+    private fun clipboardWrite(text: String): Boolean {
+        require(text.length <= MAX_CLIPBOARD_CHARS) { "Clipboard text exceeds $MAX_CLIPBOARD_CHARS characters" }
+        (activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("RiftOS program", text))
+        return true
+    }
+    private fun share(text: String, title: String) {
+        require(text.length <= MAX_SHARE_CHARS) { "Share text exceeds $MAX_SHARE_CHARS characters" }
+        activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }, title))
+    }
 
     private fun instanceState(instance: Instance): JSONObject = JSONObject()
         .put("windowId", instance.windowId)

@@ -1,84 +1,204 @@
-# RiftRT `rift-vm` Engine
+# RiftVM Engine
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-`rift-vm` is the first executable target for Rift++. It runs a validated, data-only Rift executable payload inside the existing RiftRT process/window/capability lifecycle. It does **not** evaluate JavaScript supplied by the package, execute ELF files, invoke a shell, or widen MCP.
+src/riftvm.js is the live packaged virtual machine used by RiftOS's native headless Rift++ shell path.
 
-Distribution and execution are separate:
+Current production activation:
 
-```text
-program.rift                 portable installer package
-  riftrt.json                engine = rift-vm
-  main.rxe                   Rift executable payload
+RiftNativeShell -> RiftHeadlessJsRuntime -> QuickJS -> packaged riftvm.js
 
-.rift -> RiftApps -> C:/Programs/<id> -> RiftRT -> RiftVM -> main.rxe
-```
-
-## Executable contract
-
-The first payload schema is `rift-exec-v1` with ABI `riftvm-1`.
-
-```json
-{
-  "format": "rift-exec-v1",
-  "abi": "riftvm-1",
-  "entry": "main",
-  "imports": ["app.setTitle"],
-  "constants": [
-    {"type":"string","value":"hello"}
-  ],
-  "functions": {
-    "main": {
-      "params": 0,
-      "locals": 0,
-      "code": [
-        {"op":"const","index":0},
-        {"op":"print"},
-        {"op":"halt"}
-      ]
-    }
-  },
-  "limits": {"maxSteps":10000,"maxStack":256,"maxCallDepth":16}
-}
-```
-
-V1 scalar constants are `unit`, `bool`, `u32`, `s32`, `f64`, and `string`. Runtime values may additionally contain nominal immutable `struct`, tagged `enum`, and bounded immutable `vec` composites constructed only by validated VM instructions. Vector capacity is encoded in `make_vec` and is hard-capped at 256 items. Integer arithmetic is checked; overflow traps. Proven Gate 6A semantics enforce finite `f64` values/results, canonicalize negative zero to positive zero, and reject divide/modulo by zero on the installed Core `0.7.0-bootstrap` runtime. Branch conditions require `bool`. Host calls must be declared in the executable import table before execution, and composite values cannot implicitly cross that host boundary.
-
-## VM instructions
-
-V1 supports bounded constants/locals/stack operations, checked arithmetic/comparison, string concatenation, nominal structured operations (`make_struct`, `get_field`, `make_enum`, `enum_is`, `enum_get`), bounded collection operations (`make_vec`, `vec_len`, `vec_get`, `vec_push`, `vec_set`), proven Gate 5 state operations (`state_save`, `state_load`, `state_remove`), and proven Gate 6A data-only `value_sha256`, plus jumps, calls/returns, declared host imports, output, and halt. `vec_get` returns `Option.Some/None`; `vec_push` and `vec_set` return `Result.Ok/Err` replacement values instead of mutating the original vector. Unsupported opcodes fail validation before execution.
-
-The VM has hard ceilings for function count, constants, instructions, locals, parameters, stack depth, call depth, string size and executed steps. Serialized executable input is capped at 8 MiB before JSON parsing, and aggregate normalized constant-string payload is capped at 4 MiB. Composite values are additionally capped at depth 32; rendered `print` values are capped at 64 KiB; public result conversion is capped at 4096 visited values and 64 KiB of aggregate string payload. Gate 5 state payloads are capped at 64 KiB and canonical type descriptors at 4 KiB. A program can request smaller execution limits but cannot raise the runtime hard ceilings.
-
-## Host boundary
-
-`src/riftrt.js` owns the host adapter. RiftVM itself receives only an `invoke(method,args)` callback and cannot discover RiftOS globals. The adapter exposes a finite dotted method map; share is exposed to RiftVM as `share.text` and still routes through the existing `share` capability check. Gate 5 `state.load/state.save/state.remove` map to the existing app-level `storage` declaration and an app-private `riftvm-state.json`; the state store is stat-checked as a bounded regular file before read, strictly parsed, and capped at 16 validated non-poison keys, 64 KiB per payload, and 512 KiB total. Capability-bearing imports are checked against both `riftrt.json` declarations and installed manifest permissions. `storage` is not added to the global RiftKernel capability registry, and state operations do not expose generic RiftFS paths.
-
-There is no `eval`, `new Function`, generic JS import, raw native dispatcher, process creation or shell opcode.
-
-The VM validates executable structure and runtime operation safety, not the full Rift++ source type system. Compiler-produced `.rxe` carries the compiler's static generic/element type guarantees; hand-authored `.rxe` may still be dynamically ill-typed and trap at runtime. For Gate 5 state instructions, however, the VM independently parses a canonical compiler-generated type descriptor and validates the decoded checkpoint value against that descriptor before returning it. Corrupt JSON, schema mismatch, value-shape mismatch, noncanonical descriptors and oversize state fail closed. Ordinary `host` calls still reject composites; state serialization is a dedicated bounded path, not a generic host bridge. This does not widen capability or host authority.
-
-## Bootstrap boundary
-
-`rift-exec-v1` is a bootstrap executable ABI, not a claim that Rift++ Core V1 is already complete. Installed `0.7.0-bootstrap` lowers its proven Gates 0–6A subset into this format. Gate 5 state/effect support has cross-launch persistence evidence, and Gate 6A finite numeric/parameter identity has installed proof on the same ABI. RiftLLM+ Gate 6B has now performed a real parameter update, persisted it across restart, and preserved verified memory without requiring any new opcode, import, capability, or ABI change. If later Core semantics need a stronger typed/optimized ABI, that evolution happens as a named compatible executable version rather than silently changing `rift-exec-v1`.
+The old RiftRT VM session manager in src/riftrt.js is retained/inactive.
 
 ## Source ownership
 
-- `src/riftvm.js` — executable validation and VM semantics.
-- `src/riftrt.js` — installed-app engine selection, UI/session lifecycle and host adapter.
-- `src/riftapps.js` — unchanged `.rift` installation/registry boundary.
-- `examples/riftpp/hello-rift-executable.rift` — importable first executable fixture.
-- `scripts/test-rift-vm.mjs` — executable/limits/security regression test, including independent raw vector/Option/Result semantics.
+Live:
+- src/riftvm.js
+- RiftHeadlessJsRuntime.kt
+- RiftNativeShell.kt
 
-## Invariants
+Tests/validators:
+- scripts/test-rift-vm.mjs
+- scripts/test-rift-plus-plus-core-v1.mjs
+- scripts/validate-rift-wiring.mjs
 
-- `.rift` remains the installer; `.rxe` is the installed executable payload.
-- Guest instructions are data, never evaluated as JavaScript.
-- Unsupported/malformed executables fail before execution.
-- Program authority cannot exceed package + `riftrt.json` declarations and persisted user grants.
-- Runtime limits are fail-closed, including vector capacity/index semantics, composite depth, rendered output size and public-result expansion.
-- RiftVM adds no MCP tool family and no shell/process authority.
+## Format and ABI
+
+Executable format: rift-exec-v1.
+
+ABI: riftvm-1.
+
+Preparation validates the complete executable before execution.
+
+## Opcodes
+
+The finite opcode set covers constants/locals/stack, arithmetic/comparison/boolean operations, strings, structs/enums, bounded Vec, state save/load/remove, value SHA-256, jumps/calls, explicit host calls, print, return and halt.
+
+There is no eval, new Function or native process opcode.
+
+## Hard preparation limits
+
+- functions: 256
+- imports: 64
+- constants: 4096
+- total instructions: 100000
+- instructions/function: 65536
+- parameters/function: 64
+- locals/function: 512
+- composite fields/items: 64
+- Vec capacity: 256
+- composite depth: 32
+- public result values: 4096
+- public/display string bytes: 65536
+- executable JSON: 8 MiB
+- aggregate constant strings: 4 MiB
+- VM max steps hard ceiling: 1000000
+- stack hard ceiling: 4096
+- call-depth hard ceiling: 64
+- runtime string bytes: 65536
+- state payload: 65536 bytes
+- state schema: 4096 bytes.
+
+Executable-declared limits are validated inside those ceilings.
+
+## Production shell execution limits
+
+The current headless shell further tightens execution to:
+- max steps: 100000
+- max stack: 1024
+- max call depth: 32
+- yield interval: 512 instructions
+- printed lines: <=256
+- aggregate printed bytes: <=65536
+- QuickJS evaluation timeout: 120 seconds.
+
+The VM also checks shouldCancel when a host supplies it and yields at a bounded interval.
+
+## Data types
+
+VM supports unit, bool, u32, s32, f64, string, struct, enum and bounded Vec.
+
+u32/s32 are internally BigInt-bounded. f64 must be finite JSON numbers and negative zero is canonicalized to zero. Arithmetic checks division/modulo by zero and integer overflow.
+
+## Composite boundaries
+
+Composite values have maximum nesting depth 32. Vec capacity never exceeds 256. Out-of-range Vec get returns Option.None. Vec push/set return Result.Err rather than silently exceeding capacity or index bounds.
+
+Names reject poison keys such as __proto__, prototype and constructor.
+
+## Host imports
+
+Executable imports must match the finite dotted host-method grammar and be declared before a host opcode can reference them.
+
+Composite values cannot cross the generic host import boundary implicitly.
+
+The VM itself can execute host imports only when the embedding owner supplies host.invoke.
+
+### Current production shell boundary
+
+RiftHeadlessJsRuntime inspects an executable before riftpp run/exec and rejects it when imports.length > 0.
+
+The production shell supplies only a bounded print writer to VM execution, not host.invoke.
+
+Therefore current native-shell .rxe execution is **import-free**.
+
+This is intentionally narrower than the VM engine's abstract import capability.
+
+## State opcodes
+
+The VM implements state_save, state_load and state_remove.
+
+Preparation requires the corresponding declared state.save, state.load and state.remove imports.
+
+State schemas are canonical descriptor JSON, bounded in depth, validate exact value shape and are embedded into the state envelope.
+
+State payload format: riftvm-state-v1.
+
+Payload max: 65536 bytes.
+
+Corrupt JSON, schema mismatch, shape mismatch, invalid finite numeric values and oversized state are rejected.
+
+### Current activation status
+
+These state opcodes are engine-supported and covered by test-rift-vm.mjs, but **they are not currently reachable through production riftpp run/exec** because the native shell denies every executable import.
+
+A future persistent-state host must be separately audited and wired through the headless owner.
+
+Do not treat opcode presence as proof of live persistence.
+
+## value_sha256
+
+value_sha256 canonicalizes bounded VM public data and hashes at most 65536 UTF-8 bytes through SHA-256.
+
+Struct keys are sorted for stable hashing.
+
+The headless QuickJS runtime supplies only a SHA-256 WebCrypto polyfill backed by Java MessageDigest.
+
+## Headless host capabilities
+
+QuickJS exposes only request/result exchange, UTF-8 encoding, SHA-256, bounded RiftFS readText and bounded atomic RiftFS writeText.
+
+It exposes no DOM/window, WebView, network, Android intent, arbitrary native call, process execution or ambient shell globals.
+
+Text read/write max: 8 MiB.
+
+Path access is canonicalized under app-private RiftFS.
+
+## Atomic compiled output
+
+Headless .rxe output uses same-directory temp/backup/rename replacement.
+
+During this audit output publication was hardened so an existing **directory** at the requested .rxe path is rejected rather than renamed/replaced by a file.
+
+## Tests
+
+test-rift-vm.mjs exercises executable validation, import declaration, bounded struct/enum/Vec, strings, deterministic value hashing, f64 rules, state schema/shape validation, poison/unsupported opcode rejection, composite host-boundary rejection, depth/display/public-result limits, integer overflow and step limits.
+
+During this audit the stale assertion that a .rift package currently runs main.rxe through the old RiftRT engine was removed. Installed package runtime activation belongs to the Apps subsystem.
+
+## Non-ownership boundaries
+
+RiftVM does not own Rift++ source parsing/type checking, installed-program rendering, a persistent state backend, generic native capabilities or package installation.
+
+## Critical invariants
+
+- format/ABI validation occurs before execution;
+- max Vec remains 256;
+- no eval/native process execution;
+- hard step/stack/call/output/data limits remain enforced;
+- host calls require declared imports plus explicit host.invoke;
+- production shell remains import-free unless an audited host is deliberately added;
+- state opcode existence is not documented as live persistence;
+- headless output cannot replace a directory.
+
+## Failure signatures
+
+- shell executes imported host capability -> production-host boundary regression;
+- Vec capacity >256 -> VM resource regression;
+- composite passes directly into generic host import -> boundary regression;
+- corrupt state shape loads -> state-validation regression;
+- unbounded output/result -> resource regression;
+- .rxe compile replaces an existing directory -> atomic-output regression;
+- docs claim installed .rift RiftRT VM engine is live -> stale activation claim.
+
+## Fix map
+
+Opcode/ABI/value semantics -> src/riftvm.js.
+
+Current QuickJS/path/output/host activation -> RiftHeadlessJsRuntime.kt.
+
+Shell command routing -> RiftNativeShell.kt.
+
+Source compiler -> Rift++ Core subsystem.
+
+Future state host -> new explicitly audited headless capability owner.
 
 ## Validation
 
-Run `scripts/test-rift-vm.mjs` and the normal root source checks. Import `examples/riftpp/hello-rift-executable.rift`, launch it from Programs/RiftRT, and verify the native RiftDesktop window reports the `RIFT VM` engine, prints `Rift++ executable online` and `42`, and closes through the normal RiftRT process lifecycle.
+Second source audit must verify Gradle packaging, exact format/ABI, finite opcode set, hard limits, preparation validation, step/stack/call/Vec/composite/output bounds, state schema/payload rules, host import declaration/boundary, production shell import rejection, headless capability set/path containment/atomic output, focused test coverage and removal of stale package-runtime claims.
+
+Node/Builder/device tests remain separate from source verification.

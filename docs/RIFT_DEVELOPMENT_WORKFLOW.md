@@ -1,20 +1,39 @@
 # RiftOS Development Workflow
 
-Default workflow for large changes:
+## Current source ownership rule
 
-Audit -> Snapshot -> Read -> Patch -> Dry Run -> Build -> Verify -> Commit
+Patch the narrow owner:
+- desktop/window behavior -> `RiftNativeDesktop.kt`;
+- built-ins -> `RiftNativeSystemApps.kt` / `RiftNativeWorkspaceApps.kt`;
+- shell -> `RiftNativeShell.kt` / `RiftNativeShellServices.kt`;
+- Git -> `RiftNativeGit.kt`;
+- workspace MCP -> `RiftToolSandbox.kt`;
+- MCP catalog/server -> `RiftToolHost.kt` / `RiftMcpServer.kt`;
+- browser/app/preview rendering -> explicit `RiftBrowser*` source;
+- Rift++ compiler/VM -> `src/riftpp-core.js`, `src/riftvm.js`, `RiftHeadlessJsRuntime.kt`.
 
-Large subsystem changes should be handled by subsystem ownership:
+Do not recreate the deleted broad native dispatcher or trusted shell WebView to shortcut ownership boundaries.
 
-- RiftFS: filesystem and storage operations
-- RiftNativeDispatcher: Android IO bridge
-- RiftWorkspace: project layer
-- RiftMCP: AI tooling layer
+## Safe change sequence
 
-Each patch should identify the subsystem being changed and avoid cross-layer duplication.
+1. inspect source/ownership/docs and identify the true owner;
+2. preserve a backup for large architecture changes;
+3. make a small guarded local patch;
+4. update the owning README/validator in the same patch;
+5. run static/source audits and diff review;
+6. push only when explicitly authorized;
+7. run the external Builder;
+8. install the exact built APK;
+9. live-abuse the changed subsystem and its boundaries;
+10. rerun validators after fixes before promotion.
 
-## Publish the RiftOS workspace from RiftShell
+Dev Lab may stage/snapshot/publish source locally, but compiled Android changes still require Builder/install.
 
-Use `git auth` once per shell session to provide a GitHub token with Contents write access to `Arctic403/RiftOS`. The token stays in session storage. Run `workspace status` to compare `/workspace/RiftOS-main` with `Arctic403/RiftOS` `main`, then `workspace push "Describe the change"` to publish that folder as a single Git commit. `git workspace status` and `git workspace push "Describe the change"` are equivalent. No attach, copy to `/home`, or Git metadata in the project is required.
+## Migration-specific rules
 
-The push stops if the remote branch changes while files are uploading or the workspace changes during upload. Publishing source does not start the separate builder; builds remain manual. This workflow does not change the current signing policy.
+- no WebKit imports outside the explicit RiftBrowser allowlist;
+- only Rift++ Core/VM JS assets are copied into the generated headless asset namespace;
+- native shell/MCP must survive browser/Activity lifecycle changes;
+- browser crash recovery is scoped to browser-owned renderers;
+- source checks never count as a successful Android build;
+- do not push local RiftOS changes without explicit project-owner instruction.

@@ -44,7 +44,7 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".RiftPreviewActivity"
+            android:name=".RiftBrowserPreviewActivity"
             android:exported="false"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize" />

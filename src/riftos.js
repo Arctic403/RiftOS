@@ -497,7 +497,7 @@ async function openEditor(path="/home/scratch.txt"){
 
 async function openTasks(){
   await core.ready;
-  return core.native.call("system.app.open",{id:"tasks"});
+  throw new Error("Task Manager is Android-native and unavailable in the retained web runtime.");
 }
 
 async function openSettings(){
@@ -946,7 +946,7 @@ async function runShell(raw,print,state,context={}){
 
 async function openTerminal(){
   await core.ready;
-  return core.native.call("system.app.open",{id:"terminal"});
+  throw new Error("RiftShell Terminal is Android-native and unavailable in the retained web runtime.");
 }
 
 async function openWorkspaceLive(){

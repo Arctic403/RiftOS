@@ -12,11 +12,13 @@ import android.webkit.WebViewClient
 import java.io.File
 import java.io.FileInputStream
 import java.net.URLConnection
+import java.security.MessageDigest
 
-class RiftPreviewActivity : Activity() {
-    companion object { const val EXTRA_ROOT="root"; const val EXTRA_ENTRY="entry"; private const val HOST="riftpreview.local" }
+class RiftBrowserPreviewActivity : Activity() {
+    companion object { const val EXTRA_ROOT="root"; const val EXTRA_ENTRY="entry" }
     private lateinit var webView: WebView
     private lateinit var previewRoot: File
+    private lateinit var previewHost: String
     private var rendererGone = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,24 +29,37 @@ class RiftPreviewActivity : Activity() {
         previewRoot=rootParts.fold(workspace){ current,segment->File(current,segment) }.canonicalFile
         require(previewRoot==workspace||previewRoot.path.startsWith(workspace.path+File.separator)){"Preview root escaped workspace"}
         require(previewRoot.exists()&&previewRoot.isDirectory){"Preview root does not exist"}
+        previewHost=previewHostFor(previewRoot)
         webView=WebView(this); setContentView(webView)
-        webView.settings.apply { javaScriptEnabled=true; domStorageEnabled=true; mediaPlaybackRequiresUserGesture=false; mixedContentMode=WebSettings.MIXED_CONTENT_NEVER_ALLOW; allowFileAccess=false; allowContentAccess=false }
+        webView.settings.apply { javaScriptEnabled=true; domStorageEnabled=true; mediaPlaybackRequiresUserGesture=false; mixedContentMode=WebSettings.MIXED_CONTENT_NEVER_ALLOW; allowFileAccess=false; allowContentAccess=false; blockNetworkLoads=true }
         webView.webViewClient=object:WebViewClient(){
+            override fun shouldOverrideUrlLoading(view:WebView,request:WebResourceRequest):Boolean =
+                request.url.scheme != "https" || request.url.host != previewHost
+
             override fun shouldInterceptRequest(view:WebView,request:WebResourceRequest):WebResourceResponse?{
-                if(request.url.host!=HOST)return null
+                if(request.url.scheme != "https" || request.url.host != previewHost) return forbiddenResponse()
                 return responseFor(request.url)
             }
             override fun onRenderProcessGone(view:WebView,detail:RenderProcessGoneDetail):Boolean{
                 rendererGone=true
-                RiftRendererCrashGuard.record(this@RiftPreviewActivity,"preview",detail)
-                RiftRendererCrashGuard.destroyDeadWebView(view)
+                RiftBrowserRendererCrashGuard.record(this@RiftBrowserPreviewActivity,"preview",detail)
+                RiftBrowserRendererCrashGuard.destroyDeadWebView(view)
                 finish()
                 return true
             }
         }
         val entry=normalize(intent.getStringExtra(EXTRA_ENTRY).orEmpty().ifBlank{"index.html"}).joinToString("/")
-        webView.loadUrl("https://$HOST/$entry")
+        webView.loadUrl("https://$previewHost/$entry")
     }
+
+    private fun previewHostFor(root:File):String{
+        val digest=MessageDigest.getInstance("SHA-256").digest(root.canonicalPath.toByteArray(Charsets.UTF_8))
+        val suffix=digest.take(12).joinToString(""){"%02x".format(it.toInt() and 0xff)}
+        return "preview-$suffix.riftos.local"
+    }
+
+    private fun forbiddenResponse():WebResourceResponse =
+        WebResourceResponse("text/plain","UTF-8",403,"Forbidden",mapOf("Cache-Control" to "no-store"),"External preview networking is disabled".byteInputStream())
 
     private fun normalize(raw:String):List<String>{
         val out=mutableListOf<String>()

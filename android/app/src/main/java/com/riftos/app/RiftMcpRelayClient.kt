@@ -23,7 +23,7 @@ class RiftMcpRelayClient(
 ) {
     companion object {
         private const val PROTOCOL = "rift-mcp-relay-v1"
-        private const val MAX_MESSAGE_CHARS = 1_000_000
+        private const val MAX_MESSAGE_BYTES = 1_000_000
     }
 
     private val settings = RiftRelaySettings(context.applicationContext)
@@ -134,7 +134,7 @@ class RiftMcpRelayClient(
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             if (!isCurrent(webSocket)) return
-            if (text.length > MAX_MESSAGE_CHARS) {
+            if (text.toByteArray(Charsets.UTF_8).size > MAX_MESSAGE_BYTES) {
                 webSocket.close(1009, "Message too large")
                 return
             }
@@ -152,6 +152,7 @@ class RiftMcpRelayClient(
                     JSONObject().put("type", "device.pong").put("at", System.currentTimeMillis()).toString()
                 )
                 "mcp.request" -> handleMcpRequest(webSocket, message)
+                "mcp.notification" -> handleMcpNotification(message)
                 "relay.error" -> update("relay-error", message.optString("message", "Relay rejected the connection"))
                 else -> sendProtocolError(webSocket, message.optString("requestId").takeIf { it.isNotBlank() }, "Unknown relay message")
             }
@@ -174,6 +175,12 @@ class RiftMcpRelayClient(
         }
     }
 
+    private fun handleMcpNotification(envelope: JSONObject) {
+        val payload = envelope.optJSONObject("payload") ?: return
+        if (payload.has("id") || !payload.optString("method").startsWith("notifications/")) return
+        runCatching { server.handleAsync(payload) { } }
+    }
+
     private fun handleMcpRequest(webSocket: WebSocket, envelope: JSONObject) {
         val requestId = envelope.optString("requestId").trim()
         val payload = envelope.optJSONObject("payload")
@@ -184,13 +191,16 @@ class RiftMcpRelayClient(
         runCatching {
             server.handleAsync(payload, requestId) { result ->
                 if (!isCurrent(webSocket)) return@handleAsync
-                webSocket.send(
-                    JSONObject()
-                        .put("type", "mcp.response")
-                        .put("requestId", requestId)
-                        .put("payload", result)
-                        .toString()
-                )
+                val responseText = JSONObject()
+                    .put("type", "mcp.response")
+                    .put("requestId", requestId)
+                    .put("payload", result)
+                    .toString()
+                if (responseText.toByteArray(Charsets.UTF_8).size > MAX_MESSAGE_BYTES) {
+                    sendProtocolError(webSocket, requestId, "Local MCP response exceeds relay message limit")
+                    return@handleAsync
+                }
+                webSocket.send(responseText)
             }
         }.onFailure { error ->
             sendProtocolError(webSocket, requestId, error.message ?: "Local MCP execution failed")
@@ -202,7 +212,7 @@ class RiftMcpRelayClient(
             JSONObject()
                 .put("type", "mcp.error")
                 .put("requestId", requestId ?: JSONObject.NULL)
-                .put("message", message)
+                .put("message", message.take(240))
                 .toString()
         )
     }

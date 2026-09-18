@@ -1,6 +1,7 @@
 package com.riftos.app
 
 import android.content.Context
+import java.net.URI
 import java.util.UUID
 
 data class RiftRelayConfig(
@@ -41,10 +42,19 @@ class RiftRelaySettings(context: Context) {
     fun save(enabled: Boolean, endpoint: String, replacementToken: String?) {
         val normalized = endpoint.trim().removeSuffix("/")
         if (enabled || normalized.isNotBlank()) {
-            require(normalized.startsWith("wss://")) { "Relay endpoint must use wss://" }
+            val uri = runCatching { URI(normalized) }.getOrNull()
+            require(uri != null && uri.scheme.equals("wss", ignoreCase = true) && !uri.host.isNullOrBlank()) {
+                "Relay endpoint must be a valid wss:// URL with a host"
+            }
+            require(uri.userInfo == null && uri.fragment == null) { "Relay endpoint must not include user info or a fragment" }
         }
         val token = replacementToken?.trim().orEmpty()
-        if (token.isNotEmpty()) secrets.set(TOKEN_SECRET, token)
+        if (token.isNotEmpty()) {
+            require(token.length <= 4096 && token.none { it == '\r' || it == '\n' || it.code < 0x20 || it.code == 0x7f }) {
+                "Relay pairing token is invalid"
+            }
+            secrets.set(TOKEN_SECRET, token)
+        }
         require(!enabled || secrets.get(TOKEN_SECRET)?.isNotBlank() == true) {
             "A relay pairing token is required"
         }

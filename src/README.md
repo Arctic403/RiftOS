@@ -1,37 +1,56 @@
-# RiftOS Web Runtime Source
+# RiftOS JavaScript Source
 
-This directory contains the trusted RiftOS shell/runtime JavaScript packaged into the Android APK. It is not guest webpage code.
+## Verification status
+
+**VERIFIED AGAINST CURRENT GRADLE/SOURCE — 2026-09-17.**
+
+This directory is **not** the active Android shell source tree.
+
+## Packaged live APK assets
+
+`android/app/build.gradle.kts::syncRiftOsWebAssets` currently packages only:
+
+- `riftpp-core.js`
+- `riftvm.js`
+
+They are copied into the generated `www` asset namespace and executed only by `RiftHeadlessJsRuntime` inside bounded QuickJS.
+
+## Retained reference/test source
+
+All other JavaScript files in this directory are retained for one or more of:
+- Node regression tests;
+- migration/reference behavior;
+- historical contracts;
+- future porting work.
+
+They must not be described as live Android APK authority unless Gradle and a current Kotlin caller prove that status.
+
+Examples currently **not packaged as the OS shell**:
+- `riftandroid-entry.js`
+- `riftandroid-preload.js`
+- `riftandroid-platform.js`
+- `riftcore.js`
+- `riftos.js`
+- `riftapps.js`
+- `riftrt.js`
+- `riftgit.js`
+- `riftworkspace-*.js`
+- `riftdevlab.js`
+- `riftlocal-platform.js`
+- `riftshell-batch.js`
+- `riftruntime.js`
 
 ## Ownership map
 
-| File | Owning system README |
-| --- | --- |
-| `riftandroid-entry.js` | `../docs/systems/boot/README.md` |
-| `riftandroid-preload.js` | `../docs/systems/boot/README.md` |
-| `riftandroid-platform.js` | `../docs/systems/android-host/README.md` |
-| `riftcore.js` | `../docs/systems/kernel/README.md` and `../docs/systems/riftfs/README.md` |
-| `riftos.js` | shell UI plus Files/Settings/Browser integration; see `../docs/README.md` |
-| `riftdesktop-native-compat.js` | native-window compatibility content renderer; `../docs/systems/desktop/README.md` |
-| `riftdesktop-android.js` / `.css` | legacy/fallback desktop; `../docs/systems/desktop/README.md` |
-| `riftdesktop-window-host.js` / `riftdesktop-android-compat.js` | legacy/fallback host compatibility; `../docs/systems/desktop/README.md` |
-| `riftapps.js` / `riftapps-files.js` | `../docs/systems/apps/README.md` |
-| `riftrt.js` | `../docs/systems/riftrt/README.md` |
-| `riftvm.js` | `../docs/systems/riftrt/engines/rift-vm/README.md` |
-| `riftpp-core.js` | `../docs/systems/riftpp-core/README.md` |
-| `riftruntime.js` | `../docs/systems/runtime-capabilities/README.md` |
-| `riftshell-batch.js` | `../docs/systems/shell/README.md` |
-| `riftgit.js` | `../docs/systems/git/README.md` |
-| `riftvault.js` | `../docs/systems/riftvault/README.md` |
-| `riftrepo.js` | `../docs/systems/riftrepo/README.md` |
-| `riftmemory-control.js` | `../docs/systems/riftmemory/README.md` |
-| `riftbuild.js` | `../docs/systems/riftbuild/README.md` |
-| `riftlocal-platform.js` | `../docs/systems/riftrepo/README.md`, `../docs/systems/riftvault/README.md`, `../docs/systems/riftbuild/README.md` and `../docs/systems/riftmemory/README.md` |
-| `riftllm-bridge.js` | `../docs/systems/riftllm-bridge/README.md` |
-| `riftdevlab.js` | `../docs/systems/dev-lab/README.md` |
-| `riftworkspace-web.js` / `riftworkspace-android-adapter.js` | `../docs/systems/workspace/README.md` |
-| `riftworkspace-live-host.js` | `../docs/systems/workspace/live/README.md` |
-| `riftmcp-system.js` | `../docs/systems/mcp/README.md` |
+Repository ownership remains documented in `../docs/SOURCE_OWNERSHIP.md`. Ownership means “this source has a maintained documentation owner,” not “this source is currently packaged into the APK.”
+
+For live engine ownership, use `../docs/systems/engine/README.md`.
 
 ## Rule
 
-Before changing a file here, read its owning system README. If responsibilities or public behavior change, update that README in the same patch. If a new runtime file is added, add it to `docs/SOURCE_OWNERSHIP.md`; documentation validation intentionally fails for unowned active source files.
+Before changing a retained JS module, determine whether the task is:
+1. changing a live packaged headless asset;
+2. changing a regression/reference oracle;
+3. intentionally promoting a retained module back into the live APK.
+
+Case 3 requires an explicit architecture change, Gradle packaging update, owner documentation update and build/runtime validation. Do not infer live status from the presence of a file in `src/`.

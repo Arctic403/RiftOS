@@ -1,5 +1,17 @@
-# Workspace Records UI Assets
+# Workspace Records UI Assets — Retained
 
-This historical `workspace-live/` folder now contains the trusted-shell **Workspace Records** dashboard. The product surface is observational: persistent local records, affected-file lists, local checkpoint diffs, and optional RiftGit comparison. The HTML is mounted into a shadow root with direct access to the shell's local records API; it is not a sandboxed guest app. Its UI does not offer direct workspace mutation or approve/deny controls.
+## Runtime status
 
-The full architecture, persistence model, MCP `rift_workspace_diff` contract, security boundary and debugging map live in [`../docs/systems/workspace/live/README.md`](../docs/systems/workspace/live/README.md).
+This `workspace-live/` directory is retained historical/reference UI source.
+
+It is **not packaged as the current Android Workspace Records built-in**.
+
+The live Workspace Records UI is Android-native in `RiftNativeWorkspaceApps.kt`, backed by `RiftWorkspaceRecords.kt` and `RiftWorkspaceWatcher.kt`.
+
+Historical descriptions of a trusted-shell shadow-root dashboard, direct shell API access, or HTML-mounted Workspace Records surface are not current runtime behavior.
+
+See:
+- `docs/systems/workspace/README.md` for the canonical workspace boundary;
+- `docs/systems/workspace/live/README.md` for the current native Workspace Records subsystem.
+
+Do not patch this retained folder to fix the live Android Workspace Records UI unless it is explicitly being reactivated by a separate migration.

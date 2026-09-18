@@ -25,6 +25,9 @@ private class RiftScopedLocalAgent(
 ) {
     companion object {
         private const val MAX_TREE_NODES = 1024
+        private const val MAX_SCAN_NODES = 4096
+        private const val MAX_NODE_FIELD_CHARS = 512
+        private const val MAX_PARENT_DEPTH = 64
         private const val MAX_TEXT_CHARS = 4096
         private const val GESTURE_TIMEOUT_MS = 5_000L
         private const val ACTIVATION_TIMEOUT_MS = 3_000L
@@ -80,13 +83,16 @@ private class RiftScopedLocalAgent(
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         val matches = LinkedHashMap<String, AccessibilityNodeInfo>()
         queue.add(root)
-        while (queue.isNotEmpty()) {
+        var scanned = 0
+        while (queue.isNotEmpty() && scanned < MAX_SCAN_NODES) {
             val node = queue.removeFirst()
+            scanned++
             if (node.packageName?.toString() == targetPackage && node.isVisibleToUser && node.isEnabled && node.isEditable && node.isFocused) {
                 matches.putIfAbsent(nodeIdentity(node), node)
             }
             for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
+        require(queue.isEmpty()) { "$displayName accessibility tree exceeds $MAX_SCAN_NODES-node scan limit" }
         if (matches.size > 1) throw IllegalStateException("$displayName exposes multiple focused editable fields")
         return matches.values.firstOrNull()
     }
@@ -124,8 +130,10 @@ private class RiftScopedLocalAgent(
         val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
         queue.add(root to 0)
         var total = 0
-        while (queue.isNotEmpty()) {
+        var scanned = 0
+        while (queue.isNotEmpty() && scanned < MAX_SCAN_NODES) {
             val (node, depth) = queue.removeFirst()
+            scanned++
             if (node.packageName?.toString() != targetPackage) continue
             total++
             if (rows.length() < limit) rows.put(nodeJson(node, depth))
@@ -137,7 +145,9 @@ private class RiftScopedLocalAgent(
             .put("scope", targetPackage)
             .put("nodes", rows)
             .put("total_nodes", total)
-            .put("truncated", total > limit)
+            .put("scanned_nodes", scanned)
+            .put("scan_limit_reached", queue.isNotEmpty())
+            .put("truncated", total > limit || queue.isNotEmpty())
     }
 
     private fun click(context: Context, args: JSONObject): JSONObject {
@@ -184,10 +194,10 @@ private class RiftScopedLocalAgent(
     }
 
     private fun tap(context: Context, args: JSONObject): JSONObject {
-        val service = requireTargetServiceAndRoot(context).first
+        val (service, root) = requireTargetServiceAndRoot(context)
         val x = finite(args, "x")
         val y = finite(args, "y")
-        requirePoint(service, x, y)
+        requirePointInTarget(service, root, x, y)
         val path = Path().apply { moveTo(x, y) }
         dispatchGesture(service, path, 80L)
         SystemClock.sleep(ACTION_SETTLE_MS)
@@ -195,13 +205,13 @@ private class RiftScopedLocalAgent(
     }
 
     private fun swipe(context: Context, args: JSONObject): JSONObject {
-        val service = requireTargetServiceAndRoot(context).first
+        val (service, root) = requireTargetServiceAndRoot(context)
         val x1 = finite(args, "x1")
         val y1 = finite(args, "y1")
         val x2 = finite(args, "x2")
         val y2 = finite(args, "y2")
-        requirePoint(service, x1, y1)
-        requirePoint(service, x2, y2)
+        requirePointInTarget(service, root, x1, y1)
+        requirePointInTarget(service, root, x2, y2)
         val duration = args.optLong("durationMs", 350L).coerceIn(50L, 3_000L)
         val path = Path().apply { moveTo(x1, y1); lineTo(x2, y2) }
         dispatchGesture(service, path, duration)
@@ -326,12 +336,14 @@ private class RiftScopedLocalAgent(
         val semanticMatches = mutableListOf<AccessibilityNodeInfo>()
         val semanticTarget = semanticLabel(target)
         queue.add(root)
-        while (queue.isNotEmpty()) {
+        var scanned = 0
+        while (queue.isNotEmpty() && scanned < MAX_SCAN_NODES) {
             val node = queue.removeFirst()
+            scanned++
             if (node.packageName?.toString() != targetPackage) continue
-            val text = if (node.isPassword) "" else node.text?.toString().orEmpty()
-            val description = node.contentDescription?.toString().orEmpty()
-            val viewId = node.viewIdResourceName.orEmpty()
+            val text = if (node.isPassword) "" else boundedNodeField(node.text?.toString())
+            val description = boundedNodeField(node.contentDescription?.toString())
+            val viewId = boundedNodeField(node.viewIdResourceName)
             if (node.isVisibleToUser && node.isEnabled) {
                 if (target == text || target == description || target == viewId) {
                     exactMatches.add(node)
@@ -344,6 +356,7 @@ private class RiftScopedLocalAgent(
             }
             for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
+        require(queue.isEmpty()) { "$displayName accessibility tree exceeds $MAX_SCAN_NODES-node scan limit" }
         val matches = if (exactMatches.isNotEmpty()) exactMatches else semanticMatches
         val actionableAnchors = LinkedHashMap<String, AccessibilityNodeInfo>()
         val passiveMatches = LinkedHashMap<String, AccessibilityNodeInfo>()
@@ -366,10 +379,13 @@ private class RiftScopedLocalAgent(
 
     private fun actionAnchor(node: AccessibilityNodeInfo): AccessibilityNodeInfo {
         var current: AccessibilityNodeInfo? = node
-        while (current != null && current.packageName?.toString() == targetPackage) {
+        var depth = 0
+        while (current != null && current.packageName?.toString() == targetPackage && depth < MAX_PARENT_DEPTH) {
             if (current.isClickable || current.isEditable) return current
             current = current.parent
+            depth++
         }
+        require(depth < MAX_PARENT_DEPTH) { "$displayName accessibility parent chain exceeds $MAX_PARENT_DEPTH" }
         return node
     }
 
@@ -378,8 +394,10 @@ private class RiftScopedLocalAgent(
         return "${node.windowId}:${node.className}:${node.viewIdResourceName}:${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}"
     }
 
+    private fun boundedNodeField(value: String?): String = value.orEmpty().take(MAX_NODE_FIELD_CHARS)
+
     private fun semanticLabel(value: String): String {
-        val trimmed = value.trim().replace(Regex("\\s+"), " ")
+        val trimmed = value.take(MAX_NODE_FIELD_CHARS).trim().replace(Regex("\\s+"), " ")
         if (trimmed.isEmpty()) return ""
         val parts = trimmed.split(" ", limit = 2)
         if (parts.size != 2) return trimmed
@@ -395,16 +413,16 @@ private class RiftScopedLocalAgent(
         val bounds = Rect().also(node::getBoundsInScreen)
         val out = JSONObject()
             .put("depth", depth)
-            .put("class", node.className?.toString().orEmpty())
-            .put("view_id", node.viewIdResourceName.orEmpty())
-            .put("content_description", node.contentDescription?.toString().orEmpty())
+            .put("class", boundedNodeField(node.className?.toString()))
+            .put("view_id", boundedNodeField(node.viewIdResourceName))
+            .put("content_description", boundedNodeField(node.contentDescription?.toString()))
             .put("password", node.isPassword)
             .put("clickable", node.isClickable)
             .put("editable", node.isEditable)
             .put("enabled", node.isEnabled)
             .put("visible", node.isVisibleToUser)
             .put("bounds", JSONObject().put("left", bounds.left).put("top", bounds.top).put("right", bounds.right).put("bottom", bounds.bottom))
-        out.put("text", if (node.isPassword) JSONObject.NULL else node.text?.toString().orEmpty())
+        out.put("text", if (node.isPassword) JSONObject.NULL else boundedNodeField(node.text?.toString()))
         return out
     }
 
@@ -424,6 +442,22 @@ private class RiftScopedLocalAgent(
         val value = args.getDouble(key)
         require(value.isFinite()) { "$key must be finite" }
         return value.toFloat()
+    }
+
+    private fun requirePointInTarget(service: AccessibilityService, root: AccessibilityNodeInfo, x: Float, y: Float) {
+        requirePoint(service, x, y)
+        val bounds = Rect().also(root::getBoundsInScreen)
+        require(!bounds.isEmpty && x >= bounds.left && y >= bounds.top && x < bounds.right && y < bounds.bottom) {
+            "gesture point is outside the fixed $displayName application window"
+        }
+        for (window in service.windows.orEmpty()) {
+            val otherRoot = window.root ?: continue
+            if (!otherRoot.isVisibleToUser || otherRoot.packageName?.toString() == targetPackage) continue
+            val otherBounds = Rect().also(otherRoot::getBoundsInScreen)
+            if (!otherBounds.isEmpty && x >= otherBounds.left && y >= otherBounds.top && x < otherBounds.right && y < otherBounds.bottom) {
+                throw IllegalArgumentException("gesture point is covered by another visible package window")
+            }
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -481,38 +515,18 @@ object RiftVortexLocalAgent {
     internal fun ensureActiveForSession(context: Context) = delegate.ensureActive(context)
 }
 
-/** Structured RiftOS Dev Lab controller tunneled through the authoritative shell runtime. */
+/** Structured RiftOS Dev Lab controller backed directly by the Android-native Dev Lab service. */
 private object RiftDevLabLocalAgent {
-    private const val DEVLAB_TIMEOUT_MS = 85_000L
-    private val allowedActions = setOf(
-        "status", "open", "load", "staged", "stage", "stage-file", "delete", "unstage", "reset",
-        "css", "css-off", "run", "run-file", "runs", "snapshot", "snapshots", "load-snapshot", "preview", "publish"
-    )
-
-    fun execute(args: JSONObject): JSONObject {
+    fun execute(context: Context, args: JSONObject): JSONObject {
         val request = args.optJSONObject("request") ?: throw IllegalArgumentException("Dev Lab request is required")
         val action = request.optString("action").trim().lowercase()
-        require(action in allowedActions) { "Unsupported RiftOS Dev Lab agent action: $action" }
-        val executor = RiftMcpRuntime.shellExecutor() ?: throw IllegalStateException("RiftOS shell executor is unavailable")
-        val payload = JSONObject(request.toString()).put("source", "riftos-local-agent")
-        val encoded = Base64.encodeToString(payload.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val cwd = request.optString("cwd", "/").ifBlank { "/" }
-        val latch = CountDownLatch(1)
-        var response: JSONObject? = null
-        executor.execute("devlab rpc $encoded", cwd) { result ->
-            response = result
-            latch.countDown()
-        }
-        require(latch.await(DEVLAB_TIMEOUT_MS, TimeUnit.MILLISECONDS)) { "Timed out waiting for RiftOS Dev Lab agent action: $action" }
-        val shell = response ?: throw IllegalStateException("RiftOS Dev Lab agent returned no response")
-        if (!shell.optBoolean("ok", false)) {
-            throw IllegalStateException(shell.optString("error").ifBlank { "RiftOS Dev Lab agent action failed: $action" })
-        }
+        val value = RiftNativeDevLab.execute(context, request)
         return JSONObject()
             .put("scope", "riftos-devlab")
+            .put("backend", "android-native")
+            .put("webViewRequired", false)
             .put("action", action)
-            .put("cwd", shell.optString("cwd", cwd))
-            .put("value", shell.opt("result") ?: JSONObject.NULL)
+            .put("value", value)
     }
 }
 
@@ -520,6 +534,8 @@ private object RiftOsKeyboardAgent {
     private const val RIFTOS_PACKAGE = "com.riftos.app"
     private const val SAMSUNG_KEYBOARD_PACKAGE = "com.samsung.android.honeyboard"
     private const val MAX_KEY_LABEL_CHARS = 24
+    private const val MAX_KEYBOARD_SCAN_NODES = 4096
+    private const val MAX_KEY_RAW_FIELD_CHARS = 128
     private val functionKeys = setOf("space", "enter", "done", "next", "go", "search", "shift", "backspace", "symbols", "abc")
 
     fun execute(context: Context, args: JSONObject): JSONObject {
@@ -591,13 +607,16 @@ private object RiftOsKeyboardAgent {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         val matches = LinkedHashMap<String, AccessibilityNodeInfo>()
         queue.add(root)
-        while (queue.isNotEmpty()) {
+        var scanned = 0
+        while (queue.isNotEmpty() && scanned < MAX_KEYBOARD_SCAN_NODES) {
             val node = queue.removeFirst()
+            scanned++
             if (node.packageName?.toString() == RIFTOS_PACKAGE && node.isVisibleToUser && node.isEnabled && node.isEditable && node.isFocused) {
                 matches.putIfAbsent(identity(node), node)
             }
             for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
+        require(queue.isEmpty()) { "RiftOS accessibility tree exceeds $MAX_KEYBOARD_SCAN_NODES-node keyboard scan limit" }
         if (matches.size > 1) throw IllegalStateException("RiftOS exposes multiple focused editable fields")
         return matches.values.firstOrNull()
     }
@@ -606,8 +625,10 @@ private object RiftOsKeyboardAgent {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         val matches = LinkedHashMap<String, AccessibilityNodeInfo>()
         queue.add(root)
-        while (queue.isNotEmpty()) {
+        var scanned = 0
+        while (queue.isNotEmpty() && scanned < MAX_KEYBOARD_SCAN_NODES) {
             val node = queue.removeFirst()
+            scanned++
             if (node.packageName?.toString() == SAMSUNG_KEYBOARD_PACKAGE && node.isVisibleToUser && node.isEnabled && node.isClickable) {
                 val label = keyLabel(node)
                 if (label.isNotEmpty() && keyEligible(label) && normalizeKey(label) == target) {
@@ -616,6 +637,7 @@ private object RiftOsKeyboardAgent {
             }
             for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
+        require(queue.isEmpty()) { "Samsung Keyboard tree exceeds $MAX_KEYBOARD_SCAN_NODES-node scan limit" }
         if (matches.size > 1) {
             throw IllegalArgumentException("Samsung Keyboard key is ambiguous; use a more specific key label")
         }
@@ -624,8 +646,8 @@ private object RiftOsKeyboardAgent {
 
     private fun keyLabel(node: AccessibilityNodeInfo): String {
         if (node.isPassword) return ""
-        return node.contentDescription?.toString()?.trim().takeUnless { it.isNullOrEmpty() }
-            ?: node.text?.toString()?.trim().orEmpty()
+        return node.contentDescription?.toString()?.take(MAX_KEY_RAW_FIELD_CHARS)?.trim().takeUnless { it.isNullOrEmpty() }
+            ?: node.text?.toString()?.take(MAX_KEY_RAW_FIELD_CHARS)?.trim().orEmpty()
     }
 
     private fun keyEligible(label: String): Boolean {
@@ -657,7 +679,7 @@ object RiftOsLocalAgent {
 
     fun execute(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
-        if (op == "devlab") return RiftDevLabLocalAgent.execute(args)
+        if (op == "devlab") return RiftDevLabLocalAgent.execute(context, args)
         if (op == "keyboard") return RiftOsKeyboardAgent.execute(context, args)
         if (op == "browser-inspect") {
             require(context is MainActivity) { "RiftBrowser inspector requires the active RiftOS activity" }

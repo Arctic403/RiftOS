@@ -1,46 +1,141 @@
 # Rift Project Exporter
 
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
 ## Purpose
 
-`RiftProjectExporter` streams a deterministic, bounded full-source snapshot for offline/project-wide audits without forcing a single oversized MCP response.
+`RiftProjectExporter` produces deterministic paged UTF-8 source snapshots for project-wide audits without one unbounded MCP payload.
 
 ## Source ownership
 
-`android/app/src/main/java/com/riftos/app/RiftProjectExporter.kt`.
+Primary:
+- `RiftProjectExporter.kt`
 
-Entry points: `export(...)` and `snapshotId(root)`.
+Callers:
+- `RiftToolSandbox` workspace export and expected-export-snapshot guard.
+- `RiftMcpServer` summarizes export structured content to avoid duplicating raw page source.
 
-## Export model
+## Deterministic scan
 
-The exporter scans eligible source files under a chosen workspace root, computes path/size/SHA-256 metadata and derives a deterministic snapshot ID. Pages are requested with an opaque cursor containing file index/byte offset. Large UTF-8 files are split only at safe UTF-8 boundaries. The client continues using `nextCursor` and the original expected snapshot until `done=true`.
+Eligible files are walked recursively and sorted by project-relative path.
+
+Each source row records:
+- path;
+- byte size;
+- SHA-256.
+
+Snapshot id is SHA-256 over the ordered sequence of path + file SHA pairs.
+
+Unchanged eligible source therefore produces the same snapshot id regardless of paging.
 
 ## Exclusions
 
-Build outputs, ignored directories, binary files, known secret/credential extensions and other non-source material are skipped. A bounded sample of skip reasons may be reported. The goal is source auditability, not arbitrary binary exfiltration.
+Ignored directories include common VCS/build/cache/vendor/virtual-env outputs.
 
-## Why this boundary exists
+Files are skipped when:
+- known secret/config name;
+- name begins `.env`;
+- secret extension such as keystore/jks/p12/pfx/pem/key;
+- known binary extension;
+- text file exceeds 16 MiB;
+- first 8192 bytes contain NUL.
 
-Code Mode search/ranged reads are ideal for surgical work; a full audit sometimes needs every eligible source byte. Paging keeps relay/tool envelopes below their size limits and makes workspace-change detection explicit.
+Skip counts are reported on the first page, with at most 120 sampled skipped entries.
+
+This exporter is for source audit, not arbitrary binary/credential exfiltration.
+
+## Page bounds
+
+Requested page size is clamped:
+- minimum 64 KiB;
+- default 320 KiB;
+- maximum 400 KiB.
+
+One source chunk is at most 96 KiB.
+
+Rows are reduced as needed to fit the page budget. A tiny first row may still be emitted to make progress.
+
+`responseBytes` reports the final encoded response size.
+
+## Cursor
+
+Cursor format:
+`<fileIndex>:<byteOffset>`
+
+Blank or `0` means `0:0`.
+
+Validation:
+- two numeric components;
+- file index 0..fileCount;
+- nonnegative offset;
+- end-of-project cursor requires offset 0;
+- per-file offset must not exceed file bytes;
+- a nonterminal offset must land on a UTF-8 code-point boundary.
+
+Chunk end is also backed up to a valid UTF-8 boundary.
+
+The UTF-8 start-boundary and terminal-cursor checks were added during this audit to reject forged/misaligned continuation cursors.
+
+## Snapshot continuation
+
+Every page computes the current eligible-source snapshot.
+
+When `expectedSnapshot` is supplied and differs, export aborts and tells the caller to restart from cursor 0.
+
+A correct paged client carries the initial snapshot id into every continuation request.
+
+## Entry format
+
+Each returned chunk includes:
+- path;
+- whole-file SHA-256;
+- whole-file size;
+- byteStart;
+- byteEnd;
+- complete;
+- UTF-8 content.
+
+`nextCursor` is null only when the entire eligible source set is complete.
+
+## Non-ownership boundaries
+
+Exporter does not own:
+- workspace containment -> Sandbox;
+- targeted reads/search -> Sandbox;
+- MCP response framing -> Server;
+- mutation or patching.
 
 ## Critical invariants
 
-- Continuation must reject if the source snapshot changed.
-- Cursor parsing must reject malformed/out-of-range values.
-- UTF-8 chunks must not split inside a multibyte character.
-- Secret/binary/build exclusions are fail-safe.
-- Per-page and total metadata stay deterministic for the same tree.
+- deterministic sorted scan;
+- snapshot covers every eligible source file hash;
+- secrets/binaries/build outputs excluded;
+- max source file 16 MiB;
+- page 64..400 KiB;
+- chunk <=96 KiB;
+- cursor cannot split UTF-8;
+- changed source invalidates continuation;
+- exporter never mutates workspace.
 
 ## Failure signatures
 
-- Continuation says snapshot changed -> source really changed or snapshot scan is nondeterministic.
-- File content corrupt at page boundary -> UTF-8 boundary logic.
-- Sensitive/non-source file appears -> `skipReason`/binary detection regression.
-- Huge response -> max-byte clamp/page assembly.
+- unchanged tree produces different snapshot -> ordering/hash regression;
+- changed source continues under old snapshot -> stale-audit regression;
+- secret/binary appears -> filtering regression;
+- UTF-8 corruption at continuation -> cursor/boundary regression;
+- forged end cursor with nonzero offset accepted -> cursor regression;
+- response grows far beyond configured page budget -> paging regression.
 
 ## Fix map
 
-Full-project export filtering/paging/snapshot semantics belong here. Ordinary targeted reads/search belong in `RiftToolSandbox`. Server-side duplicate structured summary behavior belongs in `RiftMcpServer`.
+Scanning/filtering/snapshot/cursor/chunking -> `RiftProjectExporter.kt`.
+
+Workspace scope -> Sandbox.
+
+MCP structured-content compaction -> Server.
 
 ## Validation
 
-Test empty projects, many files, one large UTF-8 file with multibyte characters, binary/secret/build exclusions, cursor continuation, modified source between pages and deterministic snapshot IDs across repeated unchanged exports.
+Second audit must recheck ignored/secret/binary rules, deterministic ordering, snapshot formula, 64/320/400 KiB page bounds, 96 KiB chunks, 16 MiB source cap, skip-sample 120, cursor/end/UTF-8 validation and expected-snapshot rejection.

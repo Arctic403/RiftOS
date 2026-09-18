@@ -3,11 +3,10 @@ import assert from 'node:assert/strict';
 
 const read=file=>fs.readFileSync(file,'utf8');
 const runner=read('android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt');
-const dispatcher=read('android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt');
+const services=read('android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt');
 const client=read('android/app/src/main/java/com/riftos/app/RiftLlmDevClient.kt');
 const bridge=read('src/riftllm-bridge.js');
 const gradle=read('android/app/build.gradle.kts');
-const core=read('src/riftcore.js');
 
 assert.match(runner,/PACK_MAGIC = "RIFT_TRAIN_DATA_V1\\n"/);
 assert.match(runner,/TOKENIZER_ID = "rift-token-b-balanced-v2"/);
@@ -30,15 +29,20 @@ assert.doesNotMatch(runner,/optString\("path"|getString\("path"/);
 for(const method of ['train_data_begin','train_data_append','train_data_commit','train_data_status','train_canary_start','train_canary_status']){
   assert.ok(client.includes(`"${method}" to "${method}"`),`missing fixed training provider method ${method}`);
 }
-assert.match(dispatcher,/"riftllm\.train-data" -> RiftTrainDataTaskRunner\.execute\(activity\.applicationContext, riftLlmDev, args\)/);
-assert.match(dispatcher,/method in setOf\("vortex\.agent", "riftos\.agent", "riftllm\.dev", "riftllm\.train-data"\) -> agentExecutor/);
+for (const pair of [
+  ['train-data-status','"status"'], ['train-data-build','"build"'], ['train-data-build-status','"build-status"'],
+  ['train-data-upload','"upload"'], ['train-data-remote-status','"remote-status"'],
+  ['train-canary-start','"canary-start"'], ['train-canary-status','"canary-status"']
+]) {
+  assert.ok(services.includes(`"${pair[0]}" -> RiftTrainDataTaskRunner.execute`), `native shell service missing ${pair[0]}`);
+  assert.ok(services.includes(`.put("op",${pair[1]})`), `native shell service op mismatch for ${pair[0]}`);
+}
 assert.match(gradle,/RiftTrainDataTaskRunner\.kt/);
-assert.match(core,/if\(method==="riftllm\.train-data"\)return 2\*60\*1000/);
 
 for(const command of ['train-data-status','train-data-build','train-data-build-status','train-data-upload','train-data-remote-status','train-canary-start','train-canary-status']){
-  assert.ok(bridge.includes(command),`missing fixed training command ${command}`);
+  assert.ok(bridge.includes(command),`missing fixed reference training command ${command}`);
 }
-assert.match(bridge,/core\.native\.call\("riftllm\.train-data",\{op\}\)/);
 assert.doesNotMatch(bridge,/train-data-build <path|train-canary-start <path|train-data-upload <path/);
+assert.equal(fs.existsSync('android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt'), false);
 
-console.log('RiftLLM fixed training-data/canary bridge contract OK');
+console.log('RiftLLM fixed training-data/canary native service contract OK');

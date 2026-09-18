@@ -3,6 +3,10 @@ import vm from 'node:vm';
 
 const source = readFileSync('android/app/src/main/assets/riftbrowser-mcp-app.js', 'utf8');
 
+if (!source.includes('toolExecutionArmed = true;')) throw new Error('Browser MCP must arm on a new user turn');
+if (!source.includes('contextSentForRoute = true;')) throw new Error('Browser MCP must stage context once per route');
+if (source.includes('.click()')) throw new Error('Browser MCP compatibility must not auto-click Send');
+
 function extractFunction(name) {
   const needle = `function ${name}(`;
   const start = source.indexOf(needle);
@@ -42,7 +46,10 @@ const context = {
   CALL_OPEN: '[RIFT_CALL]',
   CALL_CLOSE: '[RIFT_END]',
   RESULT_MARKER: '[RIFT_RESULT]',
-  MAX_RESULT_CHARS: 48000
+  MAX_RESULT_CHARS: 48000,
+  MAX_RAW_CALL_CHARS: 512000,
+  MAX_RAW_PATH_DEPTH: 24,
+  MAX_RAW_ARRAY_INDEX: 4096
 };
 vm.createContext(context);
 vm.runInContext(names.map(extractFunction).join('\n\n'), context);
@@ -62,6 +69,11 @@ assert(nested.errors.length === 0 && !nested.incomplete, 'nested command should 
 assert(Array.isArray(nested.calls[0].args.operations), 'numeric dotted paths should create arrays');
 assert(nested.calls[0].args.operations[0].path === 'workspace/My Project/Main.java', 'quoted string should preserve spaces');
 assert(nested.calls[0].args.operations[1].text === 'hello\nworld', 'heredoc should preserve multiline text');
+
+const blockedPrototype = context.parseRawCallEnvelopes(`[RIFT_CALL]\ncall bad-1 rift_workspace_exec\nset __proto__.polluted true\n[RIFT_END]`);
+assert(blockedPrototype.errors.length === 1, 'prototype path must be rejected');
+const blockedIndex = context.parseRawCallEnvelopes(`[RIFT_CALL]\ncall bad-2 rift_workspace_exec\nset operations.999999.op stat\n[RIFT_END]`);
+assert(blockedIndex.errors.length === 1, 'oversized array index must be rejected');
 
 const partial = context.parseRawCallEnvelopes(`[RIFT_CALL]\ncall write-2 rift_write_text\nset text <<END\nabc\n[RIFT_END]`);
 assert(partial.incomplete, 'missing heredoc delimiter should be incomplete');

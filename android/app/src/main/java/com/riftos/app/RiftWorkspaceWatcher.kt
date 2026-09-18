@@ -7,11 +7,13 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Recursive, workspace-only filesystem watcher used by the local Rift Workspace HTML surface.
+ * Recursive, workspace-only filesystem watcher feeding Workspace Records plus an optional
+ * bounded event sink.
  *
- * It observes filesDir/riftfs/workspace directly, so changes made by MCP tools, RiftFS UI,
- * git/process work, or any other local writer become visible to the HTML surface without
- * exposing a general filesystem bridge to that page.
+ * It observes filesDir/riftfs/workspace directly, so changes made by MCP tools, native Files,
+ * Git/process work or another local writer become visible to the shared records layer. The
+ * current MainActivity supplies a no-op external event sink; the retained HTML workspace surface
+ * is not the live built-in consumer.
  */
 class RiftWorkspaceWatcher(
     activity: MainActivity,

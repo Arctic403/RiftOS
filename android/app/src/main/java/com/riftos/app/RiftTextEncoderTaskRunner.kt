@@ -53,6 +53,8 @@ object RiftTextEncoderTaskRunner {
         val maxTokenBytes: Int
     )
 
+    private val frozenCandidateIds = setOf("rift-token-b-balanced-v2")
+
     private val candidates = mapOf(
         "train-a" to Candidate(
             action = "train-a",
@@ -344,13 +346,14 @@ object RiftTextEncoderTaskRunner {
         val candidateRows = JSONArray()
         for (candidate in candidates.values.sortedBy { it.action }) {
             val config = exactFile(root, candidate.configRelative, mustExist = false)
-            val recovery = recoverOutputPair(root, candidate)
-            val paths = outputPaths(root, candidate)
+            val paths = outputPaths(root, candidate, createParent = false)
+            val recovery = inspectOutputState(candidate, paths)
             val pairValid = outputPairValid(candidate, paths.artifact, paths.manifest)
             val candidateMetadata = metadataByTraining[candidate.trainingRelative]
             candidateRows.put(JSONObject()
                 .put("action", candidate.action)
                 .put("candidateId", candidate.candidateId)
+                .put("frozen", candidate.candidateId in frozenCandidateIds)
                 .put("scoreMode", candidate.scoreMode)
                 .put("trainingRelative", candidate.trainingRelative)
                 .put("trainingSourceAvailable", candidateMetadata != null)
@@ -364,7 +367,8 @@ object RiftTextEncoderTaskRunner {
                 .put("artifact", fileInfo(root, paths.artifact))
                 .put("manifest", fileInfo(root, paths.manifest))
                 .put("artifactManifestPairValid", pairValid)
-                .put("outputRecovery", recovery))
+                .put("outputState", recovery)
+                .put("recoveryPerformed", false))
         }
         return value.put("candidates", candidateRows)
             .put("trainingJob", trainingJobJson())
@@ -411,6 +415,9 @@ object RiftTextEncoderTaskRunner {
     }
 
     private fun startTraining(context: Context, candidate: Candidate): JSONObject {
+        require(candidate.candidateId !in frozenCandidateIds) {
+            "${candidate.candidateId} is frozen and cannot be retrained or overwritten by Experimental RiftCLI"
+        }
         synchronized(jobLock) {
             val current = activeJob
             require(current == null || (current.state != "queued" && current.state != "running" && current.state != "cancelling")) {
@@ -898,11 +905,15 @@ object RiftTextEncoderTaskRunner {
         return if (output == out.size) out to merged else out.copyOf(output) to merged
     }
 
-    private fun outputPaths(root: File, candidate: Candidate): OutputPaths {
+    private fun outputPaths(root: File, candidate: Candidate, createParent: Boolean = true): OutputPaths {
         val artifact = exactFile(root, candidate.outputRelative, mustExist = false)
         val parent = artifact.parentFile ?: throw IllegalArgumentException("tokenizer output has no parent")
-        require(parent.exists() || parent.mkdirs()) { "could not create tokenizer output directory" }
-        require(parent.isDirectory) { "tokenizer output parent is not a directory" }
+        if (createParent) {
+            require(parent.exists() || parent.mkdirs()) { "could not create tokenizer output directory" }
+            require(parent.isDirectory) { "tokenizer output parent is not a directory" }
+        } else if (parent.exists()) {
+            require(parent.isDirectory) { "tokenizer output parent is not a directory" }
+        }
         val manifest = File(parent, artifact.name + ".manifest.json")
         return OutputPaths(
             artifact = artifact,
@@ -974,6 +985,25 @@ object RiftTextEncoderTaskRunner {
         require(artifactText.contains("\nvocab_size=$VOCAB_SIZE\n")) { "artifact vocabulary mismatch" }
         true
     }.getOrDefault(false)
+
+    private fun inspectOutputState(candidate: Candidate, paths: OutputPaths): String {
+        val finalPresent = paths.artifact.exists() || paths.manifest.exists()
+        val finalValid = outputPairValid(candidate, paths.artifact, paths.manifest)
+        val staged = paths.stagedArtifact.exists() || paths.stagedManifest.exists()
+        val backups = paths.backupArtifact.exists() || paths.backupManifest.exists()
+        val marker = paths.marker.exists()
+        return when {
+            marker && finalValid -> "committed-marker-cleanup-pending"
+            marker && backups -> "interrupted-commit-recovery-required"
+            marker -> "interrupted-first-commit-recovery-required"
+            staged -> "stale-stage-cleanup-required"
+            backups && finalValid -> "stale-backup-cleanup-required"
+            backups -> "backup-recovery-required"
+            finalPresent && !finalValid -> "invalid-pair"
+            finalValid -> "clean-valid-pair"
+            else -> "clean"
+        }
+    }
 
     private fun cleanupCommittedTransaction(paths: OutputPaths): Boolean {
         var pending = false

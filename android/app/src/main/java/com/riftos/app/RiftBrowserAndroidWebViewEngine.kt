@@ -27,10 +27,10 @@ import org.json.JSONObject
 import java.net.URLConnection
 
 /** Android System WebView compatibility backend for RiftBrowserEngine. */
-class AndroidWebViewBrowserEngine(
+class RiftBrowserAndroidWebViewEngine(
     private val activity: Activity,
     private val launchFileChooser: (ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams?) -> Boolean,
-    private val stateChanged: () -> Unit
+    private val rendererGone: (String) -> Unit
 ) : RiftBrowserEngine {
     companion object {
         private val EXTERNAL_SCHEMES = setOf("mailto", "tel", "geo")
@@ -91,7 +91,7 @@ class AndroidWebViewBrowserEngine(
     override fun currentUrl(): String = if (mainRendererGone) "" else webView.url.orEmpty()
 
     override fun loadUrl(url: String) {
-        check(!mainRendererGone) { "RiftBrowser renderer is recovering" }
+        check(!mainRendererGone) { "RiftBrowser renderer is unavailable" }
         crashed = false
         inspectorActive = false
         updateCookiePolicy(url)
@@ -114,7 +114,7 @@ class AndroidWebViewBrowserEngine(
         desktopMode = enabled
         applyBrowserIdentity(webView.settings, enabled)
         crashed = false
-        if (current.isNotBlank() && current != "about:blank") webView.reload() else stateChanged()
+        if (current.isNotBlank() && current != "about:blank") webView.reload()
     }
 
     override fun inspect(request: JSONObject, callback: (JSONObject?, Throwable?) -> Unit) {
@@ -140,7 +140,6 @@ class AndroidWebViewBrowserEngine(
                 }
                 inspectorActive = envelope.optBoolean("active", inspectorActive)
                 callback(envelope.optJSONObject("result") ?: JSONObject(), null)
-                stateChanged()
             } catch (error: Throwable) {
                 callback(null, error)
             }
@@ -388,7 +387,6 @@ class AndroidWebViewBrowserEngine(
                 callback?.invoke(origin, false, false)
             }
 
-            override fun onProgressChanged(view: WebView?, newProgress: Int) { stateChanged() }
         }
     }
 
@@ -431,13 +429,12 @@ class AndroidWebViewBrowserEngine(
             }
 
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                RiftRendererCrashGuard.record(activity, "browser-popup", detail)
+                RiftBrowserRendererCrashGuard.record(activity, "browser-popup", detail)
                 val hostView = popupHost
                 popupWebView = null
                 popupHost = null
                 if (hostView != null) runCatching { container.removeView(hostView) }
-                RiftRendererCrashGuard.destroyDeadWebView(view)
-                runCatching { stateChanged() }
+                RiftBrowserRendererCrashGuard.destroyDeadWebView(view)
                 return true
             }
         }
@@ -488,7 +485,6 @@ class AndroidWebViewBrowserEngine(
         host.bringToFront()
         transport.webView = popup
         resultMsg.sendToTarget()
-        stateChanged()
         return true
     }
 
@@ -521,29 +517,22 @@ class AndroidWebViewBrowserEngine(
                 crashed = false
                 inspectorActive = false
                 updateCookiePolicy(url)
-                stateChanged()
                 super.onPageStarted(view, url, favicon)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 CookieManager.getInstance().flush()
                 mcpApp.ensureInjected(url)
-                stateChanged()
                 super.onPageFinished(view, url)
             }
 
-            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
-                stateChanged()
-                super.doUpdateVisitedHistory(view, url, isReload)
-            }
-
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                val lastUrl = view.url.orEmpty()
                 mainRendererGone = true
                 crashed = true
-                RiftRendererCrashGuard.record(activity, "browser-main", detail)
-                RiftRendererCrashGuard.destroyDeadWebView(view)
-                runCatching { stateChanged() }
-                RiftRendererCrashGuard.requestShellRecovery(activity)
+                RiftBrowserRendererCrashGuard.record(activity, "browser-main", detail)
+                RiftBrowserRendererCrashGuard.destroyDeadWebView(view)
+                rendererGone(lastUrl)
                 return true
             }
         }
@@ -596,7 +585,6 @@ class AndroidWebViewBrowserEngine(
             runCatching { popup.removeAllViews() }
             runCatching { popup.destroy() }
         }
-        stateChanged()
     }
 
     private fun openExternal(uri: Uri): Boolean {

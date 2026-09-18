@@ -104,4 +104,4 @@ rift-cli riftpp preview <workspace-script.riftpp> [task-name]
 - no direct Local Agent invocation;
 - no generic script runner;
 - no arbitrary backend configuration or network endpoint in source;
-- no changes to RiftLLM or its tokenizer/training stack.
+- the V0 language/compiler/coordinator itself makes no changes to RiftLLM or its tokenizer/training stack. The separate, explicitly enabled `rift-cli tokenizer` development command family is a different subsystem surface documented by the parent Experimental RiftCLI README and is not authority granted by V0 source.

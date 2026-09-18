@@ -1,54 +1,107 @@
-# RiftBrowser Engine
+# RiftBrowser Engine Contract
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-The browser engine is the renderer abstraction behind RiftBrowser. `RiftBrowserEngine` defines the small lifecycle/navigation contract; `AndroidWebViewBrowserEngine` implements it using Android System WebView.
+`RiftBrowserEngine` is the renderer-neutral contract used by `RiftBrowserWindow`.
+
+It lets RiftBrowser coordinate renderer Views, navigation, inspection, lifecycle and state without making Desktop depend on Android WebView.
 
 ## Source ownership
 
-- `RiftBrowserEngine.kt` — interface: `currentUrl`, `loadUrl`, back/forward capability/actions, `reload`, bounded `inspect`, `state`, `onResume`, `onPause`, `destroy`.
-- `AndroidWebViewBrowserEngine.kt` — WebView implementation; concrete backend guide: [`android-webview/README.md`](android-webview/README.md).
+- `RiftBrowserEngine.kt` — live interface.
+- `RiftBrowserWindow.kt` — only live coordinator/consumer.
+- `RiftBrowserAndroidWebViewEngine.kt` — only current implementation.
 
-## Current WebView responsibilities
+## Contract
 
-The Android engine configures WebView settings, cookies, normal navigation, popup/auth handling, file chooser delegation, downloads, SSL cancellation, external scheme handoff, render-process failure state, progress/state callbacks and exact-origin MCP bridge installation.
+Every engine exposes:
+- `view`;
+- `rendererId`;
+- current URL;
+- load URL;
+- back/forward capability and actions;
+- reload;
+- desktop-mode toggle;
+- bounded inspect;
+- state snapshot;
+- resume;
+- pause;
+- destroy.
 
-It denies WebView permission requests by default and does not automatically grant camera/microphone/geolocation. Arbitrary file/content access is disabled. Safe Browsing is enabled where supported and mixed content remains blocked.
+`rendererId` identifies the concrete backend and is included by the current backend in its state.
 
-## State flow
+## Actual consumer use
 
-Engine `state()` exposes renderer-facing state consumed by `RiftBrowserWindow`/shell, including URL/navigation capability, title/progress, crash status and whether temporary inspector mutations are active. Page start/finish/history/progress callbacks trigger the supplied `stateChanged` callback.
+`RiftBrowserWindow` directly uses:
+- `view`;
+- `currentUrl/loadUrl`;
+- back/forward methods;
+- reload;
+- desktop mode;
+- inspect;
+- state;
+- resume/pause;
+- destroy.
 
-`inspect(request, callback)` is a renderer-neutral, bounded live-page maintenance surface. The current backend may return structural DOM metadata and apply temporary presentation/content changes, but it must not expose arbitrary JavaScript, form values, text/HTML dumps, cookies, storage, headers or network-capable style injection.
+Some BrowserWindow functions exposing forward/reload/desktop-mode are not currently wired to native UI, but the engine methods are still live parts of the coordinator contract.
 
-## Why this boundary exists
+## State model
 
-RiftBrowser should be a RiftOS concept, not a synonym for WebView. Keeping WebView-specific code here gives a migration seam for Servo/Gecko/Chromium or another renderer while preserving desktop and MCP architecture.
+`state()` is pull-based.
+
+The engine interface does **not** define a state-change callback. Browser state is pull-based. The current Android WebView backend has only one implementation-specific notification: main-renderer loss, which lets BrowserWindow perform one bounded same-tab engine replacement. That recovery callback is not part of the renderer-neutral interface contract.
+
+## Renderer replacement boundary
+
+A replacement backend must:
+- provide one Android `View`;
+- obey BrowserWindow visibility/lifecycle;
+- provide accurate history/navigation state;
+- implement bounded inspection or explicitly compatible behavior;
+- clean resources on destroy;
+- avoid taking Desktop/window/shell/MCP authority.
+
+Backend-specific auth, downloads, cookies, network policy and native integration belong to the backend subsystem, not this interface.
+
+## Non-ownership boundaries
+
+Engine contract does not own:
+- outer Desktop geometry/visibility;
+- native browser controls;
+- Android WebView settings;
+- MCP page bridge implementation;
+- popup/download/file chooser platform policy.
 
 ## Critical invariants
 
-- Never broaden guest WebView native access to solve application-layer issues.
-- SSL errors are cancelled, not ignored.
-- Permission prompts are denied unless an explicit future broker is designed.
-- Popup/auth windows must be cleaned up and not become orphan native surfaces.
-- Exact-origin MCP bridge installation remains origin-gated.
-- `destroy()` must clean popup, bridge and WebView resources.
+- interface remains renderer-neutral;
+- Desktop never depends on WebView-specific types;
+- BrowserWindow can pause/destroy any engine through the contract;
+- state is pull-based at the coordinator boundary;
+- no fake callback requirement is documented;
+- backend cannot become native shell/filesystem authority through this interface.
 
 ## Failure signatures
 
-- Blank/crashed page after renderer death -> `onRenderProcessGone`/recreation policy.
-- Login popup loops -> popup redirect/auth-flow logic/cookie policy.
-- Download/file chooser unavailable -> engine callbacks + `MainActivity` delegation.
-- ChatGPT opens but tools absent -> MCP bridge/tool catalog, not generic WebView navigation.
+- WebView-specific method/type added to `RiftBrowserEngine` -> abstraction regression;
+- BrowserWindow casts engine to WebView backend -> abstraction regression;
+- replacement backend cannot be paused/destroyed through interface -> lifecycle contract failure;
+- docs require a state callback not present in interface -> documentation drift.
 
 ## Fix map
 
-WebView setting/cookie/auth/download/navigation/render-process issues belong here. Window geometry belongs in `RiftBrowserWindow`. Desktop behavior belongs in RiftDesktop. Tool execution never belongs in the engine.
+Interface shape -> `RiftBrowserEngine.kt`.
+
+Coordinator behavior -> `RiftBrowserWindow.kt`.
+
+WebView-specific behavior -> Android WebView backend subsystem.
 
 ## Validation
 
-Test standard HTTPS navigation, OAuth-style popup/redirect flows, file chooser, download manager, external `mailto/tel/geo`, SSL error cancellation, minimize/resume and renderer process failure. Re-run MCP exact-origin tests after changing origin/page lifecycle callbacks.
+Source verification must compare every interface member to the coordinator and current implementation, verify there is exactly one current implementation, and ensure no WebView-specific dependency leaks into the interface.
 
-## Engine replacement checklist
-
-A replacement engine must satisfy every `RiftBrowserEngine` method, provide equivalent state callbacks, fit the owned native renderer container, obey visibility/lifecycle, support required authentication/file flows, and preserve the exact-origin capability boundary without exposing general native APIs.
+Device behavior is validated through the concrete backend audit.

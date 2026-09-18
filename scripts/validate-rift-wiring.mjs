@@ -6,6 +6,7 @@ const root = process.cwd();
 const failures = [];
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const exists = relative => fs.existsSync(path.join(root, relative));
+const fail = message => failures.push(message);
 
 function walk(relative) {
   const base = path.join(root, relative);
@@ -18,55 +19,10 @@ function walk(relative) {
   }
   return out;
 }
-
-function requireFile(relative, reason) {
-  if (!exists(relative)) failures.push(`${reason}: ${relative}`);
+function requireFile(relative, reason = 'required file is missing') {
+  if (!exists(relative)) fail(`${reason}: ${relative}`);
 }
 
-function validateHtmlAssets(relative) {
-  const text = read(relative);
-  for (const match of text.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
-    const href = match[1].trim();
-    if (!href || href.startsWith('#') || /^(?:https?:|data:|mailto:|tel:)/i.test(href)) continue;
-    const clean = href.split(/[?#]/)[0];
-    const resolved = path.relative(root, path.resolve(path.dirname(path.join(root, relative)), clean)).replaceAll('\\', '/');
-    requireFile(resolved, `HTML asset reference from ${relative} is missing`);
-  }
-}
-
-function validateCssAssets(relative) {
-  const text = read(relative);
-  for (const match of text.matchAll(/url\(([^)]+)\)/g)) {
-    const raw = match[1].trim().replace(/^['"]|['"]$/g, '');
-    if (!raw || raw.startsWith('#') || /^(?:https?:|data:)/i.test(raw)) continue;
-    const clean = raw.split(/[?#]/)[0];
-    const resolved = path.relative(root, path.resolve(path.dirname(path.join(root, relative)), clean)).replaceAll('\\', '/');
-    requireFile(resolved, `CSS asset reference from ${relative} is missing`);
-  }
-}
-
-function routeMethods(text, startMarker, endMarker) {
-  const start = text.indexOf(startMarker);
-  if (start < 0) return new Set();
-  const end = endMarker ? text.indexOf(endMarker, start) : text.length;
-  const block = text.slice(start, end < 0 ? text.length : end);
-  const methods = new Set();
-  for (const line of block.split('\n')) {
-    const arrow = line.indexOf('->');
-    if (arrow < 0) continue;
-    const left = line.slice(0, arrow);
-    for (const match of left.matchAll(/"([^"]+)"/g)) methods.add(match[1]);
-  }
-  return methods;
-}
-
-function extractLiteralNativeCalls(text) {
-  const methods = new Set();
-  for (const match of text.matchAll(/(?:core|this)\.native\.call\(\s*(["'])([^"']+)\1/g)) methods.add(match[2]);
-  return methods;
-}
-
-// Every active JavaScript/MJS file must at least parse.
 const syntaxFiles = [
   ...walk('src').filter(file => file.endsWith('.js')),
   ...walk('android/app/src/main/assets').filter(file => file.endsWith('.js')),
@@ -76,59 +32,19 @@ const syntaxFiles = [
 ];
 for (const file of [...new Set(syntaxFiles)].sort()) {
   const result = spawnSync(process.execPath, ['--check', path.join(root, file)], { encoding: 'utf8' });
-  if (result.status !== 0) failures.push(`JavaScript syntax check failed: ${file}: ${(result.stderr || result.stdout || '').trim()}`);
+  if (result.status !== 0) fail(`JavaScript syntax check failed: ${file}: ${(result.stderr || result.stdout || '').trim()}`);
 }
 
-// Android shell module graph: index -> riftandroid-entry -> every src/*.js module.
-validateHtmlAssets('index.html');
-validateHtmlAssets('workspace-live/index.html');
-for (const css of ['styles.css', 'src/riftdesktop-android.css', 'workspace-live/style.css']) validateCssAssets(css);
-const indexHtml = read('index.html');
-if (!indexHtml.includes('./src/riftandroid-entry.js')) failures.push('index.html does not load src/riftandroid-entry.js');
-const entry = read('src/riftandroid-entry.js');
-const importedModules = new Set([...entry.matchAll(/import\(\s*["']\.\/([^"']+)["']\s*\)/g)].map(match => match[1]));
-const srcModules = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));
-for (const module of srcModules) {
-  if (module === 'riftandroid-entry.js') continue;
-  if (!importedModules.has(module)) failures.push(`active src module is not imported by riftandroid-entry.js: src/${module}`);
-}
-for (const module of importedModules) requireFile(`src/${module}`, 'riftandroid-entry.js imports missing module');
-
-// Android workspace override order is deliberate; JSON RPC must resolve the active adapter at call time.
-const webIndex = entry.indexOf('import("./riftworkspace-web.js")');
-const adapterIndex = entry.indexOf('import("./riftworkspace-android-adapter.js")');
-const liveIndex = entry.indexOf('import("./riftworkspace-live-host.js")');
-if (!(webIndex >= 0 && adapterIndex > webIndex && liveIndex > adapterIndex)) failures.push('workspace module load order must be web -> android-adapter -> live-host');
-const gitIndex = entry.indexOf('import("./riftgit.js")');
-const vaultIndex = entry.indexOf('import("./riftvault.js")');
-const repoIndex = entry.indexOf('import("./riftrepo.js")');
-const memoryIndex = entry.indexOf('import("./riftmemory-control.js")');
-const buildIndex = entry.indexOf('import("./riftbuild.js")');
-const localPlatformIndex = entry.indexOf('import("./riftlocal-platform.js")');
-const riftLlmBridgeIndex = entry.indexOf('import("./riftllm-bridge.js")');
-const devLabIndex = entry.indexOf('import("./riftdevlab.js")');
-const shellIndex = entry.indexOf('import("./riftos.js")');
-if (!(vaultIndex > gitIndex && repoIndex > vaultIndex && memoryIndex > repoIndex && buildIndex > memoryIndex && localPlatformIndex > buildIndex && riftLlmBridgeIndex > localPlatformIndex && devLabIndex > riftLlmBridgeIndex && devLabIndex > liveIndex && shellIndex > devLabIndex)) failures.push('trusted module order must load Git -> Vault -> Repo -> Memory -> Build -> aggregator -> RiftLLM bridge -> Dev Lab -> shell');
-const workspaceWeb = read('src/riftworkspace-web.js');
-const workspaceAdapter = read('src/riftworkspace-android-adapter.js');
-if (!workspaceWeb.includes('const activeWorkspace=window.RiftWorkspace||workspace;')) failures.push('RiftWorkspaceJSON does not resolve the active Android adapter dynamically');
-if (!workspaceAdapter.includes('window.RiftWorkspace=workspace;')) failures.push('Android workspace adapter does not replace window.RiftWorkspace');
-const workspaceRecordsHost = read('src/riftworkspace-live-host.js');
-if (!workspaceRecordsHost.includes('./workspace-live/index.html')) failures.push('Workspace Records host does not reference workspace-live/index.html');
-if (!workspaceRecordsHost.includes('attachShadow({mode:"open"})') || !workspaceRecordsHost.includes('mountWorkspaceRecords(shadow,invoke,subscribe)') || workspaceRecordsHost.includes('<iframe') || /case "write"|case "remove"|case "move"|case "copy"|case "mkdir"/.test(workspaceRecordsHost)) failures.push('Workspace Records trusted-shell mount or read-only UI contract regressed');
-
-// Manifest component wiring: every Activity declaration has source and every Activity source is declared.
 const manifest = read('android/app/src/main/AndroidManifest.xml');
-const manifestActivities = new Set([...manifest.matchAll(/<activity\b[^>]*\bandroid:name="\.([^"]+)"/g)].map(match => match[1]).filter(Boolean));
-for (const activity of manifestActivities) requireFile(`android/app/src/main/java/com/riftos/app/${activity}.kt`, 'AndroidManifest activity has no Kotlin source');
 const kotlinDir = 'android/app/src/main/java/com/riftos/app';
 const kotlinFiles = walk(kotlinDir).filter(file => file.endsWith('.kt'));
+const manifestActivities = new Set([...manifest.matchAll(/<activity\b[^>]*\bandroid:name="\.([^"]+)"/g)].map(match => match[1]));
+for (const activity of manifestActivities) requireFile(`${kotlinDir}/${activity}.kt`, 'AndroidManifest activity has no Kotlin source');
 for (const file of kotlinFiles) {
   const match = read(file).match(/\bclass\s+(\w+)\s*:\s*Activity\s*\(/);
-  if (match && !manifestActivities.has(match[1])) failures.push(`Activity source is not declared in AndroidManifest.xml: ${match[1]}`);
+  if (match && !manifestActivities.has(match[1])) fail(`Activity source is not declared in AndroidManifest.xml: ${match[1]}`);
 }
 
-// Kotlin reachability graph from manifest Activities; catches dead service/helper islands.
 const kotlinTypes = new Map(kotlinFiles.map(file => [path.basename(file, '.kt'), { file, text: read(file) }]));
 const reachable = new Set([...manifestActivities]);
 const queue = [...reachable];
@@ -145,34 +61,95 @@ while (queue.length) {
   }
 }
 for (const [name, node] of kotlinTypes) {
-  if (!reachable.has(name)) failures.push(`Kotlin source is unreachable from an Android manifest Activity: ${node.file}`);
+  if (!reachable.has(name)) fail(`Kotlin source is unreachable from an Android manifest Activity: ${node.file}`);
 }
 
-// Gradle must package the complete shell/runtime asset families.
 const gradle = read('android/app/build.gradle.kts');
-for (const required of ['include("index.html")', 'include("styles.css")', 'include("src/**")', 'include("workspace-live/**")']) {
-  if (!gradle.includes(required)) failures.push(`Android asset sync is missing ${required}`);
+const gradleRequiredKotlin = [...gradle.matchAll(/"(src\/main\/java\/com\/riftos\/app\/[A-Za-z0-9_]+\.kt)"/g)].map(match => `android/app/${match[1]}`);
+const actualKotlin = [...kotlinFiles].sort();
+const declaredKotlin = [...new Set(gradleRequiredKotlin)].sort();
+if (JSON.stringify(declaredKotlin) !== JSON.stringify(actualKotlin)) {
+  const missingFromGradle = actualKotlin.filter(file => !declaredKotlin.includes(file));
+  const staleInGradle = declaredKotlin.filter(file => !actualKotlin.includes(file));
+  fail(`Gradle mandatory Kotlin snapshot is not exact. Missing: ${missingFromGradle.join(', ') || 'none'}; stale: ${staleInGradle.join(', ') || 'none'}`);
+}
+for (const required of [
+  'include("src/riftpp-core.js")',
+  'include("src/riftvm.js")',
+  'validateRiftBrowserWebViewOwnership',
+  'io.github.dokar3:quickjs-kt:1.0.14',
+]) if (!gradle.includes(required)) fail(`Android native/headless Gradle contract is missing ${required}`);
+for (const retired of ['include("index.html")', 'include("styles.css")', 'include("src/**")', 'include("workspace-live/**")']) {
+  if (gradle.includes(retired)) fail(`retired trusted-shell asset packaging returned: ${retired}`);
 }
 
-// Browser-injected assets: only the live registry exists, and native injection must load both assets.
-const bridge = read('android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt');
+const main = read(`${kotlinDir}/MainActivity.kt`);
+const nativeShell = read(`${kotlinDir}/RiftNativeShell.kt`);
+const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
+const runtime = read(`${kotlinDir}/RiftMcpRuntime.kt`);
+const browserWindow = read(`${kotlinDir}/RiftBrowserWindow.kt`);
+const browserHost = read(`${kotlinDir}/RiftBrowserAppHost.kt`);
+const workspaceApps = read(`${kotlinDir}/RiftNativeWorkspaceApps.kt`);
+const browserBridge = read(`${kotlinDir}/RiftBrowserMcpAppBridge.kt`);
+
+for (const retired of [
+  'RiftShellBridge.kt', 'RiftSystemDump.kt', 'AndroidWebViewBrowserEngine.kt',
+  'RiftNativeAppHost.kt', 'RiftPreviewActivity.kt', 'RiftRendererCrashGuard.kt',
+  'RiftNativeDispatcher.kt', 'RiftTransferManifest.kt',
+]) if (exists(`${kotlinDir}/${retired}`)) fail(`retired migration source returned: ${retired}`);
+
+if (/android\.webkit|androidx\.webkit|RiftShellBridge|addJavascriptInterface|loadUrl\(/.test(main)) fail('MainActivity regained renderer/WebView bridge authority');
+for (const required of ['RiftNativeDesktop(', 'RiftBrowserWindow(', 'RiftBrowserAppHost(', 'RiftNativeSystemApps(', 'RiftNativeWorkspaceApps(']) {
+  if (!main.includes(required)) fail(`MainActivity native composition is missing ${required}`);
+}
+if (!main.includes('nativeWorkspaceApps.onActivityResult') || !main.includes('browserWindow.onActivityResult')) fail('MainActivity does not route browser/native Files activity results');
+
+const allowedWebKitOwners = new Set([
+  'RiftBrowserAndroidWebViewEngine.kt', 'RiftBrowserWindow.kt', 'RiftBrowserMcpAppBridge.kt',
+  'RiftBrowserAppHost.kt', 'RiftBrowserPreviewActivity.kt', 'RiftBrowserRendererCrashGuard.kt',
+]);
+for (const file of kotlinFiles) {
+  const text = read(file);
+  const usesWebKit = /import\s+(?:android|androidx)\.webkit\./.test(text) || /\bWebView\s*\(/.test(text);
+  if (usesWebKit && !allowedWebKitOwners.has(path.basename(file))) fail(`WebKit ownership escaped RiftBrowser: ${file}`);
+}
+
+if (!nativeShell.includes('class RiftNativeShell(context: Context) : RiftShellExecutor')) fail('native RiftShell executor is missing');
+if (!nativeShell.includes('.put("webViewRequired", false)')) fail('native RiftShell does not explicitly report WebView-free execution');
+if (!nativeShell.includes('headlessJs.executeRiftpp(args, cwd)')) fail('Rift++ is not routed through the headless runtime');
+if (/compatibilityFallback|RiftShellBridge|android\.webkit/.test(nativeShell)) fail('native RiftShell regained renderer fallback authority');
+if (!runtime.includes('private var nativeShell: RiftNativeShell?') || !runtime.includes('fun shellExecutor(): RiftShellExecutor? = nativeShell')) fail('MCP does not retain process-owned native shell authority');
+if (/registerShellBridge|setCompatibilityFallback|clearCompatibilityFallback/.test(runtime)) fail('MCP runtime regained shell-WebView fallback wiring');
+
+for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()', 'src/riftpp-core.js', 'src/riftvm.js']) {
+  if (!headless.includes(required)) fail(`headless Rift++ runtime is missing ${required}`);
+}
+if (/android\.webkit|WebView|ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
+
+if (!browserWindow.includes('WebChromeClient.FileChooserParams') || !browserWindow.includes('onActivityResult(')) fail('RiftBrowser does not own its file chooser lifecycle');
+if (!browserHost.includes('app.riftos.local') || !browserHost.includes('WebViewCompat.addWebMessageListener')) fail('installed RiftBrowser app host origin/capability bridge is incomplete');
+if (browserBridge.includes('RiftShellBridge') || browserBridge.includes('rift_shell_result')) fail('browser compatibility bridge regained RiftShell execution authority');
+
+for (const required of ['Intent.ACTION_OPEN_DOCUMENT_TREE', 'takePersistableUriPermission', 'DocumentFile.fromTreeUri', 'ANDROID_FILES_ROOT', 'MAX_FILES_ROWS', 'writeDocumentBytes', 'Android provider write verification failed', 'Editor target is not a file']) {
+  if (!workspaceApps.includes(required)) fail(`native Files external-storage contract is missing ${required}`);
+}
+if (/android\.webkit|WebView/.test(workspaceApps)) fail('native workspace apps gained a WebView dependency');
+
+const riftpp = read('src/riftpp-core.js');
+const vm = read('src/riftvm.js');
+if (!riftpp.includes("RIFTPP_CORE_VERSION='0.7.2-bootstrap'") || !riftpp.includes('MAX_VEC_CAPACITY=256')) fail('Rift++ Core 0.7.2 / Vec-256 contract regressed');
+if (!vm.includes('maxVecCapacity:256') || !vm.includes("RIFT_VM_ABI='riftvm-1'")) fail('RiftVM ABI/capacity contract regressed');
+
 for (const asset of ['riftbrowser-mcp-app.js', 'adapters/ai-adapter-registry.js']) {
   requireFile(`android/app/src/main/assets/${asset}`, 'browser injection asset is missing');
-  if (!bridge.includes(asset)) failures.push(`RiftBrowserMcpAppBridge does not load active asset: ${asset}`);
+  if (!browserBridge.includes(asset)) fail(`RiftBrowserMcpAppBridge does not load active asset: ${asset}`);
 }
-const adapterModules = walk('android/app/src/main/assets/adapters').filter(file => file.endsWith('.js'));
-if (adapterModules.length !== 1 || !adapterModules[0].endsWith('/ai-adapter-registry.js')) failures.push(`AI adapter directory contains unreferenced JS modules: ${adapterModules.join(', ')}`);
 
-// Relay config must point at a real worker and a real Durable Object class.
-const wrangler = read('relay/wrangler.jsonc');
-const relayMain = wrangler.match(/"main"\s*:\s*"([^"]+)"/)?.[1];
-if (!relayMain) failures.push('relay/wrangler.jsonc has no main entrypoint');
-else requireFile(`relay/${relayMain}`, 'relay main entrypoint is missing');
-const relayClass = wrangler.match(/"class_name"\s*:\s*"([^"]+)"/)?.[1];
-if (relayClass && relayMain && exists(`relay/${relayMain}`) && !read(`relay/${relayMain}`).includes(`export class ${relayClass}`)) failures.push(`relay Durable Object class is not exported: ${relayClass}`);
-
-// Root package script file references must exist.
 const pkg = JSON.parse(read('package.json'));
+const packageCommands = Object.values(pkg.scripts || {}).join(' && ');
+for (const focusedTest of walk('scripts').filter(file => /^scripts\/test-.*\.mjs$/.test(file))) {
+  if (!packageCommands.includes(`node ${focusedTest}`)) fail(`focused test is not executed by package scripts: ${focusedTest}`);
+}
 for (const [name, command] of Object.entries(pkg.scripts || {})) {
   for (const match of String(command).matchAll(/node(?:\s+--check)?\s+([^\s&]+)/g)) {
     const target = match[1];
@@ -180,169 +157,16 @@ for (const [name, command] of Object.entries(pkg.scripts || {})) {
   }
 }
 
-// Native route sources are also used by the trust-boundary checks below.
-const dispatcher = read('android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt');
-const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
-const nativeDesktopSource = read('android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt');
-const nativeSystemAppsSource = read('android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt');
-
-// RiftShell MCP execution is native-first. The trusted shell WebView is compatibility fallback only; guest browser assets never receive shell authority.
-const browserAdapter = read('android/app/src/main/assets/riftbrowser-mcp-app.js');
-const shellSource = read('src/riftos.js');
-const shellBridgeSource = read('android/app/src/main/java/com/riftos/app/RiftShellBridge.kt');
-const nativeShellSource = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
-const mcpRuntimeSource = read('android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt');
-const browserMcpBridgeSource = read('android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt');
-if (/RiftShellMcp|RiftShellMcpNative|RiftMcpShellNativeResult|rift_shell_result/.test(browserAdapter)) failures.push('guest browser MCP asset contains RiftShell execution/result authority');
-if (!shellSource.includes('window.RiftShellMcpNative = Object.freeze') || !shellSource.includes("method:'mcp.shell.result'")) failures.push('trusted shell does not own the RiftShell MCP shim/result path');
-if (!mainActivity.includes('shellBridge = RiftShellBridge(webView)') || !mainActivity.includes('method == "mcp.shell.result"')) failures.push('MainActivity does not own the shell bridge/result route on the trusted shell WebView');
-if (!manifest.includes('android:launchMode="singleTask"') || !mainActivity.includes('override fun onResume()') || !mainActivity.includes('override fun onWindowFocusChanged(hasFocus: Boolean)') || !mainActivity.includes('RiftMcpRuntime.registerShellBridge(this, shellBridge)') || !mainActivity.includes('RiftMcpRuntime.unregisterShellBridge(shellBridge)') || !mainActivity.includes('shellBridge.close()') || !nativeShellSource.includes('class RiftNativeShell(context: Context) : RiftShellExecutor') || !nativeShellSource.includes('.put("webViewRequired", false)') || !mcpRuntimeSource.includes('fun shellExecutor(): RiftShellExecutor? = nativeShell')) failures.push('MCP RiftShell is not native-first with an identity-safe compatibility fallback');
-if (browserMcpBridgeSource.includes('RiftShellBridge(') || browserMcpBridgeSource.includes('rift_shell_result')) failures.push('browser MCP compatibility bridge still owns shell execution/result routing');
-if (!shellBridgeSource.includes('private val shellWebView: WebView') || !shellBridgeSource.includes('SHELL_TIMEOUT_MS')) failures.push('RiftShellBridge is not bound to the trusted shell WebView with timeout protection');
-if (!shellSource.includes('async function runRiftppShell(') || !shellSource.includes('if(cmd==="riftpp")return runRiftppShell(args,print,state);') || !shellSource.includes('riftpp shell execution denies host imports') || !shellSource.includes('riftpp-shell-self-test/1') || !nativeShellSource.includes('riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / COMPATIBILITY SHELL]')) failures.push('normal RiftShell Rift++ Core command family is incomplete');
-
-// Native method callers and handlers must agree in both directions.
-const nativeDesktopHandlers = routeMethods(
-  nativeDesktopSource,
-  'fun handle(method: String, args: JSONObject): JSONObject = when (method)',
-  'fun handleBack(): Boolean'
-);
-const nativeDesktopRouted = mainActivity.includes('method.startsWith("desktop.")') && mainActivity.includes('nativeDesktop.handle(method, args)');
-if (!nativeDesktopRouted) failures.push('MainActivity does not own the bounded desktop.* router to RiftNativeDesktop');
-const nativeSystemAppHandlers = routeMethods(
-  nativeSystemAppsSource,
-  'fun handle(method: String, args: JSONObject): JSONObject = when (method)',
-  'fun onDesktopClosed(id: String): Boolean'
-);
-const nativeSystemAppsRouted = mainActivity.includes('method.startsWith("system.app.")') && mainActivity.includes('nativeSystemApps.handle(method, args)');
-if (!nativeSystemAppsRouted) failures.push('MainActivity does not own the bounded system.app.* router to RiftNativeSystemApps');
-const supported = new Set([
-  ...routeMethods(dispatcher, 'fun handleAsync(raw: String)', 'fun completeDirectoryPick'),
-  ...routeMethods(dispatcher, 'private fun dispatch(method: String', 'private fun normalizeSegments'),
-  ...routeMethods(mainActivity, 'private fun handleKernelRequest(raw: String)', 'private fun runKernelCommand'),
-  ...(nativeDesktopRouted ? nativeDesktopHandlers : []),
-  ...(nativeSystemAppsRouted ? nativeSystemAppHandlers : []),
-]);
-const nativeCallers = new Set();
-for (const file of srcModules.map(name => `src/${name}`)) {
-  for (const method of extractLiteralNativeCalls(read(file))) nativeCallers.add(method);
-}
-if (/\bnativeCall\s*\(|previousCore\.native\.call\(/.test(workspaceWeb)) failures.push('common RiftWorkspace layer still contains a legacy direct-native workspace path');
-const shellUi = read('src/riftos.js');
-if (shellUi.includes('core.native.call(`browser.window.${method}`')) {
-  for (const match of shellUi.matchAll(/\bnative\(\s*["']([^"']+)["']/g)) nativeCallers.add(`browser.window.${match[1]}`);
-}
-// Shared local-agent shell calls route through core.native.call(nativeMethod, ...), so the
-// route literal lives at the runLocalAgentShell call site rather than inside native.call().
-// Resolve those literals explicitly instead of weakening the orphan-handler check.
-for (const match of shellUi.matchAll(/\brunLocalAgentShell\(\s*["'][^"']+["']\s*,\s*["']([^"']+)["']/g)) {
-  nativeCallers.add(match[1]);
-}
-// Native desktop calls use nativeDesktopCall("window.focus", ...), which expands to
-// core.native.call(`desktop.${method}`, ...). Resolve those literals so typos still fail CI.
-for (const match of shellUi.matchAll(/\bnativeDesktopCall\(\s*["']([^"']+)["']/g)) {
-  nativeCallers.add(`desktop.${match[1]}`);
-}
-for (const method of nativeCallers) {
-  if (!supported.has(method)) failures.push(`JavaScript native call has no Android handler: ${method}`);
-}
-const intentionalQueryHandlers = new Set([
-  'browser.window.state',
-  'workspace.watch.state',
-  // These native-desktop routes are driven by Android chrome controls or the dynamic
-  // RiftNativeDesktop.request facade rather than a fixed literal JS call site.
-  'desktop.window.minimize',
-  'desktop.window.maximize',
-  'desktop.window.restore',
-  'desktop.window.state',
-  // Native system-app close is driven by Android window chrome, while state is a bounded
-  // diagnostics/query surface; neither requires a fixed literal JS caller.
-  'system.app.close',
-  'system.app.state',
-]);
-for (const method of supported) {
-  if (!nativeCallers.has(method) && !intentionalQueryHandlers.has(method)) failures.push(`Android native handler has no RiftOS caller/documented query role: ${method}`);
-}
-if (supported.has('browser.open')) failures.push('obsolete dispatcher browser.open alias is still registered');
-
-// Installed .rift files are installers. Program execution must route into the Android native app host.
-const appsSource = read('src/riftapps.js');
-if (!appsSource.includes('const PROGRAM_ROOT="/C:/Programs"') || !appsSource.includes('const USER_APPDATA_ROOT="/D:/Users/Default/AppData"') || !appsSource.includes('async installAtomic(')) failures.push('.rift installer is not using the C:/Programs + D:/AppData layout');
-if (appsSource.includes('<iframe') || appsSource.includes('function injectBridge(') || appsSource.includes('function materializeHtml(')) failures.push('installed app iframe execution path returned');
-if (!appsSource.includes('globalThis.RiftRT.launch(id)')) failures.push('installed program launch does not delegate to RiftRT');
-
-// RiftRT defaults installed HTML programs to the native Android app surface. Legacy iframe specs are translated, never executed as frames.
-const riftrt = read('src/riftrt.js');
-const riftvm = read('src/riftvm.js');
-const riftppCore = read('src/riftpp-core.js');
-const riftcore = read('src/riftcore.js');
-if (!riftrt.includes("engine:'native-webview'") || !riftrt.includes("requested==='iframe'?'native-webview':requested")) failures.push('RiftRT does not default/translate installed programs to native-webview');
-if (!riftrt.includes("core.native.call('app.runtime.open'") || !riftrt.includes("core.native.call('app.runtime.close'") || !riftrt.includes("core.native.call('app.runtime.state'")) failures.push('RiftRT native app runtime routes are incomplete');
-if (riftrt.includes('function launchIframe(') || riftrt.includes('function iframeHtml(') || riftrt.includes('messageInstances')) failures.push('retired RiftRT iframe execution machinery remains');
-if (!riftrt.includes("from './riftvm.js'") || !riftrt.includes("'rift-vm'") || !riftrt.includes('launchRiftVm') || !riftrt.includes('validateVmImports')) failures.push('RiftVM executable engine wiring is incomplete');
-if (!riftvm.includes("RIFT_EXEC_FORMAT='rift-exec-v1'") || !riftvm.includes("RIFT_VM_ABI='riftvm-1'") || !riftvm.includes("const PREPARED=Symbol('riftvm.prepared')") || !riftvm.includes('step limit exceeded') || !riftvm.includes("'make_struct'") || !riftvm.includes("'get_field'") || !riftvm.includes("'make_enum'") || !riftvm.includes("'enum_is'") || !riftvm.includes("'enum_get'") || !riftvm.includes("'make_vec'") || !riftvm.includes("'vec_len'") || !riftvm.includes("'vec_get'") || !riftvm.includes("'vec_push'") || !riftvm.includes("'vec_set'") || !riftvm.includes("'state_save'") || !riftvm.includes("'state_load'") || !riftvm.includes("'state_remove'") || !riftvm.includes("'value_sha256'") || !riftvm.includes('async function valueSha256') || !riftvm.includes('function finiteF64(value,label)') || !riftvm.includes("must be a finite JSON number") || !riftvm.includes("format:'riftvm-state-v1'") || !riftvm.includes('normalizeStateDescriptor') || !riftvm.includes('validateStateValue') || !riftvm.includes('schema must use canonical descriptor JSON') || !riftvm.includes('maxStateBytes:65536') || !riftvm.includes('maxVecCapacity:256') || !riftvm.includes('maxStateSchemaBytes:4096') || !riftvm.includes('maxCompositeDepth:32') || !riftvm.includes('maxPublicValues:4096') || !riftvm.includes('maxDisplayBytes:65536') || !riftvm.includes('maxExecutableBytes:8*1024*1024') || !riftvm.includes('maxConstantStringBytes:4*1024*1024') || !riftvm.includes('composite values cannot cross the host import boundary')) failures.push('RiftVM executable validation/limit/structured-data/state/Gate-6A numeric contract is incomplete');
-if (/\beval\s*\(/.test(riftvm) || /new\s+Function\b/.test(riftvm) || /ProcessBuilder|Runtime\.getRuntime|child_process/.test(riftvm)) failures.push('RiftVM gained forbidden dynamic-code/process authority');
-if (!entry.includes('import("./riftpp-core.js")') || !riftppCore.includes("RIFTPP_LANGUAGE='riftpp/1'") || !riftppCore.includes("RIFTPP_CORE_VERSION='0.7.2-bootstrap'") || !riftppCore.includes("SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string'])") || !riftppCore.includes("PRELUDE_NAMES=new Set(['print','value_sha256'") || !riftppCore.includes("SUPPORTED_EFFECTS=new Set(['storage','repair_eval','software_eval'])") || !riftppCore.includes("CHECKPOINT_BUILTINS=new Set(['checkpoint_save','checkpoint_load','checkpoint_remove'])") || !riftppCore.includes('parseF64(raw,node)') || !riftppCore.includes("expr.kind==='FloatLiteral'") || !riftppCore.includes("emit({op:'value_sha256'})") || !riftppCore.includes('validateEffects()') || !riftppCore.includes('stateDescriptor(type,node') || !riftppCore.includes('recursive checkpoint type') || !riftppCore.includes("this.imports.add('state.save')") || !riftppCore.includes("this.imports.add('state.load')") || !riftppCore.includes("this.imports.add('state.remove')") || !riftppCore.includes('compileRiftPlusPlusCoreV1') || !riftppCore.includes('compileRiftPlusPlusCoreProgramV1') || !riftppCore.includes('linkRiftPlusPlusCoreProgramV1') || !riftppCore.includes('MAX_MODULES=64') || !riftppCore.includes('MAX_PROGRAM_SOURCE_BYTES=1024*1024') || !riftppCore.includes('linkExprDepth=0') || !riftppCore.includes('linkBlockDepth=0') || !riftppCore.includes('module linker expression nesting exceeds') || !riftppCore.includes('prepareRiftExecutable(executable)') || !riftppCore.includes('compileWhile') || !riftppCore.includes('compileIf') || !riftppCore.includes('compileMatch') || !riftppCore.includes('compileVecMethod') || !riftppCore.includes('MAX_VEC_CAPACITY=256') || !riftppCore.includes('MAX_TYPE_DEPTH=32') || !riftppCore.includes('MAX_PARSE_DEPTH=128') || !riftppCore.includes('blockDepth=0') || !riftppCore.includes('compileExprDepth=0') || !riftppCore.includes('expectType(left,expected,expr)') || !riftppCore.includes('structDecl()') || !riftppCore.includes('enumDecl()') || !riftppCore.includes("'+=','-=','*=','/=','%='") || !riftppCore.includes('globalThis.RiftPlusPlusCore=Object.freeze')) failures.push('Rift++ Core bootstrap compiler wiring is incomplete');
-if (/\beval\s*\(/.test(riftppCore) || /new\s+Function\b/.test(riftppCore) || /ProcessBuilder|Runtime\.getRuntime|child_process/.test(riftppCore)) failures.push('Rift++ Core compiler gained forbidden dynamic-code/process authority');
-if (!shellSource.includes('yield:()=>new Promise(resolve=>setTimeout(resolve,0))') || !shellSource.includes('yieldEvery:512')) failures.push('Rift++ shell execution does not yield through a timer/macrotask');
-if (!riftrt.includes("'share.text':'share'") || !riftrt.includes("if(method==='share.text')return hostCall(app,'share'")) failures.push('RiftVM share import is not exposed as dotted share.text');
-if (!riftvm.includes("'string_len'") || !riftvm.includes("'string_find'") || !riftvm.includes("'string_slice'") || !riftvm.includes("'string_replace'") || !riftppCore.includes("REPAIR_BUILTINS=new Set(['repair_input_source','repair_expected_output','repair_case_id','repair_compile_test'])") || !riftppCore.includes("STRING_BUILTINS=new Set(['string_len','string_find','string_slice','string_replace'])")) failures.push('Gate 6D.2 bounded native repair/string compiler surface is incomplete');
-if (!riftrt.includes("'repair.source':'repair.eval'") || !riftrt.includes("'repair.expected':'repair.eval'") || !riftrt.includes("'repair.caseId':'repair.eval'") || !riftrt.includes("'repair.compileTest':'repair.eval'") || !riftrt.includes("compiled.executable.imports.length") || !riftrt.includes("repair.compileTest rejects challenge source with host imports") || !appsSource.includes('repair.eval')) failures.push('Gate 6D.2 repair.eval host boundary is incomplete');
-if (!riftppCore.includes("SOFTWARE_BUILTINS=new Set(['software_input_source','software_project_context','software_specification','software_case_id','software_case_language','software_compile_test'])") || !riftrt.includes("'software.source':'software.eval'") || !riftrt.includes("'software.context':'software.eval'") || !riftrt.includes("'software.spec':'software.eval'") || !riftrt.includes("'software.caseId':'software.eval'") || !riftrt.includes("'software.language':'software.eval'") || !riftrt.includes("'software.compileTest':'software.eval'") || !riftrt.includes('software verifier backend unavailable') || !riftcore.includes('softwareVerifier:false') || !appsSource.includes('software.eval')) failures.push('Gate 6D.3 software.eval host boundary is incomplete');
-if (!riftrt.includes("VM_STATE_FILE='riftvm-state.json'") || !riftrt.includes("VM_STATE_POISON_KEYS=new Set(['__proto__','prototype','constructor'])") || !riftrt.includes("stat=await core.fs.stat(path)") || !riftrt.includes("stat.kind!=='file'") || !riftrt.includes("JSON.parse(text)") || !riftrt.includes('MAX_VM_STATE_ENTRIES=16') || !riftrt.includes('MAX_VM_STATE_PAYLOAD_BYTES=64*1024') || !riftrt.includes('MAX_VM_STATE_STORE_BYTES=512*1024') || !riftrt.includes("'state.load':'storage'") || !riftrt.includes("'state.save':'storage'") || !riftrt.includes("'state.remove':'storage'") || !riftrt.includes("if(method==='state.load')return vmStateLoad") || !riftrt.includes("if(method==='state.save')return vmStateSave") || !riftrt.includes("if(method==='state.remove')return vmStateRemove")) failures.push('RiftRT Gate 5 app-private VM state authority is incomplete');
-
-// Worker RPCs still use the bounded hostCall controller while native-webview apps use RiftNativeAppHost.
-const hostStart = riftrt.indexOf('async function hostCall(');
-const hostEnd = riftrt.indexOf('const VM_IMPORT_CAPABILITIES=', hostStart);
-const hostSlice = riftrt.slice(hostStart, hostEnd);
-const riftrtHostMethods = new Set([...hostSlice.matchAll(/method===\s*["']([^"']+)["']/g)].map(match => match[1]));
-const workerStart = riftrt.indexOf('const workerBootstrap=');
-const workerEnd = riftrt.indexOf('function fitCanvas(', workerStart);
-const workerSlice = riftrt.slice(workerStart, workerEnd);
-const workerCalls = new Set([...workerSlice.matchAll(/\brpc\(\s*["']([^"']+)["']/g)].map(match => match[1]));
-for (const method of workerCalls) if (!riftrtHostMethods.has(method)) failures.push(`RiftRT Worker API has no hostCall implementation: ${method}`);
-for (const method of riftrtHostMethods) if (!workerCalls.has(method)) failures.push(`RiftRT hostCall is not exposed consistently by Worker API: ${method}`);
-
-// Retired Rift AI task/session/journal architecture must stay absent.
-const mcpServerSource = read('android/app/src/main/java/com/riftos/app/RiftMcpServer.kt');
-const toolHostSource = read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
-if (exists(`${kotlinDir}/RiftAiJournal.kt`)) failures.push('retired RiftAiJournal.kt returned');
-if (/RiftMcpAppControl|rift\/ai\/event|riftos\/aiSessionId|pendingApprovedSubmission|queueAiTask|submitAiTask/.test(browserAdapter + mcpServerSource + toolHostSource)) failures.push('retired Rift AI task/session/event architecture returned');
-if (!browserAdapter.includes('async function stageComposerMessage') || !browserAdapter.includes('writeComposer(composer')) failures.push('browser compatibility result staging path is missing');
-
-// Every deliberate Rift global/bridge surface must be documented.
-const publicSurfaceDoc = read('docs/PUBLIC_SURFACES.md');
-const publicSurfaceNames = new Set();
-for (const file of srcModules.map(name => `src/${name}`)) {
-  const text = read(file);
-  for (const match of text.matchAll(/(?:window|globalThis)\.(Rift[A-Za-z0-9_]*)\s*=/g)) publicSurfaceNames.add(match[1]);
-  for (const match of text.matchAll(/Object\.defineProperty\(globalThis,\s*["'](Rift[A-Za-z0-9_]*)["']/g)) publicSurfaceNames.add(match[1]);
-}
-for (const file of walk('android/app/src/main/assets').filter(file => file.endsWith('.js'))) {
-  const text = read(file);
-  for (const match of text.matchAll(/window\.(Rift[A-Za-z0-9_]*)\s*=/g)) publicSurfaceNames.add(match[1]);
-}
-for (const nativeSurface of ['RiftAndroid', 'RiftMcpNative']) publicSurfaceNames.add(nativeSurface);
-for (const surface of [...publicSurfaceNames].sort()) {
-  if (!publicSurfaceDoc.includes(`\`${surface}\``)) failures.push(`Rift public/global surface is undocumented: ${surface}`);
-}
-if (/RiftShellMcp|RiftShellMcpNative/.test(browserAdapter)) failures.push('trusted-shell RiftShell global leaked into guest browser asset');
-
-// Android RiftDesktop is permanent; the retired desktop/mobile mode switch must not return.
-const desktopSource = read('src/riftdesktop-android.js');
-const desktopHostSource = read('src/riftdesktop-window-host.js');
-if (/riftDesktopToggle|desktopPreference|cycleDesktopPreference|maximizeForMobile|rift\.desktop\.mode/.test(desktopSource + desktopHostSource)) failures.push('retired Android desktop/mobile mode-switch code is present');
-if (!desktopSource.includes("get mode(){return 'desktop';}")) failures.push('RiftDesktop public mode is not fixed to desktop');
-
-// Known removed runtime islands must stay removed.
-for (const stale of ['RiftTransferJob.kt', 'RiftTransferManager.kt', 'RiftTransferRegistry.kt', 'RiftTransferService.kt']) {
-  if (exists(`${kotlinDir}/${stale}`)) failures.push(`retired transfer runtime file returned: ${stale}`);
-}
+const wrangler = read('relay/wrangler.jsonc');
+const relayMain = wrangler.match(/"main"\s*:\s*"([^"]+)"/)?.[1];
+if (!relayMain) fail('relay/wrangler.jsonc has no main entrypoint');
+else requireFile(`relay/${relayMain}`, 'relay main entrypoint is missing');
+const relayClass = wrangler.match(/"class_name"\s*:\s*"([^"]+)"/)?.[1];
+if (relayClass && relayMain && exists(`relay/${relayMain}`) && !read(`relay/${relayMain}`).includes(`export class ${relayClass}`)) fail(`relay Durable Object class is not exported: ${relayClass}`);
 
 if (failures.length) {
-  console.error('RiftOS wiring validation failed:');
+  console.error('RiftOS native wiring validation failed:');
   for (const failure of [...new Set(failures)]) console.error(`- ${failure}`);
   process.exit(1);
 }
-
-console.log(`RiftOS wiring OK: ${srcModules.length} src modules; ${kotlinFiles.length} Kotlin files reachable; ${nativeCallers.size} native call routes; ${syntaxFiles.length} JS/MJS files parsed.`);
+console.log(`RiftOS native wiring OK: ${kotlinFiles.length} Kotlin files reachable; ${syntaxFiles.length} JS/MJS files parsed; WebKit browser-owned only.`);

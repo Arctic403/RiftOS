@@ -1,63 +1,363 @@
-# RiftOS Fixed-Scope Local UI Agents
+# Fixed-Scope Local UI Agents
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-The local UI agent gives trusted RiftShell hands on two explicitly fixed Android app scopes while keeping authority local to the phone. `vortex-agent` is hard-coded to exactly `com.vortex3d.app`; `riftos-agent` is hard-coded to exactly `com.riftos.app` for RiftOS self-acceptance testing. RiftOS additionally has a bounded Samsung Keyboard companion fixed to `com.samsung.android.honeyboard`; it can only report readiness or press one exact key while a visible, focused, non-password RiftOS editable field owns the input session. There is no package argument, arbitrary-app mode, keyboard tree/suggestion dump, ADB path, root path, raw Android shell path, network listener or system-server hook.
+RiftOS contains fixed-scope Android Accessibility helpers for device acceptance and UI control.
 
-The agent complements, rather than replaces, the Vortex Binder/VTXScript bridge. Use the local agent for Android UI behavior and real gestures; use `vortex ...`/VTXScript for engine/JNI semantics, deterministic state inspection and validation.
+Current fixed application scopes:
+- vortex-agent -> com.vortex3d.app
+- riftos-agent -> com.riftos.app
+
+A third fixed package, com.samsung.android.honeyboard, is visible only to the bounded RiftOS keyboard companion.
+
+There is no arbitrary package selector.
 
 ## Source ownership
 
-- `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` — shared fixed-scope helper plus Vortex-only and RiftOS-self-only launch/UI-tree/semantic-click/text/gesture/Back authorities.
-- `android/app/src/main/res/xml/vortex_agent_accessibility.xml` — Android-enforced package filter and gesture/window-content capabilities.
-- `android/app/src/main/AndroidManifest.xml` — declares the Accessibility service behind `android.permission.BIND_ACCESSIBILITY_SERVICE`.
-- `RiftNativeDispatcher.kt` — finite `vortex.agent` native route.
-- `src/riftos.js` — `vortex-agent` shell family.
+Primary:
+- RiftVortexLocalAgent.kt — fixed-package agent logic, AccessibilityService, RiftOS self-agent, Samsung keyboard helper.
+- RiftNativeShellServices.kt — strict shell argument parsing and routing.
+- RiftExperimentalCli.kt — RiftAgentRouter seam for riftos-agent; experimental mode still delegates to the same fixed RiftOsLocalAgent authority.
+- AndroidManifest.xml — Accessibility service declaration.
+- res/xml/vortex_agent_accessibility.xml — package/event/content/gesture capability filter.
 
-## Authority boundary
+Related:
+- RiftNativeDevLab.kt — native Dev Lab authority reached by fixed RiftOS devlab route.
+- MainActivity.kt — active RiftOS Activity needed for browser-inspect/self Back.
+- RiftBrowserWindow.kt — active-browser inspection target.
+- RiftVortexBridgeClient.kt — separate Binder bridge; not the Accessibility agent.
 
-`vortex-agent open` uses Android's normal launch intent for the hard-coded package `com.vortex3d.app`. It works whenever Vortex3D is installed, even when the Accessibility service is disabled.
+## Accessibility service boundary
 
-All UI inspection and interaction requires the user to enable **RiftOS Local UI Agent** in Android Accessibility settings. Android's service metadata filters events to exactly `com.vortex3d.app`, `com.riftos.app`, and the Samsung Keyboard package `com.samsung.android.honeyboard`; interactive-window retrieval is enabled solely so the RiftOS keyboard companion can see the active input-method window while RiftOS itself remains visible. Because ChatGPT can regain foreground focus between MCP calls, each UI operation may bring only its command's constructor-fixed package forward inside that same local call, wait up to three seconds for a visible Accessibility application root, require that root to stabilize across three consecutive polls, and then re-check the exact package before any inspection or action. When an IME owns Android's active Accessibility window, the shared resolver searches only visible `TYPE_APPLICATION` windows for that same constructor-fixed package instead of relaunching/reordering the app; this preserves the focused EditText while keeping package authority unchanged. Semantic actions only select visible, enabled nodes. Parent/child matches that resolve to one clickable/editable control are collapsed to that single action anchor; truly separate controls remain ambiguous. Password nodes are never returned with text and cannot be clicked or edited by semantic actions.
+RiftVortexAccessibilityService is protected by:
 
-The service does not request root, ADB, shell execution, screen-overlay authority, unrestricted package control or remote/network control. ChatGPT reaches it only through the already-existing `rift_shell_exec` -> trusted RiftShell path. The Vortex bridge may call the same hard-coded activation guard internally during `test-wait`/`script-wait`; this does not add package-selection authority or broaden the Accessibility scope.
+android.permission.BIND_ACCESSIBILITY_SERVICE
 
-## Commands
+The Accessibility XML fixes packageNames to:
+- com.vortex3d.app
+- com.riftos.app
+- com.samsung.android.honeyboard
 
-- `vortex-agent status` — installed/service/foreground/action readiness.
-- `vortex-agent open` — launch or bring Vortex3D forward using its normal Android package intent.
-- `vortex-agent tree [limit]` — bounded Vortex-only Accessibility tree; self-activates Vortex when another app regained foreground.
-- `vortex-agent click <text|content-description|view-id>` — exact visible/enabled match first, then an unambiguous icon-prefix-normalized semantic match, with clickable-parent fallback inside Vortex only; ambiguous matches are rejected. If a just-transitioned fixed-package UI has not published its deeper Accessibility children yet, lookup briefly re-queries fresh roots for the same requested target/package before failing, then waits for UI settlement after success.
-- `vortex-agent tap <x> <y>` — real Android accessibility gesture within display bounds after same-call Vortex activation/package verification.
-- `vortex-agent swipe <x1> <y1> <x2> <y2> [ms]` — bounded real gesture after same-call Vortex activation/package verification.
-- `vortex-agent type <target> <text>` — ACTION_SET_TEXT on a visible, enabled, editable, non-password Vortex node after same-call activation and root stabilization; the same exact-then-unambiguous semantic matcher is used.
-- `vortex-agent back` — Android Back only after the agent has activated and verified Vortex in the same call.
+The service can:
+- retrieve window content;
+- report view IDs;
+- include not-important views;
+- retrieve interactive windows;
+- perform gestures.
 
-The `riftos-agent` command mirrors the same `status`, `open`, `tree`, `click`, `tap`, `swipe`, `type`, and `back` verbs but is fixed to `com.riftos.app`; it exists specifically for live RiftOS UI/function acceptance testing. It also exposes the RiftBrowser-only `browser-inspect` family for bounded temporary maintenance of the active HTTPS page. `riftos-agent type-focused <text>` targets the one currently focused editable RiftOS node and therefore works on unlabeled/blank WebView or native form fields; it still rejects password fields. If the Samsung Keyboard owns the active Accessibility window, the agent resolves the still-visible fixed RiftOS application window without relaunching RiftOS, so the input focus is preserved across the tool call. `riftos-agent keyboard status` reports only bounded readiness flags, and `riftos-agent keyboard key <label>` can press one exact Samsung Keyboard key only when RiftOS has a focused non-password editable field. The keyboard companion never exposes a keyboard tree, suggestion text, clipboard contents, or an arbitrary package selector. It also owns a structured `riftos-agent devlab ...` controller. That controller does not use Accessibility and does not write `/system/devlab/stage` directly: native accepts only the finite Dev Lab action whitelist, submits a base64 JSON `devlab rpc` request to process-owned `RiftNativeShell`, and that not-yet-native family delegates to the active `RiftShellBridge` compatibility executor so the trusted WebView executes the real `RiftDevLab.executeAgentRequest()` API so baseline hashes, snapshots, evidence, guarded preview and publication stay authoritative. Arbitrary shell commands are not accepted by this tunnel. When the same label is exposed by both a non-actionable accessibility cell/text node and its real clickable/editable control, semantic resolution now prefers and deduplicates the actionable anchor instead of reporting false ambiguity; genuinely distinct actionable anchors remain an error. Because Android returned false-positive `ACTION_CLICK` success against RiftOS native self-controls during device acceptance, RiftOS semantic clicks use a short accessibility gesture at the resolved control center instead; Vortex retains its existing ACTION_CLICK behavior. For editable RiftOS controls, the fixed-scope agent first requests Android input focus with `ACTION_FOCUS` before the gesture, which preserves verified `type-focused` behavior after native window minimize/restore cycles where the IME can otherwise be visible while the EditText reports unfocused. Gesture bounds are validated in the same full real-display coordinate space used by `AccessibilityNodeInfo#getBoundsInScreen` and Android accessibility gestures, with resource metrics only as fallback; this keeps valid controls beside system bars and the native bottom taskbar from being rejected as off-display. RiftOS self-Back is dispatched through the actual foreground `MainActivity.onBackPressed()` path so Start/native-window handling reaches `RiftNativeDesktop.handleBack()` instead of trusting a false-positive global Accessibility Back result. Live agent commands are non-reversible and are rejected by RiftShell atomic batches. Dev Lab agent commands remain outside generic `batch` for the same reason: Dev Lab owns its own staged/snapshot/publication transaction semantics. Use `riftos-agent devlab stage-file` and `run-file` for exact multi-line/quoted source payloads.
+Those capabilities are broad Android Accessibility capabilities, but source-level agent routing further restricts actions to constructor-fixed package identities.
 
-### RiftBrowser live inspector
+## Fixed agent operations
 
-`riftos-agent browser-inspect` is not a generic DevTools or JavaScript tunnel. The fixed action set is `status`, `dom`, `inspect`, `focus`, `hide`, `show`, `text`, `attr`, `style`, `outline`, and `reset`. DOM results contain structural metadata only and intentionally omit page text/HTML, input values, cookies, storage, headers and hidden credentials. Selectors reject attribute/value probing and `:has()`. `style` accepts only a bounded property whitelist and a restricted value grammar; there is no raw stylesheet injection. Sensitive password-containing targets are rejected for mutations. Every change is active-tab/page-local and disappears on navigation/reload or explicit reset.
+RiftScopedLocalAgent supports:
+- status
+- open
+- tree
+- click
+- tap
+- swipe
+- type
+- back
+
+RiftOS additionally supports:
+- type-focused
+- browser-inspect
+- keyboard
+- devlab
+
+No operation accepts an arbitrary Android package name.
+
+## Activation and foreground stabilization
+
+Before UI actions, the scoped agent:
+1. requires the Accessibility service;
+2. waits briefly for Accessibility window state to settle;
+3. resolves only visible application roots whose package equals the fixed target;
+4. launches only the fixed target package when no eligible root exists;
+5. polls for a stable root;
+6. requires three stable root observations before returning authority.
+
+An input method may own rootInActiveWindow while the target application remains visible. In that case the agent searches visible application windows only for the fixed target package rather than relaunching the app.
+
+## Tree and node-scan bounds
+
+Returned tree rows are limited to:
+1024
+
+All scoped application-tree scans are bounded by:
+4096 nodes
+
+This includes:
+- focused-editable lookup;
+- tree traversal;
+- semantic target lookup.
+
+When semantic/focused lookup exceeds the scan ceiling, the operation fails instead of silently searching an unbounded Accessibility tree.
+
+tree output reports:
+- total_nodes
+- scanned_nodes
+- scan_limit_reached
+- truncated
+
+A tree may therefore be truncated either by requested row limit or by the hard scan ceiling.
+
+## Node-field bounds
+
+Accessibility node string fields returned/compared by the scoped agent are bounded to:
+512 characters
+
+This applies to:
+- class
+- view ID
+- content description
+- text used in node JSON/semantic matching
+
+Target selectors supplied by shell/API are themselves bounded to 256 characters.
+
+This prevents one abnormal Accessibility node from inflating tree/lookup responses without bound.
+
+## Password protection
+
+Password nodes are never returned with text.
+
+Operations that would act on editable/clickable target nodes call rejectPassword().
+
+Focused typing also rejects password fields.
+
+Samsung Keyboard operations require the focused RiftOS editable control to exist and reject it if Android marks it as a password field.
+
+The local agent therefore does not expose or edit password-field contents.
+
+## Click behavior
+
+For Vortex3D:
+- click resolves one unambiguous semantic/exact target;
+- walks upward only inside the fixed package to an actionable anchor;
+- performs ACTION_CLICK.
+
+For RiftOS self-controls:
+- editable targets first receive input focus when needed;
+- bounds are read from the fixed RiftOS node;
+- click is performed as a physical Accessibility gesture at the node center.
+
+The parent-anchor walk is capped at 64 levels.
+
+Ambiguous semantic targets fail and require a unique content-description or view ID.
+
+## Raw tap and swipe
+
+tap/swipe require:
+- finite coordinates;
+- full-display bounds;
+- a stable fixed-target root;
+- every gesture point to lie inside the fixed target application's visible root bounds.
+
+This audit added an additional overlay check.
+
+For each raw gesture point, the agent inspects currently visible Accessibility windows and rejects the point if another visible package window covers the same coordinate.
+
+This prevents a raw fixed-agent gesture from intentionally targeting a visible IME/overlay belonging to another package merely because the target app's rectangular window also spans that coordinate.
+
+Swipe duration is clamped to 50..3000 ms.
+
+Gesture completion is awaited with a 5000 ms timeout and must not be cancelled.
+
+## Text input
+
+type:
+- requires a resolved fixed-package editable node;
+- rejects password nodes;
+- accepts at most 4096 characters;
+- uses ACTION_SET_TEXT.
+
+type-focused:
+- is accepted only by riftos-agent at shell parsing level;
+- requires one visible, enabled, editable, focused RiftOS node;
+- rejects password nodes;
+- accepts at most 4096 characters.
+
+vortex-agent cannot use the RiftOS-only type-focused shell route.
+
+## Back
+
+For generic fixed-package agent Back:
+- the fixed target must first stabilize;
+- GLOBAL_ACTION_BACK is then dispatched.
+
+For riftos-agent with an active MainActivity:
+- target activity is stabilized;
+- MainActivity.onBackPressed() is invoked on the UI thread;
+- dispatch has a 2-second wait bound;
+- a 400 ms settle delay follows.
+
+This keeps RiftOS self-navigation on its native Activity path.
+
+## Samsung Keyboard helper
+
+Keyboard scope is fixed to:
+com.samsung.android.honeyboard
+
+The helper supports only:
+- status
+- key
+
+It requires:
+- visible RiftOS application window;
+- one focused editable RiftOS field;
+- non-password focused field;
+- visible Samsung Keyboard input-method window.
+
+Only clickable keyboard nodes are considered.
+
+Keyboard target labels are capped at 24 input characters.
+
+Raw keyboard-node text/description inspected for matching is capped at 128 characters.
+
+Both RiftOS focused-field scan and keyboard-key scan are capped at 4096 nodes.
+
+Eligible keys are:
+- known function keys such as space, enter, done, next, go, search, shift, backspace, symbols and abc;
+- or very short labels of at most three normalized characters.
+
+The keyboard helper has no arbitrary suggestion, clipboard or full-tree return API.
+
+## Native Dev Lab route
+
+riftos-agent devlab is routed directly to the already audited native Dev Lab authority.
+
+It does not:
+- scrape the Dev Lab UI;
+- execute arbitrary shell text through Accessibility;
+- convert Dev Lab into generic process execution.
+
+RiftDevLabLocalAgent returns structured native Dev Lab results and reports webViewRequired=false.
+
+## Browser inspection
+
+riftos-agent browser-inspect:
+- requires an active MainActivity;
+- requires the RiftOS target to be active;
+- calls MainActivity.inspectActiveBrowser().
+
+The separate RiftBrowser audit remains authority for what browser inspection may return/do.
+
+This local-agent route does not introduce another WebView owner.
+
+## Strict shell grammar
+
+RiftNativeShellServices routes:
+- vortex-agent directly to RiftVortexLocalAgent;
+- riftos-agent through RiftAgentRouter.
+
+RiftAgentRouter currently calls RiftExperimentalCli.routeLocalAgent(), which in both disabled and enabled experimental modes delegates the actual UI action to the same fixed RiftOsLocalAgent. Experimental mode may classify/record the route, but it does not gain wider package or UI authority.
+
+The parser now fails on malformed/extra arguments instead of silently discarding them.
+
+Current rules include:
+- help/status/open/back: exact allowed arity;
+- tree: zero or one integer argument, 1..1024;
+- tap: exactly two numeric coordinates;
+- swipe: exactly four coordinates plus optional integer duration;
+- click: non-empty target;
+- type: target plus non-empty text;
+- type-focused: RiftOS-only and non-empty text.
+
+Numeric finiteness is also checked by the agent before gesture use.
+
+## No process/network authority
+
+RiftVortexLocalAgent.kt contains no:
+- ProcessBuilder;
+- Runtime.getRuntime;
+- arbitrary shell executor;
+- network socket transport.
+
+Accessibility authority remains UI-local.
+
+The separate Vortex Binder bridge is audited independently.
+
+## Source fixes in this audit
+
+- bounded all scoped Accessibility scans to 4096 nodes;
+- bounded returned/matched scoped node string fields to 512 characters;
+- bounded parent action-anchor traversal to 64 levels;
+- bounded Samsung keyboard/focused scans to 4096 nodes;
+- bounded raw keyboard node labels to 128 characters;
+- raw tap/swipe points now must remain within the fixed target app window;
+- raw tap/swipe points now reject overlap from another visible package window;
+- shell parser now enforces exact/valid local-agent argument grammar;
+- type-focused shell route is explicitly RiftOS-only;
+- transport validator now locks package filter, bounds, password denial and strict grammar.
+
+## Critical invariants
+
+- no arbitrary package selector;
+- Accessibility XML package filter remains exactly the fixed three packages;
+- Vortex and RiftOS application agents remain constructor-fixed;
+- passwords are never returned or edited;
+- scans/output remain bounded;
+- semantic target ambiguity fails closed;
+- raw gestures stay inside the fixed application window and outside another-package overlays;
+- shell parsing fails malformed extra/invalid arguments;
+- keyboard helper remains Samsung-keyboard-only and requires a focused non-password RiftOS field;
+- local agents do not gain process/shell/network authority;
+- Dev Lab/browser routes remain delegated to their dedicated audited owners.
 
 ## Failure signatures
 
-- `open` says Vortex is not installed -> package `com.vortex3d.app` is absent or build/install failed.
-- `accessibility_connected=false` -> enable **RiftOS Local UI Agent** in Android Accessibility settings.
-- action cannot activate Vortex -> package launch failed, Android denied the foreground transition, or Vortex did not expose an Accessibility root within the bounded activation timeout.
-- semantic target not found after the bounded fresh-root retry -> inspect `vortex-agent tree`; the view may truly be hidden, disabled or lack text/content-description/resource id, in which case use a unique semantic label/view id or a bounded coordinate gesture.
-- semantic target ambiguous -> multiple distinct visible actionable controls still share the same label after parent/child collapsing and non-actionable semantic duplicates are discarded; use an app-specific content description such as `Taskbar Files` / `Start Files` or a resource id instead of letting the agent guess.
-- gesture rejected/cancelled -> Android accessibility service/lifecycle or invalid foreground transition.
-- JNI/engine state is wrong after a successful UI gesture -> inspect the separate Vortex bridge/VTXScript/engine owner rather than widening agent authority.
+- caller can provide package name -> scope regression;
+- Accessibility packageNames broadens unexpectedly -> service-scope regression;
+- any queue traversal becomes unbounded -> resource regression;
+- node text/description is returned without field cap -> response-bound regression;
+- password text appears in tree or typing path -> sensitive-field regression;
+- tap/swipe accepts a point under another package window -> fixed-scope gesture regression;
+- ambiguous semantic target is auto-selected -> target-resolution regression;
+- malformed tree/tap/swipe arguments are silently defaulted/ignored -> shell grammar regression;
+- keyboard helper accepts arbitrary package or suggestion/clipboard surface -> keyboard authority regression;
+- ProcessBuilder/runtime shell/network transport appears -> authority expansion.
 
 ## Fix map
 
-Package scope, node filtering, gesture bounds and semantic actions -> `RiftVortexLocalAgent.kt`.
-Android package filtering/capabilities -> `vortex_agent_accessibility.xml`.
-Service declaration -> Android manifest.
-Shell parsing -> `src/riftos.js`.
-Native route -> `RiftNativeDispatcher.kt`.
-Engine/JNI semantics -> Vortex3D bridge/VTXScript, not this subsystem.
+Fixed application UI authority and Accessibility implementation -> RiftVortexLocalAgent.kt.
+
+Shell grammar/routing -> RiftNativeShellServices.kt.
+
+RiftOS self-agent routing seam -> RiftExperimentalCli.kt / RiftAgentRouter.
+
+Service registration -> AndroidManifest.xml.
+
+Package/event Accessibility filter -> res/xml/vortex_agent_accessibility.xml.
+
+RiftOS Dev Lab operations -> RiftNativeDevLab.kt.
+
+RiftBrowser inspection -> MainActivity/RiftBrowser owners.
+
+Vortex Binder/JNI bridge -> RiftVortexBridgeClient.kt.
 
 ## Validation
 
-Repository transport validation locks the hard-coded app packages plus the single Samsung Keyboard companion package, interactive-window flag, BIND_ACCESSIBILITY_SERVICE permission, absence of arbitrary package arguments/root/ADB execution, password rejection, focused-field text path, IME-safe fixed-application root recovery, bounded keyboard status/key-only surface, native route, shell command and batch exclusion. An Android build remains the compile gate. Device smoke should enable the service manually once, then run `status`, `open`, `tree`, one semantic click, one coordinate tap/swipe, text entry into a harmless Vortex field, Back, and verify the agent rejects actions whenever another app is foreground.
+Second source audit must verify:
+- manifest service permission/export;
+- exact Accessibility packageNames;
+- exact fixed target-package constants;
+- operation list;
+- stable-root package matching;
+- 1024 returned tree rows;
+- 4096 node traversal bounds on all queue scans;
+- 512-character scoped node-field bounds;
+- 64-level parent bound;
+- password suppression/denial;
+- gesture display + app-window + overlay checks;
+- 4096 keyboard scan limits and 128-character raw label bound;
+- strict shell arity/numeric parsing;
+- RiftAgentRouter still delegates to fixed RiftOsLocalAgent;
+- RiftOS-only type-focused;
+- native Dev Lab/browser delegation;
+- absence of process/shell/network authority.
+
+APK/device validation remains separate and should exercise real Accessibility window/IME behavior after a successful build.

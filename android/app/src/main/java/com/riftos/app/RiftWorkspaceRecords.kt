@@ -541,8 +541,14 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         return file
     }
 
-    private fun normalizePrefix(path: String): String = path.replace('\\', '/').trim('/').also {
-        require(it.split('/').none { segment -> segment == ".." }) { "Invalid workspace record prefix" }
+    private fun normalizePrefix(path: String): String {
+        val normalized = path.replace('\\', '/').trim('/')
+        require(normalized.split('/').none { segment -> segment == ".." }) { "Invalid workspace record prefix" }
+        return when {
+            normalized == "workspace" -> ""
+            normalized.startsWith("workspace/") -> normalized.removePrefix("workspace/")
+            else -> normalized
+        }
     }
 
     private fun matchesPrefix(path: String, prefix: String): Boolean =

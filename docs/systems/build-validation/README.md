@@ -1,73 +1,360 @@
 # Build and Validation System
 
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
 ## Purpose
 
-The build/validation layer catches source-contract regressions before the separate Android builder spends time on Gradle/package/signing work.
+RiftOS uses two separate validation layers:
+
+1. source-owned static/executable checks inside RiftOS;
+2. the separate Riftos-builder Android compile/sign/package verifier.
+
+Neither layer replaces installed-device testing.
 
 ## Source ownership
 
-- root `package.json` — `npm run check` / `check:transport` command chain.
-- `scripts/validate-rift-wiring.mjs` — parses every active JS/MJS file and validates module imports, HTML/CSS assets, Android Activity registration/reachability, browser asset injection, relay entrypoints, package-script references, native caller/handler agreement (including routed `desktop.*` and `system.app.*` handler families) and known removed runtime islands.
-- `scripts/validate-rift-transport.mjs` — architectural/source invariants, including native desktop/system-app ownership, the explicit local Vortex3D Binder bridge, unchanged MCP tool family, bounded artifact/image flow and shell-result framing. It rejects regressions where migrated Terminal/Task Manager bodies return to the trusted shell WebView, and checks shell path semantics across the split runtime: JavaScript fallback owns `resolvePath()` root-alias normalization while the Android-native Terminal owns its own cwd state.
-- `scripts/validate-rift-docs.mjs` — required system READMEs and active-source ownership coverage.
-- `scripts/test-rift-dev-lab.mjs` — isolated staging, immutable snapshot, baseline-conflict abort, guarded workspace publish and retained evidence behavior.
-- `scripts/test-rift-ai-adapters.mjs` — AI selector registry tests.
-- `scripts/test-rift-raw-protocol.mjs` — raw call parser/nested arguments/result protocol tests.
-- `scripts/test-rift-shell-batch.mjs` — batch parser/preflight/rollback behavior.
-- `scripts/test-rift-shell-git.mjs` — shell/Git workflow tests.
-- `scripts/test-rift-path-compat.mjs` — executable C:/D: path-helper semantics plus cross-subsystem assertions that drive aliases canonicalize before identity/containment checks.
-- `scripts/test-rift-local-platform.mjs` — local-first repo/vault/build/memory module wiring, provider capability honesty and fail-closed build-executor contract.
-- `scripts/test-riftllm-bridge.mjs` — fixed standalone RiftLLM Binder API identity/allowlist, Keystore pairing, guarded Workspace publication, bounded V1/V2 Text Encoding Lab surface and shell-boundary contract.
-- `scripts/test-riftllm-text-encoding-bridge.mjs` — executable fixed A2 challenge transfer contract: 192 KiB chunking, exact offsets/hashes, fixed V2 artifact/challenge source, candidate identity and no arbitrary path expansion.
-- `scripts/test-riftllm-training-bridge.mjs` — fixed frozen-B2 training-data/canary transport contract: immutable B2/corpus hashes, private `RIFT_TRAIN_DATA_V1` destination, reference/fast encoder parity hook, source-stability rehash, 192 KiB upload, stable command surface and generic path/process rejection.
-- `scripts/test-riftllm-corpus.mjs` — executable V1/V2 RiftCorpus local-helper contract: deterministic 3 MiB sharded synthesis, V2 compositional identity, count bounds, shard-set provenance, sharded train/full-heldout composition, bounded Android held-out slice, private-path confinement and unfinished-project exclusion.
-- `scripts/test-rift-text-encoder-task.mjs` — fixed-path experimental V1/V2 native tokenizer task contract, pinned configs/sources, 24-byte V2 learned-token cap, async train/status/cancel wiring, optimized-batch parity, exact provenance, streaming status, transactional artifact/manifest recovery, 32K merge arithmetic and generic-process rejection.
-- `scripts/test-rift-plus-plus-v0.mjs` — Rift++ V0 compiler/Swarm IR/BrainBackend preview contract, workspace-only source confinement, finite role/capability policy, read-only reviewer/security roles and no generic execution/MCP expansion.
-- `scripts/test-rift-ir-v1.mjs` — language-independent `rift.ir/1` swarm-core lowering/validation contract, canonical task schedules, resource/context accounting, capability defense-in-depth, inspect-only execution metadata and no MCP expansion.
-- `scripts/test-rift-plus-plus-core-v1.mjs` — executable Core V1 bootstrap frontend contract: grammar subset, source spans, deterministic type/name/mutability/control-flow/structured-data/collection/module-graph checks, single-`.rxe` linking, qualified imports, cycle/missing/identity/alias rejection, nominal struct/enum execution, bounded `Vec<T,N>` plus `Option<T>` / `Result<T,E>`, arithmetic typing, recursion ceilings, signed-min coverage, exhaustive match and structured negative diagnostics without CLI/MCP expansion.
-- `scripts/test-riftpp-shell.mjs` — normal RiftShell Core command routing (`check/compile/inspect/run/exec`), deterministic source-root module loading and identity checks, separation from experimental RiftCLI, no-host-import execution, timer/macrotask yielding, bounded output/VM budgets and atomic-batch exclusion.
-- `scripts/test-rift-vm.mjs` — executable `rift-exec-v1`/`riftvm-1` validation and execution contract, including checked arithmetic, nominal struct/enum operations, bounded immutable vector operations, `Option` / `Result` collection outcomes, serialized-input/aggregate-string limits, composite depth/render/public-result expansion limits, composite host-boundary denial, dotted declared imports, hard step/stack/call limits, fake-prevalidation resistance, no eval/process path and the `.rift` + `main.rxe` package fixture.
-- `scripts/test-rift-app-import.mjs` — `.rift` package import contract.
-- `android/app/build.gradle.kts` — Android source verification and web-asset sync.
-- external `Arctic403/Riftos-builder` — manual Android build/sign/verify worker.
+RiftOS repository:
+- package.json — source-check entrypoint.
+- scripts/validate-rift-wiring.mjs — syntax, Android reachability, exact native snapshot, packaging and runtime-wiring checks.
+- scripts/validate-rift-transport.mjs — cross-layer security/authority invariants.
+- scripts/validate-rift-docs.mjs — documentation trust/ownership/maintenance gate.
+- scripts/test-*.mjs — focused active or explicitly retained-reference contracts.
+- android/app/build.gradle.kts — Android source snapshot, generated headless assets and WebView ownership preBuild gates.
 
-## Local/source check flow
+External Builder mirror audited during this pass:
+- workspace/Riftos-builder-main/.github/workflows/riftos-worker.yml
+- workspace/Riftos-builder-main/scripts/riftos-build.sh
+- workspace/Riftos-builder-main/scripts/verify-riftos-apk.sh
 
-`npm run check` starts with the wiring validator, which syntax-checks every active JS/MJS file and verifies the runtime reference graph, then runs the transport/documentation validators and focused test scripts. These are fast source-level checks and do not replace an Android compile.
+The Builder is a separate repository and is not part of RiftOS SOURCE_OWNERSHIP.
 
-Gradle `verifyRiftOsAndroidSources` rejects incomplete native snapshots, including the mandatory `RiftNativeSystemApps.kt` system-app host. `syncRiftOsWebAssets` copies root `index.html`, styles, `src/**` and `workspace-live/**` into generated Android assets before build.
+## npm source gate
 
-## External builder boundary
+Root npm run check delegates to check:transport.
 
-The RiftOS source repository intentionally has no automatic Actions build. The separate public builder is manually dispatched against an exact source commit, then compiles/alines/signs/verifies the APK according to project policy. Gradle stamps the builder-provided `SOURCE_SHA`, `GITHUB_RUN_ID` and `GITHUB_RUN_NUMBER` into generated `BuildConfig`; these values are exposed by `rift_info`, MCP initialize metadata and the privacy-limited system dump so an installed APK can be traced back to the exact source/build that produced it.
+Current ordered flow:
+1. validate-rift-wiring.mjs
+2. validate-rift-transport.mjs
+3. validate-rift-docs.mjs
+4. every focused test-rift-*.mjs listed in package.json
 
-## Signing inputs and policy
+validate-rift-wiring now also auto-discovers every scripts/test-*.mjs and fails if a focused test exists but is not executed by a package script.
 
-`android/riftos-debug.keystore.b64` is the bundled legacy fallback signing identity used by the separate builder when private release secrets are not configured. It is a build input, not an application secret. The project intentionally keeps the current signing behavior for now. A private production signing-key migration is planned, but do **not** rotate/remove the fallback, require private signing secrets, or change this policy until the project owner explicitly requests it.
+Therefore adding a focused test without wiring it into npm run check is a validation failure.
+
+## JavaScript syntax coverage
+
+validate-rift-wiring syntax-checks:
+- every src/*.js;
+- Android runtime asset JavaScript;
+- workspace-live JavaScript;
+- relay JavaScript;
+- every scripts/*.mjs.
+
+This includes retained/reference JavaScript intentionally kept as migration/regression material.
+
+Passing syntax does not imply a retained module is packaged or live.
+
+## Android Activity/source reachability
+
+The wiring validator:
+- parses manifest Activity declarations;
+- requires each declared Activity source to exist;
+- identifies Kotlin types reachable by textual source references from manifest Activities;
+- fails when a Kotlin source is unreachable from the Android application graph.
+
+This is a static reachability guard, not Kotlin compilation/type resolution.
+
+## Exact mandatory Kotlin snapshot
+
+Current Android source directory contains 40 Kotlin files.
+
+android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists all 40.
+
+During this audit the old list was found to protect only 32 files.
+
+The source validator now independently extracts the Gradle list and compares it exactly with the actual Kotlin directory:
+- a live Kotlin file omitted from Gradle -> failure;
+- a stale deleted Kotlin path left in Gradle -> failure.
+
+This prevents the final Builder's DEX verification contract from silently lagging behind current native ownership.
+
+## Gradle preBuild gates
+
+preBuild depends on:
+- verifyRiftOsAndroidSources;
+- validateRiftBrowserWebViewOwnership;
+- syncRiftOsWebAssets.
+
+### WebView ownership
+
+Only explicit RiftBrowser-named owners may contain WebKit/WebView code:
+- RiftBrowserAndroidWebViewEngine.kt
+- RiftBrowserWindow.kt
+- RiftBrowserMcpAppBridge.kt
+- RiftBrowserAppHost.kt
+- RiftBrowserPreviewActivity.kt
+- RiftBrowserRendererCrashGuard.kt
+
+Any matching WebKit/WebView code outside that set is a Gradle build failure.
+
+### Headless OS-execution assets
+
+syncRiftOsWebAssets copies exactly:
+- src/riftpp-core.js
+- src/riftvm.js
+
+into generated assets/www.
+
+It does not package:
+- index.html;
+- styles.css;
+- broad src/**;
+- workspace-live/**.
+
+RiftBrowser Android assets remain under android/app/src/main/assets and are merged separately.
+
+## Documentation validator
+
+validate-rift-docs enforces:
+- documentation is unverified by default;
+- exact verified-subsystem set;
+- SOURCE_OWNERSHIP coverage;
+- required local source-area READMEs;
+- Markdown relative-link validity;
+- retired protocol markers absent.
+
+This audit removed the brittle manually complete subsystem list assumption.
+
+The validator now auto-discovers every docs/systems/**/README.md and adds it to the required set before maintenance/trust checks.
+
+Therefore a newly created subsystem README cannot silently escape:
+- minimum useful size;
+- Source ownership;
+- Failure signatures;
+- Fix map;
+- Validation sections;
+- VERIFIED-marker trust enforcement.
+
+This also closes the discovered gap where docs/systems/vortex-bridge/README.md existed but was not in the old requiredDocs array.
+
+## Retained-reference focused tests
+
+Some focused tests deliberately execute retained JavaScript as migration/regression oracles.
+
+They are not live-runtime proof.
+
+Current examples:
+- test-rift-shell-batch.mjs — retained RiftShellBatch transaction oracle; now also asserts batch JS is not packaged and native RiftShell has no batch command.
+- test-rift-app-import.mjs — retained RiftApps/RiftRT package-format oracle; now asserts those JS implementations are not packaged and current package execution is Android-owned.
+- test-rift-path-compat.mjs — retained cross-module C:/D: compatibility oracle.
+
+The scripts index was rewritten to label these honestly.
+
+## Manual proof scripts
+
+scripts/gate6d2-*.js and gate6d3-*.js are not test-*.mjs and are not automatically executed by npm run check.
+
+They are retained/manual proof fixtures.
+
+Frozen RiftLLM+ proof artifacts are not rerun simply because source validation runs.
+
+## Build provenance
+
+Gradle compiles:
+- RIFT_SOURCE_SHA
+- RIFT_BUILD_RUN_ID
+- RIFT_BUILD_RUN_NUMBER
+
+from Builder/environment values, defaulting to local when not supplied.
+
+Native shell/MCP diagnostics consume this provenance.
+
+## External Builder source resolution
+
+The audited Riftos-builder workflow is workflow_dispatch only.
+
+It:
+1. resolves the requested private RiftOS ref to an exact commit SHA;
+2. checks out that exact SHA;
+3. verifies HEAD equals SOURCE_SHA;
+4. requires the checked-out tree to have no tracked drift or untracked files;
+5. runs the exact source commit's npm run check before Gradle.
+
+Local unpushed workspace changes are never built by that worker.
+
+## External Android build
+
+riftos-build.sh:
+- requires signing identity variables;
+- runs npm run check;
+- runs Gradle release assemble with Java 17/Android 36;
+- requires unsigned APK output;
+- zipaligns;
+- signs with apksigner;
+- verifies zip alignment;
+- verifies signature/certificate;
+- runs verify-riftos-apk.sh against the final signed APK.
+
+A source-check pass therefore does not imply an APK exists.
+
+## Final APK native verification
+
+verify-riftos-apk.sh reads the current Gradle mandatory Kotlin list.
+
+For every listed top-level Kotlin filename it requires the corresponding com/riftos/app class descriptor in packaged DEX.
+
+It also explicitly requires private top-level RiftDevLabLocalAgent and embedded SOURCE_SHA.
+
+Because the Gradle list is now exact 40/40, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
+
+## Final APK asset verification
+
+The Builder verifier was critically stale before this audit.
+
+It still required:
+- assets/www/index.html;
+- assets/www/styles.css;
+- every src file;
+- workspace-live files;
+- Workspace Records HTML marker.
+
+That directly contradicted current native Gradle packaging and would reject a correct native APK.
+
+This audit replaced the obsolete block.
+
+Current Builder final-APK rules:
+- require assets/www/src/riftpp-core.js byte-for-byte equal source;
+- require assets/www/src/riftvm.js byte-for-byte equal source;
+- reject every other file under assets/www;
+- explicitly reject index.html, styles.css, workspace-live, PWA/service-worker content;
+- verify every non-Markdown asset under android/app/src/main/assets byte-for-byte.
+
+## Builder publication
+
+On successful build with publish=true:
+- a private RiftOS prerelease tag is created against SOURCE_SHA;
+- the verified APK is uploaded;
+- upload retries are bounded to three attempts;
+- a failed partial release is cleaned up.
+
+On failure with publication enabled:
+- private logs are zipped and attached to a private RiftOS prerelease.
+
+Private source checkout and restored signing files are removed in the always() cleanup step.
+
+## Signing behavior
+
+Preferred signing uses four repository secrets:
+- RIFTOS_KEYSTORE_B64
+- RIFTOS_KEYSTORE_PASSWORD
+- RIFTOS_KEY_ALIAS
+- RIFTOS_KEY_PASSWORD
+
+Current fallback behavior remains:
+- decode source/android/riftos-debug.keystore.b64;
+- alias riftosdebug;
+- store/key password android.
+
+This fallback is an alpha/development signing identity, not strong production publisher identity.
+
+It remains intentionally unchanged in this audit because current project policy still permits alpha/debug builds when production signing secrets are absent.
+
+A production-distribution policy should require private release signing and remove the fallback separately.
+
+## External dependency/reproducibility limitations
+
+The audited Builder uses version tags rather than immutable commit-SHA pins for GitHub Actions such as:
+- actions/checkout@v7
+- actions/setup-java@v5
+- gradle/actions/setup-gradle@v6
+
+Gradle itself is pinned to 9.5.0 and Android build tools to 36.0.0.
+
+The mutable Action-tag trust surface is a current external supply-chain limitation; this audit does not claim byte-for-byte reproducible Builder infrastructure.
+
+## Source fixes in this audit
+
+- expanded Gradle mandatory Kotlin snapshot from partial 32-file list to exact current 40 files;
+- source validator now compares Gradle list exactly to actual Kotlin tree;
+- fixed Android README wording that still described a packaged web shell/runtime;
+- docs validator now auto-discovers all subsystem READMEs;
+- wiring validator now requires every test-*.mjs to be executed by package scripts;
+- retained-reference tests now assert their JS implementations remain un-packaged/unwired;
+- script index labels retained tests honestly;
+- external Builder APK verifier replaced obsolete full-web-shell requirements with exact Rift++ Core/RiftVM asset verification;
+- Builder README removed RiftNativeAppHost and old workspace-live packaging claims.
 
 ## Critical invariants
 
-- Validators should check real architectural contracts, not obsolete removed behavior.
-- A passing text/source validator must never be described as a successful Android build.
-- Web assets required at runtime must be included by Gradle asset sync.
-- Required native source verification should evolve when mandatory system classes change.
-- Build triggering remains manual unless the project owner explicitly changes policy.
+- npm check runs before Gradle in Builder;
+- every focused test is wired into npm check;
+- every subsystem README is discovered by docs validation;
+- Gradle mandatory Kotlin list exactly equals current Kotlin source directory;
+- preBuild WebView ownership gate stays active;
+- only Rift++ Core/RiftVM enter generated assets/www;
+- final Builder APK independently proves those two assets and rejects any additional OS web asset;
+- final Builder verifies native DEX/source provenance, alignment and signatures;
+- Builder builds a clean exact Git commit, not phone workspace bytes;
+- source validation is never called APK/device proof;
+- retained-reference tests remain clearly non-live.
 
 ## Failure signatures
 
-- `node --check` failure -> syntax error in named JS file.
-- validator assertion failure after intentional architecture change -> update code and test together only when the old invariant is truly obsolete.
-- Gradle source verification fails -> required native file missing from source snapshot.
-- APK runs stale web code -> asset sync/source commit/build artifact mismatch.
-- builder fails after source checks pass -> inspect Gradle/Android/package/signing stage separately.
+- Kotlin source exists but not in Gradle mandatory list -> snapshot-gate regression;
+- deleted Kotlin path remains in Gradle -> stale snapshot regression;
+- subsystem README exists but bypasses docs validator -> discovery regression;
+- test-*.mjs exists but npm check never runs it -> test-gate regression;
+- Builder verifier requires index.html/styles.css/workspace-live -> stale native-migration regression;
+- unexpected assets/www file passes Builder smoke -> packaging regression;
+- npm check is moved after Gradle -> waste/gating regression;
+- Builder source tree is dirty but proceeds -> provenance regression;
+- SOURCE_SHA absent from final DEX when Builder supplied it -> provenance regression;
+- zipalign/apksigner verification disappears -> artifact-validation regression;
+- docs call retained JS test live proof -> validation/trust regression.
 
 ## Fix map
 
-Source invariant/tests -> `scripts/`.
-Which web files enter APK -> Gradle asset sync.
-Native dependency/SDK configuration -> Gradle.
-Remote compile/sign packaging -> external builder.
+Root source-check sequencing -> package.json.
 
-## Validation discipline
+Source/runtime wiring -> scripts/validate-rift-wiring.mjs.
 
-For large changes use: audit -> snapshot -> targeted read -> patch -> local source checks -> Android build -> runtime verification -> commit. Update the owning subsystem README and its relevant validator in the same patch when changing an architectural invariant.
+Cross-layer authority/security -> scripts/validate-rift-transport.mjs.
+
+Docs/trust/ownership -> scripts/validate-rift-docs.mjs.
+
+Focused tests -> scripts/test-*.mjs.
+
+Android preBuild/source/assets/WebView gate -> android/app/build.gradle.kts.
+
+External build execution -> Riftos-builder scripts/riftos-build.sh.
+
+Final APK content/provenance smoke -> Riftos-builder scripts/verify-riftos-apk.sh.
+
+External workflow/signing/publication -> Riftos-builder .github/workflows/riftos-worker.yml.
+
+## Validation
+
+Second source audit must verify:
+- package check order;
+- every test-*.mjs appears in package commands;
+- syntax coverage;
+- exact Gradle-vs-Kotlin snapshot;
+- preBuild dependencies;
+- exact two generated OS assets;
+- WebView allowlist;
+- dynamic subsystem README discovery;
+- SOURCE_OWNERSHIP checks;
+- retained test labeling/packaging guards;
+- Builder exact-SHA + clean-tree gate;
+- Builder npm-check-before-Gradle ordering;
+- zipalign/apksigner verification;
+- final DEX/native provenance checks;
+- final exact two-asset www rule;
+- native Android assets byte-match source;
+- signing fallback accurately documented;
+- external Builder limitations accurately separated from source/device proof.
+
+No npm/Gradle/Builder execution is claimed by this source audit itself.

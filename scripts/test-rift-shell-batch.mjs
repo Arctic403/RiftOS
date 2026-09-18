@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+const gradleSource=readFileSync('android/app/build.gradle.kts','utf8');
+const nativeShellSource=readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt','utf8');
+assert.ok(!gradleSource.includes('riftshell-batch.js'),'retained batch JS must not be packaged');
+assert.ok(!nativeShellSource.includes('"batch"'),'native RiftShell must not expose the retired batch command');
+
 const normalize=value=>'/'+String(value||'/').replace(/\\/g,'/').split('/').filter(Boolean).join('/');
 const files=new Map([['/workspace/original.txt','before']]),directories=new Set(['/','/workspace','/system','/D:','/D:/Users','/D:/Users/Default','/D:/Workspace']),archives=new Map(),statCalls=[];
 const fs={
@@ -42,7 +47,7 @@ statCalls.length=0;await context.window.RiftShellBatch.run('home ; pwd',{state,e
 statCalls.length=0;await context.window.RiftShellBatch.run('workspace cd ; pwd',{state,execute,resolve,dryRun:true,print:()=>{}});assert(statCalls.includes('/D:/Workspace'),'batch preflight must model workspace cd on D:');
 assert.deepEqual(Array.from(context.window.RiftShellBatch.split('write a "x;y"; write b z')),['write a "x;y"','write b z']);
 await assert.rejects(()=>context.window.RiftShellBatch.run('write original.txt changed ; git push',{state,execute,resolve,print:()=>{}}),/cannot run inside an atomic batch/);assert.equal(files.get('/workspace/original.txt'),'after');
-console.log('ok - failed local batches restore files and directories');
+console.log('ok - retained RiftShellBatch reference restores files/directories and remains un-packaged/unwired');
 console.log('ok - successful and dry-run batch modes; preflight cwd matches D: home/workspace execution');
 console.log('ok - non-reversible commands are blocked and rolled back');
 for(const script of ['unknown thing','cp only-one','ls --bad','head original.txt nope','write /workspace x','git push','workspace rollback','workspace push publish','devlab status','riftpp run example.riftpp','write /mounts/card/file x']){

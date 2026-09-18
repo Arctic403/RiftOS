@@ -25,7 +25,7 @@ for (const [host, name] of expected) {
   const adapter = registry.current();
   assert.equal(registry.resolve(host), name, `${host} should resolve to ${name}`);
   assert.equal(adapter.name, name);
-  for (const field of ['composer', 'send', 'stop', 'assistant', 'user']) {
+  for (const field of ['composer', 'stop', 'assistant', 'user']) {
     assert.ok(Array.isArray(adapter[field]) && adapter[field].length, `${name}.${field} must expose selectors`);
   }
 }

@@ -1,69 +1,157 @@
-# Transfer Subsystem
+# Transfer Ownership
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-The transfer subsystem keeps large copy/move/ZIP/unzip operations off the normal native RPC worker, reports bounded progress to the RiftOS shell, and verifies recursive transfers before success. The active design is intentionally small: one JavaScript queue, one dedicated native executor, one manifest counter, and one progress path.
+RiftOS no longer has one generic transfer engine.
+
+Copy, move, archive, extraction, Git project replacement and SAF editing are owned by different narrow subsystems with different guarantees.
 
 ## Source ownership
 
-- `RiftTransferQueue` in `src/riftcore.js` — serializes high-level RiftFS transfer requests and ensures one rejected task cannot poison later work.
-- `RiftTransferManifest.kt` — expected file/directory/byte totals used for recursive verification.
-- `RiftNativeDispatcher.kt` — owns the dedicated transfer executor, provider-native copy/move fast paths, streaming fallback, ZIP/unzip, progress accounting and rollback/error behavior.
-- `MainActivity.sendNativeProgress()` -> `window.RiftTransferUI.__progress(...)` — native-to-shell progress bridge.
-- `src/riftos.js` `RiftTransferUI` / `renderTransferState()` — visible progress state.
+Current owners:
+- `RiftNativeShell.kt` — app-private RiftFS cp/mv/zip/unzip.
+- `RiftToolSandbox.kt` — workspace-only MCP copy/move/archive/extract and transaction support.
+- `RiftNativeGit.kt` — repository/project staging and replacement.
+- `RiftNativeWorkspaceApps.kt` — SAF mount/browse/text edit only; **not** a copy/move/archive engine.
 
-The removed `RiftTransferJob` / manager / service / registry experiment is not part of the active runtime. Cancellation/pause/resume are not currently implemented.
+Retired:
+- `RiftTransferManifest.kt` — absent.
+- general transfer code formerly inside `RiftNativeDispatcher.kt` — absent.
 
-## Runtime flow
+## Native Shell transfers
 
-```text
-Files/RiftFS request
-  -> RiftTransferQueue
-  -> RiftAndroid fs.copy/fs.move/fs.zip/fs.unzip
-  -> dedicated transferExecutor
-  -> provider-native fast path or streaming recursion
-  -> TransferProgress + RiftTransferManifest verification
-  -> MainActivity progress callback
-  -> RiftTransferUI
-  -> success/error
-```
+Shell `cp` / `mv`:
+- stay inside canonical app-private RiftFS;
+- reject RiftFS/virtual volume roots;
+- refuse overwrite unless `--force` / `-f`;
+- bound recursive copy to 10000 entries and 256 MiB;
+- try `renameTo` first for move;
+- fall back to bounded copy + source deletion;
+- if move cleanup fails after copy, both copies are retained and an error is returned rather than deleting the destination.
 
-## Why this boundary exists
+Shell `zip`:
+- requires a non-root source;
+- requires a new `.zip` destination;
+- stages output in a temporary file;
+- rejects unsafe entry names;
+- bounds source to 10000 entries and 256 MiB;
+- publishes by rename only after archive completion.
 
-Large trees can contain thousands of files. Transfer work must not monopolize the normal native RPC executor or the browser/UI thread. Provider-native operations are used when possible; otherwise the dispatcher streams data in bounded buffers and yields during long work.
+Shell `unzip`:
+- requires a non-existing destination;
+- extracts to a staging directory;
+- rejects absolute, drive-letter, `.`, `..` and duplicate entries;
+- bounds to 10000 entries and 256 MiB expanded bytes;
+- canonicalizes each staged target;
+- publishes the staged directory by rename;
+- removes staging on failure.
+
+## MCP / Code Mode transfers
+
+All MCP transfer paths remain inside `riftfs/workspace`.
+
+Archive creation:
+- source/destination must be distinct;
+- destination must end in `.zip`;
+- archive cannot be created inside its source directory;
+- bounds: 50000 entries, 256 MiB source;
+- writes a temporary archive;
+- uses `commitStaged()` for destination replacement/rollback behavior.
+
+Extraction:
+- source must be a `.zip` file;
+- destination cannot be workspace root;
+- bounds: 50000 entries, 512 MiB expanded bytes;
+- rejects absolute, drive-letter, empty, duplicate, `.` and `..` entries;
+- canonicalizes every staged output;
+- extracts to a temporary directory;
+- commits through `commitStaged()`.
+
+Workspace batch transactions separately capture mutation destinations for copy/archive/extract and provide copy-on-write rollback for the batch.
+
+## Git project replacement
+
+`RiftNativeGit` owns repository synchronization rather than using Shell/MCP transfer routines.
+
+For project replacement it:
+1. builds a staged project;
+2. writes metadata into the stage;
+3. renames the current project into a recovery backup;
+4. renames the stage into the project root;
+5. restores the backup if publish fails and the destination is absent;
+6. removes the backup only after successful publish.
+
+A failed replacement reports the recovery staging path rather than silently deleting both copies.
+
+## SAF / native Files
+
+Native Files currently does **not** implement general copy/move/zip/unzip.
+
+Its SAF responsibilities are:
+- mount;
+- browse;
+- bounded text open/edit/save;
+- unmount.
+
+External-provider write behavior is provider-specific and belongs to Files/Editor validation.
+
+Do not describe SAF support as a native transfer engine.
+
+## Non-ownership boundaries
+
+Transfer ownership does not imply:
+- MCP may leave workspace;
+- Shell may access SAF;
+- Files may perform arbitrary transfer operations;
+- Git project swaps use generic cp/mv;
+- installed apps inherit Shell transfer authority.
 
 ## Critical invariants
 
-- A rejected `RiftTransferQueue` task must not block later queued transfers.
-- `fs.copy`, `fs.move`, `fs.zip` and `fs.unzip` must run on `transferExecutor`, not the normal executor.
-- Transfer IDs must remain stable from JS request through native progress events.
-- Move must establish destination success before deleting the source; failed source deletion rolls the destination back.
-- Cross-mount recursive copy/move must verify file, directory and byte totals before reporting success.
-- ZIP extraction must retain entry-count, expansion-size and traversal limits.
-- UI progress must be throttled/bounded enough that many tiny files do not recreate the original lock-up problem.
+- `RiftTransferManifest.kt` remains absent;
+- no broad transfer dispatcher returns;
+- Shell transfers remain RiftFS-confined;
+- MCP transfers remain workspace-confined;
+- archive traversal/duplicate/size limits remain enforced;
+- move failure never silently destroys both source and destination;
+- staged archive/extract paths are cleaned or retained safely on failure;
+- Git replacement preserves a recovery path;
+- Files/SAF is not falsely documented as a copy/move/archive engine.
 
 ## Failure signatures
 
-- UI/native RPCs stall during a large transfer -> transfer escaped onto the normal executor or progress/UI work is too frequent.
-- Progress panel never appears/updates -> transfer ID, `progressSink`, `MainActivity.sendNativeProgress`, or `RiftTransferUI`.
-- Queue never continues after one failure -> `RiftTransferQueue.tail` continuation handling.
-- Destination incomplete but operation reports success -> manifest/progress verification.
-- Move loses source or destination on failure -> `moveNode` ordering/rollback.
-- User expects cancel/pause but nothing happens -> those controls are not active features; do not look for the removed job registry.
+- generic transfer queue/manifest returns -> retired architecture regression;
+- Shell transfer escapes app-private RiftFS -> containment failure;
+- MCP transfer accepts non-workspace path -> sandbox failure;
+- ZIP traversal/absolute/duplicate entry is accepted -> archive security failure;
+- shell move deletes source despite failed copy/publish -> data-loss regression;
+- Git replacement deletes current project before a recoverable stage/backup exists -> data-loss regression;
+- docs claim Files supports copy/move/zip when source has no such implementation -> documentation regression.
 
 ## Fix map
 
-- JS sequencing -> `RiftTransferQueue` in `src/riftcore.js`.
-- Worker selection -> `RiftNativeDispatcher.handleAsync` transfer-method set.
-- Throughput/provider behavior -> `copyFileBytes`, `copyNode`, `moveNode`, `tryProviderCopy`, `tryProviderMove`.
-- Completion verification -> `RiftTransferManifest` + `verifyTransferComplete`.
-- ZIP/unzip safety -> dispatcher `zip`/`unzip` and archive limits.
-- Visual progress -> dispatcher `emitTransfer`, `MainActivity.sendNativeProgress`, and `RiftTransferUI`.
+Shell cp/mv/zip/unzip -> `RiftNativeShell.kt`.
+
+Workspace copy/move/archive/extract and transactional staging -> `RiftToolSandbox.kt`.
+
+Git pull/project replacement -> `RiftNativeGit.kt`.
+
+SAF mount/edit semantics -> `RiftNativeWorkspaceApps.kt`.
 
 ## Validation
 
-Test large recursive trees, many tiny files, one large file, internal-to-internal, internal-to-SAF, SAF-to-internal, same-provider fast paths, forced streaming fallback, ZIP/unzip, error mid-transfer and move source-removal failure. Confirm normal native RPCs and the desktop remain responsive throughout.
+Source verification must recheck:
+- retired transfer files absent;
+- Shell copy/move bounds/failure semantics;
+- Shell ZIP stage/traversal/size rules;
+- MCP archive/extract limits and staging;
+- workspace confinement;
+- batch rollback capture;
+- Git recovery backup flow;
+- absence of Files copy/move/archive implementation.
 
-## Planned extension points
-
-If cancellation, pause/resume or persistent transfer jobs are added later, build them on top of the current transfer executor/progress/manifest path and add explicit runtime references plus tests. Do not reintroduce an unused parallel job registry.
+Installed-device/provider validation remains necessary for SAF and storage-provider failure semantics.

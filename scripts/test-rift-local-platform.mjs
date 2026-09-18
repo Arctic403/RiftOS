@@ -1,59 +1,41 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const read=file=>fs.readFileSync(file,'utf8');
-const entry=read('src/riftandroid-entry.js');
-const core=read('src/riftcore.js');
-const dispatcher=read('android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt');
-const vault=read('src/riftvault.js');
-const repo=read('src/riftrepo.js');
-const memory=read('src/riftmemory-control.js');
-const build=read('src/riftbuild.js');
-const riftrt=read('src/riftrt.js');
-const platform=read('src/riftlocal-platform.js');
-const shell=read('src/riftos.js');
-const batch=read('src/riftshell-batch.js');
-const surfaces=read('docs/PUBLIC_SURFACES.md');
+const read = file => fs.readFileSync(file, 'utf8');
+const vault = read('src/riftvault.js');
+const repo = read('src/riftrepo.js');
+const memory = read('src/riftmemory-control.js');
+const build = read('src/riftbuild.js');
+const platform = read('src/riftlocal-platform.js');
+const nativeShell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
+const nativeGit = read('android/app/src/main/java/com/riftos/app/RiftNativeGit.kt');
+const devLab = read('android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt');
+const surfaces = read('docs/PUBLIC_SURFACES.md');
 
-const order=['riftvault.js','riftrepo.js','riftmemory-control.js','riftbuild.js','riftlocal-platform.js','riftshell-batch.js','riftdevlab.js','riftos.js'];
-for(let i=1;i<order.length;i++)assert.ok(entry.indexOf(order[i])>entry.indexOf(order[i-1]),`boot order regressed: ${order[i-1]} -> ${order[i]}`);
 assert.match(vault,/\/system\/riftvault\/v1/);
 assert.match(vault,/objects\/sha256/);
-assert.match(vault,/core\.fs\.sha256\(full\)/);
-assert.doesNotMatch(vault,/MAX_BRIDGE_HASH_BYTES/);
-assert.match(core,/async sha256\(value\)/);
-assert.match(core,/fs\.sha256/);
-assert.match(dispatcher,/"fs\.sha256" -> sha256/);
-assert.match(dispatcher,/MessageDigest\.getInstance\("SHA-256"\)/);
-assert.match(dispatcher,/BufferedInputStream/);
-assert.match(vault,/Vault restore checksum mismatch/);
-assert.match(vault,/id:"r2"[\s\S]*ready:false/);
-assert.match(vault,/id:"terabox"[\s\S]*ready:false/);
 assert.match(repo,/\/system\/riftrepo\/v1/);
-assert.match(repo,/auto safety before rollback/);
 assert.match(repo,/Working tree has local RiftRepo changes/);
-assert.match(repo,/branches:\{main:null\}/);
 assert.match(memory,/\/system\/riftmemory\/v1/);
-assert.match(memory,/nativeAccelerator:false/);
-assert.match(memory,/filter\(row=>!row\.pinned\)/);
-assert.match(core,/localBuildExecutor:false/);
-assert.match(core,/"build\.local"/);
-assert.match(build,/capabilities\.localBuildExecutor===true/);
 assert.match(build,/RiftBuild doctor blocked local execution/);
-assert.match(dispatcher,/"build\.execute"\s*->\s*throw UnsupportedOperationException\("Local RiftBuild executor is not installed in this APK"\)/);
-assert.match(build,/async function submit\(job,cwd="\/workspace"\)/);
-assert.match(build,/rope-build-job-v1/);
-assert.match(build,/ALLOWED_TASK/);
-assert.match(riftrt,/capability\(app,'build\.local'\)/);
-assert.match(riftrt,/build\.submit\(args\.job,'\/workspace'\)/);
-assert.match(riftrt,/nativeExecutor:\$\{buildExecutor\}/);
-assert.match(build,/\/documents\/builds/);
 assert.match(platform,/family==="repo"/);
 assert.match(platform,/family==="vault"/);
 assert.match(platform,/family==="build"/);
 assert.match(platform,/family==="memory"/);
-assert.match(shell,/cmd==="rift"/);
-assert.match(batch,/"devlab","rift"/);
-for(const name of ['RiftVault','RiftRepo','RiftMemory','RiftBuild','RiftLocalPlatform'])assert.ok(surfaces.includes(`\`${name}\``),`public surface missing: ${name}`);
-assert.equal(fs.existsSync('docs/RIFT_LOCAL_FIRST_REPO_VAULT_BUILD_ARCHITECTURE.md'),false,'local-first architecture planning document must remain outside the RiftOS repo');
-console.log('Rift local-first platform contract OK');
+
+assert.match(nativeShell,/Legacy RiftLocalPlatform shell wrapper is retired/);
+assert.match(nativeShell,/"git" -> nativeGit\.execute/);
+assert.match(nativeShell,/"devlab" -> services\.devLab/);
+assert.match(nativeGit,/class RiftNativeGit/);
+assert.match(nativeGit,/GitHub tokens are entered only in native Settings/);
+assert.match(devLab,/object RiftNativeDevLab/);
+assert.equal(fs.existsSync('android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt'), false, 'dead dispatcher must not return');
+
+for (const retained of ['riftrepo.js','riftvault.js','riftbuild.js','riftmemory-control.js','riftlocal-platform.js']) {
+  assert.ok(surfaces.includes(retained), `retained local-first source missing from public-surface classification: ${retained}`);
+}
+for (const liveName of ['RiftRepo','RiftVault','RiftBuild','RiftMemory','RiftLocalPlatform']) {
+  assert.ok(!surfaces.includes(`| \`${liveName}\``), `retained local-first module must not be listed as a live public surface: ${liveName}`);
+}
+assert.equal(fs.existsSync('docs/RIFT_LOCAL_FIRST_REPO_VAULT_BUILD_ARCHITECTURE.md'), false, 'local-first architecture planning document must remain outside the RiftOS repo');
+console.log('Rift local-first reference modules + native authority migration contract OK');

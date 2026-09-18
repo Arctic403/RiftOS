@@ -29,10 +29,6 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         shellExecutor = executor
     }
 
-    fun clearShellExecutor(executor: RiftShellExecutor) {
-        if (shellExecutor === executor) shellExecutor = null
-    }
-
     init {
         migrateLegacyState()
         sandbox = RiftToolSandbox(appContext)
@@ -79,7 +75,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
     fun tools(): JSONArray = JSONArray()
         .put(tool(
             "rift_shell_exec",
-            "Execute a RiftShell command through the process-owned native core, with a temporary trusted compatibility fallback for not-yet-ported command families. Does not expose raw Android shell access.",
+            "Execute a RiftShell command through the process-owned native core. Does not expose raw Android shell access or a renderer compatibility fallback.",
             objectSchema(JSONObject()
                 .put("command", stringProperty("RiftShell command to execute."))
                 .put("cwd", stringProperty("Optional RiftShell working directory.")), listOf("command"))
@@ -210,7 +206,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         // Changing this model-visible definition changes manifest().sha256 and can force cached MCP clients to rescan actions.
         .put(tool(
             "rift_workspace_exec",
-            "Rift Code Mode + Project Intelligence v1: execute many workspace operations locally in one model-visible call. Supports snapshots, incremental symbol search, reference lookup, surgical symbol/range reads, exact/range/hunk patches, dry-run validation, and transactional multi-file edits under workspace/. Read permission is always required; write permission is required only when the batch mutates files.",
+            "Rift Code Mode + Project Intelligence v2: execute many workspace operations locally in one model-visible call. Supports snapshots, incremental symbol search, reference lookup, surgical symbol/range reads, exact/range/hunk patches, dry-run validation, and transactional multi-file edits under workspace/. Read permission is always required; write permission is required only when the batch mutates files.",
             objectSchema(
                 JSONObject()
                     .put(
@@ -243,7 +239,11 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
                 return
             }
             if (!isAllowed(name, args)) {
-                val error = "Rift MCP shell access is disabled on this device. Enable write access in Rift MCP settings."
+                val error = when {
+                    !allowRead() && !allowWrite() -> "Rift MCP shell access is disabled on this device. Enable read and write access in Rift MCP settings."
+                    !allowRead() -> "Rift MCP shell access is disabled on this device. Enable read access in Rift MCP settings."
+                    else -> "Rift MCP shell access is disabled on this device. Enable write access in Rift MCP settings."
+                }
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("error", error))
                 return
@@ -335,7 +335,11 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
 
     fun audit(): JSONArray {
         val raw = prefs.getString(PREF_AUDIT, "[]") ?: "[]"
-        return runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
+        val parsed = runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
+        if (parsed.length() <= MAX_AUDIT) return parsed
+        return JSONArray().apply {
+            for (index in parsed.length() - MAX_AUDIT until parsed.length()) put(parsed.opt(index))
+        }
     }
 
     fun clearAudit(): Boolean {

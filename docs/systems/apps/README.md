@@ -1,85 +1,398 @@
-# RiftOS Programs and .rift Installer
+# RiftOS Programs and Package Host
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-The app package subsystem is the installation/distribution layer for RiftOS programs. A `.rift` file is an installer package. It is **not** the live execution container and is never launched in an iframe.
+The current Apps subsystem discovers and runs Rift program packages that already exist in app-private RiftFS.
 
-## Installed layout
+It is an **installed-package host**, not a package installer.
 
-```text
-C:/Programs/<app-id>/
-  package.json      validated installed package payload
-  install.json      installation metadata
-
-D:/Users/Default/AppData/<app-id>/
-  storage.json      user/application state
-
-C:/ProgramData/Installer/
-  staging/          transaction candidates
-  rollback/         temporary previous versions
-```
-
-Source projects normally live under D:/Workspace or D:/Projects. Build outputs/packages normally live under D:/Builds and D:/Packages. Installing a package makes a separate installed program copy under C:/Programs.
-
-## Install transaction
-
-`src/riftapps.js` validates the package, writes a complete candidate to `C:/ProgramData/Installer/staging`, moves an existing program to a rollback location when updating, atomically promotes the staged directory to `C:/Programs/<id>`, and removes the rollback copy only after promotion succeeds. A failed promotion attempts to restore the previous installed program.
-
-User AppData is not overwritten by upgrades. Uninstall removes the program directory and that app's AppData only after explicit user confirmation.
-
-## Legacy migration
-
-IndexedDB app records and old `/apps/packages` + `/apps/data` content are one-way migration inputs. Migrated data is copied into the C:/D: layout without deleting the legacy source during V1, allowing rollback to an older RiftOS build.
-
-## Execution boundary
-
-`RiftApps.launch(id)` delegates to `RiftRT.launch(id)`. `riftapps.js` contains no guest iframe execution path and does not own app runtime bridges. RiftRT decides the executable engine; on Android, normal installed HTML-based V1 packages default to the dedicated Android-owned `native-webview` app surface. Worker/WASM/native plugin engines remain explicit RiftRT targets.
-
-This split is intentional:
-
-```text
-.rift package -> RiftApps installer -> C:/Programs/<id> -> RiftRT -> native RiftDesktop window/surface
-```
-
-Compiled Rift payloads now have an initial path without changing the installer/registry or C:/D: layout: a `.rift` package can select RiftRT `engine: "rift-vm"` and carry a validated `main.rxe` `rift-exec-v1` executable. Future R.O.P.E/Rift++ compilers can target that executable boundary while native/optimized ABIs evolve separately.
-
-## Package validation
-
-`rift-app-v1` remains a bounded text package in V1. IDs, entry paths, file paths, total package bytes and declared capabilities are validated before install. Traversal components are rejected. Supported declarations include storage, filesystem, network, clipboard, share, notifications, local-build controller and bounded native capabilities.
+There is currently no source-proven native install/update/uninstall transaction for `.rift` packages.
 
 ## Source ownership
 
-- `src/riftapps.js` — validation, transactional install/update/uninstall, migration and program registry/manager.
-- `src/riftapps-files.js` — package export/share UX.
-- `src/riftrt.js` — execution after installation.
-- `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` — Android-owned V1 installed-program surface and native capability broker.
+Live:
+- `MainActivity.kt` — launcher discovery of package candidates under C:/Programs.
+- `RiftBrowserAppHost.kt` — package validation, WebView execution, per-app origin, capability bridge, grants, app storage/filesystem policy.
+- `RiftNativeShell.kt` — installed-app listing and persisted-grant inspect/revoke.
 
-## Invariants
+Retained/non-live:
+- `src/riftapps.js`
+- `src/riftapps-files.js`
+- `src/riftrt.js`
 
-- Import/install never means execute in an iframe.
-- Program files live under C:/Programs; user app state lives under D:/Users/Default/AppData.
-- Update failure must not silently destroy the previous installed program.
-- An installed package cannot choose its install root.
-- Ordinary installed-program filesystem grants cannot modify C:/Programs, C:/ProgramData or another app's AppData; those boundaries are enforced again by the native app host.
-- Launcher entries are generated from the installed registry, not arbitrary package-provided Android intents.
-- Package execution goes through RiftRT and RiftDesktop lifecycle/process ownership.
+Those retained files are not packaged as the current Android package manager.
+
+## Package location
+
+Primary installed package:
+
+`/C:/Programs/<app-id>/package.json`
+
+The host also contains a legacy execution fallback:
+
+`/apps/packages/<app-id>/package.json`
+
+The native launcher discovers only C:/Programs.
+
+Launcher now requires the package directory name to exactly equal the manifest id.
+
+Execution performs stronger validation again when opening.
+
+## Package format
+
+`package.json` is a bounded JSON document:
+- 1 byte .. 8 MiB;
+- `manifest` object required;
+- manifest id must equal requested app id;
+- `files` object required;
+- entry defaults to `index.html`;
+- entry path is normalized and may not contain traversal/NUL;
+- entry must exist as a string in `files`.
+
+App id:
+`^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`
+
+## Capability catalog
+
+The current implemented grantable capabilities are exactly:
+
+- fs.read
+- fs.write
+- network
+- clipboard.read
+- clipboard.write
+- share
+- build.local
+
+Packages declaring another capability now fail package validation.
+
+Previously listed but unimplemented notification/repair/native capability names were removed during this audit rather than left as fake permissions.
+
+## Permission model
+
+A capability operation is accepted only when:
+1. capability is in the implemented host allowlist;
+2. package declared it;
+3. the user has previously granted it or approves the native AlertDialog.
+
+Grant records live in private `rift-native` preferences under:
+
+`setting:permissions:<app-id>`
+
+A permission dialog checks that the app instance is still live before persisting a grant or running the operation.
+
+This prevents a permission prompt left open after app closure from granting a dead instance.
+
+## Grant inspection/revocation
+
+Native RiftShell:
+
+`permissions`
+or
+`permissions list`
+
+reports persisted installed-app grants.
+
+This audit added:
+
+`permissions revoke <app-id> [capability|all]`
+
+to remove one grant or the complete app grant record.
+
+Revoke validates the app id and capability token before changing private preferences.
+
+When `network` or `all` is revoked while the app is already running, RiftShell forwards that revocation through the active MainActivity to `RiftBrowserAppHost.onGrantRevoked()`, which immediately restores `blockNetworkLoads=true` for every matching live app instance. Other capabilities are checked on each bridge request, so removing them from preferences takes effect on the next call.
+
+## Renderer ownership
+
+Each installed app runs in its own Android WebView attached directly to one RiftDesktop window.
+
+It is not:
+- an iframe;
+- shell-rendered;
+- part of RiftBrowser's browsing tab set.
+
+Chromium ownership remains explicitly inside the RiftBrowser-named host source.
+
+## Per-app origin isolation
+
+Installed apps previously shared one logical origin, `https://app.riftos.local`.
+
+That allowed same-origin cookie state to be shared across otherwise separate app WebViews.
+
+This audit replaced it with a deterministic per-app origin:
+
+`https://app-<first-128-bits-of-SHA256(app-id)>.riftos.local`
+
+The exact origin is used for:
+- base URL;
+- local asset interception;
+- WebMessage bridge allowlist;
+- source-origin checks;
+- CSP local sources.
+
+Third-party cookies are explicitly disabled for installed app WebViews.
+
+## Local asset serving
+
+Requests are served from the package `files` JSON only when:
+- HTTPS;
+- host equals this app's derived origin;
+- first URL path segment decodes to this app id;
+- asset path is normalized without traversal/NUL;
+- requested entry exists as a string.
+
+Other local paths return 404.
+
+## WebView security
+
+Installed app WebView:
+- JavaScript enabled;
+- DOM storage disabled;
+- file access disabled;
+- content access disabled;
+- automatic JS window creation disabled;
+- multiple windows disabled;
+- mixed content blocked;
+- no cache;
+- third-party cookies disabled.
+
+Top-level navigation is allowed only to the app's own local HTTPS origin.
+
+External top-level navigation is blocked.
+
+## Network capability
+
+Network has two separate gates.
+
+### Declaration / CSP preparation
+
+If the package declares `network`, its CSP permits external network/resource categories that are intended to work after a grant.
+
+External **scripts are never enabled by network permission**. Script sources remain:
+- inline packaged/bootstrap script;
+- this app's own local origin;
+- blob.
+
+That prevents remote code from becoming an implicit holder of already-granted native capabilities.
+
+CSP also blocks:
+- frames;
+- objects;
+- forms;
+- frame ancestors.
+
+### Runtime grant
+
+Actual WebView network loads start blocked unless:
+- package declared `network`;
+- a saved user grant already exists.
+
+Approving the native network permission flips `blockNetworkLoads=false` for that live app instance.
+
+## Native messaging
+
+Bridge name:
+`RiftNativeApp`
+
+Requires Android WebMessage listener support.
+
+Messages:
+- exact per-app HTTPS origin only;
+- main frame only;
+- <=1 MiB UTF-8;
+- JSON object.
+
+There is no arbitrary method/native dispatcher.
+
+Unsupported methods return an error.
+
+## Exposed app API
+
+Ungated own-app operations:
+- app.ready
+- app.close
+- app.setTitle
+- app.info
+- storage.get/set/remove
+
+Capability-gated:
+- fs.readText/list
+- fs.writeText
+- clipboard.read/write
+- share
+- build.doctor/plan/submit/runs/artifacts
+
+`build.local` currently exposes planning/diagnostic shape only:
+- nativeExecutor=false;
+- submit fails unsupported;
+- runs returns empty;
+- artifacts lists D:/Builds.
+
+This does not claim a live local compiler executor.
+
+## Filesystem policy
+
+With `fs.read`, app may read:
+- its own C:/Programs/<app-id>;
+- its own AppData;
+- approved public D: roots.
+
+With `fs.write`, app may write:
+- its own AppData;
+- approved public D: user/project data roots.
+
+It may **not write its installed C:/Programs package** through the app API.
+
+Approved D: roots:
+- Workspace
+- Projects
+- Packages
+- Builds
+- Documents
+- Downloads
+- Temp
+
+All paths pass RiftVolumePaths normalization plus canonical RiftFS containment.
+
+Text read/write bound: 8 MiB.
+
+App text writes now use temp + backup + rename atomic replacement.
+
+## App storage
+
+Own JSON storage:
+`/D:/Users/Default/AppData/<app-id>/storage.json`
+
+Maximum encoded storage: 1 MiB.
+
+Storage writes now use the same atomic replacement helper.
+
+## Bounded UI/data surfaces
+
+- filesystem list: <=5000 entries;
+- clipboard read: <=64000 characters;
+- clipboard write: <=64000 characters;
+- share text: <=256000 characters;
+- app title: <=96 characters;
+- storage key: <=160 characters;
+- incoming bridge message: <=1 MiB.
+
+## Desktop lifecycle
+
+The previous host resumed all installed-app WebViews whenever MainActivity resumed, even when a Desktop window was minimized.
+
+This audit introduced managed app WebViews whose renderer lifecycle follows actual native View state:
+- Activity paused -> all paused;
+- detached/hidden/minimized -> paused;
+- attached + shown + Activity resumed -> resumed.
+
+Desktop remains sole owner of outer window visibility/geometry.
+
+## Renderer loss
+
+Installed-app renderer death:
+- records privacy-limited crash metadata;
+- removes instance from host;
+- detaches native content;
+- removes WebMessage listener;
+- destroys dead WebView;
+- closes the Desktop window.
+
+It does not kill native RiftOS.
+
+## Close/destroy
+
+Normal close removes instance, detaches content, removes listener, blanks/destroys WebView.
+
+Host destroy closes all instances and shuts down its background executor.
+
+Replies from background operations are delivered only while the same instance remains registered.
+
+## No installer
+
+There is no current native:
+- install;
+- update;
+- uninstall;
+- package signing/trust transaction.
+
+Therefore old install/update/rollback behavior in `src/riftapps.js` is retained design/reference only.
+
+Packages must already be present in C:/Programs for launcher discovery.
+
+## Source fixes in this audit
+
+- launcher requires folder name == manifest id;
+- unsupported/unimplemented declared capabilities now fail validation;
+- removed fake unimplemented capability names from grant allowlist;
+- remote scripts no longer become allowed through network declaration;
+- added form/frame CSP restrictions;
+- permission prompt refuses to grant a closed app instance;
+- app filesystem/storage writes made atomic;
+- installed-app renderers now pause when minimized/hidden;
+- list/clipboard/share payloads bounded;
+- added native grant revocation;
+- replaced shared app origin with deterministic per-app origins;
+- disabled third-party cookies.
+
+## Critical invariants
+
+- no native installer is claimed;
+- execution revalidates package;
+- each app has distinct origin;
+- native bridge is main-frame/exact-origin/1 MiB bounded;
+- package cannot declare unknown host capability;
+- capability requires declaration + user grant;
+- grant can be revoked;
+- C:/Programs is read-only through app fs API;
+- app renderer pauses when hidden;
+- remote network access never broadens script authority;
+- no raw shell/native dispatcher.
 
 ## Failure signatures
 
-- `.rift` imports but no installed tree appears under `C:/Programs/<id>` -> installer staging/promotion failed or package validation rejected the candidate.
-- an upgrade removes the previous program after a failed promotion -> rollback transaction regression.
-- uninstall leaves or deletes the wrong AppData -> program/AppData ownership mapping drifted.
-- launching an installed program creates an iframe or shell-DOM guest -> RiftApps/RiftRT execution boundary regressed.
-- package code can choose or write a system install root -> installer/native-host containment regression.
+- two apps share origin/cookie scope -> isolation regression;
+- minimized installed app remains resumed -> lifecycle regression;
+- remote HTTPS script can run after network grant -> CSP regression;
+- package declares unknown capability but launches -> manifest validation regression;
+- closed app permission dialog can persist grant -> grant-lifecycle regression;
+- fs.write modifies C:/Programs -> filesystem policy regression;
+- package writes truncate target on failed replacement -> atomic-write regression;
+- no way to revoke persisted grant -> permission-control regression;
+- docs claim install/update/uninstall live -> stale package-manager claim.
 
 ## Fix map
 
-Package validation/install/update/uninstall/migration -> `src/riftapps.js`.
-Export/share UX -> `src/riftapps-files.js`.
-Installed-program execution/lifecycle -> `src/riftrt.js`.
-Android installed-program filesystem/capability boundary -> `RiftNativeAppHost.kt`.
-C:/D: path identity or root mapping -> RiftFS owners, not package code.
+Launcher discovery -> `MainActivity.kt`.
+
+Execution/origin/CSP/capabilities/app fs/storage/lifecycle -> `RiftBrowserAppHost.kt`.
+
+Grant inspection/revoke -> `RiftNativeShell.kt`.
+
+Future installer -> no current owner; must be separately designed/audited.
 
 ## Validation
 
-Run `scripts/test-rift-app-import.mjs`. Verify valid generic-MIME `.rift` files install beneath C:/Programs, invalid packages fail before promotion, upgrades preserve AppData, source contains no installed-app iframe path, and launching an installed program delegates to RiftRT.
+Second source audit must recheck:
+- launcher directory/id rule;
+- package schema/id/entry/path bounds;
+- exactly seven implemented capability names;
+- per-app origin derivation/use;
+- third-party-cookie policy;
+- CSP script/network separation;
+- exact-origin/main-frame message bridge;
+- 1 MiB inbound bound;
+- fs read/write roots;
+- 8 MiB text bound and atomic writes;
+- 1 MiB own storage;
+- 5000 list / clipboard/share bounds;
+- permission instance check and revoke command;
+- renderer minimize/resume and crash cleanup;
+- absence of native installer/uninstaller.
+
+Installed-device proof should launch at least two packages, test cookie/origin isolation, grant/revoke, minimize/background behavior, renderer death and filesystem boundaries.

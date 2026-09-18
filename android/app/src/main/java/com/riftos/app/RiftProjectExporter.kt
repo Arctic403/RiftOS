@@ -73,6 +73,9 @@ object RiftProjectExporter {
             val source = files[next.fileIndex]
             val bytes = source.file.readBytes()
             require(next.byteOffset in 0..bytes.size) { "Invalid export cursor offset" }
+            require(next.byteOffset == 0 || next.byteOffset == bytes.size || (bytes[next.byteOffset].toInt() and 0xC0) != 0x80) {
+                "Invalid export cursor UTF-8 boundary"
+            }
             var end = utf8Boundary(bytes, next.byteOffset, (next.byteOffset + MAX_CHUNK_BYTES).coerceAtMost(bytes.size))
             var row: JSONObject
             var rowBytes: Int
@@ -144,6 +147,7 @@ object RiftProjectExporter {
         val fileIndex = parts[0].toIntOrNull() ?: throw IllegalArgumentException("Invalid export cursor")
         val byteOffset = parts[1].toIntOrNull() ?: throw IllegalArgumentException("Invalid export cursor")
         require(fileIndex in 0..fileCount && byteOffset >= 0) { "Invalid export cursor" }
+        require(fileIndex < fileCount || byteOffset == 0) { "Invalid export cursor" }
         return Cursor(fileIndex, byteOffset)
     }
 

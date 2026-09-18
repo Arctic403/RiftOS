@@ -1,69 +1,88 @@
-# Boot and Module Loading
+# Boot and Engine Startup
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-The boot layer turns the Android-hosted static web bundle into a running RiftOS shell in a deterministic order. Its most important job is dependency ordering: modules that create shared globals must finish before modules that consume them.
-
-## Why this boundary exists
-
-RiftOS is packaged as web assets but depends on native Android services. A browser-only bootstrap would allow the shell to begin before the exact-origin `RiftAndroid` bridge exists. The Android boot path therefore fails closed if the native host is missing and imports modules sequentially.
+The current RiftOS boot path creates the Android-native engine directly. It does not load an HTML shell or sequential JavaScript module chain.
 
 ## Source ownership
 
-- `index.html` — initial shell DOM, boot surface and module entry.
-- `src/riftandroid-entry.js` — ordered Android module imports.
-- `src/riftandroid-preload.js` — requires the `RiftAndroid` WebMessage host and creates the native transport expected by core code.
-- `src/riftandroid-platform.js` — Android-specific platform integration after core initialization.
-- `src/riftos.js` — final shell/application startup and boot-screen dismissal.
-- `MainActivity.kt` — loads `https://appassets.androidplatform.net/assets/www/index.html` and installs the native message listener before page startup.
+- `MainActivity.kt` — visible OS boot/composition.
+- `RiftMcpRuntime.kt` — lazy process-owned native service graph.
+- `RiftWorkspaceRecords.kt` / `RiftWorkspaceWatcher.kt` — workspace record startup.
+- `RiftNativeDesktop.kt` — desktop bootstrap.
+- `RiftNativeSystemApps.kt` / `RiftNativeWorkspaceApps.kt` — built-in app bodies.
+- `RiftBrowserWindow.kt` / `RiftBrowserAppHost.kt` — explicit renderer owners.
+- `android/app/src/main/AndroidManifest.xml` — Android component entry points.
+- `android/app/build.gradle.kts` — required native source and packaged-asset gates.
+
+Retained `index.html`, `src/riftandroid-entry.js` and `src/riftandroid-preload.js` describe the retired web-shell boot path and are not packaged as the active OS bootstrap.
 
 ## Runtime flow
 
 ```text
-MainActivity
-  -> install RiftAndroid WebMessage listener
-  -> load appassets index.html
-  -> riftandroid-entry.js
-      -> riftandroid-preload.js
-      -> riftcore.js
-      -> Android/workspace/runtime/app/git modules
-      -> RiftVault -> RiftRepo -> RiftMemory -> RiftBuild -> RiftLocalPlatform
-      -> optional RiftLLM standalone Dev API bridge
-      -> batch -> Dev Lab
-      -> riftos.js
-      -> late desktop/MCP/runtime compatibility modules
+Android launches MainActivity
+ -> register Activity with RiftMcpRuntime
+ -> apply native window/inset policy
+ -> start Workspace Records watcher
+ -> construct RiftNativeDesktop
+ -> construct RiftBrowser/native built-ins
+ -> populate native launcher
+ -> bootstrap desktop
+ -> start process-owned outbound MCP relay client
 ```
 
-`riftandroid-entry.js` uses sequential `await import(...)` calls. Do not convert this to uncontrolled parallel imports unless dependencies are explicitly removed.
+`RiftMcpRuntime` lazily creates native shell, tool host, MCP server, relay client, native Git and Vortex bridge and keeps them outside WebView ownership.
+
+## Android components
+
+Manifest-declared runtime components currently include:
+- `MainActivity` — launcher / singleTask native desktop Activity;
+- `RiftMcpActivity` — browsable `riftos://mcp` configuration/status Activity;
+- `RiftBrowserPreviewActivity` — non-exported preview renderer;
+- `RiftVortexAccessibilityService` — user-enabled fixed-scope local UI agent.
+
+## Packaged JavaScript at boot
+
+No JavaScript is required to boot the OS desktop.
+
+Gradle copies only:
+- `src/riftpp-core.js`
+- `src/riftvm.js`
+
+Those are loaded later by the headless QuickJS Rift++ runtime when requested.
 
 ## Critical invariants
 
-- `RiftAndroid` must exist before `riftandroid-preload.js` completes.
-- `riftcore.js` must evaluate before any consumer reads `globalThis.RiftOSCore`.
-- Trusted dependency order is fixed: RiftVault -> RiftRepo -> RiftMemory -> RiftBuild -> RiftLocalPlatform -> optional RiftLLM bridge -> Dev Lab -> RiftShell UI. RiftLLM itself remains a separate APK and is not a boot dependency; only the adapter module is loaded.
-- A top-level exception in any early imported module prevents later imports, including `riftos.js`; the visible symptom is often an endless animated boot splash.
-- Android packaged assets come from Gradle's generated `www` asset tree; source changes require a new APK build to reach the installed app.
+- boot cannot depend on `index.html`, `riftandroid-entry.js`, `RiftAndroid`, `RiftOSCore` or a shell WebView;
+- native desktop must exist before attaching renderer/program content;
+- process-owned MCP/shell services must not be destroyed with browser renderers;
+- manifest components and actual Activity/service source must stay synchronized;
+- generated asset sync must remain limited to the explicitly required headless modules.
 
 ## Failure signatures
 
-**Boot animation never ends:** first suspect a top-level exception in an early module. Inspect `riftandroid-entry.js` order, then `riftandroid-preload.js` and `riftcore.js` for missing globals/classes or syntax errors. A previous example was a constructed `RiftTransferQueue` whose class definition was missing, which stopped `riftcore.js` during evaluation.
-
-**Works in a normal browser but not APK:** inspect `riftandroid-preload.js`, the exact-origin listener installation in `MainActivity`, generated assets, and Android WebView console errors.
-
-**Old code after rebuild:** inspect `syncRiftOsWebAssets` in `android/app/build.gradle.kts` and confirm the exact source commit the external builder consumed.
+- APK starts a web splash/HTML shell instead of native desktop → old bootstrap returned;
+- cold launch requires `RiftAndroid`/`RiftOSCore` → stale web boot dependency;
+- MCP/native shell unavailable until browser opens → process runtime initialization regression;
+- old JS behavior appears after build → unexpected Gradle asset packaging;
+- launcher misses installed program already under `C:/Programs` → native launcher/package scan issue.
 
 ## Fix map
 
-- Native bridge missing or wrong origin -> `MainActivity.kt` / `riftandroid-preload.js`.
-- Wrong module dependency/order -> `riftandroid-entry.js`.
-- Core global missing -> `riftcore.js`.
-- Boot UI never dismissed after all modules load -> startup tail in `riftos.js`.
-- APK contains stale web files -> Gradle asset sync/build pipeline.
+Startup composition → `MainActivity.kt`.
+
+Process-owned services → `RiftMcpRuntime.kt`.
+
+Component declarations → `AndroidManifest.xml`.
+
+Packaged asset rules → `android/app/build.gradle.kts`.
+
+Desktop boot state → `RiftNativeDesktop.kt`.
 
 ## Validation
 
-`npm run check` syntax-checks critical JS assets and runs repository validators. Android build verification also checks required source presence and packages generated web assets. For boot changes, additionally verify a clean launch rather than only warm WebView state restoration.
-
-## Safe extension points
-
-New modules should be imported at the earliest point where all dependencies already exist and before their first consumer. Keep imports explicit and ordered. A module that is optional should catch its own optional failure rather than making core boot depend on it.
+Inspect the Gradle asset include set and manifest, run source wiring/transport validation, then perform a true cold APK launch. Confirm the native desktop appears without browser initialization, native Terminal/MCP works before opening RiftBrowser, and Activity/background cycles do not reset process-owned shell/MCP state.

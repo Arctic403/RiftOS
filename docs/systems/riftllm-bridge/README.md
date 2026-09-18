@@ -1,109 +1,374 @@
-# RiftLLM Standalone Dev API Bridge
+# RiftLLM Standalone Dev / Training Bridge
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-The RiftLLM bridge lets trusted RiftOS development tooling interoperate with the separately installed `com.riftllm.app` APK through RiftLLM's token-gated Android Binder Dev API. It is optional development interoperability only: RiftLLM remains a standalone APK and never depends on RiftOS for installation, inference, memory, Dev Lab staging, snapshots, patch generation, recovery, or normal operation.
+RiftOS communicates with the standalone RiftLLM APK through one fixed local Android ContentProvider contract plus one fixed-purpose canary training-data controller.
 
-The integration follows RiftLLM's authoritative `docs/RIFTOS_DEV_API_HANDOFF.md` contract: RiftLLM owns its app-private Dev Lab; RiftOS owns only the external adapter between `/workspace/RiftLLM` and that public local API.
+RiftOS does not own RiftLLM model state/private storage, does not expose arbitrary Provider method names, and adds no dedicated MCP tool.
 
 ## Source ownership
 
-- `android/app/src/main/java/com/riftos/app/RiftLlmDevClient.kt` — fixed-purpose Binder client, target/provider identity, API-operation allowlist and Keystore-backed pairing-token use.
-- `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` — stable frozen-B2 model-data packer/upload/canary controller. It is separate from the experimental CLI and accepts no caller-selected source/destination/model path.
-- `src/riftllm-bridge.js` — trusted-shell orchestration for exact source sync, staging commands, immutable snapshot selection, patch validation, Workspace preview/apply and publication acknowledgment; it also owns the local-only bounded RiftCorpus build/status helper under `/workspace/RiftLLM/tokenizer/private/`.
-- `src/riftos.js` — `riftllm-agent` RiftShell routing plus local Settings pairing/status controls.
-- `android/app/src/main/AndroidManifest.xml` — package visibility query for `com.riftllm.app`; this grants no RiftLLM privilege.
-- `RiftNativeDispatcher.kt` — finite `riftllm.dev` native route executed on the dedicated agent worker.
-- `RiftSecretStore.kt` — encrypted storage authority for `riftllm.dev.token`.
-- `scripts/test-riftllm-bridge.mjs` plus cross-layer validators — source contract protection.
+Primary provider client:
+- `RiftLlmDevClient.kt`
 
-## Product boundary
+Fixed canary-data controller:
+- `RiftTrainDataTaskRunner.kt`
 
-RiftLLM is not a RiftOS subsystem, plugin, hosted engine or runtime dependency. RiftOS never reads RiftLLM private files and never owns its source mirror, staged edits, snapshots, snapshot IDs, publication receipts, token generation/rotation or source classification. Removing either APK leaves the other product's independent functionality intact.
+Live shell routing:
+- `RiftNativeShellServices.kt`
+- `RiftNativeShell.kt`
 
-No localhost/network server is introduced. The transport is `ContentResolver.call()` to the fixed URI `content://com.riftllm.app.devlab`. The native client accepts only the documented method family and never accepts an arbitrary URI or provider method from JavaScript/shell input.
+Secure pairing UI:
+- native Settings in `RiftNativeWorkspaceApps.kt`
 
-## Pairing and secret handling
+Secret storage:
+- `RiftSecretStore.kt`
 
-RiftLLM's Dev Lab must first enable/rotate its API and display the 256-bit token. RiftOS pairing is initiated from Settings or `riftllm-agent pair`; the token is entered only into the local prompt. The native client verifies the candidate by calling RiftLLM `status` before persisting it as `riftllm.dev.token` through `RiftSecretStore`.
+Package visibility:
+- Android manifest query for `com.riftllm.app`.
 
-The token is never returned by status/pairing, written to RiftFS/workspace, placed in a shell argument, logged by this subsystem, exposed through MCP results, or copied into Git. `unpair` deletes only RiftOS's encrypted copy; RiftLLM remains the authority for disabling/rotating its API token.
+`RiftTextEncoderTaskRunner.kt` belongs to the Experimental CLI subsystem, not this bridge.
 
-## Data and publication flow
+Retained `src/riftllm-bridge.js` is historical/reference implementation and is not the current packaged authority.
 
-For existing files, `sync` reads the exact canonical `RiftLLM/<path>` Workspace text, hashes the same UTF-8 content with SHA-256, then sends `sync_source`. New-file baselines use `sync_missing`, but only after RiftOS proves that the canonical path is absent. A path that is already staged in RiftLLM is not silently resynced underneath that edit.
+## Android provider identity
 
-`stage`, `delete`, `unstage`, `reset`, `snapshot` and snapshot-list/load operations change only RiftLLM's own app-private Dev Lab state until publication. `stage-file` is the exact-payload shell path for multiline edits. The provider's bounded read-only `list_benchmarks` / `get_benchmark` methods are exposed as `benchmarks` / `benchmark`; they never mutate staging or source and still require the same paired local API.
+Target package:
+`com.riftllm.app`
 
-`text-encoding-eval a|b|a2|b2 [heldout|challenge]` is a fixed-purpose evaluation bridge for the reviewed RiftTokenizer candidates. V1 A/B map only to their historical artifacts and V1 held-out build; V2 A2/B2 map only to their V2 artifacts and `build-v2/heldout.tsv`. The optional `challenge` lane maps only to source-owned `/workspace/RiftLLM/tokenizer/challenges/rift-tokenizer-challenge-v2.tsv`. RiftOS hashes those exact UTF-8 bytes, uploads them through 192 KiB token-gated Binder chunks, verifies every acknowledged offset/commit hash, then asks RiftLLM to run its existing `RiftTextEncodingLab`. `text-encoding-status` polls that background app-side job. No arbitrary artifact, corpus, source or destination path is accepted.
+Provider authority:
+`com.riftllm.app.devlab`
 
-`corpus-synth`, `corpus-build`, `corpus-status` and their V2 convenience forms `corpus-synth-v2`, `corpus-build-v2`, `corpus-status-v2` are **local RiftFS operations**, not Binder calls. They require no RiftLLM pairing token and are hard-confined to `/workspace/RiftLLM/tokenizer/private/`. `corpus-synth` mirrors RiftCorpus Synthesizer V1's finite original-data recipe: pinned template/seed identity, stable IDs, 12,000 generated records per category by default, reviewed maximum 20,000/category, single-file authored-seed preservation and duplicate collision checks. It writes deterministic `synthesized/part-*.jsonl` shards capped at 3 MiB plus `synth-manifest.json`; no individual text operation crosses RiftOS's fixed 4 MiB bridge limit. `corpus-build` accepts either a legacy single JSONL file or an ordered JSONL shard directory, performs the same schema/provenance/dedup/split validation, and writes `build/train/part-*.jsonl`, complete `build/heldout/part-*.jsonl`, a bounded category-balanced `heldout.tsv` (4,096 rows, 3 MiB total, 4 KiB/sample), and a hashed manifest. Shard-set provenance uses `rift-shard-set-v1`, SHA-256 over sorted `<name>\t<byte_count>\t<sha256>\n` descriptors. Output replacement uses a staged directory + backup/restore sequence rather than partially rewriting the active build folder. After a successful replacement, inability to remove the retired backup is reported as `backupCleanupPending=true` instead of falsely marking the new build as failed. The V2 synth command uses the separate `rift-corpus-synthesizer-v2` / `rift-synth-grammar-v2.2` deterministic compositional generator, deterministically disambiguates only generated-text collisions with immutable record IDs while reporting `disambiguatedCount`, and writes only `synthesized-v2` / `synth-v2-manifest.json`; `corpus-build-v2` is fixed to that source and `build-v2`, so V1/V2 corpus lineages cannot silently overwrite each other.
+URI:
+`content://com.riftllm.app.devlab`
 
-### Frozen-B2 training-data / canary flow
+Before pairing, Android package-manager resolution must return that exact provider package.
 
-`train-data-build` uses the stable native `RiftTrainDataTaskRunner`, not the experimental CLI. It is fixed to `/workspace/RiftLLM/tokenizer/private/build-v2/train`, the frozen `rift-token-b-balanced-v2` artifact and `/workspace/RiftLLM/training/private/canary-v1/rift-train-data-v1.rifttok`. The runner verifies the exact artifact/config/training hashes, applies frozen Byte-BPE, cross-checks its optimized encoder against a reference encoder on the first 32 real samples, inserts BOS/text/EOS boundaries, writes little-endian uint16 token IDs, re-hashes the entire source shard set after encoding, then atomically publishes the private pack/manifest. The pack is `purpose=canary` and `productionPretrainingEligible=false`; it is training data, **not RiftPack model weights**.
+RiftOS does not accept a caller-selected package, authority or URI.
 
-`train-data-upload` sends only that validated fixed pack through the new token-gated Binder `train_data_*` methods using 192 KiB chunks. The dedicated native route has a two-minute caller timeout because upload verification/chunking is synchronous inside that one bounded call; pack construction and canary training themselves are background jobs. `train-canary-start` is accepted only after RiftLLM reports the identical pack SHA. The app-side canary is deliberately non-production and non-architecture-faithful; it exists to measure real gradient/AdamW/checkpoint/memory/thermal behavior before a 173.8M low-memory trainer is implemented. `train-data-status`, `train-data-build-status`, `train-data-remote-status` and `train-canary-status` expose bounded state only.
+## Pairing
 
-The current private V2 training corpus is canary-scale, not production pretraining scale. No shell command in this family accepts a corpus path, tokenizer identity, output path, model shape, learning rate or executable/process argument.
+Pairing token must match exactly 64 hexadecimal characters.
 
-For preview/publication, RiftOS resolves `latest` to a concrete immutable snapshot ID, requests `get_patch`, then independently requires patch format v2, repo `Arctic403/RiftLLM`, branch `main`, a bounded change count, only write/delete actions, exact `RiftLLM/...` paths, preserved `base_sha256`, and text content for writes. It then delegates to the existing RiftWorkspace `previewPatch`/`applyPatch` transaction. Baseline conflicts abort before mutation and are never bypassed.
+Pair flow:
+1. native Settings receives the token in a password field;
+2. field is immediately cleared after button submission;
+3. `RiftLlmDevClient.pair()` verifies token format;
+4. verifies the expected provider is installed/visible;
+5. calls fixed provider `status` with the token;
+6. only after successful provider response stores the token via `RiftSecretStore`.
 
-Only after `applyPatch` returns a Workspace `historyId` does RiftOS call `ack_publish`. If that final receipt call fails, the bridge reports `published:true, acknowledged:false` with the Workspace history ID rather than reapplying or pretending the local publication did not happen. `riftllm-agent ack` is a bounded recovery operation and first requires a matching Workspace history record for the exact RiftLLM repo/branch.
+The token is not exposed through RiftShell.
 
-Publication means local Workspace mutation only. The bridge never authorizes Git push, Android build or install.
+`riftllm-agent pair ...` deliberately fails and instructs the user to use native Settings.
 
-## RiftFS source-path compatibility
+During this audit native Settings pairing was implemented because the documented secure route previously did not exist.
 
-`stage-file` and other RiftFS-source operations use the shared RiftCore absolute-path rule. Bare drive paths such as `D:/Workspace/...` are accepted as absolute instead of being joined to the shell cwd. Project-path normalization also recognizes `D:/Workspace/RiftLLM/...` as the same canonical RiftLLM project namespace as `/workspace/RiftLLM/...`; publication still targets guarded Workspace-relative `RiftLLM/...` paths only.
+Settings also provides:
+- unpair;
+- refresh/status.
 
-## Shell surface
+Status reports installed/paired/API reachability but never returns token material.
 
-`riftllm-agent` provides fixed semantic commands for status/pair/unpair, source sync, load/staged/stage/stage-file/delete/unstage/reset, snapshots, read-only benchmark records, fixed `text-encoding-eval a|b|a2|b2 [heldout|challenge]` / `text-encoding-status`, local V1/V2 corpus synth/build/status commands, stable `train-data-status/build/build-status/upload/remote-status` and `train-canary-start/status`, preview, publish and receipt recovery. Corpus commands remain local and private-data-path confined; all other RiftLLM Dev API commands retain the Binder/pairing boundary. The family is deliberately excluded from generic RiftShell atomic batch because Binder-side Dev Lab mutations, corpus directory replacement and Workspace publication each have their own transaction/receipt semantics.
+## Secret storage
 
-No dedicated MCP tool family is added. Existing trusted `rift_shell_exec` may invoke the bounded shell commands, but the pairing token itself can only be entered in the local RiftOS prompt.
+Token key:
+`riftllm.dev.token`
 
-## Security invariants
+`RiftSecretStore` encrypts values with Android-Keystore-backed AES-GCM before storing ciphertext in private preferences.
 
-- Keep `com.riftllm.app` and `com.riftllm.app.devlab` hard-coded.
-- Keep the native API method allowlist finite; never accept arbitrary provider methods or content URIs.
-- Keep Binder calls off the Android UI thread.
-- Never move RiftLLM-owned Dev Lab state into RiftOS.
-- Never expose the pairing token in tool/shell results or source-controlled state.
-- Never strip, replace, fabricate or ignore `base_sha256`.
-- Never manually loop project writes in place of RiftWorkspace guarded apply.
-- Never let RiftLLM publication imply Git push/build/install.
-- Never add a network listener to work around Binder payload limits.
-- Text Encoding Lab transfer must remain fixed to A/B tokenizer artifacts plus the one held-out TSV, use 192 KiB hash/offset-verified chunks, and never become a generic app-private file transfer or arbitrary Binder-method surface.
-- RiftTrainData must remain fixed to frozen B2 + the frozen V2 train shard set + the reviewed private canary destination. Keep uint16 BOS/text/EOS records, reference/fast parity checks, post-encode source rehash and atomic publication.
-- Training Binder transfer must remain one fixed validated pack with 192 KiB chunks. The canary must remain `architectureFaithful=false` and `productionPretrainingEligible=false` until a separate architecture-faithful trainer is implemented and qualified.
-- Keep `corpus-synth` / `corpus-build` / `corpus-status` confined to `/workspace/RiftLLM/tokenizer/private/`; they must never become arbitrary RiftFS writers or process/script execution surfaces.
-- Keep the on-device synthesizer capped at 20,000 records per category, default 12,000/category, and enforce 3 MiB JSONL shards; scaling must happen through the reviewed shard contract rather than widening the fixed 4 MiB bridge limit.
-- Corpus build must reject RiftLLM/RiftOS/Vortex3D/VTXBuilder/VortexScript source identities during the unfinished-project exclusion phase and must replace output through staged/backup directory moves.
+Unpair removes the stored secret.
+
+## Provider request boundary
+
+Provider request JSON is capped at 512 KiB UTF-8.
+
+Provider response JSON is also capped at 512 KiB UTF-8 before JSONTokener parsing.
+
+The provider receives a Bundle containing:
+- fixed token extra;
+- JSON request extra.
+
+The client expects one JSON string response and parses it through JSONTokener.
+
+There is no process execution, filesystem path selection or arbitrary Provider method parameter at this transport layer.
+
+## Fixed Provider method catalog
+
+Exactly 26 method names are allowed:
+
+- sync_source
+- sync_missing
+- load_source
+- list_staged
+- stage
+- delete
+- unstage
+- reset
+- snapshot
+- list_snapshots
+- get_snapshot
+- get_patch
+- list_benchmarks
+- get_benchmark
+- text_encoding_begin
+- text_encoding_append
+- text_encoding_commit
+- text_encoding_start
+- text_encoding_status
+- train_data_begin
+- train_data_append
+- train_data_commit
+- train_data_status
+- train_canary_start
+- train_canary_status
+- ack_publish
+
+Anything else fails before ContentResolver.call.
+
+Special local-only client operations:
+- pair;
+- unpair;
+- status.
+
+## Native shell routes
+
+Current shell provides:
+- status
+- unpair
+- staged -> provider `list_staged`
+- reset -> provider `reset`
+- snapshots -> provider `list_snapshots`
+- benchmarks -> provider `list_benchmarks`
+- text-encoding-status -> provider `text_encoding_status`
+- train-data-status
+- train-data-build
+- train-data-build-status
+- train-data-build-cancel
+- train-data-upload
+- train-data-remote-status
+- train-canary-start
+- train-canary-status
+
+During this audit stale aliases that called nonexistent Provider methods were corrected.
+
+## Preview / publish
+
+The old retained JavaScript bridge implemented `preview` and `publish` as composite operations:
+- fetch RiftLLM patch;
+- run a retired Workspace preview/apply-patch engine;
+- acknowledge publication back to RiftLLM.
+
+That native Workspace patch publisher does not currently exist.
+
+Therefore native shell `preview` and `publish` now **fail closed** rather than pretending they are direct Provider methods.
+
+A future implementation must introduce a separately audited bounded native patch preview/apply owner before re-enabling them.
+
+## Legacy helpers
+
+Unknown/legacy corpus helpers are unavailable and fail closed.
+
+They must be reintroduced only through explicit bounded native/headless owners.
+
+## Fixed RiftTrainData controller
+
+`RiftTrainDataTaskRunner` accepts no caller-selected:
+- project path;
+- tokenizer identity;
+- training shard directory;
+- output path;
+- process command.
+
+Fixed project:
+`filesDir/riftfs/workspace/RiftLLM`
+
+Fixed artifact/shard/output paths are constants below that project.
+
+This audit only verifies source wiring; it does **not** run or modify the frozen B2/V2 training inputs.
+
+## Frozen input contract
+
+Fixed tokenizer:
+- candidate `rift-token-b-balanced-v2`;
+- vocab 32768;
+- 256 byte tokens;
+- 32504 merges;
+- max token bytes 24;
+- fixed artifact SHA;
+- fixed training-corpus SHA;
+- fixed trainer-config SHA.
+
+Build requires the exact artifact and exact V2 shard-set hash before encoding.
+
+After encoding, it recomputes the training shard-set hash again and rejects if source changed mid-build.
+
+Frozen provenance/special-token mapping are validated by the parser.
+
+## Training input limits
+
+- sample UTF-8 text <=16 KiB;
+- total training source <=64 MiB;
+- each shard <=3 MiB;
+- maximum shards: 128;
+- safe shard filename regex;
+- generated pack <=8 MiB.
+
+Shard files are sorted deterministically by name.
+
+Shard-set identity material contains each name, byte count and SHA-256.
+
+## Build job lifecycle
+
+One daemon single-thread executor owns build work.
+
+Only one build may be queued/running/cancelling at a time.
+
+States include:
+- queued;
+- running;
+- cancelling;
+- cancelled;
+- complete;
+- failed.
+
+Cancellation uses an AtomicBoolean and thread interruption checks throughout validation/encoding/pack copying.
+
+During this audit native shell gained `train-data-build-cancel`, exposing the already-existing bounded cancellation operation.
+
+## Output semantics
+
+Output is a private canary token pack and manifest under fixed `workspace/RiftLLM/training/private/canary-v1` paths.
+
+Manifest explicitly records:
+- purpose = canary;
+- `productionPretrainingEligible=false`;
+- architecture id;
+- tokenizer provenance;
+- training source hash;
+- sample/token counts;
+- pack size/hash;
+- encoding/boundary policy.
+
+Pack/manifest staging uses synced temporary files followed by atomic replacement.
+
+Published pack hash is reverified after replacement.
+
+## Upload
+
+Upload requires a locally valid pack/manifest pair.
+
+Provider flow is fixed:
+1. train_data_begin(totalBytes, sha256);
+2. Provider must report exact chunk contract 192 KiB;
+3. chunks are Base64 encoded and sent with exact offsets;
+4. each append must acknowledge the exact cumulative byte count;
+5. train_data_commit must return committed=true and the same SHA-256.
+
+No caller-controlled remote method is used.
+
+## Canary start
+
+Canary start requires:
+- local pack validates;
+- remote train-data status reports available;
+- remote SHA equals exact local pack SHA.
+
+Only then is `train_canary_start` called with the pack SHA.
+
+The controller does not mark this pack as production pretraining eligible.
+
+## Experimental text encoder separation
+
+`RiftTextEncoderTaskRunner` is reachable from `RiftExperimentalCli`, not this stable RiftLLM bridge.
+
+Its training/evaluation lifecycle must be audited under Experimental RiftCLI rather than being silently included here.
+
+## No local-agent route
+
+Current RiftVortexLocalAgent source contains no direct RiftLLM bridge command.
+
+RiftLLM bridge operations currently enter through native shell and native Settings pairing only.
+
+## No MCP expansion
+
+There is no `riftllm_*` MCP tool.
+
+Remote/model access, when used, still flows through `rift_shell_exec` and ToolHost grants.
+
+The bridge itself does not widen MCP authority.
+
+## Source fixes in this audit
+
+- corrected shell aliases to real fixed Provider methods;
+- `preview/publish` now fail closed instead of calling nonexistent Provider operations;
+- implemented the previously missing native Settings pairing/status/unpair surface;
+- retained shell rejection of pairing-token arguments;
+- exposed existing fixed build cancellation as `train-data-build-cancel`;
+- confirmed frozen canary controller remains fixed-input and was not executed.
+
+## Critical invariants
+
+- fixed package/authority/URI;
+- exact 64-hex pairing token;
+- pairing verifies provider before secret persistence;
+- token never accepted through shell arguments;
+- exactly 26 provider method names;
+- Provider request <=512 KiB;
+- Provider response <=512 KiB;
+- no caller-selected training paths/tokenizer/process;
+- frozen tokenizer/shard hashes verified before build;
+- training source rehashed after encoding;
+- one cancellable build at a time;
+- upload uses exact 192 KiB chunk contract and cumulative acknowledgements;
+- canary starts only from matching local/remote pack SHA;
+- productionPretrainingEligible remains false;
+- frozen data is not rerun merely to audit bridge source.
 
 ## Failure signatures
 
-- `provider is not installed or visible` -> RiftLLM is absent or package visibility/provider declaration changed.
-- `Dev API is disabled` or token rejected -> enable/rotate in RiftLLM, then pair again; do not discover tokens programmatically.
-- `request exceeds 512 KiB` or Binder failure -> V1 IPC payload limit; use the reviewed 192 KiB Text Encoding chunk path only for its two fixed slots, otherwise reduce the operation rather than adding a network shortcut.
-- Text Encoding upload offset/hash mismatch -> restart that fixed candidate evaluation; never skip chunks or trust a partial commit.
-- corpus source read exceeds the trusted RiftFS text-bridge limit -> keep authoring batches below the current per-file bridge bound or shard the future corpus-builder design; do not expose raw Android shell/Python as a workaround.
-- `sync verification failed` -> source content/hash did not describe the same Workspace state; reread and retry.
-- baseline replacement rejected while staged -> publish/unstage/reconcile first.
-- Workspace `base_sha256` conflict -> canonical source changed after sync; abort, inspect, resync and restage.
-- `published:true, acknowledged:false` -> Workspace apply succeeded but RiftLLM receipt failed; inspect the history ID, repair API pairing if needed, then use bounded `ack` recovery exactly once.
+- native Settings has no pairing control while shell pair is blocked -> unreachable pairing regression;
+- shell `staged` calls `staged` instead of `list_staged` -> alias drift;
+- preview/publish invokes arbitrary/nonexistent Provider method -> retired-composite regression;
+- caller can supply Provider method/path -> authority regression;
+- token appears in status/log/shell output -> secret leak;
+- build accepts different tokenizer/shard hash -> frozen-input regression;
+- build has no reachable cancellation -> task-lifecycle regression;
+- remote append acknowledgement drifts but upload continues -> transfer-integrity regression;
+- canary starts with different remote SHA -> canary-integrity regression.
 
 ## Fix map
 
-Binder/provider identity, operation mapping, request size and token persistence -> `RiftLlmDevClient.kt`.
-Source baseline/hash synchronization, patch validation, preview/apply/ack orchestration and bounded local RiftCorpus synth/build/status -> `src/riftllm-bridge.js`.
-RiftShell parsing/Settings buttons -> `src/riftos.js`.
-Generic atomic-batch exclusion -> `src/riftshell-batch.js`.
-Workspace atomicity/history/rollback -> existing `src/riftworkspace-web.js`; do not duplicate it here.
-RiftLLM provider/store behavior -> fix RiftLLM itself and update its handoff contract; do not reach into its private app storage from RiftOS.
+Provider identity/methods/pairing transport -> `RiftLlmDevClient.kt`.
+
+Secure pairing UI -> `RiftNativeWorkspaceApps.kt`.
+
+Shell command mapping -> `RiftNativeShellServices.kt`.
+
+Fixed canary pack build/upload/start -> `RiftTrainDataTaskRunner.kt`.
+
+Experimental encoder/training -> Experimental RiftCLI subsystem.
+
+RiftLLM-side Provider/model behavior -> standalone RiftLLM project, not RiftOS.
 
 ## Validation
 
-`npm run check` must include `scripts/test-riftllm-bridge.mjs`, `scripts/test-riftllm-corpus.mjs`, wiring, transport and documentation validation. The corpus test executes the real bridge helpers against an in-memory RiftFS mock and verifies deterministic synthesis, finite count/output bounds, synth-to-build composition, successful split/manifest generation, path confinement and unfinished-Rift-source rejection. The Android source verifier must require `RiftLlmDevClient.kt`. Any native change still requires a later manual APK build/install.
+Second source audit must verify:
+- package/authority/manifest visibility;
+- exact 26-method catalog;
+- 64-hex token and provider-before-save flow;
+- Settings pair/unpair/status;
+- shell pair rejection and corrected aliases;
+- preview/publish fail-closed behavior;
+- 512 KiB request + response bounds;
+- fixed training paths/SHAs/limits;
+- single-job cancellation;
+- 192 KiB upload contract and ack checks;
+- local/remote canary SHA equality;
+- no direct local-agent/MCP expansion.
 
-On-device acceptance must prove absent-target handling, disabled API rejection, wrong-token rejection, correct pairing/status, exact source sync/hash, isolated RiftLLM staging, immutable snapshot creation, guarded preview, deliberate Workspace-drift conflict with zero partial writes, successful apply + receipt acknowledgment, preservation of newer post-snapshot edits, Workspace rollback, no token in logs/MCP/Git/workspace, and normal standalone RiftLLM behavior when the RiftOS bridge is absent or unpaired.
+Installed-device validation is still required for actual ContentProvider visibility, token pairing, process restart persistence, upload and canary lifecycle.

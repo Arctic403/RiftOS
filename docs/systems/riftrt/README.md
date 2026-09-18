@@ -1,83 +1,132 @@
-# RiftRT Application Runtime
+# RiftRT / Legacy Runtime Manager
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-RiftRT is the execution layer between an installed RiftOS program and RiftDesktop. Installation is owned by RiftApps; RiftRT launches only the installed copy registered under C:/Programs.
+RiftRT is the legacy browser-hosted executable/runtime manager retained in `src/riftrt.js`.
 
-RiftRT does not own a second desktop/window manager. Android `RiftNativeDesktop` remains the authoritative window frame, focus, geometry, taskbar and close lifecycle.
+The current Android APK does **not** activate that manager.
 
-## Engines
+Live execution paths that replaced parts of its old role are separate subsystems:
+- Rift++ executable execution -> `RiftHeadlessJsRuntime.kt` + packaged `riftvm.js`;
+- installed HTML/JS programs -> `RiftBrowserAppHost.kt`.
 
-### native-webview (V1 default)
-
-HTML/JS-compatible installed programs run in a **dedicated Android `WebView` View** created by `RiftNativeAppHost` and attached directly to the Android-owned RiftDesktop content rectangle. This is not an iframe, is not a child of the trusted shell WebView, and has an independent Android renderer/view lifecycle.
-
-The target exists to make the installer/native-window architecture usable immediately while R.O.P.E's compiled Rift ABI/toolchain is built. It is an execution backend, not the permanent definition of a Rift app.
-
-Old `riftrt.json` values declaring `iframe` are translated to `native-webview`; the iframe engine itself no longer exists.
-
-### worker-js
-
-Compatibility/runtime experimentation engine. A Worker receives a constrained Rift API and drives a host canvas. It stays capability-gated and cannot become a raw shell bridge.
-
-### wasm-base64
-
-Sandboxed WebAssembly compatibility engine using the existing bounded Rift ABI/frame-command surface.
-
-### rift-vm
-
-First executable target for Rift++. A normal `.rift` installer carries `riftrt.json` with `engine: "rift-vm"` plus a text `main.rxe` payload using `rift-exec-v1` / `riftvm-1`. `src/riftvm.js` validates the executable as data and runs only a finite bounded opcode set; package code is never evaluated as JavaScript. Host imports must be declared by the executable and, when privileged, by both the runtime capability list and installed manifest before the existing RiftRT permission path can run them.
-
-### native-arm64
-
-Reserved packaged-plugin direction. RiftOS does not execute arbitrary downloaded ELF binaries from writable storage.
-
-## Native app host
-
-`RiftNativeAppHost.kt` owns V1 native program surfaces. It loads only the installed package selected by app id, serves package assets through the fixed `https://app.riftos.local` origin, disables file/content access, denies frames, and exposes a fixed WebMessage API. It does not expose the general `RiftNativeDispatcher` method namespace.
-
-The app surface is mounted with `RiftNativeDesktop.attachContent(windowId, view)`. Minimize/restore/move/resize/close follows the same Android-owned WindowRecord as every other native RiftDesktop window.
-
-A normal program `fs.write` grant does not make C: writable. Native app filesystem access is restricted to approved D: user/project roots plus that program's own AppData; read access additionally permits that program's own `C:/Programs/<id>` directory. Installer/system code remains the authority that changes C:/Programs, C:/ProgramData and C:/Toolchains.
-
-## Capabilities and data
-
-Native app calls are checked against the installed manifest and the same persisted `permissions:<appId>` grants used by RiftOS. A first-use request is surfaced as an Android permission dialog. Filesystem calls use the fixed C:/D: resolver and canonical RiftFS containment.
-
-Program-local state lives under D:/Users/Default/AppData/<id>. `build.local` remains a bounded controller capability; the APK continues to report/behave as no local compiler executor until the real toolchain worker ships.
+Those replacements must not be described as “RiftRT is live.”
 
 ## Source ownership
 
-- `src/riftrt.js` — engine parsing, kernel process/session lifecycle, native-window coordination, Worker/WASM/RiftVM host integration and runtime manager.
-- `src/riftvm.js` — `rift-exec-v1` validation, bounded VM semantics and data-only executable execution.
-- `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` — Android V1 installed-program view/bridge.
-- `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` — window/surface authority.
-- `src/riftapps.js` — installation/registry only.
+Retained manager:
+- `src/riftrt.js`
 
-## Invariants
+Live replacement owners:
+- `RiftHeadlessJsRuntime.kt`
+- `RiftNativeShell.kt`
+- packaged `src/riftvm.js`
+- packaged `src/riftpp-core.js`
+- `RiftBrowserAppHost.kt`
 
-- No installed Rift program is rendered in an iframe.
-- Normal installed V1 programs get an Android-owned content View separate from the shell WebView.
-- RiftRT waits for the native WindowRecord before attaching the native program surface.
-- Closing via app, native close button, taskbar/process kill or Android Back converges on one window/process cleanup path.
-- Native app messaging exposes fixed methods, bounded payloads and declared capabilities only.
-- The trusted shell WebView remains an internal compatibility plane for built-ins that have not yet migrated; it is not an installed-app host.
+## Activation proof
+
+Current Android source contains:
+- no Kotlin `RiftRT` class;
+- no Android manifest component for RiftRT;
+- no Gradle packaging reference to `riftrt.js`;
+- no live Kotlin caller of `globalThis.RiftRT`.
+
+Retained calls in `src/riftapps.js` and `src/riftos.js` are also un-packaged shell-era references.
+
+The final native Desktop `riftrt:<app>` compatibility aliases were removed during this audit because no live producer created those window IDs.
+
+## Current live executable paths
+
+### Rift++ / .rxe
+
+```text
+RiftNativeShell
+ -> RiftHeadlessJsRuntime
+ -> QuickJS
+ -> packaged riftpp-core.js
+ -> packaged riftvm.js
+```
+
+This path is not RiftRT.
+
+### Existing installed HTML/JS program
+
+```text
+MainActivity launcher
+ -> RiftBrowserAppHost
+ -> dedicated Android WebView
+```
+
+This path is not the old `launchNativeWebView()` inside retained `riftrt.js`.
+
+## Retained RiftRT engine branches
+
+`src/riftrt.js` still contains historical branches for:
+- native-webview;
+- worker-js;
+- wasm-base64;
+- rift-vm;
+- native-arm64.
+
+Source presence is not activation.
+
+Each branch is classified independently in the engine inventory.
+
+## Why retained code remains
+
+The retained file is useful as:
+- design history;
+- migration reference;
+- tests/reference for older package semantics.
+
+It is not a runtime authority and must not be patched to fix current APK execution unless a future migration explicitly reactivates it.
+
+## Non-ownership boundaries
+
+Legacy RiftRT does not own:
+- current installed program renderer;
+- current Rift++ VM host;
+- Desktop windows;
+- current app grants;
+- build execution;
+- package install/update/uninstall.
+
+## Critical invariants
+
+- `riftrt.js` remains un-packaged unless deliberately reactivated;
+- no browser-shell dependency is reintroduced to execute Rift++;
+- installed programs stay under the audited App Host;
+- retained engine names never become evidence of live capability;
+- native Desktop does not preserve a phantom `riftrt:` window namespace.
 
 ## Failure signatures
 
-- installed app launches but no native content surface appears -> `app.runtime.open`, `RiftNativeAppHost`, or `RiftNativeDesktop.attachContent` path failed.
-- app content appears inside the trusted shell WebView/iframe -> retired execution model regressed.
-- window closes visually but the RiftRT process/session remains -> native close/process cleanup convergence broke.
-- app filesystem access reaches C: system roots or another app's AppData -> native-host containment/capability regression.
-- `build.local` claims compilation is available while the native executor is absent -> RiftBuild/RiftRT capability reporting drifted.
+- docs say RiftRT is current Android runtime manager -> status regression;
+- Gradle starts packaging `riftrt.js` without dedicated audit -> activation regression;
+- native Desktop recreates `riftrt:<app>` aliases -> stale-runtime regression;
+- Rift++ execution requires DOM/window manager -> headless boundary regression;
+- Apps launch through retained `globalThis.RiftRT` -> current host regression.
 
 ## Fix map
 
-Engine parsing/session lifecycle and Worker/WASM/native-webview launch -> `src/riftrt.js`.
-Installed Android WebView surface and bounded guest bridge -> `RiftNativeAppHost.kt`.
-Window attachment/focus/geometry/close ownership -> `RiftNativeDesktop.kt`.
-Install/registry state -> `src/riftapps.js`; do not repair installer failures inside RiftRT.
+Legacy manager/reference logic -> `src/riftrt.js`.
+
+Live RiftVM execution -> RiftVM/headless subsystem.
+
+Live installed program execution -> Apps / native WebView app engine.
 
 ## Validation
 
-Test install -> launch -> native surface, move/resize/minimize/maximize/restore, taskbar focus, app-initiated close, native close and process termination. Accessibility should see the app's dedicated Android WebView node inside the native window, not a shell iframe. Verify denied/granted filesystem and clipboard calls, package asset containment, network default-deny behavior and no arbitrary native method passthrough.
+Second source audit must prove:
+- zero Kotlin RiftRT implementation/callers;
+- zero manifest/Gradle activation;
+- retained `globalThis.RiftRT` callers are only un-packaged JS;
+- no Kotlin `riftrt:` window namespace remains;
+- live Rift++ and installed-app paths terminate in their replacement owners.
+
+Source verification does not reactivate or device-prove retained RiftRT.

@@ -1,6 +1,6 @@
 # RiftOS Android App Module
 
-This module builds the native `com.riftos.app` APK and packages the trusted RiftOS web runtime into generated Android assets.
+This module builds the native `com.riftos.app` APK. It does not package the retired RiftOS web shell; generated OS-execution assets are restricted to the headless Rift++ Core and RiftVM modules, while browser-specific assets remain under the explicit RiftBrowser-owned Android asset tree.
 
 - Build/source synchronization: [`../../docs/systems/build-validation/README.md`](../../docs/systems/build-validation/README.md)
 - Android host/lifecycle: [`../../docs/systems/android-host/README.md`](../../docs/systems/android-host/README.md)

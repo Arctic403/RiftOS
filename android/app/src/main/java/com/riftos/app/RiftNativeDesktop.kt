@@ -14,7 +14,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebView
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.GridLayout
@@ -28,14 +27,13 @@ import kotlin.math.roundToInt
 /**
  * Android-native RiftOS desktop/window authority.
  *
- * The shell WebView is retained only as a compatibility content canvas. Android owns launcher,
- * taskbar, window frames, bounds, focus, z-order, minimize/maximize/restore/close and insets.
+ * Android owns launcher, taskbar, window frames, bounds, focus, z-order,
+ * minimize/maximize/restore/close and insets. Every window must attach an explicit native or
+ * RiftBrowser-owned content View; there is no compatibility renderer fallback.
  */
 class RiftNativeDesktop(
     private val activity: Activity,
     host: FrameLayout,
-    private val compatibilityView: WebView,
-    private val stateSink: (JSONObject) -> Unit,
     private val appOpenSink: (String) -> Unit,
     private val windowClosedSink: (String) -> Unit
 ) {
@@ -89,8 +87,6 @@ class RiftNativeDesktop(
     private val launcherScroll = android.widget.ScrollView(activity)
     private val launcher = GridLayout(activity)
     private val startMenu = LinearLayout(activity)
-    private val statusBar = LinearLayout(activity)
-    private val statusTitle = TextView(activity)
     private val taskbar = LinearLayout(activity)
     private val startButton = Button(activity)
     private val taskStrip = LinearLayout(activity)
@@ -106,11 +102,8 @@ class RiftNativeDesktop(
     private var activeId: String? = null
     private var zCounter = 100L
     private var sequence = 0L
-    private var pendingBoundsState = false
-    private var pendingReason = "bounds"
     private var launcherLayoutProfile = ""
 
-    private val statusHeight = 0
     private val taskbarHeight = dp(48)
     private val titleHeight = dp(38)
     private val borderWidth = dp(1).coerceAtLeast(1)
@@ -130,15 +123,9 @@ class RiftNativeDesktop(
 
     init {
         host.setBackgroundColor(BG)
-        compatibilityView.setBackgroundColor(Color.TRANSPARENT)
-        contentHost.addView(
-            compatibilityView,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        )
         host.addView(wallpaper, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         host.addView(contentHost, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         host.addView(chromeHost, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        buildStatusBar()
         buildLauncher()
         buildTaskbar()
         buildStartMenu()
@@ -211,11 +198,6 @@ class RiftNativeDesktop(
         windows.clear()
         contentHost.removeAllViews()
         chromeHost.removeAllViews()
-    }
-
-    private fun buildStatusBar() {
-        // The permanent RiftDesktop shell intentionally has no top status strip.
-        statusBar.visibility = View.GONE
     }
 
     private fun buildLauncher() {
@@ -405,21 +387,6 @@ class RiftNativeDesktop(
             return publish("open")
         }
         val record = createWindow(id, title, kicker)
-        args.optJSONObject("boundsCss")?.let { saved ->
-            val leftCss = saved.optDouble("left", Double.NaN)
-            val topCss = saved.optDouble("top", Double.NaN)
-            val widthCss = saved.optDouble("width", Double.NaN)
-            val heightCss = saved.optDouble("height", Double.NaN)
-            if (leftCss.isFinite() && topCss.isFinite() && widthCss.isFinite() && heightCss.isFinite() && widthCss > 0.0 && heightCss > 0.0) {
-                val scale = args.optDouble("dpr", activity.resources.displayMetrics.density.toDouble()).coerceIn(0.5, 8.0)
-                val left = (leftCss * scale).roundToInt()
-                val top = (topCss * scale).roundToInt()
-                val width = (widthCss * scale).roundToInt()
-                val height = (heightCss * scale).roundToInt()
-                record.bounds = clampBounds(Rect(left, top, left + width, top + height))
-                applyRecordLayout(record)
-            }
-        }
         windows[id] = record
         focusInternal(record)
         syncTaskbar()
@@ -511,9 +478,8 @@ class RiftNativeDesktop(
         record.minimized = false
         record.z = ++zCounter
         windows.values.forEach { updateFocusStyle(it, it.id == record.id) }
-        if (record.contentView != null) record.contentView?.bringToFront() else compatibilityView.bringToFront()
+        record.contentView?.bringToFront()
         bringWindowChrome(record)
-        statusTitle.text = record.title
         applyRecordLayout(record)
         raiseSystemChrome()
     }
@@ -526,7 +492,7 @@ class RiftNativeDesktop(
         if (activeId == id) {
             val next = windows.values.filter { !it.minimized }.maxByOrNull { it.z }
             activeId = null
-            if (next != null) focusInternal(next) else statusTitle.text = "Native desktop"
+            if (next != null) focusInternal(next)
         }
         syncTaskbar()
         windowClosedSink(id)
@@ -541,7 +507,7 @@ class RiftNativeDesktop(
         if (activeId == id) {
             val next = windows.values.filter { it.id != id && !it.minimized }.maxByOrNull { it.z }
             activeId = null
-            if (next != null) focusInternal(next) else statusTitle.text = "Native desktop"
+            if (next != null) focusInternal(next)
         }
         syncTaskbar()
         return publish(reason)
@@ -584,7 +550,6 @@ class RiftNativeDesktop(
         if (args.has("kicker")) record.kicker = args.optString("kicker").trim().take(96)
         updateTitle(record)
         syncTaskbar()
-        if (activeId == id) statusTitle.text = record.title
         return publish("title")
     }
 
@@ -613,7 +578,6 @@ class RiftNativeDesktop(
             }
             showDesktopRestoreActiveId = activeId?.takeIf { it in showDesktopRestoreIds }
             activeId = null
-            statusTitle.text = "Native desktop"
             startMenu.visibility = View.GONE
             syncTaskbar()
             return publish("show-desktop")
@@ -661,7 +625,7 @@ class RiftNativeDesktop(
         val represented = LinkedHashSet<String>()
         for (appId in taskbarPins) {
             val app = launcherApps.firstOrNull { it.id == appId } ?: continue
-            val record = windows[appId] ?: windows["riftrt:$appId"]
+            val record = windows[appId]
             addTaskButton(appId, app.name, record)
             represented += appId
             if (record != null) represented += record.id
@@ -676,7 +640,7 @@ class RiftNativeDesktop(
 
     private fun addTaskButton(appId: String, label: String, record: WindowRecord?) {
         val active = record != null && record.id == activeId && !record.minimized
-        val baseId = appId.removePrefix("riftrt:")
+        val baseId = appId
         val pinned = taskbarPins.contains(baseId)
         val showLabel = !isCompactDesktop() && record != null && !pinned
         val itemWidth = if (showLabel) dp(140) else dp(44)
@@ -686,7 +650,7 @@ class RiftNativeDesktop(
             contentDescription = "Taskbar $label"
             background = pressable(if (active) PANEL_ACTIVE else Color.TRANSPARENT, 0x13ffffff, 6)
             setOnClickListener {
-                val live = windows[appId] ?: windows["riftrt:$appId"] ?: record?.let { windows[it.id] }
+                val live = windows[appId] ?: record?.let { windows[it.id] }
                 if (live == null) openApp(appId)
                 else if (live.id == activeId && !live.minimized) minimize(live.id, "taskbar-minimize")
                 else focus(live.id, "taskbar-focus")
@@ -735,7 +699,6 @@ class RiftNativeDesktop(
                         val dy = (event.rawY - startY).roundToInt()
                         record.bounds = clampBounds(Rect(startBounds).apply { offset(dx, dy) })
                         applyRecordLayout(record)
-                        scheduleBoundsState("move")
                     }
                     true
                 }
@@ -768,7 +731,6 @@ class RiftNativeDesktop(
                         val candidate = Rect(startBounds.left, startBounds.top, startBounds.right + dx, startBounds.bottom + dy)
                         record.bounds = clampBounds(candidate)
                         applyRecordLayout(record)
-                        scheduleBoundsState("resize")
                     }
                     true
                 }
@@ -858,15 +820,15 @@ class RiftNativeDesktop(
             record.bounds = if (record.maximized) workspaceBounds() else clampBounds(record.bounds)
             applyRecordLayout(record)
         }
-        scheduleBoundsState("host-layout")
+        sequence++
     }
 
     private fun workspaceBounds(): Rect {
         val metrics = activity.resources.displayMetrics
         val width = chromeHost.width.takeIf { it > 0 } ?: metrics.widthPixels
         val height = chromeHost.height.takeIf { it > 0 } ?: metrics.heightPixels
-        val bottom = (height - taskbarHeight).coerceAtLeast(statusHeight + 1)
-        return Rect(0, statusHeight, width.coerceAtLeast(1), bottom)
+        val bottom = (height - taskbarHeight).coerceAtLeast(1)
+        return Rect(0, 0, width.coerceAtLeast(1), bottom)
     }
 
     private fun defaultBounds(index: Int = windows.size): Rect {
@@ -907,21 +869,9 @@ class RiftNativeDesktop(
         )
     }
 
-    private fun scheduleBoundsState(reason: String) {
-        pendingReason = reason
-        if (pendingBoundsState) return
-        pendingBoundsState = true
-        handler.postDelayed({
-            pendingBoundsState = false
-            publish(pendingReason)
-        }, 16L)
-    }
-
     private fun publish(reason: String): JSONObject {
         sequence++
-        val state = stateObject(reason, sequence)
-        stateSink(state)
-        return state
+        return stateObject(reason, sequence)
     }
 
     private fun stateObject(reason: String, sequenceValue: Long): JSONObject {
@@ -1157,6 +1107,7 @@ class RiftNativeDesktop(
         LauncherApp("terminal", "RiftShell", ">_"),
         LauncherApp("browser", "RiftBrowser", "◎"),
         LauncherApp("editor", "Editor", "{}"),
+        LauncherApp("devlab", "Dev Lab", "◇"),
         LauncherApp("tasks", "Tasks", "≡"),
         LauncherApp("settings", "Settings", "⚙")
     )

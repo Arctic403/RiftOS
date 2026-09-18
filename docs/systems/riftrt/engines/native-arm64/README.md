@@ -1,31 +1,71 @@
-# RiftRT native-arm64 Engine Direction
+# RiftRT native-arm64 Reserved Engine Direction
 
-## Purpose
+## Verification status
 
-`native-arm64` is a reserved RiftRT engine direction for code that is explicitly trusted and packaged with RiftOS. It is **not** an active arbitrary downloaded native-code runtime.
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
+## Status
+
+`native-arm64` is a **reserved/roadmap engine name only**.
+
+No current RiftOS Android source implements a native ARM64 executable engine for installed Rift packages.
 
 ## Source ownership
 
-The reserved branch is represented by `launchNative`/runtime parsing in `src/riftrt.js`. Any future real native implementation would also require Android-side code and a separate security review before this README can describe it as active.
+Retained reference:
+- `src/riftrt.js` parser/launch branch.
 
-## Current behavior and boundary
+Current Android:
+- no Kotlin native-arm64 runtime;
+- no manifest service/activity;
+- no Gradle activation of riftrt.js;
+- no package host route selecting native-arm64.
 
-Modern Android does not provide a safe general-purpose design for executing arbitrary downloaded ELF binaries from writable app storage. RiftOS therefore must not turn this engine name into a shortcut around Android application signing, process isolation or capability policy.
+## Security boundary
+
+RiftOS must not execute arbitrary downloaded ELF/shared-object payloads from writable app storage simply because a package requests `native-arm64`.
+
+Any future native execution design requires explicit trust/admission, for example:
+- build-time packaged native code;
+- signed/trusted plugin mechanism;
+- Android process/service isolation;
+- fixed ABI;
+- capability broker;
+- crash/lifecycle handling;
+- update/revocation design.
+
+The retained engine name grants none of that today.
+
+## Current expected behavior
+
+A current package expecting legacy RiftRT native-arm64 execution is unsupported.
+
+That is the correct safe behavior.
 
 ## Critical invariants
 
-- Never execute arbitrary user-downloaded ELF simply because a package declares `native-arm64`.
-- Native modules, if implemented later, must be build-time packaged or admitted through an explicit trusted plugin mechanism.
-- Permissions and RiftOS app identity still require a brokered design.
+- no arbitrary writable/downloaded native payload execution;
+- no shell/process shortcut used as a fake native engine;
+- engine remains labeled roadmap until a separately audited implementation exists;
+- retained riftrt.js does not constitute Android native runtime code.
 
 ## Failure signatures
 
-A package expecting downloaded native execution should be rejected/unsupported; that is correct behavior, not a compatibility bug. If the runtime silently executes writable native payloads, treat it as an architecture/security regression.
+- app package launches ELF from C:/Programs or D: -> severe architecture/security regression;
+- native shell/process executor becomes app-facing native-arm64 backend -> capability collapse;
+- docs label native-arm64 live without Kotlin/build implementation -> status regression.
 
 ## Fix map
 
-Unsupported-package messaging belongs in RiftRT runtime parsing/launch handling. A future native runtime requires a separately designed Android/native subsystem rather than ad-hoc code in the package loader.
+Retained name/reference -> `src/riftrt.js`.
+
+Future native engine -> new explicit Android/native subsystem, not an ad-hoc package-loader branch.
 
 ## Validation
 
-Verify `native-arm64` cannot execute arbitrary writable/downloaded native payloads. Any future activation must add build, ABI, signing/trust, lifecycle, crash-isolation and capability tests before changing this status.
+Second audit proves:
+- retained name/branch exists;
+- no current Kotlin/Gradle/manifest activation;
+- no installed-app host route executes native package payloads.
+
+VERIFIED status here means the **unsupported/roadmap classification** is verified.

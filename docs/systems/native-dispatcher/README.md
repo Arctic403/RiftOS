@@ -1,59 +1,129 @@
-# RiftNativeDispatcher
+# Native Dispatcher — Retired Boundary
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-`RiftNativeDispatcher` is the main Android implementation behind RiftOS native capability calls. It translates validated method names/JSON arguments into Android file, mount, device and OS operations.
+This README documents an intentionally absent subsystem.
+
+The former broad `RiftNativeDispatcher.kt` JavaScript-to-Android capability dispatcher has been removed. Current RiftOS uses narrow native owners instead of one general native-call authority.
 
 ## Source ownership
 
-Primary source: `android/app/src/main/java/com/riftos/app/RiftNativeDispatcher.kt`.
+There is no maintained `RiftNativeDispatcher.kt` source file.
 
-Call entry: `handleAsync(raw)` -> `dispatch(method,args)`.
+The retired boundary is verified against:
+- current Android Kotlin source tree;
+- `MainActivity.kt`;
+- Gradle packaging;
+- Android manifest;
+- current narrow native service owners;
+- retained JavaScript that still contains historical `core.native.call(...)` migration/reference calls.
 
-## Responsibilities
+## Current absence proof
 
-The dispatcher implements internal RiftFS and SAF-mounted file operations, stat/list/read/write/base64 IO, bounded-buffer streaming SHA-256, mkdir/remove, recursive copy/move, ZIP/unzip, transfer manifest/progress/verification, mount enumeration/unmounting, settings storage, device/storage info, clipboard, share, vibration, allowed Android intents, preview launch and notifications. It also exposes the Android-native `vortex.bridge` route plus bounded `vortex.session` foreground-session route to `RiftVortexBridgeClient`, the separate fixed-scope `vortex.agent` and `riftos.agent` routes to the local UI-agent subsystem, the fixed `riftllm.dev` route to `RiftLlmDevClient`, and the local `chat.handoff` route to `RiftChatHandoff`. Vortex protocol/session semantics remain owned by the dedicated bridge subsystem, Android UI automation policy remains owned by the fixed-scope local-agent subsystem, and `.riftchat` schema/path/hash policy remains owned by the chat-handoff subsystem.
+Current source contains:
+- no `RiftNativeDispatcher.kt`;
+- no Kotlin reference to `RiftNativeDispatcher`;
+- no manifest component for it;
+- no Gradle wiring for it;
+- no Kotlin `native.call` bridge implementation.
 
-Local-agent methods run on a dedicated single-thread `agentExecutor`, separate from ordinary native RPCs. This is required because `riftos.agent` Dev Lab control can synchronously re-enter the trusted shell while the Dev Lab operation itself performs nested RiftFS/workspace RPCs; putting both on the normal single native worker would deadlock. Directory/notification picker completion enters from `MainActivity` through dedicated completion methods rather than pretending those asynchronous Android UI operations are synchronous dispatcher calls.
+Therefore no live Android component currently provides a generic method-name dispatcher equivalent to the retired class.
 
-## Why this boundary exists
+## Replacement ownership
 
-Android-specific APIs should not leak into `riftcore.js` or application code. One dispatcher makes the native authority auditable and gives the bridge a finite method surface.
+Former broad responsibilities are split among explicit owners:
 
-## Transfer path
+- workspace MCP/Code Mode -> `RiftToolSandbox`;
+- MCP schemas/grants -> `RiftToolHost`;
+- shell commands -> `RiftNativeShell`;
+- shell service families -> `RiftNativeShellServices`;
+- native system windows -> `RiftNativeSystemApps`;
+- Files/Editor/Settings/Workspace Records UI -> `RiftNativeWorkspaceApps`;
+- Dev Lab transactions -> `RiftNativeDevLab`;
+- Git -> `RiftNativeGit`;
+- browser rendering -> `RiftBrowser*`;
+- installed app renderer/capabilities -> `RiftBrowserAppHost`;
+- Vortex Binder -> `RiftVortexBridgeClient`;
+- Accessibility/local agent -> `RiftVortexLocalAgent`;
+- RiftLLM dev/training routes -> fixed client/task owners;
+- preview -> `RiftBrowserPreviewActivity`;
+- secrets -> `RiftSecretStore`.
 
-For copy/move, the dispatcher first resolves source/destination mount types. It can attempt provider-native copy/move for SAF where possible, otherwise recursively streams nodes. `buildTransferManifest` records expected file/directory/byte totals; progress is emitted during work; `verifyTransferComplete` checks completion before success.
+## Retained JavaScript
 
-## Security and path rules
+Several retained `src/` modules still contain historical calls of the form:
 
-- Internal paths are resolved inside the RiftFS root.
-- `fs.sha256` accepts only a resolved RiftFS/SAF file and streams it through `MessageDigest`; it must never expose raw Android paths or return file bytes.
-- `build.execute` is intentionally a finite fail-closed placeholder until a trusted native build executor exists; it throws rather than pretending compilation succeeded, while `RiftNativeBridge.capabilities()` advertises `localBuildExecutor:false`.
-- SAF paths are resolved relative to an explicitly persisted mount.
-- External intents are limited to an allowed scheme set.
-- This dispatcher is available to the trusted RiftOS shell, not directly to guest web pages or MCP.
-- `vortex.bridge` and `vortex.session` use explicit local Binder IPC through `RiftVortexBridgeClient`; do not replace them with a localhost/network listener or direct Vortex private-file access.
-- `vortex.agent` delegates only to hard-coded `com.vortex3d.app`, while `riftos.agent` delegates only to hard-coded `com.riftos.app`; never add an arbitrary package argument here. The RiftOS self-agent's Dev Lab branch is a finite structured action whitelist routed through the authoritative shell/Dev Lab API, not a generic command field.
-- `riftllm.dev` delegates only to `RiftLlmDevClient`, whose target package, ContentProvider authority and operation family are hard-coded. It must never become an arbitrary `ContentResolver.call()` proxy or network tunnel; its pairing token stays in `RiftSecretStore`.
-- `chat.handoff` delegates only to app-private RiftFS bundle logic; it must not read ChatGPT/Android app-private storage or grow a network path.
-- MCP has its own narrower `RiftToolSandbox`; do not expose this dispatcher as an MCP shortcut.
+`core.native.call("method.name", args)`
+
+Those calls do **not** prove a live dispatcher exists.
+
+Current Gradle packages only `riftpp-core.js` and `riftvm.js` from `src/` for the headless runtime. The old web shell/platform/runtime modules are retained reference/test/migration source unless another subsystem audit proves a separate packaged consumer.
+
+When a retained native-call shim references a route that no longer exists, the correct migration is to remove/fail that shim or wire the feature through its narrow native owner—not recreate a generic dispatcher.
+
+## Security boundary
+
+The retired dispatcher must not return as a convenience layer.
+
+A generic method-name bridge would collapse subsystem-specific validation, path confinement, capability checks and lifecycle ownership back into one high-authority object.
+
+New native functionality must:
+1. have one explicit owner;
+2. define bounded input/output;
+3. enforce its own permissions/capabilities;
+4. expose only the narrow caller path required;
+5. document and validate that path.
+
+## Non-ownership boundaries
+
+This retired subsystem owns no runtime behavior.
+
+Its README exists only to enforce the architectural absence and direct fixes toward the actual owner.
+
+## Critical invariants
+
+- `RiftNativeDispatcher.kt` remains absent;
+- no general JS-to-Android dispatcher is introduced under another name;
+- no WebView receives raw filesystem/shell/device authority;
+- retained `core.native.call` strings are never treated as proof of live Android capability;
+- feature migrations terminate in narrow subsystem owners;
+- validators/docs continue to reject broad-dispatcher regressions.
 
 ## Failure signatures
 
-- File operation fails only on Android, while web abstraction looks correct -> dispatcher/provider implementation.
-- Mounted-folder operation reports missing file -> `externalNode`/mount record/provider behavior.
-- Big copy stalls or progress is wrong -> manifest/progress/stream path.
-- ZIP extraction behaves unexpectedly -> `unzip` validation/commit behavior.
-- Clipboard/share/intent/notification fails -> respective Android API method here plus platform permissions.
+- new `RiftNativeDispatcher` class appears -> architecture regression;
+- one new class starts switching over unrelated method families -> dispatcher reintroduction;
+- retained JS call is made live by adding a broad method bridge instead of a narrow owner -> migration regression;
+- browser page gains raw native/filesystem/shell object -> authority collapse;
+- docs claim a retained `core.native.call` route is live without current packaged caller/receiver proof -> documentation regression.
 
 ## Fix map
 
-Keep semantic policy in the caller when it is not Android-specific. Patch this class for Android IO/API behavior, path resolution, provider compatibility, transfer mechanics, or dispatcher method mapping. Do not add MCP-specific permission policy here.
+Do not fix failures here by recreating this subsystem.
+
+Identify the capability family and patch its narrow owner:
+- shell -> RiftShell;
+- workspace tools -> MCP sandbox/tool host;
+- Git -> RiftNativeGit;
+- Files/Editor/Settings -> native workspace apps;
+- browser -> RiftBrowser;
+- installed apps -> RiftBrowserAppHost;
+- local agent/Vortex -> dedicated agent/bridge;
+- RiftLLM -> dedicated bridge/task owners;
+- secrets -> RiftSecretStore.
 
 ## Validation
 
-After native dispatcher changes, build the APK and test both app-private storage and at least one SAF provider. Verify `fs.sha256` against known digests, zero-byte files and a file larger than the 48 MiB binary bridge limit. Exercise failure/cancel paths as well as success. Transfer changes should test files, nested directories, zero-byte files and cross-provider moves.
+Source verification must prove:
+- retired source absent;
+- zero Kotlin references;
+- zero manifest/Gradle wiring;
+- no equivalent broad switch/dispatcher has replaced it;
+- retained JS native calls are classified as non-authoritative unless separately packaged;
+- current native capability families resolve to narrow owners.
 
-## Safe extension points
-
-Add a new dispatcher method only when an operation truly needs Android authority. Prefer explicit method names and small JSON-safe results. Long-running work must not block the UI thread and should use existing transfer/progress patterns where applicable.
+Installed-device testing is not required to prove file absence, but broader architecture acceptance still depends on Builder/device tests of the replacement owners.

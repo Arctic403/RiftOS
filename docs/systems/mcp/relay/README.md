@@ -1,54 +1,165 @@
 # Rift MCP Relay Client
 
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+
 ## Purpose
 
-The relay client gives remote MCP clients a secure outbound path to the same on-device `RiftMcpServer` without opening a listener on the phone.
+The Relay client provides an optional outbound-only WSS transport from RiftOS to the public relay while keeping all MCP execution/grants on device.
 
 ## Source ownership
 
-- `RiftMcpRelayClient.kt` — WebSocket transport/state/reconnect/forwarding.
-- `RiftRelaySettings.kt` — enabled flag, TLS endpoint, stable device ID and token retrieval/storage.
-- `RiftSecretStore.kt` — encrypted bearer-token storage.
-- `RiftMcpActivity.kt` — user configuration/reconnect/status UI.
-- public counterpart: `relay/src/index.js` (documented under relay service).
+- `RiftMcpRelayClient.kt` — socket lifecycle, protocol envelopes, reconnect.
+- `RiftRelaySettings.kt` — persisted enablement/endpoint/device id and secret-token lookup.
+- `RiftSecretStore.kt` — AES-GCM token storage backed by Android Keystore.
+- `RiftMcpActivity.kt` — local configuration/status UI.
+- `RiftMcpServer.kt` — actual MCP request execution/retry dedupe.
 
-## Runtime flow
+## Configuration
 
-```text
-RiftMcpRelayClient
-  -> outbound WSS /device with bearer token + device ID + protocol header
-  -> relay.ready
-  <- mcp.request envelopes
-  -> RiftMcpServer.handleAsync(payload, requestId)
-  -> mcp.response / mcp.error
-```
+Default relay state is disabled.
 
-The relay is disabled unless explicitly configured. It accepts secure `wss://` configuration and reconnects with bounded exponential backoff plus jitter. Socket identity checks ignore stale events from a replaced connection. `device.hello` also carries the generated app version plus source/build fingerprint (`sourceSha`, build run id) for transport diagnostics; these fields are informational and do not grant authority.
+A configured enabled relay requires:
+- valid `wss://` URI;
+- nonblank host;
+- no URI user-info;
+- no fragment;
+- saved pairing token.
+
+New/replacement token:
+- trimmed;
+- <=4096 characters;
+- rejects CR/LF and other ASCII control characters before it can become an Authorization header.
+
+Stable device id is a generated UUID stored in relay preferences.
+
+Endpoint/enabled/device id are ordinary private preferences. Pairing token plaintext is not stored there; it is encrypted through `RiftSecretStore`.
+
+Clearing token also disables relay.
+
+## Connection
+
+Client constructs an OkHttp WebSocket request with:
+- Authorization: Bearer <token>;
+- X-Rift-Device-Id;
+- X-Rift-Protocol: rift-mcp-relay-v1.
+
+It sends `device.hello` after socket open, including device id plus RiftOS version/source/build diagnostics.
+
+No local listening socket is created.
+
+## Relay protocol
+
+Inbound recognized types:
+- relay.ready;
+- relay.ping;
+- mcp.request;
+- mcp.notification;
+- relay.error.
+
+Unknown types receive `mcp.error`.
+
+Incoming text messages are capped at 1,000,000 UTF-8 bytes. Oversize messages close the socket with code 1009.
+
+Outgoing `mcp.response` envelopes are also capped at 1,000,000 UTF-8 bytes before WebSocket send; an oversized local response is converted to a bounded `mcp.error` instead of being transmitted.
+
+Invalid JSON returns a protocol error.
+
+`mcp.request` requires requestId + object payload.
+
+The payload is passed unchanged to:
+`RiftMcpServer.handleAsync(payload, requestId)`.
+
+`mcp.notification` carries an id-less `notifications/*` payload and is passed to the same server without a retry key or response callback, preserving JSON-RPC notification semantics.
+
+That relay request id is the only stable retry key supplied to server idempotency.
+
+Responses are sent only if the WebSocket is still the current socket.
+
+## Stale-socket protection
+
+Every WebSocket callback checks object identity against the currently owned socket.
+
+Close/failure from an older replaced socket cannot clear or reconnect over a newer socket.
+
+Reload/disconnect cancels scheduled reconnect and nulls current socket before starting or stopping as requested.
+
+## Reconnect
+
+On current-socket close/failure while desiredRunning:
+- connectedAt resets;
+- attempt counter increments;
+- retry delay doubles from 1s through a capped base of 60s;
+- random jitter 0..<750 ms is added;
+- only one scheduled reconnect is retained.
+
+`relay.ready` resets attempts to zero.
+
+## Status
+
+Status exposes:
+- state;
+- bounded detail (<=240 chars);
+- enabled/configured;
+- endpoint;
+- device id;
+- connectedAt;
+- attempts.
+
+It never returns the pairing token.
 
 ## Authority boundary
 
-The relay is transport-only. It cannot call RiftFS directly, cannot override tool grants and cannot widen MCP's workspace sandbox. All received MCP JSON-RPC is forwarded to the existing local server. The relay envelope `requestId` is also the only completed-response retry key supplied to the server: retrying the same envelope is idempotent, while a new envelope carrying the same tool call executes fresh.
+Relay owns transport only.
 
-## State
+It cannot:
+- alter ToolHost grants;
+- access workspace directly;
+- invoke RiftShell directly;
+- bypass Sandbox;
+- add tools.
 
-`status()` reports state/detail/enabled/configured/endpoint/deviceId/connect time/attempt count. The pairing token is not included. Settings persist endpoint/config state; token material is kept through `RiftSecretStore`.
+Browser compatibility and relay converge on the same process-owned MCP server/host.
+
+## Source hardening in this audit
+
+Relay settings were tightened from a prefix-only WSS check to actual URI validation, and pairing tokens gained length/control-character validation before HTTP-header use. The client message bound is now byte-accurate rather than character-counted, and local MCP responses are bounded before WebSocket transmission.
+
+## Critical invariants
+
+- outbound WSS only;
+- no plaintext token preference;
+- no token in status;
+- invalid endpoint/token rejected before connect;
+- incoming/outgoing relay envelopes <=1,000,000 UTF-8 bytes;
+- stale socket events ignored;
+- one bounded reconnect schedule;
+- relay request id forwarded for server retry dedupe;
+- local ToolHost remains authority.
 
 ## Failure signatures
 
-- `needs-setup` -> missing endpoint/token.
-- connecting/reconnecting forever -> endpoint/TLS/auth/network/service/device pairing.
-- relay connected but tool denied -> local `RiftToolHost` grant.
-- old socket close knocks down new connection -> stale socket identity regression.
-- ChatGPT still shows old action count after relay reconnect -> client-side action catalog cache; relay reconnect does not force action rescan.
+- malformed WSS config survives save -> settings validation regression;
+- token with CR/LF reaches header construction -> input-validation regression;
+- old socket close drops new socket -> identity regression;
+- retry loop schedules multiple concurrent reconnects -> lifecycle regression;
+- relay changes read/write permissions -> authority regression;
+- status exposes token -> secret leak;
+- same relay request duplicates mutation -> Server/relay request-id regression.
 
 ## Fix map
 
-WebSocket lifecycle/backoff/envelope forwarding -> relay client.
-Configuration validation -> relay settings.
-Token encryption -> secret store.
-Public HTTP/WebSocket routing -> relay service.
-MCP semantics -> local server/host.
+Socket/protocol/backoff -> `RiftMcpRelayClient.kt`.
+
+Configuration/device id -> `RiftRelaySettings.kt`.
+
+Token cryptography -> `RiftSecretStore.kt`.
+
+MCP semantics/retry cache -> `RiftMcpServer.kt`.
 
 ## Validation
 
-Test disabled startup, missing token, invalid endpoint, successful connect, network loss/reconnect, replacement by a newer socket, oversized/invalid relay messages and local permission denial. Confirm no listening socket is created on-device.
+Second source audit must recheck URI/token validation, encrypted token storage, outbound headers, 1M input bound, current-socket checks, reconnect cap/jitter, request-id forwarding and token-free status.
+
+Public relay-service behavior is a separate subsystem audit.

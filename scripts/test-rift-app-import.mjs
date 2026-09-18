@@ -30,6 +30,11 @@ const context = {
 };
 context.globalThis=context.window;
 vm.createContext(context);
+const gradleSource=readFileSync('android/app/build.gradle.kts','utf8');
+const appHostSource=readFileSync('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt','utf8');
+assert.ok(!gradleSource.includes('riftapps.js'),'retained RiftApps installer must not be packaged');
+assert.ok(!gradleSource.includes('riftrt.js'),'retained RiftRT manager must not be packaged');
+assert.ok(appHostSource.includes('Android-owned execution surface for installed RiftOS programs.'),'current app host boundary missing');
 const appsSource=readFileSync('src/riftapps.js','utf8');
 vm.runInContext(appsSource, context, { filename: 'src/riftapps.js' });
 
@@ -65,6 +70,6 @@ assert.equal(JSON.parse(vmApp.files['riftrt.json']).engine,'rift-vm');
 await assert.rejects(() => context.window.RiftApps.installPackageFile({ ...file, text: async () => 'not a package' }), /JSON containers/);
 await assert.rejects(() => context.window.RiftApps.installPackageFile({ ...file, text: async () => '{"format":"other"}' }), /Unsupported package format/);
 for (const [source, id] of [['src/riftapps.js', 'riftPackageInput'], ['src/riftrt.js', 'riftrtImport']]) assert.match(readFileSync(source, 'utf8'), new RegExp(`id="${id}" accept="\\.rift,\\*/\\*"`));
-console.log('ok - .rift import installs transactionally under C:/Programs with D:/ AppData separated');
-console.log('ok - installed app launch path is native RiftRT; iframe execution path is absent');
-console.log('ok - .rift installer accepts a RiftVM main.rxe executable payload without a second package format');
+console.log('ok - retained RiftApps package-format/transaction reference remains internally consistent');
+console.log('ok - retained RiftApps/RiftRT JavaScript stays un-packaged while current installed-app execution is Android-owned');
+console.log('ok - retained package-format reference accepts the historical RiftVM main.rxe payload shape');

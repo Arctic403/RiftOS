@@ -1,67 +1,98 @@
-# RiftRT native-webview Engine
+# Installed Program Native WebView Engine
+
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
 ## Purpose
 
-`native-webview` is the V1 Android renderer for installed HTML/JS-compatible RiftOS programs. The name describes the renderer implementation, not the old web-desktop model: the renderer is a dedicated Android `WebView` View attached directly to a native RiftDesktop WindowRecord.
+This is the current live HTML/JavaScript installed-program engine.
 
-There is no iframe and no guest app DOM inside the trusted shell WebView.
-
-## Runtime path
-
-```text
-C:/Programs/<id>/package.json
-  -> RiftRT launch(native-webview)
-  -> native RiftDesktop window
-  -> app.runtime.open
-  -> RiftNativeAppHost
-  -> dedicated Android WebView
-  -> RiftNativeDesktop.attachContent
-```
-
-The WebView gets the fixed local origin `https://app.riftos.local/<app-id>/`. Local package assets are served from the installed package object; file/content URI access is disabled. External network loading starts blocked and can only become available when the installed manifest declares `network` and the user grant exists/is approved.
-
-## Bridge
-
-A single `RiftNativeApp` WebMessage endpoint provides the bounded Rift API. Supported V1 families are app lifecycle/title/info, app storage, permission request, bounded RiftFS text/list operations, clipboard, share and the bounded RiftBuild controller. No generic `native.call`, shell, MCP or reflection bridge is exposed.
-
-## Security invariants
-
-- Fixed origin and app id must match the installed package.
-- Entry/asset and RiftFS paths reject traversal.
-- CSP denies frames/object embedding and network by default.
-- Bridge messages and text operations are bounded.
-- AppData stays on D: and program payload stays on C:.
-- Generic app filesystem grants cannot rewrite C: or another program's AppData; writes are restricted to approved D: user/project roots and the caller's own AppData.
-- The renderer is destroyed when the native program session closes.
+It is implemented by `RiftBrowserAppHost.kt`, not by the retained `src/riftrt.js` `native-webview` branch.
 
 ## Source ownership
 
-- `src/riftrt.js` — selects/launches `native-webview`, owns RiftRT process/session lifecycle and calls the bounded native app-runtime routes.
-- `android/app/src/main/java/com/riftos/app/RiftNativeAppHost.kt` — dedicated Android WebView, local package origin/asset serving, permission checks and bounded guest API.
-- `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` — native WindowRecord and content-view attachment/focus/geometry lifecycle.
-- `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt` — native C:/D: resolver used by app filesystem boundaries.
+- `RiftBrowserAppHost.kt` — renderer, origin, bridge, capability/filesystem policy, lifecycle.
+- `RiftNativeDesktop.kt` — outer window visibility/geometry.
+- `MainActivity.kt` — installed-program dispatch.
+
+## Activation
+
+Launcher dispatch for a non-built-in app calls:
+
+`browserAppHost.open({appId, windowId: appId})`
+
+The host creates one managed Android WebView and attaches it directly to the native Desktop window.
+
+No shell DOM, iframe, RiftRT manager, or retained app runner is involved.
+
+## Isolation
+
+Each app derives its own deterministic HTTPS origin from SHA-256(app id).
+
+The WebMessage listener is exact-origin/main-frame.
+
+Third-party cookies are disabled.
+
+DOM storage, file access and content access are disabled.
+
+External top-level navigation is blocked.
+
+## Network
+
+Network load starts blocked unless the app both declares and already has a saved `network` grant.
+
+A user grant can enable network loads for the current instance.
+
+CSP never permits external scripts merely because network is enabled.
+
+## Native authority
+
+The only app/native API is the finite `RiftNativeApp` message bridge.
+
+Capabilities are declaration + user-grant gated.
+
+App filesystem access is confined to its own installed files/AppData and approved D: data roots, with no C:/Programs writes.
+
+## Lifecycle
+
+Managed WebView lifecycle follows:
+- Activity resume state;
+- native parent attachment;
+- actual View visibility.
+
+A minimized/hidden app is paused.
+
+Renderer loss is handled by recording/destroying the dead renderer and closing its native window; native RiftOS remains alive.
+
+## Non-ownership boundaries
+
+This engine does not install/update/uninstall packages and does not implement Worker/WASM/RiftVM selection.
+
+## Critical invariants
+
+- live owner remains RiftBrowserAppHost;
+- per-app origins remain distinct;
+- only the app's exact origin receives bridge authority;
+- hidden renderer stays paused;
+- no iframe/shell/RiftRT manager path;
+- package filesystem/capability policy remains bounded.
 
 ## Failure signatures
 
-- program window exists but renderer is blank/missing -> app-runtime open/host construction/content attachment failed.
-- app appears inside shell DOM or an iframe -> native-webview boundary regressed.
-- local package assets 404 while install metadata exists -> fixed-origin asset resolver or package path validation drifted.
-- network works before a declared/granted `network` capability -> WebView default-deny regression.
-- app can write C:/Programs, C:/ProgramData, another app's AppData, or escape an approved D: root -> native filesystem containment regression.
-- closing/minimizing/restoring leaves the Android renderer visible or alive incorrectly -> `RiftNativeDesktop` content-view lifecycle mismatch.
-- a guest WebView renderer dies and the entire RiftOS Activity/process exits -> `RiftNativeAppHost.onRenderProcessGone()` isolation regressed; renderer loss must close only the affected installed-program surface and be recorded in app-runtime state.
+- app runs through retained `riftrt.js` -> activation regression;
+- two apps share origin -> isolation regression;
+- minimized app stays resumed -> lifecycle regression;
+- app bridge appears on arbitrary HTTPS page -> origin regression.
 
 ## Fix map
 
-Renderer creation, CSP/origin, asset interception, WebMessage API and app filesystem containment -> `RiftNativeAppHost.kt`.
-RiftRT route/lifecycle selection -> `src/riftrt.js`.
-Window/content attachment and z-order -> `RiftNativeDesktop.kt`.
-Drive mapping -> `RiftVolumePaths.kt` plus RiftFS contract; do not invent a second path map in the renderer.
+Renderer/security/capability behavior -> `RiftBrowserAppHost.kt`.
+
+Window behavior -> `RiftNativeDesktop.kt`.
 
 ## Validation
 
-Install and launch a V1 package; verify the dedicated Android WebView is attached to the native WindowRecord and never the shell DOM. Exercise local asset loads, denied/granted network, own AppData read/write, approved D: roots, denied C:/system and foreign-AppData writes, clipboard/share/build-controller permissions, minimize/restore/focus/resize/close, and repeated launch/dispose without leaked renderer state. Force or simulate renderer loss and verify `onRenderProcessGone()` returns handled, removes/destroys only that guest surface, closes its native window, records `lastRendererCrash`, and leaves the RiftOS shell/MCP runtime alive.
+Second source audit must prove MainActivity dispatch, AppHost construction, per-app origin/message listener, WebView settings, lifecycle and absence of a retained RiftRT caller.
 
-## Future compiler ABI
-
-This engine is a compatibility target for V1. R.O.P.E's compiled Rift ABI may later target a native UI/WASM/packaged-plugin engine. That compiler work must not undo the installer, volume, permission or native-window contracts established here.
+Device proof remains part of the Apps installed-program validation gate.

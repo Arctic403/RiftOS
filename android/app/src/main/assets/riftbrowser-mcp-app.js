@@ -11,6 +11,10 @@
   const MAX_CONTEXT_CHARS = 5000;
   const MAX_RESULT_CHARS = 48000;
   const MAX_CALLS_PER_MINUTE = 24;
+  const MAX_PROCESSED_CALLS = 512;
+  const MAX_RAW_CALL_CHARS = 512000;
+  const MAX_RAW_PATH_DEPTH = 24;
+  const MAX_RAW_ARRAY_INDEX = 4096;
   const PROCESS_DELAY_MS = 180;
   const INCOMPLETE_CALL_GRACE_MS = 1400;
 
@@ -31,6 +35,7 @@
   let processTimer = 0;
   let routeKey = location.pathname + location.search;
   let contextSentForRoute = false;
+  let contextStagePending = false;
   let toolExecutionArmed = false;
   let resultCounter = 0;
   let recoveryAttempt = 0;
@@ -176,6 +181,7 @@
     }
     routeKey = next;
     contextSentForRoute = false;
+    contextStagePending = false;
     toolExecutionArmed = false;
   }
 
@@ -230,10 +236,6 @@
 
   function markHistoricalAssistantMessage(message) {
     if (message instanceof Element) historicalAssistantMessages.add(message);
-  }
-
-  function rememberExistingToolCalls() {
-    for (const message of listAssistantMessages()) markHistoricalAssistantMessage(message);
   }
 
   async function stageComposerMessage(message) {
@@ -367,6 +369,15 @@
     return { call_id: callId, name, args };
   }
 
+  function rememberProcessedCall(key, signature) {
+    processedCalls.set(key, signature);
+    while (processedCalls.size > MAX_PROCESSED_CALLS) {
+      const oldest = processedCalls.keys().next().value;
+      if (oldest === undefined) break;
+      processedCalls.delete(oldest);
+    }
+  }
+
   async function performCall(packet) {
     let call;
     try {
@@ -391,11 +402,11 @@
       return { call_id: call.call_id, name: call.name, ok: false, final: false, error_code: 'DUPLICATE_CALL_ID', error: 'Duplicate Rift call id was reused with different arguments; retry with a new id.' };
     }
     if (!rateLimitAllowsCall()) {
-      processedCalls.set(callKey, signature);
+      rememberProcessedCall(callKey, signature);
       return { call_id: call.call_id, name: call.name, ok: false, final: false, error_code: 'RATE_LIMIT', error: 'Rift MCP browser rate limit reached; consolidate work into a larger rift_workspace_exec batch.' };
     }
 
-    processedCalls.set(callKey, signature);
+    rememberProcessedCall(callKey, signature);
     setBadge('busy');
     try {
       const result = await postRpc('tools/call', {
@@ -459,6 +470,8 @@
   function setRawPath(root, path, value) {
     const parts = String(path || '').split('.').filter(Boolean);
     if (!parts.length) throw new Error('set requires a dotted argument path');
+    if (parts.length > MAX_RAW_PATH_DEPTH) throw new Error('set path is too deep');
+    if (parts.some((part) => part === '__proto__' || part === 'prototype' || part === 'constructor')) throw new Error('set path contains a blocked key');
     let cursor = root;
     for (let i = 0; i < parts.length; i += 1) {
       const part = parts[i];
@@ -467,6 +480,7 @@
       if (Array.isArray(cursor)) {
         if (!isIndex) throw new Error(`Expected numeric array index at ${part}`);
         const index = Number(part);
+        if (!Number.isSafeInteger(index) || index < 0 || index > MAX_RAW_ARRAY_INDEX) throw new Error('set array index is out of range');
         if (last) { cursor[index] = value; return; }
         const nextIsIndex = /^\d+$/.test(parts[i + 1]);
         if (!cursor[index] || typeof cursor[index] !== 'object') cursor[index] = nextIsIndex ? [] : {};
@@ -481,7 +495,9 @@
   }
 
   function parseRawCallBlock(rawBlock) {
-    const lines = String(rawBlock || '').replace(/\r\n?/g, '\n').split('\n');
+    const rawText = String(rawBlock || '');
+    if (rawText.length > MAX_RAW_CALL_CHARS) throw new Error('Rift command block is too large');
+    const lines = rawText.replace(/\r\n?/g, '\n').split('\n');
     let callId = '';
     let name = '';
     const args = {};
@@ -588,16 +604,6 @@
       normalized === 'browsing' ||
       normalized === 'analyzing' ||
       normalized === 'analysing';
-  }
-
-  function latestAssistantHasCompletableOutput() {
-    const assistant = listAssistantMessages();
-    if (!assistant.length) return false;
-    const message = assistant[assistant.length - 1];
-    const raw = String(message.innerText || message.textContent || '');
-    if (hasToolProtocolSignal(raw)) return false;
-    const visible = stripToolEnvelopes(raw);
-    return Boolean(visible) && !isTransientAssistantStatus(visible);
   }
 
   function queueProtocolRecovery(message, errorText) {
@@ -707,14 +713,29 @@
     }
   }
 
+  function processUserMessage(message) {
+    if (!(message instanceof Element)) return;
+    const raw = String(message.innerText || message.textContent || '');
+    compactInjectedUserMessage(message);
+    if (!enabled || !mcpReady) return;
+    toolExecutionArmed = true;
+    if (contextSentForRoute || contextStagePending || raw.includes(CONTEXT_MARKER) || raw.includes(RESULT_MARKER)) return;
+    contextStagePending = true;
+    callQueue = callQueue.then(async () => {
+      await stageComposerMessage(contextBlock());
+      contextSentForRoute = true;
+      setBadge('ready');
+    }).catch(() => setBadge('error')).finally(() => { contextStagePending = false; });
+  }
+
   function flushTouchedMessages() {
     processTimer = 0;
     const assistant = Array.from(touchedAssistantMessages);
     const users = Array.from(touchedUserMessages);
     touchedAssistantMessages.clear();
     touchedUserMessages.clear();
+    for (const message of users) processUserMessage(message);
     for (const message of assistant) scanAssistantMessage(message);
-    for (const message of users) compactInjectedUserMessage(message);
   }
 
   function scheduleTouchedMessages() {

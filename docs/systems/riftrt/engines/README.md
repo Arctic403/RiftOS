@@ -1,33 +1,117 @@
-# RiftRT Engines
+# Executable Engine Inventory
 
-RiftRT engine implementations are execution backends beneath the same installed-program, permission, process and RiftDesktop contracts.
+## Verification status
 
-- [`native-webview/README.md`](native-webview/README.md) — V1 default for installed HTML/JS-compatible programs; dedicated Android WebView View in the native window, never an iframe.
-- [`worker-js/README.md`](worker-js/README.md) — constrained Worker + host-canvas compatibility engine.
-- [`wasm-base64/README.md`](wasm-base64/README.md) — sandboxed WebAssembly compatibility engine.
-- [`rift-vm/README.md`](rift-vm/README.md) — bounded data-only `rift-exec-v1` VM and first Rift++ executable target.
-- [`native-arm64/README.md`](native-arm64/README.md) — reserved packaged native-plugin direction; arbitrary downloaded ELF execution remains disabled.
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
 
-The retired iframe engine is intentionally absent. A legacy `engine: "iframe"` package declaration is translated by RiftRT to `native-webview` so old packages can migrate without reintroducing iframe execution.
+## Purpose
+
+This inventory classifies execution engines by current Android reachability, not by source-file presence.
 
 ## Source ownership
 
-Engine selection, compatibility translation, process/session lifecycle and shared broker logic live in `src/riftrt.js`. Engine-specific maintenance notes live in the child README for that engine. Android-owned `native-webview` rendering additionally depends on `RiftNativeAppHost.kt` and `RiftNativeDesktop.kt`.
+Live installed-program renderer:
+- `RiftBrowserAppHost.kt`
+
+Live RiftVM/headless execution path:
+- `src/riftvm.js`
+- `RiftHeadlessJsRuntime.kt`
+- `RiftNativeShell.kt`
+
+Retained engine inventory/reference implementation:
+- `src/riftrt.js`
+
+Child engine READMEs own their detailed engine-specific contracts.
+
+## Source-proven live engines
+
+### Installed-program native WebView host
+
+Owner:
+- `RiftBrowserAppHost.kt`
+
+Role:
+- runs already-installed HTML/JS Rift programs in dedicated Android WebViews.
+
+This is the current installed-app renderer, not the old RiftRT `native-webview` branch.
+
+### RiftVM under headless QuickJS
+
+Owners:
+- packaged `src/riftvm.js`;
+- `RiftHeadlessJsRuntime.kt`;
+- `RiftNativeShell.kt`.
+
+Role:
+- inspect/run Rift++ `.rxe` executables.
+
+This is the current VM execution path, not retained RiftRT's VM session manager.
+
+## Retained inactive engines
+
+### Worker-JS
+
+Implementation remains only in un-packaged `src/riftrt.js`.
+
+No current Kotlin/Gradle caller.
+
+### WASM-base64
+
+Implementation remains only in un-packaged `src/riftrt.js`.
+
+No current Kotlin/Gradle caller.
+
+## Reserved / roadmap
+
+### native-arm64
+
+Only a retained engine name/branch exists in `src/riftrt.js`.
+
+No current Android native runtime accepts arbitrary package-native payloads.
+
+## Removed ambiguity
+
+The old RiftRT manager itself is inactive.
+
+Native Desktop no longer carries the obsolete `riftrt:<app>` window-ID compatibility namespace.
+
+Therefore a current window/app cannot be mistaken for evidence that retained RiftRT engine selection is running.
+
+## Engine activation rule
+
+An engine is live only when all are proven:
+1. current Android caller;
+2. current packaging/build wiring;
+3. explicit owner/lifecycle;
+4. bounded authority/security contract.
+
+Source text in an un-packaged module satisfies none of those by itself.
+
+## Critical invariants
+
+- only the two source-proven live paths are labeled live;
+- retained Worker/WASM stay inactive until an actual caller/package path appears;
+- native-arm64 stays unsupported until a separately audited native design exists;
+- live RiftVM remains headless;
+- installed WebView rendering remains under the Apps host.
 
 ## Failure signatures
 
-- an engine name is accepted but launches through the wrong backend -> RiftRT engine parsing/dispatch drift.
-- legacy `iframe` creates an iframe instead of translating to `native-webview` -> retired execution path returned.
-- one engine bypasses shared permissions/process/window ownership -> engine implementation escaped the common RiftRT contracts.
-- an engine-specific failure is documented only here -> maintenance ownership is too broad; move the repair detail into that engine's README.
+- inventory calls Worker/WASM active because functions exist in riftrt.js -> reachability error;
+- installed app host is called legacy RiftRT -> ownership error;
+- native-arm64 is described as downloaded-native execution -> security/status error;
+- VM is described as browser-dependent -> live-path regression.
 
 ## Fix map
 
-Shared engine parsing/dispatch/session contracts -> `src/riftrt.js`.
-Renderer/ABI-specific behavior -> the owning child engine README and implementation it names.
-Native window attachment -> `RiftNativeDesktop.kt`.
-Installed package/registry problems -> RiftApps, not the engine layer.
+Installed WebView engine -> Apps / native-webview child.
+
+RiftVM -> RiftVM child.
+
+Retained Worker/WASM/native-arm64 design -> retained `riftrt.js` child docs.
 
 ## Validation
 
-Verify every declared engine resolves to exactly one backend, legacy `iframe` maps only to `native-webview`, unsupported engines fail closed, all active engines preserve shared permission/process/window lifecycle, and each child engine README remains accurate for its implementation.
+Second audit must compare Kotlin callers, Gradle asset inclusion, manifest wiring and retained `riftrt.js` branches.
+
+Each child has its own source audit and can be VERIFIED as active, inactive or roadmap without changing this inventory classification.

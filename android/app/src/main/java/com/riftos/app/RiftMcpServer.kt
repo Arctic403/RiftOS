@@ -69,6 +69,7 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         when (method) {
             "initialize" -> reply(success(id, initializeResult()))
             "ping" -> reply(success(id, JSONObject()))
+            "notifications/initialized" -> Unit
             "tools/list" -> {
                 val tools = toolHost.tools()
                 val manifest = toolHost.manifest()
