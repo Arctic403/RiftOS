@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -20,6 +20,7 @@ Live:
 - RiftNativeShell.kt — git command routing.
 - RiftNativeWorkspaceApps.kt — native Settings token entry/status.
 - RiftWorkspaceRecords.kt — workspace checkpoint receiver after applicable successful push/pull.
+- RiftPatchSessions.kt — provenance claims for workspace import/replacement and local Git metadata publication.
 
 Focused source test:
 - scripts/test-rift-shell-git.mjs
@@ -268,6 +269,8 @@ workspaceMeta() fetches the current remote tree rather than writing .riftgit.jso
 
 The same atomic push/stability rules apply.
 
+After a successful push, local `.riftgit.json` metadata publication can register `origin=native-git` / `operation=push-metadata` provenance when that metadata lives under Workspace. This claim is committed before the Workspace Records checkpoint is advanced.
+
 After a successful workspace push, Workspace Records checkpoint is advanced with:
 - reason git:push
 - Git root
@@ -333,6 +336,8 @@ or the special empty-checkout case where every tracked file is absent and no oth
 If remote head already equals recorded head and checkout is not empty, pull reports up to date.
 
 Otherwise it uses the staged import transaction.
+
+A staged import opens one directory-scope `origin=native-git` provenance claim before publication. After the staged tree is atomically published, that claim is committed before the workspace checkpoint. Because a directory replacement covers many descendant writes, this evidence is deliberately labeled `confidence=scope-bound` rather than pretending every child was individually SHA-bound.
 
 Successful workspace pull advances Workspace Records checkpoint with reason git:pull.
 

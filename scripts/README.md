@@ -8,6 +8,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-workspace-records.mjs` — retained Workspace Records HTML adapter regression oracle with explicit proof that `workspace-live` remains un-packaged and the native Workspace Records owner is present.
 - `test-rift-diff-engine-v2.mjs` — live Diff Engine V2 contract: bounded exact-LCS threshold, patience-style anchors, independent hunks, Android-framework independence, Workspace Records wiring, exact Gradle source declaration and documentation ownership.
 - `test-rift-file-identity-v2.mjs` — live File Identity V2 contract: exact SHA rename/copy evidence, bounded heuristic similarity, rewrite thresholds, relation-aware Workspace Records/diff wiring and documentation ownership.
+- `test-rift-patch-sessions.mjs` — live Patch Session V1 contract: state-bound provenance claims, honest unattributed fallback, writer integrations, optional MCP intent metadata, Gradle declaration and ownership coverage.
 - `test-rift-dev-lab.mjs` — native Dev Lab staging/snapshot/guarded-publish regression contract.
 - `test-rift-ai-adapters.mjs` — AI site adapter contract.
 - `test-rift-raw-protocol.mjs` — browser raw tool-call parser/protocol.

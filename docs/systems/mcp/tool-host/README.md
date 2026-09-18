@@ -40,7 +40,7 @@
 
 `manifest()` hashes the complete definitions JSON with SHA-256 and reports count/names/scope.
 
-The `rift_workspace_exec` public description now correctly identifies Project Intelligence **v2**. That intentional schema text change changes the manifest hash and requires cached clients to rescan actions.
+The `rift_workspace_exec` public description identifies Project Intelligence **v2**. Patch Session V1 also adds an optional bounded `intent` field to this existing tool schema for provenance evidence. It does not add a tool, grant permission or alter write classification. This intentional schema change changes the manifest hash and may require cached clients to rescan actions.
 
 ## Local grants
 

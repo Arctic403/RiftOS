@@ -223,9 +223,11 @@ internal object RiftPatchSessions {
             value = RiftVolumePaths.resolveRelative(value)
         } else {
             value = value.trimStart('/')
+            if (!value.equals("workspace", ignoreCase = true) &&
+                !value.startsWith("workspace/", ignoreCase = true)) return null
         }
         if (value.equals("workspace", ignoreCase = true)) return ""
-        if (value.startsWith("workspace/", ignoreCase = true)) value = value.substringAfter('/')
+        value = value.substringAfter('/')
         return normalizeWorkspaceRelative(value)
     }
 

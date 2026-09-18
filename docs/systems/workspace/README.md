@@ -31,6 +31,7 @@ Core live owners:
 - `RiftWorkspaceRecords.kt` — private change/checkpoint store outside workspace.
 - `RiftDiffEngineV2.kt` — deterministic bounded multi-hunk text diff engine consumed by Workspace Records.
 - `RiftFileIdentityV2.kt` — deterministic bounded structural identity evidence for rename/copy/rewrite correlation.
+- `RiftPatchSessions.kt` — bounded writer provenance claims for workspace mutations; unknown writers remain explicitly unattributed.
 - `RiftNativeGit.kt` — Git/project synchronization, including `/workspace/RiftOS-main`.
 - `RiftNativeDevLab.kt` — staged development/publish flow targeting the RiftOS workspace project.
 - `RiftNativeShell.kt`, `RiftHeadlessJsRuntime.kt`, and native shell services — additional bounded app-private writers where their command/capability allows workspace paths.
@@ -120,6 +121,12 @@ Git operations do not redefine the workspace root.
 
 Git checkpoints can notify Workspace Records after applicable workspace operations.
 
+## Mutation provenance
+
+Patch Session V1 overlays evidence on the same canonical filesystem rather than creating another workspace. MCP/Code Mode, direct native Shell file commands, internal native Editor saves, Dev Lab publication and native Git workspace replacement/metadata writes can register bounded provenance claims before Workspace Records observes the resulting bytes. Exact file claims are state-bound; directory claims are explicitly lower-confidence. Any writer without a valid claim is recorded as `unattributed-local` rather than inferred.
+
+This layer records origin/operation/intent evidence only. It does not change mutation authority or make the planned validation gate enforce anything while development mode remains OBSERVE.
+
 ## Dev Lab relationship
 
 Native Dev Lab targets `workspace/RiftOS-main` as its project root while staging work separately under RiftFS system Dev Lab state.
@@ -177,6 +184,8 @@ Observation/records -> `RiftWorkspaceWatcher.kt`, `RiftWorkspaceRecords.kt`.
 Text diff computation -> `RiftDiffEngineV2.kt`.
 
 File identity correlation -> `RiftFileIdentityV2.kt`.
+
+Patch-session provenance -> `RiftPatchSessions.kt` plus writer integrations.
 
 Git -> `RiftNativeGit.kt`.
 

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -20,6 +20,7 @@ Live callers:
 - `RiftNativeShellServices.kt` — finite `devlab` command family.
 - `RiftNativeShell.kt` — routes shell command to services.
 - `RiftVortexLocalAgent.kt` — bounded local-agent Dev Lab operation forwarding.
+- `RiftPatchSessions.kt` — provenance claim owner for successful canonical publication.
 
 Retained/non-authoritative:
 - `src/riftdevlab.js`
@@ -149,11 +150,14 @@ If any rollback step fails:
 - error reports that rollback was incomplete and includes the recovery path/details.
 
 On successful publication:
-- a version-2 publication receipt is written;
+- the staged target set is committed as one `origin=devlab` patch session after canonical writes succeed;
+- a version-2 publication receipt is written and includes the resulting `patchId` when provenance commit succeeds;
 - transaction directory is deleted;
 - published paths are removed from staging;
 - baseline head is cleared when staging becomes empty;
 - lastPublished is persisted.
+
+If publication rolls back, the pending patch-session claim is aborted. Provenance capture is evidence-only: failure to attach provenance does not convert already-successful file publication into a false filesystem failure; Workspace Records instead falls back to explicit unattributed evidence.
 
 ## Atomic writes
 

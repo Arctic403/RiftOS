@@ -79,7 +79,7 @@ A 14-patch closed-circuit validation program is now active as planned developmen
 Current sequence/status:
 1. **Diff Engine V2 — implemented in current source.** Workspace Records delegates text rendering to a bounded deterministic adaptive exact-LCS/patience engine with independent hunks.
 2. **File identity intelligence — implemented in current source.** Exact SHA rename/copy content identity, bounded heuristic rename/rewrite correlation and checkpoint identity summaries.
-3. Patch sessions and provenance.
+3. **Patch sessions and provenance — implemented in current source.** Explicit writer claims are state-bound where possible, directory replacement claims are labeled lower-confidence, and unknown writers remain `unattributed-local`.
 4. Immutable patch manifest and tamper-evident evidence.
 5. Semantic diff + Project Intelligence impact mapping.
 6. Local Agent validation state machine/policy core.

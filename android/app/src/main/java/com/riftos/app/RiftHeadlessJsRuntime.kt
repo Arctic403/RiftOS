@@ -133,7 +133,8 @@ class RiftHeadlessJsRuntime(context: Context) {
 
     private fun executeGate0Verifier(): CommandResult {
         val bundle = gate0Bundle()
-        val verifierSource = readGate0File("/workspace/rift++/tools/semantic-verifier-core.js")
+        val semanticVerifierSource = readGate0File("/workspace/rift++/tools/semantic-verifier-core.js")
+        val referenceVerifierSource = readGate0File("/workspace/rift++/tools/reference-integrity-verifier-core.js")
         var resultJson: String? = null
 
         runBlocking {
@@ -161,22 +162,23 @@ class RiftHeadlessJsRuntime(context: Context) {
                 evaluate<Any?>(Scripts.POLYFILLS, filename = "rift-tool-polyfills.js")
                 evaluate<Any?>(preparedVmSource(), filename = "riftvm.gate0.js")
                 evaluate<Any?>(preparedCoreSource(), filename = "riftpp-core.gate0.js")
-                evaluate<Any?>(verifierSource, filename = "semantic-verifier-core.js")
+                evaluate<Any?>(semanticVerifierSource, filename = "semantic-verifier-core.js")
+                evaluate<Any?>(referenceVerifierSource, filename = "reference-integrity-verifier-core.js")
                 evaluate<Any?>(Scripts.GATE0_VERIFY_ENTRY, filename = "gate0-verify.js")
             }
         }
 
         val payload = resultJson?.let(::JSONObject)
             ?: throw IllegalStateException("Gate 0 verifier returned no result")
-        require(payload.optString("status") == "PASS") { "Gate 0 semantic verifier did not pass" }
+        require(payload.optString("status") == "PASS") { "Gate 0 verifier suite did not pass" }
         return CommandResult(payload.toString(2), payload)
     }
 
     private fun gate0Bundle(): JSONObject {
-        val manifestText = readGate0File("/workspace/rift++/tests/FIXTURE-MANIFEST.json")
-        val expectationsText = readGate0File("/workspace/rift++/tests/compat/EXPECTATIONS.json")
-        val manifest = JSONObject(manifestText)
-        val expectations = JSONObject(expectationsText)
+        val manifest = JSONObject(readGate0File("/workspace/rift++/tests/FIXTURE-MANIFEST.json"))
+        val expectations = JSONObject(readGate0File("/workspace/rift++/tests/compat/EXPECTATIONS.json"))
+        val reference = JSONObject(readGate0File("/workspace/rift++/tests/REFERENCE-INTEGRITY.json"))
+        val bounds = JSONObject(readGate0File("/workspace/rift++/tests/BOUND-CLASSIFICATION.json"))
         require(manifest.optString("schema") == "riftpp-gate0-fixture-manifest/2") {
             "Gate 0 fixture manifest schema is not supported"
         }
@@ -186,6 +188,15 @@ class RiftHeadlessJsRuntime(context: Context) {
 
         val files = JSONObject()
         val hashes = JSONObject()
+        fun addFile(logicalPath: String, physicalPath: String) {
+            val text = readGate0File(physicalPath)
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            files.put(logicalPath, text)
+            hashes.put(logicalPath, digest)
+        }
+
         val fixturePath = Regex("^(compat|reference-bootstrap)/[A-Za-z0-9._+/-]+\\.riftpp$")
         for (index in 0 until rows.length()) {
             val row = rows.optJSONObject(index)
@@ -194,27 +205,57 @@ class RiftHeadlessJsRuntime(context: Context) {
             require(fixturePath.matches(relative) && relative.split('/').none { it == ".." }) {
                 "Gate 0 fixture path is outside the allowlist: $relative"
             }
-            val text = readGate0File("/workspace/rift++/tests/$relative")
+            addFile(relative, "/workspace/rift++/tests/$relative")
+            val text = files.getString(relative)
             val bytes = text.toByteArray(Charsets.UTF_8)
-            val expectedBytes = row.optInt("bytes", -1)
-            require(expectedBytes == bytes.size) { "Gate 0 fixture byte-length drift: $relative" }
-            val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
-            require(digest == row.optString("sha256")) { "Gate 0 fixture hash drift: $relative" }
-            files.put(relative, text)
-            hashes.put(relative, digest)
+            require(row.optInt("bytes", -1) == bytes.size) {
+                "Gate 0 fixture byte-length drift: $relative"
+            }
+            require(row.optString("sha256") == hashes.getString(relative)) {
+                "Gate 0 fixture hash drift: $relative"
+            }
         }
 
         listOf(
-            "/workspace/RiftLLM+/src/riftllm_plus/riftbrain.riftpp",
-            "/workspace/RiftLLM+/src/riftllm_plus/native_repair.riftpp"
-        ).forEach { path -> files.put(path, readGate0File(path)) }
+            "workspace/RiftLLM+/src/riftllm_plus/riftbrain.riftpp" to
+                "/workspace/RiftLLM+/src/riftllm_plus/riftbrain.riftpp",
+            "workspace/RiftLLM+/src/riftllm_plus/native_repair.riftpp" to
+                "/workspace/RiftLLM+/src/riftllm_plus/native_repair.riftpp",
+            "workspace/RiftOS-main/src/riftpp-core.js" to
+                "/workspace/RiftOS-main/src/riftpp-core.js",
+            "workspace/RiftOS-main/src/riftvm.js" to
+                "/workspace/RiftOS-main/src/riftvm.js",
+            "workspace/RiftOS-main/android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt" to
+                "/workspace/RiftOS-main/android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",
+            "workspace/RiftLLM+/tests/gate6d3-persistence-cap96.riftpp" to
+                "/workspace/RiftLLM+/tests/gate6d3-persistence-cap96.riftpp",
+            "workspace/RiftLLM+/tests/gate6d3-persistence-cap144.riftpp" to
+                "/workspace/RiftLLM+/tests/gate6d3-persistence-cap144.riftpp",
+            "workspace/RiftLLM+/experiments/E09-0024-gate6d3-stateful-substrate-candidate.md" to
+                "/workspace/RiftLLM+/experiments/E09-0024-gate6d3-stateful-substrate-candidate.md",
+            "workspace/RiftLLM+/tests/gate6d3-stateful-substrate-candidate.json" to
+                "/workspace/RiftLLM+/tests/gate6d3-stateful-substrate-candidate.json"
+        ).forEach { (logical, physical) -> addFile(logical, physical) }
 
+        val llmDirectory = resolveFile("/workspace/RiftLLM+/src/riftllm_plus", "/")
+        require(llmDirectory.isDirectory) { "RiftLLM+ source directory is unavailable" }
+        val llmMembers = llmDirectory.listFiles()
+            ?.map { entry -> if (entry.isDirectory) entry.name + "/" else entry.name }
+            ?.sorted()
+            ?: throw IllegalStateException("Could not enumerate RiftLLM+ source directory")
+        require(llmMembers.size <= 64) { "RiftLLM+ source membership exceeds verifier bounds" }
+
+        val directories = JSONObject()
+            .put("workspace/RiftLLM+/src/riftllm_plus", org.json.JSONArray(llmMembers))
         val bundle = JSONObject()
             .put("expectations", expectations)
             .put("manifest", manifest)
+            .put("reference", reference)
+            .put("bounds", bounds)
             .put("files", files)
-            .put("fixtureHashes", hashes)
+            .put("pathHashes", hashes)
+            .put("directories", directories)
+            .put("installedSourceSha", BuildConfig.RIFT_SOURCE_SHA)
         require(bundle.toString().toByteArray(Charsets.UTF_8).size <= MAX_TEXT_BYTES) {
             "Gate 0 verifier bundle exceeds headless runtime text limit"
         }
@@ -222,11 +263,24 @@ class RiftHeadlessJsRuntime(context: Context) {
     }
 
     private fun readGate0File(path: String): String {
-        val allowed = path == "/workspace/rift++/tools/semantic-verifier-core.js" ||
-            path == "/workspace/rift++/tests/FIXTURE-MANIFEST.json" ||
-            path == "/workspace/rift++/tests/compat/EXPECTATIONS.json" ||
-            path == "/workspace/RiftLLM+/src/riftllm_plus/riftbrain.riftpp" ||
-            path == "/workspace/RiftLLM+/src/riftllm_plus/native_repair.riftpp" ||
+        val exact = setOf(
+            "/workspace/rift++/tools/semantic-verifier-core.js",
+            "/workspace/rift++/tools/reference-integrity-verifier-core.js",
+            "/workspace/rift++/tests/FIXTURE-MANIFEST.json",
+            "/workspace/rift++/tests/compat/EXPECTATIONS.json",
+            "/workspace/rift++/tests/REFERENCE-INTEGRITY.json",
+            "/workspace/rift++/tests/BOUND-CLASSIFICATION.json",
+            "/workspace/RiftLLM+/src/riftllm_plus/riftbrain.riftpp",
+            "/workspace/RiftLLM+/src/riftllm_plus/native_repair.riftpp",
+            "/workspace/RiftOS-main/src/riftpp-core.js",
+            "/workspace/RiftOS-main/src/riftvm.js",
+            "/workspace/RiftOS-main/android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",
+            "/workspace/RiftLLM+/tests/gate6d3-persistence-cap96.riftpp",
+            "/workspace/RiftLLM+/tests/gate6d3-persistence-cap144.riftpp",
+            "/workspace/RiftLLM+/experiments/E09-0024-gate6d3-stateful-substrate-candidate.md",
+            "/workspace/RiftLLM+/tests/gate6d3-stateful-substrate-candidate.json"
+        )
+        val allowed = path in exact ||
             path.startsWith("/workspace/rift++/tests/compat/") ||
             path.startsWith("/workspace/rift++/tests/reference-bootstrap/")
         require(allowed && !path.contains("/../") && !path.contains("\\")) {
@@ -237,7 +291,6 @@ class RiftHeadlessJsRuntime(context: Context) {
         require(file.length() <= MAX_TEXT_BYTES) { "Gate 0 verifier file exceeds text limit: $path" }
         return file.readText(Charsets.UTF_8)
     }
-
     private fun preparedVmSource(): String {
         vmSourceCache?.let { return it }
         val source = readAsset("www/src/riftvm.js")
@@ -370,33 +423,75 @@ class RiftHeadlessJsRuntime(context: Context) {
               const bundle = JSON.parse(__rift_gate0_bundle());
               const compiler = globalThis.RiftPlusPlusCore;
               const vm = globalThis.RiftVMHeadless;
-              const verifier = globalThis.RiftSemanticVerifier;
-              if (!compiler || !vm || !verifier) throw new Error('Gate 0 verifier runtime is incomplete');
+              const semanticVerifier = globalThis.RiftSemanticVerifier;
+              const referenceVerifier = globalThis.RiftReferenceIntegrityVerifier;
+              if (!compiler || !vm || !semanticVerifier || !referenceVerifier) {
+                throw new Error('Gate 0 verifier runtime is incomplete');
+              }
+
+              const compilerApi = Object.freeze({
+                RIFTPP_CORE_VERSION: compiler.version,
+                RIFTPP_LANGUAGE: compiler.language,
+                compileRiftPlusPlusCoreV1: compiler.compile,
+                compileRiftPlusPlusCoreProgramV1: compiler.compileProgram
+              });
               const files = bundle.files || {};
-              const hashes = bundle.fixtureHashes || {};
+              const hashes = bundle.pathHashes || {};
+              const directories = bundle.directories || {};
               const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
               const loadText = async path => {
                 const key = String(path || '');
                 if (!has(files, key)) throw new Error('Gate 0 verifier denied file: ' + key);
                 return String(files[key]);
               };
-              const hashFixture = async path => {
+              const hashPath = async path => {
                 const key = String(path || '');
-                if (!has(hashes, key)) throw new Error('Gate 0 verifier denied fixture hash: ' + key);
+                if (!has(hashes, key)) throw new Error('Gate 0 verifier denied path hash: ' + key);
                 return String(hashes[key]);
               };
-              const result = await verifier.run({
-                compiler: compiler,
+              const hashFixture = hashPath;
+              const listDir = async path => {
+                const key = String(path || '');
+                if (!has(directories, key)) throw new Error('Gate 0 verifier denied directory: ' + key);
+                return Array.from(directories[key] || []);
+              };
+              const hashText = async value => {
+                const bytes = new TextEncoder().encode(String(value));
+                const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+                return Array.from(digest).map(byte => byte.toString(16).padStart(2, '0')).join('');
+              };
+              const byteLength = value => new TextEncoder().encode(String(value)).byteLength;
+
+              const semantic = await semanticVerifier.run({
+                compiler: compilerApi,
                 vm: vm,
                 loadText: loadText,
                 hashFixture: hashFixture,
                 expectations: bundle.expectations,
                 fixtureManifest: bundle.manifest
               });
+              const reference = await referenceVerifier.run({
+                compiler: compilerApi,
+                vm: vm,
+                loadText: loadText,
+                hashText: hashText,
+                hashPath: hashPath,
+                listDir: listDir,
+                byteLength: byteLength,
+                reference: bundle.reference,
+                fixtureManifest: bundle.manifest,
+                bounds: bundle.bounds
+              });
+              const result = Object.freeze({
+                schema: 'riftpp-gate0-device-verifier-suite/1',
+                status: 'PASS',
+                installedSourceSha: String(bundle.installedSourceSha || ''),
+                semantic: semantic,
+                reference: reference
+              });
               __rift_gate0_result(JSON.stringify(result));
             })();
         """
-
         const val RIFTPP_COMMAND_ENTRY = """
             (async function() {
               const request = JSON.parse(__rift_request());

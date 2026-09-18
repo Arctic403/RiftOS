@@ -16,6 +16,7 @@ Live:
 - `RiftWorkspaceRecords.kt` — process-wide record/checkpoint state and Diff Engine V2 adapter.
 - `RiftDiffEngineV2.kt` — Android-framework-independent adaptive exact-LCS / patience-style multi-hunk engine.
 - `RiftFileIdentityV2.kt` — bounded deterministic rename/copy/rewrite correlation and similarity evidence.
+- `RiftPatchSessions.kt` — process-local writer provenance claims used to correlate asynchronous filesystem observations without granting approval authority.
 - `RiftWorkspaceWatcher.kt` — recursive `FileObserver` tree.
 - `RiftNativeWorkspaceApps.kt` — native Workspace Records window.
 - `RiftToolSandbox.kt` — read-only `workspace.diff` dispatch.
@@ -101,6 +102,8 @@ Snapshot writes use temporary-file + rename publication.
 Each event record contains:
 - format;
 - sequence/id;
+- patchId;
+- structured provenance (`origin`, `operation`, optional intent/request id, attribution confidence and before/after claim state);
 - timestamp;
 - workspace-relative path;
 - action;
@@ -123,6 +126,16 @@ Identity-aware records also carry a bounded `identity` object containing version
 Event JSON is written atomically.
 
 Maximum stored event records: 2000; older files are pruned.
+
+## Patch Session V1 provenance
+
+`RiftPatchSessions` exists because FileObserver delivery is asynchronous: the writer often finishes before Workspace Records captures the final file state. Writers therefore declare intended workspace paths before mutation and commit a short-lived claim after success.
+
+Exact file/deletion claims are matched against the observed resulting SHA/existence state and are recorded with `confidence=state-bound`. Directory replacement flows such as native Git import use `confidence=scope-bound`, which is deliberately weaker and must not be treated as cryptographic authorship. Claims expire after 15 seconds and the active claim set is bounded.
+
+Current explicit writer origins are `mcp`, `native-shell`, `native-editor`, `devlab`, and `native-git`. Claim ingress accepts only explicit `workspace/...` or `D:/Workspace/...` path forms; other RiftFS paths cannot be misclassified as Workspace provenance. A mutation with no valid claim is never guessed: Workspace Records emits a unique `unattributed-*` patchId with `origin=unattributed-local`, `attributed=false`, and `confidence=none`.
+
+Provenance is observational evidence only. It does not approve a patch, grant a capability, change MCP permissions, advance a trusted checkpoint or make OBSERVE blocking.
 
 ## Diff Engine V2 and bounds
 
@@ -253,6 +266,7 @@ It observes and reports.
 
 ## Source fixes in this audit
 
+- Patch 3 introduced state-bound patch-session provenance, explicit writer origins and honest `unattributed-local` fallback without adding approval authority;
 - Patch 2 introduced `RiftFileIdentityV2`, exact SHA rename/copy correlation, bounded heuristic rename/rewrite evidence, relation-aware diff headers and checkpoint-query identity summaries;
 - Patch 1 introduced `RiftDiffEngineV2` and removed the recorder's legacy single-prefix/suffix middle-block diff implementation;
 - separate edits now produce independent bounded hunks while large ambiguous files avoid unbounded exact-LCS allocation;
@@ -276,6 +290,8 @@ It observes and reports.
 - exact rename/copy relations require SHA-256 identity; heuristic identity is explicitly non-exact;
 - full-reconciliation similarity work is bounded to 64 candidates per side and 1024 line comparisons, with incompleteness exposed; reconciliation records reuse those budgeted results instead of rescoring every file;
 - identity evidence never claims user intent or grants mutation/approval authority;
+- provenance claims expire after 15 seconds, exact claims require resulting-state agreement, directory claims are labeled lower-confidence, and unknown writers remain unattributed;
+- patchId/provenance are evidence only and cannot approve, authorize or advance trust;
 - checkpoint only advances baseline;
 - MCP access is query/read-only;
 - Git checkpoint occurs only after successful workspace Git operations.
@@ -302,6 +318,8 @@ Persistence/checkpoint/query -> `RiftWorkspaceRecords.kt`.
 Text diff computation -> `RiftDiffEngineV2.kt`.
 
 Rename/copy/rewrite identity evidence -> `RiftFileIdentityV2.kt`.
+
+Writer-session provenance -> `RiftPatchSessions.kt` plus the explicit writer call sites.
 
 Filesystem events -> `RiftWorkspaceWatcher.kt`.
 

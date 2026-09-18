@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -24,6 +24,7 @@ Primary:
 - RiftToolHost.kt — MCP permission gate/audit/result framing.
 - RiftHeadlessJsRuntime.kt — bounded QuickJS owner for the riftpp command.
 - RiftNativeGit.kt — Git command authority.
+- RiftPatchSessions.kt — provenance correlation for direct Shell filesystem mutations that resolve into D:/Workspace.
 
 Retained/unpackaged:
 - src/riftshell-batch.js
@@ -128,6 +129,8 @@ touch:
 - rejects existing non-files.
 
 This audit added the existing-target file-type check so write cannot rename a directory aside and replace it with a file.
+
+When write/touch/mkdir/cp/mv/rm/zip/unzip targets the canonical workspace, the command wrapper opens a bounded `origin=native-shell` patch session before execution, commits it only on success and aborts it on command failure. Non-workspace RiftFS paths are ignored by the workspace provenance manager. This does not change shell authority or command semantics.
 
 ## Copy/move
 

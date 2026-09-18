@@ -69,9 +69,9 @@ This is a static reachability guard, not Kotlin compilation/type resolution.
 
 ## Exact mandatory Kotlin snapshot
 
-Current Android source directory contains 42 Kotlin files.
+Current Android source directory contains 43 Kotlin files.
 
-android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists all 42.
+android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists all 43.
 
 During this audit the old list was found to protect only 32 files.
 
@@ -214,7 +214,7 @@ It also explicitly requires private top-level RiftDevLabLocalAgent and embedded 
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
-Because the Gradle list is now exact 42/42, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
+Because the Gradle list is now exact 43/43, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
 
 ## Final APK asset verification
 
@@ -293,6 +293,7 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - wiring validator now requires every test-*.mjs to be executed by package scripts;
 - Patch 1 added `test-rift-diff-engine-v2.mjs`, which locks the bounded adaptive multi-hunk engine, Workspace Records delegation, source declaration and documentation ownership;
 - Patch 2 added `test-rift-file-identity-v2.mjs`, which locks exact SHA identity semantics, bounded heuristic correlation, Workspace Records/query integration and ownership;
+- Patch 3 added `test-rift-patch-sessions.mjs`, which locks state-bound provenance, honest unattributed fallback, writer integrations, optional MCP intent metadata and ownership/source declaration;
 - retained-reference tests now assert their JS implementations remain un-packaged/unwired;
 - script index labels retained tests honestly;
 - external Builder APK verifier replaced obsolete full-web-shell requirements with exact Rift++ Core/RiftVM asset verification;

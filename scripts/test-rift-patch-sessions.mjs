@@ -18,6 +18,7 @@ assert.match(sessions, /CLAIM_TTL_MS = 15_000L/);
 assert.match(sessions, /MAX_PATHS = 512/);
 assert.match(sessions, /stateMatches/);
 assert.match(sessions, /origin", "unattributed-local"/);
+assert.match(sessions, /!value\.startsWith\("workspace\/", ignoreCase = true\)\) return null/);
 assert.match(records, /\.put\("patchId", provenance\.getString\("patchId"\)\)/);
 assert.match(records, /\.put\("provenance", provenance\)/);
 assert.match(records, /RiftPatchSessions\.resolve/);

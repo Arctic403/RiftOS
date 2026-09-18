@@ -17,6 +17,7 @@ Core composition:
 - `RiftMcpServer.kt` — in-process MCP JSON-RPC framing and relay retry dedupe.
 - `RiftToolHost.kt` — canonical tool schemas, read/write grants and tool audit.
 - `RiftToolSandbox.kt` — workspace filesystem + Project Intelligence/Code Mode.
+- `RiftPatchSessions.kt` — local mutation-provenance claims for MCP writes; it is evidence-only and not a permission owner.
 - `RiftMcpActivity.kt` — local permission/relay/status UI.
 
 Related narrow owners:
@@ -79,7 +80,7 @@ Workspace tools never widen beyond the sandbox merely because the caller is Brow
 
 `rift_shell_exec` is the stronger process-owned RiftShell capability and is permission-gated by ToolHost; it is not Android/Linux `/system/bin/sh`.
 
-`rift_workspace_exec` requires write permission only when the requested batch mutates.
+`rift_workspace_exec` requires write permission only when the requested batch mutates. Its optional `intent` field is bounded provenance metadata only; ToolHost permission classification is still derived from the normalized operations.
 
 `rift_workspace_diff` remains read-only and now returns bounded checkpoint-relative structural identity evidence in addition to raw file/event diffs. Exact SHA relations are labeled exact; heuristic similarity relations are labeled non-exact and expose whether the bounded comparison budget prevented exhaustive correlation.
 

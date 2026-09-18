@@ -56,12 +56,19 @@ assert(headless.includes('"gate0-verify" -> executeGate0Verifier()'));
 assert(headless.includes('const val GATE0_VERIFY_ENTRY = """'));
 assert(headless.includes('function("__rift_gate0_bundle")'));
 assert(headless.includes('function("__rift_gate0_result")'));
+assert(headless.includes('semantic-verifier-core.js'));
+assert(headless.includes('reference-integrity-verifier-core.js'));
+assert(headless.includes('RiftReferenceIntegrityVerifier'));
+assert(headless.includes('compileRiftPlusPlusCoreV1: compiler.compile'));
+assert(headless.includes('compileRiftPlusPlusCoreProgramV1: compiler.compileProgram'));
+assert(headless.includes("schema: 'riftpp-gate0-device-verifier-suite/1'"));
+assert(headless.includes('.put("installedSourceSha", BuildConfig.RIFT_SOURCE_SHA)'));
 assert(headless.includes('Gate 0 verifier path is outside the fixed allowlist'));
 const devStart = headless.indexOf('private fun executeGate0Verifier()');
 const devEnd = headless.indexOf('\n    private fun gate0Bundle()', devStart);
 assert(devStart >= 0 && devEnd > devStart, 'fixed Gate 0 verifier method must remain present');
 const devSlice = headless.slice(devStart, devEnd);
-for (const forbidden of ['__rift_read_text','__rift_write_text','__rift_state_load','__rift_state_save','__rift_state_remove','ProcessBuilder']) {
+for (const forbidden of ['__rift_read_text','__rift_write_text','__rift_state_load','__rift_state_save','__rift_state_remove','ProcessBuilder','Runtime.getRuntime().exec']) {
   assert(!devSlice.includes(forbidden), 'Gate 0 verifier must not expose authority: ' + forbidden);
 }
 assert(headless.includes('Rift++ state namespace exceeds $MAX_STATE_FILES records'));

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -18,7 +18,8 @@ Primary:
 Related narrow owners:
 - `RiftToolHost.kt` — schemas/grants/aliases;
 - `RiftProjectExporter.kt` — paged whole-project export;
-- `RiftWorkspaceRecords.kt` — persistent change records/checkpoint state.
+- `RiftWorkspaceRecords.kt` — persistent change records/checkpoint state;
+- `RiftPatchSessions.kt` — bounded mutation provenance claims consumed asynchronously by Workspace Records.
 
 ## Canonical root
 
@@ -141,6 +142,14 @@ Structural mkdir/remove/move/rename/copy/archive/extract are rejected in dry-run
 After successful dry-run execution the transaction is rolled back; rollback failure is surfaced as an error.
 
 Response reports `committed=false`.
+
+## Patch-session provenance
+
+Before a mutating MCP filesystem call or non-dry-run `workspace.exec` batch, the sandbox derives the mutation target set from the normalized operations and opens one `RiftPatchSessions` claim with `origin=mcp`. The MCP request id is retained and `rift_workspace_exec` may carry a bounded optional `intent` string. Intent is evidence only; it never changes permission classification.
+
+After successful mutation the claim is committed against resulting file states. On failure it is aborted. If later filesystem observation cannot correlate the claim, Workspace Records records the event as `unattributed-local` rather than trusting stale metadata.
+
+Dry-run batches create no patch-session claim because their temporary mutations are rolled back by definition.
 
 ## Change summary
 

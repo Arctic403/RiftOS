@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -24,6 +24,7 @@ Related but separate:
 - RiftNativeShell.kt — shell copy/move/delete/archive commands.
 - RiftToolSandbox.kt — MCP workspace filesystem.
 - RiftNativeGit.kt — Git repository synchronization.
+- RiftPatchSessions.kt — evidence-only provenance for internal Editor saves that resolve into D:/Workspace.
 
 Those separate authorities do not become Files UI actions merely because they operate on files.
 
@@ -177,6 +178,8 @@ Internal saves:
 This audit added the existing-target file check so Editor cannot replace a directory with a file.
 
 If publication fails and restoration of the previous file also fails, the error explicitly reports the backup path.
+
+For an internal save whose normalized path is inside D:/Workspace, Editor opens an `origin=native-editor` patch-session claim before writing, commits it after successful publication, and aborts it on failure. Internal RiftFS paths outside Workspace are not attributed as workspace patches.
 
 ## Android Editor save
 
