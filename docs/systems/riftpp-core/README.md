@@ -273,6 +273,20 @@ Unsupported features fail closed.
 - ordinary shell host-import denial remains intact;
 - compiler/VM/docs/tests remain version-synchronized.
 
+## Failure signatures
+
+Use these signatures to route failures to the owning layer before changing validation:
+
+- `validate-rift-docs.mjs` reports a missing maintenance heading -> documentation-contract regression; restore the required README section rather than weakening the validator.
+- current Core lowers a Gate 1B opcode but `prepareRiftExecutable` rejects it -> compiler/VM instruction-normalization desync; update the VM allowlist and focused Core/VM tests together.
+- `rift-tool semantic-compat` fails while the archival `gate0-verify` identity remains intact -> current implementation changed frozen observable semantics; classify as an accidental regression or an explicit versioned migration.
+- Gate 1B SourceText/TextCursor/StringBuilder tests fail while compatibility string tests pass -> working-text implementation regression; do not alter frozen `string_len/find/slice/replace` behavior to compensate.
+- `rift-tool text-model-benchmark` does not return schema `riftpp-text-model-benchmark-v1` with status `MEASURED` -> fixed benchmark/tool-host wiring regression; do not replace it with arbitrary script execution.
+- normal `riftpp run` accepts state/repair/software imports -> host-authority regression and release blocker.
+- stateful execution accepts repair/software imports -> capability-boundary regression and release blocker.
+- packaged Core/VM hashes differ from source or installed source SHA differs from the candidate commit -> provenance/package regression; do not treat runtime results as promotion evidence.
+- Builder source-check fails on a current version/opcode assertion -> inspect the first failing contract and update stale validation only when live code proves the new contract.
+
 ## Fix map
 
 Frontend syntax/type/effect/lowering:
