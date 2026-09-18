@@ -75,7 +75,7 @@ rift_workspace_diff
 rift_workspace_exec
 ```
 
-Read defaults enabled. Write defaults disabled. `rift_workspace_diff` is read-only and exposes bounded private workspace records/checkpoint diffs plus checkpoint-relative rename/copy/rewrite identity evidence and Patch Session V1 provenance when a writer claim can be correlated. Exact file provenance is resulting-state-bound; directory replacement claims are lower-confidence; unknown writers remain explicitly unattributed. `rift_workspace_exec` is always read-gated and becomes write-gated only when its operation list contains a mutation; its optional bounded `intent` field is provenance evidence only and never alters permission classification. Grants are changed through the local **Rift MCP** system app.
+Read defaults enabled. Write defaults disabled. `rift_workspace_diff` is read-only and exposes bounded private workspace records/checkpoint diffs plus checkpoint-relative rename/copy/rewrite identity evidence and Patch Session V1 provenance when a writer claim can be correlated. Patch 4 additionally reports deterministic candidate identity, record-chain integrity and separate operational/trusted-checkpoint state. The full manifest freeze remains an internal Workspace Records API and is not an MCP tool. Exact file provenance is resulting-state-bound; directory replacement claims are lower-confidence; unknown writers remain explicitly unattributed. `rift_workspace_exec` is always read-gated and becomes write-gated only when its operation list contains a mutation; its optional bounded `intent` field is provenance evidence only and never alters permission classification. Grants are changed through the local **Rift MCP** system app.
 
 ## Sandbox
 
@@ -97,6 +97,8 @@ apply_hunks  mkdir  remove  move  rename  copy  archive  extract
 ```
 
 Project Intelligence v2 is an internal expansion of that existing surface rather than a second MCP agent. `project` with no `kind` returns the bounded project overview plus language/dependency/index metadata; `kind=graph` returns focused dependency edges, `kind=impact` combines definitions/references/dependencies/dependents/docs/tests, and `kind=validation` discovers repository validation guidance. These views reuse the operation object's existing `kind` and `query` properties, so the MCP tool catalog does not need a parallel `rift_agent_*` family.
+
+Patch 5 also gives the future Local Agent an internal candidate-impact seam that is **not** part of the MCP schema. `RiftWorkspaceRecords` derives the exact changed-path seed from Patch Manifest V1; the same `RiftSourceIntelligenceV2` parser used by normal PI-v2 indexing computes before/after symbol and dependency deltas, while the live index supplies current dependents, references, tests and documentation ownership. Bounded or missing evidence is marked incomplete rather than silently discarded.
 
 The incremental symbol/dependency index is persisted in app-private RiftOS state outside `riftfs/workspace` and revalidated against workspace file size/mtime during refresh. It is an acceleration cache only; source files remain authoritative and stale rows are dropped/rebuilt.
 

@@ -130,6 +130,8 @@ Every other canonical tool maps to one fixed sandbox method:
 
 Unknown tools fail before sandbox execution.
 
+Patch 5 adds one **internal-only** `candidateImpactAsync` route from ToolHost to the sandbox for the future Local Agent validation pipeline. It is deliberately absent from `tools()`, aliases and `methodFor()`, so the model-visible catalog remains exactly 18 tools and no caller can manufacture its own candidate-impact scope through MCP.
+
 ## Audit
 
 Audit preference key: `audit`.

@@ -18,12 +18,12 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftMcpRuntime.kt`, `RiftMcpActivity.kt` | [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
 | `RiftMcpServer.kt` | [`mcp/server`](../../../../../../../../docs/systems/mcp/server/README.md) |
 | `RiftToolHost.kt` | [`mcp/tool-host`](../../../../../../../../docs/systems/mcp/tool-host/README.md) |
-| `RiftToolSandbox.kt` | [`mcp/sandbox`](../../../../../../../../docs/systems/mcp/sandbox/README.md) |
+| `RiftToolSandbox.kt`, `RiftSourceIntelligenceV2.kt` | [`mcp/sandbox`](../../../../../../../../docs/systems/mcp/sandbox/README.md) + [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) |
 | `RiftMcpRelayClient.kt`, `RiftRelaySettings.kt` | [`mcp/relay`](../../../../../../../../docs/systems/mcp/relay/README.md) |
 | `RiftProjectExporter.kt` | [`mcp/project-exporter`](../../../../../../../../docs/systems/mcp/project-exporter/README.md) |
 | `RiftNativeShell.kt`, `RiftShellExecutor.kt`, `RiftHeadlessJsRuntime.kt`, `RiftNativeShellServices.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) + [`riftpp-core`](../../../../../../../../docs/systems/riftpp-core/README.md) |
 | `RiftExperimentalCli.kt`, `RiftPlusPlusV0.kt`, `RiftIrV1.kt`, `RiftIrCliV1.kt`, `RiftSwarmCoordinatorV0.kt`, `RiftTextEncoderTaskRunner.kt` | [`experimental-cli`](../../../../../../../../docs/systems/experimental-cli/README.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
-| `RiftDiffEngineV2.kt`, `RiftFileIdentityV2.kt`, `RiftPatchSessions.kt`, `RiftWorkspaceRecords.kt`, `RiftWorkspaceWatcher.kt` | [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) + [`workspace`](../../../../../../../../docs/systems/workspace/README.md) |
+| `RiftDiffEngineV2.kt`, `RiftFileIdentityV2.kt`, `RiftPatchManifestV1.kt`, `RiftPatchSessions.kt`, `RiftWorkspaceRecords.kt`, `RiftWorkspaceWatcher.kt` | [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) + [`workspace`](../../../../../../../../docs/systems/workspace/README.md) |
 | `RiftBrowserPreviewActivity.kt` | [`preview`](../../../../../../../../docs/systems/preview/README.md) |
 | `RiftSecretStore.kt` | [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |
 | `RiftVortexBridgeClient.kt` | [`vortex-bridge`](../../../../../../../../docs/systems/vortex-bridge/README.md) |

@@ -32,6 +32,8 @@ Core live owners:
 - `RiftDiffEngineV2.kt` — deterministic bounded multi-hunk text diff engine consumed by Workspace Records.
 - `RiftFileIdentityV2.kt` — deterministic bounded structural identity evidence for rename/copy/rewrite correlation.
 - `RiftPatchSessions.kt` — bounded writer provenance claims for workspace mutations; unknown writers remain explicitly unattributed.
+- `RiftPatchManifestV1.kt` — deterministic candidate identity, immutable private freeze and tamper-evident event-chain primitives.
+- `RiftSourceIntelligenceV2.kt` — shared PI-v2 lexical source analyzer for candidate semantic deltas and normal indexing.
 - `RiftNativeGit.kt` — Git/project synchronization, including `/workspace/RiftOS-main`.
 - `RiftNativeDevLab.kt` — staged development/publish flow targeting the RiftOS workspace project.
 - `RiftNativeShell.kt`, `RiftHeadlessJsRuntime.kt`, and native shell services — additional bounded app-private writers where their command/capability allows workspace paths.
@@ -127,6 +129,14 @@ Patch Session V1 overlays evidence on the same canonical filesystem rather than 
 
 This layer records origin/operation/intent evidence only. It does not change mutation authority or make the planned validation gate enforce anything while development mode remains OBSERVE.
 
+## Candidate identity and trust state
+
+Patch Manifest V1 deterministically binds the operational checkpoint tree to the observed result tree, exact changed-path identities, structural relations, retained patch sessions and record-chain state. The manifest is content/evidence-derived; volatile freeze time is outside the hash. Internal freezes are stored outside Workspace under a SHA-256 filename and are not exposed as an MCP mutation.
+
+Operational checkpoints remain ordinary baselines. Separate trusted-checkpoint fields are currently inert and cannot be promoted by Workspace Records, Git, MCP, Shell, Editor or Dev Lab. A later Local Agent gate must own that authority.
+
+Patch 5 derives semantic impact from that exact candidate rather than from a model-provided scope. Workspace Records supplies bounded before/after source evidence; Project Intelligence V2 derives symbol/signature/dependency deltas, callers/dependents/references, tests and documentation owners. Any missing or bounded evidence stays explicitly incomplete, and semantic impact remains OBSERVE-only.
+
 ## Dev Lab relationship
 
 Native Dev Lab targets `workspace/RiftOS-main` as its project root while staging work separately under RiftFS system Dev Lab state.
@@ -160,6 +170,8 @@ Workspace does not own:
 - Workspace Records state stays outside workspace;
 - watcher observes the canonical tree rather than a shadow copy;
 - structural identity evidence stays observational, bounded and explicit about exact versus heuristic matches;
+- candidate manifests bind deterministic base/result bytes and evidence while staying outside workspace;
+- operational checkpoints cannot self-promote into trusted checkpoints;
 - Git/Dev Lab target workspace subtrees without redefining root;
 - retained workspace web code is not treated as packaged/live.
 
@@ -187,6 +199,8 @@ File identity correlation -> `RiftFileIdentityV2.kt`.
 
 Patch-session provenance -> `RiftPatchSessions.kt` plus writer integrations.
 
+Candidate manifest/tamper evidence -> `RiftPatchManifestV1.kt` + `RiftWorkspaceRecords.kt`.
+
 Git -> `RiftNativeGit.kt`.
 
 Dev Lab -> `RiftNativeDevLab.kt`.
@@ -201,6 +215,8 @@ Source verification must recheck:
 - native Editor temp-write path and bound;
 - watcher root;
 - records root separation;
+- deterministic manifest/tree/change-set identity and private freeze bounds;
+- record-chain/pruning-anchor integrity and operational-vs-trusted checkpoint separation;
 - Git/Dev Lab project roots;
 - Gradle/package absence of retained workspace web modules.
 

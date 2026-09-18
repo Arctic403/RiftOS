@@ -6,6 +6,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -34,6 +35,10 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         // Tool results are duplicated in MCP text and structured content, then JSON-escaped
         // again by the relay. Keep the raw query far below its 1 MB WebSocket envelope.
         private const val MAX_QUERY_PAYLOAD_CHARS = 96_000
+        private const val MAX_SEMANTIC_SEED_CHANGES = 4_096
+        private const val MAX_SEMANTIC_SEED_SOURCE_FILES = 1_024
+        private const val MAX_SEMANTIC_SEED_TEXT_BYTES = 8L * 1024L * 1024L
+        private const val MAX_SEMANTIC_SEED_OWNERSHIP_PROJECTS = 64
         private const val EVENT_SETTLE_MS = 220L
         @Volatile private var instance: RiftWorkspaceRecords? = null
 
@@ -59,6 +64,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     private val eventRoot = File(recordsRoot, "events").apply { mkdirs() }
     private val observedRoot = File(recordsRoot, "observed").apply { mkdirs() }
     private val checkpointRoot = File(recordsRoot, "checkpoint").apply { mkdirs() }
+    private val manifestRoot = File(recordsRoot, "manifests").apply { mkdirs() }
     private val stateFile = File(recordsRoot, "state.json")
     private val executor = Executors.newSingleThreadScheduledExecutor()
     private val pending = ConcurrentHashMap<String, ScheduledFuture<*>>()
@@ -68,9 +74,19 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     @Volatile private var initialized = false
     @Volatile private var lastReconcileAt = 0L
     private var checkpointAt = 0L
+    private var checkpointSequence = -1L
     private var checkpointReason = "initial"
     private var checkpointGitRoot: String? = null
     private var checkpointGitHeadSha: String? = null
+    private var eventChainEpoch = ""
+    private var eventChainStartSequence = 0L
+    private var eventChainAnchorHash = RiftPatchManifestV1.GENESIS
+    private var eventChainLastHash = RiftPatchManifestV1.GENESIS
+    private var eventPrunedThroughSequence = 0L
+    private var eventPrunedThroughAt = 0L
+    private var trustedCheckpointAt = 0L
+    private var trustedManifestSha256: String? = null
+    private var trustedTreeSha256: String? = null
 
     fun start() {
         if (initialized) return
@@ -103,6 +119,30 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             )
         }.get(30, TimeUnit.SECONDS)
 
+    /**
+     * Internal-only candidate freeze for the future Local Agent gate.
+     * No MCP ToolHost mapping exists in OBSERVE construction.
+     */
+    fun freezeCandidate(): JSONObject =
+        executor.submit<JSONObject> {
+            ensureInitialized()
+            reconcileAll("manifest-freeze")
+            val manifest = buildCandidateManifest()
+            val receipt = RiftPatchManifestV1.freeze(manifestRoot, manifest)
+            receipt.put("recordChain", verifyRecordChain())
+        }.get(30, TimeUnit.SECONDS)
+
+    /**
+     * Internal-only semantic working set derived from the exact Patch Manifest V1 candidate.
+     * The Local Agent/PI-v2 path consumes this; it is not a model-selected scope or MCP tool.
+     */
+    fun semanticImpactSeed(): JSONObject =
+        executor.submit<JSONObject> {
+            ensureInitialized()
+            reconcileAll("semantic-impact-seed")
+            buildSemanticImpactSeed(buildCandidateManifest())
+        }.get(30, TimeUnit.SECONDS)
+
     private fun schedule(key: String, delayMs: Long, block: () -> Unit) {
         pending.remove(key)?.cancel(false)
         val future = executor.schedule({
@@ -114,6 +154,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     private fun ensureInitialized() {
         if (initialized) return
         loadState()
+        ensureEventChain()
         if (observed.isEmpty() && checkpoint.isEmpty()) {
             seedInitialState()
         } else {
@@ -136,6 +177,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             writeSnapshot(checkpointRoot, path, snapshot.text)
         }
         checkpointAt = System.currentTimeMillis()
+        checkpointSequence = sequence.get()
         checkpointReason = "initial"
         saveState()
     }
@@ -300,7 +342,9 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             )
         }
         val file = File(eventRoot, "%012d-%013d.json".format(seq, at))
-        writeJsonAtomic(file, record)
+        val sealedRecord = RiftPatchManifestV1.sealRecord(record, eventChainEpoch, eventChainLastHash)
+        writeJsonAtomic(file, sealedRecord)
+        eventChainLastHash = sealedRecord.getString("recordHash")
 
         if (after == null) {
             observed.remove(path)
@@ -354,7 +398,9 @@ class RiftWorkspaceRecords private constructor(context: Context) {
                 )
             )
         val file = File(eventRoot, "%012d-%013d.json".format(seq, at))
-        writeJsonAtomic(file, record)
+        val sealedRecord = RiftPatchManifestV1.sealRecord(record, eventChainEpoch, eventChainLastHash)
+        writeJsonAtomic(file, sealedRecord)
+        eventChainLastHash = sealedRecord.getString("recordHash")
 
         if (relation.kind == "renamed" && relation.fromPath != relation.toPath) {
             observed.remove(relation.fromPath)
@@ -380,6 +426,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             }
         }
         checkpointAt = System.currentTimeMillis()
+        checkpointSequence = sequence.get()
         checkpointReason = reason
         checkpointGitRoot = gitRoot
         checkpointGitHeadSha = gitHeadSha
@@ -467,10 +514,15 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             } else omittedRelations++
         }
 
+        val candidateManifest = buildCandidateManifest(correlation)
+        val candidateSummary = candidateSummary(candidateManifest)
         return JSONObject()
             .put("format", FORMAT)
             .put("scope", "riftfs/workspace")
             .put("checkpoint", checkpointSummary())
+            .put("trustedCheckpoint", trustedCheckpointSummary())
+            .put("recordChain", verifyRecordChain())
+            .put("candidate", candidateSummary)
             .put("summary", JSONObject()
                 .put("changedFiles", changedCount)
                 .put("records", matchingRecords)
@@ -493,11 +545,378 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     }
 
     private fun checkpointSummary(): JSONObject = JSONObject()
+        .put("kind", "operational")
         .put("at", checkpointAt)
+        .put("sequence", checkpointSequence)
         .put("reason", checkpointReason)
         .put("gitRoot", checkpointGitRoot ?: JSONObject.NULL)
         .put("gitHeadSha", checkpointGitHeadSha ?: JSONObject.NULL)
         .put("files", checkpoint.size)
+
+    private fun trustedCheckpointSummary(): JSONObject = JSONObject()
+        .put("kind", "trusted")
+        .put("present", trustedManifestSha256 != null && trustedTreeSha256 != null)
+        .put("at", trustedCheckpointAt)
+        .put("manifestSha256", trustedManifestSha256 ?: JSONObject.NULL)
+        .put("treeSha256", trustedTreeSha256 ?: JSONObject.NULL)
+
+    private fun candidateSummary(manifest: JSONObject): JSONObject {
+        val base = manifest.getJSONObject("base")
+        val result = manifest.getJSONObject("result")
+        val sessions = manifest.getJSONObject("sessionEvidence")
+        val sha = manifest.getString("manifestSha256")
+        return JSONObject()
+            .put("version", RiftPatchManifestV1.VERSION)
+            .put("candidateId", manifest.getString("candidateId"))
+            .put("manifestSha256", sha)
+            .put("baseTreeSha256", base.getString("treeSha256"))
+            .put("resultTreeSha256", result.getString("treeSha256"))
+            .put("changeSetSha256", manifest.getString("changeSetSha256"))
+            .put("structuralDiffSha256", manifest.getString("structuralDiffSha256"))
+            .put("changedFiles", manifest.getJSONArray("changes").length())
+            .put("patchSessions", sessions.getJSONArray("sessions").length())
+            .put("sessionEvidenceComplete", sessions.getBoolean("complete"))
+            .put("frozen", File(manifestRoot, "$sha.json").isFile)
+    }
+
+    private fun buildCandidateManifest(
+        suppliedCorrelation: RiftFileIdentityV2.Correlation? = null
+    ): JSONObject {
+        val baseEntries = checkpoint.map { (path, entry) ->
+            RiftPatchManifestV1.TreeEntry(path, entry.kind, entry.size, entry.sha256)
+        }
+        val resultEntries = observed.map { (path, entry) ->
+            RiftPatchManifestV1.TreeEntry(path, entry.kind, entry.size, entry.sha256)
+        }
+        val allPaths = (checkpoint.keys + observed.keys).toSortedSet()
+        require(allPaths.size <= 50_000) { "Candidate manifest exceeds 50000 workspace paths" }
+
+        val changes = ArrayList<RiftPatchManifestV1.Change>()
+        val changeRows = JSONArray()
+        val changedPaths = LinkedHashSet<String>()
+        for (path in allPaths) {
+            val before = checkpoint[path]
+            val after = observed[path]
+            if (sameEntry(before, after)) continue
+            changedPaths += path
+            val beforeTree = before?.let {
+                RiftPatchManifestV1.TreeEntry(path, it.kind, it.size, it.sha256)
+            }
+            val afterTree = after?.let {
+                RiftPatchManifestV1.TreeEntry(path, it.kind, it.size, it.sha256)
+            }
+            val state = status(before, after)
+            changes += RiftPatchManifestV1.Change(path, state, beforeTree, afterTree)
+            changeRows.put(JSONObject()
+                .put("path", path)
+                .put("status", state)
+                .put("before", manifestEntryJson(before))
+                .put("after", manifestEntryJson(after)))
+        }
+
+        val correlation = suppliedCorrelation
+            ?: identityCorrelation(checkpoint, checkpointRoot, observed, observedRoot)
+        val relationRows = JSONArray()
+        correlation.relations
+            .sortedWith(compareBy({ it.fromPath }, { it.toPath }, { it.kind }))
+            .forEach { relationRows.put(relationJson(it)) }
+
+        val sessionsById = LinkedHashMap<String, JSONObject>()
+        val eventFiles = eventRoot.listFiles()
+            ?.filter { it.isFile && it.extension == "json" }
+            ?.sortedBy { it.name }
+            .orEmpty()
+        var oldestRetainedAt: Long? = null
+        for (file in eventFiles) {
+            val row = runCatching { JSONObject(file.readText(Charsets.UTF_8)) }.getOrNull() ?: continue
+            val at = row.optLong("at", 0L)
+            val rowSequence = row.optLong("sequence", 0L)
+            val currentOldest = oldestRetainedAt
+            if (at > 0L && (currentOldest == null || at < currentOldest)) oldestRetainedAt = at
+            val afterCheckpoint = if (checkpointSequence >= 0L) {
+                rowSequence > checkpointSequence
+            } else {
+                at >= checkpointAt
+            }
+            if (!afterCheckpoint) continue
+            if (row.optString("path") !in changedPaths) continue
+            val patchId = row.optString("patchId")
+            val provenance = row.optJSONObject("provenance") ?: continue
+            if (patchId.isBlank() || sessionsById.containsKey(patchId)) continue
+            sessionsById[patchId] = JSONObject()
+                .put("patchId", patchId)
+                .put("origin", provenance.optString("origin", "unknown"))
+                .put("operation", provenance.optString("operation", "unknown"))
+                .put("intent", if (provenance.isNull("intent")) JSONObject.NULL else provenance.optString("intent"))
+                .put("requestId", if (provenance.isNull("requestId")) JSONObject.NULL else provenance.optString("requestId"))
+                .put("confidence", provenance.optString("confidence", "none"))
+                .put("attributed", provenance.optBoolean("attributed", false))
+                .put("startedAt", provenance.optLong("startedAt", 0L))
+                .put("committedAt", provenance.optLong("committedAt", 0L))
+        }
+        val sessionRows = JSONArray()
+        for (session in sessionsById.toSortedMap().values) sessionRows.put(session)
+        val sessionComplete = changedPaths.isEmpty() ||
+            (checkpointSequence >= 0L && eventPrunedThroughSequence <= checkpointSequence)
+
+        val structural = JSONObject()
+            .put("changes", changeRows)
+            .put("relations", relationRows)
+
+        val payload = JSONObject()
+            .put("format", "rift-patch-manifest-v1")
+            .put("version", RiftPatchManifestV1.VERSION)
+            .put("mode", "observe-evidence")
+            .put("base", JSONObject()
+                .put("checkpointKind", "operational")
+                .put("checkpointAt", checkpointAt)
+                .put("checkpointSequence", checkpointSequence)
+                .put("reason", checkpointReason)
+                .put("gitRoot", checkpointGitRoot ?: JSONObject.NULL)
+                .put("gitHeadSha", checkpointGitHeadSha ?: JSONObject.NULL)
+                .put("treeSha256", RiftPatchManifestV1.treeSha256(baseEntries)))
+            .put("result", JSONObject()
+                .put("treeSha256", RiftPatchManifestV1.treeSha256(resultEntries)))
+            .put("changeSetSha256", RiftPatchManifestV1.changeSetSha256(changes))
+            .put("structuralDiffSha256", RiftPatchManifestV1.sha256Canonical(structural))
+            .put("changes", changeRows)
+            .put("identity", JSONObject()
+                .put("version", RiftFileIdentityV2.VERSION)
+                .put("similarityComparisons", correlation.similarityComparisons)
+                .put("similaritySkipped", correlation.similaritySkipped)
+                .put("relations", relationRows))
+            .put("sessionEvidence", JSONObject()
+                .put("complete", sessionComplete)
+                .put("checkpointSequence", checkpointSequence)
+                .put("prunedThroughSequence", eventPrunedThroughSequence)
+                .put("prunedThroughAt", eventPrunedThroughAt)
+                .put("oldestRetainedAt", oldestRetainedAt ?: JSONObject.NULL)
+                .put("sessions", sessionRows))
+            .put("recordChain", verifyRecordChain())
+            .put("trustedCheckpoint", trustedCheckpointSummary())
+
+        return RiftPatchManifestV1.sealManifest(payload)
+    }
+
+    private fun manifestEntryJson(entry: Entry?): Any =
+        if (entry == null) JSONObject.NULL else JSONObject()
+            .put("kind", entry.kind)
+            .put("size", entry.size)
+            .put("sha256", entry.sha256)
+
+    private fun buildSemanticImpactSeed(manifest: JSONObject): JSONObject {
+        val manifestChanges = manifest.getJSONArray("changes")
+        val rows = JSONArray()
+        val omissions = JSONArray()
+        var textBytes = 0L
+        var sourceFiles = 0
+        var complete = true
+        val limit = minOf(manifestChanges.length(), MAX_SEMANTIC_SEED_CHANGES)
+
+        if (manifestChanges.length() > MAX_SEMANTIC_SEED_CHANGES) {
+            complete = false
+            omissions.put(JSONObject()
+                .put("reason", "change-count-bound")
+                .put("omitted", manifestChanges.length() - MAX_SEMANTIC_SEED_CHANGES))
+        }
+
+        for (index in 0 until limit) {
+            val manifestRow = manifestChanges.getJSONObject(index)
+            val path = manifestRow.getString("path")
+            val before = checkpoint[path]
+            val after = observed[path]
+            val source = RiftSourceIntelligenceV2.isSourcePath(path)
+            var beforeText: String? = null
+            var afterText: String? = null
+            var semanticTextComplete = true
+
+            if (source) {
+                sourceFiles++
+                if (sourceFiles > MAX_SEMANTIC_SEED_SOURCE_FILES) {
+                    semanticTextComplete = false
+                    complete = false
+                    omissions.put(JSONObject().put("path", path).put("reason", "source-file-bound"))
+                } else {
+                    val candidateBefore = before?.takeIf { it.textStored }?.let { readSnapshot(checkpointRoot, path) }
+                    val candidateAfter = after?.takeIf { it.textStored }?.let { readSnapshot(observedRoot, path) }
+                    if (before != null && candidateBefore == null) semanticTextComplete = false
+                    if (after != null && candidateAfter == null) semanticTextComplete = false
+
+                    val requestedBytes =
+                        (candidateBefore?.toByteArray(Charsets.UTF_8)?.size?.toLong() ?: 0L) +
+                        (candidateAfter?.toByteArray(Charsets.UTF_8)?.size?.toLong() ?: 0L)
+                    if (semanticTextComplete && textBytes + requestedBytes <= MAX_SEMANTIC_SEED_TEXT_BYTES) {
+                        beforeText = candidateBefore
+                        afterText = candidateAfter
+                        textBytes += requestedBytes
+                    } else if (before != null || after != null) {
+                        semanticTextComplete = false
+                    }
+
+                    if (!semanticTextComplete) {
+                        complete = false
+                        val unavailable =
+                            (before != null && !before.textStored) ||
+                            (after != null && !after.textStored)
+                        val missing =
+                            (before != null && before.textStored && candidateBefore == null) ||
+                            (after != null && after.textStored && candidateAfter == null)
+                        omissions.put(JSONObject()
+                            .put("path", path)
+                            .put("reason", when {
+                                unavailable -> "source-text-unavailable"
+                                missing -> "source-text-missing"
+                                else -> "source-text-budget"
+                            }))
+                    }
+                }
+            }
+
+            rows.put(JSONObject()
+                .put("path", path)
+                .put("status", manifestRow.getString("status"))
+                .put("before", manifestRow.get("before"))
+                .put("after", manifestRow.get("after"))
+                .put("source", source)
+                .put("semanticTextComplete", semanticTextComplete)
+                .put("beforeText", beforeText ?: JSONObject.NULL)
+                .put("afterText", afterText ?: JSONObject.NULL))
+        }
+
+        val ownershipLedgers = JSONArray()
+        val projectRoots = linkedSetOf<String>()
+        for (index in 0 until limit) {
+            val path = manifestChanges.getJSONObject(index).getString("path").trim('/')
+            if (path.contains('/')) projectRoots += path.substringBefore('/')
+        }
+        if (projectRoots.size > MAX_SEMANTIC_SEED_OWNERSHIP_PROJECTS) {
+            complete = false
+            omissions.put(JSONObject()
+                .put("reason", "ownership-project-bound")
+                .put("omitted", projectRoots.size - MAX_SEMANTIC_SEED_OWNERSHIP_PROJECTS))
+        }
+        for (root in projectRoots.sorted().take(MAX_SEMANTIC_SEED_OWNERSHIP_PROJECTS)) {
+            val path = "$root/docs/SOURCE_OWNERSHIP.md"
+            val before = checkpoint[path]
+            val after = observed[path]
+            val beforeText = before?.takeIf { it.textStored }?.let { readSnapshot(checkpointRoot, path) }
+            val afterText = after?.takeIf { it.textStored }?.let { readSnapshot(observedRoot, path) }
+            val ledgerComplete =
+                (before == null || beforeText != null) &&
+                (after == null || afterText != null)
+            if (!ledgerComplete) {
+                complete = false
+                omissions.put(JSONObject().put("path", path).put("reason", "ownership-ledger-unavailable"))
+            }
+            ownershipLedgers.put(JSONObject()
+                .put("projectRoot", root)
+                .put("path", path)
+                .put("complete", ledgerComplete)
+                .put("beforeText", beforeText ?: JSONObject.NULL)
+                .put("afterText", afterText ?: JSONObject.NULL))
+        }
+
+        return JSONObject()
+            .put("format", "rift-candidate-impact-seed-v1")
+            .put("version", 1)
+            .put("candidate", candidateSummary(manifest))
+            .put("complete", complete)
+            .put("changesTotal", manifestChanges.length())
+            .put("changesReturned", rows.length())
+            .put("sourceFilesSeen", sourceFiles)
+            .put("sourceTextBytes", textBytes)
+            .put("maxChanges", MAX_SEMANTIC_SEED_CHANGES)
+            .put("maxSourceFiles", MAX_SEMANTIC_SEED_SOURCE_FILES)
+            .put("maxSourceTextBytes", MAX_SEMANTIC_SEED_TEXT_BYTES)
+            .put("maxOwnershipProjects", MAX_SEMANTIC_SEED_OWNERSHIP_PROJECTS)
+            .put("identity", manifest.getJSONObject("identity"))
+            .put("ownershipLedgers", ownershipLedgers)
+            .put("changes", rows)
+            .put("omissions", omissions)
+    }
+
+    private fun verifyRecordChain(): JSONObject {
+        val epoch = eventChainEpoch
+        if (epoch.isBlank()) return JSONObject()
+            .put("version", RiftPatchManifestV1.RECORD_CHAIN_VERSION)
+            .put("ok", false)
+            .put("reason", "chain-not-initialized")
+
+        var expectedPrevious = eventChainAnchorHash
+        var checked = 0
+        var brokenId: String? = null
+        var reason: String? = null
+        val files = eventRoot.listFiles()
+            ?.filter { it.isFile && it.extension == "json" }
+            ?.sortedBy { it.name }
+            .orEmpty()
+        for (file in files) {
+            val row = runCatching { JSONObject(file.readText(Charsets.UTF_8)) }.getOrNull() ?: continue
+            if (row.optString("chainEpoch") != epoch) continue
+            if (row.optLong("sequence", 0L) <= eventPrunedThroughSequence) continue
+            val verification = RiftPatchManifestV1.verifyRecord(row, epoch, expectedPrevious)
+            checked++
+            if (!verification.ok) {
+                brokenId = row.optString("id").takeIf { it.isNotBlank() } ?: file.name
+                reason = verification.reason
+                break
+            }
+            expectedPrevious = verification.recordHash ?: expectedPrevious
+        }
+        if (brokenId == null && expectedPrevious != eventChainLastHash) {
+            reason = "state-head-mismatch"
+        }
+        return JSONObject()
+            .put("version", RiftPatchManifestV1.RECORD_CHAIN_VERSION)
+            .put("epoch", epoch)
+            .put("startSequence", eventChainStartSequence)
+            .put("prunedThroughSequence", eventPrunedThroughSequence)
+            .put("prunedThroughAt", eventPrunedThroughAt)
+            .put("anchorHash", eventChainAnchorHash)
+            .put("lastRecordHash", eventChainLastHash)
+            .put("checked", checked)
+            .put("ok", brokenId == null && reason == null)
+            .put("brokenId", brokenId ?: JSONObject.NULL)
+            .put("reason", reason ?: JSONObject.NULL)
+    }
+
+    private fun ensureEventChain() {
+        if (eventChainEpoch.isBlank()) {
+            eventChainEpoch = "chain-${UUID.randomUUID()}"
+            eventChainStartSequence = sequence.get() + 1L
+            eventChainAnchorHash = RiftPatchManifestV1.GENESIS
+            eventChainLastHash = RiftPatchManifestV1.GENESIS
+            eventPrunedThroughSequence = 0L
+            eventPrunedThroughAt = 0L
+            saveState()
+            return
+        }
+        recoverEventChainHeadIfSafe()
+    }
+
+    private fun recoverEventChainHeadIfSafe() {
+        var expectedPrevious = eventChainAnchorHash
+        var tail = eventChainAnchorHash
+        var persistedHeadWasAncestor = eventChainLastHash == eventChainAnchorHash
+        val files = eventRoot.listFiles()
+            ?.filter { it.isFile && it.extension == "json" }
+            ?.sortedBy { it.name }
+            .orEmpty()
+        for (file in files) {
+            val row = runCatching { JSONObject(file.readText(Charsets.UTF_8)) }.getOrNull() ?: continue
+            if (row.optString("chainEpoch") != eventChainEpoch) continue
+            if (row.optLong("sequence", 0L) <= eventPrunedThroughSequence) continue
+            val verification = RiftPatchManifestV1.verifyRecord(row, eventChainEpoch, expectedPrevious)
+            if (!verification.ok) return
+            tail = verification.recordHash ?: return
+            expectedPrevious = tail
+            if (tail == eventChainLastHash) persistedHeadWasAncestor = true
+        }
+        if (persistedHeadWasAncestor && tail != eventChainLastHash) {
+            eventChainLastHash = tail
+            saveState()
+        }
+    }
 
     private fun scanCurrentFiles(): LinkedHashMap<String, File> {
         val out = LinkedHashMap<String, File>()
@@ -640,8 +1059,32 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     }
 
     private fun pruneRecords() {
-        val files = eventRoot.listFiles()?.filter { it.isFile && it.extension == "json" }?.sortedByDescending { it.name }.orEmpty()
-        files.drop(MAX_RECORDS).forEach { runCatching { it.delete() } }
+        val files = eventRoot.listFiles()
+            ?.filter { it.isFile && it.extension == "json" }
+            ?.sortedByDescending { it.name }
+            .orEmpty()
+        val dropped = files.drop(MAX_RECORDS)
+        val immediatePredecessor = dropped.firstOrNull()?.let { file ->
+            runCatching { JSONObject(file.readText(Charsets.UTF_8)) }.getOrNull()
+        }
+        if (immediatePredecessor != null) {
+            eventPrunedThroughSequence = maxOf(
+                eventPrunedThroughSequence,
+                immediatePredecessor.optLong("sequence", 0L)
+            )
+            eventPrunedThroughAt = maxOf(
+                eventPrunedThroughAt,
+                immediatePredecessor.optLong("at", 0L)
+            )
+            if (immediatePredecessor.optString("chainEpoch") == eventChainEpoch) {
+                immediatePredecessor.optString("recordHash")
+                    .takeIf { it.matches(Regex("^[0-9a-f]{64}$")) }
+                    ?.let { eventChainAnchorHash = it }
+            }
+            // Persist the new verification anchor before deleting the predecessor it refers to.
+            saveState()
+        }
+        dropped.forEach { runCatching { it.delete() } }
     }
 
     private fun loadState() {
@@ -649,9 +1092,19 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         val state = runCatching { JSONObject(stateFile.readText(Charsets.UTF_8)) }.getOrNull() ?: return
         sequence.set(state.optLong("sequence", 0L))
         checkpointAt = state.optLong("checkpointAt", 0L)
+        checkpointSequence = state.optLong("checkpointSequence", -1L)
         checkpointReason = state.optString("checkpointReason", "initial")
         checkpointGitRoot = if (state.isNull("checkpointGitRoot")) null else state.optString("checkpointGitRoot").takeIf { it.isNotBlank() }
         checkpointGitHeadSha = if (state.isNull("checkpointGitHeadSha")) null else state.optString("checkpointGitHeadSha").takeIf { it.isNotBlank() }
+        eventChainEpoch = state.optString("eventChainEpoch")
+        eventChainStartSequence = state.optLong("eventChainStartSequence", 0L)
+        eventChainAnchorHash = state.optString("eventChainAnchorHash", RiftPatchManifestV1.GENESIS)
+        eventChainLastHash = state.optString("eventChainLastHash", RiftPatchManifestV1.GENESIS)
+        eventPrunedThroughSequence = state.optLong("eventPrunedThroughSequence", 0L)
+        eventPrunedThroughAt = state.optLong("eventPrunedThroughAt", 0L)
+        trustedCheckpointAt = state.optLong("trustedCheckpointAt", 0L)
+        trustedManifestSha256 = if (state.isNull("trustedManifestSha256")) null else state.optString("trustedManifestSha256").takeIf { it.isNotBlank() }
+        trustedTreeSha256 = if (state.isNull("trustedTreeSha256")) null else state.optString("trustedTreeSha256").takeIf { it.isNotBlank() }
         readEntryMap(state.optJSONObject("observed"), observed)
         readEntryMap(state.optJSONObject("checkpoint"), checkpoint)
     }
@@ -661,9 +1114,19 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             .put("format", FORMAT)
             .put("sequence", sequence.get())
             .put("checkpointAt", checkpointAt)
+            .put("checkpointSequence", checkpointSequence)
             .put("checkpointReason", checkpointReason)
             .put("checkpointGitRoot", checkpointGitRoot ?: JSONObject.NULL)
             .put("checkpointGitHeadSha", checkpointGitHeadSha ?: JSONObject.NULL)
+            .put("eventChainEpoch", eventChainEpoch)
+            .put("eventChainStartSequence", eventChainStartSequence)
+            .put("eventChainAnchorHash", eventChainAnchorHash)
+            .put("eventChainLastHash", eventChainLastHash)
+            .put("eventPrunedThroughSequence", eventPrunedThroughSequence)
+            .put("eventPrunedThroughAt", eventPrunedThroughAt)
+            .put("trustedCheckpointAt", trustedCheckpointAt)
+            .put("trustedManifestSha256", trustedManifestSha256 ?: JSONObject.NULL)
+            .put("trustedTreeSha256", trustedTreeSha256 ?: JSONObject.NULL)
             .put("observed", entryMapJson(observed))
             .put("checkpoint", entryMapJson(checkpoint))
         writeJsonAtomic(stateFile, state)

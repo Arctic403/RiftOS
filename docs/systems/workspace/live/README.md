@@ -17,6 +17,8 @@ Live:
 - `RiftDiffEngineV2.kt` — Android-framework-independent adaptive exact-LCS / patience-style multi-hunk engine.
 - `RiftFileIdentityV2.kt` — bounded deterministic rename/copy/rewrite correlation and similarity evidence.
 - `RiftPatchSessions.kt` — process-local writer provenance claims used to correlate asynchronous filesystem observations without granting approval authority.
+- `RiftPatchManifestV1.kt` — deterministic tree/change-set/canonical-manifest hashing, private immutable freeze and event-record hash-chain primitives.
+- `RiftSourceIntelligenceV2.kt` — shared Project Intelligence V2 lexical analyzer used when Workspace Records emits a candidate semantic-impact seed.
 - `RiftWorkspaceWatcher.kt` — recursive `FileObserver` tree.
 - `RiftNativeWorkspaceApps.kt` — native Workspace Records window.
 - `RiftToolSandbox.kt` — read-only `workspace.diff` dispatch.
@@ -39,6 +41,7 @@ Private subtrees:
 - events/
 - observed/
 - checkpoint/
+- manifests/
 - state.json
 
 Records state is deliberately outside the workspace so normal project/MCP tools cannot rewrite their own history.
@@ -136,6 +139,46 @@ Exact file/deletion claims are matched against the observed resulting SHA/existe
 Current explicit writer origins are `mcp`, `native-shell`, `native-editor`, `devlab`, and `native-git`. Claim ingress accepts only explicit `workspace/...` or `D:/Workspace/...` path forms; other RiftFS paths cannot be misclassified as Workspace provenance. A mutation with no valid claim is never guessed: Workspace Records emits a unique `unattributed-*` patchId with `origin=unattributed-local`, `attributed=false`, and `confidence=none`.
 
 Provenance is observational evidence only. It does not approve a patch, grant a capability, change MCP permissions, advance a trusted checkpoint or make OBSERVE blocking.
+
+## Patch Manifest V1 and tamper evidence
+
+Patch 4 adds deterministic candidate identity without enabling enforcement.
+
+Candidate manifests bind:
+- the operational checkpoint kind/time/sequence/Git metadata and deterministic base-tree SHA-256;
+- deterministic current-result tree SHA-256;
+- every changed path with status and before/after kind/size/content SHA-256;
+- a separate change-set SHA-256;
+- a structural-diff SHA-256 over changes plus File Identity V2 relations;
+- retained patch-session evidence and whether that session evidence is complete;
+- current record-chain integrity;
+- current trusted-checkpoint state.
+
+Tree/change-set hashes use content identity, not mtime. Volatile generation/freeze timestamps are intentionally excluded from the hashed manifest so identical stable inputs produce the same manifest identity.
+
+`freezeCandidate()` is an internal Workspace Records API for the future Local Agent gate. It is not mapped through MCP. Frozen canonical manifests live under private `manifests/` using their 64-hex SHA-256 as filename. Existing same-hash files must match byte-for-byte. One manifest is limited to 8 MiB and the store is capped at 512 manifests; reaching either bound fails the freeze rather than silently dropping evidence.
+
+Candidate workspace path count is capped at 50000 before a full manifest can be sealed.
+
+### Event record chain
+
+New Patch-4-era event records carry chain version/epoch, previous-record hash and record hash. Legacy records from before the chain epoch remain readable but are not retroactively rewritten or claimed as tamper-evident.
+
+Pruning records the exact last-pruned sequence/time and, when applicable, the immediate predecessor hash. The updated anchor is persisted before old files are deleted. Chain verification skips rows at or below the persisted pruning boundary.
+
+On startup, a lagging persisted chain head can fast-forward only when the retained valid chain proves that old head was an ancestor. A missing/modified unrelated head is not silently adopted.
+
+### Operational versus trusted checkpoint
+
+Existing Git/manual baselines are now explicitly `kind=operational` and carry recorder sequence. Separate trusted-checkpoint fields exist but have no promotion API and remain absent until a later Local Agent gate is implemented. Patch 4 therefore cannot convert an operational checkpoint into trusted state.
+
+Patch-session completeness is sequence-based: a manifest can only call retained session evidence complete when the operational checkpoint sequence is known and all pruned records are at or before that checkpoint. Migrated old checkpoints with no sequence remain incomplete instead of being guessed complete.
+
+## Semantic impact seed
+
+Patch 5 adds an internal `semanticImpactSeed()` derived from the same live Patch Manifest V1 candidate. It never accepts a caller-selected path list. The seed carries exact changed-path identity and, only for source files, bounded checkpoint/current text needed for before/after semantic comparison.
+
+Bounds are 4096 changed rows, 1024 source files and 8 MiB combined before/after source text. If a source snapshot was binary/oversized, text was pruned/unavailable, or a working-set bound is exceeded, the seed records an omission reason and `complete=false`. This evidence is consumed by PI-v2 through the internal Local Agent path and is not exposed as a new MCP tool.
 
 ## Diff Engine V2 and bounds
 
@@ -266,6 +309,7 @@ It observes and reports.
 
 ## Source fixes in this audit
 
+- Patch 4 introduced deterministic candidate manifests, private immutable-by-hash freeze support, forward event hash chaining, pruning anchors, sequence-based provenance completeness and inert trusted-checkpoint state without adding enforcement;
 - Patch 3 introduced state-bound patch-session provenance, explicit writer origins and honest `unattributed-local` fallback without adding approval authority;
 - Patch 2 introduced `RiftFileIdentityV2`, exact SHA rename/copy correlation, bounded heuristic rename/rewrite evidence, relation-aware diff headers and checkpoint-query identity summaries;
 - Patch 1 introduced `RiftDiffEngineV2` and removed the recorder's legacy single-prefix/suffix middle-block diff implementation;
@@ -292,7 +336,12 @@ It observes and reports.
 - identity evidence never claims user intent or grants mutation/approval authority;
 - provenance claims expire after 15 seconds, exact claims require resulting-state agreement, directory claims are labeled lower-confidence, and unknown writers remain unattributed;
 - patchId/provenance are evidence only and cannot approve, authorize or advance trust;
-- checkpoint only advances baseline;
+- candidate identity excludes volatile generation/freeze time and binds deterministic base/result trees, change set, structural relations and evidence context;
+- frozen manifests are private, SHA-addressed, <=8 MiB each and capped at 512;
+- new event records are hash-chained; legacy pre-chain records are not falsely upgraded;
+- chain pruning persists sequence/time/anchor before deletion and startup recovery only fast-forwards a proven ancestor head;
+- operational and trusted checkpoint state are distinct; no trusted promotion API exists yet;
+- checkpoint only advances operational baseline;
 - MCP access is query/read-only;
 - Git checkpoint occurs only after successful workspace Git operations.
 
@@ -308,6 +357,10 @@ It observes and reports.
 - heuristic correlation exceeds 64 candidates per side / 1024 line comparisons -> identity bound regression;
 - heuristic rename is exposed as exact or treated as proof of user intent -> evidence-semantics regression;
 - exact copy/rename SHA identity is omitted from checkpoint relation evidence -> identity regression;
+- manifest identity changes across identical stable inputs because a volatile timestamp entered the hash -> determinism regression;
+- a frozen manifest filename/hash does not match canonical bytes -> evidence-integrity failure;
+- record-chain mismatch is silently healed without proving the persisted head was an ancestor -> tamper-evidence regression;
+- trusted checkpoint becomes present without a later gate-owned promotion path -> authority regression;
 - changed workspace content disappears because recorder altered files -> ownership violation;
 - watcher accepts path outside workspace -> containment failure.
 
@@ -321,6 +374,8 @@ Rename/copy/rewrite identity evidence -> `RiftFileIdentityV2.kt`.
 
 Writer-session provenance -> `RiftPatchSessions.kt` plus the explicit writer call sites.
 
+Candidate manifest/hash-chain primitives -> `RiftPatchManifestV1.kt`.
+
 Filesystem events -> `RiftWorkspaceWatcher.kt`.
 
 Native display -> `RiftNativeWorkspaceApps.kt`.
@@ -331,6 +386,6 @@ Git baseline hooks -> `RiftNativeGit.kt`.
 
 ## Validation
 
-Second source audit must verify roots, observer containment/lifecycle, event settlement/reconciliation, Diff Engine V2 multi-hunk behavior and 250000-cell exact-LCS bound, File Identity V2 exact/heuristic semantics and 64/1024 bounds, relation-aware path headers, text/diff/event/query bounds, atomic private writes, query prefix normalization, read-only MCP mapping, native UI action field, Git push/pull checkpoint call sites, and absence of approval/rollback APIs.
+Second source audit must verify roots, observer containment/lifecycle, event settlement/reconciliation, Diff Engine V2 multi-hunk behavior and 250000-cell exact-LCS bound, File Identity V2 exact/heuristic semantics and 64/1024 bounds, Patch Session V1 attribution/fallback, Patch Manifest V1 deterministic tree/change-set/canonical hashes, 8 MiB/512 freeze bounds, record-chain verification/pruning anchor/crash recovery, sequence-based session completeness, operational-vs-trusted checkpoint distinction, relation-aware path headers, text/diff/event/query bounds, atomic private writes, query prefix normalization, read-only MCP mapping, native UI action field, Git push/pull checkpoint call sites, and absence of trusted promotion/approval/rollback APIs.
 
 Device testing should mutate files through Editor, MCP, Shell, Git and Dev Lab and confirm one consistent record stream and expected checkpoint changes.

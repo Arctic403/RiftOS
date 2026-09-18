@@ -40,6 +40,16 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_ARCHIVE_ENTRIES = 50_000
         private const val MAX_ARCHIVE_SOURCE_BYTES = 256L * 1024L * 1024L
         private const val MAX_ARCHIVE_EXTRACTED_BYTES = 512L * 1024L * 1024L
+        private const val MAX_CANDIDATE_PROJECTS = 32
+        private const val MAX_CANDIDATE_CHANGED_FILES = 4_096
+        private const val MAX_CANDIDATE_CHANGED_SYMBOLS = 1_000
+        private const val MAX_CANDIDATE_REFERENCE_SYMBOLS = 80
+        private const val MAX_CANDIDATE_REFERENCES = 800
+        private const val MAX_CANDIDATE_DEPENDENCIES = 800
+        private const val MAX_CANDIDATE_DEPENDENTS = 800
+        private const val MAX_CANDIDATE_TESTS = 300
+        private const val MAX_CANDIDATE_DOCS = 300
+        private const val MAX_CANDIDATE_AFFINITY_TARGETS = 128
         private const val LEGACY_ROOT_NAME = "tool-sandbox"
         private const val OLDER_LEGACY_ROOT_NAME = "browser-sandbox"
         private const val WORKSPACE_ROOT = "workspace"
@@ -129,6 +139,20 @@ internal class RiftToolSandbox(context: Context) {
                     .put("error", error.message ?: error.javaClass.simpleName)
             }
             reply(response.toString())
+        }
+    }
+
+    internal fun candidateImpactAsync(reply: (JSONObject) -> Unit) {
+        executor.execute {
+            val response = runCatching { candidateImpact() }
+                .getOrElse { error ->
+                    JSONObject()
+                        .put("format", "rift-semantic-impact-v1")
+                        .put("version", 1)
+                        .put("complete", false)
+                        .put("error", error.message ?: error.javaClass.simpleName)
+                }
+            reply(response)
         }
     }
 
@@ -1209,6 +1233,356 @@ internal class RiftToolSandbox(context: Context) {
             .put("validation", projectValidation(path, targetPaths.firstOrNull().orEmpty()))
     }
 
+    private fun candidateImpact(): JSONObject {
+        val seed = workspaceRecords.semanticImpactSeed()
+        val candidateSeed = seed.getJSONObject("candidate")
+        val candidate = JSONObject()
+            .put("version", candidateSeed.getInt("version"))
+            .put("candidateId", candidateSeed.getString("candidateId"))
+            .put("manifestSha256", candidateSeed.getString("manifestSha256"))
+            .put("baseTreeSha256", candidateSeed.getString("baseTreeSha256"))
+            .put("resultTreeSha256", candidateSeed.getString("resultTreeSha256"))
+            .put("changeSetSha256", candidateSeed.getString("changeSetSha256"))
+            .put("structuralDiffSha256", candidateSeed.getString("structuralDiffSha256"))
+            .put("changedFiles", candidateSeed.getInt("changedFiles"))
+
+        val incompleteReasons = linkedSetOf<String>()
+        if (!seed.optBoolean("complete", false)) incompleteReasons += "semantic-seed-incomplete"
+
+        val indexStats = refreshSymbolIndex(workspaceRoot)
+        if (indexStats.optBoolean("truncated", false)) incompleteReasons += "project-index-truncated"
+
+        val changes = seed.getJSONArray("changes")
+        val projectRoots = linkedSetOf<String>()
+        val sourceTargets = linkedSetOf<String>()
+        val changedTests = linkedSetOf<String>()
+        val changedDocs = linkedSetOf<String>()
+        val changedBuildConfigs = linkedSetOf<String>()
+        val semanticRows = JSONArray()
+        val semanticDeltas = LinkedHashMap<String, RiftSourceIntelligenceV2.Delta>()
+        val changedSymbolNames = linkedSetOf<String>()
+        val apiChangedPaths = linkedSetOf<String>()
+
+        for (index in 0 until changes.length()) {
+            val row = changes.getJSONObject(index)
+            val rawPath = row.getString("path").trim('/')
+            val path = "$WORKSPACE_ROOT/$rawPath"
+            val projectRoot = candidateProjectRoot(path)
+            projectRoots += projectRoot
+            val testPath = isTestPath(path)
+            val category = RiftSourceIntelligenceV2.classifyPath(path, testPath)
+            if (testPath) changedTests += path
+            if (category == "documentation") changedDocs += path
+            if (category == "build-config") changedBuildConfigs += path
+
+            val out = JSONObject()
+                .put("path", path)
+                .put("status", row.getString("status"))
+                .put("category", category)
+                .put("projectRoot", projectRoot)
+                .put("source", row.optBoolean("source", false))
+
+            if (row.optBoolean("source", false)) {
+                sourceTargets += path
+                if (!row.optBoolean("semanticTextComplete", false)) {
+                    incompleteReasons += "source-text-incomplete"
+                    out.put("semanticComplete", false)
+                } else {
+                    val beforeExists = !row.isNull("before")
+                    val afterExists = !row.isNull("after")
+                    val beforeText = if (row.isNull("beforeText")) null else row.optString("beforeText")
+                    val afterText = if (row.isNull("afterText")) null else row.optString("afterText")
+                    val delta = RiftSourceIntelligenceV2.diff(
+                        path = path,
+                        beforeExists = beforeExists,
+                        beforeText = beforeText,
+                        afterExists = afterExists,
+                        afterText = afterText
+                    )
+                    semanticDeltas[path] = delta
+                    if (delta.truncated) incompleteReasons += "semantic-delta-truncated"
+                    if (delta.apiSurfaceChanged) apiChangedPaths += path
+                    delta.addedSymbols.forEach { changedSymbolNames += it.name }
+                    delta.removedSymbols.forEach { changedSymbolNames += it.name }
+                    delta.changedSignatures.forEach {
+                        changedSymbolNames += it.before.name
+                        changedSymbolNames += it.after.name
+                    }
+                    out.put("semanticComplete", !delta.truncated)
+                        .put("semantic", semanticDeltaJson(delta))
+                }
+            }
+            semanticRows.put(out)
+        }
+
+        if (projectRoots.size > MAX_CANDIDATE_PROJECTS) incompleteReasons += "project-root-bound"
+        val selectedProjectRoots = projectRoots.sorted().take(MAX_CANDIDATE_PROJECTS).toSet()
+        val indexed = symbolIndex.filterKeys { path ->
+            selectedProjectRoots.any { root -> isPathWithin(path, root) }
+        }
+        val resolutionPaths = (indexed.keys + sourceTargets).toSet()
+
+        val dependencyRows = ArrayList<JSONObject>()
+        val dependencyKeys = HashSet<String>()
+        fun addDependency(
+            sourcePath: String,
+            dependency: DependencyRecord,
+            relation: String
+        ) {
+            if (dependencyRows.size >= MAX_CANDIDATE_DEPENDENCIES) {
+                incompleteReasons += "dependency-bound"
+                return
+            }
+            val projectRoot = candidateProjectRoot(sourcePath)
+            val target = resolveDependency(projectRoot, sourcePath, dependency, resolutionPaths)
+            val key = "$relation|$sourcePath|${dependency.kind}|${dependency.specifier}|${target.orEmpty()}"
+            if (!dependencyKeys.add(key)) return
+            dependencyRows += JSONObject()
+                .put("relation", relation)
+                .put("source", sourcePath)
+                .put("kind", dependency.kind)
+                .put("specifier", dependency.specifier)
+                .put("target", target ?: JSONObject.NULL)
+        }
+
+        for (sourcePath in sourceTargets.sorted()) {
+            indexed[sourcePath]?.dependencies
+                ?.sortedWith(compareBy({ it.kind }, { it.specifier }, { it.line }))
+                ?.forEach { addDependency(sourcePath, it, "current") }
+            val delta = semanticDeltas[sourcePath] ?: continue
+            delta.addedDependencies.forEach {
+                addDependency(sourcePath, DependencyRecord(it.specifier, it.kind, it.line), "added")
+            }
+            delta.removedDependencies.forEach {
+                addDependency(sourcePath, DependencyRecord(it.specifier, it.kind, it.line), "removed")
+            }
+        }
+
+        val dependentRows = ArrayList<JSONObject>()
+        val dependentKeys = HashSet<String>()
+        outer@ for ((sourcePath, indexedFile) in indexed.toSortedMap()) {
+            val projectRoot = candidateProjectRoot(sourcePath)
+            for (dependency in indexedFile.dependencies.sortedWith(compareBy({ it.kind }, { it.specifier }, { it.line }))) {
+                val target = resolveDependency(projectRoot, sourcePath, dependency, resolutionPaths) ?: continue
+                if (target !in sourceTargets) continue
+                val key = "$sourcePath|$target|${dependency.kind}|${dependency.specifier}"
+                if (!dependentKeys.add(key)) continue
+                if (dependentRows.size >= MAX_CANDIDATE_DEPENDENTS) {
+                    incompleteReasons += "dependent-bound"
+                    break@outer
+                }
+                dependentRows += JSONObject()
+                    .put("source", sourcePath)
+                    .put("target", target)
+                    .put("kind", dependency.kind)
+                    .put("specifier", dependency.specifier)
+                if (isTestPath(sourcePath)) changedTests += sourcePath
+            }
+        }
+
+        val changedNames = changedSymbolNames.sorted()
+        if (changedNames.size > MAX_CANDIDATE_CHANGED_SYMBOLS) incompleteReasons += "changed-symbol-bound"
+        val referenceNames = changedNames.take(MAX_CANDIDATE_REFERENCE_SYMBOLS)
+        if (changedNames.size > referenceNames.size) incompleteReasons += "reference-symbol-bound"
+        val referenceRows = candidateReferences(indexed, referenceNames)
+        if (referenceRows.second) incompleteReasons += "reference-bound"
+        referenceRows.first.forEach { row ->
+            if (isTestPath(row.getString("path"))) changedTests += row.getString("path")
+        }
+
+        val testPaths = indexed.keys.filter(::isTestPath).sorted()
+        val affinityTargets = sourceTargets.sorted().take(MAX_CANDIDATE_AFFINITY_TARGETS)
+        if (sourceTargets.size > affinityTargets.size) incompleteReasons += "test-affinity-target-bound"
+        for (target in affinityTargets) {
+            val projectRoot = candidateProjectRoot(target)
+            val relative = if (target.startsWith("$projectRoot/")) target.removePrefix("$projectRoot/") else target
+            val tokens = validationQueryTokens(relative)
+            if (tokens.isEmpty()) continue
+            testPaths.asSequence()
+                .filter { isPathWithin(it, projectRoot) }
+                .map { it to validationTestAffinity(it, relative, tokens) }
+                .filter { it.second > 0 }
+                .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
+                .take(8)
+                .forEach { changedTests += it.first }
+        }
+
+        val owningDocs = linkedSetOf<String>()
+        for (path in semanticRowsToPaths(semanticRows)) {
+            val projectRoot = candidateProjectRoot(path)
+            ownershipDocsFor(projectRoot, path).forEach { owningDocs += it }
+            findOwningReadme(projectRoot, path)?.let { owningDocs += it }
+        }
+        for (root in selectedProjectRoots.sorted()) {
+            listOf(
+                "$root/docs/PATCH_HISTORY.md",
+                "$root/ROADMAP.md",
+                "$root/docs/PROJECT_STATUS.md",
+                "$root/docs/SOURCE_OWNERSHIP.md"
+            ).forEach { candidatePath ->
+                if (sandboxFile(candidatePath).isFile) owningDocs += candidatePath
+            }
+        }
+
+        if (changedTests.size > MAX_CANDIDATE_TESTS) incompleteReasons += "test-bound"
+        if (owningDocs.size > MAX_CANDIDATE_DOCS) incompleteReasons += "documentation-bound"
+
+        val projectRows = JSONArray()
+        for (root in selectedProjectRoots.sorted()) {
+            val projectChanges = semanticRowsToPaths(semanticRows).filter { isPathWithin(it, root) }
+            projectRows.put(JSONObject()
+                .put("root", root)
+                .put("changedFiles", projectChanges.size)
+                .put("sourceFiles", projectChanges.count { it in sourceTargets })
+                .put("testFiles", projectChanges.count(::isTestPath))
+                .put("documentationFiles", projectChanges.count(RiftSourceIntelligenceV2::isDocumentationPath))
+                .put("buildConfigFiles", projectChanges.count(RiftSourceIntelligenceV2::isBuildConfigPath)))
+        }
+
+        val reasons = incompleteReasons.sorted()
+        val payload = JSONObject()
+            .put("format", "rift-semantic-impact-v1")
+            .put("version", 1)
+            .put("projectIntelligence", "v2")
+            .put("candidate", candidate)
+            .put("complete", reasons.isEmpty())
+            .put("incompleteReasons", JSONArray(reasons))
+            .put("projects", projectRows)
+            .put("changes", semanticRows)
+            .put("changedSymbols", JSONArray(changedNames.take(MAX_CANDIDATE_CHANGED_SYMBOLS)))
+            .put("apiSurfaceChangedPaths", JSONArray(apiChangedPaths.sorted().take(MAX_CANDIDATE_CHANGED_FILES)))
+            .put("directDependencies", JSONArray(dependencyRows))
+            .put("directDependents", JSONArray(dependentRows))
+            .put("references", JSONArray(referenceRows.first))
+            .put("tests", JSONArray(changedTests.sorted().take(MAX_CANDIDATE_TESTS)))
+            .put("documentation", JSONArray(owningDocs.sorted().take(MAX_CANDIDATE_DOCS)))
+            .put("changedDocumentation", JSONArray(changedDocs.sorted().take(MAX_CANDIDATE_CHANGED_FILES)))
+            .put("changedBuildConfig", JSONArray(changedBuildConfigs.sorted().take(MAX_CANDIDATE_CHANGED_FILES)))
+            .put("seedComplete", seed.optBoolean("complete", false))
+
+        val semanticSha = RiftPatchManifestV1.sha256Canonical(payload)
+        payload.put("semanticImpactSha256", semanticSha)
+        payload.put("indexDiagnostics", indexStats)
+        return payload
+    }
+
+    private fun candidateReferences(
+        indexed: Map<String, IndexedFile>,
+        symbolNames: List<String>
+    ): Pair<List<JSONObject>, Boolean> {
+        if (symbolNames.isEmpty()) return Pair(emptyList(), false)
+        val escaped = symbolNames.distinct().sorted().map { Regex.escape(it) }
+        val pattern = Regex("(?<![A-Za-z0-9_$])(" + escaped.joinToString("|") + ")(?![A-Za-z0-9_$])")
+        val definitionLines = HashSet<String>()
+        for ((_, file) in indexed) {
+            file.symbols.forEach { definitionLines += "${it.name}@${it.path}:${it.line}" }
+        }
+
+        val out = ArrayList<JSONObject>()
+        var truncated = false
+        outer@ for (path in indexed.keys.sorted()) {
+            val file = sandboxFile(path)
+            if (!file.isFile || file.length() > MAX_WORKSPACE_SEARCH_FILE_BYTES || !isTextFile(file)) continue
+            file.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.forEachIndexed { lineIndex, line ->
+                    if (truncated) return@forEachIndexed
+                    for (match in pattern.findAll(line)) {
+                        if (out.size >= MAX_CANDIDATE_REFERENCES) {
+                            truncated = true
+                            break
+                        }
+                        val symbol = match.value
+                        val key = "$symbol@$path:${lineIndex + 1}"
+                        out += JSONObject()
+                            .put("symbol", symbol)
+                            .put("path", path)
+                            .put("line", lineIndex + 1)
+                            .put("column", match.range.first + 1)
+                            .put("definition", key in definitionLines)
+                            .put("preview", compactPreview(line))
+                    }
+                }
+            }
+            if (truncated) break@outer
+        }
+        return Pair(out, truncated)
+    }
+
+    private fun ownershipDocsFor(projectRoot: String, sourcePath: String): Set<String> {
+        val ledger = sandboxFile("$projectRoot/docs/SOURCE_OWNERSHIP.md")
+        if (!ledger.isFile || ledger.length() > MAX_INDEX_FILE_BYTES) return emptySet()
+        val repoRelative = if (sourcePath.startsWith("$projectRoot/")) {
+            sourcePath.removePrefix("$projectRoot/")
+        } else {
+            sourcePath
+        }
+        val prefix = "| " + '`' + repoRelative + '`' + " |"
+        val out = linkedSetOf<String>()
+        ledger.useLines { lines ->
+            lines.filter { it.trimStart().startsWith(prefix) }.forEach { line ->
+                Regex("`([^`]+)`").findAll(line)
+                    .map { it.groupValues[1] }
+                    .drop(1)
+                    .filter { it.startsWith("docs/") || it.equals("README.md", ignoreCase = true) }
+                    .forEach { doc -> out += "$projectRoot/$doc" }
+            }
+        }
+        return out
+    }
+
+    private fun semanticDeltaJson(delta: RiftSourceIntelligenceV2.Delta): JSONObject {
+        val added = JSONArray()
+        delta.addedSymbols.forEach { added.put(sourceSymbolJson(it)) }
+        val removed = JSONArray()
+        delta.removedSymbols.forEach { removed.put(sourceSymbolJson(it)) }
+        val signatures = JSONArray()
+        delta.changedSignatures.forEach {
+            signatures.put(JSONObject()
+                .put("before", sourceSymbolJson(it.before))
+                .put("after", sourceSymbolJson(it.after)))
+        }
+        val addedDependencies = JSONArray()
+        delta.addedDependencies.forEach { addedDependencies.put(sourceDependencyJson(it)) }
+        val removedDependencies = JSONArray()
+        delta.removedDependencies.forEach { removedDependencies.put(sourceDependencyJson(it)) }
+        return JSONObject()
+            .put("languageBefore", delta.languageBefore)
+            .put("languageAfter", delta.languageAfter)
+            .put("addedSymbols", added)
+            .put("removedSymbols", removed)
+            .put("changedSignatures", signatures)
+            .put("addedDependencies", addedDependencies)
+            .put("removedDependencies", removedDependencies)
+            .put("apiSurfaceChanged", delta.apiSurfaceChanged)
+            .put("truncated", delta.truncated)
+    }
+
+    private fun sourceSymbolJson(symbol: RiftSourceIntelligenceV2.Symbol): JSONObject = JSONObject()
+        .put("name", symbol.name)
+        .put("kind", symbol.kind)
+        .put("path", symbol.path)
+        .put("line", symbol.line)
+        .put("endLine", symbol.endLine)
+        .put("signature", symbol.signature)
+
+    private fun sourceDependencyJson(dependency: RiftSourceIntelligenceV2.Dependency): JSONObject = JSONObject()
+        .put("specifier", dependency.specifier)
+        .put("kind", dependency.kind)
+        .put("line", dependency.line)
+
+    private fun semanticRowsToPaths(rows: JSONArray): List<String> =
+        (0 until rows.length()).mapNotNull { index ->
+            rows.optJSONObject(index)?.optString("path")?.takeIf { it.isNotBlank() }
+        }.distinct().sorted()
+
+    private fun candidateProjectRoot(path: String): String {
+        val normalized = normalizedPath(path)
+        if (normalized == WORKSPACE_ROOT) return WORKSPACE_ROOT
+        val relative = normalized.removePrefix("$WORKSPACE_ROOT/")
+        if (!relative.contains('/')) return WORKSPACE_ROOT
+        return "$WORKSPACE_ROOT/${relative.substringBefore('/')}"
+    }
+
     private fun projectValidation(path: String, query: String): JSONObject {
         val base = sandboxFile(path)
         require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
@@ -1748,118 +2122,26 @@ internal class RiftToolSandbox(context: Context) {
         val cached = symbolIndex[path]
         if (cached != null && cached.modified == file.lastModified() && cached.size == file.length()) return cached
         val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return null
-        val language = languageFor(file)
-        val symbols = extractSymbols(file, text)
-        val dependencies = extractDependencies(file, text)
+        val analysis = RiftSourceIntelligenceV2.analyze(path, text, MAX_SEARCH_PREVIEW_CHARS)
+        val symbols = analysis.symbols.map { symbol ->
+            SymbolRecord(symbol.name, symbol.kind, symbol.path, symbol.line, symbol.endLine, symbol.signature)
+        }
+        val dependencies = analysis.dependencies.map { dependency ->
+            DependencyRecord(dependency.specifier, dependency.kind, dependency.line)
+        }
         persistentIndexDirty = true
-        return IndexedFile(file.lastModified(), file.length(), language, symbols, dependencies).also { symbolIndex[path] = it }
-    }
-
-    private fun extractSymbols(file: File, text: String): List<SymbolRecord> {
-        val lines = text.replace("\r\n", "\n").replace('\r', '\n').split('\n')
-        val language = languageFor(file)
-        val out = ArrayList<SymbolRecord>()
-        val typePattern = Regex("^\\s*(?:(?:public|private|protected|internal|open|final|abstract|static|export|default|data|sealed|partial)\\s+)*(class|interface|object|struct|trait|record|enum(?:\\s+class)?)\\s+([A-Za-z_$][A-Za-z0-9_$]*)")
-        val patterns = listOf(
-            "function" to Regex("^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*\\("),
-            "function" to Regex("^\\s*(?:async\\s+)?def\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\("),
-            "function" to Regex("^\\s*(?:(?:public|private|protected|internal|open|final|override|inline|suspend|operator|tailrec|infix|external)\\s+)*fun\\s+(?:<[^>]+>\\s*)?([A-Za-z_][A-Za-z0-9_]*)\\s*\\("),
-            "function" to Regex("^\\s*(?:(?:pub(?:\\([^)]*\\))?|unsafe|async|const|extern\\s+\"[^\"]+\")\\s+)*fn\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\("),
-            "function" to Regex("^\\s*func\\s+(?:\\([^)]*\\)\\s*)?([A-Za-z_][A-Za-z0-9_]*)\\s*\\("),
-            "function" to Regex("^\\s*(?:export\\s+)?(?:const|let|var)\\s+([A-Za-z_$][A-Za-z0-9_$]*)\\s*=\\s*(?:async\\s*)?(?:\\([^)]*\\)|[A-Za-z_$][A-Za-z0-9_$]*)\\s*=>")
-        )
-        lines.forEachIndexed { index, line ->
-            val typeMatch = typePattern.find(line)
-            if (typeMatch != null) {
-                val rawKind = typeMatch.groupValues[1].lowercase()
-                val kind = when { rawKind.startsWith("enum") -> "enum"; rawKind == "interface" || rawKind == "trait" -> "interface"; else -> "type" }
-                val name = typeMatch.groupValues[2]
-                out += SymbolRecord(name, kind, relativePath(file), index + 1, symbolEndLine(lines, index, language), compactPreview(line))
-            }
-            patterns.forEach { (kind, pattern) ->
-                val match = pattern.find(line) ?: return@forEach
-                val name = match.groupValues[1]
-                out += SymbolRecord(name, kind, relativePath(file), index + 1, symbolEndLine(lines, index, language), compactPreview(line))
-            }
-            if (language in setOf("java", "csharp", "cpp") && line.contains('(') && !line.trimStart().startsWith("//")) {
-                val method = Regex("^\\s*(?:(?:public|private|protected|static|final|virtual|override|abstract|synchronized|native|inline|constexpr|friend|extern)\\s+)*(?:[A-Za-z_][A-Za-z0-9_<>,.?\\[\\]:*&\\s]+\\s+)([A-Za-z_][A-Za-z0-9_]*)\\s*\\([^;]*\\)\\s*(?:\\{|=>)?\\s*$").find(line)
-                val name = method?.groupValues?.getOrNull(1)
-                if (!name.isNullOrBlank() && name !in setOf("if", "for", "while", "switch", "catch")) {
-                    out += SymbolRecord(name, "method", relativePath(file), index + 1, symbolEndLine(lines, index, language), compactPreview(line))
-                }
-            }
-        }
-        return out.distinctBy { "${it.path}:${it.line}:${it.name}:${it.kind}" }
-    }
-
-    private fun extractDependencies(file: File, text: String): List<DependencyRecord> {
-        val language = languageFor(file)
-        val out = ArrayList<DependencyRecord>()
-        fun add(specifier: String?, kind: String, line: Int) {
-            val value = specifier?.trim()?.trimEnd(';')?.trim().orEmpty()
-            if (value.isNotBlank() && value.length <= 500) out += DependencyRecord(value, kind, line)
-        }
-        text.replace("\r\n", "\n").replace('\r', '\n').split('\n').forEachIndexed { index, line ->
-            when (language) {
-                "cpp" -> Regex("^\\s*#\\s*include\\s*[<\"]([^>\"]+)[>\"]").find(line)?.let { add(it.groupValues[1], "include", index + 1) }
-                "kotlin", "java" -> Regex("^\\s*import\\s+([A-Za-z0-9_.*]+)").find(line)?.let { add(it.groupValues[1], "import", index + 1) }
-                "javascript" -> {
-                    Regex("\\bfrom\\s*[\"']([^\"']+)[\"']").find(line)?.let { add(it.groupValues[1], "import", index + 1) }
-                    Regex("^\\s*import\\s*[\"']([^\"']+)[\"']").find(line)?.let { add(it.groupValues[1], "import", index + 1) }
-                    Regex("\\b(?:require|import)\\s*\\(\\s*[\"']([^\"']+)[\"']").findAll(line).forEach { add(it.groupValues[1], "require", index + 1) }
-                }
-                "python" -> {
-                    Regex("^\\s*from\\s+([A-Za-z0-9_.]+)\\s+import\\b").find(line)?.let { add(it.groupValues[1], "python", index + 1) }
-                    Regex("^\\s*import\\s+([A-Za-z0-9_.]+)").find(line)?.let { add(it.groupValues[1], "python", index + 1) }
-                }
-                "rust" -> {
-                    Regex("^\\s*use\\s+([^;]+)").find(line)?.let { add(it.groupValues[1], "use", index + 1) }
-                    Regex("^\\s*mod\\s+([A-Za-z_][A-Za-z0-9_]*)").find(line)?.let { add(it.groupValues[1], "module", index + 1) }
-                }
-                "csharp" -> Regex("^\\s*using\\s+([A-Za-z0-9_.]+)").find(line)?.let { add(it.groupValues[1], "import", index + 1) }
-            }
-        }
-        return out.distinctBy { "${it.line}:${it.kind}:${it.specifier}" }
-    }
-
-    private fun symbolEndLine(lines: List<String>, startIndex: Int, language: String): Int {
-        if (language == "python") {
-            val start = lines[startIndex]
-            val indent = start.takeWhile { it == ' ' || it == '\t' }.length
-            for (index in startIndex + 1 until lines.size) {
-                val line = lines[index]
-                if (line.isBlank() || line.trimStart().startsWith("#")) continue
-                val nextIndent = line.takeWhile { it == ' ' || it == '\t' }.length
-                if (nextIndent <= indent) return index
-            }
-            return lines.size
-        }
-        val declaration = lines[startIndex].substringBefore("//")
-        if (!declaration.contains('{') && (declaration.contains("=") || declaration.trimEnd().endsWith(";"))) return startIndex + 1
-        var depth = 0
-        var opened = false
-        for (index in startIndex until minOf(lines.size, startIndex + 2000)) {
-            val line = lines[index].substringBefore("//")
-            val opens = line.count { it == '{' }
-            val closes = line.count { it == '}' }
-            if (opens > 0) opened = true
-            depth += opens - closes
-            if (opened && depth <= 0) return index + 1
-            if (!opened && index > startIndex + 80) return index + 1
-        }
-        return minOf(lines.size, startIndex + 81)
+        return IndexedFile(
+            file.lastModified(),
+            file.length(),
+            analysis.language,
+            symbols,
+            dependencies
+        ).also { symbolIndex[path] = it }
     }
 
     private fun symbolJson(symbol: SymbolRecord): JSONObject = JSONObject()
         .put("name", symbol.name).put("kind", symbol.kind).put("path", symbol.path)
         .put("line", symbol.line).put("endLine", symbol.endLine).put("signature", symbol.signature)
-
-    private fun languageFor(file: File): String = when (file.extension.lowercase()) {
-        "kt", "kts" -> "kotlin"; "java" -> "java"; "js", "jsx", "ts", "tsx", "mjs", "cjs" -> "javascript"
-        "py" -> "python"; "rs" -> "rust"; "go" -> "go"; "cs" -> "csharp"
-        "c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx" -> "cpp"; else -> "generic"
-    }
-
     private fun isIgnoredDirectory(directory: File): Boolean = directory.name in ignoredDirectoryNames
     private fun isIgnoredFile(file: File): Boolean = file.name in ignoredFileNames || file.extension.lowercase() in binaryExtensions || file.parentFile?.let(::isIgnoredDirectory) == true
     private fun isTextFile(file: File): Boolean {

@@ -195,6 +195,14 @@ Graph resolves project dependency evidence without guessing unresolved system in
 
 Impact combines definitions/references/dependencies/dependents/docs/tests.
 
+Patch 5 extracts source parsing into `RiftSourceIntelligenceV2`, which is now the single parser used by both the persistent PI-v2 index and candidate before/after semantic deltas. The candidate path is not model-scoped: `RiftWorkspaceRecords.semanticImpactSeed()` derives its changed paths from the exact Patch Manifest V1 candidate, then the sandbox derives project roots, symbols/signature deltas, dependency deltas, current dependents, one-pass changed-symbol references, test affinity, `docs/SOURCE_OWNERSHIP.md` owners, nearest READMEs and global project docs.
+
+Candidate semantic working-set bounds are 4096 changed paths, 1024 source files and 8 MiB before/after source text. Impact bounds are 32 project roots, 1000 output changed symbols, 80 reference-search symbols, 800 references, 800 dependency rows, 800 dependent rows, 300 tests, 300 documentation targets and 128 test-affinity targets. Missing text, truncated index/delta or any exceeded bound records an explicit incomplete reason.
+
+The deterministic impact payload is SHA-256 bound as `semanticImpactSha256` using Patch Manifest canonical JSON. Cache refresh diagnostics are attached after the semantic hash and do not alter evidence identity.
+
+The analyzer is lexical Project Intelligence, not a compiler AST or correctness proof. Compiler/build/test gates remain separate requirements.
+
 Validation discovers repository check/test/build guidance.
 
 These are Project Intelligence v2 behavior behind the existing tool schema, not separate MCP tools.

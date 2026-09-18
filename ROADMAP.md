@@ -80,8 +80,8 @@ Current sequence/status:
 1. **Diff Engine V2 — implemented in current source.** Workspace Records delegates text rendering to a bounded deterministic adaptive exact-LCS/patience engine with independent hunks.
 2. **File identity intelligence — implemented in current source.** Exact SHA rename/copy content identity, bounded heuristic rename/rewrite correlation and checkpoint identity summaries.
 3. **Patch sessions and provenance — implemented in current source.** Explicit writer claims are state-bound where possible, directory replacement claims are labeled lower-confidence, and unknown writers remain `unattributed-local`.
-4. Immutable patch manifest and tamper-evident evidence.
-5. Semantic diff + Project Intelligence impact mapping.
+4. **Immutable patch manifest and tamper-evident evidence — implemented in current source.** Deterministic base/result/change-set/structural hashes, internal SHA-addressed manifest freeze, forward record chain, pruning anchors, crash-safe head recovery and operational-vs-trusted checkpoint separation are present; trusted promotion remains absent.
+5. **Semantic diff + Project Intelligence impact mapping — implemented in current source.** One shared PI-v2 analyzer now drives normal indexing and candidate before/after deltas; impact scope is derived from Patch Manifest V1, bounded/incomplete explicitly, mapped through callers/dependents/tests/docs, and exposed only through an internal Local Agent seam.
 6. Local Agent validation state machine/policy core.
 7. Independent research-verification ledger.
 8. Documentation/README/roadmap/patch-note parity gate.

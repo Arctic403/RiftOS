@@ -17,6 +17,7 @@ Core composition:
 - `RiftMcpServer.kt` — in-process MCP JSON-RPC framing and relay retry dedupe.
 - `RiftToolHost.kt` — canonical tool schemas, read/write grants and tool audit.
 - `RiftToolSandbox.kt` — workspace filesystem + Project Intelligence/Code Mode.
+- `RiftSourceIntelligenceV2.kt` — shared lexical source/dependency analyzer for normal PI-v2 and candidate semantic deltas.
 - `RiftPatchSessions.kt` — local mutation-provenance claims for MCP writes; it is evidence-only and not a permission owner.
 - `RiftMcpActivity.kt` — local permission/relay/status UI.
 
@@ -82,7 +83,9 @@ Workspace tools never widen beyond the sandbox merely because the caller is Brow
 
 `rift_workspace_exec` requires write permission only when the requested batch mutates. Its optional `intent` field is bounded provenance metadata only; ToolHost permission classification is still derived from the normalized operations.
 
-`rift_workspace_diff` remains read-only and now returns bounded checkpoint-relative structural identity evidence in addition to raw file/event diffs. Exact SHA relations are labeled exact; heuristic similarity relations are labeled non-exact and expose whether the bounded comparison budget prevented exhaustive correlation.
+`rift_workspace_diff` remains read-only and returns bounded checkpoint-relative structural identity evidence in addition to raw file/event diffs. Exact SHA relations are labeled exact; heuristic similarity relations are labeled non-exact and expose whether the bounded comparison budget prevented exhaustive correlation. Patch 4 also gives the query source a deterministic candidate summary, record-chain integrity state and separate operational/trusted-checkpoint state; the full private freeze API is intentionally not mapped through MCP.
+
+Patch 5 adds a separate internal ToolHost→sandbox candidate-impact seam for the future Local Agent. It derives scope from Patch Manifest V1 and is not present in the MCP catalog or backend method map.
 
 Exact details are verified in the Tool Host/Sandbox audits.
 

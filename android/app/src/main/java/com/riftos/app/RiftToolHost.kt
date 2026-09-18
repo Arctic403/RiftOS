@@ -29,6 +29,13 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         shellExecutor = executor
     }
 
+    /**
+     * Internal Local Agent evidence path. This is deliberately absent from tools()/methodFor().
+     */
+    internal fun candidateImpactAsync(reply: (JSONObject) -> Unit) {
+        sandbox.candidateImpactAsync(reply)
+    }
+
     init {
         migrateLegacyState()
         sandbox = RiftToolSandbox(appContext)

@@ -119,8 +119,9 @@ The model-visible catalog is exactly 18 tools. Ordinary filesystem/Code Mode ope
 - workspace containment;
 - bounded read/write/list/search;
 - hashing and snapshots;
-- Project Intelligence v2 indexing;
+- Project Intelligence v2 indexing through the shared `RiftSourceIntelligenceV2` lexical analyzer;
 - symbols/references/graph views;
+- internal Patch-5 candidate semantic-impact evidence derived from Patch Manifest V1, with no added MCP tool;
 - guarded patches;
 - transactional multi-file mutations;
 - archive/extract bounds;

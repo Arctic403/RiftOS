@@ -9,6 +9,8 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-diff-engine-v2.mjs` — live Diff Engine V2 contract: bounded exact-LCS threshold, patience-style anchors, independent hunks, Android-framework independence, Workspace Records wiring, exact Gradle source declaration and documentation ownership.
 - `test-rift-file-identity-v2.mjs` — live File Identity V2 contract: exact SHA rename/copy evidence, bounded heuristic similarity, rewrite thresholds, relation-aware Workspace Records/diff wiring and documentation ownership.
 - `test-rift-patch-sessions.mjs` — live Patch Session V1 contract: state-bound provenance claims, honest unattributed fallback, writer integrations, optional MCP intent metadata, Gradle declaration and ownership coverage.
+- `test-rift-patch-manifest-v1.mjs` — deterministic candidate-manifest/hash-chain contract: canonical hashing, private immutable freeze bounds, checkpoint/pruning sequence evidence, crash-safe chain-head recovery, inert trusted-state fields and no MCP freeze mapping.
+- `test-rift-semantic-impact-v1.mjs` — Patch 5 contract: shared PI-v2 parser, exact candidate-derived semantic seed, bounded/incomplete impact semantics, ownership-ledger lookup, deterministic semantic hash and internal-only ToolHost routing.
 - `test-rift-dev-lab.mjs` — native Dev Lab staging/snapshot/guarded-publish regression contract.
 - `test-rift-ai-adapters.mjs` — AI site adapter contract.
 - `test-rift-raw-protocol.mjs` — browser raw tool-call parser/protocol.

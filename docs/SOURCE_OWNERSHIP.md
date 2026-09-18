@@ -93,11 +93,13 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/engine/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` | `docs/systems/vortex-bridge/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` | `docs/systems/vortex-agent/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftChatHandoff.kt` | `docs/systems/chat-handoff/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftDiffEngineV2.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftFileIdentityV2.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/mcp/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftPatchManifestV1.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftPatchSessions.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/shell/README.md` + `docs/systems/files-app/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/git/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` |
@@ -137,6 +139,8 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `scripts/test-rift-diff-engine-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` |
 | `scripts/test-rift-file-identity-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` |
 | `scripts/test-rift-patch-sessions.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/mcp/sandbox/README.md` |
+| `scripts/test-rift-patch-manifest-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-semantic-impact-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
 | `scripts/test-rift-path-compat.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftfs/README.md` + shell/build/repo/Git/Vault/Memory/Dev Lab/RiftLLM/Files owners |
