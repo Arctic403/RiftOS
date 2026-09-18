@@ -304,7 +304,9 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - the external Builder now preflights namespace/application ID, compile/target Android 36, minSdk 26, Java 17, release-minification-off and filename-to-DEX assumptions before source tests/Gradle, so future verifier drift fails with a direct stale-Builder error;
 - Builder now runs the two Gradle validation tasks in a dedicated pre-compilation phase/log;
 - final APK smoke now rejects duplicate/unsafe ZIP entries, source/VCS/keystore leakage and retired native DEX descriptors;
-- transport/wiring validation now proves the actual `preBuild` dependency wiring instead of matching implementation text from the WebKit regex, preventing validator self-drift when the ownership matcher changes.
+- transport/wiring validation now proves the actual `preBuild` dependency wiring instead of matching implementation text from the WebKit regex, preventing validator self-drift when the ownership matcher changes;
+- Android root Gradle pins built-in Kotlin KGP `2.4.10` so `quickjs-kt 1.0.14` (published with Kotlin 2.4 metadata) is compiled by a compatible Kotlin toolchain instead of AGP's lower default KGP;
+- Builder preflight independently requires the same KGP 2.4.10 + QuickJS 1.0.14 + coroutines 1.11.0 tuple before source tests/Gradle compilation.
 
 ## Critical invariants
 

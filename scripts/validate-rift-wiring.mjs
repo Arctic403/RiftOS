@@ -68,6 +68,7 @@ for (const [name, node] of kotlinTypes) {
   if (!reachable.has(name)) fail(`Kotlin source is unreachable from an Android manifest Activity: ${node.file}`);
 }
 
+const rootGradle = read('android/build.gradle.kts');
 const gradle = read('android/app/build.gradle.kts');
 const preBuildBlock = gradle.match(/tasks\.named\("preBuild"\)\.configure\s*\{([\s\S]*?)\n\}/)?.[1] || '';
 const gradleRequiredKotlin = [...gradle.matchAll(/"(src\/main\/java\/com\/riftos\/app\/[A-Za-z0-9_]+\.kt)"/g)].map(match => `android/app/${match[1]}`);
@@ -78,6 +79,7 @@ if (JSON.stringify(declaredKotlin) !== JSON.stringify(actualKotlin)) {
   const staleInGradle = declaredKotlin.filter(file => !actualKotlin.includes(file));
   fail(`Gradle mandatory Kotlin snapshot is not exact. Missing: ${missingFromGradle.join(', ') || 'none'}; stale: ${staleInGradle.join(', ') || 'none'}`);
 }
+if (!rootGradle.includes('org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10')) fail('Android Kotlin compiler toolchain is not pinned to 2.4.10');
 for (const required of [
   'include("src/riftpp-core.js")',
   'include("src/riftvm.js")',
@@ -91,6 +93,7 @@ for (const required of [
   'targetSdk = 36',
   'JavaVersion.VERSION_17',
   'io.github.dokar3:quickjs-kt:1.0.14',
+  'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0',
 ]) if (!gradle.includes(required)) fail(`Android native/headless Gradle contract is missing ${required}`);
 for (const retired of ['include("index.html")', 'include("styles.css")', 'include("src/**")', 'include("workspace-live/**")']) {
   if (gradle.includes(retired)) fail(`retired trusted-shell asset packaging returned: ${retired}`);
