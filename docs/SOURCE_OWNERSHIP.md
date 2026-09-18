@@ -1,6 +1,6 @@
 # RiftOS Source Documentation Ownership
 
-This ledger assigns implementation/build/test/reference source files to the README responsible for documenting them. **Ownership does not imply that a source is packaged, live, verified, trusted or device-proven.** Runtime activation must be established from current build/source wiring.
+This ledger assigns implementation/build/test/reference source files to the README responsible for documenting them. Ownership does **not** imply that a source is packaged, live, verified, trusted or device-proven. Runtime activation must be established from current build/source wiring.
 
 For the current Android engine, Gradle packages only `src/riftpp-core.js` and `src/riftvm.js` from the `src/` tree. Other `src/` entries are retained reference/test/migration sources unless a later audit proves otherwise. `scripts/validate-rift-docs.mjs` checks that every maintained source has a documentation owner.
 
