@@ -127,13 +127,13 @@ for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()
 if (/android\.webkit|WebView|ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
 
 if (!browserWindow.includes('WebChromeClient.FileChooserParams') || !browserWindow.includes('onActivityResult(')) fail('RiftBrowser does not own its file chooser lifecycle');
-if (!browserHost.includes('app.riftos.local') || !browserHost.includes('WebViewCompat.addWebMessageListener')) fail('installed RiftBrowser app host origin/capability bridge is incomplete');
+if (!browserHost.includes('appOrigin(app.id)') || !browserHost.includes('https://app-$token.riftos.local') || !browserHost.includes('WebViewCompat.addWebMessageListener')) fail('installed RiftBrowser app host origin/capability bridge is incomplete');
 if (browserBridge.includes('RiftShellBridge') || browserBridge.includes('rift_shell_result')) fail('browser compatibility bridge regained RiftShell execution authority');
 
 for (const required of ['Intent.ACTION_OPEN_DOCUMENT_TREE', 'takePersistableUriPermission', 'DocumentFile.fromTreeUri', 'ANDROID_FILES_ROOT', 'MAX_FILES_ROWS', 'writeDocumentBytes', 'Android provider write verification failed', 'Editor target is not a file']) {
   if (!workspaceApps.includes(required)) fail(`native Files external-storage contract is missing ${required}`);
 }
-if (/android\.webkit|WebView/.test(workspaceApps)) fail('native workspace apps gained a WebView dependency');
+if (/(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m.test(workspaceApps)) fail('native workspace apps gained a WebView dependency');
 
 const riftpp = read('src/riftpp-core.js');
 const vm = read('src/riftvm.js');

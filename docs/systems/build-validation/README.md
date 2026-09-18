@@ -286,6 +286,8 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - script index labels retained tests honestly;
 - external Builder APK verifier replaced obsolete full-web-shell requirements with exact Rift++ Core/RiftVM asset verification;
 - Builder README removed RiftNativeAppHost and old workspace-live packaging claims.
+- wiring validation now recognizes the installed-app host's dynamic `https://app-<token>.riftos.local` origin instead of requiring the obsolete literal `app.riftos.local` string;
+- native workspace-app WebView exclusion now checks actual WebKit imports/FQNs instead of rejecting harmless documentation/UI text containing the word `WebView`.
 
 ## Critical invariants
 
