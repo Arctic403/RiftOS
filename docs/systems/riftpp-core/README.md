@@ -144,12 +144,12 @@ Hot runtime/compiler working text:
 - StringBuilder capacity is measured in code units.
 
 Explicit boundary accounting:
-- `SourceText.utf8_byte_len()`;
+- `SourceText.utf8_byte_len()` using canonical UTF-8 replacement semantics: an unpaired UTF-16 surrogate contributes the UTF-8 encoding of U+FFFD (3 bytes), independent of host/JVM encoder behavior;
 - file/protocol/tokenizer/hash/provenance layers may continue to use UTF-8 bytes where their own contracts require them.
 
 This preserves existing `riftpp/1` JavaScript UTF-16 code-unit semantics while avoiding mandatory UTF-8 transcoding in the hot lexer/parser representation.
 
-The fixed `rift-tool text-model-benchmark` measures installed-device QuickJS UTF-16 hot scan versus UTF-8 prepared scan and UTF-8 prepare+scan. It records measurements; it does not hardcode a winner or claim universal encoding superiority.
+The fixed `rift-tool text-model-benchmark` v2 measures two separate workloads: lexer-like sequential traversal, and random UTF-16-code-unit access using either direct UTF-16 storage or UTF-8 bytes plus a code-unit index. It also records UTF-8 encode/index preparation cost and index-memory overhead. It records measurements; it does not hardcode a winner or claim universal encoding superiority.
 
 ## Gate 1A storage semantics
 
@@ -281,7 +281,7 @@ Use these signatures to route failures to the owning layer before changing valid
 - current Core lowers a Gate 1B opcode but `prepareRiftExecutable` rejects it -> compiler/VM instruction-normalization desync; update the VM allowlist and focused Core/VM tests together.
 - `rift-tool semantic-compat` fails while the archival `gate0-verify` identity remains intact -> current implementation changed frozen observable semantics; classify as an accidental regression or an explicit versioned migration.
 - Gate 1B SourceText/TextCursor/StringBuilder tests fail while compatibility string tests pass -> working-text implementation regression; do not alter frozen `string_len/find/slice/replace` behavior to compensate.
-- `rift-tool text-model-benchmark` does not return schema `riftpp-text-model-benchmark-v1` with status `MEASURED` -> fixed benchmark/tool-host wiring regression; do not replace it with arbitrary script execution.
+- `rift-tool text-model-benchmark` does not return schema `riftpp-text-model-benchmark-v2` with status `MEASURED` -> fixed benchmark/tool-host wiring regression; do not replace it with arbitrary script execution.
 - normal `riftpp run` accepts state/repair/software imports -> host-authority regression and release blocker.
 - stateful execution accepts repair/software imports -> capability-boundary regression and release blocker.
 - packaged Core/VM hashes differ from source or installed source SHA differs from the candidate commit -> provenance/package regression; do not treat runtime results as promotion evidence.

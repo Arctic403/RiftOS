@@ -499,73 +499,236 @@ class RiftHeadlessJsRuntime(context: Context) {
 
         const val TEXT_MODEL_BENCHMARK_ENTRY = """
             (function() {
-              const snippet = 'fn classify_value(input: string) { let total: u32 = 0 while total < 64 { total += 1 } return total } // Rift++ 😀 λ\n';
+              const snippet = 'fn classify_value(input: string) { let total: u32 = 0 while total < 64 { total += 1 } let label: string = "Rift++ 😀 λ" return total } // comment 😀 λ\n';
               let text = '';
-              while (text.length < 262144) text += snippet;
-              const iterations = 24;
+              while (text.length < 131072) text += snippet;
+              const lexIterations = 16;
+              const randomIterations = 8;
+              const indexBuildIterations = 4;
 
-              const scanUtf16 = value => {
-                let checksum = 0;
-                for (let i = 0; i < value.length; i++) checksum = (checksum + value.charCodeAt(i)) >>> 0;
-                return checksum >>> 0;
+              const isAlpha = c => (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95;
+              const isDigit = c => c >= 48 && c <= 57;
+              const isAlphaNum = c => isAlpha(c) || isDigit(c);
+
+              const lexUtf16 = value => {
+                let tokens = 0, lines = 1, i = 0;
+                while (i < value.length) {
+                  const c = value.charCodeAt(i);
+                  if (c === 10) { lines++; i++; continue; }
+                  if (c === 32 || c === 9 || c === 13) { i++; continue; }
+                  if (isAlpha(c)) {
+                    i++;
+                    while (i < value.length && isAlphaNum(value.charCodeAt(i))) i++;
+                    tokens++;
+                    continue;
+                  }
+                  if (isDigit(c)) {
+                    i++;
+                    while (i < value.length && isDigit(value.charCodeAt(i))) i++;
+                    tokens++;
+                    continue;
+                  }
+                  if (c === 47 && i + 1 < value.length && value.charCodeAt(i + 1) === 47) {
+                    i += 2;
+                    while (i < value.length && value.charCodeAt(i) !== 10) i++;
+                    continue;
+                  }
+                  if (c === 34) {
+                    i++;
+                    while (i < value.length) {
+                      const q = value.charCodeAt(i);
+                      if (q === 92 && i + 1 < value.length) { i += 2; continue; }
+                      i++;
+                      if (q === 34) break;
+                    }
+                    tokens++;
+                    continue;
+                  }
+                  i++;
+                  tokens++;
+                }
+                return ((tokens * 2654435761) ^ lines) >>> 0;
               };
-              const scanUtf8 = bytes => {
-                let checksum = 0;
-                for (let i = 0; i < bytes.length; i++) checksum = (checksum + bytes[i]) >>> 0;
-                return checksum >>> 0;
+
+              const lexUtf8 = bytes => {
+                let tokens = 0, lines = 1, i = 0;
+                while (i < bytes.length) {
+                  const c = bytes[i];
+                  if (c === 10) { lines++; i++; continue; }
+                  if (c === 32 || c === 9 || c === 13) { i++; continue; }
+                  if (isAlpha(c)) {
+                    i++;
+                    while (i < bytes.length && isAlphaNum(bytes[i])) i++;
+                    tokens++;
+                    continue;
+                  }
+                  if (isDigit(c)) {
+                    i++;
+                    while (i < bytes.length && isDigit(bytes[i])) i++;
+                    tokens++;
+                    continue;
+                  }
+                  if (c === 47 && i + 1 < bytes.length && bytes[i + 1] === 47) {
+                    i += 2;
+                    while (i < bytes.length && bytes[i] !== 10) i++;
+                    continue;
+                  }
+                  if (c === 34) {
+                    i++;
+                    while (i < bytes.length) {
+                      const q = bytes[i];
+                      if (q === 92 && i + 1 < bytes.length) { i += 2; continue; }
+                      i++;
+                      if (q === 34) break;
+                    }
+                    tokens++;
+                    continue;
+                  }
+                  i++;
+                  tokens++;
+                }
+                return ((tokens * 2654435761) ^ lines) >>> 0;
               };
+
+              const decodeCodePoint = (bytes, offset) => {
+                const b0 = bytes[offset];
+                if (b0 < 128) return b0;
+                if (b0 < 224) return ((b0 & 31) << 6) | (bytes[offset + 1] & 63);
+                if (b0 < 240) return ((b0 & 15) << 12) | ((bytes[offset + 1] & 63) << 6) | (bytes[offset + 2] & 63);
+                return ((b0 & 7) << 18) | ((bytes[offset + 1] & 63) << 12) | ((bytes[offset + 2] & 63) << 6) | (bytes[offset + 3] & 63);
+              };
+              const codePointWidth = b0 => b0 < 128 ? 1 : b0 < 224 ? 2 : b0 < 240 ? 3 : 4;
+
+              const buildUtf8CodeUnitIndex = bytes => {
+                const offsets = new Uint32Array(text.length);
+                const kinds = new Uint8Array(text.length);
+                let byteOffset = 0, unitOffset = 0;
+                while (byteOffset < bytes.length) {
+                  const cp = decodeCodePoint(bytes, byteOffset);
+                  offsets[unitOffset] = byteOffset;
+                  kinds[unitOffset] = 0;
+                  unitOffset++;
+                  if (cp > 65535) {
+                    offsets[unitOffset] = byteOffset;
+                    kinds[unitOffset] = 1;
+                    unitOffset++;
+                  }
+                  byteOffset += codePointWidth(bytes[byteOffset]);
+                }
+                if (unitOffset !== text.length) throw new Error('UTF-8 code-unit index length mismatch');
+                return { offsets: offsets, kinds: kinds };
+              };
+
+              const utf8CodeUnitAt = (bytes, index, unitOffset) => {
+                const byteOffset = index.offsets[unitOffset];
+                const cp = decodeCodePoint(bytes, byteOffset);
+                if (cp <= 65535) return cp;
+                const value = cp - 65536;
+                return index.kinds[unitOffset] === 0 ? 55296 + (value >>> 10) : 56320 + (value & 1023);
+              };
+
               const timed = fn => {
                 const start = Date.now();
                 const value = fn();
                 return { ms: Math.max(0, Date.now() - start), value: value };
               };
+              const ratio = (numerator, denominator) => denominator > 0 ? numerator / denominator : null;
 
               const bytes = new TextEncoder().encode(text);
-              for (let i = 0; i < 3; i++) { scanUtf16(text); scanUtf8(bytes); }
+              const utf8Index = buildUtf8CodeUnitIndex(bytes);
+              const signature16 = lexUtf16(text);
+              const signature8 = lexUtf8(bytes);
+              if (signature16 !== signature8) throw new Error('UTF-16/UTF-8 lexer benchmark signatures diverged');
 
-              const utf16 = timed(() => {
-                let checksum = 0;
-                for (let n = 0; n < iterations; n++) checksum = (checksum ^ scanUtf16(text)) >>> 0;
-                return checksum;
+              const probes = new Uint32Array(16384);
+              let state = 305419896;
+              for (let i = 0; i < probes.length; i++) {
+                state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+                probes[i] = state % text.length;
+              }
+
+              for (let i = 0; i < 2; i++) { lexUtf16(text); lexUtf8(bytes); }
+
+              const utf16Lex = timed(() => {
+                let acc = 0;
+                for (let n = 0; n < lexIterations; n++) acc = (acc + lexUtf16(text) + n) >>> 0;
+                return acc;
               });
-              const utf8Scan = timed(() => {
-                let checksum = 0;
-                for (let n = 0; n < iterations; n++) checksum = (checksum ^ scanUtf8(bytes)) >>> 0;
-                return checksum;
+              const utf8Lex = timed(() => {
+                let acc = 0;
+                for (let n = 0; n < lexIterations; n++) acc = (acc + lexUtf8(bytes) + n) >>> 0;
+                return acc;
               });
-              const utf8EndToEnd = timed(() => {
-                let checksum = 0;
-                for (let n = 0; n < iterations; n++) {
+              const utf8LexEndToEnd = timed(() => {
+                let acc = 0;
+                for (let n = 0; n < lexIterations; n++) {
                   const prepared = new TextEncoder().encode(text);
-                  checksum = (checksum ^ scanUtf8(prepared)) >>> 0;
+                  acc = (acc + lexUtf8(prepared) + n) >>> 0;
                 }
-                return checksum;
+                return acc;
               });
 
-              const ratio = (numerator, denominator) => denominator > 0 ? numerator / denominator : null;
+              const utf16Random = timed(() => {
+                let acc = 0;
+                for (let n = 0; n < randomIterations; n++) {
+                  for (let i = 0; i < probes.length; i++) acc = (acc + text.charCodeAt(probes[i])) >>> 0;
+                }
+                return acc;
+              });
+              const utf8IndexedRandom = timed(() => {
+                let acc = 0;
+                for (let n = 0; n < randomIterations; n++) {
+                  for (let i = 0; i < probes.length; i++) acc = (acc + utf8CodeUnitAt(bytes, utf8Index, probes[i])) >>> 0;
+                }
+                return acc;
+              });
+              const utf8IndexBuild = timed(() => {
+                let length = 0;
+                for (let n = 0; n < indexBuildIterations; n++) length += buildUtf8CodeUnitIndex(bytes).offsets.length;
+                return length;
+              });
+
               __rift_text_benchmark_result(JSON.stringify({
-                schema: 'riftpp-text-model-benchmark-v1',
+                schema: 'riftpp-text-model-benchmark-v2',
                 status: 'MEASURED',
                 representationUnderTest: {
-                  hotInternal: 'utf16-code-units',
+                  semanticUnit: 'utf16-code-unit',
+                  hotCandidate: 'utf16-string',
+                  alternateCandidate: 'utf8-bytes-plus-code-unit-index',
                   interchangeBoundary: 'utf8'
                 },
                 corpus: {
                   codeUnits: text.length,
                   utf8Bytes: bytes.length,
-                  iterations: iterations
+                  lexIterations: lexIterations,
+                  randomAccessProbes: probes.length,
+                  randomIterations: randomIterations,
+                  indexBuildIterations: indexBuildIterations
                 },
-                utf16HotScanMs: utf16.ms,
-                utf8PreparedScanMs: utf8Scan.ms,
-                utf8PrepareAndScanMs: utf8EndToEnd.ms,
-                preparedScanRatioUtf8OverUtf16: ratio(utf8Scan.ms, utf16.ms),
-                endToEndRatioUtf8OverUtf16: ratio(utf8EndToEnd.ms, utf16.ms),
+                lexerLike: {
+                  utf16Ms: utf16Lex.ms,
+                  utf8PreparedMs: utf8Lex.ms,
+                  utf8PrepareAndScanMs: utf8LexEndToEnd.ms,
+                  preparedUtf8OverUtf16: ratio(utf8Lex.ms, utf16Lex.ms),
+                  endToEndUtf8OverUtf16: ratio(utf8LexEndToEnd.ms, utf16Lex.ms),
+                  signature: signature16
+                },
+                codeUnitRandomAccess: {
+                  utf16DirectMs: utf16Random.ms,
+                  utf8IndexedMs: utf8IndexedRandom.ms,
+                  utf8IndexedOverUtf16: ratio(utf8IndexedRandom.ms, utf16Random.ms),
+                  utf8IndexBuildMs: utf8IndexBuild.ms,
+                  utf8IndexBytes: utf8Index.offsets.byteLength + utf8Index.kinds.byteLength
+                },
                 checksums: {
-                  utf16: utf16.value,
-                  utf8Prepared: utf8Scan.value,
-                  utf8EndToEnd: utf8EndToEnd.value
+                  utf16Lex: utf16Lex.value,
+                  utf8Lex: utf8Lex.value,
+                  utf8LexEndToEnd: utf8LexEndToEnd.value,
+                  utf16Random: utf16Random.value,
+                  utf8IndexedRandom: utf8IndexedRandom.value,
+                  utf8IndexBuild: utf8IndexBuild.value
                 },
-                note: 'Ratios above 1 mean the UTF-16 path completed faster. This benchmark measures installed QuickJS/device representation costs; it is not a universal encoding claim.'
+                interpretation: 'Ratios above 1 mean the UTF-16 representation completed that comparable operation faster. Treat sequential traversal, indexed code-unit access, preparation cost, and memory overhead as separate measurements.'
               }));
             })();
         """

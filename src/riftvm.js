@@ -28,7 +28,21 @@ function makeSourceTextValue(text,start=0,length=String(text).length,label='Sour
 }
 function sourceString(value){if(value.type!=='source_text')fail('source string access expected SourceText');return value.text.slice(value.start,value.start+value.length);}
 function sourceCodeUnit(value,index){if(value.type!=='source_text')fail('source code-unit access expected SourceText');if(index<0||index>=value.length)return null;return value.text.charCodeAt(value.start+index);}
-function sourceUtf8ByteLength(value){return encoder.encode(sourceString(value)).byteLength;}
+function canonicalUtf8ByteLength(text){
+  const value=String(text);let bytes=0;
+  for(let i=0;i<value.length;i++){
+    const unit=value.charCodeAt(i);
+    if(unit>=0xd800&&unit<=0xdbff){
+      const next=i+1<value.length?value.charCodeAt(i+1):-1;
+      if(next>=0xdc00&&next<=0xdfff){bytes+=4;i++;}else bytes+=3;
+    }else if(unit>=0xdc00&&unit<=0xdfff)bytes+=3;
+    else if(unit<=0x7f)bytes+=1;
+    else if(unit<=0x7ff)bytes+=2;
+    else bytes+=3;
+  }
+  return bytes;
+}
+function sourceUtf8ByteLength(value){return canonicalUtf8ByteLength(sourceString(value));}
 function makeTextCursorValue(source,codeUnitOffset=0,line=1,column=1){
   if(source.type!=='source_text')fail('TextCursor source must be SourceText');if(!Number.isInteger(codeUnitOffset)||codeUnitOffset<0||codeUnitOffset>source.length)fail('TextCursor code-unit offset is invalid');
   return Object.freeze({type:'text_cursor',source,codeUnitOffset,line,column,depth:2});

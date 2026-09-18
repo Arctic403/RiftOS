@@ -57,7 +57,7 @@ assert(headless.includes('fun executeDeveloperTool(args: List<String>): CommandR
 assert(headless.includes('"gate0-verify" -> executeGate0Verifier()'));
 assert(headless.includes('"semantic-compat" -> executeSemanticCompatibilityVerifier()'));
 assert(headless.includes('"text-model-benchmark" -> executeTextModelBenchmark()'));
-assert(headless.includes("schema: \'riftpp-text-model-benchmark-v1\'"));
+assert(headless.includes("schema: \'riftpp-text-model-benchmark-v2\'"));
 assert(headless.includes('const val SEMANTIC_COMPAT_ENTRY = """'));
 assert(headless.includes("schema: 'riftpp-semantic-compat-device-suite/1'"));
 assert(headless.includes('const val GATE0_VERIFY_ENTRY = """'));
