@@ -35,6 +35,7 @@ internal object RiftCliPatchLifecycleV1 {
     private const val MAX_INVENTORY_BYTES = 512L * 1024L * 1024L
     private const val MAX_GOVERNANCE_DOCS = 400
     private const val CANDIDATE_TIMEOUT_MS = 30_000L
+    private val PROCESS_EPOCH = "process-" + UUID.randomUUID().toString()
 
     private val POST_PATCH_EVIDENCE = setOf(
         "documentation",
@@ -276,6 +277,10 @@ internal object RiftCliPatchLifecycleV1 {
             .put("goal", goal)
             .put("base", base)
             .put("evidence", JSONArray())
+            .put("processEpoch", PROCESS_EPOCH)
+            .put("lastObservedSourceSnapshotId", sourceSnapshot)
+            .put("lastObservedCandidateManifestSha256", preCandidate.optString("manifestSha256"))
+            .put("restartDriftDetected", false)
             .put("trustedPromotionAllowed", false)
             .put("publishAllowed", false)
         writeJsonAtomic(File(sessionDir, "session.json"), session)
@@ -326,6 +331,9 @@ internal object RiftCliPatchLifecycleV1 {
             .put("current", current)
             .put("gitHeadChanged", current.optString("gitHead") != base.optString("gitHead"))
             .put("sourceChanged", current.optString("sourceSnapshotId") != base.optString("sourceSnapshotId"))
+            .put("restartDriftDetected", session.optBoolean("restartDriftDetected", false))
+            .put("restartDrift", session.optJSONObject("restartDrift") ?: JSONObject.NULL)
+            .put("sessionStorage", "riftfs/system/rift-cli-patch-lifecycle-v1")
             .put("evidence", evidenceSummary(evidence))
             .put("trustedPromotionAllowed", false)
     }
@@ -334,6 +342,9 @@ internal object RiftCliPatchLifecycleV1 {
         val kind = rawKind.trim().lowercase()
         require(kind in ALL_EVIDENCE) { "Unsupported lifecycle evidence kind: " + kind }
         val session = loadSession(context, sessionId)
+        require(!session.optBoolean("restartDriftDetected", false)) {
+            "Lifecycle session detected workspace drift across process restart; start a fresh lifecycle from a clean base"
+        }
         val external = evidenceInputFile(context, rawPath)
         require(external.length() <= MAX_EVIDENCE_BYTES) { "Evidence file exceeds " + MAX_EVIDENCE_BYTES + " bytes" }
         val payload = JSONObject(external.readText(Charsets.UTF_8))
@@ -384,7 +395,7 @@ internal object RiftCliPatchLifecycleV1 {
         val projectState = currentProjectState(context, session)
         val impactAtImport = candidateImpact(context)
         val candidate = impactAtImport.optJSONObject("candidate") ?: currentCandidate(context)
-        val requiredTargets = expectedTargetsForEvidence(kind, session, impactAtImport)
+        val requiredTargets = expectedTargetsForEvidence(context, kind, session, impactAtImport)
         val missingTargets = requiredTargets.filter { it !in targets }
         if (missingTargets.isNotEmpty()) complete = false
         val existingEvidence = latestEvidenceByKind(loadEvidence(context, session))
@@ -471,6 +482,9 @@ internal object RiftCliPatchLifecycleV1 {
         val session = loadSession(context, sessionId)
         val current = currentProjectState(context, session)
         val base = session.getJSONObject("base")
+        require(!session.optBoolean("restartDriftDetected", false)) {
+            "Lifecycle session detected workspace drift across process restart; start a fresh lifecycle from a clean base"
+        }
         val impact = candidateImpact(context)
         val candidate = impact.optJSONObject("candidate")
             ?: throw IllegalStateException("Semantic impact did not return candidate identity")
@@ -781,15 +795,24 @@ internal object RiftCliPatchLifecycleV1 {
     }
 
     private fun expectedTargetsForEvidence(
+        context: Context,
         kind: String,
         session: JSONObject,
         impact: JSONObject
     ): Set<String> {
         val base = session.getJSONObject("base")
         val projectRoot = base.getString("projectWorkspacePath").trim('/')
-        val inventory = base.getJSONObject("inventory")
-        val governance = jsonStringSet(inventory.optJSONArray("governanceDocuments"))
-        val buildManifests = jsonStringSet(inventory.optJSONArray("dependencyAndBuildManifests"))
+        val baseInventory = base.getJSONObject("inventory")
+        val baseGovernance = jsonStringSet(baseInventory.optJSONArray("governanceDocuments"))
+        val baseBuildManifests = jsonStringSet(baseInventory.optJSONArray("dependencyAndBuildManifests"))
+        val currentInventory = inventory(projectTarget(context, base.getString("projectDisplay")).file)
+        require(!currentInventory.optBoolean("truncated", true)) {
+            "Current repository inventory exceeded the bounded scan; evidence scope is incomplete"
+        }
+        val currentGovernance = jsonStringSet(currentInventory.optJSONArray("governanceDocuments"))
+        val currentBuildManifests = jsonStringSet(currentInventory.optJSONArray("dependencyAndBuildManifests"))
+        val governance = baseGovernance + currentGovernance
+        val buildManifests = baseBuildManifests + currentBuildManifests
         val changed = LinkedHashSet<String>()
         val sourceChanged = LinkedHashSet<String>()
         val impactChanges = impact.optJSONArray("changes") ?: JSONArray()
@@ -800,6 +823,12 @@ internal object RiftCliPatchLifecycleV1 {
             if (row.optString("category") == "source") sourceChanged += path
         }
         val affectedDocs = jsonStringSet(impact.optJSONArray("documentation"))
+            .mapNotNull { toProjectRelative(it, projectRoot) }
+            .toSet()
+        val changedDocs = jsonStringSet(impact.optJSONArray("changedDocumentation"))
+            .mapNotNull { toProjectRelative(it, projectRoot) }
+            .toSet()
+        val changedBuildConfig = jsonStringSet(impact.optJSONArray("changedBuildConfig"))
             .mapNotNull { toProjectRelative(it, projectRoot) }
             .toSet()
         val tests = jsonStringSet(impact.optJSONArray("tests"))
@@ -813,15 +842,15 @@ internal object RiftCliPatchLifecycleV1 {
         }
 
         val expected = when (kind) {
-            "understanding" -> governance + buildManifests
+            "understanding" -> baseGovernance + baseBuildManifests
             "research" -> emptySet()
-            "design" -> governance + buildManifests
-            "documentation" -> governance + affectedDocs
+            "design" -> baseGovernance + baseBuildManifests
+            "documentation" -> governance + affectedDocs + changedDocs
             "code-audit" -> changed + sourceChanged + dependentSources
-            "security" -> sourceChanged + buildManifests
-            "dependencies" -> buildManifests
+            "security" -> sourceChanged + buildManifests + changedBuildConfig
+            "dependencies" -> buildManifests + changedBuildConfig
             "tests" -> tests
-            "build" -> buildManifests
+            "build" -> buildManifests + changedBuildConfig
             "e2e", "rollback" -> changed
             else -> emptySet()
         }
@@ -1043,13 +1072,35 @@ internal object RiftCliPatchLifecycleV1 {
     }
 
     private fun sessionRoot(context: Context): File =
-        File(context.applicationContext.filesDir, "rift-cli-patch-lifecycle-v1").apply { mkdirs() }.canonicalFile
+        File(context.applicationContext.filesDir, "riftfs/system/rift-cli-patch-lifecycle-v1")
+            .apply { mkdirs() }
+            .canonicalFile
+
+    private fun legacySessionRoot(context: Context): File =
+        File(context.applicationContext.filesDir, "rift-cli-patch-lifecycle-v1").canonicalFile
 
     private fun sessionDirectory(context: Context, sessionId: String): File {
         require(sessionId.matches(Regex("^lifecycle-[0-9]+-[A-Za-z0-9-]{6,20}$"))) { "Invalid lifecycle session id" }
         val root = sessionRoot(context)
-        val dir = File(root, sessionId).canonicalFile
+        var dir = File(root, sessionId).canonicalFile
         require(dir.path.startsWith(root.path + File.separator)) { "Lifecycle session escaped private root" }
+        if (!dir.isDirectory) {
+            val legacyRoot = legacySessionRoot(context)
+            val legacy = File(legacyRoot, sessionId).canonicalFile
+            if (
+                legacyRoot.exists() &&
+                legacy.path.startsWith(legacyRoot.path + File.separator) &&
+                legacy.isDirectory
+            ) {
+                val migrated = runCatching {
+                    legacy.copyRecursively(dir, overwrite = false)
+                    true
+                }.getOrDefault(false)
+                require(migrated && dir.isDirectory) {
+                    "Lifecycle session migration from legacy storage failed: " + sessionId
+                }
+            }
+        }
         require(dir.isDirectory) { "Lifecycle session not found: " + sessionId }
         return dir
     }
@@ -1062,7 +1113,45 @@ internal object RiftCliPatchLifecycleV1 {
         val session = JSONObject(file.readText(Charsets.UTF_8))
         require(session.optString("schema") == SESSION_SCHEMA) { "Lifecycle session schema mismatch" }
         require(session.optString("sessionId") == sessionId) { "Lifecycle session id mismatch" }
+        observeSessionContinuity(context, file, session)
         return session
+    }
+
+    private fun observeSessionContinuity(context: Context, file: File, session: JSONObject) {
+        val previousEpoch = session.optString("processEpoch")
+        val current = currentProjectState(context, session)
+        val candidate = currentCandidate(context)
+        val currentSnapshot = current.optString("sourceSnapshotId")
+        val currentManifest = candidate.optString("manifestSha256")
+        val previousSnapshot = session.optString("lastObservedSourceSnapshotId")
+        val previousManifest = session.optString("lastObservedCandidateManifestSha256")
+        val processChanged = previousEpoch.isNotBlank() && previousEpoch != PROCESS_EPOCH
+
+        if (
+            processChanged &&
+            (
+                (previousSnapshot.isNotBlank() && previousSnapshot != currentSnapshot) ||
+                (previousManifest.isNotBlank() && previousManifest != currentManifest)
+            )
+        ) {
+            session.put("restartDriftDetected", true)
+                .put("restartDrift", JSONObject()
+                    .put("previousProcessEpoch", previousEpoch)
+                    .put("currentProcessEpoch", PROCESS_EPOCH)
+                    .put("previousSourceSnapshotId", previousSnapshot)
+                    .put("currentSourceSnapshotId", currentSnapshot)
+                    .put("previousManifestSha256", previousManifest)
+                    .put("currentManifestSha256", currentManifest)
+                    .put("detectedAt", System.currentTimeMillis())
+                    .put("modified", current.optJSONArray("modified") ?: JSONArray())
+                    .put("deleted", current.optJSONArray("deleted") ?: JSONArray())
+                    .put("untracked", current.optJSONArray("untracked") ?: JSONArray()))
+        }
+
+        session.put("processEpoch", PROCESS_EPOCH)
+            .put("lastObservedSourceSnapshotId", currentSnapshot)
+            .put("lastObservedCandidateManifestSha256", currentManifest)
+        writeJsonAtomic(file, session)
     }
 
     private fun standardsAlignment(): JSONArray = JSONArray(listOf(

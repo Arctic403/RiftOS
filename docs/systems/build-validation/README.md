@@ -303,6 +303,7 @@ Stale-document detection belongs to source ownership, changed-source impact, roa
 - Patch 4 added `test-rift-patch-manifest-v1.mjs`, which locks deterministic canonical/tree/change-set hashing, immutable private freeze bounds, record-chain/pruning/recovery semantics, checkpoint-sequence evidence, inert trusted state and absence of MCP freeze authority;
 - Patch 5 added `test-rift-semantic-impact-v1.mjs`, which locks one shared PI-v2 parser, candidate-derived semantic scope, bounded incomplete-evidence behavior, ownership lookup, deterministic semantic hashing and absence of an MCP impact tool;
 - CLI Patch Lifecycle V1 added `test-rift-cli-patch-lifecycle-v1.mjs`, which locks manual OBSERVE enablement, clean revision-bound acquisition, research/design ordering, governance/semantic target coverage, supply-chain/build evidence, stale-result binding, evaluator independence and zero trust/MCP expansion;
+- pre-Patch-8 live stress hardening added `test-rift-cli-stress-foundation.mjs`, which locks candidate-created governance/build-manifest discovery, RiftFS-system session storage/legacy migration and process-restart drift fail-closed behavior;
 - retained-reference tests now assert their JS implementations remain un-packaged/unwired;
 - script index labels retained tests honestly;
 - external Builder APK verifier replaced obsolete full-web-shell requirements with exact Rift++ Core/RiftVM asset verification;

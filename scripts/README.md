@@ -12,6 +12,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-patch-manifest-v1.mjs` — deterministic candidate-manifest/hash-chain contract: canonical hashing, private immutable freeze bounds, checkpoint/pruning sequence evidence, crash-safe chain-head recovery, inert trusted-state fields and no MCP freeze mapping.
 - `test-rift-semantic-impact-v1.mjs` — Patch 5 contract: shared PI-v2 parser, exact candidate-derived semantic seed, bounded/incomplete impact semantics, ownership-ledger lookup, deterministic semantic hash and internal-only ToolHost routing.
 - `test-rift-cli-patch-lifecycle-v1.mjs` — manual OBSERVE-only CLI patch lifecycle contract: clean/synchronized acquisition, research/design order, governance/impact-derived coverage, supply-chain/build evidence, stale-result invalidation, bounded independent evaluation and zero trust/MCP expansion.
+- `test-rift-cli-stress-foundation.mjs` — regressions from live torture testing: current candidate-created governance/build-manifest scope, RiftFS-system session durability, legacy migration and fail-closed process-restart drift detection.
 - `test-rift-dev-lab.mjs` — native Dev Lab staging/snapshot/guarded-publish regression contract.
 - `test-rift-ai-adapters.mjs` — AI site adapter contract.
 - `test-rift-raw-protocol.mjs` — browser raw tool-call parser/protocol.

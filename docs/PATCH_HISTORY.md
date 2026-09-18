@@ -6,6 +6,46 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Pre-Patch-8 Stress-foundation repair
+
+### Why
+
+Live abuse of RiftCLI Patch Lifecycle V1 exposed two real blockers before the documentation parity gate could be trusted:
+
+1. a candidate that added new governance files could mark DOCUMENT_AUDIT complete while omitting newly introduced `TODO.md`, `docs/PATCH_HISTORY.md` and `docs/SOURCE_OWNERSHIP.md`;
+2. process recreation could reset Experimental authority correctly but lifecycle-session durability was inconsistent, and an unexplained external workspace change/delete across restart could invalidate the candidate underneath evaluation.
+
+### Repair
+
+`RiftCliPatchLifecycleV1` now:
+
+- derives post-patch governance scope from **base inventory + current inventory + Project Intelligence changed-documentation evidence**;
+- derives dependency/security/build scope from **base build manifests + current build manifests + changed-build-config evidence**;
+- keeps UNDERSTAND/DESIGN bound to the original base inventory;
+- stores lifecycle sessions under `<filesDir>/riftfs/system/rift-cli-patch-lifecycle-v1`;
+- migrates legacy sessions from the previous app-private root on access;
+- records a process epoch plus last observed source snapshot/candidate manifest;
+- if process epoch changes and source/candidate identity drifted, permanently records `restartDriftDetected`;
+- blocks new evidence imports and evaluation for a restart-drifted session;
+- surfaces the drift receipt in lifecycle status.
+
+This does **not** claim the external deleter/root cause was identified. Source audit found no normal MainActivity/MCP-runtime/RiftGit-constructor path that intentionally deletes arbitrary untracked repository files on startup. The lifecycle therefore treats unexplained restart drift as unsafe instead of guessing intent.
+
+### Regression
+
+Added `scripts/test-rift-cli-stress-foundation.mjs` to the root check chain. It locks:
+
+- current governance/build-manifest discovery;
+- changed-documentation/build-config inclusion;
+- base-only pre-patch scope;
+- RiftFS system session storage + legacy migration;
+- process-epoch/restart-drift detection;
+- zero MCP/trust expansion.
+
+### Authority
+
+Still OBSERVE-only. No new MCP tool, trust promotion or publication authority.
+
 ## CLI Patch Lifecycle V1 — Patches 6/7 core + 8–10/12 foundation
 
 ### What changed

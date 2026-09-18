@@ -213,8 +213,9 @@ Expected patch behavior:
 Post-patch documentation evidence is derived from repository truth.
 
 Expected targets include:
-- discovered governance docs;
-- Project Intelligence owning docs;
+- governance docs from both the acquired base **and the current post-patch repository inventory**;
+- newly added README/ROADMAP/TODO/TASK/PATCH_HISTORY/PROJECT_STATUS/SOURCE_OWNERSHIP surfaces;
+- Project Intelligence owning/changed-documentation docs;
 - relevant READMEs;
 - ROADMAP;
 - TODO/TASK surfaces if present;
@@ -244,6 +245,8 @@ Code-audit evidence imported before required documentation evidence is flagged b
 ### 8. SUPPLY_CHAIN_SECURITY
 
 Security/dependency evidence covers changed source plus discovered build/dependency manifests.
+
+Dependency/security/build target discovery unions acquired and current dependency/build manifests plus Project Intelligence `changedBuildConfig`, so a patch cannot add a new package/lock/build manifest and omit it from post-patch evidence.
 
 Complete dependency evidence requires a `supplyChain` object with each field explicitly `PASS` or `NOT_APPLICABLE`:
 - `lockfileStatus`;
@@ -443,13 +446,19 @@ Only evidence kinds required for the current candidate participate in order vali
 
 ## Session storage
 
-Lifecycle session/evidence state is app-private:
+Lifecycle session/evidence state is app-private inside RiftFS system storage:
 
 ```text
-<filesDir>/rift-cli-patch-lifecycle-v1/
+<filesDir>/riftfs/system/rift-cli-patch-lifecycle-v1/
 ```
 
+Legacy sessions from `<filesDir>/rift-cli-patch-lifecycle-v1/` are copied into the canonical system root on access.
+
 It is outside Workspace and cannot be rewritten through normal workspace MCP tools.
+
+Each session records a process epoch plus the last observed project snapshot and candidate manifest. If a later process epoch observes different source/candidate identity, `restartDriftDetected` is permanently recorded; new evidence import and evaluation fail closed and lifecycle status returns the drift receipt. This contains interrupted/external workspace mutation without guessing whether it was intended.
+
+Live stress testing observed untracked fixture deletion across process recreation, but source audit did not prove the deletion owner. The restart-drift guard is therefore a containment/detection control, not a claim that the external deleter was fixed.
 
 This V1 store is bounded evidence state but is not yet the Patch-12 immutable decision trail. Final subject hashes make tampering detectable at evaluation time; later validation patches may add an append-only/hash-chained decision history.
 

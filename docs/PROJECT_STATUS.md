@@ -36,6 +36,7 @@ From `android/app/build.gradle.kts`:
 - `RiftSourceIntelligenceV2` is the shared lexical analyzer for normal Project Intelligence v2 indexing and candidate before/after semantic deltas. The internal candidate-impact path derives affected symbols/dependencies/dependents/references/tests/docs from Patch Manifest V1 and remains OBSERVE evidence only.
 - `RiftCliPatchLifecycleV1` is the manually enabled OBSERVE-only CLI→AI patch state machine. It binds clean Git/source acquisition, governance inventory, research/design ordering, actual candidate impact, docs/code/security/dependency/test/build/E2E/rollback evidence, final manifest freeze and independent AI evaluation hashes; it cannot publish or promote trust.
 - `RiftResearchLedgerV1` normalizes bounded external research claims/sources and requires authoritative support for critical claims; collection is explicitly not independent verification by itself.
+- Pre-Patch-8 stress hardening now unions base/current governance and build-manifest inventories for post-patch evidence, persists lifecycle sessions under RiftFS `system/`, and fail-closes any source/candidate drift detected across a process epoch change. The observed external untracked-file deletion remains root-cause-unproven; it can no longer be silently evaluated as safe.
 - `RiftSecretStore` is the Android Keystore-backed secret owner.
 - Native Files owns persisted Android SAF document-tree mounts.
 - `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.

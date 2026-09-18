@@ -144,6 +144,7 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `scripts/test-rift-patch-manifest-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-semantic-impact-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-patch-lifecycle-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-cli-stress-foundation.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
 | `scripts/test-rift-path-compat.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftfs/README.md` + shell/build/repo/Git/Vault/Memory/Dev Lab/RiftLLM/Files owners |
