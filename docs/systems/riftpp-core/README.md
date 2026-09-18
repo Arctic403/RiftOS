@@ -145,6 +145,7 @@ Hot runtime/compiler working text:
 
 Explicit boundary accounting:
 - `SourceText.utf8_byte_len()` using canonical UTF-8 replacement semantics: an unpaired UTF-16 surrogate contributes the UTF-8 encoding of U+FFFD (3 bytes), independent of host/JVM encoder behavior;
+- the headless `TextEncoder` bridge uses the same canonical encoder and normalizes bridged signed bytes into an unsigned `Uint8Array`, so hashing, byte limits, fixture hashes and benchmark decoding share one deterministic boundary.
 - file/protocol/tokenizer/hash/provenance layers may continue to use UTF-8 bytes where their own contracts require them.
 
 This preserves existing `riftpp/1` JavaScript UTF-16 code-unit semantics while avoiding mandatory UTF-8 transcoding in the hot lexer/parser representation.

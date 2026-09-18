@@ -6,6 +6,7 @@ import com.dokar.quickjs.evaluate
 import com.dokar.quickjs.quickJs
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 
@@ -34,6 +35,48 @@ class RiftHeadlessJsRuntime(context: Context) {
     @Volatile private var vmSourceCache: String? = null
     @Volatile private var coreSourceCache: String? = null
 
+
+    private fun canonicalUtf8Bytes(value: String): ByteArray {
+        val out = ByteArrayOutputStream(value.length.coerceAtLeast(16))
+        var index = 0
+        while (index < value.length) {
+            val first = value[index].code
+            val codePoint = when {
+                first in 0xD800..0xDBFF -> {
+                    val second = value.getOrNull(index + 1)?.code
+                    if (second != null && second in 0xDC00..0xDFFF) {
+                        index += 1
+                        0x10000 + ((first - 0xD800) shl 10) + (second - 0xDC00)
+                    } else {
+                        0xFFFD
+                    }
+                }
+                first in 0xDC00..0xDFFF -> 0xFFFD
+                else -> first
+            }
+            when {
+                codePoint <= 0x7F -> out.write(codePoint)
+                codePoint <= 0x7FF -> {
+                    out.write(0xC0 or (codePoint shr 6))
+                    out.write(0x80 or (codePoint and 0x3F))
+                }
+                codePoint <= 0xFFFF -> {
+                    out.write(0xE0 or (codePoint shr 12))
+                    out.write(0x80 or ((codePoint shr 6) and 0x3F))
+                    out.write(0x80 or (codePoint and 0x3F))
+                }
+                else -> {
+                    out.write(0xF0 or (codePoint shr 18))
+                    out.write(0x80 or ((codePoint shr 12) and 0x3F))
+                    out.write(0x80 or ((codePoint shr 6) and 0x3F))
+                    out.write(0x80 or (codePoint and 0x3F))
+                }
+            }
+            index += 1
+        }
+        return out.toByteArray()
+    }
+
     fun executeRiftpp(args: List<String>, cwd: String): CommandResult {
         val request = JSONObject()
             .put("args", org.json.JSONArray(args))
@@ -50,7 +93,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                     Unit
                 }
                 function("__rift_utf8") { values ->
-                    values.firstOrNull()?.toString().orEmpty().toByteArray(Charsets.UTF_8)
+                    values.firstOrNull()?.toString().orEmpty().let { canonicalUtf8Bytes(it) }
                 }
                 function("__rift_sha256") { values ->
                     val value = values.firstOrNull()
@@ -71,7 +114,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                 function("__rift_write_text") { values ->
                     val path = values.getOrNull(0)?.toString().orEmpty()
                     val text = values.getOrNull(1)?.toString().orEmpty()
-                    val bytes = text.toByteArray(Charsets.UTF_8)
+                    val bytes = text.let { canonicalUtf8Bytes(it) }
                     require(bytes.size <= MAX_TEXT_BYTES) { "output exceeds headless runtime text limit" }
                     val file = resolveFile(path, cwd)
                     file.parentFile?.mkdirs()
@@ -149,7 +192,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                     Unit
                 }
                 function("__rift_utf8") { values ->
-                    values.firstOrNull()?.toString().orEmpty().toByteArray(Charsets.UTF_8)
+                    values.firstOrNull()?.toString().orEmpty().let { canonicalUtf8Bytes(it) }
                 }
                 function("__rift_sha256") { values ->
                     val value = values.firstOrNull()
@@ -191,7 +234,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                     Unit
                 }
                 function("__rift_utf8") { values ->
-                    values.firstOrNull()?.toString().orEmpty().toByteArray(Charsets.UTF_8)
+                    values.firstOrNull()?.toString().orEmpty().let { canonicalUtf8Bytes(it) }
                 }
                 function("__rift_sha256") { values ->
                     val value = values.firstOrNull()
@@ -230,7 +273,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                     Unit
                 }
                 function("__rift_utf8") { values ->
-                    values.firstOrNull()?.toString().orEmpty().toByteArray(Charsets.UTF_8)
+                    values.firstOrNull()?.toString().orEmpty().let { canonicalUtf8Bytes(it) }
                 }
                 function("__rift_sha256") { values ->
                     val value = values.firstOrNull()
@@ -269,7 +312,7 @@ class RiftHeadlessJsRuntime(context: Context) {
         val hashes = JSONObject()
         fun addFile(logicalPath: String, physicalPath: String) {
             val text = readGate0File(physicalPath)
-            val bytes = text.toByteArray(Charsets.UTF_8)
+            val bytes = text.let { canonicalUtf8Bytes(it) }
             val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
                 .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
             files.put(logicalPath, text)
@@ -286,7 +329,7 @@ class RiftHeadlessJsRuntime(context: Context) {
             }
             addFile(relative, "/workspace/rift++/tests/$relative")
             val text = files.getString(relative)
-            val bytes = text.toByteArray(Charsets.UTF_8)
+            val bytes = text.let { canonicalUtf8Bytes(it) }
             require(row.optInt("bytes", -1) == bytes.size) {
                 "Gate 0 fixture byte-length drift: $relative"
             }
@@ -335,7 +378,7 @@ class RiftHeadlessJsRuntime(context: Context) {
             .put("pathHashes", hashes)
             .put("directories", directories)
             .put("installedSourceSha", BuildConfig.RIFT_SOURCE_SHA)
-        require(bundle.toString().toByteArray(Charsets.UTF_8).size <= MAX_TEXT_BYTES) {
+        require(bundle.toString().let { canonicalUtf8Bytes(it) }.size <= MAX_TEXT_BYTES) {
             "Gate 0 verifier bundle exceeds headless runtime text limit"
         }
         return bundle
@@ -420,7 +463,7 @@ class RiftHeadlessJsRuntime(context: Context) {
 
     private fun stateFile(namespace: String, key: String): File {
         val cleanNamespace = stateNamespace(namespace)
-        val keyBytes = key.toByteArray(Charsets.UTF_8)
+        val keyBytes = key.let { canonicalUtf8Bytes(it) }
         require(keyBytes.isNotEmpty() && keyBytes.size <= MAX_STATE_KEY_BYTES) { "Invalid Rift++ state key" }
         val directory = File(stateRoot, cleanNamespace).canonicalFile
         require(directory == stateRoot || directory.path.startsWith(stateRoot.path + File.separator)) { "State namespace escaped RiftFS" }
@@ -440,7 +483,7 @@ class RiftHeadlessJsRuntime(context: Context) {
     }
 
     private fun stateSave(namespace: String, key: String, value: String): Boolean {
-        val bytes = value.toByteArray(Charsets.UTF_8)
+        val bytes = value.let { canonicalUtf8Bytes(it) }
         require(bytes.size <= MAX_STATE_BYTES) { "Rift++ state record exceeds $MAX_STATE_BYTES UTF-8 bytes" }
         val file = stateFile(namespace, key)
         if (!file.exists()) {
@@ -482,7 +525,12 @@ class RiftHeadlessJsRuntime(context: Context) {
     private object Scripts {
         const val POLYFILLS = """
             globalThis.TextEncoder = class {
-              encode(value) { return __rift_utf8(String(value)); }
+              encode(value) {
+                const raw = __rift_utf8(String(value));
+                const out = new Uint8Array(raw.length);
+                for (let i = 0; i < raw.length; i++) out[i] = raw[i] & 255;
+                return out;
+              }
             };
             globalThis.crypto = Object.freeze({
               subtle: Object.freeze({
