@@ -232,7 +232,7 @@ That directly contradicted current native Gradle packaging and would reject a co
 This audit replaced the obsolete block.
 
 Current Builder final-APK rules:
-- use Build-Tools `aapt2 dump packagename` for packaged application ID and `aapt2 dump xmltree --file AndroidManifest.xml` for compiled minSdk 26 / targetSdk 36 values; `badging` is retained only for the non-debuggable release assertion. SDK mismatches print the observed compiled-manifest SDK lines into the private smoke log;
+- use Build-Tools `aapt2 dump packagename` for packaged application ID and `aapt2 dump xmltree --file AndroidManifest.xml` for compiled minSdk 26 / targetSdk 36 values; the parser accepts AAPT2's decimal (`=26`, `=36`) or typed-hex rendering of those same integers. `badging` is retained only for the non-debuggable release assertion. SDK mismatches print the observed compiled-manifest SDK lines into the private smoke log;
 - reject duplicate ZIP entries and unsafe absolute/`..` paths;
 - reject packaged Kotlin/Java source, `.git` content and keystore material;
 - require assets/www/src/riftpp-core.js byte-for-byte equal source;
