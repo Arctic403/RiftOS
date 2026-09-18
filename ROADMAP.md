@@ -82,15 +82,15 @@ Current sequence/status:
 3. **Patch sessions and provenance — implemented in current source.** Explicit writer claims are state-bound where possible, directory replacement claims are labeled lower-confidence, and unknown writers remain `unattributed-local`.
 4. **Immutable patch manifest and tamper-evident evidence — implemented in current source.** Deterministic base/result/change-set/structural hashes, internal SHA-addressed manifest freeze, forward record chain, pruning anchors, crash-safe head recovery and operational-vs-trusted checkpoint separation are present; trusted promotion remains absent.
 5. **Semantic diff + Project Intelligence impact mapping — implemented in current source.** One shared PI-v2 analyzer now drives normal indexing and candidate before/after deltas; impact scope is derived from Patch Manifest V1, bounded/incomplete explicitly, mapped through callers/dependents/tests/docs, and exposed only through an internal Local Agent seam.
-6. Local Agent validation state machine/policy core.
-7. Independent research-verification ledger.
-8. Documentation/README/roadmap/patch-note parity gate.
-9. Impact-derived tests/security/dependency verification planner.
-10. Hermetic/reproducible evidence and stale-result invalidation.
-11. Trust-boundary enforcement and bypass closure.
-12. Immutable verification bundle and decision trail.
-13. Builder provenance handshake from accepted source identity to APK artifact identity.
-14. Adversarial torture/re-audit before ENFORCE can be considered normal.
+6. **Local Agent validation state machine/policy core — OBSERVE core implemented.** `RiftCliPatchLifecycleV1` defines clean acquisition through final local evaluation verification and computes WOULD_ACCEPT/WOULD_DENY only; it cannot block, publish or promote trust.
+7. **Independent research-verification ledger — collection/claim core implemented.** `RiftResearchLedgerV1` binds sources to claims and requires authoritative support for critical claims. Independent re-check remains the final evaluator's responsibility; RiftOS does not fetch/cryptographically verify remote research content yet.
+8. **Documentation/README/roadmap/patch-note parity gate — coverage/order foundation implemented.** Lifecycle inventory + PI-v2 derive governance/owning-doc targets and missing targets make evidence incomplete. Semantic truth still depends on validators/independent evaluation.
+9. **Impact-derived tests/security/dependency verification planner — target-selection foundation implemented.** PI-v2 impact derives changed/dependent/test/doc/build targets and lifecycle requires security/dependency/test/build evidence as applicable. It is not an autonomous test/build runner.
+10. **Hermetic/reproducible evidence and stale-result invalidation — stale binding implemented; hermetic execution pending.** Evidence records bind source/candidate identities and final policy rejects stale manifests; build environment/artifact hashes are required, but builds are not yet hermetic/reproducible by construction.
+11. Trust-boundary enforcement and bypass closure — **not implemented; OBSERVE only.**
+12. **Immutable verification bundle and decision trail — verification-bundle foundation implemented.** Candidate/semantic/evidence/policy hashes and bounded evaluator echo checks exist; the lifecycle session/decision store is not yet an immutable/hash-chained decision trail.
+13. Builder provenance handshake from accepted source identity to APK artifact identity — **not implemented.**
+14. Adversarial torture/re-audit before ENFORCE can be considered normal — **pending.**
 
 OBSERVE and ENFORCE must execute the same verification pipeline; only authority differs. A candidate or trusted-base byte change invalidates previous acceptance evidence rather than inheriting stale approval.
 

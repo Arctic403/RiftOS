@@ -124,6 +124,16 @@ object RiftExperimentalCli {
                 val value = RiftTextEncoderTaskRunner.execute(context, action)
                 result(value.toString(2), value)
             }
+            "lifecycle" -> {
+                val action = tail.firstOrNull()?.trim()?.lowercase().orEmpty().ifBlank { "help" }
+                if (action !in setOf("help", "contract")) {
+                    require(isEnabled()) {
+                        "EXPERIMENTAL RiftCLI is OFF. Patch lifecycle sessions require explicit process-local enable."
+                    }
+                }
+                val lifecycle = RiftCliPatchLifecycleV1.execute(context, tail)
+                result(lifecycle.output, lifecycle.result)
+            }
             else -> throw IllegalArgumentException("unknown rift-cli command: $sub")
         }
     }
@@ -207,6 +217,9 @@ object RiftExperimentalCli {
         .put("autoMutation", false)
         .put("manualTokenizerTasks", isEnabled())
         .put("tokenizerTaskExecution", "native-kotlin-fixed-paths-async")
+        .put("patchLifecycleV1", true)
+        .put("patchLifecycleMode", "OBSERVE")
+        .put("patchLifecycleTrustedPromotion", false)
         .put("newMcpTools", 0)
         .put("authorityWidened", false)
         .put("lastLocalAgentRoute", lastRoute)
@@ -229,6 +242,13 @@ object RiftExperimentalCli {
                                 # Rift IR V1 language-independent inspect-only core; no run/execution command
         rift-cli tokenizer status|self-test|train-a|train-b|train-a2|train-b2|train-status|train-cancel
                                 # manual fixed-path RiftTokenizer V1/V2 tasks; training runs as one cancellable background job
+        rift-cli lifecycle help|contract
+        rift-cli lifecycle begin <project> <goal...>
+        rift-cli lifecycle begin-sync <project> <goal...>
+        rift-cli lifecycle status|request|evaluation|clear <sessionId>
+        rift-cli lifecycle import <sessionId> <kind> <D:/Documents|D:/Temp json>
+        rift-cli lifecycle verify <sessionId> <D:/Documents|D:/Temp evaluation.json>
+                                # OBSERVE-only CLI -> AI patch lifecycle; no trust promotion or publication
 
         No new MCP tools. No raw Android shell. No generic Python/process runner. No wider package authority. No autonomous writes.
         The future model/swarm backend is intentionally not connected yet.

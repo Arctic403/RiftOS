@@ -100,6 +100,8 @@ Project Intelligence v2 is an internal expansion of that existing surface rather
 
 Patch 5 also gives the future Local Agent an internal candidate-impact seam that is **not** part of the MCP schema. `RiftWorkspaceRecords` derives the exact changed-path seed from Patch Manifest V1; the same `RiftSourceIntelligenceV2` parser used by normal PI-v2 indexing computes before/after symbol and dependency deltas, while the live index supplies current dependents, references, tests and documentation ownership. Bounded or missing evidence is marked incomplete rather than silently discarded.
 
+Experimental `RiftCliPatchLifecycleV1` consumes that internal evidence for the manual OBSERVE patch workflow. It adds no MCP method. The AI-facing work/evaluation packet simply returns through the already permissioned `rift_shell_exec` result path (or the local Terminal); there is no hidden model connection. The evaluator response is imported from bounded `D:/Documents`/`D:/Temp` evidence and verified against exact candidate/evidence hashes locally.
+
 The incremental symbol/dependency index is persisted in app-private RiftOS state outside `riftfs/workspace` and revalidated against workspace file size/mtime during refresh. It is an acceleration cache only; source files remain authoritative and stale rows are dropped/rebuilt.
 
 This is intentionally not arbitrary JavaScript evaluated inside the `chatgpt.com` origin. The ChatGPT page receives only the declarative operation envelope; execution stays in the device-side sandbox. That avoids giving model-produced code access to ChatGPT DOM/session state while still collapsing many local filesystem actions into one ChatGPT↔Rift round trip.

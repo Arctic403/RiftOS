@@ -84,7 +84,9 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `android/app/src/main/java/com/riftos/app/RiftNativeGit.kt` | `docs/systems/git/README.md` + `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/systems/shell/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCliPatchLifecycleV1.kt` | `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/systems/experimental-cli/README.md` + `docs/RIFT_AI_PATCH_PIPELINE.md` + `docs/RIFT_DEVELOPMENT_WORKFLOW.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
+| `android/app/src/main/java/com/riftos/app/RiftResearchLedgerV1.kt` | `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/RIFT_AI_PATCH_PIPELINE.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftPlusPlusV0.kt` | `docs/systems/experimental-cli/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftIrV1.kt` | `docs/systems/experimental-cli/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftIrCliV1.kt` | `docs/systems/experimental-cli/README.md` |
@@ -141,6 +143,7 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `scripts/test-rift-patch-sessions.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/mcp/sandbox/README.md` |
 | `scripts/test-rift-patch-manifest-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-semantic-impact-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-cli-patch-lifecycle-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
 | `scripts/test-rift-path-compat.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftfs/README.md` + shell/build/repo/Git/Vault/Memory/Dev Lab/RiftLLM/Files owners |

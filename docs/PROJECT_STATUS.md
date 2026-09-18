@@ -34,6 +34,8 @@ From `android/app/build.gradle.kts`:
 - `RiftPatchSessions` binds explicit MCP/Shell/Editor/Dev Lab/Git writer provenance to asynchronous Workspace Records observations; exact file claims are state-bound, directory claims are lower-confidence, and unknown writers remain `unattributed-local`. It is evidence-only and does not enforce acceptance.
 - `RiftPatchManifestV1` deterministically binds operational base/result tree bytes, change-set/structural identity, retained provenance and record-chain state; private freezes are SHA-addressed and trusted-checkpoint fields are inert with no promotion API.
 - `RiftSourceIntelligenceV2` is the shared lexical analyzer for normal Project Intelligence v2 indexing and candidate before/after semantic deltas. The internal candidate-impact path derives affected symbols/dependencies/dependents/references/tests/docs from Patch Manifest V1 and remains OBSERVE evidence only.
+- `RiftCliPatchLifecycleV1` is the manually enabled OBSERVE-only CLI→AI patch state machine. It binds clean Git/source acquisition, governance inventory, research/design ordering, actual candidate impact, docs/code/security/dependency/test/build/E2E/rollback evidence, final manifest freeze and independent AI evaluation hashes; it cannot publish or promote trust.
+- `RiftResearchLedgerV1` normalizes bounded external research claims/sources and requires authoritative support for critical claims; collection is explicitly not independent verification by itself.
 - `RiftSecretStore` is the Android Keystore-backed secret owner.
 - Native Files owns persisted Android SAF document-tree mounts.
 - `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.
@@ -129,9 +131,18 @@ The engine/core pass is followed by a second engine re-audit. After the engine i
 
 ## Rift++ active candidate
 
-Current packaged Rift++ source is `0.9.0-bootstrap` / `riftpp/1` targeting `rift-exec-v1 / riftvm-1`.
+Current workspace Rift++ source is the local `0.10.0-bootstrap` candidate / `riftpp/1` targeting `rift-exec-v1 / riftvm-1`; the installed APK still requires Builder/install proof.
 
 - Gate 1A Buffer/Slice is frozen.
 - Gate 1B SourceText/TextCursor/StringBuilder + numeric text is source-verified but not device-frozen.
 - Gate 1B hot working text uses UTF-16 code units; UTF-8 remains explicit boundary accounting/interchange.
 - `rift-tool text-model-benchmark` provides a fixed installed-device representation benchmark before Gate 1B freeze.
+
+
+### Rift++ 0.10 native-byte substrate candidate
+
+Local source adds checked `u8`, `Buffer<u8,N>` / `Slice<u8>`, explicit `u8_to_u32`, and checked `u8_from_u32`.
+
+The compiler/VM test and wiring gates are updated, but the candidate is **not runtime-proven yet** because native RiftShell correctly denies arbitrary Node/process execution and the installed APK still carries the previous compiler. Builder/install/device proof is required.
+
+No raw-pointer, filesystem, network, process, or host-import authority was added.

@@ -4,10 +4,10 @@ export const RIFT_VM_ABI='riftvm-1';
 const NAME=/^[A-Za-z_][A-Za-z0-9_.:$-]{0,95}$/;
 const HOST_METHOD=/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*){1,3}$/;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
-const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','string_len','string_find','string_slice','string_replace','source_text','source_code_unit_len','source_utf8_byte_len','source_cursor','source_slice','source_to_string','cursor_code_unit_offset','cursor_line','cursor_column','cursor_eof','cursor_peek_code_unit','cursor_advance','make_string_builder','builder_len','builder_append','builder_append_source','builder_finish','parse_u32','parse_s32','parse_f64','format_u32','format_s32','format_f64','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','make_buffer','buffer_len','buffer_get','buffer_push','buffer_set','buffer_slice','slice_len','slice_get','state_save','state_load','state_remove','value_sha256','jump','jump_if_false','call','host','print','ret','halt']);
+const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','string_len','string_find','string_slice','string_replace','source_text','source_code_unit_len','source_utf8_byte_len','source_cursor','source_slice','source_to_string','cursor_code_unit_offset','cursor_line','cursor_column','cursor_eof','cursor_peek_code_unit','cursor_advance','make_string_builder','builder_len','builder_append','builder_append_source','builder_finish','u8_to_u32','u8_from_u32','parse_u32','parse_s32','parse_f64','format_u32','format_s32','format_f64','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','make_buffer','buffer_len','buffer_get','buffer_push','buffer_set','buffer_slice','slice_len','slice_get','state_save','state_load','state_remove','value_sha256','jump','jump_if_false','call','host','print','ret','halt']);
 const DEFAULT_LIMITS=Object.freeze({maxSteps:100000,maxStack:1024,maxCallDepth:32});
 const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:256,maxBufferCapacity:100000,maxSourceTextCodeUnits:4*1024*1024,maxStringBuilderUnits:4*1024*1024,maxStringBuilderParts:100000,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536,maxStateBytes:65536,maxStateSchemaBytes:4096});
-const INT_BOUNDS=Object.freeze({u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
+const INT_BOUNDS=Object.freeze({u8:[0n,255n],u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
 const UNIT=Object.freeze({type:'unit',value:null});
 const PREPARED=Symbol('riftvm.prepared');
 const encoder=new TextEncoder();
@@ -137,7 +137,7 @@ function normalizeConstant(raw,index){
   if(type==='bool'){if(typeof raw.value!=='boolean')fail(`constant ${index} bool value is invalid`);return Object.freeze({type,value:raw.value});}
   if(type==='string'){if(typeof raw.value!=='string')fail(`constant ${index} string value is invalid`);return Object.freeze({type,value:stringBytes(raw.value,`constant ${index}`)});}
   if(type==='f64')return Object.freeze({type,value:finiteF64(raw.value,`constant ${index} f64`)});
-  if(type==='u32'||type==='s32'){
+  if(type==='u8'||type==='u32'||type==='s32'){
     const value=parseIntegerConstant(raw.value,`constant ${index} ${type}`),bounds=INT_BOUNDS[type];
     if(value<bounds[0]||value>bounds[1])fail(`constant ${index} ${type} is out of range`);
     return Object.freeze({type,value});
@@ -160,7 +160,7 @@ function normalizeFieldList(raw,where){
 }
 function normalizeStateDescriptor(raw,where,depth=0){
   if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${where} exceeds state descriptor depth ${HARD_LIMITS.maxCompositeDepth}`);if(!plain(raw))fail(`${where} must be an object`);const kind=String(raw.k||'');
-  if(kind==='p'){const type=String(raw.t||'');if(!['unit','bool','u32','s32','f64','string'].includes(type))fail(`${where} primitive type is invalid: ${type||'(empty)'}`);return Object.freeze({k:'p',t:type});}
+  if(kind==='p'){const type=String(raw.t||'');if(!['unit','bool','u8','u32','s32','f64','string'].includes(type))fail(`${where} primitive type is invalid: ${type||'(empty)'}`);return Object.freeze({k:'p',t:type});}
   if(kind==='v')return Object.freeze({k:'v',c:integer(raw.c,`${where}.c`,1,HARD_LIMITS.maxVecCapacity),i:normalizeStateDescriptor(raw.i,`${where}.i`,depth+1)});
   if(kind==='o')return Object.freeze({k:'o',i:normalizeStateDescriptor(raw.i,`${where}.i`,depth+1)});
   if(kind==='r')return Object.freeze({k:'r',o:normalizeStateDescriptor(raw.o,`${where}.o`,depth+1),e:normalizeStateDescriptor(raw.e,`${where}.e`,depth+1)});
@@ -198,7 +198,7 @@ function normalizeInstruction(raw,where,ctx){
   if(op==='make_buffer'){const capacity=integer(raw.capacity,`${where}.capacity`,1,HARD_LIMITS.maxBufferCapacity),count=integer(raw.count??0,`${where}.count`,0,HARD_LIMITS.maxBufferCapacity);if(count>capacity)fail(`${where}.count exceeds buffer capacity`);return Object.freeze({op,capacity,count});}
   if(op==='buffer_len'||op==='buffer_get'||op==='buffer_push'||op==='buffer_set'||op==='buffer_slice'||op==='slice_len'||op==='slice_get')return Object.freeze({op});
   if(op==='make_string_builder')return Object.freeze({op,capacity:integer(raw.capacity,`${where}.capacity`,1,HARD_LIMITS.maxStringBuilderUnits)});
-  if(['source_text','source_code_unit_len','source_utf8_byte_len','source_cursor','source_slice','source_to_string','cursor_code_unit_offset','cursor_line','cursor_column','cursor_eof','cursor_peek_code_unit','cursor_advance','builder_len','builder_append','builder_append_source','builder_finish','parse_u32','parse_s32','parse_f64','format_u32','format_s32','format_f64'].includes(op))return Object.freeze({op});
+  if(['source_text','source_code_unit_len','source_utf8_byte_len','source_cursor','source_slice','source_to_string','cursor_code_unit_offset','cursor_line','cursor_column','cursor_eof','cursor_peek_code_unit','cursor_advance','builder_len','builder_append','builder_append_source','builder_finish','u8_to_u32','u8_from_u32','parse_u32','parse_s32','parse_f64','format_u32','format_s32','format_f64'].includes(op))return Object.freeze({op});
   if(op==='jump'||op==='jump_if_false')return Object.freeze({op,target:integer(raw.target,`${where}.target`,0,ctx.codeLength-1)});
   if(op==='call'){
     const name=safeName(raw.name,`${where}.name`),argc=integer(raw.argc??0,`${where}.argc`,0,HARD_LIMITS.maxParams),target=ctx.functions[name];
@@ -247,7 +247,7 @@ export function prepareRiftExecutable(raw){
 function publicValue(value,state={values:0,stringBytes:0}){
   if(++state.values>HARD_LIMITS.maxPublicValues)fail(`public result exceeds ${HARD_LIMITS.maxPublicValues} values`);
   if(!value||value.type==='unit')return{type:'unit'};
-  if(value.type==='u32'||value.type==='s32')return{type:value.type,value:value.value.toString()};
+  if(value.type==='u8'||value.type==='u32'||value.type==='s32')return{type:value.type,value:value.value.toString()};
   if(value.type==='string'){state.stringBytes+=encoder.encode(value.value).byteLength;if(state.stringBytes>HARD_LIMITS.maxPublicStringBytes)fail(`public result strings exceed ${HARD_LIMITS.maxPublicStringBytes} UTF-8 bytes`);return{type:'string',value:value.value};}
   if(value.type==='struct'){const fields={};for(const [key,item] of Object.entries(value.fields))fields[key]=publicValue(item,state);return{type:'struct',name:value.name,fields};}
   if(value.type==='enum')return{type:'enum',name:value.name,variant:value.variant,values:value.values.map(item=>publicValue(item,state))};
@@ -263,7 +263,7 @@ function valueToPublic(value){return publicValue(value);}
 function hashPublicValue(value,state={values:0,stringBytes:0}){
   if(++state.values>HARD_LIMITS.maxPublicValues)fail(`hash input exceeds ${HARD_LIMITS.maxPublicValues} values`);
   if(!value||value.type==='unit')return{type:'unit'};
-  if(value.type==='u32'||value.type==='s32')return{type:value.type,value:value.value.toString()};
+  if(value.type==='u8'||value.type==='u32'||value.type==='s32')return{type:value.type,value:value.value.toString()};
   if(value.type==='f64')return{type:'f64',value:finiteF64(value.value,'hash input f64')};
   if(value.type==='bool')return{type:'bool',value:value.value===true};
   if(value.type==='string'){state.stringBytes+=encoder.encode(value.value).byteLength;if(state.stringBytes>HARD_LIMITS.maxPublicStringBytes)fail(`hash input strings exceed ${HARD_LIMITS.maxPublicStringBytes} UTF-8 bytes`);return{type:'string',value:value.value};}
@@ -276,14 +276,14 @@ function hashPublicValue(value,state={values:0,stringBytes:0}){
 }
 async function valueSha256(value){const text=JSON.stringify(hashPublicValue(value)),bytes=encoder.encode(text);if(bytes.byteLength>HARD_LIMITS.maxStateBytes)fail(`hash input exceeds ${HARD_LIMITS.maxStateBytes} UTF-8 bytes`);const subtle=globalThis.crypto?.subtle;if(!subtle)fail('SHA-256 is unavailable in this runtime');const digest=new Uint8Array(await subtle.digest('SHA-256',bytes));return Object.freeze({type:'string',value:[...digest].map(byte=>byte.toString(16).padStart(2,'0')).join('')});}
 function isCompositeValue(value){return value?.type==='struct'||value?.type==='enum'||value?.type==='vec'||value?.type==='buffer'||value?.type==='slice'||value?.type==='source_text'||value?.type==='text_cursor'||value?.type==='string_builder';}
-function valueToHost(value){if(!value||value.type==='unit')return null;if(isCompositeValue(value))fail('composite values cannot cross the host import boundary');if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
+function valueToHost(value){if(!value||value.type==='unit')return null;if(isCompositeValue(value))fail('composite values cannot cross the host import boundary');if(value.type==='u8'||value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
 function hostToValue(raw){if(raw===null||raw===undefined)return UNIT;if(typeof raw==='boolean')return Object.freeze({type:'bool',value:raw});if(typeof raw==='string')return Object.freeze({type:'string',value:stringBytes(raw,'host string')});if(typeof raw==='number')return Object.freeze({type:'f64',value:finiteF64(raw,'host f64')});const text=JSON.stringify(raw);return Object.freeze({type:'string',value:stringBytes(text,'host JSON result')});}
 function statePublicToValue(raw,state={values:0,stringBytes:0}){
   if(++state.values>HARD_LIMITS.maxPublicValues)fail(`state payload exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!plain(raw))fail('state payload value must be an object');const type=String(raw.type||'');
   if(type==='unit')return UNIT;
   if(type==='bool'){if(typeof raw.value!=='boolean')fail('state bool is invalid');return Object.freeze({type,value:raw.value});}
   if(type==='string'){if(typeof raw.value!=='string')fail('state string is invalid');state.stringBytes+=encoder.encode(raw.value).byteLength;if(state.stringBytes>HARD_LIMITS.maxPublicStringBytes)fail(`state strings exceed ${HARD_LIMITS.maxPublicStringBytes} UTF-8 bytes`);return Object.freeze({type,value:stringBytes(raw.value,'state string')});}
-  if(type==='u32'||type==='s32'){const value=parseIntegerConstant(raw.value,`state ${type}`),bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])fail(`state ${type} is out of range`);return Object.freeze({type,value});}
+  if(type==='u8'||type==='u32'||type==='s32'){const value=parseIntegerConstant(raw.value,`state ${type}`),bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])fail(`state ${type} is out of range`);return Object.freeze({type,value});}
   if(type==='f64')return Object.freeze({type,value:finiteF64(raw.value,'state f64')});
   if(type==='struct'){const name=safeName(raw.name,'state struct name');if(!plain(raw.fields))fail(`state struct ${name} fields must be an object`);const entries=Object.entries(raw.fields);if(!entries.length||entries.length>HARD_LIMITS.maxCompositeItems)fail(`state struct ${name} field count is invalid`);const values=[],fields=Object.create(null);for(const [key,item] of entries){safeName(key,`state struct ${name} field`);const value=statePublicToValue(item,state);fields[key]=value;values.push(value);}return Object.freeze({type:'struct',name,fields:Object.freeze(fields),depth:checkedCompositeDepth(values,`state struct ${name}`)});}
   if(type==='enum'){const name=safeName(raw.name,'state enum name'),variant=safeName(raw.variant,'state enum variant');if(!Array.isArray(raw.values)||raw.values.length>HARD_LIMITS.maxCompositeItems)fail(`state enum ${name}.${variant} values are invalid`);const values=raw.values.map(item=>statePublicToValue(item,state));return Object.freeze({type:'enum',name,variant,values:Object.freeze(values),depth:checkedCompositeDepth(values,`state enum ${name}.${variant}`)});}
@@ -295,19 +295,19 @@ function deserializeStateValue(text,schema,descriptor){const raw=stringBytes(tex
 function displayValue(value){
   const state={bytes:0,values:0,parts:[]};
   const append=text=>{const part=String(text),bytes=encoder.encode(part).byteLength;state.bytes+=bytes;if(state.bytes>HARD_LIMITS.maxDisplayBytes)fail(`display value exceeds ${HARD_LIMITS.maxDisplayBytes} UTF-8 bytes`);state.parts.push(part);};
-  const visit=item=>{if(++state.values>HARD_LIMITS.maxPublicValues)fail(`display value exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!item||item.type==='unit'){append('unit');return;}if(item.type==='u32'||item.type==='s32'){append(item.value.toString());return;}if(item.type==='struct'){append(`${item.name}{`);let first=true;for(const [key,child] of Object.entries(item.fields)){if(!first)append(',');first=false;append(`${key}=`);visit(child);}append('}');return;}if(item.type==='enum'){append(`${item.name}.${item.variant}`);if(item.values.length){append('(');for(let i=0;i<item.values.length;i++){if(i)append(',');visit(item.values[i]);}append(')');}return;}if(item.type==='vec'){append('[');for(let i=0;i<item.items.length;i++){if(i)append(',');visit(item.items[i]);}append(']');return;}if(item.type==='buffer'){append('Buffer[');for(let i=0;i<item.length;i++){if(i)append(',');visit(bufferGetValue(item,i));}append(']');return;}if(item.type==='slice'){append('Slice[');for(let i=0;i<item.length;i++){if(i)append(',');visit(sliceGetValue(item,i));}append(']');return;}if(item.type==='source_text'){append(`SourceText(codeUnits=${item.length})`);return;}if(item.type==='text_cursor'){append(`TextCursor(codeUnit=${item.codeUnitOffset},line=${item.line},column=${item.column})`);return;}if(item.type==='string_builder'){append(`StringBuilder(codeUnits=${item.unitLength},capacity=${item.capacity})`);return;}append(item.value);};
+  const visit=item=>{if(++state.values>HARD_LIMITS.maxPublicValues)fail(`display value exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!item||item.type==='unit'){append('unit');return;}if(item.type==='u8'||item.type==='u32'||item.type==='s32'){append(item.value.toString());return;}if(item.type==='struct'){append(`${item.name}{`);let first=true;for(const [key,child] of Object.entries(item.fields)){if(!first)append(',');first=false;append(`${key}=`);visit(child);}append('}');return;}if(item.type==='enum'){append(`${item.name}.${item.variant}`);if(item.values.length){append('(');for(let i=0;i<item.values.length;i++){if(i)append(',');visit(item.values[i]);}append(')');}return;}if(item.type==='vec'){append('[');for(let i=0;i<item.items.length;i++){if(i)append(',');visit(item.items[i]);}append(']');return;}if(item.type==='buffer'){append('Buffer[');for(let i=0;i<item.length;i++){if(i)append(',');visit(bufferGetValue(item,i));}append(']');return;}if(item.type==='slice'){append('Slice[');for(let i=0;i<item.length;i++){if(i)append(',');visit(sliceGetValue(item,i));}append(']');return;}if(item.type==='source_text'){append(`SourceText(codeUnits=${item.length})`);return;}if(item.type==='text_cursor'){append(`TextCursor(codeUnit=${item.codeUnitOffset},line=${item.line},column=${item.column})`);return;}if(item.type==='string_builder'){append(`StringBuilder(codeUnits=${item.unitLength},capacity=${item.capacity})`);return;}append(item.value);};
   visit(value);return state.parts.join('');
 }
 function sameType(a,b,op){if(!a||!b||a.type!==b.type)fail(`${op} requires operands of the same type`);if(isCompositeValue(a)||isCompositeValue(b))fail(`${op} does not support composite values`);}
 function checkedInteger(type,value,op){const bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])fail(`${op} ${type} overflow`);return Object.freeze({type,value});}
 function numericBinary(op,a,b){
   sameType(a,b,op);if(a.type==='f64'){let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);return Object.freeze({type:'f64',value:finiteF64(value,`${op} f64 result`)});}
-  if(a.type!=='u32'&&a.type!=='s32')fail(`${op} requires numeric operands`);let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0n)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0n)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);return checkedInteger(a.type,value,op);
+  if(a.type!=='u8'&&a.type!=='u32'&&a.type!=='s32')fail(`${op} requires numeric operands`);let value;if(op==='add')value=a.value+b.value;else if(op==='sub')value=a.value-b.value;else if(op==='mul')value=a.value*b.value;else if(op==='div'){if(b.value===0n)fail('division by zero');value=a.value/b.value;}else if(op==='mod'){if(b.value===0n)fail('modulo by zero');value=a.value%b.value;}else fail(`${op} is not numeric`);return checkedInteger(a.type,value,op);
 }
 function compare(op,a,b){
   if(isCompositeValue(a)||isCompositeValue(b))fail(`${op} does not support composite values`);
   if(op==='eq'||op==='ne'){const equal=a?.type===b?.type&&(a?.type==='unit'||a?.value===b?.value);return Object.freeze({type:'bool',value:op==='eq'?equal:!equal});}
-  sameType(a,b,op);if(!['u32','s32','f64','string'].includes(a.type))fail(`${op} requires ordered operands`);let value;if(op==='lt')value=a.value<b.value;else if(op==='le')value=a.value<=b.value;else if(op==='gt')value=a.value>b.value;else value=a.value>=b.value;return Object.freeze({type:'bool',value});
+  sameType(a,b,op);if(!['u8','u32','s32','f64','string'].includes(a.type))fail(`${op} requires ordered operands`);let value;if(op==='lt')value=a.value<b.value;else if(op==='le')value=a.value<=b.value;else if(op==='gt')value=a.value>b.value;else value=a.value>=b.value;return Object.freeze({type:'bool',value});
 }
 
 export async function executeRiftExecutable(raw,host={},options={}){
@@ -354,6 +354,8 @@ export async function executeRiftExecutable(raw,host={},options={}){
       case'builder_append':{const text=pop(frame,'builder_append'),builder=pop(frame,'builder_append');if(builder.type!=='string_builder'||text.type!=='string')fail('builder_append requires StringBuilder, string');push(frame,builderAppendSource(builder,makeSourceTextValue(text.value,0,text.value.length,'StringBuilder.append')));break;}
       case'builder_append_source':{const source=pop(frame,'builder_append_source'),builder=pop(frame,'builder_append_source');push(frame,builderAppendSource(builder,source));break;}
       case'builder_finish':{const builder=pop(frame,'builder_finish');push(frame,finishStringBuilder(builder));break;}
+      case'u8_to_u32':{const value=pop(frame,'u8_to_u32');if(value.type!=='u8')fail('u8_to_u32 requires u8');push(frame,Object.freeze({type:'u32',value:value.value}));break;}
+      case'u8_from_u32':{const value=pop(frame,'u8_from_u32');if(value.type!=='u32')fail('u8_from_u32 requires u32');if(value.value>255n){push(frame,errValue('u32 value is out of u8 range'));break;}push(frame,okValue(Object.freeze({type:'u8',value:value.value})));break;}
       case'parse_u32':{const value=pop(frame,'parse_u32');if(value.type!=='string')fail('parse_u32 requires string');push(frame,parseIntegerText(value.value,'u32'));break;}
       case'parse_s32':{const value=pop(frame,'parse_s32');if(value.type!=='string')fail('parse_s32 requires string');push(frame,parseIntegerText(value.value,'s32'));break;}
       case'parse_f64':{const value=pop(frame,'parse_f64');if(value.type!=='string')fail('parse_f64 requires string');push(frame,parseF64Text(value.value));break;}

@@ -1029,12 +1029,22 @@ class RiftHeadlessJsRuntime(context: Context) {
                 emit(JSON.stringify(value,null,2)); finish(value); return;
               }
               if (sub === 'self-test' || sub === 'selftest') {
-                const source = 'riftpp 1\nmodule shell.selftest\nfn multiply(a: u32, b: u32) -> u32 { return a * b }\nfn main() { print("Rift++ shell self-test") print(multiply(6, 7)) print(multiply(6, 7) == 42) }\n';
+                const source = 'riftpp 1\nmodule shell.selftest\nfn multiply(a: u32, b: u32) -> u32 { return a * b }\nfn main() { print("Rift++ shell self-test") print(multiply(6, 7)) print(multiply(6, 7) == 42) let max: u8 = 255 print(max) print(u8_to_u32(max)) let narrowed: Result<u8, string> = u8_from_u32(255) match narrowed { Result.Ok(value) => { print(value) } Result.Err(message) => { print(message) } } let rejected: Result<u8, string> = u8_from_u32(256) match rejected { Result.Ok(value) => { print(value) } Result.Err(message) => { print(message) } } var bytes: Buffer<u8, 8> = [65, 66] let pushed: Result<Buffer<u8, 8>, string> = bytes.push(67) match pushed { Result.Ok(next) => { bytes = next } Result.Err(message) => { print(message) return } } print(bytes.len()) match bytes.get(2) { Option.Some(value) => { print(u8_to_u32(value)) } Option.None => { print(999) } } let sliced: Result<Slice<u8>, string> = bytes.slice(1, 3) match sliced { Result.Ok(view) => { print(view.len()) match view.get(0) { Option.Some(value) => { print(u8_to_u32(value)) } Option.None => { print(999) } } } Result.Err(message) => { print(message) } } print(value_sha256(max) == value_sha256(max)) }\n';
                 const compiled = compiler.compile(source);
                 const executed = await execute(compiled.executable, 'embedded:self-test');
-                const expected = ['Rift++ shell self-test','42','true'];
+                const expected = ['Rift++ shell self-test','42','true','255','255','255','u32 value is out of u8 range','3','67','2','66','true'];
                 if (JSON.stringify(executed.output) !== JSON.stringify(expected)) throw new Error('riftpp self-test output mismatch');
-                const value = {ok:true,schema:'riftpp-shell-self-test/2',backend:'headless-quickjs',compiler:compiler.version,format:compiled.executable.format,abi:compiled.executable.abi,steps:executed.result.steps,prints:executed.result.prints};
+                let literalRejected = false;
+                try { compiler.compile('riftpp 1\nmodule shell.selftest_bad_literal\nfn main() { let value: u8 = 256 print(value) }\n'); }
+                catch (error) { literalRejected = String(error && error.message || error).includes('u8 literal is out of range'); }
+                if (!literalRejected) throw new Error('riftpp self-test expected out-of-range u8 literal rejection');
+                let overflowRejected = false;
+                try {
+                  const overflow = compiler.compile('riftpp 1\nmodule shell.selftest_u8_overflow\nfn main() { let a: u8 = 255 let b: u8 = 1 print(a + b) }\n');
+                  await execute(overflow.executable, 'embedded:self-test-u8-overflow');
+                } catch (error) { overflowRejected = String(error && error.message || error).includes('u8 overflow'); }
+                if (!overflowRejected) throw new Error('riftpp self-test expected checked u8 overflow rejection');
+                const value = {ok:true,schema:'riftpp-shell-self-test/3',backend:'headless-quickjs',compiler:compiler.version,format:compiled.executable.format,abi:compiled.executable.abi,steps:executed.result.steps,prints:executed.result.prints,u8:{literalRange:true,explicitConversions:true,bufferSlice:true,hash:true,checkedOverflow:true}};
                 emit(JSON.stringify(value,null,2)); finish(value); return;
               }
               if (sub === 'check') {

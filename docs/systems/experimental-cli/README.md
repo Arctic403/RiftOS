@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -13,7 +13,8 @@ It currently provides:
 - an experimental routing seam that classifies Local Agent operations but preserves the same Local Agent authority;
 - Rift++ V0 declarative swarm compilation;
 - Rift IR V1 inspect-only lowering/validation;
-- fixed-path native tokenizer development tasks.
+- fixed-path native tokenizer development tasks;
+- the manual OBSERVE-only CLI→AI patch lifecycle with candidate-bound verification/evaluation evidence.
 
 It is not a replacement for production RiftShell, MCP ToolHost, Rift++ Core, RiftVM or RiftLLM.
 
@@ -21,6 +22,10 @@ It is not a replacement for production RiftShell, MCP ToolHost, Rift++ Core, Rif
 
 Primary router/shell surface:
 - RiftExperimentalCli.kt
+
+Patch lifecycle/evidence:
+- RiftCliPatchLifecycleV1.kt
+- RiftResearchLedgerV1.kt
 
 V0 language and preview:
 - RiftPlusPlusV0.kt
@@ -43,6 +48,8 @@ Focused specs/tests:
 - scripts/test-rift-plus-plus-v0.mjs
 - scripts/test-rift-ir-v1.mjs
 - scripts/test-rift-text-encoder-task.mjs
+- scripts/test-rift-cli-patch-lifecycle-v1.mjs
+- docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md
 
 ## Packaging
 
@@ -90,7 +97,7 @@ Descriptive/read-only scaffolding remains available:
 - riftpp sample
 - ir help
 
-Planning, V0 compile/preview, IR compile/validate/inspect and all tokenizer actions require explicit enablement.
+Planning, V0 compile/preview, IR compile/validate/inspect, tokenizer actions and lifecycle session/evidence/evaluation actions require explicit enablement. Lifecycle `help` and `contract` remain descriptive/read-only while disabled.
 
 ## Planner
 
@@ -107,6 +114,16 @@ It:
 The current brain backend is a rule-planner scaffold.
 
 No model backend is connected.
+
+## Patch lifecycle V1
+
+`rift-cli lifecycle` implements the manual repository work path documented in [`PATCH_LIFECYCLE_V1.md`](PATCH_LIFECYCLE_V1.md).
+
+It is OBSERVE-only and deliberately reuses existing authority. Its flow is acquire/sync → base-bound understanding evidence → research → document intent → patch → document audit → code/security/dependency/test/build/E2E audit → freeze → independent AI evaluation → local hash verification.
+
+The lifecycle stores session/evidence state outside Workspace, derives final impact from Patch Manifest V1 + Project Intelligence V2, and never lets an evaluator response promote `trustedCheckpoint` or publish source.
+
+No direct model backend is connected. The AI-facing work/evaluation packets return through the existing shell/MCP response path.
 
 ## Local Agent router
 
@@ -378,7 +395,12 @@ Its shell entry inherits rift_shell_exec's existing read+write MCP grant require
 - only one tokenizer training job at a time;
 - tokenizer input/output bounds remain explicit;
 - B2 remains frozen and cannot be retrained by Experimental RiftCLI;
-- no generic native/process execution.
+- no generic native/process execution;
+- patch lifecycle remains OBSERVE-only and manual-enable only;
+- lifecycle adds zero MCP tools/model backends and cannot publish/promote trust;
+- lifecycle acquisition is clean, bounded and revision-bound;
+- research precedes design, and post-patch audits are candidate-bound and ordered;
+- incomplete/stale/missing-target evidence cannot produce WOULD_ACCEPT.
 
 ## Failure signatures
 
@@ -391,7 +413,12 @@ Its shell entry inherits rift_shell_exec's existing read+write MCP grant require
 - train-b2 starts a job or writes B2 output -> frozen artifact regression;
 - caller can choose arbitrary tokenizer project/config/output path -> confinement regression;
 - a generic process/Python/socket runner appears -> execution-surface regression;
-- a RiftCLI MCP tool is added -> layering regression.
+- a RiftCLI MCP tool is added -> layering regression;
+- lifecycle accepts dirty/truncated acquisition -> source-identity regression;
+- lifecycle resets operational checkpoint over unrelated Workspace changes -> evidence-reset regression;
+- research/design/post-audit ordering is bypassed -> lifecycle regression;
+- incomplete or stale evidence becomes complete -> verification regression;
+- evaluator response can promote trust/publish -> authority regression.
 
 ## Fix map
 
@@ -408,6 +435,10 @@ IR lowering/validation -> RiftIrV1.kt.
 IR CLI -> RiftIrCliV1.kt.
 
 Tokenizer development -> RiftTextEncoderTaskRunner.kt.
+
+AI patch lifecycle/state machine -> RiftCliPatchLifecycleV1.kt.
+
+External research ledger -> RiftResearchLedgerV1.kt.
 
 Stable frozen-B2 canary pipeline -> RiftTrainDataTaskRunner.kt / RiftLLM bridge subsystem.
 
@@ -430,6 +461,8 @@ Second source audit must verify:
 - B2 frozen guard;
 - no generic process execution;
 - no MCP tool expansion;
-- focused tests/specs reflect current behavior.
+- focused tests/specs reflect current behavior;
+- lifecycle acquisition/evidence/order/stale-result/evaluator-separation contracts;
+- no lifecycle MCP/model/trust-promotion surface.
 
 Builder/device execution remains a separate gate. No tokenizer training job is required or permitted merely to verify this source contract.

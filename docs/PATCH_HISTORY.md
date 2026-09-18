@@ -6,6 +6,156 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## CLI Patch Lifecycle V1 — Patches 6/7 core + 8–10/12 foundation
+
+### What changed
+
+Added the manual OBSERVE-only CLI→AI→CLI patch lifecycle requested for real repository work:
+
+```text
+acquire full clean repo
+→ understand complete layout/ownership
+→ research external assumptions
+→ document intent
+→ patch through existing tools
+→ audit documents
+→ audit code
+→ security/dependency/test/build verification
+→ end-to-end/rollback verification
+→ freeze exact candidate
+→ send bounded evidence bundle to independent AI
+→ locally verify returned hashes/verdict
+```
+
+### Research performed first
+
+The design was checked against:
+- SLSA v1.2 Source/Build guidance for immutable source revision, provenance and verification-summary concepts;
+- in-toto attestation concepts for binding claims to exact subjects;
+- NIST SSDF lifecycle secure-development practices.
+
+RiftOS does not claim certification against those standards. The implementation adopts the useful patterns locally.
+
+### Primary source
+
+- `RiftCliPatchLifecycleV1.kt`
+- `RiftResearchLedgerV1.kt`
+- `RiftExperimentalCli.kt`
+
+Existing evidence owners reused rather than duplicated:
+- RiftGit;
+- Project Export;
+- Workspace Records/Patch Manifest;
+- Project Intelligence V2;
+- ToolHost internal candidate-impact seam.
+
+### What was added beyond the original proposed workflow
+
+- immutable Git HEAD + Project Export snapshot at acquisition;
+- clean-tree requirement and optional native Git pull;
+- bounded full-repository inventory;
+- README/docs/ROADMAP/TODO/TASK/patch-history/status/source-ownership discovery;
+- generated/vendor boundary discovery;
+- dependency/build manifest discovery;
+- source/version/claim research ledger;
+- authoritative-source requirement for critical claims;
+- pre-patch research→design ordering;
+- actual candidate-derived audit targets;
+- documentation→code→security/dependency→test/build→E2E/rollback ordering;
+- lockfile/SBOM/license/provenance disposition;
+- build environment + artifact SHA-256 evidence;
+- explicit rollback evidence;
+- stale-evidence invalidation against candidate manifest;
+- final candidate/semantic/evidence/policy hashes;
+- independent evaluator/patch-actor identity separation;
+- bounded structured defects;
+- evaluation packet size limit with fail-closed behavior;
+- no trust promotion/publication.
+
+### Authority
+
+Lifecycle commands are behind the existing manually enabled Experimental RiftCLI.
+
+No new MCP tool, relay method, raw Android shell, model backend, persistent enable flag, trusted-checkpoint promotion or publishing authority was added.
+
+`help` and `contract` are descriptive. Session/evidence/evaluation commands require process-local experimental enablement.
+
+### Evidence ordering
+
+The lifecycle requires:
+1. base-bound repository understanding;
+2. research;
+3. design/document intent;
+4. patch;
+5. documentation audit;
+6. code audit;
+7. security;
+8. dependency/supply-chain audit;
+9. tests when source/build config changed;
+10. optional build evidence when available (becomes required/current if supplied; Patch 13 will own mandatory artifact handshake);
+11. E2E;
+12. rollback;
+13. freeze/evaluation.
+
+Non-research evidence cannot be complete with zero checks. WARN/FAIL/NOT_RUN makes the record incomplete. Missing impact-derived targets also makes it incomplete.
+
+### State-of-the-art evidence additions
+
+Complete dependency evidence must disposition:
+- lockfiles;
+- SBOM;
+- licenses;
+- provenance.
+
+Complete build evidence must name:
+- builder;
+- toolchain;
+- source revision;
+- artifact SHA-256s.
+
+Research collection itself is not called trusted. The final evaluator must independently re-check critical claims. V1 evaluator/patch-actor IDs are declarative separation metadata, not cryptographically authenticated identities.
+
+### Current roadmap effect
+
+- Patch 6 state-machine/policy core: OBSERVE core implemented.
+- Patch 7 research ledger: collection/claim schema implemented; final independent re-check remains evaluator responsibility.
+- Patch 8 parity gate: target-coverage/order foundation implemented; semantic truth remains validators/evaluator work.
+- Patch 9 impact-derived verification planner: target-selection foundation implemented; no autonomous test/build runner.
+- Patch 10 stale-result invalidation: candidate/source/evidence binding implemented; hermetic execution is not.
+- Patch 11 enforcement/bypass closure: not implemented.
+- Patch 12 verification-bundle foundation: implemented; immutable/hash-chained decision trail not yet implemented.
+- Patch 13 Builder provenance handshake: not implemented.
+- Patch 14 adversarial graduation: pending.
+
+### Limits
+
+- lifecycle session store: 64 sessions;
+- imported evidence: 512 KiB/file, 96 records/session;
+- checks: 256/record;
+- targets: 2000/record;
+- full inventory: 50000 files / 512 MiB;
+- evaluation packet: 700 KiB and fails rather than truncates;
+- evaluator defects: 256.
+
+### Validation
+
+Focused source contract:
+- `scripts/test-rift-cli-patch-lifecycle-v1.mjs`
+
+The source test locks manual OBSERVE authority, lifecycle stages, clean acquisition, research rules, evidence completeness/coverage/order, supply-chain/build evidence, stale-result binding, evaluator separation, source ownership and no MCP expansion.
+
+Native shell on-device does not provide Node, so the new JS regression test cannot be honestly claimed executed locally in this source session. It is wired into root `npm run check` and must run in Builder/source-validation environment. Android/Gradle compile and installed-device abuse remain separate gates.
+
+### Rollback
+
+Remove:
+- `RiftCliPatchLifecycleV1.kt`;
+- `RiftResearchLedgerV1.kt`;
+- Experimental CLI lifecycle branch/status/help additions;
+- focused test and docs/source declarations.
+
+Existing Patches 1–5 evidence services remain independent and continue to work.
+
 ## Build-validation hotfix — verification marker date contract
 
 Builder run `35371827181` for source `84c0a39c7f7e8e2edf27529b566460dd7ef8f087` passed source integrity and all code/wiring checks, then failed only because `scripts/validate-rift-docs.mjs` still hard-coded `2026-09-17` while the subsystems changed by Patches 1–5 had been correctly re-verified on `2026-09-18`.
@@ -362,3 +512,33 @@ The headless runtime now:
 - has focused shell/wiring validation that rejects regression to JVM default `toByteArray(Charsets.UTF_8)` or signed-byte TextEncoder output.
 
 Gate 1B remains unfrozen until the next Builder/install run returns benchmark-v2 measurements.
+
+
+## 2026-09-18 — Rift++ 0.10 native byte substrate local candidate
+
+After the shared Rift Text reference proved Strict, Replace, streaming, and direct streaming transcode behavior, the next substrate was documented first and then patched locally.
+
+Candidate source:
+- compiler `0.10.0-bootstrap`;
+- source language remains `riftpp/1`;
+- target remains `rift-exec-v1 / riftvm-1`;
+- checked `u8` range 0..255;
+- existing `Buffer` / `Slice` support `u8`;
+- explicit `u8_to_u32`;
+- checked `u8_from_u32`;
+- u8 participates in checked arithmetic/comparison, display/hash and primitive checkpoint state.
+
+No raw pointer or new host authority was added.
+
+Focused Core/VM tests and strict wiring validation were updated. Builder has no compiler-version pin and already verifies packaged Core/VM bytes against source.
+
+This record does **not** claim runtime PASS: native RiftShell intentionally denies arbitrary Node/process execution and the installed APK still carries the previous compiler. Builder/install/device proof is required before promotion.
+
+
+## 2026-09-18 — Rift++ bounded u8 device proof route
+
+The existing fixed `riftpp self-test` command was upgraded to schema `riftpp-shell-self-test/3` so the 0.10 native-byte candidate can be proven on-device without adding any generic JS/process execution surface.
+
+The embedded proof covers checked u8 literals/conversions, `Buffer<u8,N>`, `Slice<u8>`, deterministic hashing, compile-time literal overflow rejection and runtime checked arithmetic overflow rejection.
+
+The command still executes with no host imports under the existing Rift++ shell limits. Shell and wiring validators now fail if this bounded u8 proof disappears.

@@ -4,7 +4,7 @@
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
-Current source is a **Gate 1B candidate**, not yet device-frozen.
+Current source is a **0.10 native-byte-substrate candidate**, not yet Builder/device-proven.
 
 ## Purpose
 
@@ -12,8 +12,8 @@ Current source is a **Gate 1B candidate**, not yet device-frozen.
 
 It accepts bounded `riftpp/1` source, builds source-spanned syntax, performs semantic/type/control-flow/effect checks, links bounded modules, and lowers successful programs to `rift-exec-v1 / riftvm-1`.
 
-Current compiler implementation:
-`0.9.0-bootstrap`.
+Current compiler implementation candidate:
+`0.10.0-bootstrap`.
 
 Frozen compatibility oracle:
 `0.7.2-bootstrap`.
@@ -69,6 +69,23 @@ Focused validation:
 - inspectProgram.
 
 The compiler module has no filesystem, network, Android, MCP or process authority.
+
+## Native byte substrate
+
+The 0.10 local candidate adds:
+- checked primitive `u8` in range 0..255;
+- contextually typed u8 literals with compile-time range rejection;
+- existing `Buffer<T,N>` / `Slice<T>` instantiated as `Buffer<u8,N>` / `Slice<u8>`;
+- explicit lossless `u8_to_u32`;
+- checked `u8_from_u32`;
+- checked u8 arithmetic/comparison;
+- deterministic hash/display/state serialization for u8.
+
+Indexes and lengths remain `u32`.
+
+There is no implicit u8/u32 coercion and no raw pointer primitive.
+
+Runtime proof is pending Builder/install; focused source tests and wiring validation already encode the required positive/negative contract.
 
 ## Current frontend/resource bounds
 
@@ -305,12 +322,13 @@ Shell routing/help:
 ## Validation
 
 Current source audit must verify:
-- compiler `0.9.0-bootstrap`;
+- compiler candidate `0.10.0-bootstrap`;
 - VM ABI `riftvm-1`;
 - Vec-256 / Buffer-100000;
 - UTF-16 SourceText/TextCursor/StringBuilder bounds and opcodes;
 - explicit UTF-8 boundary op;
 - numeric parse/format ops;
+- u8 primitive/conversion/compiler+VM verifier contract;
 - frozen semantic compatibility;
 - fixed benchmark route without generic authority;
 - module/effect/resource guards;

@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.9.0-bootstrap');
+assert.equal(compiled.compiler,'0.10.0-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -72,7 +72,7 @@ assert(!softwareEvalCompiled.executable.imports.includes('software.expected'),'G
 
 const numericParametersSource=readFileSync('examples/riftpp/core-v1-numeric-parameters.riftpp','utf8');
 const numericParameters=await execute(numericParametersSource);
-assert.equal(numericParameters.compiled.compiler,'0.9.0-bootstrap');
+assert.equal(numericParameters.compiled.compiler,'0.10.0-bootstrap');
 assert.equal(numericParameters.output[0],'9.5');
 assert.match(numericParameters.output[1],/^[a-f0-9]{64}$/,'Gate 6A parameter identity must be a lowercase SHA-256 digest');
 assert.deepEqual(numericParameters.output.slice(2),['true','true']);
@@ -293,6 +293,24 @@ assert.throws(()=>compileRiftPlusPlusCoreV1(`riftpp 1\nmodule bad.long_arithmeti
 const unsupported=`riftpp 1\nmodule bad.loop_case\nfn main() {\n loop { }\n}\n`;
 assert.throws(()=>compileRiftPlusPlusCoreV1(unsupported),/not implemented in the bootstrap slice/);
 
+const u8Source=`riftpp 1\nmodule proof.u8_bytes\nfn main() {\n let max: u8 = 255\n print(max)\n print(u8_to_u32(max))\n let narrowed: Result<u8, string> = u8_from_u32(255)\n match narrowed { Result.Ok(value) => { print(value) } Result.Err(message) => { print(message) } }\n let rejected: Result<u8, string> = u8_from_u32(256)\n match rejected { Result.Ok(value) => { print(value) } Result.Err(message) => { print(message) } }\n var bytes: Buffer<u8, 8> = [65, 66]\n let pushed: Result<Buffer<u8, 8>, string> = bytes.push(67)\n match pushed { Result.Ok(next) => { bytes = next } Result.Err(message) => { print(message) return } }\n print(bytes.len())\n match bytes.get(2) { Option.Some(value) => { print(u8_to_u32(value)) } Option.None => { print(999) } }\n let sliced: Result<Slice<u8>, string> = bytes.slice(1, 3)\n match sliced { Result.Ok(view) => { print(view.len()) match view.get(0) { Option.Some(value) => { print(u8_to_u32(value)) } Option.None => { print(999) } } } Result.Err(message) => { print(message) } }\n print(value_sha256(max) == value_sha256(max))\n}\n`;
+
+const u8Run=await execute(u8Source);
+assert.deepEqual(u8Run.output,['255','255','255','u32 value is out of u8 range','3','67','2','66','true'],'u8 primitive, explicit conversions and Buffer/Slice byte substrate must execute end-to-end');
+const u8Ops=Object.values(u8Run.compiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));
+for(const op of ['u8_to_u32','u8_from_u32','make_buffer','buffer_push','buffer_get','buffer_slice','slice_get','value_sha256'])assert(u8Ops.includes(op),`u8 substrate must lower ${op}`);
+assert(u8Run.compiled.executable.constants.some(item=>item.type==='u8'&&item.value==='255'),'u8 literal must lower as a u8 constant');
+assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\nmodule bad.u8_literal\nfn main() { let x: u8 = 256 print(x) }\n'),/u8 literal is out of range/);
+const mixedU8U32=`riftpp 1\nmodule bad.u8_mixed\nfn main() { let byte: u8 = 1 let wide: u32 = 2 print(byte + wide) }\n`;
+assert.throws(()=>compileRiftPlusPlusCoreV1(mixedU8U32),/type mismatch: expected u8, got u32/,'u8/u32 arithmetic must not widen implicitly');
+const u8Overflow=`riftpp 1\nmodule bad.u8_overflow\nfn main() { let a: u8 = 255 let b: u8 = 1 print(a + b) }\n`;
+await assert.rejects(()=>execute(u8Overflow),/u8 overflow/,'u8 arithmetic must remain checked');
+const u8State=`riftpp 1\nmodule proof.u8_state\nfn main() allow [storage] { let seed: u8 = 200 print(checkpoint_save("u8", seed)) let restored: u8 = checkpoint_load("u8", 0) print(restored) print(checkpoint_remove("u8")) }\n`;
+const u8StateCompiled=compileRiftPlusPlusCoreV1(u8State),u8StateOutput=[],u8StateMap=new Map();
+await executeRiftExecutable(u8StateCompiled.executable,{write:value=>u8StateOutput.push(value),invoke:async(method,args)=>{if(method==='state.save'){u8StateMap.set(args[0],args[1]);return true;}if(method==='state.load')return u8StateMap.get(args[0])??null;if(method==='state.remove')return u8StateMap.delete(args[0]);throw new Error(`unexpected ${method}`);}});
+assert.deepEqual(u8StateOutput,['true','200','true'],'u8 checkpoint serialization must round-trip');
+const u8StateSave=Object.values(u8StateCompiled.executable.functions).flatMap(fn=>fn.code).find(ins=>ins.op==='state_save');
+assert(u8StateSave?.schema.includes('"t":"u8"'),'u8 checkpoint descriptor must preserve u8');
 const sourceCode=readFileSync('src/riftpp-core.js','utf8');
 assert(!/\beval\s*\(/.test(sourceCode));
 assert(!/new\s+Function\b/.test(sourceCode));
@@ -306,3 +324,5 @@ console.log('ok - Gate 6A executes finite f64 and bounded Vec<f64,N> parameter c
 console.log('ok - Module Graph V1 links explicit/default aliases and transitive types/functions, caps graphs at 64 modules, bounds linker recursion, and rejects cycles/missing/ambient modules');
 console.log('ok - Gate 5 effects require exact transitive storage authority and lower bounded checkpoint state imports');
 console.log('ok - mutability, reachability, structured-data/collection correctness and match exhaustiveness fail closed');
+
+console.log('ok - native byte u8 semantics are checked, explicitly converted, Buffer/Slice-compatible, hashable and checkpoint-safe');

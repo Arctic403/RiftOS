@@ -280,6 +280,8 @@ Normal `run/exec` rejects executable host imports. `run-stateful/exec-stateful` 
 
 rift-cli delegates to RiftExperimentalCli and remains a separate experimental subsystem.
 
+It now includes the manual OBSERVE-only `rift-cli lifecycle` contract. `help`/`contract` are descriptive while disabled; session acquisition, evidence import, evaluation and verification require the existing process-local Experimental CLI enable. Lifecycle state lives outside Workspace and adds no generic shell/process authority.
+
 Shell availability does not imply the experimental CLI is enabled.
 
 ## MCP authority

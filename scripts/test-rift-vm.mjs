@@ -246,6 +246,25 @@ await assert.rejects(()=>executeRiftExecutable(overflow),/u32 overflow/);
 const loop={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',constants:[],functions:{main:{params:0,locals:0,code:[{op:'jump',target:0}]}},limits:{maxSteps:25,maxStack:8,maxCallDepth:2}};
 await assert.rejects(()=>executeRiftExecutable(loop),/step limit exceeded/);
 
+const u8Program={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:[{type:'u8',value:255},{type:'u32',value:255},{type:'u32',value:256}],functions:{main:{params:0,locals:0,code:[
+  {op:'const',index:0},{op:'print'},
+  {op:'const',index:0},{op:'u8_to_u32'},{op:'print'},
+  {op:'const',index:1},{op:'u8_from_u32'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'print'},
+  {op:'const',index:2},{op:'u8_from_u32'},{op:'enum_get',name:'Result',variant:'Err',index:0},{op:'print'},
+  {op:'const',index:0},{op:'value_sha256'},{op:'print'},{op:'halt'}
+]}},limits:{maxSteps:50,maxStack:8,maxCallDepth:2}};
+const u8Output=[];await executeRiftExecutable(u8Program,{write:value=>u8Output.push(value)});
+assert.deepEqual(u8Output.slice(0,4),['255','255','255','u32 value is out of u8 range']);
+assert.match(u8Output[4],/^[a-f0-9]{64}$/,'u8 must participate in deterministic value hashing');
+const badU8Constant=structuredClone(u8Program);badU8Constant.constants[0]={type:'u8',value:256};
+assert.throws(()=>prepareRiftExecutable(badU8Constant),/u8 is out of range/);
+const u8Overflow={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:[{type:'u8',value:255},{type:'u8',value:1}],functions:{main:{params:0,locals:0,code:[{op:'const',index:0},{op:'const',index:1},{op:'add'},{op:'halt'}]}},limits:{maxSteps:20,maxStack:4,maxCallDepth:2}};
+await assert.rejects(()=>executeRiftExecutable(u8Overflow),/u8 overflow/);
+const u8StateSchema=JSON.stringify({k:'p',t:'u8'});
+const u8StateProgram={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['state.load'],constants:[{type:'string',value:'byte'},{type:'u8',value:0}],functions:{main:{params:0,locals:0,code:[{op:'const',index:0},{op:'const',index:1},{op:'state_load',schema:u8StateSchema},{op:'print'},{op:'halt'}]}},limits:{maxSteps:20,maxStack:4,maxCallDepth:2}};
+const u8StateOutput=[];await executeRiftExecutable(u8StateProgram,{write:value=>u8StateOutput.push(value),invoke:async()=>JSON.stringify({format:'riftvm-state-v1',schema:u8StateSchema,value:{type:'u8',value:'200'}})});
+assert.deepEqual(u8StateOutput,['200']);
+await assert.rejects(()=>executeRiftExecutable(u8StateProgram,{invoke:async()=>JSON.stringify({format:'riftvm-state-v1',schema:u8StateSchema,value:{type:'u8',value:'256'}})}),/state u8 is out of range/);
 const source=readFileSync('src/riftvm.js','utf8');
 assert(!/\beval\s*\(/.test(source));
 assert(!/new\s+Function\b/.test(source));
@@ -256,3 +275,5 @@ console.log('ok - RiftVM Gate 6A accepts only finite JSON f64 values and compute
 console.log('ok - RiftVM Gate 6D.2 bounded string locate/slice/replace primitives execute without host authority');
 console.log('ok - RiftVM Gate 5 state opcodes validate canonical type descriptors and reject undeclared/corrupt/schema/shape-mismatched state');
 console.log('ok - current production RiftVM activation is audited separately from retained RiftRT package-engine fixtures');
+
+console.log('ok - RiftVM enforces checked u8 constants, arithmetic, explicit conversions, hashing and state validation');
