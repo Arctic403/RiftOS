@@ -89,24 +89,42 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftWorkspaceRecords.kt",
         "src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt"
     )
+
     doLast {
-        val missing = required.filter { !file(it).exists() }
-        if (missing.isNotEmpty()) {
-            throw GradleException("RiftOS Android source snapshot incomplete. Missing: ${missing.joinToString()}")
+        val duplicates = required.groupingBy { it }.eachCount().filterValues { it > 1 }.keys.sorted()
+        if (duplicates.isNotEmpty()) {
+            throw GradleException(
+                "RiftOS Android source snapshot contains duplicate entries: ${duplicates.joinToString()}"
+            )
+        }
+
+        val sourceDir = file("src/main/java/com/riftos/app")
+        val actual = sourceDir.listFiles()
+            ?.filter { it.isFile && it.extension == "kt" }
+            ?.map { it.relativeTo(projectDir).invariantSeparatorsPath }
+            ?.sorted()
+            ?: emptyList()
+        val declared = required.sorted()
+
+        if (declared != actual) {
+            val missingDeclarations = actual.filterNot(declared::contains)
+            val staleDeclarations = declared.filterNot(actual::contains)
+            throw GradleException(
+                "RiftOS Android source snapshot is not exact. " +
+                    "Missing declarations: ${missingDeclarations.joinToString().ifBlank { "none" }}; " +
+                    "stale declarations: ${staleDeclarations.joinToString().ifBlank { "none" }}"
+            )
         }
     }
 }
 
 val syncRiftOsWebAssets by tasks.registering(Sync::class) {
-    // Native RiftOS no longer ships the old HTML/DOM shell. Only trusted non-UI modules used by
-    // the bounded headless Rift++ runtime are copied into the generated www asset namespace.
     from(rootProject.projectDir.parentFile) {
         include("src/riftpp-core.js")
         include("src/riftvm.js")
     }
     into(layout.buildDirectory.dir("generated/riftosAssets/www"))
 }
-
 
 val validateRiftBrowserWebViewOwnership by tasks.registering {
     val sourceRoot = file("src/main")
@@ -118,29 +136,34 @@ val validateRiftBrowserWebViewOwnership by tasks.registering {
         "RiftBrowserPreviewActivity.kt",
         "RiftBrowserRendererCrashGuard.kt"
     )
-    val forbiddenCode = listOf(
-        Regex("""import\s+android\.webkit\."""),
-        Regex("""import\s+androidx\.webkit\."""),
-        Regex("""import\s+android\.webkit\.(?:WebView|WebViewClient)\b"""),
-        Regex("""android\.webkit\.WebView\b"""),
-        Regex("""\bWebView\s*\("""),
-        Regex("""\bWebView\s*[?.:]"""),
-        Regex("""\bWebViewClient\b"""),
-        Regex("""\bWebViewCompat\b"""),
-        Regex("""\bWebViewFeature\b"""),
-        Regex("""<\s*(?:android\.webkit\.)?WebView\b""")
+    val webKitDependency = Regex(
+        """(?m)^\s*import\s+(?:android|androidx)\.webkit\.|(?:android|androidx)\.webkit\."""
     )
+    val xmlWebView = Regex("""<\s*(?:android\.webkit\.)?WebView\b""")
+    val blockComment = Regex("""(?s)/\*.*?\*/""")
 
     doLast {
         val violations = mutableListOf<String>()
+        val actualOwners = linkedSetOf<String>()
         sourceRoot.walkTopDown()
             .filter { it.isFile && it.extension.lowercase() in setOf("kt", "java", "xml") }
             .forEach { source ->
                 val text = source.readText()
-                val ownsRendererCode = forbiddenCode.any { it.containsMatchIn(text) }
+                val codeWithoutComments = if (source.extension.lowercase() in setOf("kt", "java")) {
+                    blockComment.replace(text, "")
+                        .lineSequence()
+                        .filterNot { it.trimStart().startsWith("//") }
+                        .joinToString("\n")
+                } else text
+                val ownsRendererCode = when (source.extension.lowercase()) {
+                    "kt", "java" -> webKitDependency.containsMatchIn(codeWithoutComments)
+                    "xml" -> xmlWebView.containsMatchIn(text)
+                    else -> false
+                }
                 if (!ownsRendererCode) return@forEach
-                val allowed = source.name in allowedOwners &&
-                    source.name.startsWith("RiftBrowser")
+
+                actualOwners += source.name
+                val allowed = source.name in allowedOwners && source.name.startsWith("RiftBrowser")
                 if (!allowed) {
                     violations += source.relativeTo(projectDir).invariantSeparatorsPath
                 }
@@ -148,14 +171,22 @@ val validateRiftBrowserWebViewOwnership by tasks.registering {
 
         if (violations.isNotEmpty()) {
             throw GradleException(
-                "RiftOS WebView ownership violation. Chromium/WebView code is allowed only in " +
+                "RiftOS WebView ownership violation. Actual WebKit dependencies/WebView XML are allowed only in " +
                     "explicit RiftBrowser-owned sources. Violations: " +
                     violations.sorted().joinToString()
             )
         }
+        if (actualOwners != allowedOwners) {
+            val missingOwners = (allowedOwners - actualOwners).sorted()
+            val unexpectedOwners = (actualOwners - allowedOwners).sorted()
+            throw GradleException(
+                "RiftBrowser WebKit owner set drifted. " +
+                    "Missing owners: ${missingOwners.joinToString().ifBlank { "none" }}; " +
+                    "unexpected owners: ${unexpectedOwners.joinToString().ifBlank { "none" }}"
+            )
+        }
     }
 }
-
 
 tasks.named("preBuild").configure {
     dependsOn(verifyRiftOsAndroidSources)

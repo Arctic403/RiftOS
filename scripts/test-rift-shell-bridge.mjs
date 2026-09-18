@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const read = file => fs.readFileSync(file, 'utf8');
+const stripCodeComments = text => text
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n').filter(line => !line.trimStart().startsWith('//')).join('\n');
+const hasWebKitDependency = text => /(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\.|(?:android|androidx)\.webkit\./m.test(stripCodeComments(text));
 const k = 'android/app/src/main/java/com/riftos/app/';
 const shell = read(k + 'RiftNativeShell.kt');
 const runtime = read(k + 'RiftMcpRuntime.kt');
@@ -16,15 +20,16 @@ assert.match(shell, /class RiftNativeShell\(context: Context\) : RiftShellExecut
 assert.match(shell, /\.put\("webViewRequired", false\)/);
 assert.match(shell, /headlessJs\.executeRiftpp\(args, cwd\)/);
 assert.doesNotMatch(shell, /compatibilityFallback|RiftShellBridge/);
-assert.doesNotMatch(shell, /(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m);
+assert.equal(hasWebKitDependency(shell), false);
 assert.match(runtime, /private var nativeShell: RiftNativeShell\?/);
 assert.match(runtime, /fun shellExecutor\(\): RiftShellExecutor\? = nativeShell/);
 assert.doesNotMatch(runtime, /registerShellBridge|setCompatibilityFallback|clearCompatibilityFallback/);
-assert.doesNotMatch(main, /android\.webkit|androidx\.webkit|RiftShellBridge|addJavascriptInterface/);
+assert.equal(hasWebKitDependency(main), false);
+assert.doesNotMatch(main, /RiftShellBridge|addJavascriptInterface/);
 assert.match(headless, /quickJs \{/);
 assert.match(headless, /src\/riftpp-core\.js/);
 assert.match(headless, /src\/riftvm\.js/);
-assert.doesNotMatch(headless, /(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m);
+assert.equal(hasWebKitDependency(headless), false);
 assert.doesNotMatch(headless, /ProcessBuilder|Runtime\.getRuntime|Socket\(/);
 assert.doesNotMatch(browserBridge, /RiftShellBridge|rift_shell_result|RiftShellMcpNative/);
 assert.match(gradle, /validateRiftBrowserWebViewOwnership/);

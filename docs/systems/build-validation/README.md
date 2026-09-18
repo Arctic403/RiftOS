@@ -75,7 +75,7 @@ android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists al
 
 During this audit the old list was found to protect only 32 files.
 
-The source validator now independently extracts the Gradle list and compares it exactly with the actual Kotlin directory:
+Gradle itself now compares the declared list exactly with the actual top-level Kotlin directory and rejects duplicate, missing or stale entries. The source validator independently performs the same exact-set comparison:
 - a live Kotlin file omitted from Gradle -> failure;
 - a stale deleted Kotlin path left in Gradle -> failure.
 
@@ -90,7 +90,7 @@ preBuild depends on:
 
 ### WebView ownership
 
-Only explicit RiftBrowser-named owners may contain WebKit/WebView code:
+Only explicit RiftBrowser-named owners may contain actual WebKit dependencies/WebView XML. Harmless comments or UI text containing the word `WebView` do not count as renderer ownership:
 - RiftBrowserAndroidWebViewEngine.kt
 - RiftBrowserWindow.kt
 - RiftBrowserMcpAppBridge.kt
@@ -98,7 +98,7 @@ Only explicit RiftBrowser-named owners may contain WebKit/WebView code:
 - RiftBrowserPreviewActivity.kt
 - RiftBrowserRendererCrashGuard.kt
 
-Any matching WebKit/WebView code outside that set is a Gradle build failure.
+For Kotlin/Java, the Gradle gate strips block comments and full-line comments, then matches WebKit imports or fully qualified `android.webkit` / `androidx.webkit` references. For XML, it matches an actual `<WebView>` element. Matching dependencies outside that owner set are a Gradle build failure, and the six-owner allowlist must exactly equal the source files that currently use WebKit.
 
 ### Headless OS-execution assets
 
@@ -181,7 +181,10 @@ It:
 2. checks out that exact SHA;
 3. verifies HEAD equals SOURCE_SHA;
 4. requires the checked-out tree to have no tracked drift or untracked files;
-5. runs the exact source commit's npm run check before Gradle.
+5. syntax-checks both Builder shell scripts;
+6. preflights Builder assumptions against the source Gradle contract (namespace/application ID, compile/target Android 36, minSdk 26, Java 17, release minification off and filename-to-DEX declaration shape);
+7. runs the exact source commit's npm run check;
+8. runs the dedicated Gradle validation tasks into `gradle-validation.log` before compilation.
 
 Local unpushed workspace changes are never built by that worker.
 
@@ -190,7 +193,8 @@ Local unpushed workspace changes are never built by that worker.
 riftos-build.sh:
 - requires signing identity variables;
 - runs npm run check;
-- runs Gradle release assemble with Java 17/Android 36;
+- runs `verifyRiftOsAndroidSources` and `validateRiftBrowserWebViewOwnership` as a dedicated Gradle validation phase captured in `gradle-validation.log`;
+- runs Gradle release assemble with Java 17/Android 36 only after that validation phase passes;
 - requires unsigned APK output;
 - zipaligns;
 - signs with apksigner;
@@ -207,6 +211,8 @@ verify-riftos-apk.sh reads the current Gradle mandatory Kotlin list.
 For every listed top-level Kotlin filename it requires the corresponding com/riftos/app class descriptor in packaged DEX.
 
 It also explicitly requires private top-level RiftDevLabLocalAgent and embedded SOURCE_SHA.
+
+The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
 Because the Gradle list is now exact 40/40, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
 
@@ -226,6 +232,9 @@ That directly contradicted current native Gradle packaging and would reject a co
 This audit replaced the obsolete block.
 
 Current Builder final-APK rules:
+- use Build-Tools `aapt2 dump badging` to require packaged application ID `com.riftos.app`, minSdk 26, targetSdk 36 and a non-debuggable release manifest;
+- reject duplicate ZIP entries and unsafe absolute/`..` paths;
+- reject packaged Kotlin/Java source, `.git` content and keystore material;
 - require assets/www/src/riftpp-core.js byte-for-byte equal source;
 - require assets/www/src/riftvm.js byte-for-byte equal source;
 - reject every other file under assets/www;
@@ -292,7 +301,9 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - SOURCE_OWNERSHIP now uses the validator's canonical exact trust sentence (`Ownership does **not** imply...`) so the documentation-trust gate checks meaning and wording consistently;
 - focused retained-reference tests for RiftLLM and Workspace Records now explicitly prove those JavaScript/HTML adapters remain un-packaged instead of presenting retained globals/UI as live APK surfaces;
 - shell/WebView validation now detects actual WebKit dependencies rather than harmless comments containing the word `WebView`;
-- the external Builder now preflights its filename-to-DEX-descriptor assumption against every mandatory Kotlin source before running source tests/Gradle, so future verifier drift fails with a direct stale-Builder error.
+- the external Builder now preflights namespace/application ID, compile/target Android 36, minSdk 26, Java 17, release-minification-off and filename-to-DEX assumptions before source tests/Gradle, so future verifier drift fails with a direct stale-Builder error;
+- Builder now runs the two Gradle validation tasks in a dedicated pre-compilation phase/log;
+- final APK smoke now rejects duplicate/unsafe ZIP entries, source/VCS/keystore leakage and retired native DEX descriptors.
 
 ## Critical invariants
 
@@ -300,7 +311,7 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - every focused test is wired into npm check;
 - every subsystem README is discovered by docs validation;
 - Gradle mandatory Kotlin list exactly equals current Kotlin source directory;
-- preBuild WebView ownership gate stays active;
+- Gradle source snapshot and WebKit-owner validation run explicitly before compilation and remain wired into preBuild;
 - only Rift++ Core/RiftVM enter generated assets/www;
 - final Builder APK independently proves those two assets and rejects any additional OS web asset;
 - final Builder verifies native DEX/source provenance, alignment and signatures;
@@ -315,6 +326,7 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - subsystem README exists but bypasses docs validator -> discovery regression;
 - test-*.mjs exists but npm check never runs it -> test-gate regression;
 - Builder verifier requires index.html/styles.css/workspace-live -> stale native-migration regression;
+- duplicate/unsafe ZIP path, leaked source/VCS/keystore material or retired native DEX descriptor passes Builder smoke -> artifact-validation regression;
 - unexpected assets/www file passes Builder smoke -> packaging regression;
 - npm check is moved after Gradle -> waste/gating regression;
 - Builder source tree is dirty but proceeds -> provenance regression;

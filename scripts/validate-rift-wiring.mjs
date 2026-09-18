@@ -7,6 +7,10 @@ const failures = [];
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 const exists = relative => fs.existsSync(path.join(root, relative));
 const fail = message => failures.push(message);
+const stripCodeComments = text => text
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n').filter(line => !line.trimStart().startsWith('//')).join('\n');
+const hasWebKitDependency = text => /(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\.|(?:android|androidx)\.webkit\./m.test(stripCodeComments(text));
 
 function walk(relative) {
   const base = path.join(root, relative);
@@ -77,6 +81,13 @@ for (const required of [
   'include("src/riftpp-core.js")',
   'include("src/riftvm.js")',
   'validateRiftBrowserWebViewOwnership',
+  'RiftOS Android source snapshot is not exact',
+  'Actual WebKit dependencies/WebView XML are allowed only in',
+  'getByName("release") { isMinifyEnabled = false }',
+  'compileSdk = 36',
+  'minSdk = 26',
+  'targetSdk = 36',
+  'JavaVersion.VERSION_17',
   'io.github.dokar3:quickjs-kt:1.0.14',
 ]) if (!gradle.includes(required)) fail(`Android native/headless Gradle contract is missing ${required}`);
 for (const retired of ['include("index.html")', 'include("styles.css")', 'include("src/**")', 'include("workspace-live/**")']) {
@@ -98,7 +109,7 @@ for (const retired of [
   'RiftNativeDispatcher.kt', 'RiftTransferManifest.kt',
 ]) if (exists(`${kotlinDir}/${retired}`)) fail(`retired migration source returned: ${retired}`);
 
-if (/android\.webkit|androidx\.webkit|RiftShellBridge|addJavascriptInterface|loadUrl\(/.test(main)) fail('MainActivity regained renderer/WebView bridge authority');
+if (hasWebKitDependency(main) || /RiftShellBridge|addJavascriptInterface|loadUrl\(/.test(main)) fail('MainActivity regained renderer/WebView bridge authority');
 for (const required of ['RiftNativeDesktop(', 'RiftBrowserWindow(', 'RiftBrowserAppHost(', 'RiftNativeSystemApps(', 'RiftNativeWorkspaceApps(']) {
   if (!main.includes(required)) fail(`MainActivity native composition is missing ${required}`);
 }
@@ -108,23 +119,26 @@ const allowedWebKitOwners = new Set([
   'RiftBrowserAndroidWebViewEngine.kt', 'RiftBrowserWindow.kt', 'RiftBrowserMcpAppBridge.kt',
   'RiftBrowserAppHost.kt', 'RiftBrowserPreviewActivity.kt', 'RiftBrowserRendererCrashGuard.kt',
 ]);
+const actualWebKitOwners = new Set();
 for (const file of kotlinFiles) {
   const text = read(file);
-  const usesWebKit = /import\s+(?:android|androidx)\.webkit\./.test(text) || /\bWebView\s*\(/.test(text);
+  const usesWebKit = hasWebKitDependency(text);
+  if (usesWebKit) actualWebKitOwners.add(path.basename(file));
   if (usesWebKit && !allowedWebKitOwners.has(path.basename(file))) fail(`WebKit ownership escaped RiftBrowser: ${file}`);
 }
+for (const owner of allowedWebKitOwners) if (!actualWebKitOwners.has(owner)) fail(`RiftBrowser WebKit owner allowlist is stale: ${owner}`);
 
 if (!nativeShell.includes('class RiftNativeShell(context: Context) : RiftShellExecutor')) fail('native RiftShell executor is missing');
 if (!nativeShell.includes('.put("webViewRequired", false)')) fail('native RiftShell does not explicitly report WebView-free execution');
 if (!nativeShell.includes('headlessJs.executeRiftpp(args, cwd)')) fail('Rift++ is not routed through the headless runtime');
-if (/compatibilityFallback|RiftShellBridge|android\.webkit/.test(nativeShell)) fail('native RiftShell regained renderer fallback authority');
+if (/compatibilityFallback|RiftShellBridge/.test(nativeShell) || hasWebKitDependency(nativeShell)) fail('native RiftShell regained renderer fallback authority');
 if (!runtime.includes('private var nativeShell: RiftNativeShell?') || !runtime.includes('fun shellExecutor(): RiftShellExecutor? = nativeShell')) fail('MCP does not retain process-owned native shell authority');
 if (/registerShellBridge|setCompatibilityFallback|clearCompatibilityFallback/.test(runtime)) fail('MCP runtime regained shell-WebView fallback wiring');
 
 for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()', 'src/riftpp-core.js', 'src/riftvm.js']) {
   if (!headless.includes(required)) fail(`headless Rift++ runtime is missing ${required}`);
 }
-if (/(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m.test(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
+if (hasWebKitDependency(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
 
 if (!browserWindow.includes('WebChromeClient.FileChooserParams') || !browserWindow.includes('onActivityResult(')) fail('RiftBrowser does not own its file chooser lifecycle');
 if (!browserHost.includes('appOrigin(app.id)') || !browserHost.includes('https://app-$token.riftos.local') || !browserHost.includes('WebViewCompat.addWebMessageListener')) fail('installed RiftBrowser app host origin/capability bridge is incomplete');
@@ -133,7 +147,7 @@ if (browserBridge.includes('RiftShellBridge') || browserBridge.includes('rift_sh
 for (const required of ['Intent.ACTION_OPEN_DOCUMENT_TREE', 'takePersistableUriPermission', 'DocumentFile.fromTreeUri', 'ANDROID_FILES_ROOT', 'MAX_FILES_ROWS', 'writeDocumentBytes', 'Android provider write verification failed', 'Editor target is not a file']) {
   if (!workspaceApps.includes(required)) fail(`native Files external-storage contract is missing ${required}`);
 }
-if (/(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m.test(workspaceApps)) fail('native workspace apps gained a WebView dependency');
+if (hasWebKitDependency(workspaceApps)) fail('native workspace apps gained a WebView dependency');
 
 const riftpp = read('src/riftpp-core.js');
 const vm = read('src/riftvm.js');
