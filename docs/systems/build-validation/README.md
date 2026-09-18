@@ -303,7 +303,8 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - shell/WebView validation now detects actual WebKit dependencies rather than harmless comments containing the word `WebView`;
 - the external Builder now preflights namespace/application ID, compile/target Android 36, minSdk 26, Java 17, release-minification-off and filename-to-DEX assumptions before source tests/Gradle, so future verifier drift fails with a direct stale-Builder error;
 - Builder now runs the two Gradle validation tasks in a dedicated pre-compilation phase/log;
-- final APK smoke now rejects duplicate/unsafe ZIP entries, source/VCS/keystore leakage and retired native DEX descriptors.
+- final APK smoke now rejects duplicate/unsafe ZIP entries, source/VCS/keystore leakage and retired native DEX descriptors;
+- transport/wiring validation now proves the actual `preBuild` dependency wiring instead of matching implementation text from the WebKit regex, preventing validator self-drift when the ownership matcher changes.
 
 ## Critical invariants
 

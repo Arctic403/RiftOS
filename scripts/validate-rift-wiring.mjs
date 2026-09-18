@@ -69,6 +69,7 @@ for (const [name, node] of kotlinTypes) {
 }
 
 const gradle = read('android/app/build.gradle.kts');
+const preBuildBlock = gradle.match(/tasks\.named\("preBuild"\)\.configure\s*\{([\s\S]*?)\n\}/)?.[1] || '';
 const gradleRequiredKotlin = [...gradle.matchAll(/"(src\/main\/java\/com\/riftos\/app\/[A-Za-z0-9_]+\.kt)"/g)].map(match => `android/app/${match[1]}`);
 const actualKotlin = [...kotlinFiles].sort();
 const declaredKotlin = [...new Set(gradleRequiredKotlin)].sort();
@@ -83,6 +84,7 @@ for (const required of [
   'validateRiftBrowserWebViewOwnership',
   'RiftOS Android source snapshot is not exact',
   'Actual WebKit dependencies/WebView XML are allowed only in',
+  'RiftBrowser WebKit owner set drifted',
   'getByName("release") { isMinifyEnabled = false }',
   'compileSdk = 36',
   'minSdk = 26',
@@ -92,6 +94,9 @@ for (const required of [
 ]) if (!gradle.includes(required)) fail(`Android native/headless Gradle contract is missing ${required}`);
 for (const retired of ['include("index.html")', 'include("styles.css")', 'include("src/**")', 'include("workspace-live/**")']) {
   if (gradle.includes(retired)) fail(`retired trusted-shell asset packaging returned: ${retired}`);
+}
+for (const dependency of ['verifyRiftOsAndroidSources', 'validateRiftBrowserWebViewOwnership', 'syncRiftOsWebAssets']) {
+  if (!preBuildBlock.includes(`dependsOn(${dependency})`)) fail(`Gradle preBuild is missing dependency ${dependency}`);
 }
 
 const main = read(`${kotlinDir}/MainActivity.kt`);

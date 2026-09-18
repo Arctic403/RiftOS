@@ -31,6 +31,7 @@ const workspaceRecords = read(k + 'RiftWorkspaceRecords.kt');
 const manifest = read('android/app/src/main/AndroidManifest.xml');
 const accessibilityConfig = read('android/app/src/main/res/xml/vortex_agent_accessibility.xml');
 const gradle = read('android/app/build.gradle.kts');
+const preBuildBlock = gradle.match(/tasks\.named\("preBuild"\)\.configure\s*\{([\s\S]*?)\n\}/)?.[1] || '';
 const adapter = read('android/app/src/main/assets/riftbrowser-mcp-app.js');
 const relayWorker = read('relay/src/index.js');
 
@@ -75,7 +76,7 @@ const checks = [
   ['device relay client uses byte-accurate bounded envelopes', relayClient.includes('MAX_MESSAGE_BYTES = 1_000_000') && relayClient.includes('text.toByteArray(Charsets.UTF_8).size > MAX_MESSAGE_BYTES') && relayClient.includes('Local MCP response exceeds relay message limit')],
   ['raw chat tool protocol remains bounded and manual', adapter.includes("const CALL_OPEN = '[RIFT_CALL]'") && adapter.includes('MAX_RESULT_CHARS = 48000') && adapter.includes('stageComposerMessage') && !adapter.includes('auto-submit') && !adapter.includes('RiftMcpAppControl')],
   ['build provenance remains embedded', gradle.includes('RIFT_SOURCE_SHA') && gradle.includes('RIFT_BUILD_RUN_ID') && gradle.includes('RIFT_BUILD_RUN_NUMBER') && shell.includes('BuildConfig.RIFT_SOURCE_SHA')],
-  ['WebView ownership is a preBuild gate', gradle.includes('validateRiftBrowserWebViewOwnership') && gradle.includes('tasks.named("preBuild")') && gradle.includes('import\\s+android\\.webkit\\.')],
+  ['WebView ownership is a preBuild gate', preBuildBlock.includes('dependsOn(validateRiftBrowserWebViewOwnership)') && gradle.includes('RiftBrowser WebKit owner set drifted') && gradle.includes('Actual WebKit dependencies/WebView XML are allowed only in')],
   ['manifest routes preview only to RiftBrowser-owned preview activity', manifest.includes('.RiftBrowserPreviewActivity') && !manifest.includes('.RiftPreviewActivity')],
   ['preview stays workspace-local and per-root isolated', read(k + 'RiftBrowserPreviewActivity.kt').includes('blockNetworkLoads=true') && read(k + 'RiftBrowserPreviewActivity.kt').includes('shouldOverrideUrlLoading') && read(k + 'RiftBrowserPreviewActivity.kt').includes('External preview networking is disabled') && read(k + 'RiftBrowserPreviewActivity.kt').includes('previewHostFor') && read(k + 'RiftBrowserPreviewActivity.kt').includes('previewRoot.path.startsWith(workspace.path+File.separator)')],
   ['retired renderer/dispatcher islands remain absent', ['RiftShellBridge.kt','RiftSystemDump.kt','RiftNativeDispatcher.kt','RiftTransferManifest.kt','AndroidWebViewBrowserEngine.kt','RiftNativeAppHost.kt','RiftPreviewActivity.kt','RiftRendererCrashGuard.kt'].every(name => !existsSync(k + name))],
