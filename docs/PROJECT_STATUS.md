@@ -125,3 +125,13 @@ Still required before calling the runtime proven:
 ## Next documentation sequence
 
 The engine/core pass is followed by a second engine re-audit. After the engine is clean, each subsystem is audited independently from source and only then marked verified/trusted.
+
+
+## Rift++ active candidate
+
+Current packaged Rift++ source is `0.9.0-bootstrap` / `riftpp/1` targeting `rift-exec-v1 / riftvm-1`.
+
+- Gate 1A Buffer/Slice is frozen.
+- Gate 1B SourceText/TextCursor/StringBuilder + numeric text is source-verified but not device-frozen.
+- Gate 1B hot working text uses UTF-16 code units; UTF-8 remains explicit boundary accounting/interchange.
+- `rift-tool text-model-benchmark` provides a fixed installed-device representation benchmark before Gate 1B freeze.

@@ -117,17 +117,18 @@ class RiftHeadlessJsRuntime(context: Context) {
             "", "help" -> {
                 val value = JSONObject()
                     .put("schema", "rift-developer-tool/1")
-                    .put("commands", org.json.JSONArray(listOf("rift-tool gate0-verify", "rift-tool semantic-compat")))
+                    .put("commands", org.json.JSONArray(listOf("rift-tool gate0-verify", "rift-tool semantic-compat", "rift-tool text-model-benchmark")))
                     .put("genericJavaScript", false)
                     .put("processAuthority", false)
                     .put("networkAuthority", false)
                 CommandResult(
-                    output = "Rift developer tools\nrift-tool gate0-verify\nrift-tool semantic-compat",
+                    output = "Rift developer tools\nrift-tool gate0-verify\nrift-tool semantic-compat\nrift-tool text-model-benchmark",
                     result = value
                 )
             }
             "gate0-verify" -> executeGate0Verifier()
             "semantic-compat" -> executeSemanticCompatibilityVerifier()
+            "text-model-benchmark" -> executeTextModelBenchmark()
             else -> throw IllegalArgumentException("unsupported fixed Rift developer tool: $subcommand")
         }
     }
@@ -213,6 +214,42 @@ class RiftHeadlessJsRuntime(context: Context) {
         val payload = resultJson?.let(::JSONObject)
             ?: throw IllegalStateException("Semantic compatibility verifier returned no result")
         require(payload.optString("status") == "PASS") { "Semantic compatibility verifier did not pass" }
+        return CommandResult(payload.toString(2), payload)
+    }
+
+
+    private fun executeTextModelBenchmark(): CommandResult {
+        var resultJson: String? = null
+
+        runBlocking {
+            quickJs {
+                evaluationTimeoutMillis = EVALUATION_TIMEOUT_MS
+
+                function("__rift_text_benchmark_result") { values ->
+                    resultJson = values.firstOrNull()?.toString()
+                    Unit
+                }
+                function("__rift_utf8") { values ->
+                    values.firstOrNull()?.toString().orEmpty().toByteArray(Charsets.UTF_8)
+                }
+                function("__rift_sha256") { values ->
+                    val value = values.firstOrNull()
+                    val bytes = when (value) {
+                        is ByteArray -> value
+                        is List<*> -> ByteArray(value.size) { index -> (value[index] as Number).toByte() }
+                        else -> throw IllegalArgumentException("SHA-256 input must be a byte array")
+                    }
+                    MessageDigest.getInstance("SHA-256").digest(bytes)
+                }
+
+                evaluate<Any?>(Scripts.POLYFILLS, filename = "rift-tool-polyfills.js")
+                evaluate<Any?>(Scripts.TEXT_MODEL_BENCHMARK_ENTRY, filename = "text-model-benchmark.js")
+            }
+        }
+
+        val payload = resultJson?.let(::JSONObject)
+            ?: throw IllegalStateException("Text-model benchmark returned no result")
+        require(payload.optString("status") == "MEASURED") { "Text-model benchmark did not complete" }
         return CommandResult(payload.toString(2), payload)
     }
 
@@ -459,6 +496,79 @@ class RiftHeadlessJsRuntime(context: Context) {
             });
         """
 
+
+        const val TEXT_MODEL_BENCHMARK_ENTRY = """
+            (function() {
+              const snippet = 'fn classify_value(input: string) { let total: u32 = 0 while total < 64 { total += 1 } return total } // Rift++ 😀 λ\n';
+              let text = '';
+              while (text.length < 262144) text += snippet;
+              const iterations = 24;
+
+              const scanUtf16 = value => {
+                let checksum = 0;
+                for (let i = 0; i < value.length; i++) checksum = (checksum + value.charCodeAt(i)) >>> 0;
+                return checksum >>> 0;
+              };
+              const scanUtf8 = bytes => {
+                let checksum = 0;
+                for (let i = 0; i < bytes.length; i++) checksum = (checksum + bytes[i]) >>> 0;
+                return checksum >>> 0;
+              };
+              const timed = fn => {
+                const start = Date.now();
+                const value = fn();
+                return { ms: Math.max(0, Date.now() - start), value: value };
+              };
+
+              const bytes = new TextEncoder().encode(text);
+              for (let i = 0; i < 3; i++) { scanUtf16(text); scanUtf8(bytes); }
+
+              const utf16 = timed(() => {
+                let checksum = 0;
+                for (let n = 0; n < iterations; n++) checksum = (checksum ^ scanUtf16(text)) >>> 0;
+                return checksum;
+              });
+              const utf8Scan = timed(() => {
+                let checksum = 0;
+                for (let n = 0; n < iterations; n++) checksum = (checksum ^ scanUtf8(bytes)) >>> 0;
+                return checksum;
+              });
+              const utf8EndToEnd = timed(() => {
+                let checksum = 0;
+                for (let n = 0; n < iterations; n++) {
+                  const prepared = new TextEncoder().encode(text);
+                  checksum = (checksum ^ scanUtf8(prepared)) >>> 0;
+                }
+                return checksum;
+              });
+
+              const ratio = (numerator, denominator) => denominator > 0 ? numerator / denominator : null;
+              __rift_text_benchmark_result(JSON.stringify({
+                schema: 'riftpp-text-model-benchmark-v1',
+                status: 'MEASURED',
+                representationUnderTest: {
+                  hotInternal: 'utf16-code-units',
+                  interchangeBoundary: 'utf8'
+                },
+                corpus: {
+                  codeUnits: text.length,
+                  utf8Bytes: bytes.length,
+                  iterations: iterations
+                },
+                utf16HotScanMs: utf16.ms,
+                utf8PreparedScanMs: utf8Scan.ms,
+                utf8PrepareAndScanMs: utf8EndToEnd.ms,
+                preparedScanRatioUtf8OverUtf16: ratio(utf8Scan.ms, utf16.ms),
+                endToEndRatioUtf8OverUtf16: ratio(utf8EndToEnd.ms, utf16.ms),
+                checksums: {
+                  utf16: utf16.value,
+                  utf8Prepared: utf8Scan.value,
+                  utf8EndToEnd: utf8EndToEnd.value
+                },
+                note: 'Ratios above 1 mean the UTF-16 path completed faster. This benchmark measures installed QuickJS/device representation costs; it is not a universal encoding claim.'
+              }));
+            })();
+        """
 
         const val SEMANTIC_COMPAT_ENTRY = """
             (async function() {

@@ -300,3 +300,31 @@ Immutable Buffer versions make zero-copy Slice views safe: a Slice references on
 ### Remaining promotion gate
 
 Builder/APK/device proof remains required. After installation, run `rift-tool semantic-compat`, the Gate 1A functional fixture, `riftpp self-test`, and host-boundary checks before freezing Gate 1A.
+
+
+## 2026-09-18 — Rift++ 0.9.0 Gate 1B text/numeric candidate
+
+### What changed
+
+- advanced active compiler implementation to `0.9.0-bootstrap` while retaining source language `riftpp/1` and `rift-exec-v1 / riftvm-1`;
+- added `SourceText`, `TextCursor`, persistent `StringBuilder<N>`, numeric text parse/format;
+- selected UTF-16 code units for the hot SourceText/cursor/builder representation;
+- kept UTF-8 explicit at file/token/provenance/interchange boundaries through on-demand byte accounting;
+- preserved frozen compatibility-string UTF-16 code-unit semantics;
+- denied SourceText/TextCursor/StringBuilder checkpoint persistence and SourceText hashing through `value_sha256`;
+- added independent Core and VM tests;
+- added fixed `rift-tool text-model-benchmark` so the installed-device UTF-16/UTF-8 representation costs are recorded under a named benchmark instead of relying on an unpreserved historical multiplier.
+
+### Verified source-side
+
+- UTF-16/code-unit functional Gate 1B program PASS;
+- edge/half-surrogate program PASS;
+- 70,000-code-unit builder PASS;
+- numeric parse/format positive/negative behavior PASS;
+- full frozen semantic compatibility suite PASS;
+- RiftLLM+ consumer regression compile PASS;
+- no language/VM ABI version bump required because changes are additive to valid `riftpp/1` source.
+
+### Promotion boundary
+
+Gate 1B remains **not frozen** until Builder/install/device proof runs `semantic-compat`, exact Gate 1B fixtures, `text-model-benchmark`, self-test, authority-boundary regression and final audit.

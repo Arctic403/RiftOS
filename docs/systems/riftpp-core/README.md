@@ -4,312 +4,300 @@
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
+Current source is a **Gate 1B candidate**, not yet device-frozen.
+
 ## Purpose
 
-src/riftpp-core.js is the current packaged Rift++ bootstrap compiler frontend.
+`src/riftpp-core.js` is the packaged Rift++ bootstrap compiler frontend.
 
-It accepts bounded riftpp/1 source, produces a source-spanned AST, performs semantic/type/control-flow/effect checks, links bounded source modules, and lowers successful programs to rift-exec-v1 / riftvm-1 executables.
+It accepts bounded `riftpp/1` source, builds source-spanned syntax, performs semantic/type/control-flow/effect checks, links bounded modules, and lowers successful programs to `rift-exec-v1 / riftvm-1`.
 
-Current compiler version:
-0.8.0-bootstrap.
+Current compiler implementation:
+`0.9.0-bootstrap`.
+
+Frozen compatibility oracle:
+`0.7.2-bootstrap`.
+
+The source language remains `riftpp/1`; Gate 1A/1B additions are additive.
 
 ## Live activation
 
 Gradle packages:
-- src/riftpp-core.js
-- src/riftvm.js
+- `src/riftpp-core.js`;
+- `src/riftvm.js`.
 
-RiftHeadlessJsRuntime loads both into QuickJS for the native RiftShell riftpp command.
+`RiftHeadlessJsRuntime` loads both into bounded QuickJS for native RiftShell `riftpp` commands and fixed developer verification tools.
 
-Source compilation is live.
+Normal `riftpp run/exec` rejects all host imports.
+`run-stateful/exec-stateful` permits only:
+- `state.load`;
+- `state.save`;
+- `state.remove`.
 
-Effectful executable imports are a separate activation question: normal production `riftpp run/exec` still rejects any executable whose imports list is non-empty. The explicit `run-stateful` / `exec-stateful` path permits only `state.load`, `state.save`, and `state.remove` through a bounded namespace-scoped native checkpoint host; every other import remains denied.
+Repair/software imports remain specialized-host-only.
 
 ## Source ownership
 
-Primary:
-- src/riftpp-core.js
+Primary frontend:
+- `src/riftpp-core.js`
 
-Runtime validator/executor:
-- src/riftvm.js
+VM validator/executor:
+- `src/riftvm.js`
 
-Live Android host:
-- RiftHeadlessJsRuntime.kt
-- RiftNativeShell.kt
+Android host:
+- `RiftHeadlessJsRuntime.kt`
+- `RiftNativeShell.kt`
 
-Focused tests:
-- scripts/test-rift-plus-plus-core-v1.mjs
-- scripts/test-rift-vm.mjs
-- scripts/test-riftpp-shell.mjs
-- scripts/validate-rift-wiring.mjs
+Focused validation:
+- `scripts/test-rift-plus-plus-core-v1.mjs`
+- `scripts/test-rift-vm.mjs`
+- `scripts/test-riftpp-shell.mjs`
+- `scripts/validate-rift-wiring.mjs`
 
-## Public API
+## Public compiler API
 
-globalThis.RiftPlusPlusCore exposes:
-- version
-- language
-- targetFormat
-- targetAbi
-- lex
-- parse
-- compile
-- compileProgram
-- inspect
-- inspectProgram
+`globalThis.RiftPlusPlusCore` exposes:
+- version;
+- language;
+- targetFormat;
+- targetAbi;
+- lex;
+- parse;
+- compile;
+- compileProgram;
+- inspect;
+- inspectProgram.
 
-The compiler module itself has no filesystem, network, Android, MCP or process authority.
+The compiler module has no filesystem, network, Android, MCP or process authority.
 
-## Core source limits
+## Current frontend/resource bounds
 
-- source: 256 KiB UTF-8 per module
-- tokens: 50000
-- functions: 256
-- parameters/function: 64
-- locals/function: 512
-- struct fields / enum payload/cases: 64
-- named local types: 256
-- Vec capacity: 1..256 (frozen bounded collection)
-- Buffer capacity: 1..100000 (persistent scalable compiler/runtime storage)
-- Slice: read-only zero-copy view over an immutable Buffer version
-- generic/type nesting: 32
-- parser recursion families: 128
-- use declarations/module: 64
-- linked modules: 64 total
-- aggregate linked source: 1 MiB
-- linked symbol name: 96 UTF-8 bytes
-- declared effects/function: 16
-- generated checkpoint schema: 4096 UTF-8 bytes
+- source: 256 KiB UTF-8 boundary size per module;
+- tokens: 50,000;
+- functions: 256;
+- parameters/function: 64;
+- locals/function: 512;
+- struct fields / enum payload/cases: 64;
+- named local types: 256;
+- Vec capacity: 1..256;
+- Buffer capacity: 1..100000;
+- SourceText: <=4,194,304 UTF-16 code units;
+- StringBuilder: <=4,194,304 UTF-16 code units;
+- generic/type nesting: 32;
+- parser/linker/codegen guarded depth families: 128;
+- use declarations/module: 64;
+- linked modules: 64;
+- aggregate linked source: 1 MiB;
+- linked symbol name: 96 UTF-8 bytes;
+- declared effects/function: 16;
+- checkpoint schema: 4096 UTF-8 bytes.
 
-Module linker expression/pattern/statement/block rewrites and codegen expression/block traversal have independent 128-depth guards.
+## Language surface
 
-## Current language surface
+Frozen/current core constructs include:
+- module + bounded `use ... as ...`;
+- typed functions and unit `main`;
+- `unit`, `bool`, `u32`, `s32`, finite `f64`, compatibility `string`;
+- `let` / `var`;
+- checked assignment/compound assignment;
+- lexical scopes;
+- `if/else`, `while`, `break`, `continue`, `return`;
+- return-completeness/unreachable checking;
+- short-circuit `and/or/not`;
+- nominal structs/enums;
+- exhaustive match + guards;
+- `Option` / `Result`;
+- `Vec<T,N>`;
+- checked arithmetic;
+- compatibility `string_len/find/slice/replace`;
+- `value_sha256`;
+- checkpoint builtins;
+- repair/software-eval compiler surfaces;
+- print.
 
-Implemented bootstrap constructs include:
-- module declaration and bounded use module.path [as alias]
-- typed functions and unit main entrypoint
-- unit, bool, u32, s32, finite f64 and string
-- immutable let and mutable var
-- checked assignment and compound assignment
-- lexical block scope and shadowing
-- if/else and while
-- break and continue
-- return completeness and unreachable-code rejection
-- and/or/not with short-circuit lowering
-- local nominal struct and enum declarations
-- exact struct construction and field reads
-- enum construction
-- exhaustive match over bool, enums, Option and Result
-- match guards
-- Vec<T,N>, Buffer<T,N>, Slice<T>, Option<T>, Result<T,E>
-- bounded Vec literals and len/get/push/set
-- persistent scalable Buffer literals and len/get/push/set/slice
-- read-only Slice len/get views that remain stable across later Buffer versions
-- checked numeric arithmetic
-- string concatenation
-- string_len, string_find, string_slice, string_replace
-- value_sha256
-- checkpoint_save/load/remove compiler built-ins
-- repair evaluation compiler built-ins
-- software evaluation compiler built-ins
-- print
+Gate 1A adds, and is device-frozen:
+- persistent `Buffer<T,N>`, max 100000;
+- read-only zero-copy `Slice<T>`;
+- Buffer/Slice checkpoint denial.
 
-for and loop are recognized Core syntax but deliberately fail as not implemented.
+Gate 1B source candidate adds:
+- `SourceText`;
+- `TextCursor`;
+- `StringBuilder<N>`;
+- `source_text(string)`;
+- SourceText `code_unit_len()`, `utf8_byte_len()`, `cursor()`, `slice()`, `to_string()`;
+- TextCursor `code_unit_offset()`, `line()`, `column()`, `eof()`, `peek_code_unit()`, `advance()`;
+- StringBuilder `len_units()`, `append()`, `append_source()`, `finish()`;
+- `parse_u32/s32/f64`;
+- `format_u32/s32/f64`.
 
-Top-level const is reserved grammar/future syntax, not implemented by this bootstrap.
+`for`, `loop` and top-level `const` remain recognized/reserved but not implemented by this bootstrap.
 
-Field/index place mutation is not implemented.
+## Text model
 
-## Module linking
+Gate 1B deliberately separates hot representation from interchange encoding.
 
-compile() rejects source containing use declarations and requires compileProgram() for linked programs.
+Hot runtime/compiler working text:
+- UTF-16 code units;
+- SourceText slices use code-unit offsets;
+- TextCursor advances one code unit;
+- StringBuilder capacity is measured in code units.
 
-compileProgram():
-- rejects root duplicated in dependency map
-- requires every imported module to be supplied
-- requires supplied module identity to match its declared module name
-- rejects duplicate imports
-- rejects alias collisions
-- rejects cycles
-- rejects unused supplied dependency modules
-- rewrites linked symbols deterministically
-- closes the source module graph into one executable
+Explicit boundary accounting:
+- `SourceText.utf8_byte_len()`;
+- file/protocol/tokenizer/hash/provenance layers may continue to use UTF-8 bytes where their own contracts require them.
 
-Rift++ source modules do not become JavaScript imports or RiftVM host imports.
+This preserves existing `riftpp/1` JavaScript UTF-16 code-unit semantics while avoiding mandatory UTF-8 transcoding in the hot lexer/parser representation.
+
+The fixed `rift-tool text-model-benchmark` measures installed-device QuickJS UTF-16 hot scan versus UTF-8 prepared scan and UTF-8 prepare+scan. It records measurements; it does not hardcode a winner or claim universal encoding superiority.
+
+## Gate 1A storage semantics
+
+`Buffer<T,N>`:
+- compile-time capacity <=100000;
+- persistent value semantics;
+- current VM implementation uses a structurally shared 32-way trie;
+- get/push/set/slice;
+- old aliases remain unchanged.
+
+`Slice<T>`:
+- read-only view over one immutable Buffer version;
+- len/get;
+- remains stable after later Buffer versions are produced.
+
+Neither Buffer nor Slice may enter checkpoint state in Gate 1A.
+
+## Gate 1B working-text safety
+
+`SourceText`, `TextCursor` and `StringBuilder`:
+- are compiler/runtime working values;
+- do not gain checkpoint persistence;
+- do not cross generic host imports;
+- are denied by `value_sha256` until a separately specified canonical projection exists.
+
+Compatibility `string` remains separately bounded to 65,536 UTF-8 bytes by RiftVM public/runtime limits.
+
+## Numeric text semantics
+
+Gate 1B numeric parsing:
+- returns `Result` for invalid/out-of-range user text;
+- u32/s32 range checks remain exact;
+- f64 rejects invalid/non-finite values.
+
+Formatting is deterministic in the active VM:
+- integer decimal;
+- finite f64 canonical form including explicit decimal point;
+- exponent normalization such as `1.0e-7`.
 
 ## Effect system
 
-Current supported effect vocabulary is exactly:
-- storage
-- repair_eval
-- software_eval
+Supported language effects remain exactly:
+- `storage`;
+- `repair_eval`;
+- `software_eval`.
 
-Function effects are explicit with allow [...].
+Effects are exact/transitive requirements, not permissive ambient authority.
 
-The compiler computes direct plus transitive required effects through the call graph.
+Compiler support for an effect never implies that ordinary RiftShell grants the associated host capability.
 
-It rejects:
-- unknown effects
-- duplicate effect names
-- missing required effects
-- unused/widened declared effects
+## Validation/oracle split
 
-This is exact-effect checking, not a permissive maximum-authority declaration.
+`rift-tool gate0-verify`
+- archival exact-reference / frozen-baseline drift suite.
 
-### storage
+`rift-tool semantic-compat`
+- current compiler/runtime against frozen semantic compatibility behavior.
 
-checkpoint_save/load/remove lower only to:
-- state.save
-- state.load
-- state.remove
+`rift-tool text-model-benchmark`
+- fixed, sandboxed installed-device representation benchmark;
+- no generic JavaScript/process/network/filesystem authority.
 
-Generated state schemas are canonical bounded descriptors.
+## Current proof state
 
-Recursive checkpoint types are rejected.
+Frozen:
+- Gate 0.1;
+- Gate 0.2;
+- Gate 1A.
 
-### repair_eval
+Gate 1B source-side proof currently includes:
+- functional UTF-16/code-unit SourceText/cursor/builder execution;
+- explicit UTF-8 boundary length accounting;
+- half-surrogate/code-unit edge behavior;
+- 70,000-code-unit builder;
+- numeric parse/format positives and failures;
+- checkpoint/hash denials;
+- full frozen semantic suite PASS;
+- RiftLLM+ consumer regression compile PASS.
 
-Current compiler built-ins:
-- repair_input_source
-- repair_expected_output
-- repair_case_id
-- repair_compile_test
-
-They lower to fixed repair.* host imports.
-
-### software_eval
-
-Current compiler built-ins:
-- software_input_source
-- software_project_context
-- software_specification
-- software_case_id
-- software_case_language
-- software_compile_test
-
-They lower to fixed software.* host imports.
-
-## Activation boundary for effects
-
-The compiler can produce executables with those imports and the focused tests can execute them with explicit test hosts.
-
-The ordinary native RiftShell production path does not provide host.invoke and rejects every executable with imports before execution.
-
-Therefore:
-- the compiler effect system is live;
-- general production shell storage/repair/software authority is not live merely because the compiler can lower those built-ins.
-
-Any specialized host that executes these imports must be audited separately.
-
-## Type/runtime safety relationship
-
-Core performs source-level generic and type checking.
-
-It always sends generated executable data through prepareRiftExecutable before compile succeeds.
-
-RiftVM independently validates executable structure and runtime bounds.
-
-A hand-authored .rxe does not inherit Core source-level type soundness, but malformed bytecode still cannot widen native authority through the VM.
-
-## Determinism and bounded data
-
-Vec capacity remains compile-time fixed and <=256.
-
-Buffer is a separate persistent collection with compile-time capacity <=100000. Its VM representation is a structurally shared 32-way trie; push/set return new Buffer values and do not mutate older aliases.
-
-Slice is a zero-copy read-only view over one immutable Buffer version. A Slice remains stable if a later Buffer update returns a new version.
-
-Buffer and Slice are intentionally excluded from checkpoint persistence in Gate 1A. They are compiler/runtime working storage, not state-schema types.
-
-Composite runtime operations remain data-only.
-
-value_sha256 lowers to a VM data primitive and introduces no host import.
-
-Finite f64 rejects non-finite values; negative zero is canonicalized.
-
-No implicit integer/f64 coercion exists.
+Still required before Gate 1B freeze:
+1. Builder;
+2. exact installed source SHA;
+3. `rift-tool semantic-compat`;
+4. exact Gate 1B fixtures on-device;
+5. `rift-tool text-model-benchmark`;
+6. `riftpp self-test`;
+7. authority-boundary regression;
+8. final audit.
 
 ## Deliberate bootstrap gaps
 
-Not implemented include:
-- top-level const
-- for / loop execution
-- bit operations
-- field/index assignment
-- nested/literal enum payload patterns
-- dedicated fixed arrays
-- ? propagation
-- ownership/borrowing
-- module privacy/export controls
-- arbitrary FFI
-- generic tensor/model/train language primitives
-- self-hosted compiler
+Still not implemented:
+- top-level const execution;
+- for/loop execution;
+- deterministic Map/Set;
+- deterministic serializer/data writer;
+- compiler/toolchain execution profile;
+- bit operations;
+- field/index assignment syntax;
+- general user generics;
+- module privacy/export;
+- ownership/borrowing;
+- arbitrary FFI;
+- self-hosted compiler;
+- native machine backend.
 
-Unsupported syntax fails closed.
-
-## Current proof status
-
-The frozen 0.7.2 / Gate 0 evidence is historical compatibility proof and is not rewritten by the 0.8.0 evolution.
-
-Current 0.8.0 source has passed isolated Core/VM execution plus the frozen semantic compatibility suite. Builder/APK/device proof remains a separate Gate 1A promotion step.
+Unsupported features fail closed.
 
 ## Critical invariants
 
-- compiler version and docs stay aligned
-- only bounded riftpp/1 source is accepted
-- source modules close into one deterministic executable
-- generated executable must pass RiftVM validation
-- effects are exact and transitive
-- compiler effect support never implies production host authority
-- Vec remains <=256
-- Buffer remains <=100000 and uses persistent value semantics
-- Slice remains read-only and zero-copy over an immutable Buffer version
-- Buffer/Slice do not enter checkpoint persistence without a separately versioned persistence design
-- recursive/deep parser/linker/codegen inputs fail within explicit bounds
-- unsupported syntax fails closed
-- no eval/new Function/native shell code generation is introduced
-
-## Failure signatures
-
-- README says 0.7.0 while source exports 0.7.2 -> version drift
-- docs say storage is the only effect -> effect-surface drift
-- imported/effectful executable runs through ordinary riftpp shell -> host-boundary regression
-- module dependency becomes ambient/unqualified -> linker regression
-- extra dependency is silently accepted -> deterministic graph regression
-- missing/extra effects compile -> exact-effect regression
-- Vec capacity >256 -> frozen Vec contract regression
-- Buffer capacity >100000 -> scalable-storage bound regression
-- Slice mutation or Slice checkpoint persistence becomes possible -> Gate 1A view/persistence-boundary regression
-- compiler output bypasses prepareRiftExecutable -> validation regression
-- historical Gate/device proof is presented as proof of current source -> trust regression
-- headless QuickJS script constants become private to the nested `Scripts` object and the enclosing runtime can no longer compile -> Kotlin visibility regression
+- source language remains `riftpp/1` unless explicitly versioned;
+- old valid `riftpp/1` behavior is not silently reinterpreted;
+- Vec remains <=256;
+- Buffer remains <=100000;
+- SourceText/StringBuilder bounds remain explicit;
+- hot text uses specified code-unit behavior;
+- UTF-8 boundary accounting is explicit;
+- working-text values do not gain state/hash/host authority;
+- generated executable always passes RiftVM validation;
+- effects remain exact;
+- ordinary shell host-import denial remains intact;
+- compiler/VM/docs/tests remain version-synchronized.
 
 ## Fix map
 
-Lexer/parser/linker/type/effect/codegen -> src/riftpp-core.js.
+Frontend syntax/type/effect/lowering:
+`src/riftpp-core.js`
 
-VM validation/runtime -> src/riftvm.js.
+VM validation/execution/text representation:
+`src/riftvm.js`
 
-Live QuickJS packaging/command host -> RiftHeadlessJsRuntime.kt.
+QuickJS/device verifier + fixed benchmark:
+`RiftHeadlessJsRuntime.kt`
 
-RiftShell routing -> RiftNativeShell.kt.
-
-Specialized repair/software/state execution hosts -> their owning subsystem, not Core.
+Shell routing/help:
+`RiftNativeShell.kt`
 
 ## Validation
 
-Second source audit must verify:
-- 0.8.0 version
-- Vec-256 / Buffer-100000 / read-only Slice contracts
-- Gradle packaging and QuickJS loading
-- headless script constants remain visible to the enclosing `RiftHeadlessJsRuntime` while the `Scripts` object itself stays private
-- public API
-- source/token/type/module/effect/depth bounds
-- module graph identity/cycle/unused dependency checks
-- exact three-effect vocabulary
-- transitive missing/extra effect rejection
-- fixed repair/software/state import lowering
-- production shell import rejection
-- prepareRiftExecutable validation
-- test coverage for current version/effects/modules/collections/numeric/string/state behavior
-
-Node/Builder/device execution is a later global gate.
+Current source audit must verify:
+- compiler `0.9.0-bootstrap`;
+- VM ABI `riftvm-1`;
+- Vec-256 / Buffer-100000;
+- UTF-16 SourceText/TextCursor/StringBuilder bounds and opcodes;
+- explicit UTF-8 boundary op;
+- numeric parse/format ops;
+- frozen semantic compatibility;
+- fixed benchmark route without generic authority;
+- module/effect/resource guards;
+- production import denial;
+- Builder/device proof before Gate 1B freeze.

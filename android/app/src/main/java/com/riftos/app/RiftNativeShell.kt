@@ -104,6 +104,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
+                    "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
                     "rift-cli status|team|architecture|enable|disable|plan|riftpp|ir|tokenizer   [EXPERIMENTAL / OFF BY DEFAULT]\n" +
                     "Legacy shell-only services fail explicitly; no renderer compatibility fallback exists.",
                 cwd,

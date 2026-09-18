@@ -390,3 +390,15 @@ Second source audit must recheck:
 - MCP read+write gate and argument-redacted audit.
 
 Builder/device validation remains separate.
+
+
+## Fixed Rift developer tools
+
+`rift-tool` is a bounded trusted developer-tool router, not a generic JavaScript/process shell.
+
+Current fixed commands:
+- `rift-tool gate0-verify` — archival exact-reference/drift verification;
+- `rift-tool semantic-compat` — runs the frozen semantic contract against the active compiler/runtime;
+- `rift-tool text-model-benchmark` — fixed installed-device UTF-16-code-unit vs UTF-8 representation-cost benchmark used by Rift++ Gate 1B.
+
+The benchmark exposes no arbitrary script, process, network or generic filesystem authority. Its result is measurement evidence, not a hardcoded performance verdict.

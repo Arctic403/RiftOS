@@ -100,6 +100,87 @@ const stringOps={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[]
 const stringOutput=[];await executeRiftExecutable(stringOps,{write:value=>stringOutput.push(value)});assert.deepEqual(stringOutput,['8','0','retrun','return 7']);
 const badStringRange=structuredClone(stringOps);badStringRange.constants[3]={type:'u32',value:99};await assert.rejects(()=>executeRiftExecutable(badStringRange,{write:()=>{}}),/string_slice range is out of bounds/);
 
+const gate1bRuntime={
+  format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],
+  constants:[
+    {type:'string',value:'A😀\nB'},
+    {type:'u32',value:1},{type:'u32',value:3},
+    {type:'string',value:'X'},{type:'string',value:'Y'},
+    {type:'string',value:'4_294_967_295'},
+    {type:'string',value:'-2147483648'},
+    {type:'string',value:'1.25e+2'},
+    {type:'f64',value:0.0000001},
+    {type:'u32',value:2}
+  ],
+  functions:{main:{params:0,locals:4,code:[
+    {op:'const',index:0},{op:'source_text'},{op:'store',index:0},
+    {op:'load',index:0},{op:'source_code_unit_len'},{op:'print'},
+    {op:'load',index:0},{op:'source_utf8_byte_len'},{op:'print'},
+    {op:'load',index:0},{op:'source_cursor'},{op:'store',index:1},
+    {op:'load',index:1},{op:'cursor_column'},{op:'print'},
+    {op:'load',index:1},{op:'cursor_advance'},{op:'store',index:1},
+    {op:'load',index:1},{op:'cursor_column'},{op:'print'},
+    {op:'load',index:1},{op:'cursor_advance'},{op:'store',index:1},
+    {op:'load',index:1},{op:'cursor_column'},{op:'print'},
+    {op:'load',index:1},{op:'cursor_advance'},{op:'store',index:1},
+    {op:'load',index:1},{op:'cursor_column'},{op:'print'},
+    {op:'load',index:0},{op:'const',index:1},{op:'const',index:2},{op:'source_slice'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:2},
+    {op:'load',index:2},{op:'source_to_string'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'print'},
+    {op:'make_string_builder',capacity:128},{op:'store',index:3},
+    {op:'load',index:3},{op:'const',index:3},{op:'builder_append'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:3},
+    {op:'load',index:3},{op:'load',index:2},{op:'builder_append_source'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:3},
+    {op:'load',index:3},{op:'const',index:4},{op:'builder_append'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:3},
+    {op:'load',index:3},{op:'builder_finish'},{op:'source_to_string'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'print'},
+    {op:'const',index:5},{op:'parse_u32'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'format_u32'},{op:'print'},
+    {op:'const',index:6},{op:'parse_s32'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'format_s32'},{op:'print'},
+    {op:'const',index:7},{op:'parse_f64'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'format_f64'},{op:'print'},
+    {op:'const',index:8},{op:'format_f64'},{op:'print'},
+    {op:'halt'}
+  ]}},limits:{maxSteps:300,maxStack:16,maxCallDepth:2}
+};
+const gate1bRuntimeOutput=[];
+await executeRiftExecutable(gate1bRuntime,{write:value=>gate1bRuntimeOutput.push(value)});
+assert.deepEqual(gate1bRuntimeOutput,['5','7','1','2','3','4','😀','X😀Y','4294967295','-2147483648','125.0','1.0e-7']);
+
+const gate1bHalfSurrogate=structuredClone(gate1bRuntime);
+gate1bHalfSurrogate.functions.main.code=[
+  {op:'const',index:0},{op:'source_text'},
+  {op:'const',index:9},{op:'const',index:2},{op:'source_slice'},
+  {op:'enum_get',name:'Result',variant:'Ok',index:0},
+  {op:'dup'},{op:'source_code_unit_len'},{op:'print'},
+  {op:'source_utf8_byte_len'},{op:'print'},
+  {op:'halt'}
+];
+const gate1bHalfSurrogateOutput=[];
+await executeRiftExecutable(gate1bHalfSurrogate,{write:value=>gate1bHalfSurrogateOutput.push(value)});
+assert.deepEqual(gate1bHalfSurrogateOutput,['1','3']);
+
+const gate1bBuilderOverflow={
+  format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],
+  constants:[{type:'string',value:'abcd'}],
+  functions:{main:{params:0,locals:0,code:[
+    {op:'make_string_builder',capacity:3},{op:'const',index:0},{op:'builder_append'},
+    {op:'enum_get',name:'Result',variant:'Err',index:0},{op:'print'},{op:'halt'}
+  ]}},limits:{maxSteps:20,maxStack:8,maxCallDepth:2}
+};
+const gate1bBuilderOverflowOutput=[];
+await executeRiftExecutable(gate1bBuilderOverflow,{write:value=>gate1bBuilderOverflowOutput.push(value)});
+assert.deepEqual(gate1bBuilderOverflowOutput,['StringBuilder capacity exceeded']);
+
+const gate1bNumericErrors={
+  format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],
+  constants:[{type:'string',value:'4294967296'},{type:'string',value:'-2147483649'},{type:'string',value:'1e3'}],
+  functions:{main:{params:0,locals:0,code:[
+    {op:'const',index:0},{op:'parse_u32'},{op:'enum_get',name:'Result',variant:'Err',index:0},{op:'print'},
+    {op:'const',index:1},{op:'parse_s32'},{op:'enum_get',name:'Result',variant:'Err',index:0},{op:'print'},
+    {op:'const',index:2},{op:'parse_f64'},{op:'enum_get',name:'Result',variant:'Err',index:0},{op:'print'},
+    {op:'halt'}
+  ]}},limits:{maxSteps:30,maxStack:8,maxCallDepth:2}
+};
+const gate1bNumericErrorOutput=[];
+await executeRiftExecutable(gate1bNumericErrors,{write:value=>gate1bNumericErrorOutput.push(value)});
+assert.deepEqual(gate1bNumericErrorOutput,['u32 text is out of range','s32 text is out of range','invalid f64 text']);
+
 const numericParameters={
   format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],
   constants:[{type:'f64',value:0.5},{type:'f64',value:-1.0},{type:'f64',value:2.0},{type:'f64',value:0.25}],

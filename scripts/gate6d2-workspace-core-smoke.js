@@ -7,7 +7,7 @@ try{
   const patchedCore=coreText.replace("from './riftvm.js'",`from '${vmUrl}'`);
   coreUrl=URL.createObjectURL(new Blob([patchedCore],{type:'text/javascript'}));
   const vm=await import(vmUrl),compiler=await import(coreUrl);
-  lab.assert(compiler.RIFTPP_CORE_VERSION==='0.8.0-bootstrap','core version');
+  lab.assert(compiler.RIFTPP_CORE_VERSION==='0.9.0-bootstrap','core version');
   const source=`riftpp 1\nmodule proof.gate6d2_workspace\nfn main() allow [repair_eval] {\n let source: string = repair_input_source()\n print(string_len(source))\n let found: Option<u32> = string_find(source, "retrun", 0)\n match found { Option.Some(index) => { print(index) } Option.None => { print(999) } }\n let fixed: string = string_replace(source, 0, 6, "return")\n print(string_slice(fixed, 0, 6))\n print(repair_compile_test(fixed, repair_expected_output()))\n print(repair_case_id())\n}\n`;
   const compiled=compiler.compileRiftPlusPlusCoreV1(source);
   lab.assert(JSON.stringify(compiled.executable.imports)===JSON.stringify(['repair.caseId','repair.compileTest','repair.expected','repair.source']),'imports');

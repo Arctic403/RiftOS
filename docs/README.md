@@ -49,7 +49,7 @@ Changing relevant source invalidates the affected document's trusted status unti
 | WASM reference engine | **VERIFIED** | [`systems/riftrt/engines/wasm-base64/README.md`](systems/riftrt/engines/wasm-base64/README.md) | retained/inactive reachability audit |
 | Native ARM64 roadmap engine | **VERIFIED** | [`systems/riftrt/engines/native-arm64/README.md`](systems/riftrt/engines/native-arm64/README.md) | retained/unsupported roadmap audit |
 | RiftVM engine | **VERIFIED** | [`systems/riftrt/engines/rift-vm/README.md`](systems/riftrt/engines/rift-vm/README.md) | live VM/headless-host/import-boundary audit |
-| Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.7.2 compiler/module/effect/host-boundary audit |
+| Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.9.0 source candidate: Gate 1A frozen + Gate 1B UTF-16 text/numeric audit; device proof pending |
 | RiftShell | **VERIFIED** | [`systems/shell/README.md`](systems/shell/README.md) | process/filesystem/transaction/MCP-authority audit |
 | Experimental RiftCLI | **VERIFIED** | [`systems/experimental-cli/README.md`](systems/experimental-cli/README.md) | process-local router/V0/IR/tokenizer/freeze audit |
 | RiftGit | **VERIFIED** | [`systems/git/README.md`](systems/git/README.md) | native GitHub/metadata/push/pull/rollback audit |
@@ -103,7 +103,7 @@ Every subsystem not listed in the verified set above remains **UNVERIFIED** unti
 | WASM reference engine | **VERIFIED** | [`systems/riftrt/engines/wasm-base64/README.md`](systems/riftrt/engines/wasm-base64/README.md) | retained/inactive reachability audit |
 | Native ARM64 roadmap engine | **VERIFIED** | [`systems/riftrt/engines/native-arm64/README.md`](systems/riftrt/engines/native-arm64/README.md) | retained/unsupported roadmap audit |
 | RiftVM engine | **VERIFIED** | [`systems/riftrt/engines/rift-vm/README.md`](systems/riftrt/engines/rift-vm/README.md) | live VM/headless-host/import-boundary audit |
-| Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.7.2 compiler/module/effect/host-boundary audit |
+| Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.9.0 source candidate: Gate 1A frozen + Gate 1B UTF-16 text/numeric audit; device proof pending |
 | RiftShell | **VERIFIED** | [`systems/shell/README.md`](systems/shell/README.md) | process/filesystem/transaction/MCP-authority audit |
 | Experimental RiftCLI | **VERIFIED** | [`systems/experimental-cli/README.md`](systems/experimental-cli/README.md) | process-local router/V0/IR/tokenizer/freeze audit |
 | RiftGit | **VERIFIED** | [`systems/git/README.md`](systems/git/README.md) | native GitHub/metadata/push/pull/rollback audit |

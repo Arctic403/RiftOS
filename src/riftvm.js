@@ -4,9 +4,9 @@ export const RIFT_VM_ABI='riftvm-1';
 const NAME=/^[A-Za-z_][A-Za-z0-9_.:$-]{0,95}$/;
 const HOST_METHOD=/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*){1,3}$/;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
-const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','string_len','string_find','string_slice','string_replace','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','make_buffer','buffer_len','buffer_get','buffer_push','buffer_set','buffer_slice','slice_len','slice_get','state_save','state_load','state_remove','value_sha256','jump','jump_if_false','call','host','print','ret','halt']);
+const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','string_len','string_find','string_slice','string_replace','source_text','source_code_unit_len','source_utf8_byte_len','source_cursor','source_slice','source_to_string','cursor_code_unit_offset','cursor_line','cursor_column','cursor_eof','cursor_peek_code_unit','cursor_advance','make_string_builder','builder_len','builder_append','builder_append_source','builder_finish','parse_u32','parse_s32','parse_f64','format_u32','format_s32','format_f64','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','make_buffer','buffer_len','buffer_get','buffer_push','buffer_set','buffer_slice','slice_len','slice_get','state_save','state_load','state_remove','value_sha256','jump','jump_if_false','call','host','print','ret','halt']);
 const DEFAULT_LIMITS=Object.freeze({maxSteps:100000,maxStack:1024,maxCallDepth:32});
-const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:256,maxBufferCapacity:100000,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536,maxStateBytes:65536,maxStateSchemaBytes:4096});
+const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:256,maxBufferCapacity:100000,maxSourceTextCodeUnits:4*1024*1024,maxStringBuilderUnits:4*1024*1024,maxStringBuilderParts:100000,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536,maxStateBytes:65536,maxStateSchemaBytes:4096});
 const INT_BOUNDS=Object.freeze({u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
 const UNIT=Object.freeze({type:'unit',value:null});
 const PREPARED=Symbol('riftvm.prepared');
@@ -17,6 +17,54 @@ function plain(value){return !!value&&typeof value==='object'&&!Array.isArray(va
 function safeName(value,label){const name=String(value||'');if(!NAME.test(name)||POISON_NAMES.has(name))fail(`${label} is invalid: ${name||'(empty)'}`);return name;}
 function integer(value,label,min,max){const n=Number(value);if(!Number.isInteger(n)||n<min||n>max)fail(`${label} must be an integer in ${min}..${max}`);return n;}
 function stringBytes(value,label,max=HARD_LIMITS.maxStringBytes){const text=String(value);if(encoder.encode(text).byteLength>max)fail(`${label} exceeds ${max} UTF-8 bytes`);return text;}
+function okValue(value){return Object.freeze({type:'enum',name:'Result',variant:'Ok',values:Object.freeze([value]),depth:checkedCompositeDepth([value],'Result.Ok')});}
+function errValue(message){const value=Object.freeze({type:'string',value:stringBytes(message,'Result.Err')});return Object.freeze({type:'enum',name:'Result',variant:'Err',values:Object.freeze([value]),depth:checkedCompositeDepth([value],'Result.Err')});}
+function optionValue(value){return value===null?Object.freeze({type:'enum',name:'Option',variant:'None',values:Object.freeze([]),depth:1}):Object.freeze({type:'enum',name:'Option',variant:'Some',values:Object.freeze([value]),depth:checkedCompositeDepth([value],'Option.Some')});}
+function makeSourceTextValue(text,start=0,length=String(text).length,label='SourceText'){
+  const value=String(text);
+  if(!Number.isInteger(start)||!Number.isInteger(length)||start<0||length<0||start+length>value.length)fail(`${label} range is invalid`);
+  if(length>HARD_LIMITS.maxSourceTextCodeUnits)fail(`${label} exceeds ${HARD_LIMITS.maxSourceTextCodeUnits} UTF-16 code units`);
+  return Object.freeze({type:'source_text',text:value,start,length,depth:1});
+}
+function sourceString(value){if(value.type!=='source_text')fail('source string access expected SourceText');return value.text.slice(value.start,value.start+value.length);}
+function sourceCodeUnit(value,index){if(value.type!=='source_text')fail('source code-unit access expected SourceText');if(index<0||index>=value.length)return null;return value.text.charCodeAt(value.start+index);}
+function sourceUtf8ByteLength(value){return encoder.encode(sourceString(value)).byteLength;}
+function makeTextCursorValue(source,codeUnitOffset=0,line=1,column=1){
+  if(source.type!=='source_text')fail('TextCursor source must be SourceText');if(!Number.isInteger(codeUnitOffset)||codeUnitOffset<0||codeUnitOffset>source.length)fail('TextCursor code-unit offset is invalid');
+  return Object.freeze({type:'text_cursor',source,codeUnitOffset,line,column,depth:2});
+}
+function advanceTextCursor(value){
+  if(value.type!=='text_cursor')fail('cursor_advance expected TextCursor');if(value.codeUnitOffset>=value.source.length)return value;
+  const codeUnit=sourceCodeUnit(value.source,value.codeUnitOffset);let line=value.line,column=value.column;if(codeUnit===0x0a){line++;column=1;}else column++;
+  return makeTextCursorValue(value.source,value.codeUnitOffset+1,line,column);
+}
+function makeStringBuilderValue(capacity,tail=null,unitLength=0,parts=0){
+  if(!Number.isInteger(capacity)||capacity<1||capacity>HARD_LIMITS.maxStringBuilderUnits)fail(`StringBuilder capacity must be 1..${HARD_LIMITS.maxStringBuilderUnits}`);
+  if(!Number.isInteger(unitLength)||unitLength<0||unitLength>capacity)fail('StringBuilder code-unit length is invalid');if(!Number.isInteger(parts)||parts<0||parts>HARD_LIMITS.maxStringBuilderParts)fail('StringBuilder part count is invalid');
+  return Object.freeze({type:'string_builder',capacity,tail,unitLength,parts,depth:1});
+}
+function builderAppendSource(builder,source){
+  if(builder.type!=='string_builder'||source.type!=='source_text')fail('StringBuilder append type mismatch');if(builder.parts>=HARD_LIMITS.maxStringBuilderParts)return errValue('StringBuilder part limit exceeded');
+  if(builder.unitLength+source.length>builder.capacity)return errValue('StringBuilder capacity exceeded');
+  const tail=Object.freeze({previous:builder.tail,source});return okValue(makeStringBuilderValue(builder.capacity,tail,builder.unitLength+source.length,builder.parts+1));
+}
+function finishStringBuilder(builder){
+  if(builder.type!=='string_builder')fail('builder_finish expected StringBuilder');const parts=[];let node=builder.tail;while(node){parts.push(sourceString(node.source));node=node.previous;}
+  parts.reverse();return makeSourceTextValue(parts.join(''),0,builder.unitLength,'StringBuilder.finish');
+}
+function parseIntegerText(text,type){
+  const raw=String(text),signed=type==='s32',match=signed?/^-?(?:0[xX][0-9a-fA-F](?:[0-9a-fA-F_]*[0-9a-fA-F])?|[0-9](?:[0-9_]*[0-9])?)$/:/^(?:0[xX][0-9a-fA-F](?:[0-9a-fA-F_]*[0-9a-fA-F])?|[0-9](?:[0-9_]*[0-9])?)$/;
+  if(!match.test(raw)||raw.includes('__'))return errValue(`invalid ${type} text`);let negative=false,body=raw;if(signed&&body.startsWith('-')){negative=true;body=body.slice(1);}body=body.replaceAll('_','');let value;try{value=BigInt(body);}catch{return errValue(`invalid ${type} text`);}if(negative)value=-value;const bounds=INT_BOUNDS[type];if(value<bounds[0]||value>bounds[1])return errValue(`${type} text is out of range`);return okValue(Object.freeze({type,value}));
+}
+function parseF64Text(text){
+  const raw=String(text);if(!/^[+-]?[0-9](?:[0-9_]*[0-9])?\.[0-9](?:[0-9_]*[0-9])?(?:[eE][+-]?[0-9](?:[0-9_]*[0-9])?)?$/.test(raw)||raw.includes('__'))return errValue('invalid f64 text');
+  const value=Number(raw.replaceAll('_',''));if(!Number.isFinite(value))return errValue('f64 text is non-finite or out of range');return okValue(Object.freeze({type:'f64',value:Object.is(value,-0)?0:value}));
+}
+function canonicalF64Text(value){
+  const finite=finiteF64(value,'format_f64'),normalized=Object.is(finite,-0)?0:finite;let text=String(normalized),exp='';
+  const e=text.search(/[eE]/);if(e>=0){exp=text.slice(e+1);text=text.slice(0,e);if(!text.includes('.'))text+='.0';const expNumber=Number(exp);if(!Number.isInteger(expNumber))fail('format_f64 exponent normalization failed');return `${text}e${expNumber}`;}
+  if(!text.includes('.'))text+='.0';return text;
+}
 function valueDepth(value){return value&&Number.isInteger(value.depth)?value.depth:0;}
 function checkedCompositeDepth(values,label){let depth=1;for(const value of values)depth=Math.max(depth,valueDepth(value)+1);if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${label} exceeds composite depth limit ${HARD_LIMITS.maxCompositeDepth}`);return depth;}
 function finiteF64(value,label){if(typeof value!=='number'||!Number.isFinite(value))fail(`${label} must be a finite JSON number`);return Object.is(value,-0)?0:value;}
@@ -135,6 +183,8 @@ function normalizeInstruction(raw,where,ctx){
   if(op==='vec_len'||op==='vec_get'||op==='vec_push'||op==='vec_set')return Object.freeze({op});
   if(op==='make_buffer'){const capacity=integer(raw.capacity,`${where}.capacity`,1,HARD_LIMITS.maxBufferCapacity),count=integer(raw.count??0,`${where}.count`,0,HARD_LIMITS.maxBufferCapacity);if(count>capacity)fail(`${where}.count exceeds buffer capacity`);return Object.freeze({op,capacity,count});}
   if(op==='buffer_len'||op==='buffer_get'||op==='buffer_push'||op==='buffer_set'||op==='buffer_slice'||op==='slice_len'||op==='slice_get')return Object.freeze({op});
+  if(op==='make_string_builder')return Object.freeze({op,capacity:integer(raw.capacity,`${where}.capacity`,1,HARD_LIMITS.maxStringBuilderUnits)});
+  if(['source_text','source_code_unit_len','source_utf8_byte_len','source_cursor','source_slice','source_to_string','cursor_code_unit_offset','cursor_line','cursor_column','cursor_eof','cursor_peek_code_unit','cursor_advance','builder_len','builder_append','builder_append_source','builder_finish','parse_u32','parse_s32','parse_f64','format_u32','format_s32','format_f64'].includes(op))return Object.freeze({op});
   if(op==='jump'||op==='jump_if_false')return Object.freeze({op,target:integer(raw.target,`${where}.target`,0,ctx.codeLength-1)});
   if(op==='call'){
     const name=safeName(raw.name,`${where}.name`),argc=integer(raw.argc??0,`${where}.argc`,0,HARD_LIMITS.maxParams),target=ctx.functions[name];
@@ -190,6 +240,9 @@ function publicValue(value,state={values:0,stringBytes:0}){
   if(value.type==='vec')return{type:'vec',capacity:value.capacity,items:value.items.map(item=>publicValue(item,state))};
   if(value.type==='buffer')return{type:'buffer',capacity:value.capacity,items:bufferItems(value,item=>publicValue(item,state))};
   if(value.type==='slice')return{type:'slice',items:sliceItems(value,item=>publicValue(item,state))};
+  if(value.type==='source_text')return{type:'source_text',codeUnitLength:value.length};
+  if(value.type==='text_cursor')return{type:'text_cursor',codeUnitOffset:value.codeUnitOffset,line:value.line,column:value.column};
+  if(value.type==='string_builder')return{type:'string_builder',capacity:value.capacity,codeUnitLength:value.unitLength,parts:value.parts};
   return{type:value.type,value:value.value};
 }
 function valueToPublic(value){return publicValue(value);}
@@ -208,7 +261,7 @@ function hashPublicValue(value,state={values:0,stringBytes:0}){
   fail(`hash input uses unsupported type: ${value.type||'(missing)'}`);
 }
 async function valueSha256(value){const text=JSON.stringify(hashPublicValue(value)),bytes=encoder.encode(text);if(bytes.byteLength>HARD_LIMITS.maxStateBytes)fail(`hash input exceeds ${HARD_LIMITS.maxStateBytes} UTF-8 bytes`);const subtle=globalThis.crypto?.subtle;if(!subtle)fail('SHA-256 is unavailable in this runtime');const digest=new Uint8Array(await subtle.digest('SHA-256',bytes));return Object.freeze({type:'string',value:[...digest].map(byte=>byte.toString(16).padStart(2,'0')).join('')});}
-function isCompositeValue(value){return value?.type==='struct'||value?.type==='enum'||value?.type==='vec'||value?.type==='buffer'||value?.type==='slice';}
+function isCompositeValue(value){return value?.type==='struct'||value?.type==='enum'||value?.type==='vec'||value?.type==='buffer'||value?.type==='slice'||value?.type==='source_text'||value?.type==='text_cursor'||value?.type==='string_builder';}
 function valueToHost(value){if(!value||value.type==='unit')return null;if(isCompositeValue(value))fail('composite values cannot cross the host import boundary');if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
 function hostToValue(raw){if(raw===null||raw===undefined)return UNIT;if(typeof raw==='boolean')return Object.freeze({type:'bool',value:raw});if(typeof raw==='string')return Object.freeze({type:'string',value:stringBytes(raw,'host string')});if(typeof raw==='number')return Object.freeze({type:'f64',value:finiteF64(raw,'host f64')});const text=JSON.stringify(raw);return Object.freeze({type:'string',value:stringBytes(text,'host JSON result')});}
 function statePublicToValue(raw,state={values:0,stringBytes:0}){
@@ -228,7 +281,7 @@ function deserializeStateValue(text,schema,descriptor){const raw=stringBytes(tex
 function displayValue(value){
   const state={bytes:0,values:0,parts:[]};
   const append=text=>{const part=String(text),bytes=encoder.encode(part).byteLength;state.bytes+=bytes;if(state.bytes>HARD_LIMITS.maxDisplayBytes)fail(`display value exceeds ${HARD_LIMITS.maxDisplayBytes} UTF-8 bytes`);state.parts.push(part);};
-  const visit=item=>{if(++state.values>HARD_LIMITS.maxPublicValues)fail(`display value exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!item||item.type==='unit'){append('unit');return;}if(item.type==='u32'||item.type==='s32'){append(item.value.toString());return;}if(item.type==='struct'){append(`${item.name}{`);let first=true;for(const [key,child] of Object.entries(item.fields)){if(!first)append(',');first=false;append(`${key}=`);visit(child);}append('}');return;}if(item.type==='enum'){append(`${item.name}.${item.variant}`);if(item.values.length){append('(');for(let i=0;i<item.values.length;i++){if(i)append(',');visit(item.values[i]);}append(')');}return;}if(item.type==='vec'){append('[');for(let i=0;i<item.items.length;i++){if(i)append(',');visit(item.items[i]);}append(']');return;}if(item.type==='buffer'){append('Buffer[');for(let i=0;i<item.length;i++){if(i)append(',');visit(bufferGetValue(item,i));}append(']');return;}if(item.type==='slice'){append('Slice[');for(let i=0;i<item.length;i++){if(i)append(',');visit(sliceGetValue(item,i));}append(']');return;}append(item.value);};
+  const visit=item=>{if(++state.values>HARD_LIMITS.maxPublicValues)fail(`display value exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!item||item.type==='unit'){append('unit');return;}if(item.type==='u32'||item.type==='s32'){append(item.value.toString());return;}if(item.type==='struct'){append(`${item.name}{`);let first=true;for(const [key,child] of Object.entries(item.fields)){if(!first)append(',');first=false;append(`${key}=`);visit(child);}append('}');return;}if(item.type==='enum'){append(`${item.name}.${item.variant}`);if(item.values.length){append('(');for(let i=0;i<item.values.length;i++){if(i)append(',');visit(item.values[i]);}append(')');}return;}if(item.type==='vec'){append('[');for(let i=0;i<item.items.length;i++){if(i)append(',');visit(item.items[i]);}append(']');return;}if(item.type==='buffer'){append('Buffer[');for(let i=0;i<item.length;i++){if(i)append(',');visit(bufferGetValue(item,i));}append(']');return;}if(item.type==='slice'){append('Slice[');for(let i=0;i<item.length;i++){if(i)append(',');visit(sliceGetValue(item,i));}append(']');return;}if(item.type==='source_text'){append(`SourceText(codeUnits=${item.length})`);return;}if(item.type==='text_cursor'){append(`TextCursor(codeUnit=${item.codeUnitOffset},line=${item.line},column=${item.column})`);return;}if(item.type==='string_builder'){append(`StringBuilder(codeUnits=${item.unitLength},capacity=${item.capacity})`);return;}append(item.value);};
   visit(value);return state.parts.join('');
 }
 function sameType(a,b,op){if(!a||!b||a.type!==b.type)fail(`${op} requires operands of the same type`);if(isCompositeValue(a)||isCompositeValue(b))fail(`${op} does not support composite values`);}
@@ -270,6 +323,29 @@ export async function executeRiftExecutable(raw,host={},options={}){
       case'string_find':{const startValue=pop(frame,'string_find'),needle=pop(frame,'string_find'),text=pop(frame,'string_find');if(text.type!=='string'||needle.type!=='string'||startValue.type!=='u32')fail('string_find requires string, string, u32');const start=Number(startValue.value);if(start>text.value.length)fail('string_find start is out of range');const index=text.value.indexOf(needle.value,start);if(index<0)push(frame,Object.freeze({type:'enum',name:'Option',variant:'None',values:Object.freeze([]),depth:1}));else{const item=Object.freeze({type:'u32',value:BigInt(index)});push(frame,Object.freeze({type:'enum',name:'Option',variant:'Some',values:Object.freeze([item]),depth:checkedCompositeDepth([item],'Option.Some')}));}break;}
       case'string_slice':{const endValue=pop(frame,'string_slice'),startValue=pop(frame,'string_slice'),text=pop(frame,'string_slice');if(text.type!=='string'||startValue.type!=='u32'||endValue.type!=='u32')fail('string_slice requires string, u32, u32');const start=Number(startValue.value),end=Number(endValue.value);if(start>end||end>text.value.length)fail('string_slice range is out of bounds');push(frame,Object.freeze({type:'string',value:stringBytes(text.value.slice(start,end),'string_slice result')}));break;}
       case'string_replace':{const replacement=pop(frame,'string_replace'),endValue=pop(frame,'string_replace'),startValue=pop(frame,'string_replace'),text=pop(frame,'string_replace');if(text.type!=='string'||startValue.type!=='u32'||endValue.type!=='u32'||replacement.type!=='string')fail('string_replace requires string, u32, u32, string');const start=Number(startValue.value),end=Number(endValue.value);if(start>end||end>text.value.length)fail('string_replace range is out of bounds');const next=text.value.slice(0,start)+replacement.value+text.value.slice(end);push(frame,Object.freeze({type:'string',value:stringBytes(next,'string_replace result')}));break;}
+      case'source_text':{const value=pop(frame,'source_text');if(value.type!=='string')fail('source_text requires string');push(frame,makeSourceTextValue(value.value,0,value.value.length,'source_text'));break;}
+      case'source_code_unit_len':{const value=pop(frame,'source_code_unit_len');if(value.type!=='source_text')fail('source_code_unit_len expected SourceText');push(frame,Object.freeze({type:'u32',value:BigInt(value.length)}));break;}
+      case'source_utf8_byte_len':{const value=pop(frame,'source_utf8_byte_len');if(value.type!=='source_text')fail('source_utf8_byte_len expected SourceText');push(frame,Object.freeze({type:'u32',value:BigInt(sourceUtf8ByteLength(value))}));break;}
+      case'source_cursor':{const value=pop(frame,'source_cursor');if(value.type!=='source_text')fail('source_cursor expected SourceText');push(frame,makeTextCursorValue(value));break;}
+      case'source_slice':{const endValue=pop(frame,'source_slice'),startValue=pop(frame,'source_slice'),value=pop(frame,'source_slice');if(value.type!=='source_text'||startValue.type!=='u32'||endValue.type!=='u32')fail('source_slice requires SourceText, u32, u32');const start=Number(startValue.value),end=Number(endValue.value);if(start>end||end>value.length){push(frame,errValue('SourceText slice out of range'));break;}push(frame,okValue(makeSourceTextValue(value.text,value.start+start,end-start,'SourceText.slice')));break;}
+      case'source_to_string':{const value=pop(frame,'source_to_string');if(value.type!=='source_text')fail('source_to_string expected SourceText');const text=sourceString(value);if(encoder.encode(text).byteLength>HARD_LIMITS.maxStringBytes){push(frame,errValue('SourceText exceeds string byte limit'));break;}push(frame,okValue(Object.freeze({type:'string',value:stringBytes(text,'SourceText.to_string')})));break;}
+      case'cursor_code_unit_offset':{const value=pop(frame,'cursor_code_unit_offset');if(value.type!=='text_cursor')fail('cursor_code_unit_offset expected TextCursor');push(frame,Object.freeze({type:'u32',value:BigInt(value.codeUnitOffset)}));break;}
+      case'cursor_line':{const value=pop(frame,'cursor_line');if(value.type!=='text_cursor')fail('cursor_line expected TextCursor');push(frame,Object.freeze({type:'u32',value:BigInt(value.line)}));break;}
+      case'cursor_column':{const value=pop(frame,'cursor_column');if(value.type!=='text_cursor')fail('cursor_column expected TextCursor');push(frame,Object.freeze({type:'u32',value:BigInt(value.column)}));break;}
+      case'cursor_eof':{const value=pop(frame,'cursor_eof');if(value.type!=='text_cursor')fail('cursor_eof expected TextCursor');push(frame,Object.freeze({type:'bool',value:value.codeUnitOffset>=value.source.length}));break;}
+      case'cursor_peek_code_unit':{const offsetValue=pop(frame,'cursor_peek_code_unit'),value=pop(frame,'cursor_peek_code_unit');if(value.type!=='text_cursor'||offsetValue.type!=='u32')fail('cursor_peek_code_unit requires TextCursor, u32');const index=value.codeUnitOffset+Number(offsetValue.value),codeUnit=sourceCodeUnit(value.source,index);push(frame,optionValue(codeUnit===null?null:Object.freeze({type:'u32',value:BigInt(codeUnit)})));break;}
+      case'cursor_advance':{const value=pop(frame,'cursor_advance');push(frame,advanceTextCursor(value));break;}
+      case'make_string_builder':{push(frame,makeStringBuilderValue(ins.capacity));break;}
+      case'builder_len':{const value=pop(frame,'builder_len');if(value.type!=='string_builder')fail('builder_len expected StringBuilder');push(frame,Object.freeze({type:'u32',value:BigInt(value.unitLength)}));break;}
+      case'builder_append':{const text=pop(frame,'builder_append'),builder=pop(frame,'builder_append');if(builder.type!=='string_builder'||text.type!=='string')fail('builder_append requires StringBuilder, string');push(frame,builderAppendSource(builder,makeSourceTextValue(text.value,0,text.value.length,'StringBuilder.append')));break;}
+      case'builder_append_source':{const source=pop(frame,'builder_append_source'),builder=pop(frame,'builder_append_source');push(frame,builderAppendSource(builder,source));break;}
+      case'builder_finish':{const builder=pop(frame,'builder_finish');push(frame,finishStringBuilder(builder));break;}
+      case'parse_u32':{const value=pop(frame,'parse_u32');if(value.type!=='string')fail('parse_u32 requires string');push(frame,parseIntegerText(value.value,'u32'));break;}
+      case'parse_s32':{const value=pop(frame,'parse_s32');if(value.type!=='string')fail('parse_s32 requires string');push(frame,parseIntegerText(value.value,'s32'));break;}
+      case'parse_f64':{const value=pop(frame,'parse_f64');if(value.type!=='string')fail('parse_f64 requires string');push(frame,parseF64Text(value.value));break;}
+      case'format_u32':{const value=pop(frame,'format_u32');if(value.type!=='u32')fail('format_u32 requires u32');push(frame,Object.freeze({type:'string',value:value.value.toString()}));break;}
+      case'format_s32':{const value=pop(frame,'format_s32');if(value.type!=='s32')fail('format_s32 requires s32');push(frame,Object.freeze({type:'string',value:value.value.toString()}));break;}
+      case'format_f64':{const value=pop(frame,'format_f64');if(value.type!=='f64')fail('format_f64 requires f64');push(frame,Object.freeze({type:'string',value:canonicalF64Text(value.value)}));break;}
       case'make_struct':{const values=Array(ins.fields.length);for(let i=ins.fields.length-1;i>=0;i--)values[i]=pop(frame,'make_struct');const fields=Object.create(null);for(let i=0;i<ins.fields.length;i++)fields[ins.fields[i]]=values[i];push(frame,Object.freeze({type:'struct',name:ins.name,fields:Object.freeze(fields),depth:checkedCompositeDepth(values,`struct ${ins.name}`)}));break;}
       case'get_field':{const value=pop(frame,'get_field');if(value.type!=='struct'||value.name!==ins.name)fail(`get_field expected struct ${ins.name}`);if(!Object.prototype.hasOwnProperty.call(value.fields,ins.field))fail(`struct ${ins.name} has no field ${ins.field}`);push(frame,value.fields[ins.field]);break;}
       case'make_enum':{const values=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)values[i]=pop(frame,'make_enum');push(frame,Object.freeze({type:'enum',name:ins.name,variant:ins.variant,values:Object.freeze(values),depth:checkedCompositeDepth(values,`enum ${ins.name}.${ins.variant}`)}));break;}

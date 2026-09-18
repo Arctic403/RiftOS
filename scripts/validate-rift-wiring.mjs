@@ -159,8 +159,8 @@ if (hasWebKitDependency(workspaceApps)) fail('native workspace apps gained a Web
 
 const riftpp = read('src/riftpp-core.js');
 const vm = read('src/riftvm.js');
-if (!riftpp.includes("RIFTPP_CORE_VERSION='0.8.0-bootstrap'") || !riftpp.includes('MAX_VEC_CAPACITY=256') || !riftpp.includes('MAX_BUFFER_CAPACITY=100000') || !riftpp.includes("['Vec','Buffer','Slice','Option','Result']")) fail('Rift++ Core 0.8.0 / Vec-256 / Buffer-100000 / Slice contract regressed');
-if (!vm.includes('maxVecCapacity:256') || !vm.includes('maxBufferCapacity:100000') || !vm.includes("'buffer_slice','slice_len','slice_get'") || !vm.includes("RIFT_VM_ABI='riftvm-1'")) fail('RiftVM ABI/storage-view contract regressed');
+if (!riftpp.includes("RIFTPP_CORE_VERSION='0.9.0-bootstrap'") || !riftpp.includes('MAX_VEC_CAPACITY=256') || !riftpp.includes('MAX_BUFFER_CAPACITY=100000') || !riftpp.includes('MAX_SOURCE_CODE_UNITS=4*1024*1024') || !riftpp.includes('MAX_STRING_BUILDER_UNITS=4*1024*1024') || !riftpp.includes("BUILTIN_VALUE_TYPES=new Set(['SourceText','TextCursor'])") || !riftpp.includes("['Vec','Buffer','Slice','StringBuilder','Option','Result']")) fail('Rift++ Core 0.9.0 UTF-16 text/storage contract regressed');
+if (!vm.includes('maxVecCapacity:256') || !vm.includes('maxBufferCapacity:100000') || !vm.includes('maxSourceTextCodeUnits:4*1024*1024') || !vm.includes('maxStringBuilderUnits:4*1024*1024') || !vm.includes("'source_text','source_code_unit_len','source_utf8_byte_len','source_cursor','source_slice','source_to_string'") || !vm.includes("'parse_u32','parse_s32','parse_f64','format_u32','format_s32','format_f64'") || !vm.includes("RIFT_VM_ABI='riftvm-1'")) fail('RiftVM ABI/text/numeric contract regressed');
 
 for (const asset of ['riftbrowser-mcp-app.js', 'adapters/ai-adapter-registry.js']) {
   requireFile(`android/app/src/main/assets/${asset}`, 'browser injection asset is missing');

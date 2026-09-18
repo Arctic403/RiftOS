@@ -28,6 +28,7 @@ assert(batch.includes('"rift-cli","riftpp","rift-tool","chat"'), 'riftpp and fix
 assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]'));
 assert(nativeShell.includes('rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]'));
 assert(nativeShell.includes('rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]'));
+assert(nativeShell.includes('rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]'));
 assert(nativeShell.includes('"riftpp" -> {'));
 assert(nativeShell.includes('headlessJs.executeRiftpp(args, cwd)'));
 assert(nativeShell.includes('"rift-tool" -> {'));
@@ -55,6 +56,8 @@ assert(headless.includes('private fun stateRemove(namespace: String, key: String
 assert(headless.includes('fun executeDeveloperTool(args: List<String>): CommandResult'));
 assert(headless.includes('"gate0-verify" -> executeGate0Verifier()'));
 assert(headless.includes('"semantic-compat" -> executeSemanticCompatibilityVerifier()'));
+assert(headless.includes('"text-model-benchmark" -> executeTextModelBenchmark()'));
+assert(headless.includes("schema: \'riftpp-text-model-benchmark-v1\'"));
 assert(headless.includes('const val SEMANTIC_COMPAT_ENTRY = """'));
 assert(headless.includes("schema: 'riftpp-semantic-compat-device-suite/1'"));
 assert(headless.includes('const val GATE0_VERIFY_ENTRY = """'));
