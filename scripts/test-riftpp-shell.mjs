@@ -26,7 +26,8 @@ assert(slice.includes('compileRiftPlusPlusCoreProgramV1'));
 assert(batch.includes('"rift-cli","riftpp","rift-tool","chat"'), 'riftpp and fixed developer tools must stay outside atomic batch');
 
 assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]'));
-assert(nativeShell.includes('rift-tool gate0-verify   [FIXED TRUSTED DEV TOOL / NO GENERIC JS]'));
+assert(nativeShell.includes('rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]'));
+assert(nativeShell.includes('rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]'));
 assert(nativeShell.includes('"riftpp" -> {'));
 assert(nativeShell.includes('headlessJs.executeRiftpp(args, cwd)'));
 assert(nativeShell.includes('"rift-tool" -> {'));
@@ -53,6 +54,9 @@ assert(headless.includes('private fun stateLoad(namespace: String, key: String):
 assert(headless.includes('private fun stateRemove(namespace: String, key: String): Boolean'));
 assert(headless.includes('fun executeDeveloperTool(args: List<String>): CommandResult'));
 assert(headless.includes('"gate0-verify" -> executeGate0Verifier()'));
+assert(headless.includes('"semantic-compat" -> executeSemanticCompatibilityVerifier()'));
+assert(headless.includes('const val SEMANTIC_COMPAT_ENTRY = """'));
+assert(headless.includes("schema: 'riftpp-semantic-compat-device-suite/1'"));
 assert(headless.includes('const val GATE0_VERIFY_ENTRY = """'));
 assert(headless.includes('function("__rift_gate0_bundle")'));
 assert(headless.includes('function("__rift_gate0_result")'));
@@ -65,8 +69,9 @@ assert(headless.includes("schema: 'riftpp-gate0-device-verifier-suite/1'"));
 assert(headless.includes('.put("installedSourceSha", BuildConfig.RIFT_SOURCE_SHA)'));
 assert(headless.includes('Gate 0 verifier path is outside the fixed allowlist'));
 const devStart = headless.indexOf('private fun executeGate0Verifier()');
-const devEnd = headless.indexOf('\n    private fun gate0Bundle()', devStart);
-assert(devStart >= 0 && devEnd > devStart, 'fixed Gate 0 verifier method must remain present');
+const semanticStart = headless.indexOf('private fun executeSemanticCompatibilityVerifier()');
+const devEnd = headless.indexOf('\n    private fun gate0Bundle()', semanticStart);
+assert(devStart >= 0 && semanticStart > devStart && devEnd > semanticStart, 'fixed archival and semantic verifier methods must remain present');
 const devSlice = headless.slice(devStart, devEnd);
 for (const forbidden of ['__rift_read_text','__rift_write_text','__rift_state_load','__rift_state_save','__rift_state_remove','ProcessBuilder','Runtime.getRuntime().exec']) {
   assert(!devSlice.includes(forbidden), 'Gate 0 verifier must not expose authority: ' + forbidden);

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -11,7 +11,7 @@ src/riftpp-core.js is the current packaged Rift++ bootstrap compiler frontend.
 It accepts bounded riftpp/1 source, produces a source-spanned AST, performs semantic/type/control-flow/effect checks, links bounded source modules, and lowers successful programs to rift-exec-v1 / riftvm-1 executables.
 
 Current compiler version:
-0.7.2-bootstrap.
+0.8.0-bootstrap.
 
 ## Live activation
 
@@ -68,7 +68,9 @@ The compiler module itself has no filesystem, network, Android, MCP or process a
 - locals/function: 512
 - struct fields / enum payload/cases: 64
 - named local types: 256
-- Vec capacity: 1..256
+- Vec capacity: 1..256 (frozen bounded collection)
+- Buffer capacity: 1..100000 (persistent scalable compiler/runtime storage)
+- Slice: read-only zero-copy view over an immutable Buffer version
 - generic/type nesting: 32
 - parser recursion families: 128
 - use declarations/module: 64
@@ -98,8 +100,10 @@ Implemented bootstrap constructs include:
 - enum construction
 - exhaustive match over bool, enums, Option and Result
 - match guards
-- Vec<T,N>, Option<T>, Result<T,E>
+- Vec<T,N>, Buffer<T,N>, Slice<T>, Option<T>, Result<T,E>
 - bounded Vec literals and len/get/push/set
+- persistent scalable Buffer literals and len/get/push/set/slice
+- read-only Slice len/get views that remain stable across later Buffer versions
 - checked numeric arithmetic
 - string concatenation
 - string_len, string_find, string_slice, string_replace
@@ -208,7 +212,13 @@ A hand-authored .rxe does not inherit Core source-level type soundness, but malf
 
 ## Determinism and bounded data
 
-Vec capacity is compile-time fixed and <=256.
+Vec capacity remains compile-time fixed and <=256.
+
+Buffer is a separate persistent collection with compile-time capacity <=100000. Its VM representation is a structurally shared 32-way trie; push/set return new Buffer values and do not mutate older aliases.
+
+Slice is a zero-copy read-only view over one immutable Buffer version. A Slice remains stable if a later Buffer update returns a new version.
+
+Buffer and Slice are intentionally excluded from checkpoint persistence in Gate 1A. They are compiler/runtime working storage, not state-schema types.
 
 Composite runtime operations remain data-only.
 
@@ -226,7 +236,7 @@ Not implemented include:
 - bit operations
 - field/index assignment
 - nested/literal enum payload patterns
-- dedicated arrays/slices
+- dedicated fixed arrays
 - ? propagation
 - ownership/borrowing
 - module privacy/export controls
@@ -238,11 +248,9 @@ Unsupported syntax fails closed.
 
 ## Current proof status
 
-Older README text tied device proof to previous Core versions/commits. That is historical and is not used as proof for the current 0.7.2 source tree.
+The frozen 0.7.2 / Gate 0 evidence is historical compatibility proof and is not rewritten by the 0.8.0 evolution.
 
-This audit verifies current source/packaging/wiring only.
-
-Current Builder/APK/device proof remains a separate gate.
+Current 0.8.0 source has passed isolated Core/VM execution plus the frozen semantic compatibility suite. Builder/APK/device proof remains a separate Gate 1A promotion step.
 
 ## Critical invariants
 
@@ -253,6 +261,9 @@ Current Builder/APK/device proof remains a separate gate.
 - effects are exact and transitive
 - compiler effect support never implies production host authority
 - Vec remains <=256
+- Buffer remains <=100000 and uses persistent value semantics
+- Slice remains read-only and zero-copy over an immutable Buffer version
+- Buffer/Slice do not enter checkpoint persistence without a separately versioned persistence design
 - recursive/deep parser/linker/codegen inputs fail within explicit bounds
 - unsupported syntax fails closed
 - no eval/new Function/native shell code generation is introduced
@@ -265,7 +276,9 @@ Current Builder/APK/device proof remains a separate gate.
 - module dependency becomes ambient/unqualified -> linker regression
 - extra dependency is silently accepted -> deterministic graph regression
 - missing/extra effects compile -> exact-effect regression
-- Vec capacity >256 -> resource regression
+- Vec capacity >256 -> frozen Vec contract regression
+- Buffer capacity >100000 -> scalable-storage bound regression
+- Slice mutation or Slice checkpoint persistence becomes possible -> Gate 1A view/persistence-boundary regression
 - compiler output bypasses prepareRiftExecutable -> validation regression
 - historical Gate/device proof is presented as proof of current source -> trust regression
 - headless QuickJS script constants become private to the nested `Scripts` object and the enclosing runtime can no longer compile -> Kotlin visibility regression
@@ -285,7 +298,8 @@ Specialized repair/software/state execution hosts -> their owning subsystem, not
 ## Validation
 
 Second source audit must verify:
-- 0.7.2 version
+- 0.8.0 version
+- Vec-256 / Buffer-100000 / read-only Slice contracts
 - Gradle packaging and QuickJS loading
 - headless script constants remain visible to the enclosing `RiftHeadlessJsRuntime` while the `Scripts` object itself stays private
 - public API

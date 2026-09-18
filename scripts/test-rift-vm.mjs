@@ -69,6 +69,28 @@ const vectorOutput=[];
 await executeRiftExecutable(vectors,{write:value=>vectorOutput.push(value)});
 assert.deepEqual(vectorOutput,['2','true','7','42','vec capacity exceeded','true','vec index out of range']);
 
+const buffers={
+  format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],
+  constants:[{type:'u32',value:7},{type:'u32',value:0},{type:'u32',value:42},{type:'u32',value:1}],
+  functions:{main:{params:0,locals:4,code:[
+    {op:'make_buffer',capacity:1024,count:0},{op:'store',index:0},
+    {op:'load',index:0},{op:'const',index:0},{op:'buffer_push'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:1},
+    {op:'load',index:0},{op:'buffer_len'},{op:'print'},
+    {op:'load',index:1},{op:'buffer_len'},{op:'print'},
+    {op:'load',index:1},{op:'const',index:1},{op:'buffer_get'},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
+    {op:'load',index:1},{op:'const',index:1},{op:'const',index:2},{op:'buffer_set'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:2},
+    {op:'load',index:1},{op:'const',index:1},{op:'buffer_get'},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
+    {op:'load',index:2},{op:'const',index:1},{op:'buffer_get'},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
+    {op:'load',index:1},{op:'const',index:1},{op:'const',index:3},{op:'buffer_slice'},{op:'enum_get',name:'Result',variant:'Ok',index:0},{op:'store',index:3},
+    {op:'load',index:3},{op:'slice_len'},{op:'print'},
+    {op:'load',index:3},{op:'const',index:1},{op:'slice_get'},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
+    {op:'halt'}
+  ]}},limits:{maxSteps:100,maxStack:16,maxCallDepth:2}
+};
+const bufferOutput=[];
+await executeRiftExecutable(buffers,{write:value=>bufferOutput.push(value)});
+assert.deepEqual(bufferOutput,['0','1','7','7','42','1','7'],'Buffer updates and Slice views must be persistent and must not mutate older aliases');
+
 const stringOps={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:[{type:'string',value:'retrun 7'},{type:'string',value:'retrun'},{type:'u32',value:0},{type:'u32',value:6},{type:'string',value:'return'}],functions:{main:{params:0,locals:0,code:[
   {op:'const',index:0},{op:'string_len'},{op:'print'},
   {op:'const',index:0},{op:'const',index:1},{op:'const',index:2},{op:'string_find'},{op:'enum_get',name:'Option',variant:'Some',index:0},{op:'print'},
@@ -121,10 +143,14 @@ const badVecCapacity=structuredClone(vectors);badVecCapacity.functions.main.code
 assert.throws(()=>prepareRiftExecutable(badVecCapacity),/capacity must be an integer in 1\.\.256/);
 const badVecCount=structuredClone(vectors);badVecCount.functions.main.code[0]={op:'make_vec',capacity:1,count:2};
 assert.throws(()=>prepareRiftExecutable(badVecCount),/count exceeds vector capacity/);
+const badBufferCapacity=structuredClone(buffers);badBufferCapacity.functions.main.code[0]={op:'make_buffer',capacity:100001,count:0};
+assert.throws(()=>prepareRiftExecutable(badBufferCapacity),/capacity must be an integer in 1\.\.100000/);
 const hostComposite={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['test.echo'],constants:[{type:'u32',value:1}],functions:{main:{params:0,locals:0,code:[{op:'const',index:0},{op:'make_struct',name:'Box',fields:['value']},{op:'host',method:'test.echo',argc:1},{op:'halt'}]}},limits:{maxSteps:20,maxStack:8,maxCallDepth:2}};
 await assert.rejects(()=>executeRiftExecutable(hostComposite,{invoke:async()=>null}),/composite values cannot cross the host import boundary/);
 const hostVec={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['test.echo'],constants:[],functions:{main:{params:0,locals:0,code:[{op:'make_vec',capacity:2,count:0},{op:'host',method:'test.echo',argc:1},{op:'halt'}]}},limits:{maxSteps:20,maxStack:8,maxCallDepth:2}};
 await assert.rejects(()=>executeRiftExecutable(hostVec,{invoke:async()=>null}),/composite values cannot cross the host import boundary/);
+const hostBuffer={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:['test.echo'],constants:[],functions:{main:{params:0,locals:0,code:[{op:'make_buffer',capacity:1024,count:0},{op:'host',method:'test.echo',argc:1},{op:'halt'}]}},limits:{maxSteps:20,maxStack:8,maxCallDepth:2}};
+await assert.rejects(()=>executeRiftExecutable(hostBuffer,{invoke:async()=>null}),/composite values cannot cross the host import boundary/);
 const deepCompositeCode=[{op:'const',index:0}];for(let i=0;i<33;i++)deepCompositeCode.push({op:'make_vec',capacity:1,count:1});deepCompositeCode.push({op:'halt'});
 const deepComposite={format:RIFT_EXEC_FORMAT,abi:RIFT_VM_ABI,entry:'main',imports:[],constants:[{type:'u32',value:1}],functions:{main:{params:0,locals:0,code:deepCompositeCode}},limits:{maxSteps:100,maxStack:4,maxCallDepth:2}};
 await assert.rejects(()=>executeRiftExecutable(deepComposite),/composite depth limit 32/);

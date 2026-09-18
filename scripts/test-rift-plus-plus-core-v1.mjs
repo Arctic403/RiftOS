@@ -16,7 +16,7 @@ assert.equal(ast.module,'demo.hello');
 assert.deepEqual(ast.functions.map(fn=>fn.name),['multiply','main']);
 const base=await execute(source),compiled=base.compiled;
 assert.equal(compiled.schema,'riftpp-core-compile-result/1');
-assert.equal(compiled.compiler,'0.7.2-bootstrap');
+assert.equal(compiled.compiler,'0.8.0-bootstrap');
 assert.equal(compiled.executable.format,'rift-exec-v1');
 assert.equal(compiled.executable.abi,'riftvm-1');
 assert.equal(compiled.executable.entry,'main');
@@ -72,7 +72,7 @@ assert(!softwareEvalCompiled.executable.imports.includes('software.expected'),'G
 
 const numericParametersSource=readFileSync('examples/riftpp/core-v1-numeric-parameters.riftpp','utf8');
 const numericParameters=await execute(numericParametersSource);
-assert.equal(numericParameters.compiled.compiler,'0.7.2-bootstrap');
+assert.equal(numericParameters.compiled.compiler,'0.8.0-bootstrap');
 assert.equal(numericParameters.output[0],'9.5');
 assert.match(numericParameters.output[1],/^[a-f0-9]{64}$/,'Gate 6A parameter identity must be a lowercase SHA-256 digest');
 assert.deepEqual(numericParameters.output.slice(2),['true','true']);
@@ -102,6 +102,16 @@ const wideParameters=await execute(wideParameterSource);
 assert.equal(wideParameters.output[0],'144','Gate 6D.3 requires first-class Vec<f64,144> execution');
 assert.match(wideParameters.output[1],/^[a-f0-9]{64}$/,'wide parameter identity must remain deterministic');
 assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\nmodule bad.wide_parameters\nfn main() { let weights: Vec<f64, 257> = [] print(weights.len()) }\n'),/Vec capacity must be 1\.\.256/);
+
+const scalableBufferSource="riftpp 1\nmodule proof.scalable_buffer\nfn main() {\n  var buffer: Buffer<u32, 1024> = []\n  var index: u32 = 0\n  while index < 600 {\n    let pushed: Result<Buffer<u32, 1024>, string> = buffer.push(index)\n    match pushed {\n      Result.Ok(next) => { buffer = next }\n      Result.Err(message) => { print(message) return }\n    }\n    index += 1\n  }\n  print(buffer.len())\n  match buffer.get(599) {\n    Option.Some(value) => { print(value) }\n    Option.None => { print(0) }\n  }\n  let sliced: Result<Slice<u32>, string> = buffer.slice(590, 600)\n  match sliced {\n    Result.Ok(view) => {\n      print(view.len())\n      match view.get(0) {\n        Option.Some(value) => { print(value) }\n        Option.None => { print(0) }\n      }\n      let updated: Result<Buffer<u32, 1024>, string> = buffer.set(599, 777)\n      match updated {\n        Result.Ok(next) => {\n          buffer = next\n          match view.get(9) {\n            Option.Some(value) => { print(value) }\n            Option.None => { print(0) }\n          }\n          match buffer.get(599) {\n            Option.Some(value) => { print(value) }\n            Option.None => { print(0) }\n          }\n        }\n        Result.Err(message) => { print(message) return }\n      }\n    }\n    Result.Err(message) => { print(message) return }\n  }\n}\n";
+const scalableBuffer=await execute(scalableBufferSource);
+assert.deepEqual(scalableBuffer.output,['600','599','10','590','599','777'],'Gate 1A Buffer/Slice must scale past Vec-256 while preserving persistent indexed-update/view semantics');
+const scalableBufferOps=Object.values(scalableBuffer.compiled.executable.functions).flatMap(fn=>fn.code.map(ins=>ins.op));
+for(const op of ['make_buffer','buffer_len','buffer_get','buffer_push','buffer_set','buffer_slice','slice_len','slice_get'])assert(scalableBufferOps.includes(op),`Gate 1A storage must lower ${op}`);
+assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\nmodule bad.buffer_capacity\nfn main() { let values: Buffer<u32, 100001> = [] print(values.len()) }\n'),/Buffer capacity must be 1\.\.100000/);
+assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\nmodule bad.buffer_checkpoint\nfn main() allow [storage] { let values: Buffer<u32, 1024> = [] print(checkpoint_save("buffer", values)) }\n'),/Buffer is compiler\/runtime storage, not persistent state/);
+assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\nmodule bad.slice_checkpoint\nfn main() allow [storage] { let values: Buffer<u32, 8> = [1] let result: Result<Slice<u32>, string> = values.slice(0, 1) match result { Result.Ok(view) => { print(checkpoint_save("slice", view)) } Result.Err(message) => { print(message) } } }\n'),/Slice is a runtime view, not persistent state/);
+assert.throws(()=>compileRiftPlusPlusCoreV1('riftpp 1\nmodule bad.slice_mutation\nfn main() { let values: Buffer<u32, 8> = [1] let result: Result<Slice<u32>, string> = values.slice(0, 1) match result { Result.Ok(view) => { let x = view.push(2) print(x) } Result.Err(message) => { print(message) } } }\n'),/Slice\.push is not available; Slice is a read-only view/);
 
 const moduleMain=readFileSync('examples/riftpp/modules/demo/main.riftpp','utf8');
 const moduleSources={
@@ -277,7 +287,7 @@ assert(!/ProcessBuilder|Runtime\.getRuntime|child_process/.test(sourceCode));
 console.log('ok - Rift++ Core V1 source parses, type-checks, lowers to rift-exec-v1 and executes on RiftVM');
 console.log('ok - Control Flow V1 executes var/assignment, scopes, if/else, while, break/continue and short-circuit and/or');
 console.log('ok - Structured Data V1 executes nominal struct/enum values, field reads, payload binding and exhaustive match');
-console.log('ok - Collections V1 executes bounded Vec values with Option/Result match semantics and no host imports');
+console.log('ok - Collections V1 preserves bounded Vec semantics and Gate 1A adds scalable persistent Buffer values without host imports');
 console.log('ok - Gate 6D.2 Core lowers bounded string repair primitives and capability-gated repair.eval imports while enforcing the effect clause');
 console.log('ok - Gate 6A executes finite f64 and bounded Vec<f64,N> parameter compute, deterministic SHA-256 identity and checkpoint parity without implicit numeric coercion');
 console.log('ok - Module Graph V1 links explicit/default aliases and transitive types/functions, caps graphs at 64 modules, bounds linker recursion, and rejects cycles/missing/ambient modules');

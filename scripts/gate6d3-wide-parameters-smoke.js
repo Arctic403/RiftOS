@@ -6,7 +6,7 @@ try{
   coreUrl=URL.createObjectURL(new Blob([coreText.replace("from './riftvm.js'","from '"+vmUrl+"'")],{type:'text/javascript'}));
   const vm=await import(vmUrl);
   const compiler=await import(coreUrl);
-  lab.assert(compiler.RIFTPP_CORE_VERSION==='0.7.2-bootstrap','core version');
+  lab.assert(compiler.RIFTPP_CORE_VERSION==='0.8.0-bootstrap','core version');
   const makeSource=n=>{const values=Array.from({length:n},()=> '0.0').join(',');return 'riftpp 1\\nmodule proof.capacity_'+n+'\\nfn main() { let weights: Vec<f64, '+n+'> = ['+values+'] print(weights.len()) print(value_sha256(weights)) }\\n';};
   const results=[];
   for(const n of [96,144]){

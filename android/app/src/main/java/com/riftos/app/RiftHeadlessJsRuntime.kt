@@ -117,16 +117,17 @@ class RiftHeadlessJsRuntime(context: Context) {
             "", "help" -> {
                 val value = JSONObject()
                     .put("schema", "rift-developer-tool/1")
-                    .put("commands", org.json.JSONArray(listOf("rift-tool gate0-verify")))
+                    .put("commands", org.json.JSONArray(listOf("rift-tool gate0-verify", "rift-tool semantic-compat")))
                     .put("genericJavaScript", false)
                     .put("processAuthority", false)
                     .put("networkAuthority", false)
                 CommandResult(
-                    output = "Rift developer tools\nrift-tool gate0-verify",
+                    output = "Rift developer tools\nrift-tool gate0-verify\nrift-tool semantic-compat",
                     result = value
                 )
             }
             "gate0-verify" -> executeGate0Verifier()
+            "semantic-compat" -> executeSemanticCompatibilityVerifier()
             else -> throw IllegalArgumentException("unsupported fixed Rift developer tool: $subcommand")
         }
     }
@@ -171,6 +172,47 @@ class RiftHeadlessJsRuntime(context: Context) {
         val payload = resultJson?.let(::JSONObject)
             ?: throw IllegalStateException("Gate 0 verifier returned no result")
         require(payload.optString("status") == "PASS") { "Gate 0 verifier suite did not pass" }
+        return CommandResult(payload.toString(2), payload)
+    }
+
+    private fun executeSemanticCompatibilityVerifier(): CommandResult {
+        val bundle = gate0Bundle()
+        val semanticVerifierSource = readGate0File("/workspace/rift++/tools/semantic-verifier-core.js")
+        var resultJson: String? = null
+
+        runBlocking {
+            quickJs {
+                evaluationTimeoutMillis = EVALUATION_TIMEOUT_MS
+
+                function("__rift_gate0_bundle") { bundle.toString() }
+                function("__rift_gate0_result") { values ->
+                    resultJson = values.firstOrNull()?.toString()
+                    Unit
+                }
+                function("__rift_utf8") { values ->
+                    values.firstOrNull()?.toString().orEmpty().toByteArray(Charsets.UTF_8)
+                }
+                function("__rift_sha256") { values ->
+                    val value = values.firstOrNull()
+                    val bytes = when (value) {
+                        is ByteArray -> value
+                        is List<*> -> ByteArray(value.size) { index -> (value[index] as Number).toByte() }
+                        else -> throw IllegalArgumentException("SHA-256 input must be a byte array")
+                    }
+                    MessageDigest.getInstance("SHA-256").digest(bytes)
+                }
+
+                evaluate<Any?>(Scripts.POLYFILLS, filename = "rift-tool-polyfills.js")
+                evaluate<Any?>(preparedVmSource(), filename = "riftvm.semantic-compat.js")
+                evaluate<Any?>(preparedCoreSource(), filename = "riftpp-core.semantic-compat.js")
+                evaluate<Any?>(semanticVerifierSource, filename = "semantic-verifier-core.js")
+                evaluate<Any?>(Scripts.SEMANTIC_COMPAT_ENTRY, filename = "semantic-compat.js")
+            }
+        }
+
+        val payload = resultJson?.let(::JSONObject)
+            ?: throw IllegalStateException("Semantic compatibility verifier returned no result")
+        require(payload.optString("status") == "PASS") { "Semantic compatibility verifier did not pass" }
         return CommandResult(payload.toString(2), payload)
     }
 
@@ -417,6 +459,54 @@ class RiftHeadlessJsRuntime(context: Context) {
             });
         """
 
+
+        const val SEMANTIC_COMPAT_ENTRY = """
+            (async function() {
+              const bundle = JSON.parse(__rift_gate0_bundle());
+              const compiler = globalThis.RiftPlusPlusCore;
+              const vm = globalThis.RiftVMHeadless;
+              const semanticVerifier = globalThis.RiftSemanticVerifier;
+              if (!compiler || !vm || !semanticVerifier) {
+                throw new Error('Semantic compatibility verifier runtime is incomplete');
+              }
+
+              const compilerApi = Object.freeze({
+                RIFTPP_CORE_VERSION: compiler.version,
+                RIFTPP_LANGUAGE: compiler.language,
+                compileRiftPlusPlusCoreV1: compiler.compile,
+                compileRiftPlusPlusCoreProgramV1: compiler.compileProgram
+              });
+              const files = bundle.files || {};
+              const hashes = bundle.pathHashes || {};
+              const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+              const loadText = async path => {
+                const key = String(path || '');
+                if (!has(files, key)) throw new Error('Semantic compatibility verifier denied file: ' + key);
+                return String(files[key]);
+              };
+              const hashFixture = async path => {
+                const key = String(path || '');
+                if (!has(hashes, key)) throw new Error('Semantic compatibility verifier denied fixture hash: ' + key);
+                return String(hashes[key]);
+              };
+              const semantic = await semanticVerifier.run({
+                compiler: compilerApi,
+                vm: vm,
+                loadText: loadText,
+                hashFixture: hashFixture,
+                expectations: bundle.expectations,
+                fixtureManifest: bundle.manifest
+              });
+              const result = Object.freeze({
+                schema: 'riftpp-semantic-compat-device-suite/1',
+                status: 'PASS',
+                installedSourceSha: String(bundle.installedSourceSha || ''),
+                compiler: String(compiler.version || ''),
+                semantic: semantic
+              });
+              __rift_gate0_result(JSON.stringify(result));
+            })();
+        """
 
         const val GATE0_VERIFY_ENTRY = """
             (async function() {

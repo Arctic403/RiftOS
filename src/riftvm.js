@@ -4,9 +4,9 @@ export const RIFT_VM_ABI='riftvm-1';
 const NAME=/^[A-Za-z_][A-Za-z0-9_.:$-]{0,95}$/;
 const HOST_METHOD=/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*){1,3}$/;
 const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
-const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','string_len','string_find','string_slice','string_replace','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','state_save','state_load','state_remove','value_sha256','jump','jump_if_false','call','host','print','ret','halt']);
+const OPS=new Set(['const','load','store','pop','dup','add','sub','mul','div','mod','neg','eq','ne','lt','le','gt','ge','not','concat','string_len','string_find','string_slice','string_replace','make_struct','get_field','make_enum','enum_is','enum_get','make_vec','vec_len','vec_get','vec_push','vec_set','make_buffer','buffer_len','buffer_get','buffer_push','buffer_set','buffer_slice','slice_len','slice_get','state_save','state_load','state_remove','value_sha256','jump','jump_if_false','call','host','print','ret','halt']);
 const DEFAULT_LIMITS=Object.freeze({maxSteps:100000,maxStack:1024,maxCallDepth:32});
-const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:256,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536,maxStateBytes:65536,maxStateSchemaBytes:4096});
+const HARD_LIMITS=Object.freeze({maxFunctions:256,maxImports:64,maxConstants:4096,maxInstructions:100000,maxInstructionsPerFunction:65536,maxParams:64,maxLocals:512,maxCompositeItems:64,maxVecCapacity:256,maxBufferCapacity:100000,maxCompositeDepth:32,maxPublicValues:4096,maxDisplayBytes:65536,maxPublicStringBytes:65536,maxExecutableBytes:8*1024*1024,maxConstantStringBytes:4*1024*1024,maxSteps:1000000,maxStack:4096,maxCallDepth:64,maxStringBytes:65536,maxStateBytes:65536,maxStateSchemaBytes:4096});
 const INT_BOUNDS=Object.freeze({u32:[0n,4294967295n],s32:[-2147483648n,2147483647n]});
 const UNIT=Object.freeze({type:'unit',value:null});
 const PREPARED=Symbol('riftvm.prepared');
@@ -21,6 +21,45 @@ function valueDepth(value){return value&&Number.isInteger(value.depth)?value.dep
 function checkedCompositeDepth(values,label){let depth=1;for(const value of values)depth=Math.max(depth,valueDepth(value)+1);if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${label} exceeds composite depth limit ${HARD_LIMITS.maxCompositeDepth}`);return depth;}
 function finiteF64(value,label){if(typeof value!=='number'||!Number.isFinite(value))fail(`${label} must be a finite JSON number`);return Object.is(value,-0)?0:value;}
 function makeVecValue(capacity,items,label='vec'){return Object.freeze({type:'vec',capacity,items:Object.freeze(items),depth:checkedCompositeDepth(items,label)});}
+const BUFFER_BRANCH_BITS=5;
+const BUFFER_BRANCH=1<<BUFFER_BRANCH_BITS;
+const BUFFER_ROOT_LEVEL=3;
+function makeBufferNode(children,level){
+  let maxDepth=0;
+  for(const child of children){if(child===undefined)continue;const depth=level===0?valueDepth(child):child.maxDepth;if(depth>maxDepth)maxDepth=depth;}
+  return Object.freeze({children:Object.freeze(children),maxDepth});
+}
+function bufferNodeSet(node,index,value,level){
+  const children=node?node.children.slice():[],slot=(index>>>(level*BUFFER_BRANCH_BITS))&(BUFFER_BRANCH-1);
+  children[slot]=level===0?value:bufferNodeSet(children[slot]||null,index,value,level-1);
+  return makeBufferNode(children,level);
+}
+function bufferNodeGet(node,index,level){
+  if(!node)return null;const slot=(index>>>(level*BUFFER_BRANCH_BITS))&(BUFFER_BRANCH-1),child=node.children[slot];
+  if(level===0)return child??null;return child?bufferNodeGet(child,index,level-1):null;
+}
+function makeBufferValue(capacity,items,label='buffer'){
+  if(!Number.isInteger(capacity)||capacity<1||capacity>HARD_LIMITS.maxBufferCapacity)fail(`${label} capacity is invalid`);
+  if(!Array.isArray(items)||items.length>capacity)fail(`${label} items exceed capacity`);
+  let root=null;for(let i=0;i<items.length;i++)root=bufferNodeSet(root,i,items[i],BUFFER_ROOT_LEVEL);
+  const depth=1+(root?.maxDepth??0);if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${label} exceeds composite depth limit ${HARD_LIMITS.maxCompositeDepth}`);
+  return Object.freeze({type:'buffer',capacity,length:items.length,root,depth});
+}
+function bufferGetValue(value,index){
+  if(index<0||index>=value.length)return null;const item=bufferNodeGet(value.root,index,BUFFER_ROOT_LEVEL);if(!item)fail('buffer storage invariant failed');return item;
+}
+function bufferWithValue(value,index,item,nextLength=value.length,label='buffer'){
+  const root=bufferNodeSet(value.root,index,item,BUFFER_ROOT_LEVEL),depth=1+(root?.maxDepth??0);if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${label} exceeds composite depth limit ${HARD_LIMITS.maxCompositeDepth}`);
+  return Object.freeze({type:'buffer',capacity:value.capacity,length:nextLength,root,depth});
+}
+function bufferItems(value,mapper){const out=Array(value.length);for(let i=0;i<value.length;i++)out[i]=mapper(bufferGetValue(value,i),i);return out;}
+function makeSliceValue(buffer,start,end,label='buffer_slice'){
+  if(buffer.type!=='buffer')fail(`${label} expected buffer`);if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||start>end||end>buffer.length)fail(`${label} range is invalid`);
+  const depth=valueDepth(buffer)+1;if(depth>HARD_LIMITS.maxCompositeDepth)fail(`${label} exceeds composite depth limit ${HARD_LIMITS.maxCompositeDepth}`);
+  return Object.freeze({type:'slice',buffer,start,length:end-start,depth});
+}
+function sliceGetValue(value,index){if(index<0||index>=value.length)return null;return bufferGetValue(value.buffer,value.start+index);}
+function sliceItems(value,mapper){const out=Array(value.length);for(let i=0;i<value.length;i++)out[i]=mapper(sliceGetValue(value,i),i);return out;}
 function parseIntegerConstant(value,label){
   try{
     if(typeof value==='bigint')return value;
@@ -94,6 +133,8 @@ function normalizeInstruction(raw,where,ctx){
   if(op==='enum_get')return Object.freeze({op,name:safeName(raw.name,`${where}.name`),variant:safeName(raw.variant,`${where}.variant`),index:integer(raw.index,`${where}.index`,0,HARD_LIMITS.maxCompositeItems-1)});
   if(op==='make_vec'){const capacity=integer(raw.capacity,`${where}.capacity`,1,HARD_LIMITS.maxVecCapacity),count=integer(raw.count??0,`${where}.count`,0,HARD_LIMITS.maxVecCapacity);if(count>capacity)fail(`${where}.count exceeds vector capacity`);return Object.freeze({op,capacity,count});}
   if(op==='vec_len'||op==='vec_get'||op==='vec_push'||op==='vec_set')return Object.freeze({op});
+  if(op==='make_buffer'){const capacity=integer(raw.capacity,`${where}.capacity`,1,HARD_LIMITS.maxBufferCapacity),count=integer(raw.count??0,`${where}.count`,0,HARD_LIMITS.maxBufferCapacity);if(count>capacity)fail(`${where}.count exceeds buffer capacity`);return Object.freeze({op,capacity,count});}
+  if(op==='buffer_len'||op==='buffer_get'||op==='buffer_push'||op==='buffer_set'||op==='buffer_slice'||op==='slice_len'||op==='slice_get')return Object.freeze({op});
   if(op==='jump'||op==='jump_if_false')return Object.freeze({op,target:integer(raw.target,`${where}.target`,0,ctx.codeLength-1)});
   if(op==='call'){
     const name=safeName(raw.name,`${where}.name`),argc=integer(raw.argc??0,`${where}.argc`,0,HARD_LIMITS.maxParams),target=ctx.functions[name];
@@ -147,6 +188,8 @@ function publicValue(value,state={values:0,stringBytes:0}){
   if(value.type==='struct'){const fields={};for(const [key,item] of Object.entries(value.fields))fields[key]=publicValue(item,state);return{type:'struct',name:value.name,fields};}
   if(value.type==='enum')return{type:'enum',name:value.name,variant:value.variant,values:value.values.map(item=>publicValue(item,state))};
   if(value.type==='vec')return{type:'vec',capacity:value.capacity,items:value.items.map(item=>publicValue(item,state))};
+  if(value.type==='buffer')return{type:'buffer',capacity:value.capacity,items:bufferItems(value,item=>publicValue(item,state))};
+  if(value.type==='slice')return{type:'slice',items:sliceItems(value,item=>publicValue(item,state))};
   return{type:value.type,value:value.value};
 }
 function valueToPublic(value){return publicValue(value);}
@@ -160,10 +203,12 @@ function hashPublicValue(value,state={values:0,stringBytes:0}){
   if(value.type==='struct'){const fields={};for(const key of Object.keys(value.fields).sort())fields[key]=hashPublicValue(value.fields[key],state);return{type:'struct',name:value.name,fields};}
   if(value.type==='enum')return{type:'enum',name:value.name,variant:value.variant,values:value.values.map(item=>hashPublicValue(item,state))};
   if(value.type==='vec')return{type:'vec',capacity:value.capacity,items:value.items.map(item=>hashPublicValue(item,state))};
+  if(value.type==='buffer')return{type:'buffer',capacity:value.capacity,items:bufferItems(value,item=>hashPublicValue(item,state))};
+  if(value.type==='slice')return{type:'slice',items:sliceItems(value,item=>hashPublicValue(item,state))};
   fail(`hash input uses unsupported type: ${value.type||'(missing)'}`);
 }
 async function valueSha256(value){const text=JSON.stringify(hashPublicValue(value)),bytes=encoder.encode(text);if(bytes.byteLength>HARD_LIMITS.maxStateBytes)fail(`hash input exceeds ${HARD_LIMITS.maxStateBytes} UTF-8 bytes`);const subtle=globalThis.crypto?.subtle;if(!subtle)fail('SHA-256 is unavailable in this runtime');const digest=new Uint8Array(await subtle.digest('SHA-256',bytes));return Object.freeze({type:'string',value:[...digest].map(byte=>byte.toString(16).padStart(2,'0')).join('')});}
-function isCompositeValue(value){return value?.type==='struct'||value?.type==='enum'||value?.type==='vec';}
+function isCompositeValue(value){return value?.type==='struct'||value?.type==='enum'||value?.type==='vec'||value?.type==='buffer'||value?.type==='slice';}
 function valueToHost(value){if(!value||value.type==='unit')return null;if(isCompositeValue(value))fail('composite values cannot cross the host import boundary');if(value.type==='u32'||value.type==='s32')return Number(value.value);return value.value;}
 function hostToValue(raw){if(raw===null||raw===undefined)return UNIT;if(typeof raw==='boolean')return Object.freeze({type:'bool',value:raw});if(typeof raw==='string')return Object.freeze({type:'string',value:stringBytes(raw,'host string')});if(typeof raw==='number')return Object.freeze({type:'f64',value:finiteF64(raw,'host f64')});const text=JSON.stringify(raw);return Object.freeze({type:'string',value:stringBytes(text,'host JSON result')});}
 function statePublicToValue(raw,state={values:0,stringBytes:0}){
@@ -183,7 +228,7 @@ function deserializeStateValue(text,schema,descriptor){const raw=stringBytes(tex
 function displayValue(value){
   const state={bytes:0,values:0,parts:[]};
   const append=text=>{const part=String(text),bytes=encoder.encode(part).byteLength;state.bytes+=bytes;if(state.bytes>HARD_LIMITS.maxDisplayBytes)fail(`display value exceeds ${HARD_LIMITS.maxDisplayBytes} UTF-8 bytes`);state.parts.push(part);};
-  const visit=item=>{if(++state.values>HARD_LIMITS.maxPublicValues)fail(`display value exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!item||item.type==='unit'){append('unit');return;}if(item.type==='u32'||item.type==='s32'){append(item.value.toString());return;}if(item.type==='struct'){append(`${item.name}{`);let first=true;for(const [key,child] of Object.entries(item.fields)){if(!first)append(',');first=false;append(`${key}=`);visit(child);}append('}');return;}if(item.type==='enum'){append(`${item.name}.${item.variant}`);if(item.values.length){append('(');for(let i=0;i<item.values.length;i++){if(i)append(',');visit(item.values[i]);}append(')');}return;}if(item.type==='vec'){append('[');for(let i=0;i<item.items.length;i++){if(i)append(',');visit(item.items[i]);}append(']');return;}append(item.value);};
+  const visit=item=>{if(++state.values>HARD_LIMITS.maxPublicValues)fail(`display value exceeds ${HARD_LIMITS.maxPublicValues} values`);if(!item||item.type==='unit'){append('unit');return;}if(item.type==='u32'||item.type==='s32'){append(item.value.toString());return;}if(item.type==='struct'){append(`${item.name}{`);let first=true;for(const [key,child] of Object.entries(item.fields)){if(!first)append(',');first=false;append(`${key}=`);visit(child);}append('}');return;}if(item.type==='enum'){append(`${item.name}.${item.variant}`);if(item.values.length){append('(');for(let i=0;i<item.values.length;i++){if(i)append(',');visit(item.values[i]);}append(')');}return;}if(item.type==='vec'){append('[');for(let i=0;i<item.items.length;i++){if(i)append(',');visit(item.items[i]);}append(']');return;}if(item.type==='buffer'){append('Buffer[');for(let i=0;i<item.length;i++){if(i)append(',');visit(bufferGetValue(item,i));}append(']');return;}if(item.type==='slice'){append('Slice[');for(let i=0;i<item.length;i++){if(i)append(',');visit(sliceGetValue(item,i));}append(']');return;}append(item.value);};
   visit(value);return state.parts.join('');
 }
 function sameType(a,b,op){if(!a||!b||a.type!==b.type)fail(`${op} requires operands of the same type`);if(isCompositeValue(a)||isCompositeValue(b))fail(`${op} does not support composite values`);}
@@ -235,6 +280,14 @@ export async function executeRiftExecutable(raw,host={},options={}){
       case'vec_get':{const indexValue=pop(frame,'vec_get'),value=pop(frame,'vec_get');if(value.type!=='vec')fail('vec_get expected vec');if(indexValue.type!=='u32')fail('vec_get index must be u32');const index=Number(indexValue.value);if(index<0||index>=value.items.length)push(frame,Object.freeze({type:'enum',name:'Option',variant:'None',values:Object.freeze([]),depth:1}));else{const item=value.items[index];push(frame,Object.freeze({type:'enum',name:'Option',variant:'Some',values:Object.freeze([item]),depth:checkedCompositeDepth([item],'Option.Some')}));}break;}
       case'vec_push':{const item=pop(frame,'vec_push'),value=pop(frame,'vec_push');if(value.type!=='vec')fail('vec_push expected vec');if(value.items.length>=value.capacity){const err=Object.freeze({type:'string',value:'vec capacity exceeded'});push(frame,Object.freeze({type:'enum',name:'Result',variant:'Err',values:Object.freeze([err]),depth:checkedCompositeDepth([err],'Result.Err')}));break;}const next=makeVecValue(value.capacity,[...value.items,item],'vec_push');push(frame,Object.freeze({type:'enum',name:'Result',variant:'Ok',values:Object.freeze([next]),depth:checkedCompositeDepth([next],'Result.Ok')}));break;}
       case'vec_set':{const item=pop(frame,'vec_set'),indexValue=pop(frame,'vec_set'),value=pop(frame,'vec_set');if(value.type!=='vec')fail('vec_set expected vec');if(indexValue.type!=='u32')fail('vec_set index must be u32');const index=Number(indexValue.value);if(index<0||index>=value.items.length){const err=Object.freeze({type:'string',value:'vec index out of range'});push(frame,Object.freeze({type:'enum',name:'Result',variant:'Err',values:Object.freeze([err]),depth:checkedCompositeDepth([err],'Result.Err')}));break;}const items=value.items.slice();items[index]=item;const next=makeVecValue(value.capacity,items,'vec_set');push(frame,Object.freeze({type:'enum',name:'Result',variant:'Ok',values:Object.freeze([next]),depth:checkedCompositeDepth([next],'Result.Ok')}));break;}
+      case'make_buffer':{const items=Array(ins.count);for(let i=ins.count-1;i>=0;i--)items[i]=pop(frame,'make_buffer');push(frame,makeBufferValue(ins.capacity,items,'make_buffer'));break;}
+      case'buffer_len':{const value=pop(frame,'buffer_len');if(value.type!=='buffer')fail('buffer_len expected buffer');push(frame,Object.freeze({type:'u32',value:BigInt(value.length)}));break;}
+      case'buffer_get':{const indexValue=pop(frame,'buffer_get'),value=pop(frame,'buffer_get');if(value.type!=='buffer')fail('buffer_get expected buffer');if(indexValue.type!=='u32')fail('buffer_get index must be u32');const index=Number(indexValue.value),item=bufferGetValue(value,index);if(item===null)push(frame,Object.freeze({type:'enum',name:'Option',variant:'None',values:Object.freeze([]),depth:1}));else push(frame,Object.freeze({type:'enum',name:'Option',variant:'Some',values:Object.freeze([item]),depth:checkedCompositeDepth([item],'Option.Some')}));break;}
+      case'buffer_push':{const item=pop(frame,'buffer_push'),value=pop(frame,'buffer_push');if(value.type!=='buffer')fail('buffer_push expected buffer');if(value.length>=value.capacity){const err=Object.freeze({type:'string',value:'buffer capacity exceeded'});push(frame,Object.freeze({type:'enum',name:'Result',variant:'Err',values:Object.freeze([err]),depth:checkedCompositeDepth([err],'Result.Err')}));break;}const next=bufferWithValue(value,value.length,item,value.length+1,'buffer_push');push(frame,Object.freeze({type:'enum',name:'Result',variant:'Ok',values:Object.freeze([next]),depth:checkedCompositeDepth([next],'Result.Ok')}));break;}
+      case'buffer_set':{const item=pop(frame,'buffer_set'),indexValue=pop(frame,'buffer_set'),value=pop(frame,'buffer_set');if(value.type!=='buffer')fail('buffer_set expected buffer');if(indexValue.type!=='u32')fail('buffer_set index must be u32');const index=Number(indexValue.value);if(index<0||index>=value.length){const err=Object.freeze({type:'string',value:'buffer index out of range'});push(frame,Object.freeze({type:'enum',name:'Result',variant:'Err',values:Object.freeze([err]),depth:checkedCompositeDepth([err],'Result.Err')}));break;}const next=bufferWithValue(value,index,item,value.length,'buffer_set');push(frame,Object.freeze({type:'enum',name:'Result',variant:'Ok',values:Object.freeze([next]),depth:checkedCompositeDepth([next],'Result.Ok')}));break;}
+      case'buffer_slice':{const endValue=pop(frame,'buffer_slice'),startValue=pop(frame,'buffer_slice'),value=pop(frame,'buffer_slice');if(value.type!=='buffer')fail('buffer_slice expected buffer');if(startValue.type!=='u32'||endValue.type!=='u32')fail('buffer_slice indices must be u32');const start=Number(startValue.value),end=Number(endValue.value);if(start>end||end>value.length){const err=Object.freeze({type:'string',value:'buffer slice out of range'});push(frame,Object.freeze({type:'enum',name:'Result',variant:'Err',values:Object.freeze([err]),depth:checkedCompositeDepth([err],'Result.Err')}));break;}const next=makeSliceValue(value,start,end,'buffer_slice');push(frame,Object.freeze({type:'enum',name:'Result',variant:'Ok',values:Object.freeze([next]),depth:checkedCompositeDepth([next],'Result.Ok')}));break;}
+      case'slice_len':{const value=pop(frame,'slice_len');if(value.type!=='slice')fail('slice_len expected slice');push(frame,Object.freeze({type:'u32',value:BigInt(value.length)}));break;}
+      case'slice_get':{const indexValue=pop(frame,'slice_get'),value=pop(frame,'slice_get');if(value.type!=='slice')fail('slice_get expected slice');if(indexValue.type!=='u32')fail('slice_get index must be u32');const index=Number(indexValue.value),item=sliceGetValue(value,index);if(item===null)push(frame,Object.freeze({type:'enum',name:'Option',variant:'None',values:Object.freeze([]),depth:1}));else push(frame,Object.freeze({type:'enum',name:'Option',variant:'Some',values:Object.freeze([item]),depth:checkedCompositeDepth([item],'Option.Some')}));break;}
       case'jump':frame.ip=ins.target;break;
       case'jump_if_false':{const condition=pop(frame,'jump_if_false');if(condition.type!=='bool')fail('jump_if_false requires bool');if(!condition.value)frame.ip=ins.target;break;}
       case'call':{const args=Array(ins.argc);for(let i=ins.argc-1;i>=0;i--)args[i]=pop(frame,'call');frames.push(makeFrame(ins.name,args));break;}

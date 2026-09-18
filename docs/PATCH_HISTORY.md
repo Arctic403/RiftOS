@@ -266,3 +266,37 @@ Focused source test locks algorithm bounds, multi-hunk structure, Workspace Reco
 ### Rollback
 
 Remove `RiftDiffEngineV2.kt` and restore the prior Workspace Records text-diff routine, with the known loss of independent-hunk behavior.
+
+
+## 2026-09-18 — Rift++ 0.8.0 Gate 1A scalable storage/view candidate
+
+### What changed
+
+- advanced the active Rift++ bootstrap compiler implementation to `0.8.0-bootstrap` while keeping source language `riftpp/1`;
+- added persistent `Buffer<T,N>` with capacity up to 100000;
+- added read-only zero-copy `Slice<T>` views;
+- preserved frozen `Vec<T,N>` capacity/behavior at <=256;
+- added RiftVM Buffer/Slice opcodes and persistent 32-way trie Buffer storage;
+- Buffer/Slice remain data-only composites and cannot cross generic host-import boundaries;
+- Buffer/Slice checkpoint persistence is explicitly denied;
+- added `rift-tool semantic-compat` for ongoing frozen-semantic regression checks while leaving `gate0-verify` as the archival exact-reference/drift check;
+- updated focused Core/VM/shell tests and strict wiring validation.
+
+### Why
+
+The self-hosted compiler needs token, AST and instruction storage far beyond Vec-256. A separate scalable persistent storage primitive preserves old Vec semantics while providing compiler-scale indexed storage without prematurely introducing pointer/ownership semantics.
+
+Immutable Buffer versions make zero-copy Slice views safe: a Slice references one Buffer version and does not change when later Buffer updates produce a new version.
+
+### Verified before this record
+
+- direct 600-item Buffer/Slice execution passed with stable-view semantics;
+- 20000-item Buffer stress passed at 520033 VM steps under the existing 1000000-step VM hard ceiling;
+- ordinary compiled 100000-step budget rejected that stress workload as expected;
+- full frozen Rift++ semantic compatibility suite passed after Buffer and after Slice;
+- RiftLLM+ regression compile remained green;
+- RiftOS audit/scan found no new Gate 1A issue beyond the pre-existing RiftSecretStore filename heuristic.
+
+### Remaining promotion gate
+
+Builder/APK/device proof remains required. After installation, run `rift-tool semantic-compat`, the Gate 1A functional fixture, `riftpp self-test`, and host-boundary checks before freezing Gate 1A.

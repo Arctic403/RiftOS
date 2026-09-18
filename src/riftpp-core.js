@@ -1,6 +1,6 @@
 import { RIFT_EXEC_FORMAT, RIFT_VM_ABI, prepareRiftExecutable } from './riftvm.js';
 
-export const RIFTPP_CORE_VERSION='0.7.2-bootstrap';
+export const RIFTPP_CORE_VERSION='0.8.0-bootstrap';
 export const RIFTPP_LANGUAGE='riftpp/1';
 
 const MAX_SOURCE_BYTES=256*1024;
@@ -11,6 +11,7 @@ const MAX_LOCALS=512;
 const MAX_TYPE_ITEMS=64;
 const MAX_NAMED_TYPES=256;
 const MAX_VEC_CAPACITY=256;
+const MAX_BUFFER_CAPACITY=100000;
 const MAX_TYPE_DEPTH=32;
 const MAX_PARSE_DEPTH=128;
 const MAX_MODULES=64;
@@ -23,7 +24,7 @@ const POISON_NAMES=new Set(['__proto__','prototype','constructor']);
 const SUPPORTED_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string']);
 const SUPPORTED_EFFECTS=new Set(['storage','repair_eval','software_eval']);
 const CHECKPOINT_BUILTINS=new Set(['checkpoint_save','checkpoint_load','checkpoint_remove']);
-const BUILTIN_GENERIC_TYPES=new Set(['Vec','Option','Result']);
+const BUILTIN_GENERIC_TYPES=new Set(['Vec','Buffer','Slice','Option','Result']);
 const COMPARABLE_PRIMITIVES=new Set(['unit','bool','u32','s32','f64','string']);
 const ORDERED_PRIMITIVES=new Set(['u32','s32','f64','string']);
 const REPAIR_BUILTINS=new Set(['repair_input_source','repair_expected_output','repair_case_id','repair_compile_test']);
@@ -125,8 +126,8 @@ class Parser{
       if(token.kind!=='ident'&&token.kind!=='keyword')fail('E0102','expected type name',token,'type grammar');this.index++;const parts=[token.value];while(this.consume('.'))parts.push(this.expectKind('ident','type path segment').value);const name=parts.join('.'),args=[];let capacityRaw=null;
       if(this.consume('<')){
         if(parts.length!==1)fail('E0127',`qualified generic type '${name}' is not supported`,token,'type grammar');
-        if(name==='Vec'){args.push(this.typeRef());this.expect(',');capacityRaw=this.expectKind('number','Vec capacity','E0118').value;this.expect('>');}
-        else if(name==='Option'){args.push(this.typeRef());this.expect('>');}
+        if(name==='Vec'||name==='Buffer'){args.push(this.typeRef());this.expect(',');capacityRaw=this.expectKind('number',`${name} capacity`,'E0118').value;this.expect('>');}
+        else if(name==='Option'||name==='Slice'){args.push(this.typeRef());this.expect('>');}
         else if(name==='Result'){args.push(this.typeRef());this.expect(',');args.push(this.typeRef());this.expect('>');}
         else fail('E0118',`generic type '${name}' is not implemented in the bootstrap slice`,token,'bootstrap generic types');
         const end=this.previous();return Object.freeze({kind:'TypeRef',name,args:Object.freeze(args),capacityRaw,span:Object.freeze({start:token.start,end:end.end,line:token.line,column:token.column})});
@@ -260,7 +261,7 @@ function linkRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){
   const resolveType=(rec,path,node,required=true)=>{if(SUPPORTED_PRIMITIVES.has(path)||BUILTIN_GENERIC_TYPES.has(path))return path;const value=importTarget(rec,path,typeMaps);if(value)return value;if(required)semanticFail('E0311',`unknown or unimported type '${path}' in module ${rec.ast.module}`,node,'module name resolution');return null;};
   const resolveFunction=(rec,path,node,required=true)=>{if(path==='print')return'print';const value=importTarget(rec,path,fnMaps);if(value)return value;if(required)semanticFail('E0312',`unknown or unimported function '${path}' in module ${rec.ast.module}`,node,'module name resolution');return null;};
   const aliasGuard=(rec,name,node)=>{if(rec.aliases.has(name))semanticFail('E0313',`local name '${name}' shadows a module alias in module ${rec.ast.module}`,node,'module name resolution');if(typeMaps.get(rec.ast.module)?.has(name))semanticFail('E0216',`'${name}' is reserved by the module type namespace`,node,'name resolution');};
-  const rewriteType=(rec,type)=>{if(!type)return null;const args=(type.args||[]).map(item=>rewriteType(rec,item));const name=['Vec','Option','Result'].includes(type.name)?type.name:resolveType(rec,type.name,type);return Object.freeze({...type,name,args:Object.freeze(args)});};
+  const rewriteType=(rec,type)=>{if(!type)return null;const args=(type.args||[]).map(item=>rewriteType(rec,item));const name=['Vec','Buffer','Slice','Option','Result'].includes(type.name)?type.name:resolveType(rec,type.name,type);return Object.freeze({...type,name,args:Object.freeze(args)});};
   let linkExprDepth=0,linkBlockDepth=0,linkPatternDepth=0,linkStmtDepth=0;
   const rewritePattern=(rec,pattern)=>{if(++linkPatternDepth>MAX_PARSE_DEPTH){linkPatternDepth--;semanticFail('E0317',`module linker pattern nesting exceeds ${MAX_PARSE_DEPTH}`,pattern,'host bounds');}try{if(pattern.kind==='EnumPattern'){const parts=pattern.path.split('.'),variant=parts[parts.length-1],typePath=parts.slice(0,-1).join('.');let path=pattern.path;if(typePath){const resolved=resolveType(rec,typePath,pattern,false);if(resolved)path=`${resolved}.${variant}`;}return Object.freeze({...pattern,path,args:Object.freeze(pattern.args.map(item=>rewritePattern(rec,item)))});}if(pattern.kind==='BindingPattern')aliasGuard(rec,pattern.name,pattern);return pattern;}finally{linkPatternDepth--;}};
   const rewriteExpr=(rec,expr)=>{
@@ -300,7 +301,7 @@ function linkRiftPlusPlusCoreProgramV1(rootSource,moduleSources={}){
 class Codegen{
   constructor(ast){this.ast=ast;this.constants=[];this.constantMap=new Map();this.structs=new Map();this.enums=new Map();this.genericTypes=new Map();this.topNames=new Set();this.signatures=new Map();this.functions=Object.create(null);this.imports=new Set();this.functionEffects=new Map();}
   constant(type,value){const serialized=type==='unit'?'':String(value),key=`${type}:${serialized}`;if(this.constantMap.has(key))return this.constantMap.get(key);const index=this.constants.length;this.constants.push(type==='unit'?{type:'unit'}:{type,value});this.constantMap.set(key,index);return index;}
-  internGeneric(kind,args,capacity=null){const key=kind==='Vec'?`Vec<${args[0]},${capacity}>`:`${kind}<${args.join(',')}>`;if(!this.genericTypes.has(key))this.genericTypes.set(key,Object.freeze({kind,args:Object.freeze([...args]),capacity}));return key;}
+  internGeneric(kind,args,capacity=null){const key=(kind==='Vec'||kind==='Buffer')?`${kind}<${args[0]},${capacity}>`:`${kind}<${args.join(',')}>`;if(!this.genericTypes.has(key))this.genericTypes.set(key,Object.freeze({kind,args:Object.freeze([...args]),capacity}));return key;}
   genericInfo(type){return this.genericTypes.get(type)||null;}
   enumTypeInfo(type){
     const local=this.enums.get(type);if(local)return{def:local,runtimeName:type,displayName:type};const info=this.genericInfo(type);if(!info)return null;
@@ -312,6 +313,8 @@ class Codegen{
   stateDescriptor(type,node,seen=new Set(),depth=0){
     if(depth>MAX_TYPE_DEPTH)semanticFail('E0284',`checkpoint type nesting exceeds ${MAX_TYPE_DEPTH}`,node,'Gate 5 persistence');
     const generic=this.genericInfo(type);
+    if(generic?.kind==='Buffer')semanticFail('E0357',`checkpoint type '${type}' is unsupported; Buffer is compiler/runtime storage, not persistent state`,node,'Gate 1A scalable storage');
+    if(generic?.kind==='Slice')semanticFail('E0365',`checkpoint type '${type}' is unsupported; Slice is a runtime view, not persistent state`,node,'Gate 1A scalable storage');
     if(generic?.kind==='Vec')return Object.freeze({k:'v',c:generic.capacity,i:this.stateDescriptor(generic.args[0],node,seen,depth+1)});
     if(generic?.kind==='Option')return Object.freeze({k:'o',i:this.stateDescriptor(generic.args[0],node,seen,depth+1)});
     if(generic?.kind==='Result')return Object.freeze({k:'r',o:this.stateDescriptor(generic.args[0],node,seen,depth+1),e:this.stateDescriptor(generic.args[1],node,seen,depth+1)});
@@ -334,10 +337,15 @@ class Codegen{
       if(typeRef.args?.length!==1||typeRef.capacityRaw==null)semanticFail('E0260','Vec requires Vec<T, N>',typeRef,'bounded collection type');
       const item=this.ensureType(typeRef.args[0]),raw=String(typeRef.capacityRaw).replaceAll('_','');if(!/^[1-9][0-9]*$/.test(raw))semanticFail('E0261','Vec capacity must be a positive decimal integer',typeRef,'bounded collection type');const capacity=Number(raw);if(!Number.isInteger(capacity)||capacity<1||capacity>MAX_VEC_CAPACITY)semanticFail('E0262',`Vec capacity must be 1..${MAX_VEC_CAPACITY}`,typeRef,'bounded collection type');return this.internGeneric('Vec',[item],capacity);
     }
+    if(typeRef.name==='Buffer'){
+      if(typeRef.args?.length!==1||typeRef.capacityRaw==null)semanticFail('E0350','Buffer requires Buffer<T, N>',typeRef,'Gate 1A scalable storage');
+      const item=this.ensureType(typeRef.args[0]),raw=String(typeRef.capacityRaw).replaceAll('_','');if(!/^[1-9][0-9]*$/.test(raw))semanticFail('E0351','Buffer capacity must be a positive decimal integer',typeRef,'Gate 1A scalable storage');const capacity=Number(raw);if(!Number.isInteger(capacity)||capacity<1||capacity>MAX_BUFFER_CAPACITY)semanticFail('E0352',`Buffer capacity must be 1..${MAX_BUFFER_CAPACITY}`,typeRef,'Gate 1A scalable storage');return this.internGeneric('Buffer',[item],capacity);
+    }
+    if(typeRef.name==='Slice'){if(typeRef.args?.length!==1)semanticFail('E0360','Slice requires Slice<T>',typeRef,'Gate 1A scalable storage');return this.internGeneric('Slice',[this.ensureType(typeRef.args[0])]);}
     if(typeRef.name==='Option'){if(typeRef.args?.length!==1)semanticFail('E0263','Option requires Option<T>',typeRef,'bootstrap generic type');return this.internGeneric('Option',[this.ensureType(typeRef.args[0])]);}
     if(typeRef.name==='Result'){if(typeRef.args?.length!==2)semanticFail('E0264','Result requires Result<T, E>',typeRef,'bootstrap generic type');return this.internGeneric('Result',[this.ensureType(typeRef.args[0]),this.ensureType(typeRef.args[1])]);}
     if(typeRef.args?.length)semanticFail('E0265',`generic type '${typeRef.name}' is not implemented`,typeRef,'bootstrap generic type');
-    if(!this.typeExists(typeRef.name))semanticFail('E0200',`type '${typeRef.name}' is not implemented or declared in this Core module`,typeRef,'bootstrap type support',`Primitive types supported now: ${[...SUPPORTED_PRIMITIVES].join(', ')}; local struct/enum and Vec/Option/Result types are also supported.`);return typeRef.name;
+    if(!this.typeExists(typeRef.name))semanticFail('E0200',`type '${typeRef.name}' is not implemented or declared in this Core module`,typeRef,'bootstrap type support',`Primitive types supported now: ${[...SUPPORTED_PRIMITIVES].join(', ')}; local struct/enum and Vec/Buffer/Slice/Option/Result types are also supported.`);return typeRef.name;
   }
   collectTypes(){
     if(this.ast.structs.length+this.ast.enums.length>MAX_NAMED_TYPES)semanticFail('E0230',`named type count exceeds ${MAX_NAMED_TYPES}`,this.ast,'host bounds');
@@ -378,13 +386,17 @@ class Codegen{
       if(!info&&['Option','Result'].includes(base)){const generic=this.genericInfo(expected);if(!generic||generic.kind!==base)semanticFail('E0266',`${base}.${callee.member} requires an expected ${base}<...> type`,node,'generic enum construction');type=expected;info=this.enumTypeInfo(type);}
       if(!info)return null;const variant=info.def.cases.get(callee.member);if(!variant)semanticFail('E0235',`enum ${type} has no case '${callee.member}'`,callee,'enum construction');if(args.length!==variant.types.length)semanticFail('E0236',`${base}.${callee.member} expects ${variant.types.length} payload value(s), got ${args.length}`,node,'enum construction');for(let i=0;i<args.length;i++)compileExpr(args[i],variant.types[i]);emit({op:'make_enum',name:info.runtimeName,variant:callee.member,argc:args.length});expectType(type,expected,node);return type;
     };
-    const compileVecMethod=(expr,expected)=>{
-      if(expr.callee.kind!=='Member')return null;const method=expr.callee.member,receiverType=compileExpr(expr.callee.object,null),info=this.genericInfo(receiverType);if(!info||info.kind!=='Vec')semanticFail('E0267',`method '${method}' requires a Vec receiver; got ${receiverType}`,expr,'bounded collection method');const itemType=info.args[0];
-      if(method==='len'){if(expr.args.length)semanticFail('E0268','Vec.len expects no arguments',expr,'bounded collection method');emit({op:'vec_len'});expectType('u32',expected,expr);return'u32';}
-      if(method==='get'){if(expr.args.length!==1)semanticFail('E0268','Vec.get expects one u32 index',expr,'bounded collection method');compileExpr(expr.args[0],'u32');emit({op:'vec_get'});const type=this.internGeneric('Option',[itemType]);expectType(type,expected,expr);return type;}
-      if(method==='push'){if(expr.args.length!==1)semanticFail('E0268','Vec.push expects one item',expr,'bounded collection method');compileExpr(expr.args[0],itemType);emit({op:'vec_push'});const type=this.internGeneric('Result',[receiverType,'string']);expectType(type,expected,expr);return type;}
-      if(method==='set'){if(expr.args.length!==2)semanticFail('E0268','Vec.set expects index and item',expr,'bounded collection method');compileExpr(expr.args[0],'u32');compileExpr(expr.args[1],itemType);emit({op:'vec_set'});const type=this.internGeneric('Result',[receiverType,'string']);expectType(type,expected,expr);return type;}
-      semanticFail('E0269',`Vec has no bootstrap method '${method}'`,expr,'bounded collection method');
+    const compileCollectionMethod=(expr,expected)=>{
+      if(expr.callee.kind!=='Member')return null;const method=expr.callee.member,receiverType=compileExpr(expr.callee.object,null),info=this.genericInfo(receiverType);if(!info||!['Vec','Buffer','Slice'].includes(info.kind))semanticFail('E0267',`method '${method}' requires a Vec receiver; got ${receiverType}`,expr,'bounded collection method');const itemType=info.args[0],kind=info.kind,prefix=kind==='Vec'?'vec':kind==='Buffer'?'buffer':'slice',rule=kind==='Vec'?'bounded collection method':'Gate 1A scalable storage',arityCode=kind==='Vec'?'E0268':kind==='Buffer'?'E0353':'E0361';
+      if(method==='len'){if(expr.args.length)semanticFail(arityCode,`${kind}.len expects no arguments`,expr,rule);emit({op:`${prefix}_len`});expectType('u32',expected,expr);return'u32';}
+      if(method==='get'){if(expr.args.length!==1)semanticFail(arityCode,`${kind}.get expects one u32 index`,expr,rule);compileExpr(expr.args[0],'u32');emit({op:`${prefix}_get`});const type=this.internGeneric('Option',[itemType]);expectType(type,expected,expr);return type;}
+      if(kind==='Buffer'&&method==='slice'){if(expr.args.length!==2)semanticFail('E0353','Buffer.slice expects start and end u32 indices',expr,rule);compileExpr(expr.args[0],'u32');compileExpr(expr.args[1],'u32');emit({op:'buffer_slice'});const sliceType=this.internGeneric('Slice',[itemType]),type=this.internGeneric('Result',[sliceType,'string']);expectType(type,expected,expr);return type;}
+      if(kind==='Slice'&&(method==='push'||method==='set'))semanticFail('E0363',`Slice.${method} is not available; Slice is a read-only view`,expr,rule);
+      if(method==='push'){if(expr.args.length!==1)semanticFail(arityCode,`${kind}.push expects one item`,expr,rule);compileExpr(expr.args[0],itemType);emit({op:`${prefix}_push`});const type=this.internGeneric('Result',[receiverType,'string']);expectType(type,expected,expr);return type;}
+      if(method==='set'){if(expr.args.length!==2)semanticFail(arityCode,`${kind}.set expects index and item`,expr,rule);compileExpr(expr.args[0],'u32');compileExpr(expr.args[1],itemType);emit({op:`${prefix}_set`});const type=this.internGeneric('Result',[receiverType,'string']);expectType(type,expected,expr);return type;}
+      if(kind==='Vec')semanticFail('E0269',`Vec has no bootstrap method '${method}'`,expr,'bounded collection method');
+      if(kind==='Buffer')semanticFail('E0354',`Buffer has no method '${method}'`,expr,'Gate 1A scalable storage');
+      semanticFail('E0364',`Slice has no method '${method}'`,expr,'Gate 1A scalable storage');
     };
     const compileExpr=(expr,expected=null)=>{
       if(++compileExprDepth>MAX_PARSE_DEPTH){compileExprDepth--;semanticFail('E0272',`compiler expression nesting exceeds ${MAX_PARSE_DEPTH}`,expr,'host bounds');}
@@ -393,7 +405,7 @@ class Codegen{
       if(expr.kind==='FloatLiteral'){if(expected&&expected!=='f64')semanticFail('E0201',`type mismatch: expected ${expected}, got f64`,expr,'type checking');emit({op:'const',index:this.constant('f64',parseF64(expr.raw,expr))});return'f64';}
       if(expr.kind==='StringLiteral'){expectType('string',expected,expr);emit({op:'const',index:this.constant('string',expr.value)});return'string';}
       if(expr.kind==='BoolLiteral'){expectType('bool',expected,expr);emit({op:'const',index:this.constant('bool',expr.value)});return'bool';}
-      if(expr.kind==='VecLiteral'){const info=this.genericInfo(expected);if(!info||info.kind!=='Vec')semanticFail('E0270','vector literal requires an expected Vec<T, N> type annotation',expr,'bounded collection literal');if(expr.items.length>info.capacity)semanticFail('E0271',`vector literal has ${expr.items.length} item(s), capacity is ${info.capacity}`,expr,'bounded collection literal');for(const item of expr.items)compileExpr(item,info.args[0]);emit({op:'make_vec',capacity:info.capacity,count:expr.items.length});return expected;}
+      if(expr.kind==='VecLiteral'){const info=this.genericInfo(expected);if(!info||!['Vec','Buffer'].includes(info.kind))semanticFail('E0270','vector literal requires an expected Vec<T, N> type annotation',expr,'bounded collection literal');if(expr.items.length>info.capacity){if(info.kind==='Vec')semanticFail('E0271',`vector literal has ${expr.items.length} item(s), capacity is ${info.capacity}`,expr,'bounded collection literal');semanticFail('E0356',`buffer literal has ${expr.items.length} item(s), capacity is ${info.capacity}`,expr,'Gate 1A scalable storage');}for(const item of expr.items)compileExpr(item,info.args[0]);emit({op:info.kind==='Vec'?'make_vec':'make_buffer',capacity:info.capacity,count:expr.items.length});return expected;}
       if(expr.kind==='Name'){const local=resolve(expr.name);if(local){expectType(local.type,expected,expr);emit({op:'load',index:local.slot});return local.type;}if(this.structs.has(expr.name)||this.enums.has(expr.name)||BUILTIN_GENERIC_TYPES.has(expr.name))semanticFail('E0237',`type '${expr.name}' cannot be used as a value without construction`,expr,'structured value construction');semanticFail('E0208',`unknown name '${expr.name}'`,expr,'name resolution');}
       if(expr.kind==='StructLiteral'){
         const def=this.structs.get(expr.typeName);if(!def)semanticFail('E0238',`unknown struct type '${expr.typeName}'`,expr,'struct construction');expectType(expr.typeName,expected,expr);const seen=new Set();for(const field of expr.fields){if(seen.has(field.name))semanticFail('E0239',`duplicate initializer for field '${field.name}'`,field,'struct construction');seen.add(field.name);const declared=def.fields.get(field.name);if(!declared)semanticFail('E0240',`struct ${expr.typeName} has no field '${field.name}'`,field,'struct construction');compileExpr(field.expression,declared.type);}for(const name of def.order)if(!seen.has(name))semanticFail('E0241',`struct ${expr.typeName} is missing field '${name}'`,expr,'struct construction');emit({op:'make_struct',name:expr.typeName,fields:expr.fields.map(field=>field.name)});return expr.typeName;
@@ -423,7 +435,7 @@ class Codegen{
         const preferred=expected&&['u32','s32','f64','string'].includes(expected)?expected:null,left=compileExpr(expr.left,preferred),right=compileExpr(expr.right,left);if(left!==right)semanticFail('E0201',`binary operands differ: ${left} and ${right}`,expr,'type checking');if(expr.op==='+'&&left==='string'){expectType('string',expected,expr);emit({op:'concat'});return'string';}if(!['u32','s32','f64'].includes(left))semanticFail('E0211',`operator '${expr.op}' requires numeric operands`,expr,'numeric semantics');expectType(left,expected,expr);emit({op:{'+':'add','-':'sub','*':'mul','/':'div','%':'mod'}[expr.op]});return left;
       }
       if(expr.kind==='Call'){
-        const constructed=enumConstructor(expr.callee,expr.args,expr,expected);if(constructed)return constructed;if(expr.callee.kind==='Member')return compileVecMethod(expr,expected);
+        const constructed=enumConstructor(expr.callee,expr.args,expr,expected);if(constructed)return constructed;if(expr.callee.kind==='Member')return compileCollectionMethod(expr,expected);
         if(expr.callee.kind!=='Name')semanticFail('E0212','bootstrap calls require a direct function name, enum case constructor or Vec method',expr,'call semantics');const name=expr.callee.name;
         if(name==='print'){if(expr.args.length!==1)semanticFail('E0213','print expects exactly one argument',expr,'bootstrap prelude');compileExpr(expr.args[0],null);emit({op:'print'});emit({op:'const',index:this.constant('unit',null)});expectType('unit',expected,expr);return'unit';}
         if(name==='value_sha256'){if(expr.args.length!==1)semanticFail('E0290','value_sha256 expects exactly one bounded value',expr,'Gate 6A parameter identity');compileExpr(expr.args[0],null);emit({op:'value_sha256'});expectType('string',expected,expr);return'string';}

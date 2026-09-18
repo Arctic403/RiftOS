@@ -159,8 +159,8 @@ if (hasWebKitDependency(workspaceApps)) fail('native workspace apps gained a Web
 
 const riftpp = read('src/riftpp-core.js');
 const vm = read('src/riftvm.js');
-if (!riftpp.includes("RIFTPP_CORE_VERSION='0.7.2-bootstrap'") || !riftpp.includes('MAX_VEC_CAPACITY=256')) fail('Rift++ Core 0.7.2 / Vec-256 contract regressed');
-if (!vm.includes('maxVecCapacity:256') || !vm.includes("RIFT_VM_ABI='riftvm-1'")) fail('RiftVM ABI/capacity contract regressed');
+if (!riftpp.includes("RIFTPP_CORE_VERSION='0.8.0-bootstrap'") || !riftpp.includes('MAX_VEC_CAPACITY=256') || !riftpp.includes('MAX_BUFFER_CAPACITY=100000') || !riftpp.includes("['Vec','Buffer','Slice','Option','Result']")) fail('Rift++ Core 0.8.0 / Vec-256 / Buffer-100000 / Slice contract regressed');
+if (!vm.includes('maxVecCapacity:256') || !vm.includes('maxBufferCapacity:100000') || !vm.includes("'buffer_slice','slice_len','slice_get'") || !vm.includes("RIFT_VM_ABI='riftvm-1'")) fail('RiftVM ABI/storage-view contract regressed');
 
 for (const asset of ['riftbrowser-mcp-app.js', 'adapters/ai-adapter-registry.js']) {
   requireFile(`android/app/src/main/assets/${asset}`, 'browser injection asset is missing');
