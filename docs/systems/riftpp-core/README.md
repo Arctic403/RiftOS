@@ -268,6 +268,7 @@ Current Builder/APK/device proof remains a separate gate.
 - Vec capacity >256 -> resource regression
 - compiler output bypasses prepareRiftExecutable -> validation regression
 - historical Gate/device proof is presented as proof of current source -> trust regression
+- headless QuickJS script constants become private to the nested `Scripts` object and the enclosing runtime can no longer compile -> Kotlin visibility regression
 
 ## Fix map
 
@@ -286,6 +287,7 @@ Specialized repair/software/state execution hosts -> their owning subsystem, not
 Second source audit must verify:
 - 0.7.2 version
 - Gradle packaging and QuickJS loading
+- headless script constants remain visible to the enclosing `RiftHeadlessJsRuntime` while the `Scripts` object itself stays private
 - public API
 - source/token/type/module/effect/depth bounds
 - module graph identity/cycle/unused dependency checks

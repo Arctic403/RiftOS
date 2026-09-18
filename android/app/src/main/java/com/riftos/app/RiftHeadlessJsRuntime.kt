@@ -158,7 +158,7 @@ class RiftHeadlessJsRuntime(context: Context) {
     }
 
     private object Scripts {
-        private const val POLYFILLS = """
+        const val POLYFILLS = """
             globalThis.TextEncoder = class {
               encode(value) { return __rift_utf8(String(value)); }
             };
@@ -175,7 +175,7 @@ class RiftHeadlessJsRuntime(context: Context) {
         """
 
 
-        private const val RIFTPP_COMMAND_ENTRY = """
+        const val RIFTPP_COMMAND_ENTRY = """
             (async function() {
               const request = JSON.parse(__rift_request());
               const args = Array.from(request.args || []);

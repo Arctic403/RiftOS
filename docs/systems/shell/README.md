@@ -316,7 +316,8 @@ Dev Lab/Workspace Code Mode transactions are separate native authorities.
 - shell package listing now enforces folder/id identity and id syntax;
 - permission revoke immediately re-blocks live app network access;
 - open preserves case-sensitive installed app ids;
-- help now lists native mutating/archive/open commands and workspace push.
+- help now lists native mutating/archive/open commands and workspace push;
+- restored the shell helper boundary after a corrupted `normalizeDisplay` block had swallowed `resolveFile` and duplicated `tokenize`; path normalization now delegates directly to `RiftVolumePaths.normalizeDisplay`, file resolution uses `RiftVolumePaths.resolveRelative`, and canonical RiftFS confinement remains explicit.
 
 ## Critical invariants
 
@@ -372,6 +373,7 @@ Second source audit must recheck:
 - no native process escape;
 - command/token bounds;
 - path normalization/canonical confinement;
+- exactly one tokenizer helper and one confined `resolveFile` helper remain at class scope;
 - text/tree limits;
 - atomic write file-type guard;
 - cp/mv backup/rollback/source/destination containment;

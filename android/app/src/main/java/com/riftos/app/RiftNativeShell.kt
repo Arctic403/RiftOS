@@ -781,39 +781,19 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         return normalizeDisplay(value)
     }
 
-    private fun normalizeDisplay(raw: String): String {
-        var value = raw.trim().replace('\\', '/')
-        if (Regex("^[A-Za-z]:($|/)").containsMatchIn(value)) value = "/$value"
-        val parts = ArrayList<String>()
-        for (piece in value.split('/')) {
-            if (piece.isBlank() || piece == ".") continue
-            require(!piece.contains('\u0000')) { "Invalid RiftFS path" }
-            if (piece == "..") {
-                if (parts.isNotEmpty()) parts.removeAt(parts.lastIndex)
-                continue
-    private fun tokenize(raw: String): MutableList<String> {
-        val out = ArrayList<String>()
-        val regex = Regex("\"([^\"]*)\"|'([^']*)'|([^\\s]+)")
-        regex.findAll(raw).forEach { match ->
-            require(out.size < MAX_ARGUMENTS) { "native shell argument count exceeds $MAX_ARGUMENTS" }
-            out += match.groups[1]?.value ?: match.groups[2]?.value ?: match.groups[3]?.value.orEmpty()
-        }
-        return out
-    }
-        val relative = when {
-            normalized == "/" -> ""
-            normalized.startsWith("/C:", ignoreCase = true) || normalized.startsWith("/D:", ignoreCase = true) ->
-                RiftVolumePaths.resolveRelative(normalized)
-            else -> normalized.trimStart('/')
-        }
+    private fun normalizeDisplay(raw: String): String =
+        RiftVolumePaths.normalizeDisplay(raw)
+
+    private fun resolveFile(raw: String, cwd: String): File {
+        val display = resolveDisplay(cwd, raw)
+        val relative = if (
+            display.startsWith("/C:", true) ||
+            display.startsWith("/D:", true)
+        ) RiftVolumePaths.resolveRelative(display)
+        else display.trimStart('/')
         val target = if (relative.isBlank()) riftRoot else File(riftRoot, relative).canonicalFile
         require(target == riftRoot || target.path.startsWith(riftRoot.path + File.separator)) { "Path escaped RiftFS" }
         return target
-    }
-
-    private fun joinDisplay(base: String, child: String): String {
-        val left = normalizeDisplay(base).trimEnd('/')
-        return normalizeDisplay("$left/${child.trimStart('/')}")
     }
 
     private fun tokenize(raw: String): MutableList<String> {

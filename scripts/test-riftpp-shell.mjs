@@ -28,9 +28,15 @@ assert(batch.includes('"rift-cli","riftpp","chat"'), 'riftpp must stay outside a
 assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / HEADLESS QUICKJS]'));
 assert(nativeShell.includes('"riftpp" -> {'));
 assert(nativeShell.includes('headlessJs.executeRiftpp(args, cwd)'));
+assert.equal((nativeShell.match(/private fun tokenize\(/g) || []).length, 1, 'native shell helper scope must remain structurally intact');
+assert.equal((nativeShell.match(/private fun resolveFile\(/g) || []).length, 1, 'native shell file resolver must remain present exactly once');
 assert(!nativeShell.includes('compatibilityFallback'));
 assert(!nativeShell.includes('RiftShellBridge'));
 assert(headless.includes('quickJs {'));
+assert(headless.includes('const val POLYFILLS = \"\"\"'));
+assert(headless.includes('const val RIFTPP_COMMAND_ENTRY = \"\"\"'));
+assert(!headless.includes('private const val POLYFILLS'));
+assert(!headless.includes('private const val RIFTPP_COMMAND_ENTRY'));
 assert(headless.includes('preparedVmSource()'));
 assert(headless.includes('preparedCoreSource()'));
 assert(headless.includes('src/riftpp-core.js'));
