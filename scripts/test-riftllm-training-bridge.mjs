@@ -38,6 +38,7 @@ for (const pair of [
   assert.ok(services.includes(`.put("op",${pair[1]})`), `native shell service op mismatch for ${pair[0]}`);
 }
 assert.match(gradle,/RiftTrainDataTaskRunner\.kt/);
+assert.ok(!gradle.includes('riftllm-bridge.js'),'retained RiftLLM training bridge JavaScript must not be packaged');
 
 for(const command of ['train-data-status','train-data-build','train-data-build-status','train-data-upload','train-data-remote-status','train-canary-start','train-canary-status']){
   assert.ok(bridge.includes(command),`missing fixed reference training command ${command}`);

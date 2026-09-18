@@ -289,7 +289,10 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - wiring validation now recognizes the installed-app host's dynamic `https://app-<token>.riftos.local` origin instead of requiring the obsolete literal `app.riftos.local` string;
 - native workspace-app WebView exclusion now checks actual WebKit imports/FQNs instead of rejecting harmless documentation/UI text containing the word `WebView`;
 - transport validation now recognizes the same dynamic installed-app origin and checks Workspace Records against its dedicated owner/API instead of scanning unrelated `RiftNativeWorkspaceApps` strings such as the Settings word `approved`;
-- SOURCE_OWNERSHIP now uses the validator's canonical exact trust sentence (`Ownership does **not** imply...`) so the documentation-trust gate checks meaning and wording consistently.
+- SOURCE_OWNERSHIP now uses the validator's canonical exact trust sentence (`Ownership does **not** imply...`) so the documentation-trust gate checks meaning and wording consistently;
+- focused retained-reference tests for RiftLLM and Workspace Records now explicitly prove those JavaScript/HTML adapters remain un-packaged instead of presenting retained globals/UI as live APK surfaces;
+- shell/WebView validation now detects actual WebKit dependencies rather than harmless comments containing the word `WebView`;
+- the external Builder now preflights its filename-to-DEX-descriptor assumption against every mandatory Kotlin source before running source tests/Gradle, so future verifier drift fails with a direct stale-Builder error.
 
 ## Critical invariants
 

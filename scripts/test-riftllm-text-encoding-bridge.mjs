@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { webcrypto, createHash } from 'node:crypto';
+
+const gradleSource=fs.readFileSync('android/app/build.gradle.kts','utf8');
+assert.ok(!gradleSource.includes('riftllm-bridge.js'),'retained RiftLLM text-encoding bridge must not be packaged');
 
 globalThis.crypto ||= webcrypto;
 globalThis.btoa ||= value=>Buffer.from(value,'binary').toString('base64');
@@ -80,4 +84,4 @@ await assert.rejects(()=>bridge.textEncodingEval('/workspace/arbitrary.riftbpe')
 await assert.rejects(()=>bridge.textEncodingEval('a2','/workspace/arbitrary.tsv'),/corpus lane must be heldout or challenge/i);
 const status=await bridge.textEncodingStatus();assert.equal(status.recordId,'run-text-encoding-test.json');
 
-console.log('RiftLLM Text Encoding Lab chunk bridge contract OK');
+console.log('RiftLLM retained Text Encoding Lab bridge regression contract OK');

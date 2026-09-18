@@ -7,8 +7,7 @@ const services=read('android/app/src/main/java/com/riftos/app/RiftNativeShellSer
 const nativeShell=read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const client=read('android/app/src/main/java/com/riftos/app/RiftLlmDevClient.kt');
 const manifest=read('android/app/src/main/AndroidManifest.xml');
-const shell=read('src/riftos.js');
-const batch=read('src/riftshell-batch.js');
+const gradle=read('android/app/build.gradle.kts');
 const surfaces=read('docs/PUBLIC_SURFACES.md');
 
 assert.match(manifest,/<package android:name="com\.riftllm\.app"\s*\/>/);
@@ -26,6 +25,7 @@ assert.doesNotMatch(client,/http:\/\/|https:\/\/|Socket\(/);
 assert.match(services,/private val llm = RiftLlmDevClient\(appContext\)/);
 assert.match(nativeShell,/"riftllm-agent" -> services\.riftLlm\(args, cwd\)/);
 assert.doesNotMatch(nativeShell,/RiftNativeDispatcher/);
+
 assert.match(bridge,/TARGET_REPO="Arctic403\/RiftLLM"/);
 assert.match(bridge,/TARGET_BRANCH="main"/);
 assert.match(bridge,/native\("list_benchmarks"/);
@@ -40,7 +40,7 @@ assert.match(bridge,/text-encoding-eval <a\|b\|a2\|b2> \[heldout\|challenge\]/);
 assert.match(bridge,/corpus-synth-v2/);
 assert.match(bridge,/corpus-build-v2/);
 assert.match(bridge,/corpus-status-v2/);
-for(const command of ['train-data-status','train-data-build','train-data-build-status','train-data-upload','train-data-remote-status','train-canary-start','train-canary-status'])assert.ok(bridge.includes(command),`missing fixed training shell command ${command}`);
+for(const command of ['train-data-status','train-data-build','train-data-build-status','train-data-upload','train-data-remote-status','train-canary-start','train-canary-status'])assert.ok(bridge.includes(command),`missing fixed retained training command ${command}`);
 assert.match(services,/RiftTrainDataTaskRunner\.execute\(appContext,llm/);
 assert.match(bridge,/native\("text_encoding_begin"/);
 assert.match(bridge,/native\("text_encoding_append"/);
@@ -65,7 +65,9 @@ assert.match(bridge,/acknowledged:false/);
 assert.match(bridge,/typeof prompt!=="function"/);
 assert.match(bridge,/usage: riftllm-agent pair \(enter the token only in the secure local prompt\)/);
 assert.doesNotMatch(bridge,/localStorage|sessionStorage|fetch\(|WebSocket/);
-assert.match(shell,/cmd==="riftllm-agent"/);
-assert.match(batch,/"riftllm-agent"/);
-assert.ok(surfaces.includes('`RiftLlmBridge`'),'RiftLlmBridge public surface missing');
-console.log('RiftLLM standalone Dev API bridge contract OK');
+
+assert.ok(!gradle.includes('riftllm-bridge.js'),'retained RiftLLM bridge JavaScript must not be packaged');
+assert.ok(surfaces.includes('`riftllm-bridge.js`'),'PUBLIC_SURFACES must classify retained RiftLLM bridge source');
+assert.ok(!surfaces.includes('| `RiftLlmBridge` |'),'retained RiftLlmBridge global must not be listed as a live public surface');
+
+console.log('RiftLLM native Dev API + retained bridge regression contract OK');

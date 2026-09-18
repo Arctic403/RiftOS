@@ -124,7 +124,7 @@ if (/registerShellBridge|setCompatibilityFallback|clearCompatibilityFallback/.te
 for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()', 'src/riftpp-core.js', 'src/riftvm.js']) {
   if (!headless.includes(required)) fail(`headless Rift++ runtime is missing ${required}`);
 }
-if (/android\.webkit|WebView|ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
+if (/(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m.test(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
 
 if (!browserWindow.includes('WebChromeClient.FileChooserParams') || !browserWindow.includes('onActivityResult(')) fail('RiftBrowser does not own its file chooser lifecycle');
 if (!browserHost.includes('appOrigin(app.id)') || !browserHost.includes('https://app-$token.riftos.local') || !browserHost.includes('WebViewCompat.addWebMessageListener')) fail('installed RiftBrowser app host origin/capability bridge is incomplete');

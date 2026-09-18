@@ -31,7 +31,7 @@ assert(headless.includes('preparedVmSource()'));
 assert(headless.includes('preparedCoreSource()'));
 assert(headless.includes('src/riftpp-core.js'));
 assert(headless.includes('src/riftvm.js'));
-assert(!headless.includes('WebView'));
+assert(!/(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m.test(headless));
 assert(!headless.includes('ProcessBuilder'));
 
 console.log('ok - reference Rift++ shell remains a deterministic bootstrap oracle');

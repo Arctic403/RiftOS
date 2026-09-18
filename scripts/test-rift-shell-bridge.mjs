@@ -15,7 +15,8 @@ assert.equal(fs.existsSync(k + 'RiftSystemDump.kt'), false, 'obsolete shell rend
 assert.match(shell, /class RiftNativeShell\(context: Context\) : RiftShellExecutor/);
 assert.match(shell, /\.put\("webViewRequired", false\)/);
 assert.match(shell, /headlessJs\.executeRiftpp\(args, cwd\)/);
-assert.doesNotMatch(shell, /compatibilityFallback|RiftShellBridge|android\.webkit|WebView/);
+assert.doesNotMatch(shell, /compatibilityFallback|RiftShellBridge/);
+assert.doesNotMatch(shell, /(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m);
 assert.match(runtime, /private var nativeShell: RiftNativeShell\?/);
 assert.match(runtime, /fun shellExecutor\(\): RiftShellExecutor\? = nativeShell/);
 assert.doesNotMatch(runtime, /registerShellBridge|setCompatibilityFallback|clearCompatibilityFallback/);
@@ -23,7 +24,8 @@ assert.doesNotMatch(main, /android\.webkit|androidx\.webkit|RiftShellBridge|addJ
 assert.match(headless, /quickJs \{/);
 assert.match(headless, /src\/riftpp-core\.js/);
 assert.match(headless, /src\/riftvm\.js/);
-assert.doesNotMatch(headless, /WebView|ProcessBuilder|Runtime\.getRuntime|Socket\(/);
+assert.doesNotMatch(headless, /(?:^|\n)\s*import\s+(?:android|androidx)\.webkit\b|(?:android|androidx)\.webkit\./m);
+assert.doesNotMatch(headless, /ProcessBuilder|Runtime\.getRuntime|Socket\(/);
 assert.doesNotMatch(browserBridge, /RiftShellBridge|rift_shell_result|RiftShellMcpNative/);
 assert.match(gradle, /validateRiftBrowserWebViewOwnership/);
 assert.match(gradle, /include\("src\/riftpp-core\.js"\)/);

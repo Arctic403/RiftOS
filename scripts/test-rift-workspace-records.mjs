@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { mountWorkspaceRecords } from '../workspace-live/app.js';
+
+const gradle=fs.readFileSync('android/app/build.gradle.kts','utf8');
+const nativeApps=fs.readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt','utf8');
+assert.ok(!gradle.includes('workspace-live'),'retained Workspace Records HTML adapter must not be packaged');
+assert.ok(nativeApps.includes('WORKSPACE RECORDS · LOCAL ONLY'),'native Workspace Records owner marker missing');
 
 function fakeRoot() {
   const elements = new Map();
@@ -55,4 +61,4 @@ await tick();
 assert.match(failingRoot.querySelector('#recordList').innerHTML, /Tap Refresh to retry/);
 assert.match(failingRoot.querySelector('#checkpointText').textContent, /Native records unavailable/);
 failing.destroy();
-console.log('ok - Workspace Records direct local calls, loading, error and cleanup');
+console.log('ok - retained Workspace Records UI adapter regression remains un-packaged; native owner is present');

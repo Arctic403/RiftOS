@@ -5,17 +5,19 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `validate-rift-wiring.mjs` — full runtime wiring/reachability/import/native-route/asset/syntax validation.
 - `validate-rift-transport.mjs` — cross-layer architecture/source invariants.
 - `validate-rift-docs.mjs` — active-source ownership and required system README coverage.
+- `test-rift-workspace-records.mjs` — retained Workspace Records HTML adapter regression oracle with explicit proof that `workspace-live` remains un-packaged and the native Workspace Records owner is present.
+- `test-rift-dev-lab.mjs` — native Dev Lab staging/snapshot/guarded-publish regression contract.
 - `test-rift-ai-adapters.mjs` — AI site adapter contract.
 - `test-rift-raw-protocol.mjs` — browser raw tool-call parser/protocol.
 - `test-rift-shell-batch.mjs` — retained RiftShellBatch preflight/rollback regression oracle plus explicit proof that batch JS remains un-packaged and absent from native RiftShell.
-- `test-rift-shell-bridge.mjs` — native RiftShell migration guard: process-owned shell authority, no renderer fallback, headless QuickJS and browser-only Chromium ownership.
+- `test-rift-shell-bridge.mjs` — native RiftShell migration guard: process-owned shell authority, no renderer fallback, headless QuickJS and browser-only Chromium ownership; WebView exclusion is based on actual WebKit dependencies rather than harmless comments/text.
 - `test-rift-shell-git.mjs` — native RiftGit source contract: Keystore credential boundary, bounded GitHub transport, metadata validation, stable atomic push, staged pull/switch/clone rollback, path confinement and Workspace Records checkpoints. Retained `src/riftgit.js` is not treated as live authority.
 - `test-rift-path-compat.mjs` — retained cross-module C:/D: compatibility oracle for older JS modules; current native path authority is audited separately.
 - `test-rift-local-platform.mjs` — RiftRepo/RiftVault/RiftBuild/RiftMemory wiring, fail-closed capability and shell-surface contract.
-- `test-riftllm-bridge.mjs` — standalone RiftLLM Binder bridge, secure pairing, guarded patch publication, fixed V1/V2 Text Encoding Lab method surface and shell-boundary contract.
-- `test-riftllm-text-encoding-bridge.mjs` — executes the fixed A2 challenge uploader against a mocked paired Binder route and verifies 192 KiB chunks, offsets, hashes, candidate identity, fixed challenge lane and no arbitrary artifact/corpus path.
+- `test-riftllm-bridge.mjs` — live native RiftLLM Dev API/Binder shell contract plus retained `riftllm-bridge.js` regression checks; explicitly proves the retained JS is un-packaged and not a live public surface.
+- `test-riftllm-text-encoding-bridge.mjs` — executes the retained Text Encoding bridge oracle against a mocked native `riftllm.dev` route, verifies bounded chunks/identity/path rules, and proves the JS bridge stays un-packaged.
 - `test-riftllm-training-bridge.mjs` — locks the stable frozen-B2 RiftTrainData packer, fixed private paths/hashes, uint16 BOS/text/EOS records, post-encode source rehash, 192 KiB training upload, fixed canary commands and no arbitrary path/process authority.
-- `test-riftllm-corpus.mjs` — executes V1/V2 local RiftCorpus synth/build helpers against an in-memory RiftFS mock and verifies deterministic 3 MiB shards, shard-set hashes, V2 compositional identity, sharded train/full-heldout composition, bounded Android benchmark output, private-path confinement and unfinished-Rift-source rejection.
+- `test-riftllm-corpus.mjs` — executes the retained RiftCorpus bridge oracle against an in-memory RiftFS mock, verifies deterministic shard/path contracts, and proves the JS bridge stays un-packaged.
 - `test-rift-text-encoder-task.mjs` — locks the experimental fixed-path V1/V2 native RiftTokenizer contract, pinned configs/sources, V2 24-byte learned-token cap, async train/status/cancel surface, optimized-batch parity hooks, provenance, streaming status, transactional artifact/manifest recovery, 32K arithmetic and no-generic-process boundary.
 - `test-rift-plus-plus-v0.mjs` — locks Rift++ V0 non-executable Swarm IR, workspace-only source confinement, finite role/capability policy, preview-only BrainBackend coordinator and no-new-MCP-tool boundary.
 - `test-rift-ir-v1.mjs` — locks the language-independent `rift.ir/1` swarm-core schema, defense-in-depth graph/policy validation, resource accounting, inspect-only execution policy, experimental CLI adapter and no-new-MCP-tool boundary.

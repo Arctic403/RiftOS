@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { createHash, webcrypto } from 'node:crypto';
+
+const gradleSource=fs.readFileSync('android/app/build.gradle.kts','utf8');
+assert.ok(!gradleSource.includes('riftllm-bridge.js'),'retained RiftLLM corpus bridge must not be packaged');
 
 globalThis.crypto ||= webcrypto;
 
@@ -56,10 +60,10 @@ globalThis.RiftWorkspace={stat:async()=>null,readText:async()=>null,history:asyn
 
 await import(new URL('../src/riftllm-bridge.js?corpus-test=1',import.meta.url));
 const api=globalThis.RiftLlmBridge;
-assert.ok(api?.corpusSynth,'corpusSynth public bridge method missing');
-assert.ok(api?.corpusSynthV2,'corpusSynthV2 public bridge method missing');
-assert.ok(api?.corpusBuild,'corpusBuild public bridge method missing');
-assert.ok(api?.corpusStatus,'corpusStatus public bridge method missing');
+assert.ok(api?.corpusSynth,'retained corpusSynth bridge oracle missing');
+assert.ok(api?.corpusSynthV2,'retained corpusSynthV2 bridge oracle missing');
+assert.ok(api?.corpusBuild,'retained corpusBuild bridge oracle missing');
+assert.ok(api?.corpusStatus,'retained corpusStatus bridge oracle missing');
 const shardVectorMaterial=`part-00000.jsonl\t3\t${'a'.repeat(64)}\npart-00001.jsonl\t5\t${'b'.repeat(64)}\n`;
 assert.equal(createHash('sha256').update(shardVectorMaterial,'utf8').digest('hex'),'23eac9b3140464bc1a798481d04a8f40fe78c7246829b8c41ccebd46db051303');
 const descriptorDigest=rows=>createHash('sha256').update([...rows].sort((a,b)=>a.path.localeCompare(b.path)).map(row=>`${row.path.split('/').pop()}\t${row.utf8Bytes}\t${row.sha256}\n`).join(''),'utf8').digest('hex');
@@ -148,4 +152,4 @@ const blocked={...rows[0],id:'blocked:001',text:'blocked source sample',source_p
 await fsMock.writeText(input,[JSON.stringify(blocked),...rows.slice(1).map(row=>JSON.stringify(row))].join('\n')+'\n');
 await assert.rejects(()=>api.corpusBuild(input,undefined,{heldoutPermyriad:5000,seed:'rift-corpus-test-seed'}),/unfinished Rift project source is excluded/);
 
-console.log('RiftLLM local RiftCorpus build contract OK');
+console.log('RiftLLM retained local RiftCorpus bridge regression contract OK');
