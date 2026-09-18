@@ -100,13 +100,11 @@ The VM itself can execute host imports only when the embedding owner supplies ho
 
 ### Current production shell boundary
 
-RiftHeadlessJsRuntime inspects an executable before riftpp run/exec and rejects it when imports.length > 0.
+RiftHeadlessJsRuntime inspects every executable before execution. Normal `riftpp run/exec` still rejects it when `imports.length > 0`.
 
-The production shell supplies only a bounded print writer to VM execution, not host.invoke.
+The explicit `riftpp run-stateful/exec-stateful` commands supply `host.invoke` only for `state.load`, `state.save`, and `state.remove`. State is isolated by a caller-provided validated namespace, keys are SHA-256 mapped inside `riftfs/system/riftpp-state`, records are atomically replaced, each serialized record is capped at the VM's 65536-byte state limit, and each namespace is capped at 256 records.
 
-Therefore current native-shell .rxe execution is **import-free**.
-
-This is intentionally narrower than the VM engine's abstract import capability.
+No other VM host import becomes available through this path. This remains intentionally narrower than the VM engine's abstract import capability.
 
 ## State opcodes
 
@@ -124,11 +122,9 @@ Corrupt JSON, schema mismatch, shape mismatch, invalid finite numeric values and
 
 ### Current activation status
 
-These state opcodes are engine-supported and covered by test-rift-vm.mjs, but **they are not currently reachable through production riftpp run/exec** because the native shell denies every executable import.
+These state opcodes are engine-supported, covered by `test-rift-vm.mjs`, and now wired through the explicit native `run-stateful` / `exec-stateful` mode. Normal `run/exec` remains import-free.
 
-A future persistent-state host must be separately audited and wired through the headless owner.
-
-Do not treat opcode presence as proof of live persistence.
+Source wiring alone is not device persistence proof. Promotion still requires Builder compilation/package/signing plus installed save/reload evidence across a complete process restart.
 
 ## value_sha256
 

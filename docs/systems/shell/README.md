@@ -271,7 +271,7 @@ RiftShell -> headless QuickJS -> packaged Rift++ Core -> packaged RiftVM.
 
 No Chromium is required.
 
-Current run/exec rejects executable host imports.
+Normal `run/exec` rejects executable host imports. `run-stateful/exec-stateful` is a separate bounded path that permits only `state.load`, `state.save`, and `state.remove` against an isolated validated checkpoint namespace; it does not expose generic native calls or software verification.
 
 ## Experimental CLI
 

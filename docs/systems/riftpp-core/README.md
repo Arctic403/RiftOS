@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
 ## Purpose
 
@@ -23,7 +23,7 @@ RiftHeadlessJsRuntime loads both into QuickJS for the native RiftShell riftpp co
 
 Source compilation is live.
 
-Effectful executable imports are a separate activation question: normal production riftpp run/exec rejects any executable whose imports list is non-empty.
+Effectful executable imports are a separate activation question: normal production `riftpp run/exec` still rejects any executable whose imports list is non-empty. The explicit `run-stateful` / `exec-stateful` path permits only `state.load`, `state.save`, and `state.remove` through a bounded namespace-scoped native checkpoint host; every other import remains denied.
 
 ## Source ownership
 

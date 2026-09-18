@@ -77,7 +77,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
-                    "riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / HEADLESS QUICKJS]\n" +
+                    "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "rift-cli status|team|architecture|enable|disable|plan|riftpp|ir|tokenizer   [EXPERIMENTAL / OFF BY DEFAULT]\n" +
                     "Legacy shell-only services fail explicitly; no renderer compatibility fallback exists.",
                 cwd,

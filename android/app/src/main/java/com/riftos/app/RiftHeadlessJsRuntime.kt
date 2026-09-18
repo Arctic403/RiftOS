@@ -19,6 +19,9 @@ import java.security.MessageDigest
 class RiftHeadlessJsRuntime(context: Context) {
     companion object {
         private const val MAX_TEXT_BYTES = 8L * 1024L * 1024L
+        private const val MAX_STATE_BYTES = 64 * 1024
+        private const val MAX_STATE_KEY_BYTES = 4 * 1024
+        private const val MAX_STATE_FILES = 256
         private const val EVALUATION_TIMEOUT_MS = 120_000L
     }
 
@@ -26,6 +29,7 @@ class RiftHeadlessJsRuntime(context: Context) {
 
     private val appContext = context.applicationContext
     private val riftRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
+    private val stateRoot = File(riftRoot, "system/riftpp-state").apply { mkdirs() }.canonicalFile
 
     @Volatile private var vmSourceCache: String? = null
     @Volatile private var coreSourceCache: String? = null
@@ -73,6 +77,19 @@ class RiftHeadlessJsRuntime(context: Context) {
                     file.parentFile?.mkdirs()
                     atomicWrite(file, bytes)
                     true
+                }
+                function("__rift_state_load") { values ->
+                    stateLoad(values.getOrNull(0)?.toString().orEmpty(), values.getOrNull(1)?.toString().orEmpty())
+                }
+                function("__rift_state_save") { values ->
+                    stateSave(
+                        values.getOrNull(0)?.toString().orEmpty(),
+                        values.getOrNull(1)?.toString().orEmpty(),
+                        values.getOrNull(2)?.toString().orEmpty()
+                    )
+                }
+                function("__rift_state_remove") { values ->
+                    stateRemove(values.getOrNull(0)?.toString().orEmpty(), values.getOrNull(1)?.toString().orEmpty())
                 }
 
                 evaluate<Any?>(Scripts.POLYFILLS, filename = "rift-headless-polyfills.js")
@@ -136,6 +153,52 @@ class RiftHeadlessJsRuntime(context: Context) {
         return file
     }
 
+    private fun stateNamespace(raw: String): String {
+        val value = raw.trim()
+        require(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$").matches(value)) { "Invalid Rift++ state namespace" }
+        return value
+    }
+
+    private fun stateFile(namespace: String, key: String): File {
+        val cleanNamespace = stateNamespace(namespace)
+        val keyBytes = key.toByteArray(Charsets.UTF_8)
+        require(keyBytes.isNotEmpty() && keyBytes.size <= MAX_STATE_KEY_BYTES) { "Invalid Rift++ state key" }
+        val directory = File(stateRoot, cleanNamespace).canonicalFile
+        require(directory == stateRoot || directory.path.startsWith(stateRoot.path + File.separator)) { "State namespace escaped RiftFS" }
+        directory.mkdirs()
+        val digest = MessageDigest.getInstance("SHA-256").digest(keyBytes)
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+        val file = File(directory, "$digest.state").canonicalFile
+        require(file.parentFile == directory) { "State key escaped namespace" }
+        return file
+    }
+
+    private fun stateLoad(namespace: String, key: String): String? {
+        val file = stateFile(namespace, key)
+        if (!file.exists()) return null
+        require(file.isFile && file.length() <= MAX_STATE_BYTES.toLong()) { "Invalid Rift++ state record" }
+        return file.readText(Charsets.UTF_8)
+    }
+
+    private fun stateSave(namespace: String, key: String, value: String): Boolean {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        require(bytes.size <= MAX_STATE_BYTES) { "Rift++ state record exceeds $MAX_STATE_BYTES UTF-8 bytes" }
+        val file = stateFile(namespace, key)
+        if (!file.exists()) {
+            val count = file.parentFile?.listFiles()?.count { it.isFile } ?: 0
+            require(count < MAX_STATE_FILES) { "Rift++ state namespace exceeds $MAX_STATE_FILES records" }
+        }
+        atomicWrite(file, bytes)
+        return true
+    }
+
+    private fun stateRemove(namespace: String, key: String): Boolean {
+        val file = stateFile(namespace, key)
+        if (!file.exists()) return false
+        require(file.isFile) { "Invalid Rift++ state record" }
+        return file.delete()
+    }
+
     private fun atomicWrite(target: File, bytes: ByteArray) {
         target.parentFile?.mkdirs()
         val temp = File(target.parentFile, ".${target.name}.headless-${System.nanoTime()}")
@@ -190,7 +253,8 @@ class RiftHeadlessJsRuntime(context: Context) {
               const usage = 'Rift++ Core shell (headless QuickJS)\n' +
                 'riftpp help\nriftpp version\nriftpp self-test\nriftpp check <source.riftpp>\n' +
                 'riftpp compile <source.riftpp> [output.rxe]\nriftpp inspect <source.riftpp|program.rxe>\n' +
-                'riftpp run <source.riftpp>\nriftpp exec <program.rxe>';
+                'riftpp run <source.riftpp>\nriftpp exec <program.rxe>\n' +
+                'riftpp run-stateful <source.riftpp> <namespace>\nriftpp exec-stateful <program.rxe> <namespace>';
 
               const normalizePath = value => {
                 const raw = String(value || '').replaceAll('\\\\','/');
@@ -217,6 +281,11 @@ class RiftHeadlessJsRuntime(context: Context) {
                 const path = normalizePath(value);
                 if (!/\.rxe$/i.test(path)) throw new Error('Rift executable must end in .rxe: ' + path);
                 return path;
+              };
+              const stateNamespaceArg = value => {
+                const namespace = String(value || '').trim();
+                if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(namespace)) throw new Error('Rift++ state namespace is invalid');
+                return namespace;
               };
 
               const compileSource = (path, source) => {
@@ -259,9 +328,11 @@ class RiftHeadlessJsRuntime(context: Context) {
                 targetAbi: result.executable.abi
               });
 
-              const execute = async (raw, label) => {
+              const execute = async (raw, label, hostMode = 'none', stateNamespace = '') => {
                 const info = vm.inspectRiftExecutable(raw);
-                if (info.imports.length) throw new Error('riftpp shell execution denies host imports: ' + info.imports.join(', '));
+                const allowedImports = hostMode === 'state' ? new Set(['state.load','state.save','state.remove']) : new Set();
+                const deniedImports = info.imports.filter(method => !allowedImports.has(method));
+                if (deniedImports.length) throw new Error('riftpp shell execution denies host imports: ' + deniedImports.join(', '));
                 const lines = [];
                 let bytes = 0;
                 const host = {
@@ -270,6 +341,13 @@ class RiftHeadlessJsRuntime(context: Context) {
                     bytes += new TextEncoder().encode(text).byteLength + 1;
                     if (lines.length >= 256 || bytes > 65536) throw new Error('riftpp shell output limit exceeded');
                     lines.push(text);
+                  },
+                  invoke: async (method, args) => {
+                    if (hostMode !== 'state') throw new Error('riftpp shell host imports are disabled');
+                    if (method === 'state.load') return __rift_state_load(stateNamespace, String(args[0] ?? ''));
+                    if (method === 'state.save') return __rift_state_save(stateNamespace, String(args[0] ?? ''), String(args[1] ?? ''));
+                    if (method === 'state.remove') return __rift_state_remove(stateNamespace, String(args[0] ?? ''));
+                    throw new Error('riftpp stateful execution denied host import: ' + method);
                   }
                 };
                 const result = await vm.executeRiftExecutable(raw, host, {maxSteps:100000,maxStack:1024,maxCallDepth:32,yieldEvery:512});
@@ -321,6 +399,14 @@ class RiftHeadlessJsRuntime(context: Context) {
               if (sub === 'exec') {
                 const path = execPath(args[0]), executed = await execute(read(path), path);
                 finish({backend:'headless-quickjs',steps:executed.result.steps,prints:executed.result.prints}); return;
+              }
+              if (sub === 'run-stateful') {
+                const path = sourcePath(args[0]), namespace = stateNamespaceArg(args[1]), source = read(path), result = compileSource(path, source), executed = await execute(result.executable, path, 'state', namespace);
+                finish({backend:'headless-quickjs',hostMode:'state',namespace:namespace,steps:executed.result.steps,prints:executed.result.prints}); return;
+              }
+              if (sub === 'exec-stateful') {
+                const path = execPath(args[0]), namespace = stateNamespaceArg(args[1]), executed = await execute(read(path), path, 'state', namespace);
+                finish({backend:'headless-quickjs',hostMode:'state',namespace:namespace,steps:executed.result.steps,prints:executed.result.prints}); return;
               }
               throw new Error('unknown riftpp command: ' + sub + '\n' + usage);
             })();

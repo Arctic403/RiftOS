@@ -25,7 +25,7 @@ assert(slice.includes('riftpp-shell-self-test/1'));
 assert(slice.includes('compileRiftPlusPlusCoreProgramV1'));
 assert(batch.includes('"rift-cli","riftpp","chat"'), 'riftpp must stay outside atomic batch');
 
-assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec   [CORE V1 / HEADLESS QUICKJS]'));
+assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]'));
 assert(nativeShell.includes('"riftpp" -> {'));
 assert(nativeShell.includes('headlessJs.executeRiftpp(args, cwd)'));
 assert.equal((nativeShell.match(/private fun tokenize\(/g) || []).length, 1, 'native shell helper scope must remain structurally intact');
@@ -42,6 +42,13 @@ assert(headless.includes('preparedVmSource()'));
 assert(headless.includes('preparedCoreSource()'));
 assert(headless.includes('src/riftpp-core.js'));
 assert(headless.includes('src/riftvm.js'));
+assert(headless.includes("new Set(['state.load','state.save','state.remove'])"));
+assert(headless.includes("if (sub === 'run-stateful')"));
+assert(headless.includes("if (sub === 'exec-stateful')"));
+assert(headless.includes('private fun stateSave(namespace: String, key: String, value: String): Boolean'));
+assert(headless.includes('private fun stateLoad(namespace: String, key: String): String?'));
+assert(headless.includes('private fun stateRemove(namespace: String, key: String): Boolean'));
+assert(headless.includes('Rift++ state namespace exceeds $MAX_STATE_FILES records'));
 assert.equal(hasWebKitDependency(headless), false);
 assert(!headless.includes('ProcessBuilder'));
 
