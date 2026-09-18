@@ -784,8 +784,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun normalizeDisplay(raw: String): String =
         RiftVolumePaths.normalizeDisplay(raw)
 
-    private fun resolveFile(raw: String, cwd: String): File {
-        val display = resolveDisplay(cwd, raw)
+    private fun resolveFile(displayPath: String): File {
+        val display = normalizeDisplay(displayPath)
         val relative = if (
             display.startsWith("/C:", true) ||
             display.startsWith("/D:", true)
@@ -796,6 +796,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         return target
     }
 
+    private fun joinDisplay(base: String, child: String): String {
+        val left = normalizeDisplay(base).trimEnd('/')
+        return normalizeDisplay("$left/${child.trimStart('/')}")
+    }
     private fun tokenize(raw: String): MutableList<String> {
         val out = ArrayList<String>()
         val regex = Regex("\"([^\"]*)\"|'([^']*)'|([^\\s]+)")

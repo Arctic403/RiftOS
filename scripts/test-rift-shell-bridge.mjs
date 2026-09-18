@@ -20,7 +20,8 @@ assert.match(shell, /class RiftNativeShell\(context: Context\) : RiftShellExecut
 assert.equal((shell.match(/private fun tokenize\(/g) || []).length, 1, 'native shell must expose exactly one tokenizer helper');
 assert.equal((shell.match(/private fun resolveFile\(/g) || []).length, 1, 'native shell must expose exactly one confined file resolver');
 assert.match(shell, /private fun normalizeDisplay\(raw: String\): String =\s*RiftVolumePaths\.normalizeDisplay\(raw\)/);
-assert.match(shell, /private fun resolveFile\(raw: String, cwd: String\): File \{[\s\S]*RiftVolumePaths\.resolveRelative\(display\)[\s\S]*Path escaped RiftFS/);
+assert.match(shell, /private fun resolveFile\(displayPath: String\): File \{[\s\S]*RiftVolumePaths\.resolveRelative\(display\)[\s\S]*Path escaped RiftFS/);
+assert.match(shell, /private fun joinDisplay\(base: String, child: String\): String/);
 assert.match(shell, /\.put\("webViewRequired", false\)/);
 assert.match(shell, /headlessJs\.executeRiftpp\(args, cwd\)/);
 assert.doesNotMatch(shell, /compatibilityFallback|RiftShellBridge/);

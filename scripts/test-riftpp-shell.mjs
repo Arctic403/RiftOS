@@ -30,6 +30,7 @@ assert(nativeShell.includes('"riftpp" -> {'));
 assert(nativeShell.includes('headlessJs.executeRiftpp(args, cwd)'));
 assert.equal((nativeShell.match(/private fun tokenize\(/g) || []).length, 1, 'native shell helper scope must remain structurally intact');
 assert.equal((nativeShell.match(/private fun resolveFile\(/g) || []).length, 1, 'native shell file resolver must remain present exactly once');
+assert(nativeShell.includes('private fun joinDisplay(base: String, child: String): String'));
 assert(!nativeShell.includes('compatibilityFallback'));
 assert(!nativeShell.includes('RiftShellBridge'));
 assert(headless.includes('quickJs {'));

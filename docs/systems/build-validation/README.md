@@ -307,7 +307,7 @@ The mutable Action-tag trust surface is a current external supply-chain limitati
 - transport/wiring validation now proves the actual `preBuild` dependency wiring instead of matching implementation text from the WebKit regex, preventing validator self-drift when the ownership matcher changes;
 - Android root Gradle pins built-in Kotlin KGP `2.4.10` so `quickjs-kt 1.0.14` (published with Kotlin 2.4 metadata) is compiled by a compatible Kotlin toolchain instead of AGP's lower default KGP;
 - Builder preflight independently requires the same KGP 2.4.10 + QuickJS 1.0.14 + coroutines 1.11.0 tuple before source tests/Gradle compilation;
-- focused shell/Rift++ tests now lock the `RiftNativeShell` helper structure (one tokenizer + one confined resolver) and the headless QuickJS script-constant visibility that were exposed by the first successful Kotlin compilation attempt.
+- focused shell/Rift++ tests now lock the `RiftNativeShell` helper structure (one tokenizer + one single-argument confined resolver + `joinDisplay`) and the headless QuickJS script-constant visibility exposed by the first successful Kotlin compilation attempts; the resolver signature is intentionally the normalized-display-path form used by all live shell call sites.
 
 ## Critical invariants
 

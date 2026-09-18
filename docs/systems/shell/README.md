@@ -373,7 +373,7 @@ Second source audit must recheck:
 - no native process escape;
 - command/token bounds;
 - path normalization/canonical confinement;
-- exactly one tokenizer helper and one confined `resolveFile` helper remain at class scope;
+- exactly one tokenizer helper, one single-argument confined `resolveFile(displayPath)` helper, and one `joinDisplay` helper remain at class scope;
 - text/tree limits;
 - atomic write file-type guard;
 - cp/mv backup/rollback/source/destination containment;
