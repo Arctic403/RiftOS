@@ -121,6 +121,7 @@ const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
 const runtime = read(`${kotlinDir}/RiftMcpRuntime.kt`);
 const browserWindow = read(`${kotlinDir}/RiftBrowserWindow.kt`);
 const browserHost = read(`${kotlinDir}/RiftBrowserAppHost.kt`);
+const desktop = read(`${kotlinDir}/RiftNativeDesktop.kt`);
 const workspaceApps = read(`${kotlinDir}/RiftNativeWorkspaceApps.kt`);
 const browserBridge = read(`${kotlinDir}/RiftBrowserMcpAppBridge.kt`);
 
@@ -135,6 +136,9 @@ for (const required of ['RiftNativeDesktop(', 'RiftBrowserWindow(', 'RiftBrowser
   if (!main.includes(required)) fail(`MainActivity native composition is missing ${required}`);
 }
 if (!main.includes('nativeWorkspaceApps.onActivityResult') || !main.includes('browserWindow.onActivityResult')) fail('MainActivity does not route browser/native Files activity results');
+if (!main.includes('add("mcp", "Rift MCP", "⇄")')) fail('Rift MCP launcher entry is missing from MainActivity');
+if (!main.includes('if (id == "mcp")') || !main.includes('startActivity(Intent(this, RiftMcpActivity::class.java))')) fail('Rift MCP launcher does not open the existing RiftMcpActivity');
+if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP is missing from the native desktop fallback launcher');
 
 const allowedWebKitOwners = new Set([
   'RiftBrowserAndroidWebViewEngine.kt', 'RiftBrowserWindow.kt', 'RiftBrowserMcpAppBridge.kt',

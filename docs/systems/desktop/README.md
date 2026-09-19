@@ -158,6 +158,8 @@ The same app list drives:
 
 Launcher tile activation calls the `appOpenSink` supplied by MainActivity. Desktop itself does not decide whether the app body is Files, Terminal, RiftBrowser or an installed program.
 
+`Rift MCP` is a built-in launcher entry whose activation starts the existing `RiftMcpActivity` as its own Android activity. The desktop launcher does not duplicate, embed, or re-own MCP/relay state; `RiftMcpActivity`, `RiftMcpRuntime`, `RiftMcpRelayClient`, and `RiftRelaySettings` remain the authority.
+
 ## Taskbar
 
 The taskbar is fixed at 48 dp and contains:

@@ -133,12 +133,13 @@ class MainActivity : Activity() {
         add("devlab", "Dev Lab", "◇")
         add("tasks", "Tasks", "≡")
         add("settings", "Settings", "⚙")
+        add("mcp", "Rift MCP", "⇄")
 
         if (!includeInstalled) return apps
 
         val used = linkedSetOf(
             "files", "workspace-live", "terminal", "browser",
-            "editor", "devlab", "tasks", "settings"
+            "editor", "devlab", "tasks", "settings", "mcp"
         )
         var scannedPrograms = 0
         var scannedBytes = 0L
@@ -231,6 +232,10 @@ class MainActivity : Activity() {
         runOnUiThread {
             if (::nativeSystemApps.isInitialized && nativeSystemApps.openFromLauncher(id)) return@runOnUiThread
             if (::nativeWorkspaceApps.isInitialized && nativeWorkspaceApps.openFromLauncher(id)) return@runOnUiThread
+            if (id == "mcp") {
+                startActivity(Intent(this, RiftMcpActivity::class.java))
+                return@runOnUiThread
+            }
             if (id == "browser") {
                 openBrowserWindow("")
                 return@runOnUiThread
