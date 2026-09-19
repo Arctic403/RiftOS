@@ -72,6 +72,9 @@ const rootGradle = read('android/build.gradle.kts');
 const gradle = read('android/app/build.gradle.kts');
 const preBuildBlock = gradle.match(/tasks\.named\("preBuild"\)\.configure\s*\{([\s\S]*?)\n\}/)?.[1] || '';
 const gradleRequiredKotlin = [...gradle.matchAll(/"(src\/main\/java\/com\/riftos\/app\/[A-Za-z0-9_]+\.kt)"/g)].map(match => `android/app/${match[1]}`);
+if (gradle.includes('",\\n        "src/main/java/com/riftos/app/')) {
+  fail('Gradle mandatory Kotlin snapshot contains a literal \\n separator instead of a real newline');
+}
 const actualKotlin = [...kotlinFiles].sort();
 const declaredKotlin = [...new Set(gradleRequiredKotlin)].sort();
 if (JSON.stringify(declaredKotlin) !== JSON.stringify(actualKotlin)) {

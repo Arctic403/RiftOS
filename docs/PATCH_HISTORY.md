@@ -6,6 +6,18 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.2 — Gradle Kotlin snapshot escape repair
+
+Builder run `35420241649` for source `7d9de917ba5347c11f18bdde2ab4773aaf53d77b` passed the full RiftOS source/documentation gate and reached Gradle configuration.
+
+Gradle then failed before Kotlin compilation because the exact mandatory Kotlin source list contained one literal `\\n` escape between `RiftBrowserWindow.kt` and `RiftBuildLocalExecutor.kt` instead of a physical newline. That single malformed token caused the subsequent parser-error cascade through the remainder of the list.
+
+Repair:
+- replaced the literal `\\n` with a real newline in `android/app/build.gradle.kts`;
+- extended `validate-rift-wiring.mjs` to fail source validation if the mandatory Kotlin list ever contains this escaped-line-separator pattern again.
+
+No Kotlin runtime source, MCP surface, CLI state or build authority changed in this repair.
+
 ## Patch 10.1 — Builder documentation-gate repair
 
 Builder run `35419961262` for source `9052a0ffa913986142e32f79d3e12a8c32d61b32` stopped in `validate-rift-docs.mjs` before Android compilation.
