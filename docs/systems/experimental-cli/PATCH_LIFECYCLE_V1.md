@@ -252,6 +252,14 @@ Code-audit evidence imported before required documentation evidence is flagged b
 
 ### 8. SUPPLY_CHAIN_SECURITY
 
+Security/dependency evidence is now driven by the exact Patch-9 verification plan.
+
+Before importing security, dependencies or tests evidence, request:
+
+`rift-cli lifecycle verification-plan <sessionId>`
+
+The command returns `rift.verification-plan/1` with candidate/semantic hashes, exact targets and deterministic required check ids for security/dependencies/tests.
+
 Security/dependency evidence covers changed source plus discovered build/dependency manifests.
 
 Dependency/security/build target discovery unions acquired and current dependency/build manifests plus Project Intelligence `changedBuildConfig`, so a patch cannot add a new package/lock/build manifest and omit it from post-patch evidence.
@@ -262,15 +270,15 @@ Complete dependency evidence requires a `supplyChain` object with each field exp
 - `licenseStatus`;
 - `provenanceStatus`.
 
-Security evidence must also cover capabilities/permissions/secrets/boundaries relevant to the changed source.
+Security evidence must also cover capabilities/permissions/secrets/boundaries relevant to the changed source. Patch 9 requires every planned security target-review id plus repository `rift-audit` / `rift-scan` check ids when source/build changed.
 
 The lifecycle does not generate an SBOM itself. It requires the project/build pipeline to supply evidence when applicable.
 
 ### 9. TEST_BUILD
 
-Project Intelligence V2 selects relevant tests from semantic impact.
+Project Intelligence V2 selects relevant tests from semantic impact, and `RiftVerificationPlannerV1` turns that scope into exact test targets/check ids.
 
-For source/build-config changes, Lifecycle V1 requires impact-derived tests evidence before source-candidate evaluation.
+For source/build-config/test changes, Lifecycle V1 requires impact-derived tests evidence before source-candidate evaluation. If no runnable impact test exists, Patch 9 may derive the bounded repository `npm run check` fallback from `package.json`; if neither route exists the plan fails with `NO_TEST_OR_VALIDATION_TARGET`.
 
 External artifact build evidence is **optional in V1** because Patch 13 has not yet implemented a safe candidate→Builder provenance handshake. If build evidence is supplied, it becomes part of the required ordered evidence set and must be complete/current.
 
@@ -309,6 +317,8 @@ The evaluation is bound to:
 - base tree SHA-256;
 - result tree SHA-256;
 - semantic-impact SHA-256;
+- documentation-parity-plan SHA-256;
+- verification-plan SHA-256;
 - evidence-bundle SHA-256;
 - policy SHA-256.
 
@@ -480,6 +490,7 @@ rift-cli lifecycle begin-sync <project> <goal...>
 rift-cli lifecycle status <sessionId>
 rift-cli lifecycle request <sessionId>
 rift-cli lifecycle documentation-plan <sessionId>
+rift-cli lifecycle verification-plan <sessionId>
 rift-cli lifecycle import <sessionId> <kind> <D:/Documents|D:/Temp json>
 rift-cli lifecycle evaluation <sessionId>
 rift-cli lifecycle verify <sessionId> <D:/Documents|D:/Temp evaluation.json>

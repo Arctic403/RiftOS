@@ -112,9 +112,9 @@ The output path is not “patch finished.”
 The CLI reconstructs the final candidate from repository truth and requires separate evidence for:
 - `DOCUMENT_AUDIT` documentation parity, driven by `rift-cli lifecycle documentation-plan <session>` and exact `rift.documentation-parity/1` evidence;
 - `CODE_AUDIT` code audit;
-- security;
-- dependencies/supply chain;
-- tests;
+- security, driven by exact `rift-cli lifecycle verification-plan <session>` check ids/targets;
+- dependencies/supply chain, bound to the same verification plan;
+- tests, bound to the same verification plan;
 - optional build/artifact evidence when available before Patch 13;
 - E2E behavior;
 - rollback.

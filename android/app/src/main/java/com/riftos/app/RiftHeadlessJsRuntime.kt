@@ -536,9 +536,12 @@ class RiftHeadlessJsRuntime(context: Context) {
               subtle: Object.freeze({
                 digest: async function(name, data) {
                   if (String(name).toUpperCase() !== 'SHA-256') throw new Error('Only SHA-256 is available');
-                  const view = data instanceof ArrayBuffer ? new Int8Array(data) : data;
-                  const out = __rift_sha256(view);
-                  return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength);
+                  const view = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+                  const input = Array.from(view, value => value & 255);
+                  const raw = __rift_sha256(input);
+                  const out = new Uint8Array(raw.length);
+                  for (let i = 0; i < raw.length; i++) out[i] = raw[i] & 255;
+                  return out.buffer;
                 }
               })
             });

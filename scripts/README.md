@@ -14,6 +14,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-cli-patch-lifecycle-v1.mjs` — manual OBSERVE-only CLI patch lifecycle contract: clean/synchronized acquisition, research/design order, governance/impact-derived coverage, supply-chain/build evidence, stale-result invalidation, bounded independent evaluation and zero trust/MCP expansion.
 - `test-rift-cli-stress-foundation.mjs` — regressions from live torture testing: current candidate-created governance/build-manifest scope, RiftFS-system session durability, legacy migration and fail-closed process-restart drift detection.
 - `test-rift-documentation-parity-v1.mjs` — Patch 8 candidate-specific ownership/governance parity, mandatory owner-doc updates, structured review binding and stale-plan denial.
+- `test-rift-verification-planner-v1.mjs` — Patch 9 impact-derived test/security/dependency targets, deterministic check ids, exact plan-bound evidence and stale-plan denial.
 - `test-rift-dev-lab.mjs` — native Dev Lab staging/snapshot/guarded-publish regression contract.
 - `test-rift-ai-adapters.mjs` — AI site adapter contract.
 - `test-rift-raw-protocol.mjs` — browser raw tool-call parser/protocol.

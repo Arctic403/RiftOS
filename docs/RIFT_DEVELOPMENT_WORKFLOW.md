@@ -59,10 +59,13 @@ For substantial AI-assisted repository work, use the Experimental RiftCLI lifecy
    - changed source + callers/dependents/references/imports;
    - duplicate/dead/error/bounds/concurrency/compatibility review.
 8. **Audit security/supply chain**
-   - capabilities/secrets/permissions;
-   - lockfile/dependency/SBOM/license/provenance evidence when applicable.
+   - request the exact lifecycle `verification-plan` after code/document repair is stable;
+   - execute/report every required security/dependency check id from that plan;
+   - capabilities/secrets/permissions plus lockfile/dependency/SBOM/license/provenance evidence when applicable.
 9. **Test / build evidence**
+   - use the same `verification-plan` exact test targets/check ids;
    - impact-derived focused tests are required for source/build-config changes;
+   - if no impact test exists, use the deterministic repository validation fallback when the plan supplies one;
    - run any local/source validation available before evaluation;
    - external artifact Builder evidence is optional in Lifecycle V1 until Patch 13 can bind an accepted candidate to Builder input safely;
    - when build evidence is supplied, capture builder/toolchain/source revision and artifact digests.

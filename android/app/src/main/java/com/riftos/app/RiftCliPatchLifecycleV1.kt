@@ -37,6 +37,8 @@ internal object RiftCliPatchLifecycleV1 {
     private const val CANDIDATE_TIMEOUT_MS = 30_000L
     private val PROCESS_EPOCH = "process-" + UUID.randomUUID().toString()
 
+    private val VERIFICATION_EVIDENCE = setOf("security", "dependencies", "tests")
+
     private val POST_PATCH_EVIDENCE = setOf(
         "documentation",
         "code-audit",
@@ -98,6 +100,10 @@ internal object RiftCliPatchLifecycleV1 {
             "documentation-plan" -> {
                 require(tail.size == 1) { "usage: rift-cli lifecycle documentation-plan <sessionId>" }
                 documentationPlan(context, tail.single())
+            }
+            "verification-plan" -> {
+                require(tail.size == 1) { "usage: rift-cli lifecycle verification-plan <sessionId>" }
+                verificationPlan(context, tail.single())
             }
             "evaluation" -> {
                 require(tail.size == 1) { "usage: rift-cli lifecycle evaluation <sessionId>" }
@@ -204,6 +210,7 @@ internal object RiftCliPatchLifecycleV1 {
             "rift-cli lifecycle status <sessionId>",
             "rift-cli lifecycle request <sessionId>",
             "rift-cli lifecycle documentation-plan <sessionId>",
+            "rift-cli lifecycle verification-plan <sessionId>",
             "rift-cli lifecycle import <sessionId> <kind> <D:/Documents|D:/Temp json>",
             "rift-cli lifecycle evaluation <sessionId>",
             "rift-cli lifecycle verify <sessionId> <D:/Documents|D:/Temp evaluation.json>",
@@ -316,6 +323,7 @@ internal object RiftCliPatchLifecycleV1 {
                 "Before code mutation, import research evidence and a design evidence record covering README/docs/TODO/roadmap/patch-history changes.",
                 "Patch only after acquisition, understanding, research and documented intent are complete.",
                 "After patching, call lifecycle documentation-plan and use its exact planSha256/source/governance scope in documentation evidence.",
+                "Before security/dependencies/tests evidence, call lifecycle verification-plan and use its exact planSha256, targets and check ids.",
                 "After patching, independently audit documents first, then code, then security/dependencies/tests/build/end-to-end.",
                 "Re-run any audit whose subject became stale after another source edit.",
                 "Ask the CLI for the final evaluation packet; do not self-declare completion."
@@ -336,6 +344,37 @@ internal object RiftCliPatchLifecycleV1 {
             target.file,
             base.getString("projectWorkspacePath"),
             impact
+        )
+    }
+
+    private fun verificationPlan(context: Context, sessionId: String): JSONObject {
+        val session = loadSession(context, sessionId)
+        require(!session.optBoolean("restartDriftDetected", false)) {
+            "Lifecycle session detected workspace drift across process restart; start a fresh lifecycle from a clean base"
+        }
+        val impact = candidateImpact(context)
+        return verificationPlanFor(context, session, impact)
+    }
+
+    private fun verificationPlanFor(
+        context: Context,
+        session: JSONObject,
+        impact: JSONObject
+    ): JSONObject {
+        val base = session.getJSONObject("base")
+        val target = projectTarget(context, base.getString("projectDisplay"))
+        val currentInventory = inventory(target.file)
+        require(!currentInventory.optBoolean("truncated", true)) {
+            "Current repository inventory exceeded the bounded scan; verification scope is incomplete"
+        }
+        val buildManifests = jsonStringSet(
+            currentInventory.optJSONArray("dependencyAndBuildManifests")
+        )
+        return RiftVerificationPlannerV1.plan(
+            target.file,
+            base.getString("projectWorkspacePath"),
+            impact,
+            buildManifests
         )
     }
 
@@ -406,6 +445,7 @@ internal object RiftCliPatchLifecycleV1 {
         }
         var normalizedResearch: JSONObject? = null
         var normalizedDocumentationParity: JSONObject? = null
+        var normalizedVerificationPlanEvidence: JSONObject? = null
         if (kind == "research") {
             normalizedResearch = RiftResearchLedgerV1.validate(
                 payload.optJSONObject("researchLedger")
@@ -417,7 +457,19 @@ internal object RiftCliPatchLifecycleV1 {
         val projectState = currentProjectState(context, session)
         val impactAtImport = candidateImpact(context)
         val candidate = impactAtImport.optJSONObject("candidate") ?: currentCandidate(context)
-        val requiredTargets = expectedTargetsForEvidence(context, kind, session, impactAtImport)
+        val activeVerificationPlan =
+            if (kind in VERIFICATION_EVIDENCE) {
+                verificationPlanFor(context, session, impactAtImport)
+            } else {
+                null
+            }
+        val requiredTargets = expectedTargetsForEvidence(
+            context,
+            kind,
+            session,
+            impactAtImport,
+            activeVerificationPlan
+        )
         val missingTargets = requiredTargets.filter { it !in targets }
         if (missingTargets.isNotEmpty()) complete = false
         if (kind == "documentation") {
@@ -436,6 +488,16 @@ internal object RiftCliPatchLifecycleV1 {
                     )
             )
             complete = complete && normalizedDocumentationParity.optBoolean("complete", false)
+        }
+        if (activeVerificationPlan != null) {
+            normalizedVerificationPlanEvidence = RiftVerificationPlannerV1.validateEvidence(
+                activeVerificationPlan,
+                kind,
+                payload
+            )
+            complete =
+                complete &&
+                    normalizedVerificationPlanEvidence.optBoolean("complete", false)
         }
         val existingEvidence = latestEvidenceByKind(loadEvidence(context, session))
         if (kind == "understanding") {
@@ -490,6 +552,12 @@ internal object RiftCliPatchLifecycleV1 {
         if (normalizedDocumentationParity != null) {
             wrapper.put("normalizedDocumentationParity", normalizedDocumentationParity)
         }
+        if (normalizedVerificationPlanEvidence != null) {
+            wrapper.put(
+                "normalizedVerificationPlanEvidence",
+                normalizedVerificationPlanEvidence
+            )
+        }
 
         val sessionDir = sessionDirectory(context, sessionId)
         val evidenceDir = File(sessionDir, "evidence").apply { mkdirs() }
@@ -522,6 +590,11 @@ internal object RiftCliPatchLifecycleV1 {
                 "documentationParityPlanSha256",
                 normalizedDocumentationParity?.optString("planSha256") ?: JSONObject.NULL
             )
+            .put(
+                "verificationPlanSha256",
+                normalizedVerificationPlanEvidence?.optString("planSha256")
+                    ?: JSONObject.NULL
+            )
     }
 
     private fun evaluationPacket(context: Context, sessionId: String): JSONObject {
@@ -545,6 +618,7 @@ internal object RiftCliPatchLifecycleV1 {
             base.getString("projectWorkspacePath"),
             impact
         )
+        val verificationPlan = verificationPlanFor(context, session, impact)
 
         val allEvidence = loadEvidence(context, session)
         val latest = latestEvidenceByKind(allEvidence)
@@ -637,6 +711,49 @@ internal object RiftCliPatchLifecycleV1 {
             }
         }
 
+        val verificationHardIssues = verificationPlan.optJSONArray("hardIssues") ?: JSONArray()
+        for (index in 0 until verificationHardIssues.length()) {
+            val row = verificationHardIssues.optJSONObject(index) ?: continue
+            issues.put(issue(
+                row.optString("code", "VERIFICATION_PLAN_HARD_FAIL"),
+                row.optString("message"),
+                "verification-plan"
+            ))
+        }
+        for (kind in requiredKinds.filter { it in VERIFICATION_EVIDENCE }.sorted()) {
+            val evidence = latest[kind]
+            val normalized =
+                evidence?.optJSONObject("normalizedVerificationPlanEvidence")
+            if (normalized == null) {
+                issues.put(issue(
+                    "VERIFICATION_PLAN_EVIDENCE_MISSING",
+                    kind + " evidence does not contain normalized Patch-9 verification evidence.",
+                    kind
+                ))
+            } else {
+                if (
+                    normalized.optString("planSha256") !=
+                    verificationPlan.optString("planSha256")
+                ) {
+                    issues.put(issue(
+                        "VERIFICATION_PLAN_STALE",
+                        kind + " evidence belongs to an earlier verification plan.",
+                        kind
+                    ))
+                }
+                if (!normalized.optBoolean("complete", false)) {
+                    issues.put(issue(
+                        "VERIFICATION_PLAN_INCOMPLETE",
+                        kind + " verification evidence is incomplete. Missing checks=" +
+                            (normalized.optJSONArray("missingCheckIds") ?: JSONArray()).toString() +
+                            ", missing targets=" +
+                            (normalized.optJSONArray("missingTargets") ?: JSONArray()).toString(),
+                        kind
+                    ))
+                }
+            }
+        }
+
         for (kind in requiredKinds.filter { it in POST_PATCH_EVIDENCE }.sorted()) {
             val evidence = latest[kind]
             if (evidence == null || !evidence.optBoolean("complete", false)) {
@@ -704,6 +821,10 @@ internal object RiftCliPatchLifecycleV1 {
                 "documentationParityPlanSha256",
                 documentationParityPlan.optString("planSha256")
             )
+            .put(
+                "verificationPlanSha256",
+                verificationPlan.optString("planSha256")
+            )
             .put("evidenceBundleSha256", evidenceBundleSha)
             .put("policySha256", policySha)
         val bundleSha = RiftPatchManifestV1.sha256Canonical(evaluationSubject)
@@ -719,6 +840,7 @@ internal object RiftCliPatchLifecycleV1 {
             .put("candidate", candidate)
             .put("semanticImpact", impact)
             .put("documentationParityPlan", documentationParityPlan)
+            .put("verificationPlan", verificationPlan)
             .put("freezeReceipt", freeze)
             .put("repository", current)
             .put(
@@ -733,10 +855,11 @@ internal object RiftCliPatchLifecycleV1 {
                 "Independently inspect the exact candidate; do not accept the patch author's completion claim as evidence.",
                 "Re-check critical external research claims against their cited sources.",
                 "Verify the Patch-8 documentationParityPlan against exact source and the normalized documentation parity evidence.",
+                "Verify the Patch-9 verificationPlan against exact PI-v2 impact and normalized security/dependencies/tests verification evidence.",
                 "Verify docs/README/TODO/roadmap/patch-history/source-ownership parity against source.",
                 "Verify semantic impact, callers/dependents, security/dependencies/tests/build/end-to-end evidence and negative cases.",
                 "Return RETURN_DEFECTS for any unresolved, stale, missing, contradictory or incomplete evidence.",
-                "Echo sessionId, evaluationBundleSha256, manifestSha256, semanticImpactSha256, documentationParityPlanSha256, evidenceBundleSha256 and policySha256 exactly.",
+                "Echo sessionId, evaluationBundleSha256, manifestSha256, semanticImpactSha256, documentationParityPlanSha256, verificationPlanSha256, evidenceBundleSha256 and policySha256 exactly.",
                 "Use schema rift.cli-ai-evaluation/1. Include evaluatorId, patchActorId, independent=true, verdict and structured defects.",
                 "Each defect must include code, severity, reason and fix; optional path identifies the affected file/surface.",
                 "An ACCEPTABLE_CANDIDATE response is advisory; Local Agent still verifies hashes and cannot promote trust in V1."
@@ -778,6 +901,8 @@ internal object RiftCliPatchLifecycleV1 {
             response.optString("semanticImpactSha256") == subject.optString("semanticImpactSha256") &&
             response.optString("documentationParityPlanSha256") ==
                 subject.optString("documentationParityPlanSha256") &&
+            response.optString("verificationPlanSha256") ==
+                subject.optString("verificationPlanSha256") &&
             response.optString("evidenceBundleSha256") == subject.optString("evidenceBundleSha256") &&
             response.optString("policySha256") == subject.optString("policySha256")
         val identitySeparated =
@@ -867,6 +992,12 @@ internal object RiftCliPatchLifecycleV1 {
                 row.getJSONObject("normalizedDocumentationParity")
             )
         }
+        if (row.has("normalizedVerificationPlanEvidence")) {
+            out.put(
+                "verificationPlan",
+                row.getJSONObject("normalizedVerificationPlanEvidence")
+            )
+        }
         if (payload.has("environment")) out.put("environment", payload.get("environment"))
         if (payload.has("artifacts")) out.put("artifacts", payload.get("artifacts"))
         if (payload.has("supplyChain")) out.put("supplyChain", payload.get("supplyChain"))
@@ -910,7 +1041,8 @@ internal object RiftCliPatchLifecycleV1 {
         context: Context,
         kind: String,
         session: JSONObject,
-        impact: JSONObject
+        impact: JSONObject,
+        verificationPlan: JSONObject? = null
     ): Set<String> {
         val base = session.getJSONObject("base")
         val projectRoot = base.getString("projectWorkspacePath").trim('/')
@@ -943,9 +1075,6 @@ internal object RiftCliPatchLifecycleV1 {
         val changedBuildConfig = jsonStringSet(impact.optJSONArray("changedBuildConfig"))
             .mapNotNull { toProjectRelative(it, projectRoot) }
             .toSet()
-        val tests = jsonStringSet(impact.optJSONArray("tests"))
-            .mapNotNull { toProjectRelative(it, projectRoot) }
-            .toSet()
         val dependentSources = LinkedHashSet<String>()
         val dependents = impact.optJSONArray("directDependents") ?: JSONArray()
         for (index in 0 until dependents.length()) {
@@ -959,9 +1088,13 @@ internal object RiftCliPatchLifecycleV1 {
             "design" -> baseGovernance + baseBuildManifests
             "documentation" -> governance + affectedDocs + changedDocs
             "code-audit" -> changed + sourceChanged + dependentSources
-            "security" -> sourceChanged + buildManifests + changedBuildConfig
-            "dependencies" -> buildManifests + changedBuildConfig
-            "tests" -> tests
+            "security", "dependencies", "tests" -> {
+                val plan = verificationPlan
+                    ?: verificationPlanFor(context, session, impact)
+                jsonStringSet(
+                    plan.getJSONObject(kind).optJSONArray("targets")
+                )
+            }
             "build" -> buildManifests + changedBuildConfig
             "e2e", "rollback" -> changed
             else -> emptySet()
@@ -1000,12 +1133,14 @@ internal object RiftCliPatchLifecycleV1 {
             "rollback"
         )
         val changes = impact.optJSONArray("changes") ?: JSONArray()
-        var codeOrBuild = false
+        var testRelevantChange = false
         for (index in 0 until changes.length()) {
             val category = changes.optJSONObject(index)?.optString("category").orEmpty()
-            if (category == "source" || category == "build-config") codeOrBuild = true
+            if (category == "source" || category == "build-config" || category == "test") {
+                testRelevantChange = true
+            }
         }
-        if (codeOrBuild) {
+        if (testRelevantChange) {
             required += "tests"
         }
         return required

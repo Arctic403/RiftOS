@@ -6,6 +6,48 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 9 — Impact-derived verification planner
+
+### What changed
+
+Added `RiftVerificationPlannerV1` and bound it into the manual OBSERVE-only CLI lifecycle.
+
+The planner derives one exact `rift.verification-plan/1` from the final Patch Manifest / PI-v2 candidate and current repository state.
+
+It owns:
+- impacted test targets and bounded repository-check fallback;
+- security targets from changed source/build config/direct dependents plus API/dependency-surface reasons;
+- required repository `rift-audit` / `rift-scan` checks for source/build candidates;
+- exact added/removed dependency delta reviews;
+- changed build-config reviews;
+- current dependency/build manifest reviews;
+- deterministic check ids for every required verification action.
+
+Security, dependencies and tests evidence now require:
+
+`verificationPlan.schema = rift.verification-evidence/1`
+
+with the exact `planSha256` and evidence kind from:
+
+`rift-cli lifecycle verification-plan <sessionId>`
+
+The generic evidence `checks` list must contain every planned check id with PASS status, and `targets` must contain every required plan target. Extra checks may be reported, but the required set cannot be replaced by a caller-selected subset.
+
+Final evaluation recomputes the plan and binds `verificationPlanSha256` into the evaluator subject. Missing/incomplete/stale security/dependencies/tests plan evidence therefore denies the candidate.
+
+### Fail-closed behavior
+
+- source/build/test change with no impact test and no derivable repository validation fallback -> `NO_TEST_OR_VALIDATION_TARGET`;
+- missing planned test -> hard plan issue;
+- missing audit/scan/target/dependency/build-config check -> incomplete verification evidence;
+- candidate mutation after verification -> `VERIFICATION_PLAN_STALE`.
+
+Patch 9 remains a planner/evidence gate, not an autonomous test runner. It adds no MCP tool, process runner, dependency installer, trust promotion or publication authority.
+
+### Regression
+
+`scripts/test-rift-verification-planner-v1.mjs` locks schemas, bounds, test/security/dependency derivation, exact-check identity, lifecycle binding, Gradle/source ownership and zero MCP/trust expansion.
+
 ## Patch 8 — Documentation / project-state parity gate
 
 ### What changed

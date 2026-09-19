@@ -61,6 +61,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
         "src/main/java/com/riftos/app/RiftDocumentationParityV1.kt",
         "src/main/java/com/riftos/app/RiftExperimentalCli.kt",
+        "src/main/java/com/riftos/app/RiftVerificationPlannerV1.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
         "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",
         "src/main/java/com/riftos/app/RiftIrCliV1.kt",

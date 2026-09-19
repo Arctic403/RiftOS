@@ -27,8 +27,10 @@ assert.match(lifecycle, /val buildManifests = baseBuildManifests \+ currentBuild
 assert.match(lifecycle, /changedDocumentation/);
 assert.match(lifecycle, /changedBuildConfig/);
 assert.match(lifecycle, /"documentation" -> governance \+ affectedDocs \+ changedDocs/);
-assert.match(lifecycle, /"dependencies" -> buildManifests \+ changedBuildConfig/);
-assert.match(lifecycle, /"security" -> sourceChanged \+ buildManifests \+ changedBuildConfig/);
+assert.match(lifecycle, /"security", "dependencies", "tests" ->/);
+assert.match(lifecycle, /verificationPlanFor\(context, session, impact\)/);
+assert.match(lifecycle, /plan\.getJSONObject\(kind\)\.optJSONArray\("targets"\)/);
+assert.match(lifecycle, /normalizedVerificationPlanEvidence/);
 
 for (const governanceName of [
   'readme.md','roadmap.md','todo.md','todos.md','tasks.md',
