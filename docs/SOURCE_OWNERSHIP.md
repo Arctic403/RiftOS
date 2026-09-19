@@ -173,6 +173,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-ir-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-plus-plus-core-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftpp-core/README.md` |
 | `scripts/test-semnexis-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |
+| `scripts/test-semnexis-arm32-exec.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |
 | `scripts/test-semnexis-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/shell/README.md` |
 | `scripts/test-qjs-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` |
 | `scripts/test-riftpp-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` |
