@@ -81,7 +81,7 @@ Native core includes:
 - riftos-agent
 - riftllm-agent
 - qjs help/version/eval/run
-- semx help/version/self-test/check/dump-graph/dump-plan
+- semx help/version/self-test/check/dump-graph/dump-plan/dump-ir/emit-arm32-proof
 - riftpp
 - rift-cli
 

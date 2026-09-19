@@ -130,7 +130,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "workspace [cd|info|ls|status|push]\n" +
                     "riftbuild doctor|validate|plan|prepare-riftpp-v0|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
-                    "semx help|version|self-test|check|dump-graph|dump-plan   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
+                    "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +

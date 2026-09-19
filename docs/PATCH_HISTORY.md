@@ -6,6 +6,40 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.7 — Semnexis Native IR V0 + direct ARM32 backend seed
+
+### Current source changes
+
+Extended the QuickJS-hosted Semnexis compiler to `0.3.0-quickjs-bootstrap`.
+
+Added:
+- typed SSA-like `SEMNEXIS_NATIVE_IR_V0`;
+- deterministic IR verifier and textual dump;
+- checked signed-i32 add/sub/mul/div semantics;
+- canonical binary IR format `SNIRV0`;
+- binary decode + source-independent re-verification;
+- `semx dump-ir`;
+- direct pure-program ARM32 backend proof;
+- deterministic ELF32/EM_ARM image verifier;
+- fixed `semx emit-arm32-proof` output at `/documents/builds/Semnexis/semx-arm32-proof.elf`.
+
+The ARM32 proof backend is intentionally narrow: pure/capability-free, zero-input V0 only. It evaluates current V0 IR at build time and emits a real ARM EABI5 executable whose result is returned through the Linux/Android exit syscall. Runtime effects, inputs, recursion and unsupported operations fail closed.
+
+Generated RiftFS ELF artifacts remain non-executable by policy.
+
+### Current proof
+
+Source-host execution proves:
+- smoke IR: 1 function / 6 instructions;
+- canonical `SNIRV0`: 157 bytes;
+- multi-function IR binary: 411 bytes;
+- effectful IR binary: 233 bytes;
+- corrupt binary magic rejected;
+- ARM32 ELF: 100 bytes, ELF32, EM_ARM, entry `0x10054`, result 42;
+- effectful code rejected by the current backend.
+
+Device proof for 0.3 requires the next RiftOS APK.
+
 ## Patch 10.6 — QuickJS Semnexis bootstrap replaces native Clang experiment
 
 ### Current source changes

@@ -47,7 +47,8 @@ From `android/app/build.gradle.kts`:
 - `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.
 - installed HTML/JS programs already present under `C:/Programs` can be launched by `RiftBrowserAppHost`.
 - production `riftpp` routes through `RiftHeadlessJsRuntime` / QuickJS.
-- Gradle packages only `src/riftpp-core.js` and `src/riftvm.js` from `src/`.
+- `semx` routes through the same bounded headless QuickJS owner using the separately packaged Semnexis bootstrap asset. The 0.1 semantic bootstrap is installed-device proven on source `a7ba2b211b22fedf53073f6724d14305fec01c87`; current 0.3 source adds verified Native IR/binary IR and an ARM32 ELF proof backend pending the next APK/device gate.
+- Gradle packages only `src/riftpp-core.js`, `src/riftvm.js` and `src/semnexis-bootstrap.js` from `src/`.
 
 ### Logical RiftKernel
 

@@ -7,7 +7,8 @@ This inventory separates live packaged authority from retained reference/compati
 | Surface | Owner | Purpose |
 | --- | --- | --- |
 | `RiftShellExecutor` | `RiftNativeShell.kt` | Process-owned bounded shell executor used by native Terminal and MCP. |
-| Rift++ headless runtime | `RiftHeadlessJsRuntime.kt` | Loads only trusted Rift++ Core/RiftVM assets in QuickJS; no DOM/WebView/network/process authority. |
+| Rift++ headless runtime | `RiftHeadlessJsRuntime.kt` | Loads trusted Rift++ Core/RiftVM assets in QuickJS; no DOM/WebView/network/process authority. |
+| Semnexis bootstrap runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Fixed `semx` compiler/IR/backend commands over the packaged Semnexis bootstrap asset; only the ARM32 proof command may write, and only to its fixed RiftFS artifact path; no generated-artifact execution/process/network authority. |
 | Bounded `qjs` developer runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Evaluates bounded classic JavaScript with captured output and read-only confined RiftFS text access; no file-write/process/network/Android/Git authority. |
 | MCP tool catalog | `RiftToolHost.kt` | Canonical fixed 18-tool schemas/permissions/audit. |
 | Workspace/Code Mode | `RiftToolSandbox.kt` | Workspace-only filesystem, Project Intelligence and transactional operations. |
@@ -36,7 +37,8 @@ Guest pages must not receive RiftShell, RiftFS, Workspace, Keystore, generic nat
 
 The only JavaScript copied into the generated RiftOS `www` asset namespace for OS execution is:
 - `src/riftpp-core.js` -> `RiftPlusPlusCore` compiler surface;
-- `src/riftvm.js` -> RiftVM implementation.
+- `src/riftvm.js` -> RiftVM implementation;
+- `src/semnexis-bootstrap.js` -> bounded Semnexis bootstrap compiler, Native IR codec and ARM32 proof backend.
 
 They execute under the bounded headless runtime when invoked by native RiftShell.
 

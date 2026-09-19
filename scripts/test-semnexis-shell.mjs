@@ -18,6 +18,15 @@ assert.match(gradle, /include\("src\/semnexis-bootstrap\.js"\)/);
 assert.doesNotMatch(gradle, /RiftNativeToolchain\.kt/);
 assert.match(compiler, /globalThis\.SemnexisBootstrap/);
 assert.match(compiler, /only entry function 'main' may grant capability/);
+assert.match(compiler, /SEMNEXIS_NATIVE_IR_V0/);
+assert.match(compiler, /i32\.add\.checked/);
+assert.match(runtime, /semx dump-ir <source\.snx>/);
+assert.match(runtime, /format:compiler\.irSchema/);
+assert.match(runtime, /semx emit-arm32-proof <source\.snx>/);
+assert.match(runtime, /\/documents\/builds\/Semnexis\/semx-arm32-proof\.elf/);
+assert.match(runtime, /__rift_write_semnexis_binary/);
+assert.match(compiler, /SEMNEXIS_ARM32_ELF_PROOF_V0/);
+assert.match(compiler, /generated-artifact-not-executed-from-riftfs/);
 assert.doesNotMatch(compiler, /\beval\s*\(|new Function|\bprocess\b|XMLHttpRequest|fetch\s*\(/);
 
 console.log('ok - Semnexis QuickJS shell bootstrap boundary');

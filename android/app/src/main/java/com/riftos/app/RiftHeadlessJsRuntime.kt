@@ -186,6 +186,29 @@ class RiftHeadlessJsRuntime(context: Context) {
                     }
                     file.readText(Charsets.UTF_8)
                 }
+                function("__rift_write_semnexis_binary") { values ->
+                    val requested = values.getOrNull(0)?.toString().orEmpty()
+                    val fixedPath = "/documents/builds/Semnexis/semx-arm32-proof.elf"
+                    require(requested == fixedPath) { "Semnexis binary output path is fixed" }
+                    val bytes = when (val raw = values.getOrNull(1)) {
+                        is ByteArray -> raw
+                        is List<*> -> ByteArray(raw.size) { index ->
+                            val number = raw[index] as? Number
+                                ?: throw IllegalArgumentException("Semnexis binary payload must contain bytes")
+                            val value = number.toInt()
+                            require(value in 0..255) { "Semnexis binary payload byte is out of range" }
+                            value.toByte()
+                        }
+                        else -> throw IllegalArgumentException("Semnexis binary payload must be a byte array")
+                    }
+                    require(bytes.isNotEmpty() && bytes.size <= 1024 * 1024) {
+                        "Semnexis binary payload exceeds fixed limit"
+                    }
+                    val target = resolveFile(fixedPath, "/")
+                    target.parentFile?.mkdirs()
+                    atomicWrite(target, bytes)
+                    true
+                }
 
                 evaluate<Any?>(Scripts.POLYFILLS, filename = "semnexis-polyfills.js")
                 evaluate<Any?>(preparedSemnexisSource(), filename = "semnexis-bootstrap.headless.js")
@@ -1127,7 +1150,9 @@ class RiftHeadlessJsRuntime(context: Context) {
               const usage =
                 'Semnexis bootstrap shell (headless QuickJS)\n' +
                 'semx help\nsemx version\nsemx self-test\n' +
-                'semx check <source.snx>\nsemx dump-graph <source.snx>\nsemx dump-plan <source.snx>';
+                'semx check <source.snx>\nsemx dump-graph <source.snx>\n' +
+                'semx dump-plan <source.snx>\nsemx dump-ir <source.snx>\n' +
+                'semx emit-arm32-proof <source.snx>';
 
               const normalizePath = value => {
                 const raw = String(value || '').replaceAll('\\\\','/');
@@ -1165,6 +1190,9 @@ class RiftHeadlessJsRuntime(context: Context) {
                   compiler:compiler.version,
                   graphSchema:compiler.graphSchema,
                   planSchema:compiler.planSchema,
+                  irSchema:compiler.irSchema,
+                  irBinaryFormat:compiler.irBinaryFormat,
+                  arm32ElfSchema:compiler.arm32ElfSchema,
                   backend:'headless-quickjs'
                 };
                 emit(JSON.stringify(value, null, 2));
@@ -1176,17 +1204,36 @@ class RiftHeadlessJsRuntime(context: Context) {
                 const result = compiler.compile('fn main() -> i32 {\n    return 40 + 2;\n}\n');
                 if (result.graph.nodes.length !== 12 ||
                     result.graph.edges.length !== 18 ||
-                    result.plan.steps.length !== 5) {
+                    result.plan.steps.length !== 5 ||
+                    result.ir.functions.length !== 1 ||
+                    result.ir.functions[0].instructions.length !== 6) {
                   throw new Error('Semnexis bootstrap self-test shape mismatch');
+                }
+                const irBinary = compiler.encodeIR(result.ir);
+                const decodedIR = compiler.decodeIR(irBinary);
+                if (decodedIR.dump() !== result.irText) {
+                  throw new Error('Semnexis Native IR binary round-trip mismatch');
+                }
+                const arm32 = compiler.emitArm32Proof(result.ir);
+                if (arm32.constantResult !== 42 || arm32.byteLength !== 100 || !compiler.verifyArm32Proof(arm32)) {
+                  throw new Error('Semnexis ARM32 ELF proof self-test mismatch');
                 }
                 const value = {
                   ok:true,
-                  schema:'semnexis-bootstrap-self-test/1',
+                  schema:'semnexis-bootstrap-self-test/3',
                   backend:'headless-quickjs',
                   compiler:compiler.version,
                   nodes:result.graph.nodes.length,
                   edges:result.graph.edges.length,
-                  planSteps:result.plan.steps.length
+                  planSteps:result.plan.steps.length,
+                  irFunctions:result.ir.functions.length,
+                  irInstructions:result.ir.functions.reduce((total, fn) => total + fn.instructions.length, 0),
+                  irBinaryFormat:compiler.irBinaryFormat,
+                  irBinaryBytes:irBinary.length,
+                  arm32ElfSchema:compiler.arm32ElfSchema,
+                  arm32Target:arm32.target,
+                  arm32Bytes:arm32.byteLength,
+                  arm32ConstantResult:arm32.constantResult
                 };
                 emit(JSON.stringify(value, null, 2));
                 finish(value);
@@ -1236,6 +1283,37 @@ class RiftHeadlessJsRuntime(context: Context) {
                   compiler:compiler.version,
                   format:compiler.planSchema
                 });
+                return;
+              }
+              if (sub === 'dump-ir') {
+                emit(result.irText.replace(/\n$/,''));
+                finish({
+                  ok:true,
+                  source:path,
+                  backend:'headless-quickjs',
+                  compiler:compiler.version,
+                  format:compiler.irSchema
+                });
+                return;
+              }
+              if (sub === 'emit-arm32-proof') {
+                const artifact = compiler.emitArm32Proof(result.ir);
+                const outputPath = '/documents/builds/Semnexis/semx-arm32-proof.elf';
+                __rift_write_semnexis_binary(outputPath, Array.from(artifact.bytes));
+                const value = {
+                  ok:true,
+                  source:path,
+                  output:outputPath,
+                  backend:'headless-quickjs',
+                  compiler:compiler.version,
+                  format:artifact.schema,
+                  target:artifact.target,
+                  bytes:artifact.byteLength,
+                  constantResult:artifact.constantResult,
+                  executionPolicy:artifact.executionPolicy
+                };
+                emit(JSON.stringify(value, null, 2));
+                finish(value);
                 return;
               }
               throw new Error('unknown semx command: ' + sub + '\n' + usage);
