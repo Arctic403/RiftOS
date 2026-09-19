@@ -2,7 +2,9 @@
 
 ## Verification status
 
-**SOURCE IMPLEMENTED + AUDIT CLEAN — 2026-09-18. ANDROID COMPILE / INSTALLED EXECUTION PENDING.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+
+Source implementation and static audits are current. Android compilation and installed-device execution are still pending and are not implied by this source-verification marker.
 
 ## Purpose
 
@@ -43,6 +45,20 @@ Existing callers to activate without expanding the MCP catalog:
 - `RiftBrowserAppHost.kt` — existing `build.local` capability methods.
 
 The retained `src/riftbuild.js` remains reference-only and is not repackaged or revived as authority.
+
+## Source ownership
+
+Maintained live owners:
+- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — native build controller, direct-ELF bridge materializer, fixed binary-manifest V0 encoder and prepared APK packager;
+- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed native `riftbuild` command routing;
+- `android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt` — capability-gated `build.local` app surface;
+- `scripts/test-riftbuild-native.mjs` — focused authority/confinement/source contract;
+- `scripts/test-rift-local-platform.mjs` — retained local-first boundary regression covering historical RiftBuild reference source.
+
+Retained reference:
+- `src/riftbuild.js` — non-authoritative historical/local-first design source.
+
+Cross-system ownership remains indexed in `docs/SOURCE_OWNERSHIP.md`.
 
 ## Authority model
 

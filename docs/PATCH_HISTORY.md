@@ -6,6 +6,22 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.1 — Builder documentation-gate repair
+
+Builder run `35419961262` for source `9052a0ffa913986142e32f79d3e12a8c32d61b32` stopped in `validate-rift-docs.mjs` before Android compilation.
+
+The failure was documentation-only:
+- RiftBuild README lacked the required exact `## Source ownership` maintenance section;
+- its verification text did not match the validator's required source-verification marker;
+- two SOURCE_OWNERSHIP table insertions contained literal `\\n` text, causing the RiftBuild executor and local-platform test ownership rows to be invisible to the row parser.
+
+Repair:
+- added the canonical `**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**` marker while preserving the explicit Android compile/device-pending boundary;
+- added RiftBuild's exact source-ownership section;
+- replaced both literal `\\n` table separators with real newlines.
+
+No Kotlin, Gradle, MCP, CLI, build authority or runtime behavior changed in this repair.
+
 ## Patch 10 — Native RiftBuild bounded Android build core
 
 ### What changed
