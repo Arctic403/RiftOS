@@ -118,3 +118,61 @@ The Builder needs a reproducible toolchain-payload job that:
 7. validates both arm64-v8a and the requested armeabi-v7a compatibility path independently.
 
 Do not add a generic shell executor as a shortcut.
+
+## Source ownership
+
+Maintained live owners:
+- `android/app/src/main/java/com/riftos/app/RiftNativeToolchain.kt` — bounded Android-native Clang/LLD bootstrap authority, target selection, confinement checks, fixed Semnexis build graph and compiler-process deadline;
+- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed `riftclang doctor|semnexis-build` routing with no arbitrary compiler argument passthrough;
+- `android/app/build.gradle.kts` — mandatory Android source inventory that requires `RiftNativeToolchain.kt` to remain part of the packaged native source set;
+- `docs/systems/native-toolchain/README.md` — subsystem contract, payload boundary and promotion requirements;
+- `docs/SOURCE_OWNERSHIP.md` — cross-system ownership index.
+
+Builder-side payload proof is owned separately by the public Builder repository:
+- `.github/workflows/riftclang-payload.yml`;
+- `scripts/build-riftclang-payload.sh`;
+- `scripts/verify-riftclang-payload.sh`.
+
+The Semnexis source tree under `workspace/Semnexis` is an input project, not RiftOS subsystem source.
+
+## Failure signatures
+
+Treat the subsystem as failed or not promoted if any of these occur:
+- `riftclang` is absent from the installed native command catalog after a build that claims this source revision;
+- `riftclang doctor` reports `ready=true` while Clang, LLD, the sysroot, the resource directory or the Semnexis source root is missing;
+- caller-provided text reaches a raw shell or arbitrary compiler/linker argument surface;
+- the compiler executable resolves outside the APK-owned native-library directory;
+- a source/include path escapes `workspace/Semnexis`;
+- a build artifact escapes `documents/builds/Semnexis`;
+- generated writable RiftFS code is executed directly;
+- the compiler subprocess can outlive RiftShell's outer watchdog;
+- ARM64/ARM32 target selection emits a host triple that disagrees with the selected ABI;
+- the Builder publishes a payload without manifest/hash verification;
+- source/docs ownership drift causes `validate-rift-docs.mjs` or the Gradle source snapshot to fail.
+
+## Fix map
+
+- bounded compiler authority / target selection / process lifetime -> `RiftNativeToolchain.kt`;
+- native shell routing / command catalog -> `RiftNativeShell.kt`;
+- Android mandatory source inventory -> `android/app/build.gradle.kts`;
+- subsystem contract / W^X rules / payload policy -> this README;
+- cross-system documentation ownership -> `docs/SOURCE_OWNERSHIP.md`;
+- source documentation validator -> `scripts/validate-rift-docs.mjs`;
+- Builder payload construction -> `Riftos-builder/.github/workflows/riftclang-payload.yml` + `Riftos-builder/scripts/build-riftclang-payload.sh`;
+- Builder payload verification -> `Riftos-builder/scripts/verify-riftclang-payload.sh`;
+- Semnexis bootstrap sources -> separate `workspace/Semnexis` project.
+
+## Validation
+
+Promotion requires all of the following:
+- `npm run check` passes, including documentation parity and source wiring validation;
+- `verifyRiftOsAndroidSources` includes and accepts `RiftNativeToolchain.kt`;
+- the final APK contains the native toolchain host class when the source contract declares it;
+- full RiftOS audit/architecture/security scans show no new native-toolchain finding;
+- Builder payload scripts pass shell syntax and their dedicated payload verifier;
+- the payload manifest and SHA-256 identities are checked before any payload is consumed by the main RiftOS build;
+- installed-device `native` output lists `riftclang`;
+- installed-device `riftclang doctor` reports the expected target and only reports `ready=true` when all trusted payload inputs are present;
+- installed-device `riftclang semnexis-build` produces a non-empty ELF artifact at the fixed bounded output path;
+- the generated artifact is inspected for the expected Android machine/ABI before calling the Semnexis bootstrap native-verified;
+- no test or documentation marker is allowed to substitute for installed-device proof.
