@@ -272,7 +272,7 @@ class RiftHeadlessJsRuntime(context: Context) {
         val output = mutableListOf<String>()
         var outputBytes = 0
         var lastValue: Any? = null
-        fun emit(values: List<Any?>) {
+        fun emit(values: Array<out Any?>) {
             val line = values.joinToString(" ") { it?.toString() ?: "null" }
             val bytes = canonicalUtf8Bytes(line).size + 1
             require(outputBytes + bytes <= MAX_QJS_OUTPUT_BYTES) {
@@ -307,9 +307,9 @@ class RiftHeadlessJsRuntime(context: Context) {
             }
         }
 
-        if (mode == "eval" && lastValue is String) emit(listOf(lastValue))
-        else if (mode == "eval" && lastValue is Number) emit(listOf(lastValue))
-        else if (mode == "eval" && lastValue is Boolean) emit(listOf(lastValue))
+        if (mode == "eval" && lastValue is String) emit(arrayOf(lastValue))
+        else if (mode == "eval" && lastValue is Number) emit(arrayOf(lastValue))
+        else if (mode == "eval" && lastValue is Boolean) emit(arrayOf(lastValue))
 
         val value = JSONObject()
             .put("schema", "rift-qjs-shell-result/1")
