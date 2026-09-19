@@ -93,6 +93,7 @@ if (!rootGradle.includes('org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10')) fa
 for (const required of [
   'include("src/riftpp-core.js")',
   'include("src/riftvm.js")',
+  'include("src/semnexis-bootstrap.js")',
   'validateRiftBrowserWebViewOwnership',
   'RiftOS Android source snapshot is not exact',
   'Actual WebKit dependencies/WebView XML are allowed only in',
@@ -151,11 +152,13 @@ for (const owner of allowedWebKitOwners) if (!actualWebKitOwners.has(owner)) fai
 if (!nativeShell.includes('class RiftNativeShell(context: Context) : RiftShellExecutor')) fail('native RiftShell executor is missing');
 if (!nativeShell.includes('.put("webViewRequired", false)')) fail('native RiftShell does not explicitly report WebView-free execution');
 if (!nativeShell.includes('headlessJs.executeRiftpp(args, cwd)')) fail('Rift++ is not routed through the headless runtime');
+if (!nativeShell.includes('headlessJs.executeSemnexis(args, cwd)')) fail('Semnexis is not routed through the headless runtime');
+if (/riftclang|RiftNativeToolchain|nativeToolchain/.test(nativeShell)) fail('retired native Semnexis compiler path returned');
 if (/compatibilityFallback|RiftShellBridge/.test(nativeShell) || hasWebKitDependency(nativeShell)) fail('native RiftShell regained renderer fallback authority');
 if (!runtime.includes('private var nativeShell: RiftNativeShell?') || !runtime.includes('fun shellExecutor(): RiftShellExecutor? = nativeShell')) fail('MCP does not retain process-owned native shell authority');
 if (/registerShellBridge|setCompatibilityFallback|clearCompatibilityFallback/.test(runtime)) fail('MCP runtime regained shell-WebView fallback wiring');
 
-for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()', 'src/riftpp-core.js', 'src/riftvm.js']) {
+for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()', 'preparedSemnexisSource()', 'src/riftpp-core.js', 'src/riftvm.js', 'src/semnexis-bootstrap.js']) {
   if (!headless.includes(required)) fail(`headless Rift++ runtime is missing ${required}`);
 }
 if (hasWebKitDependency(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');

@@ -80,7 +80,6 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftNativeGit.kt",
         "src/main/java/com/riftos/app/RiftNativeShell.kt",
         "src/main/java/com/riftos/app/RiftNativeShellServices.kt",
-        "src/main/java/com/riftos/app/RiftNativeToolchain.kt",
         "src/main/java/com/riftos/app/RiftNativeSystemApps.kt",
         "src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt",
         "src/main/java/com/riftos/app/RiftPatchManifestV1.kt",
@@ -136,6 +135,7 @@ val syncRiftOsWebAssets by tasks.registering(Sync::class) {
     from(rootProject.projectDir.parentFile) {
         include("src/riftpp-core.js")
         include("src/riftvm.js")
+        include("src/semnexis-bootstrap.js")
     }
     into(layout.buildDirectory.dir("generated/riftosAssets/www"))
 }

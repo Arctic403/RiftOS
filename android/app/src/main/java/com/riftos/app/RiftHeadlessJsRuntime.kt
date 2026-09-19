@@ -13,8 +13,9 @@ import java.security.MessageDigest
 /**
  * Headless trusted JavaScript service runtime.
  *
- * This is deliberately not a browser surface. It hosts the frozen Rift++ Core/RiftVM JavaScript
- * modules inside QuickJS with a tiny capability set: confined RiftFS text I/O, UTF-8 and SHA-256.
+ * This is deliberately not a browser surface. It hosts the trusted Rift++ Core/RiftVM modules and
+ * the Semnexis V0 bootstrap compiler inside QuickJS with a tiny capability set: confined RiftFS
+ * text I/O, UTF-8 and SHA-256.
  * No DOM, network, Android intents, arbitrary native calls, or ambient shell globals are exposed.
  */
 class RiftHeadlessJsRuntime(context: Context) {
@@ -34,6 +35,7 @@ class RiftHeadlessJsRuntime(context: Context) {
 
     @Volatile private var vmSourceCache: String? = null
     @Volatile private var coreSourceCache: String? = null
+    @Volatile private var semnexisSourceCache: String? = null
 
 
     private fun canonicalUtf8Bytes(value: String): ByteArray {
@@ -153,6 +155,48 @@ class RiftHeadlessJsRuntime(context: Context) {
         )
     }
 
+
+    fun executeSemnexis(args: List<String>, cwd: String): CommandResult {
+        val request = JSONObject()
+            .put("args", org.json.JSONArray(args))
+            .put("cwd", cwd)
+        var resultJson: String? = null
+
+        runBlocking {
+            quickJs {
+                evaluationTimeoutMillis = EVALUATION_TIMEOUT_MS
+
+                function("__rift_request") { request.toString() }
+                function("__rift_result") { values ->
+                    resultJson = values.firstOrNull()?.toString()
+                    Unit
+                }
+                function("__rift_read_text") { values ->
+                    val path = values.firstOrNull()?.toString().orEmpty()
+                    val file = resolveFile(path, cwd)
+                    require(file.isFile) { "file not found: $path" }
+                    require(file.length() <= MAX_TEXT_BYTES) {
+                        "file exceeds headless runtime text limit: $path"
+                    }
+                    file.readText(Charsets.UTF_8)
+                }
+
+                evaluate<Any?>(Scripts.POLYFILLS, filename = "semnexis-polyfills.js")
+                evaluate<Any?>(preparedSemnexisSource(), filename = "semnexis-bootstrap.headless.js")
+                evaluate<Any?>(
+                    Scripts.SEMNEXIS_COMMAND_ENTRY,
+                    filename = "semnexis-command.headless.js"
+                )
+            }
+        }
+
+        val payload = resultJson?.let(::JSONObject)
+            ?: throw IllegalStateException("Headless Semnexis runtime returned no result")
+        return CommandResult(
+            output = payload.optString("output"),
+            result = payload.optJSONObject("result")
+        )
+    }
 
     fun executeDeveloperTool(args: List<String>): CommandResult {
         val subcommand = args.firstOrNull()?.trim()?.lowercase().orEmpty()
@@ -433,6 +477,14 @@ class RiftHeadlessJsRuntime(context: Context) {
         )
         source = source.replace(Regex("(?m)^export\\s+"), "")
         return ("(function(){\n" + source + "\n})();").also { coreSourceCache = it }
+    }
+
+
+    private fun preparedSemnexisSource(): String {
+        semnexisSourceCache?.let { return it }
+        var source = readAsset("www/src/semnexis-bootstrap.js")
+        source = source.replace(Regex("(?m)^export\\s+"), "")
+        return ("(function(){\n" + source + "\n})();").also { semnexisSourceCache = it }
     }
 
     private fun readAsset(path: String): String =
@@ -906,6 +958,138 @@ class RiftHeadlessJsRuntime(context: Context) {
               __rift_gate0_result(JSON.stringify(result));
             })();
         """
+        const val SEMNEXIS_COMMAND_ENTRY = """
+            (function() {
+              const request = JSON.parse(__rift_request());
+              const args = Array.from(request.args || []);
+              const cwd = String(request.cwd || '/');
+              const compiler = globalThis.SemnexisBootstrap;
+              if (!compiler) throw new Error('Semnexis bootstrap compiler is unavailable');
+
+              const output = [];
+              const emit = value => output.push(String(value == null ? '' : value));
+              const finish = result => __rift_result(JSON.stringify({
+                output: output.join('\n'),
+                result: result || null
+              }));
+              const usage =
+                'Semnexis bootstrap shell (headless QuickJS)\n' +
+                'semx help\nsemx version\nsemx self-test\n' +
+                'semx check <source.snx>\nsemx dump-graph <source.snx>\nsemx dump-plan <source.snx>';
+
+              const normalizePath = value => {
+                const raw = String(value || '').replaceAll('\\\\','/');
+                const absolute = raw.startsWith('/') || /^[A-Za-z]:($|\/)/.test(raw);
+                const joined = absolute ? raw : String(cwd).replace(/\/$/,'') + '/' + raw;
+                const parts = [];
+                for (const part of joined.split('/')) {
+                  if (!part || part === '.') continue;
+                  if (part === '..') {
+                    if (!parts.length) throw new Error('path escaped root');
+                    parts.pop();
+                    continue;
+                  }
+                  parts.push(part);
+                }
+                return '/' + parts.join('/');
+              };
+              const sourcePath = value => {
+                if (!value) throw new Error('Semnexis source path is required');
+                const path = normalizePath(value);
+                if (!/\.snx$/i.test(path)) throw new Error('Semnexis source must end in .snx: ' + path);
+                return path;
+              };
+              const read = path => __rift_read_text(sourcePath(path));
+              const sub = String(args.shift() || 'help').toLowerCase();
+
+              if (sub === 'help') {
+                emit(usage);
+                finish({backend:'headless-quickjs', compiler:compiler.version});
+                return;
+              }
+              if (sub === 'version') {
+                const value = {
+                  language:compiler.language,
+                  compiler:compiler.version,
+                  graphSchema:compiler.graphSchema,
+                  planSchema:compiler.planSchema,
+                  backend:'headless-quickjs'
+                };
+                emit(JSON.stringify(value, null, 2));
+                finish(value);
+                return;
+              }
+              if (sub === 'self-test' || sub === 'selftest') {
+                if (args.length) throw new Error('usage: semx self-test');
+                const result = compiler.compile('fn main() -> i32 {\n    return 40 + 2;\n}\n');
+                if (result.graph.nodes.length !== 12 ||
+                    result.graph.edges.length !== 18 ||
+                    result.plan.steps.length !== 5) {
+                  throw new Error('Semnexis bootstrap self-test shape mismatch');
+                }
+                const value = {
+                  ok:true,
+                  schema:'semnexis-bootstrap-self-test/1',
+                  backend:'headless-quickjs',
+                  compiler:compiler.version,
+                  nodes:result.graph.nodes.length,
+                  edges:result.graph.edges.length,
+                  planSteps:result.plan.steps.length
+                };
+                emit(JSON.stringify(value, null, 2));
+                finish(value);
+                return;
+              }
+
+              if (args.length !== 1) {
+                throw new Error('usage: semx ' + sub + ' <source.snx>');
+              }
+              const path = sourcePath(args[0]);
+              const result = compiler.compile(read(path));
+
+              if (sub === 'check') {
+                const value = {
+                  ok:true,
+                  source:path,
+                  backend:'headless-quickjs',
+                  compiler:compiler.version,
+                  nodes:result.graph.nodes.length,
+                  edges:result.graph.edges.length,
+                  planSteps:result.plan.steps.length
+                };
+                emit(
+                  'Semnexis check OK: ' + value.nodes + ' nodes, ' +
+                  value.edges + ' edges, ' + value.planSteps + ' plan steps'
+                );
+                finish(value);
+                return;
+              }
+              if (sub === 'dump-graph') {
+                emit(result.graphText.replace(/\n$/,''));
+                finish({
+                  ok:true,
+                  source:path,
+                  backend:'headless-quickjs',
+                  compiler:compiler.version,
+                  format:compiler.graphSchema
+                });
+                return;
+              }
+              if (sub === 'dump-plan') {
+                emit(result.planText.replace(/\n$/,''));
+                finish({
+                  ok:true,
+                  source:path,
+                  backend:'headless-quickjs',
+                  compiler:compiler.version,
+                  format:compiler.planSchema
+                });
+                return;
+              }
+              throw new Error('unknown semx command: ' + sub + '\n' + usage);
+            })();
+        """
+
         const val RIFTPP_COMMAND_ENTRY = """
             (async function() {
               const request = JSON.parse(__rift_request());

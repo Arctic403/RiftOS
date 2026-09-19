@@ -2,7 +2,7 @@
 
 This ledger assigns implementation/build/test/reference source files to the README responsible for documenting them. Ownership does **not** imply that a source is packaged, live, verified, trusted or device-proven. Runtime activation must be established from current build/source wiring.
 
-For the current Android engine, Gradle packages only `src/riftpp-core.js` and `src/riftvm.js` from the `src/` tree. Other `src/` entries are retained reference/test/migration sources unless a later audit proves otherwise. `scripts/validate-rift-docs.mjs` checks that every maintained source has a documentation owner.
+For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftvm.js`, and `src/semnexis-bootstrap.js` from the `src/` tree. Other `src/` entries are retained reference/test/migration sources unless a later audit proves otherwise. `scripts/validate-rift-docs.mjs` checks that every maintained source has a documentation owner.
 
 ## Root/build sources
 
@@ -48,6 +48,7 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `src/riftrt.js` | `docs/systems/riftrt/README.md` + `docs/systems/riftrt/engines/README.md` + engine-specific READMEs under `docs/systems/riftrt/engines/` |
 | `src/riftvm.js` | `docs/systems/riftrt/engines/rift-vm/README.md` + `docs/systems/engine/README.md` |
 | `src/riftpp-core.js` | `docs/systems/riftpp-core/README.md` + `docs/systems/engine/README.md` |
+| `src/semnexis-bootstrap.js` | `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/engine/README.md` |
 | `src/riftruntime.js` | `docs/systems/runtime-capabilities/README.md` + `docs/systems/engine/README.md` |
 | `src/riftshell-batch.js` | `docs/systems/shell/README.md` + `docs/systems/chat-handoff/README.md` |
 | `src/riftworkspace-android-adapter.js` | `docs/systems/workspace/README.md` |
@@ -83,9 +84,8 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `android/app/src/main/java/com/riftos/app/RiftSecretStore.kt` | `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/kernel/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellExecutor.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt` | `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt` | `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` + `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt` | `docs/systems/shell/README.md` + `docs/systems/riftllm-bridge/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeToolchain.kt` | `docs/systems/native-toolchain/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeGit.kt` | `docs/systems/git/README.md` + `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
@@ -172,6 +172,8 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `scripts/test-rift-plus-plus-v0.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-ir-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-plus-plus-core-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftpp-core/README.md` |
+| `scripts/test-semnexis-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |
+| `scripts/test-semnexis-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/shell/README.md` |
 | `scripts/test-riftpp-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` |
 | `scripts/test-rift-vm.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftrt/engines/rift-vm/README.md` |
 

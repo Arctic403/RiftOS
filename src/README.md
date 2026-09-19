@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT GRADLE/SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT GRADLE/SOURCE — 2026-09-19.**
 
 This directory is **not** the active Android shell source tree.
 
@@ -12,8 +12,9 @@ This directory is **not** the active Android shell source tree.
 
 - `riftpp-core.js`
 - `riftvm.js`
+- `semnexis-bootstrap.js`
 
-They are copied into the generated `www` asset namespace and executed only by `RiftHeadlessJsRuntime` inside bounded QuickJS.
+They are copied into the generated `www` asset namespace and executed only by `RiftHeadlessJsRuntime` inside bounded QuickJS. The Semnexis asset is a bootstrap compiler host, not a browser shell or the eventual Semnexis native runtime.
 
 ## Retained reference/test source
 

@@ -6,35 +6,36 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
-## Patch 10.5 — Bounded Rift Clang host for Semnexis bootstrap
+## Patch 10.6 — QuickJS Semnexis bootstrap replaces native Clang experiment
 
 ### Current source changes
 
-Added `RiftNativeToolchain.kt` and the fixed `riftclang doctor|semnexis-build` RiftShell family.
+The Semnexis bootstrap now runs through the already-packaged headless QuickJS runtime.
 
-The native toolchain host:
-- accepts no arbitrary compiler or linker arguments;
-- invokes no POSIX shell;
-- accepts executable compiler code only from the APK-owned native-library directory;
-- confines the Semnexis source set to `workspace/Semnexis`;
-- compiles exactly `frontend.cpp`, `graph.cpp` and `main.cpp` with the Semnexis include root;
-- selects `aarch64-linux-android26` first and `armv7a-linux-androideabi26` as compatibility target;
-- writes only `documents/builds/Semnexis/semx-android.elf`;
-- never executes the generated writable RiftFS artifact;
-- caps compiler output and terminates the compiler before RiftShell's outer 60-second watchdog.
+Active path:
+- packaged \`src/semnexis-bootstrap.js\`;
+- fixed native \`semx help|version|self-test|check|dump-graph|dump-plan\` command family;
+- confined RiftFS source reads only;
+- deterministic Program Graph + verifier + effect/capability solver + Execution Plan;
+- V0 ambient capability grants restricted to the application boundary \`main\`;
+- direct regression tests for graph/plan goldens and invalid programs.
 
-Android source inventory, shell docs, native component ownership and SOURCE_OWNERSHIP were updated together.
+Removed:
+- \`RiftNativeToolchain.kt\`;
+- the active \`riftclang\` shell route;
+- Clang/LLD APK payload expectations;
+- Builder Rift Clang workflow and payload scripts;
+- native-toolchain subsystem documentation.
 
-### Validation
+QuickJS is a bootstrap host only. It does not define the future Semnexis program runtime or native backend. The intended next compiler transition is Semnexis source compiling the Semnexis compiler itself.
 
-- full RiftOS audit: no new toolchain finding;
-- architecture scan: no new toolchain finding;
-- security scan: no new toolchain finding;
-- only reported repository finding remains the existing filename heuristic on `RiftSecretStore.kt`.
+### Validation gate
 
-### Current limit
+Source promotion requires the Semnexis bootstrap and shell-boundary regression tests, exact Android source inventory, documentation parity, full RiftOS audit/scans, then installed-device \`semx self-test\` and smoke-source proof.
 
-The trusted Android-hosted Clang/LLD executable payload and NDK-compatible sysroot/resource data are not packaged yet. `riftclang doctor` is therefore expected to report `ready=false` until the Builder payload gate is completed.
+## Patch 10.5 — Retired native Clang bootstrap experiment
+
+Patch 10.5 briefly introduced a bounded Android-hosted Clang/LLD bootstrap host. It was retired before payload integration after the bootstrap strategy changed to the already-packaged bounded QuickJS runtime. No Clang/LLD payload is part of the active RiftOS Semnexis path.
 
 ## Patch 10.4 — Installed unsigned proof + bounded APK v2 sign/verify/install bootstrap
 

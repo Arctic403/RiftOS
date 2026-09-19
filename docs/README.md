@@ -51,7 +51,7 @@ Changing relevant source invalidates the affected document's trusted status unti
 | RiftVM engine | **VERIFIED** | [`systems/riftrt/engines/rift-vm/README.md`](systems/riftrt/engines/rift-vm/README.md) | live VM/headless-host/import-boundary audit |
 | Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.9.0 source candidate: Gate 1A frozen + Gate 1B UTF-16 text/numeric audit; device proof pending |
 | RiftShell | **VERIFIED** | [`systems/shell/README.md`](systems/shell/README.md) | process/filesystem/transaction/MCP-authority audit |
-| Native Clang bootstrap | **IMPLEMENTED / PAYLOAD PENDING** | [`systems/native-toolchain/README.md`](systems/native-toolchain/README.md) | bounded packaged compiler path for Semnexis; no raw shell or writable-code execution |
+| Semnexis QuickJS bootstrap | **IMPLEMENTED / DEVICE PROOF PENDING** | [`systems/semnexis-bootstrap/README.md`](systems/semnexis-bootstrap/README.md) | first Semnexis compiler hosted by bounded headless QuickJS; no native compiler payload |
 | Experimental RiftCLI | **VERIFIED** | [`systems/experimental-cli/README.md`](systems/experimental-cli/README.md) | process-local router/V0/IR/tokenizer + OBSERVE patch-lifecycle audit |
 | RiftGit | **VERIFIED** | [`systems/git/README.md`](systems/git/README.md) | native GitHub/metadata/push/pull/rollback audit |
 | RiftRepo | **VERIFIED** | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | verified inactive/retained local-checkpoint design |
