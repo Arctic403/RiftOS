@@ -127,7 +127,7 @@ Invalid states include:
 - generated artifact authority escaping the two fixed paths;
 - generated writable artifacts being executed.
 
-## Ownership
+## Source ownership
 
 - `src/semnexis-bootstrap.js`: frontend, Program Graph, Native IR/CFG verifier, `SNIRV0`, ARM32 backend.
 - `RiftHeadlessJsRuntime.kt`: bounded QuickJS host and exact-path artifact writer.
@@ -147,3 +147,33 @@ The next APK must prove:
 - controlFlowLowered=true;
 - real ARM loop backedge=true;
 - both fixed control-flow fixtures can be emitted through `semx emit-arm32-runtime`.
+
+## Fix map
+
+Frontend syntax, Program Graph construction, effect/capability solving, Native IR, `SNIRV0`, CFG/SSA verification and ARM32 lowering → `src/semnexis-bootstrap.js`.
+
+Headless QuickJS capability boundaries, source reads, fixed binary-output paths, atomic artifact writes and embedded `semx` command entry → `android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt`.
+
+Native shell routing for `semx` → `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt`.
+
+Compiler, IR, binary-format, ARM32, CFG, comparison and loop regressions → `scripts/test-semnexis-bootstrap.mjs`.
+
+Shell/host authority and packaging contract → `scripts/test-semnexis-shell.mjs` and `scripts/validate-rift-wiring.mjs`.
+
+APK packaging parity for the compiler asset → Builder `scripts/verify-riftos-apk.sh`.
+
+## Validation
+
+Source validation for this subsystem must verify:
+- frozen smoke graph/plan/IR and `SNIRV0` compatibility expectations;
+- checked signed-i32 arithmetic and overflow/division trap semantics;
+- function ABI, liveness/register allocation and spill-frame invariants;
+- CFG reachability, predecessor sets, terminators, dominators, SSA dominance and phi predecessor contracts;
+- all six signed comparison branches target the intended blocks;
+- explicit-state loop initialization, simultaneous `next(...)` semantics and real backward branch generation;
+- `SNIRV0` encode/decode/reverify rejects malformed, truncated, unknown-opcode and trailing-byte payloads;
+- headless QuickJS exposes only bounded RiftFS reads plus the two fixed Semnexis binary-output paths;
+- generated writable artifacts remain non-executable from RiftFS;
+- packaged `assets/www/src/semnexis-bootstrap.js` matches source byte-for-byte.
+
+Build/device promotion remains separate from source verification. A promoted APK must pass the Builder source checks, Gradle validation/compilation, APK packaging/signing checks, `semx self-test`, and the documented device fixtures before source-only 0.6 claims are upgraded to device-verified claims.
