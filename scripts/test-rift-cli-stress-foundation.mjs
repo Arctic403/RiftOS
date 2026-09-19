@@ -19,7 +19,11 @@ assert.match(lifecycle, /currentProcessEpoch/);
 assert.match(lifecycle, /riftfs\/system\/rift-cli-patch-lifecycle-v1/);
 assert.ok(lifecycle.includes('"riftfs/system/rift-cli-patch-lifecycle-v1"'));
 assert.match(lifecycle, /legacySessionRoot/);
-assert.match(lifecycle, /copyRecursively\(dir, overwrite = false\)/);
+assert.match(lifecycle, /private fun copyLegacySession\(source: File, destination: File\)/);
+assert.match(lifecycle, /RiftDeadline\.check\("CLI lifecycle migration"\)/);
+assert.match(lifecycle, /CLI lifecycle migration exceeds \$MAX_INVENTORY_FILES entries/);
+assert.match(lifecycle, /CLI lifecycle migration exceeds \$\{MAX_INVENTORY_BYTES \/ \(1024 \* 1024\)\} MiB/);
+assert.doesNotMatch(lifecycle, /copyRecursively\(/);
 
 assert.match(lifecycle, /val currentInventory = inventory\(projectTarget\(context, base\.getString\("projectDisplay"\)\)\.file\)/);
 assert.match(lifecycle, /val governance = baseGovernance \+ currentGovernance/);
