@@ -1,8 +1,10 @@
 package com.riftos.app
 
 import android.os.FileObserver
+import android.os.SystemClock
 import org.json.JSONObject
 import java.io.File
+import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -21,6 +23,8 @@ class RiftWorkspaceWatcher(
     private val records: RiftWorkspaceRecords = RiftWorkspaceRecords.get(activity)
 ) {
     companion object {
+        private const val MAX_WATCHED_DIRECTORIES = 2_048
+        private const val INSTALL_BUDGET_MS = 2_000L
         private const val WATCH_MASK =
             FileObserver.CREATE or
                 FileObserver.DELETE or
@@ -37,12 +41,16 @@ class RiftWorkspaceWatcher(
     private val observers = ConcurrentHashMap<String, FileObserver>()
     private val sequence = AtomicLong(0L)
     @Volatile private var active = false
+    @Volatile private var shutdown = false
+    @Volatile private var watcherLimitReached = false
 
     @Synchronized
     fun start(): JSONObject {
+        if (shutdown) return state()
         records.start()
         if (!active) {
             active = true
+            watcherLimitReached = false
             installTree(workspaceRoot)
             emit("watch-start", workspaceRoot, true)
         }
@@ -55,11 +63,13 @@ class RiftWorkspaceWatcher(
             active = false
             observers.values.forEach { runCatching { it.stopWatching() } }
             observers.clear()
+            watcherLimitReached = false
         }
         return state()
     }
 
     fun shutdown() {
+        shutdown = true
         stop()
     }
 
@@ -67,12 +77,27 @@ class RiftWorkspaceWatcher(
         .put("active", active)
         .put("root", "workspace")
         .put("watchers", observers.size)
+        .put("watcherLimitReached", watcherLimitReached)
         .put("sequence", sequence.get())
 
     private fun installTree(directory: File) {
         if (!active || !directory.exists() || !directory.isDirectory || !isInsideRoot(directory)) return
-        install(directory)
-        directory.listFiles()?.filter { it.isDirectory }?.forEach { child -> installTree(child) }
+        val deadline = SystemClock.elapsedRealtime() + INSTALL_BUDGET_MS
+        val queue = ArrayDeque<File>()
+        queue.add(directory)
+        while (active && queue.isNotEmpty()) {
+            if (observers.size >= MAX_WATCHED_DIRECTORIES || SystemClock.elapsedRealtime() >= deadline) {
+                watcherLimitReached = true
+                return
+            }
+            val current = queue.removeFirst()
+            if (!current.exists() || !current.isDirectory || !isInsideRoot(current)) continue
+            install(current)
+            val children = current.listFiles() ?: continue
+            for (child in children) {
+                if (child.isDirectory && isInsideRoot(child)) queue.addLast(child)
+            }
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -81,6 +106,10 @@ class RiftWorkspaceWatcher(
         if (!isInsideRoot(canonical)) return
         val key = canonical.absolutePath
         if (observers.containsKey(key)) return
+        if (observers.size >= MAX_WATCHED_DIRECTORIES) {
+            watcherLimitReached = true
+            return
+        }
 
         val observer = object : FileObserver(key, WATCH_MASK) {
             override fun onEvent(event: Int, path: String?) {
@@ -100,8 +129,13 @@ class RiftWorkspaceWatcher(
                 emit(type, target, isDirectory)
             }
         }
-        observers[key] = observer
-        observer.startWatching()
+        if (observers.putIfAbsent(key, observer) != null) return
+        try {
+            observer.startWatching()
+        } catch (error: Throwable) {
+            observers.remove(key, observer)
+            throw error
+        }
     }
 
     private fun emit(type: String, file: File, directory: Boolean) {

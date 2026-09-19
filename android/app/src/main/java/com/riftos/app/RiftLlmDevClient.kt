@@ -6,6 +6,11 @@ import android.net.Uri
 import android.os.Bundle
 import org.json.JSONObject
 import org.json.JSONTokener
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /** Fixed-purpose, token-gated Binder client for RiftLLM's standalone Dev Lab API. */
 class RiftLlmDevClient(context: Context) {
@@ -18,6 +23,7 @@ class RiftLlmDevClient(context: Context) {
         private const val RESULT_JSON = "json"
         private const val MAX_REQUEST_JSON_BYTES = 512 * 1024
         private const val MAX_RESPONSE_JSON_BYTES = 512 * 1024
+        private const val IPC_TIMEOUT_MS = 12_000L
         private val URI: Uri = Uri.parse("content://$AUTHORITY")
         private val METHODS = mapOf(
             "sync_source" to "sync_source",
@@ -51,6 +57,13 @@ class RiftLlmDevClient(context: Context) {
 
     private val appContext = context.applicationContext
     private val secrets = RiftSecretStore(appContext)
+    private val ipcExecutor = ThreadPoolExecutor(
+        0,
+        2,
+        30L,
+        TimeUnit.SECONDS,
+        SynchronousQueue<Runnable>()
+    )
 
     fun execute(args: JSONObject): Any {
         return when (val op = args.optString("op").trim().lowercase()) {
@@ -102,6 +115,26 @@ class RiftLlmDevClient(context: Context) {
     }.getOrDefault(false)
 
     private fun call(method: String, token: String, request: JSONObject): Any {
+        val future = try {
+            ipcExecutor.submit<Any> { callDirect(method, token, request) }
+        } catch (error: java.util.concurrent.RejectedExecutionException) {
+            throw IllegalStateException("RiftLLM Dev API IPC workers are occupied by stalled provider calls", error)
+        }
+        return try {
+            future.get(IPC_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (error: TimeoutException) {
+            future.cancel(true)
+            throw IllegalStateException("RiftLLM Dev API call timed out after ${IPC_TIMEOUT_MS}ms", error)
+        } catch (error: InterruptedException) {
+            future.cancel(true)
+            Thread.currentThread().interrupt()
+            throw error
+        } catch (error: ExecutionException) {
+            throw (error.cause ?: error)
+        }
+    }
+
+    private fun callDirect(method: String, token: String, request: JSONObject): Any {
         val requestText = request.toString()
         require(requestText.toByteArray(Charsets.UTF_8).size <= MAX_REQUEST_JSON_BYTES) {
             "RiftLLM Dev API request exceeds 512 KiB V1 IPC limit"

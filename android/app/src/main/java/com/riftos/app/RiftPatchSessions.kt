@@ -249,6 +249,7 @@ internal object RiftPatchSessions {
         FileInputStream(file).use { input ->
             val buffer = ByteArray(64 * 1024)
             while (true) {
+                RiftDeadline.check("patch provenance hash")
                 val count = input.read(buffer)
                 if (count <= 0) break
                 digest.update(buffer, 0, count)

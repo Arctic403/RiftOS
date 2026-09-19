@@ -165,6 +165,7 @@ class RiftBuildLocalExecutor(context: Context) {
         var files = 0
         var bytes = 0L
         ref.file.walkTopDown().forEach { file ->
+            RiftDeadline.check("RiftBuild project scan")
             require(confinedTo(ref.file, file)) { "Build project escaped project root" }
             if (!file.isFile) return@forEach
             files += 1
@@ -315,7 +316,7 @@ class RiftBuildLocalExecutor(context: Context) {
         require(sha256(manifestOutput) == RIFTPP_V0_BINARY_MANIFEST_SHA) { "Materialized binary manifest SHA-256 drift" }
         require(isBinaryAndroidManifest(manifestOutput)) { "Materialized AndroidManifest.xml failed binary XML validation" }
 
-        if (libRoot.exists()) require(libRoot.deleteRecursively()) { "Could not clear stale prepared native libraries" }
+        if (libRoot.exists()) require(deleteTreeBounded(libRoot, MAX_PROJECT_FILES)) { "Could not clear stale prepared native libraries" }
         require(libRoot.mkdirs() || libRoot.isDirectory) { "Could not create prepared native library root" }
 
         val outputs = JSONArray()
@@ -407,7 +408,15 @@ class RiftBuildLocalExecutor(context: Context) {
                     total += source.length()
                     require(total <= MAX_PACKAGE_BYTES) { "APK package byte limit exceeded" }
                     zip.putNextEntry(ZipEntry(entryName).apply { time = 0L })
-                    source.inputStream().buffered().use { it.copyTo(zip) }
+                    source.inputStream().buffered().use { input ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            RiftDeadline.check("RiftBuild APK pack")
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            zip.write(buffer, 0, read)
+                        }
+                    }
                     zip.closeEntry()
                 }
             }
@@ -544,6 +553,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val out = JSONArray()
         var rows = 0
         root.walkTopDown().forEach { file ->
+            RiftDeadline.check("RiftBuild artifact list")
             if (file == root) return@forEach
             rows += 1
             require(rows <= MAX_PACKAGE_FILES) { "RiftBuild artifact listing limit exceeded" }
@@ -939,6 +949,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val assets = File(prepared, "assets")
         if (assets.isDirectory) {
             assets.walkTopDown().filter { it.isFile }.forEach { file ->
+                RiftDeadline.check("RiftBuild prepared assets")
                 require(confinedTo(assets, file)) { "prepared asset escaped root" }
                 val relative = file.relativeTo(assets).invariantSeparatorsPath
                 require(safeZipPath(relative)) { "unsafe prepared asset path: " + relative }
@@ -1071,11 +1082,13 @@ class RiftBuildLocalExecutor(context: Context) {
     private fun treeSha256(root: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         root.walkTopDown().filter { it.isFile }.sortedBy { it.relativeTo(root).invariantSeparatorsPath }.forEach { file ->
+            RiftDeadline.check("RiftBuild tree hash")
             digest.update(file.relativeTo(root).invariantSeparatorsPath.toByteArray(Charsets.UTF_8))
             digest.update(0.toByte())
             file.inputStream().buffered().use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (true) {
+                    RiftDeadline.check("RiftBuild tree hash")
                     val read = input.read(buffer)
                     if (read < 0) break
                     if (read > 0) digest.update(buffer, 0, read)
@@ -1086,11 +1099,29 @@ class RiftBuildLocalExecutor(context: Context) {
         return hex(digest.digest())
     }
 
+    private fun deleteTreeBounded(root: File, maxEntries: Int): Boolean {
+        var entries = 0
+        fun remove(node: File): Boolean {
+            RiftDeadline.check("RiftBuild cleanup")
+            require(++entries <= maxEntries) { "RiftBuild cleanup exceeds $maxEntries entries" }
+            if (node.isDirectory) {
+                val children = node.listFiles()
+                    ?: throw IllegalStateException("Could not read RiftBuild cleanup directory")
+                children.forEach { child ->
+                    require(remove(child)) { "Could not delete RiftBuild cleanup entry" }
+                }
+            }
+            return node.delete()
+        }
+        return !root.exists() || remove(root)
+    }
+
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(64 * 1024)
             while (true) {
+                RiftDeadline.check("RiftBuild file hash")
                 val read = input.read(buffer)
                 if (read < 0) break
                 if (read > 0) digest.update(buffer, 0, read)

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -11,6 +11,7 @@
 ## Source ownership
 
 - `RiftMcpServer.kt`
+- `RiftBoundedAsync.kt` — shared exactly-once deadline/cancellation primitive
 - callers: Browser MCP bridge and outbound Relay client
 - execution authority: `RiftToolHost`
 
@@ -68,13 +69,27 @@ Direct/browser calls use `handleAsync(request, reply)` and always execute fresh.
 Only Relay supplies a stable retry key.
 
 For Relay `tools/call`:
-- retry key is combined with SHA-256 of canonical request JSON;
-- identical in-flight retries join one execution;
+- retry key is combined with SHA-256 of canonical request JSON with the transport JSON-RPC `id` removed;
+- identical in-flight retries join one execution and each waiter receives its own JSON-RPC id on return;
+- each logical request accepts at most 8 retry waiters;
+- at most 64 relay-scoped requests may be in flight;
 - completed response can replay for 2 minutes;
-- completed cache is capped at 128 entries;
+- completed cache is capped at 128 entries **and 8 MiB total serialized response bytes**;
 - distinct request JSON or retry id executes separately.
 
 Canonical JSON sorts object keys recursively; array order remains significant.
+
+## Bounded request lifecycle
+
+Every request carrying an id has a server-side terminal deadline of 65 seconds. Relay-scoped requests also remove their in-flight entry when that deadline wins, so later retries cannot join an immortal request.
+
+The server deadline is intentionally outside the local execution deadlines and inside the transport deadlines:
+
+`RiftToolSandbox 45s -> RiftNativeShell 60s -> RiftMcpServer 65s -> RiftMcpRelayClient 70s -> relay Worker 75s`.
+
+The ordering is an invariant: an outer transport must not report failure while an inner mutation is still expected to keep running.
+
+`RiftBoundedAsync` guarantees exactly-once terminal callbacks for local worker owners, cancels the submitted Future on timeout, and carries a cooperative monotonic `RiftDeadline` through nested filesystem/runtime work.
 
 ## Error behavior
 
@@ -103,11 +118,13 @@ Added standard `notifications/initialized` handling as a no-response notificatio
 
 - direct calls never enter completed-response retry cache;
 - only relay tools/call uses retry dedupe;
-- retry cache max 128 / TTL 2 minutes;
+- retry cache max 128 entries / 8 MiB / TTL 2 minutes;
 - request hash is canonical;
 - tools/list and execution use same ToolHost;
 - private call correlation is echoed, not published as a tool schema;
-- initialized notification gets no response.
+- initialized notification gets no response;
+- request deadlines remain ordered 45s < 60s < 65s < 70s < 75s;
+- one logical request has at most 8 retry waiters and the server has at most 64 in-flight relay requests.
 
 ## Failure signatures
 

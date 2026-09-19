@@ -8,7 +8,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -25,15 +28,24 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         private const val MAX_COMMAND_BYTES = 2 * 1024 * 1024
         private const val MAX_ARGUMENTS = 16_384
         private const val MAX_TREE_ROWS = 5_000
+        private const val SHELL_TIMEOUT_MS = 60_000L
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
     }
 
     private val appContext = context.applicationContext
     private val riftRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
-    private val worker = Executors.newSingleThreadExecutor()
+    private val worker = ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(8)
+    )
+    private val watchdog = Executors.newSingleThreadScheduledExecutor()
     private val headlessJs = RiftHeadlessJsRuntime(appContext)
     private val services = RiftNativeShellServices(appContext)
     private val riftBuild = RiftBuildLocalExecutor(appContext)
+    private val nativeToolchain = RiftNativeToolchain(appContext)
     private val nativeGit = RiftMcpRuntime.nativeGit(appContext)
     @Volatile private var closed = false
 
@@ -44,34 +56,49 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             return
         }
         val requestedCwd = normalizeDisplay(cwd ?: "/")
-        worker.execute {
-            val operation = runCatching { tokenize(command).firstOrNull()?.lowercase().orEmpty() }.getOrDefault("")
-            val patchSession = RiftPatchSessions.begin(
-                appContext,
-                origin = "native-shell",
-                operation = operation.ifBlank { "shell" },
-                intent = operation.takeIf { it.isNotBlank() },
-                requestId = null,
-                rawPaths = shellMutationPaths(command, requestedCwd)
-            )
-            try {
-                val outcome = executeNative(command, requestedCwd)
-                patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
-                reply(JSONObject()
-                    .put("ok", true)
-                    .put("output", outcome.output)
-                    .put("cwd", outcome.cwd)
-                    .put("result", outcome.result ?: JSONObject.NULL))
-            } catch (error: Throwable) {
-                patchSession?.let(RiftPatchSessions::abort)
-                reply(errorResult(requestedCwd, error.message ?: error.javaClass.simpleName))
-            }
-        }
+        RiftBoundedAsync.submit(
+            executor = worker,
+            watchdog = watchdog,
+            timeoutMs = SHELL_TIMEOUT_MS,
+            timeoutValue = {
+                errorResult(requestedCwd, "Native RiftShell timed out after ${SHELL_TIMEOUT_MS}ms")
+            },
+            failureValue = { error ->
+                errorResult(requestedCwd, error.message ?: error.javaClass.simpleName)
+            },
+            work = {
+                RiftDeadline.check("native shell")
+                val operation = runCatching { tokenize(command).firstOrNull()?.lowercase().orEmpty() }.getOrDefault("")
+                val patchSession = RiftPatchSessions.begin(
+                    appContext,
+                    origin = "native-shell",
+                    operation = operation.ifBlank { "shell" },
+                    intent = operation.takeIf { it.isNotBlank() },
+                    requestId = null,
+                    rawPaths = shellMutationPaths(command, requestedCwd)
+                )
+                try {
+                    val outcome = executeNative(command, requestedCwd)
+                    RiftDeadline.check("native shell")
+                    patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
+                    JSONObject()
+                        .put("ok", true)
+                        .put("output", outcome.output)
+                        .put("cwd", outcome.cwd)
+                        .put("result", outcome.result ?: JSONObject.NULL)
+                } catch (error: Throwable) {
+                    patchSession?.let(RiftPatchSessions::abort)
+                    errorResult(requestedCwd, error.message ?: error.javaClass.simpleName)
+                }
+            },
+            reply = reply
+        )
     }
 
     override fun close() {
         closed = true
         worker.shutdownNow()
+        watchdog.shutdownNow()
     }
 
     private fun shellMutationPaths(raw: String, cwd: String): List<String> = runCatching {
@@ -103,6 +130,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "riftbuild doctor|validate|plan|prepare-riftpp-v0|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
+                    "riftclang doctor|semnexis-build   [TRUSTED APK CLANG / NO RAW SHELL]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
@@ -154,7 +182,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftbuild", "riftpp", "rift-tool", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftbuild", "riftclang", "riftpp", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -197,6 +225,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftbuild" -> {
                 val value = riftBuild.executeShell(args, cwd)
+                ShellOutcome(value.output, cwd, value.value)
+            }
+            "riftclang" -> {
+                val value = nativeToolchain.executeShell(args, cwd)
                 ShellOutcome(value.output, cwd, value.value)
             }
             "riftpp" -> {
@@ -419,6 +451,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val tracked = meta.optJSONObject("tracked") ?: JSONObject()
         val local = LinkedHashMap<String, File>()
         root.walkTopDown().onEnter { dir -> dir == root || dir.name != ".git" }.forEach { file ->
+            RiftDeadline.check("workspace status")
             if (!file.isFile) return@forEach
             val relative = file.relativeTo(root).invariantSeparatorsPath
             if (relative == ".riftgit.json" || relative == ".git" || relative.startsWith(".git/")) return@forEach
@@ -508,6 +541,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun appendTreeRows(rows: ArrayList<String>, displayRoot: String, root: File) {
         if (!root.isDirectory || rows.size >= MAX_TREE_ROWS) return
         for (child in root.walkTopDown().drop(1)) {
+            RiftDeadline.check("shell tree")
             if (rows.size >= MAX_TREE_ROWS) break
             val relative = child.relativeTo(root).invariantSeparatorsPath
             rows += "${if (child.isDirectory) "d" else "-"}\t${joinDisplay(displayRoot, relative)}"
@@ -592,14 +626,14 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
         try {
             if (move && source.renameTo(target)) {
-                backup?.deleteRecursively()
+                backup?.let { deleteConfined(it, cooperative = false) }
                 return ShellOutcome("moved $fromPath -> $toPath", cwd, nativeResult("mv").put("from", fromPath).put("to", toPath))
             }
 
             copyConfined(source, target)
             if (move) require(deleteConfined(source)) { "copy succeeded but source cleanup failed" }
 
-            backup?.deleteRecursively()
+            backup?.let { deleteConfined(it, cooperative = false) }
             val verb = if (move) "moved" else "copied"
             return ShellOutcome("$verb $fromPath -> $toPath", cwd, nativeResult(if (move) "mv" else "cp").put("from", fromPath).put("to", toPath))
         } catch (error: Throwable) {
@@ -649,8 +683,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         try {
             ZipOutputStream(temp.outputStream().buffered()).use { out ->
                 val base = if (source.isDirectory) source else source.parentFile
-                val files = if (source.isDirectory) source.walkTopDown().toList() else listOf(source)
+                val files: Sequence<File> = if (source.isDirectory) source.walkTopDown() else sequenceOf(source)
                 for (file in files) {
+                    RiftDeadline.check("shell archive")
                     if (file == source && file.isDirectory) continue
                     val canonical = file.canonicalFile
                     require(canonical == source.canonicalFile || canonical.path.startsWith(source.canonicalPath + File.separator) || !source.isDirectory) { "archive source escaped root" }
@@ -661,7 +696,15 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     if (file.isFile) {
                         total += file.length()
                         require(total <= 256L * 1024L * 1024L) { "archive input exceeds 256 MiB limit" }
-                        file.inputStream().buffered().use { it.copyTo(out) }
+                        file.inputStream().buffered().use { input ->
+                            val buffer = ByteArray(256 * 1024)
+                            while (true) {
+                                RiftDeadline.check("shell archive")
+                                val read = input.read(buffer)
+                                if (read <= 0) break
+                                out.write(buffer, 0, read)
+                            }
+                        }
                     }
                     out.closeEntry()
                 }
@@ -691,6 +734,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             ZipFile(archive).use { zip ->
                 val enumeration = zip.entries()
                 while (enumeration.hasMoreElements()) {
+                    RiftDeadline.check("shell extraction")
                     val entry = enumeration.nextElement()
                     val name = entry.name.replace('\\', '/')
                     require(name.isNotBlank() && !name.startsWith("/") && !Regex("^[A-Za-z]:").containsMatchIn(name)) { "unsafe ZIP entry: $name" }
@@ -707,6 +751,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             target.outputStream().buffered().use { output ->
                                 val buffer = ByteArray(64 * 1024)
                                 while (true) {
+                                    RiftDeadline.check("shell extraction")
                                     val read = input.read(buffer)
                                     if (read < 0) break
                                     if (read > 0) {
@@ -722,7 +767,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             }
             require(stage.renameTo(destination)) { "could not publish extracted folder" }
         } catch (error: Throwable) {
-            stage.deleteRecursively()
+            runCatching { deleteConfined(stage, cooperative = false) }
             throw error
         }
         return ShellOutcome("extracted $archivePath -> $folderPath", cwd, nativeResult("unzip").put("from", archivePath).put("to", folderPath).put("entries", count).put("bytes", total))
@@ -753,12 +798,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             target.parentFile?.mkdirs()
             total = source.length()
             require(total <= 256L * 1024L * 1024L) { "copy exceeds 256 MiB limit" }
-            source.copyTo(target, overwrite = false)
+            copyFileBounded(source, target, overwrite = false)
             return
         }
         require(source.isDirectory) { "unsupported source type" }
         val sourceRoot = source.canonicalFile
         for (file in source.walkTopDown()) {
+            RiftDeadline.check("shell copy")
             require(++count <= 10_000) { "copy exceeds 10,000-entry limit" }
             val canonicalSource = file.canonicalFile
             require(canonicalSource == sourceRoot || canonicalSource.path.startsWith(sourceRoot.path + File.separator)) { "copy source escaped root" }
@@ -770,15 +816,42 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 total += file.length()
                 require(total <= 256L * 1024L * 1024L) { "copy exceeds 256 MiB limit" }
                 out.parentFile?.mkdirs()
-                file.copyTo(out, overwrite = false)
+                copyFileBounded(file, out, overwrite = false)
             }
         }
     }
 
-    private fun deleteConfined(file: File): Boolean {
+    private fun copyFileBounded(source: File, target: File, overwrite: Boolean) {
+        if (target.exists()) require(overwrite) { "destination exists: ${target.path}" }
+        target.parentFile?.mkdirs()
+        source.inputStream().buffered().use { input ->
+            target.outputStream().buffered().use { output ->
+                val buffer = ByteArray(256 * 1024)
+                while (true) {
+                    RiftDeadline.check("shell copy")
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    output.write(buffer, 0, read)
+                }
+            }
+        }
+        if (source.lastModified() > 0L) target.setLastModified(source.lastModified())
+    }
+
+    private fun deleteConfined(file: File, cooperative: Boolean = true): Boolean {
         val canonical = file.canonicalFile
         require(canonical != riftRoot && canonical.path.startsWith(riftRoot.path + File.separator)) { "refusing to delete outside confined RiftFS" }
-        return if (canonical.isDirectory) canonical.deleteRecursively() else canonical.delete()
+        var count = 0
+        fun remove(node: File): Boolean {
+            if (cooperative) RiftDeadline.check("shell delete")
+            require(++count <= 10_000) { "delete exceeds 10,000-entry limit" }
+            if (node.isDirectory) {
+                val children = node.listFiles() ?: throw IllegalStateException("could not read directory for deletion")
+                children.forEach { child -> require(remove(child)) { "could not delete ${child.path}" } }
+            }
+            return node.delete()
+        }
+        return !canonical.exists() || remove(canonical)
     }
 
     private fun atomicWrite(target: File, bytes: ByteArray) {
@@ -853,6 +926,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(256 * 1024)
             while (true) {
+                RiftDeadline.check("git status hash")
                 val read = input.read(buffer)
                 if (read < 0) break
                 if (read > 0) digest.update(buffer, 0, read)

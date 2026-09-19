@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -88,6 +88,8 @@ Unpair removes the stored secret.
 Provider request JSON is capped at 512 KiB UTF-8.
 
 Provider response JSON is also capped at 512 KiB UTF-8 before JSONTokener parsing.
+
+`ContentResolver.call()` is synchronous and has no platform timeout, so RiftOS isolates Provider RPC behind a capped two-worker, no-queue executor. Each call has a 12-second deadline. If both workers are already occupied by stalled Provider calls, new bridge calls fail fast instead of creating an unbounded thread/queue leak.
 
 The provider receives a Bundle containing:
 - fixed token extra;
@@ -320,6 +322,7 @@ The bridge itself does not widen MCP authority.
 - exactly 26 provider method names;
 - Provider request <=512 KiB;
 - Provider response <=512 KiB;
+- at most two in-flight Provider IPC workers and 12-second per-call timeout;
 - no caller-selected training paths/tokenizer/process;
 - frozen tokenizer/shard hashes verified before build;
 - training source rehashed after encoding;
@@ -335,6 +338,7 @@ The bridge itself does not widen MCP authority.
 - shell `staged` calls `staged` instead of `list_staged` -> alias drift;
 - preview/publish invokes arbitrary/nonexistent Provider method -> retired-composite regression;
 - caller can supply Provider method/path -> authority regression;
+- stalled ContentProvider call permanently consumes Settings/shell worker or spawns unlimited IPC threads -> timeout/isolation regression;
 - token appears in status/log/shell output -> secret leak;
 - build accepts different tokenizer/shard hash -> frozen-input regression;
 - build has no reachable cancellation -> task-lifecycle regression;

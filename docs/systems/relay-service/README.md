@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -93,15 +93,15 @@ webSocketMessage, webSocketClose and webSocketError each first require socket ==
 
 ## Pending request bound
 
-MAX_PENDING_REQUESTS = 128.
+MAX_PENDING_REQUESTS = 64.
 
-When the active room already has 128 correlated requests, a new request receives relay-busy JSON-RPC error with HTTP 503. Pending work was previously bounded only indirectly by timeout.
+When the active room already has 64 distinct correlated requests, a new request receives relay-busy JSON-RPC error with HTTP 503. A duplicate logical request may join the existing pending entry instead of consuming another slot, with at most 8 HTTP waiters per logical request.
 
 ## Request correlation
 
-Each forwarded request receives a crypto.randomUUID relay requestId. The pending entry stores its resolver, timer and original JSON-RPC id.
+If `_meta["riftos/callId"]` is present, the Worker derives the relay requestId from that stable model-call id **plus a SHA-256 fingerprint of canonical request JSON with the transport JSON-RPC `id` removed**; otherwise it uses `crypto.randomUUID()`. A repeated logical call therefore joins only when both the model call id and logical request payload match, while accidental call-id reuse with different arguments remains distinct. The pending entry stores one timer plus a bounded waiter list, and each waiter keeps its own JSON-RPC id.
 
-The Android device receives an mcp.request envelope containing requestId plus the original payload. RiftMcpRelayClient calls RiftMcpServer.handleAsync(payload, requestId). For tools/call, this relay request id is the stable retry/idempotency key.
+The Android device receives one `mcp.request` envelope containing requestId plus the original payload. `RiftMcpRelayClient` calls `RiftMcpServer.handleAsync(payload, requestId)`. The phone removes the transport JSON-RPC `id` from the request hash, executes the logical request once, then rewrites the response id separately for each waiter.
 
 ## Response validation
 
@@ -127,9 +127,9 @@ Outgoing Android mcp.response envelopes are serialized and byte-checked before s
 
 ## Timeout and cleanup
 
-REQUEST_TIMEOUT_MS = 30,000 ms.
+REQUEST_TIMEOUT_MS = 75,000 ms.
 
-Timeout deletes the pending request and returns a 504 relay timeout.
+Timeout deletes the logical pending request and resolves every joined waiter with its own 504 relay-timeout response. The Worker timeout intentionally sits outside the 70-second Android forwarding watchdog, 65-second MCP server watchdog, 60-second shell deadline and 45-second sandbox deadline so transport failure cannot normally race ahead of an inner mutation.
 
 Active-device disconnect/error clears the current socket, clears every timer, resolves every pending request with 503 and empties the map.
 
@@ -168,7 +168,7 @@ Durable Object configuration does not imply payload persistence.
 - HTTP request body changed from post-allocation request.text() checking to bounded streaming.
 - Invalid UTF-8 fails closed.
 - WebSocket size checks changed from character length to UTF-8 byte length.
-- Pending requests capped at 128.
+- Distinct pending requests capped at 64, with at most 8 waiters per logical request.
 - Device replacement immediately fails pending work.
 - Device ID syntax narrowed.
 - Device MCP responses validate JSON-RPC id and shape.
@@ -242,8 +242,8 @@ Second source audit must verify:
 - bounded streaming request read;
 - JSON-RPC ingress validation;
 - notification forwarding;
-- 128 pending limit;
-- 30-second timeout cleanup;
+- 64 distinct pending limit plus 8 retry waiters per logical request;
+- 75-second outer timeout cleanup ordered after Android/local deadlines;
 - replacement/disconnect cleanup;
 - three stale-socket guards;
 - response id/shape correlation;

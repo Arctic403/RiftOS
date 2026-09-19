@@ -3,26 +3,43 @@ package com.riftos.app
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Small in-process MCP JSON-RPC server backed by RiftToolHost. */
 class RiftMcpServer(private val toolHost: RiftToolHost) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.17.2-relay-retry-idempotency"
+        private const val SERVER_VERSION = "0.18.0-bounded-request-lifecycle"
         private const val COMPLETED_TTL_MS = 2 * 60 * 1000L
+        private const val REQUEST_TIMEOUT_MS = 65_000L
+        private const val MAX_IN_FLIGHT_REQUESTS = 64
+        private const val MAX_WAITERS_PER_REQUEST = 8
         private const val MAX_COMPLETED_REQUESTS = 128
+        private const val MAX_COMPLETED_BYTES = 8 * 1024 * 1024
     }
 
-    private data class CompletedRequest(val response: String, val expiresAt: Long)
+    private data class CompletedRequest(val response: String, val bytes: Int, val expiresAt: Long)
+    private data class RequestWaiter(val id: Any, val reply: (JSONObject) -> Unit)
+    private class InFlightRequest(
+        val waiters: MutableList<RequestWaiter>,
+        var timeout: ScheduledFuture<*>? = null
+    )
     private val requestLock = Any()
-    private val inFlight = mutableMapOf<String, MutableList<(JSONObject) -> Unit>>()
+    private val watchdog = Executors.newSingleThreadScheduledExecutor()
+    private val inFlight = mutableMapOf<String, InFlightRequest>()
     private val completed = LinkedHashMap<String, CompletedRequest>()
+    private var completedBytes = 0L
 
     fun handleAsync(request: JSONObject, reply: (JSONObject) -> Unit) = handleAsync(request, null, reply)
 
     fun handleAsync(request: JSONObject, retryKey: String?, reply: (JSONObject) -> Unit) {
-        if (request.optString("method") != "tools/call" || retryKey.isNullOrBlank()) {
-            dispatch(request, reply)
+        val method = request.optString("method")
+        if (method != "tools/call" || retryKey.isNullOrBlank()) {
+            if (!request.has("id") || method.startsWith("notifications/")) dispatch(request, reply)
+            else dispatchBounded(request, reply)
             return
         }
 
@@ -30,34 +47,78 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         // invocations must execute fresh even when tool name/arguments are identical; otherwise
         // live reads and repeated shell commands can replay stale completed responses for the TTL.
         val key = "${retryKey.trim()}:${requestKey(request)}"
+        val id = request.opt("id") ?: JSONObject.NULL
         var cachedResponse: String? = null
         var joinedInFlight = false
+        var rejectedResponse: JSONObject? = null
         synchronized(requestLock) {
             pruneCompletedLocked()
             val cached = completed[key]
             if (cached != null) {
                 cachedResponse = cached.response
             } else {
-                val waiters = inFlight[key]
-                if (waiters != null) {
-                    waiters.add(reply)
-                    joinedInFlight = true
+                val pending = inFlight[key]
+                if (pending != null) {
+                    if (pending.waiters.size >= MAX_WAITERS_PER_REQUEST) {
+                        rejectedResponse = error(id, -32002, "Too many retry waiters for one local MCP request")
+                    } else {
+                        pending.waiters.add(RequestWaiter(id, reply))
+                        joinedInFlight = true
+                    }
+                } else if (inFlight.size >= MAX_IN_FLIGHT_REQUESTS) {
+                    rejectedResponse = error(id, -32003, "Local MCP request capacity is full")
                 } else {
-                    inFlight[key] = mutableListOf(reply)
+                    inFlight[key] = InFlightRequest(mutableListOf(RequestWaiter(id, reply)))
                 }
             }
         }
         cachedResponse?.let {
-            reply(JSONObject(it))
+            reply(JSONObject(it).put("id", id))
+            return
+        }
+        rejectedResponse?.let {
+            reply(it)
             return
         }
         if (joinedInFlight) return
+        val timeout = watchdog.schedule({
+            completeRequest(
+                key,
+                error(id, -32001, "Local MCP request timed out after ${REQUEST_TIMEOUT_MS}ms")
+            )
+        }, REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        synchronized(requestLock) {
+            val pending = inFlight[key]
+            if (pending != null) pending.timeout = timeout else timeout.cancel(false)
+        }
 
         try {
             dispatch(request) { response -> completeRequest(key, response) }
         } catch (failure: Throwable) {
-            val id = request.opt("id") ?: JSONObject.NULL
             completeRequest(key, error(id, -32603, failure.message ?: "Local MCP execution failed"))
+        }
+    }
+
+    private fun dispatchBounded(request: JSONObject, reply: (JSONObject) -> Unit) {
+        val id = request.opt("id") ?: JSONObject.NULL
+        val terminal = AtomicBoolean(false)
+        val timeout = watchdog.schedule({
+            if (terminal.compareAndSet(false, true)) {
+                reply(error(id, -32001, "Local MCP request timed out after ${REQUEST_TIMEOUT_MS}ms"))
+            }
+        }, REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        try {
+            dispatch(request) { response ->
+                if (terminal.compareAndSet(false, true)) {
+                    timeout.cancel(false)
+                    reply(response)
+                }
+            }
+        } catch (failure: Throwable) {
+            if (terminal.compareAndSet(false, true)) {
+                timeout.cancel(false)
+                reply(error(id, -32603, failure.message ?: "Local MCP execution failed"))
+            }
         }
     }
 
@@ -87,29 +148,46 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
     private fun completeRequest(key: String, response: JSONObject) {
         val serialized = response.toString()
         val waiters = synchronized(requestLock) {
-            completed[key] = CompletedRequest(serialized, System.currentTimeMillis() + COMPLETED_TTL_MS)
-            while (completed.size > MAX_COMPLETED_REQUESTS) {
+            val pending = inFlight.remove(key) ?: return
+            pending.timeout?.cancel(false)
+            val responseBytes = serialized.toByteArray(Charsets.UTF_8).size
+            completed.remove(key)?.let { completedBytes -= it.bytes.toLong() }
+            completed[key] = CompletedRequest(
+                serialized,
+                responseBytes,
+                System.currentTimeMillis() + COMPLETED_TTL_MS
+            )
+            completedBytes += responseBytes.toLong()
+            while (completed.size > MAX_COMPLETED_REQUESTS || completedBytes > MAX_COMPLETED_BYTES) {
                 val oldest = completed.entries.iterator()
-                if (oldest.hasNext()) {
-                    oldest.next()
-                    oldest.remove()
-                }
+                if (!oldest.hasNext()) break
+                val removed = oldest.next().value
+                oldest.remove()
+                completedBytes -= removed.bytes.toLong()
             }
-            inFlight.remove(key).orEmpty()
+            pending.waiters.toList()
         }
-        waiters.forEach { waiter -> runCatching { waiter(JSONObject(serialized)) } }
+        waiters.forEach { waiter ->
+            runCatching { waiter.reply(JSONObject(serialized).put("id", waiter.id)) }
+        }
     }
 
     private fun pruneCompletedLocked() {
         val now = System.currentTimeMillis()
         val entries = completed.entries.iterator()
         while (entries.hasNext()) {
-            if (entries.next().value.expiresAt <= now) entries.remove()
+            val entry = entries.next()
+            if (entry.value.expiresAt <= now) {
+                completedBytes -= entry.value.bytes.toLong()
+                entries.remove()
+            }
         }
+        if (completedBytes < 0L) completedBytes = 0L
     }
 
     private fun requestKey(request: JSONObject): String {
-        val canonical = canonicalJson(request)
+        val normalized = JSONObject(request.toString()).apply { remove("id") }
+        val canonical = canonicalJson(normalized)
         return MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }

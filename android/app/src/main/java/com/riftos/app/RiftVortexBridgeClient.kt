@@ -14,7 +14,11 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /** Explicit local Binder client for the debug-only Vortex3D development bridge. */
 class RiftVortexBridgeClient(context: Context) {
@@ -24,6 +28,7 @@ class RiftVortexBridgeClient(context: Context) {
         private const val DESCRIPTOR = "com.vortex3d.app.devbridge.v1"
         private const val TRANSACTION_EXECUTE = IBinder.FIRST_CALL_TRANSACTION
         private const val BIND_TIMEOUT_MS = 8_000L
+        private const val TRANSACTION_TIMEOUT_MS = 12_000L
         private const val REMOTE_CHUNK_BYTES = 192 * 1024
         private const val MAX_REQUEST_JSON_BYTES = 256 * 1024
         private const val MAX_RESPONSE_JSON_BYTES = 512 * 1024
@@ -37,6 +42,15 @@ class RiftVortexBridgeClient(context: Context) {
 
     private val appContext = context.applicationContext
     private val lock = Any()
+    // Binder transact() itself has no timeout. Cap abandoned/hung RPC workers at two and reject
+    // immediately once both slots are occupied instead of leaking an unbounded thread pool.
+    private val rpcExecutor = ThreadPoolExecutor(
+        0,
+        2,
+        30L,
+        TimeUnit.SECONDS,
+        SynchronousQueue()
+    )
     private val bridgeOutputRoot = File(appContext.filesDir, "riftfs/workspace/.vortex-bridge").apply { mkdirs() }
     @Volatile private var remote: IBinder? = null
     @Volatile private var bound = false
@@ -103,6 +117,7 @@ class RiftVortexBridgeClient(context: Context) {
         var last = queued
         var lastReassert = SystemClock.elapsedRealtime()
         while (SystemClock.elapsedRealtime() < deadline) {
+            RiftDeadline.check("Vortex session")
             val now = SystemClock.elapsedRealtime()
             if (now - lastReassert >= SESSION_REASSERT_MS) {
                 RiftVortexLocalAgent.ensureActiveForSession(appContext)
@@ -131,6 +146,7 @@ class RiftVortexBridgeClient(context: Context) {
         val readyDeadline = minOf(deadline, SystemClock.elapsedRealtime() + SESSION_READY_TIMEOUT_MS)
         var last: JSONObject? = null
         while (SystemClock.elapsedRealtime() < readyDeadline) {
+            RiftDeadline.check("Vortex session readiness")
             val status = transactWithReconnect(JSONObject().put("op", "status"))
             last = status
             val value = status.optJSONObject("value")
@@ -207,14 +223,34 @@ class RiftVortexBridgeClient(context: Context) {
             "Vortex3D bridge request exceeds ${MAX_REQUEST_JSON_BYTES / 1024} KiB UTF-8 limit"
         }
         return try {
-            transact(ensureRemote(), request)
+            transactBounded(ensureRemote(), request)
         } catch (error: Throwable) {
             synchronized(lock) {
                 remote = null
                 if (bound) runCatching { appContext.unbindService(connection) }
                 bound = false
             }
-            transact(ensureRemote(), request)
+            transactBounded(ensureRemote(), request)
+        }
+    }
+
+    private fun transactBounded(service: IBinder, request: JSONObject): JSONObject {
+        val future = try {
+            rpcExecutor.submit<JSONObject> { transact(service, request) }
+        } catch (error: java.util.concurrent.RejectedExecutionException) {
+            throw IllegalStateException("Vortex3D bridge RPC workers are occupied by stalled Binder calls", error)
+        }
+        return try {
+            future.get(TRANSACTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (error: TimeoutException) {
+            future.cancel(true)
+            throw IllegalStateException("Vortex3D bridge transaction timed out after ${TRANSACTION_TIMEOUT_MS}ms", error)
+        } catch (error: InterruptedException) {
+            future.cancel(true)
+            Thread.currentThread().interrupt()
+            throw error
+        } catch (error: ExecutionException) {
+            throw (error.cause ?: error)
         }
     }
 
@@ -269,6 +305,7 @@ class RiftVortexBridgeClient(context: Context) {
         var offset = 0L
         var expectedTotal = -1L
         while (true) {
+            RiftDeadline.check("Vortex artifact read")
             val chunk = transactWithReconnect(JSONObject()
                 .put("op", "artifact_read")
                 .put("id", id)
@@ -318,6 +355,7 @@ class RiftVortexBridgeClient(context: Context) {
         try {
             FileOutputStream(temporary, false).use { output ->
                 while (true) {
+                    RiftDeadline.check("Vortex artifact pull")
                     val chunk = transactWithReconnect(JSONObject()
                         .put("op", "artifact_read")
                         .put("id", id)

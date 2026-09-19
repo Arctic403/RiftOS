@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -75,7 +75,7 @@ The payload is passed unchanged to:
 
 That relay request id is the only stable retry key supplied to server idempotency.
 
-Responses are sent only if the WebSocket is still the current socket.
+Responses are sent only if the WebSocket is still the current socket. Each forwarded request also gets a 70-second Android-side forwarding watchdog; if the local MCP callback never terminates, the client emits one bounded `mcp.error` instead of leaving the relay request open forever.
 
 ## Stale-socket protection
 
@@ -124,7 +124,7 @@ Browser compatibility and relay converge on the same process-owned MCP server/ho
 
 ## Source hardening in this audit
 
-Relay settings were tightened from a prefix-only WSS check to actual URI validation, and pairing tokens gained length/control-character validation before HTTP-header use. The client message bound is now byte-accurate rather than character-counted, and local MCP responses are bounded before WebSocket transmission.
+Relay settings were tightened from a prefix-only WSS check to actual URI validation, and pairing tokens gained length/control-character validation before HTTP-header use. The client message bound is now byte-accurate rather than character-counted, local MCP responses are bounded before WebSocket transmission, and request forwarding has a 70-second terminal watchdog ordered inside the public relay's 75-second timeout.
 
 ## Critical invariants
 
@@ -136,6 +136,7 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - stale socket events ignored;
 - one bounded reconnect schedule;
 - relay request id forwarded for server retry dedupe;
+- local forwarding terminates within 70 seconds, before the public relay's 75-second timeout;
 - local ToolHost remains authority.
 
 ## Failure signatures
@@ -160,6 +161,6 @@ MCP semantics/retry cache -> `RiftMcpServer.kt`.
 
 ## Validation
 
-Second source audit must recheck URI/token validation, encrypted token storage, outbound headers, 1M input bound, current-socket checks, reconnect cap/jitter, request-id forwarding and token-free status.
+Second source audit must recheck URI/token validation, encrypted token storage, outbound headers, 1M input bound, current-socket checks, reconnect cap/jitter, 70-second forwarding watchdog, request-id forwarding and token-free status.
 
 Public relay-service behavior is a separate subsystem audit.

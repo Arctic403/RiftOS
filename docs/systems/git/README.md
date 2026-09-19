@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -41,7 +41,7 @@ Remote operations use fixed HTTPS requests to:
 
 https://api.github.com
 
-Supported HTTP methods are GET, POST and PATCH.
+Supported HTTP methods are GET, POST and PATCH. The OkHttp client now enforces a 50-second whole-call timeout (15-second connect, 45-second read/write) so a remote request cannot occupy the serialized shell path indefinitely.
 
 ## Credential boundary
 
@@ -340,6 +340,8 @@ After successful publication the old backup is deleted.
 If backup cleanup fails:
 - the successful pull/import result reports backupCleanupPending=true;
 - backupPath is returned.
+
+Stage/backup cleanup is entry-bounded (40,000 entries) and cooperatively observes the active Rift deadline instead of using unbounded recursive deletion.
 
 Failure to remove a stale backup does not retroactively destroy a successfully published repository.
 

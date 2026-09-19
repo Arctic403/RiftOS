@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -111,7 +111,7 @@ The CLI:
 6. captures deterministic `RiftProjectExporter.snapshotId`;
 7. scans the bounded full repository layout;
 8. discovers governance documents, dependency/build manifests and generated/vendor boundaries;
-9. refuses acquisition if the inventory exceeds 50,000 files or 512 MiB;
+9. refuses acquisition if the inventory exceeds 50,000 files or 512 MiB; legacy lifecycle-session copy/cleanup helpers use those same bounded inventory limits and cooperative deadlines instead of unbounded recursive filesystem helpers;
 10. refuses to reset the global operational baseline if Workspace Records already has uncheckpointed changes elsewhere;
 11. creates a new **operational**, never trusted, lifecycle checkpoint.
 

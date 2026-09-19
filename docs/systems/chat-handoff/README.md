@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -23,7 +23,7 @@ Primary:
 - RiftNativeShellServices.kt — strict chat command parsing and request construction.
 - RiftNativeShell.kt — routes the native chat command to RiftNativeShellServices.
 
-There is no live JavaScript/native-dispatcher implementation for this feature.
+There is no live JavaScript/native-dispatcher implementation for this feature. Bundle reads, verification and SHA-256 loops cooperatively check the active Rift deadline, so shell/MCP cancellation is observed during large local handoff operations.
 
 No new MCP chat tool family exists; chat operations remain behind rift_shell_exec.
 

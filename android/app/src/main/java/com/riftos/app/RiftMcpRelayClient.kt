@@ -10,6 +10,7 @@ import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 import kotlin.random.Random
 
@@ -24,6 +25,7 @@ class RiftMcpRelayClient(
     companion object {
         private const val PROTOCOL = "rift-mcp-relay-v1"
         private const val MAX_MESSAGE_BYTES = 1_000_000
+        private const val REQUEST_FORWARD_TIMEOUT_MS = 70_000L
     }
 
     private val settings = RiftRelaySettings(context.applicationContext)
@@ -188,8 +190,16 @@ class RiftMcpRelayClient(
             sendProtocolError(webSocket, requestId.takeIf { it.isNotBlank() }, "mcp.request requires requestId and payload")
             return
         }
+        val terminal = AtomicBoolean(false)
+        val timeout = scheduler.schedule({
+            if (terminal.compareAndSet(false, true) && isCurrent(webSocket)) {
+                sendProtocolError(webSocket, requestId, "Local MCP forwarding timed out")
+            }
+        }, REQUEST_FORWARD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         runCatching {
             server.handleAsync(payload, requestId) { result ->
+                if (!terminal.compareAndSet(false, true)) return@handleAsync
+                timeout.cancel(false)
                 if (!isCurrent(webSocket)) return@handleAsync
                 val responseText = JSONObject()
                     .put("type", "mcp.response")
@@ -203,7 +213,12 @@ class RiftMcpRelayClient(
                 webSocket.send(responseText)
             }
         }.onFailure { error ->
-            sendProtocolError(webSocket, requestId, error.message ?: "Local MCP execution failed")
+            if (terminal.compareAndSet(false, true)) {
+                timeout.cancel(false)
+                if (isCurrent(webSocket)) {
+                    sendProtocolError(webSocket, requestId, error.message ?: "Local MCP execution failed")
+                }
+            }
         }
     }
 

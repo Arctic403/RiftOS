@@ -1,8 +1,25 @@
 const PROTOCOL = "rift-mcp-relay-v1";
 const MAX_BODY_BYTES = 1_000_000;
-const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_PENDING_REQUESTS = 128;
+const REQUEST_TIMEOUT_MS = 75_000;
+const MAX_PENDING_REQUESTS = 64;
 const encoder = new TextEncoder();
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function requestFingerprint(payload) {
+  const normalized = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? { ...payload }
+    : payload;
+  if (normalized && typeof normalized === "object" && !Array.isArray(normalized)) delete normalized.id;
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(canonicalJson(normalized)));
+  return [...new Uint8Array(digest)].slice(0, 12).map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
 
 function json(value, status = 200, headers = {}) {
   return new Response(JSON.stringify(value), {
@@ -199,22 +216,39 @@ export class RiftRelayRoom {
   async forwardMcp(payload) {
     const socket = this.socket;
     if (!socket) return rpcError(payload?.id, -32002, "RiftOS device is offline", 503);
+    const modelCallId = payload?.params?._meta?.["riftos/callId"];
+    const requestId = typeof modelCallId === "string" && modelCallId.trim()
+      ? `call-${modelCallId.trim().slice(0, 120)}-${await requestFingerprint(payload)}`
+      : crypto.randomUUID();
+
+    const existing = this.pending.get(requestId);
+    if (existing) {
+      if (existing.waiters.length >= 8) {
+        return rpcError(payload?.id, -32006, "Too many retries are waiting on the same RiftOS request", 503);
+      }
+      return new Promise((resolve) => existing.waiters.push({ resolve, rpcId: payload?.id }));
+    }
     if (this.pending.size >= MAX_PENDING_REQUESTS) {
       return rpcError(payload?.id, -32005, "RiftOS relay is busy", 503);
     }
-    const requestId = crypto.randomUUID();
+
     return new Promise((resolve) => {
+      const waiters = [{ resolve, rpcId: payload?.id }];
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
-        resolve(rpcError(payload?.id, -32003, "RiftOS device timed out", 504));
+        for (const waiter of waiters) {
+          waiter.resolve(rpcError(waiter.rpcId, -32003, "RiftOS device timed out", 504));
+        }
       }, REQUEST_TIMEOUT_MS);
-      this.pending.set(requestId, { resolve, timer, rpcId: payload?.id });
+      this.pending.set(requestId, { waiters, timer, rpcId: payload?.id });
       try {
         socket.send(JSON.stringify({ type: "mcp.request", requestId, payload }));
       } catch {
         clearTimeout(timer);
         this.pending.delete(requestId);
-        resolve(rpcError(payload?.id, -32002, "RiftOS device disconnected", 503));
+        for (const waiter of waiters) {
+          waiter.resolve(rpcError(waiter.rpcId, -32002, "RiftOS device disconnected", 503));
+        }
       }
     });
   }
@@ -250,12 +284,20 @@ export class RiftRelayRoom {
       const payload = message.payload;
       const idMatches = JSON.stringify(payload.id ?? null) === JSON.stringify(pending.rpcId ?? null);
       if (payload.jsonrpc !== "2.0" || !idMatches || (payload.result === undefined && payload.error === undefined)) {
-        pending.resolve(rpcError(pending.rpcId, -32004, "Malformed RiftOS MCP response", 502));
+        for (const waiter of pending.waiters) {
+          waiter.resolve(rpcError(waiter.rpcId, -32004, "Malformed RiftOS MCP response", 502));
+        }
         return;
       }
-      pending.resolve(json(payload));
+      for (const waiter of pending.waiters) {
+        const response = { ...payload, id: waiter.rpcId ?? null };
+        waiter.resolve(json(response));
+      }
     } else {
-      pending.resolve(rpcError(pending.rpcId, -32004, String(message.message || "RiftOS relay error").slice(0, 240), 502));
+      const errorMessage = String(message.message || "RiftOS relay error").slice(0, 240);
+      for (const waiter of pending.waiters) {
+        waiter.resolve(rpcError(waiter.rpcId, -32004, errorMessage, 502));
+      }
     }
   }
 
@@ -274,7 +316,9 @@ export class RiftRelayRoom {
   failPending(message) {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
-      pending.resolve(rpcError(pending.rpcId, -32002, message, 503));
+      for (const waiter of pending.waiters) {
+        waiter.resolve(rpcError(waiter.rpcId, -32002, message, 503));
+      }
     }
     this.pending.clear();
   }

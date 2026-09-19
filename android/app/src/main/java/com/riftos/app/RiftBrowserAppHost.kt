@@ -24,7 +24,11 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.URLConnection
 import java.security.MessageDigest
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Android-owned execution surface for installed RiftOS programs.
@@ -44,6 +48,7 @@ class RiftBrowserAppHost(
         private const val MAX_LIST_ENTRIES = 5_000
         private const val MAX_CLIPBOARD_CHARS = 64_000
         private const val MAX_SHARE_CHARS = 256_000
+        private const val BACKGROUND_CALL_TIMEOUT_MS = 60_000L
         private val APP_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
         private val ALLOWED_CAPABILITIES = setOf(
             "fs.read", "fs.write", "network", "clipboard.read", "clipboard.write", "share", "build.local"
@@ -63,6 +68,19 @@ class RiftBrowserAppHost(
         val app: PackageInfo,
         val webView: WebView
     )
+
+    private data class BackgroundOutcome(val ok: Boolean, val value: Any? = null, val error: String? = null)
+    private data class PreparedOpen(
+        val windowId: String,
+        val app: PackageInfo,
+        val origin: String,
+        val originHost: String,
+        val networkDeclared: Boolean,
+        val networkEnabled: Boolean,
+        val html: String,
+        val baseUrl: String
+    )
+    private data class OpenOutcome(val prepared: PreparedOpen? = null, val error: String? = null)
 
     private inner class ManagedAppWebView(context: Context) : WebView(context) {
         private var lifecycleArmed = false
@@ -89,12 +107,84 @@ class RiftBrowserAppHost(
     }
 
     private val instances = LinkedHashMap<String, Instance>()
+    private val pendingOpens = ConcurrentHashMap.newKeySet<String>()
+    private val preparedOpens = ConcurrentHashMap<String, PreparedOpen>()
     private var lastRendererCrash: JSONObject? = null
     @Volatile private var resumed = false
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(16)
+    )
+    private val watchdog = Executors.newSingleThreadScheduledExecutor()
     private val riftBuild = RiftBuildLocalExecutor(activity.applicationContext)
     private val riftRoot = File(activity.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
+
+    fun openAsync(args: JSONObject, reply: (JSONObject) -> Unit) {
+        val request = JSONObject(args.toString())
+        val appId = request.optString("appId").trim()
+        val windowId = request.optString("windowId").trim()
+        instances[windowId]?.let {
+            reply(JSONObject().put("ok", true).put("state", instanceState(it)))
+            return
+        }
+        if (!pendingOpens.add(windowId)) {
+            reply(JSONObject().put("ok", true).put("pending", true).put("windowId", windowId))
+            return
+        }
+        RiftBoundedAsync.submit(
+            executor = executor,
+            watchdog = watchdog,
+            timeoutMs = BACKGROUND_CALL_TIMEOUT_MS,
+            timeoutValue = { OpenOutcome(error = "Installed Rift app preparation timed out") },
+            failureValue = { error -> OpenOutcome(error = error.message ?: error.javaClass.simpleName) },
+            work = { OpenOutcome(prepared = prepareOpen(appId, windowId)) },
+            reply = { outcome ->
+                activity.runOnUiThread {
+                    if (activity.isFinishing || activity.isDestroyed) {
+                        pendingOpens.remove(windowId)
+                        reply(JSONObject().put("ok", false).put("error", "Rift app host activity is unavailable"))
+                        return@runOnUiThread
+                    }
+                    if (!pendingOpens.remove(windowId)) {
+                        reply(JSONObject().put("ok", false).put("error", "Rift app open was cancelled"))
+                        return@runOnUiThread
+                    }
+                    val prepared = outcome.prepared
+                    if (prepared == null) {
+                        reply(JSONObject().put("ok", false).put("error", outcome.error ?: "Rift app preparation failed"))
+                        return@runOnUiThread
+                    }
+                    preparedOpens[windowId] = prepared
+                    runCatching { open(request) }
+                        .onSuccess { state -> reply(JSONObject().put("ok", true).put("state", state)) }
+                        .onFailure { error ->
+                            preparedOpens.remove(windowId)
+                            reply(JSONObject().put("ok", false).put("error", error.message ?: error.javaClass.simpleName))
+                        }
+                }
+            }
+        )
+    }
+
+    private fun prepareOpen(appId: String, windowId: String): PreparedOpen {
+        RiftDeadline.check("installed Rift app preparation")
+        require(APP_ID.matches(appId)) { "Invalid Rift app id" }
+        require(windowId.isNotBlank()) { "Rift app windowId is required" }
+        val app = loadPackage(appId)
+        RiftDeadline.check("installed Rift app preparation")
+        val origin = appOrigin(app.id)
+        val originHost = Uri.parse(origin).host ?: throw IllegalStateException("Invalid Rift app origin")
+        val networkDeclared = app.permissions.contains("network")
+        val networkEnabled = networkDeclared && hasGrant(app.id, "network")
+        val html = prepareHtml(app, networkDeclared, origin)
+        RiftDeadline.check("installed Rift app preparation")
+        val baseUrl = "$origin/${Uri.encode(app.id)}/"
+        return PreparedOpen(windowId, app, origin, originHost, networkDeclared, networkEnabled, html, baseUrl)
+    }
 
     fun open(args: JSONObject): JSONObject {
         val appId = args.optString("appId").trim()
@@ -103,11 +193,13 @@ class RiftBrowserAppHost(
         require(windowId.isNotBlank()) { "Rift app windowId is required" }
         instances[windowId]?.let { return instanceState(it) }
 
-        val app = loadPackage(appId)
-        val origin = appOrigin(app.id)
-        val originHost = Uri.parse(origin).host ?: throw IllegalStateException("Invalid Rift app origin")
-        val networkDeclared = app.permissions.contains("network")
-        val networkEnabled = networkDeclared && hasGrant(app.id, "network")
+        val prepared = preparedOpens.remove(windowId)
+            ?.takeIf { it.app.id == appId && it.windowId == windowId }
+            ?: prepareOpen(appId, windowId)
+        val app = prepared.app
+        val origin = prepared.origin
+        val originHost = prepared.originHost
+        val networkEnabled = prepared.networkEnabled
         val webView = ManagedAppWebView(activity).apply {
             setBackgroundColor(Color.rgb(11, 17, 24))
             isHorizontalScrollBarEnabled = false
@@ -181,16 +273,17 @@ class RiftBrowserAppHost(
         instances[windowId] = instance
         desktop.attachContent(windowId, webView)
         webView.armLifecycle()
-        val html = prepareHtml(app, networkDeclared, origin)
-        val baseUrl = "$origin/${Uri.encode(app.id)}/"
-        webView.loadDataWithBaseURL(baseUrl, html, "text/html", "UTF-8", null)
+        webView.loadDataWithBaseURL(prepared.baseUrl, prepared.html, "text/html", "UTF-8", null)
         return instanceState(instance)
     }
 
     fun close(args: JSONObject): JSONObject = closeWindow(args.optString("windowId"))
 
     fun closeWindow(windowId: String): JSONObject {
-        val instance = instances.remove(windowId) ?: return JSONObject().put("closed", false).put("windowId", windowId)
+        val pendingCancelled = pendingOpens.remove(windowId)
+        preparedOpens.remove(windowId)
+        val instance = instances.remove(windowId)
+            ?: return JSONObject().put("closed", pendingCancelled).put("windowId", windowId).put("pendingCancelled", pendingCancelled)
         desktop.detachContent(windowId, instance.webView)
         runCatching { WebViewCompat.removeWebMessageListener(instance.webView, BRIDGE_NAME) }
         instance.webView.stopLoading()
@@ -228,7 +321,13 @@ class RiftBrowserAppHost(
         if (resumed && webView.parent != null && webView.isShown) runCatching { webView.onResume() }
         else runCatching { webView.onPause() }
     }
-    fun destroy() { instances.keys.toList().forEach(::closeWindow); executor.shutdownNow() }
+    fun destroy() {
+        pendingOpens.clear()
+        preparedOpens.clear()
+        instances.keys.toList().forEach(::closeWindow)
+        executor.shutdownNow()
+        watchdog.shutdownNow()
+    }
 
     private fun handle(instance: Instance, request: JSONObject) {
         val id = request.opt("id") ?: JSONObject.NULL
@@ -293,10 +392,28 @@ class RiftBrowserAppHost(
     }
 
     private fun background(instance: Instance, id: Any, operation: () -> Any?) {
-        executor.execute {
-            try { val value = operation(); activity.runOnUiThread { reply(instance, id, true, value, null) } }
-            catch (error: Throwable) { activity.runOnUiThread { reply(instance, id, false, null, error.message ?: error.javaClass.simpleName) } }
-        }
+        RiftBoundedAsync.submit(
+            executor = executor,
+            watchdog = watchdog,
+            timeoutMs = BACKGROUND_CALL_TIMEOUT_MS,
+            timeoutValue = {
+                BackgroundOutcome(false, error = "Rift app host operation timed out after ${BACKGROUND_CALL_TIMEOUT_MS}ms")
+            },
+            failureValue = { error ->
+                BackgroundOutcome(false, error = error.message ?: error.javaClass.simpleName)
+            },
+            work = {
+                RiftDeadline.check("Rift app host operation")
+                BackgroundOutcome(true, value = operation())
+            },
+            reply = { outcome ->
+                activity.runOnUiThread {
+                    if (instances[instance.windowId] === instance) {
+                        reply(instance, id, outcome.ok, outcome.value, outcome.error)
+                    }
+                }
+            }
+        )
     }
 
     private fun reply(instance: Instance, id: Any, ok: Boolean, value: Any?, error: String?) {
@@ -336,7 +453,7 @@ class RiftBrowserAppHost(
         val policy = "default-src 'none'; script-src 'unsafe-inline' $origin blob:; style-src 'unsafe-inline' $origin blob:$network; img-src $origin data: blob:$network; font-src $origin data: blob:$network; connect-src ${if (networkDeclared) "https: http:" else "'none'"}; media-src $origin data: blob:$network; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
         val meta = "<meta http-equiv=\"Content-Security-Policy\" content=\"${policy.replace("\"", "&quot;")}\">"
         val manifestJson = JSONObject.quote(app.manifest.toString())
-        val bridge = """<script>(()=>{const MANIFEST=JSON.parse($manifestJson);let seq=0;const pending=new Map();window.__RiftNativeReceive=raw=>{let msg;try{msg=JSON.parse(raw)}catch{return}const p=pending.get(msg.id);if(!p)return;pending.delete(msg.id);msg.ok?p.resolve(msg.value):p.reject(new Error(msg.error||'RiftOS app host error'))};const call=(method,args={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});RiftNativeApp.postMessage(JSON.stringify({id,method,args}))});Object.defineProperty(window,'Rift',{value:Object.freeze({version:'2.0-native',app:Object.freeze({info:()=>MANIFEST,close:()=>call('app.close'),setTitle:title=>call('app.setTitle',{title})}),storage:Object.freeze({get:key=>call('storage.get',{key}),set:(key,value)=>call('storage.set',{key,value}),remove:key=>call('storage.remove',{key})}),permissions:Object.freeze({request:capability=>call('permissions.request',{capability})}),fs:Object.freeze({readText:path=>call('fs.readText',{path}),writeText:(path,text)=>call('fs.writeText',{path,text}),list:path=>call('fs.list',{path})}),clipboard:Object.freeze({readText:()=>call('clipboard.read'),writeText:text=>call('clipboard.write',{text})}),share:Object.freeze({text:text=>call('share',{text})}),build:Object.freeze({nativeExecutor:false,doctor:project=>call('build.doctor',{project}),plan:(project,target='universal')=>call('build.plan',{project,target}),submit:job=>call('build.submit',{job}),runs:(limit=20)=>call('build.runs',{limit}),artifacts:project=>call('build.artifacts',{project})})}),writable:false});RiftNativeApp.postMessage(JSON.stringify({method:'app.ready',args:{}}))})();</script>"""
+        val bridge = """<script>(()=>{const MANIFEST=JSON.parse($manifestJson),RPC_TIMEOUT_MS=65000,MAX_PENDING=32;let seq=0;const pending=new Map();window.__RiftNativeReceive=raw=>{let msg;try{msg=JSON.parse(raw)}catch{return}const p=pending.get(msg.id);if(!p)return;pending.delete(msg.id);clearTimeout(p.timer);msg.ok?p.resolve(msg.value):p.reject(new Error(msg.error||'RiftOS app host error'))};const call=(method,args={})=>new Promise((resolve,reject)=>{if(pending.size>=MAX_PENDING){reject(new Error('RiftOS app host request capacity is full'));return}const id=++seq,timer=setTimeout(()=>{pending.delete(id);reject(new Error('RiftOS app host timeout: '+method))},RPC_TIMEOUT_MS);pending.set(id,{resolve,reject,timer});try{RiftNativeApp.postMessage(JSON.stringify({id,method,args}))}catch(error){clearTimeout(timer);pending.delete(id);reject(error)}});Object.defineProperty(window,'Rift',{value:Object.freeze({version:'2.0-native',app:Object.freeze({info:()=>MANIFEST,close:()=>call('app.close'),setTitle:title=>call('app.setTitle',{title})}),storage:Object.freeze({get:key=>call('storage.get',{key}),set:(key,value)=>call('storage.set',{key,value}),remove:key=>call('storage.remove',{key})}),permissions:Object.freeze({request:capability=>call('permissions.request',{capability})}),fs:Object.freeze({readText:path=>call('fs.readText',{path}),writeText:(path,text)=>call('fs.writeText',{path,text}),list:path=>call('fs.list',{path})}),clipboard:Object.freeze({readText:()=>call('clipboard.read'),writeText:text=>call('clipboard.write',{text})}),share:Object.freeze({text:text=>call('share',{text})}),build:Object.freeze({nativeExecutor:false,doctor:project=>call('build.doctor',{project}),plan:(project,target='universal')=>call('build.plan',{project,target}),submit:job=>call('build.submit',{job}),runs:(limit=20)=>call('build.runs',{limit}),artifacts:project=>call('build.artifacts',{project})})}),writable:false});RiftNativeApp.postMessage(JSON.stringify({method:'app.ready',args:{}}))})();</script>"""
         val injection = meta + bridge
         html = if (Regex("<head[^>]*>", RegexOption.IGNORE_CASE).containsMatchIn(html)) html.replaceFirst(Regex("<head([^>]*)>", RegexOption.IGNORE_CASE), "<head$1>$injection") else injection + html
         return html

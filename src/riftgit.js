@@ -26,9 +26,17 @@ const fs={
 function token(){return sessionStorage.getItem("riftgit-token")||"";}
 function headers(extra={}){const out={Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28",...extra};if(token())out.Authorization=`Bearer ${token()}`;return out;}
 async function api(path,options={}){
-  const response=await fetch(`https://api.github.com${path}`,{...options,cache:"no-store",headers:headers(options.headers||{})});
-  if(!response.ok){let detail="";try{detail=(await response.json())?.message||"";}catch{}throw new Error(`GitHub ${response.status}${detail?`: ${detail}`:""}`);}
-  return response.status===204?null:response.json();
+  const controller=new AbortController(),external=options.signal;
+  const onAbort=()=>controller.abort(external?.reason);
+  if(external?.aborted)onAbort();else external?.addEventListener?.("abort",onAbort,{once:true});
+  const timer=setTimeout(()=>controller.abort(new Error("RiftGit GitHub request timed out")),60000);
+  try{
+    const response=await fetch(`https://api.github.com${path}`,{...options,signal:controller.signal,cache:"no-store",headers:headers(options.headers||{})});
+    if(!response.ok){let detail="";try{detail=(await response.json())?.message||"";}catch{}throw new Error(`GitHub ${response.status}${detail?`: ${detail}`:""}`);}
+    return response.status===204?null:await response.json();
+  }finally{
+    clearTimeout(timer);external?.removeEventListener?.("abort",onAbort);
+  }
 }
 function normalizePath(value="/"){
   let raw=String(value||"/").trim().replace(/\\/g,"/");if(raw==="~"||raw.startsWith("~/"))raw=`/home${raw.slice(1)}`;

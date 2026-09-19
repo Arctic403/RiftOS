@@ -2,6 +2,7 @@ package com.riftos.app
 
 import android.content.Context
 import android.os.StatFs
+import android.os.SystemClock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
@@ -9,7 +10,10 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -26,12 +30,20 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_PATCH_EDITS = 96
         private const val MAX_WORKSPACE_LIST_ENTRIES = 1200
         private const val MAX_WORKSPACE_SEARCH_FILE_BYTES = 2L * 1024L * 1024L
+        private const val MAX_SEARCH_TOTAL_BYTES = 64L * 1024L * 1024L
+        private const val MAX_HASH_TOTAL_BYTES = 256L * 1024L * 1024L
         private const val MAX_BATCH_ROLLBACK_BYTES = 64L * 1024L * 1024L
+        private const val MAX_BATCH_ROLLBACK_ENTRIES = 50_000
+        private const val REQUEST_TIMEOUT_MS = 45_000L
+        private const val LEGACY_MIGRATION_TIMEOUT_MS = 15_000L
+        private const val MAX_LEGACY_MIGRATION_ENTRIES = 20_000
+        private const val MAX_LEGACY_MIGRATION_BYTES = 256L * 1024L * 1024L
         private const val MAX_SEARCH_PREVIEW_CHARS = 320
         private const val MAX_SYMBOL_RESULTS = 240
         private const val MAX_REFERENCE_RESULTS = 400
         private const val MAX_INDEX_FILES = 25_000
         private const val MAX_INDEX_FILE_BYTES = 2L * 1024L * 1024L
+        private const val MAX_INDEX_TOTAL_BYTES = 128L * 1024L * 1024L
         private const val MAX_GRAPH_EDGES = 600
         private const val MAX_PERSISTED_INDEX_FILES = 4000
         private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
@@ -57,13 +69,21 @@ internal class RiftToolSandbox(context: Context) {
     }
 
     private val appContext = context.applicationContext
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(16)
+    )
+    private val watchdog = Executors.newSingleThreadScheduledExecutor()
     private val riftFsRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }
     private val workspaceRoot = prepareCanonicalWorkspace()
     private val workspaceRecords = RiftWorkspaceRecords.get(appContext).also { it.start() }
     private val projectIntelligenceCache = File(appContext.filesDir, "rift-project-intelligence-v2.json")
     private val transactionRoot = File(appContext.cacheDir, "rift-workspace-transactions").apply {
-        deleteRecursively()
+        // Never recursively purge the whole transaction cache on MCP construction: a large
+        // crash remnant must not block startup. Each transaction owns and bounds its own cleanup.
         mkdirs()
     }
     private val symbolIndex = LinkedHashMap<String, IndexedFile>()
@@ -107,58 +127,91 @@ internal class RiftToolSandbox(context: Context) {
     )
 
     fun handleAsync(raw: String, reply: (String) -> Unit) {
-        executor.execute {
-            val id = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
-            var patchSession: RiftPatchSessions.Handle? = null
-            val response = try {
-                val request = JSONObject(raw)
-                val requestId = request.optString("id")
-                val method = request.optString("method")
-                require(requestId.isNotBlank()) { "Missing tool request id" }
-                require(method.isNotBlank()) { "Missing tool method" }
-                val args = request.optJSONObject("args") ?: JSONObject()
-                patchSession = RiftPatchSessions.begin(
-                    appContext,
-                    origin = "mcp",
-                    operation = method,
-                    intent = args.optString("intent").takeIf { it.isNotBlank() },
-                    requestId = requestId,
-                    rawPaths = provenanceMutationPaths(method, args)
-                )
-                val value = dispatch(method, args) ?: JSONObject.NULL
-                patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
+        val id = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
+        RiftBoundedAsync.submit(
+            executor = executor,
+            watchdog = watchdog,
+            timeoutMs = REQUEST_TIMEOUT_MS,
+            timeoutValue = {
                 JSONObject()
-                    .put("id", requestId)
-                    .put("ok", true)
-                    .put("value", value)
-            } catch (error: Throwable) {
-                patchSession?.let(RiftPatchSessions::abort)
+                    .put("id", id)
+                    .put("ok", false)
+                    .put("error", "Rift MCP local operation timed out after ${REQUEST_TIMEOUT_MS}ms")
+                    .toString()
+            },
+            failureValue = { error ->
                 JSONObject()
                     .put("id", id)
                     .put("ok", false)
                     .put("error", error.message ?: error.javaClass.simpleName)
-            }
-            reply(response.toString())
-        }
+                    .toString()
+            },
+            work = {
+                var patchSession: RiftPatchSessions.Handle? = null
+                val response = try {
+                    RiftDeadline.check("MCP sandbox request")
+                    val request = JSONObject(raw)
+                    val requestId = request.optString("id")
+                    val method = request.optString("method")
+                    require(requestId.isNotBlank()) { "Missing tool request id" }
+                    require(method.isNotBlank()) { "Missing tool method" }
+                    val args = request.optJSONObject("args") ?: JSONObject()
+                    patchSession = RiftPatchSessions.begin(
+                        appContext,
+                        origin = "mcp",
+                        operation = method,
+                        intent = args.optString("intent").takeIf { it.isNotBlank() },
+                        requestId = requestId,
+                        rawPaths = provenanceMutationPaths(method, args)
+                    )
+                    val value = dispatch(method, args) ?: JSONObject.NULL
+                    RiftDeadline.check("MCP sandbox request")
+                    patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
+                    JSONObject()
+                        .put("id", requestId)
+                        .put("ok", true)
+                        .put("value", value)
+                } catch (error: Throwable) {
+                    patchSession?.let(RiftPatchSessions::abort)
+                    JSONObject()
+                        .put("id", id)
+                        .put("ok", false)
+                        .put("error", error.message ?: error.javaClass.simpleName)
+                }
+                response.toString()
+            },
+            reply = reply
+        )
     }
 
     internal fun candidateImpactAsync(reply: (JSONObject) -> Unit) {
-        executor.execute {
-            val response = runCatching { candidateImpact() }
-                .getOrElse { error ->
-                    JSONObject()
-                        .put("format", "rift-semantic-impact-v1")
-                        .put("version", 1)
-                        .put("complete", false)
-                        .put("error", error.message ?: error.javaClass.simpleName)
-                }
-            reply(response)
-        }
+        RiftBoundedAsync.submit(
+            executor = executor,
+            watchdog = watchdog,
+            timeoutMs = REQUEST_TIMEOUT_MS,
+            timeoutValue = {
+                JSONObject()
+                    .put("format", "rift-semantic-impact-v1")
+                    .put("version", 1)
+                    .put("complete", false)
+                    .put("error", "Candidate impact timed out")
+            },
+            failureValue = { error ->
+                JSONObject()
+                    .put("format", "rift-semantic-impact-v1")
+                    .put("version", 1)
+                    .put("complete", false)
+                    .put("error", error.message ?: error.javaClass.simpleName)
+            },
+            work = { candidateImpact() },
+            reply = reply
+        )
     }
 
     fun shutdown() {
         runCatching { persistProjectIntelligence() }
         executor.shutdownNow()
+        watchdog.shutdownNow()
     }
 
     /**
@@ -172,7 +225,7 @@ internal class RiftToolSandbox(context: Context) {
             val legacyWorkspace = File(legacyRoot, WORKSPACE_ROOT)
             if (legacyWorkspace.exists() && legacyWorkspace.canonicalFile != canonical.canonicalFile) {
                 val merged = runCatching { mergeMissingTree(legacyWorkspace, canonical); true }.getOrDefault(false)
-                if (merged) runCatching { legacyWorkspace.deleteRecursively() }
+                if (merged) runCatching { deleteLegacyTree(legacyWorkspace) }
             }
         }
         migrateLegacyWorkspaceScaffold(canonical)
@@ -187,7 +240,7 @@ internal class RiftToolSandbox(context: Context) {
         val legacyMeta = File(workspace, ".rift")
         if (legacyMeta.isDirectory) {
             runCatching { mergeMissingTree(legacyMeta, systemRoot) }
-                .onSuccess { runCatching { legacyMeta.deleteRecursively() } }
+                .onSuccess { runCatching { deleteLegacyTree(legacyMeta) } }
         }
         listOf("projects", "downloads", "documents", "patches").forEach { name ->
             val directory = File(workspace, name)
@@ -197,16 +250,55 @@ internal class RiftToolSandbox(context: Context) {
     }
 
     private fun mergeMissingTree(source: File, destination: File) {
-        if (source.isFile) {
-            if (!destination.exists()) {
-                destination.parentFile?.mkdirs()
-                source.copyTo(destination, overwrite = false)
+        RiftDeadline.runUntil(SystemClock.elapsedRealtime() + LEGACY_MIGRATION_TIMEOUT_MS) {
+            var entries = 0
+            var bytes = 0L
+            fun mergeNode(from: File, to: File) {
+                RiftDeadline.check("legacy workspace migration")
+                require(++entries <= MAX_LEGACY_MIGRATION_ENTRIES) {
+                    "Legacy workspace migration exceeds $MAX_LEGACY_MIGRATION_ENTRIES entries"
+                }
+                if (from.isFile) {
+                    bytes += from.length()
+                    require(bytes <= MAX_LEGACY_MIGRATION_BYTES) {
+                        "Legacy workspace migration exceeds ${MAX_LEGACY_MIGRATION_BYTES / (1024 * 1024)} MiB"
+                    }
+                    if (!to.exists()) {
+                        to.parentFile?.let { parent ->
+                            require(parent.exists() || parent.mkdirs()) { "Could not create legacy migration parent" }
+                        }
+                        from.inputStream().buffered().use { input ->
+                            to.outputStream().buffered().use { output ->
+                                val buffer = ByteArray(256 * 1024)
+                                while (true) {
+                                    RiftDeadline.check("legacy workspace migration")
+                                    val read = input.read(buffer)
+                                    if (read <= 0) break
+                                    output.write(buffer, 0, read)
+                                }
+                            }
+                        }
+                    }
+                    return
+                }
+                require((to.exists() && to.isDirectory) || to.mkdirs()) {
+                    "Could not create legacy migration directory"
+                }
+                val children = from.listFiles()
+                    ?: throw IllegalStateException("Could not read legacy migration directory")
+                children.sortedBy { it.name.lowercase() }.forEach { child ->
+                    mergeNode(child, File(to, child.name))
+                }
             }
-            return
+            mergeNode(source, destination)
         }
-        destination.mkdirs()
-        source.listFiles()?.forEach { child ->
-            mergeMissingTree(child, File(destination, child.name))
+    }
+
+    private fun deleteLegacyTree(root: File) {
+        RiftDeadline.runUntil(SystemClock.elapsedRealtime() + LEGACY_MIGRATION_TIMEOUT_MS) {
+            require(deleteTreeBounded(root, MAX_LEGACY_MIGRATION_ENTRIES, cooperative = true)) {
+                "Could not remove migrated legacy workspace"
+            }
         }
     }
 
@@ -264,9 +356,16 @@ internal class RiftToolSandbox(context: Context) {
         val findings = JSONArray()
         var files = 0
         if (root.exists()) {
-            root.walkTopDown().forEach { file ->
+            root.walkTopDown()
+                .onEnter { directory ->
+                    RiftDeadline.check("workspace audit")
+                    directory == root || !isIgnoredDirectory(directory)
+                }
+                .forEach { file ->
+                RiftDeadline.check("workspace audit")
                 if (file.isFile) {
                     files++
+                    require(files <= MAX_SNAPSHOT_FILES) { "Workspace audit exceeds $MAX_SNAPSHOT_FILES files" }
                     val name = file.name.lowercase()
                     if (name.contains("secret") || name.contains("password") || name.contains("token")) {
                         findings.put(JSONObject().put("severity", "medium").put("category", "security").put("file", relativePath(file)).put("issue", "sensitive-looking filename"))
@@ -384,6 +483,7 @@ internal class RiftToolSandbox(context: Context) {
             val children = directory.listFiles()
                 ?: throw IllegalStateException("Could not read directory while hashing: ${relativePath(directory)}")
             children.sortedBy { it.name }.forEach { child ->
+                RiftDeadline.check("workspace hash")
                 require(isInsideRoot(child)) { "Hash traversal escaped Rift MCP sandbox" }
                 entries += 1
                 require(entries <= MAX_SNAPSHOT_FILES) { "Directory hash exceeds $MAX_SNAPSHOT_FILES entries" }
@@ -395,10 +495,12 @@ internal class RiftToolSandbox(context: Context) {
                 } else {
                     files += 1
                     bytes += child.length()
+                    require(bytes <= MAX_HASH_TOTAL_BYTES) { "Directory hash exceeds ${MAX_HASH_TOTAL_BYTES / (1024 * 1024)} MiB" }
                     update("F\u0000$relative\u0000${child.length()}\u0000")
                     child.inputStream().buffered().use { input ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
+                            RiftDeadline.check("workspace hash")
                             val read = input.read(buffer)
                             if (read <= 0) break
                             digest.update(buffer, 0, read)
@@ -433,6 +535,7 @@ internal class RiftToolSandbox(context: Context) {
             val children = directory.listFiles()
                 ?: throw IllegalStateException("Could not read directory: ${relativePath(directory)}")
             children.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })).forEach { child ->
+                RiftDeadline.check("workspace list")
                 if (count >= limit) return@forEach
                 require(isInsideRoot(child)) { "Workspace entry escaped Rift MCP sandbox" }
                 count += 1
@@ -474,6 +577,7 @@ internal class RiftToolSandbox(context: Context) {
         var truncated = false
         file.bufferedReader(Charsets.UTF_8).use { reader ->
             while (true) {
+                RiftDeadline.check("workspace text read")
                 val line = reader.readLine() ?: break
                 lineNumber += 1
                 if (lineNumber < startLine) continue
@@ -590,6 +694,7 @@ internal class RiftToolSandbox(context: Context) {
         var count = 0
         var cursor = 0
         while (true) {
+            RiftDeadline.check("text occurrence scan")
             val index = text.indexOf(needle, cursor)
             if (index < 0) return count
             count += 1
@@ -614,7 +719,7 @@ internal class RiftToolSandbox(context: Context) {
         require(normalizeSegments(path).isNotEmpty()) { "Cannot delete the workspace root" }
         val file = sandboxFile(path)
         if (!file.exists()) return true
-        val removed = if (file.isDirectory) file.deleteRecursively() else file.delete()
+        val removed = if (file.isDirectory) deleteTreeBounded(file, MAX_ARCHIVE_ENTRIES, cooperative = true) else file.delete()
         require(removed && !file.exists()) { "Could not remove: $path" }
         invalidateIndex(path)
         return true
@@ -672,7 +777,7 @@ internal class RiftToolSandbox(context: Context) {
         val staged = File(parent, ".${destination.name}.${UUID.randomUUID()}.copying")
         try {
             if (source.isDirectory) {
-                require(source.copyRecursively(staged, overwrite = false)) { "Could not stage copy $from to $to" }
+                require(copyTreeBounded(source, staged, overwrite = false, maxEntries = MAX_ARCHIVE_ENTRIES, maxBytes = MAX_ARCHIVE_SOURCE_BYTES, cooperative = true)) { "Could not stage copy $from to $to" }
             } else {
                 source.copyTo(staged, overwrite = false)
             }
@@ -709,7 +814,12 @@ internal class RiftToolSandbox(context: Context) {
         }
     }
 
-    private fun workspaceExec(args: JSONObject): JSONObject {
+    private fun workspaceExec(args: JSONObject): JSONObject = batchIndexInvalidations {
+        workspaceExecInternal(args)
+    }
+
+    private fun workspaceExecInternal(args: JSONObject): JSONObject {
+        RiftDeadline.check("Rift Code Mode batch")
         val operations = args.optJSONArray("operations") ?: throw IllegalArgumentException("operations array is required")
         require(operations.length() in 1..MAX_WORKSPACE_OPS) {
             "Rift Code Mode accepts 1..$MAX_WORKSPACE_OPS operations per batch"
@@ -738,6 +848,7 @@ internal class RiftToolSandbox(context: Context) {
 
         try {
             for (index in 0 until operations.length()) {
+                RiftDeadline.check("Rift Code Mode operation $index")
                 currentIndex = index
                 val rawOperation = operations.optJSONObject(index)
                     ?: throw IllegalArgumentException("Operation $index must be an object")
@@ -751,7 +862,9 @@ internal class RiftToolSandbox(context: Context) {
                 }
 
                 captureBatchMutation(transaction, currentOp, operation)
+                RiftDeadline.check("Rift Code Mode operation $index")
                 val value = executeWorkspaceOperation(currentOp, operation)
+                RiftDeadline.check("Rift Code Mode operation $index")
                 val row = JSONObject()
                     .put("index", index)
                     .put("op", currentOp)
@@ -775,6 +888,9 @@ internal class RiftToolSandbox(context: Context) {
                 }
             }
         } catch (error: Throwable) {
+            // Timeout interrupts the worker. Clear that flag before restoring the transaction;
+            // rollback must finish even though the model-visible request has already timed out.
+            RiftDeadline.clearInterrupt()
             val rollbackError = runCatching { transaction.rollback() }.exceptionOrNull()
             transaction.close()
             val detail = error.message ?: error.javaClass.simpleName
@@ -809,7 +925,10 @@ internal class RiftToolSandbox(context: Context) {
             .put("changes", changes)
             .put("resultTruncated", resultTruncated)
             .put("results", results)
-        if (args.optBoolean("returnSnapshot", false)) response.put("snapshot", projectSnapshot(snapshotPath))
+        if (args.optBoolean("returnSnapshot", false)) {
+            RiftDeadline.check("Rift Code Mode return snapshot")
+            response.put("snapshot", projectSnapshot(snapshotPath))
+        }
         return response
     }
 
@@ -908,8 +1027,78 @@ internal class RiftToolSandbox(context: Context) {
         else -> throw IllegalArgumentException("Unsupported Rift Code Mode operation: $op")
     }
 
+    private fun copyTreeBounded(
+        source: File,
+        destination: File,
+        overwrite: Boolean,
+        maxEntries: Int,
+        maxBytes: Long,
+        cooperative: Boolean
+    ): Boolean {
+        var entries = 0
+        var bytes = 0L
+        fun check() {
+            if (cooperative) RiftDeadline.check("filesystem copy")
+        }
+        fun copyNode(from: File, to: File) {
+            check()
+            entries += 1
+            require(entries <= maxEntries) { "Filesystem copy exceeds $maxEntries entries" }
+            if (from.isDirectory) {
+                if (to.exists()) require(to.isDirectory && overwrite) { "Copy destination already exists: ${to.path}" }
+                else require(to.mkdirs()) { "Could not create copy directory: ${to.path}" }
+                val children = from.listFiles()
+                    ?: throw IllegalStateException("Could not read copy source directory: ${from.path}")
+                children.sortedBy { it.name.lowercase() }.forEach { child ->
+                    copyNode(child, File(to, child.name))
+                }
+                if (from.lastModified() > 0L) to.setLastModified(from.lastModified())
+            } else {
+                bytes += from.length()
+                require(bytes <= maxBytes) { "Filesystem copy exceeds ${maxBytes / (1024 * 1024)} MiB" }
+                to.parentFile?.let { parent ->
+                    require(parent.exists() || parent.mkdirs()) { "Could not create copy parent: ${parent.path}" }
+                }
+                if (to.exists()) require(overwrite) { "Copy destination already exists: ${to.path}" }
+                from.inputStream().buffered().use { input ->
+                    to.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            check()
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+                if (from.lastModified() > 0L) to.setLastModified(from.lastModified())
+            }
+        }
+        copyNode(source, destination)
+        return true
+    }
+
+    private fun deleteTreeBounded(root: File, maxEntries: Int, cooperative: Boolean): Boolean {
+        var entries = 0
+        fun removeNode(node: File): Boolean {
+            if (cooperative) RiftDeadline.check("filesystem delete")
+            entries += 1
+            require(entries <= maxEntries) { "Filesystem delete exceeds $maxEntries entries" }
+            if (node.isDirectory) {
+                val children = node.listFiles()
+                    ?: throw IllegalStateException("Could not read directory for deletion: ${node.path}")
+                children.forEach { child ->
+                    require(removeNode(child)) { "Could not delete ${child.path}" }
+                }
+            }
+            return node.delete()
+        }
+        return !root.exists() || removeNode(root)
+    }
+
     private fun deletePath(file: File): Boolean =
-        !file.exists() || if (file.isDirectory) file.deleteRecursively() else file.delete()
+        !file.exists() || if (file.isDirectory) deleteTreeBounded(file, MAX_ARCHIVE_ENTRIES, cooperative = false) else file.delete()
+
 
     private fun commitStaged(staged: File, destination: File, label: String) {
         val parent = destination.parentFile ?: throw IllegalArgumentException("Destination has no parent: $label")
@@ -922,7 +1111,7 @@ internal class RiftToolSandbox(context: Context) {
             }
             if (!staged.renameTo(destination)) {
                 if (staged.isDirectory) {
-                    require(staged.copyRecursively(destination, overwrite = true)) { "Could not commit staged directory: $label" }
+                    require(copyTreeBounded(staged, destination, overwrite = true, maxEntries = MAX_ARCHIVE_ENTRIES, maxBytes = MAX_ARCHIVE_EXTRACTED_BYTES, cooperative = true)) { "Could not commit staged directory: $label" }
                 } else {
                     staged.copyTo(destination, overwrite = true)
                 }
@@ -963,6 +1152,7 @@ internal class RiftToolSandbox(context: Context) {
         try {
             ZipOutputStream(BufferedOutputStream(temporary.outputStream())).use { zip ->
                 fun add(node: File, entryName: String) {
+                    RiftDeadline.check("archive creation")
                     require(isInsideRoot(node)) { "Archive entry escaped Rift MCP sandbox" }
                     entries += 1
                     require(entries <= MAX_ARCHIVE_ENTRIES) { "Archive exceeds $MAX_ARCHIVE_ENTRIES entries" }
@@ -979,7 +1169,15 @@ internal class RiftToolSandbox(context: Context) {
                         sourceBytes += node.length()
                         require(sourceBytes <= MAX_ARCHIVE_SOURCE_BYTES) { "Archive source exceeds 256 MiB" }
                         zip.putNextEntry(ZipEntry(entryName))
-                        node.inputStream().buffered().use { input -> input.copyTo(zip, 256 * 1024) }
+                        node.inputStream().buffered().use { input ->
+                            val buffer = ByteArray(256 * 1024)
+                            while (true) {
+                                RiftDeadline.check("archive creation")
+                                val read = input.read(buffer)
+                                if (read <= 0) break
+                                zip.write(buffer, 0, read)
+                            }
+                        }
                         zip.closeEntry()
                     }
                 }
@@ -1015,6 +1213,7 @@ internal class RiftToolSandbox(context: Context) {
             ZipInputStream(BufferedInputStream(source.inputStream())).use { zip ->
                 val buffer = ByteArray(256 * 1024)
                 while (true) {
+                    RiftDeadline.check("archive extraction")
                     val entry = zip.nextEntry ?: break
                     entries += 1
                     require(entries <= MAX_ARCHIVE_ENTRIES) { "Archive exceeds $MAX_ARCHIVE_ENTRIES entries" }
@@ -1042,6 +1241,7 @@ internal class RiftToolSandbox(context: Context) {
                         require(!output.exists()) { "Archive entry conflicts with an existing path: $normalized" }
                         BufferedOutputStream(output.outputStream()).use { sink ->
                             while (true) {
+                                RiftDeadline.check("archive extraction")
                                 val read = zip.read(buffer)
                                 if (read <= 0) break
                                 require(extractedBytes + read <= MAX_ARCHIVE_EXTRACTED_BYTES) {
@@ -1612,7 +1812,11 @@ internal class RiftToolSandbox(context: Context) {
         }
         val queryTokens = validationQueryTokens(projectRelativeQuery)
         if (queryTokens.isNotEmpty()) {
-            base.walkTopDown().onEnter { directory -> directory == base || !isIgnoredDirectory(directory) }
+            base.walkTopDown().onEnter { directory ->
+                RiftDeadline.check("project validation")
+                directory == base || !isIgnoredDirectory(directory)
+            }
+                .onEach { RiftDeadline.check("project validation") }
                 .filter { it.isFile && isTestPath(relativePath(it)) }
                 .map { relativePath(it) }
                 .map { testPath -> testPath to validationTestAffinity(testPath, projectRelativeQuery, queryTokens) }
@@ -1722,15 +1926,22 @@ internal class RiftToolSandbox(context: Context) {
         var filesScanned = 0
         var filesSkipped = 0
         var hitLimit = false
+        var bytesScanned = 0L
 
         fun scan(file: File) {
+            RiftDeadline.check("workspace search")
             if (hitLimit) return
             require(isInsideRoot(file)) { "Workspace search escaped Rift MCP sandbox" }
             if (!file.isFile) return
-            if (file.length() > MAX_WORKSPACE_SEARCH_FILE_BYTES) {
+            val fileBytes = file.length()
+            if (fileBytes > MAX_WORKSPACE_SEARCH_FILE_BYTES) {
                 filesSkipped += 1
                 return
             }
+            require(bytesScanned + fileBytes <= MAX_SEARCH_TOTAL_BYTES) {
+                "Workspace search exceeds ${MAX_SEARCH_TOTAL_BYTES / (1024 * 1024)} MiB scan budget"
+            }
+            bytesScanned += fileBytes
             val bytes = runCatching { file.readBytes() }.getOrElse {
                 filesSkipped += 1
                 return
@@ -1784,6 +1995,7 @@ internal class RiftToolSandbox(context: Context) {
             .put("matches", matches)
             .put("filesScanned", filesScanned)
             .put("filesSkipped", filesSkipped)
+            .put("bytesScanned", bytesScanned)
             .put("truncated", hitLimit)
     }
 
@@ -1796,6 +2008,7 @@ internal class RiftToolSandbox(context: Context) {
         var truncated = false
         val rows = ArrayList<String>()
         fun include(file: File) {
+            RiftDeadline.check("workspace snapshot")
             if (files >= MAX_SNAPSHOT_FILES) { truncated = true; return }
             if (!file.isFile || isIgnoredFile(file)) return
             files += 1
@@ -1850,13 +2063,21 @@ internal class RiftToolSandbox(context: Context) {
         var filesScanned = 0
         var filesSkipped = 0
         var hitLimit = false
+        var bytesScanned = 0L
         val pattern = Regex("(?<![A-Za-z0-9_$])${Regex.escape(symbol)}(?![A-Za-z0-9_$])")
         fun scan(file: File) {
+            RiftDeadline.check("reference search")
             if (hitLimit || !file.isFile || isIgnoredFile(file)) return
-            if (file.length() > MAX_WORKSPACE_SEARCH_FILE_BYTES || !isTextFile(file)) { filesSkipped += 1; return }
+            val fileBytes = file.length()
+            if (fileBytes > MAX_WORKSPACE_SEARCH_FILE_BYTES || !isTextFile(file)) { filesSkipped += 1; return }
+            require(bytesScanned + fileBytes <= MAX_SEARCH_TOTAL_BYTES) {
+                "Reference search exceeds ${MAX_SEARCH_TOTAL_BYTES / (1024 * 1024)} MiB scan budget"
+            }
+            bytesScanned += fileBytes
             filesScanned += 1
             file.bufferedReader(Charsets.UTF_8).useLines { lines ->
                 lines.forEachIndexed { index, line ->
+                    if (index % 128 == 0) RiftDeadline.check("reference search")
                     if (hitLimit) return@forEachIndexed
                     pattern.findAll(line).forEach { match ->
                         val key = "${relativePath(file)}:${index + 1}"
@@ -1880,6 +2101,7 @@ internal class RiftToolSandbox(context: Context) {
             .put("references", matches)
             .put("filesScanned", filesScanned)
             .put("filesSkipped", filesSkipped)
+            .put("bytesScanned", bytesScanned)
             .put("truncated", hitLimit)
     }
 
@@ -2084,14 +2306,22 @@ internal class RiftToolSandbox(context: Context) {
         var skipped = 0
         var removed = 0
         var truncated = false
+        var bytesScanned = 0L
         val seen = HashSet<String>()
         fun visit(file: File) {
+            RiftDeadline.check("project index")
             if (truncated || !file.isFile || isIgnoredFile(file)) return
             if (seen.size >= MAX_INDEX_FILES) { truncated = true; return }
             val path = relativePath(file)
             seen += path
             val cached = symbolIndex[path]
             if (cached != null && cached.modified == file.lastModified() && cached.size == file.length()) { reused += 1; return }
+            if (file.length() <= MAX_INDEX_FILE_BYTES && !isIgnoredFile(file)) {
+                require(bytesScanned + file.length() <= MAX_INDEX_TOTAL_BYTES) {
+                    "Project index refresh exceeds ${MAX_INDEX_TOTAL_BYTES / (1024 * 1024)} MiB source budget"
+                }
+                bytesScanned += file.length()
+            }
             val indexed = indexFile(file)
             if (indexed == null) skipped += 1 else scanned += 1
         }
@@ -2110,6 +2340,7 @@ internal class RiftToolSandbox(context: Context) {
             .put("reused", reused)
             .put("skipped", skipped)
             .put("removed", removed)
+            .put("bytesScanned", bytesScanned)
             .put("cachedFiles", symbolIndex.size)
             .put("persistence", "app-private-v2")
             .put("truncated", truncated)
@@ -2228,6 +2459,7 @@ internal class RiftToolSandbox(context: Context) {
         private val dir = File(transactionRoot, "batch-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}").apply { mkdirs() }
         private val snapshots = LinkedHashMap<String, BatchSnapshot>()
         private var backupBytes = 0L
+        private var backupEntries = 0
 
         fun capture(rawPath: String) {
             val path = workspacePath(rawPath)
@@ -2241,15 +2473,27 @@ internal class RiftToolSandbox(context: Context) {
             }
             val backup = if (kind == "missing") null else File(dir, sha256(path))
             if (backup != null) {
-                val bytes = if (source.isDirectory) treeBytes(source) else source.length()
-                backupBytes += bytes
+                val stats = if (source.isDirectory) treeStats(source) else TreeStats(source.length(), 1)
+                backupBytes += stats.bytes
+                backupEntries += stats.entries
                 require(backupBytes <= MAX_BATCH_ROLLBACK_BYTES) {
                     "Rift Code Mode rollback set exceeds ${MAX_BATCH_ROLLBACK_BYTES / (1024 * 1024)} MiB"
                 }
+                require(backupEntries <= MAX_BATCH_ROLLBACK_ENTRIES) {
+                    "Rift Code Mode rollback set exceeds $MAX_BATCH_ROLLBACK_ENTRIES entries"
+                }
                 backup.parentFile?.mkdirs()
                 if (source.isDirectory) {
-                    require(source.copyRecursively(backup, overwrite = true)) { "Could not snapshot directory for batch rollback: $path" }
+                    require(copyTreeBounded(
+                        source,
+                        backup,
+                        overwrite = true,
+                        maxEntries = MAX_BATCH_ROLLBACK_ENTRIES,
+                        maxBytes = MAX_BATCH_ROLLBACK_BYTES,
+                        cooperative = true
+                    )) { "Could not snapshot directory for batch rollback: $path" }
                 } else {
+                    RiftDeadline.check("batch rollback snapshot")
                     source.copyTo(backup, overwrite = true)
                 }
             }
@@ -2268,7 +2512,7 @@ internal class RiftToolSandbox(context: Context) {
                 .forEach { snapshot ->
                     val target = sandboxFile(snapshot.path)
                     if (target.exists()) {
-                        val removed = if (target.isDirectory) target.deleteRecursively() else target.delete()
+                        val removed = if (target.isDirectory) deleteTreeBounded(target, MAX_BATCH_ROLLBACK_ENTRIES, cooperative = false) else target.delete()
                         require(removed) { "Could not clear ${snapshot.path} during batch rollback" }
                     }
                     when (snapshot.kind) {
@@ -2280,7 +2524,14 @@ internal class RiftToolSandbox(context: Context) {
                         }
                         "directory" -> {
                             target.parentFile?.mkdirs()
-                            require(snapshot.backup!!.copyRecursively(target, overwrite = true)) {
+                            require(copyTreeBounded(
+                                snapshot.backup!!,
+                                target,
+                                overwrite = true,
+                                maxEntries = MAX_BATCH_ROLLBACK_ENTRIES,
+                                maxBytes = MAX_BATCH_ROLLBACK_BYTES,
+                                cooperative = false
+                            )) {
                                 "Could not restore ${snapshot.path} during batch rollback"
                             }
                             if (snapshot.modified > 0L) target.setLastModified(snapshot.modified)
@@ -2345,20 +2596,32 @@ internal class RiftToolSandbox(context: Context) {
         }
 
         fun close() {
-            runCatching { dir.deleteRecursively() }
+            runCatching {
+                deleteTreeBounded(
+                    dir,
+                    MAX_BATCH_ROLLBACK_ENTRIES + MAX_WORKSPACE_OPS + 1,
+                    cooperative = false
+                )
+            }
         }
     }
 
-    private fun treeBytes(dir: File): Long {
-        var total = 0L
+    private data class TreeStats(val bytes: Long, val entries: Int)
+
+    private fun treeStats(dir: File): TreeStats {
+        var bytes = 0L
+        var entries = 0
         dir.walkTopDown().forEach { file ->
+            RiftDeadline.check("batch rollback preflight")
             require(isInsideRoot(file)) { "Rollback snapshot escaped Rift MCP sandbox" }
+            entries += 1
+            require(entries <= MAX_BATCH_ROLLBACK_ENTRIES) { "Rollback snapshot has too many entries" }
             if (file.isFile) {
-                total += file.length()
-                require(total <= MAX_BATCH_ROLLBACK_BYTES) { "Rollback snapshot is too large" }
+                bytes += file.length()
+                require(bytes <= MAX_BATCH_ROLLBACK_BYTES) { "Rollback snapshot is too large" }
             }
         }
-        return total
+        return TreeStats(bytes, entries)
     }
 
     private fun sha256(text: String): String = MessageDigest.getInstance("SHA-256")
@@ -2370,6 +2633,7 @@ internal class RiftToolSandbox(context: Context) {
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(64 * 1024)
             while (true) {
+                RiftDeadline.check("file hash")
                 val read = input.read(buffer)
                 if (read <= 0) break
                 digest.update(buffer, 0, read)

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -50,9 +50,9 @@ Records state is deliberately outside the workspace so normal project/MCP tools 
 
 `RiftWorkspaceRecords.get(context)` is a process singleton.
 
-It owns one single-thread scheduled executor.
+It owns one serialized scheduled executor. Query/checkpoint work has a 30-second bounded Future lifecycle with cancellation on timeout, and watcher-scheduled work runs under the same cooperative 30-second deadline.
 
-MainActivity creates a `RiftWorkspaceWatcher`, starts it during boot, and shuts the watcher down during Activity destruction.
+MainActivity creates a `RiftWorkspaceWatcher`, starts its tree installation on a daemon background thread during boot, and shuts the watcher down during Activity destruction. Watcher startup therefore does not synchronously walk the workspace on the Android UI thread.
 
 The records singleton itself remains process-owned; Android process death reconstructs it from private state.
 
@@ -66,11 +66,13 @@ Initial seed therefore does not report every pre-existing file as a change.
 
 ## Observation
 
-Watcher recursively installs Android FileObservers under the canonical workspace only.
+Watcher installs Android FileObservers under the canonical workspace only using an iterative queue. Installation is capped at 2048 watched directories and a 2-second installation budget; duplicate registration uses `putIfAbsent` so concurrent directory events cannot create duplicate observers.
 
 Events include create/delete/modify/move/write/attrib/self-delete/self-move.
 
 Ordinary file events settle for 220 ms before capture.
+
+The recorder keeps at most 512 distinct pending path-debounce entries. A larger event storm cancels the per-path backlog and coalesces it into one full-tree `watch:burst` reconciliation.
 
 Directory and self/move events schedule a full-tree reconciliation after 420 ms.
 

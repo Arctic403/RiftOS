@@ -83,11 +83,15 @@
 
   function postRpc(method, params) {
     return new Promise((resolve, reject) => {
+      if (pending.size >= 32) {
+        reject(new Error('Rift MCP native bridge request capacity is full'));
+        return;
+      }
       const id = `rift-web-${now()}-${++requestCounter}`;
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(new Error(`Rift MCP timeout: ${method}`));
-      }, 30000);
+      }, 70000);
       pending.set(id, { resolve, reject, timer });
       try {
         if (!window.RiftMcpNative || typeof window.RiftMcpNative.postMessage !== 'function') {

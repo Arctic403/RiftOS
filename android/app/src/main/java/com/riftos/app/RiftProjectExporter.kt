@@ -40,6 +40,7 @@ object RiftProjectExporter {
         requestedPageBytes: Int = DEFAULT_PAGE_BYTES,
         expectedSnapshot: String = ""
     ): JSONObject {
+        RiftDeadline.check("project export")
         val pageBytes = requestedPageBytes.coerceIn(MIN_PAGE_BYTES, MAX_PAGE_BYTES)
         val skipped = JSONArray()
         val skippedCounts = linkedMapOf<String, Int>()
@@ -80,6 +81,7 @@ object RiftProjectExporter {
             var row: JSONObject
             var rowBytes: Int
             while (true) {
+                RiftDeadline.check("project export page")
                 row = exportRow(source, bytes, next.byteOffset, end)
                 rowBytes = row.toString().toByteArray(Charsets.UTF_8).size + 1
                 if (usedBytes + rowBytes <= pageBytes || entries.length() == 0 && end - next.byteOffset <= 1024) break
@@ -112,10 +114,14 @@ object RiftProjectExporter {
     ): List<SourceFile> {
         val files = mutableListOf<SourceFile>()
         root.walkTopDown()
-            .onEnter { directory -> directory == root || directory.name !in ignoredDirectories }
+            .onEnter { directory ->
+                RiftDeadline.check("project export scan")
+                directory == root || directory.name !in ignoredDirectories
+            }
             .filter { it.isFile }
             .sortedBy { relativePath(root, it) }
             .forEach { file ->
+                RiftDeadline.check("project export scan")
                 val path = relativePath(root, file)
                 val reason = skipReason(root, file)
                 if (reason != null) {
@@ -187,6 +193,7 @@ object RiftProjectExporter {
     private fun snapshotId(files: List<SourceFile>): String {
         val digest = MessageDigest.getInstance("SHA-256")
         files.forEach { source ->
+            RiftDeadline.check("project export snapshot")
             digest.update(source.path.toByteArray(Charsets.UTF_8))
             digest.update(0.toByte())
             digest.update(source.sha256.toByteArray(Charsets.US_ASCII))
@@ -200,6 +207,7 @@ object RiftProjectExporter {
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(8192)
             while (true) {
+                RiftDeadline.check("project export hash")
                 val read = input.read(buffer)
                 if (read <= 0) break
                 digest.update(buffer, 0, read)

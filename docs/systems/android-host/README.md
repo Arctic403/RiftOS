@@ -139,20 +139,20 @@ On creation, MainActivity:
 1. registers itself with `RiftMcpRuntime`;
 2. configures root/system-window behavior;
 3. obtains `RiftWorkspaceRecords`;
-4. creates and starts `RiftWorkspaceWatcher`;
+4. creates `RiftWorkspaceWatcher` and starts its bounded tree installation on a daemon background thread;
 5. creates `RiftNativeDesktop`;
 6. installs the root View;
 7. creates `RiftBrowserWindow`;
 8. creates `RiftBrowserAppHost`;
 9. creates native system apps;
 10. creates native workspace apps;
-11. rebuilds launcher entries;
+11. publishes built-in launcher entries immediately, then scans installed `C:/Programs` packages on a bounded background thread and republishes the completed launcher;
 12. bootstraps the desktop;
 13. starts the process-owned outbound relay client.
 
 The launcher always includes Files, Workspace Records, RiftShell, RiftBrowser, Editor, Dev Lab, Tasks and Settings.
 
-It additionally scans `C:/Programs` for existing package directories. Launcher manifests are accepted only when:
+It additionally scans `C:/Programs` for existing package directories off the UI thread. The installed-program scan is capped at 5 seconds, 128 candidate directories and 32 MiB total package bytes. Launcher manifests are accepted only when:
 - `package.json` exists and is 1 byte through 8 MiB;
 - JSON contains a `manifest` object;
 - id is unique and matches `^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`.
@@ -244,7 +244,7 @@ Persistent subsystem data may survive independently through RiftFS/preferences/K
 
 ## Workspace watcher lifecycle
 
-MainActivity creates one `RiftWorkspaceWatcher` and starts it during Activity creation. Its external event sink is currently a no-op; the live side effect is Workspace Records observation through the shared records owner.
+MainActivity creates one `RiftWorkspaceWatcher` during Activity creation but starts its recursive observer installation on a daemon worker so launch is not blocked by workspace tree size. Its external event sink is currently a no-op; the live side effect is Workspace Records observation through the shared records owner.
 
 The watcher is shut down with the Activity. A replacement MainActivity creates a replacement watcher.
 

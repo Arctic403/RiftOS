@@ -6,6 +6,36 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.5 — Bounded Rift Clang host for Semnexis bootstrap
+
+### Current source changes
+
+Added `RiftNativeToolchain.kt` and the fixed `riftclang doctor|semnexis-build` RiftShell family.
+
+The native toolchain host:
+- accepts no arbitrary compiler or linker arguments;
+- invokes no POSIX shell;
+- accepts executable compiler code only from the APK-owned native-library directory;
+- confines the Semnexis source set to `workspace/Semnexis`;
+- compiles exactly `frontend.cpp`, `graph.cpp` and `main.cpp` with the Semnexis include root;
+- selects `aarch64-linux-android26` first and `armv7a-linux-androideabi26` as compatibility target;
+- writes only `documents/builds/Semnexis/semx-android.elf`;
+- never executes the generated writable RiftFS artifact;
+- caps compiler output and terminates the compiler before RiftShell's outer 60-second watchdog.
+
+Android source inventory, shell docs, native component ownership and SOURCE_OWNERSHIP were updated together.
+
+### Validation
+
+- full RiftOS audit: no new toolchain finding;
+- architecture scan: no new toolchain finding;
+- security scan: no new toolchain finding;
+- only reported repository finding remains the existing filename heuristic on `RiftSecretStore.kt`.
+
+### Current limit
+
+The trusted Android-hosted Clang/LLD executable payload and NDK-compatible sysroot/resource data are not packaged yet. `riftclang doctor` is therefore expected to report `ready=false` until the Builder payload gate is completed.
+
 ## Patch 10.4 — Installed unsigned proof + bounded APK v2 sign/verify/install bootstrap
 
 ### Proven before this source patch

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -14,6 +14,7 @@ It owns canonical workspace containment, single-operation filesystem methods, bo
 
 Primary:
 - `RiftToolSandbox.kt`
+- `RiftBoundedAsync.kt` — 45-second request deadline and cooperative cancellation
 
 Related narrow owners:
 - `RiftToolHost.kt` — schemas/grants/aliases;
@@ -41,6 +42,10 @@ Old workspace scaffold metadata under `.rift` migrates into app-private system m
 - Code Mode result byte budget: 700 KiB;
 - bounded workspace read: 240000 chars;
 - search matches: 300;
+- total search scan budget: 64 MiB;
+- directory-hash content budget: 256 MiB;
+- project-index refresh source budget: 128 MiB;
+- rollback snapshot: 64 MiB and 50000 entries;
 - patch edits: 96;
 - Code Mode list entries: 1200;
 - searchable/indexed file max: 2 MiB;
@@ -230,9 +235,15 @@ Extraction rejects:
 
 Entry count and expanded-byte limits are enforced before publish.
 
+## Request lifecycle
+
+Sandbox calls execute through one serialized worker with a bounded 16-request queue and a separate watchdog. Each request has a 45-second deadline beginning at submission time, including queue delay. Timeout returns one terminal error, interrupts the Future and exposes the same monotonic deadline to long filesystem loops through `RiftDeadline.check()`.
+
+Code Mode checks the deadline between operations and around expensive archive/search/hash/index work. The outer batch defers Project Intelligence invalidations and flushes them once instead of repeatedly persisting index state for every write. If cancellation occurs during a transactional mutation, the worker clears the interrupt only long enough to complete bounded rollback before accepting later work.
+
 ## Shutdown
 
-Shutdown attempts to persist dirty PI-v2 state, then stops the sandbox single-thread executor.
+Shutdown attempts to persist dirty PI-v2 state, then stops both the bounded sandbox worker and its watchdog.
 
 ## Non-ownership boundaries
 

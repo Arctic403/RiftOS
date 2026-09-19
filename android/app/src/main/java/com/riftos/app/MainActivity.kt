@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -22,6 +23,13 @@ import java.util.concurrent.TimeUnit
  * RiftBrowser classes; MainActivity does not create or host a renderer.
  */
 class MainActivity : Activity() {
+    companion object {
+        private const val LAUNCHER_SCAN_TIMEOUT_MS = 5_000L
+        private const val MAX_LAUNCHER_PROGRAMS = 128
+        private const val MAX_LAUNCHER_SCAN_BYTES = 32L * 1024L * 1024L
+        private const val MAX_LAUNCHER_PACKAGE_BYTES = 8L * 1024L * 1024L
+    }
+
     private lateinit var rootView: FrameLayout
     private lateinit var nativeDesktop: RiftNativeDesktop
     private lateinit var browserAppHost: RiftBrowserAppHost
@@ -58,7 +66,10 @@ class MainActivity : Activity() {
 
         workspaceRecords = RiftWorkspaceRecords.get(this)
         workspaceWatcher = RiftWorkspaceWatcher(this, { _ -> Unit }, workspaceRecords)
-        workspaceWatcher.start()
+        Thread({ runCatching { workspaceWatcher.start() } }, "rift-workspace-watcher-start").apply {
+            isDaemon = true
+            start()
+        }
 
         nativeDesktop = RiftNativeDesktop(
             activity = this,
@@ -84,14 +95,31 @@ class MainActivity : Activity() {
     }
 
     private fun populateNativeLauncher() {
-        val apps = collectLauncherApps()
         nativeDesktop.handle(
             "desktop.launcher.update",
-            JSONObject().put("apps", apps)
+            JSONObject().put("apps", collectLauncherApps(includeInstalled = false))
         )
+        Thread({
+            val apps = runCatching {
+                RiftDeadline.runUntil(SystemClock.elapsedRealtime() + LAUNCHER_SCAN_TIMEOUT_MS) {
+                    collectLauncherApps(includeInstalled = true)
+                }
+            }.getOrNull() ?: return@Thread
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    nativeDesktop.handle(
+                        "desktop.launcher.update",
+                        JSONObject().put("apps", apps)
+                    )
+                }
+            }
+        }, "rift-launcher-scan").apply {
+            isDaemon = true
+            start()
+        }
     }
 
-    private fun collectLauncherApps(): JSONArray {
+    private fun collectLauncherApps(includeInstalled: Boolean = true): JSONArray {
         val apps = JSONArray()
         fun add(id: String, name: String, icon: String) {
             apps.put(JSONObject().put("id", id).put("name", name).put("icon", icon))
@@ -106,10 +134,14 @@ class MainActivity : Activity() {
         add("tasks", "Tasks", "≡")
         add("settings", "Settings", "⚙")
 
+        if (!includeInstalled) return apps
+
         val used = linkedSetOf(
             "files", "workspace-live", "terminal", "browser",
             "editor", "devlab", "tasks", "settings"
         )
+        var scannedPrograms = 0
+        var scannedBytes = 0L
         val riftRoot = File(filesDir, "riftfs").canonicalFile
         val programs = File(riftRoot, RiftVolumePaths.resolveRelative("/C:/Programs")).canonicalFile
         if (programs.isDirectory && programs.path.startsWith(riftRoot.path + File.separator)) {
@@ -117,9 +149,15 @@ class MainActivity : Activity() {
                 ?.filter { it.isDirectory }
                 ?.sortedBy { it.name.lowercase() }
                 ?.forEach { directory ->
+                    RiftDeadline.check("launcher scan")
+                    if (++scannedPrograms > MAX_LAUNCHER_PROGRAMS) return@forEach
                     val packageFile = File(directory, "package.json")
-                    if (!packageFile.isFile || packageFile.length() !in 1..(8L * 1024L * 1024L)) return@forEach
+                    val packageBytes = packageFile.length()
+                    if (!packageFile.isFile || packageBytes !in 1..MAX_LAUNCHER_PACKAGE_BYTES) return@forEach
+                    if (scannedBytes + packageBytes > MAX_LAUNCHER_SCAN_BYTES) return@forEach
+                    scannedBytes += packageBytes
                     val manifest = runCatching {
+                        RiftDeadline.check("launcher package read")
                         JSONObject(packageFile.readText(Charsets.UTF_8)).optJSONObject("manifest")
                     }.getOrNull() ?: return@forEach
                     val id = manifest.optString("id").trim()
@@ -207,7 +245,13 @@ class MainActivity : Activity() {
                         .put("title", id)
                         .put("kicker", "RIFTBROWSER APP")
                 )
-                browserAppHost.open(JSONObject().put("appId", id).put("windowId", id))
+                browserAppHost.openAsync(JSONObject().put("appId", id).put("windowId", id)) { result ->
+                    if (!result.optBoolean("ok", false)) {
+                        runCatching {
+                            nativeDesktop.handle("desktop.window.close", JSONObject().put("id", id))
+                        }
+                    }
+                }
             }.onFailure {
                 runCatching {
                     nativeDesktop.handle("desktop.window.close", JSONObject().put("id", id))

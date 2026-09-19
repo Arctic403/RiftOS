@@ -118,7 +118,7 @@ assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\
 assert.match(appHost, /"build\.submit" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.submit\(args\) \}/);
 assert.match(appHost, /private val riftBuild = RiftBuildLocalExecutor\(activity\.applicationContext\)/);
 
-for (const source of ['RiftBuildLocalExecutor.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt']) {
+for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt']) {
   assert.ok(gradle.includes('src/main/java/com/riftos/app/' + source), 'Gradle exact source snapshot omitted ' + source);
 }
 assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'), 'RiftOS manifest omitted REQUEST_INSTALL_PACKAGES');

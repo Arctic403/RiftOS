@@ -368,6 +368,7 @@ object RiftChatHandoff {
             val buffer = ByteArray(32 * 1024)
             var total = 0L
             while (true) {
+                RiftDeadline.check("chat handoff read")
                 val count = input.read(buffer)
                 if (count < 0) break
                 total += count
@@ -392,6 +393,7 @@ object RiftChatHandoff {
         BufferedInputStream(zip.getInputStream(entry)).use { input ->
             val buffer = ByteArray(32 * 1024)
             while (true) {
+                RiftDeadline.check("chat handoff verification")
                 val count = input.read(buffer)
                 if (count < 0) break
                 total += count
@@ -466,6 +468,7 @@ object RiftChatHandoff {
             val buffer = ByteArray(32 * 1024)
             var total = 0L
             while (true) {
+                RiftDeadline.check("chat handoff input")
                 val count = input.read(buffer)
                 if (count < 0) break
                 total += count
@@ -534,6 +537,7 @@ object RiftChatHandoff {
         FileInputStream(file).use { input ->
             val buffer = ByteArray(64 * 1024)
             while (true) {
+                RiftDeadline.check("chat handoff hash")
                 val count = input.read(buffer)
                 if (count < 0) break
                 digest.update(buffer, 0, count)

@@ -23,6 +23,7 @@ class RiftNativeGit(context: Context) {
         private const val MAX_FILE = 48L * 1024L * 1024L
         private const val MAX_TOTAL = 256L * 1024L * 1024L
         private const val MAX_FILES = 10000
+        private const val MAX_CLEANUP_ENTRIES = 40_000
         private const val MAX_META_BYTES = 8L * 1024L * 1024L
         private const val MAX_POINTER_BYTES = 4L * 1024L
         private const val MAX_API_RESPONSE_BYTES = 80L * 1024L * 1024L
@@ -57,9 +58,10 @@ class RiftNativeGit(context: Context) {
     private val root = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
     private val secrets = RiftSecretStore(appContext)
     private val http = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .writeTimeout(90, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(45, TimeUnit.SECONDS)
+        .callTimeout(50, TimeUnit.SECONDS)
         .build()
 
     fun storeToken(raw: String): JSONObject {
@@ -219,6 +221,7 @@ class RiftNativeGit(context: Context) {
             }
             directory == repoRoot || directory.name != ".git"
         }.forEach { file ->
+            RiftDeadline.check("native git status")
             if (!file.isFile) return@forEach
             val canonical = file.canonicalFile
             require(canonical.path.startsWith(repoRoot.canonicalPath + File.separator)) { "Repository entry escaped root" }
@@ -855,7 +858,7 @@ class RiftNativeGit(context: Context) {
                 writeCurrentRoot(rootDisplay)
 
                 val backupCleanupPending =
-                    backedUp && backup.exists() && !runCatching { backup.deleteRecursively() }.getOrDefault(false)
+                    backedUp && backup.exists() && !runCatching { deleteTreeBounded(backup) }.getOrDefault(false)
 
                 val patchReceipt = patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) }.getOrNull() }
                 checkpoint(rootDisplay, "git:pull", headSha)
@@ -904,7 +907,7 @@ class RiftNativeGit(context: Context) {
         } catch (error: Throwable) {
             patchSession?.let(RiftPatchSessions::abort)
             if (!retainRecovery && stage.exists()) {
-                val removed = runCatching { stage.deleteRecursively() }.getOrDefault(false)
+                val removed = runCatching { deleteTreeBounded(stage) }.getOrDefault(false)
                 if (!removed) {
                     throw IllegalStateException(
                         (error.message ?: "Git import failed") +
@@ -1132,6 +1135,7 @@ class RiftNativeGit(context: Context) {
             val buffer = ByteArray(256 * 1024)
             var total = 0L
             while (true) {
+                RiftDeadline.check("GitHub response")
                 val read = input.read(buffer)
                 if (read < 0) break
                 if (read == 0) continue
@@ -1193,6 +1197,25 @@ class RiftNativeGit(context: Context) {
         return parts.joinToString("/")
     }
 
+    private fun deleteTreeBounded(root: File): Boolean {
+        var entries = 0
+        fun remove(node: File): Boolean {
+            RiftDeadline.check("native git cleanup")
+            require(++entries <= MAX_CLEANUP_ENTRIES) {
+                "Native Git cleanup exceeds $MAX_CLEANUP_ENTRIES entries"
+            }
+            if (node.isDirectory) {
+                val children = node.listFiles()
+                    ?: throw IllegalStateException("Could not read Native Git cleanup directory")
+                children.forEach { child ->
+                    require(remove(child)) { "Could not remove Native Git cleanup entry: ${child.path}" }
+                }
+            }
+            return node.delete()
+        }
+        return !root.exists() || remove(root)
+    }
+
     private fun blobSha(file: File): String {
         val digest = MessageDigest.getInstance("SHA-1")
         digest.update(
@@ -1201,6 +1224,7 @@ class RiftNativeGit(context: Context) {
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(256 * 1024)
             while (true) {
+                RiftDeadline.check("native git hash")
                 val read = input.read(buffer)
                 if (read < 0) break
                 if (read > 0) digest.update(buffer, 0, read)

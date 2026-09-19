@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -106,7 +106,9 @@ Service disconnect/binding-death/null-binding clear the cached remote reference.
 
 transactWithReconnect():
 - validates request size before attempting Binder work;
-- performs one transaction;
+- submits synchronous Binder `transact()` through a capped two-worker, no-queue RPC executor;
+- waits at most 12000 ms for each Binder transaction;
+- if both RPC workers are already occupied by stalled Binder calls, fails fast rather than leaking more threads;
 - on a transaction failure, clears/unbinds stale connection state;
 - obtains a fresh fixed Binder;
 - retries once.
@@ -428,7 +430,7 @@ Vortex protocol/service behavior -> separate Vortex3D debug-source owners.
 Second RiftOS source audit must verify:
 - fixed package/service/descriptor/transaction;
 - BIND_AUTO_CREATE/BIND_IMPORTANT only to fixed component;
-- 8-second bind timeout and reconnect behavior;
+- 8-second bind timeout, 12-second per-transaction timeout and reconnect behavior;
 - process-owned singleton;
 - no network transport;
 - 256 KiB request / 512 KiB response limits;

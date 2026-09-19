@@ -323,6 +323,7 @@ private class RiftScopedLocalAgent(
         var root = initialRoot
         val deadline = SystemClock.elapsedRealtime() + TARGET_LOOKUP_TIMEOUT_MS
         while (true) {
+            RiftDeadline.check("Vortex accessibility lookup")
             findNode(root, target)?.let { return it }
             if (SystemClock.elapsedRealtime() >= deadline) return null
             SystemClock.sleep(TARGET_LOOKUP_POLL_MS)

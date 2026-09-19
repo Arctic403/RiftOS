@@ -1,6 +1,7 @@
 package com.riftos.app
 
 import android.content.Context
+import android.os.SystemClock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -16,6 +17,8 @@ import java.util.UUID
 object RiftNativeDevLab {
     private const val MAX_TEXT_BYTES = 2L * 1024L * 1024L
     private const val MAX_STAGED_FILES = 256
+    private const val MAX_CLEANUP_ENTRIES = 5_000
+    private const val DEVLAB_TIMEOUT_MS = 30_000L
     private const val PROJECT_REL = "workspace/RiftOS-main"
     private val textExtensions = setOf(
         "txt","md","markdown","json","jsonl","js","mjs","cjs","ts","tsx","jsx","css","html","htm",
@@ -23,10 +26,11 @@ object RiftNativeDevLab {
         "rs","go","c","cc","cpp","cxx","h","hpp","hh","cs","sh","bash","zsh","gradle","properties","riftpp"
     )
 
-    fun execute(context: Context, request: JSONObject): JSONObject {
+    fun execute(context: Context, request: JSONObject): JSONObject =
+        RiftDeadline.runUntil(SystemClock.elapsedRealtime() + DEVLAB_TIMEOUT_MS) {
         val action = request.optString("action").trim().lowercase()
         require(action.isNotBlank()) { "Dev Lab action is required" }
-        return when (action) {
+        when (action) {
             "status" -> status(context)
             "load" -> loadSource(context, request.optString("path"))
             "staged" -> listStaged(context)
@@ -187,7 +191,8 @@ object RiftNativeDevLab {
 
     private fun reset(context: Context): Boolean {
         val r = roots(context)
-        r.stage.deleteRecursively(); r.stage.mkdirs()
+        if (r.stage.exists()) require(deleteTreeBounded(r.stage)) { "Could not clear Dev Lab stage" }
+        require(r.stage.mkdirs() || r.stage.isDirectory) { "Could not recreate Dev Lab stage" }
         val state = loadState(r)
         state.put("staged", JSONObject()).put("baselineHeadSha", JSONObject.NULL)
         saveState(r, state)
@@ -359,7 +364,7 @@ object RiftNativeDevLab {
                     error
                 )
             }
-            tx.deleteRecursively()
+            runCatching { deleteTreeBounded(tx) }
             patchSession?.let(RiftPatchSessions::abort)
             throw IllegalStateException("Dev Lab publish rolled back: ${error.message}", error)
         }
@@ -372,7 +377,7 @@ object RiftNativeDevLab {
             .put("changes", entries.length()).put("preview", preview)
             .put("patchId", patchReceipt?.optString("patchId") ?: JSONObject.NULL)
         atomicWrite(File(r.publications, "$receiptId.json"), receipt.toString(2).toByteArray())
-        tx.deleteRecursively()
+        runCatching { deleteTreeBounded(tx) }
 
         val state = loadState(r)
         val staged = state.optJSONObject("staged") ?: JSONObject()
@@ -418,10 +423,30 @@ object RiftNativeDevLab {
         return id
     }
 
+    private fun deleteTreeBounded(root: File): Boolean {
+        var entries = 0
+        fun remove(node: File): Boolean {
+            RiftDeadline.check("Dev Lab cleanup")
+            require(++entries <= MAX_CLEANUP_ENTRIES) {
+                "Dev Lab cleanup exceeds $MAX_CLEANUP_ENTRIES entries"
+            }
+            if (node.isDirectory) {
+                val children = node.listFiles()
+                    ?: throw IllegalStateException("Could not read Dev Lab cleanup directory")
+                children.forEach { child ->
+                    require(remove(child)) { "Could not delete Dev Lab cleanup entry" }
+                }
+            }
+            return node.delete()
+        }
+        return !root.exists() || remove(root)
+    }
+
     private fun sha256(file: File): String = file.inputStream().use { input ->
         val digest = MessageDigest.getInstance("SHA-256")
         val buffer = ByteArray(64 * 1024)
         while (true) {
+            RiftDeadline.check("Dev Lab hash")
             val read = input.read(buffer)
             if (read < 0) break
             if (read > 0) digest.update(buffer, 0, read)

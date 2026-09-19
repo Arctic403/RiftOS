@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -177,7 +177,7 @@ Unpair:
 
 ## Background execution
 
-Settings uses one single-thread settingsExecutor for network/provider status and credential operations.
+Settings and native workspace I/O use a two-slot, no-queue executor backed by a separate watchdog. A stalled provider can occupy at most two workers; additional work fails fast instead of building an unbounded queue.
 
 UI updates are returned through Activity.runOnUiThread().
 
@@ -185,9 +185,9 @@ Every asynchronous UI update checks:
 - activity.isFinishing;
 - activity.isDestroyed.
 
-RiftNativeWorkspaceApps.destroy() calls settingsExecutor.shutdownNow().
+RiftNativeWorkspaceApps.destroy() shuts down both the worker pool and watchdog. Settings tasks use a 60-second deadline; Editor I/O uses 30 seconds; Files directory/provider listing uses 20 seconds. Android UI updates are emitted only after terminal completion and only while the Activity remains alive.
 
-This prevents queued Settings work from continuing to own a live UI after the native workspace-app owner is destroyed, although an already-running blocking network/provider call may finish before its thread exits.
+RiftLLM `ContentResolver.call()` is additionally isolated behind a capped two-worker IPC pool with a 12-second per-call timeout so a wedged provider cannot permanently own the Settings worker.
 
 ## Secret display/log rule
 

@@ -23,6 +23,9 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 /** Android-owned Files, Editor and Settings surfaces. No WebView/DOM/JS bridge is used. */
@@ -33,8 +36,12 @@ class RiftNativeWorkspaceApps(
     companion object {
         private const val MAX_EDITOR_BYTES = 1024 * 1024L
         private const val MAX_FILES_ROWS = 5_000
+        private const val MAX_RENDERED_FILE_ROWS = 400
         private const val ANDROID_FILES_ROOT = "/Android"
         private const val ANDROID_FILES_REQUEST = 7101
+        private const val SETTINGS_TASK_TIMEOUT_MS = 60_000L
+        private const val EDITOR_IO_TIMEOUT_MS = 30_000L
+        private const val FILES_IO_TIMEOUT_MS = 20_000L
         private val NATIVE_IDS = setOf("files", "editor", "devlab", "workspace-live", "settings")
         private const val BG = 0xff0b1118.toInt()
         private const val PANEL = 0xff111a23.toInt()
@@ -53,13 +60,16 @@ class RiftNativeWorkspaceApps(
     )
     private data class DevLabState(val root: LinearLayout, val pathInput: EditText, val body: EditText, val status: TextView, val output: TextView)
     private data class WorkspaceRecordsState(val root: LinearLayout, val status: TextView, val output: TextView)
+    private data class EditorLoadResult(val display: String, val text: String, val size: Long, val name: String)
+    private data class EditorSaveResult(val display: String, val size: Long)
+    private data class NativeTaskOutcome<T>(val value: T? = null, val error: Throwable? = null)
     private data class DisplayEntry(
         val display: String,
-        val file: File?,
-        val document: DocumentFile?,
-        val virtualDirectory: Boolean,
+        val isDirectory: Boolean,
+        val size: Long,
         val label: String? = null
     )
+    private data class FilesListing(val path: String, val entries: List<DisplayEntry>)
     private data class AndroidMount(val id: String, val name: String, val uri: Uri, val root: DocumentFile)
 
     private var files: FilesState? = null
@@ -69,7 +79,14 @@ class RiftNativeWorkspaceApps(
     private var settings: View? = null
     private val riftRoot = File(activity.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
     private val mountPrefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
-    private val settingsExecutor = Executors.newSingleThreadExecutor()
+    private val settingsExecutor = ThreadPoolExecutor(
+        0,
+        2,
+        30L,
+        TimeUnit.SECONDS,
+        SynchronousQueue<Runnable>()
+    )
+    private val settingsWatchdog = Executors.newSingleThreadScheduledExecutor()
     private val nativeGit = RiftMcpRuntime.nativeGit(activity)
     private val riftLlm = RiftLlmDevClient(activity)
 
@@ -132,6 +149,7 @@ class RiftNativeWorkspaceApps(
         workspaceRecords = null
         settings = null
         settingsExecutor.shutdownNow()
+        settingsWatchdog.shutdownNow()
     }
 
     private fun open(id: String): JSONObject = when (id) {
@@ -203,50 +221,64 @@ class RiftNativeWorkspaceApps(
     }
 
     private fun refreshFiles(state: FilesState) {
-        state.path.text = state.displayPath
+        val requestedPath = state.displayPath
+        state.path.text = requestedPath
         state.rows.removeAllViews()
-        val entries = runCatching { listDisplay(state.displayPath) }.getOrElse {
-            state.rows.addView(label("Error: ${it.message}", MUTED))
-            return
-        }
-        if (entries.isEmpty()) {
-            state.rows.addView(label("(empty)", MUTED))
-            return
-        }
-        for (entry in entries) {
-            val display = entry.display
-            val isDirectory = entry.virtualDirectory || entry.file?.isDirectory == true || entry.document?.isDirectory == true
-            val row = LinearLayout(activity).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(8), dp(6), dp(8), dp(6)); setBackgroundColor(PANEL)
+        state.rows.addView(label("Loading…", MUTED))
+        runNativeTask(
+            timeoutMs = FILES_IO_TIMEOUT_MS,
+            work = { FilesListing(requestedPath, listDisplay(requestedPath)) },
+            complete = { outcome ->
+                if (files !== state || state.displayPath != requestedPath) return@runNativeTask
+                state.rows.removeAllViews()
+                val listing = outcome.value
+                if (listing == null) {
+                    state.rows.addView(label("Error: ${outcome.error?.message ?: "unknown error"}", MUTED))
+                    return@runNativeTask
+                }
+                val entries = listing.entries
+                if (entries.isEmpty()) {
+                    state.rows.addView(label("(empty)", MUTED))
+                    return@runNativeTask
+                }
+                for (entry in entries.take(MAX_RENDERED_FILE_ROWS)) {
+                    val display = entry.display
+                    val isDirectory = entry.isDirectory
+                    val row = LinearLayout(activity).apply {
+                        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(8), dp(6), dp(8), dp(6)); setBackgroundColor(PANEL)
+                    }
+                    row.addView(TextView(activity).apply {
+                        text = (if (isDirectory) "▣  " else "·  ") + (entry.label ?: display.substringAfterLast('/'))
+                        setTextColor(TEXT); textSize = 12f
+                        typeface = if (isDirectory) Typeface.DEFAULT_BOLD else Typeface.MONOSPACE
+                        maxLines = 1
+                    }, LinearLayout.LayoutParams(0, dp(40), 1f))
+                    if (!isDirectory) {
+                        row.addView(TextView(activity).apply {
+                            text = humanBytes(entry.size); setTextColor(MUTED); textSize = 10f; gravity = Gravity.CENTER_VERTICAL
+                        }, LinearLayout.LayoutParams(dp(84), dp(40)))
+                    }
+                    if (isAndroidMountRoot(display)) {
+                        row.addView(actionButton("Unmount") {
+                            runCatching { unmountAndroid(display) }
+                                .onSuccess {
+                                    state.displayPath = ANDROID_FILES_ROOT
+                                    refreshFiles(state)
+                                }
+                                .onFailure { Toast.makeText(activity, "Unmount failed: ${it.message}", Toast.LENGTH_LONG).show() }
+                        }, LinearLayout.LayoutParams(dp(86), dp(40)))
+                    }
+                    row.setOnClickListener {
+                        if (isDirectory) { state.displayPath = display; refreshFiles(state) } else openEditor(display)
+                    }
+                    state.rows.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply { bottomMargin = dp(3) })
+                }
+                if (entries.size > MAX_RENDERED_FILE_ROWS) {
+                    state.rows.addView(label("Showing first $MAX_RENDERED_FILE_ROWS of ${entries.size} items", MUTED))
+                }
             }
-            row.addView(TextView(activity).apply {
-                text = (if (isDirectory) "▣  " else "·  ") + (entry.label ?: display.substringAfterLast('/'))
-                setTextColor(TEXT); textSize = 12f
-                typeface = if (isDirectory) Typeface.DEFAULT_BOLD else Typeface.MONOSPACE
-                maxLines = 1
-            }, LinearLayout.LayoutParams(0, dp(40), 1f))
-            if (!isDirectory) {
-                val size = entry.file?.length() ?: entry.document?.length() ?: 0L
-                row.addView(TextView(activity).apply {
-                    text = humanBytes(size); setTextColor(MUTED); textSize = 10f; gravity = Gravity.CENTER_VERTICAL
-                }, LinearLayout.LayoutParams(dp(84), dp(40)))
-            }
-            if (isAndroidMountRoot(display)) {
-                row.addView(actionButton("Unmount") {
-                    runCatching { unmountAndroid(display) }
-                        .onSuccess {
-                            state.displayPath = ANDROID_FILES_ROOT
-                            refreshFiles(state)
-                        }
-                        .onFailure { Toast.makeText(activity, "Unmount failed: ${it.message}", Toast.LENGTH_LONG).show() }
-                }, LinearLayout.LayoutParams(dp(86), dp(40)))
-            }
-            row.setOnClickListener {
-                if (isDirectory) { state.displayPath = display; refreshFiles(state) } else openEditor(display)
-            }
-            state.rows.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply { bottomMargin = dp(3) })
-        }
+        )
     }
 
     private fun openEditor(rawPath: String): JSONObject {
@@ -289,101 +321,133 @@ class RiftNativeWorkspaceApps(
     }
 
     private fun loadEditor(state: EditorState, rawPath: String) {
-        runCatching {
-            val display = RiftVolumePaths.normalizeDisplay(rawPath)
-            val (text, size, name) = if (isAndroidPath(display)) {
-                val document = resolveDocument(display)
-                require(document.isFile) { "file not found: $display" }
-                val bytes = readDocumentBytes(document, display)
-                Triple(bytes.toString(Charsets.UTF_8), bytes.size.toLong(), document.name ?: display.substringAfterLast('/'))
-            } else {
-                val file = resolveFile(display)
-                require(file.isFile) { "file not found: $display" }
-                require(file.length() <= MAX_EDITOR_BYTES) { "file exceeds native editor limit" }
-                Triple(file.readText(Charsets.UTF_8), file.length(), file.name)
+        state.status.text = "Loading…"
+        runNativeTask(
+            timeoutMs = EDITOR_IO_TIMEOUT_MS,
+            work = {
+                val display = RiftVolumePaths.normalizeDisplay(rawPath)
+                val (text, size, name) = if (isAndroidPath(display)) {
+                    val document = resolveDocument(display)
+                    require(document.isFile) { "file not found: $display" }
+                    val bytes = readDocumentBytes(document, display)
+                    Triple(bytes.toString(Charsets.UTF_8), bytes.size.toLong(), document.name ?: display.substringAfterLast('/'))
+                } else {
+                    val file = resolveFile(display)
+                    require(file.isFile) { "file not found: $display" }
+                    require(file.length() <= MAX_EDITOR_BYTES) { "file exceeds native editor limit" }
+                    Triple(file.readText(Charsets.UTF_8), file.length(), file.name)
+                }
+                EditorLoadResult(display, text, size, name)
+            },
+            complete = { outcome ->
+                if (editor !== state) return@runNativeTask
+                val value = outcome.value
+                if (value == null) {
+                    state.status.text = "Load error: ${outcome.error?.message ?: "unknown error"}"
+                } else {
+                    state.displayPath = value.display
+                    state.pathInput.setText(value.display)
+                    state.body.setText(value.text)
+                    state.body.setSelection(0)
+                    state.status.text = "Loaded ${value.display} · ${humanBytes(value.size)}"
+                    desktop.handle("desktop.window.title", JSONObject().put("id", "editor").put("title", "Editor — ${value.name}"))
+                }
             }
-            state.displayPath = display
-            state.pathInput.setText(display)
-            state.body.setText(text)
-            state.body.setSelection(0)
-            state.status.text = "Loaded $display · ${humanBytes(size)}"
-            desktop.handle("desktop.window.title", JSONObject().put("id", "editor").put("title", "Editor — $name"))
-        }.onFailure { state.status.text = "Load error: ${it.message}" }
+        )
     }
 
     private fun saveEditor(state: EditorState) {
-        var patchSession: RiftPatchSessions.Handle? = null
-        runCatching {
-            val display = RiftVolumePaths.normalizeDisplay(state.pathInput.text.toString())
-            require(display != "/" && !RiftVolumePaths.isVolumeRoot(display) && display != ANDROID_FILES_ROOT) { "A file path is required" }
-            val bytes = state.body.text.toString().toByteArray(Charsets.UTF_8)
-            require(bytes.size <= MAX_EDITOR_BYTES) { "editor content exceeds native editor limit" }
-            if (!isAndroidPath(display)) {
-                patchSession = RiftPatchSessions.begin(
-                    activity,
-                    origin = "native-editor",
-                    operation = "save",
-                    intent = "editor-save",
-                    requestId = null,
-                    rawPaths = listOf(display)
-                )
-            }
-            if (isAndroidPath(display)) {
-                val document = resolveDocument(display)
-                require(document.isFile && document.canWrite()) { "Android file is not writable: $display" }
-                val original = readDocumentBytes(document, display)
-                try {
-                    writeDocumentBytes(document, display, bytes)
-                    val published = readDocumentBytes(document, display)
-                    require(published.contentEquals(bytes)) { "Android provider write verification failed: $display" }
-                } catch (error: Throwable) {
-                    val rollback = runCatching {
-                        writeDocumentBytes(document, display, original)
-                        val restored = readDocumentBytes(document, display)
-                        require(restored.contentEquals(original)) { "Android rollback verification failed: $display" }
-                    }
-                    if (rollback.isFailure) {
-                        throw IllegalStateException(
-                            "Android save failed and rollback was incomplete for $display: ${rollback.exceptionOrNull()?.message}",
-                            error
-                        )
-                    }
-                    throw error
-                }
-            } else {
-                val file = resolveFile(display)
-                file.parentFile?.mkdirs()
-                val temp = File(file.parentFile, ".${file.name}.rift-write-${System.nanoTime()}")
-                val backup = File(file.parentFile, ".${file.name}.rift-backup-${System.nanoTime()}")
-                temp.writeBytes(bytes)
-                var backedUp = false
-                try {
-                    if (file.exists()) {
-                        require(file.isFile) { "Editor target is not a file: $display" }
-                        require(file.renameTo(backup)) { "Could not stage existing file for replacement: $display" }
-                        backedUp = true
-                    }
-                    require(temp.renameTo(file)) { "Atomic editor publish failed: $display" }
-                    if (backedUp) backup.delete()
-                } catch (error: Throwable) {
-                    temp.delete()
-                    if (backedUp && !file.exists() && !backup.renameTo(file)) {
-                        throw IllegalStateException(
-                            "Editor save failed and previous file could not be restored: ${backup.absolutePath}",
-                            error
-                        )
-                    }
-                    throw error
-                }
-            }
-            patchSession?.let { runCatching { RiftPatchSessions.commit(activity, it) } }
-            patchSession = null
-            state.displayPath = display
-            state.status.text = "Saved $display · ${humanBytes(bytes.size.toLong())}"
-        }.onFailure {
-            patchSession?.let(RiftPatchSessions::abort)
-            state.status.text = "Save error: ${it.message}"
+        val rawDisplay = state.pathInput.text.toString()
+        val bytes = state.body.text.toString().toByteArray(Charsets.UTF_8)
+        if (bytes.size > MAX_EDITOR_BYTES) {
+            state.status.text = "Save error: editor content exceeds native editor limit"
+            return
         }
+        state.status.text = "Saving…"
+        runNativeTask(
+            timeoutMs = EDITOR_IO_TIMEOUT_MS,
+            work = {
+                val display = RiftVolumePaths.normalizeDisplay(rawDisplay)
+                require(display != "/" && !RiftVolumePaths.isVolumeRoot(display) && display != ANDROID_FILES_ROOT) { "A file path is required" }
+                var patchSession: RiftPatchSessions.Handle? = null
+                try {
+                    if (!isAndroidPath(display)) {
+                        patchSession = RiftPatchSessions.begin(
+                            activity,
+                            origin = "native-editor",
+                            operation = "save",
+                            intent = "editor-save",
+                            requestId = null,
+                            rawPaths = listOf(display)
+                        )
+                    }
+                    if (isAndroidPath(display)) {
+                        val document = resolveDocument(display)
+                        require(document.isFile && document.canWrite()) { "Android file is not writable: $display" }
+                        val original = readDocumentBytes(document, display)
+                        try {
+                            writeDocumentBytes(document, display, bytes)
+                            val published = readDocumentBytes(document, display)
+                            require(published.contentEquals(bytes)) { "Android provider write verification failed: $display" }
+                        } catch (error: Throwable) {
+                            val rollback = runCatching {
+                                writeDocumentBytes(document, display, original)
+                                val restored = readDocumentBytes(document, display)
+                                require(restored.contentEquals(original)) { "Android rollback verification failed: $display" }
+                            }
+                            if (rollback.isFailure) {
+                                throw IllegalStateException(
+                                    "Android save failed and rollback was incomplete for $display: ${rollback.exceptionOrNull()?.message}",
+                                    error
+                                )
+                            }
+                            throw error
+                        }
+                    } else {
+                        val file = resolveFile(display)
+                        file.parentFile?.mkdirs()
+                        val temp = File(file.parentFile, ".${file.name}.rift-write-${System.nanoTime()}")
+                        val backup = File(file.parentFile, ".${file.name}.rift-backup-${System.nanoTime()}")
+                        temp.writeBytes(bytes)
+                        var backedUp = false
+                        try {
+                            if (file.exists()) {
+                                require(file.isFile) { "Editor target is not a file: $display" }
+                                require(file.renameTo(backup)) { "Could not stage existing file for replacement: $display" }
+                                backedUp = true
+                            }
+                            require(temp.renameTo(file)) { "Atomic editor publish failed: $display" }
+                            if (backedUp) backup.delete()
+                        } catch (error: Throwable) {
+                            temp.delete()
+                            if (backedUp && !file.exists() && !backup.renameTo(file)) {
+                                throw IllegalStateException(
+                                    "Editor save failed and previous file could not be restored: ${backup.absolutePath}",
+                                    error
+                                )
+                            }
+                            throw error
+                        }
+                    }
+                    patchSession?.let { runCatching { RiftPatchSessions.commit(activity, it) } }
+                    patchSession = null
+                    EditorSaveResult(display, bytes.size.toLong())
+                } catch (error: Throwable) {
+                    patchSession?.let(RiftPatchSessions::abort)
+                    throw error
+                }
+            },
+            complete = { outcome ->
+                if (editor !== state) return@runNativeTask
+                val value = outcome.value
+                if (value == null) {
+                    state.status.text = "Save error: ${outcome.error?.message ?: "unknown error"}"
+                } else {
+                    state.displayPath = value.display
+                    state.status.text = "Saved ${value.display} · ${humanBytes(value.size)}"
+                }
+            }
+        )
     }
 
 
@@ -529,9 +593,50 @@ class RiftNativeWorkspaceApps(
         return state()
     }
 
+    private fun <T> runNativeTask(
+        timeoutMs: Long,
+        work: () -> T,
+        complete: (NativeTaskOutcome<T>) -> Unit
+    ) {
+        RiftBoundedAsync.submit(
+            executor = settingsExecutor,
+            watchdog = settingsWatchdog,
+            timeoutMs = timeoutMs,
+            timeoutValue = { NativeTaskOutcome<T>(error = IllegalStateException("Native I/O task timed out after ${timeoutMs}ms")) },
+            failureValue = { error -> NativeTaskOutcome<T>(error = error) },
+            work = {
+                RiftDeadline.check("native I/O task")
+                NativeTaskOutcome(value = work())
+            },
+            reply = { outcome ->
+                activity.runOnUiThread {
+                    if (!activity.isFinishing && !activity.isDestroyed) complete(outcome)
+                }
+            }
+        )
+    }
+
+    private fun runSettingsTask(block: () -> Unit) {
+        RiftBoundedAsync.submit<String?>(
+            executor = settingsExecutor,
+            watchdog = settingsWatchdog,
+            timeoutMs = SETTINGS_TASK_TIMEOUT_MS,
+            timeoutValue = { "Native Settings task timed out after ${SETTINGS_TASK_TIMEOUT_MS}ms" },
+            failureValue = { error -> error.message ?: error.javaClass.simpleName },
+            work = {
+                RiftDeadline.check("native Settings task")
+                block()
+                null
+            },
+            reply = { error ->
+                if (error != null) android.util.Log.w("RiftNativeWorkspaceApps", error)
+            }
+        )
+    }
+
     private fun refreshWorkspaceRecords(viewState: WorkspaceRecordsState) {
         viewState.status.text = "Refreshing local records…"
-        settingsExecutor.execute {
+        runSettingsTask {
             val result = runCatching {
                 RiftWorkspaceRecords.get(activity).query(
                     JSONObject().put("limit", 80).put("includeDiff", false)
@@ -630,7 +735,7 @@ class RiftNativeWorkspaceApps(
                 gitStatus.text = "Enter a GitHub token first."
             } else {
                 gitStatus.text = "Verifying GitHub credential…"
-                settingsExecutor.execute {
+                runSettingsTask {
                     val result = runCatching { nativeGit.storeToken(token) }
                     activity.runOnUiThread {
                         if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
@@ -645,7 +750,7 @@ class RiftNativeWorkspaceApps(
         gitButtons.addView(actionButton("Clear") {
             tokenInput.setText("")
             gitStatus.text = "Clearing GitHub credential…"
-            settingsExecutor.execute {
+            runSettingsTask {
                 val result = runCatching { nativeGit.clearToken() }
                 activity.runOnUiThread {
                     if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
@@ -695,7 +800,7 @@ class RiftNativeWorkspaceApps(
                 llmStatus.text = "Enter the 64-character token shown by RiftLLM Dev Lab."
             } else {
                 llmStatus.text = "Verifying RiftLLM provider and token…"
-                settingsExecutor.execute {
+                runSettingsTask {
                     val result = runCatching { riftLlm.execute(JSONObject().put("op", "pair").put("token", token)) as JSONObject }
                     activity.runOnUiThread {
                         if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
@@ -709,7 +814,7 @@ class RiftNativeWorkspaceApps(
         }, LinearLayout.LayoutParams(0, dp(44), 1f))
         llmButtons.addView(actionButton("Unpair") {
             llmTokenInput.setText("")
-            settingsExecutor.execute {
+            runSettingsTask {
                 val result = runCatching { riftLlm.execute(JSONObject().put("op", "unpair")) as JSONObject }
                 activity.runOnUiThread {
                     if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
@@ -743,7 +848,7 @@ class RiftNativeWorkspaceApps(
 
     private fun refreshGitSettings(status: TextView) {
         status.text = "Checking GitHub authentication…"
-        settingsExecutor.execute {
+        runSettingsTask {
             val result = runCatching { nativeGit.authStatus() }
             activity.runOnUiThread {
                 if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
@@ -765,7 +870,7 @@ class RiftNativeWorkspaceApps(
 
     private fun refreshRiftLlmSettings(status: TextView) {
         status.text = "Checking RiftLLM pairing…"
-        settingsExecutor.execute {
+        runSettingsTask {
             val result = runCatching { riftLlm.execute(JSONObject().put("op", "status")) as JSONObject }
             activity.runOnUiThread {
                 if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
@@ -862,6 +967,7 @@ class RiftNativeWorkspaceApps(
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(16 * 1024)
             while (true) {
+                RiftDeadline.check("native editor provider read")
                 val count = stream.read(buffer)
                 if (count < 0) break
                 require(output.size().toLong() + count <= MAX_EDITOR_BYTES) { "file exceeds native editor limit" }
@@ -887,36 +993,49 @@ class RiftNativeWorkspaceApps(
 
     private fun listDisplay(rawPath: String): List<DisplayEntry> {
         val path = RiftVolumePaths.normalizeDisplay(rawPath)
+        RiftDeadline.check("native Files listing")
         if (path.equals(ANDROID_FILES_ROOT, ignoreCase = true)) {
             return mountedAndroidRoots().map { mount ->
-                DisplayEntry("$ANDROID_FILES_ROOT/${mount.id}", null, mount.root, true, mount.name)
+                DisplayEntry("$ANDROID_FILES_ROOT/${mount.id}", true, 0L, mount.name)
             }
         }
         if (isAndroidPath(path)) {
             val directory = resolveDocument(path)
             require(directory.isDirectory) { "not a directory: $path" }
+            RiftDeadline.check("native Files provider listing")
             val children = directory.listFiles()
             require(children.size <= MAX_FILES_ROWS) { "directory exceeds native Files row limit" }
             return children
-                .sortedWith(compareBy<DocumentFile>({ !it.isDirectory }, { (it.name ?: "").lowercase() }))
                 .mapNotNull { document ->
+                    RiftDeadline.check("native Files provider listing")
                     val name = document.name?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                    DisplayEntry(RiftVolumePaths.normalizeDisplay("$path/$name"), null, document, document.isDirectory)
+                    val isDirectory = document.isDirectory
+                    DisplayEntry(
+                        RiftVolumePaths.normalizeDisplay("$path/$name"),
+                        isDirectory,
+                        if (isDirectory) 0L else document.length(),
+                        name
+                    )
                 }
+                .sortedWith(compareBy<DisplayEntry>({ !it.isDirectory }, { (it.label ?: "").lowercase() }))
         }
         if (RiftVolumePaths.isVolumeRoot(path)) {
             val volume = RiftVolumePaths.volume(path) ?: return emptyList()
             val entries = ArrayList<DisplayEntry>()
             for (name in volume.roots.keys) {
+                RiftDeadline.check("native Files volume listing")
                 val child = RiftVolumePaths.normalizeDisplay("$path/$name")
-                entries += DisplayEntry(child, resolveFile(child), null, true)
+                entries += DisplayEntry(child, true, 0L)
             }
             val backing = resolveFile(path)
             val backingRows = backing.listFiles().orEmpty()
             require(entries.size + backingRows.size <= MAX_FILES_ROWS) { "directory exceeds native Files row limit" }
             backingRows.sortedBy { it.name.lowercase() }.forEach { file ->
+                RiftDeadline.check("native Files volume listing")
                 val child = RiftVolumePaths.normalizeDisplay("$path/${file.name}")
-                if (entries.none { it.display.equals(child, ignoreCase = true) }) entries += DisplayEntry(child, file, null, file.isDirectory)
+                if (entries.none { it.display.equals(child, ignoreCase = true) }) {
+                    entries += DisplayEntry(child, file.isDirectory, if (file.isFile) file.length() else 0L)
+                }
             }
             return entries
         }
@@ -925,13 +1044,20 @@ class RiftNativeWorkspaceApps(
         val children = directory.listFiles().orEmpty()
         require(children.size <= MAX_FILES_ROWS) { "directory exceeds native Files row limit" }
         return children.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))
-            .map { DisplayEntry(RiftVolumePaths.normalizeDisplay("$path/${it.name}"), it, null, it.isDirectory) }
+            .map { file ->
+                RiftDeadline.check("native Files local listing")
+                DisplayEntry(
+                    RiftVolumePaths.normalizeDisplay("$path/${file.name}"),
+                    file.isDirectory,
+                    if (file.isFile) file.length() else 0L
+                )
+            }
     }
 
     private fun normalizeExistingDirectory(rawPath: String): String {
         val candidate = runCatching { RiftVolumePaths.normalizeDisplay(rawPath) }.getOrDefault("/D:/Workspace")
         if (candidate.equals(ANDROID_FILES_ROOT, ignoreCase = true)) return ANDROID_FILES_ROOT
-        if (isAndroidPath(candidate) && runCatching { resolveDocument(candidate).isDirectory }.getOrDefault(false)) return candidate
+        if (isAndroidPath(candidate)) return candidate
         return if (runCatching { resolveFile(candidate).isDirectory || RiftVolumePaths.isVolumeRoot(candidate) }.getOrDefault(false)) candidate else "/D:/Workspace"
     }
 

@@ -960,7 +960,7 @@ internal object RiftCliPatchLifecycleV1 {
 
     private fun clear(context: Context, sessionId: String): JSONObject {
         val dir = sessionDirectory(context, sessionId)
-        val removed = dir.deleteRecursively()
+        val removed = deleteTreeBounded(dir)
         return JSONObject()
             .put("sessionId", sessionId)
             .put("cleared", removed)
@@ -1340,7 +1340,7 @@ internal object RiftCliPatchLifecycleV1 {
                 legacy.isDirectory
             ) {
                 val migrated = runCatching {
-                    legacy.copyRecursively(dir, overwrite = false)
+                    copyLegacySession(legacy, dir)
                     true
                 }.getOrDefault(false)
                 require(migrated && dir.isDirectory) {
@@ -1350,6 +1350,67 @@ internal object RiftCliPatchLifecycleV1 {
         }
         require(dir.isDirectory) { "Lifecycle session not found: " + sessionId }
         return dir
+    }
+
+    private fun deleteTreeBounded(root: File): Boolean {
+        var entries = 0
+        fun remove(node: File): Boolean {
+            RiftDeadline.check("CLI lifecycle cleanup")
+            require(++entries <= MAX_INVENTORY_FILES) {
+                "CLI lifecycle cleanup exceeds $MAX_INVENTORY_FILES entries"
+            }
+            if (node.isDirectory) {
+                val children = node.listFiles()
+                    ?: throw IllegalStateException("Could not read CLI lifecycle cleanup directory")
+                children.forEach { child ->
+                    require(remove(child)) { "Could not remove CLI lifecycle cleanup entry" }
+                }
+            }
+            return node.delete()
+        }
+        return !root.exists() || remove(root)
+    }
+
+    private fun copyLegacySession(source: File, destination: File) {
+        var entries = 0
+        var bytes = 0L
+        fun copyNode(from: File, to: File) {
+            RiftDeadline.check("CLI lifecycle migration")
+            require(++entries <= MAX_INVENTORY_FILES) {
+                "CLI lifecycle migration exceeds $MAX_INVENTORY_FILES entries"
+            }
+            if (from.isDirectory) {
+                require((to.exists() && to.isDirectory) || to.mkdirs()) {
+                    "Could not create CLI lifecycle migration directory"
+                }
+                val children = from.listFiles()
+                    ?: throw IllegalStateException("Could not read CLI lifecycle migration source")
+                children.sortedBy { it.name.lowercase() }.forEach { child ->
+                    copyNode(child, File(to, child.name))
+                }
+            } else {
+                bytes += from.length()
+                require(bytes <= MAX_INVENTORY_BYTES) {
+                    "CLI lifecycle migration exceeds ${MAX_INVENTORY_BYTES / (1024 * 1024)} MiB"
+                }
+                to.parentFile?.let { parent ->
+                    require(parent.exists() || parent.mkdirs()) { "Could not create CLI lifecycle migration parent" }
+                }
+                require(!to.exists()) { "CLI lifecycle migration destination already exists" }
+                from.inputStream().buffered().use { input ->
+                    to.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            RiftDeadline.check("CLI lifecycle migration")
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+            }
+        }
+        copyNode(source, destination)
     }
 
     private fun loadSession(context: Context, sessionId: String): JSONObject {

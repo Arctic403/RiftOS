@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -19,6 +19,7 @@ There is no trusted-shell WebView fallback and no Android/Linux raw shell escape
 Primary:
 - RiftNativeShell.kt — parser, cwd, RiftFS core commands, workspace status/push routing, app/process helpers.
 - RiftNativeShellServices.kt — bounded adapters for Chat Handoff, Dev Lab, Vortex, local agents and RiftLLM.
+- RiftNativeToolchain.kt — bounded trusted Clang/LLD bootstrap authority for Semnexis; no raw compiler argument or shell passthrough.
 - RiftShellExecutor.kt — UI/MCP-neutral asynchronous execution contract.
 - RiftMcpRuntime.kt — process singleton owner.
 - RiftToolHost.kt — MCP permission gate/audit/result framing.
@@ -34,11 +35,11 @@ Retained/unpackaged:
 
 RiftMcpRuntime lazily constructs one RiftNativeShell with application context.
 
-RiftNativeShell uses one single-thread executor. Supported commands therefore serialize through one process-owned queue.
+RiftNativeShell uses one serialized worker backed by a bounded 8-request queue plus a separate watchdog. Supported commands still execute in order, but queue growth is capped and each invocation has a 60-second terminal deadline.
 
 Activity recreation does not recreate the shell while the Android process remains alive.
 
-close() marks the shell closed and shuts down its executor.
+close() marks the shell closed and shuts down both the worker and watchdog. Timeout interrupts the active Future; long copy/delete/archive/hash/tree loops cooperatively check `RiftDeadline` so the serialized worker can recover instead of remaining poisoned.
 
 The Terminal UI is only a client; closing Terminal does not close the process shell.
 
@@ -79,6 +80,7 @@ Native core includes:
 - vortex-agent
 - riftos-agent
 - riftllm-agent
+- riftclang doctor / semnexis-build
 - riftpp
 - rift-cli
 

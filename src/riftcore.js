@@ -82,6 +82,7 @@ class RiftNativeBridge extends EventTarget{
     super();
     this.seq=0;
     this.pending=new Map();
+    this.maxPending=64;
     this.timeout=30000;
     this.transport=globalThis.RiftNativeTransport||null;
   }
@@ -126,6 +127,7 @@ class RiftNativeBridge extends EventTarget{
   }
   call(method,args={}){
     if(!this.connected)return Promise.reject(new Error("RiftAndroid native transport is not connected."));
+    if(this.pending.size>=this.maxPending)return Promise.reject(new Error("RiftAndroid native transport request capacity is full."));
     const id=`ra-${Date.now()}-${++this.seq}`;
     return new Promise((resolve,reject)=>{
       const timeout=this.timeoutFor(method);
@@ -152,10 +154,15 @@ class RiftTransferQueue{
   constructor(){
     this.tail=Promise.resolve();
     this.pending=0;
+    this.queued=0;
+    this.maxQueued=32;
   }
   run(task){
     if(typeof task!=="function")return Promise.reject(new TypeError("RiftTransferQueue task must be a function"));
+    if(this.queued>=this.maxQueued)return Promise.reject(new Error("Rift transfer queue is full"));
+    this.queued++;
     const execute=async()=>{
+      this.queued=Math.max(0,this.queued-1);
       this.pending++;
       try{return await task();}
       finally{this.pending=Math.max(0,this.pending-1);}

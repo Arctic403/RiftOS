@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -68,7 +68,7 @@ Volume-root browsing includes declared virtual roots plus any backing entries wi
 
 ## Directory row bound
 
-Native Files renders at most 5000 entries for one directory.
+Native Files accepts at most 5000 discovered entries for one directory, but renders at most 400 row Views in one refresh. Larger valid listings show a truncation notice instead of constructing thousands of Android Views on the UI thread.
 
 The limit is checked for:
 - internal RiftFS directories;
@@ -78,7 +78,7 @@ The limit is checked for:
 Directories above this limit fail with:
 directory exceeds native Files row limit
 
-This prevents an unbounded row/view creation loop.
+Directory enumeration and metadata collection run on the bounded native I/O worker with a 20-second deadline. SAF `DocumentFile.listFiles()`, `isDirectory` and `length()` are completed before returning to the UI; the UI only renders plain snapshot metadata. This prevents both unbounded row/view creation and a slow document provider from blocking the desktop thread.
 
 ## /Android virtual root
 

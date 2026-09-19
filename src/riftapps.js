@@ -23,12 +23,14 @@ const appDataRoot=id=>`${USER_APPDATA_ROOT}/${id}`;
 const dataPath=id=>`${appDataRoot(id)}/storage.json`;
 const txId=()=>`${Date.now()}-${crypto.randomUUID?.()||Math.random().toString(36).slice(2)}`;
 
-async function legacyRequest(req){return new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+async function legacyRequest(req){return new Promise((resolve,reject)=>{let done=false;const finish=(ok,value)=>{if(done)return;done=true;clearTimeout(timer);req.onsuccess=null;req.onerror=null;ok?resolve(value):reject(value);};const timer=setTimeout(()=>finish(false,new Error("Legacy IndexedDB request timed out")),10000);req.onsuccess=()=>finish(true,req.result);req.onerror=()=>finish(false,req.error||new Error("Legacy IndexedDB request failed"));});}
 async function openLegacyAppsDB(){
   return new Promise((resolve,reject)=>{
-    const req=indexedDB.open("riftapps",1);
+    const req=indexedDB.open("riftapps",1);let done=false;
+    const finish=(ok,value)=>{if(done)return;done=true;clearTimeout(timer);req.onsuccess=null;req.onerror=null;req.onblocked=null;ok?resolve(value):reject(value);};
+    const timer=setTimeout(()=>finish(false,new Error("Legacy IndexedDB open timed out")),10000);
     req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains("apps"))db.createObjectStore("apps",{keyPath:"id"});if(!db.objectStoreNames.contains("data"))db.createObjectStore("data",{keyPath:"key"});};
-    req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+    req.onsuccess=()=>finish(true,req.result);req.onerror=()=>finish(false,req.error||new Error("Legacy IndexedDB open failed"));req.onblocked=()=>finish(false,new Error("Legacy IndexedDB open was blocked"));
   });
 }
 

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -54,7 +54,9 @@ displayed internally as `workspace/RiftOS-main`.
 - maximum staged paths: 256;
 - snapshot list query: 1..200;
 - stage reason: <=500 characters;
-- snapshot note: <=1000 characters.
+- snapshot note: <=1000 characters;
+- one native Dev Lab operation: <=30 seconds cooperative execution;
+- transaction/stage cleanup: <=5000 entries.
 
 Only explicit text/source extensions and a small set of extensionless source filenames are stageable.
 
@@ -292,6 +294,6 @@ Builder/device activation -> Build/validation subsystem.
 
 ## Validation
 
-Second source audit must recheck storage roots, allowed source paths, 2 MiB/256 bounds, baseline capture, snapshot contents, file/head/type conflict detection, publish backup/rollback behavior, transaction cleanup/retention, UI/shell/local-agent callers, dead headless runner absence and absence of live shell batch.
+Second source audit must recheck storage roots, allowed source paths, 2 MiB/256 bounds, 30-second operation deadline, 5000-entry cleanup bound, baseline capture, snapshot contents, file/head/type conflict detection, publish backup/rollback behavior, transaction cleanup/retention, UI/shell/local-agent callers, dead headless runner absence and absence of live shell batch.
 
 Device proof should stage/edit/snapshot, introduce file and Git-head drift, test successful publication, force a publication failure, verify Workspace Records observation, then Builder/install before treating Kotlin changes as active.

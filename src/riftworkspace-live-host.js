@@ -54,10 +54,16 @@ function mount(container){
   let destroyed=false,cleanup=null;
   const destroy=()=>{if(destroyed)return;destroyed=true;cleanup?.();shadow.replaceChildren();};
   (async()=>{
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),15000);
     try{
+      const importWithTimeout=Promise.race([
+        import("../workspace-live/app.js"),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error("Workspace Records module timed out")),15000))
+      ]);
       const [response,view]=await Promise.all([
-        fetch(new URL("../workspace-live/index.html",import.meta.url)),
-        import("../workspace-live/app.js")
+        fetch(new URL("../workspace-live/index.html",import.meta.url),{signal:controller.signal}),
+        importWithTimeout
       ]);
       if(!response.ok)throw new Error(`Workspace Records template failed: ${response.status}`);
       const template=new DOMParser().parseFromString(await response.text(),"text/html").querySelector(".records-app");
@@ -70,6 +76,8 @@ function mount(container){
       if(destroyed)return;
       loading.textContent=`Workspace Records could not start: ${error?.message||error}`;
       console.error("[RiftWorkspaceRecords] mount failed",error);
+    }finally{
+      clearTimeout(timer);
     }
   })();
   return {destroy,root:shadow};

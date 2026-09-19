@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -40,7 +40,7 @@ The native launcher discovers only C:/Programs.
 
 Launcher now requires the package directory name to exactly equal the manifest id.
 
-Execution performs stronger validation again when opening.
+Execution performs stronger validation again when opening. Launcher-triggered opens now prepare package JSON, origin/CSP data and injected HTML on the bounded app-host worker before returning to the UI thread for WebView creation, so multi-megabyte package parsing does not block RiftDesktop.
 
 ## Package format
 
@@ -211,6 +211,8 @@ There is no arbitrary method/native dispatcher.
 
 Unsupported methods return an error.
 
+The injected app bridge keeps at most 32 pending native RPC Promises. Each Promise expires after 65 seconds and clears its timer on reply. The native app-host worker itself uses a bounded 16-request queue with a 60-second local deadline, so bridge callers cannot accumulate an immortal pending map.
+
 ## Exposed app API
 
 Ungated own-app operations:
@@ -345,7 +347,8 @@ Packages must already be present in C:/Programs for launcher discovery.
 - no native installer is claimed;
 - execution revalidates package;
 - each app has distinct origin;
-- native bridge is main-frame/exact-origin/1 MiB bounded;
+- native bridge is main-frame/exact-origin/1 MiB bounded with at most 32 pending Promises;
+- installed-app package preparation happens off the Android UI thread and terminates within the bounded app-host lifecycle;
 - package cannot declare unknown host capability;
 - capability requires declaration + user grant;
 - grant can be revoked;
@@ -386,6 +389,8 @@ Second source audit must recheck:
 - third-party-cookie policy;
 - CSP script/network separation;
 - exact-origin/main-frame message bridge;
+- 32-pending / 65-second injected RPC bound;
+- off-UI package preparation before WebView construction;
 - 1 MiB inbound bound;
 - fs read/write roots;
 - 8 MiB text bound and atomic writes;

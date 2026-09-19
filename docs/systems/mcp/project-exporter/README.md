@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -54,6 +54,8 @@ Requested page size is clamped:
 - maximum 400 KiB.
 
 One source chunk is at most 96 KiB.
+
+File discovery, page assembly and snapshot hashing cooperatively check the active `RiftDeadline`; when called through the MCP sandbox they therefore terminate within the sandbox request lifecycle instead of continuing after the caller has timed out.
 
 Rows are reduced as needed to fit the page budget. A tiny first row may still be emitted to make progress.
 
@@ -117,7 +119,8 @@ Exporter does not own:
 - chunk <=96 KiB;
 - cursor cannot split UTF-8;
 - changed source invalidates continuation;
-- exporter never mutates workspace.
+- exporter never mutates workspace;
+- scan/page/hash loops honor the active cooperative deadline.
 
 ## Failure signatures
 

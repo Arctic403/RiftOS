@@ -1,6 +1,7 @@
 package com.riftos.app
 
 import android.content.Context
+import android.os.SystemClock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -11,7 +12,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Persistent, workspace-wide change recorder.
@@ -39,6 +42,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         private const val MAX_SEMANTIC_SEED_SOURCE_FILES = 1_024
         private const val MAX_SEMANTIC_SEED_TEXT_BYTES = 8L * 1024L * 1024L
         private const val MAX_SEMANTIC_SEED_OWNERSHIP_PROJECTS = 64
+        private const val MAX_PENDING_WATCH_EVENTS = 512
         private const val EVENT_SETTLE_MS = 220L
         @Volatile private var instance: RiftWorkspaceRecords? = null
 
@@ -90,7 +94,13 @@ class RiftWorkspaceRecords private constructor(context: Context) {
 
     fun start() {
         if (initialized) return
-        executor.execute { ensureInitialized() }
+        executor.execute {
+            runCatching {
+                RiftDeadline.runUntil(SystemClock.elapsedRealtime() + 30_000L) {
+                    ensureInitialized()
+                }
+            }
+        }
     }
 
     fun observe(type: String, file: File, directory: Boolean) {
@@ -104,54 +114,94 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     }
 
     fun query(args: JSONObject = JSONObject()): JSONObject =
-        executor.submit<JSONObject> {
+        runBounded("workspace records query") {
             ensureInitialized()
             queryInternal(args)
-        }.get(30, TimeUnit.SECONDS)
+        }
 
     fun checkpoint(args: JSONObject = JSONObject()): JSONObject =
-        executor.submit<JSONObject> {
+        runBounded("workspace records checkpoint") {
             ensureInitialized()
             createCheckpoint(
                 reason = args.optString("reason", "manual").take(80).ifBlank { "manual" },
                 gitRoot = args.optString("gitRoot").takeIf { it.isNotBlank() },
                 gitHeadSha = args.optString("gitHeadSha").takeIf { it.isNotBlank() }
             )
-        }.get(30, TimeUnit.SECONDS)
+        }
 
     /**
      * Internal-only candidate freeze for the future Local Agent gate.
      * No MCP ToolHost mapping exists in OBSERVE construction.
      */
     fun freezeCandidate(): JSONObject =
-        executor.submit<JSONObject> {
+        runBounded("workspace candidate freeze") {
             ensureInitialized()
             reconcileAll("manifest-freeze")
             val manifest = buildCandidateManifest()
             val receipt = RiftPatchManifestV1.freeze(manifestRoot, manifest)
             receipt.put("recordChain", verifyRecordChain())
-        }.get(30, TimeUnit.SECONDS)
+        }
 
     /**
      * Internal-only semantic working set derived from the exact Patch Manifest V1 candidate.
      * The Local Agent/PI-v2 path consumes this; it is not a model-selected scope or MCP tool.
      */
     fun semanticImpactSeed(): JSONObject =
-        executor.submit<JSONObject> {
+        runBounded("workspace semantic impact") {
             ensureInitialized()
             reconcileAll("semantic-impact-seed")
             buildSemanticImpactSeed(buildCandidateManifest())
-        }.get(30, TimeUnit.SECONDS)
+        }
+
+    private fun <T> runBounded(label: String, block: () -> T): T {
+        val future = executor.submit<T> {
+            RiftDeadline.runUntil(SystemClock.elapsedRealtime() + 30_000L) {
+                checkActive(label)
+                block()
+            }
+        }
+        return try {
+            future.get(30, TimeUnit.SECONDS)
+        } catch (error: TimeoutException) {
+            future.cancel(true)
+            throw IllegalStateException("$label timed out after 30 seconds", error)
+        } catch (error: InterruptedException) {
+            future.cancel(true)
+            Thread.currentThread().interrupt()
+            throw error
+        }
+    }
+
+    private fun checkActive(label: String) {
+        RiftDeadline.check(label)
+    }
 
     private fun schedule(key: String, delayMs: Long, block: () -> Unit) {
+        if (key != "__tree__" && !pending.containsKey(key) && pending.size >= MAX_PENDING_WATCH_EVENTS) {
+            pending.entries.toList().forEach { entry ->
+                if (entry.key != "__tree__" && pending.remove(entry.key, entry.value)) {
+                    entry.value.cancel(false)
+                }
+            }
+            schedule("__tree__", 420L) { reconcileAll("watch:burst") }
+            return
+        }
+
         pending.remove(key)?.cancel(false)
+        val holder = AtomicReference<ScheduledFuture<*>?>()
         val future = executor.schedule({
-            try { block() } finally { pending.remove(key) }
+            try {
+                RiftDeadline.runUntil(SystemClock.elapsedRealtime() + 30_000L) { block() }
+            } finally {
+                holder.get()?.let { completed -> pending.remove(key, completed) }
+            }
         }, delayMs, TimeUnit.MILLISECONDS)
+        holder.set(future)
         pending[key] = future
     }
 
     private fun ensureInitialized() {
+        checkActive("workspace records initialization")
         if (initialized) return
         loadState()
         ensureEventChain()
@@ -166,8 +216,8 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     private fun seedInitialState() {
         observed.clear()
         checkpoint.clear()
-        observedRoot.deleteRecursively(); observedRoot.mkdirs()
-        checkpointRoot.deleteRecursively(); checkpointRoot.mkdirs()
+        resetSnapshotRoot(observedRoot)
+        resetSnapshotRoot(checkpointRoot)
         val current = scanCurrentFiles()
         for ((path, file) in current) {
             val snapshot = snapshot(file)
@@ -183,12 +233,14 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     }
 
     private fun reconcileAll(source: String) {
+        checkActive("workspace reconcile")
         val current = scanCurrentFiles()
         val currentPaths = current.keys.toSet()
         val candidates = LinkedHashMap<String, Snapshot>()
         var metadataDirty = false
 
         for ((path, file) in current) {
+            checkActive("workspace reconcile")
             val previous = observed[path]
             if (previous != null && previous.kind == "file" &&
                 previous.size == file.length() && previous.modified == file.lastModified()) continue
@@ -212,6 +264,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             .associateBy { it.toPath }
 
         for (relation in correlation.relations) {
+            checkActive("workspace reconcile")
             if (relation.kind !in setOf("renamed", "copied")) continue
             val target = candidates[relation.toPath] ?: continue
             val sourceEntry = observed[relation.fromPath] ?: continue
@@ -226,6 +279,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         }
 
         for ((path, next) in candidates) {
+            checkActive("workspace reconcile")
             if (path in handledTargets) continue
             val previous = observed[path]
             if (previous == null || previous.sha256 != next.entry.sha256 || previous.kind != next.entry.kind) {
@@ -417,7 +471,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     private fun createCheckpoint(reason: String, gitRoot: String?, gitHeadSha: String?): JSONObject {
         reconcileAll("checkpoint")
         checkpoint.clear()
-        checkpointRoot.deleteRecursively(); checkpointRoot.mkdirs()
+        resetSnapshotRoot(checkpointRoot)
         for ((path, entry) in observed) {
             checkpoint[path] = entry
             if (entry.textStored) {
@@ -923,6 +977,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         fun walk(directory: File) {
             val children = directory.listFiles()?.sortedBy { it.name.lowercase() }.orEmpty()
             for (child in children) {
+                checkActive("workspace record scan")
                 val canonical = runCatching { child.canonicalFile }.getOrNull() ?: continue
                 if (!insideWorkspace(canonical)) continue
                 if (canonical.isDirectory) walk(canonical)
@@ -1162,11 +1217,30 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         check(tmp.renameTo(file)) { "Could not persist workspace records" }
     }
 
+    private fun resetSnapshotRoot(root: File) {
+        if (root.exists()) {
+            var entries = 0
+            fun remove(node: File): Boolean {
+                checkActive("workspace record cleanup")
+                require(++entries <= 10_000) { "workspace record cleanup exceeds 10,000 entries" }
+                if (node.isDirectory) {
+                    val children = node.listFiles()
+                        ?: throw IllegalStateException("Could not read workspace record snapshot directory")
+                    children.forEach { child -> require(remove(child)) { "Could not delete workspace record snapshot" } }
+                }
+                return node.delete()
+            }
+            require(remove(root)) { "Could not reset workspace record snapshot root" }
+        }
+        require(root.mkdirs() || root.isDirectory) { "Could not recreate workspace record snapshot root" }
+    }
+
     private fun digestFile(file: File, algorithm: String): String {
         val digest = MessageDigest.getInstance(algorithm)
         FileInputStream(file).use { input ->
             val buffer = ByteArray(64 * 1024)
             while (true) {
+                checkActive("workspace record hash")
                 val count = input.read(buffer)
                 if (count <= 0) break
                 digest.update(buffer, 0, count)
