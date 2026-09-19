@@ -6,6 +6,33 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.8 — Runtime-valued ARM32 lowering
+
+### Current source changes
+
+Semnexis bootstrap compiler advanced to `0.4.0-quickjs-bootstrap`.
+
+Added `SEMNEXIS_ARM32_RUNTIME_ELF_V0`, a direct runtime-valued ARM32 backend that consumes verified Native IR without whole-program constant evaluation.
+
+Current lowering:
+- deterministic stack slot per SSA value;
+- 8-byte-aligned frames;
+- `r0-r3` parameter and call-argument ABI;
+- `BL` function calls;
+- `r0` returns;
+- `MOVW/MOVT` constants;
+- runtime copies;
+- checked add/sub using `ADDS/SUBS` plus `BVS` to a shared overflow trap;
+- nested calls;
+- fail-closed rejection for multiply/divide/effects/recursion until those lowerings exist.
+
+The runtime fixture emits a 268-byte ELF32/EM_ARM image with `constantEvaluated=false` and `runtimeLowered=true`.
+
+Fixed runtime artifact output:
+- `/documents/builds/Semnexis/semx-arm32-runtime.elf`
+
+Generated writable artifacts remain non-executable by RiftOS policy. Device proof requires the next APK.
+
 ## Patch 10.7 — Semnexis Native IR V0 + direct ARM32 backend seed
 
 ### Current source changes

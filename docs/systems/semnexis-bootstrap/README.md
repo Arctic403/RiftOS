@@ -2,38 +2,36 @@
 
 ## Status
 
-**0.1 SEMANTIC BOOTSTRAP DEVICE VERIFIED / 0.3 NATIVE IR + ARM32 BACKEND DEVICE PROOF PENDING — 2026-09-19**
+**0.3 DEVICE VERIFIED / 0.4 RUNTIME ARM32 SOURCE VERIFIED, DEVICE PROOF PENDING — 2026-09-19**
 
 Semnexis is bootstrapped by a bounded JavaScript compiler hosted inside RiftOS headless QuickJS. Clang, GCC, CMake, LLD and raw subprocess execution are not part of the active bootstrap.
 
-The installed 0.1 path was device-verified on RiftOS source `a7ba2b211b22fedf53073f6724d14305fec01c87`: `semx self-test`, smoke compilation, Program Graph golden and Execution Plan golden passed on the Android target.
+Semnexis 0.3 was device-verified on RiftOS source `8a01a0aad794d9721f345b9ab7c26e27f183b527`. That installed-device proof covered Program Graph generation, Execution Plan generation, Native IR V0, `SNIRV0` binary encode/decode/reverify and the fixed ARM32 constant-proof ELF artifact.
 
-The current source extends that compiler to 0.3 with verified Native IR, binary IR serialization and a bounded ARM32 ELF proof backend. Those new 0.3 features require the next APK before device verification is claimed.
+Current source is `0.4.0-quickjs-bootstrap`. It adds a runtime-valued ARM32 backend that no longer evaluates supported add/sub/call programs at compile time.
 
 Current source pipeline:
 
 ```text
-.snx source in RiftFS
-    -> RiftShell semx
-    -> RiftHeadlessJsRuntime
-    -> packaged semnexis-bootstrap.js
-    -> lexer/parser
-    -> deterministic Program Graph
-    -> graph verifier
-    -> effect/capability solver
+.snx source
+    -> Program Graph
+    -> graph verification
+    -> effect/capability solving
     -> Execution Plan
     -> SEMNEXIS_NATIVE_IR_V0
-    -> Native IR verifier
-    -> SNIRV0 binary encode/decode/reverify
-    -> ARM32 proof backend (pure zero-input V0 only)
+    -> IR verification
+    -> optional SNIRV0 serialization/reload/reverify
+    -> ARM32 backend
+       -> constant proof backend (reference)
+       -> runtime-valued backend (current path)
     -> ELF32 / EM_ARM artifact
 ```
 
-QuickJS is a bootstrap host, not the target runtime for Semnexis programs and not the intended self-hosted compiler runtime.
+QuickJS remains only the bootstrap host.
 
 ## Bootstrap surface
 
-RiftShell exposes fixed Semnexis commands:
+RiftShell exposes fixed commands:
 
 ```text
 semx help
@@ -44,103 +42,136 @@ semx dump-graph <source.snx>
 semx dump-plan <source.snx>
 semx dump-ir <source.snx>
 semx emit-arm32-proof <source.snx>
+semx emit-arm32-runtime <source.snx>
 ```
 
-`emit-arm32-proof` writes only `/documents/builds/Semnexis/semx-arm32-proof.elf`.
+The two binary commands may write only:
+- `/documents/builds/Semnexis/semx-arm32-proof.elf`
+- `/documents/builds/Semnexis/semx-arm32-runtime.elf`
 
-The Semnexis host exposes no subprocess authority, raw Android shell or network authority. Generated writable RiftFS artifacts are never executed by this path.
+Generated writable RiftFS artifacts are not executed by this path.
 
 ## Semantic and IR contract
 
-The bootstrap currently owns:
-- V0 lexer/parser for functions, parameters, locals, integer arithmetic and calls;
-- canonical signed `i32` facts;
-- deterministic Program Graph and graph verifier;
-- pure/time effect inference and explicit time capabilities;
-- deterministic Execution Plan;
-- `SEMNEXIS_NATIVE_IR_V0` typed SSA-like lowering;
-- explicit regions/effects/capabilities in IR;
-- Program Graph provenance on IR functions, parameters and instructions;
-- IR use-before-definition, canonical SSA identity, call-arity and structure verification;
-- checked `i32` add/sub/mul/div semantics;
-- canonical binary IR format `SNIRV0`;
-- binary decode followed by independent IR re-verification.
+The compiler owns:
+- V0 parsing and name resolution;
+- deterministic Program Graph;
+- graph verifier;
+- effect/capability solving;
+- Execution Plan;
+- `SEMNEXIS_NATIVE_IR_V0`;
+- typed SSA values;
+- explicit regions/effects/capabilities;
+- Program Graph provenance;
+- use-before-definition and call-shape verification;
+- checked signed-`i32` arithmetic semantics;
+- `SNIRV0` canonical binary serialization;
+- source-independent decode + IR re-verification.
 
-V0 checked arithmetic is language semantics. Backends may not replace it with target-specific undefined overflow behavior.
+Backends must preserve Semnexis arithmetic semantics rather than inheriting target undefined behavior.
 
-## ARM32 proof backend
+## ARM32 constant proof backend
 
-The first direct backend consumes verified Native IR and emits `SEMNEXIS_ARM32_ELF_PROOF_V0`.
+`SEMNEXIS_ARM32_ELF_PROOF_V0` remains as a transition/differential backend. It evaluates supported pure V0 IR at compile time and emits a deterministic 100-byte ARM32 ELF containing the result.
 
-Current target:
-- `armv7a-linux-androideabi26`;
-- ELF32 little-endian;
-- `EM_ARM`;
-- ARM EABI5;
-- one RX `PT_LOAD` segment.
+This backend is device-verified and is no longer the primary backend direction.
 
-The proof backend currently accepts only pure, capability-free programs whose `main` has no runtime parameters. Current V0 programs are evaluated from verified IR at build time with checked `i32` semantics, then a deterministic ARM executable image is emitted. Calls and locals are supported. Effects, runtime inputs, recursion and unsupported operations fail closed.
+## ARM32 runtime backend
 
-The smoke/native-call proof is 100 bytes and returns 42. This is a real native backend seed, not yet the general runtime-valued backend required to compile the Semnexis compiler itself.
+`SEMNEXIS_ARM32_RUNTIME_ELF_V0` is the first runtime-valued backend.
+
+Current source-verified lowering:
+- deterministic 32-bit stack slot per SSA value;
+- 8-byte-aligned function frames;
+- up to four `i32` parameters through `r0-r3`;
+- call arguments through `r0-r3`;
+- real ARM `BL` calls;
+- return values in `r0`;
+- constants through `MOVW/MOVT`;
+- runtime copies through stack loads/stores;
+- checked add through `ADDS` + `BVS`;
+- checked subtract through `SUBS` + `BVS`;
+- shared overflow trap exiting with code 125;
+- nested calls;
+- deterministic ELF32/EM_ARM layout.
+
+The runtime fixture `add(40, 2)` emits a 268-byte image with:
+- two runtime functions;
+- a real `BL` from `main` to `add`;
+- runtime `ADDS` in `add`;
+- `BVS` resolving to the shared trap;
+- `constantEvaluated=false`;
+- `runtimeLowered=true`.
+
+Current V0 runtime-backend limits are fail-closed:
+- multiply not yet lowered;
+- divide not yet lowered;
+- effects/capabilities not yet lowered;
+- recursion/call cycles rejected;
+- more than four parameters rejected;
+- no branches/loops yet because the language does not expose them.
 
 ## Source ownership
 
-Maintained live owners:
-- `src/semnexis-bootstrap.js` — compiler, Program Graph lowering, Native IR, binary IR codec and ARM32 proof backend;
-- `android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt` — bounded QuickJS host, confined source read and fixed Semnexis binary artifact writer;
-- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed `semx` routing/help surface;
-- `android/app/build.gradle.kts` — packages the bootstrap source into APK assets;
-- `scripts/test-semnexis-bootstrap.mjs` — semantic/IR/binary/backend regression suite;
-- `scripts/test-semnexis-shell.mjs` — host/shell/packaging/authority boundary regression suite.
+Maintained owners:
+- `src/semnexis-bootstrap.js` — compiler, Program Graph, Native IR, `SNIRV0`, constant ARM32 proof backend and runtime ARM32 backend;
+- `RiftHeadlessJsRuntime.kt` — bounded QuickJS host, source reads and exact-path binary artifact writer;
+- `RiftNativeShell.kt` — fixed `semx` routing;
+- `android/app/build.gradle.kts` — packaged bootstrap asset;
+- `scripts/test-semnexis-bootstrap.mjs` — compiler/IR/backend regression suite;
+- `scripts/test-semnexis-shell.mjs` — host/shell/authority boundary suite.
 
-The language-project mirror is `workspace/Semnexis/bootstrap/quickjs/semnexis-bootstrap.js`. During bootstrap it must remain byte-identical to RiftOS `src/semnexis-bootstrap.js`.
+The language-project mirror is `workspace/Semnexis/bootstrap/quickjs/semnexis-bootstrap.js` and must remain byte-identical during bootstrap.
 
 ## Failure signatures
 
-The bootstrap is invalid if:
-- `semx` routes through WebView or a generic JS evaluator;
-- Semnexis source escapes RiftFS confinement;
-- the host gains process, shell or network authority;
-- the fixed binary writer can write outside `/documents/builds/Semnexis/semx-arm32-proof.elf`;
-- `RiftNativeToolchain`, `riftclang` or a Clang payload returns;
-- identical source produces different graph/plan/IR output;
-- malformed graph or Native IR passes verification;
-- `SNIRV0` corrupted/trailing/malformed input is accepted;
-- checked `i32` behavior differs across compiler/backend paths;
-- effectful code is accepted by the current pure-only ARM32 proof backend;
-- generated writable artifacts are executed from RiftFS;
-- the packaged bootstrap asset is missing or differs from source.
+Invalid states include:
+- WebView/generic-eval routing for `semx`;
+- source path escape;
+- process/shell/network authority;
+- binary output outside the two fixed Semnexis paths;
+- return of `riftclang`/native Clang bootstrap authority;
+- non-deterministic graph/IR output;
+- malformed IR passing verification;
+- malformed `SNIRV0` passing decode/reverify;
+- backend arithmetic violating checked-`i32` rules;
+- runtime backend silently accepting unsupported multiply/divide/effects;
+- incorrect `BL` or overflow-branch relocation;
+- unaligned runtime frames;
+- generated writable artifacts being executed.
 
 ## Fix map
 
-- lexer/parser/Program Graph/solvers -> `src/semnexis-bootstrap.js`;
-- Native IR verifier/codec -> `src/semnexis-bootstrap.js`;
-- ARM32 proof backend/ELF verifier -> `src/semnexis-bootstrap.js`;
-- QuickJS host/confined I/O -> `RiftHeadlessJsRuntime.kt`;
-- shell command surface -> `RiftNativeShell.kt`;
-- APK asset packaging -> `android/app/build.gradle.kts`;
-- compiler/backend regressions -> `scripts/test-semnexis-bootstrap.mjs`;
-- shell/authority regressions -> `scripts/test-semnexis-shell.mjs`;
-- language roadmap/status -> `workspace/Semnexis`.
+- frontend/Program Graph/IR/backend -> `src/semnexis-bootstrap.js`
+- QuickJS host + fixed artifact writes -> `RiftHeadlessJsRuntime.kt`
+- shell surface -> `RiftNativeShell.kt`
+- source/backend regressions -> `scripts/test-semnexis-bootstrap.mjs`
+- shell/authority regressions -> `scripts/test-semnexis-shell.mjs`
+- language roadmap/status -> `workspace/Semnexis`
 
 ## Validation
 
-Source promotion requires:
-- bootstrap smoke graph and plan goldens;
-- frozen Native IR golden;
-- deterministic `SNIRV0` binary encoding;
-- binary decode/reverify round-trip;
-- corrupted binary rejection;
-- invalid source/capability/range rejection;
-- ARM32 ELF magic/class/machine/program-header/code verification;
-- pure multi-function native proof returns 42;
-- effectful backend input rejection;
-- source mirror hashes match;
-- full RiftOS and Semnexis audits add no new findings.
+Current source proof requires:
+- Program Graph/Execution Plan/IR goldens;
+- deterministic `SNIRV0`;
+- decode/reverify;
+- constant proof backend verification;
+- runtime backend ELF verification;
+- runtime `ADDS/SUBS`;
+- overflow `BVS` resolves to trap;
+- `BL` resolves to actual target function;
+- nested calls lower to multiple `BL` instructions;
+- frames are 8-byte aligned;
+- multiply/effects fail closed;
+- RiftOS/Semnexis compiler mirrors hash identically;
+- audits add no new findings.
 
 Next APK device gate:
-- `semx self-test` reports compiler `0.3.0-quickjs-bootstrap`;
-- self-test reports 6 IR instructions, 157-byte `SNIRV0` and 100-byte ARM32 ELF proof;
-- `semx dump-ir tests/smoke.snx` matches the IR golden;
-- `semx emit-arm32-proof tests/smoke.snx` writes the fixed artifact;
-- artifact bytes begin `7f 45 4c 46` and report `EM_ARM`.
+- `semx self-test` reports `0.4.0-quickjs-bootstrap`;
+- self-test reports `SEMNEXIS_ARM32_RUNTIME_ELF_V0`;
+- runtime image reports 268 bytes / two functions;
+- `arm32RuntimeLowered=true`;
+- `arm32RuntimeConstantEvaluated=false`;
+- `arm32RuntimeHasCall=true`;
+- `arm32RuntimeHasCheckedAdd=true`;
+- `semx emit-arm32-runtime tests/runtime_calls.snx` writes the fixed runtime artifact.

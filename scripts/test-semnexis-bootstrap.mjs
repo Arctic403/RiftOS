@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { compileSemnexisV0, inspectSemnexisV0, encodeSemnexisNativeIRV0, decodeSemnexisNativeIRV0, emitSemnexisArm32ElfProofV0, verifySemnexisArm32ElfProofV0 } from '../src/semnexis-bootstrap.js';
+import { compileSemnexisV0, inspectSemnexisV0, encodeSemnexisNativeIRV0, decodeSemnexisNativeIRV0, emitSemnexisArm32ElfProofV0, verifySemnexisArm32ElfProofV0, emitSemnexisArm32RuntimeElfV0, verifySemnexisArm32RuntimeElfV0 } from '../src/semnexis-bootstrap.js';
 
 const smokeSource = 'fn main() -> i32 {\n    return 40 + 2;\n}\n';
 const expectedGraph = 'SEMNEXIS_PROGRAM_GRAPH_V0\n' +
@@ -118,6 +118,87 @@ assert.throws(
   () => emitSemnexisArm32ElfProofV0(effectfulNativeProgram.ir),
   /effectful\/capability function/,
   'proof backend must reject runtime effects until runtime lowering exists'
+);
+
+const runtimeProgram = compileSemnexisV0(
+  'fn add(a: i32, b: i32) -> i32 { return a + b; }\n' +
+  'fn main() -> i32 { return add(40, 2); }\n'
+);
+const runtimeArm32 = emitSemnexisArm32RuntimeElfV0(runtimeProgram.ir);
+assert.equal(runtimeArm32.schema, 'SEMNEXIS_ARM32_RUNTIME_ELF_V0');
+assert.equal(runtimeArm32.target, 'armv7a-linux-androideabi26');
+assert.equal(runtimeArm32.byteLength, 268);
+assert.equal(runtimeArm32.constantEvaluated, false);
+assert.equal(runtimeArm32.runtimeLowered, true);
+assert.equal(runtimeArm32.functions.length, 2);
+assert.equal(verifySemnexisArm32RuntimeElfV0(runtimeArm32), true);
+assert.ok(runtimeArm32.functions.every(fn => fn.frameBytes % 8 === 0));
+const readArmWord = (bytes, offset) => (
+  bytes[offset] |
+  (bytes[offset + 1] << 8) |
+  (bytes[offset + 2] << 16) |
+  (bytes[offset + 3] << 24)
+) >>> 0;
+const decodeArmBranchTarget = (word, fromAddress) => {
+  let imm24 = word & 0x00ffffff;
+  if (imm24 & 0x00800000) imm24 |= 0xff000000;
+  return (fromAddress + 8 + (imm24 | 0) * 4) >>> 0;
+};
+const runtimeAdd = runtimeArm32.functions.find(fn => fn.name === 'add');
+const runtimeMain = runtimeArm32.functions.find(fn => fn.name === 'main');
+assert.ok(runtimeAdd && runtimeMain);
+let sawRuntimeAdd = false;
+let sawOverflowBranch = false;
+let sawCallToAdd = false;
+for (let offset = runtimeAdd.fileOffset; offset < runtimeAdd.fileOffset + runtimeAdd.bytes; offset += 4) {
+  const word = readArmWord(runtimeArm32.bytes, offset);
+  if (word === 0xE0902001) sawRuntimeAdd = true;
+  if (((word & 0xFF000000) >>> 0) === 0x6A000000) {
+    sawOverflowBranch = decodeArmBranchTarget(
+      word,
+      runtimeAdd.address + (offset - runtimeAdd.fileOffset)
+    ) === runtimeArm32.trapAddress;
+  }
+}
+for (let offset = runtimeMain.fileOffset; offset < runtimeMain.fileOffset + runtimeMain.bytes; offset += 4) {
+  const word = readArmWord(runtimeArm32.bytes, offset);
+  if (((word & 0xFF000000) >>> 0) === 0xEB000000 &&
+      decodeArmBranchTarget(word, runtimeMain.address + (offset - runtimeMain.fileOffset)) === runtimeAdd.address) {
+    sawCallToAdd = true;
+  }
+}
+assert.equal(sawRuntimeAdd, true);
+assert.equal(sawOverflowBranch, true);
+assert.equal(sawCallToAdd, true);
+const runtimeSub = emitSemnexisArm32RuntimeElfV0(compileSemnexisV0(
+  'fn sub(a: i32, b: i32) -> i32 { return a - b; }\n' +
+  'fn main() -> i32 { return sub(40, 2); }\n'
+).ir);
+const runtimeSubFn = runtimeSub.functions.find(fn => fn.name === 'sub');
+let sawRuntimeSub = false;
+for (let offset = runtimeSubFn.fileOffset; offset < runtimeSubFn.fileOffset + runtimeSubFn.bytes; offset += 4) {
+  if (readArmWord(runtimeSub.bytes, offset) === 0xE0502001) sawRuntimeSub = true;
+}
+assert.equal(sawRuntimeSub, true);
+const nestedRuntime = emitSemnexisArm32RuntimeElfV0(compileSemnexisV0(
+  'fn add(a: i32, b: i32) -> i32 { return a + b; }\n' +
+  'fn main() -> i32 { return add(add(20, 20), 2); }\n'
+).ir);
+const nestedMain = nestedRuntime.functions.find(fn => fn.name === 'main');
+let nestedCalls = 0;
+for (let offset = nestedMain.fileOffset; offset < nestedMain.fileOffset + nestedMain.bytes; offset += 4) {
+  if (((readArmWord(nestedRuntime.bytes, offset) & 0xFF000000) >>> 0) === 0xEB000000) nestedCalls += 1;
+}
+assert.equal(nestedCalls, 2);
+assert.throws(
+  () => emitSemnexisArm32RuntimeElfV0(compileSemnexisV0('fn main() -> i32 { return 6 * 7; }\n').ir),
+  /not lowered/,
+  'runtime backend must reject multiply until checked lowering exists'
+);
+assert.throws(
+  () => emitSemnexisArm32RuntimeElfV0(effectfulNativeProgram.ir),
+  /effectful\/capability function/,
+  'runtime backend must reject capabilities until runtime capability lowering exists'
 );
 
 console.log('ok - Semnexis QuickJS bootstrap compiler');

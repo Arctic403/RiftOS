@@ -1,4 +1,4 @@
-const SEMNEXIS_BOOTSTRAP_VERSION = '0.3.0-quickjs-bootstrap';
+const SEMNEXIS_BOOTSTRAP_VERSION = '0.4.0-quickjs-bootstrap';
 const SEMNEXIS_LANGUAGE = 'Semnexis';
 const SEMNEXIS_GRAPH_SCHEMA = 'SEMNEXIS_PROGRAM_GRAPH_V0';
 const SEMNEXIS_PLAN_SCHEMA = 'SEMNEXIS_EXECUTION_PLAN_V0';
@@ -1364,6 +1364,374 @@ function verifyArm32ElfProofV0(artifact) {
   return true;
 }
 
+
+const SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA = 'SEMNEXIS_ARM32_RUNTIME_ELF_V0';
+const ARM32_RUNTIME_MAX_FUNCTIONS = 256;
+const ARM32_RUNTIME_MAX_PARAMETERS = 4;
+const ARM32_RUNTIME_MAX_SSA_VALUES = 1000;
+const ARM32_RUNTIME_TRAP_EXIT_CODE = 125;
+
+function arm32Movw(rd, imm16) {
+  if (!Number.isInteger(rd) || rd < 0 || rd > 15) fail('arm32 runtime: invalid MOVW register');
+  const imm = imm16 & 0xffff;
+  return (0xE3000000 | ((imm & 0xF000) << 4) | (rd << 12) | (imm & 0x0FFF)) >>> 0;
+}
+
+function arm32Movt(rd, imm16) {
+  if (!Number.isInteger(rd) || rd < 0 || rd > 15) fail('arm32 runtime: invalid MOVT register');
+  const imm = imm16 & 0xffff;
+  return (0xE3400000 | ((imm & 0xF000) << 4) | (rd << 12) | (imm & 0x0FFF)) >>> 0;
+}
+
+function arm32LoadI32(words, rd, value) {
+  const raw = value >>> 0;
+  words.push(arm32Movw(rd, raw & 0xffff));
+  words.push(arm32Movt(rd, (raw >>> 16) & 0xffff));
+}
+
+function arm32LdrSp(rd, offset) {
+  if (!Number.isInteger(offset) || offset < 0 || offset > 4095) fail('arm32 runtime: stack load offset out of range');
+  return (0xE59D0000 | (rd << 12) | offset) >>> 0;
+}
+
+function arm32StrSp(rd, offset) {
+  if (!Number.isInteger(offset) || offset < 0 || offset > 4095) fail('arm32 runtime: stack store offset out of range');
+  return (0xE58D0000 | (rd << 12) | offset) >>> 0;
+}
+
+function arm32BranchWord(conditionBase, fromAddress, targetAddress) {
+  if ((fromAddress & 3) !== 0 || (targetAddress & 3) !== 0) fail('arm32 runtime: unaligned branch address');
+  const delta = targetAddress - (fromAddress + 8);
+  if ((delta & 3) !== 0) fail('arm32 runtime: branch delta is not word-aligned');
+  const words = delta / 4;
+  if (words < -0x800000 || words > 0x7fffff) fail('arm32 runtime: branch target out of range');
+  return (conditionBase | (words & 0x00ffffff)) >>> 0;
+}
+
+function arm32RuntimeAllowedFunction(fn) {
+  if (fn.effect !== 'pure' || fn.requiresCapabilities.length || fn.grantsCapabilities.length) {
+    fail("arm32 runtime: effectful/capability function '" + fn.name + "' is not supported");
+  }
+  if (fn.parameters.length > ARM32_RUNTIME_MAX_PARAMETERS) {
+    fail("arm32 runtime: function '" + fn.name + "' exceeds four register parameters");
+  }
+}
+
+function verifyAcyclicRuntimeCalls(ir) {
+  const edges = new Map();
+  for (const fn of ir.functions) edges.set(fn.name, []);
+  for (const fn of ir.functions) {
+    for (const inst of fn.instructions) if (inst.op === 'call') edges.get(fn.name).push(inst.target);
+  }
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = (name) => {
+    if (visiting.has(name)) fail("arm32 runtime: recursive call cycle includes '" + name + "'");
+    if (visited.has(name)) return;
+    visiting.add(name);
+    for (const target of edges.get(name) || []) visit(target);
+    visiting.delete(name);
+    visited.add(name);
+  };
+  for (const fn of ir.functions) visit(fn.name);
+}
+
+function allocateArm32RuntimeFrame(fn) {
+  const slots = new Map();
+  let nextSlot = 0;
+  for (const parameter of fn.parameters) {
+    slots.set(parameter.value, nextSlot);
+    nextSlot += 1;
+  }
+  for (const inst of fn.instructions) {
+    if (inst.result != null) {
+      if (slots.has(inst.result)) fail("arm32 runtime: duplicate allocated value '" + inst.result + "'");
+      slots.set(inst.result, nextSlot);
+      nextSlot += 1;
+    }
+  }
+  if (nextSlot > ARM32_RUNTIME_MAX_SSA_VALUES) fail("arm32 runtime: function '" + fn.name + "' has too many SSA values");
+  const rawBytes = nextSlot * 4;
+  const frameBytes = rawBytes === 0 ? 0 : Math.ceil(rawBytes / 8) * 8;
+  if (frameBytes > 4096) fail("arm32 runtime: function '" + fn.name + "' frame exceeds V0 stack-offset limit");
+  return {slots:slots, slotCount:nextSlot, frameBytes:frameBytes};
+}
+
+function arm32RuntimeSlotOffset(frame, value) {
+  if (!frame.slots.has(value)) fail("arm32 runtime: missing stack slot for '" + value + "'");
+  const offset = frame.slots.get(value) * 4;
+  if (offset > 4095) fail('arm32 runtime: stack slot offset exceeds encoding limit');
+  return offset;
+}
+
+function compileArm32RuntimeFunctionV0(fn) {
+  arm32RuntimeAllowedFunction(fn);
+  const frame = allocateArm32RuntimeFrame(fn);
+  const words = [];
+  const patches = [];
+
+  words.push(0xE92D4800);
+  if (frame.frameBytes > 0) {
+    arm32LoadI32(words, 12, frame.frameBytes);
+    words.push(0xE04DD00C);
+  }
+
+  for (let i = 0; i < fn.parameters.length; i += 1) {
+    words.push(arm32StrSp(i, arm32RuntimeSlotOffset(frame, fn.parameters[i].value)));
+  }
+
+  for (const inst of fn.instructions) {
+    switch (inst.op) {
+      case 'region.begin':
+      case 'region.end':
+      case 'local.bind':
+        break;
+      case 'const.i32':
+        arm32LoadI32(words, 0, inst.value);
+        words.push(arm32StrSp(0, arm32RuntimeSlotOffset(frame, inst.result)));
+        break;
+      case 'copy.i32':
+        words.push(arm32LdrSp(0, arm32RuntimeSlotOffset(frame, inst.args[0])));
+        words.push(arm32StrSp(0, arm32RuntimeSlotOffset(frame, inst.result)));
+        break;
+      case 'i32.add.checked':
+      case 'i32.sub.checked': {
+        words.push(arm32LdrSp(0, arm32RuntimeSlotOffset(frame, inst.args[0])));
+        words.push(arm32LdrSp(1, arm32RuntimeSlotOffset(frame, inst.args[1])));
+        words.push(inst.op === 'i32.add.checked' ? 0xE0902001 : 0xE0502001);
+        patches.push({wordIndex:words.length, kind:'bvs', target:'$trap'});
+        words.push(0);
+        words.push(arm32StrSp(2, arm32RuntimeSlotOffset(frame, inst.result)));
+        break;
+      }
+      case 'call':
+        if (inst.args.length > ARM32_RUNTIME_MAX_PARAMETERS) {
+          fail("arm32 runtime: call to '" + inst.target + "' exceeds four register arguments");
+        }
+        for (let i = 0; i < inst.args.length; i += 1) {
+          words.push(arm32LdrSp(i, arm32RuntimeSlotOffset(frame, inst.args[i])));
+        }
+        patches.push({wordIndex:words.length, kind:'bl', target:inst.target});
+        words.push(0);
+        words.push(arm32StrSp(0, arm32RuntimeSlotOffset(frame, inst.result)));
+        break;
+      case 'ret.i32':
+        words.push(arm32LdrSp(0, arm32RuntimeSlotOffset(frame, inst.args[0])));
+        if (frame.frameBytes > 0) {
+          arm32LoadI32(words, 12, frame.frameBytes);
+          words.push(0xE08DD00C);
+        }
+        words.push(0xE8BD8800);
+        break;
+      case 'i32.mul.checked':
+      case 'i32.div.checked':
+        fail("arm32 runtime: operation '" + inst.op + "' is not lowered in V0 runtime backend");
+        break;
+      case 'intrinsic.clock':
+        fail('arm32 runtime: clock requires runtime capability lowering');
+        break;
+      default:
+        fail("arm32 runtime: unsupported IR operation '" + inst.op + "'");
+    }
+  }
+
+  if (!words.length || words[words.length - 1] !== 0xE8BD8800) {
+    fail("arm32 runtime: function '" + fn.name + "' has no canonical return epilogue");
+  }
+
+  return {
+    name:fn.name,
+    frameBytes:frame.frameBytes,
+    slotCount:frame.slotCount,
+    parameterCount:fn.parameters.length,
+    words:words,
+    patches:patches
+  };
+}
+
+function emitArm32RuntimeElfV0(ir) {
+  ir.verify();
+  if (!ir.functions.length || ir.functions.length > ARM32_RUNTIME_MAX_FUNCTIONS) fail('arm32 runtime: invalid function count');
+  const main = ir.functions.find((fn) => fn.name === 'main');
+  if (!main) fail("arm32 runtime: entry function 'main' is required");
+  if (main.parameters.length !== 0) fail("arm32 runtime: entry function 'main' must have zero parameters");
+  for (const fn of ir.functions) arm32RuntimeAllowedFunction(fn);
+  verifyAcyclicRuntimeCalls(ir);
+
+  const compiled = ir.functions.map(compileArm32RuntimeFunctionV0);
+  const startWords = [0, 0xE3A07001, 0xEF000000];
+  const trapWords = [
+    arm32Movw(0, ARM32_RUNTIME_TRAP_EXIT_CODE),
+    arm32Movt(0, 0),
+    0xE3A07001,
+    0xEF000000
+  ];
+
+  let cursor = ARM32_ELF_CODE_OFFSET + startWords.length * 4;
+  const functionAddresses = new Map();
+  const functionMeta = [];
+  for (const fn of compiled) {
+    const address = ARM32_ELF_BASE_VADDR + cursor;
+    functionAddresses.set(fn.name, address);
+    functionMeta.push({
+      name:fn.name,
+      address:address,
+      fileOffset:cursor,
+      bytes:fn.words.length * 4,
+      frameBytes:fn.frameBytes,
+      slotCount:fn.slotCount,
+      parameterCount:fn.parameterCount
+    });
+    cursor += fn.words.length * 4;
+  }
+  const trapOffset = cursor;
+  const trapAddress = ARM32_ELF_BASE_VADDR + trapOffset;
+  cursor += trapWords.length * 4;
+  const totalBytes = cursor;
+
+  const entry = ARM32_ELF_BASE_VADDR + ARM32_ELF_CODE_OFFSET;
+  startWords[0] = arm32BranchWord(0xEB000000, entry, functionAddresses.get('main'));
+
+  for (let f = 0; f < compiled.length; f += 1) {
+    const fn = compiled[f];
+    const meta = functionMeta[f];
+    for (const patch of fn.patches) {
+      const from = meta.address + patch.wordIndex * 4;
+      const target = patch.target === '$trap' ? trapAddress : functionAddresses.get(patch.target);
+      if (target == null) fail("arm32 runtime: missing patch target '" + patch.target + "'");
+      fn.words[patch.wordIndex] = arm32BranchWord(
+        patch.kind === 'bl' ? 0xEB000000 : 0x6A000000,
+        from,
+        target
+      );
+    }
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  bytes[0] = 0x7f; bytes[1] = 0x45; bytes[2] = 0x4c; bytes[3] = 0x46;
+  bytes[4] = 1;
+  bytes[5] = 1;
+  bytes[6] = 1;
+  bytes[7] = 0;
+  writeU16LE(bytes, 16, 2);
+  writeU16LE(bytes, 18, 40);
+  writeU32LE(bytes, 20, 1);
+  writeU32LE(bytes, 24, entry);
+  writeU32LE(bytes, 28, ARM32_ELF_HEADER_BYTES);
+  writeU32LE(bytes, 32, 0);
+  writeU32LE(bytes, 36, 0x05000000);
+  writeU16LE(bytes, 40, ARM32_ELF_HEADER_BYTES);
+  writeU16LE(bytes, 42, ARM32_ELF_PROGRAM_HEADER_BYTES);
+  writeU16LE(bytes, 44, 1);
+  writeU16LE(bytes, 46, 0);
+  writeU16LE(bytes, 48, 0);
+  writeU16LE(bytes, 50, 0);
+
+  const ph = ARM32_ELF_HEADER_BYTES;
+  writeU32LE(bytes, ph + 0, 1);
+  writeU32LE(bytes, ph + 4, 0);
+  writeU32LE(bytes, ph + 8, ARM32_ELF_BASE_VADDR);
+  writeU32LE(bytes, ph + 12, ARM32_ELF_BASE_VADDR);
+  writeU32LE(bytes, ph + 16, totalBytes);
+  writeU32LE(bytes, ph + 20, totalBytes);
+  writeU32LE(bytes, ph + 24, 5);
+  writeU32LE(bytes, ph + 28, 0x1000);
+
+  let outOffset = ARM32_ELF_CODE_OFFSET;
+  for (const word of startWords) {
+    writeU32LE(bytes, outOffset, word);
+    outOffset += 4;
+  }
+  for (const fn of compiled) {
+    for (const word of fn.words) {
+      writeU32LE(bytes, outOffset, word);
+      outOffset += 4;
+    }
+  }
+  for (const word of trapWords) {
+    writeU32LE(bytes, outOffset, word);
+    outOffset += 4;
+  }
+  if (outOffset !== totalBytes) fail('arm32 runtime: image layout size mismatch');
+
+  const artifact = Object.freeze({
+    schema:SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA,
+    target:'armv7a-linux-androideabi26',
+    elfClass:'ELF32',
+    machine:'EM_ARM',
+    elfType:'ET_EXEC',
+    entry:entry,
+    bytes:bytes,
+    byteLength:bytes.length,
+    functions:functionMeta,
+    trapAddress:trapAddress,
+    trapExitCode:ARM32_RUNTIME_TRAP_EXIT_CODE,
+    constantEvaluated:false,
+    runtimeLowered:true,
+    executionPolicy:'generated-artifact-not-executed-from-riftfs'
+  });
+  verifyArm32RuntimeElfV0(artifact);
+  return artifact;
+}
+
+function verifyArm32RuntimeElfV0(artifact) {
+  if (!artifact || artifact.schema !== SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA) fail('arm32 runtime verify: schema mismatch');
+  const bytes = artifact.bytes;
+  if (!(bytes instanceof Uint8Array) || bytes.length < ARM32_ELF_CODE_OFFSET + 12) fail('arm32 runtime verify: image too small');
+  if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) fail('arm32 runtime verify: magic mismatch');
+  if (bytes[4] !== 1 || bytes[5] !== 1 || bytes[6] !== 1) fail('arm32 runtime verify: ELF identity mismatch');
+  if (readU16LE(bytes, 16) !== 2 || readU16LE(bytes, 18) !== 40 || readU32LE(bytes, 20) !== 1) fail('arm32 runtime verify: ELF type/machine/version mismatch');
+  if (readU32LE(bytes, 24) !== artifact.entry || artifact.entry !== ARM32_ELF_BASE_VADDR + ARM32_ELF_CODE_OFFSET) fail('arm32 runtime verify: entry mismatch');
+  if (readU32LE(bytes, 28) !== ARM32_ELF_HEADER_BYTES || readU32LE(bytes, 36) !== 0x05000000) fail('arm32 runtime verify: ELF header contract mismatch');
+  if (readU16LE(bytes, 40) !== ARM32_ELF_HEADER_BYTES ||
+      readU16LE(bytes, 42) !== ARM32_ELF_PROGRAM_HEADER_BYTES ||
+      readU16LE(bytes, 44) !== 1) fail('arm32 runtime verify: header sizes mismatch');
+
+  const ph = ARM32_ELF_HEADER_BYTES;
+  if (readU32LE(bytes, ph + 0) !== 1 ||
+      readU32LE(bytes, ph + 4) !== 0 ||
+      readU32LE(bytes, ph + 8) !== ARM32_ELF_BASE_VADDR ||
+      readU32LE(bytes, ph + 16) !== bytes.length ||
+      readU32LE(bytes, ph + 20) !== bytes.length ||
+      readU32LE(bytes, ph + 24) !== 5 ||
+      readU32LE(bytes, ph + 28) !== 0x1000) fail('arm32 runtime verify: PT_LOAD mismatch');
+
+  const start = ARM32_ELF_CODE_OFFSET;
+  const startBl = readU32LE(bytes, start);
+  if (((startBl & 0xFF000000) >>> 0) !== 0xEB000000) fail('arm32 runtime verify: entry does not BL main');
+  if (readU32LE(bytes, start + 4) !== 0xE3A07001 || readU32LE(bytes, start + 8) !== 0xEF000000) {
+    fail('arm32 runtime verify: entry exit sequence mismatch');
+  }
+
+  const seen = new Set();
+  for (const fn of artifact.functions) {
+    if (!fn.name || seen.has(fn.name)) fail('arm32 runtime verify: duplicate function metadata');
+    seen.add(fn.name);
+    if ((fn.address & 3) !== 0 || (fn.fileOffset & 3) !== 0 || (fn.bytes & 3) !== 0 || fn.bytes < 8) {
+      fail("arm32 runtime verify: malformed function layout for '" + fn.name + "'");
+    }
+    if (fn.fileOffset < ARM32_ELF_CODE_OFFSET + 12 || fn.fileOffset + fn.bytes > bytes.length) {
+      fail("arm32 runtime verify: function range escapes image for '" + fn.name + "'");
+    }
+    if (fn.address !== ARM32_ELF_BASE_VADDR + fn.fileOffset) fail("arm32 runtime verify: function address mismatch for '" + fn.name + "'");
+    if ((fn.frameBytes & 7) !== 0) fail("arm32 runtime verify: unaligned frame for '" + fn.name + "'");
+    if (readU32LE(bytes, fn.fileOffset) !== 0xE92D4800) fail("arm32 runtime verify: prologue mismatch for '" + fn.name + "'");
+    if (readU32LE(bytes, fn.fileOffset + fn.bytes - 4) !== 0xE8BD8800) fail("arm32 runtime verify: epilogue mismatch for '" + fn.name + "'");
+  }
+  if (!seen.has('main')) fail('arm32 runtime verify: main metadata missing');
+
+  const trapOffset = artifact.trapAddress - ARM32_ELF_BASE_VADDR;
+  if (trapOffset < ARM32_ELF_CODE_OFFSET || trapOffset + 16 !== bytes.length) fail('arm32 runtime verify: trap layout mismatch');
+  if (readU32LE(bytes, trapOffset) !== arm32Movw(0, artifact.trapExitCode) ||
+      readU32LE(bytes, trapOffset + 4) !== arm32Movt(0, 0) ||
+      readU32LE(bytes, trapOffset + 8) !== 0xE3A07001 ||
+      readU32LE(bytes, trapOffset + 12) !== 0xEF000000) {
+    fail('arm32 runtime verify: overflow trap mismatch');
+  }
+  if (artifact.constantEvaluated !== false || artifact.runtimeLowered !== true) fail('arm32 runtime verify: backend mode markers mismatch');
+  return true;
+}
+
 function requireTypeNode(types, type) {
   if (!types.has(type)) fail("type: unknown type '" + type + "'");
   return types.get(type);
@@ -1678,6 +2046,14 @@ export function verifySemnexisArm32ElfProofV0(artifact) {
   return verifyArm32ElfProofV0(artifact);
 }
 
+export function emitSemnexisArm32RuntimeElfV0(ir) {
+  return emitArm32RuntimeElfV0(ir);
+}
+
+export function verifySemnexisArm32RuntimeElfV0(artifact) {
+  return verifyArm32RuntimeElfV0(artifact);
+}
+
 export function inspectSemnexisV0(source) {
   const result = compileSemnexisV0(source);
   return Object.freeze({
@@ -1703,10 +2079,13 @@ if (typeof globalThis !== 'undefined') {
     irSchema:SEMNEXIS_NATIVE_IR_SCHEMA,
     irBinaryFormat:'SNIRV0',
     arm32ElfSchema:SEMNEXIS_ARM32_ELF_SCHEMA,
+    arm32RuntimeElfSchema:SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA,
     encodeIR:encodeNativeIRV0,
     decodeIR:decodeNativeIRV0,
     emitArm32Proof:emitArm32ElfProofV0,
     verifyArm32Proof:verifyArm32ElfProofV0,
+    emitArm32Runtime:emitArm32RuntimeElfV0,
+    verifyArm32Runtime:verifyArm32RuntimeElfV0,
     compile:compileSemnexisV0,
     inspect:inspectSemnexisV0
   });

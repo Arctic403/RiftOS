@@ -153,7 +153,7 @@ if (!nativeShell.includes('class RiftNativeShell(context: Context) : RiftShellEx
 if (!nativeShell.includes('.put("webViewRequired", false)')) fail('native RiftShell does not explicitly report WebView-free execution');
 if (!nativeShell.includes('headlessJs.executeRiftpp(args, cwd)')) fail('Rift++ is not routed through the headless runtime');
 if (!nativeShell.includes('headlessJs.executeSemnexis(args, cwd)')) fail('Semnexis is not routed through the headless runtime');
-if (!nativeShell.includes('dump-ir|emit-arm32-proof')) fail('Semnexis IR/backend shell surface is missing');
+if (!nativeShell.includes('dump-ir|emit-arm32-proof|emit-arm32-runtime')) fail('Semnexis IR/backend shell surface is missing');
 if (!nativeShell.includes('headlessJs.executeQuickJs(args, cwd)')) fail('bounded qjs is not routed through the headless runtime');
 if (/riftclang|RiftNativeToolchain|nativeToolchain/.test(nativeShell)) fail('retired native Semnexis compiler path returned');
 if (/compatibilityFallback|RiftShellBridge/.test(nativeShell) || hasWebKitDependency(nativeShell)) fail('native RiftShell regained renderer fallback authority');
@@ -165,10 +165,12 @@ for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()
 }
 if (hasWebKitDependency(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
 const semnexisSource = read('src/semnexis-bootstrap.js');
-for (const required of ['SEMNEXIS_NATIVE_IR_V0', 'SNIRV0', 'SEMNEXIS_ARM32_ELF_PROOF_V0', 'generated-artifact-not-executed-from-riftfs']) {
+for (const required of ['SEMNEXIS_NATIVE_IR_V0', 'SNIRV0', 'SEMNEXIS_ARM32_ELF_PROOF_V0', 'SEMNEXIS_ARM32_RUNTIME_ELF_V0', 'constantEvaluated:false', 'runtimeLowered:true', 'generated-artifact-not-executed-from-riftfs']) {
   if (!semnexisSource.includes(required)) fail(`Semnexis compiler/backend contract is missing ${required}`);
 }
-if (!headless.includes('/documents/builds/Semnexis/semx-arm32-proof.elf') || !headless.includes('__rift_write_semnexis_binary')) fail('Semnexis fixed ARM32 artifact writer is missing');
+if (!headless.includes('/documents/builds/Semnexis/semx-arm32-proof.elf') ||
+    !headless.includes('/documents/builds/Semnexis/semx-arm32-runtime.elf') ||
+    !headless.includes('__rift_write_semnexis_binary')) fail('Semnexis fixed ARM32 artifact writer is missing');
 const qjsStart = headless.indexOf('fun executeQuickJs(args: List<String>, cwd: String): CommandResult');
 const qjsEnd = headless.indexOf('fun executeDeveloperTool(args: List<String>): CommandResult', qjsStart);
 if (qjsStart < 0 || qjsEnd <= qjsStart) fail('bounded qjs implementation is missing');

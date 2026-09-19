@@ -23,9 +23,14 @@ assert.match(compiler, /i32\.add\.checked/);
 assert.match(runtime, /semx dump-ir <source\.snx>/);
 assert.match(runtime, /format:compiler\.irSchema/);
 assert.match(runtime, /semx emit-arm32-proof <source\.snx>/);
+assert.match(runtime, /semx emit-arm32-runtime <source\.snx>/);
 assert.match(runtime, /\/documents\/builds\/Semnexis\/semx-arm32-proof\.elf/);
+assert.match(runtime, /\/documents\/builds\/Semnexis\/semx-arm32-runtime\.elf/);
 assert.match(runtime, /__rift_write_semnexis_binary/);
 assert.match(compiler, /SEMNEXIS_ARM32_ELF_PROOF_V0/);
+assert.match(compiler, /SEMNEXIS_ARM32_RUNTIME_ELF_V0/);
+assert.match(compiler, /constantEvaluated:false/);
+assert.match(compiler, /runtimeLowered:true/);
 assert.match(compiler, /generated-artifact-not-executed-from-riftfs/);
 assert.doesNotMatch(compiler, /\beval\s*\(|new Function|\bprocess\b|XMLHttpRequest|fetch\s*\(/);
 

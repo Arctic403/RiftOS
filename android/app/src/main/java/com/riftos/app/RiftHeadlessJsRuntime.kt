@@ -188,8 +188,11 @@ class RiftHeadlessJsRuntime(context: Context) {
                 }
                 function("__rift_write_semnexis_binary") { values ->
                     val requested = values.getOrNull(0)?.toString().orEmpty()
-                    val fixedPath = "/documents/builds/Semnexis/semx-arm32-proof.elf"
-                    require(requested == fixedPath) { "Semnexis binary output path is fixed" }
+                    val allowedPaths = setOf(
+                        "/documents/builds/Semnexis/semx-arm32-proof.elf",
+                        "/documents/builds/Semnexis/semx-arm32-runtime.elf"
+                    )
+                    require(requested in allowedPaths) { "Semnexis binary output path is fixed" }
                     val bytes = when (val raw = values.getOrNull(1)) {
                         is ByteArray -> raw
                         is List<*> -> ByteArray(raw.size) { index ->
@@ -204,7 +207,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                     require(bytes.isNotEmpty() && bytes.size <= 1024 * 1024) {
                         "Semnexis binary payload exceeds fixed limit"
                     }
-                    val target = resolveFile(fixedPath, "/")
+                    val target = resolveFile(requested, "/")
                     target.parentFile?.mkdirs()
                     atomicWrite(target, bytes)
                     true
@@ -1152,7 +1155,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                 'semx help\nsemx version\nsemx self-test\n' +
                 'semx check <source.snx>\nsemx dump-graph <source.snx>\n' +
                 'semx dump-plan <source.snx>\nsemx dump-ir <source.snx>\n' +
-                'semx emit-arm32-proof <source.snx>';
+                'semx emit-arm32-proof <source.snx>\nsemx emit-arm32-runtime <source.snx>';
 
               const normalizePath = value => {
                 const raw = String(value || '').replaceAll('\\\\','/');
@@ -1193,6 +1196,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                   irSchema:compiler.irSchema,
                   irBinaryFormat:compiler.irBinaryFormat,
                   arm32ElfSchema:compiler.arm32ElfSchema,
+                  arm32RuntimeElfSchema:compiler.arm32RuntimeElfSchema,
                   backend:'headless-quickjs'
                 };
                 emit(JSON.stringify(value, null, 2));
@@ -1218,9 +1222,41 @@ class RiftHeadlessJsRuntime(context: Context) {
                 if (arm32.constantResult !== 42 || arm32.byteLength !== 100 || !compiler.verifyArm32Proof(arm32)) {
                   throw new Error('Semnexis ARM32 ELF proof self-test mismatch');
                 }
+                const runtimeProgram = compiler.compile(
+                  'fn add(a: i32, b: i32) -> i32 { return a + b; }\n' +
+                  'fn main() -> i32 { return add(40, 2); }\n'
+                );
+                const arm32Runtime = compiler.emitArm32Runtime(runtimeProgram.ir);
+                if (!compiler.verifyArm32Runtime(arm32Runtime) ||
+                    arm32Runtime.byteLength !== 268 ||
+                    arm32Runtime.constantEvaluated !== false ||
+                    arm32Runtime.runtimeLowered !== true ||
+                    arm32Runtime.functions.length !== 2) {
+                  throw new Error('Semnexis ARM32 runtime lowering self-test mismatch');
+                }
+                const readWord = (bytes, offset) => (
+                  bytes[offset] |
+                  (bytes[offset + 1] << 8) |
+                  (bytes[offset + 2] << 16) |
+                  (bytes[offset + 3] << 24)
+                ) >>> 0;
+                const addFn = arm32Runtime.functions.find(fn => fn.name === 'add');
+                const mainFn = arm32Runtime.functions.find(fn => fn.name === 'main');
+                if (!addFn || !mainFn) throw new Error('Semnexis ARM32 runtime function metadata mismatch');
+                let runtimeAdds = false;
+                for (let offset = addFn.fileOffset; offset < addFn.fileOffset + addFn.bytes; offset += 4) {
+                  if (readWord(arm32Runtime.bytes, offset) === 0xE0902001) runtimeAdds = true;
+                }
+                let runtimeCall = false;
+                for (let offset = mainFn.fileOffset; offset < mainFn.fileOffset + mainFn.bytes; offset += 4) {
+                  if (((readWord(arm32Runtime.bytes, offset) & 0xFF000000) >>> 0) === 0xEB000000) runtimeCall = true;
+                }
+                if (!runtimeAdds || !runtimeCall) {
+                  throw new Error('Semnexis ARM32 runtime codegen instructions are missing');
+                }
                 const value = {
                   ok:true,
-                  schema:'semnexis-bootstrap-self-test/3',
+                  schema:'semnexis-bootstrap-self-test/4',
                   backend:'headless-quickjs',
                   compiler:compiler.version,
                   nodes:result.graph.nodes.length,
@@ -1233,7 +1269,15 @@ class RiftHeadlessJsRuntime(context: Context) {
                   arm32ElfSchema:compiler.arm32ElfSchema,
                   arm32Target:arm32.target,
                   arm32Bytes:arm32.byteLength,
-                  arm32ConstantResult:arm32.constantResult
+                  arm32ConstantResult:arm32.constantResult,
+                  arm32RuntimeElfSchema:compiler.arm32RuntimeElfSchema,
+                  arm32RuntimeTarget:arm32Runtime.target,
+                  arm32RuntimeBytes:arm32Runtime.byteLength,
+                  arm32RuntimeFunctions:arm32Runtime.functions.length,
+                  arm32RuntimeLowered:arm32Runtime.runtimeLowered,
+                  arm32RuntimeConstantEvaluated:arm32Runtime.constantEvaluated,
+                  arm32RuntimeHasCall:runtimeCall,
+                  arm32RuntimeHasCheckedAdd:runtimeAdds
                 };
                 emit(JSON.stringify(value, null, 2));
                 finish(value);
@@ -1310,6 +1354,29 @@ class RiftHeadlessJsRuntime(context: Context) {
                   target:artifact.target,
                   bytes:artifact.byteLength,
                   constantResult:artifact.constantResult,
+                  executionPolicy:artifact.executionPolicy
+                };
+                emit(JSON.stringify(value, null, 2));
+                finish(value);
+                return;
+              }
+              if (sub === 'emit-arm32-runtime') {
+                const artifact = compiler.emitArm32Runtime(result.ir);
+                const outputPath = '/documents/builds/Semnexis/semx-arm32-runtime.elf';
+                __rift_write_semnexis_binary(outputPath, Array.from(artifact.bytes));
+                const value = {
+                  ok:true,
+                  source:path,
+                  output:outputPath,
+                  backend:'headless-quickjs',
+                  compiler:compiler.version,
+                  format:artifact.schema,
+                  target:artifact.target,
+                  bytes:artifact.byteLength,
+                  functions:artifact.functions.length,
+                  runtimeLowered:artifact.runtimeLowered,
+                  constantEvaluated:artifact.constantEvaluated,
+                  trapExitCode:artifact.trapExitCode,
                   executionPolicy:artifact.executionPolicy
                 };
                 emit(JSON.stringify(value, null, 2));

@@ -51,7 +51,7 @@ Changing relevant source invalidates the affected document's trusted status unti
 | RiftVM engine | **VERIFIED** | [`systems/riftrt/engines/rift-vm/README.md`](systems/riftrt/engines/rift-vm/README.md) | live VM/headless-host/import-boundary audit |
 | Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.9.0 source candidate: Gate 1A frozen + Gate 1B UTF-16 text/numeric audit; device proof pending |
 | RiftShell | **VERIFIED** | [`systems/shell/README.md`](systems/shell/README.md) | process/filesystem/transaction/MCP-authority audit |
-| Semnexis QuickJS bootstrap | **0.1 DEVICE VERIFIED / 0.3 IR+ARM32 DEVICE PROOF PENDING** | [`systems/semnexis-bootstrap/README.md`](systems/semnexis-bootstrap/README.md) | bounded first compiler + verified Native IR/binary IR + direct ARM32 backend seed |
+| Semnexis QuickJS bootstrap | **0.3 DEVICE VERIFIED / 0.4 RUNTIME ARM32 DEVICE PROOF PENDING** | [`systems/semnexis-bootstrap/README.md`](systems/semnexis-bootstrap/README.md) | verified Program Graph/Native IR/SNIRV0 stack plus runtime-valued ARM32 add/sub/call lowering |
 | Experimental RiftCLI | **VERIFIED** | [`systems/experimental-cli/README.md`](systems/experimental-cli/README.md) | process-local router/V0/IR/tokenizer + OBSERVE patch-lifecycle audit |
 | RiftGit | **VERIFIED** | [`systems/git/README.md`](systems/git/README.md) | native GitHub/metadata/push/pull/rollback audit |
 | RiftRepo | **VERIFIED** | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | verified inactive/retained local-checkpoint design |
