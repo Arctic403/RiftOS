@@ -23,7 +23,7 @@ assert(slice.includes('riftpp shell execution denies host imports'));
 assert(slice.includes('maxSteps:100000,maxStack:1024,maxCallDepth:32,yieldEvery:512'));
 assert(slice.includes('riftpp-shell-self-test/1'));
 assert(slice.includes('compileRiftPlusPlusCoreProgramV1'));
-assert(batch.includes('"rift-cli","riftpp","rift-tool","chat"'), 'riftpp and fixed developer tools must stay outside atomic batch');
+assert(batch.includes('DISABLED: RiftShell batch commands are disabled'), 'retired batch tombstone must remain disabled');
 
 assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]'));
 assert(nativeShell.includes('rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]'));
