@@ -56,12 +56,12 @@ assert.match(memorySource,/core\.path\.isAbsolute\(value\)/);
 assert.match(llmSource,/D:\/Workspace\/RiftLLM\//);
 assert.match(llmSource,/core\.path\.isAbsolute\(raw\)/);
 assert.match(devLabSource,/core\.path\.isAbsolute\(raw\)/);
-assert.match(batchSource,/"\/D:\/Users\/Default"/);
-assert.match(batchSource,/"\/D:\/Workspace"/);
-assert.match(batchSource,/isProtectedRoot\(target\)/);
+assert.match(batchSource,/DISABLED: RiftShell batch commands are disabled/);
+assert.match(batchSource,/disabled:true/);
+assert.match(batchSource,/status:"DISABLED"/);
 assert.match(shellSource,/\["\/D:\/Workspace","◇","Workspace"\]/);
 assert.match(shellSource,/\["\/C:\/Programs","▦","Programs"\]/);
 
 console.log('ok - RiftCore drive paths canonicalize to stable compatibility identities');
 console.log('ok - RiftBuild/RiftRepo accept D:/Workspace while enforcing the same physical sandbox');
-console.log('ok - Git, Vault, Memory, RiftLLM, Dev Lab, batch and Files consume the shared drive-path contract');
+console.log('ok - Git, Vault, Memory, RiftLLM, Dev Lab and Files consume the shared drive-path contract; retired batch stays disabled');
