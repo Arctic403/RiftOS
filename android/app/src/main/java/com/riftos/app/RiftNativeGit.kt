@@ -27,6 +27,11 @@ class RiftNativeGit(context: Context) {
         private const val MAX_POINTER_BYTES = 4L * 1024L
         private const val MAX_API_RESPONSE_BYTES = 80L * 1024L * 1024L
         private const val MAX_COMMIT_MESSAGE_BYTES = 16 * 1024
+        private const val DEFAULT_LOG_COMMITS = 20
+        private const val MAX_LOG_COMMITS = 100
+        private const val MAX_COMMIT_PARENTS = 32
+        private const val MAX_REMOTE_IDENTITY_CHARS = 512
+        private const val MAX_REMOTE_DATE_CHARS = 80
         private const val WORKSPACE_PROJECT = "/workspace/RiftOS-main"
         private const val WORKSPACE_OWNER = "Arctic403"
         private const val WORKSPACE_REPO = "RiftOS"
@@ -34,6 +39,11 @@ class RiftNativeGit(context: Context) {
     }
 
     data class CommandResult(val output: String, val result: JSONObject?)
+
+    private data class LogOptions(
+        val limit: Int,
+        val oneline: Boolean
+    )
 
     private data class RepoStatus(
         val meta: JSONObject,
@@ -104,6 +114,17 @@ class RiftNativeGit(context: Context) {
                 require(args.isEmpty()) { "usage: git status" }
                 statusResult(status(cwd), printer)
             }
+            "log" -> logHistory(cwd, args, printer)
+            "head" -> {
+                require(args.isEmpty()) { "usage: git head" }
+                headIdentity(cwd, printer)
+            }
+            "rev-parse" -> {
+                require(args.size == 1 && args.single() == "HEAD") {
+                    "usage: git rev-parse HEAD"
+                }
+                headIdentity(cwd, printer)
+            }
             "repo" -> {
                 require(args.isEmpty()) { "usage: git repo" }
                 loadMeta(cwd).also { printer(it.optString("full")) }
@@ -146,7 +167,9 @@ class RiftNativeGit(context: Context) {
                 "git clone owner/repo [branch] [destination]\n" +
                 "git init owner/repo [branch] [folder]\n" +
                 "git use <folder|owner/repo>\n" +
-                "git root | repo | status | pull\n" +
+                "git root | repo | status | head | pull\n" +
+                "git rev-parse HEAD\n" +
+                "git log [-n N|-nN|--max-count=N] [--oneline]\n" +
                 "git commit -m <message>\n" +
                 "git push [message] | sync [message]\n" +
                 "git branches | switch <branch>\n" +
@@ -224,7 +247,11 @@ class RiftNativeGit(context: Context) {
 
     private fun statusResult(state: RepoStatus, print: (Any?) -> Unit): JSONObject {
         val meta = state.meta
-        print("On " + meta.optString("full") + " / " + meta.optString("branch") + "\nroot " + meta.optString("root"))
+        print(
+            "On " + meta.optString("full") + " / " + meta.optString("branch") +
+                "\nHEAD " + meta.optString("headSha") +
+                "\nroot " + meta.optString("root")
+        )
         if (state.modified.isEmpty() && state.deleted.isEmpty() && state.untracked.isEmpty()) print("working tree clean")
         state.modified.forEach { print(" M " + it) }
         state.deleted.forEach { print(" D " + it) }
@@ -406,6 +433,217 @@ class RiftNativeGit(context: Context) {
             return JSONObject().put("synchronized", true).put("changed", false)
         }
         return atomicPush(cwd, message, null, print)
+    }
+
+    private fun logHistory(
+        cwd: String,
+        args: MutableList<String>,
+        print: (Any?) -> Unit
+    ): JSONObject {
+        val options = parseLogOptions(args)
+        val meta = loadMeta(cwd)
+        val owner = meta.getString("owner")
+        val repo = meta.getString("repo")
+        val branch = checkedBranch(meta.getString("branch"))
+        val rows = apiArray(
+            "/repos/" + enc(owner) + "/" + enc(repo) +
+                "/commits?sha=" + enc(branch) +
+                "&per_page=" + options.limit
+        )
+        require(rows.length() <= options.limit) {
+            "GitHub returned more commits than requested"
+        }
+
+        val commits = JSONArray()
+        for (index in 0 until rows.length()) {
+            val row = rows.optJSONObject(index)
+                ?: throw IllegalStateException("GitHub commit row is not an object")
+            val sha = checkedGitSha(row.optString("sha"), "commit")
+            val commit = row.optJSONObject("commit")
+                ?: throw IllegalStateException("GitHub commit payload is missing")
+            val message = checkedRemoteText(
+                commit.optString("message"),
+                MAX_COMMIT_MESSAGE_BYTES,
+                "commit message"
+            )
+            val summary = message.lineSequence().firstOrNull().orEmpty()
+            val author = remoteSignature(commit.optJSONObject("author"), "author")
+            val committer = remoteSignature(commit.optJSONObject("committer"), "committer")
+            val parentsInput = row.optJSONArray("parents") ?: JSONArray()
+            require(parentsInput.length() <= MAX_COMMIT_PARENTS) {
+                "GitHub commit exceeds parent-count limit"
+            }
+            val parents = JSONArray()
+            for (parentIndex in 0 until parentsInput.length()) {
+                val parent = parentsInput.optJSONObject(parentIndex)
+                    ?: throw IllegalStateException("GitHub parent row is not an object")
+                parents.put(checkedGitSha(parent.optString("sha"), "parent"))
+            }
+
+            val value = JSONObject()
+                .put("sha", sha)
+                .put("summary", summary)
+                .put("message", message)
+                .put("author", author)
+                .put("committer", committer)
+                .put("parents", parents)
+            commits.put(value)
+
+            if (options.oneline) {
+                print(sha.take(12) + " " + summary)
+            } else {
+                val authorName = author.optString("name")
+                val authorEmail = author.optString("email")
+                val authorLine =
+                    if (authorEmail.isBlank()) authorName
+                    else authorName + " <" + authorEmail + ">"
+                val indented = message.lineSequence()
+                    .joinToString("\n") { "    " + it }
+                print(
+                    "commit " + sha + "\n" +
+                        "Author: " + authorLine + "\n" +
+                        "Date:   " + author.optString("date") + "\n\n" +
+                        indented
+                )
+            }
+        }
+
+        val recordedHead = meta.optString("headSha")
+        val remoteHead =
+            if (commits.length() > 0) commits.getJSONObject(0).getString("sha")
+            else JSONObject.NULL
+        return JSONObject()
+            .put("repository", owner + "/" + repo)
+            .put("branch", branch)
+            .put("recordedHeadSha", recordedHead)
+            .put("remoteHeadSha", remoteHead)
+            .put(
+                "upToDate",
+                if (remoteHead is String && recordedHead.isNotBlank()) {
+                    recordedHead == remoteHead
+                } else {
+                    JSONObject.NULL
+                }
+            )
+            .put("limit", options.limit)
+            .put("oneline", options.oneline)
+            .put("count", commits.length())
+            .put("commits", commits)
+    }
+
+    private fun headIdentity(cwd: String, print: (Any?) -> Unit): JSONObject {
+        val meta = loadMeta(cwd)
+        val sha = checkedGitSha(meta.optString("headSha"), "recorded HEAD")
+        print(sha)
+        return JSONObject()
+            .put("repository", meta.getString("full"))
+            .put("branch", meta.getString("branch"))
+            .put("headSha", sha)
+    }
+
+    private fun parseLogOptions(args: MutableList<String>): LogOptions {
+        var limit = DEFAULT_LOG_COMMITS
+        var limitSeen = false
+        var oneline = false
+        var index = 0
+        while (index < args.size) {
+            val arg = args[index]
+            when {
+                arg == "--oneline" -> {
+                    require(!oneline) { "git log --oneline was specified more than once" }
+                    oneline = true
+                    index++
+                }
+                arg == "-n" || arg == "--max-count" -> {
+                    require(!limitSeen) { "git log commit limit was specified more than once" }
+                    require(index + 1 < args.size) {
+                        "usage: git log [-n N|-nN|--max-count=N] [--oneline]"
+                    }
+                    limit = checkedLogLimit(args[index + 1])
+                    limitSeen = true
+                    index += 2
+                }
+                arg.startsWith("-n") && arg.length > 2 -> {
+                    require(!limitSeen) { "git log commit limit was specified more than once" }
+                    limit = checkedLogLimit(arg.substring(2))
+                    limitSeen = true
+                    index++
+                }
+                arg.startsWith("--max-count=") -> {
+                    require(!limitSeen) { "git log commit limit was specified more than once" }
+                    limit = checkedLogLimit(arg.substringAfter('='))
+                    limitSeen = true
+                    index++
+                }
+                else -> throw IllegalArgumentException(
+                    "usage: git log [-n N|-nN|--max-count=N] [--oneline]"
+                )
+            }
+        }
+        return LogOptions(limit, oneline)
+    }
+
+    private fun checkedLogLimit(raw: String): Int {
+        val value = raw.toIntOrNull()
+            ?: throw IllegalArgumentException("git log commit limit must be an integer")
+        require(value in 1..MAX_LOG_COMMITS) {
+            "git log commit limit must be 1.." + MAX_LOG_COMMITS
+        }
+        return value
+    }
+
+    private fun remoteSignature(value: JSONObject?, label: String): JSONObject {
+        val source = value ?: JSONObject()
+        return JSONObject()
+            .put(
+                "name",
+                checkedRemoteText(
+                    source.optString("name"),
+                    MAX_REMOTE_IDENTITY_CHARS,
+                    label + " name",
+                    allowBlank = true
+                )
+            )
+            .put(
+                "email",
+                checkedRemoteText(
+                    source.optString("email"),
+                    MAX_REMOTE_IDENTITY_CHARS,
+                    label + " email",
+                    allowBlank = true
+                )
+            )
+            .put(
+                "date",
+                checkedRemoteText(
+                    source.optString("date"),
+                    MAX_REMOTE_DATE_CHARS,
+                    label + " date",
+                    allowBlank = true
+                )
+            )
+    }
+
+    private fun checkedGitSha(raw: String, label: String): String {
+        val sha = raw.trim().lowercase()
+        require(sha.matches(Regex("^[0-9a-f]{40}$"))) {
+            "GitHub " + label + " SHA is invalid"
+        }
+        return sha
+    }
+
+    private fun checkedRemoteText(
+        raw: String,
+        maxUtf8Bytes: Int,
+        label: String,
+        allowBlank: Boolean = false
+    ): String {
+        val value = raw.replace("\u0000", "")
+        if (!allowBlank) require(value.isNotBlank()) { "GitHub " + label + " is blank" }
+        require(value.toByteArray(Charsets.UTF_8).size <= maxUtf8Bytes) {
+            "GitHub " + label + " exceeds " + maxUtf8Bytes + " UTF-8 bytes"
+        }
+        return value
     }
 
     private fun listBranches(cwd: String, print: (Any?) -> Unit): JSONObject {

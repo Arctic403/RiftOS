@@ -69,9 +69,9 @@ This is a static reachability guard, not Kotlin compilation/type resolution.
 
 ## Exact mandatory Kotlin snapshot
 
-Current Android source directory contains 47 Kotlin files.
+Current Android source directory contains 48 Kotlin files.
 
-android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists all 47.
+android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists all 48.
 
 During this audit the old list was found to protect only 32 files.
 
@@ -214,7 +214,7 @@ It also explicitly requires private top-level RiftDevLabLocalAgent and embedded 
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
-Because the Gradle list is now exact 47/47, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
+Because the Gradle list is now exact 48/48, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
 
 ## Final APK asset verification
 
@@ -304,6 +304,7 @@ Stale-document detection belongs to source ownership, changed-source impact, roa
 - Patch 5 added `test-rift-semantic-impact-v1.mjs`, which locks one shared PI-v2 parser, candidate-derived semantic scope, bounded incomplete-evidence behavior, ownership lookup, deterministic semantic hashing and absence of an MCP impact tool;
 - CLI Patch Lifecycle V1 added `test-rift-cli-patch-lifecycle-v1.mjs`, which locks manual OBSERVE enablement, clean revision-bound acquisition, research/design ordering, governance/semantic target coverage, supply-chain/build evidence, stale-result binding, evaluator independence and zero trust/MCP expansion;
 - pre-Patch-8 live stress hardening added `test-rift-cli-stress-foundation.mjs`, which locks candidate-created governance/build-manifest discovery, RiftFS-system session storage/legacy migration and process-restart drift fail-closed behavior;
+- Patch 8 added `test-rift-documentation-parity-v1.mjs`, which locks candidate-derived ownership/governance parity, exact structured source/governance reviews, stale-plan binding and zero MCP/trust expansion;
 - retained-reference tests now assert their JS implementations remain un-packaged/unwired;
 - script index labels retained tests honestly;
 - external Builder APK verifier replaced obsolete full-web-shell requirements with exact Rift++ Core/RiftVM asset verification;

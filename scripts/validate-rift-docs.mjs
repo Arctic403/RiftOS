@@ -237,9 +237,11 @@ for (const source of ledgerSources) {
   if (!fs.existsSync(path.join(root, source))) failures.push(`ownership ledger points to missing source: ${source}`);
 }
 
-const ownerDocs = new Set([...ownership.matchAll(/`(docs\/systems\/[^`]+\/README\.md)`/g)].map(match => match[1]));
+const ownerDocs = new Set(
+  [...ownership.matchAll(/`((?:docs\/[^`]+|README)\.md)`/g)].map(match => match[1])
+);
 for (const owner of ownerDocs) {
-  if (!fs.existsSync(path.join(root, owner))) failures.push(`ownership ledger points to missing owner README: ${owner}`);
+  if (!fs.existsSync(path.join(root, owner))) failures.push(`ownership ledger points to missing owner document: ${owner}`);
 }
 
 const markdownFiles = [...new Set([

@@ -110,7 +110,7 @@ RiftCLI lifecycle adds no generic writer. Patch Sessions/Workspace Records obser
 The output path is not “patch finished.”
 
 The CLI reconstructs the final candidate from repository truth and requires separate evidence for:
-- `DOCUMENT_AUDIT` documentation parity;
+- `DOCUMENT_AUDIT` documentation parity, driven by `rift-cli lifecycle documentation-plan <session>` and exact `rift.documentation-parity/1` evidence;
 - `CODE_AUDIT` code audit;
 - security;
 - dependencies/supply chain;

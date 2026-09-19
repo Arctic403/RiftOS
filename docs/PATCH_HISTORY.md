@@ -6,6 +6,55 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 8 — Documentation / project-state parity gate
+
+### What changed
+
+Added `RiftDocumentationParityV1` and bound it into the manual OBSERVE-only CLI lifecycle.
+
+The new deterministic plan is derived from the exact Patch Manifest / PI-v2 candidate and checks:
+- substantive owner documentation separately from bookkeeping (`PATCH_HISTORY` / `SOURCE_OWNERSHIP` cannot alone satisfy an owner-doc update);
+- maintained source/build/test ownership;
+- stale ownership after deletion;
+- owner-document existence;
+- mandatory owner-document updates for added/type-changed/API/dependency/build-config changes;
+- ownership-ledger updates for added/deleted maintained files;
+- PATCH_HISTORY updates for maintained source/build/test candidates;
+- explicit review coverage for README, ROADMAP, PROJECT_STATUS, SOURCE_OWNERSHIP and PATCH_HISTORY when present.
+
+Documentation evidence now requires a `documentationParity` object generated against:
+
+`rift-cli lifecycle documentation-plan <sessionId>`
+
+The normalized evidence must review every maintained changed path and every governance surface using the exact deterministic owner set. Final evaluation recomputes the plan and binds `documentationParityPlanSha256` into the evaluator subject; stale parity evidence therefore denies the candidate.
+
+### What Patch 8 does not claim
+
+The gate does not claim arbitrary English prose can be proven true by local Kotlin. `UNCHANGED_VALID` remains a bounded structured claim and the independent evaluator must re-check prose against exact source/impact evidence.
+
+Patch 8 remains OBSERVE-only:
+- no MCP tool;
+- no trusted promotion;
+- no publication;
+- no autonomous documentation rewrite.
+
+### Regression
+
+`scripts/test-rift-documentation-parity-v1.mjs` locks the plan/evidence schemas, ownership rules, governance review rules, lifecycle binding, Gradle/source ownership and absence of MCP/trust expansion.
+
+## RiftGit read-only history update
+
+Added bounded native `git log` support to RiftGit before Patch 8. The command reads commit history through GitHub's commits API for the already attached repository and validated current branch; it does not invoke a local Git process or widen mutation authority.
+
+Supported forms:
+- `git log`
+- `git log -n N`
+- `git log -nN`
+- `git log --max-count=N`
+- optional `--oneline`
+
+The default is 20 commits and the hard per-request cap is 100. RiftGit also now exposes `git head` and `git rev-parse HEAD`, while `git status` prints recorded HEAD explicitly. `git log` reports recorded local HEAD versus remote branch HEAD and whether they match. Results include structured SHA/message/author/committer/parent data. History reads do not write `.riftgit.json`, create Workspace Records checkpoints, change branch state or expose arbitrary remote/ref queries.
+
 ## Builder hotfix — lifecycle regression expectation after stress-foundation repair
 
 Builder run `35405254326` for source `fdbb30c2e62f4d2c4b4c82540c64f8c107a6f1c3` passed source integrity and reached the focused lifecycle test, then stopped because `test-rift-cli-patch-lifecycle-v1.mjs` still asserted the pre-repair scope expression `understanding -> governance + buildManifests`.

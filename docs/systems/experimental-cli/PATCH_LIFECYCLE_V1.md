@@ -212,6 +212,12 @@ Expected patch behavior:
 
 Post-patch documentation evidence is derived from repository truth.
 
+Patch 8 adds an exact pre-import planning step:
+
+`rift-cli lifecycle documentation-plan <sessionId>`
+
+The command returns `rift.documentation-parity-plan/1` with the exact candidate manifest/semantic hashes, maintained changed paths, owner docs, governance surfaces, deterministic hard issues and `planSha256`. Documentation evidence must include a `documentationParity` object using that exact plan SHA.
+
 Expected targets include:
 - governance docs from both the acquired base **and the current post-patch repository inventory**;
 - newly added README/ROADMAP/TODO/TASK/PATCH_HISTORY/PROJECT_STATUS/SOURCE_OWNERSHIP surfaces;
@@ -224,6 +230,8 @@ Expected targets include:
 - patch history.
 
 The audit must reconcile prose with final source, not the other way around.
+
+The normalized Patch-8 evidence uses `rift.documentation-parity/1`. Every maintained changed path receives one exact source review, every present governance surface receives one review, deterministic owner sets cannot be replaced by caller-selected subsets, mandatory owner/governance updates must be `UPDATED`, and `UNCHANGED_VALID` requires a reason. Final evaluation recomputes the plan and denies stale `planSha256` evidence.
 
 ### 7. CODE_AUDIT
 
@@ -471,6 +479,7 @@ rift-cli lifecycle begin <project> <goal...>
 rift-cli lifecycle begin-sync <project> <goal...>
 rift-cli lifecycle status <sessionId>
 rift-cli lifecycle request <sessionId>
+rift-cli lifecycle documentation-plan <sessionId>
 rift-cli lifecycle import <sessionId> <kind> <D:/Documents|D:/Temp json>
 rift-cli lifecycle evaluation <sessionId>
 rift-cli lifecycle verify <sessionId> <D:/Documents|D:/Temp evaluation.json>

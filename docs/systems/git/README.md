@@ -75,6 +75,9 @@ Current command families:
 - root
 - repo
 - status
+- head
+- rev-parse HEAD
+- log [-n N|-nN|--max-count=N] [--oneline]
 - commit -m <message>
 - push [message]
 - pull
@@ -85,6 +88,20 @@ Current command families:
 -C <folder> may select a repository cwd before the command.
 
 Read/no-argument commands now reject extra arguments rather than silently ignoring them.
+
+`git head` and `git rev-parse HEAD` return the validated recorded local HEAD SHA from RiftGit metadata. `git status` also prints the recorded HEAD explicitly.
+
+`git log` is a bounded read-only remote-history view for the attached repository's recorded branch. RiftGit has no local `.git` object database, so history is read from GitHub's commits API using the repository/branch already present in validated RiftGit metadata.
+
+`git log`:
+- defaults to 20 commits;
+- accepts `-n N`, compact `-nN`, or `--max-count=N`;
+- caps history at 100 commits/request;
+- accepts `--oneline` for compact text output;
+- returns structured commit rows containing SHA, message, author/committer identity/date and parent SHAs;
+- returns both `recordedHeadSha` and `remoteHeadSha` plus `upToDate` when both identities are available;
+- does not mutate metadata, checkpoint Workspace Records or widen repository authority;
+- does not accept arbitrary repository/ref/path arguments in V1.
 
 switch/checkout and use require exactly one argument.
 

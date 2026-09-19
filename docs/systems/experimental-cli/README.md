@@ -50,6 +50,7 @@ Focused specs/tests:
 - scripts/test-rift-text-encoder-task.mjs
 - scripts/test-rift-cli-patch-lifecycle-v1.mjs
 - docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md
+- docs/systems/experimental-cli/PATCH8_DOCUMENTATION_PARITY.md
 
 ## Packaging
 
@@ -122,6 +123,8 @@ No model backend is connected.
 It is OBSERVE-only and deliberately reuses existing authority. Its flow is acquire/sync → base-bound understanding evidence → research → document intent → patch → document audit → code/security/dependency/test/build/E2E audit → freeze → independent AI evaluation → local hash verification.
 
 The lifecycle stores session/evidence state outside Workspace, derives final impact from Patch Manifest V1 + Project Intelligence V2, and never lets an evaluator response promote `trustedCheckpoint` or publish source.
+
+Patch 8 adds `rift-cli lifecycle documentation-plan <sessionId>` and `RiftDocumentationParityV1`. Documentation evidence must now be bound to the exact parity plan and review every deterministic source-owner/governance surface; final evaluation recomputes the plan and rejects stale parity evidence.
 
 No direct model backend is connected. The AI-facing work/evaluation packets return through the existing shell/MCP response path.
 

@@ -4,6 +4,12 @@
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
 
+## Owner-first capability rule
+
+If an active RiftOS subsystem is the canonical owner for a workflow and real development exposes a missing capability, extend that owner instead of routing around it through ad-hoc shell logic, MCP duplication, temporary files or another subsystem. This applies especially to RiftGit, Dev Lab, Workspace Records, RiftFS, Project Intelligence and the Local Agent.
+
+New capability still needs a real caller/use-case, bounded authority, documentation and regression coverage. Do not add dead APIs merely for surface parity with desktop tools.
+
 ## Current source ownership rule
 
 Patch the narrow owner:
@@ -45,8 +51,10 @@ For substantial AI-assisted repository work, use the Experimental RiftCLI lifecy
    - use narrow guarded edits/transactions through existing tools;
    - never silently edit unrelated/generated/vendor surfaces.
 6. **Audit documents first**
-   - source -> README/docs/TODO/ROADMAP/status/ownership/history;
-   - repair drift and then repeat any downstream audit made stale by the repair.
+   - request the exact lifecycle `documentation-plan` after patching;
+   - source -> owner docs/README/TODO/ROADMAP/status/ownership/history;
+   - import exact Patch-8 source/governance review evidence using the plan SHA;
+   - repair drift and then regenerate documentation evidence because any candidate change makes the prior parity plan stale.
 7. **Audit code**
    - changed source + callers/dependents/references/imports;
    - duplicate/dead/error/bounds/concurrency/compatibility review.

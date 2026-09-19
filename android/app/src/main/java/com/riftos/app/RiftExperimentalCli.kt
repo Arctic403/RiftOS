@@ -245,7 +245,7 @@ object RiftExperimentalCli {
         rift-cli lifecycle help|contract
         rift-cli lifecycle begin <project> <goal...>
         rift-cli lifecycle begin-sync <project> <goal...>
-        rift-cli lifecycle status|request|evaluation|clear <sessionId>
+        rift-cli lifecycle status|request|documentation-plan|evaluation|clear <sessionId>
         rift-cli lifecycle import <sessionId> <kind> <D:/Documents|D:/Temp json>
         rift-cli lifecycle verify <sessionId> <D:/Documents|D:/Temp evaluation.json>
                                 # OBSERVE-only CLI -> AI patch lifecycle; no trust promotion or publication

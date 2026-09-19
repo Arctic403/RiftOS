@@ -5,6 +5,7 @@ const read = file => readFileSync(file, 'utf8');
 const k = 'android/app/src/main/java/com/riftos/app/';
 const lifecycle = read(k + 'RiftCliPatchLifecycleV1.kt');
 const research = read(k + 'RiftResearchLedgerV1.kt');
+const parity = read(k + 'RiftDocumentationParityV1.kt');
 const cli = read(k + 'RiftExperimentalCli.kt');
 const host = read(k + 'RiftToolHost.kt');
 const records = read(k + 'RiftWorkspaceRecords.kt');
@@ -67,6 +68,8 @@ assert.match(research, /Instant\.parse/);
 assert.match(research, /independentVerificationRequired/);
 assert.match(research, /RiftPatchManifestV1\.sha256Canonical/);
 assert.match(research, /networkAuthority", false/);
+assert.match(parity, /rift\.documentation-parity-plan\/1/);
+assert.match(parity, /rift\.documentation-parity\/1/);
 
 assert.match(lifecycle, /kind != "research" && complete && checks\.length\(\) == 0/);
 assert.match(lifecycle, /UNDERSTANDING_EVIDENCE_MISSING/);
@@ -82,6 +85,13 @@ assert.match(lifecycle, /missingTargets/);
 assert.match(lifecycle, /expectedTargetsForEvidence/);
 assert.match(lifecycle, /POST_EVIDENCE_ORDER/);
 assert.match(lifecycle, /EVIDENCE_ORDER_INVALID/);
+assert.match(lifecycle, /"documentation-plan" ->/);
+assert.match(lifecycle, /private fun documentationPlan/);
+assert.match(lifecycle, /RiftDocumentationParityV1\.plan/);
+assert.match(lifecycle, /RiftDocumentationParityV1\.validateEvidence/);
+assert.match(lifecycle, /normalizedDocumentationParity/);
+assert.match(lifecycle, /DOCUMENTATION_PARITY_STALE/);
+assert.match(lifecycle, /documentationParityPlanSha256/);
 
 for (const field of ['lockfileStatus','sbomStatus','licenseStatus','provenanceStatus']) {
   assert.ok(lifecycle.includes('"' + field + '"'), 'missing supply-chain field ' + field);
@@ -130,8 +140,11 @@ assert.match(sandbox, /internal fun candidateImpactAsync/);
 
 assert.match(gradle, /RiftCliPatchLifecycleV1\.kt/);
 assert.match(gradle, /RiftResearchLedgerV1\.kt/);
+assert.match(gradle, /RiftDocumentationParityV1\.kt/);
 assert.match(ownership, /RiftCliPatchLifecycleV1\.kt/);
 assert.match(ownership, /RiftResearchLedgerV1\.kt/);
+assert.match(ownership, /RiftDocumentationParityV1\.kt/);
+assert.match(ownership, /test-rift-documentation-parity-v1\.mjs/);
 assert.match(ownership, /test-rift-cli-patch-lifecycle-v1\.mjs/);
 assert.match(roadmap, /Local Agent validation state machine\/policy core/);
 assert.match(pipeline, /ACQUIRE/);
