@@ -184,7 +184,7 @@ class RiftBuildLocalExecutor(context: Context) {
         if (manifest.isFile) {
             val text = readTextBounded(manifest)
             nativeActivity = text.contains("android.app.NativeActivity")
-            nativeLibraryName = Regex("android\.app\.lib_name[\\s\\S]*?android:value\\s*=\\s*[\"']([^\"']+)[\"']")
+            nativeLibraryName = Regex("""android\.app\.lib_name[\s\S]*?android:value\s*=\s*["']([^"']+)["']""")
                 .find(text)?.groupValues?.getOrNull(1).orEmpty()
             check("native-activity", nativeActivity, if (nativeActivity) "NativeActivity declared" else "NativeActivity missing")
             check("native-library-name", nativeLibraryName.isNotBlank(), if (nativeLibraryName.isBlank()) "android.app.lib_name missing" else nativeLibraryName)

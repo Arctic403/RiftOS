@@ -6,6 +6,18 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.3 — RiftBuild Kotlin regex escape repair
+
+Builder run `35420418538` for source `bc8c0cb3a8012f2eef685354ab1253fea6baf1dd` passed source checks and Gradle validation, then reached real Kotlin compilation.
+
+Kotlin compilation failed only in `RiftBuildLocalExecutor.kt:187`: the NativeActivity metadata regex used `\.` inside a normal Kotlin string. Kotlin interprets `\.` as an unsupported string escape before the regex engine sees it.
+
+Repair:
+- preserve the exact regex semantics;
+- move the pattern to a Kotlin raw triple-quoted string so regex escapes remain regex syntax and require no Kotlin escaping.
+
+No authority, behavior, MCP surface, CLI state or packaging contract changes in this repair.
+
 ## Patch 10.2 — Gradle Kotlin snapshot escape repair
 
 Builder run `35420241649` for source `7d9de917ba5347c11f18bdde2ab4773aaf53d77b` passed the full RiftOS source/documentation gate and reached Gradle configuration.
