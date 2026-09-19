@@ -39,7 +39,7 @@ From `android/app/build.gradle.kts`:
 - Pre-Patch-8 stress hardening now unions base/current governance and build-manifest inventories for post-patch evidence, persists lifecycle sessions under RiftFS `system/`, and fail-closes any source/candidate drift detected across a process epoch change. The observed external untracked-file deletion remains root-cause-unproven; it can no longer be silently evaluated as safe.
 - Patch 8 `RiftDocumentationParityV1` is the OBSERVE-only candidate-specific docs/project-state parity owner. It derives ownership/governance requirements from PI-v2 + exact repository bytes, requires structured documentationParity evidence against `documentation-plan`, and binds the final plan SHA into evaluator verification. It adds no MCP/trust/publish authority and does not claim arbitrary prose is locally provable.
 - Patch 9 `RiftVerificationPlannerV1` is the OBSERVE-only candidate-specific test/security/dependency verification owner. It derives exact plan targets/check ids from PI-v2 + current build manifests, requires `verificationPlan` evidence for security/dependencies/tests, and binds the final plan SHA into evaluator verification. It plans verification only; it does not execute arbitrary processes, install dependencies, promote trust or publish.
-- `RiftSecretStore` is the Android Keystore-backed secret owner.
+- `RiftSecretStore` is the Android Keystore-backed secret owner.\n- `RiftBuildLocalExecutor` is the source-live bounded local build controller: workspace project validation/planning/run records and prepared unsigned APK packaging are implemented without raw process execution. Direct ELF generation, APK signing and PackageInstaller integration remain blocked/pending.
 - Native Files owns persisted Android SAF document-tree mounts.
 - `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.
 - installed HTML/JS programs already present under `C:/Programs` can be launched by `RiftBrowserAppHost`.
@@ -132,7 +132,21 @@ Still required before calling the runtime proven:
 The engine/core pass is followed by a second engine re-audit. After the engine is clean, each subsystem is audited independently from source and only then marked verified/trusted.
 
 
-## Rift++ active candidate
+## Rift++ active installed/reference state
+
+The installed/reference Rift++ compiler is `0.10.0-bootstrap` / `riftpp/1` targeting `rift-exec-v1 / riftvm-1` on RiftOS source `1f5e50d70a7dc9f2193b4060170503aed1296137`.
+
+Current proven state:
+- promoted checked `u8` plus real `Buffer<u8,N>` / `Slice<u8>`;
+- Rift Text reference V4 including TextString backing/views/cache and exact-size planning;
+- portable system-runtime core V1 PASS / frozen reference;
+- RiftLLM+ linked compile PASS at 2 modules / 28 functions / 150,796 bytes;
+- Rift IR v1 feature level 0 PASS / frozen prototype;
+- ARMv7 + AArch64 leaf backend assembly/object/link proof PASS.
+
+The current native gap is no longer the portable runtime. It is local native artifact production: direct ELF/shared-object emission, binary Android package inputs, signing/verification and device installation/execution.
+
+## Rift++ historical candidate notes
 
 Current workspace Rift++ source is the local `0.10.0-bootstrap` candidate / `riftpp/1` targeting `rift-exec-v1 / riftvm-1`; the installed APK still requires Builder/install proof.
 

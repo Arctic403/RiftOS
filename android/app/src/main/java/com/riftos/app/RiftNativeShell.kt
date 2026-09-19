@@ -33,6 +33,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private val worker = Executors.newSingleThreadExecutor()
     private val headlessJs = RiftHeadlessJsRuntime(appContext)
     private val services = RiftNativeShellServices(appContext)
+    private val riftBuild = RiftBuildLocalExecutor(appContext)
     private val nativeGit = RiftMcpRuntime.nativeGit(appContext)
     @Volatile private var closed = false
 
@@ -101,6 +102,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
+                    "riftbuild doctor|validate|plan|prepare-riftpp-v0|pack|runs|artifacts   [NATIVE / WORKSPACE-BOUNDED]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
@@ -152,7 +154,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftpp", "rift-tool", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftbuild", "riftpp", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -193,6 +195,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "vortex-agent" -> services.vortexAgent(args).let { ShellOutcome(it.output, cwd, it.value) }
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
+            "riftbuild" -> {
+                val value = riftBuild.executeShell(args, cwd)
+                ShellOutcome(value.output, cwd, value.value)
+            }
             "riftpp" -> {
                 val value = headlessJs.executeRiftpp(args, cwd)
                 ShellOutcome(value.output, cwd, value.result)

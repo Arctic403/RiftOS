@@ -93,6 +93,7 @@ class RiftBrowserAppHost(
     @Volatile private var resumed = false
     private val prefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val executor = Executors.newSingleThreadExecutor()
+    private val riftBuild = RiftBuildLocalExecutor(activity.applicationContext)
     private val riftRoot = File(activity.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
 
     fun open(args: JSONObject): JSONObject {
@@ -258,11 +259,12 @@ class RiftBrowserAppHost(
             "clipboard.read" -> withCapability(instance, id, "clipboard.read", ui = true) { clipboardRead() }
             "clipboard.write" -> withCapability(instance, id, "clipboard.write", ui = true) { clipboardWrite(args.optString("text")) }
             "share" -> withCapability(instance, id, "share", ui = true) { share(args.optString("text"), instance.app.manifest.optString("name", "RiftOS")); true }
-            "build.doctor" -> withCapability(instance, id, "build.local") { JSONObject().put("available", true).put("ready", false).put("nativeExecutor", false).put("blockers", JSONArray().put("Local compiler executor is not installed in this APK yet.")) }
-            "build.plan" -> withCapability(instance, id, "build.local") { JSONObject().put("format", "riftbuild-plan-v1").put("project", args.optString("project")).put("target", args.optString("target", "universal")).put("nativeExecutor", false) }
-            "build.submit" -> withCapability(instance, id, "build.local") { throw UnsupportedOperationException("Local RiftBuild executor is not installed in this APK") }
-            "build.runs" -> withCapability(instance, id, "build.local") { JSONArray() }
-            "build.artifacts" -> withCapability(instance, id, "build.local") { listPath("/D:/Builds") }
+            "build.doctor" -> withCapability(instance, id, "build.local") { riftBuild.doctor(args.optString("project").takeIf { it.isNotBlank() }) }
+            "build.plan" -> withCapability(instance, id, "build.local") { riftBuild.plan(args.optString("project"), args.optString("target", "universal")) }
+            "build.prepare" -> withCapability(instance, id, "build.local") { riftBuild.prepare(args) }
+            "build.submit" -> withCapability(instance, id, "build.local") { riftBuild.submit(args) }
+            "build.runs" -> withCapability(instance, id, "build.local") { riftBuild.runs(args.optInt("limit", 20)) }
+            "build.artifacts" -> withCapability(instance, id, "build.local") { riftBuild.artifacts(args.optString("project").takeIf { it.isNotBlank() }) }
             else -> reply(instance, id, false, null, "Unsupported Rift app method: $method")
         }
     }

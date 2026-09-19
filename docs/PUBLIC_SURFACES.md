@@ -13,7 +13,7 @@ This inventory separates live packaged authority from retained reference/compati
 | Workspace Records | `RiftWorkspaceRecords.kt` | Private local history/diff record source. |
 | Native desktop | `RiftNativeDesktop.kt` | Android window/taskbar/z-order/geometry authority. |
 | Native built-ins | `RiftNativeSystemApps.kt`, `RiftNativeWorkspaceApps.kt` | Terminal, Task Manager, Files, Editor, Dev Lab, Workspace Records and Settings. |
-| Native Git | `RiftNativeGit.kt` | Git/GitHub workflow with Android Keystore credential access. |
+| Native Git | `RiftNativeGit.kt` | Git/GitHub workflow with Android Keystore credential access. |\n| Native RiftBuild | `RiftBuildLocalExecutor.kt` | Workspace-bounded Android project validation, build planning/run records and prepared unsigned APK packaging; no raw process authority. |
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands. |
 

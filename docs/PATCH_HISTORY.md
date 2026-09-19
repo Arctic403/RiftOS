@@ -6,6 +6,47 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10 — Native RiftBuild bounded Android build core
+
+### What changed
+
+Promoted RiftBuild from an inactive JavaScript design plus non-executing app façade to a native, workspace-bounded Android build controller.
+
+`RiftBuildLocalExecutor` now owns:
+- source/project validation for workspace Android projects;
+- deterministic project identity and bounded run records;
+- fixed ARM32 / ARM64 / universal planning;
+- the existing capability-gated `build.local` app methods;
+- a native `riftbuild` shell command family;
+- a real prepared-artifact APK ZIP stage under `D:/Builds`.
+
+The prepared package stage only accepts compiled Android binary manifest input plus selected ABI `.so` payloads and optional bounded assets/resources. It writes an **unsigned** APK plus SHA-256 receipt and explicitly records `signed=false` and `installableClaimed=false`.
+
+### Security boundary
+
+This patch does not add `ProcessBuilder`, raw `exec`, downloaded toolchain execution, automatic Git push, experimental CLI enablement or any new MCP tool. Projects remain confined to `D:/Workspace`; outputs remain confined to `D:/Builds`.
+
+Missing direct ELF emission, signing or PackageInstaller ownership produces a blocker rather than fake build success.
+
+### Validation
+
+`scripts/test-riftbuild-native.mjs` locks:
+- workspace/output confinement;
+- binary-manifest requirement;
+- dual-ABI package expectations;
+- unsigned/non-installable honesty;
+- no process/CLI/MCP authority expansion;
+- retained `src/riftbuild.js` remaining unpackaged reference source;
+- native shell and existing `build.local` wiring.
+
+The Android source snapshot is now exact 50/50 with `RiftBuildLocalExecutor.kt` included.
+
+Actual Android compilation of this new Kotlin source and on-device RiftBuild execution remain Builder/install proof steps; source validation is not called APK/device proof.
+
+### Next dependency
+
+Implement direct Rift++ ARMv7/AArch64 ELF/shared-object emission into the prepared-artifact contract, then add bounded APK signing/verification and explicit PackageInstaller integration.
+
 ## Patch 9 — Impact-derived verification planner
 
 ### What changed

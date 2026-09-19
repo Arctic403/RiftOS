@@ -14,6 +14,20 @@ This roadmap describes intended work, not shipped capability. Current implementa
 - Implement the RiftEngine/Servo migration behind a hardware compatibility gate; Android System WebView remains the current compatibility renderer until that gate passes.
 - Add focused on-device diagnostics and exported test results rather than emulator-heavy CI.
 
+## In-house RiftBuild Android pipeline
+
+RiftBuild is being promoted from retained/non-executing design to a bounded native local build controller.
+
+Immediate order:
+1. **SOURCE IMPLEMENTED** — activate the existing `build.local` capability boundary with native doctor/validate/plan/run records;
+2. **SOURCE IMPLEMENTED** — deterministic prepared-artifact unsigned APK packaging under `D:/Builds`;
+3. **NEXT** — extend Rift++ from assembly text to direct ARMv7/AArch64 ELF/shared-object emission;
+4. add bounded in-process APK signing and verification;
+5. add explicit PackageInstaller handoff;
+6. only then add broader Gradle/NDK compatibility adapters where they do not create raw process authority.
+
+RiftBuild must not add arbitrary shell execution, downloaded executable toolchains, automatic Git push, CLI enablement or new MCP authority.
+
 ## Local Rift MCP expansion
 
 Current tool family (18 registered tools):
