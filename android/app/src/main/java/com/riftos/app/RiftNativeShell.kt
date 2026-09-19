@@ -129,6 +129,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "riftbuild doctor|validate|plan|prepare-riftpp-v0|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
+                    "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
                     "semx help|version|self-test|check|dump-graph|dump-plan   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
@@ -181,7 +182,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftbuild", "semx", "riftpp", "rift-tool", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftbuild", "qjs", "semx", "riftpp", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -225,6 +226,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftbuild" -> {
                 val value = riftBuild.executeShell(args, cwd)
                 ShellOutcome(value.output, cwd, value.value)
+            }
+            "qjs" -> {
+                val value = headlessJs.executeQuickJs(args, cwd)
+                ShellOutcome(value.output, cwd, value.result)
             }
             "semx" -> {
                 val value = headlessJs.executeSemnexis(args, cwd)

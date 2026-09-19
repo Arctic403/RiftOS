@@ -153,6 +153,7 @@ if (!nativeShell.includes('class RiftNativeShell(context: Context) : RiftShellEx
 if (!nativeShell.includes('.put("webViewRequired", false)')) fail('native RiftShell does not explicitly report WebView-free execution');
 if (!nativeShell.includes('headlessJs.executeRiftpp(args, cwd)')) fail('Rift++ is not routed through the headless runtime');
 if (!nativeShell.includes('headlessJs.executeSemnexis(args, cwd)')) fail('Semnexis is not routed through the headless runtime');
+if (!nativeShell.includes('headlessJs.executeQuickJs(args, cwd)')) fail('bounded qjs is not routed through the headless runtime');
 if (/riftclang|RiftNativeToolchain|nativeToolchain/.test(nativeShell)) fail('retired native Semnexis compiler path returned');
 if (/compatibilityFallback|RiftShellBridge/.test(nativeShell) || hasWebKitDependency(nativeShell)) fail('native RiftShell regained renderer fallback authority');
 if (!runtime.includes('private var nativeShell: RiftNativeShell?') || !runtime.includes('fun shellExecutor(): RiftShellExecutor? = nativeShell')) fail('MCP does not retain process-owned native shell authority');
@@ -162,6 +163,14 @@ for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()
   if (!headless.includes(required)) fail(`headless Rift++ runtime is missing ${required}`);
 }
 if (hasWebKitDependency(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
+const qjsStart = headless.indexOf('fun executeQuickJs(args: List<String>, cwd: String): CommandResult');
+const qjsEnd = headless.indexOf('fun executeDeveloperTool(args: List<String>): CommandResult', qjsStart);
+if (qjsStart < 0 || qjsEnd <= qjsStart) fail('bounded qjs implementation is missing');
+const qjsSlice = headless.slice(qjsStart, qjsEnd);
+for (const required of ['QJS_EVALUATION_TIMEOUT_MS', 'MAX_QJS_SOURCE_BYTES', 'MAX_QJS_TOTAL_BYTES', 'MAX_QJS_FILES', 'MAX_QJS_OUTPUT_BYTES', 'function("__rift_qjs_read_text")', '.put("riftFsWrite", false)', '.put("processAuthority", false)', '.put("networkAuthority", false)', '.put("androidAuthority", false)']) {
+  if (!qjsSlice.includes(required)) fail(`bounded qjs contract is missing ${required}`);
+}
+if (/__rift_write_text|ProcessBuilder|Runtime\.getRuntime|Socket\(|startActivity|nativeGit/.test(qjsSlice)) fail('bounded qjs gained write/process/socket/Android/Git authority');
 
 if (!browserWindow.includes('WebChromeClient.FileChooserParams') || !browserWindow.includes('onActivityResult(')) fail('RiftBrowser does not own its file chooser lifecycle');
 if (!browserHost.includes('appOrigin(app.id)') || !browserHost.includes('https://app-$token.riftos.local') || !browserHost.includes('WebViewCompat.addWebMessageListener')) fail('installed RiftBrowser app host origin/capability bridge is incomplete');

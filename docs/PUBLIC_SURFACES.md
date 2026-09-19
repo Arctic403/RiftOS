@@ -8,6 +8,7 @@ This inventory separates live packaged authority from retained reference/compati
 | --- | --- | --- |
 | `RiftShellExecutor` | `RiftNativeShell.kt` | Process-owned bounded shell executor used by native Terminal and MCP. |
 | Rift++ headless runtime | `RiftHeadlessJsRuntime.kt` | Loads only trusted Rift++ Core/RiftVM assets in QuickJS; no DOM/WebView/network/process authority. |
+| Bounded `qjs` developer runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Evaluates bounded classic JavaScript with captured output and read-only confined RiftFS text access; no file-write/process/network/Android/Git authority. |
 | MCP tool catalog | `RiftToolHost.kt` | Canonical fixed 18-tool schemas/permissions/audit. |
 | Workspace/Code Mode | `RiftToolSandbox.kt` | Workspace-only filesystem, Project Intelligence and transactional operations. |
 | Workspace Records | `RiftWorkspaceRecords.kt` | Private local history/diff record source. |

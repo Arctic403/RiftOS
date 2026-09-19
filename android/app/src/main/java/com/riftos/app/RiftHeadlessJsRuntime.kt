@@ -13,9 +13,10 @@ import java.security.MessageDigest
 /**
  * Headless trusted JavaScript service runtime.
  *
- * This is deliberately not a browser surface. It hosts the trusted Rift++ Core/RiftVM modules and
- * the Semnexis V0 bootstrap compiler inside QuickJS with a tiny capability set: confined RiftFS
- * text I/O, UTF-8 and SHA-256.
+ * This is deliberately not a browser surface. It hosts the trusted Rift++ Core/RiftVM modules,
+ * the Semnexis V0 bootstrap compiler, and a bounded read-only developer qjs surface inside QuickJS.
+ * Each command family receives only its explicitly installed capabilities; generic qjs gets confined
+ * RiftFS text reads and captured output, not file writes, process, network, Git, or Android authority.
  * No DOM, network, Android intents, arbitrary native calls, or ambient shell globals are exposed.
  */
 class RiftHeadlessJsRuntime(context: Context) {
@@ -25,6 +26,11 @@ class RiftHeadlessJsRuntime(context: Context) {
         private const val MAX_STATE_KEY_BYTES = 4 * 1024
         private const val MAX_STATE_FILES = 256
         private const val EVALUATION_TIMEOUT_MS = 120_000L
+        private const val QJS_EVALUATION_TIMEOUT_MS = 30_000L
+        private const val MAX_QJS_SOURCE_BYTES = 256 * 1024
+        private const val MAX_QJS_TOTAL_BYTES = 8 * 1024 * 1024L
+        private const val MAX_QJS_FILES = 64
+        private const val MAX_QJS_OUTPUT_BYTES = 256 * 1024
     }
 
     data class CommandResult(val output: String, val result: JSONObject?)
@@ -196,6 +202,127 @@ class RiftHeadlessJsRuntime(context: Context) {
             output = payload.optString("output"),
             result = payload.optJSONObject("result")
         )
+    }
+
+    fun executeQuickJs(args: List<String>, cwd: String): CommandResult {
+        val subcommand = args.firstOrNull()?.trim()?.lowercase().orEmpty().ifBlank { "help" }
+        if (subcommand == "help") {
+            val value = JSONObject()
+                .put("schema", "rift-qjs-shell/1")
+                .put("backend", "headless-quickjs")
+                .put("commands", org.json.JSONArray(listOf("qjs help", "qjs version", "qjs eval <javascript>", "qjs run <script.js> [script.js ...]")))
+                .put("riftFsRead", true)
+                .put("riftFsWrite", false)
+                .put("processAuthority", false)
+                .put("networkAuthority", false)
+                .put("androidAuthority", false)
+            return CommandResult(
+                output = "Rift bounded QuickJS\nqjs help\nqjs version\nqjs eval <javascript>\nqjs run <script.js> [script.js ...]\nHost API: print(...), console.log(...), rift.readText(path), rift.cwd",
+                result = value
+            )
+        }
+        if (subcommand == "version") {
+            require(args.size == 1) { "usage: qjs version" }
+            val value = JSONObject()
+                .put("schema", "rift-qjs-shell-version/1")
+                .put("backend", "headless-quickjs")
+                .put("binding", "quickjs-kt")
+                .put("bindingVersion", "1.0.14")
+                .put("evaluationTimeoutMs", QJS_EVALUATION_TIMEOUT_MS)
+                .put("riftFsRead", true)
+                .put("riftFsWrite", false)
+                .put("processAuthority", false)
+                .put("networkAuthority", false)
+                .put("androidAuthority", false)
+            return CommandResult(value.toString(2), value)
+        }
+
+        val sources = mutableListOf<Pair<String, String>>()
+        val mode: String
+        when (subcommand) {
+            "eval", "-e", "--eval" -> {
+                require(args.size >= 2) { "usage: qjs eval <javascript>" }
+                val source = args.drop(1).joinToString(" ")
+                val size = canonicalUtf8Bytes(source).size
+                require(size <= MAX_QJS_SOURCE_BYTES) { "QuickJS eval source exceeds $MAX_QJS_SOURCE_BYTES UTF-8 bytes" }
+                sources += "<qjs-eval>" to source
+                mode = "eval"
+            }
+            "run" -> {
+                require(args.size >= 2) { "usage: qjs run <script.js> [script.js ...]" }
+                val requested = args.drop(1)
+                require(requested.size <= MAX_QJS_FILES) { "qjs run accepts at most $MAX_QJS_FILES scripts" }
+                var totalBytes = 0L
+                for (rawPath in requested) {
+                    require(rawPath.endsWith(".js", ignoreCase = true)) {
+                        "bounded qjs run accepts classic .js scripts only: $rawPath"
+                    }
+                    val file = resolveFile(rawPath, cwd)
+                    require(file.isFile) { "QuickJS script not found: $rawPath" }
+                    require(file.length() <= MAX_TEXT_BYTES) { "QuickJS script exceeds per-file text limit: $rawPath" }
+                    totalBytes += file.length()
+                    require(totalBytes <= MAX_QJS_TOTAL_BYTES) { "QuickJS script set exceeds $MAX_QJS_TOTAL_BYTES bytes" }
+                    sources += rawPath to file.readText(Charsets.UTF_8)
+                }
+                mode = "run"
+            }
+            else -> throw IllegalArgumentException("unsupported qjs command: $subcommand")
+        }
+
+        val output = mutableListOf<String>()
+        var outputBytes = 0
+        var lastValue: Any? = null
+        fun emit(values: List<Any?>) {
+            val line = values.joinToString(" ") { it?.toString() ?: "null" }
+            val bytes = canonicalUtf8Bytes(line).size + 1
+            require(outputBytes + bytes <= MAX_QJS_OUTPUT_BYTES) {
+                "QuickJS output exceeds $MAX_QJS_OUTPUT_BYTES UTF-8 bytes"
+            }
+            outputBytes += bytes
+            output += line
+        }
+
+        runBlocking {
+            quickJs {
+                evaluationTimeoutMillis = QJS_EVALUATION_TIMEOUT_MS
+
+                function("__rift_qjs_print") { values ->
+                    emit(values)
+                    Unit
+                }
+                function("__rift_qjs_read_text") { values ->
+                    val path = values.firstOrNull()?.toString().orEmpty()
+                    val file = resolveFile(path, cwd)
+                    require(file.isFile) { "file not found: $path" }
+                    require(file.length() <= MAX_TEXT_BYTES) {
+                        "file exceeds headless runtime text limit: $path"
+                    }
+                    file.readText(Charsets.UTF_8)
+                }
+
+                evaluate<Any?>(Scripts.QJS_PRELUDE.replace("__RIFT_QJS_CWD__", JSONObject.quote(cwd)), filename = "rift-qjs-prelude.js")
+                for ((filename, source) in sources) {
+                    lastValue = evaluate<Any?>(source, filename = filename)
+                }
+            }
+        }
+
+        if (mode == "eval" && lastValue is String) emit(listOf(lastValue))
+        else if (mode == "eval" && lastValue is Number) emit(listOf(lastValue))
+        else if (mode == "eval" && lastValue is Boolean) emit(listOf(lastValue))
+
+        val value = JSONObject()
+            .put("schema", "rift-qjs-shell-result/1")
+            .put("backend", "headless-quickjs")
+            .put("mode", mode)
+            .put("scripts", sources.size)
+            .put("outputBytes", outputBytes)
+            .put("riftFsRead", true)
+            .put("riftFsWrite", false)
+            .put("processAuthority", false)
+            .put("networkAuthority", false)
+            .put("androidAuthority", false)
+        return CommandResult(output.joinToString("\n"), value)
     }
 
     fun executeDeveloperTool(args: List<String>): CommandResult {
@@ -958,6 +1085,31 @@ class RiftHeadlessJsRuntime(context: Context) {
               __rift_gate0_result(JSON.stringify(result));
             })();
         """
+        const val QJS_PRELUDE = """
+            (function() {
+              const emit = (...values) => __rift_qjs_print(...values);
+              Object.defineProperty(globalThis, 'print', {
+                value: emit, writable: false, configurable: false, enumerable: true
+              });
+              Object.defineProperty(globalThis, 'console', {
+                value: Object.freeze({
+                  log: (...values) => emit(...values),
+                  info: (...values) => emit(...values),
+                  warn: (...values) => emit(...values),
+                  error: (...values) => emit(...values)
+                }),
+                writable: false, configurable: false, enumerable: true
+              });
+              Object.defineProperty(globalThis, 'rift', {
+                value: Object.freeze({
+                  cwd: __RIFT_QJS_CWD__,
+                  readText: path => __rift_qjs_read_text(String(path))
+                }),
+                writable: false, configurable: false, enumerable: true
+              });
+            })();
+        """
+
         const val SEMNEXIS_COMMAND_ENTRY = """
             (function() {
               const request = JSON.parse(__rift_request());

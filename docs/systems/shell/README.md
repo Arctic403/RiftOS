@@ -19,7 +19,7 @@ There is no trusted-shell WebView fallback and no Android/Linux raw shell escape
 Primary:
 - RiftNativeShell.kt — parser, cwd, RiftFS core commands, workspace status/push routing, app/process helpers.
 - RiftNativeShellServices.kt — bounded adapters for Chat Handoff, Dev Lab, Vortex, local agents and RiftLLM.
-- RiftHeadlessJsRuntime.kt also hosts the bounded Semnexis V0 bootstrap compiler for the fixed `semx` command family.
+- RiftHeadlessJsRuntime.kt also hosts the bounded Semnexis V0 bootstrap compiler for the fixed `semx` command family and the read-only generic `qjs` developer command.
 - RiftShellExecutor.kt — UI/MCP-neutral asynchronous execution contract.
 - RiftMcpRuntime.kt — process singleton owner.
 - RiftToolHost.kt — MCP permission gate/audit/result framing.
@@ -80,6 +80,7 @@ Native core includes:
 - vortex-agent
 - riftos-agent
 - riftllm-agent
+- qjs help/version/eval/run
 - semx help/version/self-test/check/dump-graph/dump-plan
 - riftpp
 - rift-cli
@@ -87,6 +88,34 @@ Native core includes:
 mount / umount are explicitly retired.
 
 The old generic rift / RiftLocalPlatform wrapper is explicitly retired.
+
+### Bounded QuickJS developer command
+
+`qjs` is a headless developer runtime owned by `RiftHeadlessJsRuntime`; it is not Android/Linux shell execution.
+
+Supported surface:
+- `qjs help`
+- `qjs version`
+- `qjs eval <javascript>`
+- `qjs run <script.js> [script.js ...]`
+
+The `run` path evaluates up to 64 classic `.js` files in one isolated QuickJS context, in the requested order. It intentionally does not expose arbitrary native module loading or the QuickJS `std`/`os` libraries.
+
+Host globals are limited to:
+- `print(...)`
+- `console.log/info/warn/error(...)`
+- `rift.cwd`
+- `rift.readText(path)`
+
+`rift.readText` uses the same canonical RiftFS confinement as the rest of the headless runtime and is read-only. Generic `qjs` has no RiftFS write binding, process/subprocess authority, sockets/network API, Android intent/activity authority, Git authority or recursive RiftShell entry point.
+
+Bounds:
+- eval source <=256 KiB UTF-8;
+- each loaded text file <=8 MiB;
+- aggregate run scripts <=8 MiB;
+- <=64 scripts per run;
+- captured output <=256 KiB;
+- QuickJS evaluation timeout 30 seconds (the outer native shell deadline remains 60 seconds).
 
 There is no live generic batch command.
 
