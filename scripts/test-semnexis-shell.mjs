@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import '../src/semnexis-bootstrap.js';
 
 const shell = fs.readFileSync(new URL('../android/app/src/main/java/com/riftos/app/RiftNativeShell.kt', import.meta.url), 'utf8');
 const runtime = fs.readFileSync(new URL('../android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt', import.meta.url), 'utf8');
@@ -39,9 +40,36 @@ assert.match(compiler, /phi\.i32/);
 assert.match(compiler, /br\.cmp\.lt/);
 assert.match(compiler, /cfg-spill-v0/);
 assert.match(compiler, /loop_backedge/);
-assert.match(runtime, /semnexis-bootstrap-self-test\/6/);
+assert.match(runtime, /semnexis-bootstrap-self-test\/7/);
+assert.match(runtime, /hardeningDerivedEffects/);
+assert.match(runtime, /hardeningCanonicalMachineVerify/);
+assert.match(runtime, /hardeningExpressionBudget/);
+assert.match(runtime, /numeric\.isFinite\(\)/);
+assert.match(runtime, /MAX_SEMNEXIS_SOURCE_BYTES/);
 assert.match(runtime, /arm32LoopBackedge/);
 assert.match(compiler, /generated-artifact-not-executed-from-riftfs/);
 assert.doesNotMatch(compiler, /\beval\s*\(|new Function|\bprocess\b|XMLHttpRequest|fetch\s*\(/);
+
+const commandMatch = runtime.match(/const val SEMNEXIS_COMMAND_ENTRY = \"\"\"([\s\S]*?)\"\"\"\s*\n\s*const val RIFTPP_COMMAND_ENTRY/);
+assert.ok(commandMatch, 'embedded Semnexis command entry must be extractable');
+let embeddedResult = null;
+globalThis.__rift_request = () => JSON.stringify({args:['self-test'], cwd:'/workspace/Semnexis'});
+globalThis.__rift_read_text = () => { throw new Error('embedded self-test must not read workspace source'); };
+globalThis.__rift_write_semnexis_binary = () => { throw new Error('embedded self-test must not write artifacts'); };
+globalThis.__rift_result = value => { embeddedResult = JSON.parse(String(value)); };
+(0, eval)(commandMatch[1]);
+assert.equal(embeddedResult?.result?.ok, true);
+assert.equal(embeddedResult.result.schema, 'semnexis-bootstrap-self-test/7');
+assert.equal(embeddedResult.result.compiler, '0.6.1-quickjs-bootstrap');
+assert.equal(embeddedResult.result.irBinaryVersion, 0);
+assert.equal(embeddedResult.result.irBinaryCompatibility, 'frozen-v0-reject-unknown-version-flags-opcodes');
+assert.equal(embeddedResult.result.irGraphNodeSemantics, 'advisory-correlation-id-v0');
+assert.equal(embeddedResult.result.hardeningDerivedEffects, true);
+assert.equal(embeddedResult.result.hardeningCanonicalMachineVerify, true);
+assert.equal(embeddedResult.result.hardeningExpressionBudget, true);
+delete globalThis.__rift_request;
+delete globalThis.__rift_read_text;
+delete globalThis.__rift_write_semnexis_binary;
+delete globalThis.__rift_result;
 
 console.log('ok - Semnexis QuickJS shell bootstrap boundary');

@@ -1,70 +1,36 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
 const gradleSource=readFileSync('android/app/build.gradle.kts','utf8');
 const nativeShellSource=readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt','utf8');
-assert.ok(!gradleSource.includes('riftshell-batch.js'),'retained batch JS must not be packaged');
+const entrySource=readFileSync('src/riftandroid-entry.js','utf8');
+const compatShellSource=readFileSync('src/riftos.js','utf8');
+const toolHostSource=readFileSync('android/app/src/main/java/com/riftos/app/RiftToolHost.kt','utf8');
+const toolSandboxSource=readFileSync('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt','utf8');
+
+assert.ok(!gradleSource.includes('riftshell-batch.js'),'disabled batch JS must not be packaged explicitly');
+assert.ok(!entrySource.includes('import("./riftshell-batch.js")'),'Android entry must not load disabled batch runtime');
 assert.ok(!nativeShellSource.includes('"batch"'),'native RiftShell must not expose the retired batch command');
+assert.ok(!compatShellSource.includes('RiftShellBatch.run'),'compat RiftShell must not execute the batch runtime');
+assert.ok(compatShellSource.includes('batch [DISABLED - DO NOT USE]'),'compat help must label batch as disabled');
+assert.ok(toolHostSource.includes('never call batch'),'MCP tool manifest must tell AI callers not to use batch');
+assert.ok(toolHostSource.includes('shellCommandName == "batch"'),'MCP shell gateway must reject batch before execution');
+assert.ok(toolHostSource.includes('.put("maxItems", 1)'),'MCP workspace schema must allow only one operation per call');
+assert.ok(toolHostSource.includes('operationCount > 1'),'MCP workspace gateway must reject multi-op batches');
+assert.ok(toolHostSource.includes('MULTI-OP/BATCH MODE IS DISABLED'),'MCP manifest must label multi-op batching disabled');
+assert.ok(toolSandboxSource.includes('.put("multiOperationBatch", "DISABLED")'),'workspace metadata must report multi-op batch mode disabled');
+assert.ok(toolSandboxSource.includes('.put("maxOperations", 1)'),'workspace metadata must advertise one operation maximum');
 
-const normalize=value=>'/'+String(value||'/').replace(/\\/g,'/').split('/').filter(Boolean).join('/');
-const files=new Map([['/workspace/original.txt','before']]),directories=new Set(['/','/workspace','/system','/D:','/D:/Users','/D:/Users/Default','/D:/Workspace']),archives=new Map(),statCalls=[];
-const fs={
-  async stat(path){path=normalize(path);statCalls.push(path);if(files.has(path))return {kind:'file',size:files.get(path).length};if(directories.has(path)||[...files.keys()].some(key=>key.startsWith(path+'/')))return {kind:'directory',size:0};return null;},
-  async mkdir(path){directories.add(normalize(path));return {kind:'directory'};},
-  async remove(path){path=normalize(path);files.delete(path);archives.delete(path);for(const key of [...files.keys()])if(key.startsWith(path+'/'))files.delete(key);for(const key of [...directories])if(key===path||key.startsWith(path+'/'))directories.delete(key);return true;},
-  async copy(from,to){from=normalize(from);to=normalize(to);if(files.has(from)){files.set(to,files.get(from));if(archives.has(from))archives.set(to,new Map(archives.get(from)));return {kind:'file'};}directories.add(to);for(const [key,value] of [...files])if(key.startsWith(from+'/'))files.set(to+key.slice(from.length),value);return {kind:'directory'};},
-  async list(path){path=normalize(path);const out=[];for(const dir of directories)if(dir!==path&&dir.startsWith(path+'/'))out.push({path:dir,kind:'directory'});for(const [key,value] of files)if(key.startsWith(path+'/'))out.push({path:key,kind:'file',size:value.length});return out;}
-};
-let allowed=true;
-const context={window:{RiftOSCore:{fs,permissions:{has:async()=>allowed}}},console,Math,Date,TextEncoder};context.window.window=context.window;Object.assign(context,context.window);vm.createContext(context);
+const context={window:{RiftOSCore:{}},console};
+context.window.window=context.window;
+Object.assign(context,context.window);
+vm.createContext(context);
 vm.runInContext(readFileSync('src/riftshell-batch.js','utf8'),context,{filename:'src/riftshell-batch.js'});
-const resolve=(cwd,value)=>normalize(String(value).startsWith('/')?value:`${cwd}/${value}`),state={cwd:'/workspace'},output=[];
-const execute=async command=>{
-  const [cmd,path,...rest]=command.split(/\s+/);
-  if(cmd==='write'){files.set(resolve(state.cwd,path),rest.join(' '));return;}
-  if(cmd==='mkdir'){directories.add(resolve(state.cwd,path));return;}
-  if(cmd==='cd'){state.cwd=resolve(state.cwd,path);return;}
-  if(cmd==='cat'){if(!files.has(resolve(state.cwd,path)))throw new Error(`missing ${path}`);return;}
-  if(cmd==='zip'){
-    const from=resolve(state.cwd,path),to=resolve(state.cwd,rest[0]),snapshot=new Map();
-    for(const [key,value] of files)if(key.startsWith(from+'/'))snapshot.set(key.slice(from.length+1),value);
-    archives.set(to,snapshot);files.set(to,'ZIP');return;
-  }
-  if(cmd==='unzip'){
-    const from=resolve(state.cwd,path),to=resolve(state.cwd,rest[0]),snapshot=archives.get(from);if(!snapshot)throw new Error(`missing archive ${path}`);
-    directories.add(to);for(const [key,value] of snapshot){const target=`${to}/${key}`;directories.add(target.slice(0,target.lastIndexOf('/')));files.set(target,value);}return;
-  }
-  if(cmd==='stat')throw new Error('planned failure');
-};
 
-await assert.rejects(()=>context.window.RiftShellBatch.run('write original.txt changed ; mkdir temp ; stat original.txt',{state,execute,resolve,print:value=>output.push(String(value))}),/rolled back/);
-assert.equal(files.get('/workspace/original.txt'),'before');assert(!directories.has('/workspace/temp'));assert.equal(state.cwd,'/workspace');
-await context.window.RiftShellBatch.run('write original.txt after ; mkdir complete',{state,execute,resolve,print:value=>output.push(String(value))});
-assert.equal(files.get('/workspace/original.txt'),'after');assert(directories.has('/workspace/complete'));
-await context.window.RiftShellBatch.run('write original.txt ignored',{state,execute,resolve,dryRun:true,print:value=>output.push(String(value))});assert.equal(files.get('/workspace/original.txt'),'after');
-statCalls.length=0;await context.window.RiftShellBatch.run('home ; pwd',{state,execute,resolve,dryRun:true,print:()=>{}});assert(statCalls.includes('/D:/Users/Default'),'batch preflight must model home on D:');
-statCalls.length=0;await context.window.RiftShellBatch.run('workspace cd ; pwd',{state,execute,resolve,dryRun:true,print:()=>{}});assert(statCalls.includes('/D:/Workspace'),'batch preflight must model workspace cd on D:');
-assert.deepEqual(Array.from(context.window.RiftShellBatch.split('write a "x;y"; write b z')),['write a "x;y"','write b z']);
-await assert.rejects(()=>context.window.RiftShellBatch.run('write original.txt changed ; git push',{state,execute,resolve,print:()=>{}}),/cannot run inside an atomic batch/);assert.equal(files.get('/workspace/original.txt'),'after');
-console.log('ok - retained RiftShellBatch reference restores files/directories and remains un-packaged/unwired');
-console.log('ok - successful and dry-run batch modes; preflight cwd matches D: home/workspace execution');
-console.log('ok - non-reversible commands are blocked and rolled back');
-for(const script of ['unknown thing','cp only-one','ls --bad','head original.txt nope','write /workspace x','git push','workspace rollback','workspace push publish','devlab status','riftpp run example.riftpp','write /mounts/card/file x']){
-  await assert.rejects(()=>context.window.RiftShellBatch.run(script,{state,execute,resolve,dryRun:true,print:()=>{}}));
-}
-allowed=false;
-await assert.rejects(()=>context.window.RiftShellBatch.run('write original.txt x',{state,execute,resolve,dryRun:true,print:()=>{}}),/permission denied/);
-allowed=true;
-await context.window.RiftShellBatch.run('mkdir planned ; cd planned ; write child hello ; cat child',{state,execute,resolve,dryRun:true,print:()=>{}});
-assert(!directories.has('/workspace/planned'));assert.equal(state.cwd,'/workspace');
-await context.window.RiftShellBatch.run('mkdir pack ; write pack/a.txt alpha ; zip pack pack.zip ; unzip pack.zip unpack ; cat unpack/a.txt',{state,execute,resolve,print:()=>{}});
-assert.equal(files.get('/workspace/unpack/a.txt'),'alpha');
-const normalCopy=fs.copy;
-fs.copy=async(from,to)=>{if(from.startsWith('/system/riftshell-batches/'))throw new Error('restore failure');return normalCopy(from,to);};
-await assert.rejects(()=>context.window.RiftShellBatch.run('write original.txt x ; stat original.txt',{state,execute,resolve,print:()=>{}}),/Recovery files retained/);
-assert([...files].some(([path,value])=>path.startsWith('/system/riftshell-batches/')&&value==='after'));
-fs.copy=normalCopy;
-console.log('ok - dry run rejects invalid commands, arguments, permissions and rollback targets');
-console.log('ok - dry run models planned directories without mutations; failed recovery retains backups');
-console.log('ok - same-batch zip/unzip exposes deferred extracted paths to later commands');
+assert.equal(context.window.RiftShellBatch.disabled,true);
+assert.equal(context.window.RiftShellBatch.status,'DISABLED');
+await assert.rejects(()=>context.window.RiftShellBatch.run('write a b'),/DISABLED: RiftShell batch commands are disabled/);
+assert.throws(()=>context.window.RiftShellBatch.split('write a b'),/DISABLED: RiftShell batch commands are disabled/);
+
+console.log('ok - RiftShell batch is disabled at import, compat shell, MCP manifest, and MCP execution gate');

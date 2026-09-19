@@ -82,9 +82,9 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
     fun tools(): JSONArray = JSONArray()
         .put(tool(
             "rift_shell_exec",
-            "Execute a RiftShell command through the process-owned native core. Does not expose raw Android shell access or a renderer compatibility fallback.",
+            "Execute a RiftShell command through the process-owned native core. Does not expose raw Android shell access or a renderer compatibility fallback. IMPORTANT: RiftShell batch and batch --dry-run are DISABLED due to unresolved hangs; never call batch. Use individual commands or MCP file operations instead.",
             objectSchema(JSONObject()
-                .put("command", stringProperty("RiftShell command to execute."))
+                .put("command", stringProperty("RiftShell command to execute. The batch command is DISABLED and must not be used."))
                 .put("cwd", stringProperty("Optional RiftShell working directory.")), listOf("command"))
         ))
         .put(tool("rift_info", "Inspect the local Rift MCP workspace sandbox and storage limits.", objectSchema()))
@@ -213,7 +213,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         // Changing this model-visible definition changes manifest().sha256 and can force cached MCP clients to rescan actions.
         .put(tool(
             "rift_workspace_exec",
-            "Rift Code Mode + Project Intelligence v2: execute many workspace operations locally in one model-visible call. Supports snapshots, incremental symbol search, reference lookup, surgical symbol/range reads, exact/range/hunk patches, dry-run validation, and transactional multi-file edits under workspace/. Read permission is always required; write permission is required only when the batch mutates files.",
+            "Rift Code Mode + Project Intelligence v2. MULTI-OP/BATCH MODE IS DISABLED because it can hang the agent/runtime. Pass exactly one workspace operation per call. Supports snapshots, symbol search, reference lookup, surgical reads, exact/range/hunk patches, and dry-run validation under workspace/. Read permission is always required; write permission is required only when that single operation mutates files.",
             objectSchema(
                 JSONObject()
                     .put(
@@ -221,17 +221,17 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
                         JSONObject()
                             .put("type", "array")
                             .put("minItems", 1)
-                            .put("maxItems", 192)
-                            .put("description", "Ordered local workspace operations. Canonical form is flat JSON: {\"op\":\"stat\",\"path\":\"workspace/project\"}. Do not nest the operation name.")
+                            .put("maxItems", 1)
+                            .put("description", "Exactly one local workspace operation. Multi-op/batch mode is DISABLED. Canonical form is flat JSON: {\"op\":\"stat\",\"path\":\"workspace/project\"}. Do not nest the operation name.")
                             .put("items", workspaceOperationSchema())
                     )
-                    .put("finish", booleanProperty("Set true only when this mutating batch is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session."))
+                    .put("finish", booleanProperty("Set true only when this single mutating operation is intended to finish the task. RiftBrowser still returns the confirmed result to ChatGPT before completing the session."))
                     .put("dryRun", booleanProperty("Execute and validate read/content-edit operations transactionally, then restore mutations instead of committing. Structural mkdir/remove/move/copy/archive/extract operations are rejected in dry-run mode."))
                     .put("intent", stringProperty("Optional bounded human/model intent for local patch-session provenance. It is evidence only and never authorizes a mutation."))
-                    .put("expectedSnapshot", stringProperty("Optional project/workspace snapshot id. Reject the batch if that snapshot scope changed."))
-                    .put("expectedExportSnapshot", stringProperty("Optional snapshotId from rift_project_export. Reject the entire batch if exported source changed after the audit."))
+                    .put("expectedSnapshot", stringProperty("Optional project/workspace snapshot id. Reject the operation if that snapshot scope changed."))
+                    .put("expectedExportSnapshot", stringProperty("Optional snapshotId from rift_project_export. Reject the operation if exported source changed after the audit."))
                     .put("snapshotPath", stringProperty("Optional workspace path used for expectedSnapshot/returnSnapshot. Defaults to workspace/."))
-                    .put("returnSnapshot", booleanProperty("Return a fresh scoped snapshot after the batch. Disabled by default to avoid rescanning large projects.")),
+                    .put("returnSnapshot", booleanProperty("Return a fresh scoped snapshot after the operation. Disabled by default to avoid rescanning large projects.")),
                 listOf("operations")
             )
         ))
@@ -244,6 +244,13 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
             if (command.isBlank()) {
                 recordAudit(name, args, false, "command required")
                 reply(JSONObject().put("ok", false).put("error", "command required"))
+                return
+            }
+            val shellCommandName = command.takeWhile { !it.isWhitespace() }.lowercase()
+            if (shellCommandName == "batch") {
+                val error = "DISABLED: RiftShell batch commands are disabled because they can hang the agent/runtime. Do not use batch or batch --dry-run; use individual commands or MCP file operations instead."
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("error", error))
                 return
             }
             if (!isAllowed(name, args)) {
@@ -292,6 +299,16 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
             recordAudit(name, args, false, message)
             reply(JSONObject().put("ok", false).put("name", name).put("error", message))
             return
+        }
+
+        if (name == "rift_workspace_exec") {
+            val operationCount = normalizedArgs.optJSONArray("operations")?.length() ?: 0
+            if (operationCount > 1) {
+                val error = "DISABLED: Rift Code Mode multi-op/batch execution is disabled because it can hang the agent/runtime. Send exactly one operation per rift_workspace_exec call."
+                recordAudit(name, normalizedArgs, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return
+            }
         }
 
         val mutatingRequest = requiresWrite(name, normalizedArgs)
@@ -513,7 +530,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
 
     private fun auditTarget(name: String, args: JSONObject): String = when (canonicalName(name)) {
         "rift_move", "rift_copy", "rift_archive", "rift_extract" -> "${args.optString("from")} -> ${args.optString("to")}".take(300)
-        "rift_workspace_exec" -> "workspace batch · ${args.optJSONArray("operations")?.length() ?: 0} ops"
+        "rift_workspace_exec" -> "workspace operation · ${args.optJSONArray("operations")?.length() ?: 0} op"
         "rift_workspace_diff" -> args.optString("path").ifBlank { "workspace" }.take(300)
         "rift_info" -> "sandbox"
         "rift_shell_exec" -> args.optString("command").trim().takeWhile { !it.isWhitespace() }

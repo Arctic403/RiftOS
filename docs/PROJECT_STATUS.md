@@ -47,7 +47,7 @@ From `android/app/build.gradle.kts`:
 - `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.
 - installed HTML/JS programs already present under `C:/Programs` can be launched by `RiftBrowserAppHost`.
 - production `riftpp` routes through `RiftHeadlessJsRuntime` / QuickJS.
-- `semx` routes through the same bounded headless QuickJS owner using the separately packaged Semnexis bootstrap asset. Semnexis 0.4 is installed-device proven on source `11cd28ce599fc0455a25a630c53fd1f6f93b926e`. Current 0.6 source preserves the source-proven checked add/sub/mul/div and `r4-r7` straight-line allocator, and adds verified basic blocks, phi merges, signed comparison branches and explicit-state loop backedges; 0.6 requires the next APK/device gate.
+- `semx` routes through the same bounded headless QuickJS owner using the separately packaged Semnexis bootstrap asset. Semnexis 0.6 is installed-device proven on source `1d743b6fda2f5e7f1085186bc4bf6e9bbbd3ef36`, including checked add/sub/mul/div, `r4-r7` allocation, CFG/phi conditionals and explicit-state loop backedges. Current 0.6.1 source is a hardening-only candidate: IR effects/capabilities are re-derived, runtime ELF verification is bound to canonical IR lowering, cyclic phi copies use parallel-copy resolution, compiler/AST/CFG/artifact/output budgets are enforced, and Builder gains independent ARM32 machine-execution plus exact embedded `semx self-test` coverage. 0.6.1 requires the next APK/device gate.
 - Gradle packages only `src/riftpp-core.js`, `src/riftvm.js` and `src/semnexis-bootstrap.js` from `src/`.
 
 ### Logical RiftKernel

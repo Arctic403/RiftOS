@@ -22,6 +22,7 @@ import java.security.MessageDigest
 class RiftHeadlessJsRuntime(context: Context) {
     companion object {
         private const val MAX_TEXT_BYTES = 8L * 1024L * 1024L
+        private const val MAX_SEMNEXIS_SOURCE_BYTES = 512L * 1024L
         private const val MAX_STATE_BYTES = 64 * 1024
         private const val MAX_STATE_KEY_BYTES = 4 * 1024
         private const val MAX_STATE_FILES = 256
@@ -181,8 +182,8 @@ class RiftHeadlessJsRuntime(context: Context) {
                     val path = values.firstOrNull()?.toString().orEmpty()
                     val file = resolveFile(path, cwd)
                     require(file.isFile) { "file not found: $path" }
-                    require(file.length() <= MAX_TEXT_BYTES) {
-                        "file exceeds headless runtime text limit: $path"
+                    require(file.length() <= MAX_SEMNEXIS_SOURCE_BYTES) {
+                        "Semnexis source exceeds compiler file budget: $path"
                     }
                     file.readText(Charsets.UTF_8)
                 }
@@ -194,18 +195,27 @@ class RiftHeadlessJsRuntime(context: Context) {
                     )
                     require(requested in allowedPaths) { "Semnexis binary output path is fixed" }
                     val bytes = when (val raw = values.getOrNull(1)) {
-                        is ByteArray -> raw
-                        is List<*> -> ByteArray(raw.size) { index ->
-                            val number = raw[index] as? Number
-                                ?: throw IllegalArgumentException("Semnexis binary payload must contain bytes")
-                            val value = number.toInt()
-                            require(value in 0..255) { "Semnexis binary payload byte is out of range" }
-                            value.toByte()
+                        is ByteArray -> {
+                            require(raw.isNotEmpty() && raw.size <= 1024 * 1024) {
+                                "Semnexis binary payload exceeds fixed limit"
+                            }
+                            raw
+                        }
+                        is List<*> -> {
+                            require(raw.isNotEmpty() && raw.size <= 1024 * 1024) {
+                                "Semnexis binary payload exceeds fixed limit"
+                            }
+                            ByteArray(raw.size) { index ->
+                                val number = raw[index] as? Number
+                                    ?: throw IllegalArgumentException("Semnexis binary payload must contain bytes")
+                                val numeric = number.toDouble()
+                                require(numeric.isFinite() && numeric % 1.0 == 0.0 && numeric in 0.0..255.0) {
+                                    "Semnexis binary payload byte is out of range"
+                                }
+                                numeric.toInt().toByte()
+                            }
                         }
                         else -> throw IllegalArgumentException("Semnexis binary payload must be a byte array")
-                    }
-                    require(bytes.isNotEmpty() && bytes.size <= 1024 * 1024) {
-                        "Semnexis binary payload exceeds fixed limit"
                     }
                     val target = resolveFile(requested, "/")
                     target.parentFile?.mkdirs()
@@ -1145,7 +1155,14 @@ class RiftHeadlessJsRuntime(context: Context) {
               if (!compiler) throw new Error('Semnexis bootstrap compiler is unavailable');
 
               const output = [];
-              const emit = value => output.push(String(value == null ? '' : value));
+              let outputChars = 0;
+              const MAX_SEMNEXIS_OUTPUT_CHARS = 256 * 1024;
+              const emit = value => {
+                const text = String(value == null ? '' : value);
+                outputChars += text.length;
+                if (outputChars > MAX_SEMNEXIS_OUTPUT_CHARS) throw new Error('Semnexis output exceeds command budget');
+                output.push(text);
+              };
               const finish = result => __rift_result(JSON.stringify({
                 output: output.join('\n'),
                 result: result || null
@@ -1195,6 +1212,9 @@ class RiftHeadlessJsRuntime(context: Context) {
                   planSchema:compiler.planSchema,
                   irSchema:compiler.irSchema,
                   irBinaryFormat:compiler.irBinaryFormat,
+                  irBinaryVersion:compiler.irBinaryVersion,
+                  irBinaryCompatibility:compiler.irBinaryCompatibility,
+                  irGraphNodeSemantics:compiler.irGraphNodeSemantics,
                   arm32ElfSchema:compiler.arm32ElfSchema,
                   arm32RuntimeElfSchema:compiler.arm32RuntimeElfSchema,
                   backend:'headless-quickjs'
@@ -1227,7 +1247,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                   'fn main() -> i32 { return add(40, 2); }\n'
                 );
                 const arm32Runtime = compiler.emitArm32Runtime(runtimeProgram.ir);
-                if (!compiler.verifyArm32Runtime(arm32Runtime) ||
+                if (!compiler.verifyArm32Runtime(arm32Runtime, runtimeProgram.ir) ||
                     arm32Runtime.byteLength !== 192 ||
                     arm32Runtime.constantEvaluated !== false ||
                     arm32Runtime.runtimeLowered !== true ||
@@ -1265,7 +1285,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                   'fn main() -> i32 { return arithmetic(84, 2); }\n'
                 );
                 const arm32Arithmetic = compiler.emitArm32Runtime(arithmeticProgram.ir);
-                if (!compiler.verifyArm32Runtime(arm32Arithmetic) ||
+                if (!compiler.verifyArm32Runtime(arm32Arithmetic, arithmeticProgram.ir) ||
                     arm32Arithmetic.byteLength !== 1016 ||
                     arm32Arithmetic.divisionHelperBytes !== 716 ||
                     arm32Arithmetic.checkedArithmetic.join(',') !== 'add,sub,mul,div') {
@@ -1299,7 +1319,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                     decodedConditional.dump() !== conditionalProgram.irText ||
                     !conditionalProgram.irText.includes('phi.i32') ||
                     !conditionalProgram.irText.includes('br.cmp.lt') ||
-                    !compiler.verifyArm32Runtime(arm32Conditional) ||
+                    !compiler.verifyArm32Runtime(arm32Conditional, conditionalProgram.ir) ||
                     arm32Conditional.byteLength !== 340 ||
                     arm32Conditional.controlFlowLowered !== true ||
                     arm32Conditional.allocator !== 'mixed-v0' ||
@@ -1320,7 +1340,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                     decodedLoop.dump() !== loopProgram.irText ||
                     !loopProgram.irText.includes('loop0.body:%v8') ||
                     !loopProgram.irText.includes('loop0.body:%v11') ||
-                    !compiler.verifyArm32Runtime(arm32Loop) ||
+                    !compiler.verifyArm32Runtime(arm32Loop, loopProgram.ir) ||
                     arm32Loop.byteLength !== 368 ||
                     arm32Loop.controlFlowLowered !== true ||
                     arm32Loop.allocator !== 'mixed-v0' ||
@@ -1343,9 +1363,28 @@ class RiftHeadlessJsRuntime(context: Context) {
                   if (target === headerBlock.address && from > headerBlock.address) loopBackedge = true;
                 }
                 if (!loopBackedge) throw new Error('Semnexis ARM32 loop backedge proof mismatch');
+                const forgedEffect = compiler.compile('fn main() -> i32 with time { return clock(); }\n').ir;
+                forgedEffect.functions[0].effect = 'pure';
+                forgedEffect.functions[0].requiresCapabilities = [];
+                forgedEffect.functions[0].grantsCapabilities = [];
+                let derivedEffectsRejectForgery = false;
+                try { forgedEffect.verify(); } catch (_) { derivedEffectsRejectForgery = true; }
+                if (!derivedEffectsRejectForgery) throw new Error('Semnexis derived-effect verifier accepted forged metadata');
+
+                const tamperedRuntime = compiler.emitArm32Runtime(runtimeProgram.ir);
+                tamperedRuntime.bytes[84] = tamperedRuntime.bytes[84] ^ 1;
+                let canonicalMachineRejectsTamper = false;
+                try { compiler.verifyArm32Runtime(tamperedRuntime, runtimeProgram.ir); } catch (_) { canonicalMachineRejectsTamper = true; }
+                if (!canonicalMachineRejectsTamper) throw new Error('Semnexis canonical machine verifier accepted tampered code');
+
+                let nestedExpr = '1';
+                for (let i = 0; i < 300; i += 1) nestedExpr = 'if 0 < 1 { ' + nestedExpr + ' } else { 2 }';
+                let expressionBudgetRejects = false;
+                try { compiler.compile('fn main() -> i32 { return ' + nestedExpr + '; }\n'); } catch (_) { expressionBudgetRejects = true; }
+                if (!expressionBudgetRejects) throw new Error('Semnexis expression budget did not reject pathological nesting');
                 const value = {
                   ok:true,
-                  schema:'semnexis-bootstrap-self-test/6',
+                  schema:'semnexis-bootstrap-self-test/7',
                   backend:'headless-quickjs',
                   compiler:compiler.version,
                   nodes:result.graph.nodes.length,
@@ -1354,6 +1393,9 @@ class RiftHeadlessJsRuntime(context: Context) {
                   irFunctions:result.ir.functions.length,
                   irInstructions:result.ir.functions.reduce((total, fn) => total + fn.instructions.length, 0),
                   irBinaryFormat:compiler.irBinaryFormat,
+                  irBinaryVersion:compiler.irBinaryVersion,
+                  irBinaryCompatibility:compiler.irBinaryCompatibility,
+                  irGraphNodeSemantics:compiler.irGraphNodeSemantics,
                   irBinaryBytes:irBinary.length,
                   arm32ElfSchema:compiler.arm32ElfSchema,
                   arm32Target:arm32.target,
@@ -1384,7 +1426,10 @@ class RiftHeadlessJsRuntime(context: Context) {
                   arm32LoopBlocks:sumFn.blockCount,
                   arm32LoopAllocator:sumFn.allocator,
                   arm32ControlFlowLowered:arm32Conditional.controlFlowLowered && arm32Loop.controlFlowLowered,
-                  arm32LoopBackedge:loopBackedge
+                  arm32LoopBackedge:loopBackedge,
+                  hardeningDerivedEffects:derivedEffectsRejectForgery,
+                  hardeningCanonicalMachineVerify:canonicalMachineRejectsTamper,
+                  hardeningExpressionBudget:expressionBudgetRejects
                 };
                 emit(JSON.stringify(value, null, 2));
                 finish(value);
@@ -1415,7 +1460,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                 return;
               }
               if (sub === 'dump-graph') {
-                emit(result.graphText.replace(/\n$/,''));
+                emit(result.graph.dump(MAX_SEMNEXIS_OUTPUT_CHARS).replace(/\n$/,''));
                 finish({
                   ok:true,
                   source:path,
@@ -1426,7 +1471,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                 return;
               }
               if (sub === 'dump-plan') {
-                emit(result.planText.replace(/\n$/,''));
+                emit(result.plan.dump(MAX_SEMNEXIS_OUTPUT_CHARS).replace(/\n$/,''));
                 finish({
                   ok:true,
                   source:path,
@@ -1437,7 +1482,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                 return;
               }
               if (sub === 'dump-ir') {
-                emit(result.irText.replace(/\n$/,''));
+                emit(result.ir.dump(MAX_SEMNEXIS_OUTPUT_CHARS).replace(/\n$/,''));
                 finish({
                   ok:true,
                   source:path,

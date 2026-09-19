@@ -6,6 +6,27 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.11 — Semnexis 0.6.1 hardening gate
+
+### Current source changes
+
+Semnexis advanced to `0.6.1-quickjs-bootstrap` without adding language feature surface.
+
+Hardening includes:
+- effect/capability re-derivation from IR instructions and call graph;
+- canonical IR-bound ARM32 machine verification;
+- independent ARM32 machine-execution regression in `npm run check`;
+- parallel-copy resolution for cyclic phi edges;
+- bounded source/token/AST/graph/CFG/artifact/output resources;
+- iterative call-cycle analysis;
+- lazy bounded graph/plan/IR dumps;
+- frozen `SNIRV0` V0 version/flags/opcode compatibility tests;
+- advisory-only graph-node correlation semantics made explicit;
+- exact embedded `semx self-test/7` execution in Builder;
+- Semnexis-specific host source limit and pre-allocation binary payload checks.
+
+0.6 remains device-verified on `1d743b6fda2f5e7f1085186bc4bf6e9bbbd3ef36`. 0.6.1 requires a new APK/device gate.
+
 ## Patch 10.10 — Explicit CFG, phi merges and explicit-state loops
 
 ### Current source changes

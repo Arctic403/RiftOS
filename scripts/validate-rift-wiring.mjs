@@ -165,12 +165,17 @@ for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()
 }
 if (hasWebKitDependency(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
 const semnexisSource = read('src/semnexis-bootstrap.js');
-for (const required of ['SEMNEXIS_NATIVE_IR_V0', 'SNIRV0', 'SEMNEXIS_ARM32_ELF_PROOF_V0', 'SEMNEXIS_ARM32_RUNTIME_ELF_V0', 'linear-scan-r4-r7-v0', 'cfg-spill-v0', 'verifyNativeIRControlFlow', 'phi.i32', 'br.cmp.lt', 'loop_backedge', 'buildArm32RuntimeDivHelperV0', "checkedArithmetic:['add','sub','mul','div']", 'constantEvaluated:false', 'runtimeLowered:true', 'generated-artifact-not-executed-from-riftfs']) {
+for (const required of ['SEMNEXIS_NATIVE_IR_V0', 'SNIRV0', 'SEMNEXIS_ARM32_ELF_PROOF_V0', 'SEMNEXIS_ARM32_RUNTIME_ELF_V0', 'verifyNativeIREffectsAndCapabilities', 'verifyArm32RuntimeElfStructureV0', 'source IR is required for canonical verification', 'MAX_SEMNEXIS_SOURCE_CHARS', 'MAX_SEMNEXIS_EXPRESSION_DEPTH', 'MAX_SEMNEXIS_CFG_BLOCKS', 'MAX_ARM32_RUNTIME_ELF_BYTES', 'advisory-correlation-id-v0', 'linear-scan-r4-r7-v0', 'cfg-spill-v0', 'verifyNativeIRControlFlow', 'phi.i32', 'br.cmp.lt', 'loop_backedge', 'buildArm32RuntimeDivHelperV0', "checkedArithmetic:['add','sub','mul','div']", 'constantEvaluated:false', 'runtimeLowered:true', 'generated-artifact-not-executed-from-riftfs']) {
   if (!semnexisSource.includes(required)) fail(`Semnexis compiler/backend contract is missing ${required}`);
 }
 if (!headless.includes('/documents/builds/Semnexis/semx-arm32-proof.elf') ||
     !headless.includes('/documents/builds/Semnexis/semx-arm32-runtime.elf') ||
     !headless.includes('__rift_write_semnexis_binary')) fail('Semnexis fixed ARM32 artifact writer is missing');
+for (const required of ['MAX_SEMNEXIS_SOURCE_BYTES', 'MAX_SEMNEXIS_OUTPUT_CHARS', 'semnexis-bootstrap-self-test/7', 'hardeningDerivedEffects', 'hardeningCanonicalMachineVerify', 'hardeningExpressionBudget']) {
+  if (!headless.includes(required)) fail(`Semnexis hardening host contract is missing ${required}`);
+}
+const packageJson = read('package.json');
+if (!packageJson.includes('test-semnexis-arm32-exec.mjs')) fail('Semnexis independent ARM32 machine execution regression is not wired into npm check');
 const qjsStart = headless.indexOf('fun executeQuickJs(args: List<String>, cwd: String): CommandResult');
 const qjsEnd = headless.indexOf('fun executeDeveloperTool(args: List<String>): CommandResult', qjsStart);
 if (qjsStart < 0 || qjsEnd <= qjsStart) fail('bounded qjs implementation is missing');

@@ -131,7 +131,7 @@ assert.equal(runtimeArm32.byteLength, 192);
 assert.equal(runtimeArm32.constantEvaluated, false);
 assert.equal(runtimeArm32.runtimeLowered, true);
 assert.equal(runtimeArm32.functions.length, 2);
-assert.equal(verifySemnexisArm32RuntimeElfV0(runtimeArm32), true);
+assert.equal(verifySemnexisArm32RuntimeElfV0(runtimeArm32, runtimeProgram.ir), true);
 assert.ok(runtimeArm32.functions.every(fn => fn.frameBytes % 8 === 0));
 assert.equal(runtimeArm32.allocator, 'linear-scan-r4-r7-v0');
 assert.ok(runtimeArm32.functions.every(fn => fn.allocator === runtimeArm32.allocator));
@@ -478,6 +478,226 @@ assert.throws(
   () => malformedLoopPhi.verify(),
   /phi predecessors do not match/,
   'CFG verifier must reject incorrect loop backedge predecessor labels'
+);
+
+
+const forgedDirectEffect = compileSemnexisV0('fn main() -> i32 with time { return clock(); }\n').ir;
+forgedDirectEffect.functions[0].effect = 'pure';
+forgedDirectEffect.functions[0].requiresCapabilities = [];
+forgedDirectEffect.functions[0].grantsCapabilities = [];
+assert.throws(
+  () => forgedDirectEffect.verify(),
+  /effect metadata mismatch/,
+  'IR verifier must derive direct intrinsic effects rather than trust stored metadata'
+);
+
+const forgedTransitiveEffect = compileSemnexisV0(
+  'fn helper() -> i32 { return clock(); }\n' +
+  'fn main() -> i32 with time { return helper(); }\n'
+).ir;
+const forgedHelper = forgedTransitiveEffect.functions.find(fn => fn.name === 'helper');
+forgedHelper.effect = 'pure';
+forgedHelper.requiresCapabilities = [];
+assert.throws(
+  () => forgedTransitiveEffect.verify(),
+  /effect metadata mismatch/,
+  'IR verifier must derive transitive call effects rather than trust stored metadata'
+);
+
+assert.throws(
+  () => verifySemnexisArm32RuntimeElfV0(runtimeArm32),
+  /source IR is required/,
+  'runtime machine verifier must require the originating verified IR'
+);
+
+const tamperProgram = compileSemnexisV0(
+  'fn add(a: i32, b: i32) -> i32 { return a + b; }\n' +
+  'fn main() -> i32 { return add(40, 2); }\n'
+);
+const tamperedArithmetic = emitSemnexisArm32RuntimeElfV0(tamperProgram.ir);
+const tamperedAdd = tamperedArithmetic.functions.find(fn => fn.name === 'add');
+let tamperedAddOffset = -1;
+for (let offset = tamperedAdd.fileOffset; offset < tamperedAdd.fileOffset + tamperedAdd.bytes; offset += 4) {
+  const word = readArmWord(tamperedArithmetic.bytes, offset);
+  if ((word & 0x0FF00000) === 0x00900000) { tamperedAddOffset = offset; break; }
+}
+assert.ok(tamperedAddOffset >= 0);
+tamperedArithmetic.bytes[tamperedAddOffset] = 0x00;
+tamperedArithmetic.bytes[tamperedAddOffset + 1] = 0x00;
+tamperedArithmetic.bytes[tamperedAddOffset + 2] = 0xA0;
+tamperedArithmetic.bytes[tamperedAddOffset + 3] = 0xE1;
+assert.throws(
+  () => verifySemnexisArm32RuntimeElfV0(tamperedArithmetic, tamperProgram.ir),
+  /machine image differs from canonical IR lowering/,
+  'runtime verifier must reject tampered arithmetic machine code'
+);
+
+const tamperedBranchProgram = compileSemnexisV0(
+  'fn choose(a: i32, b: i32) -> i32 { return if a < b { 1 } else { 2 }; }\n' +
+  'fn main() -> i32 { return choose(1, 2); }\n'
+);
+const tamperedBranch = emitSemnexisArm32RuntimeElfV0(tamperedBranchProgram.ir);
+const tamperedChoose = tamperedBranch.functions.find(fn => fn.name === 'choose');
+let conditionalBranchOffset = -1;
+for (let offset = tamperedChoose.fileOffset; offset < tamperedChoose.fileOffset + tamperedChoose.bytes; offset += 4) {
+  const word = readArmWord(tamperedBranch.bytes, offset);
+  if (((word & 0xFF000000) >>> 0) === 0xBA000000) { conditionalBranchOffset = offset; break; }
+}
+assert.ok(conditionalBranchOffset >= 0);
+tamperedBranch.bytes[conditionalBranchOffset] = 0x00;
+tamperedBranch.bytes[conditionalBranchOffset + 1] = 0x00;
+tamperedBranch.bytes[conditionalBranchOffset + 2] = 0x00;
+tamperedBranch.bytes[conditionalBranchOffset + 3] = 0xEA;
+assert.throws(
+  () => verifySemnexisArm32RuntimeElfV0(tamperedBranch, tamperedBranchProgram.ir),
+  /machine image differs from canonical IR lowering/,
+  'runtime verifier must reject tampered branch machine code'
+);
+
+const cyclicPhiProgram = compileSemnexisV0(
+  'fn swap_once() -> i32 {\n' +
+  ' return loop (a = 1, b = 2, i = 0) while i < 1 { next (b, a, i + 1); } yield a;\n' +
+  '}\n' +
+  'fn main() -> i32 { return swap_once(); }\n'
+);
+const cyclicFn = cyclicPhiProgram.ir.functions.find(fn => fn.name === 'swap_once');
+const cyclicPhis = cyclicFn.instructions.filter(inst => inst.op === 'phi.i32');
+const cyclicA = cyclicPhis[0];
+const cyclicB = cyclicPhis[1];
+const cyclicBackedge = cyclicA.incoming[1].label;
+cyclicA.incoming[1].value = cyclicB.result;
+cyclicA.args[1] = cyclicB.result;
+cyclicB.incoming[1].value = cyclicA.result;
+cyclicB.args[1] = cyclicA.result;
+cyclicPhiProgram.ir.verify();
+const cyclicArtifact = emitSemnexisArm32RuntimeElfV0(cyclicPhiProgram.ir);
+const cyclicMeta = cyclicArtifact.functions.find(fn => fn.name === 'swap_once');
+const cyclicBlocks = cyclicMeta.blocks.slice().sort((a, b) => a.wordIndex - b.wordIndex);
+const cyclicBodyIndex = cyclicBlocks.findIndex(block => block.label === cyclicBackedge);
+assert.ok(cyclicBodyIndex >= 0);
+const cyclicBody = cyclicBlocks[cyclicBodyIndex];
+const cyclicBodyEnd = cyclicBodyIndex + 1 < cyclicBlocks.length
+  ? cyclicBlocks[cyclicBodyIndex + 1].fileOffset
+  : cyclicMeta.fileOffset + cyclicMeta.bytes;
+let phiScratchLoad = false;
+let phiScratchStore = false;
+for (let offset = cyclicBody.fileOffset; offset < cyclicBodyEnd; offset += 4) {
+  const word = readArmWord(cyclicArtifact.bytes, offset);
+  if (((word & 0xFFFFF000) >>> 0) === 0xE59DC000) phiScratchLoad = true;
+  if (((word & 0xFFFFF000) >>> 0) === 0xE58DC000) phiScratchStore = true;
+}
+assert.equal(phiScratchLoad, true, 'cyclic phi copies must preserve one source through r12');
+assert.equal(phiScratchStore, true, 'cyclic phi copies must restore the preserved source from r12');
+assert.equal(verifySemnexisArm32RuntimeElfV0(cyclicArtifact, cyclicPhiProgram.ir), true);
+
+let deeplyNested = '1';
+for (let i = 0; i < 300; i += 1) deeplyNested = 'if 0 < 1 { ' + deeplyNested + ' } else { 2 }';
+assert.throws(
+  () => compileSemnexisV0('fn main() -> i32 { return ' + deeplyNested + '; }\n'),
+  /expression nesting exceeds compiler budget/,
+  'frontend must bound recursive expression depth'
+);
+
+assert.throws(
+  () => compileSemnexisV0(' '.repeat((512 * 1024) + 1)),
+  /source exceeds compiler budget/,
+  'frontend must reject source larger than its compiler budget before lexing'
+);
+
+const tokenBomb = 'fn main() -> i32 { return ' + Array(40000).fill('1').join(' + ') + '; }\n';
+assert.throws(
+  () => compileSemnexisV0(tokenBomb),
+  /token count exceeds compiler budget/,
+  'frontend must cap token count independently of source size'
+);
+
+assert.throws(
+  () => compileSemnexisV0('fn ' + 'a'.repeat(256) + '() -> i32 { return 1; }\nfn main() -> i32 { return 1; }\n'),
+  /identifier exceeds compiler budget/,
+  'frontend must reject overlong identifiers before semantic construction'
+);
+assert.throws(
+  () => compileSemnexisV0('fn main() -> i32 { return 00000000001; }\n'),
+  /integer literal exceeds compiler budget/,
+  'frontend must reject overlong integer literal text before numeric conversion'
+);
+
+const flatDepthBomb = 'fn main() -> i32 { return ' + Array(2000).fill('1').join(' + ') + '; }\n';
+assert.throws(
+  () => compileSemnexisV0(flatDepthBomb),
+  /AST structural depth exceeds compiler budget/,
+  'frontend must reject deeply left-nested ASTs even when parser recursion stays shallow'
+);
+
+
+const compatibilityBinary = encodeSemnexisNativeIRV0(smoke.ir);
+const badVersion = compatibilityBinary.slice();
+badVersion[8] = 1;
+badVersion[9] = 0;
+assert.throws(
+  () => decodeSemnexisNativeIRV0(badVersion),
+  /unsupported version/,
+  'SNIRV0 must reject unknown binary versions'
+);
+const badReservedFlags = compatibilityBinary.slice();
+badReservedFlags[10] = 1;
+assert.throws(
+  () => decodeSemnexisNativeIRV0(badReservedFlags),
+  /nonzero reserved flags/,
+  'SNIRV0 must reject unknown reserved flags'
+);
+const badOpcode = compatibilityBinary.slice();
+assert.equal(badOpcode[51], 1, 'frozen smoke first opcode offset must remain region.begin');
+badOpcode[51] = 0xFF;
+assert.throws(
+  () => decodeSemnexisNativeIRV0(badOpcode),
+  /unknown opcode/,
+  'SNIRV0 must reject unknown opcodes'
+);
+
+const staleIndexGraph = compileSemnexisV0('fn main() -> i32 { return 1; }\n').graph;
+staleIndexGraph.edges.push({...staleIndexGraph.edges[0]});
+assert.throws(
+  () => staleIndexGraph.verify(),
+  /duplicate semantic edge/,
+  'Program Graph verification must rebuild its edge index from authoritative edges'
+);
+
+assert.throws(
+  () => smoke.graph.dump(10),
+  /graph dump exceeds output budget/,
+  'Program Graph dumps must enforce construction-time output budgets'
+);
+assert.throws(
+  () => smoke.plan.dump(10),
+  /plan dump exceeds output budget/,
+  'Execution Plan dumps must enforce construction-time output budgets'
+);
+assert.throws(
+  () => smoke.ir.dump(10),
+  /IR dump exceeds output budget/,
+  'Native IR dumps must enforce construction-time output budgets'
+);
+
+let longCallSource = '';
+for (let i = 0; i < 200; i += 1) {
+  longCallSource += 'fn f' + i + '() -> i32 { return ' + (i === 199 ? '1' : ('f' + (i + 1) + '()')) + '; }\n';
+}
+longCallSource += 'fn main() -> i32 { return f0(); }\n';
+const longCallProgram = compileSemnexisV0(longCallSource);
+const longCallArtifact = emitSemnexisArm32RuntimeElfV0(longCallProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(longCallArtifact, longCallProgram.ir), true);
+assert.equal(longCallArtifact.functions.length, 201);
+
+const recursiveProgram = compileSemnexisV0(
+  'fn a() -> i32 { return b(); }\n' +
+  'fn b() -> i32 { return a(); }\n' +
+  'fn main() -> i32 { return a(); }\n'
+);
+assert.throws(
+  () => emitSemnexisArm32RuntimeElfV0(recursiveProgram.ir),
+  /recursive call cycle/,
+  'runtime backend call-cycle verification must stay fail-closed without recursive verifier stack use'
 );
 
 console.log('ok - Semnexis QuickJS bootstrap compiler');

@@ -1,8 +1,17 @@
-const SEMNEXIS_BOOTSTRAP_VERSION = '0.6.0-quickjs-bootstrap';
+const SEMNEXIS_BOOTSTRAP_VERSION = '0.7.0-quickjs-bootstrap';
 const SEMNEXIS_LANGUAGE = 'Semnexis';
 const SEMNEXIS_GRAPH_SCHEMA = 'SEMNEXIS_PROGRAM_GRAPH_V0';
 const SEMNEXIS_PLAN_SCHEMA = 'SEMNEXIS_EXECUTION_PLAN_V0';
 const SEMNEXIS_NATIVE_IR_SCHEMA = 'SEMNEXIS_NATIVE_IR_V0';
+const MAX_SEMNEXIS_SOURCE_CHARS = 512 * 1024;
+const MAX_SEMNEXIS_TOKENS = 65536;
+const MAX_SEMNEXIS_FUNCTIONS = 1024;
+const MAX_SEMNEXIS_EXPRESSION_DEPTH = 256;
+const MAX_SEMNEXIS_GRAPH_NODES = 65536;
+const MAX_SEMNEXIS_GRAPH_EDGES = 262144;
+const MAX_SEMNEXIS_CFG_BLOCKS = 512;
+const MAX_SEMNEXIS_IDENTIFIER_CHARS = 255;
+const MAX_SEMNEXIS_INTEGER_CHARS = 10;
 
 const TokenKind = Object.freeze({
   End:'End', Identifier:'Identifier', Integer:'Integer',
@@ -72,6 +81,7 @@ class Lexer {
         this.advance();
         while (isAlphaNum(this.peek())) this.advance();
         const token = this.make(TokenKind.Identifier, start, line, column);
+        if (token.lexeme.length > MAX_SEMNEXIS_IDENTIFIER_CHARS) fail('lexer: identifier exceeds compiler budget at ' + line + ':' + column);
         if (token.lexeme === 'fn') token.kind = TokenKind.KwFn;
         else if (token.lexeme === 'let') token.kind = TokenKind.KwLet;
         else if (token.lexeme === 'return') token.kind = TokenKind.KwReturn;
@@ -88,7 +98,9 @@ class Lexer {
       if (isDigit(c)) {
         this.advance();
         while (isDigit(this.peek())) this.advance();
-        out.push(this.make(TokenKind.Integer, start, line, column));
+        const token = this.make(TokenKind.Integer, start, line, column);
+        if (token.lexeme.length > MAX_SEMNEXIS_INTEGER_CHARS) fail('lexer: integer literal exceeds compiler budget at ' + line + ':' + column);
+        out.push(token);
         continue;
       }
       const one = {
@@ -140,7 +152,7 @@ class Lexer {
 }
 
 class Parser {
-  constructor(tokens) { this.tokens = tokens; this.pos = 0; }
+  constructor(tokens) { this.tokens = tokens; this.pos = 0; this.expressionDepth = 0; }
   peek(offset) {
     const i = this.pos + (offset || 0);
     return this.tokens[Math.min(i, this.tokens.length - 1)];
@@ -160,7 +172,10 @@ class Parser {
   }
   parseModule() {
     const functions = [];
-    while (this.peek().kind !== TokenKind.End) functions.push(this.parseFunction());
+    while (this.peek().kind !== TokenKind.End) {
+      if (functions.length >= MAX_SEMNEXIS_FUNCTIONS) fail('parser: function count exceeds compiler budget');
+      functions.push(this.parseFunction());
+    }
     if (!functions.length) fail('parser: module must contain at least one function');
     return {functions:functions};
   }
@@ -212,9 +227,18 @@ class Parser {
     };
   }
   parseExpr() {
-    if (this.peek().kind === TokenKind.KwIf) return this.parseIfExpression();
-    if (this.peek().kind === TokenKind.KwLoop) return this.parseLoopExpression();
-    return this.parseComparison();
+    this.expressionDepth += 1;
+    if (this.expressionDepth > MAX_SEMNEXIS_EXPRESSION_DEPTH) {
+      this.expressionDepth -= 1;
+      fail('parser: expression nesting exceeds compiler budget');
+    }
+    try {
+      if (this.peek().kind === TokenKind.KwIf) return this.parseIfExpression();
+      if (this.peek().kind === TokenKind.KwLoop) return this.parseLoopExpression();
+      return this.parseComparison();
+    } finally {
+      this.expressionDepth -= 1;
+    }
   }
   parseIfExpression() {
     this.expect(TokenKind.KwIf, "expected 'if'");
@@ -326,6 +350,44 @@ class Parser {
   }
 }
 
+function validateSemnexisAstBudgets(module) {
+  const roots = [];
+  for (const fn of module.functions) {
+    for (const local of fn.locals) roots.push(local.initializer);
+    roots.push(fn.returnExpr);
+  }
+
+  let nodeCount = 0;
+  const stack = roots.map((expr) => ({expr:expr, depth:1}));
+  while (stack.length) {
+    const row = stack.pop();
+    const expr = row.expr;
+    if (!expr || typeof expr !== 'object') fail('compiler: malformed AST expression');
+    nodeCount += 1;
+    if (nodeCount > MAX_SEMNEXIS_TOKENS) fail('compiler: AST node count exceeds compiler budget');
+    if (row.depth > MAX_SEMNEXIS_EXPRESSION_DEPTH) fail('compiler: AST structural depth exceeds compiler budget');
+
+    const nextDepth = row.depth + 1;
+    if (expr.kind === 'Binary' || expr.kind === 'Compare') {
+      stack.push({expr:expr.left, depth:nextDepth});
+      stack.push({expr:expr.right, depth:nextDepth});
+    } else if (expr.kind === 'IfExpr') {
+      stack.push({expr:expr.condition, depth:nextDepth});
+      stack.push({expr:expr.thenExpr, depth:nextDepth});
+      stack.push({expr:expr.elseExpr, depth:nextDepth});
+    } else if (expr.kind === 'LoopExpr') {
+      for (const state of expr.states) stack.push({expr:state.initializer, depth:nextDepth});
+      stack.push({expr:expr.condition, depth:nextDepth});
+      for (const value of expr.nextValues) stack.push({expr:value, depth:nextDepth});
+      stack.push({expr:expr.yieldExpr, depth:nextDepth});
+    } else if (expr.kind === 'Call') {
+      for (const arg of expr.arguments) stack.push({expr:arg, depth:nextDepth});
+    } else if (expr.kind !== 'Integer' && expr.kind !== 'Name') {
+      fail("compiler: unknown AST expression kind '" + String(expr.kind) + "'");
+    }
+  }
+}
+
 function isExpressionKind(kind) {
   return kind === NodeKind.Constant || kind === NodeKind.NameRef ||
     kind === NodeKind.Binary || kind === NodeKind.Call || kind === NodeKind.Conditional || kind === NodeKind.Loop;
@@ -340,8 +402,9 @@ function astExpressionUsesControlFlow(expr) {
 }
 
 class ProgramGraph {
-  constructor() { this.nodes = []; this.edges = []; }
+  constructor() { this.nodes = []; this.edges = []; this.edgeIndex = new Map(); }
   addNode(kind, name) {
+    if (this.nodes.length >= MAX_SEMNEXIS_GRAPH_NODES) fail('graph: node count exceeds compiler budget');
     const id = this.nodes.length;
     this.nodes.push({id:id, kind:kind, name:String(name), attributes:[]});
     return id;
@@ -353,12 +416,17 @@ class ProgramGraph {
   addEdge(from, to, relation) {
     if (!this.nodes[from] || !this.nodes[to]) fail('graph: edge endpoint does not exist');
     if (!relation) fail('graph: edge relation cannot be empty');
-    this.edges.push({from:from, to:to, relation:String(relation)});
+    if (this.edges.length >= MAX_SEMNEXIS_GRAPH_EDGES) fail('graph: edge count exceeds compiler budget');
+    const edge = {from:from, to:to, relation:String(relation)};
+    this.edges.push(edge);
+    const rows = this.edgeIndex.get(from) || [];
+    rows.push(edge);
+    this.edgeIndex.set(from, rows);
   }
   edgesFrom(from, relation) {
-    return this.edges.filter(function(edge) {
-      return edge.from === from && (relation == null || edge.relation === relation);
-    });
+    const rows = this.edgeIndex.get(from) || [];
+    if (relation == null) return rows.slice();
+    return rows.filter(function(edge) { return edge.relation === relation; });
   }
   singleEdgeTarget(from, relation) {
     const rows = this.edgesFrom(from, relation);
@@ -366,7 +434,7 @@ class ProgramGraph {
     return rows[0].to;
   }
   hasEdgeToKind(from, relation, kind) {
-    return this.edges.some((edge) => edge.from === from && edge.relation === relation && this.nodes[edge.to].kind === kind);
+    return this.edgesFrom(from, relation).some((edge) => this.nodes[edge.to].kind === kind);
   }
   countEdges(from, relation) { return this.edgesFrom(from, relation).length; }
   attribute(node, key) {
@@ -375,6 +443,14 @@ class ProgramGraph {
   }
   verify() {
     if (!this.nodes.length) fail('graph verify: graph is empty');
+    if (this.nodes.length > MAX_SEMNEXIS_GRAPH_NODES) fail('graph verify: node count exceeds compiler budget');
+    if (this.edges.length > MAX_SEMNEXIS_GRAPH_EDGES) fail('graph verify: edge count exceeds compiler budget');
+    this.edgeIndex = new Map();
+    for (const edge of this.edges) {
+      const rows = this.edgeIndex.get(edge.from) || [];
+      rows.push(edge);
+      this.edgeIndex.set(edge.from, rows);
+    }
     for (let i = 0; i < this.nodes.length; i += 1) {
       if (this.nodes[i].id !== i) fail('graph verify: non-deterministic node identity');
     }
@@ -553,14 +629,22 @@ class ProgramGraph {
 
     if (moduleCount !== 1) fail('graph verify: graph must contain exactly one module');
   }
-  dump() {
-    const out = [SEMNEXIS_GRAPH_SCHEMA];
+  dump(maxChars) {
+    const limit = maxChars == null ? Infinity : maxChars;
+    const out = [];
+    let chars = 0;
+    const push = line => {
+      chars += line.length + 1;
+      if (chars > limit) fail('graph dump exceeds output budget');
+      out.push(line);
+    };
+    push(SEMNEXIS_GRAPH_SCHEMA);
     for (const node of this.nodes) {
       let line = 'node ' + node.id + ' ' + node.kind + ' ' + node.name;
       for (const pair of node.attributes) line += ' ' + pair[0] + '=' + pair[1];
-      out.push(line);
+      push(line);
     }
-    for (const edge of this.edges) out.push('edge ' + edge.from + ' -> ' + edge.to + ' ' + edge.relation);
+    for (const edge of this.edges) push('edge ' + edge.from + ' -> ' + edge.to + ' ' + edge.relation);
     return out.join('\n') + '\n';
   }
 }
@@ -568,9 +652,17 @@ class ProgramGraph {
 class ExecutionPlan {
   constructor() { this.steps = []; }
   add(action, detail) { this.steps.push({index:this.steps.length, action:String(action), detail:String(detail)}); }
-  dump() {
-    const out = [SEMNEXIS_PLAN_SCHEMA];
-    for (const step of this.steps) out.push('step ' + step.index + ' ' + step.action + ' ' + step.detail);
+  dump(maxChars) {
+    const limit = maxChars == null ? Infinity : maxChars;
+    const out = [];
+    let chars = 0;
+    const push = line => {
+      chars += line.length + 1;
+      if (chars > limit) fail('plan dump exceeds output budget');
+      out.push(line);
+    };
+    push(SEMNEXIS_PLAN_SCHEMA);
+    for (const step of this.steps) push('step ' + step.index + ' ' + step.action + ' ' + step.detail);
     return out.join('\n') + '\n';
   }
 }
@@ -579,6 +671,7 @@ class ExecutionPlan {
 function verifyNativeIRControlFlow(fn) {
   const blockBegins = fn.instructions.filter((inst) => inst.op === 'block.begin');
   if (!blockBegins.length) return;
+  if (blockBegins.length > MAX_SEMNEXIS_CFG_BLOCKS) fail("ir verify: function '" + fn.name + "' exceeds CFG block budget");
   if (fn.instructions.length < 4 || fn.instructions[0].op !== 'region.begin' || fn.instructions[1].op !== 'block.begin') {
     fail("ir verify: control-flow function '" + fn.name + "' must begin region then entry block");
   }
@@ -727,6 +820,77 @@ function verifyNativeIRControlFlow(fn) {
   }
 }
 
+function verifyNativeIREffectsAndCapabilities(functions) {
+  const byName = new Map(functions.map((fn) => [fn.name, fn]));
+  const directTime = new Map();
+  const callers = new Map();
+
+  for (const fn of functions) callers.set(fn.name, []);
+  for (const fn of functions) {
+    let hasDirectTime = false;
+    for (const inst of fn.instructions) {
+      if (inst.op === 'intrinsic.clock') hasDirectTime = true;
+      if (inst.op === 'call') {
+        if (!byName.has(inst.target)) fail("ir verify: unresolved effect call target '" + inst.target + "'");
+        callers.get(inst.target).push(fn.name);
+      }
+    }
+    directTime.set(fn.name, hasDirectTime);
+  }
+
+  const transitivelyTime = new Map(functions.map((fn) => [fn.name, false]));
+  const effectQueue = [];
+  for (const fn of functions) {
+    if (!directTime.get(fn.name)) continue;
+    transitivelyTime.set(fn.name, true);
+    effectQueue.push(fn.name);
+  }
+  for (let cursor = 0; cursor < effectQueue.length; cursor += 1) {
+    const target = effectQueue[cursor];
+    for (const caller of callers.get(target)) {
+      if (transitivelyTime.get(caller)) continue;
+      transitivelyTime.set(caller, true);
+      effectQueue.push(caller);
+    }
+  }
+
+  const requiresTime = new Map(functions.map((fn) => [fn.name, false]));
+  const requirementQueue = [];
+  for (const fn of functions) {
+    if (!directTime.get(fn.name) || fn.grantsCapabilities.includes('time')) continue;
+    requiresTime.set(fn.name, true);
+    requirementQueue.push(fn.name);
+  }
+  for (let cursor = 0; cursor < requirementQueue.length; cursor += 1) {
+    const target = requirementQueue[cursor];
+    for (const callerName of callers.get(target)) {
+      if (requiresTime.get(callerName)) continue;
+      const caller = byName.get(callerName);
+      if (caller.grantsCapabilities.includes('time')) continue;
+      requiresTime.set(callerName, true);
+      requirementQueue.push(callerName);
+    }
+  }
+
+  for (const fn of functions) {
+    const expectedEffect = transitivelyTime.get(fn.name) ? 'time' : 'pure';
+    if (fn.effect !== expectedEffect) {
+      fail("ir verify: function '" + fn.name + "' effect metadata mismatch; expected " + expectedEffect + ', got ' + fn.effect);
+    }
+
+    const expectedRequires = requiresTime.get(fn.name) ? ['time'] : [];
+    const actualRequires = Array.from(new Set(fn.requiresCapabilities)).sort();
+    if (actualRequires.length !== expectedRequires.length ||
+        actualRequires.some((capability, index) => capability !== expectedRequires[index])) {
+      fail("ir verify: function '" + fn.name + "' capability requirements do not match derived effects");
+    }
+
+    if (requiresTime.get(fn.name) && fn.name === 'main') {
+      fail("ir verify: entry function 'main' uses time but does not grant time capability");
+    }
+  }
+}
+
 class NativeIRModule {
   constructor() {
     this.schema = SEMNEXIS_NATIVE_IR_SCHEMA;
@@ -739,16 +903,25 @@ class NativeIRModule {
   verify() {
     if (this.schema !== SEMNEXIS_NATIVE_IR_SCHEMA) fail('ir verify: schema mismatch');
     if (!this.functions.length) fail('ir verify: module has no functions');
+    if (this.functions.length > MAX_NATIVE_IR_FUNCTIONS) fail('ir verify: module exceeds function budget');
 
     const byName = new Map();
     for (const fn of this.functions) {
       if (!fn || typeof fn !== 'object') fail('ir verify: malformed function');
+      if (!Array.isArray(fn.parameters) || !Array.isArray(fn.instructions) ||
+          !Array.isArray(fn.requiresCapabilities) || !Array.isArray(fn.grantsCapabilities)) {
+        fail('ir verify: malformed function collections');
+      }
+      if (fn.parameters.length > MAX_NATIVE_IR_PARAMETERS) fail("ir verify: function '" + fn.name + "' exceeds parameter budget");
+      if (fn.instructions.length > MAX_NATIVE_IR_INSTRUCTIONS) fail("ir verify: function '" + fn.name + "' exceeds instruction budget");
       if (!fn.name || byName.has(fn.name)) fail("ir verify: duplicate or empty function '" + String(fn.name || '') + "'");
       byName.set(fn.name, fn);
       if (fn.returnType !== 'i32') fail("ir verify: unsupported return type on '" + fn.name + "'");
       if (fn.effect !== 'pure' && fn.effect !== 'time') fail("ir verify: unsupported effect on '" + fn.name + "'");
       if (!fn.region) fail("ir verify: function '" + fn.name + "' has no region");
-      if (!Number.isInteger(fn.graphNode) || fn.graphNode < 0) fail("ir verify: function '" + fn.name + "' has invalid graph provenance");
+      if (!Number.isInteger(fn.graphNode) || fn.graphNode < 0 || fn.graphNode > 0xFFFFFFFF) fail("ir verify: function '" + fn.name + "' has invalid graph node id");
+      if (new Set(fn.requiresCapabilities).size !== fn.requiresCapabilities.length) fail("ir verify: duplicate required capability on '" + fn.name + "'");
+      if (new Set(fn.grantsCapabilities).size !== fn.grantsCapabilities.length) fail("ir verify: duplicate granted capability on '" + fn.name + "'");
       for (const cap of fn.requiresCapabilities) if (cap !== 'time') fail("ir verify: unsupported required capability '" + cap + "'");
       for (const cap of fn.grantsCapabilities) if (cap !== 'time') fail("ir verify: unsupported granted capability '" + cap + "'");
       if (fn.name !== 'main' && fn.grantsCapabilities.length) fail("ir verify: only main may grant ambient capability in V0");
@@ -757,11 +930,15 @@ class NativeIRModule {
     for (const fn of this.functions) {
       const defined = new Set();
       const localNames = new Set();
+      const parameterNames = new Set();
       for (let i = 0; i < fn.parameters.length; i += 1) {
         const parameter = fn.parameters[i];
         if (parameter.index !== i || parameter.value !== '%arg' + i) fail("ir verify: function '" + fn.name + "' has non-canonical parameter identity");
         if (parameter.type !== 'i32') fail("ir verify: function '" + fn.name + "' has unsupported parameter type");
         if (!parameter.name) fail("ir verify: function '" + fn.name + "' has unnamed parameter");
+        if (parameterNames.has(parameter.name)) fail("ir verify: duplicate parameter name '" + parameter.name + "' in '" + fn.name + "'");
+        parameterNames.add(parameter.name);
+        if (!Number.isInteger(parameter.graphNode) || parameter.graphNode < 0 || parameter.graphNode > 0xFFFFFFFF) fail("ir verify: parameter '" + parameter.name + "' has invalid graph node id");
         if (defined.has(parameter.value)) fail("ir verify: duplicate SSA parameter '" + parameter.value + "'");
         defined.add(parameter.value);
       }
@@ -774,7 +951,7 @@ class NativeIRModule {
       for (let index = 0; index < fn.instructions.length; index += 1) {
         const inst = fn.instructions[index];
         if (inst.index !== index) fail("ir verify: function '" + fn.name + "' has non-canonical instruction index");
-        if (!Number.isInteger(inst.graphNode) || inst.graphNode < 0) fail("ir verify: instruction lacks graph provenance in '" + fn.name + "'");
+        if (!Number.isInteger(inst.graphNode) || inst.graphNode < 0 || inst.graphNode > 0xFFFFFFFF) fail("ir verify: instruction has invalid graph node id in '" + fn.name + "'");
 
         const args = Array.isArray(inst.args) ? inst.args : [];
         if (inst.op !== 'phi.i32') {
@@ -868,11 +1045,20 @@ class NativeIRModule {
       }
       verifyNativeIRControlFlow(fn);
     }
+    verifyNativeIREffectsAndCapabilities(this.functions);
   }
-  dump() {
-    const out = [SEMNEXIS_NATIVE_IR_SCHEMA];
+  dump(maxChars) {
+    const limit = maxChars == null ? Infinity : maxChars;
+    const out = [];
+    let chars = 0;
+    const push = line => {
+      chars += line.length + 1;
+      if (chars > limit) fail('IR dump exceeds output budget');
+      out.push(line);
+    };
+    push(SEMNEXIS_NATIVE_IR_SCHEMA);
     for (const fn of this.functions) {
-      out.push(
+      push(
         'function ' + fn.name +
         ' graph=' + fn.graphNode +
         ' return=' + fn.returnType +
@@ -882,13 +1068,13 @@ class NativeIRModule {
         ' grants=' + (fn.grantsCapabilities.length ? fn.grantsCapabilities.join(',') : '-')
       );
       for (const parameter of fn.parameters) {
-        out.push(
+        push(
           'param ' + parameter.index + ' ' + parameter.value + ':' + parameter.type +
           ' name=' + parameter.name + ' graph=' + parameter.graphNode
         );
       }
-      for (const inst of fn.instructions) out.push(dumpNativeIRInstruction(inst));
-      out.push('endfunction ' + fn.name);
+      for (const inst of fn.instructions) push(dumpNativeIRInstruction(inst));
+      push('endfunction ' + fn.name);
     }
     return out.join('\n') + '\n';
   }
@@ -1355,7 +1541,10 @@ function utf8DecodeNativeIR(bytes) {
 
 class NativeIRBinaryWriter {
   constructor() { this.bytes = []; }
-  u8(value) { this.bytes.push(value & 0xFF); }
+  u8(value) {
+    if (this.bytes.length >= MAX_NATIVE_IR_BINARY_BYTES) fail('ir binary: payload too large');
+    this.bytes.push(value & 0xFF);
+  }
   u16(value) {
     if (!Number.isInteger(value) || value < 0 || value > 0xFFFF) fail('ir binary: u16 out of range');
     this.u8(value); this.u8(value >>> 8);
@@ -1383,9 +1572,13 @@ class NativeIRBinaryWriter {
 class NativeIRBinaryReader {
   constructor(bytes) {
     if (bytes instanceof Uint8Array) this.bytes = bytes;
-    else if (Array.isArray(bytes)) this.bytes = Uint8Array.from(bytes);
-    else if (bytes instanceof ArrayBuffer) this.bytes = new Uint8Array(bytes);
-    else fail('ir binary: expected bytes');
+    else if (Array.isArray(bytes)) {
+      if (bytes.length > MAX_NATIVE_IR_BINARY_BYTES) fail('ir binary: payload too large');
+      this.bytes = Uint8Array.from(bytes);
+    } else if (bytes instanceof ArrayBuffer) {
+      if (bytes.byteLength > MAX_NATIVE_IR_BINARY_BYTES) fail('ir binary: payload too large');
+      this.bytes = new Uint8Array(bytes);
+    } else fail('ir binary: expected bytes');
     if (this.bytes.length > MAX_NATIVE_IR_BINARY_BYTES) fail('ir binary: payload too large');
     this.pos = 0;
   }
@@ -1885,6 +2078,7 @@ const ARM32_RUNTIME_MAX_FUNCTIONS = 256;
 const ARM32_RUNTIME_MAX_PARAMETERS = 4;
 const ARM32_RUNTIME_MAX_SSA_VALUES = 1000;
 const ARM32_RUNTIME_TRAP_EXIT_CODE = 125;
+const MAX_ARM32_RUNTIME_ELF_BYTES = 1024 * 1024;
 
 function arm32Movw(rd, imm16) {
   if (!Number.isInteger(rd) || rd < 0 || rd > 15) fail('arm32 runtime: invalid MOVW register');
@@ -1938,17 +2132,32 @@ function verifyAcyclicRuntimeCalls(ir) {
   for (const fn of ir.functions) {
     for (const inst of fn.instructions) if (inst.op === 'call') edges.get(fn.name).push(inst.target);
   }
-  const visiting = new Set();
-  const visited = new Set();
-  const visit = (name) => {
-    if (visiting.has(name)) fail("arm32 runtime: recursive call cycle includes '" + name + "'");
-    if (visited.has(name)) return;
-    visiting.add(name);
-    for (const target of edges.get(name) || []) visit(target);
-    visiting.delete(name);
-    visited.add(name);
-  };
-  for (const fn of ir.functions) visit(fn.name);
+
+  const state = new Map();
+  for (const fn of ir.functions) state.set(fn.name, 0);
+
+  for (const fn of ir.functions) {
+    if (state.get(fn.name) !== 0) continue;
+    const stack = [{name:fn.name, index:0}];
+    state.set(fn.name, 1);
+
+    while (stack.length) {
+      const frame = stack[stack.length - 1];
+      const targets = edges.get(frame.name) || [];
+      if (frame.index >= targets.length) {
+        state.set(frame.name, 2);
+        stack.pop();
+        continue;
+      }
+
+      const target = targets[frame.index++];
+      const targetState = state.get(target);
+      if (targetState === 1) fail("arm32 runtime: recursive call cycle includes '" + target + "'");
+      if (targetState === 2) continue;
+      state.set(target, 1);
+      stack.push({name:target, index:0});
+    }
+  }
 }
 const ARM32_RUNTIME_VALUE_REGS = Object.freeze([4,5,6,7]);
 const ARM32_RUNTIME_PUSH_MASK = 0xE92D48F0;
@@ -1993,7 +2202,7 @@ function analyzeArm32RuntimeLiveness(fn) {
     value:value,
     start:definitions.get(value),
     end:lastUse.get(value)
-  })).sort((a,b) => a.start - b.start || a.end - b.end || a.value.localeCompare(b.value));
+  })).sort((a,b) => a.start - b.start || a.end - b.end || (a.value < b.value ? -1 : (a.value > b.value ? 1 : 0)));
 
   const active = [];
   const locations = new Map();
@@ -2083,11 +2292,65 @@ function collectArm32PhiByBlock(fn) {
 
 function arm32EmitPhiCopies(words, allocation, phiByBlock, targetLabel, predecessorLabel) {
   const phis = phiByBlock.get(targetLabel) || [];
+  const moves = [];
+
   for (const phi of phis) {
     const incoming = phi.incoming.find((row) => row.label === predecessorLabel);
     if (!incoming) fail("arm32 runtime: phi in '" + targetLabel + "' has no incoming edge from '" + predecessorLabel + "'");
-    const source = arm32ReadValue(words, allocation, incoming.value, 0);
-    arm32WriteValue(words, allocation, phi.result, source);
+
+    const source = arm32RuntimeLocation(allocation, incoming.value);
+    const destination = arm32RuntimeLocation(allocation, phi.result);
+    if (source.kind !== 'spill' || destination.kind !== 'spill') {
+      fail('arm32 runtime: CFG phi copies require spill locations in V0');
+    }
+    if (source.slot === destination.slot) continue;
+    moves.push({
+      source:{kind:'spill', slot:source.slot},
+      destination:{kind:'spill', slot:destination.slot}
+    });
+  }
+
+  const sameSource = (source, slot) => source.kind === 'spill' && source.slot === slot;
+  const emitMove = (move) => {
+    const destinationOffset = move.destination.slot * 4;
+    if (destinationOffset > 4095) fail('arm32 runtime: phi destination spill offset exceeds encoding limit');
+    if (move.source.kind === 'scratch') {
+      words.push(arm32StrSp(12, destinationOffset));
+      return;
+    }
+    const sourceOffset = move.source.slot * 4;
+    if (sourceOffset > 4095) fail('arm32 runtime: phi source spill offset exceeds encoding limit');
+    words.push(arm32LdrSp(0, sourceOffset));
+    words.push(arm32StrSp(0, destinationOffset));
+  };
+
+  while (moves.length) {
+    let safeIndex = -1;
+    for (let i = 0; i < moves.length; i += 1) {
+      const destinationSlot = moves[i].destination.slot;
+      const destinationStillNeeded = moves.some((other, index) =>
+        index !== i && sameSource(other.source, destinationSlot)
+      );
+      if (!destinationStillNeeded) {
+        safeIndex = i;
+        break;
+      }
+    }
+
+    if (safeIndex >= 0) {
+      const move = moves.splice(safeIndex, 1)[0];
+      emitMove(move);
+      continue;
+    }
+
+    const cycleBreak = moves[0];
+    const savedSlot = cycleBreak.destination.slot;
+    const savedOffset = savedSlot * 4;
+    if (savedOffset > 4095) fail('arm32 runtime: phi cycle spill offset exceeds encoding limit');
+    words.push(arm32LdrSp(12, savedOffset));
+    for (const move of moves) {
+      if (sameSource(move.source, savedSlot)) move.source = {kind:'scratch'};
+    }
   }
 }
 
@@ -2424,6 +2687,7 @@ function emitArm32RuntimeElfV0(ir) {
   const trapAddress = ARM32_ELF_BASE_VADDR + trapOffset;
   cursor += trapWords.length * 4;
   const totalBytes = cursor;
+  if (totalBytes > MAX_ARM32_RUNTIME_ELF_BYTES) fail('arm32 runtime: generated ELF exceeds artifact budget');
 
   const entry = ARM32_ELF_BASE_VADDR + ARM32_ELF_CODE_OFFSET;
   startWords[0] = arm32BranchWord(0xEB000000, entry, functionAddresses.get('main'));
@@ -2535,11 +2799,11 @@ function emitArm32RuntimeElfV0(ir) {
     checkedArithmetic:['add','sub','mul','div'],
     executionPolicy:'generated-artifact-not-executed-from-riftfs'
   });
-  verifyArm32RuntimeElfV0(artifact);
+  verifyArm32RuntimeElfStructureV0(artifact);
   return artifact;
 }
 
-function verifyArm32RuntimeElfV0(artifact) {
+function verifyArm32RuntimeElfStructureV0(artifact) {
   if (!artifact || artifact.schema !== SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA) fail('arm32 runtime verify: schema mismatch');
   const bytes = artifact.bytes;
   if (!(bytes instanceof Uint8Array) || bytes.length < ARM32_ELF_CODE_OFFSET + 12) fail('arm32 runtime verify: image too small');
@@ -2649,6 +2913,52 @@ function verifyArm32RuntimeElfV0(artifact) {
   const hasControlFlow = artifact.functions.some((fn) => fn.blockCount > 0);
   if (artifact.controlFlowLowered !== hasControlFlow) fail('arm32 runtime verify: control-flow marker mismatch');
   if (artifact.constantEvaluated !== false || artifact.runtimeLowered !== true) fail('arm32 runtime verify: backend mode markers mismatch');
+  return true;
+}
+
+function verifyArm32RuntimeElfV0(artifact, ir) {
+  if (!ir || typeof ir.verify !== 'function') fail('arm32 runtime verify: source IR is required for canonical verification');
+  ir.verify();
+  verifyArm32RuntimeElfStructureV0(artifact);
+  const expected = emitArm32RuntimeElfV0(ir);
+  if (artifact.byteLength !== expected.byteLength || artifact.bytes.length !== expected.bytes.length) {
+    fail('arm32 runtime verify: machine image length differs from canonical IR lowering');
+  }
+  for (let i = 0; i < expected.bytes.length; i += 1) {
+    if (artifact.bytes[i] !== expected.bytes[i]) {
+      fail('arm32 runtime verify: machine image differs from canonical IR lowering at byte ' + i);
+    }
+  }
+
+  const scalarFields = [
+    'entry','allocator','controlFlowLowered','divisionHelperAddress','divisionHelperBytes',
+    'trapAddress','trapExitCode','constantEvaluated','runtimeLowered','executionPolicy'
+  ];
+  for (const field of scalarFields) {
+    if (artifact[field] !== expected[field]) fail("arm32 runtime verify: metadata field '" + field + "' differs from canonical lowering");
+  }
+  if (!Array.isArray(artifact.checkedArithmetic) ||
+      artifact.checkedArithmetic.join(',') !== expected.checkedArithmetic.join(',')) {
+    fail('arm32 runtime verify: checked arithmetic metadata differs from canonical lowering');
+  }
+  if (!Array.isArray(artifact.functions) || artifact.functions.length !== expected.functions.length) {
+    fail('arm32 runtime verify: function metadata count differs from canonical lowering');
+  }
+  for (let i = 0; i < expected.functions.length; i += 1) {
+    const actualFn = artifact.functions[i], expectedFn = expected.functions[i];
+    for (const field of ['name','address','fileOffset','bytes','frameBytes','slotCount','spillSlots','registerValues','allocator','parameterCount','blockCount']) {
+      if (actualFn[field] !== expectedFn[field]) fail("arm32 runtime verify: function metadata field '" + field + "' differs from canonical lowering");
+    }
+    if (!Array.isArray(actualFn.blocks) || actualFn.blocks.length !== expectedFn.blocks.length) {
+      fail('arm32 runtime verify: block metadata count differs from canonical lowering');
+    }
+    for (let b = 0; b < expectedFn.blocks.length; b += 1) {
+      const actualBlock = actualFn.blocks[b], expectedBlock = expectedFn.blocks[b];
+      for (const field of ['label','wordIndex','address','fileOffset']) {
+        if (actualBlock[field] !== expectedBlock[field]) fail("arm32 runtime verify: block metadata field '" + field + "' differs from canonical lowering");
+      }
+    }
+  }
   return true;
 }
 
@@ -2809,12 +3119,12 @@ function buildFunctionCallGraph(graph) {
 }
 
 function intrinsicHasTimeEffect(graph, intrinsicNode) {
-  return graph.edges.some((edge) => edge.from === intrinsicNode && edge.relation === 'has_effect' &&
+  return graph.edgesFrom(intrinsicNode, 'has_effect').some((edge) =>
     graph.nodes[edge.to].kind === NodeKind.Effect && graph.nodes[edge.to].name === 'time');
 }
 
 function functionGrantsTime(graph, functionNode) {
-  return graph.edges.some((edge) => edge.from === functionNode && edge.relation === 'grants_capability' &&
+  return graph.edgesFrom(functionNode, 'grants_capability').some((edge) =>
     graph.nodes[edge.to].kind === NodeKind.Capability && graph.nodes[edge.to].name === 'time');
 }
 
@@ -2823,23 +3133,24 @@ function buildPlan(graph) {
   for (const fn of graph.nodes) {
     if (fn.kind !== NodeKind.Function) continue;
     plan.add('enter_function', fn.name);
+    const outgoing = graph.edgesFrom(fn.id);
 
-    for (const edge of graph.edges) if (edge.from === fn.id && edge.relation === 'requires_capability') plan.add('receive_capability', graph.nodes[edge.to].name);
-    for (const edge of graph.edges) if (edge.from === fn.id && edge.relation === 'grants_capability') plan.add('grant_capability', graph.nodes[edge.to].name);
-    for (const edge of graph.edges) if (edge.from === fn.id && edge.relation === 'executes_in') plan.add('create_region', graph.nodes[edge.to].name);
+    for (const edge of outgoing) if (edge.relation === 'requires_capability') plan.add('receive_capability', graph.nodes[edge.to].name);
+    for (const edge of outgoing) if (edge.relation === 'grants_capability') plan.add('grant_capability', graph.nodes[edge.to].name);
+    for (const edge of outgoing) if (edge.relation === 'executes_in') plan.add('create_region', graph.nodes[edge.to].name);
 
-    for (const edge of graph.edges) {
-      if (edge.from !== fn.id || edge.relation !== 'contains') continue;
+    for (const edge of outgoing) {
+      if (edge.relation !== 'contains') continue;
       const child = graph.nodes[edge.to];
       if (child.kind === NodeKind.Parameter) plan.add('bind_parameter', child.name);
     }
-    for (const edge of graph.edges) {
-      if (edge.from !== fn.id || edge.relation !== 'contains') continue;
+    for (const edge of outgoing) {
+      if (edge.relation !== 'contains') continue;
       const child = graph.nodes[edge.to];
       if (child.kind === NodeKind.Local) plan.add('initialize_local', child.name);
     }
-    for (const edge of graph.edges) {
-      if (edge.from !== fn.id || edge.relation !== 'contains_expr') continue;
+    for (const edge of outgoing) {
+      if (edge.relation !== 'contains_expr') continue;
       const child = graph.nodes[edge.to];
       if (child.kind === NodeKind.Call) {
         const target = graph.singleEdgeTarget(child.id, 'calls');
@@ -2855,16 +3166,21 @@ function buildPlan(graph) {
     }
 
     plan.add('return', fn.name);
-    for (const edge of graph.edges) if (edge.from === fn.id && edge.relation === 'executes_in') plan.add('destroy_region', graph.nodes[edge.to].name);
+    for (const edge of outgoing) if (edge.relation === 'executes_in') plan.add('destroy_region', graph.nodes[edge.to].name);
     plan.add('leave_function', fn.name);
   }
   return plan;
 }
 
 export function compileSemnexisV0(source) {
-  const lexer = new Lexer(source);
-  const parser = new Parser(lexer.scan());
+  const sourceText = String(source || '');
+  if (sourceText.length > MAX_SEMNEXIS_SOURCE_CHARS) fail('compiler: source exceeds compiler budget');
+  const lexer = new Lexer(sourceText);
+  const tokens = lexer.scan();
+  if (tokens.length > MAX_SEMNEXIS_TOKENS) fail('compiler: token count exceeds compiler budget');
+  const parser = new Parser(tokens);
   const module = parser.parseModule();
+  validateSemnexisAstBudgets(module);
   const graph = new ProgramGraph();
   const moduleNode = graph.addNode(NodeKind.Module, 'root');
 
@@ -2968,38 +3284,59 @@ export function compileSemnexisV0(source) {
   }
 
   const callGraph = buildFunctionCallGraph(graph);
-  const directTime = new Map(), transitiveTime = new Map(), requiresTime = new Map();
+  const directTime = new Map();
+  const transitiveTime = new Map();
+  const requiresTime = new Map();
+  const callers = new Map();
 
   for (const fn of module.functions) {
     const fnNode = functions.get(fn.name).node;
     directTime.set(fnNode, false);
     transitiveTime.set(fnNode, false);
     requiresTime.set(fnNode, false);
-    for (const target of callGraph.get(fnNode) || []) {
-      if (graph.nodes[target].kind === NodeKind.Intrinsic && intrinsicHasTimeEffect(graph, target)) {
-        directTime.set(fnNode, true);
-        transitiveTime.set(fnNode, true);
-        requiresTime.set(fnNode, true);
-      }
-    }
-    if (functionGrantsTime(graph, fnNode)) requiresTime.set(fnNode, false);
+    callers.set(fnNode, []);
   }
 
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const fn of module.functions) {
-      const fnNode = functions.get(fn.name).node;
-      let nextEffect = directTime.get(fnNode);
-      let nextRequirement = directTime.get(fnNode);
-      for (const target of callGraph.get(fnNode) || []) {
-        if (graph.nodes[target].kind !== NodeKind.Function) continue;
-        nextEffect = nextEffect || transitiveTime.get(target);
-        nextRequirement = nextRequirement || requiresTime.get(target);
+  for (const fn of module.functions) {
+    const fnNode = functions.get(fn.name).node;
+    for (const target of callGraph.get(fnNode) || []) {
+      if (graph.nodes[target].kind === NodeKind.Intrinsic) {
+        if (intrinsicHasTimeEffect(graph, target)) directTime.set(fnNode, true);
+      } else if (graph.nodes[target].kind === NodeKind.Function) {
+        callers.get(target).push(fnNode);
       }
-      if (functionGrantsTime(graph, fnNode)) nextRequirement = false;
-      if (nextEffect !== transitiveTime.get(fnNode)) { transitiveTime.set(fnNode, nextEffect); changed = true; }
-      if (nextRequirement !== requiresTime.get(fnNode)) { requiresTime.set(fnNode, nextRequirement); changed = true; }
+    }
+  }
+
+  const effectQueue = [];
+  for (const fn of module.functions) {
+    const fnNode = functions.get(fn.name).node;
+    if (!directTime.get(fnNode)) continue;
+    transitiveTime.set(fnNode, true);
+    effectQueue.push(fnNode);
+  }
+  for (let cursor = 0; cursor < effectQueue.length; cursor += 1) {
+    const target = effectQueue[cursor];
+    for (const caller of callers.get(target)) {
+      if (transitiveTime.get(caller)) continue;
+      transitiveTime.set(caller, true);
+      effectQueue.push(caller);
+    }
+  }
+
+  const requirementQueue = [];
+  for (const fn of module.functions) {
+    const fnNode = functions.get(fn.name).node;
+    if (!directTime.get(fnNode) || functionGrantsTime(graph, fnNode)) continue;
+    requiresTime.set(fnNode, true);
+    requirementQueue.push(fnNode);
+  }
+  for (let cursor = 0; cursor < requirementQueue.length; cursor += 1) {
+    const target = requirementQueue[cursor];
+    for (const caller of callers.get(target)) {
+      if (requiresTime.get(caller) || functionGrantsTime(graph, caller)) continue;
+      requiresTime.set(caller, true);
+      requirementQueue.push(caller);
     }
   }
 
@@ -3025,7 +3362,7 @@ export function compileSemnexisV0(source) {
   graph.verify();
   const plan = buildPlan(graph);
   const ir = buildNativeIR(graph);
-  return Object.freeze({
+  const result = {
     schema:'semnexis-bootstrap-compile-result/1',
     language:SEMNEXIS_LANGUAGE,
     compiler:SEMNEXIS_BOOTSTRAP_VERSION,
@@ -3033,11 +3370,14 @@ export function compileSemnexisV0(source) {
     module:module,
     graph:graph,
     plan:plan,
-    ir:ir,
-    graphText:graph.dump(),
-    planText:plan.dump(),
-    irText:ir.dump()
+    ir:ir
+  };
+  Object.defineProperties(result, {
+    graphText:{enumerable:true, get:function() { return graph.dump(); }},
+    planText:{enumerable:true, get:function() { return plan.dump(); }},
+    irText:{enumerable:true, get:function() { return ir.dump(); }}
   });
+  return Object.freeze(result);
 }
 
 export function encodeSemnexisNativeIRV0(ir) {
@@ -3060,8 +3400,8 @@ export function emitSemnexisArm32RuntimeElfV0(ir) {
   return emitArm32RuntimeElfV0(ir);
 }
 
-export function verifySemnexisArm32RuntimeElfV0(artifact) {
-  return verifyArm32RuntimeElfV0(artifact);
+export function verifySemnexisArm32RuntimeElfV0(artifact, ir) {
+  return verifyArm32RuntimeElfV0(artifact, ir);
 }
 
 export function inspectSemnexisV0(source) {
@@ -3088,6 +3428,9 @@ if (typeof globalThis !== 'undefined') {
     planSchema:SEMNEXIS_PLAN_SCHEMA,
     irSchema:SEMNEXIS_NATIVE_IR_SCHEMA,
     irBinaryFormat:'SNIRV0',
+    irBinaryVersion:NATIVE_IR_BINARY_VERSION,
+    irBinaryCompatibility:'frozen-v0-reject-unknown-version-flags-opcodes',
+    irGraphNodeSemantics:'advisory-correlation-id-v0',
     arm32ElfSchema:SEMNEXIS_ARM32_ELF_SCHEMA,
     arm32RuntimeElfSchema:SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA,
     encodeIR:encodeNativeIRV0,

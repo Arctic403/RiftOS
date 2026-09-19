@@ -8,7 +8,7 @@ This inventory separates live packaged authority from retained reference/compati
 | --- | --- | --- |
 | `RiftShellExecutor` | `RiftNativeShell.kt` | Process-owned bounded shell executor used by native Terminal and MCP. |
 | Rift++ headless runtime | `RiftHeadlessJsRuntime.kt` | Loads trusted Rift++ Core/RiftVM assets in QuickJS; no DOM/WebView/network/process authority. |
-| Semnexis bootstrap runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Fixed `semx` compiler/IR/backend commands over the packaged Semnexis asset; only the two ARM32 artifact commands may write, each to its exact fixed RiftFS output path; generated artifacts are not executed and the host has no process/network authority. |
+| Semnexis bootstrap runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Fixed bounded `semx` compiler/IR/backend commands over the packaged Semnexis asset; source/output/artifact budgets are enforced, only the two ARM32 artifact commands may write to exact fixed RiftFS paths, generated artifacts are not executed, and the host has no process/network authority. |
 | Bounded `qjs` developer runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Evaluates bounded classic JavaScript with captured output and read-only confined RiftFS text access; no file-write/process/network/Android/Git authority. |
 | MCP tool catalog | `RiftToolHost.kt` | Canonical fixed 18-tool schemas/permissions/audit. |
 | Workspace/Code Mode | `RiftToolSandbox.kt` | Workspace-only filesystem, Project Intelligence and transactional operations. |
