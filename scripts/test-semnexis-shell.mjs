@@ -60,7 +60,7 @@ globalThis.__rift_result = value => { embeddedResult = JSON.parse(String(value))
 (0, eval)(commandMatch[1]);
 assert.equal(embeddedResult?.result?.ok, true);
 assert.equal(embeddedResult.result.schema, 'semnexis-bootstrap-self-test/7');
-assert.equal(embeddedResult.result.compiler, '0.6.1-quickjs-bootstrap');
+assert.equal(embeddedResult.result.compiler, '0.7.0-quickjs-bootstrap');
 assert.equal(embeddedResult.result.irBinaryVersion, 0);
 assert.equal(embeddedResult.result.irBinaryCompatibility, 'frozen-v0-reject-unknown-version-flags-opcodes');
 assert.equal(embeddedResult.result.irGraphNodeSemantics, 'advisory-correlation-id-v0');
