@@ -6,6 +6,62 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.10 — Explicit CFG, phi merges and explicit-state loops
+
+### Current source changes
+
+Semnexis advanced to `0.6.0-quickjs-bootstrap`.
+
+Added:
+- signed comparison syntax `== != < <= > >=`;
+- expression-oriented `if ... { ... } else { ... }`;
+- internal control-flow `bool` facts;
+- explicit Native IR basic blocks and branch terminators;
+- `phi.i32` merge semantics;
+- CFG reachability/predecessor/dominator verification;
+- `SNIRV0` serialization for blocks, branches and phi incoming edges;
+- ARM signed conditional branches and named block relocation;
+- conservative `cfg-spill-v0` for control-flow functions while straight-line functions retain the proven `linear-scan-r4-r7-v0` allocator.
+
+Added explicit-state loops:
+
+`loop (state = initial, ...) while condition { next (nextState, ...); } yield value`
+
+Loop state is represented semantically, not as hidden mutable locals. Header phis receive preheader and backedge inputs; all next-state values are simultaneous.
+
+### Source proof
+
+- all 0.5 straight-line graph/plan/IR/arithmetic sizes remain unchanged;
+- six signed comparison predicates verified against named ARM targets;
+- conditional: 674-byte `SNIRV0`, 340-byte ELF, 4 blocks;
+- nested conditional: 7 blocks / 444-byte ELF;
+- loop: 756-byte `SNIRV0`, 368-byte ELF, 4 blocks;
+- loop preheader and backedge each perform two phi edge copies;
+- loop emits a real backward ARM branch to its header;
+- invalid conditions, chained comparisons, malformed next-state arity, state shadowing and duplicate loop-state names are rejected.
+
+Device proof requires the next APK.
+
+## Patch 10.9 — Full checked i32 ARM32 arithmetic + liveness allocation
+
+### Current source changes
+
+Semnexis advanced to `0.5.0-quickjs-bootstrap`.
+
+The ARM32 runtime backend now includes:
+- linear-scan live-range allocation into callee-saved `r4-r7`;
+- deterministic stack spills only when live-range pressure exceeds four value registers;
+- checked runtime multiply using `SMULL` plus high/sign-extension verification;
+- checked runtime divide using a shared software divider instead of optional ARM `SDIV`;
+- divide-by-zero and `INT32_MIN / -1` overflow trapping;
+- complete checked runtime `i32` add/sub/mul/div coverage.
+
+The register-allocated add/call fixture shrank from 268 bytes to 192 bytes with zero spill frame. A forced-pressure fixture proves deterministic spilling. The full arithmetic fixture emits a 1016-byte ELF with a 716-byte shared divider and one spill slot.
+
+The software divide algorithm matched signed-`i32` reference semantics across 417 deterministic boundary/stress cases. The full ELF was independently disassembled as ARMv7 and confirmed the intended arithmetic, call and branch instructions.
+
+Device proof requires the next RiftOS APK.
+
 ## Patch 10.8 — Runtime-valued ARM32 lowering
 
 ### Current source changes

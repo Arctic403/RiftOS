@@ -1,4 +1,4 @@
-const SEMNEXIS_BOOTSTRAP_VERSION = '0.4.0-quickjs-bootstrap';
+const SEMNEXIS_BOOTSTRAP_VERSION = '0.6.0-quickjs-bootstrap';
 const SEMNEXIS_LANGUAGE = 'Semnexis';
 const SEMNEXIS_GRAPH_SCHEMA = 'SEMNEXIS_PROGRAM_GRAPH_V0';
 const SEMNEXIS_PLAN_SCHEMA = 'SEMNEXIS_EXECUTION_PLAN_V0';
@@ -7,8 +7,10 @@ const SEMNEXIS_NATIVE_IR_SCHEMA = 'SEMNEXIS_NATIVE_IR_V0';
 const TokenKind = Object.freeze({
   End:'End', Identifier:'Identifier', Integer:'Integer',
   KwFn:'KwFn', KwLet:'KwLet', KwReturn:'KwReturn', KwWith:'KwWith',
+  KwIf:'KwIf', KwElse:'KwElse', KwLoop:'KwLoop', KwWhile:'KwWhile', KwNext:'KwNext', KwYield:'KwYield',
   LParen:'LParen', RParen:'RParen', LBrace:'LBrace', RBrace:'RBrace',
-  Arrow:'Arrow', Colon:'Colon', Comma:'Comma', Equal:'Equal',
+  Arrow:'Arrow', Colon:'Colon', Comma:'Comma', Equal:'Equal', EqEq:'EqEq', BangEq:'BangEq',
+  Less:'Less', LessEq:'LessEq', Greater:'Greater', GreaterEq:'GreaterEq',
   Semicolon:'Semicolon', Plus:'Plus', Minus:'Minus', Star:'Star', Slash:'Slash'
 });
 
@@ -16,7 +18,7 @@ const NodeKind = Object.freeze({
   Module:'Module', Function:'Function', Type:'Type', Effect:'Effect',
   Capability:'Capability', Intrinsic:'Intrinsic', Region:'Region',
   Parameter:'Parameter', Local:'Local', Return:'Return', Constant:'Constant',
-  NameRef:'NameRef', Binary:'Binary', Call:'Call'
+  NameRef:'NameRef', Binary:'Binary', Call:'Call', Conditional:'Conditional', Loop:'Loop', LoopState:'LoopState'
 });
 
 function fail(message) { throw new Error(message); }
@@ -74,6 +76,12 @@ class Lexer {
         else if (token.lexeme === 'let') token.kind = TokenKind.KwLet;
         else if (token.lexeme === 'return') token.kind = TokenKind.KwReturn;
         else if (token.lexeme === 'with') token.kind = TokenKind.KwWith;
+        else if (token.lexeme === 'if') token.kind = TokenKind.KwIf;
+        else if (token.lexeme === 'else') token.kind = TokenKind.KwElse;
+        else if (token.lexeme === 'loop') token.kind = TokenKind.KwLoop;
+        else if (token.lexeme === 'while') token.kind = TokenKind.KwWhile;
+        else if (token.lexeme === 'next') token.kind = TokenKind.KwNext;
+        else if (token.lexeme === 'yield') token.kind = TokenKind.KwYield;
         out.push(token);
         continue;
       }
@@ -87,12 +95,35 @@ class Lexer {
         '(' : TokenKind.LParen, ')' : TokenKind.RParen,
         '{' : TokenKind.LBrace, '}' : TokenKind.RBrace,
         ':' : TokenKind.Colon, ',' : TokenKind.Comma,
-        '=' : TokenKind.Equal, ';' : TokenKind.Semicolon,
+        ';' : TokenKind.Semicolon,
         '+' : TokenKind.Plus, '*' : TokenKind.Star, '/' : TokenKind.Slash
       };
       if (one[c]) {
         this.advance();
         out.push(this.make(one[c], start, line, column));
+        continue;
+      }
+      if (c === '=') {
+        this.advance();
+        if (this.peek() === '=') { this.advance(); out.push(this.make(TokenKind.EqEq, start, line, column)); }
+        else out.push(this.make(TokenKind.Equal, start, line, column));
+        continue;
+      }
+      if (c === '!') {
+        this.advance();
+        if (this.peek() !== '=') fail("lexer: expected '=' after '!' at " + line + ':' + column);
+        this.advance();
+        out.push(this.make(TokenKind.BangEq, start, line, column));
+        continue;
+      }
+      if (c === '<' || c === '>') {
+        const first = this.advance();
+        const equal = this.peek() === '=';
+        if (equal) this.advance();
+        const kind = first === '<'
+          ? (equal ? TokenKind.LessEq : TokenKind.Less)
+          : (equal ? TokenKind.GreaterEq : TokenKind.Greater);
+        out.push(this.make(kind, start, line, column));
         continue;
       }
       if (c === '-') {
@@ -180,7 +211,71 @@ class Parser {
       grantedCapabilities:grantedCapabilities, locals:locals, returnExpr:returnExpr
     };
   }
-  parseExpr() { return this.parseAdditive(); }
+  parseExpr() {
+    if (this.peek().kind === TokenKind.KwIf) return this.parseIfExpression();
+    if (this.peek().kind === TokenKind.KwLoop) return this.parseLoopExpression();
+    return this.parseComparison();
+  }
+  parseIfExpression() {
+    this.expect(TokenKind.KwIf, "expected 'if'");
+    const condition = this.parseComparison();
+    this.expect(TokenKind.LBrace, "expected '{' after if condition");
+    const thenExpr = this.parseExpr();
+    this.expect(TokenKind.RBrace, "expected '}' after if branch");
+    this.expect(TokenKind.KwElse, "expected 'else' after if branch");
+    this.expect(TokenKind.LBrace, "expected '{' after else");
+    const elseExpr = this.parseExpr();
+    this.expect(TokenKind.RBrace, "expected '}' after else branch");
+    return {kind:'IfExpr', condition:condition, thenExpr:thenExpr, elseExpr:elseExpr};
+  }
+  parseLoopExpression() {
+    this.expect(TokenKind.KwLoop, "expected 'loop'");
+    this.expect(TokenKind.LParen, "expected '(' after loop");
+    const states = [];
+    if (this.peek().kind !== TokenKind.RParen) {
+      for (;;) {
+        const name = this.expect(TokenKind.Identifier, 'expected loop state name');
+        this.expect(TokenKind.Equal, "expected '=' after loop state name");
+        states.push({name:name.lexeme, initializer:this.parseExpr()});
+        if (!this.match(TokenKind.Comma)) break;
+      }
+    }
+    this.expect(TokenKind.RParen, "expected ')' after loop state list");
+    if (!states.length) fail('parser: loop requires at least one carried state');
+    this.expect(TokenKind.KwWhile, "expected 'while' after loop state list");
+    const condition = this.parseComparison();
+    this.expect(TokenKind.LBrace, "expected '{' before loop next values");
+    this.expect(TokenKind.KwNext, "expected 'next' in loop body");
+    this.expect(TokenKind.LParen, "expected '(' after next");
+    const nextValues = [];
+    if (this.peek().kind !== TokenKind.RParen) {
+      for (;;) {
+        nextValues.push(this.parseExpr());
+        if (!this.match(TokenKind.Comma)) break;
+      }
+    }
+    this.expect(TokenKind.RParen, "expected ')' after next values");
+    this.match(TokenKind.Semicolon);
+    this.expect(TokenKind.RBrace, "expected '}' after loop body");
+    this.expect(TokenKind.KwYield, "expected 'yield' after loop body");
+    const yieldExpr = this.parseExpr();
+    return {kind:'LoopExpr', states:states, condition:condition, nextValues:nextValues, yieldExpr:yieldExpr};
+  }
+  parseComparison() {
+    const left = this.parseAdditive();
+    const kind = this.peek().kind;
+    if (kind !== TokenKind.EqEq && kind !== TokenKind.BangEq &&
+        kind !== TokenKind.Less && kind !== TokenKind.LessEq &&
+        kind !== TokenKind.Greater && kind !== TokenKind.GreaterEq) return left;
+    this.pos += 1;
+    const right = this.parseAdditive();
+    const next = this.peek().kind;
+    if (next === TokenKind.EqEq || next === TokenKind.BangEq || next === TokenKind.Less ||
+        next === TokenKind.LessEq || next === TokenKind.Greater || next === TokenKind.GreaterEq) {
+      fail('parser: chained comparisons are not supported in bootstrap control flow');
+    }
+    return {kind:'Compare', op:kind, left:left, right:right};
+  }
   parseAdditive() {
     let left = this.parseMultiplicative();
     while (this.peek().kind === TokenKind.Plus || this.peek().kind === TokenKind.Minus) {
@@ -233,7 +328,15 @@ class Parser {
 
 function isExpressionKind(kind) {
   return kind === NodeKind.Constant || kind === NodeKind.NameRef ||
-    kind === NodeKind.Binary || kind === NodeKind.Call;
+    kind === NodeKind.Binary || kind === NodeKind.Call || kind === NodeKind.Conditional || kind === NodeKind.Loop;
+}
+
+function astExpressionUsesControlFlow(expr) {
+  if (!expr || typeof expr !== 'object') return false;
+  if (expr.kind === 'IfExpr' || expr.kind === 'Compare' || expr.kind === 'LoopExpr') return true;
+  if (expr.kind === 'Binary') return astExpressionUsesControlFlow(expr.left) || astExpressionUsesControlFlow(expr.right);
+  if (expr.kind === 'Call') return expr.arguments.some(astExpressionUsesControlFlow);
+  return false;
 }
 
 class ProgramGraph {
@@ -298,15 +401,25 @@ class ProgramGraph {
       } else if (relation === 'calls') {
         if (sourceKind !== NodeKind.Call || (targetKind !== NodeKind.Function && targetKind !== NodeKind.Intrinsic)) fail('graph verify: invalid calls edge');
       } else if (relation === 'resolves_to') {
-        if (sourceKind !== NodeKind.NameRef || (targetKind !== NodeKind.Parameter && targetKind !== NodeKind.Local)) fail('graph verify: invalid resolves_to edge');
+        if (sourceKind !== NodeKind.NameRef || (targetKind !== NodeKind.Parameter && targetKind !== NodeKind.Local && targetKind !== NodeKind.LoopState)) fail('graph verify: invalid resolves_to edge');
       } else if (relation === 'initialized_by') {
-        if (sourceKind !== NodeKind.Local || !isExpressionKind(targetKind)) fail('graph verify: invalid initialized_by edge');
+        if ((sourceKind !== NodeKind.Local && sourceKind !== NodeKind.LoopState) || !isExpressionKind(targetKind)) fail('graph verify: invalid initialized_by edge');
+      } else if (relation === 'next_value') {
+        if (sourceKind !== NodeKind.LoopState || !isExpressionKind(targetKind)) fail('graph verify: invalid loop next_value edge');
+      } else if (relation === 'carries_state') {
+        if (sourceKind !== NodeKind.Loop || targetKind !== NodeKind.LoopState) fail('graph verify: invalid carries_state edge');
       } else if (relation === 'returns_value') {
         if (sourceKind !== NodeKind.Return || !isExpressionKind(targetKind)) fail('graph verify: invalid returns_value edge');
       } else if (relation === 'contains_expr') {
         if (sourceKind !== NodeKind.Function || !isExpressionKind(targetKind)) fail('graph verify: invalid contains_expr edge');
       } else if (relation === 'lhs' || relation === 'rhs') {
         if (sourceKind !== NodeKind.Binary || !isExpressionKind(targetKind)) fail('graph verify: invalid binary operand edge');
+      } else if (relation === 'condition') {
+        if ((sourceKind !== NodeKind.Conditional && sourceKind !== NodeKind.Loop) || !isExpressionKind(targetKind)) fail('graph verify: invalid control-flow condition edge');
+      } else if (relation === 'yield_value') {
+        if (sourceKind !== NodeKind.Loop || !isExpressionKind(targetKind)) fail('graph verify: invalid loop yield edge');
+      } else if (relation === 'then_value' || relation === 'else_value') {
+        if (sourceKind !== NodeKind.Conditional || !isExpressionKind(targetKind)) fail('graph verify: invalid conditional value edge');
       } else if (/^arg[0-9]+$/.test(relation)) {
         if (sourceKind !== NodeKind.Call || !isExpressionKind(targetKind)) fail('graph verify: invalid call argument edge');
       } else if (relation.indexOf('arg') === 0) {
@@ -357,10 +470,62 @@ class ProgramGraph {
         if (this.countEdges(node.id, 'initialized_by') !== 1) fail("graph verify: local '" + node.name + "' must have exactly one initializer");
       }
 
+      if (node.kind === NodeKind.LoopState) {
+        if (this.countEdges(node.id, 'has_type') !== 1 || this.countEdges(node.id, 'initialized_by') !== 1 || this.countEdges(node.id, 'next_value') !== 1) {
+          fail("graph verify: loop state '" + node.name + "' must have type, initializer and next value");
+        }
+        if (this.nodes[this.singleEdgeTarget(node.id, 'has_type')].name !== 'i32') fail("graph verify: loop state '" + node.name + "' must be i32");
+      }
+
       if (node.kind === NodeKind.NameRef) {
         if (this.countEdges(node.id, 'resolves_to') !== 1 || this.countEdges(node.id, 'has_type') !== 1) fail("graph verify: name reference '" + node.name + "' must resolve and type exactly once");
         const target = this.singleEdgeTarget(node.id, 'resolves_to');
         if (this.singleEdgeTarget(node.id, 'has_type') !== this.singleEdgeTarget(target, 'has_type')) fail("graph verify: name reference '" + node.name + "' type does not match resolved symbol");
+      }
+
+      if (node.kind === NodeKind.Binary) {
+        if (this.countEdges(node.id, 'lhs') !== 1 || this.countEdges(node.id, 'rhs') !== 1 || this.countEdges(node.id, 'has_type') !== 1) {
+          fail("graph verify: binary '" + node.name + "' must have two operands and one type");
+        }
+        const operation = this.attribute(node.id, 'operation');
+        const comparison = operation === 'EqEq' || operation === 'BangEq' || operation === 'Less' || operation === 'LessEq' || operation === 'Greater' || operation === 'GreaterEq';
+        const typeName = this.nodes[this.singleEdgeTarget(node.id, 'has_type')].name;
+        if (comparison && typeName !== 'bool') fail('graph verify: comparison result must be bool');
+        if (!comparison && typeName !== 'i32') fail('graph verify: arithmetic result must be i32');
+      }
+
+      if (node.kind === NodeKind.Conditional) {
+        if (this.countEdges(node.id, 'condition') !== 1 || this.countEdges(node.id, 'then_value') !== 1 ||
+            this.countEdges(node.id, 'else_value') !== 1 || this.countEdges(node.id, 'has_type') !== 1) {
+          fail('graph verify: conditional must have one condition, two values and one type');
+        }
+        const condition = this.singleEdgeTarget(node.id, 'condition');
+        const thenValue = this.singleEdgeTarget(node.id, 'then_value');
+        const elseValue = this.singleEdgeTarget(node.id, 'else_value');
+        const conditionType = this.nodes[this.singleEdgeTarget(condition, 'has_type')].name;
+        const resultType = this.singleEdgeTarget(node.id, 'has_type');
+        if (conditionType !== 'bool') fail('graph verify: conditional condition must be bool');
+        if (this.singleEdgeTarget(thenValue, 'has_type') !== resultType || this.singleEdgeTarget(elseValue, 'has_type') !== resultType) {
+          fail('graph verify: conditional branch types must match result type');
+        }
+      }
+
+      if (node.kind === NodeKind.Loop) {
+        if (this.countEdges(node.id, 'condition') !== 1 || this.countEdges(node.id, 'yield_value') !== 1 ||
+            this.countEdges(node.id, 'has_type') !== 1 || this.countEdges(node.id, 'carries_state') < 1) {
+          fail('graph verify: loop must have state, condition, yield and type');
+        }
+        const condition = this.singleEdgeTarget(node.id, 'condition');
+        if (this.nodes[this.singleEdgeTarget(condition, 'has_type')].name !== 'bool') fail('graph verify: loop condition must be bool');
+        const resultType = this.singleEdgeTarget(node.id, 'has_type');
+        const yieldValue = this.singleEdgeTarget(node.id, 'yield_value');
+        if (this.singleEdgeTarget(yieldValue, 'has_type') !== resultType) fail('graph verify: loop yield type mismatch');
+        const names = new Set();
+        for (const edge of this.edgesFrom(node.id, 'carries_state')) {
+          const state = this.nodes[edge.to];
+          if (names.has(state.name)) fail("graph verify: duplicate loop state '" + state.name + "'");
+          names.add(state.name);
+        }
       }
 
       if (node.kind === NodeKind.Call) {
@@ -410,6 +575,157 @@ class ExecutionPlan {
   }
 }
 
+
+function verifyNativeIRControlFlow(fn) {
+  const blockBegins = fn.instructions.filter((inst) => inst.op === 'block.begin');
+  if (!blockBegins.length) return;
+  if (fn.instructions.length < 4 || fn.instructions[0].op !== 'region.begin' || fn.instructions[1].op !== 'block.begin') {
+    fail("ir verify: control-flow function '" + fn.name + "' must begin region then entry block");
+  }
+
+  const blocks = new Map();
+  const order = [];
+  const instructionBlock = new Map();
+  let current = null;
+  for (const inst of fn.instructions) {
+    if (inst.op === 'region.begin') {
+      if (inst.index !== 0) fail("ir verify: region.begin position invalid in '" + fn.name + "'");
+      continue;
+    }
+    if (inst.op === 'block.begin') {
+      if (!inst.label || blocks.has(inst.label)) fail("ir verify: duplicate or empty block label in '" + fn.name + "'");
+      current = {label:inst.label, begin:inst.index, instructions:[]};
+      blocks.set(inst.label, current);
+      order.push(inst.label);
+      instructionBlock.set(inst.index, inst.label);
+      continue;
+    }
+    if (!current) fail("ir verify: instruction outside basic block in '" + fn.name + "'");
+    current.instructions.push(inst);
+    instructionBlock.set(inst.index, current.label);
+  }
+
+  const predecessors = new Map(order.map((label) => [label, new Set()]));
+  const successors = new Map(order.map((label) => [label, new Set()]));
+  const branchOps = new Set(['br.cmp.eq','br.cmp.ne','br.cmp.lt','br.cmp.le','br.cmp.gt','br.cmp.ge']);
+
+  const addEdge = (from, to) => {
+    if (!blocks.has(to)) fail("ir verify: branch target '" + to + "' does not exist in '" + fn.name + "'");
+    successors.get(from).add(to);
+    predecessors.get(to).add(from);
+  };
+
+  for (const label of order) {
+    const block = blocks.get(label);
+    if (!block.instructions.length) fail("ir verify: empty basic block '" + label + "'");
+    const terminator = block.instructions[block.instructions.length - 1];
+    if (terminator.op !== 'br' && !branchOps.has(terminator.op) && terminator.op !== 'ret.i32') {
+      fail("ir verify: basic block '" + label + "' has no terminator");
+    }
+    for (let i = 0; i < block.instructions.length - 1; i += 1) {
+      const op = block.instructions[i].op;
+      if (op === 'br' || branchOps.has(op) || op === 'ret.i32') {
+        fail("ir verify: terminator appears before end of block '" + label + "'");
+      }
+    }
+    if (terminator.op === 'br') addEdge(label, terminator.target);
+    else if (branchOps.has(terminator.op)) {
+      addEdge(label, terminator.thenLabel);
+      addEdge(label, terminator.elseLabel);
+      if (terminator.thenLabel === terminator.elseLabel) fail("ir verify: conditional branch targets must differ in '" + label + "'");
+    }
+  }
+
+  const entry = order[0];
+  if (predecessors.get(entry).size !== 0) fail("ir verify: entry block '" + entry + "' cannot have predecessors");
+  const reachable = new Set([entry]);
+  const queue = [entry];
+  while (queue.length) {
+    const label = queue.shift();
+    for (const next of successors.get(label)) {
+      if (!reachable.has(next)) { reachable.add(next); queue.push(next); }
+    }
+  }
+  if (reachable.size !== order.length) fail("ir verify: unreachable basic block in '" + fn.name + "'");
+
+  for (const label of order) {
+    const block = blocks.get(label);
+    let seenNonPhi = false;
+    const phis = block.instructions.filter((inst) => inst.op === 'phi.i32');
+    for (const inst of block.instructions) {
+      if (inst.op === 'phi.i32') {
+        if (seenNonPhi) fail("ir verify: phi must appear before ordinary instructions in block '" + label + "'");
+      } else if (inst.op !== 'region.end') seenNonPhi = true;
+    }
+    for (const phi of phis) {
+      if (!Array.isArray(phi.incoming) || phi.incoming.length < 2 || phi.incoming.length !== phi.args.length) {
+        fail("ir verify: malformed phi incoming list in block '" + label + "'");
+      }
+      const incomingLabels = phi.incoming.map((row) => row.label);
+      if (new Set(incomingLabels).size !== incomingLabels.length) fail("ir verify: duplicate phi predecessor in block '" + label + "'");
+      const pred = predecessors.get(label);
+      if (pred.size !== incomingLabels.length || incomingLabels.some((name) => !pred.has(name))) {
+        fail("ir verify: phi predecessors do not match CFG predecessors in block '" + label + "'");
+      }
+      for (let i = 0; i < phi.incoming.length; i += 1) {
+        if (phi.incoming[i].value !== phi.args[i]) fail("ir verify: phi args/incoming mismatch in block '" + label + "'");
+      }
+    }
+  }
+
+  const allLabels = new Set(order);
+  const dominators = new Map();
+  for (const label of order) dominators.set(label, label === entry ? new Set([entry]) : new Set(allLabels));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const label of order) {
+      if (label === entry) continue;
+      const pred = Array.from(predecessors.get(label));
+      if (!pred.length) fail("ir verify: non-entry block '" + label + "' has no predecessor");
+      let next = new Set(dominators.get(pred[0]));
+      for (let i = 1; i < pred.length; i += 1) {
+        const other = dominators.get(pred[i]);
+        next = new Set(Array.from(next).filter((value) => other.has(value)));
+      }
+      next.add(label);
+      const previous = dominators.get(label);
+      if (previous.size !== next.size || Array.from(previous).some((value) => !next.has(value))) {
+        dominators.set(label, next);
+        changed = true;
+      }
+    }
+  }
+
+  const definitions = new Map();
+  for (const parameter of fn.parameters) definitions.set(parameter.value, {block:null, index:-1});
+  for (const inst of fn.instructions) {
+    if (inst.result != null) definitions.set(inst.result, {block:instructionBlock.get(inst.index), index:inst.index});
+  }
+
+  for (const label of order) {
+    const block = blocks.get(label);
+    for (const inst of block.instructions) {
+      if (inst.op === 'phi.i32') {
+        for (const incoming of inst.incoming) {
+          const def = definitions.get(incoming.value);
+          if (!def) fail("ir verify: phi uses undefined value '" + incoming.value + "'");
+          if (def.block != null && !dominators.get(incoming.label).has(def.block)) {
+            fail("ir verify: phi value '" + incoming.value + "' does not dominate predecessor '" + incoming.label + "'");
+          }
+        }
+        continue;
+      }
+      for (const arg of inst.args || []) {
+        const def = definitions.get(arg);
+        if (!def) fail("ir verify: use of undefined value '" + arg + "'");
+        if (def.block != null && def.block !== label && !dominators.get(label).has(def.block)) {
+          fail("ir verify: value '" + arg + "' does not dominate use in block '" + label + "'");
+        }
+      }
+    }
+  }
+}
 
 class NativeIRModule {
   constructor() {
@@ -461,9 +777,11 @@ class NativeIRModule {
         if (!Number.isInteger(inst.graphNode) || inst.graphNode < 0) fail("ir verify: instruction lacks graph provenance in '" + fn.name + "'");
 
         const args = Array.isArray(inst.args) ? inst.args : [];
-        for (const arg of args) {
-          if (typeof arg === 'string' && arg.startsWith('%') && !defined.has(arg)) {
-            fail("ir verify: use-before-definition '" + arg + "' in function '" + fn.name + "'");
+        if (inst.op !== 'phi.i32') {
+          for (const arg of args) {
+            if (typeof arg === 'string' && arg.startsWith('%') && !defined.has(arg)) {
+              fail("ir verify: use-before-definition '" + arg + "' in function '" + fn.name + "'");
+            }
           }
         }
 
@@ -486,6 +804,23 @@ class NativeIRModule {
             if (inst.result != null || inst.region !== fn.region || args.length) fail("ir verify: malformed region.end in '" + fn.name + "'");
             if (index !== fn.instructions.length - 2) fail("ir verify: region.end must precede return in '" + fn.name + "'");
             regionEnds += 1;
+            break;
+          case 'block.begin':
+            if (inst.result != null || args.length || !inst.label) fail("ir verify: malformed block.begin in '" + fn.name + "'");
+            break;
+          case 'br':
+            if (inst.result != null || args.length || !inst.target) fail("ir verify: malformed br in '" + fn.name + "'");
+            break;
+          case 'br.cmp.eq':
+          case 'br.cmp.ne':
+          case 'br.cmp.lt':
+          case 'br.cmp.le':
+          case 'br.cmp.gt':
+          case 'br.cmp.ge':
+            if (inst.result != null || args.length !== 2 || !inst.thenLabel || !inst.elseLabel) fail("ir verify: malformed comparison branch in '" + fn.name + "'");
+            break;
+          case 'phi.i32':
+            if (inst.result == null || inst.type !== 'i32' || args.length < 2) fail("ir verify: malformed phi.i32 in '" + fn.name + "'");
             break;
           case 'const.i32':
             if (args.length || !Number.isInteger(inst.value) || inst.value < -2147483648 || inst.value > 2147483647) {
@@ -531,6 +866,7 @@ class NativeIRModule {
       if (regionBegins !== 1 || regionEnds !== 1 || returns !== 1) {
         fail("ir verify: function '" + fn.name + "' must have one region begin/end and one return");
       }
+      verifyNativeIRControlFlow(fn);
     }
   }
   dump() {
@@ -563,6 +899,14 @@ function dumpNativeIRInstruction(inst) {
   const result = inst.result != null ? inst.result + ':' + inst.type + ' = ' : '';
   if (inst.op === 'region.begin' || inst.op === 'region.end') {
     body += inst.op + ' region=' + inst.region;
+  } else if (inst.op === 'block.begin') {
+    body += 'block.begin ' + inst.label;
+  } else if (inst.op === 'br') {
+    body += 'br ' + inst.target;
+  } else if (inst.op.indexOf('br.cmp.') === 0) {
+    body += inst.op + ' ' + inst.args[0] + ' ' + inst.args[1] + ' then=' + inst.thenLabel + ' else=' + inst.elseLabel;
+  } else if (inst.op === 'phi.i32') {
+    body += result + 'phi.i32 ' + inst.incoming.map(function(row) { return row.label + ':' + row.value; }).join(' ');
   } else if (inst.op === 'const.i32') {
     body += result + inst.op + ' ' + inst.value;
   } else if (inst.op === 'copy.i32') {
@@ -645,6 +989,33 @@ function newIRValue(ctx) {
   return value;
 }
 
+function beginIRBlock(ctx, label, graphNode) {
+  emitIR(ctx, 'block.begin', {
+    label:label,
+    args:[],
+    graphNode:graphNode
+  });
+  ctx.currentBlock = label;
+}
+
+function lowerGraphComparisonForBranch(graph, nodeId, ctx) {
+  const node = graph.nodes[nodeId];
+  if (!node || node.kind !== NodeKind.Binary) fail('ir lower: if condition must be a comparison node');
+  const operation = graph.attribute(node.id, 'operation');
+  const opMap = {
+    EqEq:'br.cmp.eq',
+    BangEq:'br.cmp.ne',
+    Less:'br.cmp.lt',
+    LessEq:'br.cmp.le',
+    Greater:'br.cmp.gt',
+    GreaterEq:'br.cmp.ge'
+  };
+  if (!opMap[operation]) fail("ir lower: unsupported comparison operation '" + operation + "'");
+  const left = lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(node.id, 'lhs'), ctx);
+  const right = lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(node.id, 'rhs'), ctx);
+  return {op:opMap[operation], left:left, right:right, graphNode:node.id};
+}
+
 function lowerGraphExpressionToIR(graph, nodeId, ctx) {
   if (ctx.expressionValues.has(nodeId)) return ctx.expressionValues.get(nodeId);
   const node = graph.nodes[nodeId];
@@ -670,6 +1041,9 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
     } else if (target.kind === NodeKind.Local) {
       if (!ctx.localValues.has(targetId)) fail("ir lower: local '" + target.name + "' used before initialization");
       source = ctx.localValues.get(targetId);
+    } else if (target.kind === NodeKind.LoopState) {
+      if (!ctx.loopStateValues.has(targetId)) fail("ir lower: loop state '" + target.name + "' used outside active loop scope");
+      source = ctx.loopStateValues.get(targetId);
     } else {
       fail('ir lower: NameRef resolved to unsupported symbol');
     }
@@ -691,7 +1065,7 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
       Star:'i32.mul.checked',
       Slash:'i32.div.checked'
     };
-    if (!opMap[operation]) fail("ir lower: unsupported binary operation '" + operation + "'");
+    if (!opMap[operation]) fail("ir lower: comparison value may only appear as an if condition, got '" + operation + "'");
     value = newIRValue(ctx);
     emitIR(ctx, opMap[operation], {
       result:value,
@@ -699,6 +1073,105 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
       args:[left, right],
       graphNode:node.id
     });
+  } else if (node.kind === NodeKind.Conditional) {
+    if (!ctx.controlFlow) fail('ir lower: conditional encountered without control-flow mode');
+    const conditionNode = graph.singleEdgeTarget(node.id, 'condition');
+    const condition = lowerGraphComparisonForBranch(graph, conditionNode, ctx);
+    const branchId = ctx.nextConditional;
+    ctx.nextConditional += 1;
+    const thenLabel = 'if' + branchId + '.then';
+    const elseLabel = 'if' + branchId + '.else';
+    const mergeLabel = 'if' + branchId + '.merge';
+
+    emitIR(ctx, condition.op, {
+      args:[condition.left, condition.right],
+      thenLabel:thenLabel,
+      elseLabel:elseLabel,
+      graphNode:condition.graphNode
+    });
+
+    beginIRBlock(ctx, thenLabel, node.id);
+    const thenValue = lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(node.id, 'then_value'), ctx);
+    const thenPredecessor = ctx.currentBlock;
+    emitIR(ctx, 'br', {args:[], target:mergeLabel, graphNode:node.id});
+
+    beginIRBlock(ctx, elseLabel, node.id);
+    const elseValue = lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(node.id, 'else_value'), ctx);
+    const elsePredecessor = ctx.currentBlock;
+    emitIR(ctx, 'br', {args:[], target:mergeLabel, graphNode:node.id});
+
+    beginIRBlock(ctx, mergeLabel, node.id);
+    value = newIRValue(ctx);
+    emitIR(ctx, 'phi.i32', {
+      result:value,
+      type:'i32',
+      args:[thenValue, elseValue],
+      incoming:[
+        {label:thenPredecessor, value:thenValue},
+        {label:elsePredecessor, value:elseValue}
+      ],
+      graphNode:node.id
+    });
+  } else if (node.kind === NodeKind.Loop) {
+    if (!ctx.controlFlow) fail('ir lower: loop encountered without control-flow mode');
+    const stateNodes = graph.edgesFrom(node.id, 'carries_state').map((edge) => graph.nodes[edge.to]);
+    if (!stateNodes.length) fail('ir lower: loop has no carried state');
+
+    const initialValues = stateNodes.map((state) => {
+      return lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(state.id, 'initialized_by'), ctx);
+    });
+    const preheader = ctx.currentBlock;
+    if (!preheader) fail('ir lower: loop has no preheader block');
+
+    const loopId = ctx.nextLoop;
+    ctx.nextLoop += 1;
+    const headerLabel = 'loop' + loopId + '.header';
+    const bodyLabel = 'loop' + loopId + '.body';
+    const exitLabel = 'loop' + loopId + '.exit';
+    emitIR(ctx, 'br', {args:[], target:headerLabel, graphNode:node.id});
+
+    beginIRBlock(ctx, headerLabel, node.id);
+    const previousLoopStates = ctx.loopStateValues;
+    const activeLoopStates = new Map(previousLoopStates);
+    const phis = [];
+    for (let i = 0; i < stateNodes.length; i += 1) {
+      const state = stateNodes[i];
+      const phiValue = newIRValue(ctx);
+      const phi = emitIR(ctx, 'phi.i32', {
+        result:phiValue,
+        type:'i32',
+        args:[initialValues[i]],
+        incoming:[{label:preheader, value:initialValues[i]}],
+        graphNode:state.id
+      });
+      phis.push(phi);
+      activeLoopStates.set(state.id, phiValue);
+    }
+    ctx.loopStateValues = activeLoopStates;
+
+    const conditionNode = graph.singleEdgeTarget(node.id, 'condition');
+    const condition = lowerGraphComparisonForBranch(graph, conditionNode, ctx);
+    emitIR(ctx, condition.op, {
+      args:[condition.left, condition.right],
+      thenLabel:bodyLabel,
+      elseLabel:exitLabel,
+      graphNode:condition.graphNode
+    });
+
+    beginIRBlock(ctx, bodyLabel, node.id);
+    const nextValues = stateNodes.map((state) => {
+      return lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(state.id, 'next_value'), ctx);
+    });
+    const backedge = ctx.currentBlock;
+    emitIR(ctx, 'br', {args:[], target:headerLabel, graphNode:node.id});
+    for (let i = 0; i < phis.length; i += 1) {
+      phis[i].args.push(nextValues[i]);
+      phis[i].incoming.push({label:backedge, value:nextValues[i]});
+    }
+
+    beginIRBlock(ctx, exitLabel, node.id);
+    value = lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(node.id, 'yield_value'), ctx);
+    ctx.loopStateValues = previousLoopStates;
   } else if (node.kind === NodeKind.Call) {
     const argEdges = graph.edgesFrom(node.id)
       .filter((edge) => /^arg[0-9]+$/.test(edge.relation))
@@ -742,11 +1215,18 @@ function buildNativeIR(graph) {
   for (const fnNode of graph.nodes) {
     if (fnNode.kind !== NodeKind.Function) continue;
     const fn = ir.addFunction(makeIRFunction(graph, fnNode));
+    const controlFlow = graph.edgesFrom(fnNode.id, 'contains_expr')
+      .some((edge) => graph.nodes[edge.to].kind === NodeKind.Conditional || graph.nodes[edge.to].kind === NodeKind.Loop);
     const ctx = {
       fn:fn,
       nextValue:0,
+      nextConditional:0,
+      nextLoop:0,
+      currentBlock:null,
+      controlFlow:controlFlow,
       parameterValues:new Map(),
       localValues:new Map(),
+      loopStateValues:new Map(),
       expressionValues:new Map()
     };
     for (const parameter of fn.parameters) ctx.parameterValues.set(parameter.graphNode, parameter.value);
@@ -757,6 +1237,7 @@ function buildNativeIR(graph) {
       args:[],
       graphNode:regionNode
     });
+    if (controlFlow) beginIRBlock(ctx, 'entry', regionNode);
 
     const locals = graph.edgesFrom(fnNode.id, 'contains')
       .map((edge) => graph.nodes[edge.to])
@@ -951,7 +1432,16 @@ const NATIVE_IR_OPCODE = Object.freeze({
   'call':9,
   'intrinsic.clock':10,
   'local.bind':11,
-  'ret.i32':12
+  'ret.i32':12,
+  'block.begin':13,
+  'br':14,
+  'br.cmp.eq':15,
+  'br.cmp.ne':16,
+  'br.cmp.lt':17,
+  'br.cmp.le':18,
+  'br.cmp.gt':19,
+  'br.cmp.ge':20,
+  'phi.i32':21
 });
 
 const NATIVE_IR_OPCODE_NAME = Object.freeze(Object.keys(NATIVE_IR_OPCODE).reduce(function(out, name) {
@@ -1050,6 +1540,19 @@ function encodeNativeIRV0(ir) {
       if (inst.op === 'const.i32') writer.i32(inst.value);
       else if (inst.op === 'call') writer.string(inst.target);
       else if (inst.op === 'local.bind') writer.string(inst.name);
+      else if (inst.op === 'block.begin') writer.string(inst.label);
+      else if (inst.op === 'br') writer.string(inst.target);
+      else if (inst.op.indexOf('br.cmp.') === 0) {
+        writer.string(inst.thenLabel);
+        writer.string(inst.elseLabel);
+      } else if (inst.op === 'phi.i32') {
+        if (!Array.isArray(inst.incoming) || inst.incoming.length > 255) fail('ir binary: invalid phi incoming list');
+        writer.u8(inst.incoming.length);
+        for (const incoming of inst.incoming) {
+          writer.string(incoming.label);
+          writer.u32(nativeIRValueRef(incoming.value));
+        }
+      }
     }
   }
   return writer.finish();
@@ -1132,6 +1635,18 @@ function decodeNativeIRV0(bytes) {
         inst.effect = 'time';
         inst.capability = 'time';
       } else if (op === 'local.bind') inst.name = reader.string();
+      else if (op === 'block.begin') inst.label = reader.string();
+      else if (op === 'br') inst.target = reader.string();
+      else if (op.indexOf('br.cmp.') === 0) {
+        inst.thenLabel = reader.string();
+        inst.elseLabel = reader.string();
+      } else if (op === 'phi.i32') {
+        const incomingCount = reader.u8();
+        inst.incoming = [];
+        for (let p = 0; p < incomingCount; p += 1) {
+          inst.incoming.push({label:reader.string(), value:nativeIRValueName(reader.u32())});
+        }
+      }
       fn.instructions.push(inst);
     }
   }
@@ -1435,49 +1950,255 @@ function verifyAcyclicRuntimeCalls(ir) {
   };
   for (const fn of ir.functions) visit(fn.name);
 }
+const ARM32_RUNTIME_VALUE_REGS = Object.freeze([4,5,6,7]);
+const ARM32_RUNTIME_PUSH_MASK = 0xE92D48F0;
+const ARM32_RUNTIME_POP_MASK = 0xE8BD88F0;
 
-function allocateArm32RuntimeFrame(fn) {
-  const slots = new Map();
-  let nextSlot = 0;
+function arm32MovReg(rd, rm) {
+  if (!Number.isInteger(rd) || rd < 0 || rd > 15 || !Number.isInteger(rm) || rm < 0 || rm > 15) {
+    fail('arm32 runtime: invalid MOV register');
+  }
+  return (0xE1A00000 | (rd << 12) | rm) >>> 0;
+}
+
+function arm32Adds(rd, rn, rm) {
+  return (0xE0900000 | (rn << 16) | (rd << 12) | rm) >>> 0;
+}
+
+function arm32Subs(rd, rn, rm) {
+  return (0xE0500000 | (rn << 16) | (rd << 12) | rm) >>> 0;
+}
+
+function analyzeArm32RuntimeLiveness(fn) {
+  const definitions = new Map();
+  const lastUse = new Map();
+
   for (const parameter of fn.parameters) {
-    slots.set(parameter.value, nextSlot);
-    nextSlot += 1;
+    definitions.set(parameter.value, -1);
+    lastUse.set(parameter.value, -1);
   }
   for (const inst of fn.instructions) {
     if (inst.result != null) {
-      if (slots.has(inst.result)) fail("arm32 runtime: duplicate allocated value '" + inst.result + "'");
-      slots.set(inst.result, nextSlot);
-      nextSlot += 1;
+      if (definitions.has(inst.result)) fail("arm32 runtime: duplicate liveness definition '" + inst.result + "'");
+      definitions.set(inst.result, inst.index);
+      lastUse.set(inst.result, inst.index);
+    }
+    for (const arg of inst.args || []) {
+      if (!definitions.has(arg)) fail("arm32 runtime: liveness saw unknown value '" + arg + "'");
+      if (inst.index > lastUse.get(arg)) lastUse.set(arg, inst.index);
     }
   }
-  if (nextSlot > ARM32_RUNTIME_MAX_SSA_VALUES) fail("arm32 runtime: function '" + fn.name + "' has too many SSA values");
-  const rawBytes = nextSlot * 4;
+
+  const intervals = Array.from(definitions.keys()).map((value) => ({
+    value:value,
+    start:definitions.get(value),
+    end:lastUse.get(value)
+  })).sort((a,b) => a.start - b.start || a.end - b.end || a.value.localeCompare(b.value));
+
+  const active = [];
+  const locations = new Map();
+  const free = ARM32_RUNTIME_VALUE_REGS.slice();
+  let spillCount = 0;
+
+  const releaseExpired = (start) => {
+    for (let i = active.length - 1; i >= 0; i -= 1) {
+      if (active[i].end < start) {
+        free.push(active[i].reg);
+        active.splice(i, 1);
+      }
+    }
+    free.sort((a,b) => a-b);
+  };
+
+  for (const interval of intervals) {
+    releaseExpired(interval.start);
+    if (free.length) {
+      const reg = free.shift();
+      locations.set(interval.value, {kind:'reg', reg:reg});
+      active.push({value:interval.value, end:interval.end, reg:reg});
+      active.sort((a,b) => a.end - b.end || a.reg - b.reg);
+    } else {
+      locations.set(interval.value, {kind:'spill', slot:spillCount});
+      spillCount += 1;
+    }
+  }
+
+  if (locations.size > ARM32_RUNTIME_MAX_SSA_VALUES) {
+    fail("arm32 runtime: function '" + fn.name + "' has too many SSA values");
+  }
+  const rawBytes = spillCount * 4;
   const frameBytes = rawBytes === 0 ? 0 : Math.ceil(rawBytes / 8) * 8;
   if (frameBytes > 4096) fail("arm32 runtime: function '" + fn.name + "' frame exceeds V0 stack-offset limit");
-  return {slots:slots, slotCount:nextSlot, frameBytes:frameBytes};
+
+  return {
+    locations:locations,
+    intervals:intervals,
+    registerValueCount:Array.from(locations.values()).filter((location) => location.kind === 'reg').length,
+    spillCount:spillCount,
+    frameBytes:frameBytes
+  };
 }
 
-function arm32RuntimeSlotOffset(frame, value) {
-  if (!frame.slots.has(value)) fail("arm32 runtime: missing stack slot for '" + value + "'");
-  const offset = frame.slots.get(value) * 4;
-  if (offset > 4095) fail('arm32 runtime: stack slot offset exceeds encoding limit');
+function allocateArm32ControlFlowSpills(fn) {
+  const locations = new Map();
+  let spillCount = 0;
+  const add = (value) => {
+    if (locations.has(value)) return;
+    locations.set(value, {kind:'spill', slot:spillCount});
+    spillCount += 1;
+  };
+  for (const parameter of fn.parameters) add(parameter.value);
+  for (const inst of fn.instructions) if (inst.result != null) add(inst.result);
+  if (locations.size > ARM32_RUNTIME_MAX_SSA_VALUES) {
+    fail("arm32 runtime: function '" + fn.name + "' has too many SSA values");
+  }
+  const rawBytes = spillCount * 4;
+  const frameBytes = rawBytes === 0 ? 0 : Math.ceil(rawBytes / 8) * 8;
+  if (frameBytes > 4096) fail("arm32 runtime: control-flow frame exceeds V0 stack-offset limit");
+  return {
+    locations:locations,
+    intervals:[],
+    registerValueCount:0,
+    spillCount:spillCount,
+    frameBytes:frameBytes
+  };
+}
+
+function collectArm32PhiByBlock(fn) {
+  const map = new Map();
+  let current = null;
+  for (const inst of fn.instructions) {
+    if (inst.op === 'block.begin') {
+      current = inst.label;
+      if (!map.has(current)) map.set(current, []);
+      continue;
+    }
+    if (inst.op === 'phi.i32') {
+      if (!current) fail("arm32 runtime: phi outside block in '" + fn.name + "'");
+      map.get(current).push(inst);
+    }
+  }
+  return map;
+}
+
+function arm32EmitPhiCopies(words, allocation, phiByBlock, targetLabel, predecessorLabel) {
+  const phis = phiByBlock.get(targetLabel) || [];
+  for (const phi of phis) {
+    const incoming = phi.incoming.find((row) => row.label === predecessorLabel);
+    if (!incoming) fail("arm32 runtime: phi in '" + targetLabel + "' has no incoming edge from '" + predecessorLabel + "'");
+    const source = arm32ReadValue(words, allocation, incoming.value, 0);
+    arm32WriteValue(words, allocation, phi.result, source);
+  }
+}
+
+function arm32Cmp(rn, rm) {
+  return (0xE1500000 | (rn << 16) | rm) >>> 0;
+}
+
+function arm32ComparisonPatchKind(op) {
+  if (op === 'br.cmp.eq') return 'beq';
+  if (op === 'br.cmp.ne') return 'bne';
+  if (op === 'br.cmp.lt') return 'blt';
+  if (op === 'br.cmp.le') return 'ble';
+  if (op === 'br.cmp.gt') return 'bgt';
+  if (op === 'br.cmp.ge') return 'bge';
+  fail("arm32 runtime: unsupported comparison branch '" + op + "'");
+}
+
+function arm32RuntimeLocation(allocation, value) {
+  const location = allocation.locations.get(value);
+  if (!location) fail("arm32 runtime: missing allocation for '" + value + "'");
+  return location;
+}
+
+function arm32RuntimeSpillOffset(allocation, value) {
+  const location = arm32RuntimeLocation(allocation, value);
+  if (location.kind !== 'spill') fail("arm32 runtime: value '" + value + "' is not spilled");
+  const offset = location.slot * 4;
+  if (offset > 4095) fail('arm32 runtime: spill offset exceeds encoding limit');
   return offset;
+}
+
+function arm32ReadValue(words, allocation, value, scratchReg) {
+  const location = arm32RuntimeLocation(allocation, value);
+  if (location.kind === 'reg') return location.reg;
+  words.push(arm32LdrSp(scratchReg, arm32RuntimeSpillOffset(allocation, value)));
+  return scratchReg;
+}
+
+function arm32MoveValueToReg(words, allocation, value, targetReg) {
+  const sourceReg = arm32ReadValue(words, allocation, value, targetReg);
+  if (sourceReg !== targetReg) words.push(arm32MovReg(targetReg, sourceReg));
+}
+
+function arm32WriteValue(words, allocation, value, sourceReg) {
+  const location = arm32RuntimeLocation(allocation, value);
+  if (location.kind === 'reg') {
+    if (location.reg !== sourceReg) words.push(arm32MovReg(location.reg, sourceReg));
+  } else {
+    words.push(arm32StrSp(sourceReg, arm32RuntimeSpillOffset(allocation, value)));
+  }
+}
+
+function buildArm32RuntimeDivHelperV0() {
+  const words = [];
+  const patches = [];
+  words.push(0xE3510000);
+  patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+  words.push(0);
+  words.push(0xE0203001);
+  words.push(0xE1A02FC0);
+  words.push(0xE0200002);
+  words.push(0xE0400002);
+  words.push(0xE1A02FC1);
+  words.push(0xE0211002);
+  words.push(0xE0411002);
+  words.push(0xE3A02000);
+  words.push(0xE3A0C000);
+
+  for (let i = 0; i < 32; i += 1) {
+    words.push(0xE1B00080);
+    words.push(0xE0ACC00C);
+    words.push(0xE15C0001);
+    words.push(0x204CC001);
+    words.push(0xE0A22002);
+  }
+
+  words.push(0xE3130102);
+  const negativePatch = {wordIndex:words.length, kind:'bne', targetWordIndex:null};
+  patches.push(negativePatch);
+  words.push(0);
+  words.push(0xE3120102);
+  patches.push({wordIndex:words.length, kind:'bne', target:'$trap'});
+  words.push(0);
+  words.push(0xE1A00002);
+  words.push(0xE12FFF1E);
+  negativePatch.targetWordIndex = words.length;
+  words.push(0xE2620000);
+  words.push(0xE12FFF1E);
+
+  return {words:words, patches:patches};
 }
 
 function compileArm32RuntimeFunctionV0(fn) {
   arm32RuntimeAllowedFunction(fn);
-  const frame = allocateArm32RuntimeFrame(fn);
+  const controlFlow = fn.instructions.some((inst) => inst.op === 'block.begin');
+  const allocation = controlFlow ? allocateArm32ControlFlowSpills(fn) : analyzeArm32RuntimeLiveness(fn);
+  const allocatorName = controlFlow ? 'cfg-spill-v0' : 'linear-scan-r4-r7-v0';
+  const phiByBlock = controlFlow ? collectArm32PhiByBlock(fn) : new Map();
   const words = [];
   const patches = [];
+  const blockLabels = new Map();
+  let currentBlock = null;
 
-  words.push(0xE92D4800);
-  if (frame.frameBytes > 0) {
-    arm32LoadI32(words, 12, frame.frameBytes);
+  words.push(ARM32_RUNTIME_PUSH_MASK);
+  if (allocation.frameBytes > 0) {
+    arm32LoadI32(words, 12, allocation.frameBytes);
     words.push(0xE04DD00C);
   }
 
   for (let i = 0; i < fn.parameters.length; i += 1) {
-    words.push(arm32StrSp(i, arm32RuntimeSlotOffset(frame, fn.parameters[i].value)));
+    arm32WriteValue(words, allocation, fn.parameters[i].value, i);
   }
 
   for (const inst of fn.instructions) {
@@ -1486,67 +2207,161 @@ function compileArm32RuntimeFunctionV0(fn) {
       case 'region.end':
       case 'local.bind':
         break;
-      case 'const.i32':
-        arm32LoadI32(words, 0, inst.value);
-        words.push(arm32StrSp(0, arm32RuntimeSlotOffset(frame, inst.result)));
+
+      case 'block.begin':
+        if (blockLabels.has(inst.label)) fail("arm32 runtime: duplicate block label '" + inst.label + "'");
+        blockLabels.set(inst.label, words.length);
+        currentBlock = inst.label;
         break;
-      case 'copy.i32':
-        words.push(arm32LdrSp(0, arm32RuntimeSlotOffset(frame, inst.args[0])));
-        words.push(arm32StrSp(0, arm32RuntimeSlotOffset(frame, inst.result)));
+
+      case 'phi.i32':
+        if (!controlFlow) fail('arm32 runtime: phi encountered without CFG lowering');
         break;
-      case 'i32.add.checked':
-      case 'i32.sub.checked': {
-        words.push(arm32LdrSp(0, arm32RuntimeSlotOffset(frame, inst.args[0])));
-        words.push(arm32LdrSp(1, arm32RuntimeSlotOffset(frame, inst.args[1])));
-        words.push(inst.op === 'i32.add.checked' ? 0xE0902001 : 0xE0502001);
-        patches.push({wordIndex:words.length, kind:'bvs', target:'$trap'});
+
+      case 'br':
+        if (!controlFlow || !currentBlock) fail('arm32 runtime: branch encountered outside CFG block');
+        arm32EmitPhiCopies(words, allocation, phiByBlock, inst.target, currentBlock);
+        patches.push({wordIndex:words.length, kind:'b', target:'$block:' + inst.target});
         words.push(0);
-        words.push(arm32StrSp(2, arm32RuntimeSlotOffset(frame, inst.result)));
+        break;
+
+      case 'br.cmp.eq':
+      case 'br.cmp.ne':
+      case 'br.cmp.lt':
+      case 'br.cmp.le':
+      case 'br.cmp.gt':
+      case 'br.cmp.ge':
+        if (!controlFlow || !currentBlock) fail('arm32 runtime: conditional branch encountered outside CFG block');
+        if ((phiByBlock.get(inst.thenLabel) || []).length || (phiByBlock.get(inst.elseLabel) || []).length) {
+          fail('arm32 runtime: conditional edge directly into phi block is not supported in CFG V0');
+        }
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        arm32MoveValueToReg(words, allocation, inst.args[1], 1);
+        words.push(arm32Cmp(0, 1));
+        patches.push({wordIndex:words.length, kind:arm32ComparisonPatchKind(inst.op), target:'$block:' + inst.thenLabel});
+        words.push(0);
+        patches.push({wordIndex:words.length, kind:'b', target:'$block:' + inst.elseLabel});
+        words.push(0);
+        break;
+
+      case 'const.i32': {
+        const location = arm32RuntimeLocation(allocation, inst.result);
+        const target = location.kind === 'reg' ? location.reg : 0;
+        arm32LoadI32(words, target, inst.value);
+        if (location.kind === 'spill') {
+          words.push(arm32StrSp(target, arm32RuntimeSpillOffset(allocation, inst.result)));
+        }
         break;
       }
+
+      case 'copy.i32': {
+        const sourceReg = arm32ReadValue(words, allocation, inst.args[0], 0);
+        arm32WriteValue(words, allocation, inst.result, sourceReg);
+        break;
+      }
+
+      case 'i32.add.checked':
+      case 'i32.sub.checked': {
+        const leftReg = arm32ReadValue(words, allocation, inst.args[0], 0);
+        const rightScratch = leftReg === 1 ? 0 : 1;
+        const rightReg = arm32ReadValue(words, allocation, inst.args[1], rightScratch);
+        const resultLocation = arm32RuntimeLocation(allocation, inst.result);
+        const resultReg = resultLocation.kind === 'reg' ? resultLocation.reg : 2;
+        words.push(inst.op === 'i32.add.checked'
+          ? arm32Adds(resultReg, leftReg, rightReg)
+          : arm32Subs(resultReg, leftReg, rightReg));
+        patches.push({wordIndex:words.length, kind:'bvs', target:'$trap'});
+        words.push(0);
+        if (resultLocation.kind === 'spill') {
+          words.push(arm32StrSp(resultReg, arm32RuntimeSpillOffset(allocation, inst.result)));
+        }
+        break;
+      }
+
+      case 'i32.mul.checked':
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        arm32MoveValueToReg(words, allocation, inst.args[1], 1);
+        words.push(0xE0C32190);
+        words.push(0xE1A0CFC2);
+        words.push(0xE153000C);
+        patches.push({wordIndex:words.length, kind:'bne', target:'$trap'});
+        words.push(0);
+        arm32WriteValue(words, allocation, inst.result, 2);
+        break;
+
+      case 'i32.div.checked':
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        arm32MoveValueToReg(words, allocation, inst.args[1], 1);
+        patches.push({wordIndex:words.length, kind:'bl', target:'$div'});
+        words.push(0);
+        arm32WriteValue(words, allocation, inst.result, 0);
+        break;
+
       case 'call':
         if (inst.args.length > ARM32_RUNTIME_MAX_PARAMETERS) {
           fail("arm32 runtime: call to '" + inst.target + "' exceeds four register arguments");
         }
         for (let i = 0; i < inst.args.length; i += 1) {
-          words.push(arm32LdrSp(i, arm32RuntimeSlotOffset(frame, inst.args[i])));
+          arm32MoveValueToReg(words, allocation, inst.args[i], i);
         }
         patches.push({wordIndex:words.length, kind:'bl', target:inst.target});
         words.push(0);
-        words.push(arm32StrSp(0, arm32RuntimeSlotOffset(frame, inst.result)));
+        arm32WriteValue(words, allocation, inst.result, 0);
         break;
+
       case 'ret.i32':
-        words.push(arm32LdrSp(0, arm32RuntimeSlotOffset(frame, inst.args[0])));
-        if (frame.frameBytes > 0) {
-          arm32LoadI32(words, 12, frame.frameBytes);
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        if (allocation.frameBytes > 0) {
+          arm32LoadI32(words, 12, allocation.frameBytes);
           words.push(0xE08DD00C);
         }
-        words.push(0xE8BD8800);
+        words.push(ARM32_RUNTIME_POP_MASK);
         break;
-      case 'i32.mul.checked':
-      case 'i32.div.checked':
-        fail("arm32 runtime: operation '" + inst.op + "' is not lowered in V0 runtime backend");
-        break;
+
       case 'intrinsic.clock':
         fail('arm32 runtime: clock requires runtime capability lowering');
         break;
+
       default:
         fail("arm32 runtime: unsupported IR operation '" + inst.op + "'");
     }
   }
 
-  if (!words.length || words[words.length - 1] !== 0xE8BD8800) {
+  if (!words.length || words[words.length - 1] !== ARM32_RUNTIME_POP_MASK) {
     fail("arm32 runtime: function '" + fn.name + "' has no canonical return epilogue");
   }
 
   return {
     name:fn.name,
-    frameBytes:frame.frameBytes,
-    slotCount:frame.slotCount,
+    frameBytes:allocation.frameBytes,
+    slotCount:allocation.spillCount,
+    spillSlots:allocation.spillCount,
+    registerValues:allocation.registerValueCount,
+    allocator:allocatorName,
     parameterCount:fn.parameters.length,
+    blockCount:blockLabels.size,
+    blockLabels:blockLabels,
     words:words,
     patches:patches
   };
+}
+function arm32RuntimeBranchBase(kind) {
+  if (kind === 'bl') return 0xEB000000;
+  if (kind === 'b') return 0xEA000000;
+  if (kind === 'bvs') return 0x6A000000;
+  if (kind === 'bne') return 0x1A000000;
+  if (kind === 'beq') return 0x0A000000;
+  if (kind === 'blt') return 0xBA000000;
+  if (kind === 'ble') return 0xDA000000;
+  if (kind === 'bgt') return 0xCA000000;
+  if (kind === 'bge') return 0xAA000000;
+  fail("arm32 runtime: unsupported branch patch kind '" + kind + "'");
+}
+
+function arm32DecodeBranchTarget(word, fromAddress) {
+  let imm24 = word & 0x00ffffff;
+  if (imm24 & 0x00800000) imm24 |= 0xff000000;
+  return (fromAddress + 8 + (imm24 | 0) * 4) >>> 0;
 }
 
 function emitArm32RuntimeElfV0(ir) {
@@ -1559,6 +2374,10 @@ function emitArm32RuntimeElfV0(ir) {
   verifyAcyclicRuntimeCalls(ir);
 
   const compiled = ir.functions.map(compileArm32RuntimeFunctionV0);
+  const allocatorKinds = Array.from(new Set(compiled.map((fn) => fn.allocator)));
+  const allocatorSummary = allocatorKinds.length === 1 ? allocatorKinds[0] : 'mixed-v0';
+  const needsDivisionHelper = compiled.some((fn) => fn.patches.some((patch) => patch.target === '$div'));
+  const divisionHelper = needsDivisionHelper ? buildArm32RuntimeDivHelperV0() : null;
   const startWords = [0, 0xE3A07001, 0xEF000000];
   const trapWords = [
     arm32Movw(0, ARM32_RUNTIME_TRAP_EXIT_CODE),
@@ -1580,10 +2399,27 @@ function emitArm32RuntimeElfV0(ir) {
       bytes:fn.words.length * 4,
       frameBytes:fn.frameBytes,
       slotCount:fn.slotCount,
-      parameterCount:fn.parameterCount
+      spillSlots:fn.spillSlots,
+      registerValues:fn.registerValues,
+      allocator:fn.allocator,
+      parameterCount:fn.parameterCount,
+      blockCount:fn.blockCount,
+      blocks:Array.from(fn.blockLabels.entries()).map(function(row) {
+        return {
+          label:row[0],
+          wordIndex:row[1],
+          address:address + row[1] * 4,
+          fileOffset:cursor + row[1] * 4
+        };
+      })
     });
     cursor += fn.words.length * 4;
   }
+
+  const divisionHelperOffset = divisionHelper ? cursor : null;
+  const divisionHelperAddress = divisionHelper ? ARM32_ELF_BASE_VADDR + cursor : null;
+  if (divisionHelper) cursor += divisionHelper.words.length * 4;
+
   const trapOffset = cursor;
   const trapAddress = ARM32_ELF_BASE_VADDR + trapOffset;
   cursor += trapWords.length * 4;
@@ -1597,10 +2433,28 @@ function emitArm32RuntimeElfV0(ir) {
     const meta = functionMeta[f];
     for (const patch of fn.patches) {
       const from = meta.address + patch.wordIndex * 4;
-      const target = patch.target === '$trap' ? trapAddress : functionAddresses.get(patch.target);
+      let target;
+      if (patch.target === '$trap') target = trapAddress;
+      else if (patch.target === '$div') target = divisionHelperAddress;
+      else if (patch.target.indexOf('$block:') === 0) {
+        const label = patch.target.slice('$block:'.length);
+        const wordIndex = fn.blockLabels.get(label);
+        if (wordIndex == null) fail("arm32 runtime: unknown local block '" + label + "' in function '" + fn.name + "'");
+        target = meta.address + wordIndex * 4;
+      } else target = functionAddresses.get(patch.target);
       if (target == null) fail("arm32 runtime: missing patch target '" + patch.target + "'");
-      fn.words[patch.wordIndex] = arm32BranchWord(
-        patch.kind === 'bl' ? 0xEB000000 : 0x6A000000,
+      fn.words[patch.wordIndex] = arm32BranchWord(arm32RuntimeBranchBase(patch.kind), from, target);
+    }
+  }
+
+  if (divisionHelper) {
+    for (const patch of divisionHelper.patches) {
+      const from = divisionHelperAddress + patch.wordIndex * 4;
+      const target = patch.target === '$trap'
+        ? trapAddress
+        : divisionHelperAddress + patch.targetWordIndex * 4;
+      divisionHelper.words[patch.wordIndex] = arm32BranchWord(
+        arm32RuntimeBranchBase(patch.kind),
         from,
         target
       );
@@ -1648,6 +2502,12 @@ function emitArm32RuntimeElfV0(ir) {
       outOffset += 4;
     }
   }
+  if (divisionHelper) {
+    for (const word of divisionHelper.words) {
+      writeU32LE(bytes, outOffset, word);
+      outOffset += 4;
+    }
+  }
   for (const word of trapWords) {
     writeU32LE(bytes, outOffset, word);
     outOffset += 4;
@@ -1664,10 +2524,15 @@ function emitArm32RuntimeElfV0(ir) {
     bytes:bytes,
     byteLength:bytes.length,
     functions:functionMeta,
+    allocator:allocatorSummary,
+    controlFlowLowered:compiled.some((fn) => fn.blockCount > 0),
+    divisionHelperAddress:divisionHelperAddress,
+    divisionHelperBytes:divisionHelper ? divisionHelper.words.length * 4 : 0,
     trapAddress:trapAddress,
     trapExitCode:ARM32_RUNTIME_TRAP_EXIT_CODE,
     constantEvaluated:false,
     runtimeLowered:true,
+    checkedArithmetic:['add','sub','mul','div'],
     executionPolicy:'generated-artifact-not-executed-from-riftfs'
   });
   verifyArm32RuntimeElfV0(artifact);
@@ -1703,6 +2568,10 @@ function verifyArm32RuntimeElfV0(artifact) {
     fail('arm32 runtime verify: entry exit sequence mismatch');
   }
 
+  if (artifact.allocator !== 'linear-scan-r4-r7-v0' && artifact.allocator !== 'cfg-spill-v0' && artifact.allocator !== 'mixed-v0') {
+    fail('arm32 runtime verify: allocator marker mismatch');
+  }
+
   const seen = new Set();
   for (const fn of artifact.functions) {
     if (!fn.name || seen.has(fn.name)) fail('arm32 runtime verify: duplicate function metadata');
@@ -1715,10 +2584,54 @@ function verifyArm32RuntimeElfV0(artifact) {
     }
     if (fn.address !== ARM32_ELF_BASE_VADDR + fn.fileOffset) fail("arm32 runtime verify: function address mismatch for '" + fn.name + "'");
     if ((fn.frameBytes & 7) !== 0) fail("arm32 runtime verify: unaligned frame for '" + fn.name + "'");
-    if (readU32LE(bytes, fn.fileOffset) !== 0xE92D4800) fail("arm32 runtime verify: prologue mismatch for '" + fn.name + "'");
-    if (readU32LE(bytes, fn.fileOffset + fn.bytes - 4) !== 0xE8BD8800) fail("arm32 runtime verify: epilogue mismatch for '" + fn.name + "'");
+    if (!Number.isInteger(fn.spillSlots) || fn.spillSlots < 0 ||
+        !Number.isInteger(fn.registerValues) || fn.registerValues < 0 ||
+        fn.slotCount !== fn.spillSlots ||
+        (fn.allocator !== 'linear-scan-r4-r7-v0' && fn.allocator !== 'cfg-spill-v0') ||
+        (artifact.allocator !== 'mixed-v0' && fn.allocator !== artifact.allocator) ||
+        !Number.isInteger(fn.blockCount) || fn.blockCount < 0 || !Array.isArray(fn.blocks) || fn.blocks.length !== fn.blockCount) {
+      fail("arm32 runtime verify: allocator metadata mismatch for '" + fn.name + "'");
+    }
+    const blockNames = new Set();
+    for (const block of fn.blocks) {
+      if (!block.label || blockNames.has(block.label) || !Number.isInteger(block.wordIndex) || block.wordIndex < 0) {
+        fail("arm32 runtime verify: malformed block metadata for '" + fn.name + "'");
+      }
+      blockNames.add(block.label);
+      if (block.address !== fn.address + block.wordIndex * 4 || block.fileOffset !== fn.fileOffset + block.wordIndex * 4 ||
+          block.fileOffset < fn.fileOffset || block.fileOffset >= fn.fileOffset + fn.bytes) {
+        fail("arm32 runtime verify: block address mismatch for '" + fn.name + "'");
+      }
+    }
+    if (fn.allocator === 'cfg-spill-v0' && (fn.registerValues !== 0 || fn.blockCount === 0)) fail("arm32 runtime verify: CFG spill allocator metadata mismatch in '" + fn.name + "'");
+    if (fn.allocator === 'linear-scan-r4-r7-v0' && fn.blockCount !== 0) fail("arm32 runtime verify: linear allocator used on CFG function '" + fn.name + "'");
+    const expectedFrame = fn.spillSlots === 0 ? 0 : Math.ceil((fn.spillSlots * 4) / 8) * 8;
+    if (fn.frameBytes !== expectedFrame) fail("arm32 runtime verify: spill frame mismatch for '" + fn.name + "'");
+    if (readU32LE(bytes, fn.fileOffset) !== ARM32_RUNTIME_PUSH_MASK) fail("arm32 runtime verify: prologue mismatch for '" + fn.name + "'");
+    if (readU32LE(bytes, fn.fileOffset + fn.bytes - 4) !== ARM32_RUNTIME_POP_MASK) fail("arm32 runtime verify: epilogue mismatch for '" + fn.name + "'");
   }
   if (!seen.has('main')) fail('arm32 runtime verify: main metadata missing');
+
+  if (artifact.divisionHelperAddress == null) {
+    if (artifact.divisionHelperBytes !== 0) fail('arm32 runtime verify: division helper metadata mismatch');
+  } else {
+    if ((artifact.divisionHelperAddress & 3) !== 0 ||
+        !Number.isInteger(artifact.divisionHelperBytes) ||
+        artifact.divisionHelperBytes <= 0 ||
+        (artifact.divisionHelperBytes & 3) !== 0) {
+      fail('arm32 runtime verify: division helper layout mismatch');
+    }
+    const divOffset = artifact.divisionHelperAddress - ARM32_ELF_BASE_VADDR;
+    if (divOffset < ARM32_ELF_CODE_OFFSET || divOffset + artifact.divisionHelperBytes > bytes.length) {
+      fail('arm32 runtime verify: division helper escapes image');
+    }
+    if (readU32LE(bytes, divOffset) !== 0xE3510000) fail('arm32 runtime verify: division helper zero-divisor check missing');
+    const zeroBranch = readU32LE(bytes, divOffset + 4);
+    if (((zeroBranch & 0xFF000000) >>> 0) !== 0x0A000000 ||
+        arm32DecodeBranchTarget(zeroBranch, artifact.divisionHelperAddress + 4) !== artifact.trapAddress) {
+      fail('arm32 runtime verify: division-by-zero trap branch mismatch');
+    }
+  }
 
   const trapOffset = artifact.trapAddress - ARM32_ELF_BASE_VADDR;
   if (trapOffset < ARM32_ELF_CODE_OFFSET || trapOffset + 16 !== bytes.length) fail('arm32 runtime verify: trap layout mismatch');
@@ -1728,6 +2641,13 @@ function verifyArm32RuntimeElfV0(artifact) {
       readU32LE(bytes, trapOffset + 12) !== 0xEF000000) {
     fail('arm32 runtime verify: overflow trap mismatch');
   }
+
+  if (!Array.isArray(artifact.checkedArithmetic) ||
+      artifact.checkedArithmetic.join(',') !== 'add,sub,mul,div') {
+    fail('arm32 runtime verify: checked arithmetic coverage mismatch');
+  }
+  const hasControlFlow = artifact.functions.some((fn) => fn.blockCount > 0);
+  if (artifact.controlFlowLowered !== hasControlFlow) fail('arm32 runtime verify: control-flow marker mismatch');
   if (artifact.constantEvaluated !== false || artifact.runtimeLowered !== true) fail('arm32 runtime verify: backend mode markers mismatch');
   return true;
 }
@@ -1760,16 +2680,83 @@ function lowerExpr(expr, graph, ownerFunction, symbols, functions, intrinsics, t
     return {node:node, type:symbol.type};
   }
 
-  if (expr.kind === 'Binary') {
+  if (expr.kind === 'Binary' || expr.kind === 'Compare') {
     const left = lowerExpr(expr.left, graph, ownerFunction, symbols, functions, intrinsics, types);
     const right = lowerExpr(expr.right, graph, ownerFunction, symbols, functions, intrinsics, types);
-    if (left.type !== 'i32' || right.type !== 'i32') fail('type: bootstrap arithmetic requires i32 operands');
+    if (left.type !== 'i32' || right.type !== 'i32') fail('type: bootstrap binary operators require i32 operands');
+    const comparison = expr.kind === 'Compare';
+    const resultType = comparison ? 'bool' : 'i32';
+    if (comparison && !types.has('bool')) fail('type: internal bool type is unavailable');
     const node = graph.addNode(NodeKind.Binary, expr.op);
     graph.addAttribute(node, 'operation', expr.op);
+    if (comparison) graph.addAttribute(node, 'semantic_class', 'comparison');
     graph.addEdge(node, left.node, 'lhs');
     graph.addEdge(node, right.node, 'rhs');
-    graph.addEdge(node, requireTypeNode(types, 'i32'), 'has_type');
+    graph.addEdge(node, requireTypeNode(types, resultType), 'has_type');
     attachExpression(graph, ownerFunction, node);
+    return {node:node, type:resultType};
+  }
+
+  if (expr.kind === 'IfExpr') {
+    const condition = lowerExpr(expr.condition, graph, ownerFunction, symbols, functions, intrinsics, types);
+    if (condition.type !== 'bool') fail('type: if condition must be a comparison yielding bool');
+    const thenValue = lowerExpr(expr.thenExpr, graph, ownerFunction, symbols, functions, intrinsics, types);
+    const elseValue = lowerExpr(expr.elseExpr, graph, ownerFunction, symbols, functions, intrinsics, types);
+    if (thenValue.type !== elseValue.type) fail('type: if branches must produce the same type');
+    if (thenValue.type !== 'i32') fail('type: bootstrap if expressions currently produce i32 only');
+    const node = graph.addNode(NodeKind.Conditional, 'if');
+    graph.addAttribute(node, 'merge', 'phi');
+    graph.addEdge(node, condition.node, 'condition');
+    graph.addEdge(node, thenValue.node, 'then_value');
+    graph.addEdge(node, elseValue.node, 'else_value');
+    graph.addEdge(node, requireTypeNode(types, thenValue.type), 'has_type');
+    attachExpression(graph, ownerFunction, node);
+    return {node:node, type:thenValue.type};
+  }
+
+  if (expr.kind === 'LoopExpr') {
+    if (expr.nextValues.length !== expr.states.length) {
+      fail('loop: next value count must match carried state count');
+    }
+    const node = graph.addNode(NodeKind.Loop, 'loop');
+    graph.addAttribute(node, 'state_count', String(expr.states.length));
+    graph.addAttribute(node, 'merge', 'header_phi');
+    attachExpression(graph, ownerFunction, node);
+
+    const stateRows = [];
+    const names = new Set();
+    for (const state of expr.states) {
+      if (names.has(state.name)) fail("loop: duplicate carried state '" + state.name + "'");
+      if (symbols.has(state.name)) fail("loop: carried state '" + state.name + "' shadows an existing symbol; bootstrap loops require unique state names");
+      names.add(state.name);
+      const initializer = lowerExpr(state.initializer, graph, ownerFunction, symbols, functions, intrinsics, types);
+      if (initializer.type !== 'i32') fail("loop: initializer for '" + state.name + "' must be i32");
+      const stateNode = graph.addNode(NodeKind.LoopState, state.name);
+      graph.addAttribute(stateNode, 'symbol', 'fnnode::' + ownerFunction + '::loop::' + node + '::state::' + state.name);
+      graph.addAttribute(stateNode, 'update', 'simultaneous');
+      graph.addEdge(node, stateNode, 'carries_state');
+      graph.addEdge(stateNode, requireTypeNode(types, 'i32'), 'has_type');
+      graph.addEdge(stateNode, initializer.node, 'initialized_by');
+      stateRows.push({decl:state, node:stateNode});
+    }
+
+    const loopSymbols = new Map(symbols);
+    for (const state of stateRows) loopSymbols.set(state.decl.name, {node:state.node, type:'i32'});
+
+    const condition = lowerExpr(expr.condition, graph, ownerFunction, loopSymbols, functions, intrinsics, types);
+    if (condition.type !== 'bool') fail('loop: while condition must be a comparison yielding bool');
+    graph.addEdge(node, condition.node, 'condition');
+
+    for (let i = 0; i < stateRows.length; i += 1) {
+      const nextValue = lowerExpr(expr.nextValues[i], graph, ownerFunction, loopSymbols, functions, intrinsics, types);
+      if (nextValue.type !== 'i32') fail("loop: next value for '" + stateRows[i].decl.name + "' must be i32");
+      graph.addEdge(stateRows[i].node, nextValue.node, 'next_value');
+    }
+
+    const yieldValue = lowerExpr(expr.yieldExpr, graph, ownerFunction, loopSymbols, functions, intrinsics, types);
+    if (yieldValue.type !== 'i32') fail('loop: yield value must be i32');
+    graph.addEdge(node, yieldValue.node, 'yield_value');
+    graph.addEdge(node, requireTypeNode(types, 'i32'), 'has_type');
     return {node:node, type:'i32'};
   }
 
@@ -1854,9 +2841,17 @@ function buildPlan(graph) {
     for (const edge of graph.edges) {
       if (edge.from !== fn.id || edge.relation !== 'contains_expr') continue;
       const child = graph.nodes[edge.to];
-      if (child.kind !== NodeKind.Call) continue;
-      const target = graph.singleEdgeTarget(child.id, 'calls');
-      plan.add(graph.nodes[target].kind === NodeKind.Intrinsic ? 'invoke_intrinsic' : 'invoke', graph.nodes[target].name);
+      if (child.kind === NodeKind.Call) {
+        const target = graph.singleEdgeTarget(child.id, 'calls');
+        plan.add(graph.nodes[target].kind === NodeKind.Intrinsic ? 'invoke_intrinsic' : 'invoke', graph.nodes[target].name);
+      } else if (child.kind === NodeKind.Conditional) {
+        plan.add('branch_if', 'comparison');
+        plan.add('merge_phi', 'i32');
+      } else if (child.kind === NodeKind.Loop) {
+        plan.add('loop_header', graph.attribute(child.id, 'state_count') + '_state');
+        plan.add('loop_backedge', 'simultaneous_next');
+        plan.add('loop_yield', 'i32');
+      }
     }
 
     plan.add('return', fn.name);
@@ -1878,6 +2873,16 @@ export function compileSemnexisV0(source) {
   graph.addAttribute(i32Type, 'width', '32');
   graph.addAttribute(i32Type, 'signed', 'true');
   types.set('i32', i32Type);
+  const usesControlFlow = module.functions.some(function(fn) {
+    return fn.locals.some(function(local) { return astExpressionUsesControlFlow(local.initializer); }) ||
+      astExpressionUsesControlFlow(fn.returnExpr);
+  });
+  if (usesControlFlow) {
+    const boolType = graph.addNode(NodeKind.Type, 'bool');
+    graph.addAttribute(boolType, 'width', '1');
+    graph.addAttribute(boolType, 'internal_control_flow_only', 'true');
+    types.set('bool', boolType);
+  }
 
   const pureEffect = graph.addNode(NodeKind.Effect, 'pure');
   graph.addAttribute(pureEffect, 'observable_effects', 'none');
@@ -1898,8 +2903,12 @@ export function compileSemnexisV0(source) {
   for (const fn of module.functions) {
     if (functions.has(fn.name)) fail("resolve: duplicate function '" + fn.name + "'");
     if (intrinsics.has(fn.name)) fail("resolve: function name conflicts with intrinsic '" + fn.name + "'");
+    if (fn.returnType !== 'i32') fail("type: bootstrap function '" + fn.name + "' must return i32");
     requireTypeNode(types, fn.returnType);
-    for (const parameter of fn.parameters) requireTypeNode(types, parameter.type);
+    for (const parameter of fn.parameters) {
+      if (parameter.type !== 'i32') fail("type: bootstrap parameter '" + parameter.name + "' must be i32");
+      requireTypeNode(types, parameter.type);
+    }
 
     const fnNode = graph.addNode(NodeKind.Function, fn.name);
     graph.addAttribute(fnNode, 'symbol', 'fn::' + fn.name);
@@ -1939,6 +2948,7 @@ export function compileSemnexisV0(source) {
     for (const local of fn.locals) {
       if (symbols.has(local.name)) fail("resolve: duplicate symbol '" + local.name + "' in function '" + fn.name + "'");
       const initializer = lowerExpr(local.initializer, graph, fnNode, symbols, functions, intrinsics, types);
+      if (initializer.type !== 'i32') fail("type: bootstrap local '" + local.name + "' must resolve to i32");
       const localNode = graph.addNode(NodeKind.Local, local.name);
       graph.addAttribute(localNode, 'symbol', 'fn::' + fn.name + '::local::' + local.name);
       graph.addAttribute(localNode, 'type_proof', 'initializer');

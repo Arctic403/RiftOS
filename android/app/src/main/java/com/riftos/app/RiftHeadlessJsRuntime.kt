@@ -1228,7 +1228,7 @@ class RiftHeadlessJsRuntime(context: Context) {
                 );
                 const arm32Runtime = compiler.emitArm32Runtime(runtimeProgram.ir);
                 if (!compiler.verifyArm32Runtime(arm32Runtime) ||
-                    arm32Runtime.byteLength !== 268 ||
+                    arm32Runtime.byteLength !== 192 ||
                     arm32Runtime.constantEvaluated !== false ||
                     arm32Runtime.runtimeLowered !== true ||
                     arm32Runtime.functions.length !== 2) {
@@ -1245,18 +1245,107 @@ class RiftHeadlessJsRuntime(context: Context) {
                 if (!addFn || !mainFn) throw new Error('Semnexis ARM32 runtime function metadata mismatch');
                 let runtimeAdds = false;
                 for (let offset = addFn.fileOffset; offset < addFn.fileOffset + addFn.bytes; offset += 4) {
-                  if (readWord(arm32Runtime.bytes, offset) === 0xE0902001) runtimeAdds = true;
+                  if ((readWord(arm32Runtime.bytes, offset) & 0x0FF00000) === 0x00900000) runtimeAdds = true;
                 }
                 let runtimeCall = false;
                 for (let offset = mainFn.fileOffset; offset < mainFn.fileOffset + mainFn.bytes; offset += 4) {
                   if (((readWord(arm32Runtime.bytes, offset) & 0xFF000000) >>> 0) === 0xEB000000) runtimeCall = true;
                 }
-                if (!runtimeAdds || !runtimeCall) {
-                  throw new Error('Semnexis ARM32 runtime codegen instructions are missing');
+                if (!runtimeAdds || !runtimeCall || arm32Runtime.allocator !== 'linear-scan-r4-r7-v0' ||
+                    arm32Runtime.functions.some(fn => fn.spillSlots !== 0)) {
+                  throw new Error('Semnexis ARM32 runtime codegen/register-allocation proof is missing');
                 }
+                const arithmeticProgram = compiler.compile(
+                  'fn arithmetic(a: i32, b: i32) -> i32 {\n' +
+                  ' let sum = a + b;\n' +
+                  ' let difference = a - b;\n' +
+                  ' let product = sum * difference;\n' +
+                  ' return product / b;\n' +
+                  '}\n' +
+                  'fn main() -> i32 { return arithmetic(84, 2); }\n'
+                );
+                const arm32Arithmetic = compiler.emitArm32Runtime(arithmeticProgram.ir);
+                if (!compiler.verifyArm32Runtime(arm32Arithmetic) ||
+                    arm32Arithmetic.byteLength !== 1016 ||
+                    arm32Arithmetic.divisionHelperBytes !== 716 ||
+                    arm32Arithmetic.checkedArithmetic.join(',') !== 'add,sub,mul,div') {
+                  throw new Error('Semnexis ARM32 checked arithmetic proof mismatch');
+                }
+                const arithmeticFn = arm32Arithmetic.functions.find(fn => fn.name === 'arithmetic');
+                if (!arithmeticFn || arithmeticFn.spillSlots !== 1 || arithmeticFn.frameBytes !== 8) {
+                  throw new Error('Semnexis ARM32 arithmetic allocator proof mismatch');
+                }
+                let runtimeSmull = false;
+                let runtimeDivCall = false;
+                for (let offset = arithmeticFn.fileOffset; offset < arithmeticFn.fileOffset + arithmeticFn.bytes; offset += 4) {
+                  const word = readWord(arm32Arithmetic.bytes, offset);
+                  if (word === 0xE0C32190) runtimeSmull = true;
+                  if (((word & 0xFF000000) >>> 0) === 0xEB000000) runtimeDivCall = true;
+                }
+                if (!runtimeSmull || !runtimeDivCall) {
+                  throw new Error('Semnexis ARM32 multiply/divide instructions are missing');
+                }
+                const conditionalProgram = compiler.compile(
+                  'fn choose(a: i32, b: i32) -> i32 {\n' +
+                  ' return if a < b { a + 1 } else { b + 2 };\n' +
+                  '}\n' +
+                  'fn main() -> i32 { return choose(3, 5); }\n'
+                );
+                const conditionalBinary = compiler.encodeIR(conditionalProgram.ir);
+                const decodedConditional = compiler.decodeIR(conditionalBinary);
+                const arm32Conditional = compiler.emitArm32Runtime(conditionalProgram.ir);
+                const chooseFn = arm32Conditional.functions.find(fn => fn.name === 'choose');
+                if (conditionalBinary.length !== 674 ||
+                    decodedConditional.dump() !== conditionalProgram.irText ||
+                    !conditionalProgram.irText.includes('phi.i32') ||
+                    !conditionalProgram.irText.includes('br.cmp.lt') ||
+                    !compiler.verifyArm32Runtime(arm32Conditional) ||
+                    arm32Conditional.byteLength !== 340 ||
+                    arm32Conditional.controlFlowLowered !== true ||
+                    arm32Conditional.allocator !== 'mixed-v0' ||
+                    !chooseFn || chooseFn.allocator !== 'cfg-spill-v0' || chooseFn.blockCount !== 4) {
+                  throw new Error('Semnexis conditional CFG proof mismatch');
+                }
+                const loopProgram = compiler.compile(
+                  'fn sum(n: i32) -> i32 {\n' +
+                  ' return loop (i = 0, acc = 0) while i < n { next (i + 1, acc + i); } yield acc;\n' +
+                  '}\n' +
+                  'fn main() -> i32 { return sum(5); }\n'
+                );
+                const loopBinary = compiler.encodeIR(loopProgram.ir);
+                const decodedLoop = compiler.decodeIR(loopBinary);
+                const arm32Loop = compiler.emitArm32Runtime(loopProgram.ir);
+                const sumFn = arm32Loop.functions.find(fn => fn.name === 'sum');
+                if (loopBinary.length !== 756 ||
+                    decodedLoop.dump() !== loopProgram.irText ||
+                    !loopProgram.irText.includes('loop0.body:%v8') ||
+                    !loopProgram.irText.includes('loop0.body:%v11') ||
+                    !compiler.verifyArm32Runtime(arm32Loop) ||
+                    arm32Loop.byteLength !== 368 ||
+                    arm32Loop.controlFlowLowered !== true ||
+                    arm32Loop.allocator !== 'mixed-v0' ||
+                    !sumFn || sumFn.allocator !== 'cfg-spill-v0' || sumFn.blockCount !== 4) {
+                  throw new Error('Semnexis loop CFG proof mismatch');
+                }
+                const loopBlocks = Object.fromEntries(sumFn.blocks.map(block => [block.label, block]));
+                let loopBackedge = false;
+                const bodyBlock = loopBlocks['loop0.body'];
+                const exitBlock = loopBlocks['loop0.exit'];
+                const headerBlock = loopBlocks['loop0.header'];
+                if (!bodyBlock || !exitBlock || !headerBlock) throw new Error('Semnexis loop block metadata mismatch');
+                for (let offset = bodyBlock.fileOffset; offset < exitBlock.fileOffset; offset += 4) {
+                  const word = readWord(arm32Loop.bytes, offset);
+                  if (((word & 0xFF000000) >>> 0) !== 0xEA000000) continue;
+                  let imm24 = word & 0x00FFFFFF;
+                  if (imm24 & 0x00800000) imm24 |= 0xFF000000;
+                  const from = sumFn.address + (offset - sumFn.fileOffset);
+                  const target = (from + 8 + (imm24 | 0) * 4) >>> 0;
+                  if (target === headerBlock.address && from > headerBlock.address) loopBackedge = true;
+                }
+                if (!loopBackedge) throw new Error('Semnexis ARM32 loop backedge proof mismatch');
                 const value = {
                   ok:true,
-                  schema:'semnexis-bootstrap-self-test/4',
+                  schema:'semnexis-bootstrap-self-test/6',
                   backend:'headless-quickjs',
                   compiler:compiler.version,
                   nodes:result.graph.nodes.length,
@@ -1277,7 +1366,25 @@ class RiftHeadlessJsRuntime(context: Context) {
                   arm32RuntimeLowered:arm32Runtime.runtimeLowered,
                   arm32RuntimeConstantEvaluated:arm32Runtime.constantEvaluated,
                   arm32RuntimeHasCall:runtimeCall,
-                  arm32RuntimeHasCheckedAdd:runtimeAdds
+                  arm32RuntimeHasCheckedAdd:runtimeAdds,
+                  arm32RuntimeAllocator:arm32Runtime.allocator,
+                  arm32RuntimeRegisterOnlyFixture:arm32Runtime.functions.every(fn => fn.spillSlots === 0),
+                  arm32ArithmeticBytes:arm32Arithmetic.byteLength,
+                  arm32ArithmeticChecked:arm32Arithmetic.checkedArithmetic,
+                  arm32DivisionHelperBytes:arm32Arithmetic.divisionHelperBytes,
+                  arm32ArithmeticSpillSlots:arithmeticFn.spillSlots,
+                  arm32RuntimeHasCheckedMultiply:runtimeSmull,
+                  arm32RuntimeHasCheckedDivide:runtimeDivCall,
+                  controlFlowIrBinaryBytes:conditionalBinary.length,
+                  arm32ConditionalBytes:arm32Conditional.byteLength,
+                  arm32ConditionalBlocks:chooseFn.blockCount,
+                  arm32ConditionalAllocator:chooseFn.allocator,
+                  loopIrBinaryBytes:loopBinary.length,
+                  arm32LoopBytes:arm32Loop.byteLength,
+                  arm32LoopBlocks:sumFn.blockCount,
+                  arm32LoopAllocator:sumFn.allocator,
+                  arm32ControlFlowLowered:arm32Conditional.controlFlowLowered && arm32Loop.controlFlowLowered,
+                  arm32LoopBackedge:loopBackedge
                 };
                 emit(JSON.stringify(value, null, 2));
                 finish(value);
@@ -1377,6 +1484,13 @@ class RiftHeadlessJsRuntime(context: Context) {
                   runtimeLowered:artifact.runtimeLowered,
                   constantEvaluated:artifact.constantEvaluated,
                   trapExitCode:artifact.trapExitCode,
+                  allocator:artifact.allocator,
+                  controlFlowLowered:artifact.controlFlowLowered,
+                  blocks:artifact.functions.reduce((total, fn) => total + fn.blockCount, 0),
+                  spillSlots:artifact.functions.reduce((total, fn) => total + fn.spillSlots, 0),
+                  registerValues:artifact.functions.reduce((total, fn) => total + fn.registerValues, 0),
+                  divisionHelperBytes:artifact.divisionHelperBytes,
+                  checkedArithmetic:artifact.checkedArithmetic,
                   executionPolicy:artifact.executionPolicy
                 };
                 emit(JSON.stringify(value, null, 2));

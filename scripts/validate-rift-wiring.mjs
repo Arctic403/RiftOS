@@ -165,7 +165,7 @@ for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()
 }
 if (hasWebKitDependency(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
 const semnexisSource = read('src/semnexis-bootstrap.js');
-for (const required of ['SEMNEXIS_NATIVE_IR_V0', 'SNIRV0', 'SEMNEXIS_ARM32_ELF_PROOF_V0', 'SEMNEXIS_ARM32_RUNTIME_ELF_V0', 'constantEvaluated:false', 'runtimeLowered:true', 'generated-artifact-not-executed-from-riftfs']) {
+for (const required of ['SEMNEXIS_NATIVE_IR_V0', 'SNIRV0', 'SEMNEXIS_ARM32_ELF_PROOF_V0', 'SEMNEXIS_ARM32_RUNTIME_ELF_V0', 'linear-scan-r4-r7-v0', 'cfg-spill-v0', 'verifyNativeIRControlFlow', 'phi.i32', 'br.cmp.lt', 'loop_backedge', 'buildArm32RuntimeDivHelperV0', "checkedArithmetic:['add','sub','mul','div']", 'constantEvaluated:false', 'runtimeLowered:true', 'generated-artifact-not-executed-from-riftfs']) {
   if (!semnexisSource.includes(required)) fail(`Semnexis compiler/backend contract is missing ${required}`);
 }
 if (!headless.includes('/documents/builds/Semnexis/semx-arm32-proof.elf') ||

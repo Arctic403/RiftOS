@@ -31,6 +31,16 @@ assert.match(compiler, /SEMNEXIS_ARM32_ELF_PROOF_V0/);
 assert.match(compiler, /SEMNEXIS_ARM32_RUNTIME_ELF_V0/);
 assert.match(compiler, /constantEvaluated:false/);
 assert.match(compiler, /runtimeLowered:true/);
+assert.match(compiler, /linear-scan-r4-r7-v0/);
+assert.match(compiler, /buildArm32RuntimeDivHelperV0/);
+assert.match(compiler, /checkedArithmetic:\['add','sub','mul','div'\]/);
+assert.match(compiler, /verifyNativeIRControlFlow/);
+assert.match(compiler, /phi\.i32/);
+assert.match(compiler, /br\.cmp\.lt/);
+assert.match(compiler, /cfg-spill-v0/);
+assert.match(compiler, /loop_backedge/);
+assert.match(runtime, /semnexis-bootstrap-self-test\/6/);
+assert.match(runtime, /arm32LoopBackedge/);
 assert.match(compiler, /generated-artifact-not-executed-from-riftfs/);
 assert.doesNotMatch(compiler, /\beval\s*\(|new Function|\bprocess\b|XMLHttpRequest|fetch\s*\(/);
 
