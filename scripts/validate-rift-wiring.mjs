@@ -40,6 +40,13 @@ for (const file of [...new Set(syntaxFiles)].sort()) {
 }
 
 const manifest = read('android/app/src/main/AndroidManifest.xml');
+for (const required of [
+  'android.permission.REQUEST_INSTALL_PACKAGES',
+  'android:name=".RiftBuildInstallReceiver"',
+  'android:exported="false"',
+  'android.intent.action.PACKAGE_FIRST_LAUNCH',
+  'com.riftpp.nativeproof',
+]) if (!manifest.includes(required)) fail(`Android RiftBuild install contract is missing ${required}`);
 const kotlinDir = 'android/app/src/main/java/com/riftos/app';
 const kotlinFiles = walk(kotlinDir).filter(file => file.endsWith('.kt'));
 const manifestActivities = new Set([...manifest.matchAll(/<activity\b[^>]*\bandroid:name="\.([^"]+)"/g)].map(match => match[1]));
@@ -107,6 +114,8 @@ for (const dependency of ['verifyRiftOsAndroidSources', 'validateRiftBrowserWebV
 
 const main = read(`${kotlinDir}/MainActivity.kt`);
 const nativeShell = read(`${kotlinDir}/RiftNativeShell.kt`);
+const buildInstaller = read(`${kotlinDir}/RiftBuildInstaller.kt`);
+if (!buildInstaller.includes('class RiftBuildInstallReceiver : BroadcastReceiver()')) fail('RiftBuild manifest receiver source is missing');
 const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
 const runtime = read(`${kotlinDir}/RiftMcpRuntime.kt`);
 const browserWindow = read(`${kotlinDir}/RiftBrowserWindow.kt`);

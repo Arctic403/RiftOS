@@ -3,10 +3,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <queries>
         <package android:name="com.vortex3d.app" />
         <package android:name="com.riftllm.app" />
+        <package android:name="com.riftpp.nativeproof" />
         <package android:name="com.samsung.android.honeyboard" />
     </queries>
 
@@ -18,6 +20,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.RiftOS"
         android:usesCleartextTraffic="false">
+        <receiver
+            android:name=".RiftBuildInstallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_FIRST_LAUNCH" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".RiftVortexAccessibilityService"
             android:exported="true"

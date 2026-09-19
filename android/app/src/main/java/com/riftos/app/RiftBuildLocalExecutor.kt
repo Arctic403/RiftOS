@@ -13,7 +13,8 @@ import java.util.zip.ZipOutputStream
  * Workspace-bounded native RiftBuild controller.
  *
  * No raw process execution lives here. v0.1 validates Android projects, records bounded plans/runs,
- * and packages already-prepared binary Android artifacts into an unsigned APK under D:/Builds.
+ * materializes the fixed Rift++ proof, packages prepared Android artifacts, and routes only bounded
+ * D:/Builds APK v2 sign/verify/install-proof operations to dedicated native owners.
  */
 class RiftBuildLocalExecutor(context: Context) {
     data class CommandResult(val output: String, val value: JSONObject)
@@ -88,13 +89,15 @@ class RiftBuildLocalExecutor(context: Context) {
     private val workspaceRoot = File(riftRoot, "workspace").apply { mkdirs() }.canonicalFile
     private val runRoot = File(riftRoot, "system/riftbuild/v1/runs").apply { mkdirs() }.canonicalFile
     private val artifactRoot = File(riftRoot, "documents/builds").apply { mkdirs() }.canonicalFile
+    private val apkSigner = RiftApkV2Signer(appContext)
+    private val installer = RiftBuildInstaller(appContext)
 
     fun executeShell(args: MutableList<String>, cwd: String): CommandResult {
         val sub = args.removeFirstOrNull()?.lowercase() ?: "doctor"
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | pack <project> [target] | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -112,6 +115,11 @@ class RiftBuildLocalExecutor(context: Context) {
                 args.getOrNull(1) ?: "universal",
                 cwd
             )
+            "sign" -> signArtifact(args.firstOrNull() ?: error("usage: riftbuild sign <unsigned-apk>"))
+            "verify" -> verifyArtifact(args.firstOrNull() ?: error("usage: riftbuild verify <signed-apk>"))
+            "install-proof" -> installProof(args.firstOrNull() ?: error("usage: riftbuild install-proof <signed-apk>"))
+            "install-status" -> installer.status()
+            "launch-proof" -> installer.launchProof()
             "runs" -> JSONObject().put("schema", "riftbuild-runs-v1").put("runs", runs(args.firstOrNull()?.toIntOrNull() ?: 20))
             "artifacts" -> JSONObject().put("schema", "riftbuild-artifacts-v1").put("artifacts", artifacts(args.firstOrNull(), cwd))
             else -> error("unknown riftbuild command: " + sub)
@@ -138,15 +146,16 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("preparedArtifactPackagerReady", true)
             .put("packReady", packReady)
             .put("compileReady", false)
-            .put("signingReady", false)
-            .put("installReady", false)
+            .put("signingReady", true)
+            .put("verificationReady", true)
+            .put("installOwnerReady", true)
+            .put("installReady", appContext.packageManager.canRequestPackageInstalls())
             .put("ready", false)
             .put("project", projectValue ?: JSONObject.NULL)
             .put("artifactRoot", "/D:/Builds")
             .put("blockers", JSONArray()
-                .put("android-binary-manifest: prepared Android binary manifest is still required before packaging")
-                .put("apk-signing: bounded in-process signing is pending")
-                .put("package-install: explicit PackageInstaller ownership is pending"))
+                .put("native-compile: general repository native compilation is not wired yet")
+                .put("package-install: Android may still require Allow from this source + user confirmation"))
     }
 
     fun validate(project: String, cwd: String = "/D:/Workspace"): JSONObject {
@@ -246,9 +255,9 @@ class RiftBuildLocalExecutor(context: Context) {
                     if (hasPreparedNative(prepared, normalizedTarget)) null else "run prepare-riftpp-v0 for the current Rift++ V0 proof"
                 ))
                 .put(stage("apk-package", if (packReady) "ready" else "blocked", if (packReady) null else "prepared binary Android artifacts incomplete"))
-                .put(stage("apk-signing", "blocked", "bounded in-process signer pending"))
-                .put(stage("artifact-verification", "partial", "ZIP + SHA receipt only"))
-                .put(stage("package-install", "blocked", "PackageInstaller owner pending")))
+                .put(stage("apk-signing", "ready-v2", null))
+                .put(stage("artifact-verification", "ready-v2", null))
+                .put(stage("package-install", "user-confirmed", "restricted to com.riftpp.nativeproof; Android user confirmation may be required")))
     }
 
 
@@ -422,12 +431,97 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("signed", false)
             .put("installableClaimed", false)
             .put("blockers", JSONArray()
-                .put("APK signing is not implemented yet")
-                .put("device install/launch proof is not implemented yet"))
+                .put("run riftbuild sign on this bounded unsigned artifact")
+                .put("install is allowed only after independent v2 verification and Android user confirmation"))
             .put("createdAt", System.currentTimeMillis())
         atomicWrite(File(outDir, "receipt.json"), receipt.toString(2).toByteArray(Charsets.UTF_8))
         writeRun(receipt)
         return receipt
+    }
+
+
+    @Synchronized
+    fun signArtifact(rawArtifact: String): JSONObject {
+        val unsignedApk = resolveArtifact(rawArtifact)
+        require(unsignedApk.name.endsWith("-unsigned.apk")) { "RiftBuild sign accepts only *-unsigned.apk artifacts" }
+        val signedApk = File(
+            unsignedApk.parentFile,
+            unsignedApk.name.removeSuffix("-unsigned.apk") + "-signed.apk"
+        ).canonicalFile
+        require(confinedTo(artifactRoot, signedApk)) { "signed APK output escaped D:/Builds" }
+
+        val signed = apkSigner.sign(unsignedApk, signedApk)
+        val id = runId()
+        val receipt = JSONObject()
+            .put("format", "riftbuild-apk-v2-signing-receipt-v1")
+            .put("state", "signed-v2")
+            .put("runId", id)
+            .put("inputArtifact", artifactDisplay(unsignedApk))
+            .put("inputSha256", sha256(unsignedApk))
+            .put("artifact", artifactDisplay(signedApk))
+            .put("artifactSha256", signed.apkSha256)
+            .put("artifactBytes", signed.outputBytes)
+            .put("scheme", 2)
+            .put("signatureAlgorithmId", "0x0103")
+            .put("certificateSha256", signed.certificateSha256)
+            .put("publicKeySha256", signed.publicKeySha256)
+            .put("contentDigestSha256", signed.contentDigestSha256)
+            .put("signingBlockBytes", signed.signingBlockBytes)
+            .put("signatureVerified", true)
+            .put("installableClaimed", false)
+            .put("createdAt", System.currentTimeMillis())
+        atomicWrite(
+            File(signedApk.parentFile, "signing-receipt.json"),
+            receipt.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(receipt)
+        return receipt
+    }
+
+    fun verifyArtifact(rawArtifact: String): JSONObject {
+        val signedApk = resolveArtifact(rawArtifact)
+        require(signedApk.name.endsWith("-signed.apk")) { "RiftBuild verify accepts only *-signed.apk artifacts" }
+        val verified = apkSigner.verify(signedApk)
+        val id = runId()
+        val receipt = JSONObject()
+            .put("format", "riftbuild-apk-v2-verification-receipt-v1")
+            .put("state", "verified-v2")
+            .put("runId", id)
+            .put("artifact", artifactDisplay(signedApk))
+            .put("artifactSha256", verified.apkSha256)
+            .put("artifactBytes", signedApk.length())
+            .put("scheme", 2)
+            .put("signatureAlgorithmId", "0x0103")
+            .put("certificateSha256", verified.certificateSha256)
+            .put("publicKeySha256", verified.publicKeySha256)
+            .put("contentDigestSha256", verified.contentDigestSha256)
+            .put("signingBlockBytes", verified.signingBlockBytes)
+            .put("signatureVerified", true)
+            .put("installableClaimed", false)
+            .put("verifiedAt", System.currentTimeMillis())
+        atomicWrite(
+            File(signedApk.parentFile, "verification-receipt.json"),
+            receipt.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(receipt)
+        return receipt
+    }
+
+    @Synchronized
+    fun installProof(rawArtifact: String): JSONObject {
+        val signedApk = resolveArtifact(rawArtifact)
+        require(signedApk.name.endsWith("-signed.apk")) { "RiftBuild install-proof accepts only *-signed.apk artifacts" }
+        val verified = apkSigner.verify(signedApk)
+        val result = installer.installProof(signedApk, verified)
+            .put("format", "riftbuild-install-proof-v1")
+            .put("runId", runId())
+            .put("artifact", artifactDisplay(signedApk))
+            .put("artifactSha256", verified.apkSha256)
+            .put("certificateSha256", verified.certificateSha256)
+            .put("signatureVerified", true)
+            .put("installableClaimed", false)
+        writeRun(result)
+        return result
     }
 
     fun runs(limit: Int = 20): JSONArray {
@@ -912,6 +1006,24 @@ class RiftBuildLocalExecutor(context: Context) {
     }
 
     private fun artifactProjectDisplay(ref: ProjectRef): String = artifactDisplay(artifactProjectRoot(ref))
+
+    private fun resolveArtifact(raw: String): File {
+        require(raw.isNotBlank()) { "RiftBuild artifact path is required" }
+        val value = raw.trim().replace('\\', '/')
+        val absolute = when {
+            value == "/D:/Builds" || value.startsWith("/D:/Builds/") -> value
+            value == "D:/Builds" || value.startsWith("D:/Builds/") -> "/" + value
+            else -> "/D:/Builds/" + value.trimStart('/')
+        }
+        val display = RiftVolumePaths.normalizeDisplay(absolute)
+        require(display.startsWith("/D:/Builds/")) { "RiftBuild artifact must live under D:/Builds" }
+        val relative = display.removePrefix("/D:/Builds/").trim('/')
+        require(relative.isNotBlank()) { "RiftBuild artifact file is required" }
+        val file = File(artifactRoot, relative).canonicalFile
+        require(confinedTo(artifactRoot, file)) { "RiftBuild artifact escaped D:/Builds" }
+        require(file.isFile) { "RiftBuild artifact not found: " + display }
+        return file
+    }
 
     private fun artifactDisplay(file: File): String {
         val canonical = file.canonicalFile

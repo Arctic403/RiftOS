@@ -2,9 +2,46 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.4 — Installed unsigned proof + bounded APK v2 sign/verify/install bootstrap
+
+### Proven before this source patch
+
+Installed RiftOS source `1c1ae33b81cfe643eb804cac0841ced636e982e3` / Builder run 214 executed the RiftBuild bootstrap path on-device:
+- `prepare-riftpp-v0` materialized the AArch64 ELF at 1,064 bytes / SHA-256 `9cfc79cd6452d1c920c87b30a40a4c64561d216288b8bf5edc1fc480d07525ab`;
+- it materialized the ARMv7 ELF at 732 bytes / SHA-256 `b4e91421b5078ad1b67f9a1f9f4e22a1bda08b8127255b7837e72e0f14007f49`;
+- the fixed Android binary manifest matched 1,440 bytes / SHA-256 `ac035bb5bf89f55a3f34bae8eea980108324d2f36333f1e708f8a0b82af8e7c2`;
+- project validate/plan reported the universal package ready;
+- `riftbuild pack` produced a 1,843-byte unsigned APK with three entries and SHA-256 `a01c190f3b5475df1be59303ffc0a92623cff0dcde38a4743184dcd75e08f329`.
+
+That is installed-device proof for the direct-ELF bridge, binary manifest and local unsigned APK packaging stages. It is not signing/install proof.
+
+### Current source changes
+
+Added `RiftApkV2Signer.kt`:
+- one persistent AndroidKeyStore RSA-2048 signing key;
+- APK Signature Scheme v2 algorithm `0x0103` (RSA PKCS#1 v1.5 + SHA-256);
+- AOSP-style 1 MiB content-digest chunks and APK Signing Block insertion before the ZIP central directory;
+- strict non-ZIP64/single-signer bootstrap parsing;
+- independent certificate/public-key/signature/content-digest verification;
+- sign operations self-verify before publishing their receipt.
+
+Added `RiftBuildInstaller.kt`:
+- `REQUEST_INSTALL_PACKAGES` / per-source Android trust handling;
+- PackageInstaller session ownership with user action required;
+- install restricted to exact package `com.riftpp.nativeproof`;
+- persisted install result state;
+- exact `android.app.NativeActivity` launch request;
+- protected `PACKAGE_FIRST_LAUNCH` receipt recorded as `launch-proven`.
+
+The existing `riftbuild` family now exposes only bounded `sign`, `verify`, `install-proof`, `install-status` and `launch-proof`; it adds no MCP tool, raw process/package-manager shell, automatic Git push or experimental CLI authority.
+
+### Proof boundary
+
+This signer/installer patch is **SOURCE IMPLEMENTED ONLY** until Android Builder compiles it and that APK is installed. The next proof sequence is exactly: sign the already-produced proof APK → independently verify v2 → Android PackageInstaller confirmation/install → launch → confirm first-launch status. After that bootstrap milestone, active development returns to RiftLLM+.
 
 ## Patch 10.3 — RiftBuild Kotlin regex escape repair
 

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -214,7 +214,7 @@ It also explicitly requires private top-level RiftDevLabLocalAgent and embedded 
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
-Because the Gradle list is now exact 50/50, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
+Because the Gradle list is now exact 52/52, including the bounded RiftBuild signer and installer owners, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
 
 ## Final APK asset verification
 

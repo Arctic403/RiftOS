@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 This subsystem was rebuilt from `MainActivity.kt`, `AndroidManifest.xml`, Android resources and direct lifecycle/call-site references. Browser, Desktop, MCP, Files, Preview and Accessibility behavior are mentioned only where they cross the Android-host boundary; their subsystem READMEs remain independently unverified until audited.
 
@@ -37,6 +37,7 @@ Host-adjacent lifecycle source:
 - `RiftNativeWorkspaceApps.kt` — native Files SAF Activity-result recipient.
 
 Manifest-declared components whose internal behavior belongs elsewhere:
+- `RiftBuildInstallReceiver` in `RiftBuildInstaller.kt` — private PackageInstaller result + protected first-launch proof receiver for `com.riftpp.nativeproof`;
 - `RiftMcpActivity.kt` — MCP configuration/status UI.
 - `RiftBrowserPreviewActivity.kt` — bounded preview renderer.
 - `RiftVortexAccessibilityService` in `RiftVortexLocalAgent.kt` — user-enabled Accessibility service.
@@ -46,13 +47,15 @@ Manifest-declared components whose internal behavior belongs elsewhere:
 The manifest currently declares:
 - `INTERNET`;
 - `VIBRATE`;
-- `POST_NOTIFICATIONS`.
+- `POST_NOTIFICATIONS`;
+- `REQUEST_INSTALL_PACKAGES` — used only by the bounded RiftBuild proof installer and still subject to Android's per-source user trust/confirmation flow.
 
 The source audit found no direct `Vibrator`/vibration call and no runtime `requestPermissions`/direct app notification-posting path in RiftOS Kotlin. These permissions are therefore recorded as **declared manifest permissions**, not evidence of an active host feature.
 
 Package visibility queries are declared for:
 - `com.vortex3d.app`;
 - `com.riftllm.app`;
+- `com.riftpp.nativeproof` — fixed RiftBuild bootstrap install/launch target;
 - `com.samsung.android.honeyboard`.
 
 Those correspond to fixed Vortex, RiftLLM and Samsung-keyboard integration code paths.

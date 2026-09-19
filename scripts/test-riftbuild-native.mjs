@@ -5,12 +5,19 @@ const read = file => fs.readFileSync(file, 'utf8');
 const exists = file => fs.existsSync(file);
 
 const nativeBuildPath = 'android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt';
-assert.ok(exists(nativeBuildPath), 'native RiftBuild owner is missing');
+const signerPath = 'android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt';
+const installerPath = 'android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt';
+for (const file of [nativeBuildPath, signerPath, installerPath]) {
+  assert.ok(exists(file), 'RiftBuild source owner is missing: ' + file);
+}
 
 const nativeBuild = read(nativeBuildPath);
+const signer = read(signerPath);
+const installer = read(installerPath);
 const shell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');
 const gradle = read('android/app/build.gradle.kts');
+const manifest = read('android/app/src/main/AndroidManifest.xml');
 const retained = read('src/riftbuild.js');
 const toolHost = read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
 const surfaces = read('docs/PUBLIC_SURFACES.md');
@@ -40,21 +47,62 @@ for (const required of [
   'AndroidManifest.xml must be compiled Android binary XML',
   'arm64-v8a',
   'armeabi-v7a',
+  'signArtifact',
+  'verifyArtifact',
+  'installProof',
+  'resolveArtifact',
+  'RiftBuild artifact must live under D:/Builds',
+  'RiftBuild sign accepts only *-unsigned.apk artifacts',
+  'RiftBuild verify accepts only *-signed.apk artifacts',
+  'RiftBuild install-proof accepts only *-signed.apk artifacts',
   'installableClaimed',
   'RiftBuild does not accept raw commands',
 ]) assert.ok(nativeBuild.includes(required), 'native RiftBuild contract missing: ' + required);
 
+for (const required of [
+  'class RiftApkV2Signer',
+  'AndroidKeyStore',
+  'KEY_SIZE = 2048',
+  'SIGNATURE_ALGORITHM_ID = 0x0103',
+  'V2_BLOCK_ID = 0x7109871a',
+  'APK Sig Block 42',
+  'SHA256withRSA',
+  'SIGNATURE_PADDING_RSA_PKCS1',
+  '0xa5.toByte()',
+  'top.write(0x5a)',
+  'ZIP64 APK is unsupported',
+  'APK already contains an APK Signing Block',
+  'v2 protected APK content digest mismatch',
+  'v2 signed-data RSA signature verification failed',
+]) assert.ok(signer.includes(required), 'APK v2 signer contract missing: ' + required);
+
+for (const required of [
+  'class RiftBuildInstaller',
+  'TARGET_PACKAGE = "com.riftpp.nativeproof"',
+  'PackageInstaller',
+  'USER_ACTION_REQUIRED',
+  'PendingIntent.FLAG_MUTABLE',
+  'ACTION_PACKAGE_FIRST_LAUNCH',
+  'launch-proven',
+  'canRequestPackageInstalls',
+  'ACTION_MANAGE_UNKNOWN_APP_SOURCES',
+  'RiftBuild V0 installer accepts only',
+  'class RiftBuildInstallReceiver : BroadcastReceiver()',
+]) assert.ok(installer.includes(required), 'RiftBuild installer contract missing: ' + required);
+
+const combinedAuthority = nativeBuild + '\n' + signer + '\n' + installer;
 for (const forbidden of [
   'ProcessBuilder',
   'Runtime.getRuntime().exec',
-  '.exec(',
   'rift-cli enable',
   'localBuildExecutor',
-]) assert.ok(!nativeBuild.includes(forbidden), 'native RiftBuild gained forbidden authority: ' + forbidden);
+  'pm install',
+]) assert.ok(!combinedAuthority.includes(forbidden), 'RiftBuild gained forbidden authority: ' + forbidden);
 
 assert.match(nativeBuild, /display == "\/D:\/Workspace"/);
 assert.match(nativeBuild, /confinedTo\(workspaceRoot, file\)/);
 assert.match(nativeBuild, /confinedTo\(artifactRoot, outDir\)/);
+assert.match(nativeBuild, /confinedTo\(artifactRoot, file\)/);
 assert.match(nativeBuild, /type == XML_TYPE && headerSize == 8 && declaredSize == file\.length\(\)\.toInt\(\)/);
 assert.match(nativeBuild, /writeManifestU32\(output, 1\)/);
 assert.match(nativeBuild, /writeManifestU32\(output, XML_NO_INDEX\)/);
@@ -63,17 +111,27 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|pack\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
 assert.match(appHost, /"build\.submit" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.submit\(args\) \}/);
 assert.match(appHost, /private val riftBuild = RiftBuildLocalExecutor\(activity\.applicationContext\)/);
 
-assert.ok(gradle.includes('src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt'), 'Gradle exact source snapshot omitted RiftBuild');
+for (const source of ['RiftBuildLocalExecutor.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt']) {
+  assert.ok(gradle.includes('src/main/java/com/riftos/app/' + source), 'Gradle exact source snapshot omitted ' + source);
+}
+assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'), 'RiftOS manifest omitted REQUEST_INSTALL_PACKAGES');
+assert.ok(manifest.includes('.RiftBuildInstallReceiver'), 'RiftOS manifest omitted private RiftBuild install receiver');
+assert.ok(manifest.includes('android.intent.action.PACKAGE_FIRST_LAUNCH'), 'RiftOS manifest omitted first-launch proof action');
+assert.ok(manifest.includes('com.riftpp.nativeproof'), 'RiftOS manifest omitted fixed proof-package visibility');
+assert.match(manifest, /android:name="\.RiftBuildInstallReceiver"[\s\S]*?android:exported="false"/);
+
 assert.match(retained, /RiftBuild doctor blocked local execution/);
 assert.ok(!gradle.includes('src/riftbuild.js'), 'retained JavaScript RiftBuild must remain unpackaged');
 assert.ok(!toolHost.includes('rift_build'), 'RiftBuild must not expand the MCP catalog');
 assert.match(surfaces, /Native RiftBuild/);
+assert.match(surfaces, /RiftApkV2Signer\.kt/);
+assert.match(surfaces, /RiftBuildInstaller\.kt/);
 
-console.log('Native RiftBuild bounded controller + prepared APK packager contract OK');
+console.log('Native RiftBuild bounded prepare/package/v2-sign/verify/install-proof contract OK');

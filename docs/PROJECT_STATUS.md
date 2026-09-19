@@ -2,9 +2,9 @@
 
 ## Verification status
 
-**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-18.**
+**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-19.**
 
-This file reports what the current local source implements. It does not claim the unpushed native migration has passed Android Builder or installed-device acceptance.
+This file reports both current local source state and explicitly identified installed-device proof. New signer/installer source in the current working tree is not called installed until a subsequent Builder/install pass proves it.
 
 ## Android target
 
@@ -39,7 +39,10 @@ From `android/app/build.gradle.kts`:
 - Pre-Patch-8 stress hardening now unions base/current governance and build-manifest inventories for post-patch evidence, persists lifecycle sessions under RiftFS `system/`, and fail-closes any source/candidate drift detected across a process epoch change. The observed external untracked-file deletion remains root-cause-unproven; it can no longer be silently evaluated as safe.
 - Patch 8 `RiftDocumentationParityV1` is the OBSERVE-only candidate-specific docs/project-state parity owner. It derives ownership/governance requirements from PI-v2 + exact repository bytes, requires structured documentationParity evidence against `documentation-plan`, and binds the final plan SHA into evaluator verification. It adds no MCP/trust/publish authority and does not claim arbitrary prose is locally provable.
 - Patch 9 `RiftVerificationPlannerV1` is the OBSERVE-only candidate-specific test/security/dependency verification owner. It derives exact plan targets/check ids from PI-v2 + current build manifests, requires `verificationPlan` evidence for security/dependencies/tests, and binds the final plan SHA into evaluator verification. It plans verification only; it does not execute arbitrary processes, install dependencies, promote trust or publish.
-- `RiftSecretStore` is the Android Keystore-backed secret owner.\n- `RiftBuildLocalExecutor` is the source-live bounded local build controller: workspace project validation/planning/run records and prepared unsigned APK packaging are implemented without raw process execution. Direct ELF generation, APK signing and PackageInstaller integration remain blocked/pending.
+- `RiftSecretStore` is the Android Keystore-backed secret owner.
+- Installed RiftBuild on source `1c1ae33b81cfe643eb804cac0841ced636e982e3` / Builder run 214 has device-proven Rift++ V0 ELF materialization, the fixed 1,440-byte binary Android manifest, project validation/planning and deterministic universal unsigned APK packaging under `D:/Builds`.
+- Current unpushed source adds `RiftApkV2Signer`: one Android-Keystore RSA-2048 key, APK Signature Scheme v2 / RSA-PKCS1-SHA256 signing, and independent signature/certificate/content-digest verification with no raw process authority.
+- Current unpushed source adds `RiftBuildInstaller`: PackageInstaller handoff restricted to `com.riftpp.nativeproof`, Android-managed unknown-source/user confirmation, persisted install status, exact NativeActivity launch request and protected first-launch proof recording. Builder compile + installed-device sign/verify/install/launch proof is still pending.
 - Native Files owns persisted Android SAF document-tree mounts.
 - `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.
 - installed HTML/JS programs already present under `C:/Programs` can be launched by `RiftBrowserAppHost`.
@@ -77,7 +80,7 @@ Historical `src/riftrt.js` and its Worker/WASM/application-runtime architecture 
 
 The current source can discover and host packages already present in `C:/Programs/<id>/package.json`.
 
-**Not currently source-proven as live:** a native package installer. The old JavaScript installer (`src/riftapps.js`) is not packaged by Gradle.
+The current working tree now contains a native `RiftBuildInstaller` bootstrap installer, but it is source-only until the next Builder/install pass. It is deliberately restricted to the signed `com.riftpp.nativeproof` artifact and does not replace the older general JavaScript app-package design (`src/riftapps.js`), which remains unpackaged.
 
 ## Retired/non-live engine paths
 
@@ -134,7 +137,7 @@ The engine/core pass is followed by a second engine re-audit. After the engine i
 
 ## Rift++ active installed/reference state
 
-The installed/reference Rift++ compiler is `0.10.0-bootstrap` / `riftpp/1` targeting `rift-exec-v1 / riftvm-1` on RiftOS source `1f5e50d70a7dc9f2193b4060170503aed1296137`.
+The installed/reference Rift++ compiler is `0.10.0-bootstrap` / `riftpp/1` targeting `rift-exec-v1 / riftvm-1`; the currently installed RiftOS proof host is source `1c1ae33b81cfe643eb804cac0841ced636e982e3` / Builder run 214.
 
 Current proven state:
 - promoted checked `u8` plus real `Buffer<u8,N>` / `Slice<u8>`;
@@ -144,7 +147,7 @@ Current proven state:
 - Rift IR v1 feature level 0 PASS / frozen prototype;
 - ARMv7 + AArch64 leaf backend assembly/object/link proof PASS.
 
-The current native gap is no longer the portable runtime. It is local native artifact production: direct ELF/shared-object emission, binary Android package inputs, signing/verification and device installation/execution.
+The direct Rift++ V0 ELF materialization, fixed binary Android manifest and unsigned APK package path are now installed-device proven. The remaining bootstrap gap is to Builder-compile/install the current v2 signer/PackageInstaller source and prove sign → independent verify → Android install → first launch; after that work returns to RiftLLM+ as the first real repository compile target.
 
 ## Rift++ historical candidate notes
 

@@ -63,6 +63,8 @@ For the current Android engine, Gradle packages only `src/riftpp-core.js` and `s
 | `android/app/src/main/java/com/riftos/app/RiftBrowserEngine.kt` | `docs/systems/browser/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt` | `docs/systems/browser/mcp-compat/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserWindow.kt` | `docs/systems/browser/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
+| `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/systems/apps/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpActivity.kt` | `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt` | `docs/systems/mcp/relay/README.md` |

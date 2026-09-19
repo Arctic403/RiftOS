@@ -35,9 +35,11 @@ Therefore RiftBuild v0.1 deliberately keeps execution in Android/Kotlin/Rift++ o
 
 ## Native owner
 
-Planned live owner in this patch:
+Source owners in this patch:
 
-- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt`
+- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — bounded build/package command owner;
+- `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` — bounded APK Signature Scheme v2 signer/verifier;
+- `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` — user-confirmed PackageInstaller + launch-proof owner
 
 Existing callers to activate without expanding the MCP catalog:
 
@@ -49,7 +51,9 @@ The retained `src/riftbuild.js` remains reference-only and is not repackaged or 
 ## Source ownership
 
 Maintained live owners:
-- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — native build controller, direct-ELF bridge materializer, fixed binary-manifest V0 encoder and prepared APK packager;
+- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — native build controller, direct-ELF bridge materializer, fixed binary-manifest V0 encoder, prepared APK packager and bounded sign/verify/install command routing;
+- `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` — Android-Keystore RSA key owner plus narrow APK Signature Scheme v2 encoder/verifier;
+- `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` — exact-package PackageInstaller session/result/first-launch proof owner;
 - `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed native `riftbuild` command routing;
 - `android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt` — capability-gated `build.local` app surface;
 - `scripts/test-riftbuild-native.mjs` — focused authority/confinement/source contract;
@@ -196,6 +200,35 @@ Rules:
 
 This stage proves local package construction. It does **not** imply compilation or signing.
 
+## Signing / verification / install V0 contract
+
+The bootstrap signer is deliberately narrower than a general Android signing tool.
+
+Signing:
+- input must be an unsigned APK already produced under `D:/Builds`;
+- the signer uses one persistent RSA-2048 key owned by Android Keystore under the RiftOS app identity;
+- V0 emits APK Signature Scheme v2 with RSASSA-PKCS1-v1_5 + SHA-256 (algorithm ID `0x0103`);
+- no private-key bytes may leave Android Keystore;
+- the signer must parse the ZIP EOCD/central-directory boundaries itself and reject ZIP64, malformed or already-signed input;
+- content digests follow the AOSP v2 1 MiB chunk construction and the signing block is inserted immediately before the ZIP central directory;
+- output remains under the same bounded `D:/Builds` run directory and receives a SHA-256 receipt.
+
+Verification:
+- verification is independent of the signing operation;
+- it must parse the v2 signing block, verify the RSA signature over signed-data, match certificate/public-key identity, recompute the protected APK content digest, and reject structural drift;
+- verification records the certificate SHA-256, public-key SHA-256, content digest and final APK SHA-256;
+- a signed artifact is not installable-claimed until this verifier passes.
+
+Install/launch proof:
+- V0 installation is restricted to the exact bootstrap package `com.riftpp.nativeproof`;
+- RiftOS declares `REQUEST_INSTALL_PACKAGES` and uses Android `PackageInstaller`, never raw package-manager shell commands;
+- normal Android unknown-source trust/user confirmation remains mandatory;
+- install status is persisted under RiftBuild system state;
+- after successful installation, the proof launcher targets only the exported `android.app.NativeActivity` for `com.riftpp.nativeproof`;
+- no arbitrary package name, arbitrary APK path or silent/background install authority is exposed.
+
+The v2 implementation is intentionally a small bootstrap subset. General multi-signer/v3/v4/key-import support is out of scope for the RiftLLM+ return milestone.
+
 ## Stage graph
 
 Current stage ownership:
@@ -204,9 +237,9 @@ Current stage ownership:
 2. Rift++/IR validation — existing Rift++ proof surfaces;
 3. native ELF/shared-object generation — Rift++ direct-ELF V0 reference Buffer emission PASS; runtime-byte bridge/materialization active;
 4. APK layout/package — RiftBuild v0.1 prepared-artifact packer;
-5. signing — pending bounded in-process signer;
-6. artifact verification — grows with signing/ELF support;
-7. install — pending explicit PackageInstaller owner.
+5. signing — bounded Android-Keystore APK Signature Scheme v2 owner defined by this V0 contract;
+6. artifact verification — independent v2 signature/content-digest verifier defined by this V0 contract;
+7. install — user-confirmed PackageInstaller + exact proof-package launch owner defined by this V0 contract.
 
 A build/run record must say `blocked` rather than fake success when an upstream stage is unavailable.
 

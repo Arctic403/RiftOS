@@ -19,12 +19,13 @@ This roadmap describes intended work, not shipped capability. Current implementa
 RiftBuild is being promoted from retained/non-executing design to a bounded native local build controller.
 
 Immediate order:
-1. **SOURCE IMPLEMENTED** — activate the existing `build.local` capability boundary with native doctor/validate/plan/run records;
-2. **SOURCE IMPLEMENTED** — deterministic prepared-artifact unsigned APK packaging under `D:/Builds`;
-3. **NEXT** — extend Rift++ from assembly text to direct ARMv7/AArch64 ELF/shared-object emission;
-4. add bounded in-process APK signing and verification;
-5. add explicit PackageInstaller handoff;
-6. only then add broader Gradle/NDK compatibility adapters where they do not create raw process authority.
+1. **SOURCE IMPLEMENTED + INSTALLED PROVEN** — native doctor/validate/plan/run records;
+2. **SOURCE IMPLEMENTED + INSTALLED PROVEN** — direct Rift++ V0 ARMv7/AArch64 ELF materialization, fixed binary manifest and deterministic unsigned APK packaging under `D:/Builds`;
+3. **SOURCE IMPLEMENTED** — bounded Android-Keystore APK Signature Scheme v2 signing + independent v2 verification;
+4. **SOURCE IMPLEMENTED** — exact-package, user-confirmed PackageInstaller handoff + first-launch proof recording;
+5. **PROOF NEXT** — Builder compile/install this signer patch, then sign → verify → install → launch the existing proof APK on-device;
+6. **THEN RETURN TO RIFTLLM+** as the first real repository compiled through the native Rift++/RiftBuild path;
+7. broader Gradle/NDK compatibility adapters stay deferred unless RiftLLM+ proves they are actually needed.
 
 RiftBuild must not add arbitrary shell execution, downloaded executable toolchains, automatic Git push, CLI enablement or new MCP authority.
 

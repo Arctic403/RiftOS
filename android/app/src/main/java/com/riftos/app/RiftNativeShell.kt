@@ -102,7 +102,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
-                    "riftbuild doctor|validate|plan|prepare-riftpp-v0|pack|runs|artifacts   [NATIVE / WORKSPACE-BOUNDED]\n" +
+                    "riftbuild doctor|validate|plan|prepare-riftpp-v0|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
