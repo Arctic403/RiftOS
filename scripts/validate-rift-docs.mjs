@@ -50,6 +50,7 @@ const requiredDocs = [
   'docs/systems/riftvault/README.md',
   'docs/systems/riftbuild/README.md',
   'docs/systems/riftmemory/README.md',
+  'docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md',
   'docs/systems/files-app/README.md',
   'docs/systems/settings/README.md',
   'docs/systems/preview/README.md',
@@ -272,7 +273,34 @@ for (const retired of ['rift-tools-v2', 'RIFT_TOOL_RESULT_V2', '<rift_call>', 'R
   if (activeDocsText.includes(retired)) failures.push(`active documentation still references retired chat protocol marker: ${retired}`);
 }
 
+const n2MemoryRoadmap = fs.readFileSync(
+  path.join(root, 'docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md'),
+  'utf8'
+);
+for (const required of [
+  '**ROADMAP / NOT IMPLEMENTED / NOT A CURRENT CAPABILITY — 2026-09-20.**',
+  'ONE MEMORY KERNEL. MANY SPECIALIZED COGNITIVE ENGINES.',
+  'MemoryStore API',
+  'SQLite reference backend',
+  'RiftStore experimental backend',
+  '### N2.12 — External benchmarks, ablations and final promotion',
+  '**N3 MUST NOT START until N2.12 is promoted.**',
+]) {
+  if (!n2MemoryRoadmap.includes(required)) {
+    failures.push(`N2 federated memory roadmap lost required frozen contract: ${required}`);
+  }
+}
+
+const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
+if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — HARD PRE-N3 PROGRAM') ||
+    !rootRoadmap.includes('N3 Architecture/impact engine — BLOCKED until N2.12 promotion')) {
+  failures.push('ROADMAP.md no longer carries the hard N2-before-N3 promotion barrier');
+}
+
 const docsIndex = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');
+if (!docsIndex.includes('systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md')) {
+  failures.push('docs/README.md does not index the N2 federated memory roadmap');
+}
 for (const discoverable of ['../LOCAL_MCP_MODE.md', '../ROADMAP.md', 'RIFT_RAW_CHAT_PROTOCOL.md']) {
   if (!docsIndex.includes(discoverable)) failures.push(`docs/README.md does not link operational document: ${discoverable}`);
 }

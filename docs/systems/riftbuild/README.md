@@ -97,8 +97,12 @@ riftbuild validate <project>
 riftbuild plan <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
 riftbuild prepare-codynex-mc0 <codynex-root>
-# then package the prepared MC0 subproject:
+riftbuild prepare-codynex-mc1a <codynex-root>
+riftbuild prepare-codynex-mc1b <codynex-root>
+# then package the corresponding prepared ARM32 proof subproject:
 riftbuild pack <codynex-root>/native/mc0/apk-proof arm32
+riftbuild pack <codynex-root>/native/mc1/apk-proof arm32
+riftbuild pack <codynex-root>/native/mc1/apk-proof-b arm32
 riftbuild pack <project> [arm32|arm64|universal]
 riftbuild sign <unsigned-apk>
 riftbuild verify <signed-apk>
@@ -264,7 +268,7 @@ Verification:
 - a signed artifact is not installable-claimed until this verifier passes.
 
 Install/launch proof:
-- installation is restricted to RiftBuild's fixed proof-package allowlist: `com.riftpp.nativeproof` and `com.codynex.mc0proof`;
+- installation is restricted to RiftBuild's fixed proof-package allowlist: `com.riftpp.nativeproof`, `com.codynex.mc0proof`, `com.codynex.mc1aproof`, and `com.codynex.mc1bproof`;
 - RiftOS declares `REQUEST_INSTALL_PACKAGES` and uses Android `PackageInstaller`, never raw package-manager shell commands;
 - normal Android unknown-source trust/user confirmation remains mandatory;
 - PackageInstaller commit/result callbacks are delivered to the private `RiftBuildInstallActivity`, not a background broadcast callback, so `STATUS_PENDING_USER_ACTION` can surface Android's confirmation UI from a foreground Activity;
@@ -332,7 +336,7 @@ The subsystem is invalid if:
 - `build.submit` reports success without all required stages;
 - plain text `AndroidManifest.xml` is mislabeled as an installable packaged manifest;
 - only one ABI is packaged for `universal`;
-- signing/install success is claimed without the independent v2 verifier, the bounded proof-package allowlist (`com.riftpp.nativeproof` and `com.codynex.mc0proof`), or Android-managed user confirmation;
+- signing/install success is claimed without the independent v2 verifier, the bounded proof-package allowlist (`com.riftpp.nativeproof`, `com.codynex.mc0proof`, `com.codynex.mc1aproof`, and `com.codynex.mc1bproof`), or Android-managed user confirmation;
 - RiftBuild silently enables the experimental CLI;
 - MCP catalog expands just to expose build internals.
 
@@ -382,3 +386,30 @@ The preparer:
 The MC1-A host is test equipment only. It may map/invoke the exact compiler, provide bounded buffers, execute emitted code, compare frozen vectors and report PASS/FAIL. It must not parse decimal source, emit target instructions, repair compiler output or substitute another compiler.
 
 The proof remains ARM32-only. General native compilation is still not implied by this lane.
+
+
+## Codynex MC1-B / MC1.2 raw machine proof lane
+
+MC1-B is a separate additive proof lane. MC1-A remains frozen as the previous-stage oracle.
+
+Command:
+
+`riftbuild prepare-codynex-mc1b /workspace/Codynex`
+
+The preparer:
+
+- decodes only `native/mc1/arm32/mc1b_seed.hex`;
+- requires exactly **552 bytes**;
+- requires SHA-256 `4f4a7305900547d949831fc4cfc6c6c0f747edd7ab525adfb8a1488a6ca304be`;
+- validates `native/mc1/apk-proof-b`;
+- extracts only `lib/armeabi-v7a/libcodynex_mc1b_host.so` from the installed RiftOS APK;
+- verifies the extracted host is ARM32 ELF;
+- generates a bounded binary manifest for `com.codynex.mc1bproof`;
+- packages the exact raw compiler only as `assets/mc1b_seed.bin`;
+- records host/seed hashes and anti-contamination ownership.
+
+The MC1-B host is test equipment only. It maps/invokes the exact compiler, checks the frozen **96-case assertion surface**, executes the emitted native function and requires exact 12-byte `MOV + ADD + BX` output. It must not parse source, emit target instructions, constant-fold the expression, repair compiler output or substitute another compiler.
+
+The generated runtime result may reach 510 even though each source literal remains u8. The exact emitted `ADD r0,r0,#right` is part of the proof contract.
+
+This lane remains ARM32-only and is not promoted until the exact 552-byte seed passes on real hardware.

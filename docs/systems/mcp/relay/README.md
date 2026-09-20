@@ -10,7 +10,7 @@ The Relay client provides an optional outbound-only WSS transport from RiftOS to
 
 ## Source ownership
 
-- `RiftMcpRelayClient.kt` — socket lifecycle, protocol envelopes, reconnect.
+- `RiftMcpRelayClient.kt` — socket lifecycle, protocol envelopes, reconnect and passive RiftDebugHub transport diagnostics.
 - `RiftRelaySettings.kt` — persisted enablement/endpoint/device id and secret-token lookup.
 - `RiftSecretStore.kt` — AES-GCM token storage backed by Android Keystore.
 - `RiftMcpActivity.kt` — local configuration/status UI.
@@ -85,6 +85,30 @@ On `relay.ready`, the client reads `cliResumeAfter` and replays retained device 
 
 The event bus is bounded to 256 events, 96 KiB per event and 48 KiB inline results. Large results are represented by metadata and remain available through the explicit job-control fallback when retained by the owning job lane.
 
+### Passive N1.5 debugger observability
+
+The process-wide RiftDebugHub observes this transport beside the execution path.
+
+`RiftCliEventBus` emits `event.created` metadata under component `riftcli.event-bus`.
+
+`RiftMcpRelayClient` emits bounded metadata under component `mcp.relay` for:
+- `socket.connect`;
+- `socket.open`;
+- `relay.ready` and its resume cursor;
+- `cli.event.send` with sequence/type/status/terminal and queue outcome;
+- `cli.replay.request` and `cli.replay.send`;
+- `cli.ack` with sequence and whether the local acknowledgement high-water advanced;
+- socket close/failure/reconnect scheduling.
+
+These signals contain no MCP payload body, CLI result body, relay endpoint URL, Authorization header or pairing token. They grant no transport or execution authority.
+
+This gives the installed-device promotion test three separate evidence points:
+1. `event.created` proves the local CLI event exists;
+2. `cli.event.send: queued` proves OkHttp accepted it for the current device WebSocket;
+3. matching `cli.ack` proves the Cloudflare relay received and acknowledged that sequence.
+
+A separate external subscriber proof is still required to prove Cloudflare -> driver SSE/WebSocket delivery.
+
 Responses are sent only if the WebSocket is still the current socket. Each forwarded request also gets a 70-second Android-side forwarding watchdog; if the local MCP callback never terminates, the client emits one bounded `mcp.error` instead of leaving the relay request open forever.
 
 ## Stale-socket protection
@@ -151,6 +175,8 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - local forwarding terminates within 70 seconds, before the public relay's 75-second timeout;
 - RiftCLI events use the process-wide bounded device ring and the existing WSS;
 - reconnect replay is sequence-based and does not give the relay execution authority;
+- debugger instrumentation remains passive and metadata-only;
+- local event creation, WSS queueing and relay acknowledgement remain separately observable;
 - local ToolHost remains authority.
 
 ## Failure signatures
@@ -163,7 +189,9 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - status exposes token -> secret leak;
 - same relay request duplicates mutation -> Server/relay request-id regression;
 - RiftCLI progress requires rapid polling despite an active relay WSS -> push-channel regression;
-- replay request/ACK handling regresses or event replay escapes the bounded device ring -> event-recovery regression.
+- replay request/ACK handling regresses or event replay escapes the bounded device ring -> event-recovery regression;
+- a connected relay queues a CLI event but no matching ACK is observed -> device-to-relay delivery failure/unproven state;
+- debugger signals expose endpoint URLs, Authorization values, pairing tokens or CLI/MCP payload bodies -> diagnostics privacy regression.
 
 ## Fix map
 

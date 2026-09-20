@@ -77,6 +77,16 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val MC1A_HOST_APK_ENTRY = "lib/armeabi-v7a/libcodynex_mc1a_host.so"
         private const val MC1A_VERSION_NAME = "0.1.0-mc1a-proof"
         private const val MC1A_MAX_HOST_BYTES = 4L * 1024L * 1024L
+        private const val MC1B_SEED_HEX = "native/mc1/arm32/mc1b_seed.hex"
+        private const val MC1B_SEED_BYTES = 552
+        private const val MC1B_SEED_SHA256 = "4f4a7305900547d949831fc4cfc6c6c0f747edd7ab525adfb8a1488a6ca304be"
+        private const val MC1B_APK_PROJECT = "native/mc1/apk-proof-b"
+        private const val MC1B_PACKAGE = "com.codynex.mc1bproof"
+        private const val MC1B_LIBRARY_NAME = "codynex_mc1b_host"
+        private const val MC1B_LIBRARY_FILE = "libcodynex_mc1b_host.so"
+        private const val MC1B_HOST_APK_ENTRY = "lib/armeabi-v7a/libcodynex_mc1b_host.so"
+        private const val MC1B_VERSION_NAME = "0.1.0-mc1b-proof"
+        private const val MC1B_MAX_HOST_BYTES = 4L * 1024L * 1024L
         private const val XML_NO_INDEX = -1
         private const val XML_STRING_POOL_TYPE = 0x0001
         private const val XML_TYPE = 0x0003
@@ -114,6 +124,13 @@ class RiftBuildLocalExecutor(context: Context) {
             "android.app.NativeActivity", "true", "meta-data", "android.app.lib_name", MC1A_LIBRARY_NAME,
             "intent-filter", "action", "android.intent.action.MAIN", "category", "android.intent.category.LAUNCHER"
         )
+        private val MC1B_MANIFEST_STRINGS = listOf(
+            "name", "hasCode", "exported", "value", "minSdkVersion", "versionCode", "versionName", "targetSdkVersion",
+            "android", "http://schemas.android.com/apk/res/android", "manifest", "package", MC1B_PACKAGE, "1",
+            MC1B_VERSION_NAME, "uses-sdk", "26", "36", "application", "false", "activity",
+            "android.app.NativeActivity", "true", "meta-data", "android.app.lib_name", MC1B_LIBRARY_NAME,
+            "intent-filter", "action", "android.intent.action.MAIN", "category", "android.intent.category.LAUNCHER"
+        )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
         private val SAFE_SEGMENT = Regex("^[A-Za-z0-9._+-]{1,120}$")
@@ -132,7 +149,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -151,6 +168,10 @@ class RiftBuildLocalExecutor(context: Context) {
             )
             "prepare-codynex-mc1a" -> prepareCodynexMc1a(
                 args.firstOrNull() ?: error("usage: riftbuild prepare-codynex-mc1a <codynex-root>"),
+                cwd
+            )
+            "prepare-codynex-mc1b" -> prepareCodynexMc1b(
+                args.firstOrNull() ?: error("usage: riftbuild prepare-codynex-mc1b <codynex-root>"),
                 cwd
             )
             "pack" -> pack(
@@ -673,6 +694,133 @@ fun prepareCodynexMc1a(project: String, cwd: String = "/D:/Workspace"): JSONObje
 
         atomicWrite(
             File(buildRoot, "codynex-mc1a-materialization.json"),
+            result.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(result)
+        return result
+    }
+
+fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObject {
+        val ref = resolveProject(project, cwd)
+        val seedFile = projectFile(ref, MC1B_SEED_HEX)
+        require(seedFile.isFile) { "Codynex MC1-B seed is missing" }
+        val seed = decodeHex(readTextBounded(seedFile).trim())
+        require(seed.size == MC1B_SEED_BYTES) {
+            "Codynex MC1-B seed byte count drift: " + seed.size
+        }
+        require(sha256(seed) == MC1B_SEED_SHA256) {
+            "Codynex MC1-B seed SHA-256 drift"
+        }
+
+        val apkProject = projectFile(ref, MC1B_APK_PROJECT)
+        require(apkProject.isDirectory) { "Codynex MC1-B apk-proof project is missing" }
+        val apkDisplay = projectDisplay(ref, apkProject)
+        val sourceValidation = validate(apkDisplay, "/D:/Workspace")
+        require(sourceValidation.optBoolean("sourceReady")) {
+            "Codynex MC1-B apk-proof source validation failed"
+        }
+        require(sourceValidation.optString("nativeLibraryName") == MC1B_LIBRARY_NAME) {
+            "Codynex MC1-B NativeActivity library declaration drift"
+        }
+
+        val sourceManifest = projectFile(
+            ref,
+            MC1B_APK_PROJECT + "/app/src/main/AndroidManifest.xml"
+        )
+        val sourceManifestText = readTextBounded(sourceManifest)
+        require(sourceManifestText.contains("package=\"" + MC1B_PACKAGE + "\"")) {
+            "Codynex MC1-B package declaration drift"
+        }
+        require(sourceManifestText.contains("android:value=\"" + MC1B_LIBRARY_NAME + "\"")) {
+            "Codynex MC1-B library declaration drift"
+        }
+
+        val host = readOwnApkEntry(MC1B_HOST_APK_ENTRY, MC1B_MAX_HOST_BYTES)
+        verifyElfImage(host, 1, 40)
+
+        val buildRoot = File(apkProject, "build/riftbuild").canonicalFile
+        require(confinedTo(apkProject, buildRoot)) {
+            "Codynex MC1-B build root escaped apk-proof"
+        }
+        val preparedRoot = File(buildRoot, "prepared").canonicalFile
+        require(confinedTo(buildRoot, preparedRoot)) {
+            "Codynex MC1-B prepared root escaped build/riftbuild"
+        }
+        if (preparedRoot.exists()) {
+            require(deleteTreeBounded(preparedRoot, MAX_PROJECT_FILES)) {
+                "Could not clear stale Codynex MC1-B prepared package"
+            }
+        }
+
+        val libRoot = File(preparedRoot, "lib/armeabi-v7a").canonicalFile
+        val assetRoot = File(preparedRoot, "assets").canonicalFile
+        require(confinedTo(preparedRoot, libRoot)) {
+            "Codynex MC1-B library root escaped prepared package"
+        }
+        require(confinedTo(preparedRoot, assetRoot)) {
+            "Codynex MC1-B asset root escaped prepared package"
+        }
+        require(libRoot.mkdirs() || libRoot.isDirectory) {
+            "Could not create Codynex MC1-B library directory"
+        }
+        require(assetRoot.mkdirs() || assetRoot.isDirectory) {
+            "Could not create Codynex MC1-B asset directory"
+        }
+
+        val manifestBytes = buildMc1bBinaryManifest()
+        val manifestOutput = File(preparedRoot, "AndroidManifest.xml").canonicalFile
+        val hostOutput = File(libRoot, MC1B_LIBRARY_FILE).canonicalFile
+        val seedOutput = File(assetRoot, "mc1b_seed.bin").canonicalFile
+
+        atomicWrite(manifestOutput, manifestBytes)
+        atomicWrite(hostOutput, host)
+        atomicWrite(seedOutput, seed)
+
+        require(isBinaryAndroidManifest(manifestOutput)) {
+            "Codynex MC1-B binary AndroidManifest.xml failed validation"
+        }
+        require(sha256(hostOutput) == sha256(host)) {
+            "Codynex MC1-B host materialization hash mismatch"
+        }
+        require(sha256(seedOutput) == MC1B_SEED_SHA256) {
+            "Codynex MC1-B seed materialization hash mismatch"
+        }
+
+        val runId = runId()
+        val result = JSONObject()
+            .put("format", "riftbuild-codynex-mc1b-materialization-v1")
+            .put("runId", runId)
+            .put("state", "prepared-native")
+            .put("project", ref.display)
+            .put("androidProject", apkDisplay)
+            .put("target", "arm32")
+            .put("package", MC1B_PACKAGE)
+            .put("libraryName", MC1B_LIBRARY_NAME)
+            .put("libraryFile", MC1B_LIBRARY_FILE)
+            .put("hostSource", "self-apk:" + MC1B_HOST_APK_ENTRY)
+            .put("hostBytes", host.size)
+            .put("hostSha256", sha256(host))
+            .put("seedSource", projectDisplay(ref, seedFile))
+            .put("seedBytes", seed.size)
+            .put("seedSha256", sha256(seed))
+            .put(
+                "manifest",
+                JSONObject()
+                    .put("path", projectDisplay(ref, manifestOutput))
+                    .put("bytes", manifestOutput.length())
+                    .put("sha256", sha256(manifestOutput))
+            )
+            .put("antiContamination", JSONObject()
+                .put("hostParsesSource", false)
+                .put("hostEmitsInstructions", false)
+                .put("compilerAuthority", "assets/mc1b_seed.bin"))
+            .put("manifestReady", true)
+            .put("signed", false)
+            .put("installableClaimed", false)
+            .put("createdAt", System.currentTimeMillis())
+
+        atomicWrite(
+            File(buildRoot, "codynex-mc1b-materialization.json"),
             result.toString(2).toByteArray(Charsets.UTF_8)
         )
         writeRun(result)
@@ -1437,6 +1585,200 @@ private fun buildMc1aBinaryManifest(): ByteArray {
         val index = MC1A_MANIFEST_STRINGS.indexOf(value)
         require(index >= 0) {
             "Codynex MC1-A manifest string is not in the frozen pool: " + value
+        }
+        return index
+    }
+
+private fun buildMc1bBinaryManifest(): ByteArray {
+        val body = ByteArrayOutputStream()
+        body.write(buildMc1bManifestStringPool())
+        body.write(buildManifestResourceMap())
+        body.write(buildMc1bManifestNamespace(XML_START_NAMESPACE_TYPE))
+
+        body.write(buildMc1bManifestStartElement(
+            "manifest",
+            listOf(
+                mc1bManifestStringAttr("package", MC1B_PACKAGE, XML_NO_INDEX),
+                mc1bManifestIntAttr("versionCode", "1", 1),
+                mc1bManifestStringAttr("versionName", MC1B_VERSION_NAME)
+            )
+        ))
+        body.write(buildMc1bManifestStartElement(
+            "uses-sdk",
+            listOf(
+                mc1bManifestIntAttr("minSdkVersion", "26", 26),
+                mc1bManifestIntAttr("targetSdkVersion", "36", 36)
+            )
+        ))
+        body.write(buildMc1bManifestEndElement("uses-sdk"))
+        body.write(buildMc1bManifestStartElement(
+            "application",
+            listOf(mc1bManifestBoolAttr("hasCode", "false", false))
+        ))
+        body.write(buildMc1bManifestStartElement(
+            "activity",
+            listOf(
+                mc1bManifestStringAttr("name", "android.app.NativeActivity"),
+                mc1bManifestBoolAttr("exported", "true", true)
+            )
+        ))
+        body.write(buildMc1bManifestStartElement(
+            "meta-data",
+            listOf(
+                mc1bManifestStringAttr("name", "android.app.lib_name"),
+                mc1bManifestStringAttr("value", MC1B_LIBRARY_NAME)
+            )
+        ))
+        body.write(buildMc1bManifestEndElement("meta-data"))
+        body.write(buildMc1bManifestStartElement("intent-filter", emptyList()))
+        body.write(buildMc1bManifestStartElement(
+            "action",
+            listOf(mc1bManifestStringAttr("name", "android.intent.action.MAIN"))
+        ))
+        body.write(buildMc1bManifestEndElement("action"))
+        body.write(buildMc1bManifestStartElement(
+            "category",
+            listOf(mc1bManifestStringAttr("name", "android.intent.category.LAUNCHER"))
+        ))
+        body.write(buildMc1bManifestEndElement("category"))
+        body.write(buildMc1bManifestEndElement("intent-filter"))
+        body.write(buildMc1bManifestEndElement("activity"))
+        body.write(buildMc1bManifestEndElement("application"))
+        body.write(buildMc1bManifestEndElement("manifest"))
+        body.write(buildMc1bManifestNamespace(XML_END_NAMESPACE_TYPE))
+
+        val bodyBytes = body.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(output, XML_TYPE, 8, 8 + bodyBytes.size)
+        output.write(bodyBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildMc1bManifestStringPool(): ByteArray {
+        val offsets = ArrayList<Int>(MC1B_MANIFEST_STRINGS.size)
+        val data = ByteArrayOutputStream()
+        for (value in MC1B_MANIFEST_STRINGS) {
+            val bytes = value.toByteArray(Charsets.UTF_8)
+            require(value.length < 0x80 && bytes.size < 0x80) {
+                "Codynex MC1-B manifest string exceeds one-byte UTF-8 pool length"
+            }
+            offsets.add(data.size())
+            writeManifestLength8(data, value.length)
+            writeManifestLength8(data, bytes.size)
+            data.write(bytes)
+            data.write(0)
+        }
+        while (data.size() % 4 != 0) data.write(0)
+
+        val stringsStart = 28 + (MC1B_MANIFEST_STRINGS.size * 4)
+        val dataBytes = data.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(
+            output,
+            XML_STRING_POOL_TYPE,
+            28,
+            stringsStart + dataBytes.size
+        )
+        writeManifestU32(output, MC1B_MANIFEST_STRINGS.size)
+        writeManifestU32(output, 0)
+        writeManifestU32(output, XML_UTF8_FLAG)
+        writeManifestU32(output, stringsStart)
+        writeManifestU32(output, 0)
+        for (offset in offsets) writeManifestU32(output, offset)
+        output.write(dataBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildMc1bManifestNamespace(type: Int): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, type, 24)
+        writeManifestU32(output, mc1bManifestStringIndex("android"))
+        writeManifestU32(
+            output,
+            mc1bManifestStringIndex("http://schemas.android.com/apk/res/android")
+        )
+        return output.toByteArray()
+    }
+
+    private fun buildMc1bManifestStartElement(
+        name: String,
+        attrs: List<ManifestAttr>
+    ): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, XML_START_ELEMENT_TYPE, 36 + (attrs.size * 20))
+        writeManifestU32(output, XML_NO_INDEX)
+        writeManifestU32(output, mc1bManifestStringIndex(name))
+        writeManifestU16(output, 20)
+        writeManifestU16(output, 20)
+        writeManifestU16(output, attrs.size)
+        writeManifestU16(output, 0)
+        writeManifestU16(output, 0)
+        writeManifestU16(output, 0)
+        for (attr in attrs) {
+            writeManifestU32(output, attr.namespace)
+            writeManifestU32(output, attr.name)
+            writeManifestU32(output, attr.rawValue)
+            writeManifestU16(output, 8)
+            output.write(0)
+            output.write(attr.dataType)
+            writeManifestU32(output, attr.data)
+        }
+        return output.toByteArray()
+    }
+
+    private fun buildMc1bManifestEndElement(name: String): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, XML_END_ELEMENT_TYPE, 24)
+        writeManifestU32(output, XML_NO_INDEX)
+        writeManifestU32(output, mc1bManifestStringIndex(name))
+        return output.toByteArray()
+    }
+
+    private fun mc1bManifestStringAttr(
+        name: String,
+        value: String,
+        namespace: Int = mc1bManifestStringIndex(
+            "http://schemas.android.com/apk/res/android"
+        )
+    ): ManifestAttr =
+        ManifestAttr(
+            namespace,
+            mc1bManifestStringIndex(name),
+            mc1bManifestStringIndex(value),
+            XML_VALUE_STRING,
+            mc1bManifestStringIndex(value)
+        )
+
+    private fun mc1bManifestIntAttr(
+        name: String,
+        rawValue: String,
+        value: Int
+    ): ManifestAttr =
+        ManifestAttr(
+            mc1bManifestStringIndex("http://schemas.android.com/apk/res/android"),
+            mc1bManifestStringIndex(name),
+            mc1bManifestStringIndex(rawValue),
+            XML_VALUE_INT_DEC,
+            value
+        )
+
+    private fun mc1bManifestBoolAttr(
+        name: String,
+        rawValue: String,
+        value: Boolean
+    ): ManifestAttr =
+        ManifestAttr(
+            mc1bManifestStringIndex("http://schemas.android.com/apk/res/android"),
+            mc1bManifestStringIndex(name),
+            mc1bManifestStringIndex(rawValue),
+            XML_VALUE_INT_BOOLEAN,
+            if (value) -1 else 0
+        )
+
+    private fun mc1bManifestStringIndex(value: String): Int {
+        val index = MC1B_MANIFEST_STRINGS.indexOf(value)
+        require(index >= 0) {
+            "Codynex MC1-B manifest string is not in the frozen pool: " + value
         }
         return index
     }

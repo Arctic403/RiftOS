@@ -13,10 +13,12 @@ It is not a shell, executor, permission service, validator, cancellation service
 ## Source ownership
 
 - `RiftDebugHub.kt` — bounded hub, spans, event snapshots, secret-key redaction and the adapter contract.
-- `RiftMcpRuntime.kt` — owns the single process-wide hub.
+- `RiftMcpRuntime.kt` — owns the single process-wide hub and injects it into the CLI event/relay path.
 - `RiftMcpServer.kt` — creates the MCP tool-call parent span and returns `riftos/traceId`.
 - `RiftToolHost.kt` — creates the child tool-host span and exposes the read-only `rift_debug` query.
-- `scripts/test-rift-debug-hub.mjs` — source/wiring/authority regression lock.
+- `RiftCliEventBus.kt` — emits bounded event-creation metadata into component `riftcli.event-bus`.
+- `RiftMcpRelayClient.kt` — emits bounded socket/push/replay/ACK metadata into component `mcp.relay`.
+- `scripts/test-rift-debug-hub.mjs` — source/wiring/privacy/authority regression lock.
 
 ## Runtime flow
 
@@ -30,6 +32,19 @@ MCP tools/call
 ```
 
 Debug events travel beside that path. Normal execution never waits for a debugger consumer.
+
+RiftCLI N1.5 adds a second passive diagnostic flow:
+
+```text
+RiftCLI state transition
+  -> RiftCliEventBus event.created
+  -> RiftMcpRelayClient cli.event.send
+  -> existing device WSS
+  -> Cloudflare relay
+  -> cli.ack received by device
+```
+
+The debugger records only bounded metadata such as event sequence, event type, lane, status, terminal flag, queue result, replay cursor/count and socket/HTTP status. It does not retain CLI result bodies, MCP payloads, endpoint URLs, Authorization headers, pairing tokens or SSE/WebSocket subscriber payloads.
 
 ## Universal plug
 
@@ -52,7 +67,7 @@ Register it with the process hub:
 val connection = RiftMcpRuntime.debugHub().plug(exampleAdapter)
 ```
 
-For components that only need standalone events, `debugHub.sink("component.name")` supplies a lightweight sink without an adapter lifecycle.
+For components that only need standalone events, `debugHub.sink("component.name")` supplies a lightweight sink without an adapter lifecycle. The N1.5 event bus and relay client use this lightweight path because both are process-owned singletons with the same lifetime as the hub.
 
 Signals contain operation/phase/correlation/outcome/duration/message and bounded string attributes. They must not contain request bodies, file contents, tokens or credentials.
 
@@ -95,6 +110,9 @@ The hub stores no payload body and persists nothing to disk.
 - adapter detach is explicit;
 - debug queries require the existing MCP read grant;
 - RiftCLI is not enabled or made persistent by this subsystem;
+- relay/event diagnostics are metadata-only and never include event payload bodies, URLs or credentials;
+- `event.created`, `cli.event.send` and `cli.ack` remain distinguishable so local creation, local queueing and Cloudflare receipt cannot be conflated;
+- debugger absence/failure must not change event delivery, replay, ACK or reconnect behavior;
 - RiftShell batch remains disabled.
 
 ## Failure signatures
@@ -105,7 +123,10 @@ The hub stores no payload body and persists nothing to disk.
 - rising `evictedActiveSpans` -> active-span leak or sustained concurrency beyond the configured bound;
 - rising `droppedEvents` -> event rate exceeds retained history;
 - raw secret-like values appear -> adapter violated metadata rules or redaction regressed;
-- debugger failure blocks a tool -> passive-boundary regression.
+- debugger failure blocks a tool -> passive-boundary regression;
+- a CLI event is created but no `cli.event.send` appears while the relay is connected -> event-to-relay wiring regression;
+- `cli.event.send` is queued but no matching `cli.ack` arrives -> device-to-Cloudflare delivery is unproven or broken;
+- raw CLI results, MCP payloads, endpoint URLs or credentials appear in relay/event diagnostics -> privacy-boundary regression.
 
 ## Fix map
 
@@ -113,7 +134,9 @@ The hub stores no payload body and persists nothing to disk.
 - process lifetime -> `RiftMcpRuntime.kt`;
 - MCP parent correlation/result metadata -> `RiftMcpServer.kt`;
 - public query schema/read grant/child span -> `RiftToolHost.kt`;
-- subsystem-specific emission -> that subsystem's adapter.
+- subsystem-specific emission -> that subsystem's adapter/lightweight debug sink;
+- RiftCLI event creation -> `RiftCliEventBus.kt`;
+- relay socket/push/replay/ACK diagnostics -> `RiftMcpRelayClient.kt`.
 
 ## Validation
 

@@ -57,7 +57,7 @@ Changing relevant source invalidates the affected document's trusted status unti
 | RiftRepo | **VERIFIED** | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | verified inactive/retained local-checkpoint design |
 | RiftVault | **VERIFIED** | [`systems/riftvault/README.md`](systems/riftvault/README.md) | verified inactive/retained backup design |
 | RiftBuild | **VERIFIED** | [`systems/riftbuild/README.md`](systems/riftbuild/README.md) | native bounded build/package controller; core ELF/manifest/universal unsigned APK path installed-proven, signer/verify/exact proof-installer source implemented pending next APK/device proof |
-| RiftMemory | **VERIFIED** | [`systems/riftmemory/README.md`](systems/riftmemory/README.md) | verified inactive/retained cache design |
+| RiftMemory | **VERIFIED retained / N2 ROADMAP ONLY** | [`systems/riftmemory/README.md`](systems/riftmemory/README.md) + [`N2 roadmap`](systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md) | retained cache remains inactive; future federated Rift Memory Kernel is specified but not implemented or promoted |
 | Files | **VERIFIED** | [`systems/files-app/README.md`](systems/files-app/README.md) | native RiftFS/SAF/editor data-safety audit |
 | Settings | **VERIFIED** | [`systems/settings/README.md`](systems/settings/README.md) | native Git/RiftLLM credential-ingress audit |
 | Preview | **VERIFIED** | [`systems/preview/README.md`](systems/preview/README.md) | workspace-local/per-root Chromium preview audit |

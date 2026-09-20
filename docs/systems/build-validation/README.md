@@ -125,7 +125,10 @@ validate-rift-docs enforces:
 - SOURCE_OWNERSHIP coverage;
 - required local source-area READMEs;
 - Markdown relative-link validity;
-- retired protocol markers absent.
+- retired protocol markers absent;
+- the RiftCLI N2 federated-memory roadmap remains explicitly roadmap-only;
+- the frozen N2 contract still names the canonical-kernel/specialist split, replaceable MemoryStore, SQLite reference backend and RiftStore experiment;
+- ROADMAP.md and the N2 spec retain the hard N2.12-before-N3 promotion barrier.
 
 This audit removed the brittle manually complete subsystem list assumption.
 

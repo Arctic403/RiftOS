@@ -31,7 +31,7 @@ object RiftMcpRuntime {
     fun cliEvents(): RiftCliEventBus {
         cliEvents?.let { return it }
         return synchronized(this) {
-            cliEvents ?: RiftCliEventBus().also { cliEvents = it }
+            cliEvents ?: RiftCliEventBus(debugHub()).also { cliEvents = it }
         }
     }
 
@@ -77,7 +77,12 @@ object RiftMcpRuntime {
     fun relayClient(context: Context): RiftMcpRelayClient {
         relay?.let { return it }
         return synchronized(this) {
-            relay ?: RiftMcpRelayClient(context.applicationContext, server(context), cliEvents()).also { relay = it }
+            relay ?: RiftMcpRelayClient(
+                context.applicationContext,
+                server(context),
+                cliEvents(),
+                debugHub()
+            ).also { relay = it }
         }
     }
 

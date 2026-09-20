@@ -13,12 +13,21 @@ Retained implementation:
 
 Current Android source contains no native RiftMemory owner or command, and Gradle does not package the module.
 
+The future RiftCLI N2 memory architecture is a **separate roadmap** and does not activate this retained cache controller:
+
+- `N2_FEDERATED_MEMORY_ROADMAP.md` — one canonical Rift Memory Kernel, multiple specialist cognitive engines, SQLite-first replaceable storage, benchmarked RiftStore competition, Observer/Validator reconciliation and hard pre-N3 promotion gates.
+
+That N2 document is roadmap-only until source, packaging, tests, Builder output and installed-device proof establish otherwise.
+
 ## Source ownership
 
 Retained implementation:
 - `src/riftmemory-control.js`
 
-There is no current Kotlin/native RiftMemory owner. Any future native accelerator requires a fresh ownership audit rather than inheriting this retained document's authority.
+Roadmap-only N2 specification:
+- `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md`
+
+There is no current Kotlin/native RiftMemory owner. The N2 roadmap intentionally has no active runtime owner yet. Any future native Rift Memory Kernel, MemoryStore, specialist engine or RiftStore source requires explicit new ownership entries and a fresh source audit rather than inheriting authority from this retained document.
 
 ## Retained design
 
@@ -68,7 +77,9 @@ It does not certify the retained cache/prune algorithms or any future C++/JNI ac
 - no current RAM-expansion claim is made;
 - RiftVault dependency remains reference-only;
 - no native cache accelerator is implied by the retained design;
-- future activation requires explicit ownership, resource bounds and storage/wear analysis.
+- future activation requires explicit ownership, resource bounds and storage/wear analysis;
+- the N2 roadmap does not make the retained cache controller live;
+- N3 must remain blocked until the roadmap's N2.12 promotion gate is actually satisfied.
 
 ## Failure signatures
 
@@ -76,7 +87,9 @@ It does not certify the retained cache/prune algorithms or any future C++/JNI ac
 - native shell advertises `rift memory`;
 - Gradle packages riftmemory-control.js silently;
 - nativeAccelerator is claimed active without a native implementation;
-- retained cache control is confused with Android memory management.
+- retained cache control is confused with Android memory management;
+- roadmap-only N2 capabilities are described as implemented/current;
+- N3 begins before N2.12 promotion evidence exists.
 
 ## Fix map
 
@@ -85,6 +98,8 @@ Retained design -> src/riftmemory-control.js.
 Historical wrapper -> src/riftlocal-platform.js.
 
 Future native cache/data-plane -> requires new owner and audit.
+
+Future RiftCLI N2 cognitive memory -> `N2_FEDERATED_MEMORY_ROADMAP.md`; every implemented source owner must be added here and to `docs/SOURCE_OWNERSHIP.md` when implementation begins.
 
 ## Validation
 

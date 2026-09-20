@@ -10,6 +10,8 @@ const hub = read("RiftDebugHub.kt");
 const runtime = read("RiftMcpRuntime.kt");
 const server = read("RiftMcpServer.kt");
 const host = read("RiftToolHost.kt");
+const relayClient = read("RiftMcpRelayClient.kt");
+const cliEvents = read("RiftCliEventBus.kt");
 const gradle = fs.readFileSync(path.join(root, "android/app/build.gradle.kts"), "utf8");
 const ownership = fs.readFileSync(path.join(root, "docs/SOURCE_OWNERSHIP.md"), "utf8");
 const debuggerDocs = fs.readFileSync(path.join(root, "docs/systems/debugger/README.md"), "utf8");
@@ -34,6 +36,8 @@ assert.match(runtime, /@Volatile private var debugHub: RiftDebugHub\? = null/);
 assert.match(runtime, /fun debugHub\(\): RiftDebugHub/);
 assert.match(runtime, /RiftToolHost\([\s\S]*debugHub\(\)/);
 assert.match(runtime, /RiftMcpServer\(toolHost\(context\), debugHub\(\)\)/);
+assert.match(runtime, /RiftCliEventBus\(debugHub\(\)\)/);
+assert.match(runtime, /RiftMcpRelayClient\([\s\S]*cliEvents\(\),[\s\S]*debugHub\(\)/);
 
 assert.match(server, /component = "mcp\.server"/);
 assert.match(server, /operation = "tools\.call"/);
@@ -48,6 +52,31 @@ assert.match(host, /parent = debugContext/);
 assert.match(host, /debugHub\.query\(args\)/);
 assert.match(host, /Actions: status, events, active, components/);
 assert.doesNotMatch(host, /"rift_debug"[\s\S]{0,800}"cancel"/);
+
+assert.match(cliEvents, /debugHub\?\.sink\("riftcli\.event-bus"\)/);
+assert.match(cliEvents, /operation = "event\.created"/);
+assert.match(cliEvents, /runCatching \{[\s\S]{0,1200}debugSink\?\.emit\(/, "event-bus diagnostics must fail isolated before relay listeners");
+assert.match(cliEvents, /"eventSequence" to frozen\.optLong\("sequence"\)\.toString\(\)/);
+assert.doesNotMatch(cliEvents, /RiftDebugSignal\([\s\S]{0,1000}resultInline/);
+
+assert.match(relayClient, /debugHub\?\.sink\("mcp\.relay"\)/);
+assert.match(relayClient, /private fun debug\([\s\S]*runCatching \{[\s\S]{0,500}debugSink\?\.emit\(/, "relay diagnostics must be fail isolated");
+for (const operation of [
+  "socket.connect",
+  "socket.open",
+  "relay.ready",
+  "cli.replay.request",
+  "cli.replay.send",
+  "cli.event.send",
+  "cli.ack",
+  "socket.closed",
+  "socket.failure",
+  "socket.reconnect",
+]) {
+  assert.ok(relayClient.includes(`operation = "${operation}"`), `missing relay debug operation ${operation}`);
+}
+assert.match(relayClient, /"eventSequence" to event\.optLong\("sequence", 0L\)\.toString\(\)/);
+assert.doesNotMatch(relayClient, /"(endpoint|authorization|token|secret|cookie)"\s+to\s+/, "relay debugger attributes must not expose endpoint or credential fields");
 
 assert.ok(gradle.includes("src/main/java/com/riftos/app/RiftDebugHub.kt"));
 assert.ok(ownership.includes("RiftDebugHub.kt") && ownership.includes("docs/systems/debugger/README.md"));
@@ -68,4 +97,4 @@ const serverConstructors = kotlinFiles.flatMap(([name, text]) =>
 assert.deepEqual(toolHostConstructors.sort(), ["RiftMcpRuntime.kt", "RiftToolHost.kt"]);
 assert.deepEqual(serverConstructors.sort(), ["RiftMcpRuntime.kt", "RiftMcpServer.kt"]);
 
-console.log("RiftDebugHub passive core, adapter plug, MCP correlation, bounds, and authority checks passed");
+console.log("RiftDebugHub passive core, MCP/ToolHost correlation, RiftCLI event/relay diagnostics, bounds, privacy, and authority checks passed");

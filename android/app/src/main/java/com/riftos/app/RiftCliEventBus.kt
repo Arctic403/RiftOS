@@ -13,7 +13,9 @@ import java.util.concurrent.atomic.AtomicLong
  * subscribes and forwards them over the already-open device WebSocket. A small replay ring lets a
  * reconnected driver recover recent events without polling every CLI job.
  */
-class RiftCliEventBus {
+class RiftCliEventBus(
+    debugHub: RiftDebugHub? = null
+) {
     companion object {
         const val SCHEMA = "rift.cli-event/1"
         private const val MAX_EVENTS = 256
@@ -22,6 +24,7 @@ class RiftCliEventBus {
     }
 
     private val sequence = AtomicLong(System.currentTimeMillis() * 1000L)
+    private val debugSink = debugHub?.sink("riftcli.event-bus")
     private val lock = Any()
     private val events = ArrayDeque<JSONObject>(MAX_EVENTS)
     private val listeners = CopyOnWriteArraySet<(JSONObject) -> Unit>()
@@ -169,6 +172,23 @@ class RiftCliEventBus {
         synchronized(lock) {
             events.addLast(frozen)
             while (events.size > MAX_EVENTS) events.removeFirst()
+        }
+        runCatching {
+            debugSink?.emit(
+                RiftDebugSignal(
+                    operation = "event.created",
+                    outcome = "ok",
+                    attributes = linkedMapOf(
+                        "eventSequence" to frozen.optLong("sequence").toString(),
+                        "eventType" to frozen.optString("type").take(128),
+                        "lane" to frozen.optString("lane").take(64),
+                        "status" to frozen.optString("status").take(64),
+                        "terminal" to frozen.optBoolean("terminal", false).toString(),
+                        "hasJobId" to frozen.has("jobId").toString(),
+                        "hasRequestId" to frozen.has("requestId").toString()
+                    )
+                )
+            )
         }
         listeners.forEach { listener ->
             runCatching { listener(JSONObject(frozen.toString())) }

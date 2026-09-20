@@ -4,7 +4,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 
 - `validate-rift-wiring.mjs` — full runtime wiring/reachability/import/native-route/asset/syntax validation.
 - `validate-rift-transport.mjs` — cross-layer architecture/source invariants.
-- `validate-rift-docs.mjs` — active-source ownership and required system README coverage.
+- `validate-rift-docs.mjs` — active-source ownership, required system README coverage, Markdown link integrity, and the frozen RiftCLI N2 memory/N3-barrier documentation contract.
 - `test-rift-workspace-records.mjs` — retained Workspace Records HTML adapter regression oracle with explicit proof that `workspace-live` remains un-packaged and the native Workspace Records owner is present.
 - `test-rift-diff-engine-v2.mjs` — live Diff Engine V2 contract: bounded exact-LCS threshold, patience-style anchors, independent hunks, Android-framework independence, Workspace Records wiring, exact Gradle source declaration and documentation ownership.
 - `test-rift-file-identity-v2.mjs` — live File Identity V2 contract: exact SHA rename/copy evidence, bounded heuristic similarity, rewrite thresholds, relation-aware Workspace Records/diff wiring and documentation ownership.

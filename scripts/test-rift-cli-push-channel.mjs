@@ -12,7 +12,8 @@ const relay=read('relay/src/index.js');
 
 assert.match(gradle,/RiftCliEventBus\.kt/,'exact Android source snapshot must include the CLI event bus');
 assert.match(runtime,/fun cliEvents\(\): RiftCliEventBus/,'runtime must own one process-wide CLI event bus');
-assert.match(runtime,/RiftMcpRelayClient\(context\.applicationContext, server\(context\), cliEvents\(\)\)/,'relay client must subscribe to the process-wide CLI event bus');
+assert.match(runtime,/RiftCliEventBus\(debugHub\(\)\)/,'process-wide CLI event bus must publish into the passive debugger');
+assert.match(runtime,/RiftMcpRelayClient\([\s\S]*server\(context\),[\s\S]*cliEvents\(\),[\s\S]*debugHub\(\)/,'relay client must share the process-wide event bus and debugger');
 
 assert.match(bus,/SCHEMA = "rift\.cli-event\/1"/);
 assert.match(bus,/MAX_EVENTS = 256/);
@@ -29,6 +30,9 @@ assert.match(bus,/val sequenceValue = event\.optLong\("sequence"\)/,'oversized e
 assert.match(bus,/put\("eventTruncated", true\)/,'oversized events must collapse to a bounded fallback instead of creating replay gaps');
 assert.match(bus,/events\.addLast\(frozen\)/);
 assert.match(bus,/while \(events\.size > MAX_EVENTS\) events\.removeFirst\(\)/);
+assert.match(bus,/debugHub\?\.sink\("riftcli\.event-bus"\)/,'event creation must be visible to RiftDebugHub');
+assert.match(bus,/operation = "event\.created"/,'debugger must distinguish local event creation from transport delivery');
+assert.match(bus,/runCatching \{[\s\S]{0,1200}debugSink\?\.emit\(/,'debugger failure must not block relay listeners');
 
 assert.match(relayClient,/private val cliEvents: RiftCliEventBus/);
 assert.match(relayClient,/cliEvents\.addListener\(cliEventListener\)/);
@@ -38,6 +42,13 @@ assert.match(relayClient,/"cli\.replay\.request"/);
 assert.match(relayClient,/"cli\.ack"/);
 assert.match(relayClient,/cliEvents\.replayAfter\(afterSequence\)/);
 assert.match(relayClient,/cliLastAckSequence/);
+assert.match(relayClient,/debugHub\?\.sink\("mcp\.relay"\)/,'relay transport must be visible to RiftDebugHub');
+assert.match(relayClient,/operation = "cli\.event\.send"/,'debugger must observe device WebSocket queue attempts');
+assert.match(relayClient,/operation = "cli\.ack"/,'debugger must observe Cloudflare acknowledgement receipt');
+assert.match(relayClient,/operation = "relay\.ready"/,'debugger must observe relay resume handshakes');
+assert.match(relayClient,/operation = "cli\.replay\.request"/,'debugger must observe replay requests');
+assert.match(relayClient,/operation = "cli\.replay\.send"/,'debugger must observe replay fan-out attempts');
+assert.match(relayClient,/private fun debug\([\s\S]*runCatching \{[\s\S]{0,500}debugSink\?\.emit\(/,'relay debugger failure must be non-fatal');
 
 assert.match(toolHost,/emitCliJob\(job, "job\.submitted"\)/);
 assert.match(toolHost,/emitCliJob\(job, "job\.started"\)/);

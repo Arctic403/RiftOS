@@ -6,7 +6,7 @@
 
 Gate N0 is proven on the installed Android device. Gate N1 plus its replay/job/cancellation/provenance hardening is also proven on the installed Android device (Builder run #255 / source `121edf6b3255beca33a45351d3952c7026b5cb4b`) on `armeabi-v7a`.
 
-Status: **N1 live-proven. N1.5 persistent push and N1.6 RiftCLI Batch V2 are source-complete and locally gated; new Builder/APK/device promotion is still pending.**
+Status: **N1 and N1.6 Batch V2 are live-proven on device. N1.5 persistent push is installed and source-complete, but its final external driver push-receipt proof remains pending. Current source additionally adds passive DebugHub observability for event creation, WSS queueing, replay and relay ACK receipt; that instrumentation requires the next APK build/install before it can be used live.**
 
 RiftCLI is being rebuilt from scratch as RiftOS's native engineering supervisor. The previous Experimental RiftCLI Kotlin/swarm/IR/lifecycle implementation was intentionally retired rather than used as the new foundation.
 
@@ -228,31 +228,63 @@ Once enabled, N1 may authorize the full RiftOS authority surface, but only one b
 
 ### Gate N1.5 — Persistent push/events
 
-**Source-complete; Builder/APK/device promotion pending.** Job lifecycle and small terminal results are pushed over the existing persistent relay connection. Device memory owns the bounded replay ring; the relay owns bounded fan-out only. Driver WebSocket and SSE subscribers use monotonic cursors, reconnect replay and ACKs. Poll/list/cancel remain recovery/debug controls rather than the steady-state observation loop.
+**Installed/source-complete; final external push-receipt proof pending.** Job lifecycle and small terminal results are pushed over the existing persistent relay connection. Device memory owns the bounded replay ring; the relay owns bounded fan-out only. Driver WebSocket and SSE subscribers use monotonic cursors, reconnect replay and ACKs. Poll/list/cancel remain recovery/debug controls rather than the steady-state observation loop.
+
+Current source also feeds bounded N1.5 transport metadata into the passive process-wide RiftDebugHub. Component `riftcli.event-bus` records `event.created`; component `mcp.relay` records device-WSS queue attempts, replay, `relay.ready`, socket lifecycle and `cli.ack`. This lets an installed build distinguish local event creation from device-to-Cloudflare receipt without storing event/result payload bodies or relay credentials. A matching relay ACK proves Cloudflare received a sequence; it does not by itself prove an external SSE/WebSocket subscriber consumed it.
 
 ### Gate N1.6 — RiftCLI Batch V2
 
-**Source-complete; Builder/APK/device promotion pending.** `rift_cli_batch` provides at most 16 fully prevalidated sequential steps under one global authority reservation, with bounded results, per-step push events, stop/continue failure policy, truthful cancellation and `rift-cli-batch` provenance. Retired RiftShell `batch` and multi-op `rift_workspace_exec` stay disabled.
+**Live-proven on Builder run #259 / source `eaa2a390438784be435929e49283f9e6281b8ed0`.** `rift_cli_batch` provides at most 16 fully prevalidated sequential steps under one global authority reservation, with bounded results, per-step push events, stop/continue failure policy, truthful cancellation and `rift-cli-batch` provenance. Installed-device proof covered validation, successful 3-step mutation/readback, `rift-cli-batch` Workspace Records provenance, stop/continue failure semantics, nested/retired-batch rejection and replay protection. Retired RiftShell `batch` and multi-op `rift_workspace_exec` stay disabled.
 
 ### Gate N1.7 — abuse/reconnect/batch stress
 
 Pending promotion gate after the new APK is built and installed. Exercise reconnect/replay gaps, duplicate delivery, slow subscribers, large-result fallback, batch cancellation between steps, no-interleave behavior, failure policies and cleanup.
 
-### Gate N2 — Engineering State
+### Gate N2 — Federated Rift Memory Kernel
 
-Persistent native project memory:
+**Hard pre-N3 program; roadmap only until implemented and promoted.**
 
-- project identity and roots;
-- project/subsystem relationships;
-- architecture decisions;
-- known invariants;
-- hazards and rejected approaches;
-- task history;
-- test/build history;
-- checkpoints and recovery;
-- evidence references and confidence.
+N2 is no longer a generic "engineering state" bucket. It is one canonical Rift Memory Kernel with multiple specialized cognitive engines operating over the same canonical IDs/evidence/transactions.
 
-Current source-layout truth should come from Project Intelligence rather than duplicated stale source snapshots.
+Kernel authority owns:
+
+- canonical IDs/schema/scope/time;
+- immutable/content-addressed evidence;
+- canonical event history and current-state projection;
+- evidence vs claim vs belief separation;
+- trust/provenance;
+- protected policy/authority;
+- reconciliation and transaction outcomes;
+- snapshot/replay/rollback/integrity;
+- projection dirty/rebuild state.
+
+Specialists own interpretation and rebuildable projections only:
+
+- temporal/graph;
+- episodic;
+- consolidation;
+- semantic;
+- belief/reflection;
+- skill/procedural;
+- failure intelligence;
+- causal;
+- commitment;
+- predictive/expected-state;
+- exact/entity/project/temporal/BM25/vector and other retrieval indexes.
+
+The retrieval path is Memory Router -> specialist retrieval -> fusion/arbitration -> Context Compiler. Semantic similarity never establishes truth.
+
+The learning/update path is Planner -> Tools -> Observer -> Validator -> Difference/Surprise -> Reconciliation -> governed canonical memory transaction.
+
+Storage starts with a replaceable SQLite reference `MemoryStore`. A later RiftStore backend may replace SQLite responsibilities only after identical benchmark workloads prove enough benefit to justify its complexity without weakening crash consistency or integrity.
+
+N2 is implemented and promoted as N2.0-N2.12: contract/baseline freeze; canonical JSON/evidence/event ledgers; SQLite backend; reconciliation; temporal graph; episodic/consolidation/semantic; belief/predictive; skill/failure/causal/commitment/policy; router/fusion/Context Compiler; Observer/Validator closed loop; RiftStore competition; fsck/poisoning/crash/scale hardening; public/private benchmarks plus incremental hybrids and ablations.
+
+Full frozen program: `../riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md`.
+
+### Hard N3 barrier
+
+N3 does not start because the N2 architecture exists or because one happy-path demo works. N2.12 must first prove the mandatory weakest-link categories: canonical integrity, temporal accuracy, Observer reconciliation, project isolation, provenance, poisoning resistance, procedural learning, cold restart, crash recovery, rollback, projection rebuild, integrity/security and bounded Android resource behavior.
 
 ### Gate N3 — Architecture and impact engine
 
@@ -416,4 +448,4 @@ Builder validation must additionally prove the final signed APK contains:
 - `lib/armeabi-v7a/libriftcli.so`;
 - no x86/x86_64 RiftCLI library.
 
-N1 is already installed-device proven. Promotion of N1.5/N1.6 still requires a new Builder artifact and installed-device proof of push-without-poll terminal delivery, small inline vs large-result fallback, disconnect/reconnect replay + ACK, duplicate filtering, Batch V2 validate/execute, stop/continue failure policy, cancellation between steps, one global authority reservation/no interleave, per-step push events, `rift-cli-batch` provenance, and continued rejection of the retired batch paths.
+N1 and N1.6 are already installed-device proven. N1.5 still requires the next Builder artifact/install for the new passive relay diagnostics plus the final external push-without-poll receipt proof, including small inline vs large-result fallback, disconnect/reconnect replay + ACK and duplicate filtering. N1.7 then stress-tests cancellation/no-interleave/reconnect/bounds against the installed build. N2 remains roadmap-only and N3 stays blocked until the full N2.12 promotion evidence is complete.

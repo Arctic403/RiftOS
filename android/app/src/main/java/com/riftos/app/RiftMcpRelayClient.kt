@@ -21,7 +21,8 @@ import kotlin.random.Random
 class RiftMcpRelayClient(
     context: Context,
     private val server: RiftMcpServer,
-    private val cliEvents: RiftCliEventBus
+    private val cliEvents: RiftCliEventBus,
+    debugHub: RiftDebugHub? = null
 ) {
     companion object {
         private const val PROTOCOL = "rift-mcp-relay-v1"
@@ -30,6 +31,7 @@ class RiftMcpRelayClient(
     }
 
     private val settings = RiftRelaySettings(context.applicationContext)
+    private val debugSink = debugHub?.sink("mcp.relay")
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
     private val http = OkHttpClient.Builder()
         .pingInterval(25, TimeUnit.SECONDS)
@@ -111,6 +113,11 @@ class RiftMcpRelayClient(
         }
         val token = config.token ?: return
         update("connecting", "Opening secure relay connection")
+        debug(
+            operation = "socket.connect",
+            outcome = "attempt",
+            attributes = mapOf("attempt" to attempts.toString())
+        )
         val request = Request.Builder()
             .url(config.endpoint)
             .header("Authorization", "Bearer $token")
@@ -129,6 +136,11 @@ class RiftMcpRelayClient(
         override fun onOpen(webSocket: WebSocket, response: Response) {
             if (!isCurrent(webSocket)) return
             update("authenticating", "Secure socket open; waiting for relay")
+            debug(
+                operation = "socket.open",
+                outcome = "ok",
+                attributes = mapOf("httpCode" to response.code.toString())
+            )
             webSocket.send(
                 JSONObject()
                     .put("type", "device.hello")
@@ -159,6 +171,11 @@ class RiftMcpRelayClient(
                     connectedAt = System.currentTimeMillis()
                     update("connected", "ChatGPT relay connected")
                     val resumeAfter = message.optLong("cliResumeAfter", 0L).coerceAtLeast(0L)
+                    debug(
+                        operation = "relay.ready",
+                        outcome = "ok",
+                        attributes = mapOf("resumeAfter" to resumeAfter.toString())
+                    )
                     sendCliReplay(webSocket, resumeAfter)
                 }
                 "relay.ping" -> webSocket.send(
@@ -168,11 +185,25 @@ class RiftMcpRelayClient(
                 "mcp.notification" -> handleMcpNotification(message)
                 "cli.replay.request" -> {
                     val after = message.optLong("after", 0L).coerceAtLeast(0L)
+                    debug(
+                        operation = "cli.replay.request",
+                        outcome = "received",
+                        attributes = mapOf("after" to after.toString())
+                    )
                     sendCliReplay(webSocket, after)
                 }
                 "cli.ack" -> {
                     val sequence = message.optLong("sequence", 0L)
-                    if (sequence > lastCliAckSequence) lastCliAckSequence = sequence
+                    val advanced = sequence > lastCliAckSequence
+                    if (advanced) lastCliAckSequence = sequence
+                    debug(
+                        operation = "cli.ack",
+                        outcome = if (sequence > 0L) "received" else "invalid",
+                        attributes = mapOf(
+                            "eventSequence" to sequence.toString(),
+                            "advanced" to advanced.toString()
+                        )
+                    )
                 }
                 "relay.error" -> update("relay-error", message.optString("message", "Relay rejected the connection"))
                 else -> sendProtocolError(webSocket, message.optString("requestId").takeIf { it.isNotBlank() }, "Unknown relay message")
@@ -186,12 +217,23 @@ class RiftMcpRelayClient(
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             if (!clearCurrent(webSocket)) return
             connectedAt = 0L
+            debug(
+                operation = "socket.closed",
+                outcome = "closed",
+                attributes = mapOf("code" to code.toString())
+            )
             if (desiredRunning) scheduleReconnect("Relay closed: $code")
         }
 
         override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
             if (!clearCurrent(webSocket)) return
             connectedAt = 0L
+            debug(
+                operation = "socket.failure",
+                outcome = "error",
+                message = error.javaClass.simpleName,
+                attributes = mapOf("httpCode" to (response?.code?.toString() ?: "none"))
+            )
             if (desiredRunning) scheduleReconnect(error.message ?: "Relay connection failed")
         }
     }
@@ -242,8 +284,15 @@ class RiftMcpRelayClient(
     }
 
     private fun sendCliEvent(event: JSONObject) {
-        val webSocket = synchronized(lock) { socket } ?: return
-        if (!isCurrent(webSocket)) return
+        val webSocket = synchronized(lock) { socket }
+        if (webSocket == null || !isCurrent(webSocket)) {
+            debug(
+                operation = "cli.event.send",
+                outcome = "deferred_no_socket",
+                attributes = cliEventDebugAttributes(event)
+            )
+            return
+        }
         sendCliEvent(webSocket, event)
     }
 
@@ -253,12 +302,34 @@ class RiftMcpRelayClient(
             .put("protocol", PROTOCOL)
             .put("event", event)
             .toString()
-        if (envelope.toByteArray(Charsets.UTF_8).size > MAX_MESSAGE_BYTES) return
-        webSocket.send(envelope)
+        val envelopeBytes = envelope.toByteArray(Charsets.UTF_8).size
+        if (envelopeBytes > MAX_MESSAGE_BYTES) {
+            debug(
+                operation = "cli.event.send",
+                outcome = "rejected_oversize",
+                attributes = cliEventDebugAttributes(event) + mapOf("bytes" to envelopeBytes.toString())
+            )
+            return
+        }
+        val queued = webSocket.send(envelope)
+        debug(
+            operation = "cli.event.send",
+            outcome = if (queued) "queued" else "queue_rejected",
+            attributes = cliEventDebugAttributes(event) + mapOf("bytes" to envelopeBytes.toString())
+        )
     }
 
     private fun sendCliReplay(webSocket: WebSocket, afterSequence: Long) {
-        cliEvents.replayAfter(afterSequence).forEach { event ->
+        val replay = cliEvents.replayAfter(afterSequence)
+        debug(
+            operation = "cli.replay.send",
+            outcome = "start",
+            attributes = mapOf(
+                "after" to afterSequence.toString(),
+                "count" to replay.size.toString()
+            )
+        )
+        replay.forEach { event ->
             if (!isCurrent(webSocket)) return
             sendCliEvent(webSocket, event)
         }
@@ -280,6 +351,14 @@ class RiftMcpRelayClient(
         val delayMs = min(60_000L, baseSeconds * 1_000L) + Random.nextLong(0L, 750L)
         attempts += 1
         update("reconnecting", "$reason; retrying shortly")
+        debug(
+            operation = "socket.reconnect",
+            outcome = "scheduled",
+            attributes = mapOf(
+                "attempt" to attempts.toString(),
+                "delayMs" to delayMs.toString()
+            )
+        )
         synchronized(lock) {
             reconnect?.cancel(false)
             reconnect = scheduler.schedule({
@@ -294,6 +373,32 @@ class RiftMcpRelayClient(
         if (socket !== candidate) return@synchronized false
         socket = null
         true
+    }
+
+    private fun cliEventDebugAttributes(event: JSONObject): Map<String, String> = linkedMapOf(
+        "eventSequence" to event.optLong("sequence", 0L).toString(),
+        "eventType" to event.optString("type").take(128),
+        "lane" to event.optString("lane").take(64),
+        "status" to event.optString("status").take(64),
+        "terminal" to event.optBoolean("terminal", false).toString()
+    )
+
+    private fun debug(
+        operation: String,
+        outcome: String? = null,
+        message: String? = null,
+        attributes: Map<String, String> = emptyMap()
+    ) {
+        runCatching {
+            debugSink?.emit(
+                RiftDebugSignal(
+                    operation = operation,
+                    outcome = outcome,
+                    message = message,
+                    attributes = attributes
+                )
+            )
+        }
     }
 
     private fun update(newState: String, newDetail: String) {

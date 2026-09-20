@@ -6,6 +6,36 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.20 — RiftCLI N2 federated memory roadmap freeze
+
+### Roadmap/documentation changes only
+
+Froze the full pre-N3 RiftCLI N2 memory program in `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` without claiming any new runtime capability.
+
+The frozen architecture requires one canonical Rift Memory Kernel and one canonical evidence/event/transaction/reconciliation authority. Specialized temporal/graph, episodic, consolidation, semantic, belief/reflection, skill/procedural, failure, causal, commitment and predictive engines operate as rebuildable cognitive views over canonical IDs rather than independent sources of truth.
+
+N2 starts with a replaceable SQLite reference `MemoryStore`. RiftStore is an experimental backend that may replace SQLite responsibilities only when identical benchmark workloads show enough correctness/resource/performance benefit to justify the added complexity. Logical JSON-shaped schemas remain independent from physical storage encoding.
+
+The roadmap freezes evidence-vs-belief separation, bi-temporal history, protected policy/authority, governed memory transactions, Observer/Validator reconciliation, Difference/Surprise handling, NO/FAST/DEEP/FORENSIC retrieval modes, multi-index fusion, Context Compiler, speculative branch isolation, fsck/snapshot/replay/rollback, poisoning defenses, crash consistency, scale gates, public/private benchmark suites, specialist metrics, incremental hybrid benchmarks and ablations.
+
+Implementation is split into N2.0 through N2.12. N3 is explicitly blocked until N2.12 promotion proves the mandatory weakest-link categories and bounded Android resource behavior. Happy-path demos or strong average benchmark scores cannot waive a failing critical category.
+
+Updated `ROADMAP.md`, RiftCLI docs, RiftMemory classification, project status and docs index to point at the frozen N2 program while preserving `src/riftmemory-control.js` as inactive retained reference source. Extended `scripts/validate-rift-docs.mjs` so Builder/documentation validation fails if the N2 roadmap, SQLite/RiftStore storage split or hard N3 barrier disappears.
+
+## Patch 10.19 — N1.5 passive relay/event observability
+
+### Current source changes
+
+Connected the existing process-wide RiftDebugHub to the RiftCLI persistent-push path without placing the debugger in the execution or authority path.
+
+`RiftCliEventBus` now emits bounded `event.created` metadata through component `riftcli.event-bus`. `RiftMcpRelayClient` now emits bounded metadata through component `mcp.relay` for socket connect/open/close/failure/reconnect, `relay.ready`, CLI event queue attempts, replay request/send and `cli.ack` receipt.
+
+The trace deliberately separates three evidence boundaries: local event creation, local OkHttp WebSocket queue acceptance, and Cloudflare relay acknowledgement. A matching `cli.ack` proves the relay received that event sequence; it does not by itself prove an external SSE/WebSocket subscriber consumed the event.
+
+Diagnostics are metadata-only. They do not include MCP payload bodies, CLI result bodies, relay endpoint URLs, Authorization headers or pairing tokens. DebugHub remains passive/read-only and owns no network, execution, mutation or cancellation authority. Event-bus and relay diagnostic emission is wrapped in fail-isolation so an unexpected debugger exception cannot block CLI event delivery, socket handling or replay.
+
+Updated the N1.5 push/debug regression locks, debugger/relay/RiftCLI documentation, ownership ledger, roadmap and project status. N1.6 Batch V2 status is corrected to live-proven on Builder run #259 / source `eaa2a390438784be435929e49283f9e6281b8ed0`; N1.5 still requires the final external push-receipt proof after this instrumentation is built and installed.
+
 ## Patch 10.18 — Retired RiftShell batch regression narrowed for Batch V2
 
 ### Current source changes
@@ -1430,3 +1460,22 @@ Validation/hardening:
 
 This source is not yet promoted as an installed N1.5/N1.6 build. Builder compile/package and target-device push/reconnect/batch proof remain required before N1.7/N2 promotion.
 
+
+
+## 2026-09-20 — Codynex MC1-B / MC1.2 proof lane
+
+Added a separate bounded ARM32 proof path for the next Codynex machine-bootstrap pressure stage without modifying the frozen MC1-A oracle.
+
+Changes:
+
+- added `codynex_mc1b_host` NativeActivity test host;
+- added exact native-source snapshot ownership for `mc1/codynex_mc1b_host.cpp`;
+- added `prepare-codynex-mc1b` RiftBuild command;
+- added frozen 552-byte seed / SHA-256 checks;
+- added `com.codynex.mc1bproof` bounded binary manifest generation;
+- added installer allowlist and package visibility for the MC1-B proof app;
+- added exact `assets/mc1b_seed.bin` compiler-authority receipt;
+- added source tests requiring 12-byte runtime `MOV + ADD + BX` evidence and 96-check proof coverage;
+- retained no-raw-process and bounded-package rules.
+
+MC1-B is not yet claimed as a device pass. A rebuilt RiftOS APK is required so the new ARM32 host can be extracted and materialized into the proof APK, followed by the frozen real-device 96-check run.

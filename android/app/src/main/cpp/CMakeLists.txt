@@ -80,3 +80,29 @@ target_link_libraries(
     ${android-lib}
     ${log-lib}
 )
+
+
+add_library(
+    codynex_mc1b_host
+    SHARED
+    mc1/codynex_mc1b_host.cpp
+)
+
+target_compile_features(codynex_mc1b_host PRIVATE cxx_std_17)
+
+target_compile_options(
+    codynex_mc1b_host
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -fno-exceptions
+    -fno-rtti
+)
+
+target_link_libraries(
+    codynex_mc1b_host
+    PRIVATE
+    ${android-lib}
+    ${log-lib}
+)
