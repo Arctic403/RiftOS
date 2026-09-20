@@ -1159,3 +1159,20 @@ The regression test now asserts the current invariant:
 All other positive `RiftNativeGit.kt` assertions in the test were checked against current source; 97 assertions were evaluated and this was the only stale one.
 
 No RiftGit runtime or GraphQL behavior changed.
+
+
+## 2026-09-20 — RiftBuild native-test missing CMake binding repair
+
+Builder run `35498910295` for RiftOS source `0db984ccc9f08abe14578cfece36939515e79ae2` passed wiring, transport, docs, CLI bootstrap, Git, path compatibility and earlier gates, then stopped in `scripts/test-riftbuild-native.mjs` with a JavaScript `ReferenceError`.
+
+The test asserted CMake ownership for the Codynex MC0 host:
+- `codynex_mc0_host` must be compiled with `-fno-exceptions`;
+- `codynex_mc0_host` must be compiled with `-fno-rtti`.
+
+Those CMake rules are present and correct in `android/app/src/main/cpp/CMakeLists.txt`, but the test referenced a `cmake` variable that had never been initialized.
+
+The test now explicitly reads `android/app/src/main/cpp/CMakeLists.txt` before those assertions.
+
+A follow-up undefined-binding sweep of the remaining active tests found no additional comparable missing fixture variable; reported heuristic candidates were all valid local declarations, callback parameters or destructured bindings.
+
+No RiftBuild, Codynex MC0, CMake, RiftCLI or runtime behavior changed.

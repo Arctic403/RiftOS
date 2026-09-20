@@ -17,6 +17,7 @@ const installer = read(installerPath);
 const shell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');
 const gradle = read('android/app/build.gradle.kts');
+const cmake = read('android/app/src/main/cpp/CMakeLists.txt');
 const manifest = read('android/app/src/main/AndroidManifest.xml');
 const retained = read('src/riftbuild.js');
 const toolHost = read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
