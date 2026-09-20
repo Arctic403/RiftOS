@@ -6,6 +6,19 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.17 — RiftCLI N1.5/N1.6 source ownership ledger repair
+
+### Current source changes
+
+Builder run `35537600791` on source `f31f9505e3e3edc8302caa516626484c2678bc27` passed native wiring, the 19-tool MCP surface, relay/transport validation, RiftCLI persistent-push validation and RiftCLI Batch V2 validation. It then stopped in documentation validation because three newly maintained N1.5/N1.6 sources had no documentation ownership rows.
+
+Added exact ownership entries for:
+- `android/app/src/main/java/com/riftos/app/RiftCliEventBus.kt`;
+- `scripts/test-rift-cli-push-channel.mjs`;
+- `scripts/test-rift-cli-batch-v2.mjs`.
+
+The entries point to the existing RiftCLI, relay and build-validation documentation that already describes those sources. Runtime behavior, MCP configuration, relay identity and authority boundaries are unchanged.
+
 ## Patch 10.16 — RiftCLI pre-N2 Builder validator diagnostics hardening
 
 ### Current source changes

@@ -91,6 +91,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCliHost.kt` | `docs/systems/riftcli/README.md` + `docs/systems/shell/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCliEventBus.kt` | `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/relay-service/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCodynexBridgeClient.kt` | `docs/CODYNEX_LR0_BRIDGE.md` + `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftcli/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/cpp/mc0/codynex_mc0_host.cpp` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
@@ -150,6 +151,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-semantic-impact-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-native-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-driver-protocol.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-cli-push-channel.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-cli-batch-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-debug-hub.mjs` | `docs/systems/debugger/README.md` + `docs/systems/build-validation/README.md` |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
