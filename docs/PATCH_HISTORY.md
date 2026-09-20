@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.16 — RiftCLI pre-N2 Builder validator diagnostics hardening
+
+### Current source changes
+
+Builder run `35537136265` on source `5f6e951760194cff41a93836b72841ba34a4542d` stopped in `validate-rift-wiring.mjs` at the combined RiftCLI N1/N1.5/N1.6 core-contract assertion. Direct inspection of the pushed source proved every individual fragment in that combined assertion was present.
+
+The validator now checks the same contract as individually named requirements instead of collapsing roughly twenty independent conditions into one generic “boundary drifted” failure. Replay protection still separately fails if `g_recentRequestIds.clear()` returns.
+
+This changes validation diagnostics only; RiftCLI authority, relay configuration, MCP endpoint/tool surface, Batch V2 behavior and Android runtime code are unchanged by this patch.
+
 ## Patch 10.15 — RiftDebugHub passive global debugger foundation
 
 ### Current source changes

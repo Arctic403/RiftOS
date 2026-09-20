@@ -166,27 +166,34 @@ if (!gradle.includes('ndkVersion = "28.2.13676358"') ||
 if (!cliCmake.includes('add_library(') || !cliCmake.includes('riftcli') || !cliCmake.includes('SHARED')) {
   fail('RiftCLI native CMake shared library contract is missing');
 }
-if (!cliCore.includes('external-driver -> MCP/RiftShell -> RiftCLI') ||
-    !cliCore.includes('full-riftos-when-enabled') ||
-    !cliCore.includes(String.raw`\\\"directModelBackend\\\":false`) ||
-    !cliCore.includes(String.raw`\\\"directNetworkClient\\\":false`) ||
-    !cliCore.includes(String.raw`\\\"driverContinuationExternalOnly\\\":true`) ||
-    !cliCore.includes('kMaxDriverLoopSteps = 8') ||
-    !cliCore.includes('kMaxDriverRequestIds = 4096') ||
-    !cliCore.includes('RequestReservation::Capacity') ||
-    !cliCore.includes('duplicate-request-id') ||
-    !cliCore.includes('request-id-capacity') ||
-    !cliCore.includes(String.raw`\\\"driverReplayCapacity\\\":`) ||
-    !cliCore.includes(String.raw`\\\"driverReplayEviction\\\":false`) ||
-    !cliCore.includes(String.raw`\"driverReplayReset\":\"process-restart-only\"`) ||
-    cliCore.includes('g_recentRequestIds.clear()') ||
-    !cliCore.includes('isDriverJobControl') ||
-    !cliCore.includes('if (!on && !jobControl)') ||
-    !cliCore.includes('jobControl ? RequestReservation::Accepted') ||
-    !cliCore.includes(String.raw`driverToolExecution\":\"push-first-jobs-with-poll-fallback`) ||
-    !cliCore.includes(String.raw`driverEventDelivery\":\"persistent-relay-push`) ||
-    !cliCore.includes(String.raw`batchV2\":true`) ||
-    !cliCore.includes(String.raw`batchV2MaxSteps\":16`)) fail('RiftCLI N1 authority/driver/replay/push/batch boundary drifted');
+const cliN1CoreContracts = [
+  ['dependency direction', 'external-driver -> MCP/RiftShell -> RiftCLI'],
+  ['authority mode', 'full-riftos-when-enabled'],
+  ['no direct model backend', String.raw`\"directModelBackend\":false`],
+  ['no direct network client', String.raw`\"directNetworkClient\":false`],
+  ['external continuation ownership', String.raw`\"driverContinuationExternalOnly\":true`],
+  ['driver loop cap', 'kMaxDriverLoopSteps = 8'],
+  ['request-id cap', 'kMaxDriverRequestIds = 4096'],
+  ['request-id capacity enum', 'RequestReservation::Capacity'],
+  ['duplicate request-id rejection', 'duplicate-request-id'],
+  ['request-id capacity rejection', 'request-id-capacity'],
+  ['driver replay capacity', String.raw`\"driverReplayCapacity\":`],
+  ['non-evicting replay ids', String.raw`\"driverReplayEviction\":false`],
+  ['process restart replay reset', String.raw`\"driverReplayReset\":\"process-restart-only\"`],
+  ['job-control classification', 'isDriverJobControl'],
+  ['disabled-state job-control allowance', 'if (!on && !jobControl)'],
+  ['job-control reservation bypass', 'jobControl ? RequestReservation::Accepted'],
+  ['push-first job execution', String.raw`\"driverToolExecution\":\"push-first-jobs-with-poll-fallback\"`],
+  ['persistent relay push', String.raw`\"driverEventDelivery\":\"persistent-relay-push\"`],
+  ['Batch V2 enabled', String.raw`\"batchV2\":true`],
+  ['Batch V2 step cap', String.raw`\"batchV2MaxSteps\":16`],
+];
+for (const [name, fragment] of cliN1CoreContracts) {
+  if (!cliCore.includes(fragment)) fail(`RiftCLI N1 core contract missing: ${name}`);
+}
+if (cliCore.includes('g_recentRequestIds.clear()')) {
+  fail('RiftCLI N1 replay contract drifted: request IDs must not be cleared in-process');
+}
 if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
     !nativeShell.includes('executeCliShellDispatch') ||
     !nativeShell.includes('executeCliToolDispatch') ||
