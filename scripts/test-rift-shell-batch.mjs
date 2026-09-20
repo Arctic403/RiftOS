@@ -11,7 +11,7 @@ const toolSandboxSource=readFileSync('android/app/src/main/java/com/riftos/app/R
 
 assert.ok(!gradleSource.includes('riftshell-batch.js'),'disabled batch JS must not be packaged explicitly');
 assert.ok(!entrySource.includes('import("./riftshell-batch.js")'),'Android entry must not load disabled batch runtime');
-assert.ok(!nativeShellSource.includes('"batch"'),'native RiftShell must not expose the retired batch command');
+assert.ok(!/^\s*"batch"\s*->/m.test(nativeShellSource),'native RiftShell must not expose the retired batch command');
 assert.ok(!compatShellSource.includes('RiftShellBatch.run'),'compat RiftShell must not execute the batch runtime');
 assert.ok(compatShellSource.includes('batch [DISABLED - DO NOT USE]'),'compat help must label batch as disabled');
 assert.ok(toolHostSource.includes('never call batch'),'MCP tool manifest must tell AI callers not to use batch');

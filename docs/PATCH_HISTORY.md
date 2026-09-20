@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.18 — Retired RiftShell batch regression narrowed for Batch V2
+
+### Current source changes
+
+Builder run `35537848556` on source `508f6fbe175d3af34282ceb047af00e23b0d4e62` passed RiftCLI N1.5 persistent push, RiftCLI N1.6 Batch V2, transport, wiring and documentation validation, then failed in the legacy retired-batch regression.
+
+The old test rejected any occurrence of the literal `"batch"` inside `RiftNativeShell.kt`. That became stale once the new, separately-authorized `rift_cli_batch` Batch V2 path was added. The regression now rejects the actual retired native RiftShell command dispatch pattern (`"batch" ->`) instead.
+
+The old RiftShell batch command remains disabled. This patch changes the test only; Batch V2 runtime behavior and authority are unchanged.
+
 ## Patch 10.17 — RiftCLI N1.5/N1.6 source ownership ledger repair
 
 ### Current source changes
