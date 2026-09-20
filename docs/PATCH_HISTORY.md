@@ -1119,3 +1119,28 @@ Builder run `35497823649` for RiftOS source `6772904840c0c21cd7dcf8833086e84f93d
 The test was changed to an exact source-string assertion for `createCommitOnBranch(input: \$input)`. No RiftGit runtime or GraphQL behavior changed.
 
 The next Builder run remains the compilation/package proof.
+
+
+## 2026-09-20 — active test parity audit after native RiftCLI reset
+
+After Builder exposed two stale source-regression assertions in sequence, the remaining active `npm run check` chain was audited against current source contracts before another build.
+
+Confirmed current:
+- Native RiftCLI Bootstrap-0 tests and dual-ABI Gradle/CMake pins;
+- retired RiftShell batch tombstone/one-operation MCP contract;
+- current RiftBuild/Codynex MC0 source markers, hashes and proof-package ownership;
+- retained local-platform compatibility references;
+- RiftLLM fixed Provider/training/corpus contracts;
+- Rift++ Core `0.10.0-bootstrap` and current RiftVM contracts;
+- Semnexis deep compiler/ARM32 tests including frozen SNIRV0-SNIRV7 compatibility;
+- bounded QuickJS/Rift++ shell and native shell/WebView-separation tests;
+- retained RiftApps/RiftRT package-format reference tests.
+
+One additional stale cluster was found in `scripts/test-semnexis-shell.mjs` before Builder reached it:
+- self-test schema was still pinned to `semnexis-bootstrap-self-test/13` instead of current `/17`;
+- latest IR format/version was still pinned to SNIRV6/version 6 instead of SNIRV7/version 7;
+- compatibility text was pre-Arena/state;
+- source-text assertions incorrectly required literal `SNIRV2` through `SNIRV6`, even though current compiler generates intermediate version labels dynamically;
+- the shell test duplicated old exact binary/ARM32 byte counts already owned by the dedicated compiler/ARM32 regression suites.
+
+The shell integration test now verifies the current V7 compatibility/export surface and semantic fixture coverage while leaving exact binary byte-size locks to the dedicated compiler/ARM32 tests. No Semnexis compiler/runtime, RiftCLI, Git, RiftLLM or Rift++ runtime behavior changed.

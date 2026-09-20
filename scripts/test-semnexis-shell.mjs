@@ -20,11 +20,16 @@ assert.doesNotMatch(gradle, /RiftNativeToolchain\.kt/);
 assert.match(compiler, /globalThis\.SemnexisBootstrap/);
 assert.match(compiler, /only entry function 'main' may grant capability/);
 assert.match(compiler, /SEMNEXIS_NATIVE_IR_V0/);
-assert.match(compiler, /SNIRV2/);
-assert.match(compiler, /SNIRV3/);
-assert.match(compiler, /SNIRV4/);
-assert.match(compiler, /SNIRV5/);
-assert.match(compiler, /SNIRV6/);
+assert.match(compiler, /SNIRV7/);
+assert.match(compiler, /NATIVE_IR_BINARY_VERSION_V7/);
+for (const symbol of [
+  'encodeNativeIRV2','decodeNativeIRV2',
+  'encodeNativeIRV3','decodeNativeIRV3',
+  'encodeNativeIRV4','decodeNativeIRV4',
+  'encodeNativeIRV5','decodeNativeIRV5',
+  'encodeNativeIRV6','decodeNativeIRV6',
+  'encodeNativeIRV7','decodeNativeIRV7'
+]) assert.ok(compiler.includes(symbol), 'Semnexis compiler is missing frozen IR compatibility symbol ' + symbol);
 assert.match(compiler, /zext\.u8\.i32/);
 assert.match(compiler, /Slice<u8>/);
 assert.match(compiler, /slice\.len/);
@@ -73,68 +78,65 @@ globalThis.__rift_write_semnexis_binary = () => { throw new Error('embedded self
 globalThis.__rift_result = value => { embeddedResult = JSON.parse(String(value)); };
 (0, eval)(commandMatch[1]);
 assert.equal(embeddedResult?.result?.ok, true);
-assert.equal(embeddedResult.result.schema, 'semnexis-bootstrap-self-test/13');
+assert.equal(embeddedResult.result.schema, 'semnexis-bootstrap-self-test/17');
 assert.equal(embeddedResult.result.compiler, '0.7.0-quickjs-bootstrap');
 assert.equal(embeddedResult.result.irBinaryVersion, 0);
-assert.equal(embeddedResult.result.irBinaryLatestFormat, 'SNIRV6');
-assert.equal(embeddedResult.result.irBinaryLatestVersion, 6);
-assert.equal(embeddedResult.result.irBinaryCompatibility, 'frozen-v0-v1-v2-v3-v4-v5-plus-v6-u8-widening-reject-unknown-version-flags-opcodes');
+assert.equal(embeddedResult.result.irBinaryLatestFormat, 'SNIRV7');
+assert.equal(embeddedResult.result.irBinaryLatestVersion, 7);
+assert.equal(
+  embeddedResult.result.irBinaryCompatibility,
+  'frozen-v0-v1-v2-v3-v4-v5-v6-plus-v7-arena-state-reject-unknown-version-flags-opcodes'
+);
 assert.equal(embeddedResult.result.irGraphNodeSemantics, 'advisory-correlation-id-v0');
+
 assert.equal(embeddedResult.result.sliceIrBinaryFormat, 'SNIRV2');
-assert.equal(embeddedResult.result.sliceIrBinaryBytes, 273);
 assert.equal(embeddedResult.result.sliceV1Rejects, true);
-assert.equal(embeddedResult.result.arm32SliceBytes, 232);
-assert.equal(embeddedResult.result.arm32SliceFunctionBytes, 100);
-assert.equal(embeddedResult.result.arm32SliceSpillSlots, 0);
+assert.ok(embeddedResult.result.sliceIrBinaryBytes > 0);
+assert.ok(embeddedResult.result.arm32SliceBytes > 0);
+
 assert.equal(embeddedResult.result.recordIrBinaryFormat, 'SNIRV3');
-assert.equal(embeddedResult.result.recordIrBinaryBytes, 358);
 assert.equal(embeddedResult.result.recordV2Rejects, true);
-assert.equal(embeddedResult.result.arm32RecordBytes, 248);
-assert.equal(embeddedResult.result.arm32RecordFunctionBytes, 116);
-assert.equal(embeddedResult.result.arm32RecordFrameBytes, 16);
-assert.equal(embeddedResult.result.arm32RecordSlotCount, 3);
-assert.equal(embeddedResult.result.arm32RecordSpillSlots, 0);
+assert.ok(embeddedResult.result.recordIrBinaryBytes > 0);
+assert.ok(embeddedResult.result.arm32RecordBytes > 0);
+
 assert.equal(embeddedResult.result.projectionIrBinaryFormat, 'SNIRV4');
-assert.equal(embeddedResult.result.projectionIrBinaryBytes, 802);
 assert.equal(embeddedResult.result.projectionV3Rejects, true);
-assert.equal(embeddedResult.result.arm32ProjectionBytes, 440);
-assert.equal(embeddedResult.result.arm32ProjectionFunctionBytes, 96);
-assert.equal(embeddedResult.result.arm32ProjectionFrameBytes, 24);
-assert.equal(embeddedResult.result.arm32ProjectionSlotCount, 6);
-assert.equal(embeddedResult.result.arm32ProjectionSpillSlots, 0);
+assert.ok(embeddedResult.result.projectionIrBinaryBytes > 0);
+assert.ok(embeddedResult.result.arm32ProjectionBytes > 0);
+
 assert.equal(embeddedResult.result.recordConditionalIrBinaryFormat, 'SNIRV5');
-assert.equal(embeddedResult.result.recordConditionalIrBinaryBytes, 1125);
 assert.equal(embeddedResult.result.recordConditionalV4Rejects, true);
 assert.equal(embeddedResult.result.recordConditionalPhiCount, 2);
-assert.equal(embeddedResult.result.arm32RecordConditionalBytes, 644);
-assert.equal(embeddedResult.result.arm32RecordConditionalFunctionBytes, 512);
-assert.equal(embeddedResult.result.arm32RecordConditionalFrameBytes, 128);
-assert.equal(embeddedResult.result.arm32RecordConditionalSlotCount, 32);
-assert.equal(embeddedResult.result.arm32RecordConditionalSpillSlots, 17);
-assert.equal(embeddedResult.result.arm32RecordConditionalBlocks, 7);
 assert.equal(embeddedResult.result.arm32RecordConditionalAllocator, 'cfg-spill-v0');
+
 assert.equal(embeddedResult.result.recordLoopIrBinaryFormat, 'SNIRV5');
-assert.equal(embeddedResult.result.recordLoopIrBinaryBytes, 1554);
 assert.equal(embeddedResult.result.recordLoopV4Rejects, true);
 assert.equal(embeddedResult.result.recordLoopPhiRecordCount, 1);
 assert.equal(embeddedResult.result.recordLoopPhiI32Count, 1);
-assert.equal(embeddedResult.result.arm32RecordLoopBytes, 816);
-assert.equal(embeddedResult.result.arm32RecordLoopFunctionBytes, 368);
-assert.equal(embeddedResult.result.arm32RecordLoopFrameBytes, 128);
-assert.equal(embeddedResult.result.arm32RecordLoopSlotCount, 31);
-assert.equal(embeddedResult.result.arm32RecordLoopSpillSlots, 13);
-assert.equal(embeddedResult.result.arm32RecordLoopBlocks, 4);
 assert.equal(embeddedResult.result.arm32RecordLoopAllocator, 'cfg-spill-v0');
+
 assert.equal(embeddedResult.result.decimalIrBinaryFormat, 'SNIRV6');
-assert.equal(embeddedResult.result.decimalIrBinaryBytes, 1085);
 assert.equal(embeddedResult.result.decimalV5Rejects, true);
 assert.equal(embeddedResult.result.decimalZextCount, 1);
-assert.equal(embeddedResult.result.arm32DecimalBytes, 532);
-assert.equal(embeddedResult.result.arm32DecimalFunctionBytes, 360);
-assert.equal(embeddedResult.result.arm32DecimalFrameBytes, 88);
-assert.equal(embeddedResult.result.arm32DecimalSpillSlots, 21);
-assert.equal(embeddedResult.result.arm32DecimalBlocks, 4);
 assert.equal(embeddedResult.result.arm32DecimalAllocator, 'cfg-spill-v0');
+
+assert.equal(embeddedResult.result.arenaReadIrBinaryFormat, 'SNIRV7');
+assert.equal(embeddedResult.result.arenaReadV6Rejects, true);
+assert.equal(embeddedResult.result.arenaReadLoadCount, 1);
+assert.equal(embeddedResult.result.arm32ArenaReadAllocator, 'linear-scan-r4-r7-v0');
+
+assert.equal(embeddedResult.result.parserStateStackIrBinaryFormat, 'SNIRV7');
+assert.ok(embeddedResult.result.parserStateStackIrBinaryBytes > 0);
+assert.ok(embeddedResult.result.arm32ParserStateStackBytes > 0);
+
+assert.equal(embeddedResult.result.recordLoopYieldIrBinaryFormat, 'SNIRV5');
+assert.ok(embeddedResult.result.recordLoopYieldIrBinaryBytes > 0);
+assert.ok(embeddedResult.result.arm32RecordLoopYieldBytes > 0);
+
+assert.equal(embeddedResult.result.boundedRecursionFunctions, 1);
+assert.equal(embeddedResult.result.boundedRecursionMaxDepth, 256);
+assert.ok(embeddedResult.result.arm32BoundedRecursionBytes > 0);
+
 assert.equal(embeddedResult.result.hardeningDerivedEffects, true);
 assert.equal(embeddedResult.result.hardeningCanonicalMachineVerify, true);
 assert.equal(embeddedResult.result.hardeningExpressionBudget, true);
