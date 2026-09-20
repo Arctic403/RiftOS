@@ -23,6 +23,7 @@ class RiftBuildInstaller(context: Context) {
         const val MC0_TARGET_PACKAGE = "com.codynex.mc0proof"
         const val MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"
         const val MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"
+        const val M2_VM0_TARGET_PACKAGE = "com.codynex.m2vm0proof"
         const val TARGET_ACTIVITY = "android.app.NativeActivity"
         const val ACTION_INSTALL_STATUS = "com.riftos.app.RIFTBUILD_INSTALL_STATUS"
 
@@ -30,7 +31,8 @@ class RiftBuildInstaller(context: Context) {
             TARGET_PACKAGE,
             MC0_TARGET_PACKAGE,
             MC1A_TARGET_PACKAGE,
-            MC1B_TARGET_PACKAGE
+            MC1B_TARGET_PACKAGE,
+            M2_VM0_TARGET_PACKAGE
         )
 
         private fun statusFile(context: Context): File =
