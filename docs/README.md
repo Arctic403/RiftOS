@@ -51,12 +51,12 @@ Changing relevant source invalidates the affected document's trusted status unti
 | RiftVM engine | **VERIFIED** | [`systems/riftrt/engines/rift-vm/README.md`](systems/riftrt/engines/rift-vm/README.md) | live VM/headless-host/import-boundary audit |
 | Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.9.0 source candidate: Gate 1A frozen + Gate 1B UTF-16 text/numeric audit; device proof pending |
 | RiftShell | **VERIFIED** | [`systems/shell/README.md`](systems/shell/README.md) | process/filesystem/transaction/MCP-authority audit |
-| Semnexis QuickJS bootstrap | **0.6 DEVICE VERIFIED / 0.6.1 HARDENING SOURCE VERIFIED / 0.7 SELF-HOSTING LEXER/PARSER DEVICE PROOF PENDING** | [`systems/semnexis-bootstrap/README.md`](systems/semnexis-bootstrap/README.md) | device-proven Native IR/SNIRV0 + ARM32 arithmetic/CFG/loops; current 0.7 source/machine proof reaches SNIRV6, borrowed byte slices, flat token records, record CFG/loop state, variable-width token spans, parser-state execution and native decimal accumulation |
+| Semnexis QuickJS bootstrap | **0.6 DEVICE VERIFIED / 0.6.1 HARDENING SOURCE VERIFIED / 0.7 SNIRV7 ARENA + BOUNDED-RECURSION SOURCE/MACHINE VERIFIED; APK PROMOTION PENDING** | [`systems/semnexis-bootstrap/README.md`](systems/semnexis-bootstrap/README.md) | device-proven 0.6 baseline; current 0.7 source/machine proof reaches SNIRV7 Arena state, typed AST load/store, record stack ABI, bounded native recursion and recursive-descent Arena AST parsing/evaluation; next installed gate is `semnexis-bootstrap-self-test/17` |
 | Native RiftCLI | **BOOTSTRAP-0** | [`systems/riftcli/README.md`](systems/riftcli/README.md) | C++ core + thin Kotlin JNI host; ARM64 + ARM32; zero mutation/model/network authority |
 | RiftGit | **VERIFIED** | [`systems/git/README.md`](systems/git/README.md) | native GitHub/metadata/push/pull/rollback audit |
 | RiftRepo | **VERIFIED** | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | verified inactive/retained local-checkpoint design |
 | RiftVault | **VERIFIED** | [`systems/riftvault/README.md`](systems/riftvault/README.md) | verified inactive/retained backup design |
-| RiftBuild | **VERIFIED** | [`systems/riftbuild/README.md`](systems/riftbuild/README.md) | inactive controller + live non-executing app façade |
+| RiftBuild | **VERIFIED** | [`systems/riftbuild/README.md`](systems/riftbuild/README.md) | native bounded build/package controller; core ELF/manifest/universal unsigned APK path installed-proven, signer/verify/exact proof-installer source implemented pending next APK/device proof |
 | RiftMemory | **VERIFIED** | [`systems/riftmemory/README.md`](systems/riftmemory/README.md) | verified inactive/retained cache design |
 | Files | **VERIFIED** | [`systems/files-app/README.md`](systems/files-app/README.md) | native RiftFS/SAF/editor data-safety audit |
 | Settings | **VERIFIED** | [`systems/settings/README.md`](systems/settings/README.md) | native Git/RiftLLM credential-ingress audit |
@@ -110,7 +110,7 @@ Every subsystem not listed in the verified set above remains **UNVERIFIED** unti
 | RiftGit | **VERIFIED** | [`systems/git/README.md`](systems/git/README.md) | native GitHub/metadata/push/pull/rollback audit |
 | RiftRepo | **VERIFIED** | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | verified inactive/retained local-checkpoint design |
 | RiftVault | **VERIFIED** | [`systems/riftvault/README.md`](systems/riftvault/README.md) | verified inactive/retained backup design |
-| RiftBuild | **VERIFIED** | [`systems/riftbuild/README.md`](systems/riftbuild/README.md) | inactive controller + live non-executing app façade |
+| RiftBuild | **VERIFIED** | [`systems/riftbuild/README.md`](systems/riftbuild/README.md) | native bounded build/package controller; core ELF/manifest/universal unsigned APK path installed-proven, signer/verify/exact proof-installer source implemented pending next APK/device proof |
 | RiftMemory | **VERIFIED** | [`systems/riftmemory/README.md`](systems/riftmemory/README.md) | verified inactive/retained cache design |
 | Files | **VERIFIED** | [`systems/files-app/README.md`](systems/files-app/README.md) | native RiftFS/SAF/editor data-safety audit |
 | Settings | **VERIFIED** | [`systems/settings/README.md`](systems/settings/README.md) | native Git/RiftLLM credential-ingress audit |
@@ -142,7 +142,7 @@ Do not copy historical claims forward merely because they appear in another READ
 
 Cross-cutting files such as [`TRUE_OS_ARCHITECTURE.md`](TRUE_OS_ARCHITECTURE.md), [`ANDROID_NATIVE_ARCHITECTURE.md`](ANDROID_NATIVE_ARCHITECTURE.md), `RIFTBROWSER_ARCHITECTURE.md`, `RIFT_MCP_APP_ARCHITECTURE.md`, `RIFTWORKSPACE_WEB_ARCHITECTURE.md`, `RIFTRT-v1.md`, [`PUBLIC_SURFACES.md`](PUBLIC_SURFACES.md) and [`PROJECT_STATUS.md`](PROJECT_STATUS.md) must also be audited against source before being trusted for a subsystem.
 
-Operational references: [`../LOCAL_MCP_MODE.md`](../LOCAL_MCP_MODE.md), [`../ROADMAP.md`](../ROADMAP.md), and [`RIFT_RAW_CHAT_PROTOCOL.md`](RIFT_RAW_CHAT_PROTOCOL.md).
+Operational references: [`../LOCAL_MCP_MODE.md`](../LOCAL_MCP_MODE.md), [`../ROADMAP.md`](../ROADMAP.md), [`RIFT_RAW_CHAT_PROTOCOL.md`](RIFT_RAW_CHAT_PROTOCOL.md), and [`CODYNEX_LR0_BRIDGE.md`](CODYNEX_LR0_BRIDGE.md).
 
 ## Debugging rule
 

@@ -90,7 +90,7 @@ Build/runtime boundary:
 
 No HTML page, JavaScript boot chain, `RiftAndroid` bridge or shell WebView participates in live OS boot.
 
-During same-process MainActivity destruction/recreation, `RiftMcpRuntime` keeps native shell, MCP host/server/relay, native Git and Vortex bridge independent of browser renderer/Activity lifetime. This does **not** survive Android process death: process death destroys those in-memory singletons and a new process reconstructs them lazily.
+During same-process MainActivity destruction/recreation, `RiftMcpRuntime` keeps native shell, MCP host/server/relay, native Git, Vortex bridge and the Codynex LR0 Binder bridge independent of browser renderer/Activity lifetime. This does **not** survive Android process death: process death destroys those in-memory singletons and a new process reconstructs them lazily.
 
 ## Logical process model
 
@@ -123,7 +123,7 @@ The model-visible catalog is exactly 18 tools. Ordinary filesystem/Code Mode ope
 - symbols/references/graph views;
 - internal Patch-5 candidate semantic-impact evidence derived from Patch Manifest V1, with no added MCP tool;
 - guarded patches;
-- transactional multi-file mutations;
+- guarded one-operation Code Mode mutations with copy-on-write rollback; public multi-op/batch execution is disabled in `RiftToolHost`;
 - archive/extract bounds;
 - workspace record integration.
 
@@ -143,7 +143,7 @@ RiftNativeShell
 
 The headless runtime exposes only bounded trusted functions such as confined RiftFS text I/O, UTF-8 and SHA-256. It has no DOM, WebView, arbitrary Android call, raw process execution or ambient network socket.
 
-Gradle packages **only** `src/riftpp-core.js` and `src/riftvm.js` from the old `src/` tree into the generated `www` assets.
+Gradle packages **only** `src/riftpp-core.js`, `src/riftvm.js`, and `src/semnexis-bootstrap.js` from the old `src/` tree into the generated `www` assets. Rift++ consumes the first two; `semx` consumes the Semnexis bootstrap asset.
 
 ## Browser/program execution engine
 
@@ -160,6 +160,7 @@ There is no live Kotlin `RiftRT` class and `src/riftrt.js` is not packaged by Gr
 ### Packaged live headless assets
 - `src/riftpp-core.js`
 - `src/riftvm.js`
+- `src/semnexis-bootstrap.js`
 
 ### Retained repository/reference/test source, not live APK shell
 Examples include:

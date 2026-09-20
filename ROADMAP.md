@@ -29,6 +29,17 @@ Immediate order:
 
 RiftBuild must not add arbitrary shell execution, downloaded executable toolchains, automatic Git push, CLI enablement or new MCP authority.
 
+## Semnexis self-hosting bootstrap
+
+Current source is `0.7.0-quickjs-bootstrap`. The source/machine pressure loop now reaches additive `SNIRV7`, Arena-backed AST storage, typed Arena record reads/writes, record stack arguments, bounded 256-frame native recursion, and a recursive-descent Arena parser/evaluator on ARM32. QuickJS remains only the bootstrap host.
+
+Immediate order:
+1. **NEXT APK GATE** — build/install current RiftOS and prove installed `semnexis-bootstrap-self-test/17`;
+2. add real parser failure/error propagation and richer grammar only when the self-host parser exposes the need;
+3. keep expanding Semnexis-written compiler pieces and recursive AST traversal through machine-verified pressure probes;
+4. preserve frozen SNIRV0–SNIRV6 compatibility while adding new IR versions only for genuinely new semantics;
+5. move toward a Semnexis-written compiler/self-host boundary once the language/runtime surface is sufficient instead of predesigning unrelated features.
+
 ## Local Rift MCP expansion
 
 Current tool family (18 registered tools):
@@ -75,7 +86,7 @@ High-impact operations should require explicit developer-mode capability grants.
 
 ## MCP project intelligence
 
-Implemented foundation: compact `RIFT_PROJECT_V2` project descriptor, full workspace reachability through `rift_workspace_exec` (Rift Code Mode), Project Intelligence v2 snapshots, restart-persistent incremental symbol indexing, bounded import/include dependency graph edges, focused project graph and impact views, validation-plan discovery, reference lookup, exact symbol/ranged reads, SHA-256 guarded range/hunk patching, built-in dependency/build/cache ignore rules, dry-run validation, compact changed-file summaries and transactional batched write/replace/patch/mkdir/remove/move/archive/extract with rollback on batch failure.
+Implemented foundation: compact `RIFT_PROJECT_V2` project descriptor, full workspace reachability through `rift_workspace_exec` (Rift Code Mode), Project Intelligence v2 snapshots, restart-persistent incremental symbol indexing, bounded import/include dependency graph edges, focused project graph and impact views, validation-plan discovery, reference lookup, exact symbol/ranged reads, SHA-256 guarded range/hunk patching, built-in dependency/build/cache ignore rules, dry-run validation, compact changed-file summaries, and copy-on-write rollback for each one-operation `rift_workspace_exec` mutation. Public multi-op/batch execution is currently fail-fast disabled because it can hang the agent/runtime; coordinated changes must use explicit sequential calls.
 
 Project Intelligence v2 deliberately stays behind the existing `project` Code Mode operation. `kind=graph`, `kind=impact` and `kind=validation` reuse the already-published `kind`/`query` operation fields, so no parallel agent tool catalog or second task controller is required.
 

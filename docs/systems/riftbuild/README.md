@@ -2,9 +2,9 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
-Source implementation and static audits are current. Android compilation and installed-device execution are still pending and are not implied by this source-verification marker.
+The core RiftBuild validation/planning, Rift++ V0 ELF materialization, fixed 1,440-byte binary manifest and deterministic universal unsigned APK package path is installed-device proven on RiftOS source `1c1ae33b81cfe643eb804cac0841ced636e982e3` / Builder run 214. Current source additionally contains bounded APK v2 signing/verification plus exact proof-package PackageInstaller/launch ownership; that newer sign → verify → install → launch chain still requires the next Builder/install device proof.
 
 ## Purpose
 
@@ -97,6 +97,11 @@ riftbuild validate <project>
 riftbuild plan <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
 riftbuild pack <project> [arm32|arm64|universal]
+riftbuild sign <unsigned-apk>
+riftbuild verify <signed-apk>
+riftbuild install-proof <signed-apk>
+riftbuild install-status
+riftbuild launch-proof
 riftbuild runs [limit]
 riftbuild artifacts [project]
 ```
@@ -286,7 +291,7 @@ The subsystem is invalid if:
 - `build.submit` reports success without all required stages;
 - plain text `AndroidManifest.xml` is mislabeled as an installable packaged manifest;
 - only one ABI is packaged for `universal`;
-- signing/install is claimed before its native owner exists;
+- signing/install success is claimed without the independent v2 verifier, exact `com.riftpp.nativeproof` restriction, or Android-managed user confirmation;
 - RiftBuild silently enables the experimental CLI;
 - MCP catalog expands just to expose build internals.
 
@@ -309,5 +314,5 @@ Promotion requires:
 - exact Kotlin snapshot includes the native owner;
 - source ownership and subsystem docs are synchronized;
 - `npm run check` remains green;
-- actual Android Builder compilation is still required before this new Kotlin source is called installed/live;
-- a real on-device APK artifact must be inspected before claiming local APK generation PASS.
+- the already-proven validation/materialization/manifest/package path must retain its installed-device regression evidence;
+- the newer signer/verifier/installer/launch source must pass Builder compilation plus real on-device sign → verify → install → launch proof before that chain is called installed/live.

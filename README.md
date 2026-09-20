@@ -69,7 +69,7 @@ Native Files also supports user-granted Android Storage Access Framework documen
 
 `RiftNativeShell` is process-owned through `RiftMcpRuntime`. It does not depend on a particular Activity or WebView lifetime while the Android process remains alive, and it does not expose Android/Linux `/system/bin/sh`. Android process death destroys the in-memory singleton and a new process recreates it lazily.
 
-The shell owns native navigation/file commands and finite routes for native Git, chat handoff, Dev Lab, Vortex, local agents, RiftLLM fixed services, production Rift++ and experimental RiftCLI.
+The shell owns native navigation/file commands and finite routes for native Git, chat handoff, Dev Lab, Vortex, local agents, RiftLLM fixed services, the Codynex LR0 Binder bridge, production Rift++, Semnexis, and experimental RiftCLI.
 
 The legacy shell `mount`/`umount` and generic `rift` wrappers are retired in the current source.
 
@@ -84,9 +84,13 @@ RiftNativeShell
  -> src/riftvm.js
 ```
 
-Those are the **only** files under `src/` currently copied by Gradle into the generated RiftOS `www` assets.
+Gradle currently copies exactly three files from `src/` into the generated RiftOS `www` assets: `riftpp-core.js`, `riftvm.js`, and `semnexis-bootstrap.js`. The first two serve production Rift++; the third is the bounded Semnexis QuickJS bootstrap compiler.
 
 The headless runtime provides bounded trusted text I/O, UTF-8 and SHA-256 helpers. It does not provide DOM, WebView, arbitrary Android calls, raw process execution or ambient network sockets.
+
+## Semnexis
+
+`semx` uses the same bounded headless QuickJS host with the separately packaged `src/semnexis-bootstrap.js` compiler asset. Current source is `0.7.0-quickjs-bootstrap` with versioned `SNIRV0`–`SNIRV7`, borrowed `Slice<u8>`, flat records, Arena-backed AST storage, typed Arena load/store, bounded 256-frame native recursion, and source/machine-proven recursive-descent parsing on ARM32. The source-embedded gate is `semnexis-bootstrap-self-test/17`; installed-device promotion waits for the next RiftOS APK build/install.
 
 ## RiftBrowser
 
@@ -100,7 +104,7 @@ Chromium is not the OS engine. It is owned only by explicit `RiftBrowser*` class
 
 `MainActivity` scans valid package manifests already present under `C:/Programs`, and `RiftBrowserAppHost` can run those HTML/JS programs in dedicated capability-gated WebViews at `https://app.riftos.local`.
 
-The current native source does **not** contain a live native package installer. The old `src/riftapps.js` installer/runtime code is retained repository/reference source and is not packaged by Gradle. Do not claim package installation is active until a native owner is implemented and verified.
+Current source contains the bounded `RiftBuildInstaller` proof installer, restricted to verified signed `com.riftpp.nativeproof` artifacts, Android-managed unknown-source/user confirmation, persisted install status and an exact NativeActivity launch proof. That newest signer/install path is still source-only until the next Builder/install pass; it is **not** a general Rift app installer. The old `src/riftapps.js` installer/runtime remains retained repository/reference source and is not packaged by Gradle.
 
 ## Rift MCP
 
@@ -117,7 +121,7 @@ Ordinary filesystem/Code Mode tools execute in `RiftToolSandbox` and are confine
 - Project Intelligence v2 indexing;
 - symbol/reference/dependency views;
 - guarded range/hunk patches;
-- transactional multi-file mutations;
+- guarded one-operation Code Mode mutations with copy-on-write rollback; multi-op/batch execution is fail-fast disabled;
 - bounded archive/extract;
 - private Workspace Records integration.
 
@@ -139,7 +143,7 @@ Git credentials are accessed through `RiftSecretStore`/Android Keystore-backed s
 
 The repository still contains the former web-shell runtime under `src/`, including `riftcore.js`, `riftos.js`, `riftrt.js`, `riftgit.js`, `riftworkspace-*.js` and other modules.
 
-Except for `riftpp-core.js` and `riftvm.js`, those files are **not packaged as the active Android OS runtime**. They are retained for tests, migration/reference behavior and future porting work.
+Except for `riftpp-core.js`, `riftvm.js`, and `semnexis-bootstrap.js`, those files are **not packaged as active Android headless-runtime assets**. They are retained for tests, migration/reference behavior and future porting work.
 
 Presence in `src/` does not mean “live APK code.”
 

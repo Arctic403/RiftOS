@@ -61,7 +61,7 @@ Several retained `src/` modules still contain historical calls of the form:
 
 Those calls do **not** prove a live dispatcher exists.
 
-Current Gradle packages only `riftpp-core.js` and `riftvm.js` from `src/` for the headless runtime. The old web shell/platform/runtime modules are retained reference/test/migration source unless another subsystem audit proves a separate packaged consumer.
+Current Gradle packages exactly `riftpp-core.js`, `riftvm.js`, and `semnexis-bootstrap.js` from `src/` for the bounded headless runtime. The old web shell/platform/runtime modules are retained reference/test/migration source unless another subsystem audit proves a separate packaged consumer.
 
 When a retained native-call shim references a route that no longer exists, the correct migration is to remove/fail that shim or wire the feature through its narrow native owner—not recreate a generic dispatcher.
 

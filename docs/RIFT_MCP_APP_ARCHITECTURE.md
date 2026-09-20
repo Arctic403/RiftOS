@@ -112,11 +112,11 @@ Legacy batch `finish` semantics are not an active completion or trust mechanism.
 
 The upfront project handoff is `RIFT_PROJECT_V2`: a bounded top-level descriptor that states full workspace reachability. For a complete offline audit, `rift_project_export` streams a deterministic `RIFT_PROJECT_EXPORT_V2` snapshot in pages capped below the relay limit. Each page contains UTF-8 source content, paths, full-file hashes and byte ranges. Callers continue with `nextCursor` and the first page's `snapshotId`; continuation fails if the project changes mid-export. Build outputs, binary assets and sensitive credential files are excluded, while large source files are split across pages.
 
-After the audit, the model returns complete ordinary files or guarded patches as operations in one `rift_workspace_exec` call. The device applies that batch under one copy-on-write transaction: every operation commits together, or every touched path is restored. This is a local atomic change set, not an automatic Git commit.
+After the audit, the model returns complete ordinary files or guarded patches as explicit `rift_workspace_exec` calls with exactly one operation each. The sandbox still applies copy-on-write rollback within each individual call; coordinated multi-file work is a visible sequence of guarded operations rather than one opaque atomic batch.
 
 ## Mutation safety
 
-Persistent AI-session journaling has been removed. Mutation safety is provided by the actual active layers: local read/write grants in `RiftToolHost`, workspace containment and limits in `RiftToolSandbox`, copy-on-write rollback for one transactional `rift_workspace_exec` batch, expected snapshot/hash guards, bounded audit metadata, and explicit Git/source-control workflows when durable history is required.
+Persistent AI-session journaling has been removed. Mutation safety is provided by the actual active layers: local read/write grants in `RiftToolHost`, workspace containment and limits in `RiftToolSandbox`, copy-on-write rollback for each one-operation `rift_workspace_exec` mutation, expected snapshot/hash guards, bounded audit metadata, and explicit Git/source-control workflows when durable history is required. Public multi-op/batch execution remains disabled.
 
 ## Browser compatibility boundary
 

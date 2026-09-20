@@ -14,7 +14,7 @@ The live engine is split across native owners documented in [`../engine/README.m
 
 The logical kernel identity is represented by:
 - `RiftNativeShell.kt` — reports/protects the logical `kernel` task and owns shell/path/process-facing behavior;
-- `RiftMcpRuntime.kt` — process-owned shell/MCP/Git/Vortex services;
+- `RiftMcpRuntime.kt` — process-owned shell/MCP/Git/Vortex/Codynex bridge services;
 - `MainActivity.kt` — visible native OS composition;
 - `RiftNativeDesktop.kt` — native window/task authority;
 - `RiftVolumePaths.kt` — native RiftFS display-path mapping;

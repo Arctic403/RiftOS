@@ -133,7 +133,7 @@ The requested tool name must exist in the live `tools/list` manifest.
 - returned result must echo that exact call id;
 - tool execution permissions remain native.
 
-For large project work, the injected guide prefers one transactional `rift_workspace_exec` batch.
+For large project work, the injected guide prefers `rift_workspace_exec` for focused project operations, but current ToolHost policy permits exactly one operation per call. Coordinated multi-file work must use explicit sequential calls; multi-op/batch execution is fail-fast disabled.
 
 ## Result handling
 

@@ -222,7 +222,7 @@ MainActivity registers on:
 
 On `onDestroy`, unregistering clears the weak reference only if it still points at that exact Activity instance. That prevents an old Activity from clearing a newer replacement instance.
 
-While the Android process remains alive, `RiftMcpRuntime` singletons for native shell, MCP host/server/relay, native Git and Vortex bridge are not destroyed by MainActivity teardown.
+While the Android process remains alive, `RiftMcpRuntime` singletons for native shell, MCP host/server/relay, native Git, Vortex bridge and the Codynex LR0 Binder bridge are not destroyed by MainActivity teardown.
 
 ### Activity-owned teardown
 

@@ -12,7 +12,8 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftVolumePaths.kt` | [`riftfs`](../../../../../../../../docs/systems/riftfs/README.md) |
 | `RiftNativeWorkspaceApps.kt`, `RiftNativeDevLab.kt` | [`files-app`](../../../../../../../../docs/systems/files-app/README.md) + [`dev-lab`](../../../../../../../../docs/systems/dev-lab/README.md) + [`settings`](../../../../../../../../docs/systems/settings/README.md) + [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) |
 | `RiftNativeGit.kt` | [`git`](../../../../../../../../docs/systems/git/README.md) + [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |
-| `RiftBrowserWindow.kt` | [`browser`](../../../../../../../../docs/systems/browser/README.md) |\n| `RiftBuildLocalExecutor.kt` | [`riftbuild`](../../../../../../../../docs/systems/riftbuild/README.md) + [`build-validation`](../../../../../../../../docs/systems/build-validation/README.md) |
+| `RiftBrowserWindow.kt` | [`browser`](../../../../../../../../docs/systems/browser/README.md) |
+| `RiftBuildLocalExecutor.kt` | [`riftbuild`](../../../../../../../../docs/systems/riftbuild/README.md) + [`build-validation`](../../../../../../../../docs/systems/build-validation/README.md) |
 | `RiftBrowserEngine.kt`, `RiftBrowserAndroidWebViewEngine.kt` | [`browser/engine`](../../../../../../../../docs/systems/browser/engine/README.md) |
 | `RiftBrowserMcpAppBridge.kt` | [`browser/mcp-compat`](../../../../../../../../docs/systems/browser/mcp-compat/README.md) |
 | `RiftMcpRuntime.kt`, `RiftMcpActivity.kt` | [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
@@ -23,6 +24,7 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftProjectExporter.kt` | [`mcp/project-exporter`](../../../../../../../../docs/systems/mcp/project-exporter/README.md) |
 | `RiftNativeShell.kt`, `RiftShellExecutor.kt`, `RiftHeadlessJsRuntime.kt`, `RiftNativeShellServices.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) + [`riftpp-core`](../../../../../../../../docs/systems/riftpp-core/README.md) + [`semnexis-bootstrap`](../../../../../../../../docs/systems/semnexis-bootstrap/README.md) |
 | `RiftCliHost.kt` | [`riftcli`](../../../../../../../../docs/systems/riftcli/README.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
+| `RiftCodynexBridgeClient.kt` | [`Codynex LR0 bridge`](../../../../../../../../docs/CODYNEX_LR0_BRIDGE.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
 | `RiftDiffEngineV2.kt`, `RiftFileIdentityV2.kt`, `RiftPatchManifestV1.kt`, `RiftPatchSessions.kt`, `RiftWorkspaceRecords.kt`, `RiftWorkspaceWatcher.kt` | [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) + [`workspace`](../../../../../../../../docs/systems/workspace/README.md) |
 | `RiftBrowserPreviewActivity.kt` | [`preview`](../../../../../../../../docs/systems/preview/README.md) |
 | `RiftSecretStore.kt` | [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |

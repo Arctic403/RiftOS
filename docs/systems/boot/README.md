@@ -35,7 +35,7 @@ Android launches MainActivity
  -> start process-owned outbound MCP relay client
 ```
 
-`RiftMcpRuntime` lazily creates native shell, tool host, MCP server, relay client, native Git and Vortex bridge and keeps them outside WebView ownership.
+`RiftMcpRuntime` lazily creates native shell, tool host, MCP server, relay client, native Git, Vortex bridge and the Codynex LR0 Binder bridge and keeps them outside WebView ownership.
 
 ## Android components
 
@@ -52,8 +52,9 @@ No JavaScript is required to boot the OS desktop.
 Gradle copies only:
 - `src/riftpp-core.js`
 - `src/riftvm.js`
+- `src/semnexis-bootstrap.js`
 
-Those are loaded later by the headless QuickJS Rift++ runtime when requested.
+They are loaded later by the bounded headless QuickJS runtime when requested. Rift++ uses `riftpp-core.js` + `riftvm.js`; `semx` uses `semnexis-bootstrap.js`.
 
 ## Critical invariants
 

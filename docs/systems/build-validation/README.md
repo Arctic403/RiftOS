@@ -105,6 +105,7 @@ For Kotlin/Java, the Gradle gate strips block comments and full-line comments, t
 syncRiftOsWebAssets copies exactly:
 - src/riftpp-core.js
 - src/riftvm.js
+- src/semnexis-bootstrap.js
 
 into generated assets/www.
 
@@ -214,7 +215,7 @@ It also explicitly requires private top-level RiftDevLabLocalAgent and embedded 
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
-Because the Gradle list is now exact 52/52, including the bounded RiftBuild signer and installer owners, the Builder consumes the same mandatory native snapshot rather than maintaining another stale source list.
+Because the current Gradle list is exact 45/45 Kotlin sources, including the bounded RiftBuild signer/installer owners and `RiftCodynexBridgeClient.kt`, the Builder consumes that same mandatory native snapshot dynamically rather than maintaining a second stale Kotlin list.
 
 ## Final APK asset verification
 
@@ -237,6 +238,7 @@ Current Builder final-APK rules:
 - reject packaged Kotlin/Java source, `.git` content and keystore material;
 - require assets/www/src/riftpp-core.js byte-for-byte equal source;
 - require assets/www/src/riftvm.js byte-for-byte equal source;
+- require assets/www/src/semnexis-bootstrap.js byte-for-byte equal source;
 - reject every other file under assets/www;
 - explicitly reject index.html, styles.css, workspace-live, PWA/service-worker content;
 - verify every non-Markdown asset under android/app/src/main/assets byte-for-byte.
@@ -329,8 +331,8 @@ Stale-document detection belongs to source ownership, changed-source impact, roa
 - every subsystem README is discovered by docs validation;
 - Gradle mandatory Kotlin list exactly equals current Kotlin source directory;
 - Gradle source snapshot and WebKit-owner validation run explicitly before compilation and remain wired into preBuild;
-- only Rift++ Core/RiftVM enter generated assets/www;
-- final Builder APK independently proves those two assets and rejects any additional OS web asset;
+- only Rift++ Core, RiftVM, and the Semnexis bootstrap enter generated assets/www;
+- final Builder APK independently proves those three assets byte-for-byte and rejects any additional OS web asset;
 - final Builder verifies native DEX/source provenance, alignment and signatures;
 - Builder builds a clean exact Git commit, not phone workspace bytes;
 - source validation is never called APK/device proof;

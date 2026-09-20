@@ -11,7 +11,7 @@ This inventory separates live packaged authority from retained reference/compati
 | Semnexis bootstrap runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Fixed bounded `semx` compiler/IR/backend commands over the packaged Semnexis asset; source/output/artifact budgets are enforced, only the two ARM32 artifact commands may write to exact fixed RiftFS paths, generated artifacts are not executed, and the host has no process/network authority. |
 | Bounded `qjs` developer runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Evaluates bounded classic JavaScript with captured output and read-only confined RiftFS text access; no file-write/process/network/Android/Git authority. |
 | MCP tool catalog | `RiftToolHost.kt` | Canonical fixed 18-tool schemas/permissions/audit. |
-| Workspace/Code Mode | `RiftToolSandbox.kt` | Workspace-only filesystem, Project Intelligence and transactional operations. |
+| Workspace/Code Mode | `RiftToolSandbox.kt` + `RiftToolHost.kt` | Workspace-only filesystem and Project Intelligence; model-facing `rift_workspace_exec` is one operation per call with per-call rollback, while multi-op/batch execution is disabled. |
 | Workspace Records | `RiftWorkspaceRecords.kt` | Private local history/diff record source. |
 | Native desktop | `RiftNativeDesktop.kt` | Android window/taskbar/z-order/geometry authority. |
 | Native built-ins | `RiftNativeSystemApps.kt`, `RiftNativeWorkspaceApps.kt` | Terminal, Task Manager, Files, Editor, Dev Lab, Workspace Records and Settings. |
@@ -19,6 +19,12 @@ This inventory separates live packaged authority from retained reference/compati
 | Native RiftBuild | `RiftBuildLocalExecutor.kt`, `RiftApkV2Signer.kt`, `RiftBuildInstaller.kt` | Workspace-bounded Android validation/materialization/package flow plus bounded APK v2 signing/verification and exact proof-package PackageInstaller handoff; no raw process or arbitrary package authority. |
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands. |
+
+## Current source pending installed-device promotion
+
+| Surface | Owner | Purpose |
+| --- | --- | --- |
+| Codynex LR0 local bridge | `RiftCodynexBridgeClient.kt`, `RiftMcpRuntime.kt`, `RiftNativeShellServices.kt` | Explicit-package Binder bridge exposed only through the fixed `codynex` shell family; bounded request/response/timeout/source limits; next RiftOS Builder/install pass must prove installed-device behavior. |
 
 ## Live RiftBrowser page surfaces
 
@@ -38,7 +44,7 @@ Guest pages must not receive RiftShell, RiftFS, Workspace, Keystore, generic nat
 The only JavaScript copied into the generated RiftOS `www` asset namespace for OS execution is:
 - `src/riftpp-core.js` -> `RiftPlusPlusCore` compiler surface;
 - `src/riftvm.js` -> RiftVM implementation;
-- `src/semnexis-bootstrap.js` -> bounded Semnexis bootstrap compiler, Native IR codec and ARM32 proof backend.
+- `src/semnexis-bootstrap.js` -> bounded Semnexis bootstrap compiler, versioned SNIRV0–SNIRV7 Native IR codec, Arena/state lowering, ARM32 proof/runtime backends and canonical machine verifier.
 
 They execute under the bounded headless runtime when invoked by native RiftShell.
 

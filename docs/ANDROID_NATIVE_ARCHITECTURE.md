@@ -21,7 +21,7 @@ There is no trusted shell WebView, `RiftShellBridge`, or general `RiftNativeDisp
 
 Android-native code owns desktop/window state, Terminal, Task Manager, Files, Editor, Dev Lab, Workspace Records, Settings, Git, MCP, native shell, local agents and fixed RiftLLM/Vortex service routes.
 
-`RiftNativeShell` is process-owned by `RiftMcpRuntime` while the Android process is alive; Activity recreation does not explicitly destroy it, but Android process death does. Current Rift++ Core execution is hosted by `RiftHeadlessJsRuntime` using bounded QuickJS and only the packaged `riftpp-core.js` / `riftvm.js` assets.
+`RiftNativeShell` is process-owned by `RiftMcpRuntime` while the Android process is alive; Activity recreation does not explicitly destroy it, but Android process death does. `RiftHeadlessJsRuntime` hosts bounded QuickJS over exactly three packaged headless assets: `riftpp-core.js`, `riftvm.js`, and `semnexis-bootstrap.js`. Rift++ uses the first two; `semx` uses the Semnexis bootstrap asset.
 
 Native Files owns user-granted Android document-tree access through persisted SAF permissions. The legacy shell mount entry point is retired.
 

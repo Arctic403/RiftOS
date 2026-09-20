@@ -2,13 +2,13 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
 ## Purpose
 
 `RiftToolSandbox` is the workspace-only execution engine behind normal Rift MCP filesystem tools, project inspection and Rift Code Mode / Project Intelligence v2.
 
-It owns canonical workspace containment, single-operation filesystem methods, bounded search/read results, transactional multi-operation batches, snapshots, project intelligence and archive safety.
+It owns canonical workspace containment, single-operation filesystem methods, bounded search/read results, per-call transaction/rollback safety, snapshots, project intelligence and archive safety. Model-facing `rift_workspace_exec` is hard-limited by `RiftToolHost` to exactly one operation per call; multi-op/batch execution is fail-fast disabled.
 
 ## Source ownership
 
@@ -38,7 +38,7 @@ Old workspace scaffold metadata under `.rift` migrates into app-private system m
 
 - ordinary tool file/payload bound: 8 MiB;
 - ordinary list: 5000 entries;
-- Code Mode operations per batch: 192;
+- internal Code Mode operation-array ceiling: 192; model-facing `rift_workspace_exec` is currently capped to exactly 1 operation by `RiftToolHost`;
 - Code Mode result byte budget: 700 KiB;
 - bounded workspace read: 240000 chars;
 - search matches: 300;
@@ -108,19 +108,19 @@ Both canonical flat operations and the same unambiguous shorthand normalization 
 
 ## Snapshot guards
 
-Before batch execution:
+Before each `rift_workspace_exec` call:
 - `expectedSnapshot` can require an exact scoped project snapshot;
 - `expectedExportSnapshot` can require the current RiftProjectExporter snapshot id.
 
-A mismatch rejects the whole batch before mutation.
+A mismatch rejects the call before mutation.
 
-`returnSnapshot` optionally returns a fresh scoped snapshot after the batch.
+`returnSnapshot` optionally returns a fresh scoped snapshot after the one-operation call.
 
 ## Transactions
 
-Every batch creates a private cache transaction directory.
+Every `workspace.exec` call creates a private cache transaction directory. Public ToolHost requests contain exactly one operation, so this transaction currently protects one visible operation at a time.
 
-Before each mutating operation:
+For a mutating operation:
 - write/replace/patch/patch_range/apply_hunks/mkdir/remove capture `path`;
 - move/rename capture both `from` and `to`;
 - copy/archive/extract capture `to`.
@@ -133,7 +133,7 @@ If an operation throws:
 1. every captured target is cleared;
 2. original file/directory/missing state is restored;
 3. index invalidation follows restoration;
-4. rollback errors are appended to the surfaced batch error;
+4. rollback errors are appended to the surfaced operation error;
 5. transaction staging is removed.
 
 The code never silently claims atomicity when rollback itself failed.
@@ -150,11 +150,11 @@ Response reports `committed=false`.
 
 ## Patch-session provenance
 
-Before a mutating MCP filesystem call or non-dry-run `workspace.exec` batch, the sandbox derives the mutation target set from the normalized operations and opens one `RiftPatchSessions` claim with `origin=mcp`. The MCP request id is retained and `rift_workspace_exec` may carry a bounded optional `intent` string. Intent is evidence only; it never changes permission classification.
+Before a mutating MCP filesystem call or non-dry-run `workspace.exec` call, the sandbox derives the mutation target set from the single normalized operation and opens one `RiftPatchSessions` claim with `origin=mcp`. The MCP request id is retained and `rift_workspace_exec` may carry a bounded optional `intent` string. Intent is evidence only; it never changes permission classification.
 
 After successful mutation the claim is committed against resulting file states. On failure it is aborted. If later filesystem observation cannot correlate the claim, Workspace Records records the event as `unattributed-local` rather than trusting stale metadata.
 
-Dry-run batches create no patch-session claim because their temporary mutations are rolled back by definition.
+Dry-run calls create no patch-session claim because their temporary mutation is rolled back by definition.
 
 ## Change summary
 
@@ -162,11 +162,11 @@ Before/after snapshots generate bounded changed-file metadata.
 
 For small text files the transaction computes added/removed line deltas. Changed files may include post-change SHA-256 when within ordinary tool bounds.
 
-This is a batch summary, not a permanent AI-session journal.
+This is a per-call change summary, not a permanent AI-session journal.
 
 ## Result bounding
 
-Each operation result is counted against the 700 KiB batch result budget.
+Each `rift_workspace_exec` result is counted against the 700 KiB Code Mode result budget.
 
 When the budget is exceeded, execution continues but the affected operation receives a compact `resultOmitted=true` summary rather than returning unbounded content.
 
@@ -218,7 +218,7 @@ Text search is bounded by file size, match count and preview size.
 
 Symbol/reference results are bounded independently.
 
-Index invalidation is batched around mutations and persisted after refresh/invalidation.
+Index invalidation is coalesced within a mutation call and persisted after refresh/invalidation.
 
 Workspace files remain authoritative; stale cache rows cannot override source.
 
@@ -239,7 +239,7 @@ Entry count and expanded-byte limits are enforced before publish.
 
 Sandbox calls execute through one serialized worker with a bounded 16-request queue and a separate watchdog. Each request has a 45-second deadline beginning at submission time, including queue delay. Timeout returns one terminal error, interrupts the Future and exposes the same monotonic deadline to long filesystem loops through `RiftDeadline.check()`.
 
-Code Mode checks the deadline between operations and around expensive archive/search/hash/index work. The outer batch defers Project Intelligence invalidations and flushes them once instead of repeatedly persisting index state for every write. If cancellation occurs during a transactional mutation, the worker clears the interrupt only long enough to complete bounded rollback before accepting later work.
+Code Mode checks the deadline around expensive archive/search/hash/index work and before/after the one normalized operation. Project Intelligence invalidations are coalesced within the call and flushed once. If cancellation occurs during a transactional mutation, the worker clears the interrupt only long enough to complete bounded rollback before accepting later work.
 
 ## Shutdown
 
@@ -270,12 +270,12 @@ Sandbox does not own:
 ## Failure signatures
 
 - workspace tool accesses sibling RiftFS root -> containment regression;
-- partial batch remains after ordinary failure -> rollback regression;
+- failed one-operation mutation leaves partial target state -> rollback regression;
 - rollback failure reported as success -> atomicity regression;
 - dry-run structural op succeeds -> dry-run contract regression;
 - stale PI cache overrides changed file -> cache-validation regression;
 - generated `.vortex-bridge` evidence appears as source -> indexing regression;
-- batch result grows beyond budget -> result-bound regression;
+- Code Mode result grows beyond the per-call budget -> result-bound regression;
 - ZIP traversal or duplicate path accepted -> archive regression.
 
 ## Fix map

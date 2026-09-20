@@ -19,7 +19,7 @@ There is no trusted-shell WebView fallback and no Android/Linux raw shell escape
 Primary:
 - RiftNativeShell.kt — parser, cwd, RiftFS core commands, workspace status/push routing, app/process helpers.
 - RiftNativeShellServices.kt — bounded adapters for Chat Handoff, Dev Lab, Vortex, local agents and RiftLLM.
-- RiftHeadlessJsRuntime.kt also hosts the bounded Semnexis V0 bootstrap compiler for the fixed `semx` command family and the read-only generic `qjs` developer command.
+- `RiftHeadlessJsRuntime.kt` also hosts the bounded Semnexis `0.7.0-quickjs-bootstrap` compiler for the fixed `semx` command family and the read-only generic `qjs` developer command. Current source exposes versioned SNIRV0–SNIRV7, Arena/state lowering and bounded-recursion ARM32 emission; the installed APK is updated only after a new RiftOS build/install.
 - RiftShellExecutor.kt — UI/MCP-neutral asynchronous execution contract.
 - RiftMcpRuntime.kt — process singleton owner.
 - RiftToolHost.kt — MCP permission gate/audit/result framing.
@@ -80,6 +80,7 @@ Native core includes:
 - vortex-agent
 - riftos-agent
 - riftllm-agent
+- codynex status/read-state/call/compile-activate/activate/corrupt/recover/clear/cold-restart
 - qjs help/version/eval/run
 - semx help/version/self-test/check/dump-graph/dump-plan/dump-ir/emit-arm32-proof/emit-arm32-runtime
 - riftpp

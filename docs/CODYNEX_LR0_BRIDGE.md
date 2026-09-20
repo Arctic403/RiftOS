@@ -1,7 +1,9 @@
 # Codynex LR0 Local Bridge
 
-Status: **IMPLEMENTATION AUTHORIZED**
+Status: **SOURCE AUDITED / BUILD + INSTALLED-DEVICE PROOF PENDING**
 Date: 2026-09-20
+
+The RiftOS source side is implemented and wired through `RiftMcpRuntime`, `RiftNativeShellServices`, and the fixed `codynex` shell family. Gradle now includes `RiftCodynexBridgeClient.kt` in the exact mandatory Kotlin snapshot. The installed APK is not called bridge-proven until the next RiftOS Builder/install pass completes the success gate below.
 
 ## Goal
 

@@ -2,9 +2,30 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.14 — Semnexis SNIRV7 Arena AST + bounded recursion pressure loop
+
+### Current source changes
+
+Continued the Semnexis 0.7 self-hosting pressure loop from parser-state records into native AST storage and recursive parsing.
+
+Added and verified:
+- a first-class borrowed `Arena` state descriptor with fixed 16-byte flat-record cells;
+- typed `arena_store(arena,index,record)` and `arena_load<Record>(arena,index)` with descriptor/index/capacity/data-pointer validation;
+- derived `state` effects for Arena reads/writes and additive `SNIRV7`, while SNIRV0–SNIRV6 remain frozen compatibility surfaces and reject newer semantics;
+- ARM32 Arena load/store lowering plus canonical machine-image verification and independent machine execution over seeded memory;
+- flattened record parameter ABI beyond r0-r3 using aligned caller stack words, including parser-state records;
+- bounded direct and mutual native recursion. Only functions participating in recursive call cycles receive the backend-private `r11` depth guard; frame 256 succeeds and frame 257 traps through the canonical runtime trap;
+- canonical verifier checks for the actual recursion-guard instruction sequence and trap branch target, not metadata alone;
+- recursive-descent parsing of `1+(2+3)` into a five-node Arena-backed AST followed by recursive AST evaluation to `6`;
+- permanent Semnexis self-host probe `parser_recursive_arena_probe.snx` plus its QuickJS runner;
+- embedded source `semx self-test` promoted to `semnexis-bootstrap-self-test/17`, reporting SNIRV7 Arena-read, parser-state stack ABI, record-loop-yield and bounded-recursion proof metrics;
+- RiftOS/Builder documentation parity updated for the third packaged headless asset `src/semnexis-bootstrap.js`.
+
+The installed APK still exposes older `semx` wiring until the next RiftOS build/install. Current 0.7 SNIRV7/Arena/recursion work is source + independent-machine-regression verified; APK/device promotion remains a separate gate.
 
 ## Patch 10.13 — Semnexis 0.7 record/parser pressure loop
 

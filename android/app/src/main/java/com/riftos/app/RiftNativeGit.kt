@@ -27,6 +27,8 @@ class RiftNativeGit(context: Context) {
         private const val MAX_META_BYTES = 8L * 1024L * 1024L
         private const val MAX_POINTER_BYTES = 4L * 1024L
         private const val MAX_API_RESPONSE_BYTES = 80L * 1024L * 1024L
+        private const val MAX_GRAPHQL_PUSH_REQUEST_BYTES = 16L * 1024L * 1024L
+        private const val MAX_GRAPHQL_ERROR_CHARS = 2048
         private const val MAX_COMMIT_MESSAGE_BYTES = 16 * 1024
         private const val DEFAULT_LOG_COMMITS = 20
         private const val MAX_LOG_COMMITS = 100
@@ -37,6 +39,13 @@ class RiftNativeGit(context: Context) {
         private const val WORKSPACE_OWNER = "Arctic403"
         private const val WORKSPACE_REPO = "RiftOS"
         private const val WORKSPACE_BRANCH = "main"
+        private const val CREATE_COMMIT_ON_BRANCH_MUTATION =
+            "mutation RiftGitCreateCommit(\$input: CreateCommitOnBranchInput!) {" +
+                " createCommitOnBranch(input: \$input) {" +
+                " commit { oid }" +
+                " ref { target { oid } }" +
+                " }" +
+                " }"
     }
 
     data class CommandResult(val output: String, val result: JSONObject?)
@@ -283,77 +292,101 @@ class RiftNativeGit(context: Context) {
             return JSONObject().put("pushed", false).put("reason", "clean")
         }
         require(changes.size <= MAX_FILES) { "Change set exceeds file limit" }
+
         val owner = meta.getString("owner")
         val repo = meta.getString("repo")
         val branch = meta.getString("branch")
         val remote = branchInfo(owner, repo, branch)
-        val remoteSha = remote.getJSONObject("commit").getString("sha")
+        val remoteSha = checkedGitSha(
+            remote.getJSONObject("commit").getString("sha"),
+            "remote branch head"
+        )
         val recorded = meta.optString("headSha")
         require(recorded.isBlank() || recorded == remoteSha) {
             "Remote branch changed since the last clone/pull. Run: git pull"
         }
-        val headCommit = apiObject(
-            "/repos/" + enc(owner) + "/" + enc(repo) + "/git/commits/" + enc(remoteSha)
-        )
-        val baseTree = headCommit.getJSONObject("tree").getString("sha")
-        val entries = JSONArray()
+
+        val uploadPaths = initial.modified + initial.untracked
         val uploaded = LinkedHashMap<String, String>()
         val uploadedSizes = LinkedHashMap<String, Long>()
-        val uploadPaths = initial.modified + initial.untracked
+        val additions = JSONArray()
         var total = 0L
-        var done = 0
-        print("Uploading " + changes.size + " change(s) as one atomic commit...")
+
+        print("Preparing " + changes.size + " change(s) for one atomic GitHub commit request...")
         for (path in uploadPaths) {
             val file = repoFile(meta, path)
             require(file.length() <= MAX_FILE) { path + " exceeds per-file limit" }
             total += file.length()
             require(total <= MAX_TOTAL) { "Change set exceeds total sync limit" }
+
+            val trackedMode =
+                meta.optJSONObject("tracked")?.optJSONObject(path)?.optString("mode", "100644")
+                    ?: "100644"
+            require(trackedMode == "100644") {
+                "Single-request GitHub push cannot safely preserve mode " +
+                    trackedMode + " for " + path + "; native pack transport is required"
+            }
+
             val bytes = file.readBytes()
-            val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-            val blob = apiObject(
-                "/repos/" + enc(owner) + "/" + enc(repo) + "/git/blobs",
-                "POST",
-                JSONObject().put("content", encoded).put("encoding", "base64")
-            )
+            require(bytes.size.toLong() == file.length()) {
+                "File changed while reading: " + path
+            }
             val localSha = blobSha(bytes)
-            require(blob.optString("sha") == localSha) { "GitHub blob hash mismatch: " + path }
             uploaded[path] = localSha
             uploadedSizes[path] = bytes.size.toLong()
-            val oldMode = meta.optJSONObject("tracked")?.optJSONObject(path)?.optString("mode", "100644") ?: "100644"
-            entries.put(JSONObject().put("path", path).put("mode", oldMode).put("type", "blob").put("sha", localSha))
-            done++
-            if (done % 25 == 0 || done == uploadPaths.size) print("  " + done + "/" + uploadPaths.size + " files uploaded")
+            additions.put(
+                JSONObject()
+                    .put("path", path)
+                    .put("contents", Base64.encodeToString(bytes, Base64.NO_WRAP))
+            )
         }
-        initial.deleted.forEach {
-            entries.put(JSONObject().put("path", it).put("mode", "100644").put("type", "blob").put("sha", JSONObject.NULL))
+
+        val deletions = JSONArray()
+        initial.deleted.forEach { path ->
+            deletions.put(JSONObject().put("path", path))
         }
 
         verifyWorkspaceStable(initial, uploaded)
 
-        val tree = apiObject(
-            "/repos/" + enc(owner) + "/" + enc(repo) + "/git/trees",
-            "POST",
-            JSONObject().put("base_tree", baseTree).put("tree", entries)
-        )
         val message = checkedCommitMessage(rawMessage.ifBlank {
             meta.optString("pendingMessage").ifBlank { "RiftOS workspace update" }
         })
-        val commit = apiObject(
-            "/repos/" + enc(owner) + "/" + enc(repo) + "/git/commits",
-            "POST",
-            JSONObject()
-                .put("message", message)
-                .put("tree", tree.getString("sha"))
-                .put("parents", JSONArray().put(remoteSha))
-        )
-        val commitSha = commit.getString("sha")
+        val messageInput = commitMessageInput(message)
+        val fileChanges = JSONObject()
+        if (additions.length() > 0) fileChanges.put("additions", additions)
+        if (deletions.length() > 0) fileChanges.put("deletions", deletions)
+
+        val input = JSONObject()
+            .put(
+                "branch",
+                JSONObject()
+                    .put("repositoryNameWithOwner", owner + "/" + repo)
+                    .put("branchName", branch)
+            )
+            .put("expectedHeadOid", remoteSha)
+            .put("message", messageInput)
+            .put("fileChanges", fileChanges)
+
+        val variables = JSONObject().put("input", input)
         verifyWorkspaceStable(initial, uploaded)
-        apiObject(
-            "/repos/" + enc(owner) + "/" + enc(repo) + "/git/refs/heads/" +
-                branch.split('/').joinToString("/") { enc(it) },
-            "PATCH",
-            JSONObject().put("sha", commitSha).put("force", false)
+
+        val data = graphqlObject(
+            CREATE_COMMIT_ON_BRANCH_MUTATION,
+            variables,
+            MAX_GRAPHQL_PUSH_REQUEST_BYTES
         )
+        val created = data.getJSONObject("createCommitOnBranch")
+        val commitSha = checkedGitSha(
+            created.getJSONObject("commit").getString("oid"),
+            "created commit"
+        )
+        val refSha = checkedGitSha(
+            created.getJSONObject("ref").getJSONObject("target").getString("oid"),
+            "updated branch"
+        )
+        require(commitSha == refSha) {
+            "GitHub commit/ref mismatch after atomic push"
+        }
 
         val tracked = meta.optJSONObject("tracked") ?: JSONObject().also { meta.put("tracked", it) }
         initial.deleted.forEach { tracked.remove(it) }
@@ -367,6 +400,7 @@ class RiftNativeGit(context: Context) {
                     .put("mode", oldMode)
             )
         }
+
         meta.put("headSha", commitSha)
         meta.remove("pendingMessage")
         val patchSession = RiftPatchSessions.begin(
@@ -380,8 +414,27 @@ class RiftNativeGit(context: Context) {
         if (suppliedMeta != null) refreshAttachedMeta(meta) else saveMeta(meta)
         patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
         checkpoint(meta.optString("root"), "git:push", commitSha)
-        print("Push complete: " + commitSha.take(12) + " · one Git commit.")
-        return JSONObject().put("pushed", true).put("commitSha", commitSha).put("changes", changes.size)
+
+        print(
+            "Push complete: " + commitSha.take(12) +
+                " · one Git commit · one GitHub write request."
+        )
+        return JSONObject()
+            .put("pushed", true)
+            .put("commitSha", commitSha)
+            .put("changes", changes.size)
+            .put("transport", "graphql-createCommitOnBranch")
+            .put("writeRequests", 1)
+    }
+
+    private fun commitMessageInput(message: String): JSONObject {
+        val lines = message.split('\n')
+        val headline = lines.first().trim()
+        require(headline.isNotBlank()) { "commit headline is required" }
+        val body = lines.drop(1).joinToString("\n").trim()
+        return JSONObject()
+            .put("headline", headline)
+            .also { if (body.isNotBlank()) it.put("body", body) }
     }
 
     private fun verifyWorkspaceStable(initial: RepoStatus, uploaded: Map<String, String>) {
@@ -1064,6 +1117,62 @@ class RiftNativeGit(context: Context) {
         require(bytes.size.toLong() <= MAX_FILE) { "GitHub blob exceeds per-file limit" }
         require(blobSha(bytes) == sha) { "GitHub blob SHA mismatch" }
         return bytes
+    }
+
+    private fun graphqlObject(
+        query: String,
+        variables: JSONObject,
+        maxRequestBytes: Long
+    ): JSONObject {
+        val payload = JSONObject()
+            .put("query", query)
+            .put("variables", variables)
+        val payloadText = payload.toString()
+        val payloadBytes = payloadText.toByteArray(Charsets.UTF_8)
+        require(payloadBytes.size.toLong() <= maxRequestBytes) {
+            "GitHub atomic push request exceeds " + maxRequestBytes +
+                " bytes; split the change set before pushing"
+        }
+
+        val token = requireToken()
+        val request = Request.Builder()
+            .url("https://api.github.com/graphql")
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "RiftOS-NativeGit/" + BuildConfig.VERSION_NAME)
+            .header("Authorization", "Bearer " + token)
+            .post(payloadText.toRequestBody("application/json".toMediaType()))
+            .build()
+
+        http.newCall(request).execute().use { response ->
+            val text = readApiBody(response.body)
+            if (!response.isSuccessful) {
+                val detail = runCatching {
+                    JSONObject(text).optString("message")
+                }.getOrDefault("")
+                throw IllegalStateException(
+                    "GitHub " + response.code +
+                        if (detail.isNotBlank()) ": " + detail else ""
+                )
+            }
+
+            val root = JSONObject(text)
+            val errors = root.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                val messages = ArrayList<String>()
+                for (i in 0 until errors.length()) {
+                    val message = errors.optJSONObject(i)?.optString("message").orEmpty()
+                    if (message.isNotBlank()) messages += message
+                }
+                val detail = messages.joinToString("; ").take(MAX_GRAPHQL_ERROR_CHARS)
+                throw IllegalStateException(
+                    "GitHub GraphQL" +
+                        if (detail.isNotBlank()) ": " + detail else " request failed"
+                )
+            }
+
+            return root.optJSONObject("data")
+                ?: throw IllegalStateException("GitHub GraphQL response is missing data")
+        }
     }
 
     private fun apiObject(
