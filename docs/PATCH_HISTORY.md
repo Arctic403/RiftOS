@@ -1144,3 +1144,18 @@ One additional stale cluster was found in `scripts/test-semnexis-shell.mjs` befo
 - the shell test duplicated old exact binary/ARM32 byte counts already owned by the dedicated compiler/ARM32 regression suites.
 
 The shell integration test now verifies the current V7 compatibility/export surface and semantic fixture coverage while leaving exact binary byte-size locks to the dedicated compiler/ARM32 tests. No Semnexis compiler/runtime, RiftCLI, Git, RiftLLM or Rift++ runtime behavior changed.
+
+
+## 2026-09-20 — RiftGit force-flag test drift repair
+
+Builder run `35498648678` for RiftOS source `b5f9353cf9edf3c66537bc0b1f44fda0fbd2600b` passed the Semnexis shell gate and then stopped in `test-rift-shell-git.mjs`.
+
+The Git implementation was current and correct. Native RiftGit uses GitHub GraphQL `createCommitOnBranch` with `expectedHeadOid = remoteSha` for optimistic concurrency. The test still required a historical literal `.put("force", false)` marker that no longer belongs to this GraphQL input shape.
+
+The regression test now asserts the current invariant:
+- `expectedHeadOid` must be present and bound to the remote head;
+- the atomic push body must expose no force override.
+
+All other positive `RiftNativeGit.kt` assertions in the test were checked against current source; 97 assertions were evaluated and this was the only stale one.
+
+No RiftGit runtime or GraphQL behavior changed.

@@ -68,7 +68,8 @@ assert.ok(!atomicPushBody.includes('/git/blobs'),'atomicPush must not POST one G
 assert.ok(!atomicPushBody.includes('/git/trees'),'atomicPush must not construct the remote tree through a second REST write');
 assert.ok(!atomicPushBody.includes('/git/commits'),'atomicPush must not create the commit through a third REST write');
 assert.ok(!atomicPushBody.includes('/git/refs/heads/'),'atomicPush must not PATCH the branch ref separately');
-assert.match(git,/put\("force", false\)/);
+assert.match(git,/\.put\("expectedHeadOid", remoteSha\)/);
+assert.ok(!atomicPushBody.includes('.put("force"'),'atomic GraphQL push must rely on expectedHeadOid optimistic concurrency and expose no force override');
 
 assert.match(git,/\.riftgit-stage-/);
 assert.match(git,/\.riftgit-backup-/);
