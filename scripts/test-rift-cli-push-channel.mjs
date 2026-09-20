@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+
+const read=(path)=>readFileSync(path,'utf8');
+const gradle=read('android/app/build.gradle.kts');
+const runtime=read('android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt');
+const bus=read('android/app/src/main/java/com/riftos/app/RiftCliEventBus.kt');
+const relayClient=read('android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt');
+const toolHost=read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
+const shell=read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
+const relay=read('relay/src/index.js');
+
+assert.match(gradle,/RiftCliEventBus\.kt/,'exact Android source snapshot must include the CLI event bus');
+assert.match(runtime,/fun cliEvents\(\): RiftCliEventBus/,'runtime must own one process-wide CLI event bus');
+assert.match(runtime,/RiftMcpRelayClient\(context\.applicationContext, server\(context\), cliEvents\(\)\)/,'relay client must subscribe to the process-wide CLI event bus');
+
+assert.match(bus,/SCHEMA = "rift\.cli-event\/1"/);
+assert.match(bus,/MAX_EVENTS = 256/);
+assert.match(bus,/MAX_EVENT_BYTES = 96 \* 1024/);
+assert.match(bus,/MAX_INLINE_RESULT_BYTES = 48 \* 1024/);
+assert.match(bus,/AtomicLong\(System\.currentTimeMillis\(\) \* 1000L\)/,'event sequence must stay ahead across normal process restarts');
+assert.match(bus,/fun replayAfter\(afterSequence: Long\)/);
+assert.match(bus,/stepKey = extra\?\.optString\("stepId"\)/,'batch step events must not be coalesced together');
+assert.match(bus,/lastJobState\[jobId\] == key/,'duplicate job-state events must be coalesced');
+assert.match(bus,/type\.trim\(\)\.take\(128\)/,'event type must be bounded');
+assert.match(bus,/key\.length in 1\.\.128/,'extra metadata keys must be bounded');
+assert.match(bus,/extraKeys\.forEach \{ event\.remove\(it\) \}/,'oversized extra metadata must be stripped');
+assert.match(bus,/val sequenceValue = event\.optLong\("sequence"\)/,'oversized events must retain their allocated sequence');
+assert.match(bus,/put\("eventTruncated", true\)/,'oversized events must collapse to a bounded fallback instead of creating replay gaps');
+assert.match(bus,/events\.addLast\(frozen\)/);
+assert.match(bus,/while \(events\.size > MAX_EVENTS\) events\.removeFirst\(\)/);
+
+assert.match(relayClient,/private val cliEvents: RiftCliEventBus/);
+assert.match(relayClient,/cliEvents\.addListener\(cliEventListener\)/);
+assert.match(relayClient,/\.put\("type", "cli\.event"\)/);
+assert.match(relayClient,/sendCliReplay\(webSocket, resumeAfter\)/);
+assert.match(relayClient,/"cli\.replay\.request"/);
+assert.match(relayClient,/"cli\.ack"/);
+assert.match(relayClient,/cliEvents\.replayAfter\(afterSequence\)/);
+assert.match(relayClient,/cliLastAckSequence/);
+
+assert.match(toolHost,/emitCliJob\(job, "job\.submitted"\)/);
+assert.match(toolHost,/emitCliJob\(job, "job\.started"\)/);
+assert.match(toolHost,/"job\.cancelling"/);
+assert.match(toolHost,/"job\.completed"/);
+assert.match(shell,/emitCliShellJob\(job, "job\.submitted"/);
+assert.match(shell,/emitCliShellJob\(job, "job\.started"/);
+assert.match(shell,/type = "driver\.need_more_info"/);
+assert.match(shell,/type = "cli\.enabled"/);
+assert.match(shell,/type = "cli\.disabled"/);
+
+assert.match(relay,/MAX_DRIVER_SOCKETS = 4/);
+assert.match(relay,/this\.ctx\.getWebSockets\("driver"\)\.length \+ this\.sseClients\.size >= MAX_DRIVER_SOCKETS/,'WS and SSE subscribers must share one bounded ceiling');
+assert.match(relay,/client\.writer\.desiredSize != null && client\.writer\.desiredSize <= 0/,'slow SSE subscribers must fail closed instead of building an unbounded queue');
+assert.match(relay,/MAX_CLI_EVENT_BYTES = 128_000/);
+assert.match(relay,/request\.headers\.get\("last-event-id"\)/);
+assert.match(relay,/ctx\.getWebSockets\("driver"\)/);
+assert.match(relay,/acceptWebSocket\(server, \["driver"\]\)/);
+assert.match(relay,/acceptWebSocket\(server, \["device"\]\)/);
+assert.match(relay,/serializeAttachment\(\{ role: "driver", after \}\)/);
+assert.match(relay,/type: "cli\.events\.ready"/);
+assert.match(relay,/requestCliReplay\(after\)/);
+assert.match(relay,/lastCliSequence: this\.lastCliSequence/,'device WebSocket attachment must persist the CLI resume cursor across Durable Object hibernation');
+assert.match(relay,/deviceAttachment\.lastCliSequence/,'constructor must restore the hibernated CLI cursor without Durable Object storage');
+assert.match(relay,/minimumCliResumeAfter\(\)/,'device reconnect must honor the oldest active subscriber cursor');
+assert.match(relay,/cliResumeAfter: this\.minimumCliResumeAfter\(\)/);
+assert.match(relay,/after >= sequence\) continue/,'replayed events must not be rebroadcast to caught-up subscribers');
+assert.match(relay,/driver\.serializeAttachment\(\{ role: "driver", after: sequence \}\)/,'driver cursor must advance after delivery');
+assert.match(relay,/this\.sseClients\.set\(id, \{ writer, after \}\)/,'SSE subscribers must retain independent replay cursors');
+assert.match(relay,/method: "notifications\/riftcli\/event"/,'SSE fallback must carry valid JSON-RPC MCP notifications');
+assert.match(relay,/method: "notifications\/riftcli\/ready"/);
+assert.match(relay,/id: \$\{event\.sequence\}/);
+assert.match(relay,/message\.type === "cli\.event"/);
+assert.match(relay,/socket\.send\(JSON\.stringify\(\{ type: "cli\.ack", sequence \}\)\)/);
+assert.match(relay,/sequence > current/,'driver acknowledgements must not regress replay cursors');
+assert.ok(!relay.includes('ctx.storage'),'CLI push replay must stay device-owned and avoid Durable Object storage writes');
+
+console.log('ok - RiftCLI N1.5 persistent push channel is bounded, replayable and hibernatable');

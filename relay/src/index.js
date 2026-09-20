@@ -2,6 +2,8 @@ const PROTOCOL = "rift-mcp-relay-v1";
 const MAX_BODY_BYTES = 1_000_000;
 const REQUEST_TIMEOUT_MS = 75_000;
 const MAX_PENDING_REQUESTS = 64;
+const MAX_DRIVER_SOCKETS = 4;
+const MAX_CLI_EVENT_BYTES = 128_000;
 const encoder = new TextEncoder();
 
 function canonicalJson(value) {
@@ -117,7 +119,19 @@ export default {
         });
       }
       if (request.method === "GET") {
-        return new Response(null, { status: 405, headers: { allow: "POST, DELETE, OPTIONS" } });
+        const room = env.RIFT_RELAY.getByName("primary");
+        const afterRaw = url.searchParams.get("after") || request.headers.get("last-event-id") || "0";
+        const after = /^\d{1,20}$/.test(afterRaw) ? afterRaw : "0";
+        if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
+          const forwarded = new Request(`https://relay.internal/events-ws?after=${after}`, request);
+          return room.fetch(forwarded);
+        }
+        return room.fetch(
+          new Request(`https://relay.internal/events-sse?after=${after}`, {
+            method: "GET",
+            headers: { accept: "text/event-stream" },
+          }),
+        );
       }
       if (request.method === "DELETE") return new Response(null, { status: 204 });
       if (request.method !== "POST") {
@@ -168,16 +182,39 @@ export default {
 export class RiftRelayRoom {
   constructor(ctx) {
     this.ctx = ctx;
-    this.socket = ctx.getWebSockets()[0] || null;
+    const allSockets = ctx.getWebSockets();
+    this.socket = ctx.getWebSockets("device")[0]
+      || allSockets.find(socket => (socket.deserializeAttachment?.()?.role || "device") === "device")
+      || null;
     this.pending = new Map();
+    this.sseClients = new Map();
+    const deviceAttachment = this.socket?.deserializeAttachment?.() || {};
+    const attachedSequence = Number(deviceAttachment.lastCliSequence ?? 0);
+    this.lastCliSequence = Number.isSafeInteger(attachedSequence) && attachedSequence >= 0
+      ? attachedSequence
+      : 0;
   }
 
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/health") {
-      return json({ ok: true, deviceConnected: Boolean(this.socket) });
+      return json({
+        ok: true,
+        deviceConnected: Boolean(this.socket),
+        driverSockets: this.ctx.getWebSockets("driver").length,
+        sseClients: this.sseClients.size,
+        cliSequence: this.lastCliSequence,
+      });
     }
     if (url.pathname === "/device") return this.acceptDevice();
+    if (url.pathname === "/events-ws") {
+      const after = Number(url.searchParams.get("after") || "0");
+      return this.acceptDriver(Number.isSafeInteger(after) && after >= 0 ? after : 0);
+    }
+    if (url.pathname === "/events-sse") {
+      const after = Number(url.searchParams.get("after") || "0");
+      return this.openSse(Number.isSafeInteger(after) && after >= 0 ? after : 0);
+    }
     if (url.pathname === "/mcp" && request.method === "POST") {
       const payload = await request.json();
       return this.forwardMcp(payload);
@@ -197,9 +234,120 @@ export class RiftRelayRoom {
       this.failPending("RiftOS device connection was replaced");
       this.socket.close(1012, "Replaced by a newer RiftOS connection");
     }
-    this.ctx.acceptWebSocket(server);
+    this.ctx.acceptWebSocket(server, ["device"]);
+    server.serializeAttachment({ role: "device", lastCliSequence: this.lastCliSequence });
     this.socket = server;
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  acceptDriver(after) {
+    const existing = this.ctx.getWebSockets("driver");
+    if (existing.length + this.sseClients.size >= MAX_DRIVER_SOCKETS) {
+      return json({ error: "Too many RiftCLI event subscribers" }, 503);
+    }
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    this.ctx.acceptWebSocket(server, ["driver"]);
+    server.serializeAttachment({ role: "driver", after });
+    server.send(JSON.stringify({
+      type: "cli.events.ready",
+      protocol: PROTOCOL,
+      transport: "websocket",
+      after,
+    }));
+    this.requestCliReplay(after);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  openSse(after) {
+    if (this.ctx.getWebSockets("driver").length + this.sseClients.size >= MAX_DRIVER_SOCKETS) {
+      return json({ error: "Too many RiftCLI event subscribers" }, 503);
+    }
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
+    const id = crypto.randomUUID();
+    this.sseClients.set(id, { writer, after });
+    writer.closed.finally(() => this.sseClients.delete(id)).catch(() => this.sseClients.delete(id));
+    writer.write(encoder.encode(
+      `event: message\ndata: ${JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/riftcli/ready",
+        params: { protocol: PROTOCOL, transport: "sse", after },
+      })}\n\n`,
+    )).catch(() => this.sseClients.delete(id));
+    this.requestCliReplay(after);
+    return new Response(stream.readable, {
+      status: 200,
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        "connection": "keep-alive",
+      },
+    });
+  }
+
+  requestCliReplay(after) {
+    const socket = this.socket;
+    if (!socket) return;
+    try {
+      socket.send(JSON.stringify({ type: "cli.replay.request", after }));
+    } catch {
+      // Device reconnect logic owns recovery.
+    }
+  }
+
+  minimumCliResumeAfter() {
+    let resume = Number.isSafeInteger(this.lastCliSequence) && this.lastCliSequence >= 0
+      ? this.lastCliSequence
+      : 0;
+    for (const driver of this.ctx.getWebSockets("driver")) {
+      const after = Number(driver.deserializeAttachment?.()?.after ?? 0);
+      if (Number.isSafeInteger(after) && after >= 0) resume = Math.min(resume, after);
+    }
+    for (const client of this.sseClients.values()) {
+      const after = Number(client?.after ?? 0);
+      if (Number.isSafeInteger(after) && after >= 0) resume = Math.min(resume, after);
+    }
+    return resume;
+  }
+
+  broadcastCliEvent(event) {
+    const sequence = Number(event.sequence);
+    if (!Number.isSafeInteger(sequence) || sequence <= 0) return;
+    const message = JSON.stringify({ type: "cli.event", event });
+    for (const driver of this.ctx.getWebSockets("driver")) {
+      const attachment = driver.deserializeAttachment?.() || {};
+      const after = Number(attachment.after ?? 0);
+      if (Number.isSafeInteger(after) && after >= sequence) continue;
+      try {
+        driver.send(message);
+        driver.serializeAttachment({ role: "driver", after: sequence });
+      } catch {
+        try { driver.close(1011, "RiftCLI event delivery failed"); } catch {}
+      }
+    }
+    const sse = encoder.encode(
+      `id: ${event.sequence}\nevent: message\ndata: ${JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/riftcli/event",
+        params: event,
+      })}\n\n`,
+    );
+    for (const [id, client] of this.sseClients.entries()) {
+      const after = Number(client?.after ?? 0);
+      if (Number.isSafeInteger(after) && after >= sequence) continue;
+      if (client.writer.desiredSize != null && client.writer.desiredSize <= 0) {
+        this.sseClients.delete(id);
+        client.writer.abort("RiftCLI SSE subscriber is not keeping up").catch(() => {});
+        continue;
+      }
+      client.after = sequence;
+      client.writer.write(sse).catch(() => {
+        this.sseClients.delete(id);
+        client.writer.abort("RiftCLI SSE delivery failed").catch(() => {});
+      });
+    }
   }
 
   forwardNotification(payload) {
@@ -254,6 +402,10 @@ export class RiftRelayRoom {
   }
 
   webSocketMessage(socket, raw) {
+    const role = socket.deserializeAttachment?.()?.role || (socket === this.socket ? "device" : "unknown");
+    if (role === "driver") {
+      return this.handleDriverMessage(socket, raw);
+    }
     if (socket !== this.socket) return;
     if (typeof raw !== "string" || encoder.encode(raw).byteLength > MAX_BODY_BYTES) {
       socket.close(1009, "Message too large");
@@ -271,10 +423,26 @@ export class RiftRelayRoom {
         socket.close(1002, "Unsupported protocol");
         return;
       }
-      socket.send(JSON.stringify({ type: "relay.ready" }));
+      socket.send(JSON.stringify({ type: "relay.ready", cliResumeAfter: this.minimumCliResumeAfter() }));
       return;
     }
     if (message.type === "device.pong") return;
+    if (message.type === "cli.event") {
+      const event = message.event;
+      if (!event || Array.isArray(event) || typeof event !== "object") return;
+      const serialized = JSON.stringify(event);
+      if (encoder.encode(serialized).byteLength > MAX_CLI_EVENT_BYTES) return;
+      if (event.schema !== "rift.cli-event/1") return;
+      const sequence = Number(event.sequence);
+      if (!Number.isSafeInteger(sequence) || sequence <= 0) return;
+      this.lastCliSequence = Math.max(this.lastCliSequence, sequence);
+      socket.serializeAttachment({ role: "device", lastCliSequence: this.lastCliSequence });
+      this.broadcastCliEvent(event);
+      try {
+        socket.send(JSON.stringify({ type: "cli.ack", sequence }));
+      } catch {}
+      return;
+    }
     if (message.type !== "mcp.response" && message.type !== "mcp.error") return;
     const pending = this.pending.get(message.requestId);
     if (!pending) return;
@@ -301,13 +469,49 @@ export class RiftRelayRoom {
     }
   }
 
+  handleDriverMessage(socket, raw) {
+    if (typeof raw !== "string" || encoder.encode(raw).byteLength > 32_000) {
+      socket.close(1009, "Driver message too large");
+      return;
+    }
+    let message;
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      socket.send(JSON.stringify({ type: "cli.events.error", message: "Invalid driver JSON" }));
+      return;
+    }
+    if (message.type === "cli.events.replay") {
+      const after = Number(message.after || 0);
+      if (Number.isSafeInteger(after) && after >= 0) {
+        socket.serializeAttachment({ role: "driver", after });
+        this.requestCliReplay(after);
+      }
+      return;
+    }
+    if (message.type === "cli.events.ack") {
+      const sequence = Number(message.sequence || 0);
+      const current = Number(socket.deserializeAttachment?.()?.after ?? 0);
+      if (Number.isSafeInteger(sequence) && sequence >= 0 &&
+          (!Number.isSafeInteger(current) || sequence > current)) {
+        socket.serializeAttachment({ role: "driver", after: sequence });
+      }
+      return;
+    }
+    socket.send(JSON.stringify({ type: "cli.events.error", message: "Unsupported driver event message" }));
+  }
+
   webSocketClose(socket) {
+    const role = socket.deserializeAttachment?.()?.role;
+    if (role === "driver") return;
     if (socket !== this.socket) return;
     this.socket = null;
     this.failPending("RiftOS device disconnected");
   }
 
   webSocketError(socket) {
+    const role = socket.deserializeAttachment?.()?.role;
+    if (role === "driver") return;
     if (socket !== this.socket) return;
     this.socket = null;
     this.failPending("RiftOS device connection failed");

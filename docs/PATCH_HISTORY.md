@@ -1359,3 +1359,41 @@ MC0 remains a separate frozen proof path. The new lane does not refactor or repl
 
 No general compiler authority, shell authority, silent install authority or heap/runtime semantics were added.
 
+## 2026-09-20 — RiftCLI N1.5 persistent push + N1.6 Batch V2 source completion
+
+RiftCLI pre-N2 work was hardened and re-audited after the live-proven N1 baseline at Builder run #255 / source `121edf6b3255beca33a45351d3952c7026b5cb4b`.
+
+N1.5 persistent push:
+- `RiftCliEventBus` now owns a bounded 256-event process-local replay ring, 96 KiB event ceiling and 48 KiB inline-result ceiling;
+- event sequences start from a wall-clock-derived high base so a normal RiftOS process restart does not reset new events below a relay/driver cursor retained from the previous process;
+- event type and extra metadata keys are bounded;
+- batch step coalescing includes `stepId`;
+- oversized events collapse to a bounded metadata-only event while preserving their allocated sequence instead of creating a synthetic replay gap;
+- the Android relay client forwards `cli.event` over the existing persistent WSS and handles replay requests plus ACKs;
+- the relay maintains independent WebSocket/SSE cursors, filters replay already consumed by each subscriber and advances cursors only forward;
+- device reconnect uses the oldest active subscriber cursor through `cliResumeAfter`;
+- WebSocket and SSE event subscribers share one four-client ceiling;
+- slow SSE subscribers fail closed on backpressure rather than building an unbounded write queue;
+- Durable Object event payload persistence remains absent; device memory owns replay.
+
+N1.6 RiftCLI Batch V2:
+- `rift_cli_batch` accepts at most 16 fully prevalidated sequential steps;
+- whole-plan and per-step byte limits, unique step IDs, explicit `validate` / `execute` modes and `stop` / `continue` failure policies are enforced;
+- tool steps reject nested/control/batch/workspace-exec targets and shell steps use an explicit allowlist while rejecting recursive `rift-cli` and retired `batch`;
+- one Batch V2 job reserves the same global `RiftCliExecutionGate` for its entire plan;
+- per-step events include `stepId`, index/count/kind/operation and bounded results;
+- `completed_with_failures` is a true terminal push state;
+- `InterruptedException` is rethrown rather than being converted to an ordinary failed step, and cancellation is checked before and after every step;
+- shell and ToolSandbox mutation provenance use `rift-cli-batch`;
+- retired RiftShell `batch` and public multi-op `rift_workspace_exec` remain fail-fast disabled.
+
+Validation/hardening:
+- repaired interrupted pre-handoff source tests that contained literal escaped newline text;
+- replaced remaining fragile escaped RiftCLI C++ JSON checks in the wiring gate with `String.raw`;
+- source-level N1.5 and N1.6 gates pass through the bounded read-only QuickJS harness;
+- modified relay and RiftCLI JS/MJS gates parse cleanly;
+- same-class scan is clean apart from intentional retired-batch tombstone assertions;
+- documentation, roadmap, relay protocol, subsystem READMEs and test inventory were synchronized to push-first + Batch V2 semantics.
+
+This source is not yet promoted as an installed N1.5/N1.6 build. Builder compile/package and target-device push/reconnect/batch proof remain required before N1.7/N2 promotion.
+

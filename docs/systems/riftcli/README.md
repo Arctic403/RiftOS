@@ -4,9 +4,9 @@
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
-Gate N0 is proven on the installed Android device (RiftOS run #250 / source `6f7a61295d6c75ae97cdde59231d767d39eb8152`): native C++ status/architecture, `armeabi-v7a` execution, explicit process-local enable, fail-closed unsupported command handling, and force-stop/restart reset back to disabled all passed.
+Gate N0 is proven on the installed Android device. Gate N1 plus its replay/job/cancellation/provenance hardening is also proven on the installed Android device (Builder run #255 / source `121edf6b3255beca33a45351d3952c7026b5cb4b`) on `armeabi-v7a`.
 
-Status: **Gate N1 / native Driver Protocol in development**
+Status: **N1 live-proven. N1.5 persistent push and N1.6 RiftCLI Batch V2 are source-complete and locally gated; new Builder/APK/device promotion is still pending.**
 
 RiftCLI is being rebuilt from scratch as RiftOS's native engineering supervisor. The previous Experimental RiftCLI Kotlin/swarm/IR/lifecycle implementation was intentionally retired rather than used as the new foundation.
 
@@ -90,18 +90,22 @@ Each accepted N1 driver request authorizes at most **one RiftOS action**. Depend
 
 Every authority-bearing driver request must carry a unique process-local `request-id`. RiftCLI retains **all accepted request IDs for the lifetime of the RiftOS process**; IDs are never evicted while that process lives, so an old transport retry cannot become executable again after a disable/re-enable cycle. The fail-closed capacity is 4096 unique authority requests. Once that capacity is reached, RiftCLI rejects new authority requests until RiftOS is restarted. Disable/re-enable clears active driver-loop state but does not clear replay protection.
 
-### Live-poll job execution
+### Push-first job execution with live-poll fallback
 
-N1 does not keep ChatGPT/MCP blocked on long CLI work.
+N1 does not keep ChatGPT/MCP blocked on long CLI work. N1.5 changes observation from rapid polling to a persistent push-first event stream while retaining list/poll/cancel as recovery and debugging controls.
 
-Both authority lanes are job-based, and Gate N1 permits **exactly one outstanding authority job globally** across shell + ToolHost. A second authority action is rejected until the current job reaches a terminal state; job list/poll/cancel controls remain available.
+Both authority lanes are job-based, and RiftCLI permits **exactly one outstanding authority job globally** across shell + ToolHost + Batch V2. A second authority action is rejected until the current job reaches a terminal state; job controls remain available.
 
-- RiftShell actions run on a dedicated single-thread CLI worker so the normal RiftShell worker remains free to service polling/cancellation requests.
+- RiftShell actions run on a dedicated single-thread CLI worker so the normal RiftShell worker remains free to service observation/cancellation requests.
 - Direct `rift_*` ToolHost actions run through the existing confined ToolSandbox on a CLI job lane with **no fixed CLI wall-clock timeout**.
-- a fair process-wide `RiftCliExecutionGate` serializes actual CLI execution across both lanes, preventing shell-vs-ToolHost mutation races while leaving list/poll/cancel responsive.
+- a fair process-wide `RiftCliExecutionGate` serializes actual CLI execution across authority lanes.
+- `RiftCliEventBus` owns a process-local 256-event replay ring, bounded 96 KiB events, bounded 48 KiB inline results, monotonic restart-safe sequence IDs, and batch-step-aware coalescing.
+- the already-open device WSS carries `cli.event` envelopes to the relay; the relay forwards to bounded driver WebSocket or SSE subscribers without per-event Durable Object storage writes.
+- reconnect uses sequence cursors and device-owned replay; duplicate replay delivery is filtered per subscriber.
+- polling is **fallback only** for recovery, explicit inspection, or results too large to inline.
 - normal non-CLI MCP calls keep their existing bounded timeouts.
 
-Every submitted action returns a process-local `jobId`. The external driver then uses new, unique driver request IDs to call:
+Every submitted action returns a process-local `jobId`. The external driver normally observes lifecycle/terminal events over push. It may use new, unique driver request IDs to call:
 
 ```text
 --tool rift_cli_job_list   --tool-args {"requestId":"<original-request-id>"}
@@ -112,6 +116,16 @@ Every submitted action returns a process-local `jobId`. The external driver then
 `rift_cli_job_list` provides recovery when the original submit response is lost: the driver can locate the already-started job by its original `request-id` without replaying the action. List responses are metadata-only; full output/result data is returned only by explicit `rift_cli_job_poll` for a concrete job ID. Terminal job data is limited to 2 MiB per job, 16 retained jobs per lane, and 5 minutes of retention; larger successful results are reported as `completed_result_too_large`.
 
 Cancellation is explicit and observable. A queued job that is cancelled before execution ends as `cancelled`. A running operation first enters `cancelling`; if it still completes successfully, the terminal state is `completed_after_cancel_request`. If interruption is observed after execution may already have touched state, the terminal state is `cancelled_may_have_applied` instead of pretending rollback is proven. Disabling RiftCLI requests cancellation of both shell and ToolHost CLI jobs. The idempotent `rift_cli_job_list`, `rift_cli_job_poll`, and `rift_cli_job_cancel` controls remain available while CLI authority is disabled so the external driver can verify whether a previously-authorized job actually stopped.
+
+### RiftCLI Batch V2
+
+N1.6 adds a **new** bounded batch mechanism and does not resurrect either retired batch path.
+
+`rift_cli_batch` accepts at most 16 prevalidated sequential steps in `validate` or `execute` mode. Each step has a unique bounded ID and is either a ToolHost step or an allowlisted RiftShell step. The full plan is validated before authority execution begins. Nested `rift_cli_batch`, `rift_shell_exec`, `rift_workspace_exec`, CLI job-control tools, recursive `rift-cli`, and the old RiftShell `batch` command are rejected.
+
+One Batch V2 job reserves the same global `RiftCliExecutionGate` for its entire lifetime, so unrelated authority cannot interleave between steps. Per-step results are bounded, `stop` and `continue` failure policies are explicit, cancellation is checked before and after each step, cancellation interrupts are never converted into ordinary step failures, and mutations are recorded with `rift-cli-batch` provenance. Push events include unique `stepId` metadata so separate step transitions cannot be coalesced together.
+
+The retired RiftShell batch implementation and multi-operation `rift_workspace_exec` remain fail-fast disabled.
 
 ## JNI text contract
 
@@ -136,7 +150,7 @@ A future task may require coordinated understanding of many files/subsystems, bu
 - recoverable;
 - followed by evidence/verification before dependent mutations proceed.
 
-RiftCLI must not reintroduce the retired multi-operation batch-edit model.
+RiftCLI must not reintroduce the retired opaque RiftShell/workspace-exec batch-edit model. Batch V2 is the only CLI multi-step lane: it is bounded, fully prevalidated, sequential, observable per step, provenance-recorded, cancellation-aware, and owns one global authority reservation for the whole plan.
 
 ## Reusable RiftOS infrastructure
 
@@ -191,7 +205,7 @@ Each gate must be implemented, documented, adversarially tested, and independent
 
 ### Gate N1 — Driver Protocol
 
-Current gate. Add a bounded native protocol for external reasoning input:
+**Live-proven on Builder run #255 / source `121edf6b...`.** Bounded native protocol for external reasoning input:
 
 - unique process-local request identity plus session/task/project identity;
 - goal and assumptions;
@@ -210,7 +224,19 @@ The loop is **external continuation only**:
 4. RiftCLI never recursively calls itself or a model.
 5. `loopMax` is capped at **8** and `loopStep` must remain below that cap.
 
-Once enabled, N1 may authorize the full RiftOS authority surface, but only one bounded action per accepted request. Shell and ToolHost actions are submitted as live-poll jobs; the external driver recovers/lists, polls or cancels them explicitly. No model client is added to RiftCLI.
+Once enabled, N1 may authorize the full RiftOS authority surface, but only one bounded action per accepted request. No model client is added to RiftCLI.
+
+### Gate N1.5 — Persistent push/events
+
+**Source-complete; Builder/APK/device promotion pending.** Job lifecycle and small terminal results are pushed over the existing persistent relay connection. Device memory owns the bounded replay ring; the relay owns bounded fan-out only. Driver WebSocket and SSE subscribers use monotonic cursors, reconnect replay and ACKs. Poll/list/cancel remain recovery/debug controls rather than the steady-state observation loop.
+
+### Gate N1.6 — RiftCLI Batch V2
+
+**Source-complete; Builder/APK/device promotion pending.** `rift_cli_batch` provides at most 16 fully prevalidated sequential steps under one global authority reservation, with bounded results, per-step push events, stop/continue failure policy, truthful cancellation and `rift-cli-batch` provenance. Retired RiftShell `batch` and multi-op `rift_workspace_exec` stay disabled.
+
+### Gate N1.7 — abuse/reconnect/batch stress
+
+Pending promotion gate after the new APK is built and installed. Exercise reconnect/replay gaps, duplicate delivery, slow subscribers, large-result fallback, batch cancellation between steps, no-interleave behavior, failure policies and cleanup.
 
 ### Gate N2 — Engineering State
 
@@ -308,7 +334,7 @@ The source gate must verify:
 - native source contains no model/API/network/process execution surface;
 - documentation/source ownership points to this subsystem.
 
-The Builder must continue verifying both `libriftcli.so` ABI payloads in every final signed APK. N1 additionally requires source regression coverage for the native driver protocol and the RiftShell dispatcher/provenance bridge.
+The Builder must continue verifying both `libriftcli.so` ABI payloads in every final signed APK. RiftCLI regression coverage must include the native driver protocol, dispatcher/provenance bridge, persistent push/replay transport, and Batch V2 while separately locking the retired batch paths off.
 
 
 ## Failure signatures
@@ -320,14 +346,18 @@ The Builder must continue verifying both `libriftcli.so` ABI payloads in every f
 - RiftCLI recursively dispatches `rift-cli` internally instead of requiring a new external-driver continuation -> loop-boundary regression.
 - a driver loop exceeds 8 steps or advances without an explicit external request -> bounded-loop regression.
 - a duplicate authority-bearing `request-id` executes again instead of being replay-rejected -> idempotency regression.
-- a long CLI action blocks the normal RiftShell worker instead of returning a live-poll `jobId` -> polling regression.
+- a long CLI action blocks the normal RiftShell worker instead of returning a job ID and publishing push lifecycle events -> async-execution regression.
+- normal job observation requires rapid HTTP/MCP polling instead of persistent relay push -> push-channel regression.
+- reconnect replay duplicates already-consumed events, regresses subscriber cursors, or loses retained events because the device resumes only from relay high-water -> replay regression.
+- a slow SSE subscriber can build an unbounded write queue -> event-backpressure regression.
 - a lost submit response cannot be recovered by original `request-id` -> job-recovery regression.
 - cancellation reports terminal `cancelled` before the worker actually resolves, or loses the `cancelled_may_have_applied` / `completed_after_cancel_request` distinction -> cancellation-truth regression.
 - a CLI-driven mutation bypasses RiftPatchSessions provenance -> provenance regression.
 - either ARM64 or ARM32 native library is missing from the final APK -> ABI parity regression.
 - JNI uses modified UTF helpers instead of explicit UTF-16/UTF-8 conversion -> text-boundary regression.
 - a retired Experimental RiftCLI Kotlin/swarm/IR source returns -> reset regression.
-- an opaque multi-operation batch mutation path returns -> incremental-execution regression.
+- retired RiftShell `batch` or multi-operation `rift_workspace_exec` becomes executable again -> retired-batch regression.
+- Batch V2 bypasses whole-plan prevalidation, global authority reservation, per-step bounds/events/provenance, or cancellation checks -> Batch V2 regression.
 
 ## Fix map
 
@@ -347,7 +377,7 @@ Local Agent remains an independent RiftOS owner; enabled CLI reaches it only thr
 
 ABI/source snapshot ownership -> `android/app/build.gradle.kts`.
 
-Source regression gate -> `scripts/test-rift-cli-native-bootstrap.mjs` + `scripts/test-rift-cli-driver-protocol.mjs` + `scripts/validate-rift-wiring.mjs`.
+Source regression gate -> `scripts/test-rift-cli-native-bootstrap.mjs` + `scripts/test-rift-cli-driver-protocol.mjs` + `scripts/test-rift-cli-push-channel.mjs` + `scripts/test-rift-cli-batch-v2.mjs` + wiring/transport validators.
 
 Final APK native-library proof -> public Builder `scripts/verify-riftos-apk.sh`.
 
@@ -367,14 +397,16 @@ Source validation must verify:
 - every authority-bearing request requires a bounded unique `request-id`; accepted IDs are retained without eviction for the whole RiftOS process lifetime, duplicate IDs are replay-rejected across disable/re-enable cycles, and the 4096-entry protection set fails closed at capacity until process restart;
 - re-enabling an already-enabled CLI preserves replay/loop state;
 - shell actions use the separate serialized CLI worker rather than blocking the normal RiftShell worker;
-- direct CLI ToolHost actions use live-poll jobs with no fixed CLI wall-clock timeout while normal MCP timeouts remain unchanged;
-- `rift_cli_job_list`, `rift_cli_job_poll` and `rift_cli_job_cancel` provide recovery/observation/cancellation for both job lanes;
+- direct CLI ToolHost actions use async jobs with no fixed CLI wall-clock timeout while normal MCP timeouts remain unchanged;
+- persistent relay push is the normal observation path, with bounded device-owned replay, per-subscriber cursors, ACK handling and bounded WebSocket/SSE fan-out;
+- `rift_cli_job_list`, `rift_cli_job_poll` and `rift_cli_job_cancel` provide recovery/explicit observation/cancellation for job lanes;
 - jobs retain the original `request-id` so lost submit responses can be recovered without replay;
 - actual CLI execution is globally serialized across shell and ToolHost lanes while poll/list/cancel remain responsive;
 - cancellation exposes `cancelling`, `cancelled_may_have_applied` and `completed_after_cancel_request` truthfully;
 - ToolHost dispatch dynamically accepts current/future `rift_*` tools but rejects `rift_shell_exec` and `rift_workspace_exec` in that lane;
 - driver loops are process-local, identity-bound, strictly monotonic, externally continued and capped at 8 steps;
 - CLI shell mutations retain `RiftPatchSessions` provenance and direct tool mutations retain ToolSandbox provenance;
+- Batch V2 accepts at most 16 prevalidated sequential steps, holds one global authority reservation for the whole plan, rejects nested/retired batch paths, emits unique per-step events, preserves `rift-cli-batch` provenance and does not swallow cancellation interrupts;
 - JNI uses explicit UTF-16/UTF-8 transcoding;
 - the native core itself still contains no model/API client or raw process/network execution primitive.
 
@@ -384,4 +416,4 @@ Builder validation must additionally prove the final signed APK contains:
 - `lib/armeabi-v7a/libriftcli.so`;
 - no x86/x86_64 RiftCLI library.
 
-Installed-device promotion still requires the N1 build to prove `status`/architecture identity, request-id replay rejection, shell-job submit/list/poll/cancel, ToolHost-job submit/list/poll/cancel, disable-time cancellation, one bounded external continuation loop and restart-reset behavior on the target Android device.
+N1 is already installed-device proven. Promotion of N1.5/N1.6 still requires a new Builder artifact and installed-device proof of push-without-poll terminal delivery, small inline vs large-result fallback, disconnect/reconnect replay + ACK, duplicate filtering, Batch V2 validate/execute, stop/continue failure policy, cancellation between steps, one global authority reservation/no interleave, per-step push events, `rift-cli-batch` provenance, and continued rejection of the retired batch paths.

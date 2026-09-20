@@ -152,9 +152,10 @@ check(
 );
 
 check(
-  'RiftCLI docs lock plan-global act-incremental and no-batch policy',
+  'RiftCLI docs lock plan-global act-incremental and retired-batch isolation',
   docs.includes('plan globally but act incrementally') &&
-    docs.includes('must not reintroduce the retired multi-operation batch-edit model')
+    docs.includes('N1.6 adds a **new** bounded batch mechanism') &&
+    docs.includes('retired RiftShell batch implementation and multi-operation `rift_workspace_exec` remain fail-fast disabled')
 );
 
 if (failures.length) {

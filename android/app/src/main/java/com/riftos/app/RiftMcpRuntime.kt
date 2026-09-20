@@ -13,6 +13,7 @@ object RiftMcpRuntime {
     @Volatile private var codynexBridge: RiftCodynexBridgeClient? = null
     @Volatile private var nativeGit: RiftNativeGit? = null
     @Volatile private var debugHub: RiftDebugHub? = null
+    @Volatile private var cliEvents: RiftCliEventBus? = null
     @Volatile private var activityRef: WeakReference<MainActivity>? = null
 
     fun registerActivity(activity: MainActivity) {
@@ -25,6 +26,14 @@ object RiftMcpRuntime {
     }
 
     fun activeActivity(): MainActivity? = activityRef?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
+
+    /** Process-wide bounded RiftCLI event stream. This owns no execution authority. */
+    fun cliEvents(): RiftCliEventBus {
+        cliEvents?.let { return it }
+        return synchronized(this) {
+            cliEvents ?: RiftCliEventBus().also { cliEvents = it }
+        }
+    }
 
     /** Passive process-wide diagnostics. This object owns no execution authority. */
     fun debugHub(): RiftDebugHub {
@@ -68,7 +77,7 @@ object RiftMcpRuntime {
     fun relayClient(context: Context): RiftMcpRelayClient {
         relay?.let { return it }
         return synchronized(this) {
-            relay ?: RiftMcpRelayClient(context.applicationContext, server(context)).also { relay = it }
+            relay ?: RiftMcpRelayClient(context.applicationContext, server(context), cliEvents()).also { relay = it }
         }
     }
 

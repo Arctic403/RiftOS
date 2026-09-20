@@ -198,6 +198,15 @@ internal class RiftToolSandbox(context: Context) {
      * authority; deep filesystem/runtime loops remain cooperative through RiftDeadline.check(),
      * which also observes thread interruption. Normal MCP calls retain their bounded timeout.
      */
+    /**
+     * Synchronous RiftCLI Batch V2 tool step.
+     *
+     * The batch owner already holds RiftCliExecutionGate for the entire plan, so this path must
+     * not reserve or queue a nested CLI job. Per-step provenance is still recorded by executeRequest.
+     */
+    internal fun executeCliBatchRequest(raw: String): String =
+        executeRequest(raw, "rift-cli-batch")
+
     internal fun submitCliJob(
         raw: String,
         onStart: () -> Unit,

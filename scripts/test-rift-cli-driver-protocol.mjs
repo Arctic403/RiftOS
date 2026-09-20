@@ -15,7 +15,7 @@ check(
   'N1 schema and hardened protocol version are native-owned',
   core.includes('rift.cli-driver/1') &&
     core.includes('kDriverProtocolVersion = 1') &&
-    core.includes('0.1.1-driver-live-poll')
+    core.includes('0.2.0-pre-n2')
 );
 
 check(
@@ -143,6 +143,15 @@ check(
 );
 
 check(
+  'persistent push capability is advertised with poll fallback',
+  core.includes(String.raw`\"driverToolExecution\":\"push-first-jobs-with-poll-fallback\"`) &&
+    core.includes(String.raw`\"driverEventDelivery\":\"persistent-relay-push\"`) &&
+    core.includes(String.raw`\"driverEventReplay\":\"device-ring-256\"`) &&
+    core.includes(String.raw`\"batchV2\":true`) &&
+    core.includes(String.raw`\"batchV2MaxSteps\":16`)
+);
+
+check(
   'CLI never recursively dispatches itself',
   core.includes('internal RiftCLI recursion is forbidden') &&
     shell.includes('Internal RiftCLI recursion is forbidden') &&
@@ -150,7 +159,7 @@ check(
 );
 
 check(
-  'shell authority runs as a separate live-poll job lane',
+  'shell authority runs as a separate async push-observable job lane',
   core.includes(String.raw`\"kind\":\"rift-shell\"`) &&
     shell.includes('private val cliWorker = ThreadPoolExecutor(') &&
     shell.includes('cliWorker.submit {') &&
@@ -176,7 +185,7 @@ check(
 );
 
 check(
-  'live-poll retention is bounded for 32-bit heap safety',
+  'async job retention is bounded for 32-bit heap safety',
   shell.includes('MAX_CLI_SHELL_RETAINED_RESULT_BYTES = 2 * 1024 * 1024') &&
     shell.includes('CLI_SHELL_JOB_RETENTION_MS = 5 * 60 * 1000L') &&
     shell.includes('"completed_result_too_large"') &&
@@ -186,8 +195,8 @@ check(
 );
 
 check(
-  'live-poll recovery surface covers list poll and cancel',
-  core.includes(String.raw`\"driverToolExecution\":\"live-poll-jobs\"`) &&
+  'poll fallback recovery surface covers list poll and cancel',
+  core.includes(String.raw`\"driverToolExecution\":\"push-first-jobs-with-poll-fallback\"`) &&
     core.includes('rift_cli_job_list') &&
     core.includes('rift_cli_job_poll') &&
     core.includes('rift_cli_job_cancel') &&
@@ -270,9 +279,11 @@ check(
 );
 
 check(
-  'docs describe full authority live polling replay safety and bounded looping',
+  'docs describe full authority push-first execution replay safety poll fallback and bounded looping',
   docs.includes('full RiftOS authority') &&
-    docs.includes('live-poll') &&
+    docs.includes('persistent push') &&
+    docs.includes('polling is **fallback only**') &&
+    docs.includes('RiftCLI Batch V2') &&
     docs.includes('request-id') &&
     docs.includes('external continuation') &&
     docs.includes('8')

@@ -52,6 +52,7 @@ class RiftToolHost(
         private const val MAX_CLI_JOBS = 16
         private const val CLI_JOB_RETENTION_MS = 5 * 60 * 1000L
         private const val MAX_CLI_RETAINED_RESULT_BYTES = 2 * 1024 * 1024
+        private const val MAX_CLI_BATCH_TOOL_ARGS_BYTES = 64 * 1024
         private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")
         const val SCOPE = "riftfs/workspace"
     }
@@ -72,6 +73,32 @@ class RiftToolHost(
     )
 
     private val cliJobs = ConcurrentHashMap<String, CliJob>()
+
+    private fun emitCliJob(
+        job: CliJob,
+        type: String,
+        result: Any? = null,
+        message: String? = null
+    ) {
+        val terminal = job.status in setOf(
+            "completed",
+            "completed_result_too_large",
+            "failed",
+            "cancelled",
+            "cancelled_may_have_applied",
+            "completed_after_cancel_request"
+        )
+        RiftMcpRuntime.cliEvents().emitJob(
+            type = type,
+            jobId = job.id,
+            requestId = job.requestId,
+            lane = "tool",
+            status = job.status,
+            terminal = terminal,
+            result = result,
+            message = message
+        )
+    }
     @Volatile private var shellExecutor: RiftShellExecutor? = initialShellExecutor
 
     fun setShellExecutor(executor: RiftShellExecutor) {
@@ -312,6 +339,125 @@ class RiftToolHost(
         callAsyncInternal(rawName, args, bypassAccess = false, debugContext = debugContext, rawReply = reply)
     }
 
+    internal fun validateCliBatchTool(rawName: String, args: JSONObject): JSONObject {
+        val name = canonicalName(rawName)
+        val forbidden = setOf(
+            "rift_shell_exec",
+            "rift_workspace_exec",
+            "rift_cli_batch",
+            "rift_cli_job_list",
+            "rift_cli_job_poll",
+            "rift_cli_job_cancel"
+        )
+        if (name in forbidden) {
+            return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", "RiftCLI Batch V2 forbids nested/control tool: $name")
+        }
+        if (!name.startsWith("rift_")) {
+            return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", "RiftCLI Batch V2 tool names must use the rift_* namespace")
+        }
+        val argsBytes = args.toString().toByteArray(Charsets.UTF_8).size
+        if (argsBytes > MAX_CLI_BATCH_TOOL_ARGS_BYTES) {
+            return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", "RiftCLI Batch V2 tool args exceed $MAX_CLI_BATCH_TOOL_ARGS_BYTES UTF-8 bytes")
+        }
+        val normalizedArgs = try {
+            normalizeToolArgs(name, args)
+        } catch (error: Throwable) {
+            return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", error.message ?: "Invalid RiftCLI Batch V2 tool arguments")
+        }
+        if (name != "rift_debug" && methodFor(name) == null) {
+            return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", "Unsupported RiftCLI Batch V2 tool: $rawName")
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("name", name)
+            .put("args", normalizedArgs)
+    }
+
+    /**
+     * Execute one already-authorized CLI Batch V2 tool step synchronously.
+     *
+     * The batch owner holds the global CLI authority reservation and execution gate for the whole
+     * plan. This helper therefore never creates a nested job or reserves the gate again.
+     */
+    internal fun executeCliBatchTool(
+        rawName: String,
+        args: JSONObject,
+        stepRequestId: String
+    ): JSONObject {
+        val validation = validateCliBatchTool(rawName, args)
+        if (!validation.optBoolean("ok", false)) {
+            val name = validation.optString("name", rawName)
+            val error = validation.optString("error", "Invalid RiftCLI Batch V2 tool step")
+            recordAudit(name, args, false, error)
+            return JSONObject(validation.toString())
+        }
+        val name = validation.optString("name")
+        val normalizedArgs = validation.optJSONObject("args") ?: JSONObject()
+
+        if (name == "rift_debug") {
+            return try {
+                val value = debugHub.query(normalizedArgs)
+                recordAudit(name, normalizedArgs, true, null, 0L)
+                JSONObject().put("ok", true).put("name", name).put("value", value)
+            } catch (error: Throwable) {
+                val message = error.message ?: "Invalid rift_debug batch request"
+                recordAudit(name, normalizedArgs, false, message, 0L)
+                JSONObject().put("ok", false).put("name", name).put("error", message)
+            }
+        }
+
+        val method = methodFor(name)
+            ?: return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", "Unsupported RiftCLI Batch V2 tool: $rawName")
+
+        val started = SystemClock.elapsedRealtime()
+        val request = JSONObject()
+            .put("id", "cli-batch-$stepRequestId")
+            .put("method", method)
+            .put("args", JSONObject(normalizedArgs.toString()).put("intent", "rift-cli-batch:$stepRequestId"))
+
+        val raw = sandbox.executeCliBatchRequest(request.toString())
+        val response = runCatching { JSONObject(raw) }
+            .getOrElse {
+                JSONObject()
+                    .put("ok", false)
+                    .put("error", "RiftCLI Batch V2 sandbox returned invalid JSON")
+            }
+        val duration = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+
+        if (!response.optBoolean("ok", false)) {
+            val error = response.optString("error").takeIf { it.isNotBlank() } ?: "RiftCLI Batch V2 tool failed"
+            recordAudit(name, normalizedArgs, false, error, duration)
+            return JSONObject().put("ok", false).put("name", name).put("error", error).put("durationMs", duration)
+        }
+
+        val value = response.opt("value") ?: JSONObject.NULL
+        if (name == "rift_info" && value is JSONObject) value.put("mcpManifest", manifest())
+        recordAudit(name, normalizedArgs, true, null, duration)
+        return JSONObject()
+            .put("ok", true)
+            .put("name", name)
+            .put("durationMs", duration)
+            .put("value", value)
+    }
+
     /**
      * Trusted in-process RiftCLI live-poll lane.
      *
@@ -364,6 +510,7 @@ class RiftToolHost(
         }
         val job = CliJob(jobId, driverRequestId, name, now, now, "queued")
         cliJobs[jobId] = job
+        emitCliJob(job, "job.submitted")
 
         if (name == "rift_debug") {
             val response = try {
@@ -380,6 +527,11 @@ class RiftToolHost(
                 job.status = if (response.optBoolean("ok", false)) "completed" else "failed"
                 job.updatedAt = SystemClock.elapsedRealtime()
             }
+            emitCliJob(
+                job,
+                if (job.status == "completed") "job.completed" else "job.failed",
+                response
+            )
             RiftCliExecutionGate.release(jobId)
             return cliJobSnapshot(job)
         }
@@ -394,12 +546,15 @@ class RiftToolHost(
             sandbox.submitCliJob(
                 request.toString(),
                 onStart = {
+                    var started = false
                     synchronized(job) {
                         if (job.status == "queued") {
                             job.status = "running"
                             job.updatedAt = SystemClock.elapsedRealtime()
+                            started = true
                         }
                     }
+                    if (started) emitCliJob(job, "job.started")
                 }
             ) { raw ->
                 try {
@@ -453,6 +608,15 @@ class RiftToolHost(
                         }
                         job.updatedAt = SystemClock.elapsedRealtime()
                     }
+                    emitCliJob(
+                        job,
+                        when (job.status) {
+                            "completed", "completed_result_too_large", "completed_after_cancel_request" -> "job.completed"
+                            "cancelled", "cancelled_may_have_applied" -> "job.cancelled"
+                            else -> "job.failed"
+                        },
+                        retainedResponse
+                    )
                 } finally {
                     RiftCliExecutionGate.release(jobId)
                 }
@@ -465,6 +629,7 @@ class RiftToolHost(
                 job.status = "failed"
                 job.updatedAt = SystemClock.elapsedRealtime()
             }
+            emitCliJob(job, "job.failed", job.response)
             RiftCliExecutionGate.release(jobId)
             return cliJobSnapshot(job)
         }
@@ -511,11 +676,17 @@ class RiftToolHost(
                 job.status = "cancelling"
             }
         }
+        emitCliJob(
+            job,
+            if (job.status == "cancelled") "job.cancelled" else "job.cancelling",
+            job.response
+        )
         return cliJobSnapshot(job)
     }
 
     internal fun cancelAllCliJobs(reason: String): JSONObject {
         var requested = 0
+        val changed = ArrayList<CliJob>()
         cliJobs.values.forEach { job ->
             synchronized(job) {
                 if (job.status !in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
@@ -533,9 +704,18 @@ class RiftToolHost(
                     } else {
                         job.status = "cancelling"
                     }
+                    changed += job
                     requested++
                 }
             }
+        }
+        changed.forEach { job ->
+            emitCliJob(
+                job,
+                if (job.status == "cancelled") "job.cancelled" else "job.cancelling",
+                job.response,
+                reason
+            )
         }
         return JSONObject().put("ok", true).put("cancellationRequested", requested)
     }
@@ -543,7 +723,11 @@ class RiftToolHost(
     private fun cliJobSnapshot(job: CliJob, includeResult: Boolean = true): JSONObject = synchronized(job) {
         JSONObject()
             .put("ok", true)
-            .put("jobOk", job.response?.optBoolean("ok"))
+            .put("jobOk", when (job.status) {
+                "completed", "completed_result_too_large", "completed_after_cancel_request" -> true
+                "failed", "cancelled", "cancelled_may_have_applied" -> false
+                else -> JSONObject.NULL
+            })
             .put("jobId", job.id)
             .put("requestId", job.requestId)
             .put("tool", job.name)

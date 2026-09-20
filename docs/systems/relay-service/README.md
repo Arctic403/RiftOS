@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
 ## Purpose
 
@@ -43,7 +43,7 @@ Because the secret is embedded in the pathname, normal invocation logging can ex
 
 ## Public endpoints
 
-/health returns only ok=true and deviceConnected.
+/health reports bounded transport diagnostics: `ok`, device connection state, active driver WebSocket count, active SSE client count and the current RiftCLI sequence high-water.
 
 /device requires:
 - WebSocket upgrade;
@@ -51,7 +51,7 @@ Because the secret is embedded in the pathname, normal invocation logging can ex
 - exact X-Rift-Protocol = rift-mcp-relay-v1;
 - X-Rift-Device-Id matching [A-Za-z0-9._:-]{1,160}.
 
-/mcp/<secret> supports OPTIONS, POST and DELETE. GET and unsupported methods return 405. DELETE is a stateless lifecycle acknowledgement; the relay owns no HTTP session object.
+/mcp/<secret> supports OPTIONS, POST, GET and DELETE. POST remains normal MCP JSON-RPC forwarding. GET opens the RiftCLI event channel: WebSocket upgrade selects the hibernatable driver WebSocket path; otherwise SSE is returned. `after=<sequence>` and `Last-Event-ID` provide resume cursors. DELETE is a stateless lifecycle acknowledgement; the relay owns no HTTP MCP session object.
 
 ## Request body bound
 
@@ -77,9 +77,12 @@ RiftRelayRoom allocates no pending correlation state for a notification. RiftMcp
 
 RiftRelayRoom owns only:
 - the current device socket;
-- an in-memory pending HTTP-to-device request map.
+- up to four hibernatable driver event WebSockets;
+- bounded in-memory SSE subscriber state;
+- an in-memory pending HTTP-to-device request map;
+- ephemeral RiftCLI event sequence/cursor state.
 
-The constructor can recover an accepted socket through ctx.getWebSockets(). Current source contains no ctx.storage access and no payload database writes.
+The constructor can recover accepted device/driver sockets through `ctx.getWebSockets()`. Current source contains no `ctx.storage` access and no payload/event database writes.
 
 ## Device replacement
 
@@ -135,6 +138,16 @@ Active-device disconnect/error clears the current socket, clears every timer, re
 
 Device replacement performs the same immediate pending failure before switching ownership.
 
+## RiftCLI event delivery
+
+The device sends `cli.event` envelopes containing schema `rift.cli-event/1` and a positive monotonic sequence. The relay bounds each event at 128,000 UTF-8 bytes before forwarding.
+
+Driver WebSocket and SSE subscribers share one maximum of four subscribers. Each subscriber keeps an independent `after` cursor. Events at or below that cursor are skipped, so a replay requested for one lagging subscriber is not redundantly rebroadcast to subscribers that already advanced. Driver acknowledgements can only advance, never regress, a cursor.
+
+SSE output uses JSON-RPC notifications `notifications/riftcli/event` and SSE `id` equal to the event sequence. A slow SSE writer is removed when backpressure indicates it is not keeping up instead of accumulating an unbounded queue.
+
+The relay requests replay from the device rather than persisting event payloads. When the device reconnects, `relay.ready.cliResumeAfter` uses the minimum cursor still needed by active subscribers. Accepted device events receive `cli.ack`.
+
 ## Notification delivery
 
 Notification delivery is best-effort and uncorrelated:
@@ -155,11 +168,12 @@ RiftRelaySettings validates a wss:// endpoint, rejects userinfo/fragments, and b
 ## Privacy and persistence
 
 Current relay source:
-- has no ctx.storage use;
+- has no `ctx.storage` use;
 - performs no database write;
 - has no console logging;
-- stores correlation only in live object memory;
-- clears pending entries on reply, send failure, timeout, replacement or disconnect.
+- stores MCP correlation and RiftCLI subscriber/cursor state only ephemerally;
+- clears pending MCP entries on reply, send failure, timeout, replacement or disconnect;
+- does not persist RiftCLI event payloads or an offline event queue.
 
 Durable Object configuration does not imply payload persistence.
 
@@ -176,7 +190,8 @@ Durable Object configuration does not imply payload persistence.
 - Oversized local MCP responses fail before send.
 - MCP notifications are forwarded fire-and-forget instead of dropped.
 - Worker invocation logs disabled because path authentication contains a secret.
-- The already-verified MCP relay-client README and transport validator were re-synchronized.
+- The MCP relay-client README and transport validator were re-synchronized.
+- N1.5 added bounded driver WebSocket/SSE subscriptions, per-subscriber cursors, device-owned replay, ACKs, slow-SSE backpressure handling and zero Durable Object event-payload writes.
 
 ## Current limitations
 
@@ -186,7 +201,8 @@ Durable Object configuration does not imply payload persistence.
 - no OAuth/user accounts/multi-tenant isolation;
 - /health publicly reveals only device connectivity;
 - no persistent offline queue;
-- no request resumption across room/process restart;
+- RiftCLI replay is limited to the current device process's bounded 256-event ring;
+- no MCP request resumption across room/process restart;
 - no HTTP MCP session state beyond stateless DELETE acknowledgement.
 
 ## Critical invariants
@@ -200,7 +216,9 @@ Durable Object configuration does not imply payload persistence.
 - replacement cannot strand pending work;
 - response JSON-RPC id must match the pending request;
 - notifications preserve no-response semantics;
-- no MCP payload persistence;
+- RiftCLI event subscribers remain bounded and transport-only;
+- event replay stays device-owned and per-subscriber cursors never regress;
+- no MCP or RiftCLI event payload persistence;
 - no relay tool allowlist;
 - on-device ToolHost remains authority.
 
@@ -215,7 +233,10 @@ Durable Object configuration does not imply payload persistence.
 - notification returns 202 without device forwarding -> lifecycle transport regression;
 - ctx.storage starts persisting MCP payloads -> persistence/privacy expansion;
 - invocation_logs becomes enabled while URL-path secret auth remains -> credential exposure risk;
-- relay gains a tool allowlist/filter -> transport/authority drift.
+- relay gains a tool allowlist/filter -> transport/authority drift;
+- GET event subscribers become unbounded or slow SSE writes queue indefinitely -> event resource regression;
+- replayed events are redelivered to caught-up subscribers or subscriber ACKs regress cursors -> replay regression;
+- RiftCLI events are written to Durable Object storage -> persistence/cost regression.
 
 ## Fix map
 
@@ -250,6 +271,8 @@ Second source audit must verify:
 - matching 1,000,000-byte Worker and Android bounds;
 - no ctx.storage/payload persistence;
 - no relay tool filter;
-- Android response pre-send bound.
+- Android response pre-send bound;
+- shared four-subscriber WebSocket/SSE cap and SSE backpressure;
+- device-owned RiftCLI replay, monotonic subscriber cursors, ACK handling and no `ctx.storage` event writes.
 
-relay/package.json syntax/deployment and live Cloudflare abuse remain later runtime validation.
+`relay/package.json` syntax/deployment plus live reconnect/abuse behavior remain runtime validation for the new build.

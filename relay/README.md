@@ -2,7 +2,7 @@
 
 For the full runtime ownership, failure map, invariants and repair guide, see [`../docs/systems/relay-service/README.md`](../docs/systems/relay-service/README.md).
 
-Single-device development relay for RiftOS. A Durable Object keeps the Android WebSocket and correlates ChatGPT Streamable HTTP requests without storing tool payloads.
+Single-device development relay for RiftOS. A Durable Object keeps the Android WebSocket, correlates ChatGPT Streamable HTTP requests, and fans out bounded RiftCLI push events to driver WebSocket/SSE subscribers without storing tool or event payloads.
 
 ## Required secrets
 

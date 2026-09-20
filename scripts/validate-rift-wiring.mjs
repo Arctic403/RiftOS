@@ -126,6 +126,9 @@ const buildInstaller = read(`${kotlinDir}/RiftBuildInstaller.kt`);
 if (!buildInstaller.includes('class RiftBuildInstallReceiver : BroadcastReceiver()')) fail('RiftBuild manifest receiver source is missing');
 const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
 const runtime = read(`${kotlinDir}/RiftMcpRuntime.kt`);
+const cliEvents = read(`${kotlinDir}/RiftCliEventBus.kt`);
+const relayClient = read(`${kotlinDir}/RiftMcpRelayClient.kt`);
+const relayWorker = read('relay/src/index.js');
 const browserWindow = read(`${kotlinDir}/RiftBrowserWindow.kt`);
 const browserHost = read(`${kotlinDir}/RiftBrowserAppHost.kt`);
 const desktop = read(`${kotlinDir}/RiftNativeDesktop.kt`);
@@ -165,22 +168,25 @@ if (!cliCmake.includes('add_library(') || !cliCmake.includes('riftcli') || !cliC
 }
 if (!cliCore.includes('external-driver -> MCP/RiftShell -> RiftCLI') ||
     !cliCore.includes('full-riftos-when-enabled') ||
-    !cliCore.includes('"directModelBackend\\":false') ||
-    !cliCore.includes('"directNetworkClient\\":false') ||
-    !cliCore.includes('"driverContinuationExternalOnly\\":true') ||
+    !cliCore.includes(String.raw`\\\"directModelBackend\\\":false`) ||
+    !cliCore.includes(String.raw`\\\"directNetworkClient\\\":false`) ||
+    !cliCore.includes(String.raw`\\\"driverContinuationExternalOnly\\\":true`) ||
     !cliCore.includes('kMaxDriverLoopSteps = 8') ||
     !cliCore.includes('kMaxDriverRequestIds = 4096') ||
     !cliCore.includes('RequestReservation::Capacity') ||
     !cliCore.includes('duplicate-request-id') ||
     !cliCore.includes('request-id-capacity') ||
-    !cliCore.includes('driverReplayCapacity\\":') ||
-    !cliCore.includes('driverReplayEviction\\":false') ||
+    !cliCore.includes(String.raw`\\\"driverReplayCapacity\\\":`) ||
+    !cliCore.includes(String.raw`\\\"driverReplayEviction\\\":false`) ||
     !cliCore.includes(String.raw`\"driverReplayReset\":\"process-restart-only\"`) ||
     cliCore.includes('g_recentRequestIds.clear()') ||
     !cliCore.includes('isDriverJobControl') ||
     !cliCore.includes('if (!on && !jobControl)') ||
     !cliCore.includes('jobControl ? RequestReservation::Accepted') ||
-    !cliCore.includes(String.raw`driverToolExecution\":\"live-poll-jobs`)) fail('RiftCLI N1 authority/driver/replay boundary drifted');
+    !cliCore.includes(String.raw`driverToolExecution\":\"push-first-jobs-with-poll-fallback`) ||
+    !cliCore.includes(String.raw`driverEventDelivery\":\"persistent-relay-push`) ||
+    !cliCore.includes(String.raw`batchV2\":true`) ||
+    !cliCore.includes(String.raw`batchV2MaxSteps\":16`)) fail('RiftCLI N1 authority/driver/replay/push/batch boundary drifted');
 if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
     !nativeShell.includes('executeCliShellDispatch') ||
     !nativeShell.includes('executeCliToolDispatch') ||
@@ -211,7 +217,26 @@ if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
     !nativeShell.includes('RiftCliExecutionGate.run {') ||
     !toolSandbox.includes('RiftCliExecutionGate.run {') ||
     !toolSandbox.includes('internal fun submitCliJob(') ||
-    !toolSandbox.includes('executeRequest(raw, "rift-cli")')) fail('RiftCLI N1 live-poll dispatcher/provenance boundary drifted');
+    !toolSandbox.includes('executeRequest(raw, "rift-cli")') ||
+    !nativeShell.includes('"rift_cli_batch" -> startCliBatch') ||
+    !nativeShell.includes('MAX_CLI_BATCH_STEPS = 16') ||
+    !nativeShell.includes('origin = "rift-cli-batch"') ||
+    !toolHost.includes('internal fun validateCliBatchTool') ||
+    !toolHost.includes('internal fun executeCliBatchTool') ||
+    !toolSandbox.includes('internal fun executeCliBatchRequest') ||
+    !toolSandbox.includes('executeRequest(raw, "rift-cli-batch")')) fail('RiftCLI N1 dispatcher/provenance/Batch V2 boundary drifted');
+if (!gradle.includes('RiftCliEventBus.kt') ||
+    !runtime.includes('fun cliEvents(): RiftCliEventBus') ||
+    !runtime.includes('RiftMcpRelayClient(context.applicationContext, server(context), cliEvents())') ||
+    !cliEvents.includes('SCHEMA = "rift.cli-event/1"') ||
+    !cliEvents.includes('MAX_EVENTS = 256') ||
+    !cliEvents.includes('stepKey = extra?.optString("stepId")') ||
+    !relayClient.includes('cliEvents.addListener(cliEventListener)') ||
+    !relayClient.includes('"cli.replay.request"') ||
+    !relayClient.includes('"cli.ack"') ||
+    !relayWorker.includes('acceptWebSocket(server, ["driver"])') ||
+    !relayWorker.includes('notifications/riftcli/event') ||
+    relayWorker.includes('ctx.storage')) fail('RiftCLI N1.5 persistent push wiring drifted');
 if (cliJni.includes('GetStringUTFChars') || cliJni.includes('NewStringUTF') ||
     !cliJni.includes('GetStringChars') || !cliJni.includes('utf8ToUtf16')) fail('RiftCLI JNI UTF boundary drifted');
 

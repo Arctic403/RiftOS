@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
 ## Purpose
 
@@ -56,6 +56,8 @@ Inbound recognized types:
 - relay.ping;
 - mcp.request;
 - mcp.notification;
+- cli.replay.request;
+- cli.ack;
 - relay.error.
 
 Unknown types receive `mcp.error`.
@@ -74,6 +76,14 @@ The payload is passed unchanged to:
 `mcp.notification` carries an id-less `notifications/*` payload and is passed to the same server without a retry key or response callback, preserving JSON-RPC notification semantics.
 
 That relay request id is the only stable retry key supplied to server idempotency.
+
+## RiftCLI push events
+
+The client subscribes to the process-wide `RiftCliEventBus` owned by `RiftMcpRuntime`. New events are wrapped as `cli.event` and sent over the already-open device WSS; no second device connection or rapid poll loop is created.
+
+On `relay.ready`, the client reads `cliResumeAfter` and replays retained device events after that sequence. The relay may later request another replay with `cli.replay.request`. `cli.ack` advances the client's observed acknowledgement high-water mark. The event ring itself remains on-device.
+
+The event bus is bounded to 256 events, 96 KiB per event and 48 KiB inline results. Large results are represented by metadata and remain available through the explicit job-control fallback when retained by the owning job lane.
 
 Responses are sent only if the WebSocket is still the current socket. Each forwarded request also gets a 70-second Android-side forwarding watchdog; if the local MCP callback never terminates, the client emits one bounded `mcp.error` instead of leaving the relay request open forever.
 
@@ -105,7 +115,9 @@ Status exposes:
 - endpoint;
 - device id;
 - connectedAt;
-- attempts.
+- attempts;
+- last RiftCLI acknowledgement sequence;
+- bounded event-bus status/capacity.
 
 It never returns the pairing token.
 
@@ -124,7 +136,7 @@ Browser compatibility and relay converge on the same process-owned MCP server/ho
 
 ## Source hardening in this audit
 
-Relay settings were tightened from a prefix-only WSS check to actual URI validation, and pairing tokens gained length/control-character validation before HTTP-header use. The client message bound is now byte-accurate rather than character-counted, local MCP responses are bounded before WebSocket transmission, and request forwarding has a 70-second terminal watchdog ordered inside the public relay's 75-second timeout.
+Relay settings were tightened from a prefix-only WSS check to actual URI validation, and pairing tokens gained length/control-character validation before HTTP-header use. The client message bound is byte-accurate rather than character-counted, local MCP responses are bounded before WebSocket transmission, and request forwarding has a 70-second terminal watchdog ordered inside the public relay's 75-second timeout. N1.5 additionally reuses this persistent WSS for bounded RiftCLI push events, reconnect replay and acknowledgements.
 
 ## Critical invariants
 
@@ -137,6 +149,8 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - one bounded reconnect schedule;
 - relay request id forwarded for server retry dedupe;
 - local forwarding terminates within 70 seconds, before the public relay's 75-second timeout;
+- RiftCLI events use the process-wide bounded device ring and the existing WSS;
+- reconnect replay is sequence-based and does not give the relay execution authority;
 - local ToolHost remains authority.
 
 ## Failure signatures
@@ -147,7 +161,9 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - retry loop schedules multiple concurrent reconnects -> lifecycle regression;
 - relay changes read/write permissions -> authority regression;
 - status exposes token -> secret leak;
-- same relay request duplicates mutation -> Server/relay request-id regression.
+- same relay request duplicates mutation -> Server/relay request-id regression;
+- RiftCLI progress requires rapid polling despite an active relay WSS -> push-channel regression;
+- replay request/ACK handling regresses or event replay escapes the bounded device ring -> event-recovery regression.
 
 ## Fix map
 
@@ -161,6 +177,6 @@ MCP semantics/retry cache -> `RiftMcpServer.kt`.
 
 ## Validation
 
-Second source audit must recheck URI/token validation, encrypted token storage, outbound headers, 1M input bound, current-socket checks, reconnect cap/jitter, 70-second forwarding watchdog, request-id forwarding and token-free status.
+Second source audit must recheck URI/token validation, encrypted token storage, outbound headers, 1M input bound, current-socket checks, reconnect cap/jitter, 70-second forwarding watchdog, request-id forwarding, token-free status, process-wide event-bus subscription, replay/ACK handling and bounded event status.
 
 Public relay-service behavior is a separate subsystem audit.

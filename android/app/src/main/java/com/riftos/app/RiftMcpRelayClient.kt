@@ -20,7 +20,8 @@ import kotlin.random.Random
  */
 class RiftMcpRelayClient(
     context: Context,
-    private val server: RiftMcpServer
+    private val server: RiftMcpServer,
+    private val cliEvents: RiftCliEventBus
 ) {
     companion object {
         private const val PROTOCOL = "rift-mcp-relay-v1"
@@ -41,9 +42,15 @@ class RiftMcpRelayClient(
     @Volatile private var state = "disabled"
     @Volatile private var detail = "Relay is disabled"
     @Volatile private var connectedAt = 0L
+    @Volatile private var lastCliAckSequence = 0L
     private var attempts = 0
     private var socket: WebSocket? = null
     private var reconnect: ScheduledFuture<*>? = null
+    private val cliEventListener: (JSONObject) -> Unit = { event -> sendCliEvent(event) }
+
+    init {
+        cliEvents.addListener(cliEventListener)
+    }
 
     fun start() {
         val config = settings.load()
@@ -89,6 +96,8 @@ class RiftMcpRelayClient(
             .put("deviceId", config.deviceId)
             .put("connectedAt", connectedAt)
             .put("attempts", attempts)
+            .put("cliLastAckSequence", lastCliAckSequence)
+            .put("cliEvents", cliEvents.status())
     }
 
     private fun open(config: RiftRelayConfig) {
@@ -149,12 +158,22 @@ class RiftMcpRelayClient(
                     attempts = 0
                     connectedAt = System.currentTimeMillis()
                     update("connected", "ChatGPT relay connected")
+                    val resumeAfter = message.optLong("cliResumeAfter", 0L).coerceAtLeast(0L)
+                    sendCliReplay(webSocket, resumeAfter)
                 }
                 "relay.ping" -> webSocket.send(
                     JSONObject().put("type", "device.pong").put("at", System.currentTimeMillis()).toString()
                 )
                 "mcp.request" -> handleMcpRequest(webSocket, message)
                 "mcp.notification" -> handleMcpNotification(message)
+                "cli.replay.request" -> {
+                    val after = message.optLong("after", 0L).coerceAtLeast(0L)
+                    sendCliReplay(webSocket, after)
+                }
+                "cli.ack" -> {
+                    val sequence = message.optLong("sequence", 0L)
+                    if (sequence > lastCliAckSequence) lastCliAckSequence = sequence
+                }
                 "relay.error" -> update("relay-error", message.optString("message", "Relay rejected the connection"))
                 else -> sendProtocolError(webSocket, message.optString("requestId").takeIf { it.isNotBlank() }, "Unknown relay message")
             }
@@ -219,6 +238,29 @@ class RiftMcpRelayClient(
                     sendProtocolError(webSocket, requestId, error.message ?: "Local MCP execution failed")
                 }
             }
+        }
+    }
+
+    private fun sendCliEvent(event: JSONObject) {
+        val webSocket = synchronized(lock) { socket } ?: return
+        if (!isCurrent(webSocket)) return
+        sendCliEvent(webSocket, event)
+    }
+
+    private fun sendCliEvent(webSocket: WebSocket, event: JSONObject) {
+        val envelope = JSONObject()
+            .put("type", "cli.event")
+            .put("protocol", PROTOCOL)
+            .put("event", event)
+            .toString()
+        if (envelope.toByteArray(Charsets.UTF_8).size > MAX_MESSAGE_BYTES) return
+        webSocket.send(envelope)
+    }
+
+    private fun sendCliReplay(webSocket: WebSocket, afterSequence: Long) {
+        cliEvents.replayAfter(afterSequence).forEach { event ->
+            if (!isCurrent(webSocket)) return
+            sendCliEvent(webSocket, event)
         }
     }
 

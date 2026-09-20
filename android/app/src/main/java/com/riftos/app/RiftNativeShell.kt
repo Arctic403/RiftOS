@@ -35,6 +35,19 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         private const val MAX_CLI_SHELL_JOBS = 16
         private const val CLI_SHELL_JOB_RETENTION_MS = 5 * 60 * 1000L
         private const val MAX_CLI_SHELL_RETAINED_RESULT_BYTES = 2 * 1024 * 1024
+        private const val MAX_CLI_BATCH_STEPS = 16
+        private const val MAX_CLI_BATCH_BYTES = 128 * 1024
+        private const val MAX_CLI_BATCH_STEP_BYTES = 64 * 1024
+        private const val MAX_CLI_BATCH_STEP_RESULT_BYTES = 128 * 1024
+        private val CLI_BATCH_ALLOWED_SHELL_COMMANDS = setOf(
+            "help", "pwd", "cd", "home", "ps", "kill", "apps", "permissions",
+            "drives", "df", "sysinfo", "native", "uptime", "version",
+            "ls", "tree", "stat", "cat", "head", "tail",
+            "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip",
+            "browser", "open", "clear", "workspace", "git", "chat", "devlab",
+            "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex",
+            "riftbuild", "qjs", "semx", "riftpp", "rift-tool"
+        )
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
     }
 
@@ -74,10 +87,52 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         @Volatile var output: String = "",
         @Volatile var result: Any? = null,
         @Volatile var error: String? = null,
-        @Volatile var future: Future<*>? = null
+        @Volatile var future: Future<*>? = null,
+        val lane: String = "shell"
+    )
+
+    private data class CliBatchStep(
+        val id: String,
+        val kind: String,
+        val toolName: String? = null,
+        val toolArgs: JSONObject? = null,
+        val shellCommand: String? = null
+    )
+
+    private data class CliBatchPlan(
+        val mode: String,
+        val failurePolicy: String,
+        val steps: List<CliBatchStep>
     )
 
     private val cliShellJobs = ConcurrentHashMap<String, CliShellJob>()
+
+    private fun emitCliShellJob(
+        job: CliShellJob,
+        type: String,
+        result: Any? = null,
+        message: String? = null
+    ) {
+        val terminal = job.status in setOf(
+            "completed",
+            "completed_result_too_large",
+            "completed_with_failures",
+            "failed",
+            "cancelled",
+            "cancelled_may_have_applied",
+            "completed_after_cancel_request"
+        )
+        RiftMcpRuntime.cliEvents().emitJob(
+            type = type,
+            jobId = job.id,
+            requestId = job.requestId,
+            lane = job.lane,
+            status = job.status,
+            terminal = terminal,
+            result = result,
+            message = message
+        )
+    }
 
     override fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit) {
         if (closed) {
@@ -287,6 +342,30 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun executeCliCommand(cwd: String, args: MutableList<String>): ShellOutcome {
         val cli = RiftCliHost.executeShell(args, cwd)
 
+        if (cli.result.optString("state") == "need_more_info") {
+            RiftMcpRuntime.cliEvents().emit(
+                type = "driver.need_more_info",
+                requestId = cli.result.optString("requestId").takeIf { it.isNotBlank() },
+                lane = "driver",
+                status = "need_more_info",
+                terminal = false,
+                message = cli.result.optString("requestMoreInfo").takeIf { it.isNotBlank() },
+                extra = JSONObject()
+                    .put("sessionId", cli.result.optString("sessionId"))
+                    .put("taskId", cli.result.optString("taskId"))
+                    .put("projectId", cli.result.optString("projectId"))
+                    .put("loop", cli.result.optJSONObject("loop") ?: JSONObject.NULL)
+            )
+        }
+        if (cli.result.optString("command") == "enable" && cli.result.optBoolean("enabled", false)) {
+            RiftMcpRuntime.cliEvents().emit(
+                type = "cli.enabled",
+                lane = "driver",
+                status = "enabled",
+                terminal = true
+            )
+        }
+
         if (cli.result.optString("command") == "disable" && !cli.result.optBoolean("enabled", true)) {
             val reason = "RiftCLI disabled by external driver"
             val shellCancelled = cancelAllCliShellJobs(reason)
@@ -294,6 +373,15 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             val result = JSONObject(cli.result.toString())
                 .put("cliShellJobCancellationsRequested", shellCancelled)
                 .put("cliToolJobCancellationsRequested", toolCancellation.optInt("cancellationRequested", 0))
+            RiftMcpRuntime.cliEvents().emit(
+                type = "cli.disabled",
+                lane = "driver",
+                status = "disabled",
+                terminal = true,
+                result = JSONObject()
+                    .put("shellCancellationsRequested", shellCancelled)
+                    .put("toolCancellationsRequested", toolCancellation.optInt("cancellationRequested", 0))
+            )
             return ShellOutcome(cli.output, cwd, result)
         }
 
@@ -366,18 +454,22 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "queued"
         )
         cliShellJobs[jobId] = job
+        emitCliShellJob(job, "job.submitted")
 
         val future = try {
             cliWorker.submit {
                 RiftDeadline.clearInterrupt()
                 try {
                     RiftCliExecutionGate.run {
+                        var started = false
                         synchronized(job) {
                             if (job.status == "queued") {
                                 job.status = "running"
                                 job.updatedAt = SystemClock.elapsedRealtime()
+                                started = true
                             }
                         }
+                        if (started) emitCliShellJob(job, "job.started")
                         val nestedSession = RiftPatchSessions.begin(
                             appContext,
                             origin = "rift-cli-driver",
@@ -420,6 +512,19 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 }
                                 job.updatedAt = SystemClock.elapsedRealtime()
                             }
+                            val terminalResult = JSONObject()
+                                .put("output", job.output)
+                                .put("result", job.result ?: JSONObject.NULL)
+                                .put("error", job.error ?: JSONObject.NULL)
+                            emitCliShellJob(
+                                job,
+                                when (job.status) {
+                                    "completed", "completed_result_too_large", "completed_after_cancel_request" -> "job.completed"
+                                    "cancelled", "cancelled_may_have_applied" -> "job.cancelled"
+                                    else -> "job.failed"
+                                },
+                                terminalResult
+                            )
                         } catch (error: Throwable) {
                             nestedSession?.let(RiftPatchSessions::abort)
                             synchronized(job) {
@@ -427,15 +532,29 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) "cancelled_may_have_applied" else "failed"
                                 job.updatedAt = SystemClock.elapsedRealtime()
                             }
+                            emitCliShellJob(
+                                job,
+                                if (job.status == "cancelled_may_have_applied") "job.cancelled" else "job.failed",
+                                message = job.error
+                            )
                         }
                     }
                 } catch (error: Throwable) {
+                    var changed = false
                     synchronized(job) {
-                        if (job.status !in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                        if (job.status !in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
                             job.error = error.message ?: error.javaClass.simpleName
                             job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) "cancelled" else "failed"
                             job.updatedAt = SystemClock.elapsedRealtime()
+                            changed = true
                         }
+                    }
+                    if (changed) {
+                        emitCliShellJob(
+                            job,
+                            if (job.status == "cancelled") "job.cancelled" else "job.failed",
+                            message = job.error
+                        )
                     }
                 } finally {
                     RiftCliExecutionGate.release(jobId)
@@ -448,6 +567,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 job.status = "failed"
                 job.updatedAt = SystemClock.elapsedRealtime()
             }
+            emitCliShellJob(job, "job.failed", message = job.error)
             RiftCliExecutionGate.release(jobId)
             null
         }
@@ -471,14 +591,18 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun cliShellJobSnapshot(job: CliShellJob, includeResult: Boolean = true): JSONObject = synchronized(job) {
         JSONObject()
             .put("ok", true)
-            .put("jobOk", if (job.status == "completed" || job.status == "completed_result_too_large" || job.status == "completed_after_cancel_request") true else if (job.status == "failed" || job.status == "cancelled") false else JSONObject.NULL)
+            .put("jobOk", when (job.status) {
+                "completed", "completed_result_too_large", "completed_after_cancel_request" -> true
+                "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied" -> false
+                else -> JSONObject.NULL
+            })
             .put("jobId", job.id)
             .put("requestId", job.requestId)
-            .put("kind", "rift-shell")
+            .put("kind", if (job.lane == "batch") "rift-cli-batch" else "rift-shell")
             .put("operation", job.operation.take(80))
             .put("cwd", job.cwd)
             .put("status", job.status)
-            .put("terminal", job.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request"))
+            .put("terminal", job.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request"))
             .put("createdAtElapsedMs", job.createdAt)
             .put("updatedAtElapsedMs", job.updatedAt)
             .put("cancelRequested", job.cancelRequested)
@@ -512,7 +636,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun cancelCliShellJob(jobId: String): JSONObject? {
         val job = cliShellJobs[jobId] ?: return null
         synchronized(job) {
-            if (job.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+            if (job.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
                 return cliShellJobSnapshot(job)
             }
             job.cancelRequested = true
@@ -526,15 +650,21 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             } else {
                 job.status = "cancelling"
             }
+            emitCliShellJob(
+                job,
+                if (job.status == "cancelled") "job.cancelled" else "job.cancelling",
+                message = job.error
+            )
             return cliShellJobSnapshot(job)
         }
     }
 
     private fun cancelAllCliShellJobs(reason: String): Int {
         var requested = 0
+        val changed = ArrayList<CliShellJob>()
         cliShellJobs.values.forEach { job ->
             synchronized(job) {
-                if (job.status !in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                if (job.status !in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
                     job.cancelRequested = true
                     val wasQueued = job.status == "queued"
                     val cancelled = job.future?.cancel(true) == true
@@ -546,9 +676,17 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     } else {
                         job.status = "cancelling"
                     }
+                    changed += job
                     requested++
                 }
             }
+        }
+        changed.forEach { job ->
+            emitCliShellJob(
+                job,
+                if (job.status == "cancelled") "job.cancelled" else "job.cancelling",
+                message = reason
+            )
         }
         return requested
     }
@@ -556,7 +694,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun pruneCliShellJobs(forceTerminalTrim: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
         val terminal = cliShellJobs.values
-            .filter { it.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request") }
+            .filter { it.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request") }
             .sortedBy { it.updatedAt }
 
         terminal.forEach { job ->
@@ -569,6 +707,413 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 cliShellJobs.remove(job.id, job)
             }
         }
+    }
+
+    private fun parseCliBatchPlan(args: JSONObject, toolHost: RiftToolHost): CliBatchPlan {
+        val encodedBytes = args.toString().toByteArray(Charsets.UTF_8).size
+        require(encodedBytes <= MAX_CLI_BATCH_BYTES) {
+            "RiftCLI Batch V2 plan exceeds $MAX_CLI_BATCH_BYTES UTF-8 bytes"
+        }
+        val mode = args.optString("mode", "execute").trim().lowercase().ifBlank { "execute" }
+        require(mode == "execute" || mode == "validate") {
+            "RiftCLI Batch V2 mode must be execute or validate"
+        }
+        val failurePolicy = args.optString("failurePolicy", "stop").trim().lowercase().ifBlank { "stop" }
+        require(failurePolicy == "stop" || failurePolicy == "continue") {
+            "RiftCLI Batch V2 failurePolicy must be stop or continue"
+        }
+        val rawSteps = args.optJSONArray("steps")
+            ?: throw IllegalArgumentException("RiftCLI Batch V2 requires steps[]")
+        require(rawSteps.length() in 1..MAX_CLI_BATCH_STEPS) {
+            "RiftCLI Batch V2 requires between 1 and $MAX_CLI_BATCH_STEPS steps"
+        }
+
+        val seen = LinkedHashSet<String>()
+        val steps = ArrayList<CliBatchStep>(rawSteps.length())
+        for (index in 0 until rawSteps.length()) {
+            val raw = rawSteps.optJSONObject(index)
+                ?: throw IllegalArgumentException("RiftCLI Batch V2 step ${index + 1} must be an object")
+            require(raw.toString().toByteArray(Charsets.UTF_8).size <= MAX_CLI_BATCH_STEP_BYTES) {
+                "RiftCLI Batch V2 step ${index + 1} exceeds $MAX_CLI_BATCH_STEP_BYTES UTF-8 bytes"
+            }
+            val id = raw.optString("id").trim()
+            require(Regex("[A-Za-z0-9._-]{1,64}").matches(id)) {
+                "RiftCLI Batch V2 step ${index + 1} requires id [A-Za-z0-9._-]{1,64}"
+            }
+            require(seen.add(id)) { "RiftCLI Batch V2 duplicate step id: $id" }
+            when (val kind = raw.optString("kind").trim().lowercase()) {
+                "tool" -> {
+                    val name = raw.optString("name").trim()
+                    require(name.isNotBlank()) { "RiftCLI Batch V2 tool step $id requires name" }
+                    val rawToolArgs = raw.opt("args")
+                    require(rawToolArgs == null || rawToolArgs === JSONObject.NULL || rawToolArgs is JSONObject) {
+                        "RiftCLI Batch V2 tool step $id args must be an object"
+                    }
+                    val toolArgs = rawToolArgs as? JSONObject ?: JSONObject()
+                    val validation = toolHost.validateCliBatchTool(name, toolArgs)
+                    require(validation.optBoolean("ok", false)) {
+                        validation.optString("error", "Invalid RiftCLI Batch V2 tool step $id")
+                    }
+                    steps += CliBatchStep(
+                        id = id,
+                        kind = kind,
+                        toolName = validation.optString("name"),
+                        toolArgs = validation.optJSONObject("args") ?: JSONObject()
+                    )
+                }
+                "shell" -> {
+                    val command = raw.optString("command").trim()
+                    require(command.isNotBlank()) { "RiftCLI Batch V2 shell step $id requires command" }
+                    require(command.toByteArray(Charsets.UTF_8).size <= MAX_CLI_BATCH_STEP_BYTES) {
+                        "RiftCLI Batch V2 shell step $id exceeds $MAX_CLI_BATCH_STEP_BYTES UTF-8 bytes"
+                    }
+                    val tokens = tokenize(command)
+                    val commandName = tokens.firstOrNull()?.lowercase().orEmpty()
+                    require(commandName.isNotBlank()) { "RiftCLI Batch V2 shell step $id has no command" }
+                    require(commandName != "rift-cli") { "RiftCLI Batch V2 forbids recursive rift-cli steps" }
+                    require(commandName != "batch") { "RiftCLI Batch V2 does not resurrect retired RiftShell batch" }
+                    require(commandName in CLI_BATCH_ALLOWED_SHELL_COMMANDS) {
+                        "Unsupported RiftCLI Batch V2 shell command: $commandName"
+                    }
+                    steps += CliBatchStep(id = id, kind = kind, shellCommand = command)
+                }
+                else -> throw IllegalArgumentException(
+                    "RiftCLI Batch V2 step $id kind must be tool or shell"
+                )
+            }
+        }
+        return CliBatchPlan(mode = mode, failurePolicy = failurePolicy, steps = steps)
+    }
+
+    private fun cliBatchPlanSummary(plan: CliBatchPlan): JSONObject {
+        val rows = JSONArray()
+        plan.steps.forEach { step ->
+            rows.put(
+                JSONObject()
+                    .put("id", step.id)
+                    .put("kind", step.kind)
+                    .put(
+                        "operation",
+                        if (step.kind == "tool") step.toolName ?: ""
+                        else runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault("")
+                    )
+            )
+        }
+        return JSONObject()
+            .put("schema", "rift.cli-batch/2")
+            .put("mode", plan.mode)
+            .put("failurePolicy", plan.failurePolicy)
+            .put("stepCount", plan.steps.size)
+            .put("steps", rows)
+    }
+
+    private fun emitCliBatchStep(
+        job: CliShellJob,
+        type: String,
+        step: CliBatchStep,
+        index: Int,
+        total: Int,
+        status: String,
+        result: Any? = null,
+        message: String? = null
+    ) {
+        val operation = if (step.kind == "tool") {
+            step.toolName.orEmpty()
+        } else {
+            runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault("")
+        }
+        RiftMcpRuntime.cliEvents().emit(
+            type = type,
+            requestId = job.requestId,
+            jobId = job.id,
+            lane = "batch",
+            status = status,
+            terminal = false,
+            message = message,
+            result = result,
+            extra = JSONObject()
+                .put("stepId", step.id)
+                .put("stepIndex", index)
+                .put("stepCount", total)
+                .put("stepKind", step.kind)
+                .put("operation", operation.take(80))
+        )
+    }
+
+    private fun executeCliBatchShellStep(
+        rawAction: String,
+        cwd: String,
+        stepRequestId: String,
+        intent: String?
+    ): ShellOutcome {
+        require(rawAction.toByteArray(Charsets.UTF_8).size <= MAX_CLI_BATCH_STEP_BYTES) {
+            "RiftCLI Batch V2 shell step exceeds $MAX_CLI_BATCH_STEP_BYTES UTF-8 bytes"
+        }
+        val tokens = tokenize(rawAction)
+        val commandName = tokens.firstOrNull()?.lowercase().orEmpty()
+        require(commandName.isNotBlank()) { "RiftCLI Batch V2 shell step is blank" }
+        require(commandName != "rift-cli") { "RiftCLI Batch V2 forbids recursive rift-cli steps" }
+        require(commandName != "batch") { "RiftCLI Batch V2 does not resurrect retired RiftShell batch" }
+        require(commandName in CLI_BATCH_ALLOWED_SHELL_COMMANDS) {
+            "Unsupported RiftCLI Batch V2 shell command: $commandName"
+        }
+        val patchSession = RiftPatchSessions.begin(
+            appContext,
+            origin = "rift-cli-batch",
+            operation = commandName,
+            intent = intent,
+            requestId = stepRequestId,
+            rawPaths = shellMutationPaths(rawAction, cwd)
+        )
+        return try {
+            val outcome = executeNative(rawAction, cwd)
+            patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
+            outcome
+        } catch (error: Throwable) {
+            patchSession?.let(RiftPatchSessions::abort)
+            throw error
+        }
+    }
+
+    private fun startCliBatch(
+        cwd: String,
+        cliResult: JSONObject,
+        args: JSONObject,
+        toolHost: RiftToolHost
+    ): JSONObject {
+        val plan = parseCliBatchPlan(args, toolHost)
+        val planSummary = cliBatchPlanSummary(plan)
+        if (plan.mode == "validate") {
+            RiftMcpRuntime.cliEvents().emit(
+                type = "batch.validated",
+                requestId = cliResult.optString("requestId").takeIf { it.isNotBlank() },
+                lane = "batch",
+                status = "validated",
+                terminal = true,
+                result = planSummary
+            )
+            return JSONObject(planSummary.toString())
+                .put("ok", true)
+                .put("validated", true)
+                .put("terminal", true)
+                .put("status", "validated")
+        }
+
+        pruneCliShellJobs()
+        if (cliShellJobs.size >= MAX_CLI_SHELL_JOBS) pruneCliShellJobs(forceTerminalTrim = true)
+        require(cliShellJobs.size < MAX_CLI_SHELL_JOBS) {
+            "RiftCLI Batch V2 job capacity reached ($MAX_CLI_SHELL_JOBS); inspect existing jobs first"
+        }
+        val now = SystemClock.elapsedRealtime()
+        val jobId = "cli-batch-job-" + UUID.randomUUID().toString()
+        if (!RiftCliExecutionGate.tryReserve(jobId)) {
+            return JSONObject()
+                .put("ok", false)
+                .put("error", "RiftCLI already has one outstanding authority job")
+                .put("outstandingJobId", RiftCliExecutionGate.outstandingJob() ?: JSONObject.NULL)
+        }
+        val job = CliShellJob(
+            id = jobId,
+            requestId = cliResult.optString("requestId"),
+            operation = "batch",
+            cwd = cwd,
+            createdAt = now,
+            updatedAt = now,
+            status = "queued",
+            lane = "batch"
+        )
+        cliShellJobs[jobId] = job
+        emitCliShellJob(job, "batch.submitted", planSummary)
+
+        val future = try {
+            cliWorker.submit {
+                RiftDeadline.clearInterrupt()
+                try {
+                    RiftCliExecutionGate.run {
+                        synchronized(job) {
+                            if (job.status == "queued") {
+                                job.status = "running"
+                                job.updatedAt = SystemClock.elapsedRealtime()
+                            }
+                        }
+                        emitCliShellJob(job, "batch.started", planSummary)
+                        val stepRows = JSONArray()
+                        var currentCwd = cwd
+                        var failedSteps = 0
+                        var executedSteps = 0
+                        var stopped = false
+
+                        for ((index0, step) in plan.steps.withIndex()) {
+                            if (job.cancelRequested || Thread.currentThread().isInterrupted) {
+                                throw InterruptedException("RiftCLI Batch V2 cancelled before step ${step.id}")
+                            }
+                            val index = index0 + 1
+                            emitCliBatchStep(job, "batch.step.started", step, index, plan.steps.size, "running")
+                            val started = SystemClock.elapsedRealtime()
+                            val stepResponse = try {
+                                if (step.kind == "tool") {
+                                    toolHost.executeCliBatchTool(
+                                        step.toolName.orEmpty(),
+                                        step.toolArgs ?: JSONObject(),
+                                        "${job.requestId}:${step.id}"
+                                    )
+                                } else {
+                                    val outcome = executeCliBatchShellStep(
+                                        step.shellCommand.orEmpty(),
+                                        currentCwd,
+                                        "${job.requestId}:${step.id}",
+                                        cliResult.optString("goal").takeIf { it.isNotBlank() }
+                                    )
+                                    currentCwd = outcome.cwd
+                                    JSONObject()
+                                        .put("ok", true)
+                                        .put("operation", runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault(""))
+                                        .put("cwd", outcome.cwd)
+                                        .put("output", outcome.output)
+                                        .put("result", outcome.result ?: JSONObject.NULL)
+                                }
+                            } catch (error: InterruptedException) {
+                                throw error
+                            } catch (error: Exception) {
+                                JSONObject()
+                                    .put("ok", false)
+                                    .put("error", error.message ?: error.javaClass.simpleName)
+                            }
+                            val duration = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+                            val ok = stepResponse.optBoolean("ok", false)
+                            if (!ok) failedSteps++
+                            executedSteps++
+
+                            val responseBytes = stepResponse.toString().toByteArray(Charsets.UTF_8).size
+                            val retained = if (responseBytes > MAX_CLI_BATCH_STEP_RESULT_BYTES) {
+                                JSONObject()
+                                    .put("ok", ok)
+                                    .put("resultRetained", false)
+                                    .put("resultBytes", responseBytes)
+                                    .put("retentionLimitBytes", MAX_CLI_BATCH_STEP_RESULT_BYTES)
+                            } else {
+                                JSONObject(stepResponse.toString())
+                            }
+                            val stepRow = JSONObject()
+                                .put("id", step.id)
+                                .put("kind", step.kind)
+                                .put("ok", ok)
+                                .put("durationMs", duration)
+                                .put("result", retained)
+                            stepRows.put(stepRow)
+                            emitCliBatchStep(
+                                job,
+                                if (ok) "batch.step.completed" else "batch.step.failed",
+                                step,
+                                index,
+                                plan.steps.size,
+                                if (ok) "completed" else "failed",
+                                retained,
+                                if (ok) null else stepResponse.optString("error").takeIf { it.isNotBlank() }
+                            )
+
+                            if (job.cancelRequested || Thread.currentThread().isInterrupted) {
+                                throw InterruptedException("RiftCLI Batch V2 cancellation observed after step ${step.id}")
+                            }
+                            if (!ok && plan.failurePolicy == "stop") {
+                                stopped = true
+                                break
+                            }
+                        }
+
+                        val finalResult = JSONObject()
+                            .put("schema", "rift.cli-batch/2")
+                            .put("mode", "execute")
+                            .put("failurePolicy", plan.failurePolicy)
+                            .put("stepCount", plan.steps.size)
+                            .put("executedSteps", executedSteps)
+                            .put("failedSteps", failedSteps)
+                            .put("stoppedOnFailure", stopped)
+                            .put("cwd", currentCwd)
+                            .put("steps", stepRows)
+                        val finalBytes = finalResult.toString().toByteArray(Charsets.UTF_8).size
+                        val retainedFinal = if (finalBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES) {
+                            JSONObject()
+                                .put("schema", "rift.cli-batch/2")
+                                .put("resultRetained", false)
+                                .put("resultBytes", finalBytes)
+                                .put("retentionLimitBytes", MAX_CLI_SHELL_RETAINED_RESULT_BYTES)
+                                .put("stepCount", plan.steps.size)
+                                .put("executedSteps", executedSteps)
+                                .put("failedSteps", failedSteps)
+                        } else finalResult
+
+                        synchronized(job) {
+                            job.output = "RiftCLI Batch V2 executed $executedSteps/${plan.steps.size} steps; failures=$failedSteps"
+                            job.result = retainedFinal
+                            job.status = when {
+                                job.cancelRequested -> "completed_after_cancel_request"
+                                failedSteps > 0 && plan.failurePolicy == "continue" -> "completed_with_failures"
+                                failedSteps > 0 -> "failed"
+                                finalBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES -> "completed_result_too_large"
+                                else -> "completed"
+                            }
+                            job.error = if (failedSteps > 0 && plan.failurePolicy == "stop") {
+                                "RiftCLI Batch V2 stopped after a failed step"
+                            } else null
+                            job.updatedAt = SystemClock.elapsedRealtime()
+                        }
+                        emitCliShellJob(
+                            job,
+                            when (job.status) {
+                                "completed", "completed_result_too_large", "completed_with_failures", "completed_after_cancel_request" -> "batch.completed"
+                                else -> "batch.failed"
+                            },
+                            retainedFinal,
+                            job.error
+                        )
+                    }
+                } catch (error: Throwable) {
+                    var changed = false
+                    synchronized(job) {
+                        if (job.status !in setOf(
+                                "completed",
+                                "completed_result_too_large",
+                                "completed_with_failures",
+                                "failed",
+                                "cancelled",
+                                "cancelled_may_have_applied",
+                                "completed_after_cancel_request"
+                            )) {
+                            job.error = error.message ?: error.javaClass.simpleName
+                            job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) {
+                                "cancelled_may_have_applied"
+                            } else {
+                                "failed"
+                            }
+                            job.updatedAt = SystemClock.elapsedRealtime()
+                            changed = true
+                        }
+                    }
+                    if (changed) {
+                        emitCliShellJob(
+                            job,
+                            if (job.status == "cancelled_may_have_applied") "batch.cancelled" else "batch.failed",
+                            message = job.error
+                        )
+                    }
+                } finally {
+                    RiftCliExecutionGate.release(jobId)
+                    RiftDeadline.clearInterrupt()
+                }
+            }
+        } catch (error: Throwable) {
+            synchronized(job) {
+                job.error = error.message ?: error.javaClass.simpleName
+                job.status = "failed"
+                job.updatedAt = SystemClock.elapsedRealtime()
+            }
+            emitCliShellJob(job, "batch.failed", message = job.error)
+            RiftCliExecutionGate.release(jobId)
+            null
+        }
+        job.future = future
+        return cliShellJobSnapshot(job)
     }
 
     private fun executeCliToolDispatch(
@@ -591,6 +1136,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
         val toolHost = RiftMcpRuntime.toolHost(appContext)
         val response = when (toolName) {
+            "rift_cli_batch" -> startCliBatch(cwd, cliResult, toolArgs, toolHost)
             "rift_cli_job_list" -> {
                 val requestId = toolArgs.optString("requestId").trim().takeIf { it.isNotBlank() }
                 val rows = JSONArray()
@@ -620,6 +1166,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             toolName == "rift_cli_job_poll" ||
             toolName == "rift_cli_job_cancel"
         val submitted = !jobControl && response.optString("jobId").isNotBlank()
+        val asynchronous = submitted
         val executed = jobControl || terminal
         val output = if (!ok) {
             response.optString("error", "RiftCLI tool dispatch failed")
@@ -633,7 +1180,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("dispatchOk", ok)
             .put("dispatchTool", toolName)
             .put("dispatchCwd", cwd)
-            .put("dispatchAsync", !jobControl)
+            .put("dispatchAsync", asynchronous)
             .put("dispatchTerminal", terminal)
             .put("dispatchStatus", status)
             .put("dispatchOutput", output)
