@@ -1092,3 +1092,19 @@ New architecture:
 The source-oracle project under Codynex `native/mc0/apk-proof` passes the currently installed RiftBuild source validator with `sourceReady=true`. It remains `preparedPackageReady=false` until a future authorized RiftOS build/install contains the new host and the new prepare command is executed.
 
 This change also records the research-order decision that the remaining LR0 live-replacement gates no longer block MC0. LR0 remains the C++ reference/oracle track; MC0 now proceeds independently as the machine-bootstrap truth track.
+
+
+## 2026-09-20 — Semnexis wiring validator drift repair
+
+Builder run `35497553508` for RiftOS source `01013078d81cdbae7f7371f89e8c6da034910ddb` stopped in `validate-rift-wiring.mjs` before Android compilation.
+
+The Semnexis compiler/runtime was not the failing subsystem. The validator still required historical literal strings `SNIRV2` through `SNIRV6`, while the current compiler constructs versioned SNIR diagnostics dynamically and now exposes frozen V0-V7 compatibility with `SNIRV7` as the latest binary format. The validator also still pinned headless self-test schema `semnexis-bootstrap-self-test/13`, while current headless source emits `/17`.
+
+The wiring gate was updated without changing Semnexis compiler/runtime behavior:
+- retain `SNIRV0` compatibility assertion;
+- require latest `SNIRV7` / `NATIVE_IR_BINARY_VERSION_V7`;
+- require concrete V2-V7 encoder/decoder function ownership;
+- retain the existing feature/opcode/runtime hardening assertions;
+- update the headless self-test contract to `semnexis-bootstrap-self-test/17`.
+
+This is a validator-parity repair only. The next Builder run remains the compilation/package proof.
