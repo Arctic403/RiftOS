@@ -1108,3 +1108,14 @@ The wiring gate was updated without changing Semnexis compiler/runtime behavior:
 - update the headless self-test contract to `semnexis-bootstrap-self-test/17`.
 
 This is a validator-parity repair only. The next Builder run remains the compilation/package proof.
+
+
+## 2026-09-20 — RiftGit GraphQL regression-test escape repair
+
+Builder run `35497823649` for RiftOS source `6772904840c0c21cd7dcf8833086e84f93d72496` stopped in `test-rift-shell-git.mjs` before Android compilation.
+
+`RiftNativeGit.kt` was correct: Kotlin source must escape the GraphQL variable as `\$input` inside the string literal so the runtime payload contains `$input`. The regression test used a JavaScript regex whose `$input` portion was parsed with `$` as an end-of-string anchor, making the assertion impossible to satisfy against the valid Kotlin source.
+
+The test was changed to an exact source-string assertion for `createCommitOnBranch(input: \$input)`. No RiftGit runtime or GraphQL behavior changed.
+
+The next Builder run remains the compilation/package proof.

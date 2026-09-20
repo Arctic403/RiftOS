@@ -50,7 +50,7 @@ assert.match(git,/\.put\("size", uploadedSizes\.getValue\(path\)\)/);
 assert.ok(!git.includes('if (suppliedMeta != null) verifyWorkspaceStable'),'all pushes must verify a stable local snapshot');
 assert.match(git,/Remote branch changed since the last clone\/pull/);
 assert.match(git,/CREATE_COMMIT_ON_BRANCH_MUTATION/);
-assert.match(git,/createCommitOnBranch\(input: \\$input\)/);
+assert.ok(git.includes('createCommitOnBranch(input: \\$input)'), 'atomic GraphQL mutation must preserve the literal Kotlin-escaped $input variable');
 assert.match(git,/repositoryNameWithOwner/);
 assert.match(git,/branchName/);
 assert.match(git,/expectedHeadOid/);
