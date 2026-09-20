@@ -10,6 +10,7 @@
         <package android:name="com.riftllm.app" />
         <package android:name="com.codynex.lr0lab" />
         <package android:name="com.codynex.mc0proof" />
+        <package android:name="com.codynex.mc1aproof" />
         <package android:name="com.riftpp.nativeproof" />
         <package android:name="com.samsung.android.honeyboard" />
     </queries>

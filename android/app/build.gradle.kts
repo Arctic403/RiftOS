@@ -117,6 +117,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
     val requiredNative = listOf(
         "src/main/cpp/CMakeLists.txt",
         "src/main/cpp/mc0/codynex_mc0_host.cpp",
+        "src/main/cpp/mc1/codynex_mc1a_host.cpp",
         "src/main/cpp/riftcli/rift_cli_core.cpp",
         "src/main/cpp/riftcli/rift_cli_core.h",
         "src/main/cpp/riftcli/rift_cli_jni.cpp"

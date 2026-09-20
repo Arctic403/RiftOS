@@ -1340,3 +1340,22 @@ The test still required the pre-N1 implementation string `origin = "mcp"`, so it
 A scan across all active `.mjs` tests/validators found no additional hardcoded `origin = "mcp"` provenance assumptions.
 
 No runtime provenance, ToolSandbox, RiftCLI authority, or patch-session behavior changed.
+
+## 2026-09-20 — Codynex MC1-A machine proof lane
+
+Added the next machine-bootstrap pressure stage after the real-device MC0 ARM32 PASS.
+
+RiftOS additions:
+- separate `codynex_mc1a_host` NativeActivity test host;
+- CMake + exact native-source snapshot wiring;
+- bounded `prepare-codynex-mc1a` RiftBuild command;
+- frozen MC1-A seed size/hash/package/library constants;
+- separate binary manifest encoder for `com.codynex.mc1aproof`;
+- exact `assets/mc1a_seed.bin` compiler-authority receipt;
+- PackageInstaller allowlist + package visibility for MC1-A;
+- RiftShell help and static RiftBuild contract assertions.
+
+MC0 remains a separate frozen proof path. The new lane does not refactor or replace the MC0 compiler artifact.
+
+No general compiler authority, shell authority, silent install authority or heap/runtime semantics were added.
+

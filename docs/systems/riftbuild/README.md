@@ -357,3 +357,28 @@ Promotion requires:
 - `npm run check` remains green;
 - the already-proven validation/materialization/manifest/package path must retain its installed-device regression evidence;
 - the newer signer/verifier/installer/launch source must pass Builder compilation plus real on-device sign → verify → install → launch proof before that chain is called installed/live.
+
+
+## Codynex MC1-A raw machine proof lane
+
+MC1-A is a separate additive proof lane. MC0 remains frozen as the previous-stage oracle.
+
+Command:
+
+`riftbuild prepare-codynex-mc1a /workspace/Codynex`
+
+The preparer:
+
+- decodes only `native/mc1/arm32/mc1a_seed.hex`;
+- requires exactly **236 bytes**;
+- requires SHA-256 `2ef7054e533bfafaefb0fcc14b9cd41cd05aceeec58eeeb335fc6aef4e88ba1a`;
+- validates `native/mc1/apk-proof`;
+- extracts only `lib/armeabi-v7a/libcodynex_mc1a_host.so` from the installed RiftOS APK;
+- verifies the extracted host is ARM32 ELF;
+- generates a bounded binary manifest for `com.codynex.mc1aproof`;
+- packages the exact raw compiler only as `assets/mc1a_seed.bin`;
+- records host/seed hashes and anti-contamination ownership.
+
+The MC1-A host is test equipment only. It may map/invoke the exact compiler, provide bounded buffers, execute emitted code, compare frozen vectors and report PASS/FAIL. It must not parse decimal source, emit target instructions, repair compiler output or substitute another compiler.
+
+The proof remains ARM32-only. General native compilation is still not implied by this lane.
