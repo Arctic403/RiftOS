@@ -1309,3 +1309,17 @@ Validation after hardening:
 - Rift audit/scan cover 237 files and remain clean apart from the existing filename-only `RiftSecretStore.kt` heuristic finding.
 
 Builder compile/package and installed-device N1 proof remain required before Gate N1 promotion.
+
+
+## 2026-09-20 — Builder wiring validator class/escape parity repair
+
+Builder run `35505319625` for RiftOS source `0f611a30270e4fafe68eb6bd59f52f772ecf227f` stopped in the first source wiring gate before Android compilation.
+
+Two validator assumptions were stale while runtime source was already correct:
+
+- `AndroidManifest.xml` declares `RiftBuildInstallActivity`, and the class exists in `RiftBuildInstaller.kt`. The wiring gate incorrectly assumed every manifest Activity must live in a same-named Kotlin file (`RiftBuildInstallActivity.kt`). The gate now resolves manifest activities by actual Kotlin class declarations across the Android source set, and checks all Activity declarations in each Kotlin file against the manifest.
+- the RiftCLI N1 replay/tool-execution checks compared escaped C++ JSON source using ordinary JavaScript string literals. Quoted JSON string values such as `driverReplayReset` and `driverToolExecution` could lose a backslash during JavaScript literal decoding and falsely report architecture drift. Those assertions now use `String.raw` for the exact C++ source representation.
+
+A follow-up scan of every active `.mjs` test/validator found no additional same-name Activity-file assumptions or non-`String.raw` escaped quoted-value assertions of this class.
+
+No RiftBuild installer runtime, RiftCLI runtime, JNI, authority model, or Android manifest behavior changed. The next Builder run remains the compile/package proof.

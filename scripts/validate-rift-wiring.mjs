@@ -50,10 +50,17 @@ for (const required of [
 const kotlinDir = 'android/app/src/main/java/com/riftos/app';
 const kotlinFiles = walk(kotlinDir).filter(file => file.endsWith('.kt'));
 const manifestActivities = new Set([...manifest.matchAll(/<activity\b[^>]*\bandroid:name="\.([^"]+)"/g)].map(match => match[1]));
-for (const activity of manifestActivities) requireFile(`${kotlinDir}/${activity}.kt`, 'AndroidManifest activity has no Kotlin source');
+const kotlinTexts = new Map(kotlinFiles.map(file => [file, read(file)]));
+for (const activity of manifestActivities) {
+  const activityPattern = new RegExp(`\\bclass\\s+${activity}\\s*:\\s*Activity\\s*\\(`);
+  const owner = kotlinFiles.find(file => activityPattern.test(kotlinTexts.get(file) || ''));
+  if (!owner) fail(`AndroidManifest activity has no Kotlin class source: ${activity}`);
+}
 for (const file of kotlinFiles) {
-  const match = read(file).match(/\bclass\s+(\w+)\s*:\s*Activity\s*\(/);
-  if (match && !manifestActivities.has(match[1])) fail(`Activity source is not declared in AndroidManifest.xml: ${match[1]}`);
+  const text = kotlinTexts.get(file) || '';
+  for (const match of text.matchAll(/\bclass\s+(\w+)\s*:\s*Activity\s*\(/g)) {
+    if (!manifestActivities.has(match[1])) fail(`Activity source is not declared in AndroidManifest.xml: ${match[1]}`);
+  }
 }
 
 const kotlinTypes = new Map(kotlinFiles.map(file => [path.basename(file, '.kt'), { file, text: read(file) }]));
@@ -168,12 +175,12 @@ if (!cliCore.includes('external-driver -> MCP/RiftShell -> RiftCLI') ||
     !cliCore.includes('request-id-capacity') ||
     !cliCore.includes('driverReplayCapacity\\":') ||
     !cliCore.includes('driverReplayEviction\\":false') ||
-    !cliCore.includes('driverReplayReset\\":\"process-restart-only') ||
+    !cliCore.includes(String.raw`\"driverReplayReset\":\"process-restart-only\"`) ||
     cliCore.includes('g_recentRequestIds.clear()') ||
     !cliCore.includes('isDriverJobControl') ||
     !cliCore.includes('if (!on && !jobControl)') ||
     !cliCore.includes('jobControl ? RequestReservation::Accepted') ||
-    !cliCore.includes('driverToolExecution\\":\"live-poll-jobs')) fail('RiftCLI N1 authority/driver/replay boundary drifted');
+    !cliCore.includes(String.raw`driverToolExecution\":\"live-poll-jobs`)) fail('RiftCLI N1 authority/driver/replay boundary drifted');
 if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
     !nativeShell.includes('executeCliShellDispatch') ||
     !nativeShell.includes('executeCliToolDispatch') ||
