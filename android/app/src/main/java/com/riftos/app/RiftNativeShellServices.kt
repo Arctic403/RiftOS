@@ -159,6 +159,145 @@ class RiftNativeShellServices(context: Context) {
         return Result(display.toString(2),value)
     }
 
+    fun codynex(args: MutableList<String>, cwd: String): Result {
+        val sub = args.removeFirstOrNull()?.lowercase() ?: "help"
+
+        if (sub == "help") {
+            require(args.isEmpty()) { "usage: codynex help" }
+            return Result(
+                "Codynex LR0 local Binder bridge\n" +
+                    "codynex status\n" +
+                    "codynex read-state <id>\n" +
+                    "codynex call <function-id>\n" +
+                    "codynex compile-activate <RiftFS-source-path>\n" +
+                    "codynex activate\n" +
+                    "codynex corrupt\n" +
+                    "codynex recover\n" +
+                    "codynex clear\n" +
+                    "codynex cold-restart"
+            )
+        }
+
+        val request = JSONObject()
+
+        when (sub) {
+            "status" -> {
+                require(args.isEmpty()) { "usage: codynex status" }
+                request.put("op", "status")
+            }
+
+            "read-state", "read_state" -> {
+                require(args.size == 1) {
+                    "usage: codynex read-state <id>"
+                }
+
+                val id = args[0].toIntOrNull()
+                    ?: throw IllegalArgumentException(
+                        "state id must be an integer"
+                    )
+
+                require(id in 0..65535) {
+                    "state id must be between 0 and 65535"
+                }
+
+                request
+                    .put("op", "read_state")
+                    .put("stateId", id)
+            }
+
+            "call" -> {
+                require(args.size == 1) {
+                    "usage: codynex call <function-id>"
+                }
+
+                val id = args[0].toIntOrNull()
+                    ?: throw IllegalArgumentException(
+                        "function id must be an integer"
+                    )
+
+                require(id in 0..65535) {
+                    "function id must be between 0 and 65535"
+                }
+
+                request
+                    .put("op", "call")
+                    .put("functionId", id)
+            }
+
+            "compile-activate", "compile_activate" -> {
+                require(args.size == 1) {
+                    "usage: codynex compile-activate <RiftFS-source-path>"
+                }
+
+                val display = resolveDisplay(cwd, args[0])
+                val file = resolveFile(display)
+
+                require(file.isFile) {
+                    "Codynex source file not found: $display"
+                }
+
+                require(file.length() <= 64L * 1024L) {
+                    "Codynex LR0 source exceeds 64 KiB"
+                }
+
+                val source = file.readText(Charsets.UTF_8)
+
+                require(
+                    source.toByteArray(Charsets.UTF_8).size <=
+                        64 * 1024
+                ) {
+                    "Codynex LR0 source exceeds 64 KiB UTF-8"
+                }
+
+                request
+                    .put("op", "compile_activate")
+                    .put("source", source)
+            }
+
+            "activate" -> {
+                require(args.isEmpty()) { "usage: codynex activate" }
+                request.put("op", "activate_candidate")
+            }
+
+            "corrupt" -> {
+                require(args.isEmpty()) { "usage: codynex corrupt" }
+                request.put("op", "corrupt_candidate")
+            }
+
+            "recover" -> {
+                require(args.isEmpty()) { "usage: codynex recover" }
+                request.put("op", "recover")
+            }
+
+            "clear" -> {
+                require(args.isEmpty()) { "usage: codynex clear" }
+                request.put("op", "clear")
+            }
+
+            "cold-restart", "cold_restart" -> {
+                require(args.isEmpty()) {
+                    "usage: codynex cold-restart"
+                }
+                request.put("op", "cold_restart")
+            }
+
+            else ->
+                throw IllegalArgumentException(
+                    "unknown codynex command: $sub"
+                )
+        }
+
+        val value =
+            RiftMcpRuntime
+                .codynexBridge(appContext)
+                .execute(request)
+
+        return Result(
+            value.toString(2),
+            value
+        )
+    }
+
     fun vortexAgent(args: MutableList<String>): Result =
         localAgent("vortex-agent",args){ request -> RiftVortexLocalAgent.execute(appContext,request) }
 

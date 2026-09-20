@@ -8,6 +8,7 @@
     <queries>
         <package android:name="com.vortex3d.app" />
         <package android:name="com.riftllm.app" />
+        <package android:name="com.codynex.lr0lab" />
         <package android:name="com.riftpp.nativeproof" />
         <package android:name="com.samsung.android.honeyboard" />
     </queries>

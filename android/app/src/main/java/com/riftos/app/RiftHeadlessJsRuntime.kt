@@ -1213,6 +1213,8 @@ class RiftHeadlessJsRuntime(context: Context) {
                   irSchema:compiler.irSchema,
                   irBinaryFormat:compiler.irBinaryFormat,
                   irBinaryVersion:compiler.irBinaryVersion,
+                  irBinaryLatestFormat:compiler.irBinaryLatestFormat,
+                  irBinaryLatestVersion:compiler.irBinaryLatestVersion,
                   irBinaryCompatibility:compiler.irBinaryCompatibility,
                   irGraphNodeSemantics:compiler.irGraphNodeSemantics,
                   arm32ElfSchema:compiler.arm32ElfSchema,
@@ -1382,9 +1384,340 @@ class RiftHeadlessJsRuntime(context: Context) {
                 let expressionBudgetRejects = false;
                 try { compiler.compile('fn main() -> i32 { return ' + nestedExpr + '; }\n'); } catch (_) { expressionBudgetRejects = true; }
                 if (!expressionBudgetRejects) throw new Error('Semnexis expression budget did not reject pathological nesting');
+                const sliceProgram = compiler.compile(
+                  'fn first(source: Slice<u8>) -> u8 { return slice_get(source, 0); }\n' +
+                  'fn main() -> i32 { return 0; }\n'
+                );
+                const sliceBinary = compiler.encodeIR(sliceProgram.ir);
+                const sliceDecoded = compiler.decodeIR(sliceBinary);
+                const sliceRuntime = compiler.emitArm32Runtime(sliceProgram.ir);
+                const sliceMagic = String.fromCharCode(
+                  sliceBinary[0], sliceBinary[1], sliceBinary[2],
+                  sliceBinary[3], sliceBinary[4], sliceBinary[5]
+                );
+                let sliceV1Rejects = false;
+                try { compiler.encodeIRV1(sliceProgram.ir); } catch (_) { sliceV1Rejects = true; }
+                if (sliceMagic !== 'SNIRV2' ||
+                    sliceBinary.length !== 273 ||
+                    sliceDecoded.dump() !== sliceProgram.irText ||
+                    !sliceV1Rejects ||
+                    !compiler.verifyArm32Runtime(sliceRuntime, sliceProgram.ir) ||
+                    sliceRuntime.byteLength !== 232) {
+                  throw new Error('Semnexis Slice<u8>/SNIRV2 proof mismatch');
+                }
+                const sliceFn = sliceRuntime.functions.find(fn => fn.name === 'first');
+                if (!sliceFn || sliceFn.bytes !== 100 || sliceFn.spillSlots !== 0) {
+                  throw new Error('Semnexis Slice<u8> ARM32 function proof mismatch');
+                }
+                const recordProgram = compiler.compile(
+                  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+                  'fn first_token(source: Slice<u8>) -> Token { return Token { kind: 1, start: 0, end: slice_len(source) }; }\n' +
+                  'fn main() -> i32 { return 0; }\n'
+                );
+                const recordBinary = compiler.encodeIR(recordProgram.ir);
+                const recordDecoded = compiler.decodeIR(recordBinary);
+                const recordRuntime = compiler.emitArm32Runtime(recordProgram.ir);
+                const recordMagic = String.fromCharCode(
+                  recordBinary[0], recordBinary[1], recordBinary[2],
+                  recordBinary[3], recordBinary[4], recordBinary[5]
+                );
+                let recordV2Rejects = false;
+                try { compiler.encodeIRV2(recordProgram.ir); } catch (_) { recordV2Rejects = true; }
+                if (recordMagic !== 'SNIRV3' ||
+                    recordBinary.length !== 358 ||
+                    recordDecoded.dump() !== recordProgram.irText ||
+                    !recordV2Rejects ||
+                    !compiler.verifyArm32Runtime(recordRuntime, recordProgram.ir) ||
+                    recordRuntime.byteLength !== 248) {
+                  throw new Error('Semnexis flat-record/SNIRV3 proof mismatch');
+                }
+                const recordFn = recordRuntime.functions.find(fn => fn.name === 'first_token');
+                if (!recordFn ||
+                    recordFn.bytes !== 116 ||
+                    recordFn.frameBytes !== 16 ||
+                    recordFn.slotCount !== 3 ||
+                    recordFn.spillSlots !== 0) {
+                  throw new Error('Semnexis flat-record ARM32 function proof mismatch');
+                }
+                const projectionProgram = compiler.compile(
+                  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+                  'fn first_token(source: Slice<u8>) -> Token { return Token { kind: 1, start: 0, end: slice_len(source) }; }\n' +
+                  'fn token_kind(source: Slice<u8>) -> i32 { let token = first_token(source); return token.kind; }\n' +
+                  'fn token_end(source: Slice<u8>) -> i32 { let token = first_token(source); return token.end; }\n' +
+                  'fn main() -> i32 { return 0; }\n'
+                );
+                const projectionBinary = compiler.encodeIR(projectionProgram.ir);
+                const projectionDecoded = compiler.decodeIR(projectionBinary);
+                const projectionRuntime = compiler.emitArm32Runtime(projectionProgram.ir);
+                const projectionMagic = String.fromCharCode(
+                  projectionBinary[0], projectionBinary[1], projectionBinary[2],
+                  projectionBinary[3], projectionBinary[4], projectionBinary[5]
+                );
+                let projectionV3Rejects = false;
+                try { compiler.encodeIRV3(projectionProgram.ir); } catch (_) { projectionV3Rejects = true; }
+                if (projectionMagic !== 'SNIRV4' ||
+                    projectionBinary.length !== 802 ||
+                    projectionDecoded.dump() !== projectionProgram.irText ||
+                    !projectionV3Rejects ||
+                    !compiler.verifyArm32Runtime(projectionRuntime, projectionProgram.ir) ||
+                    projectionRuntime.byteLength !== 440) {
+                  throw new Error('Semnexis record-projection/SNIRV4 proof mismatch');
+                }
+                const projectionKindFn = projectionRuntime.functions.find(fn => fn.name === 'token_kind');
+                const projectionEndFn = projectionRuntime.functions.find(fn => fn.name === 'token_end');
+                for (const projectionFn of [projectionKindFn, projectionEndFn]) {
+                  if (!projectionFn ||
+                      projectionFn.bytes !== 96 ||
+                      projectionFn.frameBytes !== 24 ||
+                      projectionFn.slotCount !== 6 ||
+                      projectionFn.spillSlots !== 0) {
+                    throw new Error('Semnexis record-projection ARM32 function proof mismatch');
+                  }
+                }
+                const recordConditionalProgram = compiler.compile(
+                  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+                  'fn lex_first(source: Slice<u8>) -> Token {\n' +
+                  ' let c = slice_get(source, 0);\n' +
+                  ' return if c >= 48 { if c <= 57 { Token { kind: 2, start: 0, end: 1 } } else { Token { kind: 1, start: 0, end: 1 } } } else { Token { kind: 1, start: 0, end: 1 } };\n' +
+                  '}\n' +
+                  'fn main() -> i32 { return 0; }\n'
+                );
+                const recordConditionalBinary = compiler.encodeIR(recordConditionalProgram.ir);
+                const recordConditionalDecoded = compiler.decodeIR(recordConditionalBinary);
+                const recordConditionalRuntime = compiler.emitArm32Runtime(recordConditionalProgram.ir);
+                const recordConditionalMagic = String.fromCharCode(
+                  recordConditionalBinary[0], recordConditionalBinary[1], recordConditionalBinary[2],
+                  recordConditionalBinary[3], recordConditionalBinary[4], recordConditionalBinary[5]
+                );
+                let recordConditionalV4Rejects = false;
+                try { compiler.encodeIRV4(recordConditionalProgram.ir); } catch (_) { recordConditionalV4Rejects = true; }
+                const recordConditionalFn = recordConditionalRuntime.functions.find(fn => fn.name === 'lex_first');
+                const recordPhiCount = recordConditionalProgram.ir.functions
+                  .find(fn => fn.name === 'lex_first').instructions.filter(inst => inst.op === 'phi.record').length;
+                if (recordConditionalMagic !== 'SNIRV5' ||
+                    recordConditionalBinary.length !== 1125 ||
+                    recordConditionalDecoded.dump() !== recordConditionalProgram.irText ||
+                    !recordConditionalV4Rejects ||
+                    recordPhiCount !== 2 ||
+                    !compiler.verifyArm32Runtime(recordConditionalRuntime, recordConditionalProgram.ir) ||
+                    recordConditionalRuntime.byteLength !== 644 ||
+                    !recordConditionalFn ||
+                    recordConditionalFn.bytes !== 512 ||
+                    recordConditionalFn.frameBytes !== 128 ||
+                    recordConditionalFn.slotCount !== 32 ||
+                    recordConditionalFn.spillSlots !== 17 ||
+                    recordConditionalFn.blockCount !== 7 ||
+                    recordConditionalFn.allocator !== 'cfg-spill-v0') {
+                  throw new Error('Semnexis record-conditional/SNIRV5 proof mismatch');
+                }
+                const recordLoopProgram = compiler.compile(
+                  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+                  'fn lex_at(source: Slice<u8>, start: i32) -> Token {\n' +
+                  ' return if start < slice_len(source) { Token { kind: 1, start: start, end: start + 1 } } else { Token { kind: 0, start: start, end: start } };\n' +
+                  '}\n' +
+                  'fn count_tokens(source: Slice<u8>) -> i32 {\n' +
+                  ' let first = lex_at(source, 0);\n' +
+                  ' return loop(token = first, count = 0) while token.kind != 0 {\n' +
+                  '  next(lex_at(source, token.end), count + 1);\n' +
+                  ' } yield count;\n' +
+                  '}\n' +
+                  'fn main() -> i32 { return 0; }\n'
+                );
+                const recordLoopBinary = compiler.encodeIR(recordLoopProgram.ir);
+                const recordLoopDecoded = compiler.decodeIR(recordLoopBinary);
+                const recordLoopRuntime = compiler.emitArm32Runtime(recordLoopProgram.ir);
+                const recordLoopMagic = String.fromCharCode(
+                  recordLoopBinary[0], recordLoopBinary[1], recordLoopBinary[2],
+                  recordLoopBinary[3], recordLoopBinary[4], recordLoopBinary[5]
+                );
+                let recordLoopV4Rejects = false;
+                try { compiler.encodeIRV4(recordLoopProgram.ir); } catch (_) { recordLoopV4Rejects = true; }
+                const countTokensIr = recordLoopProgram.ir.functions.find(fn => fn.name === 'count_tokens');
+                const recordLoopPhiRecordCount = countTokensIr.instructions.filter(inst => inst.op === 'phi.record').length;
+                const recordLoopPhiI32Count = countTokensIr.instructions.filter(inst => inst.op === 'phi.i32').length;
+                const recordLoopFn = recordLoopRuntime.functions.find(fn => fn.name === 'count_tokens');
+                if (recordLoopMagic !== 'SNIRV5' ||
+                    recordLoopBinary.length !== 1554 ||
+                    recordLoopDecoded.dump() !== recordLoopProgram.irText ||
+                    !recordLoopV4Rejects ||
+                    recordLoopPhiRecordCount !== 1 ||
+                    recordLoopPhiI32Count !== 1 ||
+                    !compiler.verifyArm32Runtime(recordLoopRuntime, recordLoopProgram.ir) ||
+                    recordLoopRuntime.byteLength !== 816 ||
+                    !recordLoopFn ||
+                    recordLoopFn.bytes !== 368 ||
+                    recordLoopFn.frameBytes !== 128 ||
+                    recordLoopFn.slotCount !== 31 ||
+                    recordLoopFn.spillSlots !== 13 ||
+                    recordLoopFn.blockCount !== 4 ||
+                    recordLoopFn.allocator !== 'cfg-spill-v0') {
+                  throw new Error('Semnexis record-loop-state/SNIRV5 proof mismatch');
+                }
+                const decimalProgram = compiler.compile(
+                  'fn digit_value(c: u8) -> i32 { return c - 48; }\n' +
+                  'fn parse_decimal(source: Slice<u8>, start: i32, end: i32) -> i32 {\n' +
+                  ' return loop(i = start, value = 0) while i < end {\n' +
+                  '  next(i + 1, value * 10 + digit_value(slice_get(source, i)));\n' +
+                  ' } yield value;\n' +
+                  '}\n' +
+                  'fn main() -> i32 { return 0; }\n'
+                );
+                const decimalBinary = compiler.encodeIR(decimalProgram.ir);
+                const decimalDecoded = compiler.decodeIR(decimalBinary);
+                const decimalRuntime = compiler.emitArm32Runtime(decimalProgram.ir);
+                const decimalMagic = String.fromCharCode(
+                  decimalBinary[0], decimalBinary[1], decimalBinary[2],
+                  decimalBinary[3], decimalBinary[4], decimalBinary[5]
+                );
+                let decimalV5Rejects = false;
+                try { compiler.encodeIRV5(decimalProgram.ir); } catch (_) { decimalV5Rejects = true; }
+                const decimalZextCount = decimalProgram.ir.functions.reduce(
+                  (total, fn) => total + fn.instructions.filter(inst => inst.op === 'zext.u8.i32').length,
+                  0
+                );
+                const decimalParseFn = decimalRuntime.functions.find(fn => fn.name === 'parse_decimal');
+                if (decimalMagic !== 'SNIRV6' ||
+                    decimalBinary.length !== 1085 ||
+                    decimalDecoded.dump() !== decimalProgram.irText ||
+                    !decimalV5Rejects ||
+                    decimalZextCount !== 1 ||
+                    !compiler.verifyArm32Runtime(decimalRuntime, decimalProgram.ir) ||
+                    decimalRuntime.byteLength !== 532 ||
+                    !decimalParseFn ||
+                    decimalParseFn.bytes !== 360 ||
+                    decimalParseFn.frameBytes !== 88 ||
+                    decimalParseFn.spillSlots !== 21 ||
+                    decimalParseFn.blockCount !== 4 ||
+                    decimalParseFn.allocator !== 'cfg-spill-v0') {
+                  throw new Error('Semnexis decimal-widening/SNIRV6 proof mismatch');
+                }
+                const arenaReadProgram = compiler.compile(
+                  'struct Expr { kind: i32, a: i32, b: i32, value: i32 }\n' +
+                  'fn read_value(arena: Arena, index: i32) -> i32 {\n' +
+                  ' let node = arena_load<Expr>(arena, index);\n' +
+                  ' return node.value;\n' +
+                  '}\n' +
+                  'fn main() -> i32 { return 0; }\n'
+                );
+                const arenaReadBinary = compiler.encodeIR(arenaReadProgram.ir);
+                const arenaReadDecoded = compiler.decodeIR(arenaReadBinary);
+                const arenaReadRuntime = compiler.emitArm32Runtime(arenaReadProgram.ir);
+                const arenaReadMagic = String.fromCharCode(
+                  arenaReadBinary[0], arenaReadBinary[1], arenaReadBinary[2],
+                  arenaReadBinary[3], arenaReadBinary[4], arenaReadBinary[5]
+                );
+                let arenaReadV6Rejects = false;
+                try { compiler.encodeIRV6(arenaReadProgram.ir); } catch (_) { arenaReadV6Rejects = true; }
+                const arenaLoadCount = arenaReadProgram.ir.functions.reduce(
+                  (total, fn) => total + fn.instructions.filter(inst => inst.op === 'arena.load.record').length,
+                  0
+                );
+                const arenaReadFn = arenaReadRuntime.functions.find(fn => fn.name === 'read_value');
+                if (arenaReadMagic !== 'SNIRV7' ||
+                    arenaReadBinary.length !== 392 ||
+                    arenaReadDecoded.dump() !== arenaReadProgram.irText ||
+                    !arenaReadV6Rejects ||
+                    arenaLoadCount !== 1 ||
+                    !compiler.verifyArm32Runtime(arenaReadRuntime, arenaReadProgram.ir) ||
+                    arenaReadRuntime.byteLength !== 328 ||
+                    !arenaReadFn ||
+                    arenaReadFn.bytes !== 196 ||
+                    arenaReadFn.frameBytes !== 32 ||
+                    arenaReadFn.slotCount !== 8 ||
+                    arenaReadFn.spillSlots !== 0 ||
+                    arenaReadFn.blockCount !== 0 ||
+                    arenaReadFn.allocator !== 'linear-scan-r4-r7-v0') {
+                  throw new Error('Semnexis Arena-read/SNIRV7 proof mismatch');
+                }
+                const parserStateStackProgram = compiler.compile(
+                  'struct Expr { kind: i32, a: i32, b: i32, value: i32 }\n' +
+                  'struct ParserState { pos: i32, root: i32, slot: i32 }\n' +
+                  'fn step(source: Slice<u8>, arena: Arena, state: ParserState) -> i32 {\n' +
+                  ' let node = arena_load<Expr>(arena, state.root);\n' +
+                  ' return state.pos + state.slot + node.value + slice_len(source);\n' +
+                  '}\n' +
+                  'fn call_step(source: Slice<u8>, arena: Arena) -> i32 {\n' +
+                  ' let state = ParserState { pos: 2, root: 0, slot: 7 };\n' +
+                  ' return step(source, arena, state);\n' +
+                  '}\n' +
+                  'fn main() -> i32 { return 0; }\n'
+                );
+                const parserStateStackBinary = compiler.encodeIR(parserStateStackProgram.ir);
+                const parserStateStackDecoded = compiler.decodeIR(parserStateStackBinary);
+                const parserStateStackRuntime = compiler.emitArm32Runtime(parserStateStackProgram.ir);
+                const parserStateStackMagic = String.fromCharCode(
+                  parserStateStackBinary[0], parserStateStackBinary[1], parserStateStackBinary[2],
+                  parserStateStackBinary[3], parserStateStackBinary[4], parserStateStackBinary[5]
+                );
+                const parserStateStepFn = parserStateStackRuntime.functions.find(fn => fn.name === 'step');
+                const parserStateCallFn = parserStateStackRuntime.functions.find(fn => fn.name === 'call_step');
+                if (parserStateStackMagic !== 'SNIRV7' ||
+                    parserStateStackBinary.length !== 953 ||
+                    parserStateStackDecoded.dump() !== parserStateStackProgram.irText ||
+                    !compiler.verifyArm32Runtime(parserStateStackRuntime, parserStateStackProgram.ir) ||
+                    parserStateStackRuntime.byteLength !== 676 ||
+                    !parserStateStepFn ||
+                    parserStateStepFn.bytes !== 368 ||
+                    parserStateStepFn.frameBytes !== 80 ||
+                    parserStateStepFn.slotCount !== 20 ||
+                    parserStateStepFn.spillSlots !== 0 ||
+                    !parserStateCallFn ||
+                    parserStateCallFn.bytes !== 176 ||
+                    parserStateCallFn.frameBytes !== 32 ||
+                    parserStateCallFn.slotCount !== 7 ||
+                    parserStateCallFn.spillSlots !== 1) {
+                  throw new Error('Semnexis parser-state stack-argument proof mismatch');
+                }
+                const recordLoopYieldProgram = compiler.compile(
+                  'struct ParserState { pos: i32, root: i32, slot: i32 }\n' +
+                  'fn advance(n: i32) -> ParserState {\n' +
+                  ' return loop(state = ParserState { pos: 0, root: 0, slot: 0 }) while state.pos < n {\n' +
+                  '  next(ParserState { pos: state.pos + 1, root: state.root, slot: state.slot + 1 });\n' +
+                  ' } yield state;\n' +
+                  '}\n' +
+                  'fn run() -> i32 { let state = advance(5); return state.pos + state.slot; }\n' +
+                  'fn main() -> i32 { return run(); }\n'
+                );
+                const recordLoopYieldBinary = compiler.encodeIR(recordLoopYieldProgram.ir);
+                const recordLoopYieldDecoded = compiler.decodeIR(recordLoopYieldBinary);
+                const recordLoopYieldRuntime = compiler.emitArm32Runtime(recordLoopYieldProgram.ir);
+                const recordLoopYieldMagic = String.fromCharCode(
+                  recordLoopYieldBinary[0], recordLoopYieldBinary[1], recordLoopYieldBinary[2],
+                  recordLoopYieldBinary[3], recordLoopYieldBinary[4], recordLoopYieldBinary[5]
+                );
+                const recordLoopYieldFn = recordLoopYieldRuntime.functions.find(fn => fn.name === 'advance');
+                if (recordLoopYieldMagic !== 'SNIRV5' ||
+                    recordLoopYieldBinary.length !== 1150 ||
+                    recordLoopYieldDecoded.dump() !== recordLoopYieldProgram.irText ||
+                    !compiler.verifyArm32Runtime(recordLoopYieldRuntime, recordLoopYieldProgram.ir) ||
+                    recordLoopYieldRuntime.byteLength !== 700 ||
+                    !recordLoopYieldFn ||
+                    recordLoopYieldFn.bytes !== 432 ||
+                    recordLoopYieldFn.frameBytes !== 152 ||
+                    recordLoopYieldFn.slotCount !== 37 ||
+                    recordLoopYieldFn.spillSlots !== 13 ||
+                    recordLoopYieldFn.blockCount !== 4 ||
+                    recordLoopYieldFn.allocator !== 'cfg-spill-v0') {
+                  throw new Error('Semnexis record-loop-yield proof mismatch');
+                }
+
+                const recursionProgram = compiler.compile(
+                  'fn fact(n: i32) -> i32 { return if n <= 1 { 1 } else { n * fact(n - 1) }; }\n' +
+                  'fn main() -> i32 { return fact(5); }\n'
+                );
+                const recursionRuntime = compiler.emitArm32Runtime(recursionProgram.ir);
+                const recursionFactFn = recursionRuntime.functions.find(fn => fn.name === 'fact');
+                const recursionMainFn = recursionRuntime.functions.find(fn => fn.name === 'main');
+                if (!compiler.verifyArm32Runtime(recursionRuntime, recursionProgram.ir) ||
+                    recursionRuntime.recursiveFunctions.join(',') !== 'fact' ||
+                    recursionRuntime.maxRecursiveCallDepth !== 256 ||
+                    !recursionFactFn || recursionFactFn.boundedRecursion !== true ||
+                    !recursionMainFn || recursionMainFn.boundedRecursion !== false) {
+                  throw new Error('Semnexis bounded-recursion proof mismatch');
+                }
                 const value = {
                   ok:true,
-                  schema:'semnexis-bootstrap-self-test/7',
+                  schema:'semnexis-bootstrap-self-test/17',
                   backend:'headless-quickjs',
                   compiler:compiler.version,
                   nodes:result.graph.nodes.length,
@@ -1394,6 +1727,8 @@ class RiftHeadlessJsRuntime(context: Context) {
                   irInstructions:result.ir.functions.reduce((total, fn) => total + fn.instructions.length, 0),
                   irBinaryFormat:compiler.irBinaryFormat,
                   irBinaryVersion:compiler.irBinaryVersion,
+                  irBinaryLatestFormat:compiler.irBinaryLatestFormat,
+                  irBinaryLatestVersion:compiler.irBinaryLatestVersion,
                   irBinaryCompatibility:compiler.irBinaryCompatibility,
                   irGraphNodeSemantics:compiler.irGraphNodeSemantics,
                   irBinaryBytes:irBinary.length,
@@ -1427,6 +1762,92 @@ class RiftHeadlessJsRuntime(context: Context) {
                   arm32LoopAllocator:sumFn.allocator,
                   arm32ControlFlowLowered:arm32Conditional.controlFlowLowered && arm32Loop.controlFlowLowered,
                   arm32LoopBackedge:loopBackedge,
+                  sliceIrBinaryFormat:sliceMagic,
+                  sliceIrBinaryBytes:sliceBinary.length,
+                  sliceV1Rejects:sliceV1Rejects,
+                  arm32SliceBytes:sliceRuntime.byteLength,
+                  arm32SliceFunctionBytes:sliceFn.bytes,
+                  arm32SliceSpillSlots:sliceFn.spillSlots,
+                  recordIrBinaryFormat:recordMagic,
+                  recordIrBinaryBytes:recordBinary.length,
+                  recordV2Rejects:recordV2Rejects,
+                  arm32RecordBytes:recordRuntime.byteLength,
+                  arm32RecordFunctionBytes:recordFn.bytes,
+                  arm32RecordFrameBytes:recordFn.frameBytes,
+                  arm32RecordSlotCount:recordFn.slotCount,
+                  arm32RecordSpillSlots:recordFn.spillSlots,
+                  projectionIrBinaryFormat:projectionMagic,
+                  projectionIrBinaryBytes:projectionBinary.length,
+                  projectionV3Rejects:projectionV3Rejects,
+                  arm32ProjectionBytes:projectionRuntime.byteLength,
+                  arm32ProjectionFunctionBytes:projectionKindFn.bytes,
+                  arm32ProjectionFrameBytes:projectionKindFn.frameBytes,
+                  arm32ProjectionSlotCount:projectionKindFn.slotCount,
+                  arm32ProjectionSpillSlots:projectionKindFn.spillSlots,
+                  recordConditionalIrBinaryFormat:recordConditionalMagic,
+                  recordConditionalIrBinaryBytes:recordConditionalBinary.length,
+                  recordConditionalV4Rejects:recordConditionalV4Rejects,
+                  recordConditionalPhiCount:recordPhiCount,
+                  arm32RecordConditionalBytes:recordConditionalRuntime.byteLength,
+                  arm32RecordConditionalFunctionBytes:recordConditionalFn.bytes,
+                  arm32RecordConditionalFrameBytes:recordConditionalFn.frameBytes,
+                  arm32RecordConditionalSlotCount:recordConditionalFn.slotCount,
+                  arm32RecordConditionalSpillSlots:recordConditionalFn.spillSlots,
+                  arm32RecordConditionalBlocks:recordConditionalFn.blockCount,
+                  arm32RecordConditionalAllocator:recordConditionalFn.allocator,
+                  recordLoopIrBinaryFormat:recordLoopMagic,
+                  recordLoopIrBinaryBytes:recordLoopBinary.length,
+                  recordLoopV4Rejects:recordLoopV4Rejects,
+                  recordLoopPhiRecordCount:recordLoopPhiRecordCount,
+                  recordLoopPhiI32Count:recordLoopPhiI32Count,
+                  arm32RecordLoopBytes:recordLoopRuntime.byteLength,
+                  arm32RecordLoopFunctionBytes:recordLoopFn.bytes,
+                  arm32RecordLoopFrameBytes:recordLoopFn.frameBytes,
+                  arm32RecordLoopSlotCount:recordLoopFn.slotCount,
+                  arm32RecordLoopSpillSlots:recordLoopFn.spillSlots,
+                  arm32RecordLoopBlocks:recordLoopFn.blockCount,
+                  arm32RecordLoopAllocator:recordLoopFn.allocator,
+                  decimalIrBinaryFormat:decimalMagic,
+                  decimalIrBinaryBytes:decimalBinary.length,
+                  decimalV5Rejects:decimalV5Rejects,
+                  decimalZextCount:decimalZextCount,
+                  arm32DecimalBytes:decimalRuntime.byteLength,
+                  arm32DecimalFunctionBytes:decimalParseFn.bytes,
+                  arm32DecimalFrameBytes:decimalParseFn.frameBytes,
+                  arm32DecimalSpillSlots:decimalParseFn.spillSlots,
+                  arm32DecimalBlocks:decimalParseFn.blockCount,
+                  arm32DecimalAllocator:decimalParseFn.allocator,
+                  arenaReadIrBinaryFormat:arenaReadMagic,
+                  arenaReadIrBinaryBytes:arenaReadBinary.length,
+                  arenaReadV6Rejects:arenaReadV6Rejects,
+                  arenaReadLoadCount:arenaLoadCount,
+                  arm32ArenaReadBytes:arenaReadRuntime.byteLength,
+                  arm32ArenaReadFunctionBytes:arenaReadFn.bytes,
+                  arm32ArenaReadFrameBytes:arenaReadFn.frameBytes,
+                  arm32ArenaReadSlotCount:arenaReadFn.slotCount,
+                  arm32ArenaReadSpillSlots:arenaReadFn.spillSlots,
+                  arm32ArenaReadAllocator:arenaReadFn.allocator,
+                  parserStateStackIrBinaryFormat:parserStateStackMagic,
+                  parserStateStackIrBinaryBytes:parserStateStackBinary.length,
+                  arm32ParserStateStackBytes:parserStateStackRuntime.byteLength,
+                  arm32ParserStateStepBytes:parserStateStepFn.bytes,
+                  arm32ParserStateStepFrameBytes:parserStateStepFn.frameBytes,
+                  arm32ParserStateStepSlotCount:parserStateStepFn.slotCount,
+                  arm32ParserStateCallBytes:parserStateCallFn.bytes,
+                  arm32ParserStateCallFrameBytes:parserStateCallFn.frameBytes,
+                  arm32ParserStateCallSpillSlots:parserStateCallFn.spillSlots,
+                  recordLoopYieldIrBinaryFormat:recordLoopYieldMagic,
+                  recordLoopYieldIrBinaryBytes:recordLoopYieldBinary.length,
+                  arm32RecordLoopYieldBytes:recordLoopYieldRuntime.byteLength,
+                  arm32RecordLoopYieldFunctionBytes:recordLoopYieldFn.bytes,
+                  arm32RecordLoopYieldFrameBytes:recordLoopYieldFn.frameBytes,
+                  arm32RecordLoopYieldSlotCount:recordLoopYieldFn.slotCount,
+                  arm32RecordLoopYieldSpillSlots:recordLoopYieldFn.spillSlots,
+                  arm32RecordLoopYieldBlocks:recordLoopYieldFn.blockCount,
+                  boundedRecursionFunctions:recursionRuntime.recursiveFunctions.length,
+                  boundedRecursionMaxDepth:recursionRuntime.maxRecursiveCallDepth,
+                  arm32BoundedRecursionBytes:recursionRuntime.byteLength,
+                  arm32BoundedRecursionFunctionBytes:recursionFactFn.bytes,
                   hardeningDerivedEffects:derivedEffectsRejectForgery,
                   hardeningCanonicalMachineVerify:canonicalMachineRejectsTamper,
                   hardeningExpressionBudget:expressionBudgetRejects

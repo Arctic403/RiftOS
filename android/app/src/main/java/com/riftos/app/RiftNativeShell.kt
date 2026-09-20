@@ -136,6 +136,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
                     "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
                     "rift-cli status|team|architecture|enable|disable|plan|riftpp|ir|tokenizer   [EXPERIMENTAL / OFF BY DEFAULT]\n" +
+                    "codynex status|read-state|call|compile-activate|activate|corrupt|recover|clear|cold-restart   [LOCAL BINDER BRIDGE]\n" +
                     "Legacy shell-only services fail explicitly; no renderer compatibility fallback exists.",
                 cwd,
                 nativeResult(command)
@@ -182,7 +183,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftbuild", "qjs", "semx", "riftpp", "rift-tool", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex", "riftbuild", "qjs", "semx", "riftpp", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -223,6 +224,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "vortex-agent" -> services.vortexAgent(args).let { ShellOutcome(it.output, cwd, it.value) }
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
+            "codynex" -> services.codynex(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftbuild" -> {
                 val value = riftBuild.executeShell(args, cwd)
                 ShellOutcome(value.output, cwd, value.value)

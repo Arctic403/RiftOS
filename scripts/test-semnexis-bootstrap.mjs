@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { compileSemnexisV0, inspectSemnexisV0, encodeSemnexisNativeIRV0, decodeSemnexisNativeIRV0, emitSemnexisArm32ElfProofV0, verifySemnexisArm32ElfProofV0, emitSemnexisArm32RuntimeElfV0, verifySemnexisArm32RuntimeElfV0 } from '../src/semnexis-bootstrap.js';
+import { compileSemnexisV0, inspectSemnexisV0, encodeSemnexisNativeIRV0, decodeSemnexisNativeIRV0, encodeSemnexisNativeIRV1, decodeSemnexisNativeIRV1, encodeSemnexisNativeIRV2, decodeSemnexisNativeIRV2, encodeSemnexisNativeIRV3, decodeSemnexisNativeIRV3, encodeSemnexisNativeIRV4, decodeSemnexisNativeIRV4, encodeSemnexisNativeIRV5, decodeSemnexisNativeIRV5, encodeSemnexisNativeIRV6, decodeSemnexisNativeIRV6, encodeSemnexisNativeIRV7, decodeSemnexisNativeIRV7, encodeSemnexisNativeIR, decodeSemnexisNativeIR, emitSemnexisArm32ElfProofV0, verifySemnexisArm32ElfProofV0, emitSemnexisArm32RuntimeElfV0, verifySemnexisArm32RuntimeElfV0 } from '../src/semnexis-bootstrap.js';
 
 const smokeSource = 'fn main() -> i32 {\n    return 40 + 2;\n}\n';
 const expectedGraph = 'SEMNEXIS_PROGRAM_GRAPH_V0\n' +
@@ -81,8 +81,8 @@ const effectSource = 'fn sample_time() -> i32 {\n' +
   'fn main() -> i32 with time {\n' +
   '    return sample_time();\n}\n';
 const effect = compileSemnexisV0(effectSource);
-assert.match(effect.graphText, /Function sample_time .*effect_proof=transitive_call_graph_v0 capability_proof=transitive_requirement_v0/);
-assert.match(effect.graphText, /Function main .*effect_proof=transitive_call_graph_v0 capability_proof=satisfied_by_grant_v0/);
+assert.match(effect.graphText, /Function sample_time .*effect_proof=transitive_time_graph_v0 capability_proof=transitive_requirement_v0/);
+assert.match(effect.graphText, /Function main .*effect_proof=transitive_time_graph_v0 capability_proof=satisfied_by_grant_v0/);
 
 const rejects = [
   ['fn add(a: i32, b: i32) -> i32 { return a + b; }\nfn main() -> i32 { return add(1); }\n', /expects 2 argument/],
@@ -257,8 +257,8 @@ assert.equal(spillMain.allocator, 'linear-scan-r4-r7-v0');
 
 assert.throws(
   () => emitSemnexisArm32RuntimeElfV0(effectfulNativeProgram.ir),
-  /effectful\/capability function/,
-  'runtime backend must reject capabilities until runtime capability lowering exists'
+  /unsupported effect\/capability function/,
+  'runtime backend must reject time/capability functions while allowing explicit borrowed-state lowering'
 );
 
 
@@ -694,10 +694,592 @@ const recursiveProgram = compileSemnexisV0(
   'fn b() -> i32 { return a(); }\n' +
   'fn main() -> i32 { return a(); }\n'
 );
+const recursiveArtifact = emitSemnexisArm32RuntimeElfV0(recursiveProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(recursiveArtifact, recursiveProgram.ir), true);
+assert.deepEqual(recursiveArtifact.recursiveFunctions, ['a','b']);
+assert.equal(recursiveArtifact.maxRecursiveCallDepth, 256);
+assert.equal(recursiveArtifact.functions.find(fn => fn.name === 'a').boundedRecursion, true);
+assert.equal(recursiveArtifact.functions.find(fn => fn.name === 'b').boundedRecursion, true);
+assert.equal(recursiveArtifact.functions.find(fn => fn.name === 'main').boundedRecursion, false);
+
+
+const autoSmokeBinary = encodeSemnexisNativeIR(smoke.ir);
+assert.deepEqual(Array.from(autoSmokeBinary), Array.from(smokeBinary), 'auto binary encoder must preserve frozen SNIRV0 for i32-only IR');
+
+const u8ProbeSource =
+  'fn classify_byte(c: u8) -> i32 {\n' +
+  ' return if c >= 48 { if c <= 57 { 3 } else { 4 } } else { 4 };\n' +
+  '}\n' +
+  'fn main() -> i32 { return classify_byte(65); }\n';
+const u8Probe = compileSemnexisV0(u8ProbeSource);
+assert.match(u8Probe.irText, /param 0 %arg0:u8 name=c/);
+assert.match(u8Probe.irText, /copy\.u8/);
+assert.match(u8Probe.irText, /const\.u8 48/);
+const u8BinaryV1 = encodeSemnexisNativeIRV1(u8Probe.ir);
+const u8BinaryAuto = encodeSemnexisNativeIR(u8Probe.ir);
+assert.equal(String.fromCharCode(...u8BinaryV1.slice(0, 6)), 'SNIRV1');
+assert.deepEqual(Array.from(u8BinaryAuto), Array.from(u8BinaryV1));
+assert.equal(decodeSemnexisNativeIRV1(u8BinaryV1).dump(), u8Probe.irText);
+assert.equal(decodeSemnexisNativeIR(u8BinaryAuto).dump(), u8Probe.irText);
 assert.throws(
-  () => emitSemnexisArm32RuntimeElfV0(recursiveProgram.ir),
-  /recursive call cycle/,
-  'runtime backend call-cycle verification must stay fail-closed without recursive verifier stack use'
+  () => encodeSemnexisNativeIRV0(u8Probe.ir),
+  /SNIRV0 cannot encode u8 values/,
+  'frozen SNIRV0 must reject the additive u8 IR surface'
+);
+const u8Runtime = emitSemnexisArm32RuntimeElfV0(u8Probe.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(u8Runtime, u8Probe.ir), true);
+assert.equal(u8Runtime.byteLength, 348);
+
+const u8Return = compileSemnexisV0(
+  'fn id_byte(x: u8) -> u8 { return x; }\n' +
+  'fn main() -> i32 { return 42; }\n'
+);
+assert.match(u8Return.irText, /ret\.u8/);
+assert.equal(decodeSemnexisNativeIRV1(encodeSemnexisNativeIRV1(u8Return.ir)).dump(), u8Return.irText);
+
+assert.throws(
+  () => compileSemnexisV0('fn take(x: u8) -> i32 { return 1; }\nfn main() -> i32 { return take(300); }\n'),
+  /integer literal is outside u8 range/,
+  'u8 contextual literals must reject values above 255'
+);
+assert.throws(
+  () => compileSemnexisV0('fn take(x: u8) -> i32 { return 1; }\nfn main() -> i32 { let x = 300; return take(x); }\n'),
+  /requires u8, got i32/,
+  'runtime i32 values must not narrow implicitly to u8'
+);
+
+
+const sliceProbeSource =
+  'fn first(source: Slice<u8>) -> u8 { return slice_get(source, 0); }\n' +
+  'fn main() -> i32 { return 0; }\n';
+const sliceProbe = compileSemnexisV0(sliceProbeSource);
+assert.match(sliceProbe.graphText, /Type Slice<u8> kind=borrowed_slice element=u8 mutability=read_only abi=descriptor_ptr_v0 descriptor_alignment=4 descriptor_layout=data_ptr@0,length_i32@4 escape=parameter_borrow_only/);
+assert.match(sliceProbe.graphText, /Region first\.local lifetime=function escape=false proof=borrowed_slice_parameter_v0/);
+assert.match(sliceProbe.irText, /param 0 %arg0:Slice<u8> name=source/);
+assert.match(sliceProbe.irText, /copy\.slice\.u8/);
+assert.match(sliceProbe.irText, /slice\.get\.u8/);
+const sliceBinaryV2 = encodeSemnexisNativeIRV2(sliceProbe.ir);
+const sliceBinaryAuto = encodeSemnexisNativeIR(sliceProbe.ir);
+assert.equal(String.fromCharCode(...sliceBinaryV2.slice(0, 6)), 'SNIRV2');
+assert.equal(sliceBinaryV2.length, 273);
+assert.deepEqual(Array.from(sliceBinaryAuto), Array.from(sliceBinaryV2));
+assert.equal(decodeSemnexisNativeIRV2(sliceBinaryV2).dump(), sliceProbe.irText);
+assert.equal(decodeSemnexisNativeIR(sliceBinaryAuto).dump(), sliceProbe.irText);
+assert.throws(
+  () => encodeSemnexisNativeIRV1(sliceProbe.ir),
+  /SNIRV1 cannot encode Slice<u8> values/,
+  'frozen SNIRV1 must reject borrowed slice IR'
+);
+assert.throws(
+  () => encodeSemnexisNativeIRV0(sliceProbe.ir),
+  /SNIRV0 cannot encode Slice<u8> values/,
+  'frozen SNIRV0 must reject borrowed slice IR'
+);
+const sliceRuntime = emitSemnexisArm32RuntimeElfV0(sliceProbe.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(sliceRuntime, sliceProbe.ir), true);
+assert.equal(sliceRuntime.byteLength, 232);
+
+assert.throws(
+  () => compileSemnexisV0(
+    'fn bad(source: Slice<u8>) -> u8 { return slice_get(source, source); }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /intrinsic 'slice_get' requires i32, got Slice<u8>/,
+  'slice_get index must remain i32'
+);
+assert.throws(
+  () => compileSemnexisV0(
+    'fn bad(source: Slice<u8>) -> i32 { return slice_len(1); }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /intrinsic 'slice_len' requires Slice<u8>, got i32/,
+  'slice_len must reject non-slice values'
+);
+assert.throws(
+  () => compileSemnexisV0(
+    'fn bad(source: Slice<u8>) -> Slice<u8> { return source; }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /must return i32, u8 or a flat record/,
+  'borrowed Slice<u8> must not escape through function returns'
+);
+assert.throws(
+  () => compileSemnexisV0(
+    'fn bad(source: Vec<Slice<u8>>) -> i32 { return 0; }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /must be i32, u8, Slice<u8> or a flat record/,
+  'generic type syntax may parse while unsupported generic semantics remain fail-closed'
+);
+const sliceMain = compileSemnexisV0('fn main(source: Slice<u8>) -> i32 { return slice_len(source); }\n');
+assert.throws(
+  () => emitSemnexisArm32RuntimeElfV0(sliceMain.ir),
+  /entry function 'main' must have zero parameters/,
+  'native process entry must not consume undefined Slice<u8> registers'
+);
+
+
+const tokenRecordSource =
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn first_token(source: Slice<u8>) -> Token {\n' +
+  ' return Token { kind: 1, start: 0, end: slice_len(source) };\n' +
+  '}\n' +
+  'fn main() -> i32 { return 0; }\n';
+const tokenRecordProgram = compileSemnexisV0(tokenRecordSource);
+assert.match(tokenRecordProgram.graphText, /Type Token kind=record abi=flat_words_v0 field_count=3/);
+assert.match(tokenRecordProgram.irText, /record Token fields=kind:i32,start:i32,end:i32 abi=flat_words_v0/);
+assert.match(tokenRecordProgram.irText, /record\.make Token/);
+assert.match(tokenRecordProgram.irText, /ret\.record/);
+const tokenRecordV3 = encodeSemnexisNativeIRV3(tokenRecordProgram.ir);
+const tokenRecordAuto = encodeSemnexisNativeIR(tokenRecordProgram.ir);
+assert.equal(String.fromCharCode(...tokenRecordV3.slice(0, 6)), 'SNIRV3');
+assert.equal(tokenRecordV3.length, 358);
+assert.deepEqual(Array.from(tokenRecordAuto), Array.from(tokenRecordV3));
+assert.equal(decodeSemnexisNativeIRV3(tokenRecordV3).dump(), tokenRecordProgram.irText);
+assert.equal(decodeSemnexisNativeIR(tokenRecordAuto).dump(), tokenRecordProgram.irText);
+assert.throws(
+  () => encodeSemnexisNativeIRV2(tokenRecordProgram.ir),
+  /SNIRV2 cannot encode record values/,
+  'frozen SNIRV2 must reject record IR'
+);
+const tokenRecordRuntime = emitSemnexisArm32RuntimeElfV0(tokenRecordProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(tokenRecordRuntime, tokenRecordProgram.ir), true);
+assert.equal(tokenRecordRuntime.byteLength, 248);
+const firstTokenMeta = tokenRecordRuntime.functions.find(fn => fn.name === 'first_token');
+assert.equal(firstTokenMeta.frameBytes, 16);
+assert.equal(firstTokenMeta.slotCount, 3);
+assert.equal(firstTokenMeta.spillSlots, 0);
+
+const copiedRecordProgram = compileSemnexisV0(
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn copy_token() -> Token {\n' +
+  ' let t = Token { kind: 7, start: 8, end: 9 };\n' +
+  ' return t;\n' +
+  '}\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+assert.match(copiedRecordProgram.irText, /copy\.record/);
+assert.equal(
+  verifySemnexisArm32RuntimeElfV0(emitSemnexisArm32RuntimeElfV0(copiedRecordProgram.ir), copiedRecordProgram.ir),
+  true
+);
+
+assert.throws(
+  () => compileSemnexisV0(
+    'struct Token { kind: i32, start: i32, end: i32 }\n' +
+    'fn bad() -> Token { return Token { kind: 1, start: 0 }; }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /must initialize every field exactly once/,
+  'record literals must initialize every field'
+);
+assert.throws(
+  () => compileSemnexisV0(
+    'struct TooWide { a: i32, b: i32, c: i32, d: i32, e: i32 }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /exceeds flat record ABI limit of 4 fields/,
+  'flat record ABI must remain bounded to four words'
+);
+assert.throws(
+  () => compileSemnexisV0(
+    'struct Token { kind: i32, kind: i32 }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /duplicate struct field 'kind'/,
+  'record field names must be unique'
+);
+
+const braceAmbiguityProgram = compileSemnexisV0(
+  'fn sum(n: i32) -> i32 { return loop(i = 0, acc = 0) while i < n { next(i + 1, acc + i); } yield acc; }\n' +
+  'fn main() -> i32 { return sum(5); }\n'
+);
+assert.equal(emitSemnexisArm32RuntimeElfV0(braceAmbiguityProgram.ir).byteLength, 368);
+
+const recordParameterProgram = compileSemnexisV0(
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn consume(token: Token) -> i32 { return token.end; }\n' +
+  'fn relay() -> i32 { let token = Token { kind: 2, start: 4, end: 9 }; return consume(token); }\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+const recordParameterRuntime = emitSemnexisArm32RuntimeElfV0(recordParameterProgram.ir);
+assert.equal(
+  verifySemnexisArm32RuntimeElfV0(recordParameterRuntime, recordParameterProgram.ir),
+  true,
+  'record parameters must lower through the r0-r3 flat-record ABI'
+);
+const mixedRecordParameterProgram = compileSemnexisV0(
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn shifted(prefix: i32, token: Token) -> i32 { return prefix + token.end; }\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+assert.equal(
+  verifySemnexisArm32RuntimeElfV0(emitSemnexisArm32RuntimeElfV0(mixedRecordParameterProgram.ir), mixedRecordParameterProgram.ir),
+  true,
+  'one scalar plus a three-word record must exactly fill r0-r3'
+);
+const stackedRecordParameterProgram = compileSemnexisV0(
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn stacked(prefix: i32, token: Token, suffix: i32) -> i32 { return prefix + token.end + suffix; }\n' +
+  'fn relay_stacked() -> i32 { let token = Token { kind: 2, start: 4, end: 9 }; return stacked(10, token, 7); }\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+assert.equal(
+  verifySemnexisArm32RuntimeElfV0(emitSemnexisArm32RuntimeElfV0(stackedRecordParameterProgram.ir), stackedRecordParameterProgram.ir),
+  true,
+  'record parameters beyond r0-r3 must use the bounded aligned stack-argument ABI'
+);
+const overBudgetParameterList = Array.from({length:33}, (_, index) => 'p' + index + ': i32').join(', ');
+const overBudgetParameterProgram = compileSemnexisV0(
+  'fn too_many(' + overBudgetParameterList + ') -> i32 { return p0; }\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+assert.throws(
+  () => emitSemnexisArm32RuntimeElfV0(overBudgetParameterProgram.ir),
+  /exceeds 32 argument words/,
+  'native stack-argument ABI must remain bounded to 32 flattened words'
+);
+
+const recordCallProgram = compileSemnexisV0(
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn make() -> Token { return Token { kind: 1, start: 0, end: 1 }; }\n' +
+  'fn relay() -> Token { return make(); }\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+assert.equal(
+  verifySemnexisArm32RuntimeElfV0(emitSemnexisArm32RuntimeElfV0(recordCallProgram.ir), recordCallProgram.ir),
+  true,
+  'record-returning calls must lower through the r0-r3 flat-record ABI'
+);
+
+const recordProjectionProgram = compileSemnexisV0(
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn first_token(source: Slice<u8>) -> Token { return Token { kind: 1, start: 0, end: slice_len(source) }; }\n' +
+  'fn token_kind(source: Slice<u8>) -> i32 { let token = first_token(source); return token.kind; }\n' +
+  'fn token_end(source: Slice<u8>) -> i32 { let token = first_token(source); return token.end; }\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+assert.match(recordProjectionProgram.graphText, /Field kind record_type=Token field_index=0 field_name=kind/);
+assert.match(recordProjectionProgram.graphText, /Field end record_type=Token field_index=2 field_name=end/);
+assert.match(recordProjectionProgram.irText, /record\.get %v2 field=0/);
+assert.match(recordProjectionProgram.irText, /record\.get %v2 field=2/);
+const recordProjectionV4 = encodeSemnexisNativeIRV4(recordProjectionProgram.ir);
+const recordProjectionAuto = encodeSemnexisNativeIR(recordProjectionProgram.ir);
+assert.equal(String.fromCharCode(...recordProjectionV4.slice(0, 6)), 'SNIRV4');
+assert.equal(recordProjectionV4.length, 802);
+assert.deepEqual(Array.from(recordProjectionAuto), Array.from(recordProjectionV4));
+assert.equal(decodeSemnexisNativeIRV4(recordProjectionV4).dump(), recordProjectionProgram.irText);
+assert.equal(decodeSemnexisNativeIR(recordProjectionAuto).dump(), recordProjectionProgram.irText);
+assert.throws(
+  () => encodeSemnexisNativeIRV3(recordProjectionProgram.ir),
+  /SNIRV3 cannot encode record field projection/,
+  'frozen SNIRV3 must reject record field projection'
+);
+const recordProjectionRuntime = emitSemnexisArm32RuntimeElfV0(recordProjectionProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(recordProjectionRuntime, recordProjectionProgram.ir), true);
+assert.equal(recordProjectionRuntime.byteLength, 440);
+
+const forgedProjection = recordProjectionProgram.ir.functions.find(fn => fn.name === 'token_end').instructions.find(inst => inst.op === 'record.get');
+const savedFieldIndex = forgedProjection.fieldIndex;
+forgedProjection.fieldIndex = 9;
+assert.throws(
+  () => recordProjectionProgram.ir.verify(),
+  /record\.get field index out of range/,
+  'IR verifier must reject forged record field indexes'
+);
+forgedProjection.fieldIndex = savedFieldIndex;
+recordProjectionProgram.ir.verify();
+
+assert.throws(
+  () => compileSemnexisV0(
+    'struct Token { kind: i32, start: i32, end: i32 }\n' +
+    'fn bad() -> i32 { let token = Token { kind: 1, start: 0, end: 1 }; return token.nope; }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /has no field 'nope'/,
+  'record field projection must reject unknown field names'
+);
+assert.throws(
+  () => compileSemnexisV0(
+    'fn bad() -> i32 { return 1.kind; }\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /field access base must be a flat record/,
+  'field projection must reject non-record bases'
+);
+
+
+const recordConditionalProgram = compileSemnexisV0(
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn lex_first(source: Slice<u8>) -> Token {\n' +
+  ' let c = slice_get(source, 0);\n' +
+  ' return if c >= 48 { if c <= 57 { Token { kind: 2, start: 0, end: 1 } } else { Token { kind: 1, start: 0, end: 1 } } } else { Token { kind: 1, start: 0, end: 1 } };\n' +
+  '}\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+assert.equal(recordConditionalProgram.ir.functions.find(fn => fn.name === 'lex_first').instructions.filter(inst => inst.op === 'phi.record').length, 2);
+const recordConditionalV5 = encodeSemnexisNativeIRV5(recordConditionalProgram.ir);
+const recordConditionalAuto = encodeSemnexisNativeIR(recordConditionalProgram.ir);
+assert.equal(String.fromCharCode(...recordConditionalV5.slice(0, 6)), 'SNIRV5');
+assert.equal(recordConditionalV5.length, 1125);
+assert.deepEqual(Array.from(recordConditionalAuto), Array.from(recordConditionalV5));
+assert.equal(decodeSemnexisNativeIRV5(recordConditionalV5).dump(), recordConditionalProgram.irText);
+assert.equal(decodeSemnexisNativeIR(recordConditionalAuto).dump(), recordConditionalProgram.irText);
+assert.throws(
+  () => encodeSemnexisNativeIRV4(recordConditionalProgram.ir),
+  /SNIRV4 cannot encode record phi values/,
+  'frozen SNIRV4 must reject aggregate phi control flow'
+);
+const recordConditionalRuntime = emitSemnexisArm32RuntimeElfV0(recordConditionalProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(recordConditionalRuntime, recordConditionalProgram.ir), true);
+assert.equal(recordConditionalRuntime.byteLength, 644);
+
+const recordConditionalFn = recordConditionalProgram.ir.functions.find(fn => fn.name === 'lex_first');
+const forgedRecordPhi = recordConditionalFn.instructions.find(inst => inst.op === 'phi.record');
+const savedIncomingValue = forgedRecordPhi.incoming[0].value;
+const savedArgValue = forgedRecordPhi.args[0];
+forgedRecordPhi.incoming[0].value = '%v9';
+forgedRecordPhi.args[0] = '%v9';
+assert.throws(
+  () => recordConditionalProgram.ir.verify(),
+  /phi\.record incoming value type mismatch/,
+  'IR verifier must reject scalar values forged into record phi inputs'
+);
+forgedRecordPhi.incoming[0].value = savedIncomingValue;
+forgedRecordPhi.args[0] = savedArgValue;
+recordConditionalProgram.ir.verify();
+
+const savedIncomingLabel = forgedRecordPhi.incoming[0].label;
+forgedRecordPhi.incoming[0].label = 'entry';
+assert.throws(
+  () => recordConditionalProgram.ir.verify(),
+  /phi predecessors do not match CFG predecessors/,
+  'record phi predecessors must exactly match CFG predecessors'
+);
+forgedRecordPhi.incoming[0].label = savedIncomingLabel;
+recordConditionalProgram.ir.verify();
+
+
+const recordLoopStateProgram = compileSemnexisV0(
+  'struct Token { kind: i32, start: i32, end: i32 }\n' +
+  'fn lex_at(source: Slice<u8>, start: i32) -> Token {\n' +
+  ' return if start < slice_len(source) { Token { kind: 1, start: start, end: start + 1 } } else { Token { kind: 0, start: start, end: start } };\n' +
+  '}\n' +
+  'fn count_tokens(source: Slice<u8>) -> i32 {\n' +
+  ' let first = lex_at(source, 0);\n' +
+  ' return loop(token = first, count = 0) while token.kind != 0 {\n' +
+  '  next(lex_at(source, token.end), count + 1);\n' +
+  ' } yield count;\n' +
+  '}\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+const countTokensIr = recordLoopStateProgram.ir.functions.find(fn => fn.name === 'count_tokens');
+assert.equal(countTokensIr.instructions.filter(inst => inst.op === 'phi.record').length, 1);
+assert.equal(countTokensIr.instructions.filter(inst => inst.op === 'phi.i32').length, 1);
+const recordLoopStateV5 = encodeSemnexisNativeIRV5(recordLoopStateProgram.ir);
+assert.equal(String.fromCharCode(...recordLoopStateV5.slice(0, 6)), 'SNIRV5');
+assert.equal(recordLoopStateV5.length, 1554);
+assert.equal(decodeSemnexisNativeIRV5(recordLoopStateV5).dump(), recordLoopStateProgram.irText);
+assert.equal(decodeSemnexisNativeIR(recordLoopStateV5).dump(), recordLoopStateProgram.irText);
+const recordLoopRuntime = emitSemnexisArm32RuntimeElfV0(recordLoopStateProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(recordLoopRuntime, recordLoopStateProgram.ir), true);
+assert.equal(recordLoopRuntime.byteLength, 816);
+
+assert.throws(
+  () => compileSemnexisV0(
+    'struct Token { kind: i32, start: i32, end: i32 }\n' +
+    'fn bad() -> i32 {\n' +
+    ' let first = Token { kind: 1, start: 0, end: 1 };\n' +
+    ' return loop(token = first, count = 0) while count < 1 { next(count, count + 1); } yield count;\n' +
+    '}\n' +
+    'fn main() -> i32 { return 0; }\n'
+  ),
+  /next value for 'token' must remain Token, got i32/,
+  'record loop state must preserve its exact type across next()'
+);
+
+
+const recordLoopYieldProgram = compileSemnexisV0(
+  'struct ParserState { pos: i32, root: i32, slot: i32 }\n' +
+  'fn advance(n: i32) -> ParserState {\n' +
+  ' return loop(state = ParserState { pos: 0, root: 0, slot: 0 }) while state.pos < n {\n' +
+  '  next(ParserState { pos: state.pos + 1, root: state.root, slot: state.slot + 1 });\n' +
+  ' } yield state;\n' +
+  '}\n' +
+  'fn run() -> i32 { let state = advance(5); return state.pos + state.slot; }\n' +
+  'fn main() -> i32 { return run(); }\n'
+);
+const recordLoopYieldV5 = encodeSemnexisNativeIRV5(recordLoopYieldProgram.ir);
+assert.equal(String.fromCharCode(...recordLoopYieldV5.slice(0, 6)), 'SNIRV5');
+assert.equal(recordLoopYieldV5.length, 1150);
+assert.equal(decodeSemnexisNativeIRV5(recordLoopYieldV5).dump(), recordLoopYieldProgram.irText);
+const recordLoopYieldRuntime = emitSemnexisArm32RuntimeElfV0(recordLoopYieldProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(recordLoopYieldRuntime, recordLoopYieldProgram.ir), true);
+assert.equal(recordLoopYieldRuntime.byteLength, 700);
+assert.equal(
+  recordLoopYieldProgram.ir.functions.find(fn => fn.name === 'advance').instructions.filter(inst => inst.op === 'phi.record').length,
+  1,
+  'record-valued loop result must use the loop-carried record phi'
+);
+
+const decimalValueProgram = compileSemnexisV0(
+  'fn digit_value(c: u8) -> i32 { return c - 48; }\n' +
+  'fn parse_decimal(source: Slice<u8>, start: i32, end: i32) -> i32 {\n' +
+  ' return loop(i = start, value = 0) while i < end {\n' +
+  '  next(i + 1, value * 10 + digit_value(slice_get(source, i)));\n' +
+  ' } yield value;\n' +
+  '}\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+assert.match(decimalValueProgram.irText, /zext\.u8\.i32/);
+const decimalValueV6 = encodeSemnexisNativeIRV6(decimalValueProgram.ir);
+const decimalValueAuto = encodeSemnexisNativeIR(decimalValueProgram.ir);
+assert.equal(String.fromCharCode(...decimalValueV6.slice(0, 6)), 'SNIRV6');
+assert.equal(decimalValueV6.length, 1085);
+assert.deepEqual(Array.from(decimalValueAuto), Array.from(decimalValueV6));
+assert.equal(decodeSemnexisNativeIRV6(decimalValueV6).dump(), decimalValueProgram.irText);
+assert.equal(decodeSemnexisNativeIR(decimalValueAuto).dump(), decimalValueProgram.irText);
+assert.throws(
+  () => encodeSemnexisNativeIRV5(decimalValueProgram.ir),
+  /SNIRV5 cannot encode u8-to-i32 widening/,
+  'frozen SNIRV5 must reject u8-to-i32 widening'
+);
+const decimalValueRuntime = emitSemnexisArm32RuntimeElfV0(decimalValueProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(decimalValueRuntime, decimalValueProgram.ir), true);
+assert.equal(decimalValueRuntime.byteLength, 532);
+
+const decimalValueFn = decimalValueProgram.ir.functions.find(fn => fn.name === 'digit_value');
+const forgedZext = decimalValueFn.instructions.find(inst => inst.op === 'zext.u8.i32');
+const savedZextType = forgedZext.type;
+forgedZext.type = 'u8';
+assert.throws(
+  () => decimalValueProgram.ir.verify(),
+  /malformed zext\.u8\.i32/,
+  'IR verifier must reject malformed zext result types'
+);
+forgedZext.type = savedZextType;
+decimalValueProgram.ir.verify();
+
+
+const arenaStateProgram = compileSemnexisV0(
+  'struct Expr { kind: i32, a: i32, b: i32, value: i32 }\n' +
+  'fn build_add(source: Slice<u8>, arena: Arena) -> i32 {\n' +
+  ' let left = Expr { kind: 0, a: 0, b: 0, value: 1 };\n' +
+  ' let right = Expr { kind: 0, a: 0, b: 0, value: 2 };\n' +
+  ' let root = Expr { kind: 1, a: 0, b: 1, value: 3 };\n' +
+  ' let write0 = arena_store(arena, 0, left);\n' +
+  ' let write1 = arena_store(arena, 1, right);\n' +
+  ' let write2 = arena_store(arena, 2, root);\n' +
+  ' return 2;\n' +
+  '}\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+const arenaBuildFn = arenaStateProgram.ir.functions.find(fn => fn.name === 'build_add');
+assert.equal(arenaBuildFn.effect, 'state');
+assert.match(arenaStateProgram.irText, /%v[0-9]+:Arena = copy\.arena %arg1/);
+assert.match(arenaStateProgram.irText, /arena\.store\.record .* record=Expr effect=state/);
+const arenaStateV7 = encodeSemnexisNativeIRV7(arenaStateProgram.ir);
+const arenaStateAuto = encodeSemnexisNativeIR(arenaStateProgram.ir);
+assert.equal(String.fromCharCode(...arenaStateV7.slice(0, 6)), 'SNIRV7');
+assert.equal(arenaStateV7.length, 1018);
+assert.deepEqual(Array.from(arenaStateAuto), Array.from(arenaStateV7));
+assert.equal(decodeSemnexisNativeIRV7(arenaStateV7).dump(), arenaStateProgram.irText);
+assert.equal(decodeSemnexisNativeIR(arenaStateAuto).dump(), arenaStateProgram.irText);
+assert.throws(
+  () => encodeSemnexisNativeIRV6(arenaStateProgram.ir),
+  /SNIRV6 cannot encode Arena\/state values/,
+  'frozen SNIRV6 must reject Arena/state IR'
+);
+const arenaStateRuntime = emitSemnexisArm32RuntimeElfV0(arenaStateProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(arenaStateRuntime, arenaStateProgram.ir), true);
+assert.equal(arenaStateRuntime.byteLength, 808);
+const arenaStateRuntimeFn = arenaStateRuntime.functions.find(fn => fn.name === 'build_add');
+assert.equal(arenaStateRuntimeFn.bytes, 676);
+assert.equal(arenaStateRuntimeFn.frameBytes, 112);
+assert.equal(arenaStateRuntimeFn.slotCount, 27);
+assert.equal(arenaStateRuntimeFn.spillSlots, 3);
+
+const arenaStoreInst = arenaBuildFn.instructions.find(inst => inst.op === 'arena.store.record');
+const savedArenaRecordType = arenaStoreInst.recordType;
+arenaStoreInst.recordType = 'MissingRecord';
+assert.throws(
+  () => arenaStateProgram.ir.verify(),
+  /malformed arena\.store\.record/,
+  'IR verifier must reject forged Arena record type metadata'
+);
+arenaStoreInst.recordType = savedArenaRecordType;
+const savedArenaEffect = arenaBuildFn.effect;
+arenaBuildFn.effect = 'pure';
+assert.throws(
+  () => arenaStateProgram.ir.verify(),
+  /effect metadata mismatch; expected state, got pure/,
+  'IR verifier must re-derive borrowed-state effects'
+);
+arenaBuildFn.effect = savedArenaEffect;
+arenaStateProgram.ir.verify();
+
+const arenaReadProgram = compileSemnexisV0(
+  'struct Expr { kind: i32, a: i32, b: i32, value: i32 }\n' +
+  'fn read_value(arena: Arena, index: i32) -> i32 {\n' +
+  ' let node = arena_load<Expr>(arena, index);\n' +
+  ' return node.value;\n' +
+  '}\n' +
+  'fn main() -> i32 { return 0; }\n'
+);
+const arenaReadFn = arenaReadProgram.ir.functions.find(fn => fn.name === 'read_value');
+assert.equal(arenaReadFn.effect, 'state');
+assert.match(arenaReadProgram.irText, /%v[0-9]+:Expr = arena\.load\.record .* record=Expr effect=state/);
+const arenaReadV7 = encodeSemnexisNativeIRV7(arenaReadProgram.ir);
+assert.equal(String.fromCharCode(...arenaReadV7.slice(0, 6)), 'SNIRV7');
+assert.equal(decodeSemnexisNativeIRV7(arenaReadV7).dump(), arenaReadProgram.irText);
+assert.equal(decodeSemnexisNativeIR(arenaReadV7).dump(), arenaReadProgram.irText);
+assert.throws(
+  () => encodeSemnexisNativeIRV6(arenaReadProgram.ir),
+  /SNIRV6 cannot encode Arena\/state values/,
+  'frozen SNIRV6 must reject Arena record loads'
+);
+const arenaReadRuntime = emitSemnexisArm32RuntimeElfV0(arenaReadProgram.ir);
+assert.equal(verifySemnexisArm32RuntimeElfV0(arenaReadRuntime, arenaReadProgram.ir), true);
+
+const arenaLoadInst = arenaReadFn.instructions.find(inst => inst.op === 'arena.load.record');
+const savedArenaLoadType = arenaLoadInst.type;
+arenaLoadInst.type = 'i32';
+assert.throws(
+  () => arenaReadProgram.ir.verify(),
+  /malformed arena\.load\.record/,
+  'IR verifier must reject non-record Arena loads'
+);
+arenaLoadInst.type = savedArenaLoadType;
+const savedArenaLoadEffect = arenaLoadInst.effect;
+arenaLoadInst.effect = 'pure';
+assert.throws(
+  () => arenaReadProgram.ir.verify(),
+  /malformed arena\.load\.record/,
+  'IR verifier must reject Arena loads without state effect'
+);
+arenaLoadInst.effect = savedArenaLoadEffect;
+arenaReadProgram.ir.verify();
+assert.throws(
+  () => compileSemnexisV0('fn bad(arena: Arena) -> i32 { return arena_load<i32>(arena, 0); }\nfn main() -> i32 { return 0; }\n'),
+  /type argument must be a flat record/,
+  'arena_load must reject scalar type arguments'
+);
+
+const arenaTimeStateProgram = compileSemnexisV0(
+  'struct Cell { value: i32 }\n' +
+  'fn main(arena: Arena) -> i32 with time {\n' +
+  ' let cell = Cell { value: 1 };\n' +
+  ' let written = arena_store(arena, 0, cell);\n' +
+  ' return clock();\n' +
+  '}\n'
+);
+assert.equal(arenaTimeStateProgram.ir.functions.find(fn => fn.name === 'main').effect, 'time_state');
+const arenaTimeStateV7 = encodeSemnexisNativeIRV7(arenaTimeStateProgram.ir);
+assert.equal(decodeSemnexisNativeIRV7(arenaTimeStateV7).dump(), arenaTimeStateProgram.irText);
+assert.throws(
+  () => emitSemnexisArm32RuntimeElfV0(arenaTimeStateProgram.ir),
+  /entry function 'main' must have zero parameters|unsupported effect\/capability function/,
+  'native runtime must keep time_state fail-closed at the process-entry or effect boundary'
 );
 
 console.log('ok - Semnexis QuickJS bootstrap compiler');

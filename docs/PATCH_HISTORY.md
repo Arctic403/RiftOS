@@ -6,6 +6,53 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.13 — Semnexis 0.7 record/parser pressure loop
+
+### Current source changes
+
+Continued the self-hosting pressure loop by compiling increasingly real lexer/parser kernels and adding only the general capabilities those kernels exposed.
+
+Added and verified:
+- flat immutable records (up to four scalar fields), `SNIRV3`, deterministic aggregate stack slots and r0-r3 record returns/calls;
+- record field projection through `record.get` and frozen additive `SNIRV4`;
+- record-valued conditionals and explicit-state record loop values through `phi.record`, additive `SNIRV5`, and the existing cycle-safe parallel phi edge-copy resolver;
+- generic CFG return handling for `ret.i32`, `ret.u8` and `ret.record`;
+- post-definition phi type verification, including backedge-safe record phi validation;
+- variable-width numeric token spans over borrowed `Slice<u8>` source;
+- a native streaming parser-state kernel that accepts valid `digit + digit` forms and rejects incomplete/extra/wrong-operator forms;
+- verified zero-extension from semantic `u8` to `i32` through `zext.u8.i32` and additive `SNIRV6`;
+- native decimal accumulation (`1234` -> integer `1234`) using checked arithmetic;
+- independent ARM32 execution regressions for record returns/calls/projection, record branch/loop state, variable-width token spans, parser state and numeric widening;
+- embedded `semx self-test/13` proof for the V6 binary/runtime path;
+- Builder wiring guards for SNIRV6, zext and `/13` host proof.
+
+Compatibility remains additive and fail-closed: V0-V5 remain explicit encoders/decoders, and older formats reject newer semantics rather than silently reinterpreting them.
+
+0.6 remains installed-device verified. The 0.7 lexer/parser/V6 work is source + independent-machine-regression verified and awaits the `/13` APK/device promotion gate.
+
+## Patch 10.12 — Semnexis 0.7 self-hosting byte/slice pressure loop
+
+### Current source changes
+
+Semnexis advanced to `0.7.0-quickjs-bootstrap` by feeding real lexer requirements back into the language instead of predesigning unrelated features.
+
+Added:
+- real `u8` parameters/returns/literals with zero-extended 32-bit register representation;
+- frozen `SNIRV0` preservation plus additive `SNIRV1` for `u8` IR;
+- bounded generic type-reference parsing (`Name<T,...>`, maximum nesting 16);
+- read-only borrowed `Slice<u8>` values with a fixed descriptor-pointer ABI;
+- pure `slice_len` and bounds-checked `slice_get` intrinsics;
+- additive `SNIRV2` for slice values/ops while V0/V1 reject newer value kinds;
+- ARM32 word/byte loads and fail-closed descriptor/index/length/data-pointer checks;
+- independent ARM32 execution over seeded external descriptor/data memory;
+- a real native scanner kernel that walks `a1b23!` through `Slice<u8>` and returns digit count `3`;
+- exact embedded `semx self-test/8` proof for SNIRV2 + canonical slice ARM32 lowering;
+- Builder wiring guards for SNIRV2, slice IR/backend markers and `/8` host proof.
+
+Compatibility remains explicit: i32-only IR auto-encodes as `SNIRV0`, `u8` IR as `SNIRV1`, and borrowed-slice IR as `SNIRV2`. Existing 0.6 smoke/conditional/loop binary sizes remain frozen.
+
+0.6 remains device-verified on `1d743b6fda2f5e7f1085186bc4bf6e9bbbd3ef36`. The 0.7 self-hosting slice is source + independent-machine-regression verified and requires the next APK/device `/8` gate.
+
 ## Patch 10.11 — Semnexis 0.6.1 hardening gate
 
 ### Current source changes

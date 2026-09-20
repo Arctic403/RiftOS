@@ -6,7 +6,11 @@ const SEMNEXIS_NATIVE_IR_SCHEMA = 'SEMNEXIS_NATIVE_IR_V0';
 const MAX_SEMNEXIS_SOURCE_CHARS = 512 * 1024;
 const MAX_SEMNEXIS_TOKENS = 65536;
 const MAX_SEMNEXIS_FUNCTIONS = 1024;
+const MAX_SEMNEXIS_STRUCTS = 256;
+const MAX_SEMNEXIS_STRUCT_FIELDS = 16;
+const MAX_SEMNEXIS_FLAT_RECORD_WORDS = 4;
 const MAX_SEMNEXIS_EXPRESSION_DEPTH = 256;
+const MAX_SEMNEXIS_TYPE_DEPTH = 16;
 const MAX_SEMNEXIS_GRAPH_NODES = 65536;
 const MAX_SEMNEXIS_GRAPH_EDGES = 262144;
 const MAX_SEMNEXIS_CFG_BLOCKS = 512;
@@ -15,10 +19,10 @@ const MAX_SEMNEXIS_INTEGER_CHARS = 10;
 
 const TokenKind = Object.freeze({
   End:'End', Identifier:'Identifier', Integer:'Integer',
-  KwFn:'KwFn', KwLet:'KwLet', KwReturn:'KwReturn', KwWith:'KwWith',
+  KwFn:'KwFn', KwStruct:'KwStruct', KwLet:'KwLet', KwReturn:'KwReturn', KwWith:'KwWith',
   KwIf:'KwIf', KwElse:'KwElse', KwLoop:'KwLoop', KwWhile:'KwWhile', KwNext:'KwNext', KwYield:'KwYield',
   LParen:'LParen', RParen:'RParen', LBrace:'LBrace', RBrace:'RBrace',
-  Arrow:'Arrow', Colon:'Colon', Comma:'Comma', Equal:'Equal', EqEq:'EqEq', BangEq:'BangEq',
+  Arrow:'Arrow', Colon:'Colon', Comma:'Comma', Dot:'Dot', Equal:'Equal', EqEq:'EqEq', BangEq:'BangEq',
   Less:'Less', LessEq:'LessEq', Greater:'Greater', GreaterEq:'GreaterEq',
   Semicolon:'Semicolon', Plus:'Plus', Minus:'Minus', Star:'Star', Slash:'Slash'
 });
@@ -27,7 +31,7 @@ const NodeKind = Object.freeze({
   Module:'Module', Function:'Function', Type:'Type', Effect:'Effect',
   Capability:'Capability', Intrinsic:'Intrinsic', Region:'Region',
   Parameter:'Parameter', Local:'Local', Return:'Return', Constant:'Constant',
-  NameRef:'NameRef', Binary:'Binary', Call:'Call', Conditional:'Conditional', Loop:'Loop', LoopState:'LoopState'
+  NameRef:'NameRef', Binary:'Binary', Convert:'Convert', Call:'Call', Record:'Record', Field:'Field', Conditional:'Conditional', Loop:'Loop', LoopState:'LoopState'
 });
 
 function fail(message) { throw new Error(message); }
@@ -83,6 +87,7 @@ class Lexer {
         const token = this.make(TokenKind.Identifier, start, line, column);
         if (token.lexeme.length > MAX_SEMNEXIS_IDENTIFIER_CHARS) fail('lexer: identifier exceeds compiler budget at ' + line + ':' + column);
         if (token.lexeme === 'fn') token.kind = TokenKind.KwFn;
+        else if (token.lexeme === 'struct') token.kind = TokenKind.KwStruct;
         else if (token.lexeme === 'let') token.kind = TokenKind.KwLet;
         else if (token.lexeme === 'return') token.kind = TokenKind.KwReturn;
         else if (token.lexeme === 'with') token.kind = TokenKind.KwWith;
@@ -106,7 +111,7 @@ class Lexer {
       const one = {
         '(' : TokenKind.LParen, ')' : TokenKind.RParen,
         '{' : TokenKind.LBrace, '}' : TokenKind.RBrace,
-        ':' : TokenKind.Colon, ',' : TokenKind.Comma,
+        ':' : TokenKind.Colon, ',' : TokenKind.Comma, '.' : TokenKind.Dot,
         ';' : TokenKind.Semicolon,
         '+' : TokenKind.Plus, '*' : TokenKind.Star, '/' : TokenKind.Slash
       };
@@ -152,7 +157,7 @@ class Lexer {
 }
 
 class Parser {
-  constructor(tokens) { this.tokens = tokens; this.pos = 0; this.expressionDepth = 0; }
+  constructor(tokens) { this.tokens = tokens; this.pos = 0; this.expressionDepth = 0; this.typeDepth = 0; }
   peek(offset) {
     const i = this.pos + (offset || 0);
     return this.tokens[Math.min(i, this.tokens.length - 1)];
@@ -171,19 +176,65 @@ class Parser {
     return token;
   }
   parseModule() {
+    const structs = [];
     const functions = [];
     while (this.peek().kind !== TokenKind.End) {
+      if (this.peek().kind === TokenKind.KwStruct) {
+        if (structs.length >= MAX_SEMNEXIS_STRUCTS) fail('parser: struct count exceeds compiler budget');
+        structs.push(this.parseStruct());
+        continue;
+      }
       if (functions.length >= MAX_SEMNEXIS_FUNCTIONS) fail('parser: function count exceeds compiler budget');
       functions.push(this.parseFunction());
     }
     if (!functions.length) fail('parser: module must contain at least one function');
-    return {functions:functions};
+    return {structs:structs, functions:functions};
+  }
+  parseStruct() {
+    this.expect(TokenKind.KwStruct, "expected 'struct'");
+    const name = this.expect(TokenKind.Identifier, 'expected struct name').lexeme;
+    this.expect(TokenKind.LBrace, "expected '{' after struct name");
+    const fields = [];
+    const names = new Set();
+    while (this.peek().kind !== TokenKind.RBrace) {
+      if (fields.length >= MAX_SEMNEXIS_STRUCT_FIELDS) fail("parser: struct '" + name + "' exceeds field budget");
+      const fieldName = this.expect(TokenKind.Identifier, 'expected struct field name').lexeme;
+      if (names.has(fieldName)) fail("parser: duplicate struct field '" + fieldName + "'");
+      names.add(fieldName);
+      this.expect(TokenKind.Colon, "expected ':' after struct field name");
+      const type = this.parseTypeReference();
+      fields.push({name:fieldName, type:type});
+      if (!this.match(TokenKind.Comma)) break;
+    }
+    this.expect(TokenKind.RBrace, "expected '}' after struct fields");
+    if (!fields.length) fail("parser: struct '" + name + "' requires at least one field");
+    return {name:name, fields:fields};
+  }
+  parseTypeReference() {
+    this.typeDepth += 1;
+    if (this.typeDepth > MAX_SEMNEXIS_TYPE_DEPTH) {
+      this.typeDepth -= 1;
+      fail('parser: type nesting exceeds compiler budget');
+    }
+    try {
+      const base = this.expect(TokenKind.Identifier, 'expected type name').lexeme;
+      if (!this.match(TokenKind.Less)) return base;
+      const args = [];
+      for (;;) {
+        args.push(this.parseTypeReference());
+        if (!this.match(TokenKind.Comma)) break;
+      }
+      this.expect(TokenKind.Greater, "expected '>' after type arguments");
+      return base + '<' + args.join(',') + '>';
+    } finally {
+      this.typeDepth -= 1;
+    }
   }
   parseParameter() {
     const name = this.expect(TokenKind.Identifier, 'expected parameter name');
     this.expect(TokenKind.Colon, "expected ':' after parameter name");
-    const type = this.expect(TokenKind.Identifier, 'expected parameter type');
-    return {name:name.lexeme, type:type.lexeme};
+    const type = this.parseTypeReference();
+    return {name:name.lexeme, type:type};
   }
   parseLocal() {
     this.expect(TokenKind.KwLet, "expected 'let'");
@@ -206,7 +257,7 @@ class Parser {
     }
     this.expect(TokenKind.RParen, "expected ')'");
     this.expect(TokenKind.Arrow, "expected '->'");
-    const returnType = this.expect(TokenKind.Identifier, 'expected return type');
+    const returnType = this.parseTypeReference();
     const grantedCapabilities = [];
     if (this.match(TokenKind.KwWith)) {
       for (;;) {
@@ -222,7 +273,7 @@ class Parser {
     this.expect(TokenKind.Semicolon, "expected ';' after return expression");
     this.expect(TokenKind.RBrace, "expected '}'");
     return {
-      name:name.lexeme, parameters:parameters, returnType:returnType.lexeme,
+      name:name.lexeme, parameters:parameters, returnType:returnType,
       grantedCapabilities:grantedCapabilities, locals:locals, returnExpr:returnExpr
     };
   }
@@ -318,20 +369,53 @@ class Parser {
     }
     return left;
   }
-  parsePrimary() {
-    if (this.match(TokenKind.LParen)) {
-      const expression = this.parseExpr();
-      this.expect(TokenKind.RParen, "expected ')' after expression");
-      return expression;
+  looksLikeTypeArgumentCall() {
+    if (this.peek().kind !== TokenKind.Less) return false;
+    let depth = 0;
+    let sawType = false;
+    for (let offset = 0; offset < MAX_SEMNEXIS_TYPE_DEPTH * 8; offset += 1) {
+      const kind = this.peek(offset).kind;
+      if (kind === TokenKind.Less) {
+        depth += 1;
+        if (depth > MAX_SEMNEXIS_TYPE_DEPTH) return false;
+      } else if (kind === TokenKind.Greater) {
+        depth -= 1;
+        if (depth < 0) return false;
+        if (depth === 0) return sawType && this.peek(offset + 1).kind === TokenKind.LParen;
+      } else if (kind === TokenKind.Identifier) {
+        sawType = true;
+      } else if (kind === TokenKind.Comma && depth > 0) {
+        continue;
+      } else {
+        return false;
+      }
     }
-    if (this.peek().kind === TokenKind.Integer) {
+    return false;
+  }
+  parseCallTypeArguments() {
+    if (!this.looksLikeTypeArgumentCall()) return [];
+    this.expect(TokenKind.Less, "expected '<' before call type arguments");
+    const args = [];
+    for (;;) {
+      args.push(this.parseTypeReference());
+      if (!this.match(TokenKind.Comma)) break;
+    }
+    this.expect(TokenKind.Greater, "expected '>' after call type arguments");
+    return args;
+  }
+  parsePrimary() {
+    let expression = null;
+    if (this.match(TokenKind.LParen)) {
+      expression = this.parseExpr();
+      this.expect(TokenKind.RParen, "expected ')' after expression");
+    } else if (this.peek().kind === TokenKind.Integer) {
       const token = this.tokens[this.pos++];
       const integer = Number(token.lexeme);
       if (!Number.isSafeInteger(integer) || integer > 2147483647) fail('parser: integer literal is outside signed i32 range');
-      return {kind:'Integer', integer:integer};
-    }
-    if (this.peek().kind === TokenKind.Identifier) {
+      expression = {kind:'Integer', integer:integer};
+    } else if (this.peek().kind === TokenKind.Identifier) {
       const token = this.tokens[this.pos++];
+      const typeArguments = this.parseCallTypeArguments();
       if (this.match(TokenKind.LParen)) {
         const args = [];
         if (this.peek().kind !== TokenKind.RParen) {
@@ -341,12 +425,37 @@ class Parser {
           }
         }
         this.expect(TokenKind.RParen, "expected ')' after call arguments");
-        return {kind:'Call', name:token.lexeme, arguments:args};
+        expression = {kind:'Call', name:token.lexeme, typeArguments:typeArguments, arguments:args};
+      } else if (this.peek().kind === TokenKind.LBrace && this.peek(1).kind === TokenKind.Identifier && this.peek(2).kind === TokenKind.Colon) {
+        this.pos += 1;
+        const fields = [];
+        const names = new Set();
+        if (this.peek().kind !== TokenKind.RBrace) {
+          for (;;) {
+            if (fields.length >= MAX_SEMNEXIS_STRUCT_FIELDS) fail("parser: record literal '" + token.lexeme + "' exceeds field budget");
+            const fieldName = this.expect(TokenKind.Identifier, 'expected record field name').lexeme;
+            if (names.has(fieldName)) fail("parser: duplicate record field '" + fieldName + "'");
+            names.add(fieldName);
+            this.expect(TokenKind.Colon, "expected ':' after record field name");
+            fields.push({name:fieldName, value:this.parseExpr()});
+            if (!this.match(TokenKind.Comma)) break;
+          }
+        }
+        this.expect(TokenKind.RBrace, "expected '}' after record literal");
+        expression = {kind:'RecordLiteral', typeName:token.lexeme, fields:fields};
+      } else {
+        expression = {kind:'Name', name:token.lexeme};
       }
-      return {kind:'Name', name:token.lexeme};
+    } else {
+      const token = this.peek();
+      fail('parser: expected expression at ' + token.line + ':' + token.column + ", found '" + token.lexeme + "'");
     }
-    const token = this.peek();
-    fail('parser: expected expression at ' + token.line + ':' + token.column + ", found '" + token.lexeme + "'");
+
+    while (this.match(TokenKind.Dot)) {
+      const field = this.expect(TokenKind.Identifier, "expected field name after '.'");
+      expression = {kind:'FieldAccess', base:expression, field:field.lexeme};
+    }
+    return expression;
   }
 }
 
@@ -382,6 +491,10 @@ function validateSemnexisAstBudgets(module) {
       stack.push({expr:expr.yieldExpr, depth:nextDepth});
     } else if (expr.kind === 'Call') {
       for (const arg of expr.arguments) stack.push({expr:arg, depth:nextDepth});
+    } else if (expr.kind === 'RecordLiteral') {
+      for (const field of expr.fields) stack.push({expr:field.value, depth:nextDepth});
+    } else if (expr.kind === 'FieldAccess') {
+      stack.push({expr:expr.base, depth:nextDepth});
     } else if (expr.kind !== 'Integer' && expr.kind !== 'Name') {
       fail("compiler: unknown AST expression kind '" + String(expr.kind) + "'");
     }
@@ -390,7 +503,7 @@ function validateSemnexisAstBudgets(module) {
 
 function isExpressionKind(kind) {
   return kind === NodeKind.Constant || kind === NodeKind.NameRef ||
-    kind === NodeKind.Binary || kind === NodeKind.Call || kind === NodeKind.Conditional || kind === NodeKind.Loop;
+    kind === NodeKind.Binary || kind === NodeKind.Convert || kind === NodeKind.Call || kind === NodeKind.Record || kind === NodeKind.Field || kind === NodeKind.Conditional || kind === NodeKind.Loop;
 }
 
 function astExpressionUsesControlFlow(expr) {
@@ -398,6 +511,8 @@ function astExpressionUsesControlFlow(expr) {
   if (expr.kind === 'IfExpr' || expr.kind === 'Compare' || expr.kind === 'LoopExpr') return true;
   if (expr.kind === 'Binary') return astExpressionUsesControlFlow(expr.left) || astExpressionUsesControlFlow(expr.right);
   if (expr.kind === 'Call') return expr.arguments.some(astExpressionUsesControlFlow);
+  if (expr.kind === 'RecordLiteral') return expr.fields.some((field) => astExpressionUsesControlFlow(field.value));
+  if (expr.kind === 'FieldAccess') return astExpressionUsesControlFlow(expr.base);
   return false;
 }
 
@@ -490,6 +605,8 @@ class ProgramGraph {
         if (sourceKind !== NodeKind.Function || !isExpressionKind(targetKind)) fail('graph verify: invalid contains_expr edge');
       } else if (relation === 'lhs' || relation === 'rhs') {
         if (sourceKind !== NodeKind.Binary || !isExpressionKind(targetKind)) fail('graph verify: invalid binary operand edge');
+      } else if (relation === 'operand') {
+        if (sourceKind !== NodeKind.Convert || !isExpressionKind(targetKind)) fail('graph verify: invalid conversion operand edge');
       } else if (relation === 'condition') {
         if ((sourceKind !== NodeKind.Conditional && sourceKind !== NodeKind.Loop) || !isExpressionKind(targetKind)) fail('graph verify: invalid control-flow condition edge');
       } else if (relation === 'yield_value') {
@@ -500,6 +617,12 @@ class ProgramGraph {
         if (sourceKind !== NodeKind.Call || !isExpressionKind(targetKind)) fail('graph verify: invalid call argument edge');
       } else if (relation.indexOf('arg') === 0) {
         fail("graph verify: malformed call argument relation '" + relation + "'");
+      } else if (relation === 'base') {
+        if (sourceKind !== NodeKind.Field || !isExpressionKind(targetKind)) fail('graph verify: invalid field projection base edge');
+      } else if (/^field[0-9]+$/.test(relation)) {
+        if (sourceKind !== NodeKind.Record || !isExpressionKind(targetKind)) fail('graph verify: invalid record field edge');
+      } else if (relation.indexOf('field') === 0) {
+        fail("graph verify: malformed record field relation '" + relation + "'");
       } else if (relation === 'has_type') {
         if (targetKind !== NodeKind.Type) fail('graph verify: has_type must target Type');
       } else if (relation === 'contains') {
@@ -537,6 +660,21 @@ class ProgramGraph {
         if (this.countEdges(node.id, 'returns_type') !== 1 || this.countEdges(node.id, 'has_effect') !== 1) fail("graph verify: intrinsic '" + node.name + "' missing type/effect contract");
       }
 
+      if (node.kind === NodeKind.Type && this.attribute(node.id, 'kind') === 'record') {
+        const fieldCount = Number(this.attribute(node.id, 'field_count'));
+        if (!Number.isInteger(fieldCount) || fieldCount < 1 || fieldCount > MAX_SEMNEXIS_FLAT_RECORD_WORDS) {
+          fail("graph verify: record type '" + node.name + "' has invalid field count");
+        }
+        const fieldNames = new Set();
+        for (let i = 0; i < fieldCount; i += 1) {
+          const fieldName = this.attribute(node.id, 'field' + i + '_name');
+          const fieldType = this.attribute(node.id, 'field' + i + '_type');
+          if (!fieldName || fieldNames.has(fieldName)) fail("graph verify: record type '" + node.name + "' has invalid field names");
+          if (!isBootstrapScalarType(fieldType)) fail("graph verify: record type '" + node.name + "' has unsupported field type");
+          fieldNames.add(fieldName);
+        }
+      }
+
       if (node.kind === NodeKind.Parameter) {
         if (!this.hasEdgeToKind(node.id, 'has_type', NodeKind.Type) || this.countEdges(node.id, 'has_type') !== 1) fail("graph verify: parameter '" + node.name + "' must have exactly one type");
       }
@@ -550,13 +688,77 @@ class ProgramGraph {
         if (this.countEdges(node.id, 'has_type') !== 1 || this.countEdges(node.id, 'initialized_by') !== 1 || this.countEdges(node.id, 'next_value') !== 1) {
           fail("graph verify: loop state '" + node.name + "' must have type, initializer and next value");
         }
-        if (this.nodes[this.singleEdgeTarget(node.id, 'has_type')].name !== 'i32') fail("graph verify: loop state '" + node.name + "' must be i32");
+        const stateTypeNodeId = this.singleEdgeTarget(node.id, 'has_type');
+        const stateTypeNode = this.nodes[stateTypeNodeId];
+        const stateType = stateTypeNode.name;
+        if (stateType !== 'i32' && !(stateTypeNode.kind === NodeKind.Type && this.attribute(stateTypeNodeId, 'kind') === 'record')) {
+          fail("graph verify: loop state '" + node.name + "' must be i32 or a flat record");
+        }
+        const initializer = this.singleEdgeTarget(node.id, 'initialized_by');
+        const nextValue = this.singleEdgeTarget(node.id, 'next_value');
+        if (this.singleEdgeTarget(initializer, 'has_type') !== stateTypeNodeId ||
+            this.singleEdgeTarget(nextValue, 'has_type') !== stateTypeNodeId) {
+          fail("graph verify: loop state '" + node.name + "' initializer/next type mismatch");
+        }
       }
 
       if (node.kind === NodeKind.NameRef) {
         if (this.countEdges(node.id, 'resolves_to') !== 1 || this.countEdges(node.id, 'has_type') !== 1) fail("graph verify: name reference '" + node.name + "' must resolve and type exactly once");
         const target = this.singleEdgeTarget(node.id, 'resolves_to');
         if (this.singleEdgeTarget(node.id, 'has_type') !== this.singleEdgeTarget(target, 'has_type')) fail("graph verify: name reference '" + node.name + "' type does not match resolved symbol");
+      }
+
+      if (node.kind === NodeKind.Convert) {
+        if (this.countEdges(node.id, 'operand') !== 1 || this.countEdges(node.id, 'has_type') !== 1) {
+          fail('graph verify: conversion must have one operand and one result type');
+        }
+        if (this.attribute(node.id, 'conversion') !== 'u8_to_i32') fail('graph verify: unsupported conversion kind');
+        const operand = this.singleEdgeTarget(node.id, 'operand');
+        const operandType = this.nodes[this.singleEdgeTarget(operand, 'has_type')].name;
+        const resultType = this.nodes[this.singleEdgeTarget(node.id, 'has_type')].name;
+        if (operandType !== 'u8' || resultType !== 'i32') fail('graph verify: malformed u8_to_i32 conversion');
+      }
+
+      if (node.kind === NodeKind.Record) {
+        if (this.countEdges(node.id, 'has_type') !== 1) fail("graph verify: record literal '" + node.name + "' must have exactly one type");
+        const typeNode = this.nodes[this.singleEdgeTarget(node.id, 'has_type')];
+        if (typeNode.kind !== NodeKind.Type || this.attribute(typeNode.id, 'kind') !== 'record' || typeNode.name !== node.name) {
+          fail("graph verify: record literal '" + node.name + "' type contract mismatch");
+        }
+        const fieldCount = Number(this.attribute(typeNode.id, 'field_count'));
+        const recordFieldEdges = this.edgesFrom(node.id).filter((edge) => /^field[0-9]+$/.test(edge.relation));
+        if (recordFieldEdges.length !== fieldCount) fail("graph verify: record literal '" + node.name + "' field count mismatch");
+        for (let i = 0; i < fieldCount; i += 1) {
+          if (this.countEdges(node.id, 'field' + i) !== 1) fail("graph verify: record literal '" + node.name + "' missing field " + i);
+          const value = this.singleEdgeTarget(node.id, 'field' + i);
+          const expectedType = this.attribute(typeNode.id, 'field' + i + '_type');
+          const actualType = this.nodes[this.singleEdgeTarget(value, 'has_type')].name;
+          if (actualType !== expectedType) fail("graph verify: record literal '" + node.name + "' field type mismatch at index " + i);
+        }
+      }
+
+      if (node.kind === NodeKind.Field) {
+        if (this.countEdges(node.id, 'base') !== 1 || this.countEdges(node.id, 'has_type') !== 1) {
+          fail("graph verify: field projection '" + node.name + "' must have one base and one type");
+        }
+        const base = this.singleEdgeTarget(node.id, 'base');
+        const baseTypeNode = this.nodes[this.singleEdgeTarget(base, 'has_type')];
+        if (baseTypeNode.kind !== NodeKind.Type || this.attribute(baseTypeNode.id, 'kind') !== 'record') {
+          fail("graph verify: field projection '" + node.name + "' base is not a record");
+        }
+        const recordType = this.attribute(node.id, 'record_type');
+        const fieldName = this.attribute(node.id, 'field_name');
+        const fieldIndex = Number(this.attribute(node.id, 'field_index'));
+        const fieldCount = Number(this.attribute(baseTypeNode.id, 'field_count'));
+        if (recordType !== baseTypeNode.name || fieldName !== node.name || !Number.isInteger(fieldIndex) || fieldIndex < 0 || fieldIndex >= fieldCount) {
+          fail("graph verify: field projection '" + node.name + "' metadata mismatch");
+        }
+        if (this.attribute(baseTypeNode.id, 'field' + fieldIndex + '_name') !== fieldName) {
+          fail("graph verify: field projection '" + node.name + "' field name mismatch");
+        }
+        const expectedType = this.attribute(baseTypeNode.id, 'field' + fieldIndex + '_type');
+        const actualType = this.nodes[this.singleEdgeTarget(node.id, 'has_type')].name;
+        if (actualType !== expectedType) fail("graph verify: field projection '" + node.name + "' result type mismatch");
       }
 
       if (node.kind === NodeKind.Binary) {
@@ -566,8 +768,13 @@ class ProgramGraph {
         const operation = this.attribute(node.id, 'operation');
         const comparison = operation === 'EqEq' || operation === 'BangEq' || operation === 'Less' || operation === 'LessEq' || operation === 'Greater' || operation === 'GreaterEq';
         const typeName = this.nodes[this.singleEdgeTarget(node.id, 'has_type')].name;
+        const lhs = this.singleEdgeTarget(node.id, 'lhs');
+        const rhs = this.singleEdgeTarget(node.id, 'rhs');
+        const lhsType = this.nodes[this.singleEdgeTarget(lhs, 'has_type')].name;
+        const rhsType = this.nodes[this.singleEdgeTarget(rhs, 'has_type')].name;
         if (comparison && typeName !== 'bool') fail('graph verify: comparison result must be bool');
-        if (!comparison && typeName !== 'i32') fail('graph verify: arithmetic result must be i32');
+        if (comparison && (!isBootstrapScalarType(lhsType) || lhsType !== rhsType)) fail('graph verify: comparison operands must have the same scalar type');
+        if (!comparison && (typeName !== 'i32' || lhsType !== 'i32' || rhsType !== 'i32')) fail('graph verify: arithmetic operands/result must be i32');
       }
 
       if (node.kind === NodeKind.Conditional) {
@@ -609,12 +816,41 @@ class ProgramGraph {
         const target = this.singleEdgeTarget(node.id, 'calls');
         const targetNode = this.nodes[target];
         let arity = 0;
-        if (targetNode.kind === NodeKind.Intrinsic) arity = Number(this.attribute(target, 'arity'));
-        else arity = this.edgesFrom(target, 'contains').filter((edge) => this.nodes[edge.to].kind === NodeKind.Parameter).length;
+        let expectedTypes = [];
+        let expectedKinds = [];
+        if (targetNode.kind === NodeKind.Intrinsic) {
+          arity = Number(this.attribute(target, 'arity'));
+          expectedTypes = [];
+          expectedKinds = [];
+          for (let i = 0; i < arity; i += 1) {
+            const expectedType = this.attribute(target, 'param' + i + '_type');
+            const expectedKind = this.attribute(target, 'param' + i + '_kind');
+            if (!expectedType && !expectedKind) fail("graph verify: intrinsic '" + targetNode.name + "' missing parameter contract");
+            expectedTypes.push(expectedType || null);
+            expectedKinds.push(expectedKind || null);
+          }
+        } else {
+          const parameters = this.edgesFrom(target, 'contains')
+            .map((edge) => this.nodes[edge.to])
+            .filter((child) => child.kind === NodeKind.Parameter);
+          arity = parameters.length;
+          expectedTypes = parameters.map((parameter) => this.nodes[this.singleEdgeTarget(parameter.id, 'has_type')].name);
+        }
+        const targetReturnType = this.singleEdgeTarget(target, 'returns_type');
+        if (this.singleEdgeTarget(node.id, 'has_type') !== targetReturnType) fail("graph verify: call '" + node.name + "' result type does not match target");
         const argEdges = this.edgesFrom(node.id).filter((edge) => /^arg[0-9]+$/.test(edge.relation));
         if (argEdges.length !== arity) fail("graph verify: call '" + node.name + "' argument count does not match target");
-        const indexes = argEdges.map((edge) => Number(edge.relation.slice(3))).sort((a,b) => a-b);
-        for (let i = 0; i < indexes.length; i += 1) if (indexes[i] !== i) fail("graph verify: call '" + node.name + "' argument indexes are not contiguous");
+        const orderedArgs = argEdges.slice().sort((a,b) => Number(a.relation.slice(3)) - Number(b.relation.slice(3)));
+        for (let i = 0; i < orderedArgs.length; i += 1) {
+          if (Number(orderedArgs[i].relation.slice(3)) !== i) fail("graph verify: call '" + node.name + "' argument indexes are not contiguous");
+          const argTypeNode = this.singleEdgeTarget(orderedArgs[i].to, 'has_type');
+          const argType = this.nodes[argTypeNode].name;
+          if (expectedTypes[i] != null) {
+            if (argType !== expectedTypes[i]) fail("graph verify: call '" + node.name + "' argument type mismatch at index " + i);
+          } else if (expectedKinds[i] === 'flat_record') {
+            if (this.attribute(argTypeNode, 'kind') !== 'record') fail("graph verify: call '" + node.name + "' argument " + i + ' must be a flat record');
+          } else fail("graph verify: call '" + node.name + "' has unsupported parameter contract at index " + i);
+        }
       }
 
       if (node.kind === NodeKind.Return) {
@@ -701,6 +937,7 @@ function verifyNativeIRControlFlow(fn) {
   const predecessors = new Map(order.map((label) => [label, new Set()]));
   const successors = new Map(order.map((label) => [label, new Set()]));
   const branchOps = new Set(['br.cmp.eq','br.cmp.ne','br.cmp.lt','br.cmp.le','br.cmp.gt','br.cmp.ge']);
+  const returnOps = new Set(['ret.i32','ret.u8','ret.record']);
 
   const addEdge = (from, to) => {
     if (!blocks.has(to)) fail("ir verify: branch target '" + to + "' does not exist in '" + fn.name + "'");
@@ -712,12 +949,12 @@ function verifyNativeIRControlFlow(fn) {
     const block = blocks.get(label);
     if (!block.instructions.length) fail("ir verify: empty basic block '" + label + "'");
     const terminator = block.instructions[block.instructions.length - 1];
-    if (terminator.op !== 'br' && !branchOps.has(terminator.op) && terminator.op !== 'ret.i32') {
+    if (terminator.op !== 'br' && !branchOps.has(terminator.op) && !returnOps.has(terminator.op)) {
       fail("ir verify: basic block '" + label + "' has no terminator");
     }
     for (let i = 0; i < block.instructions.length - 1; i += 1) {
       const op = block.instructions[i].op;
-      if (op === 'br' || branchOps.has(op) || op === 'ret.i32') {
+      if (op === 'br' || branchOps.has(op) || returnOps.has(op)) {
         fail("ir verify: terminator appears before end of block '" + label + "'");
       }
     }
@@ -744,9 +981,9 @@ function verifyNativeIRControlFlow(fn) {
   for (const label of order) {
     const block = blocks.get(label);
     let seenNonPhi = false;
-    const phis = block.instructions.filter((inst) => inst.op === 'phi.i32');
+    const phis = block.instructions.filter((inst) => inst.op === 'phi.i32' || inst.op === 'phi.record');
     for (const inst of block.instructions) {
-      if (inst.op === 'phi.i32') {
+      if (inst.op === 'phi.i32' || inst.op === 'phi.record') {
         if (seenNonPhi) fail("ir verify: phi must appear before ordinary instructions in block '" + label + "'");
       } else if (inst.op !== 'region.end') seenNonPhi = true;
     }
@@ -799,7 +1036,7 @@ function verifyNativeIRControlFlow(fn) {
   for (const label of order) {
     const block = blocks.get(label);
     for (const inst of block.instructions) {
-      if (inst.op === 'phi.i32') {
+      if (inst.op === 'phi.i32' || inst.op === 'phi.record') {
         for (const incoming of inst.incoming) {
           const def = definitions.get(incoming.value);
           if (!def) fail("ir verify: phi uses undefined value '" + incoming.value + "'");
@@ -823,36 +1060,46 @@ function verifyNativeIRControlFlow(fn) {
 function verifyNativeIREffectsAndCapabilities(functions) {
   const byName = new Map(functions.map((fn) => [fn.name, fn]));
   const directTime = new Map();
+  const directState = new Map();
   const callers = new Map();
 
   for (const fn of functions) callers.set(fn.name, []);
   for (const fn of functions) {
     let hasDirectTime = false;
+    let hasDirectState = false;
     for (const inst of fn.instructions) {
       if (inst.op === 'intrinsic.clock') hasDirectTime = true;
+      if (inst.op === 'arena.load.record' || inst.op === 'arena.store.record') hasDirectState = true;
       if (inst.op === 'call') {
         if (!byName.has(inst.target)) fail("ir verify: unresolved effect call target '" + inst.target + "'");
         callers.get(inst.target).push(fn.name);
       }
     }
     directTime.set(fn.name, hasDirectTime);
+    directState.set(fn.name, hasDirectState);
   }
 
-  const transitivelyTime = new Map(functions.map((fn) => [fn.name, false]));
-  const effectQueue = [];
-  for (const fn of functions) {
-    if (!directTime.get(fn.name)) continue;
-    transitivelyTime.set(fn.name, true);
-    effectQueue.push(fn.name);
-  }
-  for (let cursor = 0; cursor < effectQueue.length; cursor += 1) {
-    const target = effectQueue[cursor];
-    for (const caller of callers.get(target)) {
-      if (transitivelyTime.get(caller)) continue;
-      transitivelyTime.set(caller, true);
-      effectQueue.push(caller);
+  const propagateEffect = (direct) => {
+    const transitive = new Map(functions.map((fn) => [fn.name, false]));
+    const queue = [];
+    for (const fn of functions) {
+      if (!direct.get(fn.name)) continue;
+      transitive.set(fn.name, true);
+      queue.push(fn.name);
     }
-  }
+    for (let cursor = 0; cursor < queue.length; cursor += 1) {
+      const target = queue[cursor];
+      for (const caller of callers.get(target)) {
+        if (transitive.get(caller)) continue;
+        transitive.set(caller, true);
+        queue.push(caller);
+      }
+    }
+    return transitive;
+  };
+
+  const transitivelyTime = propagateEffect(directTime);
+  const transitivelyState = propagateEffect(directState);
 
   const requiresTime = new Map(functions.map((fn) => [fn.name, false]));
   const requirementQueue = [];
@@ -873,7 +1120,9 @@ function verifyNativeIREffectsAndCapabilities(functions) {
   }
 
   for (const fn of functions) {
-    const expectedEffect = transitivelyTime.get(fn.name) ? 'time' : 'pure';
+    const hasTime = transitivelyTime.get(fn.name);
+    const hasState = transitivelyState.get(fn.name);
+    const expectedEffect = hasTime ? (hasState ? 'time_state' : 'time') : (hasState ? 'state' : 'pure');
     if (fn.effect !== expectedEffect) {
       fail("ir verify: function '" + fn.name + "' effect metadata mismatch; expected " + expectedEffect + ', got ' + fn.effect);
     }
@@ -894,7 +1143,12 @@ function verifyNativeIREffectsAndCapabilities(functions) {
 class NativeIRModule {
   constructor() {
     this.schema = SEMNEXIS_NATIVE_IR_SCHEMA;
+    this.recordTypes = [];
     this.functions = [];
+  }
+  addRecordType(record) {
+    this.recordTypes.push(record);
+    return record;
   }
   addFunction(fn) {
     this.functions.push(fn);
@@ -902,8 +1156,29 @@ class NativeIRModule {
   }
   verify() {
     if (this.schema !== SEMNEXIS_NATIVE_IR_SCHEMA) fail('ir verify: schema mismatch');
+    if (!Array.isArray(this.recordTypes)) fail('ir verify: malformed record type table');
+    if (this.recordTypes.length > MAX_NATIVE_IR_RECORD_TYPES) fail('ir verify: module exceeds record type budget');
     if (!this.functions.length) fail('ir verify: module has no functions');
     if (this.functions.length > MAX_NATIVE_IR_FUNCTIONS) fail('ir verify: module exceeds function budget');
+
+    const recordByName = new Map();
+    for (const record of this.recordTypes) {
+      if (!record || typeof record !== 'object' || !record.name || recordByName.has(record.name) || !Array.isArray(record.fields)) {
+        fail('ir verify: malformed or duplicate record type');
+      }
+      if (record.fields.length < 1 || record.fields.length > MAX_SEMNEXIS_FLAT_RECORD_WORDS) {
+        fail("ir verify: record '" + record.name + "' exceeds flat record field limit");
+      }
+      const fieldNames = new Set();
+      for (let i = 0; i < record.fields.length; i += 1) {
+        const field = record.fields[i];
+        if (!field || field.index !== i || !field.name || fieldNames.has(field.name) || !isBootstrapScalarType(field.type)) {
+          fail("ir verify: malformed field metadata in record '" + record.name + "'");
+        }
+        fieldNames.add(field.name);
+      }
+      recordByName.set(record.name, record);
+    }
 
     const byName = new Map();
     for (const fn of this.functions) {
@@ -916,8 +1191,10 @@ class NativeIRModule {
       if (fn.instructions.length > MAX_NATIVE_IR_INSTRUCTIONS) fail("ir verify: function '" + fn.name + "' exceeds instruction budget");
       if (!fn.name || byName.has(fn.name)) fail("ir verify: duplicate or empty function '" + String(fn.name || '') + "'");
       byName.set(fn.name, fn);
-      if (fn.returnType !== 'i32') fail("ir verify: unsupported return type on '" + fn.name + "'");
-      if (fn.effect !== 'pure' && fn.effect !== 'time') fail("ir verify: unsupported effect on '" + fn.name + "'");
+      if (!isBootstrapScalarType(fn.returnType) && !recordByName.has(fn.returnType)) fail("ir verify: unsupported return type on '" + fn.name + "'");
+      if (fn.effect !== 'pure' && fn.effect !== 'time' && fn.effect !== 'state' && fn.effect !== 'time_state') {
+        fail("ir verify: unsupported effect on '" + fn.name + "'");
+      }
       if (!fn.region) fail("ir verify: function '" + fn.name + "' has no region");
       if (!Number.isInteger(fn.graphNode) || fn.graphNode < 0 || fn.graphNode > 0xFFFFFFFF) fail("ir verify: function '" + fn.name + "' has invalid graph node id");
       if (new Set(fn.requiresCapabilities).size !== fn.requiresCapabilities.length) fail("ir verify: duplicate required capability on '" + fn.name + "'");
@@ -929,18 +1206,20 @@ class NativeIRModule {
 
     for (const fn of this.functions) {
       const defined = new Set();
+      const valueTypes = new Map();
       const localNames = new Set();
       const parameterNames = new Set();
       for (let i = 0; i < fn.parameters.length; i += 1) {
         const parameter = fn.parameters[i];
         if (parameter.index !== i || parameter.value !== '%arg' + i) fail("ir verify: function '" + fn.name + "' has non-canonical parameter identity");
-        if (parameter.type !== 'i32') fail("ir verify: function '" + fn.name + "' has unsupported parameter type");
+        if (!isBootstrapParameterType(parameter.type) && !recordByName.has(parameter.type)) fail("ir verify: function '" + fn.name + "' has unsupported parameter type");
         if (!parameter.name) fail("ir verify: function '" + fn.name + "' has unnamed parameter");
         if (parameterNames.has(parameter.name)) fail("ir verify: duplicate parameter name '" + parameter.name + "' in '" + fn.name + "'");
         parameterNames.add(parameter.name);
         if (!Number.isInteger(parameter.graphNode) || parameter.graphNode < 0 || parameter.graphNode > 0xFFFFFFFF) fail("ir verify: parameter '" + parameter.name + "' has invalid graph node id");
         if (defined.has(parameter.value)) fail("ir verify: duplicate SSA parameter '" + parameter.value + "'");
         defined.add(parameter.value);
+        valueTypes.set(parameter.value, parameter.type);
       }
 
       let nextValue = 0;
@@ -954,7 +1233,7 @@ class NativeIRModule {
         if (!Number.isInteger(inst.graphNode) || inst.graphNode < 0 || inst.graphNode > 0xFFFFFFFF) fail("ir verify: instruction has invalid graph node id in '" + fn.name + "'");
 
         const args = Array.isArray(inst.args) ? inst.args : [];
-        if (inst.op !== 'phi.i32') {
+        if (inst.op !== 'phi.i32' && inst.op !== 'phi.record') {
           for (const arg of args) {
             if (typeof arg === 'string' && arg.startsWith('%') && !defined.has(arg)) {
               fail("ir verify: use-before-definition '" + arg + "' in function '" + fn.name + "'");
@@ -966,8 +1245,9 @@ class NativeIRModule {
           const expected = '%v' + nextValue;
           if (inst.result !== expected) fail("ir verify: non-canonical SSA result '" + inst.result + "', expected '" + expected + "'");
           if (defined.has(inst.result)) fail("ir verify: duplicate SSA result '" + inst.result + "'");
-          if (inst.type !== 'i32') fail("ir verify: SSA result '" + inst.result + "' is not i32");
+          if (!isBootstrapValueType(inst.type) && !recordByName.has(inst.type)) fail("ir verify: SSA result '" + inst.result + "' has unsupported value type");
           defined.add(inst.result);
+          valueTypes.set(inst.result, inst.type);
           nextValue += 1;
         }
 
@@ -995,29 +1275,135 @@ class NativeIRModule {
           case 'br.cmp.gt':
           case 'br.cmp.ge':
             if (inst.result != null || args.length !== 2 || !inst.thenLabel || !inst.elseLabel) fail("ir verify: malformed comparison branch in '" + fn.name + "'");
+            if (!isBootstrapScalarType(valueTypes.get(args[0])) || valueTypes.get(args[0]) !== valueTypes.get(args[1])) {
+              fail("ir verify: comparison branch operands must have the same scalar type in '" + fn.name + "'");
+            }
             break;
           case 'phi.i32':
             if (inst.result == null || inst.type !== 'i32' || args.length < 2) fail("ir verify: malformed phi.i32 in '" + fn.name + "'");
             break;
+          case 'phi.record':
+            if (inst.result == null || !recordByName.has(inst.type) || args.length < 2) fail("ir verify: malformed phi.record in '" + fn.name + "'");
+            break;
           case 'const.i32':
-            if (args.length || !Number.isInteger(inst.value) || inst.value < -2147483648 || inst.value > 2147483647) {
+            if (inst.type !== 'i32' || args.length || !Number.isInteger(inst.value) || inst.value < -2147483648 || inst.value > 2147483647) {
               fail("ir verify: invalid i32 constant in '" + fn.name + "'");
             }
             break;
-          case 'copy.i32':
-            if (args.length !== 1 || inst.result == null) fail("ir verify: malformed copy.i32 in '" + fn.name + "'");
+          case 'const.u8':
+            if (inst.type !== 'u8' || args.length || !Number.isInteger(inst.value) || inst.value < 0 || inst.value > 255) {
+              fail("ir verify: invalid u8 constant in '" + fn.name + "'");
+            }
             break;
+          case 'copy.i32':
+            if (inst.type !== 'i32' || args.length !== 1 || inst.result == null || valueTypes.get(args[0]) !== 'i32') fail("ir verify: malformed copy.i32 in '" + fn.name + "'");
+            break;
+          case 'copy.u8':
+            if (inst.type !== 'u8' || args.length !== 1 || inst.result == null || valueTypes.get(args[0]) !== 'u8') fail("ir verify: malformed copy.u8 in '" + fn.name + "'");
+            break;
+          case 'zext.u8.i32':
+            if (inst.type !== 'i32' || args.length !== 1 || inst.result == null || valueTypes.get(args[0]) !== 'u8') {
+              fail("ir verify: malformed zext.u8.i32 in '" + fn.name + "'");
+            }
+            break;
+          case 'copy.slice.u8':
+            if (inst.type !== SEMNEXIS_SLICE_U8_TYPE || args.length !== 1 || inst.result == null ||
+                valueTypes.get(args[0]) !== SEMNEXIS_SLICE_U8_TYPE) {
+              fail("ir verify: malformed copy.slice.u8 in '" + fn.name + "'");
+            }
+            break;
+          case 'copy.arena':
+            if (inst.type !== SEMNEXIS_ARENA_TYPE || args.length !== 1 || inst.result == null ||
+                valueTypes.get(args[0]) !== SEMNEXIS_ARENA_TYPE) {
+              fail("ir verify: malformed copy.arena in '" + fn.name + "'");
+            }
+            break;
+          case 'slice.len':
+            if (inst.type !== 'i32' || args.length !== 1 || inst.result == null ||
+                valueTypes.get(args[0]) !== SEMNEXIS_SLICE_U8_TYPE) {
+              fail("ir verify: malformed slice.len in '" + fn.name + "'");
+            }
+            break;
+          case 'slice.get.u8':
+            if (inst.type !== 'u8' || args.length !== 2 || inst.result == null ||
+                valueTypes.get(args[0]) !== SEMNEXIS_SLICE_U8_TYPE || valueTypes.get(args[1]) !== 'i32') {
+              fail("ir verify: malformed slice.get.u8 in '" + fn.name + "'");
+            }
+            break;
+          case 'arena.len':
+            if (inst.type !== 'i32' || args.length !== 1 || inst.result == null ||
+                valueTypes.get(args[0]) !== SEMNEXIS_ARENA_TYPE) {
+              fail("ir verify: malformed arena.len in '" + fn.name + "'");
+            }
+            break;
+          case 'arena.load.record': {
+            if (!recordByName.has(inst.type) || args.length !== 2 || inst.result == null ||
+                valueTypes.get(args[0]) !== SEMNEXIS_ARENA_TYPE || valueTypes.get(args[1]) !== 'i32' ||
+                inst.effect !== 'state') {
+              fail("ir verify: malformed arena.load.record in '" + fn.name + "'");
+            }
+            break;
+          }
+          case 'arena.store.record': {
+            if (inst.type !== 'i32' || args.length !== 3 || inst.result == null ||
+                valueTypes.get(args[0]) !== SEMNEXIS_ARENA_TYPE || valueTypes.get(args[1]) !== 'i32' ||
+                !recordByName.has(inst.recordType) || valueTypes.get(args[2]) !== inst.recordType || inst.effect !== 'state') {
+              fail("ir verify: malformed arena.store.record in '" + fn.name + "'");
+            }
+            break;
+          }
+          case 'record.make': {
+            const record = recordByName.get(inst.type);
+            if (!record || inst.result == null || args.length !== record.fields.length) {
+              fail("ir verify: malformed record.make in '" + fn.name + "'");
+            }
+            for (let fieldIndex = 0; fieldIndex < record.fields.length; fieldIndex += 1) {
+              if (valueTypes.get(args[fieldIndex]) !== record.fields[fieldIndex].type) {
+                fail("ir verify: record.make field type mismatch for '" + inst.type + "'");
+              }
+            }
+            break;
+          }
+          case 'copy.record':
+            if (!recordByName.has(inst.type) || inst.result == null || args.length !== 1 || valueTypes.get(args[0]) !== inst.type) {
+              fail("ir verify: malformed copy.record in '" + fn.name + "'");
+            }
+            break;
+          case 'record.get': {
+            if (inst.result == null || args.length !== 1 || !Number.isInteger(inst.fieldIndex)) {
+              fail("ir verify: malformed record.get in '" + fn.name + "'");
+            }
+            const recordType = valueTypes.get(args[0]);
+            const record = recordByName.get(recordType);
+            if (!record || inst.fieldIndex < 0 || inst.fieldIndex >= record.fields.length) {
+              fail("ir verify: record.get field index out of range in '" + fn.name + "'");
+            }
+            if (record.fields[inst.fieldIndex].type !== inst.type) {
+              fail("ir verify: record.get result type mismatch in '" + fn.name + "'");
+            }
+            break;
+          }
           case 'i32.add.checked':
           case 'i32.sub.checked':
           case 'i32.mul.checked':
           case 'i32.div.checked':
-            if (args.length !== 2 || inst.result == null) fail("ir verify: malformed checked arithmetic in '" + fn.name + "'");
+            if (inst.type !== 'i32' || args.length !== 2 || inst.result == null ||
+                valueTypes.get(args[0]) !== 'i32' || valueTypes.get(args[1]) !== 'i32') {
+              fail("ir verify: malformed checked arithmetic in '" + fn.name + "'");
+            }
             break;
-          case 'call':
+          case 'call': {
             if (!inst.target || !byName.has(inst.target) || inst.result == null) fail("ir verify: unresolved call in '" + fn.name + "'");
-            if (args.length !== byName.get(inst.target).parameters.length) fail("ir verify: call arity mismatch for '" + inst.target + "'");
-            if (byName.get(inst.target).returnType !== inst.type) fail("ir verify: call result type mismatch for '" + inst.target + "'");
+            const targetFn = byName.get(inst.target);
+            if (args.length !== targetFn.parameters.length) fail("ir verify: call arity mismatch for '" + inst.target + "'");
+            if (targetFn.returnType !== inst.type) fail("ir verify: call result type mismatch for '" + inst.target + "'");
+            for (let argIndex = 0; argIndex < args.length; argIndex += 1) {
+              if (valueTypes.get(args[argIndex]) !== targetFn.parameters[argIndex].type) {
+                fail("ir verify: call argument type mismatch for '" + inst.target + "'");
+              }
+            }
             break;
+          }
           case 'intrinsic.clock':
             if (args.length || inst.result == null || inst.effect !== 'time' || inst.capability !== 'time') {
               fail("ir verify: malformed clock intrinsic in '" + fn.name + "'");
@@ -1030,13 +1416,38 @@ class NativeIRModule {
             localNames.add(inst.name);
             break;
           case 'ret.i32':
-            if (inst.result != null || args.length !== 1 || index !== fn.instructions.length - 1) {
+            if (fn.returnType !== 'i32' || inst.type !== 'i32' || inst.result != null || args.length !== 1 ||
+                valueTypes.get(args[0]) !== 'i32' || index !== fn.instructions.length - 1) {
               fail("ir verify: malformed ret.i32 in '" + fn.name + "'");
+            }
+            returns += 1;
+            break;
+          case 'ret.u8':
+            if (fn.returnType !== 'u8' || inst.type !== 'u8' || inst.result != null || args.length !== 1 ||
+                valueTypes.get(args[0]) !== 'u8' || index !== fn.instructions.length - 1) {
+              fail("ir verify: malformed ret.u8 in '" + fn.name + "'");
+            }
+            returns += 1;
+            break;
+          case 'ret.record':
+            if (!recordByName.has(fn.returnType) || inst.type !== fn.returnType || inst.result != null || args.length !== 1 ||
+                valueTypes.get(args[0]) !== fn.returnType || index !== fn.instructions.length - 1) {
+              fail("ir verify: malformed ret.record in '" + fn.name + "'");
             }
             returns += 1;
             break;
           default:
             fail("ir verify: unsupported operation '" + inst.op + "'");
+        }
+      }
+
+      for (const inst of fn.instructions) {
+        if (inst.op !== 'phi.i32' && inst.op !== 'phi.record') continue;
+        const expectedType = inst.op === 'phi.i32' ? 'i32' : inst.type;
+        for (const arg of inst.args || []) {
+          if (valueTypes.get(arg) !== expectedType) {
+            fail("ir verify: " + inst.op + " incoming value type mismatch in '" + fn.name + "'");
+          }
         }
       }
 
@@ -1057,6 +1468,9 @@ class NativeIRModule {
       out.push(line);
     };
     push(SEMNEXIS_NATIVE_IR_SCHEMA);
+    for (const record of this.recordTypes) {
+      push('record ' + record.name + ' fields=' + record.fields.map(function(field) { return field.name + ':' + field.type; }).join(',') + ' abi=flat_words_v0');
+    }
     for (const fn of this.functions) {
       push(
         'function ' + fn.name +
@@ -1091,12 +1505,29 @@ function dumpNativeIRInstruction(inst) {
     body += 'br ' + inst.target;
   } else if (inst.op.indexOf('br.cmp.') === 0) {
     body += inst.op + ' ' + inst.args[0] + ' ' + inst.args[1] + ' then=' + inst.thenLabel + ' else=' + inst.elseLabel;
-  } else if (inst.op === 'phi.i32') {
-    body += result + 'phi.i32 ' + inst.incoming.map(function(row) { return row.label + ':' + row.value; }).join(' ');
-  } else if (inst.op === 'const.i32') {
+  } else if (inst.op === 'phi.i32' || inst.op === 'phi.record') {
+    body += result + inst.op + ' ' + inst.incoming.map(function(row) { return row.label + ':' + row.value; }).join(' ');
+  } else if (inst.op === 'const.i32' || inst.op === 'const.u8') {
     body += result + inst.op + ' ' + inst.value;
-  } else if (inst.op === 'copy.i32') {
+  } else if (inst.op === 'copy.i32' || inst.op === 'copy.u8' || inst.op === 'copy.slice.u8' || inst.op === 'copy.arena' || inst.op === 'zext.u8.i32') {
     body += result + inst.op + ' ' + inst.args[0];
+  } else if (inst.op === 'slice.len') {
+    body += result + 'slice.len ' + inst.args[0];
+  } else if (inst.op === 'slice.get.u8') {
+    body += result + 'slice.get.u8 ' + inst.args[0] + ' ' + inst.args[1];
+  } else if (inst.op === 'arena.len') {
+    body += result + 'arena.len ' + inst.args[0];
+  } else if (inst.op === 'arena.load.record') {
+    body += result + 'arena.load.record ' + inst.args[0] + ' ' + inst.args[1] + ' record=' + inst.type + ' effect=' + inst.effect;
+  } else if (inst.op === 'arena.store.record') {
+    body += result + 'arena.store.record ' + inst.args[0] + ' ' + inst.args[1] + ' ' + inst.args[2] + ' record=' + inst.recordType + ' effect=' + inst.effect;
+  } else if (inst.op === 'record.make') {
+    body += result + 'record.make ' + inst.type;
+    for (const arg of inst.args) body += ' ' + arg;
+  } else if (inst.op === 'copy.record') {
+    body += result + 'copy.record ' + inst.args[0];
+  } else if (inst.op === 'record.get') {
+    body += result + 'record.get ' + inst.args[0] + ' field=' + inst.fieldIndex;
   } else if (inst.op === 'i32.add.checked' || inst.op === 'i32.sub.checked' ||
              inst.op === 'i32.mul.checked' || inst.op === 'i32.div.checked') {
     body += result + inst.op + ' ' + inst.args[0] + ' ' + inst.args[1];
@@ -1107,8 +1538,8 @@ function dumpNativeIRInstruction(inst) {
     body += result + 'intrinsic.clock effect=' + inst.effect + ' capability=' + inst.capability;
   } else if (inst.op === 'local.bind') {
     body += 'local.bind name=' + inst.name + ' value=' + inst.args[0];
-  } else if (inst.op === 'ret.i32') {
-    body += 'ret.i32 ' + inst.args[0];
+  } else if (inst.op === 'ret.i32' || inst.op === 'ret.u8' || inst.op === 'ret.record') {
+    body += inst.op + ' ' + inst.args[0];
   } else {
     body += inst.op;
   }
@@ -1210,10 +1641,12 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
   let value;
   if (node.kind === NodeKind.Constant) {
     const raw = Number(graph.attribute(node.id, 'value'));
+    const valueType = graphTypeName(graph, node.id);
+    if (!isBootstrapScalarType(valueType)) fail('ir lower: constant has unsupported scalar type');
     value = newIRValue(ctx);
-    emitIR(ctx, 'const.i32', {
+    emitIR(ctx, valueType === 'u8' ? 'const.u8' : 'const.i32', {
       result:value,
-      type:'i32',
+      type:valueType,
       value:raw,
       args:[],
       graphNode:node.id
@@ -1234,11 +1667,56 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
       fail('ir lower: NameRef resolved to unsupported symbol');
     }
     if (!source) fail("ir lower: unresolved SSA source for '" + node.name + "'");
+    const valueType = graphTypeName(graph, node.id);
+    const typeNode = graph.singleEdgeTarget(node.id, 'has_type');
+    const recordType = graph.attribute(typeNode, 'kind') === 'record';
+    if (!isBootstrapValueType(valueType) && !recordType) fail('ir lower: name reference has unsupported value type');
     value = newIRValue(ctx);
-    emitIR(ctx, 'copy.i32', {
+    const copyOp = recordType ? 'copy.record' :
+      (valueType === 'u8' ? 'copy.u8' :
+      (valueType === SEMNEXIS_SLICE_U8_TYPE ? 'copy.slice.u8' :
+      (valueType === SEMNEXIS_ARENA_TYPE ? 'copy.arena' : 'copy.i32')));
+    emitIR(ctx, copyOp, {
+      result:value,
+      type:valueType,
+      args:[source],
+      graphNode:node.id
+    });
+  } else if (node.kind === NodeKind.Record) {
+    const typeName = graphTypeName(graph, node.id);
+    const typeNode = graph.singleEdgeTarget(node.id, 'has_type');
+    const fieldCount = Number(graph.attribute(typeNode, 'field_count'));
+    const args = [];
+    for (let i = 0; i < fieldCount; i += 1) {
+      args.push(lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(node.id, 'field' + i), ctx));
+    }
+    value = newIRValue(ctx);
+    emitIR(ctx, 'record.make', {
+      result:value,
+      type:typeName,
+      args:args,
+      graphNode:node.id
+    });
+  } else if (node.kind === NodeKind.Field) {
+    const base = lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(node.id, 'base'), ctx);
+    const fieldIndex = Number(graph.attribute(node.id, 'field_index'));
+    value = newIRValue(ctx);
+    emitIR(ctx, 'record.get', {
       result:value,
       type:graphTypeName(graph, node.id),
-      args:[source],
+      args:[base],
+      fieldIndex:fieldIndex,
+      graphNode:node.id
+    });
+  } else if (node.kind === NodeKind.Convert) {
+    const conversion = graph.attribute(node.id, 'conversion');
+    if (conversion !== 'u8_to_i32') fail("ir lower: unsupported conversion '" + conversion + "'");
+    const operand = lowerGraphExpressionToIR(graph, graph.singleEdgeTarget(node.id, 'operand'), ctx);
+    value = newIRValue(ctx);
+    emitIR(ctx, 'zext.u8.i32', {
+      result:value,
+      type:'i32',
+      args:[operand],
       graphNode:node.id
     });
   } else if (node.kind === NodeKind.Binary) {
@@ -1288,9 +1766,14 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
 
     beginIRBlock(ctx, mergeLabel, node.id);
     value = newIRValue(ctx);
-    emitIR(ctx, 'phi.i32', {
+    const resultType = graphTypeName(graph, node.id);
+    const resultTypeNode = graph.singleEdgeTarget(node.id, 'has_type');
+    const phiOp = resultType === 'i32' ? 'phi.i32' :
+      (graph.attribute(resultTypeNode, 'kind') === 'record' ? 'phi.record' : null);
+    if (!phiOp) fail("ir lower: unsupported conditional merge type '" + resultType + "'");
+    emitIR(ctx, phiOp, {
       result:value,
-      type:'i32',
+      type:resultType,
       args:[thenValue, elseValue],
       incoming:[
         {label:thenPredecessor, value:thenValue},
@@ -1322,10 +1805,15 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
     const phis = [];
     for (let i = 0; i < stateNodes.length; i += 1) {
       const state = stateNodes[i];
+      const stateType = graphTypeName(graph, state.id);
+      const stateTypeNode = graph.singleEdgeTarget(state.id, 'has_type');
+      const phiOp = stateType === 'i32' ? 'phi.i32' :
+        (graph.attribute(stateTypeNode, 'kind') === 'record' ? 'phi.record' : null);
+      if (!phiOp) fail("ir lower: unsupported loop-carried state type '" + stateType + "'");
       const phiValue = newIRValue(ctx);
-      const phi = emitIR(ctx, 'phi.i32', {
+      const phi = emitIR(ctx, phiOp, {
         result:phiValue,
-        type:'i32',
+        type:stateType,
         args:[initialValues[i]],
         incoming:[{label:preheader, value:initialValues[i]}],
         graphNode:state.id
@@ -1383,6 +1871,44 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
         capability:'time',
         graphNode:node.id
       });
+    } else if (target.kind === NodeKind.Intrinsic && target.name === 'slice_len') {
+      emitIR(ctx, 'slice.len', {
+        result:value,
+        type:'i32',
+        args:args,
+        graphNode:node.id
+      });
+    } else if (target.kind === NodeKind.Intrinsic && target.name === 'slice_get') {
+      emitIR(ctx, 'slice.get.u8', {
+        result:value,
+        type:'u8',
+        args:args,
+        graphNode:node.id
+      });
+    } else if (target.kind === NodeKind.Intrinsic && target.name === 'arena_len') {
+      emitIR(ctx, 'arena.len', {
+        result:value,
+        type:'i32',
+        args:args,
+        graphNode:node.id
+      });
+    } else if (target.kind === NodeKind.Intrinsic && graph.attribute(target.id, 'intrinsic_base') === 'arena_load') {
+      emitIR(ctx, 'arena.load.record', {
+        result:value,
+        type:graphTypeName(graph, node.id),
+        args:args,
+        effect:'state',
+        graphNode:node.id
+      });
+    } else if (target.kind === NodeKind.Intrinsic && target.name === 'arena_store') {
+      emitIR(ctx, 'arena.store.record', {
+        result:value,
+        type:'i32',
+        args:args,
+        recordType:graphTypeName(graph, argEdges[2].to),
+        effect:'state',
+        graphNode:node.id
+      });
     } else {
       fail("ir lower: unsupported call target '" + target.name + "'");
     }
@@ -1397,6 +1923,20 @@ function lowerGraphExpressionToIR(graph, nodeId, ctx) {
 function buildNativeIR(graph) {
   graph.verify();
   const ir = new NativeIRModule();
+
+  for (const typeNode of graph.nodes) {
+    if (typeNode.kind !== NodeKind.Type || graph.attribute(typeNode.id, 'kind') !== 'record') continue;
+    const fieldCount = Number(graph.attribute(typeNode.id, 'field_count'));
+    const fields = [];
+    for (let i = 0; i < fieldCount; i += 1) {
+      fields.push({
+        index:i,
+        name:graph.attribute(typeNode.id, 'field' + i + '_name'),
+        type:graph.attribute(typeNode.id, 'field' + i + '_type')
+      });
+    }
+    ir.addRecordType({name:typeNode.name, fields:fields, abi:'flat_words_v0'});
+  }
 
   for (const fnNode of graph.nodes) {
     if (fnNode.kind !== NodeKind.Function) continue;
@@ -1453,8 +1993,11 @@ function buildNativeIR(graph) {
       args:[],
       graphNode:regionNode
     });
-    emitIR(ctx, 'ret.i32', {
-      type:'i32',
+    const returnOp = ir.recordTypes.some((record) => record.name === fn.returnType)
+      ? 'ret.record'
+      : (fn.returnType === 'u8' ? 'ret.u8' : 'ret.i32');
+    emitIR(ctx, returnOp, {
+      type:fn.returnType,
       args:[returnValue],
       graphNode:returnNode.id
     });
@@ -1465,10 +2008,25 @@ function buildNativeIR(graph) {
 }
 
 
-const NATIVE_IR_BINARY_MAGIC = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x30,0x00,0x00]);
-const NATIVE_IR_BINARY_VERSION = 0;
+const NATIVE_IR_BINARY_MAGIC_V0 = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x30,0x00,0x00]);
+const NATIVE_IR_BINARY_MAGIC_V1 = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x31,0x00,0x00]);
+const NATIVE_IR_BINARY_MAGIC_V2 = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x32,0x00,0x00]);
+const NATIVE_IR_BINARY_MAGIC_V3 = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x33,0x00,0x00]);
+const NATIVE_IR_BINARY_MAGIC_V4 = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x34,0x00,0x00]);
+const NATIVE_IR_BINARY_MAGIC_V5 = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x35,0x00,0x00]);
+const NATIVE_IR_BINARY_MAGIC_V6 = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x36,0x00,0x00]);
+const NATIVE_IR_BINARY_MAGIC_V7 = Object.freeze([0x53,0x4e,0x49,0x52,0x56,0x37,0x00,0x00]);
+const NATIVE_IR_BINARY_VERSION_V0 = 0;
+const NATIVE_IR_BINARY_VERSION_V1 = 1;
+const NATIVE_IR_BINARY_VERSION_V2 = 2;
+const NATIVE_IR_BINARY_VERSION_V3 = 3;
+const NATIVE_IR_BINARY_VERSION_V4 = 4;
+const NATIVE_IR_BINARY_VERSION_V5 = 5;
+const NATIVE_IR_BINARY_VERSION_V6 = 6;
+const NATIVE_IR_BINARY_VERSION_V7 = 7;
 const MAX_NATIVE_IR_BINARY_BYTES = 4 * 1024 * 1024;
 const MAX_NATIVE_IR_FUNCTIONS = 1024;
+const MAX_NATIVE_IR_RECORD_TYPES = 252;
 const MAX_NATIVE_IR_PARAMETERS = 1024;
 const MAX_NATIVE_IR_INSTRUCTIONS = 100000;
 const MAX_NATIVE_IR_STRING_BYTES = 4096;
@@ -1613,7 +2171,7 @@ class NativeIRBinaryReader {
   done() { return this.pos === this.bytes.length; }
 }
 
-const NATIVE_IR_OPCODE = Object.freeze({
+const NATIVE_IR_OPCODE_V0 = Object.freeze({
   'region.begin':1,
   'region.end':2,
   'const.i32':3,
@@ -1637,33 +2195,102 @@ const NATIVE_IR_OPCODE = Object.freeze({
   'phi.i32':21
 });
 
-const NATIVE_IR_OPCODE_NAME = Object.freeze(Object.keys(NATIVE_IR_OPCODE).reduce(function(out, name) {
-  out[NATIVE_IR_OPCODE[name]] = name;
-  return out;
-}, {}));
+const NATIVE_IR_OPCODE_V1 = Object.freeze(Object.assign({}, NATIVE_IR_OPCODE_V0, {
+  'const.u8':22,
+  'copy.u8':23,
+  'ret.u8':24
+}));
 
-function nativeIRTypeCode(type) {
+const NATIVE_IR_OPCODE_V2 = Object.freeze(Object.assign({}, NATIVE_IR_OPCODE_V1, {
+  'copy.slice.u8':25,
+  'slice.len':26,
+  'slice.get.u8':27
+}));
+
+const NATIVE_IR_OPCODE_V3 = Object.freeze(Object.assign({}, NATIVE_IR_OPCODE_V2, {
+  'record.make':28,
+  'copy.record':29,
+  'ret.record':30
+}));
+
+const NATIVE_IR_OPCODE_V4 = Object.freeze(Object.assign({}, NATIVE_IR_OPCODE_V3, {
+  'record.get':31
+}));
+
+const NATIVE_IR_OPCODE_V5 = Object.freeze(Object.assign({}, NATIVE_IR_OPCODE_V4, {
+  'phi.record':32
+}));
+
+const NATIVE_IR_OPCODE_V6 = Object.freeze(Object.assign({}, NATIVE_IR_OPCODE_V5, {
+  'zext.u8.i32':33
+}));
+
+const NATIVE_IR_OPCODE_V7 = Object.freeze(Object.assign({}, NATIVE_IR_OPCODE_V6, {
+  'copy.arena':34,
+  'arena.len':35,
+  'arena.store.record':36,
+  'arena.load.record':37
+}));
+
+function nativeIROpcodeNames(table) {
+  return Object.freeze(Object.keys(table).reduce(function(out, name) {
+    out[table[name]] = name;
+    return out;
+  }, {}));
+}
+
+const NATIVE_IR_OPCODE_NAME_V0 = nativeIROpcodeNames(NATIVE_IR_OPCODE_V0);
+const NATIVE_IR_OPCODE_NAME_V1 = nativeIROpcodeNames(NATIVE_IR_OPCODE_V1);
+const NATIVE_IR_OPCODE_NAME_V2 = nativeIROpcodeNames(NATIVE_IR_OPCODE_V2);
+const NATIVE_IR_OPCODE_NAME_V3 = nativeIROpcodeNames(NATIVE_IR_OPCODE_V3);
+const NATIVE_IR_OPCODE_NAME_V4 = nativeIROpcodeNames(NATIVE_IR_OPCODE_V4);
+const NATIVE_IR_OPCODE_NAME_V5 = nativeIROpcodeNames(NATIVE_IR_OPCODE_V5);
+const NATIVE_IR_OPCODE_NAME_V6 = nativeIROpcodeNames(NATIVE_IR_OPCODE_V6);
+const NATIVE_IR_OPCODE_NAME_V7 = nativeIROpcodeNames(NATIVE_IR_OPCODE_V7);
+
+function nativeIRTypeCode(type, version, recordIndexByName) {
   if (type == null) return 0;
   if (type === 'i32') return 1;
-  fail("ir binary: unsupported type '" + type + "'");
+  if (version >= 1 && type === 'u8') return 2;
+  if (version >= 2 && type === SEMNEXIS_SLICE_U8_TYPE) return 3;
+  if (version >= 7 && type === SEMNEXIS_ARENA_TYPE) return 255;
+  if (version >= 3 && recordIndexByName && recordIndexByName.has(type)) {
+    const index = recordIndexByName.get(type);
+    const limit = version >= 7 ? 251 : MAX_NATIVE_IR_RECORD_TYPES;
+    if (!Number.isInteger(index) || index < 0 || index >= limit) fail('ir binary: record type index out of range');
+    return 4 + index;
+  }
+  fail("ir binary: unsupported type '" + type + "' for version " + version);
 }
 
-function nativeIRTypeName(code) {
+function nativeIRTypeName(code, version, recordNames) {
   if (code === 0) return null;
   if (code === 1) return 'i32';
-  fail('ir binary: unknown type code ' + code);
+  if (version >= 1 && code === 2) return 'u8';
+  if (version >= 2 && code === 3) return SEMNEXIS_SLICE_U8_TYPE;
+  if (version >= 7 && code === 255) return SEMNEXIS_ARENA_TYPE;
+  if (version >= 3 && code >= 4) {
+    const index = code - 4;
+    if (!recordNames || index < 0 || index >= recordNames.length) fail('ir binary: unknown record type code ' + code);
+    return recordNames[index];
+  }
+  fail('ir binary: unknown type code ' + code + ' for version ' + version);
 }
 
-function nativeIREffectCode(effect) {
+function nativeIREffectCode(effect, version) {
   if (effect === 'pure') return 0;
   if (effect === 'time') return 1;
-  fail("ir binary: unsupported effect '" + effect + "'");
+  if (version >= 7 && effect === 'state') return 2;
+  if (version >= 7 && effect === 'time_state') return 3;
+  fail("ir binary: unsupported effect '" + effect + "' for version " + version);
 }
 
-function nativeIREffectName(code) {
+function nativeIREffectName(code, version) {
   if (code === 0) return 'pure';
   if (code === 1) return 'time';
-  fail('ir binary: unknown effect code ' + code);
+  if (version >= 7 && code === 2) return 'state';
+  if (version >= 7 && code === 3) return 'time_state';
+  fail('ir binary: unknown effect code ' + code + ' for version ' + version);
 }
 
 function nativeIRValueRef(value) {
@@ -1686,13 +2313,69 @@ function nativeIRValueName(ref) {
   return '%v' + ref;
 }
 
-function encodeNativeIRV0(ir) {
+function nativeIRRequiredVersion(ir) {
+  let required = ir.recordTypes && ir.recordTypes.length ? 3 : 0;
+  for (const fn of ir.functions) {
+    if (fn.effect === 'state' || fn.effect === 'time_state') required = Math.max(required, 7);
+    if (fn.returnType === 'u8') required = Math.max(required, 1);
+    for (const parameter of fn.parameters) {
+      if (parameter.type === SEMNEXIS_ARENA_TYPE) required = Math.max(required, 7);
+      else if (parameter.type === SEMNEXIS_SLICE_U8_TYPE) required = Math.max(required, 2);
+      else if (parameter.type === 'u8') required = Math.max(required, 1);
+    }
+    for (const inst of fn.instructions) {
+      if (inst.type === SEMNEXIS_ARENA_TYPE || inst.op === 'copy.arena' || inst.op === 'arena.len' || inst.op === 'arena.load.record' || inst.op === 'arena.store.record') required = Math.max(required, 7);
+      else if (inst.op === 'zext.u8.i32') required = Math.max(required, 6);
+      else if (inst.op === 'phi.record') required = Math.max(required, 5);
+      else if (inst.op === 'record.get') required = Math.max(required, 4);
+      else if (inst.type === SEMNEXIS_SLICE_U8_TYPE || inst.op === 'copy.slice.u8' ||
+          inst.op === 'slice.len' || inst.op === 'slice.get.u8') required = Math.max(required, 2);
+      else if (inst.type === 'u8' || inst.op === 'const.u8' || inst.op === 'copy.u8' || inst.op === 'ret.u8') required = Math.max(required, 1);
+    }
+  }
+  return required;
+}
+
+function encodeNativeIRVersion(ir, version) {
   ir.verify();
+  if (version !== 0 && version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7) fail('ir binary: unsupported encoder version');
+  const requiredVersion = nativeIRRequiredVersion(ir);
+  if (version < requiredVersion) {
+    if (requiredVersion === 1) fail('ir binary: SNIRV0 cannot encode u8 values');
+    if (requiredVersion === 2) fail('ir binary: SNIRV' + version + ' cannot encode Slice<u8> values');
+    if (requiredVersion === 3) fail('ir binary: SNIRV' + version + ' cannot encode record values');
+    if (requiredVersion === 4) fail('ir binary: SNIRV' + version + ' cannot encode record field projection');
+    if (requiredVersion === 5) fail('ir binary: SNIRV' + version + ' cannot encode record phi values');
+    if (requiredVersion === 6) fail('ir binary: SNIRV' + version + ' cannot encode u8-to-i32 widening');
+    fail('ir binary: SNIRV' + version + ' cannot encode Arena/state values');
+  }
   if (ir.functions.length > MAX_NATIVE_IR_FUNCTIONS) fail('ir binary: too many functions');
+  const recordTypeLimit = version >= 7 ? 251 : MAX_NATIVE_IR_RECORD_TYPES;
+  if (ir.recordTypes.length > recordTypeLimit) fail('ir binary: too many record types');
   const writer = new NativeIRBinaryWriter();
-  for (const byte of NATIVE_IR_BINARY_MAGIC) writer.u8(byte);
-  writer.u16(NATIVE_IR_BINARY_VERSION);
+  const magic = version === 0 ? NATIVE_IR_BINARY_MAGIC_V0 :
+    (version === 1 ? NATIVE_IR_BINARY_MAGIC_V1 : (version === 2 ? NATIVE_IR_BINARY_MAGIC_V2 :
+    (version === 3 ? NATIVE_IR_BINARY_MAGIC_V3 : (version === 4 ? NATIVE_IR_BINARY_MAGIC_V4 :
+    (version === 5 ? NATIVE_IR_BINARY_MAGIC_V5 : (version === 6 ? NATIVE_IR_BINARY_MAGIC_V6 : NATIVE_IR_BINARY_MAGIC_V7))))));
+  const opcodeTable = version === 0 ? NATIVE_IR_OPCODE_V0 :
+    (version === 1 ? NATIVE_IR_OPCODE_V1 : (version === 2 ? NATIVE_IR_OPCODE_V2 :
+    (version === 3 ? NATIVE_IR_OPCODE_V3 : (version === 4 ? NATIVE_IR_OPCODE_V4 :
+    (version === 5 ? NATIVE_IR_OPCODE_V5 : (version === 6 ? NATIVE_IR_OPCODE_V6 : NATIVE_IR_OPCODE_V7))))));
+  const recordIndexByName = new Map(ir.recordTypes.map((record, index) => [record.name, index]));
+  for (const byte of magic) writer.u8(byte);
+  writer.u16(version);
   writer.u16(0);
+  if (version >= 3) {
+    writer.u16(ir.recordTypes.length);
+    for (const record of ir.recordTypes) {
+      writer.string(record.name);
+      writer.u8(record.fields.length);
+      for (const field of record.fields) {
+        writer.string(field.name);
+        writer.u8(nativeIRTypeCode(field.type, 1));
+      }
+    }
+  }
   writer.u32(ir.functions.length);
 
   for (const fn of ir.functions) {
@@ -1700,8 +2383,8 @@ function encodeNativeIRV0(ir) {
     if (fn.instructions.length > MAX_NATIVE_IR_INSTRUCTIONS) fail("ir binary: too many instructions in '" + fn.name + "'");
     writer.string(fn.name);
     writer.u32(fn.graphNode);
-    writer.u8(nativeIRTypeCode(fn.returnType));
-    writer.u8(nativeIREffectCode(fn.effect));
+    writer.u8(nativeIRTypeCode(fn.returnType, version, recordIndexByName));
+    writer.u8(nativeIREffectCode(fn.effect, version));
     let capabilityFlags = 0;
     if (fn.requiresCapabilities.includes('time')) capabilityFlags |= 1;
     if (fn.grantsCapabilities.includes('time')) capabilityFlags |= 2;
@@ -1712,25 +2395,26 @@ function encodeNativeIRV0(ir) {
 
     for (const parameter of fn.parameters) {
       writer.u16(parameter.index);
-      writer.u8(nativeIRTypeCode(parameter.type));
+      writer.u8(nativeIRTypeCode(parameter.type, version, recordIndexByName));
       writer.string(parameter.name);
       writer.u32(parameter.graphNode);
     }
 
     for (const inst of fn.instructions) {
-      const opcode = NATIVE_IR_OPCODE[inst.op];
+      const opcode = opcodeTable[inst.op];
       if (!opcode) fail("ir binary: unsupported operation '" + inst.op + "'");
       writer.u32(inst.index);
       writer.u8(opcode);
       writer.u32(inst.graphNode);
       writer.u32(inst.result == null ? 0xFFFFFFFF : nativeIRValueRef(inst.result));
-      writer.u8(nativeIRTypeCode(inst.type));
+      writer.u8(nativeIRTypeCode(inst.type, version, recordIndexByName));
       const args = Array.isArray(inst.args) ? inst.args : [];
       if (args.length > 255) fail('ir binary: too many instruction operands');
       writer.u8(args.length);
       for (const arg of args) writer.u32(nativeIRValueRef(arg));
 
       if (inst.op === 'const.i32') writer.i32(inst.value);
+      else if (inst.op === 'const.u8') writer.u8(inst.value);
       else if (inst.op === 'call') writer.string(inst.target);
       else if (inst.op === 'local.bind') writer.string(inst.name);
       else if (inst.op === 'block.begin') writer.string(inst.label);
@@ -1738,35 +2422,86 @@ function encodeNativeIRV0(ir) {
       else if (inst.op.indexOf('br.cmp.') === 0) {
         writer.string(inst.thenLabel);
         writer.string(inst.elseLabel);
-      } else if (inst.op === 'phi.i32') {
+      } else if (inst.op === 'phi.i32' || inst.op === 'phi.record') {
         if (!Array.isArray(inst.incoming) || inst.incoming.length > 255) fail('ir binary: invalid phi incoming list');
         writer.u8(inst.incoming.length);
         for (const incoming of inst.incoming) {
           writer.string(incoming.label);
           writer.u32(nativeIRValueRef(incoming.value));
         }
+      } else if (inst.op === 'record.get') {
+        if (!Number.isInteger(inst.fieldIndex) || inst.fieldIndex < 0 || inst.fieldIndex > 255) fail('ir binary: invalid record field index');
+        writer.u8(inst.fieldIndex);
+      } else if (inst.op === 'arena.store.record') {
+        writer.u8(nativeIRTypeCode(inst.recordType, version, recordIndexByName));
       }
     }
   }
   return writer.finish();
 }
 
-function decodeNativeIRV0(bytes) {
+function encodeNativeIRV0(ir) { return encodeNativeIRVersion(ir, 0); }
+function encodeNativeIRV1(ir) { return encodeNativeIRVersion(ir, 1); }
+function encodeNativeIRV2(ir) { return encodeNativeIRVersion(ir, 2); }
+function encodeNativeIRV3(ir) { return encodeNativeIRVersion(ir, 3); }
+function encodeNativeIRV4(ir) { return encodeNativeIRVersion(ir, 4); }
+function encodeNativeIRV5(ir) { return encodeNativeIRVersion(ir, 5); }
+function encodeNativeIRV6(ir) { return encodeNativeIRVersion(ir, 6); }
+function encodeNativeIRV7(ir) { return encodeNativeIRVersion(ir, 7); }
+function encodeNativeIR(ir) { return encodeNativeIRVersion(ir, nativeIRRequiredVersion(ir)); }
+
+function decodeNativeIRVersion(bytes, version) {
+  if (version !== 0 && version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7) fail('ir binary: unsupported decoder version');
   const reader = new NativeIRBinaryReader(bytes);
-  for (const expected of NATIVE_IR_BINARY_MAGIC) {
+  const magic = version === 0 ? NATIVE_IR_BINARY_MAGIC_V0 :
+    (version === 1 ? NATIVE_IR_BINARY_MAGIC_V1 : (version === 2 ? NATIVE_IR_BINARY_MAGIC_V2 :
+    (version === 3 ? NATIVE_IR_BINARY_MAGIC_V3 : (version === 4 ? NATIVE_IR_BINARY_MAGIC_V4 :
+    (version === 5 ? NATIVE_IR_BINARY_MAGIC_V5 : (version === 6 ? NATIVE_IR_BINARY_MAGIC_V6 : NATIVE_IR_BINARY_MAGIC_V7))))));
+  const opcodeNames = version === 0 ? NATIVE_IR_OPCODE_NAME_V0 :
+    (version === 1 ? NATIVE_IR_OPCODE_NAME_V1 : (version === 2 ? NATIVE_IR_OPCODE_NAME_V2 :
+    (version === 3 ? NATIVE_IR_OPCODE_NAME_V3 : (version === 4 ? NATIVE_IR_OPCODE_NAME_V4 :
+    (version === 5 ? NATIVE_IR_OPCODE_NAME_V5 : (version === 6 ? NATIVE_IR_OPCODE_NAME_V6 : NATIVE_IR_OPCODE_NAME_V7))))));
+  for (const expected of magic) {
     if (reader.u8() !== expected) fail('ir binary: magic mismatch');
   }
-  if (reader.u16() !== NATIVE_IR_BINARY_VERSION) fail('ir binary: unsupported version');
+  if (reader.u16() !== version) fail('ir binary: unsupported version');
   if (reader.u16() !== 0) fail('ir binary: nonzero reserved flags');
-  const functionCount = reader.u32();
-  if (!functionCount || functionCount > MAX_NATIVE_IR_FUNCTIONS) fail('ir binary: invalid function count');
 
   const ir = new NativeIRModule();
+  const recordNames = [];
+  if (version >= 3) {
+    const recordCount = reader.u16();
+    const recordTypeLimit = version >= 7 ? 251 : MAX_NATIVE_IR_RECORD_TYPES;
+    if (recordCount > recordTypeLimit) fail('ir binary: too many record types');
+    const seenRecordNames = new Set();
+    for (let r = 0; r < recordCount; r += 1) {
+      const recordName = reader.string();
+      if (!recordName || seenRecordNames.has(recordName)) fail('ir binary: duplicate or empty record type name');
+      seenRecordNames.add(recordName);
+      const fieldCount = reader.u8();
+      if (fieldCount < 1 || fieldCount > MAX_SEMNEXIS_FLAT_RECORD_WORDS) fail('ir binary: invalid record field count');
+      const fields = [];
+      const seenFieldNames = new Set();
+      for (let fieldIndex = 0; fieldIndex < fieldCount; fieldIndex += 1) {
+        const fieldName = reader.string();
+        if (!fieldName || seenFieldNames.has(fieldName)) fail('ir binary: duplicate or empty record field name');
+        seenFieldNames.add(fieldName);
+        const fieldType = nativeIRTypeName(reader.u8(), 1, []);
+        if (!isBootstrapScalarType(fieldType)) fail('ir binary: record fields must be scalar');
+        fields.push({index:fieldIndex, name:fieldName, type:fieldType});
+      }
+      recordNames.push(recordName);
+      ir.addRecordType({name:recordName, fields:fields, abi:'flat_words_v0'});
+    }
+  }
+
+  const functionCount = reader.u32();
+  if (!functionCount || functionCount > MAX_NATIVE_IR_FUNCTIONS) fail('ir binary: invalid function count');
   for (let f = 0; f < functionCount; f += 1) {
     const name = reader.string();
     const graphNode = reader.u32();
-    const returnType = nativeIRTypeName(reader.u8());
-    const effect = nativeIREffectName(reader.u8());
+    const returnType = nativeIRTypeName(reader.u8(), version, recordNames);
+    const effect = nativeIREffectName(reader.u8(), version);
     const capabilityFlags = reader.u8();
     if ((capabilityFlags & ~3) !== 0) fail('ir binary: unknown capability flags');
     const region = reader.string();
@@ -1789,7 +2524,7 @@ function decodeNativeIRV0(bytes) {
 
     for (let p = 0; p < parameterCount; p += 1) {
       const index = reader.u16();
-      const type = nativeIRTypeName(reader.u8());
+      const type = nativeIRTypeName(reader.u8(), version, recordNames);
       const parameterName = reader.string();
       const parameterGraphNode = reader.u32();
       fn.parameters.push({
@@ -1804,11 +2539,11 @@ function decodeNativeIRV0(bytes) {
     for (let i = 0; i < instructionCount; i += 1) {
       const index = reader.u32();
       const opcode = reader.u8();
-      const op = NATIVE_IR_OPCODE_NAME[opcode];
+      const op = opcodeNames[opcode];
       if (!op) fail('ir binary: unknown opcode ' + opcode);
       const graphNode = reader.u32();
       const resultRef = reader.u32();
-      const type = nativeIRTypeName(reader.u8());
+      const type = nativeIRTypeName(reader.u8(), version, recordNames);
       const argCount = reader.u8();
       const args = [];
       for (let a = 0; a < argCount; a += 1) args.push(nativeIRValueName(reader.u32()));
@@ -1823,6 +2558,7 @@ function decodeNativeIRV0(bytes) {
       if (type != null) inst.type = type;
       if (op === 'region.begin' || op === 'region.end') inst.region = region;
       else if (op === 'const.i32') inst.value = reader.i32();
+      else if (op === 'const.u8') inst.value = reader.u8();
       else if (op === 'call') inst.target = reader.string();
       else if (op === 'intrinsic.clock') {
         inst.effect = 'time';
@@ -1833,12 +2569,19 @@ function decodeNativeIRV0(bytes) {
       else if (op.indexOf('br.cmp.') === 0) {
         inst.thenLabel = reader.string();
         inst.elseLabel = reader.string();
-      } else if (op === 'phi.i32') {
+      } else if (op === 'phi.i32' || op === 'phi.record') {
         const incomingCount = reader.u8();
         inst.incoming = [];
         for (let p = 0; p < incomingCount; p += 1) {
           inst.incoming.push({label:reader.string(), value:nativeIRValueName(reader.u32())});
         }
+      } else if (op === 'record.get') {
+        inst.fieldIndex = reader.u8();
+      } else if (op === 'arena.load.record') {
+        inst.effect = 'state';
+      } else if (op === 'arena.store.record') {
+        inst.recordType = nativeIRTypeName(reader.u8(), version, recordNames);
+        inst.effect = 'state';
       }
       fn.instructions.push(inst);
     }
@@ -1847,6 +2590,41 @@ function decodeNativeIRV0(bytes) {
   if (!reader.done()) fail('ir binary: trailing bytes');
   ir.verify();
   return ir;
+}
+
+function decodeNativeIRV0(bytes) { return decodeNativeIRVersion(bytes, 0); }
+function decodeNativeIRV1(bytes) { return decodeNativeIRVersion(bytes, 1); }
+function decodeNativeIRV2(bytes) { return decodeNativeIRVersion(bytes, 2); }
+function decodeNativeIRV3(bytes) { return decodeNativeIRVersion(bytes, 3); }
+function decodeNativeIRV4(bytes) { return decodeNativeIRVersion(bytes, 4); }
+function decodeNativeIRV5(bytes) { return decodeNativeIRVersion(bytes, 5); }
+function decodeNativeIRV6(bytes) { return decodeNativeIRVersion(bytes, 6); }
+function decodeNativeIRV7(bytes) { return decodeNativeIRVersion(bytes, 7); }
+
+function decodeNativeIR(bytes) {
+  let view;
+  if (bytes instanceof Uint8Array) view = bytes;
+  else if (Array.isArray(bytes)) view = Uint8Array.from(bytes);
+  else if (bytes instanceof ArrayBuffer) view = new Uint8Array(bytes);
+  else fail('ir binary: expected bytes');
+  if (view.length < 10) fail('ir binary: truncated payload');
+  const isV0 = NATIVE_IR_BINARY_MAGIC_V0.every((value, index) => view[index] === value);
+  const isV1 = NATIVE_IR_BINARY_MAGIC_V1.every((value, index) => view[index] === value);
+  const isV2 = NATIVE_IR_BINARY_MAGIC_V2.every((value, index) => view[index] === value);
+  const isV3 = NATIVE_IR_BINARY_MAGIC_V3.every((value, index) => view[index] === value);
+  const isV4 = NATIVE_IR_BINARY_MAGIC_V4.every((value, index) => view[index] === value);
+  const isV5 = NATIVE_IR_BINARY_MAGIC_V5.every((value, index) => view[index] === value);
+  const isV6 = NATIVE_IR_BINARY_MAGIC_V6.every((value, index) => view[index] === value);
+  const isV7 = NATIVE_IR_BINARY_MAGIC_V7.every((value, index) => view[index] === value);
+  if (isV0) return decodeNativeIRV0(view);
+  if (isV1) return decodeNativeIRV1(view);
+  if (isV2) return decodeNativeIRV2(view);
+  if (isV3) return decodeNativeIRV3(view);
+  if (isV4) return decodeNativeIRV4(view);
+  if (isV5) return decodeNativeIRV5(view);
+  if (isV6) return decodeNativeIRV6(view);
+  if (isV7) return decodeNativeIRV7(view);
+  fail('ir binary: unknown magic');
 }
 
 
@@ -2075,7 +2853,9 @@ function verifyArm32ElfProofV0(artifact) {
 
 const SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA = 'SEMNEXIS_ARM32_RUNTIME_ELF_V0';
 const ARM32_RUNTIME_MAX_FUNCTIONS = 256;
-const ARM32_RUNTIME_MAX_PARAMETERS = 4;
+const ARM32_RUNTIME_MAX_CALL_DEPTH = 256;
+const ARM32_RUNTIME_REGISTER_ARGUMENT_WORDS = 4;
+const ARM32_RUNTIME_MAX_ARGUMENT_WORDS = 32;
 const ARM32_RUNTIME_MAX_SSA_VALUES = 1000;
 const ARM32_RUNTIME_TRAP_EXIT_CODE = 125;
 const MAX_ARM32_RUNTIME_ELF_BYTES = 1024 * 1024;
@@ -2108,6 +2888,51 @@ function arm32StrSp(rd, offset) {
   return (0xE58D0000 | (rd << 12) | offset) >>> 0;
 }
 
+function arm32LdrImm(rd, rn, offset) {
+  if (!Number.isInteger(rd) || rd < 0 || rd > 15 || !Number.isInteger(rn) || rn < 0 || rn > 15) {
+    fail('arm32 runtime: invalid LDR register');
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 4095) fail('arm32 runtime: LDR offset out of range');
+  return (0xE5900000 | (rn << 16) | (rd << 12) | offset) >>> 0;
+}
+
+function arm32StrImm(rd, rn, offset) {
+  if (!Number.isInteger(rd) || rd < 0 || rd > 15 || !Number.isInteger(rn) || rn < 0 || rn > 15) {
+    fail('arm32 runtime: invalid STR register');
+  }
+  if (!Number.isInteger(offset) || offset < 0 || offset > 4095) fail('arm32 runtime: STR offset out of range');
+  return (0xE5800000 | (rn << 16) | (rd << 12) | offset) >>> 0;
+}
+
+function arm32LoadStackWord(words, rd, offset) {
+  if (!Number.isInteger(offset) || offset < 0 || offset > 0x7fffffff) {
+    fail('arm32 runtime: extended stack load offset out of range');
+  }
+  if (offset <= 4095) {
+    words.push(arm32LdrSp(rd, offset));
+    return;
+  }
+  arm32LoadI32(words, 12, offset);
+  words.push(0xE08DC00C);
+  words.push(arm32LdrImm(rd, 12, 0));
+}
+
+function arm32LslImm(rd, rm, shift) {
+  if (!Number.isInteger(rd) || rd < 0 || rd > 15 || !Number.isInteger(rm) || rm < 0 || rm > 15 ||
+      !Number.isInteger(shift) || shift < 0 || shift > 31) {
+    fail('arm32 runtime: invalid LSL operands');
+  }
+  return (0xE1A00000 | (rd << 12) | (shift << 7) | rm) >>> 0;
+}
+
+function arm32LdrbReg(rd, rn, rm) {
+  if (!Number.isInteger(rd) || rd < 0 || rd > 15 || !Number.isInteger(rn) || rn < 0 || rn > 15 ||
+      !Number.isInteger(rm) || rm < 0 || rm > 15) {
+    fail('arm32 runtime: invalid LDRB register');
+  }
+  return (0xE7D00000 | (rn << 16) | (rd << 12) | rm) >>> 0;
+}
+
 function arm32BranchWord(conditionBase, fromAddress, targetAddress) {
   if ((fromAddress & 3) !== 0 || (targetAddress & 3) !== 0) fail('arm32 runtime: unaligned branch address');
   const delta = targetAddress - (fromAddress + 8);
@@ -2117,47 +2942,48 @@ function arm32BranchWord(conditionBase, fromAddress, targetAddress) {
   return (conditionBase | (words & 0x00ffffff)) >>> 0;
 }
 
-function arm32RuntimeAllowedFunction(fn) {
-  if (fn.effect !== 'pure' || fn.requiresCapabilities.length || fn.grantsCapabilities.length) {
-    fail("arm32 runtime: effectful/capability function '" + fn.name + "' is not supported");
+function arm32RuntimeParameterWords(fn, recordByName) {
+  let words = 0;
+  for (const parameter of fn.parameters) {
+    const record = recordByName && recordByName.get(parameter.type);
+    words += record ? record.fields.length : 1;
   }
-  if (fn.parameters.length > ARM32_RUNTIME_MAX_PARAMETERS) {
-    fail("arm32 runtime: function '" + fn.name + "' exceeds four register parameters");
+  return words;
+}
+
+function arm32RuntimeAllowedFunction(fn, recordByName) {
+  if ((fn.effect !== 'pure' && fn.effect !== 'state') || fn.requiresCapabilities.length || fn.grantsCapabilities.length) {
+    fail("arm32 runtime: unsupported effect/capability function '" + fn.name + "'");
+  }
+  if (arm32RuntimeParameterWords(fn, recordByName) > ARM32_RUNTIME_MAX_ARGUMENT_WORDS) {
+    fail("arm32 runtime: function '" + fn.name + "' exceeds " + ARM32_RUNTIME_MAX_ARGUMENT_WORDS + " argument words");
   }
 }
 
-function verifyAcyclicRuntimeCalls(ir) {
+function findRecursiveRuntimeFunctions(ir) {
   const edges = new Map();
   for (const fn of ir.functions) edges.set(fn.name, []);
   for (const fn of ir.functions) {
     for (const inst of fn.instructions) if (inst.op === 'call') edges.get(fn.name).push(inst.target);
   }
 
-  const state = new Map();
-  for (const fn of ir.functions) state.set(fn.name, 0);
-
+  const recursive = new Set();
   for (const fn of ir.functions) {
-    if (state.get(fn.name) !== 0) continue;
-    const stack = [{name:fn.name, index:0}];
-    state.set(fn.name, 1);
-
-    while (stack.length) {
-      const frame = stack[stack.length - 1];
-      const targets = edges.get(frame.name) || [];
-      if (frame.index >= targets.length) {
-        state.set(frame.name, 2);
-        stack.pop();
-        continue;
+    const start = fn.name;
+    const pending = (edges.get(start) || []).slice();
+    const visited = new Set();
+    while (pending.length) {
+      const target = pending.pop();
+      if (target === start) {
+        recursive.add(start);
+        break;
       }
-
-      const target = targets[frame.index++];
-      const targetState = state.get(target);
-      if (targetState === 1) fail("arm32 runtime: recursive call cycle includes '" + target + "'");
-      if (targetState === 2) continue;
-      state.set(target, 1);
-      stack.push({name:target, index:0});
+      if (visited.has(target)) continue;
+      visited.add(target);
+      for (const next of (edges.get(target) || [])) pending.push(next);
     }
   }
+  return recursive;
 }
 const ARM32_RUNTIME_VALUE_REGS = Object.freeze([4,5,6,7]);
 const ARM32_RUNTIME_PUSH_MASK = 0xE92D48F0;
@@ -2178,21 +3004,32 @@ function arm32Subs(rd, rn, rm) {
   return (0xE0500000 | (rn << 16) | (rd << 12) | rm) >>> 0;
 }
 
-function analyzeArm32RuntimeLiveness(fn) {
+function arm32RuntimeAggregateValues(fn, recordByName) {
+  const values = new Set();
+  if (!recordByName) return values;
+  for (const parameter of fn.parameters) if (recordByName.has(parameter.type)) values.add(parameter.value);
+  for (const inst of fn.instructions) if (inst.result != null && recordByName.has(inst.type)) values.add(inst.result);
+  return values;
+}
+
+function analyzeArm32RuntimeLiveness(fn, recordByName) {
   const definitions = new Map();
   const lastUse = new Map();
+  const aggregateValues = arm32RuntimeAggregateValues(fn, recordByName);
 
   for (const parameter of fn.parameters) {
+    if (aggregateValues.has(parameter.value)) continue;
     definitions.set(parameter.value, -1);
     lastUse.set(parameter.value, -1);
   }
   for (const inst of fn.instructions) {
-    if (inst.result != null) {
+    if (inst.result != null && !aggregateValues.has(inst.result)) {
       if (definitions.has(inst.result)) fail("arm32 runtime: duplicate liveness definition '" + inst.result + "'");
       definitions.set(inst.result, inst.index);
       lastUse.set(inst.result, inst.index);
     }
     for (const arg of inst.args || []) {
+      if (aggregateValues.has(arg)) continue;
       if (!definitions.has(arg)) fail("arm32 runtime: liveness saw unknown value '" + arg + "'");
       if (inst.index > lastUse.get(arg)) lastUse.set(arg, inst.index);
     }
@@ -2248,11 +3085,12 @@ function analyzeArm32RuntimeLiveness(fn) {
   };
 }
 
-function allocateArm32ControlFlowSpills(fn) {
+function allocateArm32ControlFlowSpills(fn, recordByName) {
   const locations = new Map();
+  const aggregateValues = arm32RuntimeAggregateValues(fn, recordByName);
   let spillCount = 0;
   const add = (value) => {
-    if (locations.has(value)) return;
+    if (aggregateValues.has(value) || locations.has(value)) return;
     locations.set(value, {kind:'spill', slot:spillCount});
     spillCount += 1;
   };
@@ -2282,7 +3120,7 @@ function collectArm32PhiByBlock(fn) {
       if (!map.has(current)) map.set(current, []);
       continue;
     }
-    if (inst.op === 'phi.i32') {
+    if (inst.op === 'phi.i32' || inst.op === 'phi.record') {
       if (!current) fail("arm32 runtime: phi outside block in '" + fn.name + "'");
       map.get(current).push(inst);
     }
@@ -2290,13 +3128,34 @@ function collectArm32PhiByBlock(fn) {
   return map;
 }
 
-function arm32EmitPhiCopies(words, allocation, phiByBlock, targetLabel, predecessorLabel) {
+function arm32EmitPhiCopies(words, allocation, aggregate, recordByName, phiByBlock, targetLabel, predecessorLabel) {
   const phis = phiByBlock.get(targetLabel) || [];
   const moves = [];
 
   for (const phi of phis) {
     const incoming = phi.incoming.find((row) => row.label === predecessorLabel);
     if (!incoming) fail("arm32 runtime: phi in '" + targetLabel + "' has no incoming edge from '" + predecessorLabel + "'");
+
+    if (phi.op === 'phi.record') {
+      const record = recordByName.get(phi.type);
+      const sourceRow = aggregate.slots.get(incoming.value);
+      const destinationRow = aggregate.slots.get(phi.result);
+      if (!record || !sourceRow || !destinationRow ||
+          sourceRow.type !== phi.type || destinationRow.type !== phi.type ||
+          sourceRow.fieldCount !== record.fields.length || destinationRow.fieldCount !== record.fields.length) {
+        fail("arm32 runtime: malformed aggregate phi storage for '" + phi.type + "'");
+      }
+      for (let fieldIndex = 0; fieldIndex < record.fields.length; fieldIndex += 1) {
+        const sourceSlot = sourceRow.baseSlot + fieldIndex;
+        const destinationSlot = destinationRow.baseSlot + fieldIndex;
+        if (sourceSlot === destinationSlot) continue;
+        moves.push({
+          source:{kind:'spill', slot:sourceSlot},
+          destination:{kind:'spill', slot:destinationSlot}
+        });
+      }
+      continue;
+    }
 
     const source = arm32RuntimeLocation(allocation, incoming.value);
     const destination = arm32RuntimeLocation(allocation, phi.result);
@@ -2389,6 +3248,13 @@ function arm32ReadValue(words, allocation, value, scratchReg) {
   return scratchReg;
 }
 
+function arm32ReadValueWithSpBias(words, allocation, value, scratchReg, spBias) {
+  const location = arm32RuntimeLocation(allocation, value);
+  if (location.kind === 'reg') return location.reg;
+  arm32LoadStackWord(words, scratchReg, arm32RuntimeSpillOffset(allocation, value) + spBias);
+  return scratchReg;
+}
+
 function arm32MoveValueToReg(words, allocation, value, targetReg) {
   const sourceReg = arm32ReadValue(words, allocation, value, targetReg);
   if (sourceReg !== targetReg) words.push(arm32MovReg(targetReg, sourceReg));
@@ -2443,10 +3309,52 @@ function buildArm32RuntimeDivHelperV0() {
   return {words:words, patches:patches};
 }
 
-function compileArm32RuntimeFunctionV0(fn) {
-  arm32RuntimeAllowedFunction(fn);
+function allocateArm32RecordSlots(fn, recordByName, baseSlotCount) {
+  const slots = new Map();
+  let nextSlot = baseSlotCount;
+  const allocate = (value, type) => {
+    if (slots.has(value) || !recordByName.has(type)) return;
+    const record = recordByName.get(type);
+    slots.set(value, {
+      type:type,
+      baseSlot:nextSlot,
+      fieldCount:record.fields.length
+    });
+    nextSlot += record.fields.length;
+  };
+  for (const parameter of fn.parameters) allocate(parameter.value, parameter.type);
+  for (const inst of fn.instructions) {
+    if (inst.result == null) continue;
+    allocate(inst.result, inst.type);
+  }
+  const frameBytesRaw = nextSlot * 4;
+  const frameBytes = frameBytesRaw === 0 ? 0 : Math.ceil(frameBytesRaw / 8) * 8;
+  if (frameBytes > 4096) fail("arm32 runtime: function '" + fn.name + "' aggregate frame exceeds V0 stack-offset limit");
+  return {
+    slots:slots,
+    totalSlotCount:nextSlot,
+    recordWords:nextSlot - baseSlotCount,
+    frameBytes:frameBytes
+  };
+}
+
+function arm32RecordFieldOffset(recordSlots, value, fieldIndex) {
+  const row = recordSlots.get(value);
+  if (!row) fail("arm32 runtime: record value '" + value + "' has no aggregate storage");
+  if (!Number.isInteger(fieldIndex) || fieldIndex < 0 || fieldIndex >= row.fieldCount) {
+    fail("arm32 runtime: record field index out of range for '" + value + "'");
+  }
+  const offset = (row.baseSlot + fieldIndex) * 4;
+  if (offset > 4095) fail('arm32 runtime: record spill offset exceeds encoding limit');
+  return offset;
+}
+
+function compileArm32RuntimeFunctionV0(fn, recordByName, boundedRecursion) {
+  arm32RuntimeAllowedFunction(fn, recordByName);
   const controlFlow = fn.instructions.some((inst) => inst.op === 'block.begin');
-  const allocation = controlFlow ? allocateArm32ControlFlowSpills(fn) : analyzeArm32RuntimeLiveness(fn);
+  const allocation = controlFlow ? allocateArm32ControlFlowSpills(fn, recordByName) : analyzeArm32RuntimeLiveness(fn, recordByName);
+  const aggregate = allocateArm32RecordSlots(fn, recordByName, allocation.spillCount);
+  const frameBytes = aggregate.frameBytes;
   const allocatorName = controlFlow ? 'cfg-spill-v0' : 'linear-scan-r4-r7-v0';
   const phiByBlock = controlFlow ? collectArm32PhiByBlock(fn) : new Map();
   const words = [];
@@ -2455,13 +3363,42 @@ function compileArm32RuntimeFunctionV0(fn) {
   let currentBlock = null;
 
   words.push(ARM32_RUNTIME_PUSH_MASK);
-  if (allocation.frameBytes > 0) {
-    arm32LoadI32(words, 12, allocation.frameBytes);
+  if (boundedRecursion) {
+    arm32LoadI32(words, 12, 1);
+    words.push(arm32Adds(11, 11, 12));
+    arm32LoadI32(words, 12, ARM32_RUNTIME_MAX_CALL_DEPTH);
+    words.push(arm32Cmp(11, 12));
+    patches.push({wordIndex:words.length, kind:'bgt', target:'$trap'});
+    words.push(0);
+  }
+  if (frameBytes > 0) {
+    arm32LoadI32(words, 12, frameBytes);
     words.push(0xE04DD00C);
   }
 
-  for (let i = 0; i < fn.parameters.length; i += 1) {
-    arm32WriteValue(words, allocation, fn.parameters[i].value, i);
+  let parameterWord = 0;
+  const incomingArgumentWord = () => {
+    if (parameterWord < ARM32_RUNTIME_REGISTER_ARGUMENT_WORDS) return parameterWord;
+    const stackOffset = frameBytes + 24 + (parameterWord - ARM32_RUNTIME_REGISTER_ARGUMENT_WORDS) * 4;
+    arm32LoadStackWord(words, 12, stackOffset);
+    return 12;
+  };
+  for (const parameter of fn.parameters) {
+    const recordParameter = recordByName.get(parameter.type);
+    if (recordParameter) {
+      for (let fieldIndex = 0; fieldIndex < recordParameter.fields.length; fieldIndex += 1) {
+        const sourceReg = incomingArgumentWord();
+        words.push(arm32StrSp(
+          sourceReg,
+          arm32RecordFieldOffset(aggregate.slots, parameter.value, fieldIndex)
+        ));
+        parameterWord += 1;
+      }
+    } else {
+      const sourceReg = incomingArgumentWord();
+      arm32WriteValue(words, allocation, parameter.value, sourceReg);
+      parameterWord += 1;
+    }
   }
 
   for (const inst of fn.instructions) {
@@ -2478,12 +3415,13 @@ function compileArm32RuntimeFunctionV0(fn) {
         break;
 
       case 'phi.i32':
+      case 'phi.record':
         if (!controlFlow) fail('arm32 runtime: phi encountered without CFG lowering');
         break;
 
       case 'br':
         if (!controlFlow || !currentBlock) fail('arm32 runtime: branch encountered outside CFG block');
-        arm32EmitPhiCopies(words, allocation, phiByBlock, inst.target, currentBlock);
+        arm32EmitPhiCopies(words, allocation, aggregate, recordByName, phiByBlock, inst.target, currentBlock);
         patches.push({wordIndex:words.length, kind:'b', target:'$block:' + inst.target});
         words.push(0);
         break;
@@ -2507,7 +3445,8 @@ function compileArm32RuntimeFunctionV0(fn) {
         words.push(0);
         break;
 
-      case 'const.i32': {
+      case 'const.i32':
+      case 'const.u8': {
         const location = arm32RuntimeLocation(allocation, inst.result);
         const target = location.kind === 'reg' ? location.reg : 0;
         arm32LoadI32(words, target, inst.value);
@@ -2517,11 +3456,160 @@ function compileArm32RuntimeFunctionV0(fn) {
         break;
       }
 
-      case 'copy.i32': {
+      case 'copy.i32':
+      case 'copy.u8':
+      case 'copy.slice.u8':
+      case 'copy.arena':
+      case 'zext.u8.i32': {
         const sourceReg = arm32ReadValue(words, allocation, inst.args[0], 0);
         arm32WriteValue(words, allocation, inst.result, sourceReg);
         break;
       }
+
+      case 'slice.len':
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        arm32LoadI32(words, 3, 0);
+        words.push(arm32Cmp(0, 3));
+        patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrImm(1, 0, 4));
+        words.push(arm32Cmp(1, 3));
+        patches.push({wordIndex:words.length, kind:'blt', target:'$trap'});
+        words.push(0);
+        arm32WriteValue(words, allocation, inst.result, 1);
+        break;
+
+      case 'slice.get.u8':
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        arm32MoveValueToReg(words, allocation, inst.args[1], 1);
+        arm32LoadI32(words, 3, 0);
+        words.push(arm32Cmp(0, 3));
+        patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+        words.push(0);
+        words.push(arm32Cmp(1, 3));
+        patches.push({wordIndex:words.length, kind:'blt', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrImm(2, 0, 4));
+        words.push(arm32Cmp(2, 3));
+        patches.push({wordIndex:words.length, kind:'blt', target:'$trap'});
+        words.push(0);
+        words.push(arm32Cmp(1, 2));
+        patches.push({wordIndex:words.length, kind:'bge', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrImm(2, 0, 0));
+        words.push(arm32Cmp(2, 3));
+        patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrbReg(2, 2, 1));
+        arm32WriteValue(words, allocation, inst.result, 2);
+        break;
+
+      case 'arena.len':
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        arm32LoadI32(words, 3, 0);
+        words.push(arm32Cmp(0, 3));
+        patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrImm(1, 0, 4));
+        words.push(arm32Cmp(1, 3));
+        patches.push({wordIndex:words.length, kind:'blt', target:'$trap'});
+        words.push(0);
+        arm32WriteValue(words, allocation, inst.result, 1);
+        break;
+
+      case 'arena.load.record': {
+        const record = recordByName.get(inst.type);
+        if (!record) fail("arm32 runtime: unknown arena record type '" + inst.type + "'");
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        arm32MoveValueToReg(words, allocation, inst.args[1], 1);
+        arm32LoadI32(words, 3, 0);
+        words.push(arm32Cmp(0, 3));
+        patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+        words.push(0);
+        words.push(arm32Cmp(1, 3));
+        patches.push({wordIndex:words.length, kind:'blt', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrImm(2, 0, 4));
+        words.push(arm32Cmp(2, 3));
+        patches.push({wordIndex:words.length, kind:'blt', target:'$trap'});
+        words.push(0);
+        words.push(arm32Cmp(1, 2));
+        patches.push({wordIndex:words.length, kind:'bge', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrImm(2, 0, 0));
+        words.push(arm32Cmp(2, 3));
+        patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+        words.push(0);
+        words.push(arm32LslImm(3, 1, 4));
+        words.push(arm32Adds(2, 2, 3));
+        for (let fieldIndex = 0; fieldIndex < record.fields.length; fieldIndex += 1) {
+          words.push(arm32LdrImm(3, 2, fieldIndex * 4));
+          words.push(arm32StrSp(3, arm32RecordFieldOffset(aggregate.slots, inst.result, fieldIndex)));
+        }
+        break;
+      }
+
+      case 'arena.store.record': {
+        const record = recordByName.get(inst.recordType);
+        if (!record) fail("arm32 runtime: unknown arena record type '" + inst.recordType + "'");
+        arm32MoveValueToReg(words, allocation, inst.args[0], 0);
+        arm32MoveValueToReg(words, allocation, inst.args[1], 1);
+        arm32LoadI32(words, 3, 0);
+        words.push(arm32Cmp(0, 3));
+        patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+        words.push(0);
+        words.push(arm32Cmp(1, 3));
+        patches.push({wordIndex:words.length, kind:'blt', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrImm(2, 0, 4));
+        words.push(arm32Cmp(2, 3));
+        patches.push({wordIndex:words.length, kind:'blt', target:'$trap'});
+        words.push(0);
+        words.push(arm32Cmp(1, 2));
+        patches.push({wordIndex:words.length, kind:'bge', target:'$trap'});
+        words.push(0);
+        words.push(arm32LdrImm(2, 0, 0));
+        words.push(arm32Cmp(2, 3));
+        patches.push({wordIndex:words.length, kind:'beq', target:'$trap'});
+        words.push(0);
+        words.push(arm32LslImm(3, 1, 4));
+        words.push(arm32Adds(2, 2, 3));
+        for (let fieldIndex = 0; fieldIndex < MAX_SEMNEXIS_FLAT_RECORD_WORDS; fieldIndex += 1) {
+          if (fieldIndex < record.fields.length) {
+            words.push(arm32LdrSp(3, arm32RecordFieldOffset(aggregate.slots, inst.args[2], fieldIndex)));
+          } else {
+            arm32LoadI32(words, 3, 0);
+          }
+          words.push(arm32StrImm(3, 2, fieldIndex * 4));
+        }
+        arm32WriteValue(words, allocation, inst.result, 1);
+        break;
+      }
+
+      case 'record.make': {
+        const record = recordByName.get(inst.type);
+        if (!record || inst.args.length !== record.fields.length) fail("arm32 runtime: malformed record.make for '" + inst.type + "'");
+        for (let i = 0; i < record.fields.length; i += 1) {
+          const sourceReg = arm32ReadValue(words, allocation, inst.args[i], 0);
+          words.push(arm32StrSp(sourceReg, arm32RecordFieldOffset(aggregate.slots, inst.result, i)));
+        }
+        break;
+      }
+
+      case 'copy.record': {
+        const record = recordByName.get(inst.type);
+        if (!record) fail("arm32 runtime: unknown record type '" + inst.type + "'");
+        for (let i = 0; i < record.fields.length; i += 1) {
+          words.push(arm32LdrSp(0, arm32RecordFieldOffset(aggregate.slots, inst.args[0], i)));
+          words.push(arm32StrSp(0, arm32RecordFieldOffset(aggregate.slots, inst.result, i)));
+        }
+        break;
+      }
+
+      case 'record.get':
+        words.push(arm32LdrSp(0, arm32RecordFieldOffset(aggregate.slots, inst.args[0], inst.fieldIndex)));
+        arm32WriteValue(words, allocation, inst.result, 0);
+        break;
 
       case 'i32.add.checked':
       case 'i32.sub.checked': {
@@ -2560,26 +3648,96 @@ function compileArm32RuntimeFunctionV0(fn) {
         arm32WriteValue(words, allocation, inst.result, 0);
         break;
 
-      case 'call':
-        if (inst.args.length > ARM32_RUNTIME_MAX_PARAMETERS) {
-          fail("arm32 runtime: call to '" + inst.target + "' exceeds four register arguments");
+      case 'call': {
+        const argumentWords = [];
+        for (const arg of inst.args) {
+          const aggregateArg = aggregate.slots.get(arg);
+          if (aggregateArg) {
+            const recordArg = recordByName.get(aggregateArg.type);
+            if (!recordArg) fail("arm32 runtime: unknown record call argument type '" + aggregateArg.type + "'");
+            for (let fieldIndex = 0; fieldIndex < recordArg.fields.length; fieldIndex += 1) {
+              argumentWords.push({kind:'record', value:arg, fieldIndex:fieldIndex});
+            }
+          } else {
+            argumentWords.push({kind:'scalar', value:arg});
+          }
         }
-        for (let i = 0; i < inst.args.length; i += 1) {
-          arm32MoveValueToReg(words, allocation, inst.args[i], i);
+        if (argumentWords.length > ARM32_RUNTIME_MAX_ARGUMENT_WORDS) {
+          fail("arm32 runtime: call to '" + inst.target + "' exceeds " + ARM32_RUNTIME_MAX_ARGUMENT_WORDS + " argument words");
         }
+
+        const stackWordCount = Math.max(0, argumentWords.length - ARM32_RUNTIME_REGISTER_ARGUMENT_WORDS);
+        const rawStackArgumentBytes = stackWordCount * 4;
+        const stackArgumentBytes = rawStackArgumentBytes === 0 ? 0 : Math.ceil(rawStackArgumentBytes / 8) * 8;
+        if (stackArgumentBytes > 0) {
+          arm32LoadI32(words, 12, stackArgumentBytes);
+          words.push(0xE04DD00C);
+        }
+
+        const loadArgumentWord = (word, targetReg) => {
+          if (word.kind === 'record') {
+            arm32LoadStackWord(
+              words,
+              targetReg,
+              arm32RecordFieldOffset(aggregate.slots, word.value, word.fieldIndex) + stackArgumentBytes
+            );
+            return;
+          }
+          const sourceReg = arm32ReadValueWithSpBias(words, allocation, word.value, targetReg, stackArgumentBytes);
+          if (sourceReg !== targetReg) words.push(arm32MovReg(targetReg, sourceReg));
+        };
+
+        for (let wordIndex = ARM32_RUNTIME_REGISTER_ARGUMENT_WORDS; wordIndex < argumentWords.length; wordIndex += 1) {
+          loadArgumentWord(argumentWords[wordIndex], 12);
+          words.push(arm32StrSp(12, (wordIndex - ARM32_RUNTIME_REGISTER_ARGUMENT_WORDS) * 4));
+        }
+        const registerWordCount = Math.min(argumentWords.length, ARM32_RUNTIME_REGISTER_ARGUMENT_WORDS);
+        for (let wordIndex = 0; wordIndex < registerWordCount; wordIndex += 1) {
+          loadArgumentWord(argumentWords[wordIndex], wordIndex);
+        }
+
         patches.push({wordIndex:words.length, kind:'bl', target:inst.target});
         words.push(0);
-        arm32WriteValue(words, allocation, inst.result, 0);
+        if (stackArgumentBytes > 0) {
+          arm32LoadI32(words, 12, stackArgumentBytes);
+          words.push(0xE08DD00C);
+        }
+        const recordResult = recordByName.get(inst.type);
+        if (recordResult) {
+          if (recordResult.fields.length > 4) fail("arm32 runtime: record call result exceeds r0-r3 ABI for '" + inst.type + "'");
+          for (let i = 0; i < recordResult.fields.length; i += 1) {
+            words.push(arm32StrSp(i, arm32RecordFieldOffset(aggregate.slots, inst.result, i)));
+          }
+        } else {
+          arm32WriteValue(words, allocation, inst.result, 0);
+        }
         break;
+      }
 
       case 'ret.i32':
+      case 'ret.u8':
         arm32MoveValueToReg(words, allocation, inst.args[0], 0);
-        if (allocation.frameBytes > 0) {
-          arm32LoadI32(words, 12, allocation.frameBytes);
+        if (frameBytes > 0) {
+          arm32LoadI32(words, 12, frameBytes);
           words.push(0xE08DD00C);
         }
         words.push(ARM32_RUNTIME_POP_MASK);
         break;
+
+      case 'ret.record': {
+        const record = recordByName.get(inst.type);
+        if (!record) fail("arm32 runtime: unknown record return type '" + inst.type + "'");
+        if (record.fields.length > 4) fail("arm32 runtime: record return exceeds r0-r3 ABI for '" + inst.type + "'");
+        for (let i = 0; i < record.fields.length; i += 1) {
+          words.push(arm32LdrSp(i, arm32RecordFieldOffset(aggregate.slots, inst.args[0], i)));
+        }
+        if (frameBytes > 0) {
+          arm32LoadI32(words, 12, frameBytes);
+          words.push(0xE08DD00C);
+        }
+        words.push(ARM32_RUNTIME_POP_MASK);
+        break;
+      }
 
       case 'intrinsic.clock':
         fail('arm32 runtime: clock requires runtime capability lowering');
@@ -2596,12 +3754,13 @@ function compileArm32RuntimeFunctionV0(fn) {
 
   return {
     name:fn.name,
-    frameBytes:allocation.frameBytes,
-    slotCount:allocation.spillCount,
+    frameBytes:frameBytes,
+    slotCount:aggregate.totalSlotCount,
     spillSlots:allocation.spillCount,
     registerValues:allocation.registerValueCount,
     allocator:allocatorName,
     parameterCount:fn.parameters.length,
+    boundedRecursion:boundedRecursion === true,
     blockCount:blockLabels.size,
     blockLabels:blockLabels,
     words:words,
@@ -2630,18 +3789,25 @@ function arm32DecodeBranchTarget(word, fromAddress) {
 function emitArm32RuntimeElfV0(ir) {
   ir.verify();
   if (!ir.functions.length || ir.functions.length > ARM32_RUNTIME_MAX_FUNCTIONS) fail('arm32 runtime: invalid function count');
+  const recordByName = new Map(ir.recordTypes.map((record) => [record.name, record]));
   const main = ir.functions.find((fn) => fn.name === 'main');
   if (!main) fail("arm32 runtime: entry function 'main' is required");
   if (main.parameters.length !== 0) fail("arm32 runtime: entry function 'main' must have zero parameters");
-  for (const fn of ir.functions) arm32RuntimeAllowedFunction(fn);
-  verifyAcyclicRuntimeCalls(ir);
+  if (recordByName.has(main.returnType)) fail("arm32 runtime: entry function 'main' cannot return a record");
+  for (const fn of ir.functions) arm32RuntimeAllowedFunction(fn, recordByName);
 
-  const compiled = ir.functions.map(compileArm32RuntimeFunctionV0);
+  const recursiveFunctions = findRecursiveRuntimeFunctions(ir);
+  const compiled = ir.functions.map((fn) => compileArm32RuntimeFunctionV0(fn, recordByName, recursiveFunctions.has(fn.name)));
   const allocatorKinds = Array.from(new Set(compiled.map((fn) => fn.allocator)));
   const allocatorSummary = allocatorKinds.length === 1 ? allocatorKinds[0] : 'mixed-v0';
   const needsDivisionHelper = compiled.some((fn) => fn.patches.some((patch) => patch.target === '$div'));
   const divisionHelper = needsDivisionHelper ? buildArm32RuntimeDivHelperV0() : null;
-  const startWords = [0, 0xE3A07001, 0xEF000000];
+  const startWords = [];
+  if (recursiveFunctions.size) {
+    startWords.push(arm32Movw(11, 0), arm32Movt(11, 0));
+  }
+  const startCallWordIndex = startWords.length;
+  startWords.push(0, 0xE3A07001, 0xEF000000);
   const trapWords = [
     arm32Movw(0, ARM32_RUNTIME_TRAP_EXIT_CODE),
     arm32Movt(0, 0),
@@ -2666,6 +3832,7 @@ function emitArm32RuntimeElfV0(ir) {
       registerValues:fn.registerValues,
       allocator:fn.allocator,
       parameterCount:fn.parameterCount,
+      boundedRecursion:fn.boundedRecursion,
       blockCount:fn.blockCount,
       blocks:Array.from(fn.blockLabels.entries()).map(function(row) {
         return {
@@ -2690,7 +3857,7 @@ function emitArm32RuntimeElfV0(ir) {
   if (totalBytes > MAX_ARM32_RUNTIME_ELF_BYTES) fail('arm32 runtime: generated ELF exceeds artifact budget');
 
   const entry = ARM32_ELF_BASE_VADDR + ARM32_ELF_CODE_OFFSET;
-  startWords[0] = arm32BranchWord(0xEB000000, entry, functionAddresses.get('main'));
+  startWords[startCallWordIndex] = arm32BranchWord(0xEB000000, entry + startCallWordIndex * 4, functionAddresses.get('main'));
 
   for (let f = 0; f < compiled.length; f += 1) {
     const fn = compiled[f];
@@ -2788,6 +3955,8 @@ function emitArm32RuntimeElfV0(ir) {
     bytes:bytes,
     byteLength:bytes.length,
     functions:functionMeta,
+    recursiveFunctions:Array.from(recursiveFunctions).sort(),
+    maxRecursiveCallDepth:recursiveFunctions.size ? ARM32_RUNTIME_MAX_CALL_DEPTH : 0,
     allocator:allocatorSummary,
     controlFlowLowered:compiled.some((fn) => fn.blockCount > 0),
     divisionHelperAddress:divisionHelperAddress,
@@ -2806,7 +3975,7 @@ function emitArm32RuntimeElfV0(ir) {
 function verifyArm32RuntimeElfStructureV0(artifact) {
   if (!artifact || artifact.schema !== SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA) fail('arm32 runtime verify: schema mismatch');
   const bytes = artifact.bytes;
-  if (!(bytes instanceof Uint8Array) || bytes.length < ARM32_ELF_CODE_OFFSET + 12) fail('arm32 runtime verify: image too small');
+  if (!(bytes instanceof Uint8Array) || bytes.length < ARM32_ELF_CODE_OFFSET + 20) fail('arm32 runtime verify: image too small');
   if (bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) fail('arm32 runtime verify: magic mismatch');
   if (bytes[4] !== 1 || bytes[5] !== 1 || bytes[6] !== 1) fail('arm32 runtime verify: ELF identity mismatch');
   if (readU16LE(bytes, 16) !== 2 || readU16LE(bytes, 18) !== 40 || readU32LE(bytes, 20) !== 1) fail('arm32 runtime verify: ELF type/machine/version mismatch');
@@ -2825,12 +3994,27 @@ function verifyArm32RuntimeElfStructureV0(artifact) {
       readU32LE(bytes, ph + 24) !== 5 ||
       readU32LE(bytes, ph + 28) !== 0x1000) fail('arm32 runtime verify: PT_LOAD mismatch');
 
+  if (!Array.isArray(artifact.recursiveFunctions)) fail('arm32 runtime verify: recursive function metadata missing');
+  const recursiveSet = new Set(artifact.recursiveFunctions);
+  if (recursiveSet.size !== artifact.recursiveFunctions.length) fail('arm32 runtime verify: duplicate recursive function metadata');
+  const hasRecursion = recursiveSet.size > 0;
+  if (artifact.maxRecursiveCallDepth !== (hasRecursion ? ARM32_RUNTIME_MAX_CALL_DEPTH : 0)) {
+    fail('arm32 runtime verify: recursive call-depth limit metadata mismatch');
+  }
+
   const start = ARM32_ELF_CODE_OFFSET;
-  const startBl = readU32LE(bytes, start);
+  const startCallOffset = hasRecursion ? 8 : 0;
+  if (hasRecursion && (readU32LE(bytes, start) !== arm32Movw(11, 0) ||
+      readU32LE(bytes, start + 4) !== arm32Movt(11, 0))) {
+    fail('arm32 runtime verify: entry call-depth initialization mismatch');
+  }
+  const startBl = readU32LE(bytes, start + startCallOffset);
   if (((startBl & 0xFF000000) >>> 0) !== 0xEB000000) fail('arm32 runtime verify: entry does not BL main');
-  if (readU32LE(bytes, start + 4) !== 0xE3A07001 || readU32LE(bytes, start + 8) !== 0xEF000000) {
+  if (readU32LE(bytes, start + startCallOffset + 4) !== 0xE3A07001 ||
+      readU32LE(bytes, start + startCallOffset + 8) !== 0xEF000000) {
     fail('arm32 runtime verify: entry exit sequence mismatch');
   }
+  const minimumFunctionOffset = ARM32_ELF_CODE_OFFSET + startCallOffset + 12;
 
   if (artifact.allocator !== 'linear-scan-r4-r7-v0' && artifact.allocator !== 'cfg-spill-v0' && artifact.allocator !== 'mixed-v0') {
     fail('arm32 runtime verify: allocator marker mismatch');
@@ -2843,16 +4027,17 @@ function verifyArm32RuntimeElfStructureV0(artifact) {
     if ((fn.address & 3) !== 0 || (fn.fileOffset & 3) !== 0 || (fn.bytes & 3) !== 0 || fn.bytes < 8) {
       fail("arm32 runtime verify: malformed function layout for '" + fn.name + "'");
     }
-    if (fn.fileOffset < ARM32_ELF_CODE_OFFSET + 12 || fn.fileOffset + fn.bytes > bytes.length) {
+    if (fn.fileOffset < minimumFunctionOffset || fn.fileOffset + fn.bytes > bytes.length) {
       fail("arm32 runtime verify: function range escapes image for '" + fn.name + "'");
     }
     if (fn.address !== ARM32_ELF_BASE_VADDR + fn.fileOffset) fail("arm32 runtime verify: function address mismatch for '" + fn.name + "'");
     if ((fn.frameBytes & 7) !== 0) fail("arm32 runtime verify: unaligned frame for '" + fn.name + "'");
     if (!Number.isInteger(fn.spillSlots) || fn.spillSlots < 0 ||
+        !Number.isInteger(fn.slotCount) || fn.slotCount < fn.spillSlots ||
         !Number.isInteger(fn.registerValues) || fn.registerValues < 0 ||
-        fn.slotCount !== fn.spillSlots ||
         (fn.allocator !== 'linear-scan-r4-r7-v0' && fn.allocator !== 'cfg-spill-v0') ||
         (artifact.allocator !== 'mixed-v0' && fn.allocator !== artifact.allocator) ||
+        typeof fn.boundedRecursion !== 'boolean' || fn.boundedRecursion !== recursiveSet.has(fn.name) ||
         !Number.isInteger(fn.blockCount) || fn.blockCount < 0 || !Array.isArray(fn.blocks) || fn.blocks.length !== fn.blockCount) {
       fail("arm32 runtime verify: allocator metadata mismatch for '" + fn.name + "'");
     }
@@ -2869,9 +4054,31 @@ function verifyArm32RuntimeElfStructureV0(artifact) {
     }
     if (fn.allocator === 'cfg-spill-v0' && (fn.registerValues !== 0 || fn.blockCount === 0)) fail("arm32 runtime verify: CFG spill allocator metadata mismatch in '" + fn.name + "'");
     if (fn.allocator === 'linear-scan-r4-r7-v0' && fn.blockCount !== 0) fail("arm32 runtime verify: linear allocator used on CFG function '" + fn.name + "'");
-    const expectedFrame = fn.spillSlots === 0 ? 0 : Math.ceil((fn.spillSlots * 4) / 8) * 8;
-    if (fn.frameBytes !== expectedFrame) fail("arm32 runtime verify: spill frame mismatch for '" + fn.name + "'");
+    const expectedFrame = fn.slotCount === 0 ? 0 : Math.ceil((fn.slotCount * 4) / 8) * 8;
+    if (fn.frameBytes !== expectedFrame) fail("arm32 runtime verify: frame/slot metadata mismatch for '" + fn.name + "'");
     if (readU32LE(bytes, fn.fileOffset) !== ARM32_RUNTIME_PUSH_MASK) fail("arm32 runtime verify: prologue mismatch for '" + fn.name + "'");
+    if (fn.boundedRecursion) {
+      const guardWords = [
+        arm32Movw(12, 1),
+        arm32Movt(12, 0),
+        arm32Adds(11, 11, 12),
+        arm32Movw(12, ARM32_RUNTIME_MAX_CALL_DEPTH & 0xffff),
+        arm32Movt(12, (ARM32_RUNTIME_MAX_CALL_DEPTH >>> 16) & 0xffff),
+        arm32Cmp(11, 12)
+      ];
+      if (fn.bytes < 36) fail("arm32 runtime verify: recursion guard is truncated in '" + fn.name + "'");
+      for (let guardIndex = 0; guardIndex < guardWords.length; guardIndex += 1) {
+        if (readU32LE(bytes, fn.fileOffset + 4 + guardIndex * 4) !== guardWords[guardIndex]) {
+          fail("arm32 runtime verify: recursion guard mismatch in '" + fn.name + "'");
+        }
+      }
+      const guardBranchOffset = fn.fileOffset + 28;
+      const guardBranch = readU32LE(bytes, guardBranchOffset);
+      if (((guardBranch & 0xFF000000) >>> 0) !== 0xCA000000 ||
+          arm32DecodeBranchTarget(guardBranch, fn.address + 28) !== artifact.trapAddress) {
+        fail("arm32 runtime verify: recursion depth trap branch mismatch in '" + fn.name + "'");
+      }
+    }
     if (readU32LE(bytes, fn.fileOffset + fn.bytes - 4) !== ARM32_RUNTIME_POP_MASK) fail("arm32 runtime verify: epilogue mismatch for '" + fn.name + "'");
   }
   if (!seen.has('main')) fail('arm32 runtime verify: main metadata missing');
@@ -2962,22 +4169,79 @@ function verifyArm32RuntimeElfV0(artifact, ir) {
   return true;
 }
 
+const SEMNEXIS_SLICE_U8_TYPE = 'Slice<u8>';
+const SEMNEXIS_ARENA_TYPE = 'Arena';
+
+function isBootstrapScalarType(type) {
+  return type === 'i32' || type === 'u8';
+}
+
+function isBootstrapValueType(type) {
+  return isBootstrapScalarType(type) || type === SEMNEXIS_SLICE_U8_TYPE || type === SEMNEXIS_ARENA_TYPE;
+}
+
+function isBootstrapParameterType(type) {
+  return isBootstrapValueType(type);
+}
+
 function requireTypeNode(types, type) {
   if (!types.has(type)) fail("type: unknown type '" + type + "'");
   return types.get(type);
+}
+
+function typeNodeIsRecord(graph, types, type) {
+  if (!types.has(type)) return false;
+  const node = types.get(type);
+  return graph.attribute(node, 'kind') === 'record';
+}
+
+function recordTypeFields(graph, types, type) {
+  if (!typeNodeIsRecord(graph, types, type)) fail("type: '" + type + "' is not a record type");
+  const node = types.get(type);
+  const count = Number(graph.attribute(node, 'field_count'));
+  if (!Number.isInteger(count) || count < 1 || count > MAX_SEMNEXIS_FLAT_RECORD_WORDS) {
+    fail("type: record '" + type + "' has invalid field metadata");
+  }
+  const fields = [];
+  for (let i = 0; i < count; i += 1) {
+    const name = graph.attribute(node, 'field' + i + '_name');
+    const fieldType = graph.attribute(node, 'field' + i + '_type');
+    if (!name || !isBootstrapScalarType(fieldType)) fail("type: record '" + type + "' has invalid field metadata");
+    fields.push({name:name, type:fieldType});
+  }
+  return fields;
 }
 
 function attachExpression(graph, ownerFunction, expressionNode) {
   graph.addEdge(ownerFunction, expressionNode, 'contains_expr');
 }
 
-function lowerExpr(expr, graph, ownerFunction, symbols, functions, intrinsics, types) {
-  if (expr.kind === 'Integer') {
-    const node = graph.addNode(NodeKind.Constant, 'integer');
-    graph.addAttribute(node, 'value', String(expr.integer));
+function coerceGraphValue(value, expectedType, graph, ownerFunction, types) {
+  if (!expectedType || value.type === expectedType) return value;
+  if (value.type === 'u8' && expectedType === 'i32') {
+    const node = graph.addNode(NodeKind.Convert, 'u8_to_i32');
+    graph.addAttribute(node, 'conversion', 'u8_to_i32');
+    graph.addEdge(node, value.node, 'operand');
     graph.addEdge(node, requireTypeNode(types, 'i32'), 'has_type');
     attachExpression(graph, ownerFunction, node);
     return {node:node, type:'i32'};
+  }
+  return value;
+}
+
+function lowerExpr(expr, graph, ownerFunction, symbols, functions, intrinsics, types, expectedType) {
+  if (expr.kind === 'Integer') {
+    let literalType = 'i32';
+    if (expectedType === 'u8') {
+      if (expr.integer < 0 || expr.integer > 255) fail('type: integer literal is outside u8 range');
+      literalType = 'u8';
+    }
+    const node = graph.addNode(NodeKind.Constant, 'integer');
+    graph.addAttribute(node, 'value', String(expr.integer));
+    if (literalType === 'u8') graph.addAttribute(node, 'literal_type', 'u8');
+    graph.addEdge(node, requireTypeNode(types, literalType), 'has_type');
+    attachExpression(graph, ownerFunction, node);
+    return {node:node, type:literalType};
   }
 
   if (expr.kind === 'Name') {
@@ -2990,16 +4254,81 @@ function lowerExpr(expr, graph, ownerFunction, symbols, functions, intrinsics, t
     return {node:node, type:symbol.type};
   }
 
+  if (expr.kind === 'RecordLiteral') {
+    const fields = recordTypeFields(graph, types, expr.typeName);
+    const literalFields = new Map(expr.fields.map((field) => [field.name, field.value]));
+    if (literalFields.size !== fields.length) fail("type: record literal '" + expr.typeName + "' must initialize every field exactly once");
+    const node = graph.addNode(NodeKind.Record, expr.typeName);
+    graph.addAttribute(node, 'record_type', expr.typeName);
+    graph.addAttribute(node, 'field_count', String(fields.length));
+    graph.addEdge(node, requireTypeNode(types, expr.typeName), 'has_type');
+    attachExpression(graph, ownerFunction, node);
+    for (let i = 0; i < fields.length; i += 1) {
+      const field = fields[i];
+      if (!literalFields.has(field.name)) fail("type: record literal '" + expr.typeName + "' is missing field '" + field.name + "'");
+      let value = lowerExpr(literalFields.get(field.name), graph, ownerFunction, symbols, functions, intrinsics, types, field.type);
+      value = coerceGraphValue(value, field.type, graph, ownerFunction, types);
+      if (value.type !== field.type) fail("type: record field '" + expr.typeName + '.' + field.name + "' requires " + field.type + ', got ' + value.type);
+      graph.addAttribute(node, 'field' + i + '_name', field.name);
+      graph.addEdge(node, value.node, 'field' + i);
+    }
+    for (const literalField of expr.fields) {
+      if (!fields.some((field) => field.name === literalField.name)) {
+        fail("type: record literal '" + expr.typeName + "' has unknown field '" + literalField.name + "'");
+      }
+    }
+    return {node:node, type:expr.typeName};
+  }
+
+  if (expr.kind === 'FieldAccess') {
+    const base = lowerExpr(expr.base, graph, ownerFunction, symbols, functions, intrinsics, types);
+    if (!typeNodeIsRecord(graph, types, base.type)) fail("type: field access base must be a flat record, got '" + base.type + "'");
+    const fields = recordTypeFields(graph, types, base.type);
+    const fieldIndex = fields.findIndex((field) => field.name === expr.field);
+    if (fieldIndex < 0) fail("type: record '" + base.type + "' has no field '" + expr.field + "'");
+    const field = fields[fieldIndex];
+    const node = graph.addNode(NodeKind.Field, expr.field);
+    graph.addAttribute(node, 'record_type', base.type);
+    graph.addAttribute(node, 'field_index', String(fieldIndex));
+    graph.addAttribute(node, 'field_name', field.name);
+    graph.addEdge(node, base.node, 'base');
+    graph.addEdge(node, requireTypeNode(types, field.type), 'has_type');
+    attachExpression(graph, ownerFunction, node);
+    return {node:node, type:field.type};
+  }
+
   if (expr.kind === 'Binary' || expr.kind === 'Compare') {
-    const left = lowerExpr(expr.left, graph, ownerFunction, symbols, functions, intrinsics, types);
-    const right = lowerExpr(expr.right, graph, ownerFunction, symbols, functions, intrinsics, types);
-    if (left.type !== 'i32' || right.type !== 'i32') fail('type: bootstrap binary operators require i32 operands');
     const comparison = expr.kind === 'Compare';
+    let left;
+    let right;
+    if (comparison && expr.left.kind === 'Integer' && expr.right.kind !== 'Integer') {
+      right = lowerExpr(expr.right, graph, ownerFunction, symbols, functions, intrinsics, types);
+      left = lowerExpr(expr.left, graph, ownerFunction, symbols, functions, intrinsics, types, right.type);
+    } else {
+      left = lowerExpr(expr.left, graph, ownerFunction, symbols, functions, intrinsics, types);
+      right = lowerExpr(expr.right, graph, ownerFunction, symbols, functions, intrinsics, types,
+        comparison && expr.right.kind === 'Integer' ? left.type : undefined);
+    }
+    if (comparison) {
+      if (left.type !== right.type &&
+          ((left.type === 'u8' && right.type === 'i32') || (left.type === 'i32' && right.type === 'u8'))) {
+        left = coerceGraphValue(left, 'i32', graph, ownerFunction, types);
+        right = coerceGraphValue(right, 'i32', graph, ownerFunction, types);
+      }
+      if (!isBootstrapScalarType(left.type) || left.type !== right.type) {
+        fail('type: comparison operands must have the same scalar type');
+      }
+    } else {
+      left = coerceGraphValue(left, 'i32', graph, ownerFunction, types);
+      right = coerceGraphValue(right, 'i32', graph, ownerFunction, types);
+      if (left.type !== 'i32' || right.type !== 'i32') fail('type: checked arithmetic currently requires i32 operands');
+    }
     const resultType = comparison ? 'bool' : 'i32';
     if (comparison && !types.has('bool')) fail('type: internal bool type is unavailable');
     const node = graph.addNode(NodeKind.Binary, expr.op);
     graph.addAttribute(node, 'operation', expr.op);
     if (comparison) graph.addAttribute(node, 'semantic_class', 'comparison');
+    if (left.type === 'u8') graph.addAttribute(node, 'operand_type', 'u8');
     graph.addEdge(node, left.node, 'lhs');
     graph.addEdge(node, right.node, 'rhs');
     graph.addEdge(node, requireTypeNode(types, resultType), 'has_type');
@@ -3013,7 +4342,9 @@ function lowerExpr(expr, graph, ownerFunction, symbols, functions, intrinsics, t
     const thenValue = lowerExpr(expr.thenExpr, graph, ownerFunction, symbols, functions, intrinsics, types);
     const elseValue = lowerExpr(expr.elseExpr, graph, ownerFunction, symbols, functions, intrinsics, types);
     if (thenValue.type !== elseValue.type) fail('type: if branches must produce the same type');
-    if (thenValue.type !== 'i32') fail('type: bootstrap if expressions currently produce i32 only');
+    if (thenValue.type !== 'i32' && !typeNodeIsRecord(graph, types, thenValue.type)) {
+      fail('type: bootstrap if expressions currently produce i32 or flat records only');
+    }
     const node = graph.addNode(NodeKind.Conditional, 'if');
     graph.addAttribute(node, 'merge', 'phi');
     graph.addEdge(node, condition.node, 'condition');
@@ -3040,39 +4371,53 @@ function lowerExpr(expr, graph, ownerFunction, symbols, functions, intrinsics, t
       if (symbols.has(state.name)) fail("loop: carried state '" + state.name + "' shadows an existing symbol; bootstrap loops require unique state names");
       names.add(state.name);
       const initializer = lowerExpr(state.initializer, graph, ownerFunction, symbols, functions, intrinsics, types);
-      if (initializer.type !== 'i32') fail("loop: initializer for '" + state.name + "' must be i32");
+      if (initializer.type !== 'i32' && !typeNodeIsRecord(graph, types, initializer.type)) {
+        fail("loop: initializer for '" + state.name + "' must be i32 or a flat record");
+      }
       const stateNode = graph.addNode(NodeKind.LoopState, state.name);
       graph.addAttribute(stateNode, 'symbol', 'fnnode::' + ownerFunction + '::loop::' + node + '::state::' + state.name);
       graph.addAttribute(stateNode, 'update', 'simultaneous');
       graph.addEdge(node, stateNode, 'carries_state');
-      graph.addEdge(stateNode, requireTypeNode(types, 'i32'), 'has_type');
+      graph.addEdge(stateNode, requireTypeNode(types, initializer.type), 'has_type');
       graph.addEdge(stateNode, initializer.node, 'initialized_by');
-      stateRows.push({decl:state, node:stateNode});
+      stateRows.push({decl:state, node:stateNode, type:initializer.type});
     }
 
     const loopSymbols = new Map(symbols);
-    for (const state of stateRows) loopSymbols.set(state.decl.name, {node:state.node, type:'i32'});
+    for (const state of stateRows) loopSymbols.set(state.decl.name, {node:state.node, type:state.type});
 
     const condition = lowerExpr(expr.condition, graph, ownerFunction, loopSymbols, functions, intrinsics, types);
     if (condition.type !== 'bool') fail('loop: while condition must be a comparison yielding bool');
     graph.addEdge(node, condition.node, 'condition');
 
     for (let i = 0; i < stateRows.length; i += 1) {
-      const nextValue = lowerExpr(expr.nextValues[i], graph, ownerFunction, loopSymbols, functions, intrinsics, types);
-      if (nextValue.type !== 'i32') fail("loop: next value for '" + stateRows[i].decl.name + "' must be i32");
+      let nextValue = lowerExpr(expr.nextValues[i], graph, ownerFunction, loopSymbols, functions, intrinsics, types, stateRows[i].type);
+      nextValue = coerceGraphValue(nextValue, stateRows[i].type, graph, ownerFunction, types);
+      if (nextValue.type !== stateRows[i].type) {
+        fail("loop: next value for '" + stateRows[i].decl.name + "' must remain " + stateRows[i].type + ', got ' + nextValue.type);
+      }
       graph.addEdge(stateRows[i].node, nextValue.node, 'next_value');
     }
 
-    const yieldValue = lowerExpr(expr.yieldExpr, graph, ownerFunction, loopSymbols, functions, intrinsics, types);
-    if (yieldValue.type !== 'i32') fail('loop: yield value must be i32');
+    let yieldValue = lowerExpr(expr.yieldExpr, graph, ownerFunction, loopSymbols, functions, intrinsics, types, expectedType);
+    if (expectedType) yieldValue = coerceGraphValue(yieldValue, expectedType, graph, ownerFunction, types);
+    if (yieldValue.type !== 'i32' && !typeNodeIsRecord(graph, types, yieldValue.type)) {
+      fail('loop: yield value must be i32 or a flat record');
+    }
+    if (expectedType && yieldValue.type !== expectedType) {
+      fail('loop: yield value must match expected type ' + expectedType + ', got ' + yieldValue.type);
+    }
     graph.addEdge(node, yieldValue.node, 'yield_value');
-    graph.addEdge(node, requireTypeNode(types, 'i32'), 'has_type');
-    return {node:node, type:'i32'};
+    graph.addEdge(node, requireTypeNode(types, yieldValue.type), 'has_type');
+    return {node:node, type:yieldValue.type};
   }
 
   if (expr.kind !== 'Call') fail('compiler: unknown expression kind');
 
+  const callTypeArguments = Array.isArray(expr.typeArguments) ? expr.typeArguments : [];
+
   if (functions.has(expr.name)) {
+    if (callTypeArguments.length) fail("call: function '" + expr.name + "' does not accept type arguments in the bootstrap");
     const functionInfo = functions.get(expr.name);
     const target = functionInfo.decl;
     if (expr.arguments.length !== target.parameters.length) fail("call: '" + expr.name + "' expects " + target.parameters.length + ' argument(s), got ' + expr.arguments.length);
@@ -3081,8 +4426,9 @@ function lowerExpr(expr, graph, ownerFunction, symbols, functions, intrinsics, t
     graph.addEdge(node, requireTypeNode(types, target.returnType), 'has_type');
     attachExpression(graph, ownerFunction, node);
     for (let i = 0; i < expr.arguments.length; i += 1) {
-      const arg = lowerExpr(expr.arguments[i], graph, ownerFunction, symbols, functions, intrinsics, types);
       const expected = target.parameters[i].type;
+      let arg = lowerExpr(expr.arguments[i], graph, ownerFunction, symbols, functions, intrinsics, types, expected);
+      arg = coerceGraphValue(arg, expected, graph, ownerFunction, types);
       if (arg.type !== expected) fail('type: argument ' + i + " of '" + expr.name + "' requires " + expected + ', got ' + arg.type);
       graph.addEdge(node, arg.node, 'arg' + i);
     }
@@ -3091,17 +4437,54 @@ function lowerExpr(expr, graph, ownerFunction, symbols, functions, intrinsics, t
 
   if (intrinsics.has(expr.name)) {
     const intrinsic = intrinsics.get(expr.name);
+    let intrinsicNode = intrinsic.node;
+    let intrinsicReturnType = intrinsic.returnType;
+
+    if (intrinsic.genericRecordReturn) {
+      if (callTypeArguments.length !== intrinsic.typeArity) {
+        fail("call: intrinsic '" + expr.name + "' expects " + intrinsic.typeArity + ' type argument(s), got ' + callTypeArguments.length);
+      }
+      intrinsicReturnType = callTypeArguments[0];
+      if (!typeNodeIsRecord(graph, types, intrinsicReturnType)) {
+        fail("type: intrinsic '" + expr.name + "' type argument must be a flat record, got '" + intrinsicReturnType + "'");
+      }
+      if (!intrinsic.specializations.has(intrinsicReturnType)) {
+        const specialization = graph.addNode(NodeKind.Intrinsic, expr.name + '<' + intrinsicReturnType + '>');
+        graph.addAttribute(specialization, 'intrinsic_base', expr.name);
+        graph.addAttribute(specialization, 'record_type', intrinsicReturnType);
+        graph.addAttribute(specialization, 'arity', String(intrinsic.arity));
+        for (let i = 0; i < intrinsic.arity; i += 1) {
+          if (intrinsic.paramTypes[i]) graph.addAttribute(specialization, 'param' + i + '_type', intrinsic.paramTypes[i]);
+          else if (intrinsic.paramKinds && intrinsic.paramKinds[i]) graph.addAttribute(specialization, 'param' + i + '_kind', intrinsic.paramKinds[i]);
+        }
+        graph.addEdge(specialization, requireTypeNode(types, intrinsicReturnType), 'returns_type');
+        graph.addEdge(specialization, intrinsic.effectNode, 'has_effect');
+        intrinsic.specializations.set(intrinsicReturnType, specialization);
+      }
+      intrinsicNode = intrinsic.specializations.get(intrinsicReturnType);
+    } else if (callTypeArguments.length) {
+      fail("call: intrinsic '" + expr.name + "' does not accept type arguments");
+    }
+
     if (expr.arguments.length !== intrinsic.arity) fail("call: intrinsic '" + expr.name + "' expects " + intrinsic.arity + ' argument(s), got ' + expr.arguments.length);
     const node = graph.addNode(NodeKind.Call, expr.name);
     graph.addAttribute(node, 'intrinsic', 'true');
-    graph.addEdge(node, intrinsic.node, 'calls');
-    graph.addEdge(node, requireTypeNode(types, intrinsic.returnType), 'has_type');
+    graph.addEdge(node, intrinsicNode, 'calls');
+    graph.addEdge(node, requireTypeNode(types, intrinsicReturnType), 'has_type');
     attachExpression(graph, ownerFunction, node);
     for (let i = 0; i < expr.arguments.length; i += 1) {
-      const arg = lowerExpr(expr.arguments[i], graph, ownerFunction, symbols, functions, intrinsics, types);
+      const expected = intrinsic.paramTypes[i];
+      const expectedKind = intrinsic.paramKinds && intrinsic.paramKinds[i];
+      let arg = lowerExpr(expr.arguments[i], graph, ownerFunction, symbols, functions, intrinsics, types, expected || undefined);
+      if (expected) {
+        arg = coerceGraphValue(arg, expected, graph, ownerFunction, types);
+        if (arg.type !== expected) fail('type: argument ' + i + " of intrinsic '" + expr.name + "' requires " + expected + ', got ' + arg.type);
+      } else if (expectedKind === 'flat_record') {
+        if (!typeNodeIsRecord(graph, types, arg.type)) fail('type: argument ' + i + " of intrinsic '" + expr.name + "' requires a flat record, got " + arg.type);
+      } else fail("type: intrinsic '" + expr.name + "' has unsupported parameter contract at index " + i);
       graph.addEdge(node, arg.node, 'arg' + i);
     }
-    return {node:node, type:intrinsic.returnType};
+    return {node:node, type:intrinsicReturnType};
   }
 
   fail("resolve: unknown function or intrinsic '" + expr.name + "'");
@@ -3119,8 +4502,17 @@ function buildFunctionCallGraph(graph) {
 }
 
 function intrinsicHasTimeEffect(graph, intrinsicNode) {
-  return graph.edgesFrom(intrinsicNode, 'has_effect').some((edge) =>
-    graph.nodes[edge.to].kind === NodeKind.Effect && graph.nodes[edge.to].name === 'time');
+  return graph.edgesFrom(intrinsicNode, 'has_effect').some((edge) => {
+    const target = graph.nodes[edge.to];
+    return target.kind === NodeKind.Effect && (target.name === 'time' || target.name === 'time_state');
+  });
+}
+
+function intrinsicHasStateEffect(graph, intrinsicNode) {
+  return graph.edgesFrom(intrinsicNode, 'has_effect').some((edge) => {
+    const target = graph.nodes[edge.to];
+    return target.kind === NodeKind.Effect && (target.name === 'state' || target.name === 'time_state');
+  });
 }
 
 function functionGrantsTime(graph, functionNode) {
@@ -3189,6 +4581,68 @@ export function compileSemnexisV0(source) {
   graph.addAttribute(i32Type, 'width', '32');
   graph.addAttribute(i32Type, 'signed', 'true');
   types.set('i32', i32Type);
+  const usesSliceU8 = module.functions.some(function(fn) {
+    return fn.parameters.some(function(parameter) { return parameter.type === SEMNEXIS_SLICE_U8_TYPE; });
+  });
+  const usesArena = module.functions.some(function(fn) {
+    return fn.parameters.some(function(parameter) { return parameter.type === SEMNEXIS_ARENA_TYPE; });
+  });
+  const usesU8 = usesSliceU8 || module.structs.some(function(structDecl) {
+    return structDecl.fields.some(function(field) { return field.type === 'u8'; });
+  }) || module.functions.some(function(fn) {
+    return fn.returnType === 'u8' || fn.parameters.some(function(parameter) { return parameter.type === 'u8'; });
+  });
+  if (usesU8) {
+    const u8Type = graph.addNode(NodeKind.Type, 'u8');
+    graph.addAttribute(u8Type, 'width', '8');
+    graph.addAttribute(u8Type, 'signed', 'false');
+    graph.addAttribute(u8Type, 'native_register_representation', 'zero_extended_i32');
+    types.set('u8', u8Type);
+  }
+  const recordTypes = new Map();
+  for (const structDecl of module.structs) {
+    if (types.has(structDecl.name) || recordTypes.has(structDecl.name)) fail("type: duplicate or reserved struct name '" + structDecl.name + "'");
+    if (structDecl.fields.length > MAX_SEMNEXIS_FLAT_RECORD_WORDS) {
+      fail("type: struct '" + structDecl.name + "' exceeds flat record ABI limit of " + MAX_SEMNEXIS_FLAT_RECORD_WORDS + ' fields');
+    }
+    for (const field of structDecl.fields) {
+      if (!isBootstrapScalarType(field.type)) fail("type: struct field '" + structDecl.name + '.' + field.name + "' must be i32 or u8");
+      if (!types.has(field.type)) fail("type: struct field '" + structDecl.name + '.' + field.name + "' uses unavailable type '" + field.type + "'");
+    }
+    const recordType = graph.addNode(NodeKind.Type, structDecl.name);
+    graph.addAttribute(recordType, 'kind', 'record');
+    graph.addAttribute(recordType, 'abi', 'flat_words_v0');
+    graph.addAttribute(recordType, 'field_count', String(structDecl.fields.length));
+    for (let i = 0; i < structDecl.fields.length; i += 1) {
+      graph.addAttribute(recordType, 'field' + i + '_name', structDecl.fields[i].name);
+      graph.addAttribute(recordType, 'field' + i + '_type', structDecl.fields[i].type);
+    }
+    types.set(structDecl.name, recordType);
+    recordTypes.set(structDecl.name, {decl:structDecl, node:recordType});
+  }
+  if (usesSliceU8) {
+    const sliceType = graph.addNode(NodeKind.Type, SEMNEXIS_SLICE_U8_TYPE);
+    graph.addAttribute(sliceType, 'kind', 'borrowed_slice');
+    graph.addAttribute(sliceType, 'element', 'u8');
+    graph.addAttribute(sliceType, 'mutability', 'read_only');
+    graph.addAttribute(sliceType, 'abi', 'descriptor_ptr_v0');
+    graph.addAttribute(sliceType, 'descriptor_alignment', '4');
+    graph.addAttribute(sliceType, 'descriptor_layout', 'data_ptr@0,length_i32@4');
+    graph.addAttribute(sliceType, 'escape', 'parameter_borrow_only');
+    types.set(SEMNEXIS_SLICE_U8_TYPE, sliceType);
+  }
+  if (usesArena) {
+    const arenaType = graph.addNode(NodeKind.Type, SEMNEXIS_ARENA_TYPE);
+    graph.addAttribute(arenaType, 'kind', 'bounded_mutable_arena');
+    graph.addAttribute(arenaType, 'cell_words', String(MAX_SEMNEXIS_FLAT_RECORD_WORDS));
+    graph.addAttribute(arenaType, 'cell_bytes', String(MAX_SEMNEXIS_FLAT_RECORD_WORDS * 4));
+    graph.addAttribute(arenaType, 'mutability', 'read_write');
+    graph.addAttribute(arenaType, 'abi', 'descriptor_ptr_v0');
+    graph.addAttribute(arenaType, 'descriptor_alignment', '4');
+    graph.addAttribute(arenaType, 'descriptor_layout', 'data_ptr@0,length_i32@4');
+    graph.addAttribute(arenaType, 'escape', 'parameter_borrow_only');
+    types.set(SEMNEXIS_ARENA_TYPE, arenaType);
+  }
   const usesControlFlow = module.functions.some(function(fn) {
     return fn.locals.some(function(local) { return astExpressionUsesControlFlow(local.initializer); }) ||
       astExpressionUsesControlFlow(fn.returnExpr);
@@ -3204,6 +4658,14 @@ export function compileSemnexisV0(source) {
   graph.addAttribute(pureEffect, 'observable_effects', 'none');
   const timeEffect = graph.addNode(NodeKind.Effect, 'time');
   graph.addAttribute(timeEffect, 'observable_effects', 'time');
+  let stateEffect = null;
+  let timeStateEffect = null;
+  if (usesArena) {
+    stateEffect = graph.addNode(NodeKind.Effect, 'state');
+    graph.addAttribute(stateEffect, 'observable_effects', 'explicit_borrowed_state');
+    timeStateEffect = graph.addNode(NodeKind.Effect, 'time_state');
+    graph.addAttribute(timeStateEffect, 'observable_effects', 'time,explicit_borrowed_state');
+  }
   const timeCapability = graph.addNode(NodeKind.Capability, 'time');
   graph.addAttribute(timeCapability, 'authority', 'clock');
 
@@ -3213,16 +4675,67 @@ export function compileSemnexisV0(source) {
   graph.addEdge(clockIntrinsic, i32Type, 'returns_type');
   graph.addEdge(clockIntrinsic, timeEffect, 'has_effect');
   graph.addEdge(clockIntrinsic, timeCapability, 'requires_capability');
-  intrinsics.set('clock', {node:clockIntrinsic, returnType:'i32', arity:0});
+  intrinsics.set('clock', {node:clockIntrinsic, returnType:'i32', arity:0, paramTypes:[]});
+
+  if (usesSliceU8) {
+    const sliceLenIntrinsic = graph.addNode(NodeKind.Intrinsic, 'slice_len');
+    graph.addAttribute(sliceLenIntrinsic, 'arity', '1');
+    graph.addAttribute(sliceLenIntrinsic, 'param0_type', SEMNEXIS_SLICE_U8_TYPE);
+    graph.addEdge(sliceLenIntrinsic, i32Type, 'returns_type');
+    graph.addEdge(sliceLenIntrinsic, pureEffect, 'has_effect');
+    intrinsics.set('slice_len', {node:sliceLenIntrinsic, returnType:'i32', arity:1, paramTypes:[SEMNEXIS_SLICE_U8_TYPE], paramKinds:[null]});
+
+    const sliceGetIntrinsic = graph.addNode(NodeKind.Intrinsic, 'slice_get');
+    graph.addAttribute(sliceGetIntrinsic, 'arity', '2');
+    graph.addAttribute(sliceGetIntrinsic, 'param0_type', SEMNEXIS_SLICE_U8_TYPE);
+    graph.addAttribute(sliceGetIntrinsic, 'param1_type', 'i32');
+    graph.addEdge(sliceGetIntrinsic, requireTypeNode(types, 'u8'), 'returns_type');
+    graph.addEdge(sliceGetIntrinsic, pureEffect, 'has_effect');
+    intrinsics.set('slice_get', {node:sliceGetIntrinsic, returnType:'u8', arity:2, paramTypes:[SEMNEXIS_SLICE_U8_TYPE, 'i32'], paramKinds:[null,null]});
+  }
+
+  if (usesArena) {
+    const arenaLenIntrinsic = graph.addNode(NodeKind.Intrinsic, 'arena_len');
+    graph.addAttribute(arenaLenIntrinsic, 'arity', '1');
+    graph.addAttribute(arenaLenIntrinsic, 'param0_type', SEMNEXIS_ARENA_TYPE);
+    graph.addEdge(arenaLenIntrinsic, i32Type, 'returns_type');
+    graph.addEdge(arenaLenIntrinsic, pureEffect, 'has_effect');
+    intrinsics.set('arena_len', {node:arenaLenIntrinsic, returnType:'i32', arity:1, paramTypes:[SEMNEXIS_ARENA_TYPE], paramKinds:[null]});
+
+    const arenaStoreIntrinsic = graph.addNode(NodeKind.Intrinsic, 'arena_store');
+    graph.addAttribute(arenaStoreIntrinsic, 'arity', '3');
+    graph.addAttribute(arenaStoreIntrinsic, 'param0_type', SEMNEXIS_ARENA_TYPE);
+    graph.addAttribute(arenaStoreIntrinsic, 'param1_type', 'i32');
+    graph.addAttribute(arenaStoreIntrinsic, 'param2_kind', 'flat_record');
+    graph.addEdge(arenaStoreIntrinsic, i32Type, 'returns_type');
+    graph.addEdge(arenaStoreIntrinsic, stateEffect, 'has_effect');
+    intrinsics.set('arena_store', {node:arenaStoreIntrinsic, returnType:'i32', arity:3, paramTypes:[SEMNEXIS_ARENA_TYPE, 'i32', null], paramKinds:[null,null,'flat_record']});
+
+    intrinsics.set('arena_load', {
+      node:null,
+      returnType:null,
+      arity:2,
+      paramTypes:[SEMNEXIS_ARENA_TYPE, 'i32'],
+      paramKinds:[null,null],
+      genericRecordReturn:true,
+      typeArity:1,
+      effectNode:stateEffect,
+      specializations:new Map()
+    });
+  }
 
   const functions = new Map();
   for (const fn of module.functions) {
     if (functions.has(fn.name)) fail("resolve: duplicate function '" + fn.name + "'");
     if (intrinsics.has(fn.name)) fail("resolve: function name conflicts with intrinsic '" + fn.name + "'");
-    if (fn.returnType !== 'i32') fail("type: bootstrap function '" + fn.name + "' must return i32");
+    if (!isBootstrapScalarType(fn.returnType) && !typeNodeIsRecord(graph, types, fn.returnType)) {
+      fail("type: bootstrap function '" + fn.name + "' must return i32, u8 or a flat record");
+    }
     requireTypeNode(types, fn.returnType);
     for (const parameter of fn.parameters) {
-      if (parameter.type !== 'i32') fail("type: bootstrap parameter '" + parameter.name + "' must be i32");
+      if (!isBootstrapParameterType(parameter.type) && !typeNodeIsRecord(graph, types, parameter.type)) {
+        fail("type: bootstrap parameter '" + parameter.name + "' must be i32, u8, Slice<u8> or a flat record");
+      }
       requireTypeNode(types, parameter.type);
     }
 
@@ -3243,7 +4756,8 @@ export function compileSemnexisV0(source) {
     const regionNode = graph.addNode(NodeKind.Region, fn.name + '.local');
     graph.addAttribute(regionNode, 'lifetime', 'function');
     graph.addAttribute(regionNode, 'escape', 'false');
-    graph.addAttribute(regionNode, 'proof', 'no_reference_values_v0');
+    const hasSliceParameter = fn.parameters.some(function(parameter) { return parameter.type === SEMNEXIS_SLICE_U8_TYPE; });
+    graph.addAttribute(regionNode, 'proof', hasSliceParameter ? 'borrowed_slice_parameter_v0' : 'no_reference_values_v0');
     graph.addEdge(fnNode, regionNode, 'executes_in');
     functions.set(fn.name, {decl:fn, node:fnNode, region:regionNode});
   }
@@ -3264,7 +4778,9 @@ export function compileSemnexisV0(source) {
     for (const local of fn.locals) {
       if (symbols.has(local.name)) fail("resolve: duplicate symbol '" + local.name + "' in function '" + fn.name + "'");
       const initializer = lowerExpr(local.initializer, graph, fnNode, symbols, functions, intrinsics, types);
-      if (initializer.type !== 'i32') fail("type: bootstrap local '" + local.name + "' must resolve to i32");
+      if (!isBootstrapValueType(initializer.type) && !typeNodeIsRecord(graph, types, initializer.type)) {
+        fail("type: bootstrap local '" + local.name + "' must resolve to a supported value type");
+      }
       const localNode = graph.addNode(NodeKind.Local, local.name);
       graph.addAttribute(localNode, 'symbol', 'fn::' + fn.name + '::local::' + local.name);
       graph.addAttribute(localNode, 'type_proof', 'initializer');
@@ -3274,7 +4790,8 @@ export function compileSemnexisV0(source) {
       symbols.set(local.name, {node:localNode, type:initializer.type});
     }
 
-    const returnValue = lowerExpr(fn.returnExpr, graph, fnNode, symbols, functions, intrinsics, types);
+    let returnValue = lowerExpr(fn.returnExpr, graph, fnNode, symbols, functions, intrinsics, types, fn.returnType);
+    returnValue = coerceGraphValue(returnValue, fn.returnType, graph, fnNode, types);
     if (returnValue.type !== fn.returnType) fail("type: function '" + fn.name + "' returns " + fn.returnType + ' but expression is ' + returnValue.type);
 
     const returnNode = graph.addNode(NodeKind.Return, 'return');
@@ -3286,6 +4803,8 @@ export function compileSemnexisV0(source) {
   const callGraph = buildFunctionCallGraph(graph);
   const directTime = new Map();
   const transitiveTime = new Map();
+  const directState = new Map();
+  const transitiveState = new Map();
   const requiresTime = new Map();
   const callers = new Map();
 
@@ -3293,6 +4812,8 @@ export function compileSemnexisV0(source) {
     const fnNode = functions.get(fn.name).node;
     directTime.set(fnNode, false);
     transitiveTime.set(fnNode, false);
+    directState.set(fnNode, false);
+    transitiveState.set(fnNode, false);
     requiresTime.set(fnNode, false);
     callers.set(fnNode, []);
   }
@@ -3302,6 +4823,7 @@ export function compileSemnexisV0(source) {
     for (const target of callGraph.get(fnNode) || []) {
       if (graph.nodes[target].kind === NodeKind.Intrinsic) {
         if (intrinsicHasTimeEffect(graph, target)) directTime.set(fnNode, true);
+        if (intrinsicHasStateEffect(graph, target)) directState.set(fnNode, true);
       } else if (graph.nodes[target].kind === NodeKind.Function) {
         callers.get(target).push(fnNode);
       }
@@ -3324,6 +4846,22 @@ export function compileSemnexisV0(source) {
     }
   }
 
+  const stateQueue = [];
+  for (const fn of module.functions) {
+    const fnNode = functions.get(fn.name).node;
+    if (!directState.get(fnNode)) continue;
+    transitiveState.set(fnNode, true);
+    stateQueue.push(fnNode);
+  }
+  for (let cursor = 0; cursor < stateQueue.length; cursor += 1) {
+    const target = stateQueue[cursor];
+    for (const caller of callers.get(target)) {
+      if (transitiveState.get(caller)) continue;
+      transitiveState.set(caller, true);
+      stateQueue.push(caller);
+    }
+  }
+
   const requirementQueue = [];
   for (const fn of module.functions) {
     const fnNode = functions.get(fn.name).node;
@@ -3342,9 +4880,17 @@ export function compileSemnexisV0(source) {
 
   for (const fn of module.functions) {
     const fnNode = functions.get(fn.name).node;
-    if (transitiveTime.get(fnNode)) {
-      graph.addAttribute(fnNode, 'effect_proof', 'transitive_call_graph_v0');
+    const hasTime = transitiveTime.get(fnNode);
+    const hasState = transitiveState.get(fnNode);
+    if (hasTime && hasState) {
+      graph.addAttribute(fnNode, 'effect_proof', 'transitive_time_state_graph_v0');
+      graph.addEdge(fnNode, timeStateEffect, 'has_effect');
+    } else if (hasTime) {
+      graph.addAttribute(fnNode, 'effect_proof', 'transitive_time_graph_v0');
       graph.addEdge(fnNode, timeEffect, 'has_effect');
+    } else if (hasState) {
+      graph.addAttribute(fnNode, 'effect_proof', 'transitive_state_graph_v0');
+      graph.addEdge(fnNode, stateEffect, 'has_effect');
     } else {
       graph.addAttribute(fnNode, 'effect_proof', 'closed_pure_graph_v0');
       graph.addEdge(fnNode, pureEffect, 'has_effect');
@@ -3384,8 +4930,72 @@ export function encodeSemnexisNativeIRV0(ir) {
   return encodeNativeIRV0(ir);
 }
 
+export function encodeSemnexisNativeIRV1(ir) {
+  return encodeNativeIRV1(ir);
+}
+
+export function encodeSemnexisNativeIRV2(ir) {
+  return encodeNativeIRV2(ir);
+}
+
+export function encodeSemnexisNativeIRV3(ir) {
+  return encodeNativeIRV3(ir);
+}
+
+export function encodeSemnexisNativeIRV4(ir) {
+  return encodeNativeIRV4(ir);
+}
+
+export function encodeSemnexisNativeIRV5(ir) {
+  return encodeNativeIRV5(ir);
+}
+
+export function encodeSemnexisNativeIRV6(ir) {
+  return encodeNativeIRV6(ir);
+}
+
+export function encodeSemnexisNativeIRV7(ir) {
+  return encodeNativeIRV7(ir);
+}
+
+export function encodeSemnexisNativeIR(ir) {
+  return encodeNativeIR(ir);
+}
+
 export function decodeSemnexisNativeIRV0(bytes) {
   return decodeNativeIRV0(bytes);
+}
+
+export function decodeSemnexisNativeIRV1(bytes) {
+  return decodeNativeIRV1(bytes);
+}
+
+export function decodeSemnexisNativeIRV2(bytes) {
+  return decodeNativeIRV2(bytes);
+}
+
+export function decodeSemnexisNativeIRV3(bytes) {
+  return decodeNativeIRV3(bytes);
+}
+
+export function decodeSemnexisNativeIRV4(bytes) {
+  return decodeNativeIRV4(bytes);
+}
+
+export function decodeSemnexisNativeIRV5(bytes) {
+  return decodeNativeIRV5(bytes);
+}
+
+export function decodeSemnexisNativeIRV6(bytes) {
+  return decodeNativeIRV6(bytes);
+}
+
+export function decodeSemnexisNativeIRV7(bytes) {
+  return decodeNativeIRV7(bytes);
+}
+
+export function decodeSemnexisNativeIR(bytes) {
+  return decodeNativeIR(bytes);
 }
 
 export function emitSemnexisArm32ElfProofV0(ir) {
@@ -3428,13 +5038,31 @@ if (typeof globalThis !== 'undefined') {
     planSchema:SEMNEXIS_PLAN_SCHEMA,
     irSchema:SEMNEXIS_NATIVE_IR_SCHEMA,
     irBinaryFormat:'SNIRV0',
-    irBinaryVersion:NATIVE_IR_BINARY_VERSION,
-    irBinaryCompatibility:'frozen-v0-reject-unknown-version-flags-opcodes',
+    irBinaryVersion:NATIVE_IR_BINARY_VERSION_V0,
+    irBinaryLatestFormat:'SNIRV7',
+    irBinaryLatestVersion:NATIVE_IR_BINARY_VERSION_V7,
+    irBinaryCompatibility:'frozen-v0-v1-v2-v3-v4-v5-v6-plus-v7-arena-state-reject-unknown-version-flags-opcodes',
     irGraphNodeSemantics:'advisory-correlation-id-v0',
     arm32ElfSchema:SEMNEXIS_ARM32_ELF_SCHEMA,
     arm32RuntimeElfSchema:SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA,
-    encodeIR:encodeNativeIRV0,
-    decodeIR:decodeNativeIRV0,
+    encodeIR:encodeNativeIR,
+    decodeIR:decodeNativeIR,
+    encodeIRV0:encodeNativeIRV0,
+    decodeIRV0:decodeNativeIRV0,
+    encodeIRV1:encodeNativeIRV1,
+    decodeIRV1:decodeNativeIRV1,
+    encodeIRV2:encodeNativeIRV2,
+    decodeIRV2:decodeNativeIRV2,
+    encodeIRV3:encodeNativeIRV3,
+    decodeIRV3:decodeNativeIRV3,
+    encodeIRV4:encodeNativeIRV4,
+    decodeIRV4:decodeNativeIRV4,
+    encodeIRV5:encodeNativeIRV5,
+    decodeIRV5:decodeNativeIRV5,
+    encodeIRV6:encodeNativeIRV6,
+    decodeIRV6:decodeNativeIRV6,
+    encodeIRV7:encodeNativeIRV7,
+    decodeIRV7:decodeNativeIRV7,
     emitArm32Proof:emitArm32ElfProofV0,
     verifyArm32Proof:verifyArm32ElfProofV0,
     emitArm32Runtime:emitArm32RuntimeElfV0,
