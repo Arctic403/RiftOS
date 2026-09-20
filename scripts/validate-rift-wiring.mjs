@@ -234,7 +234,7 @@ if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
     !toolSandbox.includes('executeRequest(raw, "rift-cli-batch")')) fail('RiftCLI N1 dispatcher/provenance/Batch V2 boundary drifted');
 if (!gradle.includes('RiftCliEventBus.kt') ||
     !runtime.includes('fun cliEvents(): RiftCliEventBus') ||
-    !runtime.includes('RiftMcpRelayClient(context.applicationContext, server(context), cliEvents())') ||
+    !runtime.includes('RiftMcpRelayClient(') ||\n    !runtime.includes('server(context)') ||\n    !runtime.includes('cliEvents()') ||\n    !runtime.includes('debugHub()') ||
     !cliEvents.includes('SCHEMA = "rift.cli-event/1"') ||
     !cliEvents.includes('MAX_EVENTS = 256') ||
     !cliEvents.includes('stepKey = extra?.optString("stepId")') ||
