@@ -8,7 +8,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Future
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -29,12 +32,22 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         private const val MAX_ARGUMENTS = 16_384
         private const val MAX_TREE_ROWS = 5_000
         private const val SHELL_TIMEOUT_MS = 60_000L
+        private const val MAX_CLI_SHELL_JOBS = 16
+        private const val CLI_SHELL_JOB_RETENTION_MS = 5 * 60 * 1000L
+        private const val MAX_CLI_SHELL_RETAINED_RESULT_BYTES = 2 * 1024 * 1024
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
     }
 
     private val appContext = context.applicationContext
     private val riftRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
     private val worker = ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(8)
+    )
+    private val cliWorker = ThreadPoolExecutor(
         1,
         1,
         0L,
@@ -49,6 +62,23 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     @Volatile private var closed = false
 
     private data class ShellOutcome(val output: String, val cwd: String, val result: Any? = null)
+    private data class CliShellJob(
+        val id: String,
+        val requestId: String,
+        val operation: String,
+        val cwd: String,
+        val createdAt: Long,
+        @Volatile var updatedAt: Long,
+        @Volatile var status: String,
+        @Volatile var cancelRequested: Boolean = false,
+        @Volatile var output: String = "",
+        @Volatile var result: Any? = null,
+        @Volatile var error: String? = null,
+        @Volatile var future: Future<*>? = null
+    )
+
+    private val cliShellJobs = ConcurrentHashMap<String, CliShellJob>()
+
     override fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit) {
         if (closed) {
             reply(errorResult(cwd ?: "/", "Native RiftShell is closed"))
@@ -96,7 +126,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
     override fun close() {
         closed = true
+        cancelAllCliShellJobs("Native RiftShell closed")
         worker.shutdownNow()
+        cliWorker.shutdownNow()
         watchdog.shutdownNow()
     }
 
@@ -135,7 +167,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
                     "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
-                    "rift-cli status|team|architecture|enable|disable|plan|riftpp|ir|tokenizer   [EXPERIMENTAL / OFF BY DEFAULT]\n" +
+                    "rift-cli help|status|architecture|enable|disable|driver   [NATIVE N1 / OFF BY DEFAULT]\n" +
                     "codynex status|read-state|call|compile-activate|activate|corrupt|recover|clear|cold-restart   [LOCAL BINDER BRIDGE]\n" +
                     "Legacy shell-only services fail explicitly; no renderer compatibility fallback exists.",
                 cwd,
@@ -245,14 +277,368 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 val value = headlessJs.executeDeveloperTool(args)
                 ShellOutcome(value.output, cwd, value.result)
             }
-            "rift-cli" -> {
-                val cli = RiftCliHost.executeShell(args, cwd)
-                ShellOutcome(cli.output, cwd, cli.result)
-            }
+            "rift-cli" -> executeCliCommand(cwd, args)
             "mount", "umount" -> throw IllegalStateException("Legacy shell mount entry point is retired during native Files migration; no renderer fallback exists.")
             "rift" -> throw IllegalStateException("Legacy RiftLocalPlatform shell wrapper is retired; use native Git, Workspace Records, Dev Lab and fixed native build/training services.")
             else -> throw IllegalArgumentException("unsupported native RiftShell command: $command")
         }
+    }
+
+    private fun executeCliCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val cli = RiftCliHost.executeShell(args, cwd)
+
+        if (cli.result.optString("command") == "disable" && !cli.result.optBoolean("enabled", true)) {
+            val reason = "RiftCLI disabled by external driver"
+            val shellCancelled = cancelAllCliShellJobs(reason)
+            val toolCancellation = RiftMcpRuntime.toolHost(appContext).cancelAllCliJobs(reason)
+            val result = JSONObject(cli.result.toString())
+                .put("cliShellJobCancellationsRequested", shellCancelled)
+                .put("cliToolJobCancellationsRequested", toolCancellation.optInt("cancellationRequested", 0))
+            return ShellOutcome(cli.output, cwd, result)
+        }
+
+        val dispatch = cli.result.optJSONObject("dispatch")
+            ?: return ShellOutcome(cli.output, cwd, cli.result)
+
+        require(cli.result.optBoolean("accepted", false)) {
+            "RiftCLI returned a dispatch without accepting the driver request"
+        }
+
+        return when (dispatch.optString("kind")) {
+            "rift-shell" -> executeCliShellDispatch(cwd, cli.result, dispatch)
+            "rift-tool" -> executeCliToolDispatch(cwd, cli.result, dispatch)
+            else -> throw IllegalArgumentException(
+                "Unsupported RiftCLI dispatch kind: ${dispatch.optString("kind")}"
+            )
+        }
+    }
+
+    private fun executeCliShellDispatch(
+        cwd: String,
+        cliResult: JSONObject,
+        dispatch: JSONObject
+    ): ShellOutcome {
+        val rawAction = dispatch.optString("command")
+        require(rawAction.isNotBlank()) { "RiftCLI dispatch command is blank" }
+        require(rawAction.toByteArray(Charsets.UTF_8).size <= MAX_COMMAND_BYTES) {
+            "RiftCLI dispatch exceeds $MAX_COMMAND_BYTES UTF-8 bytes"
+        }
+
+        val nestedArgs = tokenize(rawAction)
+        val nestedCommand = nestedArgs.firstOrNull()?.lowercase().orEmpty()
+        require(nestedCommand.isNotBlank()) { "RiftCLI dispatch command is blank" }
+        require(nestedCommand != "rift-cli") {
+            "Internal RiftCLI recursion is forbidden; external driver continuation must send the next bounded loop request"
+        }
+
+        pruneCliShellJobs()
+        if (cliShellJobs.size >= MAX_CLI_SHELL_JOBS) {
+            pruneCliShellJobs(forceTerminalTrim = true)
+        }
+        require(cliShellJobs.size < MAX_CLI_SHELL_JOBS) {
+            "RiftCLI shell job capacity reached ($MAX_CLI_SHELL_JOBS); poll/cancel existing jobs first"
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        val jobId = "cli-shell-job-" + UUID.randomUUID().toString()
+        if (!RiftCliExecutionGate.tryReserve(jobId)) {
+            val response = JSONObject()
+                .put("ok", false)
+                .put("error", "RiftCLI already has one outstanding authority job")
+                .put("outstandingJobId", RiftCliExecutionGate.outstandingJob() ?: JSONObject.NULL)
+            val result = JSONObject(cliResult.toString())
+                .put("dispatchSubmitted", false)
+                .put("dispatchExecuted", false)
+                .put("dispatchOk", false)
+                .put("dispatchCommand", nestedCommand)
+                .put("dispatchCwd", cwd)
+                .put("dispatchOutput", response.toString(2))
+                .put("dispatchResult", response)
+            return ShellOutcome(response.toString(2), cwd, result)
+        }
+        val job = CliShellJob(
+            jobId,
+            cliResult.optString("requestId"),
+            nestedCommand,
+            cwd,
+            now,
+            now,
+            "queued"
+        )
+        cliShellJobs[jobId] = job
+
+        val future = try {
+            cliWorker.submit {
+                RiftDeadline.clearInterrupt()
+                try {
+                    RiftCliExecutionGate.run {
+                        synchronized(job) {
+                            if (job.status == "queued") {
+                                job.status = "running"
+                                job.updatedAt = SystemClock.elapsedRealtime()
+                            }
+                        }
+                        val nestedSession = RiftPatchSessions.begin(
+                            appContext,
+                            origin = "rift-cli-driver",
+                            operation = nestedCommand,
+                            intent = cliResult.optString("goal").takeIf { it.isNotBlank() },
+                            requestId = cliResult.optString("requestId").takeIf { it.isNotBlank() },
+                            rawPaths = shellMutationPaths(rawAction, cwd)
+                        )
+                        try {
+                            val nested = executeNative(rawAction, cwd)
+                            nestedSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
+
+                            val resultText = when (val value = nested.result) {
+                                null -> ""
+                                is JSONObject -> value.toString()
+                                is JSONArray -> value.toString()
+                                else -> value.toString()
+                            }
+                            val retainedBytes =
+                                nested.output.toByteArray(Charsets.UTF_8).size +
+                                    resultText.toByteArray(Charsets.UTF_8).size
+                            val oversized = retainedBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES
+
+                            synchronized(job) {
+                                if (oversized) {
+                                    job.output = ""
+                                    job.result = JSONObject()
+                                        .put("resultRetained", false)
+                                        .put("resultBytes", retainedBytes)
+                                        .put("retentionLimitBytes", MAX_CLI_SHELL_RETAINED_RESULT_BYTES)
+                                        .put("note", "RiftCLI completed the shell action but did not retain an oversized result; use a smaller bounded inspection command.")
+                                } else {
+                                    job.output = nested.output
+                                    job.result = nested.result
+                                }
+                                job.status = when {
+                                    job.cancelRequested -> "completed_after_cancel_request"
+                                    oversized -> "completed_result_too_large"
+                                    else -> "completed"
+                                }
+                                job.updatedAt = SystemClock.elapsedRealtime()
+                            }
+                        } catch (error: Throwable) {
+                            nestedSession?.let(RiftPatchSessions::abort)
+                            synchronized(job) {
+                                job.error = error.message ?: error.javaClass.simpleName
+                                job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) "cancelled_may_have_applied" else "failed"
+                                job.updatedAt = SystemClock.elapsedRealtime()
+                            }
+                        }
+                    }
+                } catch (error: Throwable) {
+                    synchronized(job) {
+                        if (job.status !in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                            job.error = error.message ?: error.javaClass.simpleName
+                            job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) "cancelled" else "failed"
+                            job.updatedAt = SystemClock.elapsedRealtime()
+                        }
+                    }
+                } finally {
+                    RiftCliExecutionGate.release(jobId)
+                    RiftDeadline.clearInterrupt()
+                }
+            }
+        } catch (error: Throwable) {
+            synchronized(job) {
+                job.error = error.message ?: error.javaClass.simpleName
+                job.status = "failed"
+                job.updatedAt = SystemClock.elapsedRealtime()
+            }
+            RiftCliExecutionGate.release(jobId)
+            null
+        }
+        job.future = future
+
+        val snapshot = cliShellJobSnapshot(job)
+        val result = JSONObject(cliResult.toString())
+            .put("dispatchSubmitted", true)
+            .put("dispatchExecuted", snapshot.optBoolean("terminal", false))
+            .put("dispatchOk", snapshot.optBoolean("ok", false))
+            .put("dispatchCommand", nestedCommand)
+            .put("dispatchCwd", cwd)
+            .put("dispatchAsync", true)
+            .put("dispatchTerminal", snapshot.optBoolean("terminal", false))
+            .put("dispatchStatus", snapshot.optString("status"))
+            .put("dispatchOutput", snapshot.toString(2))
+            .put("dispatchResult", snapshot)
+        return ShellOutcome(snapshot.toString(2), cwd, result)
+    }
+
+    private fun cliShellJobSnapshot(job: CliShellJob, includeResult: Boolean = true): JSONObject = synchronized(job) {
+        JSONObject()
+            .put("ok", true)
+            .put("jobOk", if (job.status == "completed" || job.status == "completed_result_too_large" || job.status == "completed_after_cancel_request") true else if (job.status == "failed" || job.status == "cancelled") false else JSONObject.NULL)
+            .put("jobId", job.id)
+            .put("requestId", job.requestId)
+            .put("kind", "rift-shell")
+            .put("operation", job.operation.take(80))
+            .put("cwd", job.cwd)
+            .put("status", job.status)
+            .put("terminal", job.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request"))
+            .put("createdAtElapsedMs", job.createdAt)
+            .put("updatedAtElapsedMs", job.updatedAt)
+            .put("cancelRequested", job.cancelRequested)
+            .put("elapsedMs", (SystemClock.elapsedRealtime() - job.createdAt).coerceAtLeast(0L))
+            .also { snapshot ->
+                if (includeResult) {
+                    snapshot
+                        .put("output", job.output)
+                        .put("result", job.result ?: JSONObject.NULL)
+                        .put("error", job.error ?: JSONObject.NULL)
+                }
+            }
+    }
+
+    private fun listCliShellJobs(requestId: String? = null): JSONArray {
+        pruneCliShellJobs()
+        val rows = JSONArray()
+        cliShellJobs.values
+            .filter { requestId.isNullOrBlank() || it.requestId == requestId }
+            .sortedBy { it.createdAt }
+            .forEach { rows.put(cliShellJobSnapshot(it, includeResult = false)) }
+        return rows
+    }
+
+    private fun pollCliShellJob(jobId: String): JSONObject? {
+        pruneCliShellJobs()
+        val job = cliShellJobs[jobId] ?: return null
+        return cliShellJobSnapshot(job)
+    }
+
+    private fun cancelCliShellJob(jobId: String): JSONObject? {
+        val job = cliShellJobs[jobId] ?: return null
+        synchronized(job) {
+            if (job.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                return cliShellJobSnapshot(job)
+            }
+            job.cancelRequested = true
+            val wasQueued = job.status == "queued"
+            val cancelled = job.future?.cancel(true) == true
+            job.updatedAt = SystemClock.elapsedRealtime()
+            if (wasQueued && cancelled) {
+                job.status = "cancelled"
+                job.error = "RiftCLI shell job cancelled before execution"
+                RiftCliExecutionGate.release(job.id)
+            } else {
+                job.status = "cancelling"
+            }
+            return cliShellJobSnapshot(job)
+        }
+    }
+
+    private fun cancelAllCliShellJobs(reason: String): Int {
+        var requested = 0
+        cliShellJobs.values.forEach { job ->
+            synchronized(job) {
+                if (job.status !in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                    job.cancelRequested = true
+                    val wasQueued = job.status == "queued"
+                    val cancelled = job.future?.cancel(true) == true
+                    job.updatedAt = SystemClock.elapsedRealtime()
+                    if (wasQueued && cancelled) {
+                        job.status = "cancelled"
+                        job.error = reason
+                        RiftCliExecutionGate.release(job.id)
+                    } else {
+                        job.status = "cancelling"
+                    }
+                    requested++
+                }
+            }
+        }
+        return requested
+    }
+
+    private fun pruneCliShellJobs(forceTerminalTrim: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        val terminal = cliShellJobs.values
+            .filter { it.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request") }
+            .sortedBy { it.updatedAt }
+
+        terminal.forEach { job ->
+            if (now - job.updatedAt >= CLI_SHELL_JOB_RETENTION_MS) cliShellJobs.remove(job.id, job)
+        }
+
+        if (forceTerminalTrim && cliShellJobs.size >= MAX_CLI_SHELL_JOBS) {
+            terminal.forEach { job ->
+                if (cliShellJobs.size < MAX_CLI_SHELL_JOBS) return
+                cliShellJobs.remove(job.id, job)
+            }
+        }
+    }
+
+    private fun executeCliToolDispatch(
+        cwd: String,
+        cliResult: JSONObject,
+        dispatch: JSONObject
+    ): ShellOutcome {
+        val toolName = dispatch.optString("name").trim()
+        require(toolName.isNotBlank()) { "RiftCLI tool dispatch name is blank" }
+        require(toolName != "rift_shell_exec" && toolName != "rift_workspace_exec") {
+            "RiftCLI tool dispatch forbids $toolName"
+        }
+
+        val argsJson = dispatch.optString("argsJson", "{}")
+        require(argsJson.toByteArray(Charsets.UTF_8).size <= MAX_COMMAND_BYTES) {
+            "RiftCLI tool args exceed $MAX_COMMAND_BYTES UTF-8 bytes"
+        }
+        val toolArgs = runCatching { JSONObject(argsJson) }
+            .getOrElse { throw IllegalArgumentException("RiftCLI tool args must be a JSON object") }
+
+        val toolHost = RiftMcpRuntime.toolHost(appContext)
+        val response = when (toolName) {
+            "rift_cli_job_list" -> {
+                val requestId = toolArgs.optString("requestId").trim().takeIf { it.isNotBlank() }
+                val rows = JSONArray()
+                val shellRows = listCliShellJobs(requestId)
+                for (index in 0 until shellRows.length()) rows.put(shellRows.opt(index))
+                val toolRows = toolHost.listCliJobs(requestId).optJSONArray("jobs") ?: JSONArray()
+                for (index in 0 until toolRows.length()) rows.put(toolRows.opt(index))
+                JSONObject().put("ok", true).put("jobs", rows)
+            }
+            "rift_cli_job_poll" -> {
+                val jobId = toolArgs.optString("jobId").trim()
+                require(jobId.isNotBlank()) { "rift_cli_job_poll requires jobId" }
+                pollCliShellJob(jobId) ?: toolHost.pollCliJob(jobId)
+            }
+            "rift_cli_job_cancel" -> {
+                val jobId = toolArgs.optString("jobId").trim()
+                require(jobId.isNotBlank()) { "rift_cli_job_cancel requires jobId" }
+                cancelCliShellJob(jobId) ?: toolHost.cancelCliJob(jobId)
+            }
+            else -> toolHost.startCliJob(toolName, toolArgs, cliResult.optString("requestId"))
+        }
+
+        val ok = response.optBoolean("ok", false)
+        val status = response.optString("status")
+        val terminal = response.optBoolean("terminal", false)
+        val jobControl = toolName == "rift_cli_job_list" ||
+            toolName == "rift_cli_job_poll" ||
+            toolName == "rift_cli_job_cancel"
+        val submitted = !jobControl && response.optString("jobId").isNotBlank()
+        val executed = jobControl || terminal
+        val output = if (!ok) {
+            response.optString("error", "RiftCLI tool dispatch failed")
+        } else {
+            response.toString(2)
+        }
+
+        val result = JSONObject(cliResult.toString())
+            .put("dispatchSubmitted", submitted)
+            .put("dispatchExecuted", executed)
+            .put("dispatchOk", ok)
+            .put("dispatchTool", toolName)
+            .put("dispatchCwd", cwd)
+            .put("dispatchAsync", !jobControl)
+            .put("dispatchTerminal", terminal)
+            .put("dispatchStatus", status)
+            .put("dispatchOutput", output)
+            .put("dispatchResult", response)
+        return ShellOutcome(output, cwd, result)
     }
 
     private fun cdCommand(cwd: String, args: MutableList<String>): ShellOutcome {

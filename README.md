@@ -186,3 +186,17 @@ Start with:
 - [`docs/systems/build-validation/README.md`](docs/systems/build-validation/README.md) — promotion gates.
 
 No documentation is authoritative merely because it exists. Treat a subsystem README as trusted only after it has been audited against its current owning source.
+
+## RiftDebugHub
+
+Current source includes a process-wide passive debugger foundation:
+
+- `RiftDebugHub` retains a bounded in-memory event timeline and active-span table;
+- `RiftDebugAdapter` and `RiftDebugSink` are the common plug for additional subsystems;
+- MCP Server and Tool Host already publish correlated parent/child spans;
+- MCP results return `riftos/traceId`;
+- the read-only `rift_debug` tool exposes `status`, `events`, `active` and `components`;
+- secret-like attribute keys are redacted, payload bodies are not retained, and all fields/collections are bounded;
+- the debugger has no execution, mutation, cancellation, filesystem, network or model authority.
+
+See [the verified debugger subsystem document](docs/systems/debugger/README.md).

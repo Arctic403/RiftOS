@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
 ## Purpose
 
@@ -11,6 +11,7 @@
 ## Source ownership
 
 - `RiftMcpServer.kt`
+- `RiftDebugHub.kt` — passive trace/span owner shared with Tool Host
 - `RiftBoundedAsync.kt` — shared exactly-once deadline/cancellation primitive
 - callers: Browser MCP bridge and outbound Relay client
 - execution authority: `RiftToolHost`
@@ -135,9 +136,17 @@ Added standard `notifications/initialized` handling as a no-response notificatio
 - client gets method-not-found for initialized notification -> lifecycle regression;
 - image Base64 duplicated in structured text and image content -> payload regression.
 
+## Debug correlation
+
+Every valid `tools/call` opens an `mcp.server` parent span. The same context is forwarded to Tool Host, and the MCP result metadata includes `riftos/traceId` for a later `rift_debug` query.
+
+The debugger remains outside request execution: it cannot dispatch, authorize, mutate or cancel the call.
+
 ## Fix map
 
 Protocol framing/idempotency/metadata -> `RiftMcpServer.kt`.
+
+Trace storage/bounds/redaction/adapter contract -> `RiftDebugHub.kt`.
 
 Tool behavior/grants -> Tool Host.
 

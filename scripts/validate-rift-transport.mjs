@@ -30,6 +30,7 @@ const chatHandoff = read(k + 'RiftChatHandoff.kt');
 const workspaceRecords = read(k + 'RiftWorkspaceRecords.kt');
 const workspaceWatcher = read(k + 'RiftWorkspaceWatcher.kt');
 const boundedAsync = read(k + 'RiftBoundedAsync.kt');
+const debugHub = read(k + 'RiftDebugHub.kt');
 const manifest = read('android/app/src/main/AndroidManifest.xml');
 const accessibilityConfig = read('android/app/src/main/res/xml/vortex_agent_accessibility.xml');
 const gradle = read('android/app/build.gradle.kts');
@@ -40,14 +41,15 @@ const relayWorker = read('relay/src/index.js');
 const expectedTools = [
   'rift_shell_exec','rift_info','rift_stat','rift_hash','rift_list','rift_read_text','rift_write_text','rift_mkdir',
   'rift_remove','rift_move','rift_copy','rift_archive','rift_extract','rift_audit','rift_scan','rift_project_export',
-  'rift_workspace_diff','rift_workspace_exec'
+  'rift_workspace_diff','rift_debug','rift_workspace_exec'
 ];
 const declaredTools = [...host.matchAll(/tool\(\s*"([^"]+)"/g)].map(match => match[1]);
 const uniqueDeclaredTools = [...new Set(declaredTools)].sort();
 const expectedSorted = [...expectedTools].sort();
 
 const checks = [
-  ['MCP surface remains exactly the expected 18-tool family', JSON.stringify(uniqueDeclaredTools) === JSON.stringify(expectedSorted)],
+  ['MCP surface remains exactly the expected 19-tool family', JSON.stringify(uniqueDeclaredTools) === JSON.stringify(expectedSorted)],
+  ['global debugger remains passive and bounded', debugHub.includes('interface RiftDebugAdapter') && debugHub.includes('private val maxEvents: Int = 1_024') && debugHub.includes('.put("execute", false)') && debugHub.includes('.put("mutate", false)') && !debugHub.includes('ProcessBuilder') && !debugHub.includes('Runtime.getRuntime') && host.includes('"rift_debug"') && server.includes('"riftos/traceId"')],
   ['MCP shell execution is process-owned and native', runtime.includes('private var nativeShell: RiftNativeShell?') && runtime.includes('fun shellExecutor(): RiftShellExecutor? = nativeShell') && shell.includes('class RiftNativeShell(context: Context) : RiftShellExecutor') && shell.includes('.put("webViewRequired", false)')],
   ['renderer shell fallback is absent', !existsSync(k + 'RiftShellBridge.kt') && !existsSync(k + 'RiftSystemDump.kt') && !runtime.includes('registerShellBridge') && !runtime.includes('compatibilityFallback') && !shell.includes('compatibilityFallback')],
   ['MainActivity is renderer-free', !hasWebKitDependency(main) && !main.includes('addJavascriptInterface')],

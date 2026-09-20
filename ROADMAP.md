@@ -112,8 +112,8 @@ Reusable RiftOS evidence foundations remain live and independent:
 
 RiftCLI is now rebuilt as a native C++ subsystem with this promotion sequence:
 
-- **N0 Native bootstrap — current work.** C++ core + thin Kotlin JNI host, ARM64 primary + ARM32 compatibility, explicit process-local enable, exact native source snapshot, zero mutation/tool/network/model authority, final APK must contain both ABI libraries.
-- **N1 Driver Protocol.** Bounded external-driver/session/task/project/evidence/proposed-action contract. Dependency stays external driver → MCP/RiftShell → RiftCLI; CLI never calls a model/API.
+- **N0 Native bootstrap — proven.** C++ core + thin Kotlin JNI host, ARM64 primary + ARM32 compatibility, explicit process-local enable, exact native source snapshot, final APK native packaging, real `armeabi-v7a` device execution, fail-closed unsupported command handling, and force-stop/restart reset were proven on RiftOS run #250 (`6f7a6129…`).
+- **N1 Driver Protocol — current work.** Bounded external-driver request-id/session/task/project/evidence/action contract. Once explicitly enabled, RiftCLI may authorize full RiftOS authority through existing subsystem boundaries, one action per accepted request. Shell and ToolHost actions are submitted as live-poll jobs; request IDs are retained without eviction for the RiftOS process lifetime and replay-protected, lost submit responses are recoverable by request-id, polling/cancellation stay external, driver continuation is external-only and capped at 8 steps, and RiftCLI never calls a model/API itself.
 - **N2 Engineering State.** Native persistent project memory for architecture decisions, hazards, tasks, checkpoints, evidence and history without duplicating current source truth.
 - **N3 Architecture/impact engine.** Consume Project Intelligence and owner contracts to derive subsystem boundaries, dependencies, docs/tests/build/security impact before change.
 - **N4 Planner.** Professional dependency-aware planning with explicit preconditions/postconditions and recovery. Plan globally; mutate incrementally. No opaque multi-operation batch editing.
@@ -188,3 +188,16 @@ The Android SDK/Gradle toolchain should remain outside the installed phone app t
 - adding an undeclared direct model API/key path or hidden AI task controller,
 - making MCP the internal RiftOS capability API,
 - reintroducing the removed local LLM runtime on low-memory Android devices.
+
+## RiftDebugHub integration
+
+Foundation complete in current source:
+
+- process-owned passive hub;
+- bounded spans/events and secret-key redaction;
+- reusable `RiftDebugAdapter` plug;
+- MCP Server -> Tool Host trace propagation;
+- one read-only `rift_debug` query surface;
+- focused source/wiring regression and exact Gradle source declaration.
+
+Next integration work is intentionally subsystem-by-subsystem: RiftCLI, Local Agent validation, RiftShell, RiftFS, Git, Builder, Binder bridges and Accessibility emit through adapters without routing execution through the debugger.

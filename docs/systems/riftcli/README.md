@@ -2,11 +2,11 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
-Bootstrap-0 source ownership, JNI routing, dual-ABI Gradle wiring and zero-authority boundaries were audited against current code. Native Builder/APK/device proof remains pending.
+Gate N0 is proven on the installed Android device (RiftOS run #250 / source `6f7a61295d6c75ae97cdde59231d767d39eb8152`): native C++ status/architecture, `armeabi-v7a` execution, explicit process-local enable, fail-closed unsupported command handling, and force-stop/restart reset back to disabled all passed.
 
-Status: **Bootstrap-0 / native foundation only**
+Status: **Gate N1 / native Driver Protocol in development**
 
 RiftCLI is being rebuilt from scratch as RiftOS's native engineering supervisor. The previous Experimental RiftCLI Kotlin/swarm/IR/lifecycle implementation was intentionally retired rather than used as the new foundation.
 
@@ -65,9 +65,17 @@ RiftCLI is native-first with:
 
 Both ABIs are declared in the Android native build contract. A release is not considered RiftCLI-capable unless both native libraries are packaged and verified.
 
-## Bootstrap-0 behavior
+## N0 proof and N1 authority model
 
-Bootstrap-0 intentionally implements only:
+Gate N0 proved the native bootstrap on-device. The enable switch remains process-local, defaults OFF after every RiftOS process start, and still requires the literal `CONFIRM-EXPERIMENTAL` acknowledgement.
+
+Gate N1 changes the authority model deliberately: once RiftCLI is explicitly enabled, it may authorize **full RiftOS authority** through existing RiftOS subsystem boundaries. That includes mutation, Git, build, device/local-agent, browser/network-backed RiftOS services, and other currently exposed native RiftOS actions.
+
+Full authority does **not** mean a hidden raw Android/Linux escape hatch. RiftCLI delegates through the same bounded RiftOS owners and provenance systems already used by the rest of RiftOS.
+
+RiftCLI still has no embedded model backend and never calls ChatGPT or another model by itself.
+
+N1 command surface:
 
 ```text
 rift-cli help
@@ -75,25 +83,35 @@ rift-cli status
 rift-cli architecture
 rift-cli enable CONFIRM-EXPERIMENTAL
 rift-cli disable
+rift-cli driver request ...
 ```
 
-The enable switch is process-local and defaults OFF on every process start.
+Each accepted N1 driver request authorizes at most **one RiftOS action**. Dependent work is issued as later external-driver requests after inspecting the previous result.
 
-Even when explicitly enabled, Bootstrap-0 has:
+Every authority-bearing driver request must carry a unique process-local `request-id`. RiftCLI retains **all accepted request IDs for the lifetime of the RiftOS process**; IDs are never evicted while that process lives, so an old transport retry cannot become executable again after a disable/re-enable cycle. The fail-closed capacity is 4096 unique authority requests. Once that capacity is reached, RiftCLI rejects new authority requests until RiftOS is restarted. Disable/re-enable clears active driver-loop state but does not clear replay protection.
 
-- no filesystem mutation authority;
-- no Git authority;
-- no Local Agent authority;
-- no arbitrary process/shell authority;
-- no network authority;
-- no model/API authority;
-- no project memory yet;
-- no project graph yet;
-- no planner yet;
-- no verification engine yet;
-- no autonomous tool execution.
+### Live-poll job execution
 
-This is deliberate. Native execution and ABI parity must be proven before engineering intelligence is layered onto the core.
+N1 does not keep ChatGPT/MCP blocked on long CLI work.
+
+Both authority lanes are job-based, and Gate N1 permits **exactly one outstanding authority job globally** across shell + ToolHost. A second authority action is rejected until the current job reaches a terminal state; job list/poll/cancel controls remain available.
+
+- RiftShell actions run on a dedicated single-thread CLI worker so the normal RiftShell worker remains free to service polling/cancellation requests.
+- Direct `rift_*` ToolHost actions run through the existing confined ToolSandbox on a CLI job lane with **no fixed CLI wall-clock timeout**.
+- a fair process-wide `RiftCliExecutionGate` serializes actual CLI execution across both lanes, preventing shell-vs-ToolHost mutation races while leaving list/poll/cancel responsive.
+- normal non-CLI MCP calls keep their existing bounded timeouts.
+
+Every submitted action returns a process-local `jobId`. The external driver then uses new, unique driver request IDs to call:
+
+```text
+--tool rift_cli_job_list   --tool-args {"requestId":"<original-request-id>"}
+--tool rift_cli_job_poll   --tool-args {"jobId":"<job-id>"}
+--tool rift_cli_job_cancel --tool-args {"jobId":"<job-id>"}
+```
+
+`rift_cli_job_list` provides recovery when the original submit response is lost: the driver can locate the already-started job by its original `request-id` without replaying the action. List responses are metadata-only; full output/result data is returned only by explicit `rift_cli_job_poll` for a concrete job ID. Terminal job data is limited to 2 MiB per job, 16 retained jobs per lane, and 5 minutes of retention; larger successful results are reported as `completed_result_too_large`.
+
+Cancellation is explicit and observable. A queued job that is cancelled before execution ends as `cancelled`. A running operation first enters `cancelling`; if it still completes successfully, the terminal state is `completed_after_cancel_request`. If interruption is observed after execution may already have touched state, the terminal state is `cancelled_may_have_applied` instead of pretending rollback is proven. Disabling RiftCLI requests cancellation of both shell and ToolHost CLI jobs. The idempotent `rift_cli_job_list`, `rift_cli_job_poll`, and `rift_cli_job_cancel` controls remain available while CLI authority is disabled so the external driver can verify whether a previously-authorized job actually stopped.
 
 ## JNI text contract
 
@@ -173,18 +191,26 @@ Each gate must be implemented, documented, adversarially tested, and independent
 
 ### Gate N1 — Driver Protocol
 
-Add a bounded native protocol for external reasoning input:
+Current gate. Add a bounded native protocol for external reasoning input:
 
-- driver/session/task identity;
-- project identity;
+- unique process-local request identity plus session/task/project identity;
 - goal and assumptions;
 - evidence references;
-- proposed action;
-- requested capability;
+- requested RiftOS capability;
+- one proposed action;
 - acceptance/rejection reasons;
-- next-safe-action hints.
+- next-safe-action hints;
+- explicit bounded continuation state.
 
-No network/model call is added.
+The loop is **external continuation only**:
+
+1. ChatGPT (or another external driver) sends a driver request.
+2. RiftCLI validates/authorizes it and either dispatches one RiftOS action or returns `need_more_info`.
+3. If more information is needed, the external driver must explicitly send the next driver request with the next loop step.
+4. RiftCLI never recursively calls itself or a model.
+5. `loopMax` is capped at **8** and `loopStep` must remain below that cap.
+
+Once enabled, N1 may authorize the full RiftOS authority surface, but only one bounded action per accepted request. Shell and ToolHost actions are submitted as live-poll jobs; the external driver recovers/lists, polls or cancels them explicitly. No model client is added to RiftCLI.
 
 ### Gate N2 — Engineering State
 
@@ -282,7 +308,7 @@ The source gate must verify:
 - native source contains no model/API/network/process execution surface;
 - documentation/source ownership points to this subsystem.
 
-The Builder must additionally verify both `libriftcli.so` ABI payloads in the final signed APK before Bootstrap-0 can be promoted.
+The Builder must continue verifying both `libriftcli.so` ABI payloads in every final signed APK. N1 additionally requires source regression coverage for the native driver protocol and the RiftShell dispatcher/provenance bridge.
 
 
 ## Failure signatures
@@ -290,8 +316,14 @@ The Builder must additionally verify both `libriftcli.so` ABI payloads in the fi
 - `rift-cli` routes to any Kotlin planner/brain instead of `RiftCliHost` -> ownership regression.
 - `RiftCliHost.kt` gains project memory/planning/research/verification logic -> duplicate-core regression.
 - C++ core gains a model/API client or network transport -> dependency-direction regression.
-- Bootstrap-0 can mutate Workspace/Git/device state -> authority regression.
-- `riftos-agent` routes through RiftCLI before an explicit promoted bridge exists -> Local Agent authority regression.
+- RiftCLI authorizes mutation/tool/network-backed RiftOS work while disabled -> authority regression.
+- RiftCLI recursively dispatches `rift-cli` internally instead of requiring a new external-driver continuation -> loop-boundary regression.
+- a driver loop exceeds 8 steps or advances without an explicit external request -> bounded-loop regression.
+- a duplicate authority-bearing `request-id` executes again instead of being replay-rejected -> idempotency regression.
+- a long CLI action blocks the normal RiftShell worker instead of returning a live-poll `jobId` -> polling regression.
+- a lost submit response cannot be recovered by original `request-id` -> job-recovery regression.
+- cancellation reports terminal `cancelled` before the worker actually resolves, or loses the `cancelled_may_have_applied` / `completed_after_cancel_request` distinction -> cancellation-truth regression.
+- a CLI-driven mutation bypasses RiftPatchSessions provenance -> provenance regression.
 - either ARM64 or ARM32 native library is missing from the final APK -> ABI parity regression.
 - JNI uses modified UTF helpers instead of explicit UTF-16/UTF-8 conversion -> text-boundary regression.
 - a retired Experimental RiftCLI Kotlin/swarm/IR source returns -> reset regression.
@@ -311,11 +343,11 @@ Android library loader/result envelope -> `android/app/src/main/java/com/riftos/
 
 Shell command routing -> `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt`.
 
-Local Agent direct routing while CLI has no authority -> `android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt`.
+Local Agent remains an independent RiftOS owner; enabled CLI reaches it only through normal RiftShell dispatch -> `android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt`.
 
 ABI/source snapshot ownership -> `android/app/build.gradle.kts`.
 
-Source regression gate -> `scripts/test-rift-cli-native-bootstrap.mjs` + `scripts/validate-rift-wiring.mjs`.
+Source regression gate -> `scripts/test-rift-cli-native-bootstrap.mjs` + `scripts/test-rift-cli-driver-protocol.mjs` + `scripts/validate-rift-wiring.mjs`.
 
 Final APK native-library proof -> public Builder `scripts/verify-riftos-apk.sh`.
 
@@ -326,14 +358,25 @@ Source validation must verify:
 - retired CLI-specific Kotlin/swarm/IR/tokenizer files are absent;
 - `RiftCliHost` is transport-only and loads `libriftcli.so`;
 - RiftShell routes `rift-cli` only through that host;
-- Local Agent bypasses RiftCLI at Bootstrap-0;
 - CMake owns one `riftcli` shared library;
 - Gradle pins NDK/CMake plus `arm64-v8a` and `armeabi-v7a`;
 - exact C++ source snapshot matches the declared build contract;
 - core defaults OFF and enablement is process-local;
-- model, network, mutation, tool, planner, graph and project-memory authority remain false;
+- enabled authority is delegated through existing RiftOS owners rather than raw process/network clients;
+- shell and ToolHost dispatch remain one action per accepted request;
+- every authority-bearing request requires a bounded unique `request-id`; accepted IDs are retained without eviction for the whole RiftOS process lifetime, duplicate IDs are replay-rejected across disable/re-enable cycles, and the 4096-entry protection set fails closed at capacity until process restart;
+- re-enabling an already-enabled CLI preserves replay/loop state;
+- shell actions use the separate serialized CLI worker rather than blocking the normal RiftShell worker;
+- direct CLI ToolHost actions use live-poll jobs with no fixed CLI wall-clock timeout while normal MCP timeouts remain unchanged;
+- `rift_cli_job_list`, `rift_cli_job_poll` and `rift_cli_job_cancel` provide recovery/observation/cancellation for both job lanes;
+- jobs retain the original `request-id` so lost submit responses can be recovered without replay;
+- actual CLI execution is globally serialized across shell and ToolHost lanes while poll/list/cancel remain responsive;
+- cancellation exposes `cancelling`, `cancelled_may_have_applied` and `completed_after_cancel_request` truthfully;
+- ToolHost dispatch dynamically accepts current/future `rift_*` tools but rejects `rift_shell_exec` and `rift_workspace_exec` in that lane;
+- driver loops are process-local, identity-bound, strictly monotonic, externally continued and capped at 8 steps;
+- CLI shell mutations retain `RiftPatchSessions` provenance and direct tool mutations retain ToolSandbox provenance;
 - JNI uses explicit UTF-16/UTF-8 transcoding;
-- no process/network execution primitives exist in the native bootstrap.
+- the native core itself still contains no model/API client or raw process/network execution primitive.
 
 Builder validation must additionally prove the final signed APK contains:
 
@@ -341,4 +384,4 @@ Builder validation must additionally prove the final signed APK contains:
 - `lib/armeabi-v7a/libriftcli.so`;
 - no x86/x86_64 RiftCLI library.
 
-Installed-device promotion still requires executing `rift-cli status`, `architecture`, enable/disable and restart-reset behavior on the target Android device.
+Installed-device promotion still requires the N1 build to prove `status`/architecture identity, request-id replay rejection, shell-job submit/list/poll/cancel, ToolHost-job submit/list/poll/cancel, disable-time cancellation, one bounded external continuation loop and restart-reset behavior on the target Android device.

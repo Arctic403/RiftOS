@@ -1,5 +1,6 @@
 package com.riftos.app
 
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -8,6 +9,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import org.json.JSONObject
 import java.io.File
@@ -57,14 +59,23 @@ class RiftBuildInstaller(context: Context) {
             }
         }
 
+        private fun launchForeground(context: Context, intent: Intent) {
+            if (context is Activity) {
+                context.startActivity(intent)
+            } else {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.applicationContext.startActivity(intent)
+            }
+        }
+
         private fun launchExact(context: Context, packageName: String) {
             require(packageName in ALLOWED_PROOF_PACKAGES) {
                 "RiftBuild proof package is not allowlisted: " + packageName
             }
-            val intent = Intent()
-                .setClassName(packageName, TARGET_ACTIVITY)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.applicationContext.startActivity(intent)
+            launchForeground(
+                context,
+                Intent().setClassName(packageName, TARGET_ACTIVITY)
+            )
         }
 
         fun handleStatus(context: Context, intent: Intent) {
@@ -139,8 +150,7 @@ class RiftBuildInstaller(context: Context) {
                     )
                     writeStatus(appContext, updated)
                     if (confirmIntent != null) {
-                        confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        appContext.startActivity(confirmIntent)
+                        launchForeground(context, confirmIntent)
                     }
                 }
 
@@ -155,7 +165,7 @@ class RiftBuildInstaller(context: Context) {
                         .put("launchRequested", true)
 
                     val launchError = runCatching {
-                        launchExact(appContext, packageName)
+                        launchExact(context, packageName)
                     }.exceptionOrNull()
 
                     if (launchError != null) {
@@ -263,14 +273,14 @@ class RiftBuildInstaller(context: Context) {
 
                 val callbackIntent = Intent(
                     appContext,
-                    RiftBuildInstallReceiver::class.java
+                    RiftBuildInstallActivity::class.java
                 ).setAction(ACTION_INSTALL_STATUS)
 
                 var flags = PendingIntent.FLAG_UPDATE_CURRENT
                 if (Build.VERSION.SDK_INT >= 31) {
                     flags = flags or PendingIntent.FLAG_MUTABLE
                 }
-                val callback = PendingIntent.getBroadcast(
+                val callback = PendingIntent.getActivity(
                     appContext,
                     sessionId,
                     callbackIntent,
@@ -359,6 +369,24 @@ class RiftBuildInstaller(context: Context) {
             )
         }
         return info?.packageName.orEmpty()
+    }
+}
+
+class RiftBuildInstallActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        handle(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handle(intent)
+    }
+
+    private fun handle(intent: Intent) {
+        RiftBuildInstaller.handleStatus(this, intent)
+        finish()
     }
 }
 

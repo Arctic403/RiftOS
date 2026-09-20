@@ -125,6 +125,8 @@ const desktop = read(`${kotlinDir}/RiftNativeDesktop.kt`);
 const workspaceApps = read(`${kotlinDir}/RiftNativeWorkspaceApps.kt`);
 const browserBridge = read(`${kotlinDir}/RiftBrowserMcpAppBridge.kt`);
 const cliHost = read(`${kotlinDir}/RiftCliHost.kt`);
+const toolHost = read(`${kotlinDir}/RiftToolHost.kt`);
+const toolSandbox = read(`${kotlinDir}/RiftToolSandbox.kt`);
 const cliCmake = read('android/app/src/main/cpp/CMakeLists.txt');
 const cliCore = read('android/app/src/main/cpp/riftcli/rift_cli_core.cpp');
 const cliJni = read('android/app/src/main/cpp/riftcli/rift_cli_jni.cpp');
@@ -155,9 +157,54 @@ if (!cliCmake.includes('add_library(') || !cliCmake.includes('riftcli') || !cliC
   fail('RiftCLI native CMake shared library contract is missing');
 }
 if (!cliCore.includes('external-driver -> MCP/RiftShell -> RiftCLI') ||
-    !cliCore.includes('"mutationAuthority\\":false') ||
-    !cliCore.includes('"modelBackend\\":false') ||
-    !cliCore.includes('"networkAuthority\\":false')) fail('RiftCLI bootstrap authority boundary drifted');
+    !cliCore.includes('full-riftos-when-enabled') ||
+    !cliCore.includes('"directModelBackend\\":false') ||
+    !cliCore.includes('"directNetworkClient\\":false') ||
+    !cliCore.includes('"driverContinuationExternalOnly\\":true') ||
+    !cliCore.includes('kMaxDriverLoopSteps = 8') ||
+    !cliCore.includes('kMaxDriverRequestIds = 4096') ||
+    !cliCore.includes('RequestReservation::Capacity') ||
+    !cliCore.includes('duplicate-request-id') ||
+    !cliCore.includes('request-id-capacity') ||
+    !cliCore.includes('driverReplayCapacity\\":') ||
+    !cliCore.includes('driverReplayEviction\\":false') ||
+    !cliCore.includes('driverReplayReset\\":\"process-restart-only') ||
+    cliCore.includes('g_recentRequestIds.clear()') ||
+    !cliCore.includes('isDriverJobControl') ||
+    !cliCore.includes('if (!on && !jobControl)') ||
+    !cliCore.includes('jobControl ? RequestReservation::Accepted') ||
+    !cliCore.includes('driverToolExecution\\":\"live-poll-jobs')) fail('RiftCLI N1 authority/driver/replay boundary drifted');
+if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
+    !nativeShell.includes('executeCliShellDispatch') ||
+    !nativeShell.includes('executeCliToolDispatch') ||
+    !nativeShell.includes('private val cliWorker = ThreadPoolExecutor(') ||
+    !nativeShell.includes('rift_cli_job_list') ||
+    !nativeShell.includes('rift_cli_job_poll') ||
+    !nativeShell.includes('rift_cli_job_cancel') ||
+    !nativeShell.includes('origin = "rift-cli-driver"') ||
+    !nativeShell.includes('requestId = cliResult.optString("requestId")') ||
+    !nativeShell.includes('Internal RiftCLI recursion is forbidden') ||
+    nativeShell.includes('CountDownLatch') ||
+    !toolHost.includes('internal fun startCliJob') ||
+    !toolHost.includes('internal fun listCliJobs') ||
+    !toolHost.includes('internal fun pollCliJob') ||
+    !toolHost.includes('internal fun cancelCliJob') ||
+    !toolHost.includes('cancelled_may_have_applied') ||
+    !nativeShell.includes('cancelled_may_have_applied') ||
+    !toolHost.includes('RiftCLI tool lane forbids') ||
+    !toolHost.includes('internal object RiftCliExecutionGate') ||
+    !toolHost.includes('ReentrantLock(true)') ||
+    !toolHost.includes('outstandingJobId = AtomicReference<String?>(null)') ||
+    !toolHost.includes('fun tryReserve(jobId: String)') ||
+    !toolHost.includes('fun release(jobId: String)') ||
+    !nativeShell.includes('RiftCliExecutionGate.tryReserve(jobId)') ||
+    !toolHost.includes('RiftCliExecutionGate.tryReserve(jobId)') ||
+    !nativeShell.includes('cliShellJobSnapshot(it, includeResult = false)') ||
+    !toolHost.includes('cliJobSnapshot(it, includeResult = false)') ||
+    !nativeShell.includes('RiftCliExecutionGate.run {') ||
+    !toolSandbox.includes('RiftCliExecutionGate.run {') ||
+    !toolSandbox.includes('internal fun submitCliJob(') ||
+    !toolSandbox.includes('executeRequest(raw, "rift-cli")')) fail('RiftCLI N1 live-poll dispatcher/provenance boundary drifted');
 if (cliJni.includes('GetStringUTFChars') || cliJni.includes('NewStringUTF') ||
     !cliJni.includes('GetStringChars') || !cliJni.includes('utf8ToUtf16')) fail('RiftCLI JNI UTF boundary drifted');
 

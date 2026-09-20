@@ -27,7 +27,7 @@ RiftFS is app-private storage with fixed C:/D: display aliases. Workspace MCP/Pr
 
 ## MCP and shell
 
-The 18-tool MCP catalog is device-owned by `RiftToolHost`. Normal filesystem/Code Mode tools use `RiftToolSandbox`; `rift_shell_exec` uses process-owned `RiftNativeShell`. There is no WebView compatibility fallback and no raw Linux/Android shell.
+The 19-tool MCP catalog is device-owned by `RiftToolHost`; `rift_debug` is a passive read-only diagnostics query. Normal filesystem/Code Mode tools use `RiftToolSandbox`; `rift_shell_exec` uses process-owned `RiftNativeShell`. There is no WebView compatibility fallback and no raw Linux/Android shell.
 
 ## Runtime and apps
 

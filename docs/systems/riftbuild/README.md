@@ -267,6 +267,8 @@ Install/launch proof:
 - installation is restricted to RiftBuild's fixed proof-package allowlist: `com.riftpp.nativeproof` and `com.codynex.mc0proof`;
 - RiftOS declares `REQUEST_INSTALL_PACKAGES` and uses Android `PackageInstaller`, never raw package-manager shell commands;
 - normal Android unknown-source trust/user confirmation remains mandatory;
+- PackageInstaller commit/result callbacks are delivered to the private `RiftBuildInstallActivity`, not a background broadcast callback, so `STATUS_PENDING_USER_ACTION` can surface Android's confirmation UI from a foreground Activity;
+- `RiftBuildInstallReceiver` remains only for bounded first-launch evidence;
 - install status is persisted under RiftBuild system state;
 - after successful installation, the proof launcher targets only exported `android.app.NativeActivity` for the allowlisted package recorded by the install session;
 - no arbitrary package name, arbitrary APK path or silent/background install authority is exposed.

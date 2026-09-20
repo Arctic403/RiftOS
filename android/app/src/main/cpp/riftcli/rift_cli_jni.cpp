@@ -4,11 +4,17 @@
 
 #include <cstdint>
 #include <string>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace {
 
 constexpr std::uint32_t kReplacement = 0xfffd;
+constexpr jsize kMaxNativeArgs = 512;
+constexpr std::size_t kMaxNativeArgBytes = 128 * 1024;
+constexpr std::size_t kMaxNativeTotalArgBytes = 512 * 1024;
+constexpr std::size_t kMaxNativeCwdBytes = 4096;
 
 void appendUtf8(std::string& out, std::uint32_t cp) {
     if (cp <= 0x7f) {
@@ -178,32 +184,47 @@ Java_com_riftos_app_RiftCliHost_nativeExecute(
     jobjectArray args,
     jstring cwd
 ) {
-    std::vector<std::string> nativeArgs;
-
-    if (args != nullptr) {
-        const jsize count = env->GetArrayLength(args);
-        nativeArgs.reserve(static_cast<std::size_t>(count));
-        for (jsize i = 0; i < count; ++i) {
-            auto* value = static_cast<jstring>(env->GetObjectArrayElement(args, i));
-            nativeArgs.push_back(jstringToUtf8(env, value));
-            if (value != nullptr) env->DeleteLocalRef(value);
-        }
-    }
-
-    const std::string nativeCwd = jstringToUtf8(env, cwd);
-
     try {
+        std::vector<std::string> nativeArgs;
+        std::size_t totalArgBytes = 0;
+
+        if (args != nullptr) {
+            const jsize count = env->GetArrayLength(args);
+            if (count < 0 || count > kMaxNativeArgs) {
+                throw std::invalid_argument("too many RiftCLI JNI arguments");
+            }
+            nativeArgs.reserve(static_cast<std::size_t>(count));
+            for (jsize i = 0; i < count; ++i) {
+                auto* value = static_cast<jstring>(env->GetObjectArrayElement(args, i));
+                std::string converted = jstringToUtf8(env, value);
+                if (value != nullptr) env->DeleteLocalRef(value);
+                if (converted.size() > kMaxNativeArgBytes) {
+                    throw std::invalid_argument("RiftCLI JNI argument exceeds 131072 bytes");
+                }
+                totalArgBytes += converted.size();
+                if (totalArgBytes > kMaxNativeTotalArgBytes) {
+                    throw std::invalid_argument("RiftCLI JNI arguments exceed 524288 bytes total");
+                }
+                nativeArgs.push_back(std::move(converted));
+            }
+        }
+
+        const std::string nativeCwd = jstringToUtf8(env, cwd);
+        if (nativeCwd.size() > kMaxNativeCwdBytes) {
+            throw std::invalid_argument("RiftCLI JNI cwd exceeds 4096 bytes");
+        }
+
         return utf8ToJstring(env, envelope(riftcli::execute(nativeArgs, nativeCwd)));
     } catch (const std::exception& error) {
         const riftcli::CommandResponse response{
             std::string("RiftCLI native failure: ") + error.what(),
-            "{\"schema\":\"rift.cli-native-error/0\",\"ok\":false,\"error\":\"native exception\",\"mutationAuthority\":false}"
+            "{\"schema\":\"rift.cli-native-error/1\",\"ok\":false,\"error\":\"native exception\",\"authorityState\":\"unknown\"}"
         };
         return utf8ToJstring(env, envelope(response));
     } catch (...) {
         const riftcli::CommandResponse response{
             "RiftCLI native failure: unknown exception",
-            "{\"schema\":\"rift.cli-native-error/0\",\"ok\":false,\"error\":\"unknown native exception\",\"mutationAuthority\":false}"
+            "{\"schema\":\"rift.cli-native-error/1\",\"ok\":false,\"error\":\"unknown native exception\",\"authorityState\":\"unknown\"}"
         };
         return utf8ToJstring(env, envelope(response));
     }

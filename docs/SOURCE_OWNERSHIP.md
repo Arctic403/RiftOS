@@ -72,6 +72,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` + `docs/CODYNEX_LR0_BRIDGE.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBoundedAsync.kt` | `docs/systems/mcp/server/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftDebugHub.kt` | `docs/systems/debugger/README.md` + `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/systems/mcp/tool-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` | `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt` | `docs/systems/shell-ui/README.md` + `docs/systems/shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt` | `docs/systems/riftrt/README.md` + `docs/systems/apps/README.md` |
@@ -148,6 +149,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-patch-manifest-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-semantic-impact-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-native-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-cli-driver-protocol.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-debug-hub.mjs` | `docs/systems/debugger/README.md` + `docs/systems/build-validation/README.md` |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
 | `scripts/test-rift-path-compat.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftfs/README.md` + shell/build/repo/Git/Vault/Memory/Dev Lab/RiftLLM/Files owners |

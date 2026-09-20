@@ -6,6 +6,23 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.15 — RiftDebugHub passive global debugger foundation
+
+### Current source changes
+
+Added the first process-wide global debugger layer without placing it in the execution path:
+
+- `RiftDebugHub.kt` owns bounded in-memory spans/events, monotonic durations, trace correlation, active-span visibility, capacity counters and secret-key redaction;
+- `RiftDebugAdapter` + `RiftDebugSink` provide the reusable subsystem plug;
+- `RiftMcpRuntime` owns one hub per Android process;
+- `RiftMcpServer` creates the parent tool-call span, forwards its context and returns `riftos/traceId`;
+- `RiftToolHost` creates the child span and exposes one read-only `rift_debug` tool with status/events/active/components actions;
+- the MCP catalog is now 19 tools;
+- the exact Gradle Kotlin source snapshot is now 46 files;
+- focused regression, transport validator, ownership ledger and subsystem documentation were updated together.
+
+Authority remains unchanged: the hub cannot execute, mutate, cancel, read files, access the network, host a model, grant permission or enable RiftCLI. RiftShell batch remains disabled. Current proof is source/static-validation level; APK compilation and installed-device behavior remain the next build gate.
+
 ## Patch 10.14 — Semnexis SNIRV7 Arena AST + bounded recursion pressure loop
 
 ### Current source changes
@@ -1189,3 +1206,106 @@ A fresh read-only clone of GitHub `main` confirmed the Builder was executing the
 An escape-aware follow-up sweep checked both plain and regex-escaped `/13` through `/16` schema forms across the active test set; no additional old Semnexis self-test schema markers were found in the scanned scripts.
 
 No Semnexis compiler/runtime, RiftCLI, Builder checkout, or Android runtime behavior changed.
+
+## 2026-09-20 — RiftBuild PackageInstaller foreground confirmation fix
+
+Observed on live RiftOS:
+- MC0 APK preparation, packaging, APK v2 signing and independent verification all passed;
+- PackageInstaller reached `STATUS_PENDING_USER_ACTION`;
+- `Intent.EXTRA_INTENT` was present;
+- Android did not surface the install confirmation UI.
+
+Root cause:
+- the PackageInstaller result `IntentSender` targeted `RiftBuildInstallReceiver`;
+- the receiver attempted to launch Android's confirmation intent from a background context;
+- modern Android background-activity restrictions can suppress that UI launch.
+
+Fix:
+- added private translucent/no-history `RiftBuildInstallActivity`;
+- PackageInstaller commit callbacks now use `PendingIntent.getActivity(...)`;
+- pending-user-action confirmation is launched from that foreground Activity;
+- the existing receiver remains for bounded `PACKAGE_FIRST_LAUNCH` evidence only;
+- proof package allowlist, APK v2 verification requirement, user confirmation requirement and exact NativeActivity launch boundary remain unchanged.
+
+No silent install authority was added.
+
+
+
+## 2026-09-20 — RiftCLI Gate N1 driver protocol + full-authority delegation
+
+Gate N0 was proven on-device on RiftOS source `6f7a61295d6c75ae97cdde59231d767d39eb8152` / run #250: native C++ status/architecture, `armeabi-v7a` execution, explicit process-local enable, fail-closed unsupported command handling and force-stop/restart reset all passed.
+
+Gate N1 source now adds a native C++ external-driver protocol with:
+- session/task/project identity, goal, assumptions and evidence references;
+- explicit process-local enable as the authority gate;
+- full RiftOS authority while enabled through existing RiftOS owners, not raw Android/Linux escape paths;
+- one bounded shell action or one bounded direct `rift_*` ToolHost action per accepted request;
+- trusted ToolHost delegation that bypasses user-facing MCP read/write toggles only after native CLI authorization while still using the same confined/audited ToolSandbox;
+- hard denial of `rift_shell_exec` and `rift_workspace_exec` inside the direct tool lane so shell recursion and the retired/broken workspace-exec batch path cannot return;
+- no embedded model/API client and no direct network/process client in the C++ core.
+
+External-driver continuation is bounded rather than recursively autonomous:
+- `loopMax` is capped at 8;
+- loops are process-local and reset on enable/disable/process restart;
+- loop identity binds session/task/project/loopMax;
+- continuations must advance exactly one step;
+- the final loop step cannot request more information;
+- only a new external-driver request may advance a loop.
+
+RiftShell now owns the N1 dispatch bridge:
+- shell dispatch executes one existing native RiftShell command;
+- direct tool dispatch invokes the trusted ToolHost lane;
+- CLI shell mutations retain `RiftPatchSessions` provenance;
+- direct tool mutations continue through ToolSandbox's existing patch/provenance path;
+- dispatch failures are returned as structured CLI results instead of silently becoming success.
+
+Focused source validation was expanded with `scripts/test-rift-cli-driver-protocol.mjs` and stronger wiring/bootstrap assertions. The N1 audit also fixed one Kotlin named/positional argument merge hazard in the concurrently modified ToolHost debugger integration.
+
+Source audit/scan after the patch remained clean apart from the existing filename-only `RiftSecretStore.kt` heuristic finding. Builder compile/package and installed-device N1 proof are still required before Gate N1 promotion.
+
+
+## 2026-09-20 — RiftCLI N1 end-to-end authority hardening
+
+A follow-up end-to-end audit hardened Gate N1 before Builder/device promotion.
+
+Authority execution:
+- both RiftShell and direct ToolHost authority lanes now submit process-owned live-poll jobs instead of blocking the MCP request;
+- the CLI path has no fixed wall-clock timeout; normal MCP requests retain their existing bounded timeout;
+- `rift_cli_job_list`, `rift_cli_job_poll` and `rift_cli_job_cancel` provide external observation/recovery/cancellation;
+- job-control requests are idempotent single-step controls and remain available while CLI authority is disabled;
+- a shared `RiftCliExecutionGate` permits exactly one outstanding CLI authority job globally across shell + ToolHost, rejecting a second authority action instead of silently queueing future mutations.
+
+Replay/idempotency:
+- every authority-bearing driver request requires a bounded `request-id`;
+- accepted request IDs are retained without eviction for the entire RiftOS process lifetime;
+- duplicate request IDs are rejected;
+- the protection set fails closed at 4096 unique authority requests rather than evicting old IDs;
+- disable/re-enable clears driver-loop state but does not clear replay protection; replay state resets only with RiftOS process restart;
+- lost submit responses can be recovered by listing jobs filtered by the original request ID without replaying the authority action.
+
+Cancellation truthfulness:
+- queued cancellation is reported as `cancelled`;
+- a running request first reports `cancelling`;
+- successful completion after a cancellation request reports `completed_after_cancel_request`;
+- interruption after state may already have changed reports `cancelled_may_have_applied`, never a false rollback claim;
+- disabling RiftCLI requests cancellation of both authority lanes, while job controls remain available to verify the terminal result.
+
+Retention/privacy:
+- both job lanes retain at most 16 jobs for 5 minutes;
+- retained terminal output/result is capped at 2 MiB per job;
+- oversized successful results become `completed_result_too_large` and retain only bounded metadata;
+- job-list recovery is metadata-only; full stored output/result is returned only by explicit poll of a concrete job ID;
+- shell job history retains the operation name rather than the full original command/arguments.
+
+Native boundary:
+- JNI ingress remains bounded to 512 arguments, 128 KiB per argument, 512 KiB total arguments and 4096 bytes of cwd text;
+- explicit UTF-16/UTF-8 transcoding remains in place;
+- the native core still owns no direct process/network/model client.
+
+Validation after hardening:
+- `test-rift-cli-driver-protocol.mjs` passes against the live working-tree source;
+- `test-rift-cli-native-bootstrap.mjs` passes against the live working-tree source;
+- JavaScript validator/test syntax and `package.json` syntax pass;
+- Rift audit/scan cover 237 files and remain clean apart from the existing filename-only `RiftSecretStore.kt` heuristic finding.
+
+Builder compile/package and installed-device N1 proof remain required before Gate N1 promotion.

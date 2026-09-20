@@ -9,10 +9,13 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Small in-process MCP JSON-RPC server backed by RiftToolHost. */
-class RiftMcpServer(private val toolHost: RiftToolHost) {
+class RiftMcpServer(
+    private val toolHost: RiftToolHost,
+    private val debugHub: RiftDebugHub = RiftDebugHub()
+) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.18.0-bounded-request-lifecycle"
+        private const val SERVER_VERSION = "0.19.0-debug-hub"
         private const val COMPLETED_TTL_MS = 2 * 60 * 1000L
         private const val REQUEST_TIMEOUT_MS = 65_000L
         private const val MAX_IN_FLIGHT_REQUESTS = 64
@@ -215,7 +218,13 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
         val modelCallId = requestMeta.optString("riftos/callId")
             .trim()
             .takeIf { it.isNotBlank() }
-        toolHost.callAsync(name, args) { call ->
+        val mcpSpan = debugHub.start(
+            component = "mcp.server",
+            operation = "tools.call",
+            traceId = modelCallId,
+            attributes = mapOf("tool" to name)
+        )
+        toolHost.callAsync(name, args, mcpSpan.context) { call ->
             val ok = call.optBoolean("ok", false)
             val rawValue = if (ok) call.opt("value") else null
             val image = if (name == "rift_shell_exec" && rawValue is JSONObject) {
@@ -241,6 +250,7 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
             }
 
             val resultMeta = JSONObject()
+                .put("riftos/traceId", mcpSpan.context.traceId)
             if (modelCallId != null) resultMeta.put("riftos/callId", modelCallId)
             val content = JSONArray().put(JSONObject().put("type", "text").put("text", text))
             if (ok && image != null) {
@@ -258,6 +268,11 @@ class RiftMcpServer(private val toolHost: RiftToolHost) {
                 .put("structuredContent", structured)
                 .put("_meta", resultMeta)
                 .put("isError", !ok)
+            if (ok) {
+                mcpSpan.success(mapOf("tool" to name))
+            } else {
+                mcpSpan.failure(call.optString("error", "Rift tool failed"), mapOf("tool" to name))
+            }
             reply(success(id, result))
         }
     }

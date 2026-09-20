@@ -75,6 +75,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftBrowserRendererCrashGuard.kt",
         "src/main/java/com/riftos/app/RiftBrowserWindow.kt",
         "src/main/java/com/riftos/app/RiftBoundedAsync.kt",
+        "src/main/java/com/riftos/app/RiftDebugHub.kt",
         "src/main/java/com/riftos/app/RiftApkV2Signer.kt",
         "src/main/java/com/riftos/app/RiftBuildInstaller.kt",
         "src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt",

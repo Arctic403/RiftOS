@@ -12,6 +12,7 @@ object RiftMcpRuntime {
     @Volatile private var vortexBridge: RiftVortexBridgeClient? = null
     @Volatile private var codynexBridge: RiftCodynexBridgeClient? = null
     @Volatile private var nativeGit: RiftNativeGit? = null
+    @Volatile private var debugHub: RiftDebugHub? = null
     @Volatile private var activityRef: WeakReference<MainActivity>? = null
 
     fun registerActivity(activity: MainActivity) {
@@ -24,6 +25,14 @@ object RiftMcpRuntime {
     }
 
     fun activeActivity(): MainActivity? = activityRef?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
+
+    /** Passive process-wide diagnostics. This object owns no execution authority. */
+    fun debugHub(): RiftDebugHub {
+        debugHub?.let { return it }
+        return synchronized(this) {
+            debugHub ?: RiftDebugHub().also { debugHub = it }
+        }
+    }
 
     /** Native process-owned shell authority. This remains available without any WebView. */
     fun shellExecutor(): RiftShellExecutor? = nativeShell
@@ -41,14 +50,18 @@ object RiftMcpRuntime {
     fun toolHost(context: Context): RiftToolHost {
         host?.let { return it }
         return synchronized(this) {
-            host ?: RiftToolHost(context.applicationContext, nativeShell(context)).also { host = it }
+            host ?: RiftToolHost(
+                context.applicationContext,
+                nativeShell(context),
+                debugHub()
+            ).also { host = it }
         }
     }
 
     fun server(context: Context): RiftMcpServer {
         server?.let { return it }
         return synchronized(this) {
-            server ?: RiftMcpServer(toolHost(context)).also { server = it }
+            server ?: RiftMcpServer(toolHost(context), debugHub()).also { server = it }
         }
     }
 

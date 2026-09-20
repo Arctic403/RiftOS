@@ -13,7 +13,8 @@ All transports converge on one native server/tool host. Browser compatibility an
 ## Source ownership
 
 Core composition:
-- `RiftMcpRuntime.kt` — process-owned singleton graph and current Activity reference.
+- `RiftMcpRuntime.kt` — process-owned singleton graph, passive debug hub and current Activity reference.
+- `RiftDebugHub.kt` — process-wide bounded passive diagnostics and universal adapter plug.
 - `RiftMcpServer.kt` — in-process MCP JSON-RPC framing and relay retry dedupe.
 - `RiftToolHost.kt` — canonical tool schemas, read/write grants and tool audit.
 - `RiftToolSandbox.kt` — workspace filesystem + Project Intelligence/Code Mode.
@@ -51,7 +52,7 @@ There is no shell WebView executor and no general native dispatcher.
 
 The authoritative catalog is `RiftToolHost.tools()`.
 
-Current expected count: **18**:
+Current expected count: **19**:
 - rift_shell_exec
 - rift_info
 - rift_stat
@@ -69,9 +70,12 @@ Current expected count: **18**:
 - rift_scan
 - rift_project_export
 - rift_workspace_diff
+- rift_debug
 - rift_workspace_exec
 
 `manifest()` hashes the complete tool-definition JSON with SHA-256 and reports names/count/scope.
+
+`rift_debug` is the single passive debugger query surface. It exposes status, events, active spans and components under the existing read grant; it cannot execute, mutate, cancel or widen authority.
 
 ## Permission boundary
 

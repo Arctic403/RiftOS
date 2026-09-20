@@ -12,6 +12,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
@@ -126,6 +127,45 @@ internal class RiftToolSandbox(context: Context) {
         val dependencies: List<DependencyRecord>
     )
 
+    private fun executeRequest(raw: String, origin: String): String {
+        val fallbackId = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
+        var patchSession: RiftPatchSessions.Handle? = null
+        return try {
+            RiftDeadline.check("$origin sandbox request")
+            val request = JSONObject(raw)
+            val requestId = request.optString("id")
+            val method = request.optString("method")
+            require(requestId.isNotBlank()) { "Missing tool request id" }
+            require(method.isNotBlank()) { "Missing tool method" }
+            val args = request.optJSONObject("args") ?: JSONObject()
+            patchSession = RiftPatchSessions.begin(
+                appContext,
+                origin = origin,
+                operation = method,
+                intent = args.optString("intent").takeIf { it.isNotBlank() },
+                requestId = requestId,
+                rawPaths = provenanceMutationPaths(method, args)
+            )
+            val value = dispatch(method, args) ?: JSONObject.NULL
+            if (origin != "rift-cli") RiftDeadline.check("$origin sandbox request")
+            patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
+            JSONObject()
+                .put("id", requestId)
+                .put("ok", true)
+                .put("value", value)
+                .toString()
+        } catch (error: Throwable) {
+            patchSession?.let(RiftPatchSessions::abort)
+            JSONObject()
+                .put("id", fallbackId)
+                .put("ok", false)
+                .put("error", error.message ?: error.javaClass.simpleName)
+                .toString()
+        } finally {
+            RiftDeadline.clearInterrupt()
+        }
+    }
+
     fun handleAsync(raw: String, reply: (String) -> Unit) {
         val id = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
         RiftBoundedAsync.submit(
@@ -146,42 +186,38 @@ internal class RiftToolSandbox(context: Context) {
                     .put("error", error.message ?: error.javaClass.simpleName)
                     .toString()
             },
-            work = {
-                var patchSession: RiftPatchSessions.Handle? = null
-                val response = try {
-                    RiftDeadline.check("MCP sandbox request")
-                    val request = JSONObject(raw)
-                    val requestId = request.optString("id")
-                    val method = request.optString("method")
-                    require(requestId.isNotBlank()) { "Missing tool request id" }
-                    require(method.isNotBlank()) { "Missing tool method" }
-                    val args = request.optJSONObject("args") ?: JSONObject()
-                    patchSession = RiftPatchSessions.begin(
-                        appContext,
-                        origin = "mcp",
-                        operation = method,
-                        intent = args.optString("intent").takeIf { it.isNotBlank() },
-                        requestId = requestId,
-                        rawPaths = provenanceMutationPaths(method, args)
-                    )
-                    val value = dispatch(method, args) ?: JSONObject.NULL
-                    RiftDeadline.check("MCP sandbox request")
-                    patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
-                    JSONObject()
-                        .put("id", requestId)
-                        .put("ok", true)
-                        .put("value", value)
-                } catch (error: Throwable) {
-                    patchSession?.let(RiftPatchSessions::abort)
-                    JSONObject()
-                        .put("id", id)
-                        .put("ok", false)
-                        .put("error", error.message ?: error.javaClass.simpleName)
-                }
-                response.toString()
-            },
+            work = { executeRequest(raw, "mcp") },
             reply = reply
         )
+    }
+
+    /**
+     * RiftCLI live-poll lane.
+     *
+     * No fixed wall-clock timeout is imposed here. The returned Future is the cancellation
+     * authority; deep filesystem/runtime loops remain cooperative through RiftDeadline.check(),
+     * which also observes thread interruption. Normal MCP calls retain their bounded timeout.
+     */
+    internal fun submitCliJob(
+        raw: String,
+        onStart: () -> Unit,
+        reply: (String) -> Unit
+    ): Future<*> = executor.submit {
+        val id = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
+        val response = try {
+            RiftCliExecutionGate.run {
+                runCatching { onStart() }
+                executeRequest(raw, "rift-cli")
+            }
+        } catch (error: Throwable) {
+            RiftDeadline.clearInterrupt()
+            JSONObject()
+                .put("id", id)
+                .put("ok", false)
+                .put("error", error.message ?: error.javaClass.simpleName)
+                .toString()
+        }
+        runCatching { reply(response) }
     }
 
     internal fun candidateImpactAsync(reply: (JSONObject) -> Unit) {

@@ -113,7 +113,7 @@ External Android folders are not part of the engine root namespace by raw path. 
 
 `RiftMcpRuntime` constructs one process-owned `RiftToolHost` and `RiftMcpServer`.
 
-The model-visible catalog is exactly 18 tools. Ordinary filesystem/Code Mode operations execute in `RiftToolSandbox`; `rift_shell_exec` executes through process-owned `RiftNativeShell`.
+The model-visible catalog is exactly 19 tools, including the passive read-only `rift_debug` query. Ordinary filesystem/Code Mode operations execute in `RiftToolSandbox`; `rift_shell_exec` executes through process-owned `RiftNativeShell`.
 
 `RiftToolSandbox` owns:
 - workspace containment;

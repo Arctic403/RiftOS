@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
 
 ## Purpose
 
@@ -17,7 +17,7 @@
 
 ## Canonical catalog
 
-`tools()` is authoritative. The current published set is exactly 18 tools:
+`tools()` is authoritative. The current published set is exactly 19 tools:
 
 1. rift_shell_exec
 2. rift_info
@@ -36,9 +36,12 @@
 15. rift_scan
 16. rift_project_export
 17. rift_workspace_diff
-18. rift_workspace_exec
+18. rift_debug
+19. rift_workspace_exec
 
 `manifest()` hashes the complete definitions JSON with SHA-256 and reports count/names/scope.
+
+Each call opens a bounded RiftDebugHub child span. `rift_debug` reads the hub through the same Tool Host and read grant, but the hub is passive and owns no execution or cancellation authority.
 
 The `rift_workspace_exec` public description identifies Project Intelligence **v2**. Patch Session V1 also adds an optional bounded `intent` field to this existing tool schema for provenance evidence. It does not add a tool, grant permission or alter write classification. This intentional schema change changes the manifest hash and may require cached clients to rescan actions.
 
@@ -53,6 +56,7 @@ Read-gated tools:
 - audit/scan;
 - project export;
 - workspace diff, including bounded checkpoint file-identity evidence;
+- passive debugger status/events/active/components;
 - workspace exec even when read-only.
 
 `rift_workspace_diff` remains one read-only tool; Patch 2 expands its result evidence with bounded `identity.relations` and similarity-budget metadata without adding mutation authority or another tool.
@@ -130,7 +134,7 @@ Every other canonical tool maps to one fixed sandbox method:
 
 Unknown tools fail before sandbox execution.
 
-Patch 5 adds one **internal-only** `candidateImpactAsync` route from ToolHost to the sandbox for the future Local Agent validation pipeline. It is deliberately absent from `tools()`, aliases and `methodFor()`, so the model-visible catalog remains exactly 18 tools and no caller can manufacture its own candidate-impact scope through MCP.
+Patch 5 adds one **internal-only** `candidateImpactAsync` route from ToolHost to the sandbox for the future Local Agent validation pipeline. It is deliberately absent from `tools()`, aliases and `methodFor()`, so that patch left the model-visible catalog at 18 tools and no caller could manufacture its own candidate-impact scope through MCP. The later passive `rift_debug` query raises the current catalog to 19.
 
 ## Audit
 

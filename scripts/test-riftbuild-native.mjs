@@ -100,6 +100,9 @@ for (const required of [
   'canRequestPackageInstalls',
   'ACTION_MANAGE_UNKNOWN_APP_SOURCES',
   'RiftBuild installer accepts only allowlisted proof packages',
+  'class RiftBuildInstallActivity : Activity()',
+  'PendingIntent.getActivity(',
+  'launchForeground(context, confirmIntent)',
   'class RiftBuildInstallReceiver : BroadcastReceiver()',
 ]) assert.ok(installer.includes(required), 'RiftBuild installer contract missing: ' + required);
 
@@ -154,6 +157,7 @@ for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftA
   assert.ok(gradle.includes('src/main/java/com/riftos/app/' + source), 'Gradle exact source snapshot omitted ' + source);
 }
 assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'), 'RiftOS manifest omitted REQUEST_INSTALL_PACKAGES');
+assert.ok(manifest.includes('.RiftBuildInstallActivity'), 'RiftOS manifest omitted foreground RiftBuild install callback activity');
 assert.ok(manifest.includes('.RiftBuildInstallReceiver'), 'RiftOS manifest omitted private RiftBuild install receiver');
 assert.ok(manifest.includes('android.intent.action.PACKAGE_FIRST_LAUNCH'), 'RiftOS manifest omitted first-launch proof action');
 assert.ok(manifest.includes('com.riftpp.nativeproof'), 'RiftOS manifest omitted Rift++ proof-package visibility');

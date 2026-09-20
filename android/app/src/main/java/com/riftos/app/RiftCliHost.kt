@@ -15,16 +15,39 @@ internal object RiftCliHost {
         val result: JSONObject
     )
 
-    init {
-        System.loadLibrary("riftcli")
-    }
+    private val nativeLoadFailure: Throwable? =
+        runCatching { System.loadLibrary("riftcli") }.exceptionOrNull()
 
     private external fun nativeExecute(args: Array<String>, cwd: String): String
 
     fun executeShell(args: List<String>, cwd: String): CommandResult {
-        val envelope = JSONObject(nativeExecute(args.toTypedArray(), cwd))
-        val output = envelope.getString("output")
-        val result = envelope.getJSONObject("result")
-        return CommandResult(output, result)
+        nativeLoadFailure?.let { failure ->
+            return hostFailure("RiftCLI native library load failed", failure)
+        }
+
+        return try {
+            val raw = nativeExecute(args.toTypedArray(), cwd)
+            val envelope = JSONObject(raw)
+            val output = envelope.optString("output")
+            val result = envelope.optJSONObject("result")
+                ?: return hostFailure("RiftCLI native envelope is missing result")
+            CommandResult(output, result)
+        } catch (failure: Throwable) {
+            hostFailure("RiftCLI native transport failed", failure)
+        }
+    }
+
+    private fun hostFailure(message: String, failure: Throwable? = null): CommandResult {
+        val detail = failure?.message?.take(512)
+        val output = if (detail.isNullOrBlank()) message else "$message: $detail"
+        return CommandResult(
+            output,
+            JSONObject()
+                .put("schema", "rift.cli-host-error/1")
+                .put("ok", false)
+                .put("error", message)
+                .put("detail", detail ?: JSONObject.NULL)
+                .put("authorityState", "unknown")
+        )
     }
 }

@@ -32,28 +32,30 @@ const retired = [
   'RiftEngineeringStateV1.kt',
 ];
 
-check(
-  'retired Kotlin CLI sources are absent',
-  retired.every(name => !exists(k + name))
-);
+check('retired Kotlin CLI sources are absent', retired.every(name => !exists(k + name)));
 
 check(
-  'thin Kotlin host loads only the native RiftCLI library',
+  'thin Kotlin host loads native RiftCLI and fails closed on transport/envelope errors',
   host.includes('internal object RiftCliHost') &&
     host.includes('System.loadLibrary("riftcli")') &&
     host.includes('private external fun nativeExecute') &&
-    host.includes('JSONObject(nativeExecute(args.toTypedArray(), cwd))')
+    host.includes('nativeLoadFailure') &&
+    host.includes('rift.cli-host-error/1') &&
+    host.includes('authorityState') &&
+    host.includes('val raw = nativeExecute(args.toTypedArray(), cwd)') &&
+    host.includes('envelope.optJSONObject("result")')
 );
 
 check(
-  'RiftShell routes rift-cli into the new host',
-  shell.includes('"rift-cli" ->') &&
+  'RiftShell routes rift-cli into the native host and N1 dispatcher',
+  shell.includes('"rift-cli" -> executeCliCommand(cwd, args)') &&
     shell.includes('RiftCliHost.executeShell(args, cwd)') &&
+    shell.includes('origin = "rift-cli-driver"') &&
     !shell.includes('RiftExperimentalCli')
 );
 
 check(
-  'Local Agent no longer routes through old CLI',
+  'Local Agent remains an independent RiftOS authority',
   services.includes('RiftOsLocalAgent.execute(context,request)') &&
     !services.includes('RiftAgentRouter')
 );
@@ -95,29 +97,34 @@ check(
 );
 
 check(
-  'bootstrap exposes zero engineering mutation/model/network/tool authority',
-  core.includes('"modelBackend\\":false') &&
-    core.includes('"networkAuthority\\":false') &&
-    core.includes('"mutationAuthority\\":false') &&
-    core.includes('"toolExecution\\":false') &&
-    core.includes('"projectMemory\\":false') &&
-    core.includes('"planner\\":false') &&
-    core.includes('"verificationEngine\\":false')
+  'N1 authority is full RiftOS only when explicitly enabled',
+  core.includes('full-riftos-when-enabled') &&
+    core.includes('"mutation\\":') &&
+    core.includes('"toolExecution\\":') &&
+    core.includes('"networkViaRiftOs\\":') &&
+    core.includes('"directModelBackend\\":false') &&
+    core.includes('"directNetworkClient\\":false') &&
+    core.includes('bounded-riftos-authorities')
 );
 
 check(
-  'external driver dependency direction is one-way into CLI',
+  'external driver dependency direction remains one-way into CLI',
   core.includes('external-driver -> MCP/RiftShell -> RiftCLI') &&
     core.includes('"cliCallsDriver\\":false') &&
     docs.includes('RiftCLI **never calls a model or inference API**')
 );
 
 check(
-  'JNI uses explicit UTF-16/UTF-8 transcoding',
+  'JNI uses explicit UTF-16/UTF-8 transcoding and bounded ingress',
   jni.includes('GetStringChars') &&
     jni.includes('ReleaseStringChars') &&
     jni.includes('NewString(') &&
     jni.includes('utf8ToUtf16') &&
+    jni.includes('kMaxNativeArgs = 512') &&
+    jni.includes('kMaxNativeArgBytes = 128 * 1024') &&
+    jni.includes('kMaxNativeTotalArgBytes = 512 * 1024') &&
+    jni.includes('kMaxNativeCwdBytes = 4096') &&
+    jni.includes(String.raw`\"authorityState\":\"unknown\"`) &&
     !jni.includes('GetStringUTFChars') &&
     !jni.includes('NewStringUTF')
 );
@@ -132,7 +139,7 @@ const forbiddenNativeCalls = [
   /https?:\/\//,
 ];
 check(
-  'native bootstrap has no process/network execution surface',
+  'native core delegates authority without gaining raw process/network clients',
   forbiddenNativeCalls.every(pattern => !pattern.test(core) && !pattern.test(jni))
 );
 
@@ -151,9 +158,9 @@ check(
 );
 
 if (failures.length) {
-  console.error('RiftCLI native bootstrap validation failed:');
+  console.error('RiftCLI native foundation validation failed:');
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log('RiftCLI native bootstrap source contract OK');
+console.log('RiftCLI native foundation source contract OK');

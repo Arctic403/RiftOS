@@ -5,9 +5,42 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Future
+import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+
+internal object RiftCliExecutionGate {
+    private val lock = ReentrantLock(true)
+    private val outstandingJobId = AtomicReference<String?>(null)
+
+    fun tryReserve(jobId: String): Boolean =
+        outstandingJobId.compareAndSet(null, jobId)
+
+    fun release(jobId: String) {
+        outstandingJobId.compareAndSet(jobId, null)
+    }
+
+    fun outstandingJob(): String? = outstandingJobId.get()
+
+    fun <T> run(block: () -> T): T {
+        lock.lockInterruptibly()
+        return try {
+            block()
+        } finally {
+            lock.unlock()
+        }
+    }
+}
 
 /** Canonical device-side capability registry for the local Rift MCP server. */
-class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = null) {
+class RiftToolHost(
+    context: Context,
+    initialShellExecutor: RiftShellExecutor? = null,
+    private val debugHub: RiftDebugHub = RiftDebugHub()
+) {
     companion object {
         private const val PREFS = "rift-mcp-tools"
         private const val LEGACY_PREFS = "rift-bridge"
@@ -16,6 +49,9 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         private const val PREF_AUDIT = "audit"
         private const val PREF_MIGRATED = "legacyStateMigrated"
         private const val MAX_AUDIT = 100
+        private const val MAX_CLI_JOBS = 16
+        private const val CLI_JOB_RETENTION_MS = 5 * 60 * 1000L
+        private const val MAX_CLI_RETAINED_RESULT_BYTES = 2 * 1024 * 1024
         private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")
         const val SCOPE = "riftfs/workspace"
     }
@@ -23,6 +59,19 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val sandbox: RiftToolSandbox
+    private data class CliJob(
+        val id: String,
+        val requestId: String,
+        val name: String,
+        val createdAt: Long,
+        @Volatile var updatedAt: Long,
+        @Volatile var status: String,
+        @Volatile var cancelRequested: Boolean = false,
+        @Volatile var response: JSONObject? = null,
+        @Volatile var future: Future<*>? = null
+    )
+
+    private val cliJobs = ConcurrentHashMap<String, CliJob>()
     @Volatile private var shellExecutor: RiftShellExecutor? = initialShellExecutor
 
     fun setShellExecutor(executor: RiftShellExecutor) {
@@ -50,7 +99,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v2")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")))
         .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
 
@@ -209,6 +258,20 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
                     .put("includeDiff", booleanProperty("Include bounded git-style text diffs for changed text files and record entries."))
             )
         ))
+        .put(tool(
+            "rift_debug",
+            "Read the passive process-wide RiftDebugHub. Actions: status, events, active, components. The debugger has no execution, mutation, cancellation, filesystem, network, or model authority.",
+            objectSchema(
+                JSONObject()
+                    .put("action", JSONObject()
+                        .put("type", "string")
+                        .put("enum", JSONArray(listOf("status", "events", "active", "components"))))
+                    .put("traceId", stringProperty("Optional exact trace identifier filter."))
+                    .put("component", stringProperty("Optional exact component filter."))
+                    .put("sinceSequence", JSONObject().put("type", "integer").put("description", "Only return events newer than this sequence."))
+                    .put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 200))
+            )
+        ))
         // Keep the published rift_workspace_exec schema/description stable while Project Intelligence v2 evolves behind it.
         // Changing this model-visible definition changes manifest().sha256 and can force cached MCP clients to rescan actions.
         .put(tool(
@@ -237,8 +300,327 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         ))
 
     fun callAsync(rawName: String, args: JSONObject, reply: (JSONObject) -> Unit) {
+        callAsync(rawName, args, debugContext = null, reply = reply)
+    }
+
+    fun callAsync(
+        rawName: String,
+        args: JSONObject,
+        debugContext: RiftDebugContext?,
+        reply: (JSONObject) -> Unit
+    ) {
+        callAsyncInternal(rawName, args, bypassAccess = false, debugContext = debugContext, rawReply = reply)
+    }
+
+    /**
+     * Trusted in-process RiftCLI live-poll lane.
+     *
+     * The native C++ enable gate authorizes entry. Jobs run through the same confined/audited
+     * sandbox implementations, but the CLI lane has no fixed wall-clock timeout. The external
+     * driver observes progress by polling and may explicitly cancel a job.
+     */
+    internal fun startCliJob(rawName: String, args: JSONObject, driverRequestId: String): JSONObject {
+        pruneCliJobs()
+        val name = canonicalName(rawName)
+        if (name == "rift_shell_exec" || name == "rift_workspace_exec") {
+            val error = "RiftCLI tool lane forbids $name; use one bounded RiftCLI shell dispatch and never workspace-exec/batch."
+            recordAudit(name, args, false, error)
+            return JSONObject().put("ok", false).put("name", name).put("error", error)
+        }
+
+        val method = methodFor(name)
+        if (name != "rift_debug" && method == null) {
+            val error = "Unsupported Rift tool: $rawName"
+            recordAudit(rawName.take(120), args, false, error)
+            return JSONObject().put("ok", false).put("name", rawName).put("error", error)
+        }
+
+        val normalizedArgs = try {
+            normalizeToolArgs(name, args)
+        } catch (error: Throwable) {
+            val message = error.message ?: "Invalid Rift tool arguments"
+            recordAudit(name, args, false, message)
+            return JSONObject().put("ok", false).put("name", name).put("error", message)
+        }
+
+        if (cliJobs.size >= MAX_CLI_JOBS) {
+            pruneCliJobs(forceTerminalTrim = true)
+        }
+        if (cliJobs.size >= MAX_CLI_JOBS) {
+            return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", "RiftCLI live-poll job capacity reached ($MAX_CLI_JOBS); poll/cancel existing jobs first.")
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        val jobId = "cli-job-" + UUID.randomUUID().toString()
+        if (!RiftCliExecutionGate.tryReserve(jobId)) {
+            return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", "RiftCLI already has one outstanding authority job")
+                .put("outstandingJobId", RiftCliExecutionGate.outstandingJob() ?: JSONObject.NULL)
+        }
+        val job = CliJob(jobId, driverRequestId, name, now, now, "queued")
+        cliJobs[jobId] = job
+
+        if (name == "rift_debug") {
+            val response = try {
+                val value = debugHub.query(normalizedArgs)
+                recordAudit(name, normalizedArgs, true, null)
+                JSONObject().put("ok", true).put("name", name).put("value", value)
+            } catch (failure: Throwable) {
+                val error = failure.message ?: "Invalid rift_debug request"
+                recordAudit(name, normalizedArgs, false, error)
+                JSONObject().put("ok", false).put("name", name).put("error", error)
+            }
+            synchronized(job) {
+                job.response = response
+                job.status = if (response.optBoolean("ok", false)) "completed" else "failed"
+                job.updatedAt = SystemClock.elapsedRealtime()
+            }
+            RiftCliExecutionGate.release(jobId)
+            return cliJobSnapshot(job)
+        }
+
+        val requestId = "cli-tool-$jobId"
+        val request = JSONObject()
+            .put("id", requestId)
+            .put("method", method)
+            .put("args", normalizedArgs)
+
+        val future = try {
+            sandbox.submitCliJob(
+                request.toString(),
+                onStart = {
+                    synchronized(job) {
+                        if (job.status == "queued") {
+                            job.status = "running"
+                            job.updatedAt = SystemClock.elapsedRealtime()
+                        }
+                    }
+                }
+            ) { raw ->
+                try {
+                    val response = runCatching { JSONObject(raw) }
+                        .getOrElse { JSONObject().put("ok", false).put("error", "RiftCLI sandbox returned invalid JSON") }
+                    val terminalResponse = try {
+                        if (response.optBoolean("ok", false)) {
+                            val value = response.opt("value") ?: JSONObject.NULL
+                            if (name == "rift_info" && value is JSONObject) {
+                                value.put("mcpManifest", manifest())
+                                value.put("connectorRefresh", JSONObject()
+                                    .put("toolListStaticForProcess", true)
+                                    .put("refreshClientActionsWhenCountDiffers", true)
+                                    .put("note", "If a client exposes fewer tools than mcpManifest.count, refresh/rescan that client's MCP app actions; reconnecting the relay alone does not replace a cached client action catalog."))
+                            }
+                            recordAudit(name, normalizedArgs, true, null)
+                            JSONObject().put("ok", true).put("name", name).put("value", value)
+                        } else {
+                            val error = response.optString("error").takeIf { it.isNotBlank() } ?: "Rift sandbox call failed"
+                            recordAudit(name, normalizedArgs, false, error)
+                            JSONObject().put("ok", false).put("name", name).put("error", error)
+                        }
+                    } catch (error: Throwable) {
+                        JSONObject()
+                            .put("ok", false)
+                            .put("name", name)
+                            .put("error", error.message ?: error.javaClass.simpleName)
+                    }
+
+                    val terminalBytes = terminalResponse.toString().toByteArray(Charsets.UTF_8).size
+                    val retainedResponse = if (terminalBytes > MAX_CLI_RETAINED_RESULT_BYTES) {
+                        JSONObject()
+                            .put("ok", terminalResponse.optBoolean("ok", false))
+                            .put("name", name)
+                            .put("resultRetained", false)
+                            .put("resultBytes", terminalBytes)
+                            .put("retentionLimitBytes", MAX_CLI_RETAINED_RESULT_BYTES)
+                            .put("note", "RiftCLI completed the operation but did not retain an oversized result; use a smaller bounded read/export.")
+                    } else {
+                        terminalResponse
+                    }
+
+                    synchronized(job) {
+                        job.response = retainedResponse
+                        job.status = when {
+                            job.cancelRequested && terminalResponse.optBoolean("ok", false) -> "completed_after_cancel_request"
+                            job.cancelRequested -> "cancelled_may_have_applied"
+                            terminalResponse.optBoolean("ok", false) && terminalBytes > MAX_CLI_RETAINED_RESULT_BYTES -> "completed_result_too_large"
+                            terminalResponse.optBoolean("ok", false) -> "completed"
+                            else -> "failed"
+                        }
+                        job.updatedAt = SystemClock.elapsedRealtime()
+                    }
+                } finally {
+                    RiftCliExecutionGate.release(jobId)
+                }
+            }
+        } catch (error: Throwable) {
+            val message = error.message ?: error.javaClass.simpleName
+            recordAudit(name, normalizedArgs, false, message)
+            synchronized(job) {
+                job.response = JSONObject().put("ok", false).put("name", name).put("error", message)
+                job.status = "failed"
+                job.updatedAt = SystemClock.elapsedRealtime()
+            }
+            RiftCliExecutionGate.release(jobId)
+            return cliJobSnapshot(job)
+        }
+        job.future = future
+        return cliJobSnapshot(job)
+    }
+
+    internal fun listCliJobs(requestId: String? = null): JSONObject {
+        pruneCliJobs()
+        val rows = JSONArray()
+        cliJobs.values
+            .filter { requestId.isNullOrBlank() || it.requestId == requestId }
+            .sortedBy { it.createdAt }
+            .forEach { rows.put(cliJobSnapshot(it, includeResult = false)) }
+        return JSONObject().put("ok", true).put("jobs", rows)
+    }
+
+    internal fun pollCliJob(jobId: String): JSONObject {
+        pruneCliJobs()
+        val job = cliJobs[jobId]
+            ?: return JSONObject().put("ok", false).put("error", "Unknown or expired RiftCLI job: $jobId")
+        return cliJobSnapshot(job)
+    }
+
+    internal fun cancelCliJob(jobId: String): JSONObject {
+        val job = cliJobs[jobId]
+            ?: return JSONObject().put("ok", false).put("error", "Unknown or expired RiftCLI job: $jobId")
+        synchronized(job) {
+            if (job.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                return cliJobSnapshot(job)
+            }
+            job.cancelRequested = true
+            val wasQueued = job.status == "queued"
+            val cancelled = job.future?.cancel(true) == true
+            job.updatedAt = SystemClock.elapsedRealtime()
+            if (wasQueued && cancelled) {
+                job.status = "cancelled"
+                job.response = JSONObject()
+                    .put("ok", false)
+                    .put("name", job.name)
+                    .put("error", "RiftCLI job cancelled before execution")
+                RiftCliExecutionGate.release(job.id)
+            } else {
+                job.status = "cancelling"
+            }
+        }
+        return cliJobSnapshot(job)
+    }
+
+    internal fun cancelAllCliJobs(reason: String): JSONObject {
+        var requested = 0
+        cliJobs.values.forEach { job ->
+            synchronized(job) {
+                if (job.status !in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                    job.cancelRequested = true
+                    val wasQueued = job.status == "queued"
+                    val cancelled = job.future?.cancel(true) == true
+                    job.updatedAt = SystemClock.elapsedRealtime()
+                    if (wasQueued && cancelled) {
+                        job.status = "cancelled"
+                        job.response = JSONObject()
+                            .put("ok", false)
+                            .put("name", job.name)
+                            .put("error", reason)
+                        RiftCliExecutionGate.release(job.id)
+                    } else {
+                        job.status = "cancelling"
+                    }
+                    requested++
+                }
+            }
+        }
+        return JSONObject().put("ok", true).put("cancellationRequested", requested)
+    }
+
+    private fun cliJobSnapshot(job: CliJob, includeResult: Boolean = true): JSONObject = synchronized(job) {
+        JSONObject()
+            .put("ok", true)
+            .put("jobOk", job.response?.optBoolean("ok"))
+            .put("jobId", job.id)
+            .put("requestId", job.requestId)
+            .put("tool", job.name)
+            .put("status", job.status)
+            .put("terminal", job.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request"))
+            .put("createdAtElapsedMs", job.createdAt)
+            .put("updatedAtElapsedMs", job.updatedAt)
+            .put("cancelRequested", job.cancelRequested)
+            .put("elapsedMs", (SystemClock.elapsedRealtime() - job.createdAt).coerceAtLeast(0L))
+            .also { snapshot ->
+                if (includeResult) snapshot.put("result", job.response ?: JSONObject.NULL)
+            }
+    }
+
+    private fun pruneCliJobs(forceTerminalTrim: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        val terminal = cliJobs.values
+            .filter { it.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request") }
+            .sortedBy { it.updatedAt }
+
+        terminal.forEach { job ->
+            if (now - job.updatedAt >= CLI_JOB_RETENTION_MS) cliJobs.remove(job.id, job)
+        }
+
+        if (forceTerminalTrim && cliJobs.size >= MAX_CLI_JOBS) {
+            terminal.forEach { job ->
+                if (cliJobs.size < MAX_CLI_JOBS) return
+                cliJobs.remove(job.id, job)
+            }
+        }
+    }
+
+    private fun callAsyncInternal(
+        rawName: String,
+        args: JSONObject,
+        bypassAccess: Boolean,
+        debugContext: RiftDebugContext?,
+        rawReply: (JSONObject) -> Unit
+    ) {
         val name = canonicalName(rawName)
         val method = methodFor(name)
+        val hostSpan = debugHub.start(
+            component = "tool.host",
+            operation = name.ifBlank { "unknown" },
+            parent = debugContext,
+            attributes = mapOf("lane" to if (bypassAccess) "trusted-cli" else "mcp")
+        )
+        val terminal = AtomicBoolean(false)
+        val reply: (JSONObject) -> Unit = { response ->
+            if (terminal.compareAndSet(false, true)) {
+                if (response.optBoolean("ok", false)) {
+                    hostSpan.success()
+                } else {
+                    hostSpan.failure(response.optString("error", "Rift tool failed"))
+                }
+                rawReply(response)
+            }
+        }
+
+        if (name == "rift_debug") {
+            if (!bypassAccess && !allowRead()) {
+                val error = "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return
+            }
+            try {
+                val value = debugHub.query(args)
+                recordAudit(name, args, true, null)
+                reply(JSONObject().put("ok", true).put("name", name).put("value", value))
+            } catch (failure: Throwable) {
+                val error = failure.message ?: "Invalid rift_debug request"
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+            }
+            return
+        }
         if (name == "rift_shell_exec") {
             val command = args.optString("command").trim()
             if (command.isBlank()) {
@@ -253,7 +635,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
                 reply(JSONObject().put("ok", false).put("error", error))
                 return
             }
-            if (!isAllowed(name, args)) {
+            if (!bypassAccess && !isAllowed(name, args)) {
                 val error = when {
                     !allowRead() && !allowWrite() -> "Rift MCP shell access is disabled on this device. Enable read and write access in Rift MCP settings."
                     !allowRead() -> "Rift MCP shell access is disabled on this device. Enable read access in Rift MCP settings."
@@ -312,7 +694,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         }
 
         val mutatingRequest = requiresWrite(name, normalizedArgs)
-        if (!isAllowed(name, normalizedArgs)) {
+        if (!bypassAccess && !isAllowed(name, normalizedArgs)) {
             val error = when {
                 name == "rift_workspace_exec" && !allowRead() ->
                     "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
@@ -373,6 +755,8 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
     }
 
     fun shutdown() {
+        cancelAllCliJobs("RiftToolHost shutdown")
+        cliJobs.clear()
         sandbox.shutdown()
     }
 
@@ -461,6 +845,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         "scan", "rift_scan" -> "rift_scan"
         "projectExport", "rift_project_export" -> "rift_project_export"
         "workspaceDiff", "rift_workspace_diff" -> "rift_workspace_diff"
+        "debug", "rift_debug" -> "rift_debug"
         else -> raw.trim()
     }
 
@@ -533,6 +918,7 @@ class RiftToolHost(context: Context, initialShellExecutor: RiftShellExecutor? = 
         "rift_workspace_exec" -> "workspace operation · ${args.optJSONArray("operations")?.length() ?: 0} op"
         "rift_workspace_diff" -> args.optString("path").ifBlank { "workspace" }.take(300)
         "rift_info" -> "sandbox"
+        "rift_debug" -> args.optString("action", "status").trim().lowercase().ifBlank { "status" }
         "rift_shell_exec" -> args.optString("command").trim().takeWhile { !it.isWhitespace() }
             .take(48).replace(Regex("[^A-Za-z0-9_-]"), "?") + " [arguments omitted]"
         else -> args.optString("path").take(300)
