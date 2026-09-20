@@ -1323,3 +1323,20 @@ Two validator assumptions were stale while runtime source was already correct:
 A follow-up scan of every active `.mjs` test/validator found no additional same-name Activity-file assumptions or non-`String.raw` escaped quoted-value assertions of this class.
 
 No RiftBuild installer runtime, RiftCLI runtime, JNI, authority model, or Android manifest behavior changed. The next Builder run remains the compile/package proof.
+
+
+## 2026-09-20 — Builder patch-session provenance test parity
+
+Builder run `35506014725` for RiftOS source `c346c3b7d33a8847b7a03130c829fe65e072ee20` passed wiring/docs and then stopped in `scripts/test-rift-patch-sessions.mjs`.
+
+The runtime provenance path was already correct and intentionally generalized for RiftCLI N1:
+- `RiftToolSandbox.executeRequest(raw, origin)` owns the shared implementation;
+- `RiftPatchSessions.begin(... origin = origin ...)` records the supplied writer origin;
+- normal MCP calls use `executeRequest(raw, "mcp")`;
+- RiftCLI live-poll jobs use `executeRequest(raw, "rift-cli")`.
+
+The test still required the pre-N1 implementation string `origin = "mcp"`, so it falsely rejected the generalized owner. The test now requires the generalized provenance assignment plus both concrete call-site origins.
+
+A scan across all active `.mjs` tests/validators found no additional hardcoded `origin = "mcp"` provenance assumptions.
+
+No runtime provenance, ToolSandbox, RiftCLI authority, or patch-session behavior changed.
