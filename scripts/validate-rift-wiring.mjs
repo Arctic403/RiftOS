@@ -234,11 +234,22 @@ if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
     !toolSandbox.includes('executeRequest(raw, "rift-cli-batch")')) fail('RiftCLI N1 dispatcher/provenance/Batch V2 boundary drifted');
 if (!gradle.includes('RiftCliEventBus.kt') ||
     !runtime.includes('fun cliEvents(): RiftCliEventBus') ||
-    !runtime.includes('RiftMcpRelayClient(') ||\n    !runtime.includes('server(context)') ||\n    !runtime.includes('cliEvents()') ||\n    !runtime.includes('debugHub()') ||
+    !runtime.includes('RiftMcpRelayClient(') ||
+    !runtime.includes('server(context)') ||
+    !runtime.includes('cliEvents()') ||
+    !runtime.includes('debugHub()') ||
     !cliEvents.includes('SCHEMA = "rift.cli-event/1"') ||
     !cliEvents.includes('MAX_EVENTS = 256') ||
     !cliEvents.includes('stepKey = extra?.optString("stepId")') ||
+    !cliEvents.includes('debugHub?.sink("riftcli.event-bus")') ||
+    !cliEvents.includes('operation = "event.created"') ||
     !relayClient.includes('cliEvents.addListener(cliEventListener)') ||
+    !relayClient.includes('debugHub?.sink("mcp.relay")') ||
+    !relayClient.includes('operation = "cli.event.send"') ||
+    !relayClient.includes('operation = "relay.ready"') ||
+    !relayClient.includes('operation = "cli.replay.request"') ||
+    !relayClient.includes('operation = "cli.replay.send"') ||
+    !relayClient.includes('operation = "cli.ack"') ||
     !relayClient.includes('"cli.replay.request"') ||
     !relayClient.includes('"cli.ack"') ||
     !relayWorker.includes('acceptWebSocket(server, ["driver"])') ||

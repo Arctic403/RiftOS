@@ -35,10 +35,13 @@ The Builder is a separate repository and is not part of RiftOS SOURCE_OWNERSHIP.
 Root npm run check delegates to check:transport.
 
 Current ordered flow:
-1. validate-rift-wiring.mjs
-2. validate-rift-transport.mjs
-3. validate-rift-docs.mjs
-4. every focused test-rift-*.mjs listed in package.json
+1. Builder syntax-preflights the critical source-gate entrypoints before invoking them;
+2. validate-rift-wiring.mjs;
+3. validate-rift-transport.mjs;
+4. validate-rift-docs.mjs;
+5. every focused test-rift-*.mjs listed in package.json.
+
+The external Builder also requires package.json to keep the wiring, transport, docs, RiftCLI push, Batch V2 and DebugHub entrypoints reachable from npm run check.
 
 validate-rift-wiring now also auto-discovers every scripts/test-*.mjs and fails if a focused test exists but is not executed by a package script.
 
@@ -57,6 +60,8 @@ This includes retained/reference JavaScript intentionally kept as migration/regr
 
 Passing syntax does not imply a retained module is packaged or live.
 
+The Builder repeats a narrow syntax preflight for the critical source-gate entrypoints before npm run check, so validate-rift-wiring.mjs is not the only mechanism expected to detect its own syntax corruption.
+
 ## Android Activity/source reachability
 
 The wiring validator:
@@ -69,9 +74,9 @@ This is a static reachability guard, not Kotlin compilation/type resolution.
 
 ## Exact mandatory Kotlin snapshot
 
-Current Android source directory contains 50 Kotlin files.
+Current Android source directory contains 47 Kotlin files.
 
-android/app/build.gradle.kts::verifyRiftOsAndroidSources now explicitly lists all 49.
+android/app/build.gradle.kts::verifyRiftOsAndroidSources explicitly lists all 47.
 
 During this audit the old list was found to protect only 32 files.
 
@@ -216,9 +221,11 @@ For every listed top-level Kotlin filename it requires the corresponding com/rif
 
 It also explicitly requires private top-level RiftDevLabLocalAgent and embedded SOURCE_SHA.
 
+For RiftCLI N1.5, the final signed DEX must also retain the passive push-diagnostic markers `riftcli.event-bus`, `mcp.relay`, `event.created`, `cli.event.send`, `relay.ready`, `cli.replay.request`, `cli.replay.send` and `cli.ack`. Mandatory class descriptors prove the Kotlin owners exist; these markers prove the specific event/relay instrumentation survived compilation into the final artifact.
+
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
-Because the current Gradle list is exact 45/45 Kotlin sources, including the bounded RiftBuild signer/installer owners and `RiftCodynexBridgeClient.kt`, the Builder consumes that same mandatory native snapshot dynamically rather than maintaining a second stale Kotlin list.
+Because the current Gradle list is exact 47/47 Kotlin sources, including the bounded RiftBuild signer/installer owners and `RiftCodynexBridgeClient.kt`, the Builder consumes that same mandatory native snapshot dynamically rather than maintaining a second stale Kotlin list.
 
 ## Final APK asset verification
 

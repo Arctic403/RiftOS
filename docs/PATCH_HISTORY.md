@@ -6,6 +6,34 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.21 — N1.5 Builder validation closure
+
+### Failure reproduced
+
+Public Builder run `35542173887` for RiftOS source `c9e7852661840aaaee90a760d2737269455347eb` failed before product validation because `scripts/validate-rift-wiring.mjs` contained literal `\\n` characters inside the N1.5 runtime-wiring condition. Node rejected the validator itself with a syntax error.
+
+### Source repair
+
+Repaired the malformed condition and extended `validate-rift-wiring.mjs` so N1.5 wiring now also requires the passive DebugHub component/hooks:
+
+- `riftcli.event-bus` + `event.created`;
+- `mcp.relay`;
+- `cli.event.send`;
+- `relay.ready`;
+- `cli.replay.request`;
+- `cli.replay.send`;
+- `cli.ack`.
+
+The focused `test-rift-cli-push-channel.mjs` and `test-rift-debug-hub.mjs` remain part of `npm run check`.
+
+### External Builder hardening
+
+The public Builder now independently `node --check`s the critical source-gate entrypoints before running the source-owned validator. It also fails if `package.json` no longer routes wiring, transport, docs, RiftCLI push, Batch V2 or DebugHub checks through `npm run check`.
+
+The final signed-APK verifier now requires DEX to contain the N1.5 diagnostic component/operation markers in addition to the mandatory Kotlin class descriptors. This proves the specific event/relay instrumentation survived compilation rather than only proving its owner classes exist.
+
+No installed-device behavior is claimed by these source/Builder checks. N1.5 still requires the green artifact, install, DebugHub device-to-relay ACK proof and final external subscriber push proof.
+
 ## Patch 10.20 — RiftCLI N2 federated memory roadmap freeze
 
 ### Roadmap/documentation changes only
