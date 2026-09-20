@@ -59,7 +59,7 @@ assert.match(compiler, /phi\.i32/);
 assert.match(compiler, /br\.cmp\.lt/);
 assert.match(compiler, /cfg-spill-v0/);
 assert.match(compiler, /loop_backedge/);
-assert.match(runtime, /semnexis-bootstrap-self-test\/13/);
+assert.match(runtime, /semnexis-bootstrap-self-test\/17/);
 assert.match(runtime, /hardeningDerivedEffects/);
 assert.match(runtime, /hardeningCanonicalMachineVerify/);
 assert.match(runtime, /hardeningExpressionBudget/);

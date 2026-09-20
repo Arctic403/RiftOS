@@ -1176,3 +1176,16 @@ The test now explicitly reads `android/app/src/main/cpp/CMakeLists.txt` before t
 A follow-up undefined-binding sweep of the remaining active tests found no additional comparable missing fixture variable; reported heuristic candidates were all valid local declarations, callback parameters or destructured bindings.
 
 No RiftBuild, Codynex MC0, CMake, RiftCLI or runtime behavior changed.
+
+
+## 2026-09-20 — escaped Semnexis self-test schema assertion repair
+
+Builder run `35499228200` for RiftOS source `5ec147ed9d4f61ca8dc15e6174479dfec2e765ba` passed all source gates through RiftBuild, RiftLLM, Rift++ Core, Semnexis bootstrap and Semnexis ARM32 execution, then stopped in `scripts/test-semnexis-shell.mjs`.
+
+The previous stale-test audit corrected the executable-result assertion to `semnexis-bootstrap-self-test/17`, but one separate source-regression assertion remained escaped inside a JavaScript regex literal as `semnexis-bootstrap-self-test\/13`. A plain-text search for `semnexis-bootstrap-self-test/13` did not match that escaped representation, so the stale check survived.
+
+A fresh read-only clone of GitHub `main` confirmed the Builder was executing the actual committed file and that line 62 still contained the escaped `/13` assertion. The assertion is now updated to `/17`.
+
+An escape-aware follow-up sweep checked both plain and regex-escaped `/13` through `/16` schema forms across the active test set; no additional old Semnexis self-test schema markers were found in the scanned scripts.
+
+No Semnexis compiler/runtime, RiftCLI, Builder checkout, or Android runtime behavior changed.
