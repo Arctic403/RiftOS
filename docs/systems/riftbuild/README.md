@@ -96,6 +96,9 @@ riftbuild doctor [project]
 riftbuild validate <project>
 riftbuild plan <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
+riftbuild prepare-codynex-mc0 <codynex-root>
+# then package the prepared MC0 subproject:
+riftbuild pack <codynex-root>/native/mc0/apk-proof arm32
 riftbuild pack <project> [arm32|arm64|universal]
 riftbuild sign <unsigned-apk>
 riftbuild verify <signed-apk>
@@ -178,6 +181,42 @@ The V0 layout is now fully canonicalized: every XML node uses `lineNumber=1`, co
 
 This V0 encoder is not a general XML/resource compiler.
 
+## Codynex MC0 local proof lane
+
+MC0 reuses the existing prepared-artifact pipeline instead of using Tmpbuilder or GitHub as a build transport.
+
+`riftbuild prepare-codynex-mc0 <codynex-root>` is ARM32-only and must:
+
+- read `native/mc0/arm32/mc0_seed.hex` from the Codynex project;
+- decode exactly 172 bytes;
+- require SHA-256 `3276dcbf29704b1ba7d9d331e7891ceff10d85b16bb7688c62273aeaa3ca311e`;
+- validate the source-oracle project at `native/mc0/apk-proof`;
+- extract `lib/armeabi-v7a/libcodynex_mc0_host.so` from the installed RiftOS APK;
+- require the extracted host to be an ARMv7 little-endian ET_DYN ELF;
+- materialize a bounded binary AndroidManifest for package `com.codynex.mc0proof`;
+- write the host only as `lib/armeabi-v7a/libcodynex_mc0_host.so`;
+- write the exact compiler only as `assets/mc0_seed.bin`;
+- re-hash both materialized files;
+- record that compiler authority remains the seed asset.
+
+The MC0 host is test equipment. Its allowed responsibilities are limited to:
+
+- reading the exact seed asset;
+- RW mapping and copying the seed;
+- changing the mapping to RX before execution;
+- providing bounded source/output buffers;
+- calling the raw compiler ABI;
+- checking frozen proof vectors;
+- changing emitted-code memory from RW to RX before execution;
+- executing generated code;
+- reporting PASS/FAIL.
+
+The host must not parse Codynex source, emit target instructions, repair compiler output, or substitute another compiler implementation.
+
+The host library is built as part of RiftOS for both configured RiftOS ABIs, but the MC0 proof preparer extracts and packages only the `armeabi-v7a` image. This forces the proof APK into a 32-bit process where the A32 seed is executable.
+
+No general native compiler is implied by this lane. MC0 is already machine code; RiftBuild only packages the bounded test host and exact machine-code asset.
+
 ## Deterministic prepared-artifact package stage
 
 v0.1 owns a real APK ZIP packaging stage for **prepared Android artifacts**.
@@ -225,11 +264,11 @@ Verification:
 - a signed artifact is not installable-claimed until this verifier passes.
 
 Install/launch proof:
-- V0 installation is restricted to the exact bootstrap package `com.riftpp.nativeproof`;
+- installation is restricted to RiftBuild's fixed proof-package allowlist: `com.riftpp.nativeproof` and `com.codynex.mc0proof`;
 - RiftOS declares `REQUEST_INSTALL_PACKAGES` and uses Android `PackageInstaller`, never raw package-manager shell commands;
 - normal Android unknown-source trust/user confirmation remains mandatory;
 - install status is persisted under RiftBuild system state;
-- after successful installation, the proof launcher targets only the exported `android.app.NativeActivity` for `com.riftpp.nativeproof`;
+- after successful installation, the proof launcher targets only exported `android.app.NativeActivity` for the allowlisted package recorded by the install session;
 - no arbitrary package name, arbitrary APK path or silent/background install authority is exposed.
 
 The v2 implementation is intentionally a small bootstrap subset. General multi-signer/v3/v4/key-import support is out of scope for the RiftLLM+ return milestone.
@@ -244,7 +283,7 @@ Current stage ownership:
 4. APK layout/package — RiftBuild v0.1 prepared-artifact packer;
 5. signing — bounded Android-Keystore APK Signature Scheme v2 owner defined by this V0 contract;
 6. artifact verification — independent v2 signature/content-digest verifier defined by this V0 contract;
-7. install — user-confirmed PackageInstaller + exact proof-package launch owner defined by this V0 contract.
+7. install — user-confirmed PackageInstaller + bounded proof-package allowlist and exact NativeActivity launch owner defined by this contract.
 
 A build/run record must say `blocked` rather than fake success when an upstream stage is unavailable.
 
@@ -291,7 +330,7 @@ The subsystem is invalid if:
 - `build.submit` reports success without all required stages;
 - plain text `AndroidManifest.xml` is mislabeled as an installable packaged manifest;
 - only one ABI is packaged for `universal`;
-- signing/install success is claimed without the independent v2 verifier, exact `com.riftpp.nativeproof` restriction, or Android-managed user confirmation;
+- signing/install success is claimed without the independent v2 verifier, the bounded proof-package allowlist (`com.riftpp.nativeproof` and `com.codynex.mc0proof`), or Android-managed user confirmation;
 - RiftBuild silently enables the experimental CLI;
 - MCP catalog expands just to expose build internals.
 

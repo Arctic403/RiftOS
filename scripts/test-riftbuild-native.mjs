@@ -28,10 +28,20 @@ for (const required of [
   'documents/builds',
   'workspaceRoot',
   'preparedArtifactPackagerReady',
-  'direct-elf-shared-object',
+  'prepared-native-proof',
   'riftpp-direct-elf-shared-v0-bytes/1',
   'DIRECT-ELF-SHARED-V0-BYTES.json',
   'prepareRiftppV0',
+  'prepareCodynexMc0',
+  'prepare-codynex-mc0',
+  'MC0_SEED_BYTES = 172',
+  '3276dcbf29704b1ba7d9d331e7891ceff10d85b16bb7688c62273aeaa3ca311e',
+  'libcodynex_mc0_host.so',
+  'lib/armeabi-v7a/libcodynex_mc0_host.so',
+  'readOwnApkEntry',
+  'Codynex MC0 seed SHA-256 drift',
+  'Codynex MC0 host materialization hash mismatch',
+  'compilerAuthority", "assets/mc0_seed.bin',
   'Rift++ V0 raw SHA-256 mismatch',
   'Rift++ V0 ELF machine mismatch',
   'libriftpp_nativeproof.so',
@@ -79,6 +89,8 @@ for (const required of [
 for (const required of [
   'class RiftBuildInstaller',
   'TARGET_PACKAGE = "com.riftpp.nativeproof"',
+  'MC0_TARGET_PACKAGE = "com.codynex.mc0proof"',
+  'ALLOWED_PROOF_PACKAGES',
   'PackageInstaller',
   'USER_ACTION_REQUIRED',
   'PendingIntent.FLAG_MUTABLE',
@@ -86,7 +98,7 @@ for (const required of [
   'launch-proven',
   'canRequestPackageInstalls',
   'ACTION_MANAGE_UNKNOWN_APP_SOURCES',
-  'RiftBuild V0 installer accepts only',
+  'RiftBuild installer accepts only allowlisted proof packages',
   'class RiftBuildInstallReceiver : BroadcastReceiver()',
 ]) assert.ok(installer.includes(required), 'RiftBuild installer contract missing: ' + required);
 
@@ -106,12 +118,31 @@ assert.match(nativeBuild, /confinedTo\(artifactRoot, file\)/);
 assert.match(nativeBuild, /type == XML_TYPE && headerSize == 8 && declaredSize == file\.length\(\)\.toInt\(\)/);
 assert.match(nativeBuild, /writeManifestU32\(output, 1\)/);
 assert.match(nativeBuild, /writeManifestU32\(output, XML_NO_INDEX\)/);
+assert.match(nativeBuild, /buildMc0BinaryManifest/);
+assert.match(nativeBuild, /verifyElfImage\(host, 1, 40\)/);
+assert.match(nativeBuild, /target", "arm32"/);
+assert.match(nativeBuild, /hostParsesSource", false/);
+assert.match(nativeBuild, /hostEmitsInstructions", false/);
+const mc0Host = read('android/app/src/main/cpp/mc0/codynex_mc0_host.cpp');
+assert.match(mc0Host, /while \(total < kSeedBytes\)/);
+assert.match(mc0Host, /AAsset_read\(/);
+assert.match(mc0Host, /mprotect\(memory, rounded, PROT_READ \| PROT_EXEC\)/);
+assert.match(mc0Host, /mprotect\(generated, pageSize, PROT_READ \| PROT_EXEC\)/);
+assert.match(mc0Host, /const int validDigits\[\] = \{0, 1, 7, 9\}/);
+assert.match(mc0Host, /reject-capacity-0/);
+assert.match(mc0Host, /reject-capacity-7/);
+assert.match(mc0Host, /kCanary = 0xA5/);
+assert.match(mc0Host, /reject-output-unchanged/);
+assert.ok(!mc0Host.includes('#include <string>'), 'MC0 host must not depend on std::string');
+assert.ok(!mc0Host.includes('std::string'), 'MC0 host must remain C-style test glue');
+assert.match(cmake, /codynex_mc0_host[\s\S]*?-fno-exceptions/);
+assert.match(cmake, /codynex_mc0_host[\s\S]*?-fno-rtti/);
 assert.match(nativeBuild, /\.put\("signed", false\)/);
 assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-codynex-mc0\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
@@ -124,7 +155,9 @@ for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftA
 assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'), 'RiftOS manifest omitted REQUEST_INSTALL_PACKAGES');
 assert.ok(manifest.includes('.RiftBuildInstallReceiver'), 'RiftOS manifest omitted private RiftBuild install receiver');
 assert.ok(manifest.includes('android.intent.action.PACKAGE_FIRST_LAUNCH'), 'RiftOS manifest omitted first-launch proof action');
-assert.ok(manifest.includes('com.riftpp.nativeproof'), 'RiftOS manifest omitted fixed proof-package visibility');
+assert.ok(manifest.includes('com.riftpp.nativeproof'), 'RiftOS manifest omitted Rift++ proof-package visibility');
+assert.ok(manifest.includes('com.codynex.mc0proof'), 'RiftOS manifest omitted Codynex MC0 proof-package visibility');
+assert.ok(gradle.includes('src/main/cpp/mc0/codynex_mc0_host.cpp'), 'Gradle exact native source snapshot omitted MC0 host');
 assert.match(manifest, /android:name="\.RiftBuildInstallReceiver"[\s\S]*?android:exported="false"/);
 
 assert.match(retained, /RiftBuild doctor blocked local execution/);

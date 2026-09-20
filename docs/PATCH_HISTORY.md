@@ -1071,3 +1071,24 @@ Gradle now pins NDK `28.2.13676358`, CMake `3.22.1`, both ARM ABI filters and an
 The public Builder was updated in parallel to install the pinned NDK/CMake, preflight the native contract and require both `lib/arm64-v8a/libriftcli.so` and `lib/armeabi-v7a/libriftcli.so` in the final signed APK while forbidding x86 RiftCLI payloads.
 
 This entry records **source architecture only**. Bootstrap-0 is not promoted until Builder compilation/package/sign/APK verification succeeds and the installed device proves native `rift-cli status`, architecture, enable/disable and restart-reset behavior.
+
+
+## 2026-09-20 — Codynex MC0 local proof packaging lane
+
+RiftBuild gained a local, bounded proof-packaging entrance for the Codynex MC0 ARM32 machine bootstrap. This is a source-only local candidate; no APK build or Git push was performed while creating this lane.
+
+New architecture:
+- RiftOS CMake owns a dumb `codynex_mc0_host` NativeActivity shared library;
+- the host maps the exact MC0 seed RW, changes it to RX, invokes it through the frozen ARM32 ABI, provides bounded source/output buffers, changes emitted code RW -> RX, executes generated code and reports PASS/FAIL;
+- the host does not parse Codynex source or emit target instructions;
+- `riftbuild prepare-codynex-mc0 <codynex-root>` reads the canonical `native/mc0/arm32/mc0_seed.hex`, requires exactly 172 decoded bytes and SHA-256 `3276dcbf29704b1ba7d9d331e7891ceff10d85b16bb7688c62273aeaa3ca311e`;
+- prepare extracts only `lib/armeabi-v7a/libcodynex_mc0_host.so` from the installed RiftOS APK and validates it as ARMv7 little-endian ET_DYN;
+- the prepared proof stores the compiler authority only as `assets/mc0_seed.bin`;
+- package identity is `com.codynex.mc0proof`;
+- the existing deterministic APK packer, Android-Keystore APK v2 signer, independent verifier and user-confirmed PackageInstaller remain the downstream pipeline;
+- the installer proof-package boundary is now an explicit two-package allowlist: existing `com.riftpp.nativeproof` plus `com.codynex.mc0proof`;
+- MC0 is ARM32-only for the first proof so Android selects a 32-bit process for the A32 seed.
+
+The source-oracle project under Codynex `native/mc0/apk-proof` passes the currently installed RiftBuild source validator with `sourceReady=true`. It remains `preparedPackageReady=false` until a future authorized RiftOS build/install contains the new host and the new prepare command is executed.
+
+This change also records the research-order decision that the remaining LR0 live-replacement gates no longer block MC0. LR0 remains the C++ reference/oracle track; MC0 now proceeds independently as the machine-bootstrap truth track.

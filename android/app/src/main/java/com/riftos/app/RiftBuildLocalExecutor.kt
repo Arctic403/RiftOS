@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 /**
@@ -56,6 +57,16 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val RIFTPP_V0_APP_GRADLE_SHA = "1d1739a07896c4d7f1e521fa154a0285c5c4eefe87eab718830fee37194c0765"
         private const val RIFTPP_V0_BINARY_MANIFEST_BYTES = 1440
         private const val RIFTPP_V0_BINARY_MANIFEST_SHA = "ac035bb5bf89f55a3f34bae8eea980108324d2f36333f1e708f8a0b82af8e7c2"
+        private const val MC0_SEED_HEX = "native/mc0/arm32/mc0_seed.hex"
+        private const val MC0_SEED_BYTES = 172
+        private const val MC0_SEED_SHA256 = "3276dcbf29704b1ba7d9d331e7891ceff10d85b16bb7688c62273aeaa3ca311e"
+        private const val MC0_APK_PROJECT = "native/mc0/apk-proof"
+        private const val MC0_PACKAGE = "com.codynex.mc0proof"
+        private const val MC0_LIBRARY_NAME = "codynex_mc0_host"
+        private const val MC0_LIBRARY_FILE = "libcodynex_mc0_host.so"
+        private const val MC0_HOST_APK_ENTRY = "lib/armeabi-v7a/libcodynex_mc0_host.so"
+        private const val MC0_VERSION_NAME = "0.1.0-mc0-proof"
+        private const val MC0_MAX_HOST_BYTES = 4L * 1024L * 1024L
         private const val XML_NO_INDEX = -1
         private const val XML_STRING_POOL_TYPE = 0x0001
         private const val XML_TYPE = 0x0003
@@ -79,6 +90,13 @@ class RiftBuildLocalExecutor(context: Context) {
             0x01010003, 0x0101000c, 0x01010010, 0x01010024,
             0x0101020c, 0x0101021b, 0x0101021c, 0x01010270
         )
+        private val MC0_MANIFEST_STRINGS = listOf(
+            "name", "hasCode", "exported", "value", "minSdkVersion", "versionCode", "versionName", "targetSdkVersion",
+            "android", "http://schemas.android.com/apk/res/android", "manifest", "package", MC0_PACKAGE, "1",
+            MC0_VERSION_NAME, "uses-sdk", "26", "36", "application", "false", "activity",
+            "android.app.NativeActivity", "true", "meta-data", "android.app.lib_name", MC0_LIBRARY_NAME,
+            "intent-filter", "action", "android.intent.action.MAIN", "category", "android.intent.category.LAUNCHER"
+        )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
         private val SAFE_SEGMENT = Regex("^[A-Za-z0-9._+-]{1,120}$")
@@ -97,7 +115,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-codynex-mc0 <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -108,6 +126,10 @@ class RiftBuildLocalExecutor(context: Context) {
             "prepare-riftpp-v0" -> prepareRiftppV0(
                 args.firstOrNull() ?: error("usage: riftbuild prepare-riftpp-v0 <riftpp-root> [arm32|arm64|universal]"),
                 args.getOrNull(1) ?: "universal",
+                cwd
+            )
+            "prepare-codynex-mc0" -> prepareCodynexMc0(
+                args.firstOrNull() ?: error("usage: riftbuild prepare-codynex-mc0 <codynex-root>"),
                 cwd
             )
             "pack" -> pack(
@@ -237,6 +259,12 @@ class RiftBuildLocalExecutor(context: Context) {
         val prepared = inspectPrepared(ref, normalizedTarget)
         val sourceReady = validation.optBoolean("sourceReady")
         val packReady = sourceReady && prepared.optBoolean("ready")
+        val nativeLibraryName = validation.optString("nativeLibraryName")
+        val prepareHint = when (nativeLibraryName) {
+            MC0_LIBRARY_NAME -> "run prepare-codynex-mc0 from the Codynex project root"
+            "riftpp_nativeproof" -> "run prepare-riftpp-v0 for the current Rift++ V0 proof"
+            else -> "materialize a bounded prepared native package"
+        }
         return JSONObject()
             .put("format", "riftbuild-native-plan-v1")
             .put("project", ref.display)
@@ -249,26 +277,28 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("artifactRoot", artifactProjectDisplay(ref))
             .put("stages", JSONArray()
                 .put(stage("source-validation", if (sourceReady) "ready" else "blocked", if (sourceReady) null else "source validation failed"))
-                .put(stage("riftpp-ir-backend", "reference-ready", "existing Rift++ proof surface"))
                 .put(stage(
-                    "direct-elf-shared-object",
+                    "prepared-native-proof",
                     if (hasPreparedNative(prepared, normalizedTarget)) "prepared" else "blocked",
-                    if (hasPreparedNative(prepared, normalizedTarget)) null else "run prepare-riftpp-v0 for the current Rift++ V0 proof"
+                    if (hasPreparedNative(prepared, normalizedTarget)) null else prepareHint
                 ))
                 .put(stage("apk-package", if (packReady) "ready" else "blocked", if (packReady) null else "prepared binary Android artifacts incomplete"))
                 .put(stage("apk-signing", "ready-v2", null))
                 .put(stage("artifact-verification", "ready-v2", null))
-                .put(stage("package-install", "user-confirmed", "restricted to com.riftpp.nativeproof; Android user confirmation may be required")))
+                .put(stage("package-install", "user-confirmed", "restricted to RiftBuild proof-package allowlist; Android user confirmation may be required")))
     }
 
 
     fun prepare(args: JSONObject, cwd: String = "/D:/Workspace"): JSONObject {
         require(!args.has("command") && !args.has("shell") && !args.has("exec")) { "RiftBuild does not accept raw commands" }
         val kind = args.optString("kind", "riftpp-v0")
-        require(kind == "riftpp-v0") { "build.prepare kind must be riftpp-v0" }
         val project = args.optString("project").ifBlank { args.optString("projectPath") }
-        require(project.isNotBlank()) { "build.prepare requires the Rift++ project root" }
-        return prepareRiftppV0(project, args.optString("target", "universal"), cwd)
+        require(project.isNotBlank()) { "build.prepare requires a project root" }
+        return when (kind) {
+            "riftpp-v0" -> prepareRiftppV0(project, args.optString("target", "universal"), cwd)
+            "codynex-mc0" -> prepareCodynexMc0(project, cwd)
+            else -> error("build.prepare kind must be riftpp-v0 or codynex-mc0")
+        }
     }
 
     @Synchronized
@@ -371,6 +401,182 @@ class RiftBuildLocalExecutor(context: Context) {
         )
         writeRun(result)
         return result
+    }
+
+    @Synchronized
+    fun prepareCodynexMc0(project: String, cwd: String = "/D:/Workspace"): JSONObject {
+        val ref = resolveProject(project, cwd)
+        val seedFile = projectFile(ref, MC0_SEED_HEX)
+        require(seedFile.isFile) { "Codynex MC0 seed is missing" }
+        val seed = decodeHex(readTextBounded(seedFile).trim())
+        require(seed.size == MC0_SEED_BYTES) {
+            "Codynex MC0 seed byte count drift: " + seed.size
+        }
+        require(sha256(seed) == MC0_SEED_SHA256) {
+            "Codynex MC0 seed SHA-256 drift"
+        }
+
+        val apkProject = projectFile(ref, MC0_APK_PROJECT)
+        require(apkProject.isDirectory) { "Codynex MC0 apk-proof project is missing" }
+        val apkDisplay = projectDisplay(ref, apkProject)
+        val sourceValidation = validate(apkDisplay, "/D:/Workspace")
+        require(sourceValidation.optBoolean("sourceReady")) {
+            "Codynex MC0 apk-proof source validation failed"
+        }
+        require(sourceValidation.optString("nativeLibraryName") == MC0_LIBRARY_NAME) {
+            "Codynex MC0 NativeActivity library declaration drift"
+        }
+
+        val sourceManifest = projectFile(
+            ref,
+            MC0_APK_PROJECT + "/app/src/main/AndroidManifest.xml"
+        )
+        val sourceManifestText = readTextBounded(sourceManifest)
+        require(sourceManifestText.contains("package=\"" + MC0_PACKAGE + "\"")) {
+            "Codynex MC0 package declaration drift"
+        }
+        require(sourceManifestText.contains("android:value=\"" + MC0_LIBRARY_NAME + "\"")) {
+            "Codynex MC0 library declaration drift"
+        }
+
+        val host = readOwnApkEntry(MC0_HOST_APK_ENTRY, MC0_MAX_HOST_BYTES)
+        verifyElfImage(host, 1, 40)
+
+        val buildRoot = File(apkProject, "build/riftbuild").canonicalFile
+        require(confinedTo(apkProject, buildRoot)) {
+            "Codynex MC0 build root escaped apk-proof"
+        }
+        val preparedRoot = File(buildRoot, "prepared").canonicalFile
+        require(confinedTo(buildRoot, preparedRoot)) {
+            "Codynex MC0 prepared root escaped build/riftbuild"
+        }
+        if (preparedRoot.exists()) {
+            require(deleteTreeBounded(preparedRoot, MAX_PROJECT_FILES)) {
+                "Could not clear stale Codynex MC0 prepared package"
+            }
+        }
+
+        val libRoot = File(preparedRoot, "lib/armeabi-v7a").canonicalFile
+        val assetRoot = File(preparedRoot, "assets").canonicalFile
+        require(confinedTo(preparedRoot, libRoot)) {
+            "Codynex MC0 library root escaped prepared package"
+        }
+        require(confinedTo(preparedRoot, assetRoot)) {
+            "Codynex MC0 asset root escaped prepared package"
+        }
+        require(libRoot.mkdirs() || libRoot.isDirectory) {
+            "Could not create Codynex MC0 library directory"
+        }
+        require(assetRoot.mkdirs() || assetRoot.isDirectory) {
+            "Could not create Codynex MC0 asset directory"
+        }
+
+        val manifestBytes = buildMc0BinaryManifest()
+        val manifestOutput = File(preparedRoot, "AndroidManifest.xml").canonicalFile
+        val hostOutput = File(libRoot, MC0_LIBRARY_FILE).canonicalFile
+        val seedOutput = File(assetRoot, "mc0_seed.bin").canonicalFile
+
+        atomicWrite(manifestOutput, manifestBytes)
+        atomicWrite(hostOutput, host)
+        atomicWrite(seedOutput, seed)
+
+        require(isBinaryAndroidManifest(manifestOutput)) {
+            "Codynex MC0 binary AndroidManifest.xml failed validation"
+        }
+        require(sha256(hostOutput) == sha256(host)) {
+            "Codynex MC0 host materialization hash mismatch"
+        }
+        require(sha256(seedOutput) == MC0_SEED_SHA256) {
+            "Codynex MC0 seed materialization hash mismatch"
+        }
+
+        val runId = runId()
+        val result = JSONObject()
+            .put("format", "riftbuild-codynex-mc0-materialization-v1")
+            .put("runId", runId)
+            .put("state", "prepared-native")
+            .put("project", ref.display)
+            .put("androidProject", apkDisplay)
+            .put("target", "arm32")
+            .put("package", MC0_PACKAGE)
+            .put("libraryName", MC0_LIBRARY_NAME)
+            .put("libraryFile", MC0_LIBRARY_FILE)
+            .put("hostSource", "self-apk:" + MC0_HOST_APK_ENTRY)
+            .put("hostBytes", host.size)
+            .put("hostSha256", sha256(host))
+            .put("seedSource", projectDisplay(ref, seedFile))
+            .put("seedBytes", seed.size)
+            .put("seedSha256", sha256(seed))
+            .put(
+                "manifest",
+                JSONObject()
+                    .put("path", projectDisplay(ref, manifestOutput))
+                    .put("bytes", manifestOutput.length())
+                    .put("sha256", sha256(manifestOutput))
+            )
+            .put("antiContamination", JSONObject()
+                .put("hostParsesSource", false)
+                .put("hostEmitsInstructions", false)
+                .put("compilerAuthority", "assets/mc0_seed.bin"))
+            .put("manifestReady", true)
+            .put("signed", false)
+            .put("installableClaimed", false)
+            .put("createdAt", System.currentTimeMillis())
+
+        atomicWrite(
+            File(buildRoot, "codynex-mc0-materialization.json"),
+            result.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(result)
+        return result
+    }
+
+    private fun decodeHex(raw: String): ByteArray {
+        require(raw.isNotBlank() && raw.length % 2 == 0) {
+            "Codynex MC0 hex must contain complete byte pairs"
+        }
+        require(raw.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+            "Codynex MC0 hex contains non-hex characters"
+        }
+        return ByteArray(raw.length / 2) { index ->
+            raw.substring(index * 2, index * 2 + 2).toInt(16).toByte()
+        }
+    }
+
+    private fun readOwnApkEntry(entryName: String, maxBytes: Long): ByteArray {
+        require(entryName.startsWith("lib/") && safeZipPath(entryName)) {
+            "Unsafe RiftOS self-APK entry"
+        }
+        val apk = File(appContext.applicationInfo.sourceDir).canonicalFile
+        require(apk.isFile) { "Installed RiftOS base APK is unavailable" }
+        ZipFile(apk).use { zip ->
+            val entry = zip.getEntry(entryName)
+                ?: throw IllegalStateException(
+                    "Installed RiftOS APK does not contain " + entryName +
+                        "; rebuild/install RiftOS with the MC0 host first"
+                )
+            require(!entry.isDirectory) { "RiftOS MC0 host entry is not a file" }
+            require(entry.size < 0L || entry.size <= maxBytes) {
+                "RiftOS MC0 host exceeds bounded extraction limit"
+            }
+            val output = ByteArrayOutputStream()
+            zip.getInputStream(entry).buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    RiftDeadline.check("RiftBuild MC0 host extraction")
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (read == 0) continue
+                    total += read
+                    require(total <= maxBytes) {
+                        "RiftOS MC0 host exceeds bounded extraction limit"
+                    }
+                    output.write(buffer, 0, read)
+                }
+            }
+            return output.toByteArray()
+        }
     }
 
     fun submit(args: JSONObject, cwd: String = "/D:/Workspace"): JSONObject {
@@ -697,6 +903,200 @@ class RiftBuildLocalExecutor(context: Context) {
             "arm32" -> arm32 > 0
             else -> arm64 > 0 && arm32 > 0
         }
+    }
+
+    private fun buildMc0BinaryManifest(): ByteArray {
+        val body = ByteArrayOutputStream()
+        body.write(buildMc0ManifestStringPool())
+        body.write(buildManifestResourceMap())
+        body.write(buildMc0ManifestNamespace(XML_START_NAMESPACE_TYPE))
+
+        body.write(buildMc0ManifestStartElement(
+            "manifest",
+            listOf(
+                mc0ManifestStringAttr("package", MC0_PACKAGE, XML_NO_INDEX),
+                mc0ManifestIntAttr("versionCode", "1", 1),
+                mc0ManifestStringAttr("versionName", MC0_VERSION_NAME)
+            )
+        ))
+        body.write(buildMc0ManifestStartElement(
+            "uses-sdk",
+            listOf(
+                mc0ManifestIntAttr("minSdkVersion", "26", 26),
+                mc0ManifestIntAttr("targetSdkVersion", "36", 36)
+            )
+        ))
+        body.write(buildMc0ManifestEndElement("uses-sdk"))
+        body.write(buildMc0ManifestStartElement(
+            "application",
+            listOf(mc0ManifestBoolAttr("hasCode", "false", false))
+        ))
+        body.write(buildMc0ManifestStartElement(
+            "activity",
+            listOf(
+                mc0ManifestStringAttr("name", "android.app.NativeActivity"),
+                mc0ManifestBoolAttr("exported", "true", true)
+            )
+        ))
+        body.write(buildMc0ManifestStartElement(
+            "meta-data",
+            listOf(
+                mc0ManifestStringAttr("name", "android.app.lib_name"),
+                mc0ManifestStringAttr("value", MC0_LIBRARY_NAME)
+            )
+        ))
+        body.write(buildMc0ManifestEndElement("meta-data"))
+        body.write(buildMc0ManifestStartElement("intent-filter", emptyList()))
+        body.write(buildMc0ManifestStartElement(
+            "action",
+            listOf(mc0ManifestStringAttr("name", "android.intent.action.MAIN"))
+        ))
+        body.write(buildMc0ManifestEndElement("action"))
+        body.write(buildMc0ManifestStartElement(
+            "category",
+            listOf(mc0ManifestStringAttr("name", "android.intent.category.LAUNCHER"))
+        ))
+        body.write(buildMc0ManifestEndElement("category"))
+        body.write(buildMc0ManifestEndElement("intent-filter"))
+        body.write(buildMc0ManifestEndElement("activity"))
+        body.write(buildMc0ManifestEndElement("application"))
+        body.write(buildMc0ManifestEndElement("manifest"))
+        body.write(buildMc0ManifestNamespace(XML_END_NAMESPACE_TYPE))
+
+        val bodyBytes = body.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(output, XML_TYPE, 8, 8 + bodyBytes.size)
+        output.write(bodyBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildMc0ManifestStringPool(): ByteArray {
+        val offsets = ArrayList<Int>(MC0_MANIFEST_STRINGS.size)
+        val data = ByteArrayOutputStream()
+        for (value in MC0_MANIFEST_STRINGS) {
+            val bytes = value.toByteArray(Charsets.UTF_8)
+            require(value.length < 0x80 && bytes.size < 0x80) {
+                "Codynex MC0 manifest string exceeds one-byte UTF-8 pool length"
+            }
+            offsets.add(data.size())
+            writeManifestLength8(data, value.length)
+            writeManifestLength8(data, bytes.size)
+            data.write(bytes)
+            data.write(0)
+        }
+        while (data.size() % 4 != 0) data.write(0)
+
+        val stringsStart = 28 + (MC0_MANIFEST_STRINGS.size * 4)
+        val dataBytes = data.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(
+            output,
+            XML_STRING_POOL_TYPE,
+            28,
+            stringsStart + dataBytes.size
+        )
+        writeManifestU32(output, MC0_MANIFEST_STRINGS.size)
+        writeManifestU32(output, 0)
+        writeManifestU32(output, XML_UTF8_FLAG)
+        writeManifestU32(output, stringsStart)
+        writeManifestU32(output, 0)
+        for (offset in offsets) writeManifestU32(output, offset)
+        output.write(dataBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildMc0ManifestNamespace(type: Int): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, type, 24)
+        writeManifestU32(output, mc0ManifestStringIndex("android"))
+        writeManifestU32(
+            output,
+            mc0ManifestStringIndex("http://schemas.android.com/apk/res/android")
+        )
+        return output.toByteArray()
+    }
+
+    private fun buildMc0ManifestStartElement(
+        name: String,
+        attrs: List<ManifestAttr>
+    ): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, XML_START_ELEMENT_TYPE, 36 + (attrs.size * 20))
+        writeManifestU32(output, XML_NO_INDEX)
+        writeManifestU32(output, mc0ManifestStringIndex(name))
+        writeManifestU16(output, 20)
+        writeManifestU16(output, 20)
+        writeManifestU16(output, attrs.size)
+        writeManifestU16(output, 0)
+        writeManifestU16(output, 0)
+        writeManifestU16(output, 0)
+        for (attr in attrs) {
+            writeManifestU32(output, attr.namespace)
+            writeManifestU32(output, attr.name)
+            writeManifestU32(output, attr.rawValue)
+            writeManifestU16(output, 8)
+            output.write(0)
+            output.write(attr.dataType)
+            writeManifestU32(output, attr.data)
+        }
+        return output.toByteArray()
+    }
+
+    private fun buildMc0ManifestEndElement(name: String): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, XML_END_ELEMENT_TYPE, 24)
+        writeManifestU32(output, XML_NO_INDEX)
+        writeManifestU32(output, mc0ManifestStringIndex(name))
+        return output.toByteArray()
+    }
+
+    private fun mc0ManifestStringAttr(
+        name: String,
+        value: String,
+        namespace: Int = mc0ManifestStringIndex(
+            "http://schemas.android.com/apk/res/android"
+        )
+    ): ManifestAttr =
+        ManifestAttr(
+            namespace,
+            mc0ManifestStringIndex(name),
+            mc0ManifestStringIndex(value),
+            XML_VALUE_STRING,
+            mc0ManifestStringIndex(value)
+        )
+
+    private fun mc0ManifestIntAttr(
+        name: String,
+        rawValue: String,
+        value: Int
+    ): ManifestAttr =
+        ManifestAttr(
+            mc0ManifestStringIndex("http://schemas.android.com/apk/res/android"),
+            mc0ManifestStringIndex(name),
+            mc0ManifestStringIndex(rawValue),
+            XML_VALUE_INT_DEC,
+            value
+        )
+
+    private fun mc0ManifestBoolAttr(
+        name: String,
+        rawValue: String,
+        value: Boolean
+    ): ManifestAttr =
+        ManifestAttr(
+            mc0ManifestStringIndex("http://schemas.android.com/apk/res/android"),
+            mc0ManifestStringIndex(name),
+            mc0ManifestStringIndex(rawValue),
+            XML_VALUE_INT_BOOLEAN,
+            if (value) -1 else 0
+        )
+
+    private fun mc0ManifestStringIndex(value: String): Int {
+        val index = MC0_MANIFEST_STRINGS.indexOf(value)
+        require(index >= 0) {
+            "Codynex MC0 manifest string is not in the frozen pool: " + value
+        }
+        return index
     }
 
     private fun buildRiftppV0BinaryManifest(): ByteArray {

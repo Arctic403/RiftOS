@@ -13,21 +13,32 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * User-confirmed PackageInstaller owner for the fixed RiftBuild bootstrap proof package.
+ * User-confirmed PackageInstaller owner for bounded RiftBuild native proof packages.
  */
 class RiftBuildInstaller(context: Context) {
     companion object {
         const val TARGET_PACKAGE = "com.riftpp.nativeproof"
+        const val MC0_TARGET_PACKAGE = "com.codynex.mc0proof"
         const val TARGET_ACTIVITY = "android.app.NativeActivity"
         const val ACTION_INSTALL_STATUS = "com.riftos.app.RIFTBUILD_INSTALL_STATUS"
 
+        private val ALLOWED_PROOF_PACKAGES = setOf(
+            TARGET_PACKAGE,
+            MC0_TARGET_PACKAGE
+        )
+
         private fun statusFile(context: Context): File =
-            File(context.applicationContext.filesDir, "riftfs/system/riftbuild/v1/install-status.json")
+            File(
+                context.applicationContext.filesDir,
+                "riftfs/system/riftbuild/v1/install-status.json"
+            )
 
         private fun readStatus(context: Context): JSONObject {
             val file = statusFile(context)
             return if (file.isFile && file.length() <= 1024L * 1024L) {
-                runCatching { JSONObject(file.readText(Charsets.UTF_8)) }.getOrElse { JSONObject() }
+                runCatching {
+                    JSONObject(file.readText(Charsets.UTF_8))
+                }.getOrElse { JSONObject() }
             } else JSONObject()
         }
 
@@ -36,13 +47,22 @@ class RiftBuildInstaller(context: Context) {
             target.parentFile?.mkdirs()
             val temp = File(target.parentFile, "." + target.name + ".tmp")
             temp.writeText(value.toString(2), Charsets.UTF_8)
-            if (target.exists()) require(target.delete()) { "could not replace RiftBuild install status" }
-            require(temp.renameTo(target)) { "could not publish RiftBuild install status" }
+            if (target.exists()) {
+                require(target.delete()) {
+                    "could not replace RiftBuild install status"
+                }
+            }
+            require(temp.renameTo(target)) {
+                "could not publish RiftBuild install status"
+            }
         }
 
-        private fun launchExact(context: Context) {
+        private fun launchExact(context: Context, packageName: String) {
+            require(packageName in ALLOWED_PROOF_PACKAGES) {
+                "RiftBuild proof package is not allowlisted: " + packageName
+            }
             val intent = Intent()
-                .setClassName(TARGET_PACKAGE, TARGET_ACTIVITY)
+                .setClassName(packageName, TARGET_ACTIVITY)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.applicationContext.startActivity(intent)
         }
@@ -52,11 +72,13 @@ class RiftBuildInstaller(context: Context) {
 
             if (intent.action == Intent.ACTION_PACKAGE_FIRST_LAUNCH) {
                 val packageName = intent.data?.schemeSpecificPart.orEmpty()
-                if (packageName == TARGET_PACKAGE) {
+                if (packageName in ALLOWED_PROOF_PACKAGES) {
                     val current = readStatus(appContext)
+                    val recorded = current.optString("package")
+                    if (recorded.isNotBlank() && recorded != packageName) return
                     current
                         .put("schema", "riftbuild-install-status-v1")
-                        .put("package", TARGET_PACKAGE)
+                        .put("package", packageName)
                         .put("state", "launch-proven")
                         .put("launchProven", true)
                         .put("launchProvenAt", System.currentTimeMillis())
@@ -66,55 +88,94 @@ class RiftBuildInstaller(context: Context) {
             }
 
             if (intent.action != ACTION_INSTALL_STATUS) return
-            val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-            val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
-            val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
-            val packageName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME).orEmpty()
+
+            val platformStatus = intent.getIntExtra(
+                PackageInstaller.EXTRA_STATUS,
+                PackageInstaller.STATUS_FAILURE
+            )
+            val message = intent
+                .getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                .orEmpty()
+            val sessionId = intent.getIntExtra(
+                PackageInstaller.EXTRA_SESSION_ID,
+                -1
+            )
+            val reportedPackage = intent
+                .getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
+                .orEmpty()
+
             val current = readStatus(appContext)
+            val expectedPackage = current.optString("package")
+            val packageName = when {
+                reportedPackage in ALLOWED_PROOF_PACKAGES -> reportedPackage
+                expectedPackage in ALLOWED_PROOF_PACKAGES -> expectedPackage
+                else -> ""
+            }
+
+            val updated = current
                 .put("schema", "riftbuild-install-status-v1")
-                .put("package", TARGET_PACKAGE)
+                .put("package", packageName)
                 .put("sessionId", sessionId)
-                .put("platformStatus", status)
+                .put("platformStatus", platformStatus)
                 .put("platformMessage", message)
-                .put("reportedPackage", packageName)
+                .put("reportedPackage", reportedPackage)
                 .put("updatedAt", System.currentTimeMillis())
 
-            when (status) {
+            when (platformStatus) {
                 PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                    current.put("state", "pending-user-action")
+                    updated.put("state", "pending-user-action")
                     val confirmIntent = if (Build.VERSION.SDK_INT >= 33) {
-                        intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                        intent.getParcelableExtra(
+                            Intent.EXTRA_INTENT,
+                            Intent::class.java
+                        )
                     } else {
                         @Suppress("DEPRECATION")
                         intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
                     }
-                    current.put("confirmationIntentPresent", confirmIntent != null)
-                    writeStatus(appContext, current)
+                    updated.put(
+                        "confirmationIntentPresent",
+                        confirmIntent != null
+                    )
+                    writeStatus(appContext, updated)
                     if (confirmIntent != null) {
                         confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         appContext.startActivity(confirmIntent)
                     }
                 }
+
                 PackageInstaller.STATUS_SUCCESS -> {
-                    current
+                    require(packageName in ALLOWED_PROOF_PACKAGES) {
+                        "PackageInstaller reported an unexpected proof package"
+                    }
+                    updated
                         .put("state", "installed-launch-requested")
                         .put("installed", true)
                         .put("installedAt", System.currentTimeMillis())
                         .put("launchRequested", true)
-                    val launchError = runCatching { launchExact(appContext) }.exceptionOrNull()
+
+                    val launchError = runCatching {
+                        launchExact(appContext, packageName)
+                    }.exceptionOrNull()
+
                     if (launchError != null) {
-                        current
+                        updated
                             .put("state", "installed-launch-failed")
                             .put("launchRequested", false)
-                            .put("launchError", launchError.message ?: launchError.javaClass.simpleName)
+                            .put(
+                                "launchError",
+                                launchError.message
+                                    ?: launchError.javaClass.simpleName
+                            )
                     }
-                    writeStatus(appContext, current)
+                    writeStatus(appContext, updated)
                 }
+
                 else -> {
-                    current
+                    updated
                         .put("state", "install-failed")
                         .put("installed", false)
-                    writeStatus(appContext, current)
+                    writeStatus(appContext, updated)
                 }
             }
         }
@@ -128,6 +189,7 @@ class RiftBuildInstaller(context: Context) {
             .put("schema", "riftbuild-install-permission-v1")
             .put("allowed", allowed)
             .put("package", appContext.packageName)
+
         if (!allowed) {
             val intent = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -136,38 +198,56 @@ class RiftBuildInstaller(context: Context) {
             appContext.startActivity(intent)
             result
                 .put("state", "settings-opened")
-                .put("message", "Enable Allow from this source for RiftOS, then retry riftbuild install-proof")
+                .put(
+                    "message",
+                    "Enable Allow from this source for RiftOS, then retry riftbuild install-proof"
+                )
         } else {
             result.put("state", "ready")
         }
         return result
     }
 
-    fun installProof(apk: File, verified: RiftApkV2Signer.VerifyResult): JSONObject {
+    fun installProof(
+        apk: File,
+        verified: RiftApkV2Signer.VerifyResult
+    ): JSONObject {
         require(apk.isFile) { "signed proof APK is missing" }
-        require(verified.apkSha256.isNotBlank()) { "signed proof APK must pass RiftBuild v2 verification first" }
+        require(verified.apkSha256.isNotBlank()) {
+            "signed proof APK must pass RiftBuild v2 verification first"
+        }
 
         val packageName = archivePackageName(apk)
-        require(packageName == TARGET_PACKAGE) {
-            "RiftBuild V0 installer accepts only " + TARGET_PACKAGE + ", got " + packageName
+        require(packageName in ALLOWED_PROOF_PACKAGES) {
+            "RiftBuild installer accepts only allowlisted proof packages, got " +
+                packageName
         }
 
         if (!appContext.packageManager.canRequestPackageInstalls()) {
             return requestInstallPermissionIfNeeded()
+                .put("proofPackage", packageName)
                 .put("verifiedApkSha256", verified.apkSha256)
                 .put("certificateSha256", verified.certificateSha256)
         }
 
         val packageInstaller = appContext.packageManager.packageInstaller
-        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-            setAppPackageName(TARGET_PACKAGE)
+        val params = PackageInstaller.SessionParams(
+            PackageInstaller.SessionParams.MODE_FULL_INSTALL
+        ).apply {
+            setAppPackageName(packageName)
             setSize(apk.length())
-            if (Build.VERSION.SDK_INT >= 26) setInstallReason(PackageManager.INSTALL_REASON_USER)
+            if (Build.VERSION.SDK_INT >= 26) {
+                setInstallReason(PackageManager.INSTALL_REASON_USER)
+            }
             if (Build.VERSION.SDK_INT >= 31) {
-                setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
+                setRequireUserAction(
+                    PackageInstaller.SessionParams.USER_ACTION_REQUIRED
+                )
             }
             if (Build.VERSION.SDK_INT >= 33) {
-                setPackageSource(PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE)
+                setPackageSource(
+                    PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE
+                )
             }
         }
 
@@ -175,20 +255,32 @@ class RiftBuildInstaller(context: Context) {
         try {
             packageInstaller.openSession(sessionId).use { session ->
                 session.openWrite("base.apk", 0, apk.length()).use { output ->
-                    apk.inputStream().buffered().use { input -> input.copyTo(output) }
+                    apk.inputStream().buffered().use { input ->
+                        input.copyTo(output)
+                    }
                     session.fsync(output)
                 }
 
-                val callbackIntent = Intent(appContext, RiftBuildInstallReceiver::class.java)
-                    .setAction(ACTION_INSTALL_STATUS)
+                val callbackIntent = Intent(
+                    appContext,
+                    RiftBuildInstallReceiver::class.java
+                ).setAction(ACTION_INSTALL_STATUS)
+
                 var flags = PendingIntent.FLAG_UPDATE_CURRENT
-                if (Build.VERSION.SDK_INT >= 31) flags = flags or PendingIntent.FLAG_MUTABLE
-                val callback = PendingIntent.getBroadcast(appContext, sessionId, callbackIntent, flags)
+                if (Build.VERSION.SDK_INT >= 31) {
+                    flags = flags or PendingIntent.FLAG_MUTABLE
+                }
+                val callback = PendingIntent.getBroadcast(
+                    appContext,
+                    sessionId,
+                    callbackIntent,
+                    flags
+                )
 
                 val status = JSONObject()
                     .put("schema", "riftbuild-install-status-v1")
                     .put("state", "committed-awaiting-result")
-                    .put("package", TARGET_PACKAGE)
+                    .put("package", packageName)
                     .put("sessionId", sessionId)
                     .put("artifact", apk.absolutePath)
                     .put("artifactSha256", verified.apkSha256)
@@ -217,28 +309,40 @@ class RiftBuildInstaller(context: Context) {
     }
 
     fun launchProof(): JSONObject {
+        val current = status()
+        val packageName = current
+            .optString("package")
+            .ifBlank { TARGET_PACKAGE }
+
+        require(packageName in ALLOWED_PROOF_PACKAGES) {
+            "Latest RiftBuild proof package is not allowlisted"
+        }
+
         val packageInfo = runCatching {
             if (Build.VERSION.SDK_INT >= 33) {
                 appContext.packageManager.getPackageInfo(
-                    TARGET_PACKAGE,
+                    packageName,
                     PackageManager.PackageInfoFlags.of(0L)
                 )
             } else {
                 @Suppress("DEPRECATION")
-                appContext.packageManager.getPackageInfo(TARGET_PACKAGE, 0)
+                appContext.packageManager.getPackageInfo(packageName, 0)
             }
         }.getOrNull()
-        require(packageInfo != null) { "Rift++ native proof package is not installed" }
 
-        launchExact(appContext)
-        val current = status()
+        require(packageInfo != null) {
+            "RiftBuild proof package is not installed: " + packageName
+        }
+
+        launchExact(appContext, packageName)
+        val updated = current
             .put("schema", "riftbuild-install-status-v1")
             .put("state", "launch-requested")
-            .put("package", TARGET_PACKAGE)
+            .put("package", packageName)
             .put("launchRequested", true)
             .put("launchRequestedAt", System.currentTimeMillis())
-        writeStatus(appContext, current)
-        return current
+        writeStatus(appContext, updated)
+        return updated
     }
 
     private fun archivePackageName(apk: File): String {
@@ -249,7 +353,10 @@ class RiftBuildInstaller(context: Context) {
             )
         } else {
             @Suppress("DEPRECATION")
-            appContext.packageManager.getPackageArchiveInfo(apk.absolutePath, 0)
+            appContext.packageManager.getPackageArchiveInfo(
+                apk.absolutePath,
+                0
+            )
         }
         return info?.packageName.orEmpty()
     }

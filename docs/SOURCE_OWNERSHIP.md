@@ -91,7 +91,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCliHost.kt` | `docs/systems/riftcli/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCodynexBridgeClient.kt` | `docs/CODYNEX_LR0_BRIDGE.md` + `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftcli/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftcli/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/cpp/mc0/codynex_mc0_host.cpp` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/cpp/riftcli/rift_cli_core.h` | `docs/systems/riftcli/README.md` |
 | `android/app/src/main/cpp/riftcli/rift_cli_core.cpp` | `docs/systems/riftcli/README.md` |
 | `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp` | `docs/systems/riftcli/README.md` + `docs/systems/android-host/README.md` |

@@ -25,3 +25,32 @@ target_include_directories(
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/riftcli
 )
+
+
+add_library(
+    codynex_mc0_host
+    SHARED
+    mc0/codynex_mc0_host.cpp
+)
+
+target_compile_features(codynex_mc0_host PRIVATE cxx_std_17)
+
+target_compile_options(
+    codynex_mc0_host
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -fno-exceptions
+    -fno-rtti
+)
+
+find_library(android-lib android)
+find_library(log-lib log)
+
+target_link_libraries(
+    codynex_mc0_host
+    PRIVATE
+    ${android-lib}
+    ${log-lib}
+)
