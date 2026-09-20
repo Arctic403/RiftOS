@@ -124,6 +124,10 @@ const browserHost = read(`${kotlinDir}/RiftBrowserAppHost.kt`);
 const desktop = read(`${kotlinDir}/RiftNativeDesktop.kt`);
 const workspaceApps = read(`${kotlinDir}/RiftNativeWorkspaceApps.kt`);
 const browserBridge = read(`${kotlinDir}/RiftBrowserMcpAppBridge.kt`);
+const cliHost = read(`${kotlinDir}/RiftCliHost.kt`);
+const cliCmake = read('android/app/src/main/cpp/CMakeLists.txt');
+const cliCore = read('android/app/src/main/cpp/riftcli/rift_cli_core.cpp');
+const cliJni = read('android/app/src/main/cpp/riftcli/rift_cli_jni.cpp');
 
 for (const retired of [
   'RiftShellBridge.kt', 'RiftSystemDump.kt', 'AndroidWebViewBrowserEngine.kt',
@@ -139,6 +143,23 @@ if (!main.includes('nativeWorkspaceApps.onActivityResult') || !main.includes('br
 if (!main.includes('add("mcp", "Rift MCP", "⇄")')) fail('Rift MCP launcher entry is missing from MainActivity');
 if (!main.includes('if (id == "mcp")') || !main.includes('startActivity(Intent(this, RiftMcpActivity::class.java))')) fail('Rift MCP launcher does not open the existing RiftMcpActivity');
 if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP is missing from the native desktop fallback launcher');
+
+if (!cliHost.includes('System.loadLibrary("riftcli")') || !cliHost.includes('private external fun nativeExecute')) {
+  fail('RiftCLI Kotlin host is not a thin JNI loader');
+}
+if (!nativeShell.includes('RiftCliHost.executeShell(args, cwd)')) fail('RiftShell does not route rift-cli into the native C++ host');
+if (!gradle.includes('ndkVersion = "28.2.13676358"') ||
+    !gradle.includes('abiFilters += listOf("arm64-v8a", "armeabi-v7a")') ||
+    !gradle.includes('path = file("src/main/cpp/CMakeLists.txt")')) fail('RiftCLI pinned dual-ABI native Gradle wiring is missing');
+if (!cliCmake.includes('add_library(') || !cliCmake.includes('riftcli') || !cliCmake.includes('SHARED')) {
+  fail('RiftCLI native CMake shared library contract is missing');
+}
+if (!cliCore.includes('external-driver -> MCP/RiftShell -> RiftCLI') ||
+    !cliCore.includes('"mutationAuthority\\":false') ||
+    !cliCore.includes('"modelBackend\\":false') ||
+    !cliCore.includes('"networkAuthority\\":false')) fail('RiftCLI bootstrap authority boundary drifted');
+if (cliJni.includes('GetStringUTFChars') || cliJni.includes('NewStringUTF') ||
+    !cliJni.includes('GetStringChars') || !cliJni.includes('utf8ToUtf16')) fail('RiftCLI JNI UTF boundary drifted');
 
 const allowedWebKitOwners = new Set([
   'RiftBrowserAndroidWebViewEngine.kt', 'RiftBrowserWindow.kt', 'RiftBrowserMcpAppBridge.kt',

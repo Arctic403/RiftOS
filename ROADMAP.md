@@ -87,29 +87,30 @@ Next improvements should stay lightweight:
 
 The project should never be injected wholesale into ChatGPT. RiftOS exposes full project reachability through the local executor; only bounded search/read results needed for reasoning cross the existing ChatGPT Web transport.
 
-## Workspace trust and validation hardening — observe-first
+## Native RiftCLI engineering program
 
-A 14-patch closed-circuit validation program is now active as planned development work. Until the full system survives adversarial validation, its eventual Local Agent gate defaults to **OBSERVE**: it may compute WOULD_ACCEPT / WOULD_DENY evidence but must not block existing patch, Git, Dev Lab or build workflows. ENFORCE remains manual-only until graduation.
+The former 14-patch Experimental RiftCLI lifecycle program was retired on 2026-09-19. Its Kotlin lifecycle/swarm/IR/research/parity/verification implementation is no longer the active roadmap.
 
-Current sequence/status:
-1. **Diff Engine V2 — implemented in current source.** Workspace Records delegates text rendering to a bounded deterministic adaptive exact-LCS/patience engine with independent hunks.
-2. **File identity intelligence — implemented in current source.** Exact SHA rename/copy content identity, bounded heuristic rename/rewrite correlation and checkpoint identity summaries.
-3. **Patch sessions and provenance — implemented in current source.** Explicit writer claims are state-bound where possible, directory replacement claims are labeled lower-confidence, and unknown writers remain `unattributed-local`.
-4. **Immutable patch manifest and tamper-evident evidence — implemented in current source.** Deterministic base/result/change-set/structural hashes, internal SHA-addressed manifest freeze, forward record chain, pruning anchors, crash-safe head recovery and operational-vs-trusted checkpoint separation are present; trusted promotion remains absent.
-5. **Semantic diff + Project Intelligence impact mapping — implemented in current source.** One shared PI-v2 analyzer now drives normal indexing and candidate before/after deltas; impact scope is derived from Patch Manifest V1, bounded/incomplete explicitly, mapped through callers/dependents/tests/docs, and exposed only through an internal Local Agent seam.
-6. **Local Agent validation state machine/policy core — OBSERVE core implemented.** `RiftCliPatchLifecycleV1` defines clean acquisition through final local evaluation verification and computes WOULD_ACCEPT/WOULD_DENY only; it cannot block, publish or promote trust.
-7. **Independent research-verification ledger — collection/claim core implemented.** `RiftResearchLedgerV1` binds sources to claims and requires authoritative support for critical claims. Independent re-check remains the final evaluator's responsibility; RiftOS does not fetch/cryptographically verify remote research content yet.
-**Pre-Patch-8 stress-foundation repair — implemented in current source.** Live abuse fixed candidate-created governance/build-manifest scope and moved lifecycle sessions into RiftFS system storage with fail-closed process-restart drift detection. Exact regressions are locked by `test-rift-cli-stress-foundation.mjs`. The external source of the observed untracked-file deletion was not proven; restart drift is contained/detected rather than guessed safe.
+Reusable RiftOS evidence foundations remain live and independent:
 
-8. **Documentation/README/roadmap/patch-note parity gate — OBSERVE implementation complete.** `RiftDocumentationParityV1` now derives exact maintained-path ownership/governance requirements from the final candidate, hard-fails missing/stale ownership and mandatory owner-doc/patch-history updates, requires exact structured source/governance reviews, and binds the recomputed parity-plan SHA into final evaluator verification. Arbitrary prose truth remains an independent-evaluator responsibility.
-9. **Impact-derived tests/security/dependency verification planner — OBSERVE implementation complete.** `RiftVerificationPlannerV1` now derives exact test/security/dependency targets and deterministic required check ids from the final candidate, requires plan-bound security/dependencies/tests evidence, fail-closes missing test/validation scope, and binds the recomputed `verificationPlanSha256` into final evaluator verification. It remains a planner/evidence gate, not an autonomous runner.
-10. **Hermetic/reproducible evidence and stale-result invalidation — stale binding implemented; hermetic execution pending.** Evidence records bind source/candidate identities and final policy rejects stale manifests; build environment/artifact hashes are required, but builds are not yet hermetic/reproducible by construction.
-11. Trust-boundary enforcement and bypass closure — **not implemented; OBSERVE only.**
-12. **Immutable verification bundle and decision trail — verification-bundle foundation implemented.** Candidate/semantic/evidence/policy hashes and bounded evaluator echo checks exist; the lifecycle session/decision store is not yet an immutable/hash-chained decision trail.
-13. Builder provenance handshake from accepted source identity to APK artifact identity — **not implemented.**
-14. Adversarial torture/re-audit before ENFORCE can be considered normal — **pending.**
+1. **Diff Engine V2 — retained.** Workspace Records owns bounded deterministic multi-hunk evidence.
+2. **File identity intelligence — retained.** Rename/copy/rewrite correlation remains Workspace evidence.
+3. **Patch sessions and provenance — retained.** Explicit writer provenance remains shared by MCP/Shell/Files/Dev Lab/Git.
+4. **Patch Manifest/tamper evidence — retained.** Candidate/tree/change-set hashing and record-chain primitives remain reusable.
+5. **Project Intelligence V2 impact mapping — retained.** Current source graph/impact/validation evidence remains the canonical live project-intelligence owner.
 
-OBSERVE and ENFORCE must execute the same verification pipeline; only authority differs. A candidate or trusted-base byte change invalidates previous acceptance evidence rather than inheriting stale approval.
+RiftCLI is now rebuilt as a native C++ subsystem with this promotion sequence:
+
+- **N0 Native bootstrap — current work.** C++ core + thin Kotlin JNI host, ARM64 primary + ARM32 compatibility, explicit process-local enable, exact native source snapshot, zero mutation/tool/network/model authority, final APK must contain both ABI libraries.
+- **N1 Driver Protocol.** Bounded external-driver/session/task/project/evidence/proposed-action contract. Dependency stays external driver → MCP/RiftShell → RiftCLI; CLI never calls a model/API.
+- **N2 Engineering State.** Native persistent project memory for architecture decisions, hazards, tasks, checkpoints, evidence and history without duplicating current source truth.
+- **N3 Architecture/impact engine.** Consume Project Intelligence and owner contracts to derive subsystem boundaries, dependencies, docs/tests/build/security impact before change.
+- **N4 Planner.** Professional dependency-aware planning with explicit preconditions/postconditions and recovery. Plan globally; mutate incrementally. No opaque multi-operation batch editing.
+- **N5 Research/evidence.** Native bounded source/claim/assumption/freshness ledger with authoritative-source and independent-verification requirements.
+- **N6 Verification.** Candidate-bound compile/test/security/dependency/docs/build/APK/device/performance evidence as applicable.
+- **N7 Adversarial engineering loop.** Corrupt/stale memory, renamed files, dependency cycles, failed/interrupted builds, misleading tests, dirty repos, malformed driver input, restart/resume and huge-project stress. Every discovered defect becomes a regression test.
+
+No later gate is promoted merely because a happy-path demo passes. Documentation and regression tests are part of each gate.
 
 ## RiftEngine
 

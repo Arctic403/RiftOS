@@ -89,16 +89,11 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftNativeGit.kt` | `docs/systems/git/README.md` + `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftExperimentalCli.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/systems/shell/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftVerificationPlannerV1.kt` | `docs/systems/experimental-cli/PATCH9_VERIFICATION_PLANNER.md` + `docs/systems/experimental-cli/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftDocumentationParityV1.kt` | `docs/systems/experimental-cli/PATCH8_DOCUMENTATION_PARITY.md` + `docs/systems/experimental-cli/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCliPatchLifecycleV1.kt` | `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/systems/experimental-cli/README.md` + `docs/RIFT_AI_PATCH_PIPELINE.md` + `docs/RIFT_DEVELOPMENT_WORKFLOW.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftResearchLedgerV1.kt` | `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/RIFT_AI_PATCH_PIPELINE.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftPlusPlusV0.kt` | `docs/systems/experimental-cli/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftIrV1.kt` | `docs/systems/experimental-cli/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftIrCliV1.kt` | `docs/systems/experimental-cli/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftSwarmCoordinatorV0.kt` | `docs/systems/experimental-cli/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt` | `docs/systems/experimental-cli/README.md` + `docs/systems/shell/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCliHost.kt` | `docs/systems/riftcli/README.md` + `docs/systems/shell/README.md` |
+| `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftcli/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/cpp/riftcli/rift_cli_core.h` | `docs/systems/riftcli/README.md` |
+| `android/app/src/main/cpp/riftcli/rift_cli_core.cpp` | `docs/systems/riftcli/README.md` |
+| `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp` | `docs/systems/riftcli/README.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
@@ -150,10 +145,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-patch-sessions.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/mcp/sandbox/README.md` |
 | `scripts/test-rift-patch-manifest-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-semantic-impact-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-cli-patch-lifecycle-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-verification-planner-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/PATCH9_VERIFICATION_PLANNER.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-documentation-parity-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/PATCH8_DOCUMENTATION_PARITY.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-cli-stress-foundation.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/PATCH_LIFECYCLE_V1.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-cli-native-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
 | `scripts/test-rift-path-compat.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftfs/README.md` + shell/build/repo/Git/Vault/Memory/Dev Lab/RiftLLM/Files owners |
@@ -168,9 +160,6 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 
 | `scripts/test-rift-shell-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` |
 | `scripts/test-riftllm-corpus.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
-| `scripts/test-rift-text-encoder-task.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
-| `scripts/test-rift-plus-plus-v0.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
-| `scripts/test-rift-ir-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/experimental-cli/README.md` |
 | `scripts/test-rift-plus-plus-core-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftpp-core/README.md` |
 | `scripts/test-semnexis-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |
 | `scripts/test-semnexis-arm32-exec.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |

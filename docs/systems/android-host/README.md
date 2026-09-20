@@ -30,8 +30,10 @@ Host source:
 - `android/app/src/main/AndroidManifest.xml`
 - `android/app/src/main/res/values/styles.xml`
 
-Host-adjacent lifecycle source:
+Host-adjacent lifecycle/source boundaries:
 - `RiftMcpRuntime.kt` — process-lifetime service singletons and weak MainActivity reference.
+- `RiftCliHost.kt` — thin Kotlin loader/envelope adapter for the native C++ RiftCLI core; it owns no CLI planning/memory/policy.
+- `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp` — explicit UTF-16/UTF-8 JNI marshalling boundary for RiftCLI.
 - `RiftWorkspaceWatcher.kt` — Activity-created/stopped workspace observation.
 - `RiftBrowserWindow.kt` — browser Activity-result/lifecycle recipient.
 - `RiftNativeWorkspaceApps.kt` — native Files SAF Activity-result recipient.
@@ -150,7 +152,7 @@ On creation, MainActivity:
 12. bootstraps the desktop;
 13. starts the process-owned outbound relay client.
 
-The launcher always includes Files, Workspace Records, RiftShell, RiftBrowser, Editor, Dev Lab, Tasks and Settings.
+The launcher always includes Files, Workspace Records, RiftShell, RiftBrowser, Editor, Dev Lab, Tasks, Settings and Rift MCP. Rift MCP launches the existing `RiftMcpActivity`; MainActivity does not duplicate relay/MCP state.
 
 It additionally scans `C:/Programs` for existing package directories off the UI thread. The installed-program scan is capped at 5 seconds, 128 candidate directories and 32 MiB total package bytes. Launcher manifests are accepted only when:
 - `package.json` exists and is 1 byte through 8 MiB;
@@ -262,7 +264,8 @@ Android Host does not own:
 - Git transactions → RiftGit;
 - SAF mount/filesystem semantics → Files;
 - Accessibility/local-agent command policy → Vortex/local-agent;
-- persistent records semantics → Workspace Records.
+- persistent records semantics → Workspace Records;
+- RiftCLI engineering logic/project memory/planning/verification → native C++ RiftCLI core.
 
 MainActivity is composition and lifecycle glue; subsystem policy must not migrate into it.
 
@@ -279,7 +282,9 @@ MainActivity is composition and lifecycle glue; subsystem policy must not migrat
 - Accessibility service remains permission-gated and package-scoped;
 - UI-only shell operations fail clearly when no usable MainActivity exists;
 - docs distinguish same-process Activity recreation from process death;
-- Android backup policy is described from manifest truth, not assumed.
+- Android backup policy is described from manifest truth, not assumed;
+- `RiftCliHost.kt` remains transport-only and does not become a second Kotlin CLI implementation;
+- RiftCLI JNI text crosses the host boundary through explicit UTF-16/UTF-8 conversion.
 
 ## Failure signatures
 
@@ -293,7 +298,9 @@ MainActivity is composition and lifecycle glue; subsystem policy must not migrat
 - externally supplied `riftos://mcp` data is interpreted as a command → exported-Activity boundary regression;
 - preview becomes exported → preview attack-surface regression;
 - docs claim backup exclusion while `allowBackup=true` and no exclusion rules exist → manifest/documentation mismatch;
-- docs call implemented-but-unwired MainActivity methods active routes → reachability documentation error.
+- docs call implemented-but-unwired MainActivity methods active routes → reachability documentation error;
+- RiftCliHost gains planner/memory/model/network logic → Android-host ownership regression;
+- RiftCLI JNI switches to modified-UTF shortcuts and corrupts standard UTF payloads → JNI text-boundary regression.
 
 ## Fix map
 
@@ -310,6 +317,10 @@ Workspace watcher lifetime → `RiftWorkspaceWatcher.kt`.
 Browser picker lifecycle → `RiftBrowserWindow.kt`.
 
 Files SAF picker lifecycle → `RiftNativeWorkspaceApps.kt`.
+
+RiftCLI Android loader/result envelope → `RiftCliHost.kt`.
+
+RiftCLI JNI string marshalling → `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp`; CLI engineering behavior remains owned by `docs/systems/riftcli/README.md`.
 
 MCP settings Activity internals → MCP subsystem, not Android Host.
 
@@ -328,6 +339,8 @@ Source validation for this subsystem must verify:
 - current MainActivity public method reachability;
 - manifest permissions/package queries/application flags;
 - backup policy declaration;
+- Rift MCP launcher routes only to the existing `RiftMcpActivity`;
+- `RiftCliHost.kt` remains thin JNI transport and JNI uses explicit UTF-16/UTF-8 conversion;
 - no saved-state/window-layout persistence is falsely claimed.
 
 Build/device promotion still requires:

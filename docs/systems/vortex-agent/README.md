@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
 ## Purpose
 
@@ -20,8 +20,7 @@ There is no arbitrary package selector.
 
 Primary:
 - RiftVortexLocalAgent.kt — fixed-package agent logic, AccessibilityService, RiftOS self-agent, Samsung keyboard helper.
-- RiftNativeShellServices.kt — strict shell argument parsing and routing.
-- RiftExperimentalCli.kt — RiftAgentRouter seam for riftos-agent; experimental mode still delegates to the same fixed RiftOsLocalAgent authority.
+- RiftNativeShellServices.kt — strict shell argument parsing and direct routing to the fixed RiftOsLocalAgent authority.
 - AndroidManifest.xml — Accessibility service declaration.
 - res/xml/vortex_agent_accessibility.xml — package/event/content/gesture capability filter.
 
@@ -252,9 +251,9 @@ This local-agent route does not introduce another WebView owner.
 
 RiftNativeShellServices routes:
 - vortex-agent directly to RiftVortexLocalAgent;
-- riftos-agent through RiftAgentRouter.
+- riftos-agent directly to the fixed RiftOsLocalAgent authority.
 
-RiftAgentRouter currently calls RiftExperimentalCli.routeLocalAgent(), which in both disabled and enabled experimental modes delegates the actual UI action to the same fixed RiftOsLocalAgent. Experimental mode may classify/record the route, but it does not gain wider package or UI authority.
+The retired Experimental RiftCLI router no longer sits in the Local Agent path. Native RiftCLI Bootstrap-0 has no Local Agent authority.
 
 The parser now fails on malformed/extra arguments instead of silently discarding them.
 
@@ -327,7 +326,7 @@ Fixed application UI authority and Accessibility implementation -> RiftVortexLoc
 
 Shell grammar/routing -> RiftNativeShellServices.kt.
 
-RiftOS self-agent routing seam -> RiftExperimentalCli.kt / RiftAgentRouter.
+RiftOS self-agent routing -> RiftNativeShellServices.kt -> RiftOsLocalAgent in RiftVortexLocalAgent.kt.
 
 Service registration -> AndroidManifest.xml.
 
@@ -355,7 +354,7 @@ Second source audit must verify:
 - gesture display + app-window + overlay checks;
 - 4096 keyboard scan limits and 128-character raw label bound;
 - strict shell arity/numeric parsing;
-- RiftAgentRouter still delegates to fixed RiftOsLocalAgent;
+- riftos-agent routes directly to fixed RiftOsLocalAgent with no RiftCLI interception;
 - RiftOS-only type-focused;
 - native Dev Lab/browser delegation;
 - absence of process/shell/network authority.

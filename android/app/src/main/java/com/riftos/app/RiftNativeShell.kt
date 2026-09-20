@@ -244,7 +244,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 ShellOutcome(value.output, cwd, value.result)
             }
             "rift-cli" -> {
-                val cli = RiftExperimentalCli.executeShell(appContext, args)
+                val cli = RiftCliHost.executeShell(args, cwd)
                 ShellOutcome(cli.output, cwd, cli.result)
             }
             "mount", "umount" -> throw IllegalStateException("Legacy shell mount entry point is retired during native Files migration; no renderer fallback exists.")

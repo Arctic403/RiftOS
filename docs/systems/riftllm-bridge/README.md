@@ -31,7 +31,7 @@ Secret storage:
 Package visibility:
 - Android manifest query for `com.riftllm.app`.
 
-`RiftTextEncoderTaskRunner.kt` belongs to the Experimental CLI subsystem, not this bridge.
+The former Experimental CLI `RiftTextEncoderTaskRunner.kt` was retired during the Native RiftCLI reset. It was never part of the stable RiftLLM bridge authority.
 
 Retained `src/riftllm-bridge.js` is historical/reference implementation and is not the current packaged authority.
 
@@ -284,11 +284,11 @@ Only then is `train_canary_start` called with the pack SHA.
 
 The controller does not mark this pack as production pretraining eligible.
 
-## Experimental text encoder separation
+## Retired Experimental CLI text encoder
 
-`RiftTextEncoderTaskRunner` is reachable from `RiftExperimentalCli`, not this stable RiftLLM bridge.
+The former `RiftTextEncoderTaskRunner` / `RiftExperimentalCli` path was removed during the Native RiftCLI reset. No replacement tokenizer authority was added to this bridge.
 
-Its training/evaluation lifecycle must be audited under Experimental RiftCLI rather than being silently included here.
+Stable RiftLLM bridge behavior remains unchanged; any future native RiftCLI training integration requires its own explicit bridge contract and promotion gate.
 
 ## No local-agent route
 
@@ -355,7 +355,7 @@ Shell command mapping -> `RiftNativeShellServices.kt`.
 
 Fixed canary pack build/upload/start -> `RiftTrainDataTaskRunner.kt`.
 
-Experimental encoder/training -> Experimental RiftCLI subsystem.
+Retired Experimental CLI text encoder -> removed; no active owner in RiftOS.
 
 RiftLLM-side Provider/model behavior -> standalone RiftLLM project, not RiftOS.
 

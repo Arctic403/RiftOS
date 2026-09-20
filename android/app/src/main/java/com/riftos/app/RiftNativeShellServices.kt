@@ -170,7 +170,7 @@ class RiftNativeShellServices(context: Context) {
         }
         val activity=RiftMcpRuntime.activeActivity()
         val context=activity?:appContext
-        return localAgent("riftos-agent",args){ request -> RiftAgentRouter.execute(context,request) }
+        return localAgent("riftos-agent",args){ request -> RiftOsLocalAgent.execute(context,request) }
     }
 
     fun riftLlm(args: MutableList<String>, cwd: String): Result {

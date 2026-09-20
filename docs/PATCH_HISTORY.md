@@ -966,3 +966,40 @@ The existing fixed `riftpp self-test` command was upgraded to schema `riftpp-she
 The embedded proof covers checked u8 literals/conversions, `Buffer<u8,N>`, `Slice<u8>`, deterministic hashing, compile-time literal overflow rejection and runtime checked arithmetic overflow rejection.
 
 The command still executes with no host imports under the existing Rift++ shell limits. Shell and wiring validators now fail if this bounded u8 proof disappears.
+
+
+## 2026-09-19 — Native RiftCLI Bootstrap-0 reset
+
+The former Experimental RiftCLI implementation was intentionally retired instead of being used as the foundation for the next CLI architecture.
+
+Retired CLI-only owners:
+- `RiftExperimentalCli.kt`;
+- `RiftCliPatchLifecycleV1.kt`;
+- `RiftDocumentationParityV1.kt`;
+- `RiftVerificationPlannerV1.kt`;
+- `RiftResearchLedgerV1.kt`;
+- `RiftPlusPlusV0.kt`;
+- `RiftIrV1.kt` / `RiftIrCliV1.kt`;
+- `RiftSwarmCoordinatorV0.kt`;
+- `RiftTextEncoderTaskRunner.kt`;
+- their Experimental CLI docs, V0 sample and focused regression tests.
+
+Shared RiftOS infrastructure was deliberately retained: Project/Source Intelligence, Workspace Records, Diff/File Identity, Patch Manifest/Sessions, Git, MCP, Dev Lab, RiftBuild, RiftBrowser and Local Agent.
+
+The replacement Bootstrap-0 architecture is:
+- C++ canonical core under `android/app/src/main/cpp/riftcli/`;
+- thin `RiftCliHost.kt` JNI loader/result adapter only;
+- existing `rift-cli` RiftShell command routed directly to that host;
+- `riftos-agent` restored to direct `RiftOsLocalAgent` routing with no CLI interception;
+- permanent dependency direction `external driver -> MCP/RiftShell -> RiftCLI`;
+- no model/API client inside RiftCLI;
+- no mutation, tool, network, project-memory, planner or verification authority in Bootstrap-0;
+- process-local explicit `CONFIRM-EXPERIMENTAL` enable switch, default OFF;
+- explicit UTF-16 <-> standard UTF-8 JNI transcoding;
+- primary `arm64-v8a` plus required `armeabi-v7a` support from the first native build.
+
+Gradle now pins NDK `28.2.13676358`, CMake `3.22.1`, both ARM ABI filters and an exact native C++ source snapshot. Source validation was replaced with `test-rift-cli-native-bootstrap.mjs` plus wiring/docs gates.
+
+The public Builder was updated in parallel to install the pinned NDK/CMake, preflight the native contract and require both `lib/arm64-v8a/libriftcli.so` and `lib/armeabi-v7a/libriftcli.so` in the final signed APK while forbidding x86 RiftCLI payloads.
+
+This entry records **source architecture only**. Bootstrap-0 is not promoted until Builder compilation/package/sign/APK verification succeeds and the installed device proves native `rift-cli status`, architecture, enable/disable and restart-reset behavior.

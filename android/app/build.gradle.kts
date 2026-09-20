@@ -5,6 +5,7 @@ plugins {
 android {
     namespace = "com.riftos.app"
     compileSdk = 36
+    ndkVersion = "28.2.13676358"
 
     val riftSourceSha = System.getenv("SOURCE_SHA")?.trim().orEmpty().ifBlank { "local" }
     val riftBuildRunId = System.getenv("GITHUB_RUN_ID")?.trim().orEmpty().ifBlank { "local" }
@@ -19,6 +20,23 @@ android {
         buildConfigField("String", "RIFT_SOURCE_SHA", "\"$riftSourceSha\"")
         buildConfigField("String", "RIFT_BUILD_RUN_ID", "\"$riftBuildRunId\"")
         buildConfigField("String", "RIFT_BUILD_RUN_NUMBER", "\"$riftBuildRunNumber\"")
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++17")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildFeatures {
@@ -61,15 +79,10 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftBuildInstaller.kt",
         "src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt",
         "src/main/java/com/riftos/app/RiftChatHandoff.kt",
-        "src/main/java/com/riftos/app/RiftCliPatchLifecycleV1.kt",
+        "src/main/java/com/riftos/app/RiftCliHost.kt",
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
-        "src/main/java/com/riftos/app/RiftDocumentationParityV1.kt",
-        "src/main/java/com/riftos/app/RiftExperimentalCli.kt",
-        "src/main/java/com/riftos/app/RiftVerificationPlannerV1.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
         "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",
-        "src/main/java/com/riftos/app/RiftIrCliV1.kt",
-        "src/main/java/com/riftos/app/RiftIrV1.kt",
         "src/main/java/com/riftos/app/RiftLlmDevClient.kt",
         "src/main/java/com/riftos/app/RiftMcpActivity.kt",
         "src/main/java/com/riftos/app/RiftMcpRelayClient.kt",
@@ -84,15 +97,11 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt",
         "src/main/java/com/riftos/app/RiftPatchManifestV1.kt",
         "src/main/java/com/riftos/app/RiftPatchSessions.kt",
-        "src/main/java/com/riftos/app/RiftPlusPlusV0.kt",
         "src/main/java/com/riftos/app/RiftProjectExporter.kt",
         "src/main/java/com/riftos/app/RiftRelaySettings.kt",
-        "src/main/java/com/riftos/app/RiftResearchLedgerV1.kt",
         "src/main/java/com/riftos/app/RiftSecretStore.kt",
         "src/main/java/com/riftos/app/RiftShellExecutor.kt",
         "src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt",
-        "src/main/java/com/riftos/app/RiftSwarmCoordinatorV0.kt",
-        "src/main/java/com/riftos/app/RiftTextEncoderTaskRunner.kt",
         "src/main/java/com/riftos/app/RiftToolHost.kt",
         "src/main/java/com/riftos/app/RiftToolSandbox.kt",
         "src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt",
@@ -101,6 +110,13 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftVortexLocalAgent.kt",
         "src/main/java/com/riftos/app/RiftWorkspaceRecords.kt",
         "src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt"
+    )
+
+    val requiredNative = listOf(
+        "src/main/cpp/CMakeLists.txt",
+        "src/main/cpp/riftcli/rift_cli_core.cpp",
+        "src/main/cpp/riftcli/rift_cli_core.h",
+        "src/main/cpp/riftcli/rift_cli_jni.cpp"
     )
 
     doLast {
@@ -124,6 +140,24 @@ val verifyRiftOsAndroidSources by tasks.registering {
             val staleDeclarations = declared.filterNot(actual::contains)
             throw GradleException(
                 "RiftOS Android source snapshot is not exact. " +
+                    "Missing declarations: ${missingDeclarations.joinToString().ifBlank { "none" }}; " +
+                    "stale declarations: ${staleDeclarations.joinToString().ifBlank { "none" }}"
+            )
+        }
+
+        val nativeRoot = file("src/main/cpp")
+        val actualNative = nativeRoot.walkTopDown()
+            .filter { it.isFile }
+            .map { it.relativeTo(projectDir).invariantSeparatorsPath }
+            .sorted()
+            .toList()
+        val declaredNative = requiredNative.sorted()
+
+        if (declaredNative != actualNative) {
+            val missingDeclarations = actualNative.filterNot(declaredNative::contains)
+            val staleDeclarations = declaredNative.filterNot(actualNative::contains)
+            throw GradleException(
+                "RiftOS native C++ source snapshot is not exact. " +
                     "Missing declarations: ${missingDeclarations.joinToString().ifBlank { "none" }}; " +
                     "stale declarations: ${staleDeclarations.joinToString().ifBlank { "none" }}"
             )

@@ -23,8 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Stable fixed-purpose Rift-Micro training-data builder.
  *
- * This runner is deliberately separate from RiftExperimentalCli. It accepts no caller-selected
- * paths, process commands or tokenizer identities. The only supported input is the frozen B2
+ * This runner is deliberately separate from RiftCLI. It accepts no caller-selected paths,
+ * process commands or tokenizer identities. The only supported input is the frozen B2
  * tokenizer plus the frozen V2 training shard set, and the only output is the ignored/private
  * canary training pack under workspace/RiftLLM/training/private/.
  */

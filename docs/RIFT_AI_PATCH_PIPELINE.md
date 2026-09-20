@@ -1,200 +1,45 @@
 # AI-Assisted Patch Pipeline
 
-## Verification status
+## Status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**RETIRED IMPLEMENTATION — 2026-09-19**
 
-This document defines the canonical **input/output path between RiftCLI/Local Agent and an AI** for repository modification.
+The former Experimental RiftCLI patch lifecycle (`RiftCliPatchLifecycleV1`, its research ledger, documentation-parity planner and verification planner) was intentionally removed when RiftCLI was reset to a native C++ architecture.
 
-The executable OBSERVE-only implementation is owned by:
-- `RiftCliPatchLifecycleV1.kt`;
-- `RiftResearchLedgerV1.kt`;
-- Experimental RiftCLI.
+This file remains only as an architectural-history marker so older patch notes and discussions do not silently point at a missing system.
 
-Detailed source contract: [Experimental CLI / Patch Lifecycle V1](systems/experimental-cli/PATCH_LIFECYCLE_V1.md).
+The current RiftCLI contract is:
 
-## Design rule
+- [Native RiftCLI architecture](systems/riftcli/README.md)
 
-The AI does not get to say “I looked at these files, therefore the patch is complete.”
+## Preserved engineering principles
 
-The system flow is:
+The reset does **not** discard the useful engineering rules learned from the retired lifecycle.
 
-```text
-clean repo / immutable source revision
-              ↓
-CLI acquisition + full bounded inventory
-              ↓
-AI understands repository + ownership
-              ↓
-external research + claim ledger
-              ↓
-document implementation intent
-              ↓
-guarded patch through existing tools
-              ↓
-CLI-derived actual candidate
-              ↓
-document audit
-              ↓
-code audit
-              ↓
-security / dependency / test / build evidence
-              ↓
-end-to-end verification + rollback evidence
-              ↓
-freeze exact manifest + semantic impact
-              ↓
-bounded evaluation packet → independent AI
-              ↓
-AI verdict + exact defects + echoed hashes
-              ↓
-CLI verifies subject identity
-              ↓
-WOULD_ACCEPT / WOULD_DENY only
-```
+Future native RiftCLI gates must preserve these principles:
 
-## IN path: repository to AI
+- understand repository architecture before mutation;
+- bind work to actual project/source identity;
+- research uncertain external assumptions;
+- document intended architecture and rollback;
+- patch through narrow existing authorities;
+- derive impact from repository truth instead of author claims;
+- verify documentation, code, security, dependencies, tests, builds and end-to-end behavior when applicable;
+- retain exact evidence/checkpoint identity;
+- fail closed on stale or incomplete evidence;
+- keep AI reasoning separate from local mutation authority;
+- never let a model response silently promote trust or publication state.
 
-### ACQUIRE
+## Current behavior
 
-Prefer:
+Bootstrap-0 RiftCLI does **not** implement an AI patch lifecycle.
 
-```text
-rift-cli lifecycle begin-sync D:/Workspace/<repo> <goal...>
-```
+It currently has:
 
-The CLI synchronizes through native RiftGit, requires a clean tree, captures Git HEAD and deterministic Project Export snapshot, enumerates governance/build/generated boundaries, and creates an operational lifecycle checkpoint.
+- native C++ core;
+- thin Kotlin JNI host;
+- help/status/architecture;
+- explicit process-local enable/disable;
+- zero mutation/tool/network/model authority.
 
-If another Workspace project already has uncheckpointed changes, lifecycle acquisition refuses to move the global operational checkpoint.
-
-### UNDERSTAND
-
-The AI must understand the project before editing:
-- tree/layout;
-- subsystem ownership;
-- APIs/imports/references;
-- tests;
-- build/CI;
-- dependency manifests;
-- generated/vendor surfaces;
-- docs/README;
-- ROADMAP;
-- TODO/TASK when the project actually has them;
-- source ownership;
-- patch history.
-
-RiftOS currently uses `ROADMAP.md` as its backlog owner and has no dedicated TODO/TASK governance file.
-
-The AI then imports complete `understanding` evidence against the still-unchanged acquired base. Research cannot complete before this evidence exists, so UNDERSTAND is a verifiable lifecycle stage rather than advisory prose.
-
-### RESEARCH
-
-Research assumptions are recorded as `rift.research-ledger/1` evidence after complete understanding evidence exists.
-
-Critical claims require authoritative support. Source retrieval is performed by the AI/research environment, not by a hidden RiftOS network agent.
-
-### DOCUMENT_INTENT — document intent
-
-Research must be imported before design evidence.
-
-Design evidence must be imported before source/build-config mutation and describe the intended code/docs/tests/security/compatibility/rollback changes.
-
-## PATCH path
-
-The AI patches through existing permissioned tools.
-
-RiftCLI lifecycle adds no generic writer. Patch Sessions/Workspace Records observe the actual mutation state.
-
-## OUT path: patch result back to AI
-
-The output path is not “patch finished.”
-
-The CLI reconstructs the final candidate from repository truth and requires separate evidence for:
-- `DOCUMENT_AUDIT` documentation parity, driven by `rift-cli lifecycle documentation-plan <session>` and exact `rift.documentation-parity/1` evidence;
-- `CODE_AUDIT` code audit;
-- security, driven by exact `rift-cli lifecycle verification-plan <session>` check ids/targets;
-- dependencies/supply chain, bound to the same verification plan;
-- tests, bound to the same verification plan;
-- optional build/artifact evidence when available before Patch 13;
-- E2E behavior;
-- rollback.
-
-Project Intelligence derives affected targets; the patch author cannot shrink the impact scope manually.
-
-### FREEZE
-
-The final packet binds:
-- base Git revision;
-- base/current source snapshots;
-- candidate manifest;
-- base/result tree hashes;
-- semantic-impact hash;
-- evidence-bundle hash;
-- policy hash.
-
-### AI_EVALUATION — AI evaluation
-
-`rift-cli lifecycle evaluation <session>` emits the bounded AI-facing packet.
-
-The independent evaluator must return:
-- exact subject hashes;
-- evaluator id;
-- patch actor id;
-- independence claim;
-- verdict;
-- exact structured defects when present.
-
-### LOCAL_VERIFY — local verify
-
-`rift-cli lifecycle verify ...` checks the response against the still-current candidate.
-
-It reports only WOULD_ACCEPT / WOULD_DENY.
-
-OBSERVE V1 cannot:
-- trust;
-- publish;
-- advance trusted checkpoint;
-- bypass a missing gate.
-
-## State-of-the-art additions beyond the original workflow
-
-The initial human workflow was:
-
-```text
-pull full repo
-→ understand layout
-→ research
-→ docs/README/TODO/everything
-→ patch
-→ audit documents
-→ verify docs/everything
-→ audit code
-→ verify end-to-end
-→ send back for evaluation
-```
-
-The implemented contract adds:
-- immutable Git revision and Project Export snapshot;
-- generated/vendor boundary discovery;
-- source provenance fields;
-- dependency/lockfile/SBOM/license disposition;
-- security/capability evidence;
-- build environment identity;
-- artifact SHA-256s;
-- explicit rollback evidence;
-- stale-result invalidation;
-- candidate/semantic/evidence/policy hashes;
-- declarative evaluator/patch-actor identity separation (not cryptographically authenticated in V1);
-- bounded structured defect responses;
-- fail-closed incomplete/oversized evidence;
-- no silent trust promotion.
-
-These additions are informed by SLSA 1.2, in-toto attestation concepts and NIST SSDF, without claiming formal certification.
-
-## Authority rule
-
-The invariant is:
-
-> AI reasons; Local Agent/CLI correlates evidence and owns mutation/trust boundaries.
-
-A future ENFORCE mode must run the same verification pipeline as OBSERVE. Only authority may change.
+The professional-engineering workflow will be rebuilt natively in gated stages rather than restoring the retired Kotlin implementation.

@@ -307,13 +307,15 @@ No Chromium is required.
 
 Normal `run/exec` rejects executable host imports. `run-stateful/exec-stateful` is a separate bounded path that permits only `state.load`, `state.save`, and `state.remove` against an isolated validated checkpoint namespace; it does not expose generic native calls or software verification.
 
-## Experimental CLI
+## Native RiftCLI
 
-rift-cli delegates to RiftExperimentalCli and remains a separate experimental subsystem.
+`rift-cli` delegates to the thin `RiftCliHost` JNI adapter, which calls the C++ RiftCLI core in `libriftcli.so`.
 
-It now includes the manual OBSERVE-only `rift-cli lifecycle` contract. `help`/`contract` are descriptive while disabled; session acquisition, evidence import, evaluation and verification require the existing process-local Experimental CLI enable. Lifecycle state lives outside Workspace and adds no generic shell/process authority.
+Bootstrap-0 exposes only help/status/architecture plus explicit process-local enable/disable. The native CLI currently has zero mutation, tool, network, model/API, project-memory or planner authority.
 
-Shell availability does not imply the experimental CLI is enabled.
+Shell availability does not imply RiftCLI is enabled. The process-local switch still defaults OFF after every process restart.
+
+See `docs/systems/riftcli/README.md`.
 
 ## MCP authority
 
