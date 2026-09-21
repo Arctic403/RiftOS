@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
 }
@@ -61,7 +63,7 @@ android {
         getByName("release") { isMinifyEnabled = false }
     }
 
-    sourceSets["main"].assets.srcDir("build/generated/riftosAssets")
+    sourceSets["main"].assets.directories.add(file("build/generated/riftosAssets"))
 }
 
 val verifyRiftOsAndroidSources by tasks.registering {
@@ -199,7 +201,7 @@ val verifyCodynexEditorPayload by tasks.registering {
 
     doLast {
         fun sha256(file: File): String {
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = MessageDigest.getInstance("SHA-256")
             file.inputStream().buffered().use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (true) {
