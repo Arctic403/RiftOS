@@ -120,7 +120,7 @@ Ordinary filesystem/Code Mode tools execute in `RiftToolSandbox` and are confine
 - deterministic project export;
 - Project Intelligence v2 indexing;
 - symbol/reference/dependency views;
-- N1.8 Repository Consistency Observer architecture locked above PI-v2/Workspace Records for code/import/reference/contract/docs/README/ROADMAP/TODO consistency; implementation pending;
+- N1.8 Repository Consistency Observer foundation source-implemented above PI-v2/Workspace Records: stable fact/edge/finding schema, deterministic graph hashing, verified rebuildable private cache and existing `project kind=consistency` surface; Builder/install promotion pending;
 - guarded range/hunk patches;
 - guarded one-operation Code Mode mutations with copy-on-write rollback; multi-op/batch execution is fail-fast disabled;
 - bounded archive/extract;

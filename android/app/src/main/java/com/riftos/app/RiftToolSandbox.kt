@@ -81,6 +81,7 @@ internal class RiftToolSandbox(context: Context) {
     private val riftFsRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }
     private val workspaceRoot = prepareCanonicalWorkspace()
     private val workspaceRecords = RiftWorkspaceRecords.get(appContext).also { it.start() }
+    private val repositoryConsistencyObserver = RiftRepositoryConsistencyObserver(appContext)
     private val projectIntelligenceCache = File(appContext.filesDir, "rift-project-intelligence-v2.json")
     private val transactionRoot = File(appContext.cacheDir, "rift-workspace-transactions").apply {
         // Never recursively purge the whole transaction cache on MCP construction: a large
@@ -1322,6 +1323,7 @@ internal class RiftToolSandbox(context: Context) {
         if (kind == "graph") return projectGraph(path, query, requestedLimit)
         if (kind == "impact") return projectImpact(path, query, requestedLimit)
         if (kind == "validation") return projectValidation(path, query)
+        if (kind == "consistency") return projectConsistency(path)
         val indexStats = refreshSymbolIndex(base)
 
         val children = (base.listFiles()
@@ -1360,8 +1362,8 @@ internal class RiftToolSandbox(context: Context) {
                 .put("index", indexStats)
                 .put("languages", languages)
                 .put("dependencyEdges", dependencyEdges)
-                .put("views", JSONArray(listOf("graph", "impact", "validation")))
-                .put("viewUsage", "project kind=graph|impact|validation with query for focused analysis"))
+                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency")))
+                .put("viewUsage", "project kind=graph|impact|validation|consistency; query is used by focused graph/impact/validation views"))
             .put("operations", JSONArray(listOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")))
     }
 
@@ -1410,6 +1412,17 @@ internal class RiftToolSandbox(context: Context) {
             .put("unresolvedEdges", unresolved)
             .put("edges", edges)
             .put("truncated", total > edgeLimit)
+    }
+
+    private fun projectConsistency(path: String): JSONObject {
+        val graph = projectGraph(path, "", MAX_GRAPH_EDGES)
+        return repositoryConsistencyObserver.foundationView(
+            projectRoot = normalizedPath(path),
+            projectGraph = graph
+        )
+            .put("view", "consistency")
+            .put("projectIntelligence", "v2")
+            .put("observerAuthority", "evidence-only")
     }
 
     private fun projectImpact(path: String, query: String, requestedLimit: Int): JSONObject {

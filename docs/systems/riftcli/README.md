@@ -254,9 +254,11 @@ The SSE lifecycle and true Android process-restart portions are now live-proven 
 
 ### Gate N1.8 — Repository Consistency Observer
 
-**Hard pre-N2 gate; architecture locked, implementation pending.**
+**Hard pre-N2 gate; N1.8.0 source-implemented, promotion pending.**
 
-N1.8 upgrades the observer from impact discovery into repository-wide semantic integrity. Workspace Records and Project Intelligence V2 remain canonical foundations. The new observer adds a rebuildable fact/claim graph, incremental invalidation and reverse-dependency propagation, syntax/import resolution, stable semantic identity, caller/dependent propagation, manifest/config/schema/build/JNI/protocol contract checks, test ownership, and README/docs/ROADMAP/TODO/current-status claim consistency.
+N1.8.0 now provides the repository fact-graph substrate in `RiftRepositoryConsistencyObserver.kt`. It consumes the existing PI-v2 graph rather than rescanning source, assigns stable content-independent IDs to facts/edges/findings, keeps content hashes separate, canonicalizes graph ordering into a deterministic SHA-256 identity, uses a bounded verified rebuildable app-private cache and exposes the foundation through existing `project kind=consistency`. The dedicated regression test is wired into the main Builder chain. Local source validation is green; external Builder/Kotlin compile and installed-device proof remain required before N1.8.0 promotion.
+
+Later N1.8 gates upgrade the observer from this substrate into repository-wide semantic integrity: incremental invalidation and reverse-dependency propagation, syntax/import resolution, stable semantic identity, caller/dependent propagation, manifest/config/schema/build/JNI/protocol contract checks, test ownership, and README/docs/ROADMAP/TODO/current-status claim consistency.
 
 Deterministic evidence outranks inference; inferred links cannot block promotion alone. Every deterministic finding must include evidence and the graph path explaining the mismatch. Incremental state must periodically equal a clean graph rebuild. The observer remains evidence-only and cannot mutate/approve/push by itself.
 

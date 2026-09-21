@@ -194,11 +194,14 @@ Ignored directories include common build/cache/vendor trees plus `.vortex-bridge
 The existing `project` operation provides bounded:
 - graph;
 - impact;
-- validation views.
+- validation;
+- consistency views.
 
 Graph resolves project dependency evidence without guessing unresolved system includes into fake local edges.
 
 Impact combines definitions/references/dependencies/dependents/docs/tests.
+
+The N1.8.0 `consistency` view is an evidence-only foundation derived from the existing PI-v2 graph. It does not rescan source or create a second symbol/dependency index. It emits stable fact/edge identities, separate content hashes, a deterministic repository graph hash, explicit completeness/bounds, and a verified rebuildable private cache under `filesDir/rift-repository-consistency-v1`. N1.8.0 only establishes graph/schema/hash/cache invariants; syntax/import correctness findings and documentation claims belong to later N1.8 gates.
 
 Patch 5 extracts source parsing into `RiftSourceIntelligenceV2`, which is now the single parser used by both the persistent PI-v2 index and candidate before/after semantic deltas. The candidate path is not model-scoped: `RiftWorkspaceRecords.semanticImpactSeed()` derives its changed paths from the exact Patch Manifest V1 candidate, then the sandbox derives project roots, symbols/signature deltas, dependency deltas, current dependents, one-pass changed-symbol references, test affinity, `docs/SOURCE_OWNERSHIP.md` owners, nearest READMEs and global project docs.
 

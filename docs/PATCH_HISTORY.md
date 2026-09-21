@@ -6,6 +6,41 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.29 — N1.8.0 repository fact graph foundation
+
+### Source implementation
+
+N1.8.0 now exists in source as `android/app/src/main/java/com/riftos/app/RiftRepositoryConsistencyObserver.kt`.
+
+The observer deliberately consumes the existing Project Intelligence V2 graph instead of scanning source or maintaining a second symbol/dependency index. The existing Code Mode `project` operation now exposes a read-only `kind=consistency` view that asks PI-v2 for its maximum bounded dependency graph and derives the N1.8.0 fact graph from that evidence.
+
+The foundation defines canonical required-field schemas for facts, edges and findings. Fact identity is derived from `{kind,stableKey}`; edge identity from `{relation,sourceFactId,targetFactId,stableKey}`; finding identity from `{ruleId,category,sourceFactId,conflictFactId,stableKey}`. Identity hashes are deliberately separate from content hashes so content can change without erasing logical identity.
+
+Facts and edges are sorted by stable ID before canonical SHA-256 hashing through `RiftPatchManifestV1.sha256Canonical`. The resulting graph has a deterministic `graphSha256` and `graphId`, explicit completeness/incomplete reasons and hard bounds for facts, edges, findings, stable-key length, cache bytes and cache-file count.
+
+### Cache model
+
+The N1.8.0 snapshot cache lives outside the user workspace under app-private `filesDir/rift-repository-consistency-v1`. It is explicitly non-authoritative and rebuildable. Writes use a temporary file followed by atomic replace when available, with bounded fallback replacement. Every persisted snapshot is read back and its canonical graph hash is reverified before the view reports success. Corrupt, wrong-version or oversized cache files are never accepted as repository truth.
+
+### Regression coverage
+
+`scripts/test-rift-repository-consistency-v1.mjs` independently locks:
+- traversal/map ordering does not alter graph SHA-256;
+- fact content changes preserve fact identity while changing content hash and graph hash;
+- identity changes create new stable IDs;
+- edge content changes preserve edge identity while changing edge content hash;
+- graph/cache bounds and canonical hash primitives stay present;
+- the observer does not call the source analyzer, walk the filesystem or refresh a second index;
+- `project kind=consistency`, PI-v2 graph reuse and the Gradle source snapshot remain wired.
+
+The test is part of the main `check:transport` Builder chain. `SOURCE_OWNERSHIP.md`, Sandbox docs, build-validation docs, ROADMAP, PROJECT_STATUS, root README and the canonical N1.8 specification were updated in the same patch.
+
+### Validation and promotion boundary
+
+Local `riftbuild validate android` reports `sourceReady: true`. Full repo audit/scan found no new issue; only the pre-existing filename heuristic on `RiftSecretStore.kt` remains.
+
+N1.8.0 is **source-implemented, not promoted**. External Builder/Kotlin compile and installed-device proof of the `consistency` view, deterministic graph identity and verified cache behavior are still required before N1.8.0 promotion. N1.8.1 and later gates remain pending.
+
 ## Patch 10.28 — N1.8 Repository Consistency Observer architecture lock
 
 ### Direction lock

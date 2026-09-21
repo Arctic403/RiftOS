@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **ARCHITECTURE LOCKED — IMPLEMENTATION PENDING**
+Status: **N1.8.0 SOURCE-IMPLEMENTED — BUILDER/INSTALL PROMOTION PENDING; N1.8.1+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -434,10 +434,19 @@ No "best" claim is allowed without measured comparable evidence.
 
 ### N1.8.0 — fact graph/schema
 
-- canonical node/edge/finding schema;
-- deterministic IDs and graph hashing;
-- bounded persistence/rebuild model;
-- no second competing project index.
+**Source implementation present; external Builder/Kotlin compile and installed-device proof still required for promotion.**
+
+Current source provides:
+- canonical fact/edge/finding required-field schema in `RiftRepositoryConsistencyObserver.kt`;
+- stable identities derived from semantic identity tuples, separate from content hashes;
+- deterministic sorted canonical graph SHA-256 and graph ID;
+- explicit completeness/incomplete-reason reporting and hard fact/edge/finding/cache bounds;
+- verified atomic app-private cache that is non-authoritative and rebuildable;
+- derivation from the existing PI-v2 graph only, with no observer-owned source scan/index;
+- existing Code Mode `project kind=consistency` read-only view;
+- independent regression coverage in `scripts/test-rift-repository-consistency-v1.mjs` wired into the main Builder chain.
+
+Promotion still requires the external Kotlin/Android build to pass and the installed APK to prove the new view/cache/hash behavior on-device.
 
 ### N1.8.1 — syntax/import integrity
 

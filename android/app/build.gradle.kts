@@ -104,6 +104,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftPatchSessions.kt",
         "src/main/java/com/riftos/app/RiftProjectExporter.kt",
         "src/main/java/com/riftos/app/RiftRelaySettings.kt",
+        "src/main/java/com/riftos/app/RiftRepositoryConsistencyObserver.kt",
         "src/main/java/com/riftos/app/RiftSecretStore.kt",
         "src/main/java/com/riftos/app/RiftShellExecutor.kt",
         "src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt",
