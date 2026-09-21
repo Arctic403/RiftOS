@@ -6,6 +6,34 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.28 — N1.8 Repository Consistency Observer architecture lock
+
+### Direction lock
+
+Before starting the next RiftCLI program step, the observer design was deliberately researched against multiple established approaches rather than copying one static-analysis architecture. The locked direction combines incremental syntax/parsing, compiler-style semantic identity, graph/query-based dependency reasoning, rule-based structural analysis, incremental dependency invalidation and requirements/documentation traceability into one evidence-first repository consistency system.
+
+The current RiftOS foundation remains authoritative: Workspace Records supplies observed before/after/provenance/candidate evidence, RiftSourceIntelligenceV2 supplies source symbols/signatures/dependencies, and Project Intelligence V2 supplies references/dependents/graph/validation views. N1.8 does not introduce a second competing project index.
+
+### Canonical architecture
+
+The canonical specification is now `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`.
+
+N1.8 adds a rebuildable Repository Fact Graph with typed nodes/edges for source syntax, semantic identities, imports/includes/modules, references/callers/dependents, manifests/config/schema/build/JNI/protocol contracts, tests, documentation claims, README ownership, ROADMAP state, TODO/FIXME state and other explicit invariants.
+
+A filesystem mutation invalidates affected facts, walks the reverse dependency closure, recomputes only invalidated facts, detects contradictions/orphans/stale claims, and emits evidence-grade proof obligations. Deterministic evidence outranks heuristic or model-derived links. Inference may request review but cannot block promotion alone. Incremental graph state must periodically equal a clean rebuild exactly.
+
+### Benchmark contract
+
+N1.8 is benchmark-driven rather than feature-count-driven. The Rift mutation corpus includes broken imports, renamed APIs, signature drift, interface/implementation breaks, stale constants/config keys/routes/protocol fields, JNI mismatches, manifest/build/source-set drift, stale README/ROADMAP/TODO/ownership claims, deleted proof tests, far-transitive breakage, rename/copy/rewrite, syntax damage, misleading documentation, historical-document false-positive controls and generated/external dependency controls.
+
+Metrics include precision, recall, F1, false positives/negatives, deterministic contradiction recall, local-dependency recall, documentation-drift recall, propagation distance, incremental p50/p95 latency, clean rebuild latency, peak memory and incremental-vs-clean graph parity. External benchmark families such as NIST SARD/Juliet, OWASP Benchmark and public traceability datasets supplement but do not replace the Rift corpus.
+
+### Promotion
+
+N1.8.0-N1.8.7 cover fact graph/schema, syntax/import integrity, semantic dependency propagation, cross-boundary contracts, documentation/ROADMAP/TODO claims, focused proof obligations, adversarial benchmarks/ablations and installed-device promotion. N1.8 is a hard pre-N2 gate. The observer remains evidence-only and has no direct edit/approval/push authority.
+
+This architecture-lock pass also reconciled stale current-state documentation discovered manually: root `README.md` still claimed 18 model-visible tools while the live device manifest and ToolHost documentation report 19 including `rift_debug`, and N1.7 status text still described SSE lifecycle/force-stop proofs as pending after they were proven live on source `679dba5a78fc1bd8a66f846933dcb05c139285f1`.
+
 ## Patch 10.27 — N1.7 deterministic SSE lifecycle
 
 ### Live stress finding

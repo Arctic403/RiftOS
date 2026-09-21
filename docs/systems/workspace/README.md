@@ -137,6 +137,14 @@ Operational checkpoints remain ordinary baselines. Separate trusted-checkpoint f
 
 Patch 5 derives semantic impact from that exact candidate rather than from a model-provided scope. Workspace Records supplies bounded before/after source evidence; Project Intelligence V2 derives symbol/signature/dependency deltas, callers/dependents/references, tests and documentation owners. Any missing or bounded evidence stays explicitly incomplete, and semantic impact remains OBSERVE-only.
 
+## N1.8 Repository Consistency Observer
+
+N1.8 is the locked next observer layer above Workspace Records + Project Intelligence V2. It does not create a competing index. It converts repository state into a rebuildable fact/claim graph and treats a mutation as invalidation of facts rather than merely a changed-file list. Reverse dependency propagation must reach source syntax/imports, symbols/references/callers, manifests/config/schema/build/JNI/protocol contracts, tests, README/docs, ROADMAP/TODO/current-status claims and ownership.
+
+Deterministic evidence outranks inference. Inferred documentation links may request review but cannot block promotion alone. Every deterministic finding must carry exact evidence and a graph path. Incremental results must periodically match a clean graph rebuild exactly. The observer remains evidence-only and may not edit, approve or push changes itself.
+
+Canonical specification and N1.8.0-N1.8.7 promotion gates: [`REPOSITORY_CONSISTENCY_OBSERVER.md`](REPOSITORY_CONSISTENCY_OBSERVER.md).
+
 ## Dev Lab relationship
 
 Native Dev Lab targets `workspace/RiftOS-main` as its project root while staging work separately under RiftFS system Dev Lab state.

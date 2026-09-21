@@ -250,11 +250,21 @@ Current source now closes the remaining restart/liveness gaps in two layers. `Ri
 
 For SSE lifecycle, stable identity is now mandatory: production clients provide `Mcp-Session-Id`, while browser diagnostics may use a validated `?subscriber=<id>` that becomes an isolated `diag:<id>` session. Anonymous streams are rejected. The Worker returns the Durable Object stream directly, Cloudflare request-signal cancellation/passthrough are explicitly enabled, and every SSE connection has an absolute 180-second lease plus up to 30 seconds of jitter. Lease expiry closes/removes the stream and reconnect relies on `Last-Event-ID`. Existing byte backpressure and two-heartbeat no-drain eviction remain secondary protection.
 
-These latest source changes still require Builder validation and live Worker deployment plus the explicit close-all-tabs and force-stop/reopen re-tests before N1.7 promotion.
+The SSE lifecycle and true Android process-restart portions are now live-proven on source `679dba5a78fc1bd8a66f846933dcb05c139285f1` (2026-09-21). Browser stress exercised stable diagnostic sessions, the independent eight-client ceiling and ninth-client rejection, session replacement, backpressure, and lease cleanup to `sseClients: 0` without generating cleanup traffic. A real Android force-stop/reopen then restored `relay.ready.resumeAfter=1790021835452094` with `cli.replay.send count=0`; RiftCLI correctly restarted OFF, was explicitly re-enabled only after warning, and the next event ACK advanced normally. N1.7 still retains the rest of its abuse matrix before full promotion.
+
+### Gate N1.8 — Repository Consistency Observer
+
+**Hard pre-N2 gate; architecture locked, implementation pending.**
+
+N1.8 upgrades the observer from impact discovery into repository-wide semantic integrity. Workspace Records and Project Intelligence V2 remain canonical foundations. The new observer adds a rebuildable fact/claim graph, incremental invalidation and reverse-dependency propagation, syntax/import resolution, stable semantic identity, caller/dependent propagation, manifest/config/schema/build/JNI/protocol contract checks, test ownership, and README/docs/ROADMAP/TODO/current-status claim consistency.
+
+Deterministic evidence outranks inference; inferred links cannot block promotion alone. Every deterministic finding must include evidence and the graph path explaining the mismatch. Incremental state must periodically equal a clean graph rebuild. The observer remains evidence-only and cannot mutate/approve/push by itself.
+
+Promotion is split into N1.8.0-N1.8.7: fact graph/schema, syntax/import integrity, semantic propagation, cross-boundary contracts, documentation claims, focused proof obligations, adversarial benchmarks/ablations, and installed-device promotion. Canonical specification: `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`.
 
 ### Gate N2 — Federated Rift Memory Kernel
 
-**Hard pre-N3 program; roadmap only until implemented and promoted.**
+**Hard pre-N3 program; roadmap only until implemented and promoted. N2 is blocked until N1.8 promotion.**
 
 N2 is no longer a generic "engineering state" bucket. It is one canonical Rift Memory Kernel with multiple specialized cognitive engines operating over the same canonical IDs/evidence/transactions.
 

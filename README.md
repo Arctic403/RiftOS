@@ -108,7 +108,7 @@ Current source contains the bounded `RiftBuildInstaller` proof installer, restri
 
 ## Rift MCP
 
-`RiftToolHost` is the canonical device-side capability registry. The current catalog is exactly 18 model-visible tools.
+`RiftToolHost` is the canonical device-side capability registry. The device manifest currently declares exactly 19 MCP tools, including passive/read-only `rift_debug`. A client may temporarily expose fewer actions if its connector catalog is cached; reconnect/refresh is required when the client count differs from the manifest.
 
 Ordinary filesystem/Code Mode tools execute in `RiftToolSandbox` and are confined to the workspace. `rift_shell_exec` is a separately permissioned route to the process-owned native shell.
 
@@ -120,6 +120,7 @@ Ordinary filesystem/Code Mode tools execute in `RiftToolSandbox` and are confine
 - deterministic project export;
 - Project Intelligence v2 indexing;
 - symbol/reference/dependency views;
+- N1.8 Repository Consistency Observer architecture locked above PI-v2/Workspace Records for code/import/reference/contract/docs/README/ROADMAP/TODO consistency; implementation pending;
 - guarded range/hunk patches;
 - guarded one-operation Code Mode mutations with copy-on-write rollback; multi-op/batch execution is fail-fast disabled;
 - bounded archive/extract;
@@ -132,6 +133,8 @@ The optional relay is outbound-only and does not widen filesystem authority.
 `RiftWorkspaceRecords` and `RiftWorkspaceWatcher` are native/process-local. They observe the canonical workspace tree and persist private record/checkpoint data outside the workspace itself.
 
 The current built-in Workspace Records UI is native. The old `workspace-live` HTML/JS component remains repository reference source and is not the live built-in.
+
+The locked N1.8 Repository Consistency Observer reuses Workspace Records + Project Intelligence V2 rather than creating a second index. Its canonical architecture, benchmark corpus and N1.8.0-N1.8.7 promotion gates are in `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`. N2 is blocked until N1.8 promotion.
 
 ## Git and secrets
 
