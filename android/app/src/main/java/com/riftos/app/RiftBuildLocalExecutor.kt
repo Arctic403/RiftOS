@@ -167,7 +167,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/build.gradle.kts" to
                 "e529a5182ab3b1ae42aacb621b8eb4d99f4881ef43d1e251f6f9ad559401c0a3",
             "external/editor/app/src/main/AndroidManifest.xml" to
-                "00c52e0e78ab3a63e34fa0de96c5c056ff5043ddefaff595152649560e1892b3",
+                "78a9f5bd010e8cce8ff5269a5de3251e9fe65d6f9cd0d65c9c9e77cdf2004952",
             "external/editor/settings.gradle.kts" to
                 "9a258efd9b28084a1655568c96de7fb3f35a6e58bd90785e5d9f1028b567d6ce",
             "external/editor/build.gradle.kts" to
@@ -250,7 +250,7 @@ class RiftBuildLocalExecutor(context: Context) {
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
         private val SAFE_SEGMENT = Regex("^[A-Za-z0-9._+-]{1,120}$")
-        private val DEX_ENTRY = Regex("^classes(?:[2-9][0-9]*)?\\.dex$")
+        private val DEX_ENTRY = Regex("^classes(?:[2-9]|[1-9][0-9]+)?\\.dex$")
     }
 
     private val appContext = context.applicationContext
@@ -1448,7 +1448,7 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         require(sourceValidation.optBoolean("requiresDex")) {
             "Codynex E0 editor must remain a code-bearing Activity package"
         }
-        require(sourceValidation.optString("activityName") == ".MainActivity") {
+        require(sourceValidation.optString("activityName") == EDITOR_ACTIVITY) {
             "Codynex E0 editor launch activity drift"
         }
 
