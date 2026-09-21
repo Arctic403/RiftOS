@@ -215,7 +215,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
-                    "riftbuild doctor|validate|plan|prepare-riftpp-v0|prepare-codynex-mc0|prepare-codynex-mc1a|prepare-codynex-mc1b|prepare-codynex-m2-vm0|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
+                    "riftbuild doctor|validate|plan|prepare-riftpp-v0|prepare-codynex-mc0|prepare-codynex-mc1a|prepare-codynex-mc1b|prepare-codynex-m2-vm0|prepare-codynex-m2b|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +

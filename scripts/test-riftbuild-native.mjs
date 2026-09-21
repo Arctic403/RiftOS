@@ -203,12 +203,33 @@ assert.ok(!m2Vm0Host.includes('#include <string>'), 'M2 VM0 host must not depend
 assert.ok(!m2Vm0Host.includes('std::string'), 'M2 VM0 host must remain C-style test glue');
 assert.match(cmake, /codynex_m2_vm0_host[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /codynex_m2_vm0_host[\s\S]*?-fno-rtti/);
+const m2bHost = read('android/app/src/main/cpp/m2/codynex_m2b_host.cpp');
+assert.match(nativeBuild, /prepare-codynex-m2b/);
+assert.match(nativeBuild, /M2_B_VM_BYTES = 812/);
+assert.match(nativeBuild, /M2_B_VM_SHA256 = "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"/);
+assert.match(nativeBuild, /M2_B_COMPILER_BYTES = 704/);
+assert.match(nativeBuild, /M2_B_COMPILER_SHA256 = "4a3bd4867de5cf76604e5810f2ae92a2af029f694891017bf0e073833510f575"/);
+assert.match(nativeBuild, /M2_B_PACKAGE = "com\.codynex\.m2bproof"/);
+assert.match(nativeBuild, /buildM2BBinaryManifest/);
+assert.match(nativeBuild, /fun prepareCodynexM2B[\s\S]*?val manifestBytes = buildM2BBinaryManifest\(\)/);
+assert.match(nativeBuild, /vmAuthority", "assets\/vm1_seed\.bin"/);
+assert.match(nativeBuild, /compilerAuthority", "assets\/mc1b_compiler\.bin"/);
+assert.match(m2bHost, /kVmBytes = 812/);
+assert.match(m2bHost, /kCompilerBytes = 704/);
+assert.match(m2bHost, /M2-B PASS/);
+assert.match(m2bHost, /vm-compile-valid/);
+assert.match(m2bHost, /generated-runtime-add-result/);
+assert.match(m2bHost, /reject-capacity-11/);
+assert.ok(!m2bHost.includes('#include <string>'), 'M2-B host must not depend on std::string');
+assert.ok(!m2bHost.includes('std::string'), 'M2-B host must remain C-style test glue');
+assert.match(cmake, /codynex_m2b_host[\s\S]*?-fno-exceptions/);
+assert.match(cmake, /codynex_m2b_host[\s\S]*?-fno-rtti/);
 assert.match(nativeBuild, /\.put\("signed", false\)/);
 assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
@@ -227,10 +248,12 @@ assert.ok(manifest.includes('com.codynex.mc0proof'), 'RiftOS manifest omitted Co
 assert.ok(manifest.includes('com.codynex.mc1aproof'), 'RiftOS manifest omitted Codynex MC1-A proof-package visibility');
 assert.ok(manifest.includes('com.codynex.mc1bproof'), 'RiftOS manifest omitted Codynex MC1-B proof-package visibility');
 assert.ok(manifest.includes('com.codynex.m2vm0proof'), 'RiftOS manifest omitted Codynex M2 VM0 proof-package visibility');
+assert.ok(manifest.includes('com.codynex.m2bproof'), 'RiftOS manifest omitted Codynex M2-B proof-package visibility');
 assert.ok(gradle.includes('src/main/cpp/mc0/codynex_mc0_host.cpp'), 'Gradle exact native source snapshot omitted MC0 host');
 assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1a_host.cpp'), 'Gradle exact native source snapshot omitted MC1-A host');
 assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1b_host.cpp'), 'Gradle exact native source snapshot omitted MC1-B host');
 assert.ok(gradle.includes('src/main/cpp/m2/codynex_m2_vm0_host.cpp'), 'Gradle exact native source snapshot omitted M2 VM0 host');
+assert.ok(gradle.includes('src/main/cpp/m2/codynex_m2b_host.cpp'), 'Gradle exact native source snapshot omitted M2-B host');
 assert.match(manifest, /android:name="\.RiftBuildInstallReceiver"[\s\S]*?android:exported="false"/);
 
 assert.match(retained, /RiftBuild doctor blocked local execution/);
