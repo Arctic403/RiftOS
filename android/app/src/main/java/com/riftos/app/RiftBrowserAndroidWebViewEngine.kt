@@ -9,6 +9,7 @@ import android.net.Uri
 import android.net.http.SslError
 import android.os.Environment
 import android.os.Message
+import android.util.Base64
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
@@ -147,14 +148,29 @@ class RiftBrowserAndroidWebViewEngine(
     }
 
     private fun buildInspectorScript(action: String, request: JSONObject): String {
-        val allowedActions = setOf("status", "dom", "inspect", "focus", "hide", "show", "text", "attr", "style", "outline", "reset")
+        val allowedActions = setOf("status", "dom", "inspect", "focus", "hide", "show", "text", "edit", "attr", "style", "outline", "reset")
         require(action in allowedActions) { "Unsupported RiftBrowser inspector action: $action" }
-        val selector = if (action in setOf("dom", "inspect", "focus", "hide", "show", "text", "attr", "style")) {
+        val selector = if (action in setOf("dom", "inspect", "focus", "hide", "show", "text", "edit", "attr", "style")) {
             validateInspectorSelector(request.optString("selector").ifBlank { if (action == "dom") "body *" else "" })
         } else ""
         val limit = request.optInt("limit", 60).coerceIn(1, 100)
-        val text = request.optString("text")
-        require(text.length <= 4096) { "Inspector text is limited to 4096 characters" }
+        val text = if (action == "edit" && request.has("textBase64")) {
+            val encoded = request.optString("textBase64")
+            require(encoded.length <= 384 * 1024) { "Inspector Base64 payload is too large" }
+            val decoded = runCatching { Base64.decode(encoded, Base64.DEFAULT) }
+                .getOrElse { throw IllegalArgumentException("Inspector Base64 payload is invalid", it) }
+            require(decoded.size <= 256 * 1024) { "Inspector edit payload is limited to 256 KiB UTF-8" }
+            val value = decoded.toString(Charsets.UTF_8)
+            require(value.toByteArray(Charsets.UTF_8).contentEquals(decoded)) { "Inspector Base64 payload must decode to canonical UTF-8" }
+            value
+        } else {
+            request.optString("text")
+        }
+        if (action == "edit") {
+            require(text.toByteArray(Charsets.UTF_8).size <= 256 * 1024) { "Inspector edit payload is limited to 256 KiB UTF-8" }
+        } else {
+            require(text.length <= 4096) { "Inspector text is limited to 4096 characters" }
+        }
         val attrName = request.optString("name").trim().lowercase()
         val attrValue = request.optString("value")
         if (action == "attr") {
@@ -174,13 +190,14 @@ class RiftBrowserAndroidWebViewEngine(
         val outlineEnabled = request.optBoolean("enabled", false)
 
         val actionBody = when (action) {
-            "status" -> "result={available:true,active:s.touched.length>0||!!s.outlineStyle,origin:location.origin,host:location.hostname,actions:['dom','inspect','focus','hide','show','text','attr','style','outline','reset']};"
+            "status" -> "result={available:true,active:s.touched.length>0||!!s.outlineStyle,origin:location.origin,host:location.hostname,actions:['dom','inspect','focus','hide','show','text','edit','attr','style','outline','reset']};"
             "dom" -> "const list=Array.from(document.querySelectorAll($selectorJs)).filter(visible).slice(0,$limit);result={selector:$selectorJs,count:list.length,elements:list.map(meta)};"
             "inspect" -> "const el=one($selectorJs);result={selector:$selectorJs,element:meta(el)};"
             "focus" -> "const el=one($selectorJs);if(sensitive(el))throw new Error('Sensitive form controls cannot be targeted');touchStyle(el);el.scrollIntoView({block:'center',inline:'nearest'});el.style.setProperty('outline','3px solid #4fb99a','important');el.style.setProperty('outline-offset','2px','important');result={selector:$selectorJs,element:meta(el),focused:true};"
             "hide" -> "const el=one($selectorJs);if(sensitive(el))throw new Error('Sensitive form controls cannot be targeted');touchStyle(el);el.style.setProperty('display','none','important');result={selector:$selectorJs,hidden:true};"
             "show" -> "const el=one($selectorJs);if(sensitive(el))throw new Error('Sensitive form controls cannot be targeted');touchStyle(el);el.style.setProperty('display','block','important');result={selector:$selectorJs,shown:true,element:meta(el)};"
             "text" -> "const el=one($selectorJs);if(sensitive(el)||/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))throw new Error('Form controls cannot be text-edited');touchText(el);el.textContent=$textJs;result={selector:$selectorJs,changed:true,element:meta(el)};"
+            "edit" -> "const el=one($selectorJs);if(!editable(el))throw new Error('Target is not an editable text control');if(sensitive(el))throw new Error('Sensitive form controls cannot be edited');el.scrollIntoView({block:'center',inline:'nearest'});el.focus();if(el instanceof HTMLTextAreaElement||el instanceof HTMLInputElement){touchValue(el);setNativeValue(el,$textJs);try{el.setSelectionRange(String($textJs).length,String($textJs).length)}catch(_){};emitInput(el,$textJs)}else{touchText(el);replaceContentEditable(el,$textJs)};result={selector:$selectorJs,changed:true,editorKind:editorKind(el),chars:String($textJs).length,element:meta(el)};"
             "attr" -> "const el=one($selectorJs);if(sensitive(el))throw new Error('Sensitive form controls cannot be targeted');touchAttr(el,$attrNameJs);el.setAttribute($attrNameJs,$attrValueJs);result={selector:$selectorJs,changed:true,element:meta(el)};"
             "style" -> "const el=one($selectorJs);if(sensitive(el))throw new Error('Sensitive form controls cannot be targeted');touchStyle(el);el.style.setProperty($stylePropertyJs,$styleValueJs,'important');result={selector:$selectorJs,property:$stylePropertyJs,value:$styleValueJs,changed:true,element:meta(el)};"
             "outline" -> if (outlineEnabled) {
@@ -188,7 +205,7 @@ class RiftBrowserAndroidWebViewEngine(
             } else {
                 "if(s.outlineStyle)s.outlineStyle.remove();s.outlineStyle=null;result={outline:false};"
             }
-            "reset" -> "for(const r of s.touched){if(!r.el)continue;if(r.styleStored){if(r.style===null)r.el.removeAttribute('style');else r.el.setAttribute('style',r.style)}if(r.textStored)r.el.textContent=r.text;for(const name of Object.keys(r.attrs)){const value=r.attrs[name];if(value===null)r.el.removeAttribute(name);else r.el.setAttribute(name,value)}}if(s.outlineStyle)s.outlineStyle.remove();s.touched.length=0;s.outlineStyle=null;result={reset:true};"
+            "reset" -> "for(const r of s.touched){if(!r.el)continue;if(r.styleStored){if(r.style===null)r.el.removeAttribute('style');else r.el.setAttribute('style',r.style)}if(r.valueStored){setNativeValue(r.el,r.value);emitInput(r.el,r.value)}if(r.textStored){if(editable(r.el))replaceContentEditable(r.el,r.text);else r.el.textContent=r.text}for(const name of Object.keys(r.attrs)){const value=r.attrs[name];if(value===null)r.el.removeAttribute(name);else r.el.setAttribute(name,value)}}if(s.outlineStyle)s.outlineStyle.remove();s.touched.length=0;s.outlineStyle=null;result={reset:true};"
             else -> error("unreachable")
         }
 
@@ -201,12 +218,18 @@ class RiftBrowserAndroidWebViewEngine(
                 const token=v=>{v=String(v||'');return /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(v)?v:''};
                 const structuralPath=el=>{if(!el||el.nodeType!==1)return '';const safeId=token(el.id);if(safeId)return '#'+safeId;const parts=[];let cur=el;for(let depth=0;cur&&cur!==document.documentElement&&depth<5;depth++,cur=cur.parentElement){let part=cur.tagName.toLowerCase();const c=Array.from(cur.classList||[]).map(token).filter(Boolean)[0];if(c)part+='.'+c;const p=cur.parentElement;if(p){const peers=Array.from(p.children).filter(x=>x.tagName===cur.tagName);if(peers.length>1)part+=':nth-of-type('+(peers.indexOf(cur)+1)+')'}parts.unshift(part)}return parts.join('>')};
                 const visible=el=>{if(!el||el.nodeType!==1)return false;const r=el.getBoundingClientRect();const cs=getComputedStyle(el);return r.width>0&&r.height>0&&cs.display!=='none'&&cs.visibility!=='hidden'};
-                const sensitive=el=>!!(el&&(el.matches('input[type=password]')||el.querySelector('input[type=password]')));
-                const meta=el=>{const r=el.getBoundingClientRect(),cs=getComputedStyle(el);return {path:structuralPath(el),tag:el.tagName.toLowerCase(),id:token(el.id),classes:Array.from(el.classList||[]).map(token).filter(Boolean).slice(0,8),role:token(el.getAttribute('role')),type:token(el.getAttribute('type')),bounds:{x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)},display:cs.display,visibility:cs.visibility,position:cs.position,overflow:cs.overflow,zIndex:String(cs.zIndex||'').slice(0,24)}};
-                const record=el=>{let r=s.touched.find(x=>x.el===el);if(!r){r={el:el,styleStored:false,style:null,textStored:false,text:null,attrs:{}};s.touched.push(r)}return r};
+                const sensitive=el=>{if(!el)return false;const marker=[el.getAttribute('name'),el.getAttribute('id'),el.getAttribute('autocomplete'),el.getAttribute('aria-label')].filter(Boolean).join(' ').toLowerCase();return !!(el.matches('input[type=password]')||/(?:password|passwd|secret|token|api[-_ ]?key|authorization)/.test(marker)||el.querySelector('input[type=password]'))};
+                const editorKind=el=>{if(el instanceof HTMLTextAreaElement)return 'textarea';if(el instanceof HTMLInputElement)return 'input';if(el&&el.isContentEditable)return 'contenteditable';return 'none'};
+                const editable=el=>{if(!el||sensitive(el))return false;if(el instanceof HTMLTextAreaElement)return true;if(el instanceof HTMLInputElement){const type=String(el.type||'text').toLowerCase();return ['text','search','url','email','tel'].includes(type)}return !!(el.isContentEditable||el.getAttribute('contenteditable')==='true')};
+                const meta=el=>{const r=el.getBoundingClientRect(),cs=getComputedStyle(el);return {path:structuralPath(el),tag:el.tagName.toLowerCase(),id:token(el.id),classes:Array.from(el.classList||[]).map(token).filter(Boolean).slice(0,8),role:token(el.getAttribute('role')),type:token(el.getAttribute('type')),editable:editable(el),editorKind:editorKind(el),bounds:{x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)},display:cs.display,visibility:cs.visibility,position:cs.position,overflow:cs.overflow,zIndex:String(cs.zIndex||'').slice(0,24)}};
+                const record=el=>{let r=s.touched.find(x=>x.el===el);if(!r){r={el:el,styleStored:false,style:null,textStored:false,text:null,valueStored:false,value:null,attrs:{}};s.touched.push(r)}return r};
                 const touchStyle=el=>{const r=record(el);if(!r.styleStored){r.styleStored=true;r.style=el.getAttribute('style')}};
                 const touchText=el=>{const r=record(el);if(!r.textStored){r.textStored=true;r.text=el.textContent}};
+                const touchValue=el=>{const r=record(el);if(!r.valueStored){r.valueStored=true;r.value=String(el.value??'')}};
                 const touchAttr=(el,name)=>{const r=record(el);if(!Object.prototype.hasOwnProperty.call(r.attrs,name))r.attrs[name]=el.getAttribute(name)};
+                const setNativeValue=(el,value)=>{const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const descriptor=Object.getOwnPropertyDescriptor(proto,'value');if(descriptor&&typeof descriptor.set==='function')descriptor.set.call(el,String(value));else el.value=String(value)};
+                const emitInput=(el,value)=>{try{el.dispatchEvent(new InputEvent('input',{bubbles:true,composed:true,inputType:'insertReplacementText',data:String(value)}))}catch(_){el.dispatchEvent(new Event('input',{bubbles:true,composed:true}))}el.dispatchEvent(new Event('change',{bubbles:true}))};
+                const replaceContentEditable=(el,value)=>{el.focus();const selection=window.getSelection();const range=document.createRange();range.selectNodeContents(el);selection.removeAllRanges();selection.addRange(range);let applied=false;try{applied=document.execCommand('insertText',false,String(value))===true}catch(_){}if(!applied){el.textContent=String(value);emitInput(el,value)}selection.removeAllRanges()};
                 const one=selector=>{const el=document.querySelector(selector);if(!el)throw new Error('No element matches selector');return el};
                 let result={};
                 $actionBody

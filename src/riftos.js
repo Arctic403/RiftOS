@@ -718,7 +718,7 @@ async function runRiftOsAgentShell(args,print,state){
   }
   if(first==="browser-inspect"){
     args.shift();const action=(args.shift()||"help").toLowerCase();
-    if(action==="help")return print(`RiftBrowser live inspector (temporary, active tab only)\nriftos-agent browser-inspect status\nriftos-agent browser-inspect dom [selector] [limit]\nriftos-agent browser-inspect inspect <selector>\nriftos-agent browser-inspect focus <selector>\nriftos-agent browser-inspect hide <selector>\nriftos-agent browser-inspect show <selector>\nriftos-agent browser-inspect text <selector> <text>\nriftos-agent browser-inspect attr <selector> <class|title|aria-label|role|tabindex> <value>\nriftos-agent browser-inspect style <selector> <property> <value>\nriftos-agent browser-inspect outline <on|off>\nriftos-agent browser-inspect reset\nDOM output is structural only: no values, textContent, innerHTML, cookies, storage, headers, or arbitrary JavaScript.`);
+    if(action==="help")return print(`RiftBrowser live inspector (temporary, active tab only)\nriftos-agent browser-inspect status\nriftos-agent browser-inspect dom [selector] [limit]\nriftos-agent browser-inspect inspect <selector>\nriftos-agent browser-inspect focus <selector>\nriftos-agent browser-inspect hide <selector>\nriftos-agent browser-inspect show <selector>\nriftos-agent browser-inspect text <selector> <text>\nriftos-agent browser-inspect edit <selector> <text>\nriftos-agent browser-inspect edit-b64 <selector> <base64-utf8>\nriftos-agent browser-inspect attr <selector> <class|title|aria-label|role|tabindex> <value>\nriftos-agent browser-inspect style <selector> <property> <value>\nriftos-agent browser-inspect outline <on|off>\nriftos-agent browser-inspect reset\nedit/edit-b64 target only non-sensitive text inputs, textareas, or contenteditable editor surfaces; payload limit 256 KiB UTF-8. DOM output remains structural only: no values, textContent, innerHTML, cookies, storage, headers, or arbitrary JavaScript.`);
     const request={op:"browser-inspect",action};
     if(["status","reset"].includes(action)){
       const result=await core.native.call("riftos.agent",request);print(JSON.stringify(result,null,2));return result;
@@ -729,8 +729,10 @@ async function runRiftOsAgentShell(args,print,state){
       let limit=60;if(args.length&&/^\d+$/.test(args[args.length-1]))limit=Number(args.pop());request.selector=args.join(" ").trim()||"body *";request.limit=limit;
     }else if(["inspect","focus","hide","show"].includes(action)){
       request.selector=args.join(" ").trim();if(!request.selector)throw new Error(`usage: riftos-agent browser-inspect ${action} <selector>`);
-    }else if(action==="text"){
-      if(args.length<2)throw new Error("usage: riftos-agent browser-inspect text <selector> <text>");request.selector=args.shift();request.text=args.join(" ");
+    }else if(action==="text"||action==="edit"){
+      if(args.length<2)throw new Error(`usage: riftos-agent browser-inspect ${action} <selector> <text>`);request.selector=args.shift();request.text=args.join(" ");
+    }else if(action==="edit-b64"){
+      if(args.length!==2)throw new Error("usage: riftos-agent browser-inspect edit-b64 <selector> <base64-utf8>");request.action="edit";request.selector=args.shift();request.textBase64=args.shift();
     }else if(action==="attr"){
       if(args.length<3)throw new Error("usage: riftos-agent browser-inspect attr <selector> <name> <value>");request.selector=args.shift();request.name=args.shift();request.value=args.join(" ");
     }else if(action==="style"){

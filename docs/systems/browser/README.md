@@ -90,6 +90,8 @@ Current external Kotlin call sites:
 - `back()` -> Android Back routing;
 - `onResume()/onPause()/destroy()` -> MainActivity lifecycle.
 
+The inspector now includes a bounded `edit` action for the active HTTPS page. It can replace text only in non-sensitive text-like `<input>`, `<textarea>` or `contenteditable` editor surfaces, dispatches normal input/change events for framework editors, and records the original value/text for inspector reset. Password controls and controls whose identifying attributes look like password/secret/token/API-key/authorization fields are rejected. The shell also exposes `edit-b64`, which carries complete UTF-8 source through Base64 so newlines and quotes are not mangled by RiftShell; the decoded edit payload is capped at 256 KiB. The inspector still does not expose arbitrary JavaScript execution, cookies, storage, headers, control values or page source.
+
 Implemented but with no current external Kotlin UI caller:
 - `navigate()`;
 - `forward()`;

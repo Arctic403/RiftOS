@@ -6,6 +6,18 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.24 — RiftBrowser bounded editor bridge
+
+### Source change
+
+Extended the existing active-page RiftBrowser inspector so RiftOS can edit browser-hosted code/text editors without adding arbitrary JavaScript execution or a second WebView owner. The new `edit` action accepts only non-sensitive text-like inputs, textareas and contenteditable surfaces, uses native value setters plus input/change events for framework-backed controls, records the original value/text for inspector reset, and rejects password plus password/secret/token/API-key/authorization-like controls.
+
+RiftShell exposes `riftos-agent browser-inspect edit <selector> <text>` and `edit-b64 <selector> <base64-utf8>`. `edit-b64` preserves complete source text across shell parsing; the Android bridge decodes canonical UTF-8 and enforces a 256 KiB payload ceiling. No submit/deploy click authority, cookies, storage, headers, innerHTML, control-value readback or arbitrary page script execution was added.
+
+### Validation and status
+
+`validate-rift-wiring.mjs` now requires the bounded editor bridge, Base64 transport, secret-field guard and shell commands so this capability cannot silently disappear. Browser and Local Agent subsystem docs describe the new contract. This patch is source-complete only until Builder validation and installation of the resulting APK; after install, the intended acceptance test is to inspect an active HTTPS code editor, edit a disposable/non-secret field or source buffer, reset it, then use the same bridge against the Cloudflare Worker editor before any explicit deploy click.
+
 ## Patch 10.23 — N1.7 zero-poll steady-state contract lock
 
 ### Source hardening

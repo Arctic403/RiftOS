@@ -243,7 +243,16 @@ riftos-agent browser-inspect:
 - requires the RiftOS target to be active;
 - calls MainActivity.inspectActiveBrowser().
 
-The separate RiftBrowser audit remains authority for what browser inspection may return/do.
+The fixed inspector grammar includes structural/status actions plus bounded active-page editing:
+- `riftos-agent browser-inspect edit <selector> <text>` replaces one non-sensitive text control/editor surface;
+- `riftos-agent browser-inspect edit-b64 <selector> <base64-utf8>` carries complete UTF-8 source without shell newline/quote loss;
+- decoded edit payloads are capped at 256 KiB;
+- eligible targets are text-like inputs, textareas and contenteditable editor surfaces;
+- password controls and password/secret/token/API-key/authorization-like controls are rejected;
+- the bridge dispatches input/change events for framework-backed editors and keeps reset state in-page;
+- no arbitrary JavaScript, cookies, storage, headers, innerHTML or control-value readback is exposed.
+
+The separate RiftBrowser audit remains authority for what browser inspection may return/do. `edit` is explicit local authority only; it does not submit forms, click deploy buttons or otherwise add generic browser automation authority.
 
 This local-agent route does not introduce another WebView owner.
 

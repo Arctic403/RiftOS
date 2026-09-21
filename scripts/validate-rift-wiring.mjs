@@ -130,7 +130,9 @@ const cliEvents = read(`${kotlinDir}/RiftCliEventBus.kt`);
 const relayClient = read(`${kotlinDir}/RiftMcpRelayClient.kt`);
 const relayWorker = read('relay/src/index.js');
 const browserWindow = read(`${kotlinDir}/RiftBrowserWindow.kt`);
+const browserEngine = read(`${kotlinDir}/RiftBrowserAndroidWebViewEngine.kt`);
 const browserHost = read(`${kotlinDir}/RiftBrowserAppHost.kt`);
+const riftosJs = read('src/riftos.js');
 const desktop = read(`${kotlinDir}/RiftNativeDesktop.kt`);
 const workspaceApps = read(`${kotlinDir}/RiftNativeWorkspaceApps.kt`);
 const browserBridge = read(`${kotlinDir}/RiftBrowserMcpAppBridge.kt`);
@@ -273,6 +275,22 @@ for (const file of kotlinFiles) {
   if (usesWebKit && !allowedWebKitOwners.has(path.basename(file))) fail(`WebKit ownership escaped RiftBrowser: ${file}`);
 }
 for (const owner of allowedWebKitOwners) if (!actualWebKitOwners.has(owner)) fail(`RiftBrowser WebKit owner allowlist is stale: ${owner}`);
+
+for (const required of [
+  'Inspector edit payload is limited to 256 KiB UTF-8',
+  'Base64.decode(encoded, Base64.DEFAULT)',
+  "Target is not an editable text control",
+  'Sensitive form controls cannot be edited',
+  'replaceContentEditable',
+  'insertReplacementText',
+  'editorKind:editorKind(el)',
+]) if (!browserEngine.includes(required)) fail(`RiftBrowser bounded editor bridge is missing ${required}`);
+for (const required of [
+  'browser-inspect edit <selector> <text>',
+  'browser-inspect edit-b64 <selector> <base64-utf8>',
+  'request.action="edit"',
+  'request.textBase64=args.shift()',
+]) if (!riftosJs.includes(required)) fail(`RiftBrowser editor shell surface is missing ${required}`);
 
 if (!nativeShell.includes('class RiftNativeShell(context: Context) : RiftShellExecutor')) fail('native RiftShell executor is missing');
 if (!nativeShell.includes('.put("webViewRequired", false)')) fail('native RiftShell does not explicitly report WebView-free execution');
