@@ -122,8 +122,10 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
 
         val matchedFiles = projectGraph.optJSONArray("matchedFiles") ?: JSONArray()
         val filesMatched = projectGraph.optInt("filesMatched", matchedFiles.length())
-        if (filesMatched > matchedFiles.length()) incompleteReasons += "matched-file-preview-bound"
-        if (projectGraph.optBoolean("truncated", false)) incompleteReasons += "pi-v2-edge-bound"
+        val filesTruncated = projectGraph.optBoolean("filesTruncated", filesMatched > matchedFiles.length())
+        val edgesTruncated = projectGraph.optBoolean("edgesTruncated", projectGraph.optBoolean("truncated", false) && !filesTruncated)
+        if (filesTruncated || filesMatched > matchedFiles.length()) incompleteReasons += "pi-v2-file-bound"
+        if (edgesTruncated) incompleteReasons += "pi-v2-edge-bound"
 
         for (index in 0 until matchedFiles.length()) {
             val path = matchedFiles.optString(index).trim()

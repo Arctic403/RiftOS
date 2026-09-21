@@ -45,7 +45,10 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_INDEX_FILES = 25_000
         private const val MAX_INDEX_FILE_BYTES = 2L * 1024L * 1024L
         private const val MAX_INDEX_TOTAL_BYTES = 128L * 1024L * 1024L
+        private const val MAX_GRAPH_FILES_PREVIEW = 120
         private const val MAX_GRAPH_EDGES = 600
+        private const val MAX_CONSISTENCY_INPUT_FILES = 1_024
+        private const val MAX_CONSISTENCY_INPUT_EDGES = 1_024
         private const val MAX_PERSISTED_INDEX_FILES = 4000
         private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
         private const val MAX_HUNKS = 128
@@ -1367,10 +1370,24 @@ internal class RiftToolSandbox(context: Context) {
             .put("operations", JSONArray(listOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")))
     }
 
-    private fun projectGraph(path: String, query: String, requestedLimit: Int): JSONObject {
+    private fun projectGraph(path: String, query: String, requestedLimit: Int): JSONObject =
+        buildProjectGraph(
+            path = path,
+            query = query,
+            fileLimit = MAX_GRAPH_FILES_PREVIEW,
+            edgeLimit = requestedLimit.coerceIn(1, MAX_GRAPH_EDGES)
+        )
+
+    private fun buildProjectGraph(
+        path: String,
+        query: String,
+        fileLimit: Int,
+        edgeLimit: Int
+    ): JSONObject {
         val base = sandboxFile(path)
         val indexStats = refreshSymbolIndex(base)
-        val edgeLimit = requestedLimit.coerceIn(1, MAX_GRAPH_EDGES)
+        val boundedFileLimit = fileLimit.coerceAtLeast(1)
+        val boundedEdgeLimit = edgeLimit.coerceAtLeast(1)
         val q = query.trim().lowercase()
         val indexed = symbolIndex.filterKeys { isPathWithin(it, path) }
         val allPaths = indexed.keys.toSet()
@@ -1386,7 +1403,7 @@ internal class RiftToolSandbox(context: Context) {
                 total += 1
                 val target = resolveDependency(path, sourcePath, dependency, allPaths)
                 if (target == null) unresolved += 1 else resolved += 1
-                if (edges.length() < edgeLimit) {
+                if (edges.length() < boundedEdgeLimit) {
                     edges.put(JSONObject()
                         .put("source", sourcePath)
                         .put("kind", dependency.kind)
@@ -1397,7 +1414,9 @@ internal class RiftToolSandbox(context: Context) {
             }
         }
         val files = JSONArray()
-        selected.keys.take(120).forEach { files.put(it) }
+        selected.keys.take(boundedFileLimit).forEach { files.put(it) }
+        val filesTruncated = selected.size > boundedFileLimit
+        val edgesTruncated = total > boundedEdgeLimit
         return JSONObject()
             .put("root", normalizedPath(path))
             .put("projectIntelligence", "v2")
@@ -1411,11 +1430,20 @@ internal class RiftToolSandbox(context: Context) {
             .put("resolvedEdges", resolved)
             .put("unresolvedEdges", unresolved)
             .put("edges", edges)
-            .put("truncated", total > edgeLimit)
+            .put("fileLimit", boundedFileLimit)
+            .put("edgeLimit", boundedEdgeLimit)
+            .put("filesTruncated", filesTruncated)
+            .put("edgesTruncated", edgesTruncated)
+            .put("truncated", filesTruncated || edgesTruncated)
     }
 
     private fun projectConsistency(path: String, query: String, requestedLimit: Int): JSONObject {
-        val graph = projectGraph(path, "", MAX_GRAPH_EDGES)
+        val graph = buildProjectGraph(
+            path = path,
+            query = "",
+            fileLimit = MAX_CONSISTENCY_INPUT_FILES,
+            edgeLimit = MAX_CONSISTENCY_INPUT_EDGES
+        )
         val result = repositoryConsistencyObserver.foundationView(
             projectRoot = normalizedPath(path),
             projectGraph = graph

@@ -136,6 +136,8 @@ assert.match(observer, /"blocksPromotion"/);
 assert.match(observer, /"evidenceIncomplete"/);
 assert.match(observer, /private fun stableFindingId/);
 assert.match(observer, /inferenceMayBlockPromotion", false/);
+assert.match(observer, /pi-v2-file-bound/);
+assert.match(observer, /pi-v2-edge-bound/);
 
 assert.ok(!observer.includes('walkTopDown('), 'observer must not create a second filesystem index');
 assert.ok(!observer.includes('RiftSourceIntelligenceV2.analyze('), 'observer must consume PI-v2 instead of reparsing source');
@@ -144,7 +146,15 @@ assert.ok(!observer.includes('refreshSymbolIndex('), 'observer must not own PI-v
 assert.match(sandbox, /private val repositoryConsistencyObserver = RiftRepositoryConsistencyObserver\(appContext\)/);
 assert.match(sandbox, /if \(kind == "consistency"\) return projectConsistency\(path, query, requestedLimit\)/);
 assert.match(sandbox, /private fun projectConsistency\(path: String, query: String, requestedLimit: Int\)/);
-assert.match(sandbox, /projectGraph\(path, "", MAX_GRAPH_EDGES\)/);
+assert.match(sandbox, /MAX_GRAPH_FILES_PREVIEW = 120/);
+assert.match(sandbox, /MAX_GRAPH_EDGES = 600/);
+assert.match(sandbox, /MAX_CONSISTENCY_INPUT_FILES = 1_024/);
+assert.match(sandbox, /MAX_CONSISTENCY_INPUT_EDGES = 1_024/);
+assert.match(sandbox, /private fun buildProjectGraph\(/);
+assert.match(sandbox, /fileLimit = MAX_CONSISTENCY_INPUT_FILES/);
+assert.match(sandbox, /edgeLimit = MAX_CONSISTENCY_INPUT_EDGES/);
+assert.match(sandbox, /filesTruncated/);
+assert.match(sandbox, /edgesTruncated/);
 assert.match(sandbox, /repositoryConsistencyObserver\.foundationView/);
 assert.match(sandbox, /if \(mode == "full"\)/);
 assert.match(sandbox, /responseMode", "compact"/);

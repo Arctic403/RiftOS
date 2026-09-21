@@ -38,7 +38,7 @@ Changing relevant source invalidates the affected document's trusted status unti
 | MCP relay | **VERIFIED** | [`systems/mcp/relay/README.md`](systems/mcp/relay/README.md) | WSS transport/config/reconnect/authority audit |
 | Project exporter | **VERIFIED** | [`systems/mcp/project-exporter/README.md`](systems/mcp/project-exporter/README.md) | deterministic paging/snapshot/filter/cursor audit |
 | Workspace | **VERIFIED** | [`systems/workspace/README.md`](systems/workspace/README.md) | canonical-root/writer/watcher/live-vs-retained audit |
-| Repository Consistency Observer | **N1.8.0 SOURCE** | [`systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`](systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md) | fact/edge/finding schema + deterministic graph/cache implemented; Builder/install promotion pending |
+| Repository Consistency Observer | **N1.8.0 SOURCE** | [`systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`](systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md) | graph/cache + full-repo PI-v2 evidence feed implemented; rebuilt install must prove `complete=true` before promotion |
 | Workspace Records | **VERIFIED** | [`systems/workspace/live/README.md`](systems/workspace/live/README.md) | watcher/persistence/diff/file-identity/provenance/manifest-chain audit |
 | Dev Lab | **VERIFIED** | [`systems/dev-lab/README.md`](systems/dev-lab/README.md) | staging/snapshot/publish/recovery audit |
 | RiftLLM bridge | **VERIFIED** | [`systems/riftllm-bridge/README.md`](systems/riftllm-bridge/README.md) | fixed Provider/pairing/canary-controller audit |

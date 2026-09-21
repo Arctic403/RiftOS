@@ -6,6 +6,37 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.31 — N1.8.0 full-repository PI-v2 coverage feed
+
+### Why promotion remained blocked
+
+The compact whole-repository observer response on installed source `6dfaea915aa47ca61f5efb9a55a72379b9efb77f` was deterministic and cache-stable, but it correctly reported `complete=false`.
+
+The root cause was architectural: `project kind=consistency` was consuming `projectGraph()`, which is a human-facing PI-v2 preview surface capped at 120 matched files and 600 dependency edges. The live repository currently contains 258 indexed files and 758 dependency edges, so the observer was hashing a deterministic but incomplete preview.
+
+### Fix
+
+Graph construction is now refactored through one shared internal PI-v2 builder.
+
+- public `project kind=graph` keeps its 120-file / 600-edge preview caps;
+- consistency calls the same builder with observer-only 1024-file / 1024-edge input bounds;
+- file truncation and edge truncation are reported separately as `filesTruncated` and `edgesTruncated`;
+- the observer maps those to exact `pi-v2-file-bound` / `pi-v2-edge-bound` incomplete reasons instead of conflating them;
+- no second filesystem scan, parser, dependency resolver or symbol index is introduced.
+
+Current live PI-v2 data is 258 files, 758 dependency records, 56 resolved edges and 702 unresolved edges. Full observer materialization is expected to be roughly 1017 facts and 1072 graph edges, leaving substantial headroom below the N1.8.0 4096-fact / 4096-edge bounds.
+
+### Regression lock
+
+`test-rift-repository-consistency-v1.mjs` now locks:
+- the public 120/600 preview caps;
+- the private consistency 1024/1024 feed;
+- reuse of one shared `buildProjectGraph` implementation;
+- separate file/edge truncation state;
+- exact observer incomplete reasons.
+
+N1.8.0 remains **unpromoted** until a rebuilt installed APK runs the full RiftOS repository and returns `complete=true` with no PI-v2 file/edge-bound reason.
+
 ## Patch 10.30 — N1.8.0 compact whole-repo proof surface
 
 ### Installed proof and discovered limit

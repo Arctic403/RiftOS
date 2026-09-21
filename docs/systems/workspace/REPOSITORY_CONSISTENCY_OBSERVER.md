@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 SOURCE-IMPLEMENTED — BUILDER/INSTALL PROMOTION PENDING; N1.8.1+ PENDING**
+Status: **N1.8.0 SOURCE/LIVE-PROVEN BUT PROMOTION PENDING FULL-REPO COMPLETENESS; N1.8.1+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -434,7 +434,7 @@ No "best" claim is allowed without measured comparable evidence.
 
 ### N1.8.0 — fact graph/schema
 
-**Source implementation present; external Builder/Kotlin compile and installed-device proof still required for promotion.**
+**Source/live behavior proven, but promotion is blocked until the full-repository graph reports complete.**
 
 Current source provides:
 - canonical fact/edge/finding required-field schema in `RiftRepositoryConsistencyObserver.kt`;
@@ -446,7 +446,7 @@ Current source provides:
 - existing Code Mode `project kind=consistency` read-only view with compact-by-default whole-repo output and explicit `query=full` detail mode;
 - independent regression coverage in `scripts/test-rift-repository-consistency-v1.mjs` wired into the main Builder chain.
 
-The first installed proof on source `cc172dc158c0f7163730d1339ae6f6bf51346531` verified the observer was live and a `relay/` subtree produced a complete deterministic graph twice with the same SHA-256, verified cache reuse and `changed=false` on the second run. The initial whole-repository response exceeded Code Mode's 700 KiB result budget because the view returned all fact/edge arrays; source was therefore hardened to compact-by-default before promotion. Promotion still requires a new external Kotlin/Android build and installed proof that the compact whole-repo view returns without result omission while preserving graph identity/cache behavior.
+Installed proof on source `6dfaea915aa47ca61f5efb9a55a72379b9efb77f` verified compact whole-repository response delivery, deterministic graph SHA-256, verified cache reuse and `changed=false` on the second identical run. However, that same proof reported `complete=false` because the observer was consuming PI-v2's human-facing graph preview caps: 120 matched files and 600 dependency edges. Source now refactors graph construction into one shared PI-v2 builder. The public graph view keeps those preview caps, while consistency uses observer-only internal bounds of 1024 files and 1024 dependency edges. The current RiftOS repository contains 258 indexed files and 758 dependency edges (56 resolved / 702 unresolved), which yields about 1017 facts and 1072 graph edges—well below the observer's 4096/4096 ceilings. N1.8.0 therefore remains unpromoted until a rebuilt installed APK returns full-repository `complete=true` with no PI-v2 file/edge-bound reason.
 
 ### N1.8.1 — syntax/import integrity
 
