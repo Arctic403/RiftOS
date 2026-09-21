@@ -122,6 +122,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/cpp/mc1/codynex_mc1b_host.cpp",
         "src/main/cpp/m2/codynex_m2_vm0_host.cpp",
         "src/main/cpp/m2/codynex_m2b_host.cpp",
+        "src/main/cpp/m2/codynex_mc2a_host.cpp",
         "src/main/cpp/riftcli/rift_cli_core.cpp",
         "src/main/cpp/riftcli/rift_cli_core.h",
         "src/main/cpp/riftcli/rift_cli_jni.cpp"

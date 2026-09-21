@@ -110,6 +110,22 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val M2_B_HOST_APK_ENTRY = "lib/armeabi-v7a/libcodynex_m2b_host.so"
         private const val M2_B_VERSION_NAME = "0.1.0-m2b-proof"
         private const val M2_B_MAX_HOST_BYTES = 4L * 1024L * 1024L
+        private const val MC2_A_VM_HEX = "native/m2/vm1/arm32/vm1_seed.hex"
+        private const val MC2_A_VM_BYTES = 812
+        private const val MC2_A_VM_SHA256 = "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"
+        private const val MC2_A_COMPILER_HEX = "native/mc2/source0/selfhost_compiler.hex"
+        private const val MC2_A_COMPILER_BYTES = 292
+        private const val MC2_A_COMPILER_SHA256 = "b00cc99ef0cf122d47cff54123e1e1ec19f83a44dfe949f5358428e45f47fb2e"
+        private const val MC2_A_SOURCE = "native/mc2/source0/selfhost_compiler.cx0"
+        private const val MC2_A_SOURCE_BYTES = 584
+        private const val MC2_A_SOURCE_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"
+        private const val MC2_A_APK_PROJECT = "native/mc2/source0/apk-proof"
+        private const val MC2_A_PACKAGE = "com.codynex.mc2aproof"
+        private const val MC2_A_LIBRARY_NAME = "codynex_mc2a_host"
+        private const val MC2_A_LIBRARY_FILE = "libcodynex_mc2a_host.so"
+        private const val MC2_A_HOST_APK_ENTRY = "lib/armeabi-v7a/libcodynex_mc2a_host.so"
+        private const val MC2_A_VERSION_NAME = "0.1.0-mc2a-proof"
+        private const val MC2_A_MAX_HOST_BYTES = 4L * 1024L * 1024L
         private const val XML_NO_INDEX = -1
         private const val XML_STRING_POOL_TYPE = 0x0001
         private const val XML_TYPE = 0x0003
@@ -168,6 +184,13 @@ class RiftBuildLocalExecutor(context: Context) {
             "android.app.NativeActivity", "true", "meta-data", "android.app.lib_name", M2_B_LIBRARY_NAME,
             "intent-filter", "action", "android.intent.action.MAIN", "category", "android.intent.category.LAUNCHER"
         )
+        private val MC2_A_MANIFEST_STRINGS = listOf(
+            "name", "hasCode", "exported", "value", "minSdkVersion", "versionCode", "versionName", "targetSdkVersion",
+            "android", "http://schemas.android.com/apk/res/android", "manifest", "package", MC2_A_PACKAGE, "1",
+            MC2_A_VERSION_NAME, "uses-sdk", "26", "36", "application", "false", "activity",
+            "android.app.NativeActivity", "true", "meta-data", "android.app.lib_name", MC2_A_LIBRARY_NAME,
+            "intent-filter", "action", "android.intent.action.MAIN", "category", "android.intent.category.LAUNCHER"
+        )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
         private val SAFE_SEGMENT = Regex("^[A-Za-z0-9._+-]{1,120}$")
@@ -186,7 +209,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -217,6 +240,10 @@ class RiftBuildLocalExecutor(context: Context) {
             )
             "prepare-codynex-m2b" -> prepareCodynexM2B(
                 args.firstOrNull() ?: error("usage: riftbuild prepare-codynex-m2b <codynex-root>"),
+                cwd
+            )
+            "prepare-codynex-mc2a" -> prepareCodynexMc2A(
+                args.firstOrNull() ?: error("usage: riftbuild prepare-codynex-mc2a <codynex-root>"),
                 cwd
             )
             "pack" -> pack(
@@ -1140,6 +1167,172 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
 
         atomicWrite(
             File(buildRoot, "codynex-m2b-materialization.json"),
+            result.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(result)
+        return result
+    }
+
+    fun prepareCodynexMc2A(project: String, cwd: String = "/D:/Workspace"): JSONObject {
+        val ref = resolveProject(project, cwd)
+
+        val vmFile = projectFile(ref, MC2_A_VM_HEX)
+        require(vmFile.isFile) { "Codynex MC2-A VM1 seed is missing" }
+        val vm = decodeHex(readTextBounded(vmFile).trim())
+        require(vm.size == MC2_A_VM_BYTES) {
+            "Codynex MC2-A VM1 byte count drift: " + vm.size
+        }
+        require(sha256(vm) == MC2_A_VM_SHA256) {
+            "Codynex MC2-A VM1 SHA-256 drift"
+        }
+
+        val compilerFile = projectFile(ref, MC2_A_COMPILER_HEX)
+        require(compilerFile.isFile) { "Codynex MC2-A compiler A is missing" }
+        val compiler = decodeHex(readTextBounded(compilerFile).trim())
+        require(compiler.size == MC2_A_COMPILER_BYTES) {
+            "Codynex MC2-A compiler byte count drift: " + compiler.size
+        }
+        require(sha256(compiler) == MC2_A_COMPILER_SHA256) {
+            "Codynex MC2-A compiler SHA-256 drift"
+        }
+
+        val sourceFile = projectFile(ref, MC2_A_SOURCE)
+        require(sourceFile.isFile) { "Codynex MC2-A external compiler source is missing" }
+        val source = readTextBounded(sourceFile).toByteArray(Charsets.UTF_8)
+        require(source.size == MC2_A_SOURCE_BYTES) {
+            "Codynex MC2-A source byte count drift: " + source.size
+        }
+        require(sha256(source) == MC2_A_SOURCE_SHA256) {
+            "Codynex MC2-A source SHA-256 drift"
+        }
+
+        val apkProject = projectFile(ref, MC2_A_APK_PROJECT)
+        require(apkProject.isDirectory) { "Codynex MC2-A apk-proof project is missing" }
+        val apkDisplay = projectDisplay(ref, apkProject)
+        val sourceValidation = validate(apkDisplay, "/D:/Workspace")
+        require(sourceValidation.optBoolean("sourceReady")) {
+            "Codynex MC2-A apk-proof source validation failed"
+        }
+        require(sourceValidation.optString("nativeLibraryName") == MC2_A_LIBRARY_NAME) {
+            "Codynex MC2-A NativeActivity library declaration drift"
+        }
+
+        val sourceManifest = projectFile(
+            ref,
+            MC2_A_APK_PROJECT + "/app/src/main/AndroidManifest.xml"
+        )
+        val sourceManifestText = readTextBounded(sourceManifest)
+        require(sourceManifestText.contains("package=\"" + MC2_A_PACKAGE + "\"")) {
+            "Codynex MC2-A package declaration drift"
+        }
+        require(sourceManifestText.contains("android:value=\"" + MC2_A_LIBRARY_NAME + "\"")) {
+            "Codynex MC2-A library declaration drift"
+        }
+
+        val host = readOwnApkEntry(MC2_A_HOST_APK_ENTRY, MC2_A_MAX_HOST_BYTES)
+        verifyElfImage(host, 1, 40)
+
+        val buildRoot = File(apkProject, "build/riftbuild").canonicalFile
+        require(confinedTo(apkProject, buildRoot)) {
+            "Codynex MC2-A build root escaped apk-proof"
+        }
+        val preparedRoot = File(buildRoot, "prepared").canonicalFile
+        require(confinedTo(buildRoot, preparedRoot)) {
+            "Codynex MC2-A prepared root escaped build/riftbuild"
+        }
+        if (preparedRoot.exists()) {
+            require(deleteTreeBounded(preparedRoot, MAX_PROJECT_FILES)) {
+                "Could not clear stale Codynex MC2-A prepared package"
+            }
+        }
+
+        val libRoot = File(preparedRoot, "lib/armeabi-v7a").canonicalFile
+        val assetRoot = File(preparedRoot, "assets").canonicalFile
+        require(confinedTo(preparedRoot, libRoot)) {
+            "Codynex MC2-A library root escaped prepared package"
+        }
+        require(confinedTo(preparedRoot, assetRoot)) {
+            "Codynex MC2-A asset root escaped prepared package"
+        }
+        require(libRoot.mkdirs() || libRoot.isDirectory) {
+            "Could not create Codynex MC2-A library directory"
+        }
+        require(assetRoot.mkdirs() || assetRoot.isDirectory) {
+            "Could not create Codynex MC2-A asset directory"
+        }
+
+        val manifestBytes = buildMc2ABinaryManifest()
+        val manifestOutput = File(preparedRoot, "AndroidManifest.xml").canonicalFile
+        val hostOutput = File(libRoot, MC2_A_LIBRARY_FILE).canonicalFile
+        val vmOutput = File(assetRoot, "vm1_seed.bin").canonicalFile
+        val compilerOutput = File(assetRoot, "selfhost_compiler.bin").canonicalFile
+        val sourceOutput = File(assetRoot, "selfhost_compiler.cx0").canonicalFile
+
+        atomicWrite(manifestOutput, manifestBytes)
+        atomicWrite(hostOutput, host)
+        atomicWrite(vmOutput, vm)
+        atomicWrite(compilerOutput, compiler)
+        atomicWrite(sourceOutput, source)
+
+        require(isBinaryAndroidManifest(manifestOutput)) {
+            "Codynex MC2-A binary AndroidManifest.xml failed validation"
+        }
+        require(sha256(hostOutput) == sha256(host)) {
+            "Codynex MC2-A host materialization hash mismatch"
+        }
+        require(sha256(vmOutput) == MC2_A_VM_SHA256) {
+            "Codynex MC2-A VM1 materialization hash mismatch"
+        }
+        require(sha256(compilerOutput) == MC2_A_COMPILER_SHA256) {
+            "Codynex MC2-A compiler materialization hash mismatch"
+        }
+        require(sha256(sourceOutput) == MC2_A_SOURCE_SHA256) {
+            "Codynex MC2-A source materialization hash mismatch"
+        }
+
+        val runId = runId()
+        val result = JSONObject()
+            .put("format", "riftbuild-codynex-mc2a-materialization-v1")
+            .put("runId", runId)
+            .put("state", "prepared-native")
+            .put("project", ref.display)
+            .put("androidProject", apkDisplay)
+            .put("target", "arm32")
+            .put("package", MC2_A_PACKAGE)
+            .put("libraryName", MC2_A_LIBRARY_NAME)
+            .put("libraryFile", MC2_A_LIBRARY_FILE)
+            .put("hostSource", "self-apk:" + MC2_A_HOST_APK_ENTRY)
+            .put("hostBytes", host.size)
+            .put("hostSha256", sha256(host))
+            .put("vmSource", projectDisplay(ref, vmFile))
+            .put("vmBytes", vm.size)
+            .put("vmSha256", sha256(vm))
+            .put("compilerSource", projectDisplay(ref, compilerFile))
+            .put("compilerBytes", compiler.size)
+            .put("compilerSha256", sha256(compiler))
+            .put("externalSource", projectDisplay(ref, sourceFile))
+            .put("externalSourceBytes", source.size)
+            .put("externalSourceSha256", sha256(source))
+            .put(
+                "manifest",
+                JSONObject()
+                    .put("path", projectDisplay(ref, manifestOutput))
+                    .put("bytes", manifestOutput.length())
+                    .put("sha256", sha256(manifestOutput))
+            )
+            .put("antiContamination", JSONObject()
+                .put("hostParsesSource", false)
+                .put("hostEmitsInstructions", false)
+                .put("vmAuthority", "assets/vm1_seed.bin")
+                .put("compilerAuthority", "assets/selfhost_compiler.bin")
+                .put("sourceAuthority", "assets/selfhost_compiler.cx0"))
+            .put("manifestReady", true)
+            .put("signed", false)
+            .put("installableClaimed", false)
+            .put("createdAt", System.currentTimeMillis())
+
+        atomicWrite(
+            File(buildRoot, "codynex-mc2a-materialization.json"),
             result.toString(2).toByteArray(Charsets.UTF_8)
         )
         writeRun(result)
@@ -2486,6 +2679,200 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         val index = M2_B_MANIFEST_STRINGS.indexOf(value)
         require(index >= 0) {
             "Codynex M2-B manifest string is not in the frozen pool: " + value
+        }
+        return index
+    }
+
+    private fun buildMc2ABinaryManifest(): ByteArray {
+        val body = ByteArrayOutputStream()
+        body.write(buildMc2AManifestStringPool())
+        body.write(buildManifestResourceMap())
+        body.write(buildMc2AManifestNamespace(XML_START_NAMESPACE_TYPE))
+
+        body.write(buildMc2AManifestStartElement(
+            "manifest",
+            listOf(
+                mc2AManifestStringAttr("package", MC2_A_PACKAGE, XML_NO_INDEX),
+                mc2AManifestIntAttr("versionCode", "1", 1),
+                mc2AManifestStringAttr("versionName", MC2_A_VERSION_NAME)
+            )
+        ))
+        body.write(buildMc2AManifestStartElement(
+            "uses-sdk",
+            listOf(
+                mc2AManifestIntAttr("minSdkVersion", "26", 26),
+                mc2AManifestIntAttr("targetSdkVersion", "36", 36)
+            )
+        ))
+        body.write(buildMc2AManifestEndElement("uses-sdk"))
+        body.write(buildMc2AManifestStartElement(
+            "application",
+            listOf(mc2AManifestBoolAttr("hasCode", "false", false))
+        ))
+        body.write(buildMc2AManifestStartElement(
+            "activity",
+            listOf(
+                mc2AManifestStringAttr("name", "android.app.NativeActivity"),
+                mc2AManifestBoolAttr("exported", "true", true)
+            )
+        ))
+        body.write(buildMc2AManifestStartElement(
+            "meta-data",
+            listOf(
+                mc2AManifestStringAttr("name", "android.app.lib_name"),
+                mc2AManifestStringAttr("value", MC2_A_LIBRARY_NAME)
+            )
+        ))
+        body.write(buildMc2AManifestEndElement("meta-data"))
+        body.write(buildMc2AManifestStartElement("intent-filter", emptyList()))
+        body.write(buildMc2AManifestStartElement(
+            "action",
+            listOf(mc2AManifestStringAttr("name", "android.intent.action.MAIN"))
+        ))
+        body.write(buildMc2AManifestEndElement("action"))
+        body.write(buildMc2AManifestStartElement(
+            "category",
+            listOf(mc2AManifestStringAttr("name", "android.intent.category.LAUNCHER"))
+        ))
+        body.write(buildMc2AManifestEndElement("category"))
+        body.write(buildMc2AManifestEndElement("intent-filter"))
+        body.write(buildMc2AManifestEndElement("activity"))
+        body.write(buildMc2AManifestEndElement("application"))
+        body.write(buildMc2AManifestEndElement("manifest"))
+        body.write(buildMc2AManifestNamespace(XML_END_NAMESPACE_TYPE))
+
+        val bodyBytes = body.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(output, XML_TYPE, 8, 8 + bodyBytes.size)
+        output.write(bodyBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildMc2AManifestStringPool(): ByteArray {
+        val offsets = ArrayList<Int>(MC2_A_MANIFEST_STRINGS.size)
+        val data = ByteArrayOutputStream()
+        for (value in MC2_A_MANIFEST_STRINGS) {
+            val bytes = value.toByteArray(Charsets.UTF_8)
+            require(value.length < 0x80 && bytes.size < 0x80) {
+                "Codynex MC2-A manifest string exceeds one-byte UTF-8 pool length"
+            }
+            offsets.add(data.size())
+            writeManifestLength8(data, value.length)
+            writeManifestLength8(data, bytes.size)
+            data.write(bytes)
+            data.write(0)
+        }
+        while (data.size() % 4 != 0) data.write(0)
+
+        val stringsStart = 28 + (MC2_A_MANIFEST_STRINGS.size * 4)
+        val dataBytes = data.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(
+            output,
+            XML_STRING_POOL_TYPE,
+            28,
+            stringsStart + dataBytes.size
+        )
+        writeManifestU32(output, MC2_A_MANIFEST_STRINGS.size)
+        writeManifestU32(output, 0)
+        writeManifestU32(output, XML_UTF8_FLAG)
+        writeManifestU32(output, stringsStart)
+        writeManifestU32(output, 0)
+        for (offset in offsets) writeManifestU32(output, offset)
+        output.write(dataBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildMc2AManifestNamespace(type: Int): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, type, 24)
+        writeManifestU32(output, mc2AManifestStringIndex("android"))
+        writeManifestU32(
+            output,
+            mc2AManifestStringIndex("http://schemas.android.com/apk/res/android")
+        )
+        return output.toByteArray()
+    }
+
+    private fun buildMc2AManifestStartElement(
+        name: String,
+        attrs: List<ManifestAttr>
+    ): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, XML_START_ELEMENT_TYPE, 36 + (attrs.size * 20))
+        writeManifestU32(output, XML_NO_INDEX)
+        writeManifestU32(output, mc2AManifestStringIndex(name))
+        writeManifestU16(output, 20)
+        writeManifestU16(output, 20)
+        writeManifestU16(output, attrs.size)
+        writeManifestU16(output, 0)
+        writeManifestU16(output, 0)
+        writeManifestU16(output, 0)
+        for (attr in attrs) {
+            writeManifestU32(output, attr.namespace)
+            writeManifestU32(output, attr.name)
+            writeManifestU32(output, attr.rawValue)
+            writeManifestU16(output, 8)
+            output.write(0)
+            output.write(attr.dataType)
+            writeManifestU32(output, attr.data)
+        }
+        return output.toByteArray()
+    }
+
+    private fun buildMc2AManifestEndElement(name: String): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, XML_END_ELEMENT_TYPE, 24)
+        writeManifestU32(output, XML_NO_INDEX)
+        writeManifestU32(output, mc2AManifestStringIndex(name))
+        return output.toByteArray()
+    }
+
+    private fun mc2AManifestStringAttr(
+        name: String,
+        value: String,
+        namespace: Int = mc2AManifestStringIndex(
+            "http://schemas.android.com/apk/res/android"
+        )
+    ): ManifestAttr =
+        ManifestAttr(
+            namespace,
+            mc2AManifestStringIndex(name),
+            mc2AManifestStringIndex(value),
+            XML_VALUE_STRING,
+            mc2AManifestStringIndex(value)
+        )
+
+    private fun mc2AManifestIntAttr(
+        name: String,
+        rawValue: String,
+        value: Int
+    ): ManifestAttr =
+        ManifestAttr(
+            mc2AManifestStringIndex("http://schemas.android.com/apk/res/android"),
+            mc2AManifestStringIndex(name),
+            mc2AManifestStringIndex(rawValue),
+            XML_VALUE_INT_DEC,
+            value
+        )
+
+    private fun mc2AManifestBoolAttr(
+        name: String,
+        rawValue: String,
+        value: Boolean
+    ): ManifestAttr =
+        ManifestAttr(
+            mc2AManifestStringIndex("http://schemas.android.com/apk/res/android"),
+            mc2AManifestStringIndex(name),
+            mc2AManifestStringIndex(rawValue),
+            XML_VALUE_INT_BOOLEAN,
+            if (value) -1 else 0
+        )
+
+    private fun mc2AManifestStringIndex(value: String): Int {
+        val index = MC2_A_MANIFEST_STRINGS.indexOf(value)
+        require(index >= 0) {
+            "Codynex MC2-A manifest string is not in the frozen pool: " + value
         }
         return index
     }

@@ -224,12 +224,37 @@ assert.ok(!m2bHost.includes('#include <string>'), 'M2-B host must not depend on 
 assert.ok(!m2bHost.includes('std::string'), 'M2-B host must remain C-style test glue');
 assert.match(cmake, /codynex_m2b_host[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /codynex_m2b_host[\s\S]*?-fno-rtti/);
+const mc2aHost = read('android/app/src/main/cpp/m2/codynex_mc2a_host.cpp');
+assert.match(nativeBuild, /prepare-codynex-mc2a/);
+assert.match(nativeBuild, /MC2_A_VM_BYTES = 812/);
+assert.match(nativeBuild, /MC2_A_VM_SHA256 = "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"/);
+assert.match(nativeBuild, /MC2_A_COMPILER_BYTES = 292/);
+assert.match(nativeBuild, /MC2_A_COMPILER_SHA256 = "b00cc99ef0cf122d47cff54123e1e1ec19f83a44dfe949f5358428e45f47fb2e"/);
+assert.match(nativeBuild, /MC2_A_SOURCE_BYTES = 584/);
+assert.match(nativeBuild, /MC2_A_SOURCE_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"/);
+assert.match(nativeBuild, /MC2_A_PACKAGE = "com\.codynex\.mc2aproof"/);
+assert.match(nativeBuild, /buildMc2ABinaryManifest/);
+assert.match(nativeBuild, /fun prepareCodynexMc2A[\s\S]*?val manifestBytes = buildMc2ABinaryManifest\(\)/);
+assert.match(nativeBuild, /vmAuthority", "assets\/vm1_seed\.bin"/);
+assert.match(nativeBuild, /compilerAuthority", "assets\/selfhost_compiler\.bin"/);
+assert.match(nativeBuild, /sourceAuthority", "assets\/selfhost_compiler\.cx0"/);
+assert.match(mc2aHost, /kVmBytes = 812/);
+assert.match(mc2aHost, /kCompilerBytes = 292/);
+assert.match(mc2aHost, /kSourceBytes = 584/);
+assert.match(mc2aHost, /MC2-A PASS/);
+assert.match(mc2aHost, /B-equals-A/);
+assert.match(mc2aHost, /C-equals-B/);
+assert.match(mc2aHost, /C-equals-A/);
+assert.ok(!mc2aHost.includes('#include <string>'), 'MC2-A host must not depend on std::string');
+assert.ok(!mc2aHost.includes('std::string'), 'MC2-A host must remain C-style proof glue');
+assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-exceptions/);
+assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-rtti/);
 assert.match(nativeBuild, /\.put\("signed", false\)/);
 assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
@@ -249,11 +274,13 @@ assert.ok(manifest.includes('com.codynex.mc1aproof'), 'RiftOS manifest omitted C
 assert.ok(manifest.includes('com.codynex.mc1bproof'), 'RiftOS manifest omitted Codynex MC1-B proof-package visibility');
 assert.ok(manifest.includes('com.codynex.m2vm0proof'), 'RiftOS manifest omitted Codynex M2 VM0 proof-package visibility');
 assert.ok(manifest.includes('com.codynex.m2bproof'), 'RiftOS manifest omitted Codynex M2-B proof-package visibility');
+assert.ok(manifest.includes('com.codynex.mc2aproof'), 'RiftOS manifest omitted Codynex MC2-A proof-package visibility');
 assert.ok(gradle.includes('src/main/cpp/mc0/codynex_mc0_host.cpp'), 'Gradle exact native source snapshot omitted MC0 host');
 assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1a_host.cpp'), 'Gradle exact native source snapshot omitted MC1-A host');
 assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1b_host.cpp'), 'Gradle exact native source snapshot omitted MC1-B host');
 assert.ok(gradle.includes('src/main/cpp/m2/codynex_m2_vm0_host.cpp'), 'Gradle exact native source snapshot omitted M2 VM0 host');
 assert.ok(gradle.includes('src/main/cpp/m2/codynex_m2b_host.cpp'), 'Gradle exact native source snapshot omitted M2-B host');
+assert.ok(gradle.includes('src/main/cpp/m2/codynex_mc2a_host.cpp'), 'Gradle exact native source snapshot omitted MC2-A host');
 assert.match(manifest, /android:name="\.RiftBuildInstallReceiver"[\s\S]*?android:exported="false"/);
 
 assert.match(retained, /RiftBuild doctor blocked local execution/);
