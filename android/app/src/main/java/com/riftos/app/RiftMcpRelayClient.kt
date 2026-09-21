@@ -44,7 +44,7 @@ class RiftMcpRelayClient(
     @Volatile private var state = "disabled"
     @Volatile private var detail = "Relay is disabled"
     @Volatile private var connectedAt = 0L
-    @Volatile private var lastCliAckSequence = 0L
+    @Volatile private var lastCliAckSequence = settings.loadCliAckSequence()
     private var attempts = 0
     private var socket: WebSocket? = null
     private var reconnect: ScheduledFuture<*>? = null
@@ -196,7 +196,10 @@ class RiftMcpRelayClient(
                 "cli.ack" -> {
                     val sequence = message.optLong("sequence", 0L)
                     val advanced = sequence > lastCliAckSequence
-                    if (advanced) lastCliAckSequence = sequence
+                    if (advanced) {
+                        lastCliAckSequence = sequence
+                        settings.saveCliAckSequence(sequence)
+                    }
                     debug(
                         operation = "cli.ack",
                         outcome = if (sequence > 0L) "received" else "invalid",

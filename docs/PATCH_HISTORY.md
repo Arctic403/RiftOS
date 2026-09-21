@@ -6,6 +6,28 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.26 — N1.7 force-stop cursor durability and stale-SSE cleanup
+
+### Live stress finding
+
+Installed-device stress on 2026-09-21 against source `a2b29555445fdcc7ea2ad228f98fd8a1af5a6833` proved the first relay cursor-recovery repair live. Manual relay replacement resumed from the exact current ACK high-water instead of zero, replay count stayed zero, five consecutive replacements recovered on the next MCP call, five 16-wide MCP waves completed 80/80, and device replacement did not strand seven simultaneous scans. External SSE cap testing opened eight browser streams and correctly rejected the ninth with `Too many MCP SSE subscribers`.
+
+Closing all eight browser tabs exposed a separate lifecycle leak: after multiple heartbeat windows, the Durable Object still reported eight SSE clients because Chrome/Cloudflare had not propagated abort/cancel. Deliberate ~37 KiB CLI event pressure then evicted six stale streams through `backpressureDropped`, proving the 512 KiB fail-closed queue path works live, while two idle streams remained registered because they continued to appear drainable from the Worker side.
+
+A pre-force-stop audit also found that Android `lastCliAckSequence` was RAM-only. Ordinary relay reconnect was fixed, but a true Android process death could still reset `device.hello.cliAckSequence` to zero if the Durable Object also lost its in-memory cursor while the phone was offline.
+
+### Source repair
+
+`RiftRelaySettings` now stores the highest relay-ACKed CLI sequence as a monotonic app-private `Long`. `RiftMcpRelayClient` restores that value at construction and synchronously persists each newly advanced ACK before a later force-stop can erase the process copy. The persisted value contains no token, payload or event body.
+
+The Worker now records SSE queue `desiredSize` progress across heartbeats. A client with queued bytes and no forward drain progress across two consecutive heartbeat observations is evicted through the existing backpressure cleanup path. Existing byte-cap protection remains unchanged, so either a full queue or a no-drain stream fails closed instead of living indefinitely.
+
+No Durable Object storage or event-payload persistence was added. Focused and broad transport validators now require the persisted Android ACK cursor plus the no-drain heartbeat contract.
+
+### Validation and status
+
+These changes are source-complete pending Builder validation, APK installation and Worker deployment. N1.7 remains unpromoted until a new live pass proves: force-stop/reopen restores the persisted ACK cursor without a zero replay, closed browser SSE tabs age out automatically without event pressure, and subscriber count returns to zero. Existing live proof already covers the eight-client SSE ceiling, ninth-client rejection, real backpressure eviction, repeated relay replacement, concurrency and transport size bounds.
+
 ## Patch 10.25 — N1.7 relay cursor recovery hardening
 
 ### Live stress finding

@@ -20,6 +20,7 @@ class RiftRelaySettings(context: Context) {
         private const val KEY_ENABLED = "enabled"
         private const val KEY_ENDPOINT = "endpoint"
         private const val KEY_DEVICE_ID = "deviceId"
+        private const val KEY_CLI_ACK_SEQUENCE = "cliAckSequence"
         private const val TOKEN_SECRET = "rift.relay.token"
     }
 
@@ -37,6 +38,18 @@ class RiftRelaySettings(context: Context) {
             token = secrets.get(TOKEN_SECRET),
             deviceId = deviceId
         )
+    }
+
+    fun loadCliAckSequence(): Long =
+        prefs.getLong(KEY_CLI_ACK_SEQUENCE, 0L).coerceAtLeast(0L)
+
+    fun saveCliAckSequence(sequence: Long): Boolean {
+        if (sequence <= 0L) return false
+        val current = loadCliAckSequence()
+        if (sequence <= current) return true
+        return prefs.edit()
+            .putLong(KEY_CLI_ACK_SEQUENCE, sequence)
+            .commit()
     }
 
     fun save(enabled: Boolean, endpoint: String, replacementToken: String?) {

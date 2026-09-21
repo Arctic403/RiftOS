@@ -10,6 +10,7 @@ const MAX_CLI_EVENT_BYTES = 128_000;
 
 const MAX_SSE_BUFFER_BYTES = 512_000;
 const SSE_HEARTBEAT_MS = 15_000;
+const MAX_SSE_NO_DRAIN_HEARTBEATS = 2;
 
 const SSE_CLIENT_RETRY_MS = 2_000;
 const SSE_RECONNECT_MIN_MS = 1_000;
@@ -910,6 +911,8 @@ export class RiftRelayRoom {
             connectedAt: Date.now(),
             lastDeliveryAt: Date.now(),
             heartbeatTimer: null,
+            heartbeatDesiredSize: controller.desiredSize,
+            noDrainHeartbeats: 0,
             requestSignal: request.signal,
             onAbort,
           };
@@ -942,6 +945,8 @@ export class RiftRelayRoom {
                 })}\n\n`,
               ),
             );
+            clientState.heartbeatDesiredSize =
+              controller.desiredSize;
           } catch {
             room.dropSseClient(
               id,
@@ -1066,9 +1071,42 @@ export class RiftRelayRoom {
         `: rift-heartbeat ${Date.now()}\n\n`,
       );
 
+      const desiredSize =
+        current.controller.desiredSize;
+      const previousDesiredSize = Number(
+        current.heartbeatDesiredSize,
+      );
+
+      if (desiredSize != null) {
+        const madeDrainProgress =
+          Number.isFinite(previousDesiredSize) &&
+          desiredSize > previousDesiredSize;
+        const hasQueuedBytes =
+          desiredSize < MAX_SSE_BUFFER_BYTES;
+
+        if (hasQueuedBytes && !madeDrainProgress) {
+          current.noDrainHeartbeats += 1;
+        } else {
+          current.noDrainHeartbeats = 0;
+        }
+
+        if (
+          current.noDrainHeartbeats >=
+          MAX_SSE_NO_DRAIN_HEARTBEATS
+        ) {
+          this.dropSseClient(
+            id,
+            "backpressure",
+            "MCP SSE subscriber stopped draining",
+            "error",
+          );
+          return;
+        }
+      }
+
       if (
-        current.controller.desiredSize != null &&
-        current.controller.desiredSize < heartbeat.byteLength
+        desiredSize != null &&
+        desiredSize < heartbeat.byteLength
       ) {
         this.dropSseClient(
           id,
@@ -1082,6 +1120,8 @@ export class RiftRelayRoom {
       try {
         current.controller.enqueue(heartbeat);
         current.lastDeliveryAt = Date.now();
+        current.heartbeatDesiredSize =
+          current.controller.desiredSize;
       } catch {
         this.dropSseClient(
           id,
