@@ -63,7 +63,7 @@ android {
         getByName("release") { isMinifyEnabled = false }
     }
 
-    sourceSets["main"].assets.directories.add(file("build/generated/riftosAssets"))
+    sourceSets["main"].assets.directories.add("build/generated/riftosAssets")
 }
 
 val verifyRiftOsAndroidSources by tasks.registering {
