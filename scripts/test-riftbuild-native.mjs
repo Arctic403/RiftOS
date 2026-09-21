@@ -93,6 +93,8 @@ for (const required of [
   'MC0_TARGET_PACKAGE = "com.codynex.mc0proof"',
   'MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"',
   'MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"',
+  'EDITOR_TARGET_PACKAGE = "com.codynex.editor"',
+  'EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"',
   'ALLOWED_PROOF_PACKAGES',
   'PackageInstaller',
   'USER_ACTION_REQUIRED',
@@ -249,12 +251,69 @@ assert.ok(!mc2aHost.includes('#include <string>'), 'MC2-A host must not depend o
 assert.ok(!mc2aHost.includes('std::string'), 'MC2-A host must remain C-style proof glue');
 assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-rtti/);
+
+const editorCoreModel = read('android/app/src/main/java/com/codynex/editor/EditorModel.kt');
+const editorCorePorts = read('android/app/src/main/java/com/codynex/editor/EditorPorts.kt');
+const editorCoreController = read('android/app/src/main/java/com/codynex/editor/CodynexEditorController.kt');
+const editorActivity = read('android/app/src/main/java/com/codynex/editorapp/MainActivity.kt');
+const editorWorkspace = read('android/app/src/main/java/com/codynex/editorapp/FileWorkspacePort.kt');
+const editorBootstrap = read('android/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt');
+const editorToolchain = read('android/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt');
+const editorVmBridgeKt = read('android/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt');
+const editorVmBridgeCpp = read('android/app/src/main/cpp/editor/editor_vm_bridge.cpp');
+
+assert.match(nativeBuild, /prepare-codynex-editor/);
+assert.match(nativeBuild, /fun prepareCodynexEditor/);
+assert.match(nativeBuild, /EDITOR_PACKAGE = "com\.codynex\.editor"/);
+assert.match(nativeBuild, /EDITOR_ACTIVITY = "com\.codynex\.editorapp\.MainActivity"/);
+assert.match(nativeBuild, /EDITOR_LIBRARY_NAME = "codynex_editor_vm"/);
+assert.match(nativeBuild, /EDITOR_VM_HEX_SHA256 = "1f013e2592741895f511d1724ecd69ee156e24f771c289d848e1bab265d3655e"/);
+assert.match(nativeBuild, /EDITOR_COMPILER_HEX_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"/);
+assert.match(nativeBuild, /EDITOR_SOURCE0_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"/);
+assert.match(nativeBuild, /buildEditorBinaryManifest/);
+assert.match(nativeBuild, /readOwnDexEntries/);
+assert.match(nativeBuild, /classes\.dex missing for code-bearing Activity package/);
+assert.match(nativeBuild, /DEX_ENTRY/);
+assert.match(nativeBuild, /editorCoreLanguageAgnostic", true/);
+assert.match(nativeBuild, /remoteBuildRequired", false/);
+assert.match(nativeBuild, /runtimeAuthority", "assets\/vm1_seed\.hex"/);
+assert.match(nativeBuild, /compilerAuthority", "assets\/selfhost_compiler\.hex"/);
+assert.match(nativeBuild, /sourceAuthority", "assets\/selfhost_compiler\.cx0"/);
+assert.match(cmake, /codynex_editor_vm[\s\S]*?editor\/editor_vm_bridge\.cpp/);
+assert.match(cmake, /codynex_editor_vm[\s\S]*?-fno-exceptions/);
+assert.match(cmake, /codynex_editor_vm[\s\S]*?-fno-rtti/);
+assert.ok(gradle.includes('src/main/cpp/editor/editor_vm_bridge.cpp'), 'Gradle exact native source snapshot omitted editor VM bridge');
+assert.match(gradle, /verifyCodynexEditorPayload/);
+assert.match(gradle, /b68dfe842893871190d9f0585bf96294d62525d4f74cebee88a272204cafe15d/);
+assert.match(gradle, /49f2346ceb2d896203c8aca3305e98724a22d482aa9a0d74e6b9347b0f64bc04/);
+assert.match(installer, /EDITOR_TARGET_PACKAGE = "com\.codynex\.editor"/);
+assert.match(installer, /EDITOR_TARGET_ACTIVITY = "com\.codynex\.editorapp\.MainActivity"/);
+assert.match(manifest, /com\.codynex\.editor/);
+assert.match(shell, /prepare-codynex-editor/);
+
+for (const core of [editorCoreModel, editorCorePorts, editorCoreController]) {
+  assert.ok(!/android\./.test(core), 'Reusable editor core gained Android coupling');
+  assert.ok(!/Source0/i.test(core), 'Reusable editor core gained Source0 coupling');
+  assert.ok(!/VM1|Vm1/.test(core), 'Reusable editor core gained VM1 coupling');
+  assert.ok(!/LR0|CXE1/i.test(core), 'Reusable editor core gained LR0/CXE1 coupling');
+}
+assert.match(editorActivity, /CodynexEditorController/);
+assert.match(editorActivity, /controller\.compile\(\)/);
+assert.match(editorActivity, /controller\.preview\(\)/);
+assert.match(editorWorkspace, /StandardCopyOption\.ATOMIC_MOVE/);
+assert.match(editorWorkspace, /path escapes editor workspace/);
+assert.match(editorBootstrap, /VM1_SHA256/);
+assert.match(editorToolchain, /class Source0SelfHostToolchainPort/);
+assert.match(editorVmBridgeKt, /System\.loadLibrary\("codynex_editor_vm"\)/);
+assert.ok(!/Source0|selfhost_compiler|hex character/i.test(editorVmBridgeCpp), 'Generic editor VM bridge gained Source0/compiler parsing semantics');
+assert.match(editorVmBridgeCpp, /VmContext/);
+assert.match(editorVmBridgeCpp, /stepBudget/);
 assert.match(nativeBuild, /\.put\("signed", false\)/);
 assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
@@ -275,6 +334,7 @@ assert.ok(manifest.includes('com.codynex.mc1bproof'), 'RiftOS manifest omitted C
 assert.ok(manifest.includes('com.codynex.m2vm0proof'), 'RiftOS manifest omitted Codynex M2 VM0 proof-package visibility');
 assert.ok(manifest.includes('com.codynex.m2bproof'), 'RiftOS manifest omitted Codynex M2-B proof-package visibility');
 assert.ok(manifest.includes('com.codynex.mc2aproof'), 'RiftOS manifest omitted Codynex MC2-A proof-package visibility');
+assert.ok(manifest.includes('com.codynex.editor'), 'RiftOS manifest omitted Codynex editor package visibility');
 assert.ok(gradle.includes('src/main/cpp/mc0/codynex_mc0_host.cpp'), 'Gradle exact native source snapshot omitted MC0 host');
 assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1a_host.cpp'), 'Gradle exact native source snapshot omitted MC1-A host');
 assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1b_host.cpp'), 'Gradle exact native source snapshot omitted MC1-B host');

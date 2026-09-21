@@ -126,6 +126,55 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val MC2_A_HOST_APK_ENTRY = "lib/armeabi-v7a/libcodynex_mc2a_host.so"
         private const val MC2_A_VERSION_NAME = "0.1.0-mc2a-proof"
         private const val MC2_A_MAX_HOST_BYTES = 4L * 1024L * 1024L
+        private const val EDITOR_PROJECT = "external/editor"
+        private const val EDITOR_PACKAGE = "com.codynex.editor"
+        private const val EDITOR_ACTIVITY = "com.codynex.editorapp.MainActivity"
+        private const val EDITOR_LIBRARY_NAME = "codynex_editor_vm"
+        private const val EDITOR_LIBRARY_FILE = "libcodynex_editor_vm.so"
+        private const val EDITOR_HOST_APK_ENTRY = "lib/armeabi-v7a/libcodynex_editor_vm.so"
+        private const val EDITOR_VERSION_NAME = "0.1.0-e0"
+        private const val EDITOR_MAX_HOST_BYTES = 4L * 1024L * 1024L
+        private const val EDITOR_MAX_DEX_BYTES = 32L * 1024L * 1024L
+        private const val EDITOR_MAX_TOTAL_DEX_BYTES = 96L * 1024L * 1024L
+        private const val EDITOR_VM_HEX = "native/m2/vm1/arm32/vm1_seed.hex"
+        private const val EDITOR_VM_HEX_BYTES = 1624
+        private const val EDITOR_VM_HEX_SHA256 = "1f013e2592741895f511d1724ecd69ee156e24f771c289d848e1bab265d3655e"
+        private const val EDITOR_COMPILER_HEX = "native/mc2/source0/selfhost_compiler.hex"
+        private const val EDITOR_COMPILER_HEX_BYTES = 584
+        private const val EDITOR_COMPILER_HEX_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"
+        private const val EDITOR_SOURCE0 = "native/mc2/source0/selfhost_compiler.cx0"
+        private const val EDITOR_SOURCE0_BYTES = 584
+        private const val EDITOR_SOURCE0_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"
+        private val EDITOR_SOURCE_SHA256 = linkedMapOf(
+            "external/editor/core/src/main/kotlin/com/codynex/editor/EditorModel.kt" to
+                "d9dbb536e623800f53766f86ded4c31735d2b877fe515fabcf5b9d250e70eb8b",
+            "external/editor/core/src/main/kotlin/com/codynex/editor/EditorPorts.kt" to
+                "427008739cfaf470c78d99ab740263c969335be349d1909926380c31e124c85b",
+            "external/editor/core/src/main/kotlin/com/codynex/editor/CodynexEditorController.kt" to
+                "b68dfe842893871190d9f0585bf96294d62525d4f74cebee88a272204cafe15d",
+            "external/editor/app/src/main/java/com/codynex/editorapp/FileWorkspacePort.kt" to
+                "49f2346ceb2d896203c8aca3305e98724a22d482aa9a0d74e6b9347b0f64bc04",
+            "external/editor/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
+                "d4cd556b6c351c0e81b7e4b0610fd9152fdc47b0ba0e9b01d1e023ce4dd0d9d9",
+            "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
+                "10223ca98ad0f5b33a4a5925380f4ca87f5f237315df841790c6ae347771e243",
+            "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
+                "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
+            "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
+                "542e29806d6f5eef5b22763530e705ae11d67d87ef37387e4b6dcc74eb1c3a12",
+            "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
+                "69e9bd113959612ef234c87cbacde4ac11a37ca017e198b719da7eba17d4afd2",
+            "external/editor/app/build.gradle.kts" to
+                "e529a5182ab3b1ae42aacb621b8eb4d99f4881ef43d1e251f6f9ad559401c0a3",
+            "external/editor/app/src/main/AndroidManifest.xml" to
+                "00c52e0e78ab3a63e34fa0de96c5c056ff5043ddefaff595152649560e1892b3",
+            "external/editor/settings.gradle.kts" to
+                "9a258efd9b28084a1655568c96de7fb3f35a6e58bd90785e5d9f1028b567d6ce",
+            "external/editor/build.gradle.kts" to
+                "230ecfeab072a48248b0012ffe5d2159772e9b2162d9f7c7229674f646478bc8",
+            "external/editor/core/build.gradle.kts" to
+                "ac7cfb56bb6a67678000e7cd78fbff58524cc867351bafdaf3277b23521d0d30"
+        )
         private const val XML_NO_INDEX = -1
         private const val XML_STRING_POOL_TYPE = 0x0001
         private const val XML_TYPE = 0x0003
@@ -191,9 +240,17 @@ class RiftBuildLocalExecutor(context: Context) {
             "android.app.NativeActivity", "true", "meta-data", "android.app.lib_name", MC2_A_LIBRARY_NAME,
             "intent-filter", "action", "android.intent.action.MAIN", "category", "android.intent.category.LAUNCHER"
         )
+        private val EDITOR_MANIFEST_STRINGS = listOf(
+            "name", "hasCode", "exported", "value", "minSdkVersion", "versionCode", "versionName", "targetSdkVersion",
+            "android", "http://schemas.android.com/apk/res/android", "manifest", "package", EDITOR_PACKAGE, "1",
+            EDITOR_VERSION_NAME, "uses-sdk", "26", "36", "application", "true", "activity",
+            EDITOR_ACTIVITY, "intent-filter", "action", "android.intent.action.MAIN",
+            "category", "android.intent.category.LAUNCHER"
+        )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
         private val SAFE_SEGMENT = Regex("^[A-Za-z0-9._+-]{1,120}$")
+        private val DEX_ENTRY = Regex("^classes(?:[2-9][0-9]*)?\\.dex$")
     }
 
     private val appContext = context.applicationContext
@@ -209,7 +266,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -244,6 +301,10 @@ class RiftBuildLocalExecutor(context: Context) {
             )
             "prepare-codynex-mc2a" -> prepareCodynexMc2A(
                 args.firstOrNull() ?: error("usage: riftbuild prepare-codynex-mc2a <codynex-root>"),
+                cwd
+            )
+            "prepare-codynex-editor" -> prepareCodynexEditor(
+                args.firstOrNull() ?: error("usage: riftbuild prepare-codynex-editor <codynex-root>"),
                 cwd
             )
             "pack" -> pack(
@@ -327,13 +388,30 @@ class RiftBuildLocalExecutor(context: Context) {
 
         var nativeActivity = false
         var nativeLibraryName = ""
+        var activityName = ""
+        var requiresDex = false
         if (manifest.isFile) {
             val text = readTextBounded(manifest)
-            nativeActivity = text.contains("android.app.NativeActivity")
+            activityName = Regex("""<activity\b[^>]*android:name\s*=\s*["']([^"']+)["']""")
+                .find(text)?.groupValues?.getOrNull(1).orEmpty()
+            nativeActivity =
+                activityName == "android.app.NativeActivity" ||
+                    text.contains("android.app.NativeActivity")
+            requiresDex = activityName.isNotBlank() && !nativeActivity
             nativeLibraryName = Regex("""android\.app\.lib_name[\s\S]*?android:value\s*=\s*["']([^"']+)["']""")
                 .find(text)?.groupValues?.getOrNull(1).orEmpty()
-            check("native-activity", nativeActivity, if (nativeActivity) "NativeActivity declared" else "NativeActivity missing")
-            check("native-library-name", nativeLibraryName.isNotBlank(), if (nativeLibraryName.isBlank()) "android.app.lib_name missing" else nativeLibraryName)
+            check(
+                "activity",
+                activityName.isNotBlank(),
+                if (activityName.isBlank()) "launch activity missing" else activityName
+            )
+            if (nativeActivity) {
+                check(
+                    "native-library-name",
+                    nativeLibraryName.isNotBlank(),
+                    if (nativeLibraryName.isBlank()) "android.app.lib_name missing" else nativeLibraryName
+                )
+            }
         }
 
         val arm64Source = File(ref.file, "app/src/main/cpp/generated/arm64-v8a/rift_ir_entry.S")
@@ -348,7 +426,7 @@ class RiftBuildLocalExecutor(context: Context) {
         }
 
         val sourceReady = (0 until checks.length()).all { checks.getJSONObject(it).optBoolean("ok") }
-        val prepared = inspectPrepared(ref, "universal")
+        val prepared = inspectPrepared(ref, "universal", requiresDex)
         return JSONObject()
             .put("schema", "riftbuild-native-validation-v1")
             .put("project", ref.display)
@@ -360,6 +438,8 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("androidGradleProject", settings != null && rootGradle != null && appGradle != null && manifest.isFile)
             .put("nativeActivity", nativeActivity)
             .put("nativeLibraryName", nativeLibraryName)
+            .put("activityName", activityName)
+            .put("requiresDex", requiresDex)
             .put("riftNativeProof", riftNativeProof)
             .put("checks", checks)
             .put("preparedPackageReady", prepared.optBoolean("ready"))
@@ -370,14 +450,19 @@ class RiftBuildLocalExecutor(context: Context) {
         val normalizedTarget = normalizeTarget(target)
         val validation = validate(project, cwd)
         val ref = resolveProject(project, cwd)
-        val prepared = inspectPrepared(ref, normalizedTarget)
+        val requiresDex = validation.optBoolean("requiresDex", false)
+        val prepared = inspectPrepared(ref, normalizedTarget, requiresDex)
         val sourceReady = validation.optBoolean("sourceReady")
         val packReady = sourceReady && prepared.optBoolean("ready")
         val nativeLibraryName = validation.optString("nativeLibraryName")
-        val prepareHint = when (nativeLibraryName) {
-            MC0_LIBRARY_NAME -> "run prepare-codynex-mc0 from the Codynex project root"
-            "riftpp_nativeproof" -> "run prepare-riftpp-v0 for the current Rift++ V0 proof"
-            else -> "materialize a bounded prepared native package"
+        val prepareHint = when {
+            ref.display.endsWith("/" + EDITOR_PROJECT) ->
+                "run prepare-codynex-editor from the Codynex project root"
+            nativeLibraryName == MC0_LIBRARY_NAME ->
+                "run prepare-codynex-mc0 from the Codynex project root"
+            nativeLibraryName == "riftpp_nativeproof" ->
+                "run prepare-riftpp-v0 for the current Rift++ V0 proof"
+            else -> "materialize a bounded prepared Android package"
         }
         return JSONObject()
             .put("format", "riftbuild-native-plan-v1")
@@ -411,7 +496,8 @@ class RiftBuildLocalExecutor(context: Context) {
         return when (kind) {
             "riftpp-v0" -> prepareRiftppV0(project, args.optString("target", "universal"), cwd)
             "codynex-mc0" -> prepareCodynexMc0(project, cwd)
-            else -> error("build.prepare kind must be riftpp-v0 or codynex-mc0")
+            "codynex-editor" -> prepareCodynexEditor(project, cwd)
+            else -> error("build.prepare kind must be riftpp-v0, codynex-mc0, or codynex-editor")
         }
     }
 
@@ -1339,6 +1425,238 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         return result
     }
 
+    @Synchronized
+    fun prepareCodynexEditor(
+        project: String,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+
+        EDITOR_SOURCE_SHA256.forEach { (path, expectedSha) ->
+            verifyProjectSource(ref, path, expectedSha)
+        }
+
+        val editorProject = projectFile(ref, EDITOR_PROJECT)
+        require(editorProject.isDirectory) {
+            "Codynex E0 editor project is missing"
+        }
+        val editorDisplay = projectDisplay(ref, editorProject)
+        val sourceValidation = validate(editorDisplay, "/D:/Workspace")
+        require(sourceValidation.optBoolean("sourceReady")) {
+            "Codynex E0 editor source validation failed"
+        }
+        require(sourceValidation.optBoolean("requiresDex")) {
+            "Codynex E0 editor must remain a code-bearing Activity package"
+        }
+        require(sourceValidation.optString("activityName") == ".MainActivity") {
+            "Codynex E0 editor launch activity drift"
+        }
+
+        val vmFile = projectFile(ref, EDITOR_VM_HEX)
+        require(vmFile.isFile) { "Codynex E0 VM1 hex authority is missing" }
+        val vmText = readTextBounded(vmFile).toByteArray(Charsets.UTF_8)
+        require(vmText.size == EDITOR_VM_HEX_BYTES) {
+            "Codynex E0 VM1 hex byte count drift: " + vmText.size
+        }
+        require(sha256(vmText) == EDITOR_VM_HEX_SHA256) {
+            "Codynex E0 VM1 hex SHA-256 drift"
+        }
+
+        val compilerFile = projectFile(ref, EDITOR_COMPILER_HEX)
+        require(compilerFile.isFile) {
+            "Codynex E0 compiler hex authority is missing"
+        }
+        val compilerText =
+            readTextBounded(compilerFile).toByteArray(Charsets.UTF_8)
+        require(compilerText.size == EDITOR_COMPILER_HEX_BYTES) {
+            "Codynex E0 compiler hex byte count drift: " + compilerText.size
+        }
+        require(sha256(compilerText) == EDITOR_COMPILER_HEX_SHA256) {
+            "Codynex E0 compiler hex SHA-256 drift"
+        }
+
+        val sourceFile = projectFile(ref, EDITOR_SOURCE0)
+        require(sourceFile.isFile) {
+            "Codynex E0 Source0 authority is missing"
+        }
+        val sourceText =
+            readTextBounded(sourceFile).toByteArray(Charsets.UTF_8)
+        require(sourceText.size == EDITOR_SOURCE0_BYTES) {
+            "Codynex E0 Source0 byte count drift: " + sourceText.size
+        }
+        require(sha256(sourceText) == EDITOR_SOURCE0_SHA256) {
+            "Codynex E0 Source0 SHA-256 drift"
+        }
+
+        val host =
+            readOwnApkEntry(EDITOR_HOST_APK_ENTRY, EDITOR_MAX_HOST_BYTES)
+        verifyElfImage(host, 1, 40)
+
+        val dexEntries = readOwnDexEntries()
+        require(dexEntries.isNotEmpty()) {
+            "Installed RiftOS APK contains no editor DEX payload"
+        }
+        dexEntries.forEach { (name, bytes) ->
+            require(bytes.size >= 8) {
+                "RiftOS DEX payload is too small: " + name
+            }
+            require(
+                bytes[0] == 'd'.code.toByte() &&
+                    bytes[1] == 'e'.code.toByte() &&
+                    bytes[2] == 'x'.code.toByte() &&
+                    bytes[3] == '\n'.code.toByte() &&
+                    bytes[7] == 0.toByte()
+            ) {
+                "RiftOS DEX payload has invalid magic: " + name
+            }
+        }
+
+        val buildRoot = File(editorProject, "build/riftbuild").canonicalFile
+        require(confinedTo(editorProject, buildRoot)) {
+            "Codynex E0 build root escaped editor project"
+        }
+        val preparedRoot = File(buildRoot, "prepared").canonicalFile
+        require(confinedTo(buildRoot, preparedRoot)) {
+            "Codynex E0 prepared root escaped build/riftbuild"
+        }
+        if (preparedRoot.exists()) {
+            require(deleteTreeBounded(preparedRoot, MAX_PROJECT_FILES)) {
+                "Could not clear stale Codynex E0 prepared package"
+            }
+        }
+
+        val libRoot = File(preparedRoot, "lib/armeabi-v7a").canonicalFile
+        val assetRoot = File(preparedRoot, "assets").canonicalFile
+        require(confinedTo(preparedRoot, libRoot)) {
+            "Codynex E0 library root escaped prepared package"
+        }
+        require(confinedTo(preparedRoot, assetRoot)) {
+            "Codynex E0 asset root escaped prepared package"
+        }
+        require(libRoot.mkdirs() || libRoot.isDirectory) {
+            "Could not create Codynex E0 library directory"
+        }
+        require(assetRoot.mkdirs() || assetRoot.isDirectory) {
+            "Could not create Codynex E0 asset directory"
+        }
+
+        val manifestBytes = buildEditorBinaryManifest()
+        val manifestOutput =
+            File(preparedRoot, "AndroidManifest.xml").canonicalFile
+        val hostOutput =
+            File(libRoot, EDITOR_LIBRARY_FILE).canonicalFile
+        val vmOutput = File(assetRoot, "vm1_seed.hex").canonicalFile
+        val compilerOutput =
+            File(assetRoot, "selfhost_compiler.hex").canonicalFile
+        val sourceOutput =
+            File(assetRoot, "selfhost_compiler.cx0").canonicalFile
+
+        atomicWrite(manifestOutput, manifestBytes)
+        atomicWrite(hostOutput, host)
+        atomicWrite(vmOutput, vmText)
+        atomicWrite(compilerOutput, compilerText)
+        atomicWrite(sourceOutput, sourceText)
+
+        val dexReceipt = JSONArray()
+        for ((name, bytes) in dexEntries) {
+            require(DEX_ENTRY.matches(name)) {
+                "Unsafe Codynex E0 DEX output name: " + name
+            }
+            val output = File(preparedRoot, name).canonicalFile
+            require(confinedTo(preparedRoot, output)) {
+                "Codynex E0 DEX output escaped prepared package"
+            }
+            atomicWrite(output, bytes)
+            require(sha256(output) == sha256(bytes)) {
+                "Codynex E0 DEX materialization hash mismatch: " + name
+            }
+            dexReceipt.put(
+                JSONObject()
+                    .put("name", name)
+                    .put("bytes", bytes.size)
+                    .put("sha256", sha256(bytes))
+            )
+        }
+
+        require(isBinaryAndroidManifest(manifestOutput)) {
+            "Codynex E0 binary AndroidManifest.xml failed validation"
+        }
+        require(sha256(hostOutput) == sha256(host)) {
+            "Codynex E0 VM bridge materialization hash mismatch"
+        }
+        require(sha256(vmOutput) == EDITOR_VM_HEX_SHA256) {
+            "Codynex E0 VM1 asset materialization hash mismatch"
+        }
+        require(sha256(compilerOutput) == EDITOR_COMPILER_HEX_SHA256) {
+            "Codynex E0 compiler asset materialization hash mismatch"
+        }
+        require(sha256(sourceOutput) == EDITOR_SOURCE0_SHA256) {
+            "Codynex E0 Source0 asset materialization hash mismatch"
+        }
+
+        val sourceReceipt = JSONObject()
+        EDITOR_SOURCE_SHA256.forEach { (path, expectedSha) ->
+            sourceReceipt.put(path, expectedSha)
+        }
+
+        val runId = runId()
+        val result = JSONObject()
+            .put("format", "riftbuild-codynex-editor-materialization-v1")
+            .put("runId", runId)
+            .put("state", "prepared-code")
+            .put("project", ref.display)
+            .put("androidProject", editorDisplay)
+            .put("target", "arm32")
+            .put("package", EDITOR_PACKAGE)
+            .put("activity", EDITOR_ACTIVITY)
+            .put("libraryName", EDITOR_LIBRARY_NAME)
+            .put("libraryFile", EDITOR_LIBRARY_FILE)
+            .put("hostSource", "self-apk:" + EDITOR_HOST_APK_ENTRY)
+            .put("hostBytes", host.size)
+            .put("hostSha256", sha256(host))
+            .put("dexSource", "self-apk:classes*.dex")
+            .put("dex", dexReceipt)
+            .put("localSourceAuthority", sourceReceipt)
+            .put("vmSource", projectDisplay(ref, vmFile))
+            .put("vmBytes", vmText.size)
+            .put("vmSha256", sha256(vmText))
+            .put("compilerSource", projectDisplay(ref, compilerFile))
+            .put("compilerBytes", compilerText.size)
+            .put("compilerSha256", sha256(compilerText))
+            .put("externalSource", projectDisplay(ref, sourceFile))
+            .put("externalSourceBytes", sourceText.size)
+            .put("externalSourceSha256", sha256(sourceText))
+            .put(
+                "manifest",
+                JSONObject()
+                    .put("path", projectDisplay(ref, manifestOutput))
+                    .put("bytes", manifestOutput.length())
+                    .put("sha256", sha256(manifestOutput))
+            )
+            .put(
+                "antiContamination",
+                JSONObject()
+                    .put("editorCoreLanguageAgnostic", true)
+                    .put("editorSourceAuthority", "local Codynex external/editor")
+                    .put("runtimeAuthority", "assets/vm1_seed.hex")
+                    .put("compilerAuthority", "assets/selfhost_compiler.hex")
+                    .put("sourceAuthority", "assets/selfhost_compiler.cx0")
+                    .put("remoteBuildRequired", false)
+            )
+            .put("manifestReady", true)
+            .put("dexReady", true)
+            .put("signed", false)
+            .put("installableClaimed", false)
+            .put("createdAt", System.currentTimeMillis())
+
+        atomicWrite(
+            File(buildRoot, "codynex-editor-materialization.json"),
+            result.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(result)
+        return result
+    }
+
     private fun decodeHex(raw: String): ByteArray {
         require(raw.isNotBlank() && raw.length % 2 == 0) {
             "Codynex machine-seed hex must contain complete byte pairs"
@@ -1384,6 +1702,63 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
                 }
             }
             return output.toByteArray()
+        }
+    }
+
+    private fun readOwnDexEntries(): List<Pair<String, ByteArray>> {
+        val apk = File(appContext.applicationInfo.sourceDir).canonicalFile
+        require(apk.isFile) { "Installed RiftOS base APK is unavailable" }
+
+        ZipFile(apk).use { zip ->
+            val names = ArrayList<String>()
+            val enumeration = zip.entries()
+            while (enumeration.hasMoreElements()) {
+                val entry = enumeration.nextElement()
+                if (!entry.isDirectory && DEX_ENTRY.matches(entry.name)) {
+                    names += entry.name
+                }
+            }
+
+            require(names.contains("classes.dex")) {
+                "Installed RiftOS APK does not contain classes.dex"
+            }
+
+            val ordered = names.sortedBy(::dexEntryOrder)
+            val output = ArrayList<Pair<String, ByteArray>>(ordered.size)
+            var totalBytes = 0L
+
+            for (name in ordered) {
+                RiftDeadline.check("RiftBuild editor DEX extraction")
+                val entry = zip.getEntry(name)
+                    ?: error("RiftOS DEX entry disappeared: " + name)
+                require(entry.size < 0L || entry.size <= EDITOR_MAX_DEX_BYTES) {
+                    "RiftOS DEX entry exceeds editor extraction limit: " + name
+                }
+
+                val bytes = ByteArrayOutputStream()
+                zip.getInputStream(entry).buffered().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    var entryBytes = 0L
+                    while (true) {
+                        RiftDeadline.check("RiftBuild editor DEX extraction")
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        if (read == 0) continue
+                        entryBytes += read
+                        totalBytes += read
+                        require(entryBytes <= EDITOR_MAX_DEX_BYTES) {
+                            "RiftOS DEX entry exceeds editor extraction limit: " + name
+                        }
+                        require(totalBytes <= EDITOR_MAX_TOTAL_DEX_BYTES) {
+                            "RiftOS DEX payload exceeds editor total extraction limit"
+                        }
+                        bytes.write(buffer, 0, read)
+                    }
+                }
+                output += name to bytes.toByteArray()
+            }
+
+            return output
         }
     }
 
@@ -2877,6 +3252,192 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         return index
     }
 
+    private fun buildEditorBinaryManifest(): ByteArray {
+        val body = ByteArrayOutputStream()
+        body.write(buildEditorManifestStringPool())
+        body.write(buildManifestResourceMap())
+        body.write(buildEditorManifestNamespace(XML_START_NAMESPACE_TYPE))
+
+        body.write(buildEditorManifestStartElement(
+            "manifest",
+            listOf(
+                editorManifestStringAttr("package", EDITOR_PACKAGE, XML_NO_INDEX),
+                editorManifestIntAttr("versionCode", "1", 1),
+                editorManifestStringAttr("versionName", EDITOR_VERSION_NAME)
+            )
+        ))
+        body.write(buildEditorManifestStartElement(
+            "uses-sdk",
+            listOf(
+                editorManifestIntAttr("minSdkVersion", "26", 26),
+                editorManifestIntAttr("targetSdkVersion", "36", 36)
+            )
+        ))
+        body.write(buildEditorManifestEndElement("uses-sdk"))
+        body.write(buildEditorManifestStartElement(
+            "application",
+            listOf(editorManifestBoolAttr("hasCode", "true", true))
+        ))
+        body.write(buildEditorManifestStartElement(
+            "activity",
+            listOf(
+                editorManifestStringAttr("name", EDITOR_ACTIVITY),
+                editorManifestBoolAttr("exported", "true", true)
+            )
+        ))
+        body.write(buildEditorManifestStartElement("intent-filter", emptyList()))
+        body.write(buildEditorManifestStartElement(
+            "action",
+            listOf(editorManifestStringAttr("name", "android.intent.action.MAIN"))
+        ))
+        body.write(buildEditorManifestEndElement("action"))
+        body.write(buildEditorManifestStartElement(
+            "category",
+            listOf(editorManifestStringAttr("name", "android.intent.category.LAUNCHER"))
+        ))
+        body.write(buildEditorManifestEndElement("category"))
+        body.write(buildEditorManifestEndElement("intent-filter"))
+        body.write(buildEditorManifestEndElement("activity"))
+        body.write(buildEditorManifestEndElement("application"))
+        body.write(buildEditorManifestEndElement("manifest"))
+        body.write(buildEditorManifestNamespace(XML_END_NAMESPACE_TYPE))
+
+        val bodyBytes = body.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(output, XML_TYPE, 8, 8 + bodyBytes.size)
+        output.write(bodyBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildEditorManifestStringPool(): ByteArray {
+        val offsets = ArrayList<Int>(EDITOR_MANIFEST_STRINGS.size)
+        val data = ByteArrayOutputStream()
+        for (value in EDITOR_MANIFEST_STRINGS) {
+            val bytes = value.toByteArray(Charsets.UTF_8)
+            require(value.length < 0x80 && bytes.size < 0x80) {
+                "Codynex editor manifest string exceeds one-byte UTF-8 pool length"
+            }
+            offsets.add(data.size())
+            writeManifestLength8(data, value.length)
+            writeManifestLength8(data, bytes.size)
+            data.write(bytes)
+            data.write(0)
+        }
+        while (data.size() % 4 != 0) data.write(0)
+
+        val stringsStart = 28 + (EDITOR_MANIFEST_STRINGS.size * 4)
+        val dataBytes = data.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(
+            output,
+            XML_STRING_POOL_TYPE,
+            28,
+            stringsStart + dataBytes.size
+        )
+        writeManifestU32(output, EDITOR_MANIFEST_STRINGS.size)
+        writeManifestU32(output, 0)
+        writeManifestU32(output, XML_UTF8_FLAG)
+        writeManifestU32(output, stringsStart)
+        writeManifestU32(output, 0)
+        for (offset in offsets) writeManifestU32(output, offset)
+        output.write(dataBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildEditorManifestNamespace(type: Int): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, type, 24)
+        writeManifestU32(output, editorManifestStringIndex("android"))
+        writeManifestU32(
+            output,
+            editorManifestStringIndex("http://schemas.android.com/apk/res/android")
+        )
+        return output.toByteArray()
+    }
+
+    private fun buildEditorManifestStartElement(
+        name: String,
+        attrs: List<ManifestAttr>
+    ): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, XML_START_ELEMENT_TYPE, 36 + (attrs.size * 20))
+        writeManifestU32(output, XML_NO_INDEX)
+        writeManifestU32(output, editorManifestStringIndex(name))
+        writeManifestU16(output, 20)
+        writeManifestU16(output, 20)
+        writeManifestU16(output, attrs.size)
+        writeManifestU16(output, 0)
+        writeManifestU16(output, 0)
+        writeManifestU16(output, 0)
+        for (attr in attrs) {
+            writeManifestU32(output, attr.namespace)
+            writeManifestU32(output, attr.name)
+            writeManifestU32(output, attr.rawValue)
+            writeManifestU16(output, 8)
+            output.write(0)
+            output.write(attr.dataType)
+            writeManifestU32(output, attr.data)
+        }
+        return output.toByteArray()
+    }
+
+    private fun buildEditorManifestEndElement(name: String): ByteArray {
+        val output = ByteArrayOutputStream()
+        writeManifestNodeHeader(output, XML_END_ELEMENT_TYPE, 24)
+        writeManifestU32(output, XML_NO_INDEX)
+        writeManifestU32(output, editorManifestStringIndex(name))
+        return output.toByteArray()
+    }
+
+    private fun editorManifestStringAttr(
+        name: String,
+        value: String,
+        namespace: Int = editorManifestStringIndex(
+            "http://schemas.android.com/apk/res/android"
+        )
+    ): ManifestAttr =
+        ManifestAttr(
+            namespace,
+            editorManifestStringIndex(name),
+            editorManifestStringIndex(value),
+            XML_VALUE_STRING,
+            editorManifestStringIndex(value)
+        )
+
+    private fun editorManifestIntAttr(
+        name: String,
+        rawValue: String,
+        value: Int
+    ): ManifestAttr =
+        ManifestAttr(
+            editorManifestStringIndex("http://schemas.android.com/apk/res/android"),
+            editorManifestStringIndex(name),
+            editorManifestStringIndex(rawValue),
+            XML_VALUE_INT_DEC,
+            value
+        )
+
+    private fun editorManifestBoolAttr(
+        name: String,
+        rawValue: String,
+        value: Boolean
+    ): ManifestAttr =
+        ManifestAttr(
+            editorManifestStringIndex("http://schemas.android.com/apk/res/android"),
+            editorManifestStringIndex(name),
+            editorManifestStringIndex(rawValue),
+            XML_VALUE_INT_BOOLEAN,
+            if (value) -1 else 0
+        )
+
+    private fun editorManifestStringIndex(value: String): Int {
+        val index = EDITOR_MANIFEST_STRINGS.indexOf(value)
+        require(index >= 0) {
+            "Codynex editor manifest string is not in the frozen pool: " + value
+        }
+        return index
+    }
+
     private fun buildRiftppV0BinaryManifest(): ByteArray {
         val body = ByteArrayOutputStream()
         body.write(buildManifestStringPool())
@@ -3075,7 +3636,7 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         output.write((value ushr 24) and 0xff)
     }
 
-    private fun inspectPrepared(ref: ProjectRef, target: String): JSONObject {
+    private fun inspectPrepared(ref: ProjectRef, target: String, requiresDex: Boolean = false): JSONObject {
         val prepared = File(ref.file, "build/riftbuild/prepared").canonicalFile
         if (!prepared.isDirectory || !confinedTo(ref.file, prepared)) {
             return JSONObject()
@@ -3086,14 +3647,21 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         val manifest = File(prepared, "AndroidManifest.xml")
         val arm64 = nativeLibraries(prepared, "arm64-v8a")
         val arm32 = nativeLibraries(prepared, "armeabi-v7a")
+        val dexFiles = prepared.listFiles()
+            ?.filter { it.isFile && DEX_ENTRY.matches(it.name) }
+            ?.sortedBy { dexEntryOrder(it.name) }
+            .orEmpty()
         val blockers = JSONArray()
         if (!isBinaryAndroidManifest(manifest)) blockers.put("AndroidManifest.xml must be compiled Android binary XML")
         if ((target == "arm64" || target == "universal") && arm64.isEmpty()) blockers.put("arm64-v8a native library missing")
         if ((target == "arm32" || target == "universal") && arm32.isEmpty()) blockers.put("armeabi-v7a native library missing")
+        if (requiresDex && dexFiles.none { it.name == "classes.dex" }) blockers.put("classes.dex missing for code-bearing Activity package")
         return JSONObject()
             .put("ready", blockers.length() == 0)
             .put("root", ref.display + "/build/riftbuild/prepared")
             .put("binaryManifest", isBinaryAndroidManifest(manifest))
+            .put("requiresDex", requiresDex)
+            .put("dexFiles", JSONArray(dexFiles.map { it.name }))
             .put("arm64Libraries", JSONArray(arm64.map { it.name }))
             .put("arm32Libraries", JSONArray(arm32.map { it.name }))
             .put("blockers", blockers)
@@ -3102,12 +3670,23 @@ private fun buildMc1bBinaryManifest(): ByteArray {
     private fun collectPreparedEntries(prepared: File, target: String): List<Pair<String, File>> {
         require(prepared.isDirectory) { "prepared package directory missing" }
         val allowedTop = setOf("AndroidManifest.xml", "resources.arsc", "lib", "assets")
-        prepared.listFiles()?.forEach { require(allowedTop.contains(it.name)) { "unsupported prepared APK input: " + it.name } }
+        prepared.listFiles()?.forEach { entry ->
+            require(
+                allowedTop.contains(entry.name) ||
+                    (entry.isFile && DEX_ENTRY.matches(entry.name))
+            ) {
+                "unsupported prepared APK input: " + entry.name
+            }
+        }
 
         val out = ArrayList<Pair<String, File>>()
         val manifest = File(prepared, "AndroidManifest.xml")
         require(isBinaryAndroidManifest(manifest)) { "AndroidManifest.xml must be compiled Android binary XML" }
         out += "AndroidManifest.xml" to manifest
+        prepared.listFiles()
+            ?.filter { it.isFile && DEX_ENTRY.matches(it.name) }
+            ?.sortedBy { dexEntryOrder(it.name) }
+            ?.forEach { dex -> out += dex.name to dex }
         File(prepared, "resources.arsc").takeIf { it.isFile }?.let { out += "resources.arsc" to it }
 
         val abis = when (target) {
@@ -3136,6 +3715,11 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         }
         return out
     }
+
+    private fun dexEntryOrder(name: String): Int =
+        if (name == "classes.dex") 1
+        else name.removePrefix("classes").removeSuffix(".dex").toIntOrNull()
+            ?: Int.MAX_VALUE
 
     private fun nativeLibraries(prepared: File, abi: String): List<File> {
         val dir = File(prepared, "lib/" + abi).canonicalFile

@@ -26,7 +26,9 @@ class RiftBuildInstaller(context: Context) {
         const val M2_VM0_TARGET_PACKAGE = "com.codynex.m2vm0proof"
         const val M2_B_TARGET_PACKAGE = "com.codynex.m2bproof"
         const val MC2_A_TARGET_PACKAGE = "com.codynex.mc2aproof"
+        const val EDITOR_TARGET_PACKAGE = "com.codynex.editor"
         const val TARGET_ACTIVITY = "android.app.NativeActivity"
+        const val EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"
         const val ACTION_INSTALL_STATUS = "com.riftos.app.RIFTBUILD_INSTALL_STATUS"
 
         private val ALLOWED_PROOF_PACKAGES = setOf(
@@ -36,7 +38,8 @@ class RiftBuildInstaller(context: Context) {
             MC1B_TARGET_PACKAGE,
             M2_VM0_TARGET_PACKAGE,
             M2_B_TARGET_PACKAGE,
-            MC2_A_TARGET_PACKAGE
+            MC2_A_TARGET_PACKAGE,
+            EDITOR_TARGET_PACKAGE
         )
 
         private fun statusFile(context: Context): File =
@@ -82,9 +85,14 @@ class RiftBuildInstaller(context: Context) {
             require(packageName in ALLOWED_PROOF_PACKAGES) {
                 "RiftBuild proof package is not allowlisted: " + packageName
             }
+            val activity = if (packageName == EDITOR_TARGET_PACKAGE) {
+                EDITOR_TARGET_ACTIVITY
+            } else {
+                TARGET_ACTIVITY
+            }
             launchForeground(
                 context,
-                Intent().setClassName(packageName, TARGET_ACTIVITY)
+                Intent().setClassName(packageName, activity)
             )
         }
 

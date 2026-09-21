@@ -184,3 +184,23 @@ target_link_libraries(
     ${android-lib}
     ${log-lib}
 )
+
+
+add_library(
+    codynex_editor_vm
+    SHARED
+    editor/editor_vm_bridge.cpp
+)
+
+target_compile_features(codynex_editor_vm PRIVATE cxx_std_17)
+
+target_compile_options(
+    codynex_editor_vm
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -fno-exceptions
+    -fno-rtti
+)

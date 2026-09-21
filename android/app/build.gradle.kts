@@ -123,6 +123,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/cpp/m2/codynex_m2_vm0_host.cpp",
         "src/main/cpp/m2/codynex_m2b_host.cpp",
         "src/main/cpp/m2/codynex_mc2a_host.cpp",
+        "src/main/cpp/editor/editor_vm_bridge.cpp",
         "src/main/cpp/riftcli/rift_cli_core.cpp",
         "src/main/cpp/riftcli/rift_cli_core.h",
         "src/main/cpp/riftcli/rift_cli_jni.cpp"
@@ -170,6 +171,57 @@ val verifyRiftOsAndroidSources by tasks.registering {
                     "Missing declarations: ${missingDeclarations.joinToString().ifBlank { "none" }}; " +
                     "stale declarations: ${staleDeclarations.joinToString().ifBlank { "none" }}"
             )
+        }
+    }
+}
+
+val verifyCodynexEditorPayload by tasks.registering {
+    val expected = linkedMapOf(
+        "src/main/java/com/codynex/editor/EditorModel.kt" to
+            "d9dbb536e623800f53766f86ded4c31735d2b877fe515fabcf5b9d250e70eb8b",
+        "src/main/java/com/codynex/editor/EditorPorts.kt" to
+            "427008739cfaf470c78d99ab740263c969335be349d1909926380c31e124c85b",
+        "src/main/java/com/codynex/editor/CodynexEditorController.kt" to
+            "b68dfe842893871190d9f0585bf96294d62525d4f74cebee88a272204cafe15d",
+        "src/main/java/com/codynex/editorapp/FileWorkspacePort.kt" to
+            "49f2346ceb2d896203c8aca3305e98724a22d482aa9a0d74e6b9347b0f64bc04",
+        "src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
+            "d4cd556b6c351c0e81b7e4b0610fd9152fdc47b0ba0e9b01d1e023ce4dd0d9d9",
+        "src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
+            "10223ca98ad0f5b33a4a5925380f4ca87f5f237315df841790c6ae347771e243",
+        "src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
+            "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
+        "src/main/java/com/codynex/editorapp/MainActivity.kt" to
+            "542e29806d6f5eef5b22763530e705ae11d67d87ef37387e4b6dcc74eb1c3a12",
+        "src/main/cpp/editor/editor_vm_bridge.cpp" to
+            "69e9bd113959612ef234c87cbacde4ac11a37ca017e198b719da7eba17d4afd2"
+    )
+
+    doLast {
+        fun sha256(file: File): String {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (read > 0) digest.update(buffer, 0, read)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        expected.forEach { (path, expectedSha) ->
+            val source = file(path)
+            if (!source.isFile) {
+                throw GradleException("Codynex E0 editor payload source is missing: $path")
+            }
+            val actualSha = sha256(source)
+            if (actualSha != expectedSha) {
+                throw GradleException(
+                    "Codynex E0 editor payload drift: $path expected $expectedSha got $actualSha"
+                )
+            }
         }
     }
 }
@@ -247,6 +299,7 @@ val validateRiftBrowserWebViewOwnership by tasks.registering {
 
 tasks.named("preBuild").configure {
     dependsOn(verifyRiftOsAndroidSources)
+    dependsOn(verifyCodynexEditorPayload)
     dependsOn(validateRiftBrowserWebViewOwnership)
     dependsOn(syncRiftOsWebAssets)
 }

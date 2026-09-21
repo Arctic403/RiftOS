@@ -99,7 +99,11 @@ riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
 riftbuild prepare-codynex-mc0 <codynex-root>
 riftbuild prepare-codynex-mc1a <codynex-root>
 riftbuild prepare-codynex-mc1b <codynex-root>
-# then package the corresponding prepared ARM32 proof subproject:
+riftbuild prepare-codynex-m2-vm0 <codynex-root>
+riftbuild prepare-codynex-m2b <codynex-root>
+riftbuild prepare-codynex-mc2a <codynex-root>
+riftbuild prepare-codynex-editor <codynex-root>
+# then package the corresponding prepared ARM32 proof/editor subproject:
 riftbuild pack <codynex-root>/native/mc0/apk-proof arm32
 riftbuild pack <codynex-root>/native/mc1/apk-proof arm32
 riftbuild pack <codynex-root>/native/mc1/apk-proof-b arm32
@@ -184,6 +188,29 @@ The encoder writes Android binary XML chunks directly: XML header, UTF-8 string 
 The V0 layout is now fully canonicalized: every XML node uses `lineNumber=1`, comments use `NO_INDEX`, raw lexical attribute values remain in the string pool, and all chunks are little-endian/4-byte aligned. The independently reconstructed reference is exactly 1,440 bytes with SHA-256 `ac035bb5bf89f55a3f34bae8eea980108324d2f36333f1e708f8a0b82af8e7c2`. The Kotlin encoder must reproduce that identity exactly or preparation fails closed.
 
 This V0 encoder is not a general XML/resource compiler.
+
+## Codynex E0 editor local packaging lane
+
+The E0 editor remains canonical under local Codynex source:
+
+`external/editor/`
+
+RiftOS carries a SHA-bound compiled packaging payload only so the phone can package the editor without a remote builder or arbitrary on-device Gradle execution.
+
+`riftbuild prepare-codynex-editor <codynex-root>` must:
+
+- verify the exact local E0 editor source/project hashes before packaging;
+- require a normal code-bearing Activity project with launch activity `.MainActivity`;
+- extract `classes*.dex` from the installed RiftOS APK under bounded per-entry/total limits;
+- extract the ARM32 `libcodynex_editor_vm.so` bridge from the installed RiftOS APK;
+- materialize a bounded binary manifest for package `com.codynex.editor` and activity `com.codynex.editorapp.MainActivity`;
+- copy the canonical local VM1 hex, self-host compiler hex and Source0 file into assets;
+- require `classes.dex` for code-bearing packages;
+- re-hash every materialized authority artifact;
+- feed the existing local `pack -> sign -> verify -> install-proof` chain;
+- never mutate Codynex source and never require a remote Codynex build/publish path.
+
+The mirrored editor source inside RiftOS is packaging payload, not Codynex source authority. RiftOS build validation pins that payload to the canonical local Codynex hashes so drift fails closed.
 
 ## Codynex MC0 local proof lane
 
