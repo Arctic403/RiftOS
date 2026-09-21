@@ -7,6 +7,7 @@
 
 namespace {
 
+#if defined(__arm__)
 struct VmContext {
     const uint8_t* source;
     uint32_t sourceLength;
@@ -74,6 +75,8 @@ void* mapExecutable(
     *mappedSize = rounded;
     return memory;
 }
+
+#endif
 
 jintArray resultArray(
     JNIEnv* env,

@@ -163,7 +163,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
                 "542e29806d6f5eef5b22763530e705ae11d67d87ef37387e4b6dcc74eb1c3a12",
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
-                "9ea87287a387da24b33c6f8ee1f1948951e6c05a70478347a51b47f53a1ecc79",
+                "47039b185cc4c481846735946b1f0667564e729f5994b7badb0ab6ce69b978ba",
             "external/editor/app/build.gradle.kts" to
                 "e529a5182ab3b1ae42aacb621b8eb4d99f4881ef43d1e251f6f9ad559401c0a3",
             "external/editor/app/src/main/AndroidManifest.xml" to
