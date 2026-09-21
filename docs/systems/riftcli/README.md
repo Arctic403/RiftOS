@@ -102,7 +102,7 @@ Both authority lanes are job-based, and RiftCLI permits **exactly one outstandin
 - `RiftCliEventBus` owns a process-local 256-event replay ring, bounded 96 KiB events, bounded 48 KiB inline results, monotonic restart-safe sequence IDs, and batch-step-aware coalescing.
 - the already-open device WSS carries `cli.event` envelopes to the relay; the relay forwards to bounded driver WebSocket or SSE subscribers without per-event Durable Object storage writes.
 - reconnect uses sequence cursors and device-owned replay; duplicate replay delivery is filtered per subscriber.
-- polling is **fallback only** for recovery, explicit inspection, or results too large to inline.
+- automatic polling is disabled by the native contract (`driverObservationMode=persistent-push-steady-state`, `automaticPolling=false`, `pollFallbackOnly=true`); polling is **fallback only** for recovery, explicit inspection, or results too large to inline.
 - normal non-CLI MCP calls keep their existing bounded timeouts.
 
 Every submitted action returns a process-local `jobId`. The external driver normally observes lifecycle/terminal events over push. It may use new, unique driver request IDs to call:

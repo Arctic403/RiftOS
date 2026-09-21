@@ -127,6 +127,9 @@ std::string baseStatus(const std::string& command, const std::string& cwd) {
         << "\"driverReplayEviction\":false,"
         << "\"driverReplayReset\":\"process-restart-only\","
         << "\"driverToolExecution\":\"push-first-jobs-with-poll-fallback\","
+        << "\"driverObservationMode\":\"persistent-push-steady-state\","
+        << "\"automaticPolling\":false,"
+        << "\"pollFallbackOnly\":true,"
         << "\"driverEventDelivery\":\"persistent-relay-push\","
         << "\"driverEventReplay\":\"device-ring-256\","
         << "\"batchV2\":true,"
@@ -579,7 +582,7 @@ CommandResponse execute(const std::vector<std::string>& args, const std::string&
             "--capability riftos [--action <single-command> | --tool <rift-tool> [--tool-args <json>] | --request-more-info <question>] "
             "[--loop-id <id> --loop-step <0..7> --loop-max <1..8>]\n\n"
             "When enabled, RiftCLI may authorize the full existing RiftOS authority surface through one bounded action at a time. "
-            "CLI actions publish persistent relay events; polling remains a recovery/debug fallback via rift_cli_job_list, rift_cli_job_poll and rift_cli_job_cancel. "
+            "CLI actions publish persistent relay events; automatic polling is disabled. rift_cli_job_list and rift_cli_job_poll are explicit recovery/debug fallbacks, while rift_cli_job_cancel remains an explicit control. "
             "CLI Batch V2 is available as --tool rift_cli_batch with at most 16 prevalidated sequential steps; retired RiftShell/workspace-exec batch paths remain disabled. "
             "Every authority-bearing request-id is replay-protected in-process. Driver continuation loops are external-only and capped at 8 steps.";
         return {output, baseStatus("help", cwd)};
@@ -605,6 +608,9 @@ CommandResponse execute(const std::vector<std::string>& args, const std::string&
             << "\"driverReplayCapacity\":" << kMaxDriverRequestIds << ","
         << "\"driverReplayEviction\":false,"
             << "\"driverToolExecution\":\"push-first-jobs-with-poll-fallback\","
+        << "\"driverObservationMode\":\"persistent-push-steady-state\","
+        << "\"automaticPolling\":false,"
+        << "\"pollFallbackOnly\":true,"
         << "\"driverEventDelivery\":\"persistent-relay-push\","
         << "\"driverEventReplay\":\"device-ring-256\","
         << "\"batchV2\":true,"

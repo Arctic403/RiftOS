@@ -6,6 +6,20 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.23 — N1.7 zero-poll steady-state contract lock
+
+### Source hardening
+
+Promoted push-first observation from a documented preference into an explicit native RiftCLI contract without removing recovery controls. The C++ status/architecture surfaces now advertise `driverObservationMode=persistent-push-steady-state`, `automaticPolling=false` and `pollFallbackOnly=true` alongside the existing persistent relay push/replay fields.
+
+No automatic polling loop existed in the runtime before this patch: `rift_cli_job_poll` was already invoked only through the explicit external job-control route. This patch locks that structure with regression coverage so a future internal poll loop cannot be introduced silently. `rift_cli_job_list` and `rift_cli_job_poll` remain explicit recovery/debug fallbacks, while `rift_cli_job_cancel` remains an explicit control surface.
+
+### Validation and status
+
+`test-rift-cli-driver-protocol.mjs` now requires the zero-poll contract fields and verifies the bounded poll call-site structure: one shell poll helper definition plus its explicit control call, one ToolHost poll helper definition, and one explicit ToolHost poll call. `validate-rift-wiring.mjs` also requires the new native contract markers.
+
+RiftCLI remained OFF while this source hardening was made. The change is source-complete only until the external Builder runs the Node/Android validation chain and an updated APK is installed. N1.7 is not promoted by this patch; forced restart, repeated reconnect, backpressure/subscriber caps, large-result fallback, cancellation/no-interleave, concurrent-driver pressure and broader bounds remain pending.
+
 ## Patch 10.22 — N1.5 persistent SSE push/replay live promotion
 
 ### Installed-device proof

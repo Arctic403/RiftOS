@@ -145,6 +145,9 @@ check(
 check(
   'persistent push capability is advertised with poll fallback',
   core.includes(String.raw`\"driverToolExecution\":\"push-first-jobs-with-poll-fallback\"`) &&
+    core.includes(String.raw`\"driverObservationMode\":\"persistent-push-steady-state\"`) &&
+    core.includes(String.raw`\"automaticPolling\":false`) &&
+    core.includes(String.raw`\"pollFallbackOnly\":true`) &&
     core.includes(String.raw`\"driverEventDelivery\":\"persistent-relay-push\"`) &&
     core.includes(String.raw`\"driverEventReplay\":\"device-ring-256\"`) &&
     core.includes(String.raw`\"batchV2\":true`) &&
@@ -197,6 +200,9 @@ check(
 check(
   'poll fallback recovery surface covers list poll and cancel',
   core.includes(String.raw`\"driverToolExecution\":\"push-first-jobs-with-poll-fallback\"`) &&
+    core.includes(String.raw`\"driverObservationMode\":\"persistent-push-steady-state\"`) &&
+    core.includes(String.raw`\"automaticPolling\":false`) &&
+    core.includes(String.raw`\"pollFallbackOnly\":true`) &&
     core.includes('rift_cli_job_list') &&
     core.includes('rift_cli_job_poll') &&
     core.includes('rift_cli_job_cancel') &&
@@ -205,6 +211,13 @@ check(
     shell.includes('"rift_cli_job_cancel" ->') &&
     shell.includes('requestId') &&
     toolHost.includes('.put("requestId", job.requestId)')
+);
+
+check(
+  'automatic job polling is absent; poll remains explicit fallback only',
+  (shell.match(/pollCliShellJob\(/g) || []).length === 2 &&
+    (toolHost.match(/pollCliJob\(/g) || []).length === 1 &&
+    (shell.match(/toolHost\.pollCliJob\(/g) || []).length === 1
 );
 
 check(
