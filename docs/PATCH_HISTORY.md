@@ -6,6 +6,22 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.25 — N1.7 relay cursor recovery hardening
+
+### Live stress finding
+
+Installed-device relay torture testing on 2026-09-21 against source `6d21cd5fd2d9ef2331c8ec42a8654d7de07dd31f` exercised concurrent MCP bursts, repeated relay replacement, CLI disable/re-enable, health-counter cleanup and device-to-relay CLI event ACKs. Normal reconnects recovered on the next MCP call and preserved the current resume cursor. One `EOFException` recovery path exposed a real transport defect: after the device WebSocket attachment and room in-memory cursor were no longer available, the next `relay.ready` returned `cliResumeAfter=0`. The still-running Android process retained its device-owned event ring and replayed 29 already-ACKed events. Cloudflare ACKed those duplicates as non-advancing, so CLI authority did not re-execute, but the reconnect produced unnecessary replay traffic and proved that the relay high-water mark was not fully recoverable from a dead device socket alone.
+
+### Source repair
+
+`RiftMcpRelayClient` now includes its process-local `lastCliAckSequence` in authenticated `device.hello` as `cliAckSequence`. `RiftRelayRoom` validates that value as a non-negative safe integer, monotonically merges it into `lastCliSequence`, refreshes the current device WebSocket attachment, and only then calculates `relay.ready.cliResumeAfter`. Active subscriber cursors can still lower the requested replay point when older events are genuinely required.
+
+The fix deliberately adds no Durable Object storage and persists no event payloads. `test-rift-cli-push-channel.mjs` and `validate-rift-transport.mjs` now require the device-owned ACK handshake so a future relay rewrite cannot silently regress to attachment-only cursor recovery.
+
+### Validation and status
+
+This patch is source-complete only until Builder validation, APK installation and Worker deployment. N1.7 remains unpromoted. The live re-test must reproduce EOF/socket replacement recovery and confirm that the reconnect resumes from the highest ACKed device cursor instead of zero. Slow-SSE/backpressure, SSE subscriber-cap saturation and a true Android process force-stop/restart remain separate installed-device proofs.
+
 ## Patch 10.24 — RiftBrowser bounded editor bridge
 
 ### Source change

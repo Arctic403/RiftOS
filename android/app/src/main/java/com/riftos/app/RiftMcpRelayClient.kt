@@ -146,6 +146,7 @@ class RiftMcpRelayClient(
                     .put("type", "device.hello")
                     .put("protocol", PROTOCOL)
                     .put("deviceId", config.deviceId)
+                    .put("cliAckSequence", lastCliAckSequence)
                     .put("client", JSONObject()
                         .put("name", "RiftOS")
                         .put("version", BuildConfig.VERSION_NAME)

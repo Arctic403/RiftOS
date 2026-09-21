@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-21.**
 
 ## Purpose
 
@@ -142,11 +142,11 @@ Device replacement performs the same immediate pending failure before switching 
 
 The device sends `cli.event` envelopes containing schema `rift.cli-event/1` and a positive monotonic sequence. The relay bounds each event at 128,000 UTF-8 bytes before forwarding.
 
-Driver WebSocket and SSE subscribers share one maximum of four subscribers. Each subscriber keeps an independent `after` cursor. Events at or below that cursor are skipped, so a replay requested for one lagging subscriber is not redundantly rebroadcast to subscribers that already advanced. Driver acknowledgements can only advance, never regress, a cursor.
+Driver WebSocket subscribers are bounded independently at four, while SSE subscribers are bounded at eight. Each subscriber keeps an independent `after` cursor. Events at or below that cursor are skipped, so a replay requested for one lagging subscriber is not redundantly rebroadcast to subscribers that already advanced. Driver acknowledgements can only advance, never regress, a cursor.
 
 SSE output uses JSON-RPC notifications `notifications/riftcli/event` and SSE `id` equal to the event sequence. A slow SSE writer is removed when backpressure indicates it is not keeping up instead of accumulating an unbounded queue.
 
-The relay requests replay from the device rather than persisting event payloads. When the device reconnects, `relay.ready.cliResumeAfter` uses the minimum cursor still needed by active subscribers. Accepted device events receive `cli.ack`.
+The relay requests replay from the device rather than persisting event payloads. Accepted device events receive `cli.ack`, and the Android client tracks the highest ACKed sequence process-locally. On every authenticated `device.hello`, the client now sends that value as `cliAckSequence`; the relay monotonically restores `lastCliSequence` from it before calculating `relay.ready.cliResumeAfter`. This closes the socket/DO-state-loss case where a dead device WebSocket attachment could otherwise make the server forget the high-water mark and request a full duplicate replay from sequence zero. Active subscriber cursors still lower the resume point when they genuinely need older events. No Durable Object storage or event-payload persistence is added.
 
 ## Notification delivery
 

@@ -1787,6 +1787,26 @@ export class RiftRelayRoom {
         return;
       }
 
+      const deviceAckSequence = Number(
+        message.cliAckSequence ?? 0,
+      );
+
+      if (
+        Number.isSafeInteger(deviceAckSequence) &&
+        deviceAckSequence >= 0
+      ) {
+        this.lastCliSequence = Math.max(
+          this.lastCliSequence,
+          deviceAckSequence,
+        );
+
+        socket.serializeAttachment({
+          role: "device",
+          lastCliSequence:
+            this.lastCliSequence,
+        });
+      }
+
       socket.send(
         JSON.stringify({
           type: "relay.ready",

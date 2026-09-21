@@ -240,6 +240,10 @@ Current source also feeds bounded N1.5 transport metadata into the passive proce
 
 Next promotion gate. Basic SSE reconnect/replay, ACK correlation and duplicate-free cursor recovery are already proven under N1.5. N1.7 exercises forced relay/device restarts, repeated replay gaps, slow subscribers/backpressure, subscriber caps, large-result fallback, batch cancellation between steps, global no-interleave behavior, concurrent-driver pressure, failure policies, bounds and cleanup on the installed build.
 
+Live stress on 2026-09-21 against source `6d21cd5fd2d9ef2331c8ec42a8654d7de07dd31f` proved repeated manual relay replacement recovers on the next MCP call, concurrent read-only MCP bursts drain back to zero pending requests, CLI disable/re-enable events advance through the relay, and normal reconnects preserve the active resume cursor. The same run also exposed one real recovery defect: after an `EOFException` coincided with loss of the device WebSocket attachment/room in-memory cursor, `relay.ready` returned `resumeAfter=0` and the phone replayed 29 already-ACKed events. Duplicate ACKs were rejected as non-advancing, so authority did not repeat, but the transport generated an unnecessary replay storm.
+
+Current source fixes that defect without Durable Object storage: `RiftMcpRelayClient` includes its process-local highest relay-ACKed sequence as `device.hello.cliAckSequence`; the authenticated relay validates it as a non-negative safe integer, monotonically restores `lastCliSequence`, refreshes the device socket attachment, and only then calculates `cliResumeAfter`. This source fix is **not yet installed/live-proven**. N1.7 remains unpromoted until a new APK and Worker deployment re-run EOF/restart recovery plus the still-pending live slow-SSE/backpressure, subscriber-cap and forced full-process restart cases.
+
 ### Gate N2 — Federated Rift Memory Kernel
 
 **Hard pre-N3 program; roadmap only until implemented and promoted.**
