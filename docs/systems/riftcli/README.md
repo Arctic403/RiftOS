@@ -2,11 +2,11 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-21.**
 
 Gate N0 is proven on the installed Android device. Gate N1 plus its replay/job/cancellation/provenance hardening is also proven on the installed Android device (Builder run #255 / source `121edf6b3255beca33a45351d3952c7026b5cb4b`) on `armeabi-v7a`.
 
-Status: **N1 and N1.6 Batch V2 are live-proven on device. N1.5 persistent push is installed and source-complete, but its final external driver push-receipt proof remains pending. Current source additionally adds passive DebugHub observability for event creation, WSS queueing, replay and relay ACK receipt; that instrumentation requires the next APK build/install before it can be used live.**
+Status: **N1, N1.5 persistent push/events, and N1.6 Batch V2 are live-proven on the installed Android device. N1.5 was promoted on 2026-09-21 from installed source `0814fb8cf8ca31186d6e639fc7ad3b965d822897`: an external Chrome SSE subscriber received the same sequenced lifecycle events that DebugHub recorded through `event.created -> cli.event.send -> cli.ack`, without polling, and a forced disconnect/reconnect replayed only the missed cursor range with no duplicates.**
 
 RiftCLI is being rebuilt from scratch as RiftOS's native engineering supervisor. The previous Experimental RiftCLI Kotlin/swarm/IR/lifecycle implementation was intentionally retired rather than used as the new foundation.
 
@@ -228,7 +228,7 @@ Once enabled, N1 may authorize the full RiftOS authority surface, but only one b
 
 ### Gate N1.5 — Persistent push/events
 
-**Installed/source-complete; final external push-receipt proof pending.** Job lifecycle and small terminal results are pushed over the existing persistent relay connection. Device memory owns the bounded replay ring; the relay owns bounded fan-out only. Driver WebSocket and SSE subscribers use monotonic cursors, reconnect replay and ACKs. Poll/list/cancel remain recovery/debug controls rather than the steady-state observation loop.
+**LIVE-PROVEN on installed Android source `0814fb8cf8ca31186d6e639fc7ad3b965d822897` (2026-09-21).** Job lifecycle and terminal results are pushed over the existing persistent relay connection. Device memory owns the bounded replay ring; the relay owns bounded fan-out only. Driver WebSocket and SSE subscribers use monotonic cursors, reconnect replay and ACKs. The live proof attached an external Chrome SSE subscriber, observed `sseClients: 1`, ran a read-only `version` job, and received the same `job.submitted`, `job.started`, and `job.completed` sequences that DebugHub independently correlated through `event.created`, `cli.event.send`=`queued`, and `cli.ack`=`received`. No job polling was used for lifecycle observation. A second proof forced `sseClients: 0`, created events while disconnected, then reconnected from the prior cursor and replayed exactly the missed range in order with no duplicate or older event. Poll/list/cancel remain recovery/debug controls rather than the steady-state observation loop.
 
 Current source also feeds bounded N1.5 transport metadata into the passive process-wide RiftDebugHub. Component `riftcli.event-bus` records `event.created`; component `mcp.relay` records device-WSS queue attempts, replay, `relay.ready`, socket lifecycle and `cli.ack`. This lets an installed build distinguish local event creation from device-to-Cloudflare receipt without storing event/result payload bodies or relay credentials. A matching relay ACK proves Cloudflare received a sequence; it does not by itself prove an external SSE/WebSocket subscriber consumed it.
 
@@ -238,7 +238,7 @@ Current source also feeds bounded N1.5 transport metadata into the passive proce
 
 ### Gate N1.7 — abuse/reconnect/batch stress
 
-Pending promotion gate after the new APK is built and installed. Exercise reconnect/replay gaps, duplicate delivery, slow subscribers, large-result fallback, batch cancellation between steps, no-interleave behavior, failure policies and cleanup.
+Next promotion gate. Basic SSE reconnect/replay, ACK correlation and duplicate-free cursor recovery are already proven under N1.5. N1.7 exercises forced relay/device restarts, repeated replay gaps, slow subscribers/backpressure, subscriber caps, large-result fallback, batch cancellation between steps, global no-interleave behavior, concurrent-driver pressure, failure policies, bounds and cleanup on the installed build.
 
 ### Gate N2 — Federated Rift Memory Kernel
 
@@ -448,4 +448,4 @@ Builder validation must additionally prove the final signed APK contains:
 - `lib/armeabi-v7a/libriftcli.so`;
 - no x86/x86_64 RiftCLI library.
 
-N1 and N1.6 are already installed-device proven. N1.5 still requires the next Builder artifact/install for the new passive relay diagnostics plus the final external push-without-poll receipt proof, including small inline vs large-result fallback, disconnect/reconnect replay + ACK and duplicate filtering. N1.7 then stress-tests cancellation/no-interleave/reconnect/bounds against the installed build. N2 remains roadmap-only and N3 stays blocked until the full N2.12 promotion evidence is complete.
+N1, N1.5 and N1.6 are installed-device proven. N1.5 now has live external SSE push-without-poll proof plus disconnect/reconnect cursor replay with ACK correlation and no duplicate/older replay. Large-result fallback, slow-subscriber/backpressure behavior, subscriber caps, forced restart recovery, repeated reconnect abuse, cancellation/no-interleave and broader bounds remain N1.7 stress work. N2 remains roadmap-only and N3 stays blocked until the full N2.12 promotion evidence is complete.

@@ -2,9 +2,27 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-21.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.22 — N1.5 persistent SSE push/replay live promotion
+
+### Installed-device proof
+
+Promoted RiftCLI N1.5 on the installed Android build from source `0814fb8cf8ca31186d6e639fc7ad3b965d822897` after completing the missing external-subscriber proof against the live `rift-mcp-relay` Cloudflare Worker/Durable Object.
+
+The live `/health` surface reported `deviceConnected`, `driverSockets`, `sseClients` and `cliSequence`. With an external Chrome SSE subscriber attached (`sseClients: 1`), a read-only RiftCLI `version` job emitted `job.submitted`, `job.started` and `job.completed`. RiftDebugHub independently recorded matching `riftcli.event-bus/event.created`, `mcp.relay/cli.event.send`=`queued`, and `mcp.relay/cli.ack`=`received` records for the same event sequences. The Chrome subscriber received those exact sequences and the inline terminal result without job polling.
+
+### Reconnect/replay proof
+
+The SSE client was fully disconnected until `/health` reported `sseClients: 0`. A second read-only `version` job then created a three-event gap while no SSE subscriber existed. Reconnecting with the previous `after` cursor produced the `notifications/riftcli/ready` event followed by exactly the three missed lifecycle sequences, in order, with no replay of the cursor event and no older duplicate.
+
+### Promotion result
+
+N1.5 persistent push/events is therefore live-proven for basic external SSE delivery, device-to-relay ACK correlation, cursor reconnect and duplicate-free missed-event replay. Poll/list/cancel remain recovery/debug fallbacks. Large-result fallback, forced relay/device restart abuse, repeated reconnect pressure, slow-subscriber/backpressure behavior, subscriber caps, cancellation/no-interleave and broader bounds remain N1.7 stress work. RiftCLI was returned to its default OFF state after proof.
+
+This promotion updates documentation/status only; it does not change runtime authority, relay secrets, Durable Object bindings or CLI enable defaults.
 
 ## Patch 10.21 — N1.5 Builder validation closure
 
