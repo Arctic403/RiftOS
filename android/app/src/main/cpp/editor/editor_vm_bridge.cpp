@@ -102,6 +102,11 @@ Java_com_codynex_editorapp_Vm1Bridge_run(
     jint stepBudget
 ) {
 #if !defined(__arm__)
+    (void)vmArray;
+    (void)programArray;
+    (void)sourceArray;
+    (void)outputArray;
+    (void)stepBudget;
     return resultArray(env, -90, 0);
 #else
     if (
