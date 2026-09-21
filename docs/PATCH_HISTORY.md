@@ -6,6 +6,34 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.30 — N1.8.0 compact whole-repo proof surface
+
+### Installed proof and discovered limit
+
+The first installed proof ran on exact source `cc172dc158c0f7163730d1339ae6f6bf51346531`.
+
+The live `project kind=consistency` operation executed successfully against the full RiftOS repository, but its result was omitted by Code Mode because the response exceeded the existing 700 KiB result budget. The engine had completed; the problem was the proof surface returning the entire fact/edge/finding arrays.
+
+A bounded `relay/` subtree was then run twice on the installed APK. It returned `phase=N1.8.0`, `complete=true`, five facts, four edges, zero findings and verified app-private cache state. Both runs produced the identical graph SHA-256 `ce122f0a400bfa2a1aef2ae9058b2516410ee8290dca43a267dce5937b53da1e`. The first cache write reported no previous hash and `changed=true`; the second reported the same previous/current hash and `changed=false`. This live-proved deterministic graph identity and cache verification on-device.
+
+### Hardening
+
+The normal `project kind=consistency` response is now compact by default. It preserves:
+- graph format/version/phase;
+- project root and PI-v2 provenance;
+- completeness and incomplete reasons;
+- graph SHA-256 and graph ID;
+- schema and hard bounds;
+- cache verification state;
+- fact/edge/finding counts;
+- bounded previews capped at 40 rows per category.
+
+The internal graph and hash calculation are unchanged. Full arrays remain available only through explicit `query=full`, intended for smaller scopes/debugging where the caller deliberately accepts the larger response.
+
+`test-rift-repository-consistency-v1.mjs` now locks compact-default behavior, explicit full mode and the 40-row preview cap.
+
+N1.8.0 remains unpromoted until a new Builder artifact compiles this hardening and the installed APK returns the compact full-repository view without result omission while preserving deterministic graph/cache behavior.
+
 ## Patch 10.29 — N1.8.0 repository fact graph foundation
 
 ### Source implementation

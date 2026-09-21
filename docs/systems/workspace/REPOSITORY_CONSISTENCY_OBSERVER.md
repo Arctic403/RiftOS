@@ -443,10 +443,10 @@ Current source provides:
 - explicit completeness/incomplete-reason reporting and hard fact/edge/finding/cache bounds;
 - verified atomic app-private cache that is non-authoritative and rebuildable;
 - derivation from the existing PI-v2 graph only, with no observer-owned source scan/index;
-- existing Code Mode `project kind=consistency` read-only view;
+- existing Code Mode `project kind=consistency` read-only view with compact-by-default whole-repo output and explicit `query=full` detail mode;
 - independent regression coverage in `scripts/test-rift-repository-consistency-v1.mjs` wired into the main Builder chain.
 
-Promotion still requires the external Kotlin/Android build to pass and the installed APK to prove the new view/cache/hash behavior on-device.
+The first installed proof on source `cc172dc158c0f7163730d1339ae6f6bf51346531` verified the observer was live and a `relay/` subtree produced a complete deterministic graph twice with the same SHA-256, verified cache reuse and `changed=false` on the second run. The initial whole-repository response exceeded Code Mode's 700 KiB result budget because the view returned all fact/edge arrays; source was therefore hardened to compact-by-default before promotion. Promotion still requires a new external Kotlin/Android build and installed proof that the compact whole-repo view returns without result omission while preserving graph identity/cache behavior.
 
 ### N1.8.1 — syntax/import integrity
 

@@ -1323,7 +1323,7 @@ internal class RiftToolSandbox(context: Context) {
         if (kind == "graph") return projectGraph(path, query, requestedLimit)
         if (kind == "impact") return projectImpact(path, query, requestedLimit)
         if (kind == "validation") return projectValidation(path, query)
-        if (kind == "consistency") return projectConsistency(path)
+        if (kind == "consistency") return projectConsistency(path, query, requestedLimit)
         val indexStats = refreshSymbolIndex(base)
 
         val children = (base.listFiles()
@@ -1414,15 +1414,55 @@ internal class RiftToolSandbox(context: Context) {
             .put("truncated", total > edgeLimit)
     }
 
-    private fun projectConsistency(path: String): JSONObject {
+    private fun projectConsistency(path: String, query: String, requestedLimit: Int): JSONObject {
         val graph = projectGraph(path, "", MAX_GRAPH_EDGES)
-        return repositoryConsistencyObserver.foundationView(
+        val result = repositoryConsistencyObserver.foundationView(
             projectRoot = normalizedPath(path),
             projectGraph = graph
         )
             .put("view", "consistency")
             .put("projectIntelligence", "v2")
             .put("observerAuthority", "evidence-only")
+
+        val mode = query.trim().lowercase()
+        if (mode == "full") {
+            return result.put("responseMode", "full")
+        }
+
+        val previewLimit = requestedLimit.coerceIn(1, 40)
+        fun preview(name: String): JSONArray {
+            val source = result.optJSONArray(name) ?: JSONArray()
+            val out = JSONArray()
+            for (index in 0 until minOf(source.length(), previewLimit)) out.put(source.get(index))
+            return out
+        }
+
+        return JSONObject()
+            .put("format", result.getString("format"))
+            .put("version", result.getInt("version"))
+            .put("phase", result.getString("phase"))
+            .put("projectRoot", result.getString("projectRoot"))
+            .put("projectIntelligence", "v2")
+            .put("sourceOfTruth", result.getString("sourceOfTruth"))
+            .put("authoritative", result.getBoolean("authoritative"))
+            .put("rebuildableCache", result.getBoolean("rebuildableCache"))
+            .put("complete", result.getBoolean("complete"))
+            .put("incompleteReasons", result.getJSONArray("incompleteReasons"))
+            .put("graphSha256", result.getString("graphSha256"))
+            .put("graphId", result.getString("graphId"))
+            .put("schema", result.getJSONObject("schema"))
+            .put("bounds", result.getJSONObject("bounds"))
+            .put("cache", result.getJSONObject("cache"))
+            .put("counts", result.getJSONObject("counts"))
+            .put("view", "consistency")
+            .put("observerAuthority", "evidence-only")
+            .put("responseMode", "compact")
+            .put("previewLimit", previewLimit)
+            .put("factPreview", preview("facts"))
+            .put("edgePreview", preview("edges"))
+            .put("findingPreview", preview("findings"))
+            .put("fullResultAvailable", true)
+            .put("fullResultUsage", "project kind=consistency query=full")
     }
 
     private fun projectImpact(path: String, query: String, requestedLimit: Int): JSONObject {

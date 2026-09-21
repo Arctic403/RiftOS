@@ -142,9 +142,14 @@ assert.ok(!observer.includes('RiftSourceIntelligenceV2.analyze('), 'observer mus
 assert.ok(!observer.includes('refreshSymbolIndex('), 'observer must not own PI-v2 index refresh');
 
 assert.match(sandbox, /private val repositoryConsistencyObserver = RiftRepositoryConsistencyObserver\(appContext\)/);
-assert.match(sandbox, /if \(kind == "consistency"\) return projectConsistency\(path\)/);
+assert.match(sandbox, /if \(kind == "consistency"\) return projectConsistency\(path, query, requestedLimit\)/);
+assert.match(sandbox, /private fun projectConsistency\(path: String, query: String, requestedLimit: Int\)/);
 assert.match(sandbox, /projectGraph\(path, "", MAX_GRAPH_EDGES\)/);
 assert.match(sandbox, /repositoryConsistencyObserver\.foundationView/);
+assert.match(sandbox, /if \(mode == "full"\)/);
+assert.match(sandbox, /responseMode", "compact"/);
+assert.match(sandbox, /project kind=consistency query=full/);
+assert.match(sandbox, /requestedLimit\.coerceIn\(1, 40\)/);
 assert.match(sandbox, /"graph", "impact", "validation", "consistency"/);
 assert.match(gradle, /RiftRepositoryConsistencyObserver\.kt/);
 
