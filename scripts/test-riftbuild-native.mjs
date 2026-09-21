@@ -192,6 +192,7 @@ assert.match(nativeBuild, /M2_VM0_SEED_BYTES = 332/);
 assert.match(nativeBuild, /M2_VM0_SEED_SHA256 = "0577161c8cad09541a998ba44cacd823ce0b0c3a6a5b607960b855483af1dba6"/);
 assert.match(nativeBuild, /M2_VM0_PACKAGE = "com\.codynex\.m2vm0proof"/);
 assert.match(nativeBuild, /buildM2Vm0BinaryManifest/);
+assert.match(nativeBuild, /fun prepareCodynexM2Vm0[\s\S]*?val manifestBytes = buildM2Vm0BinaryManifest\(\)/);
 assert.match(nativeBuild, /vmAuthority", "assets\/vm0_seed\.bin"/);
 assert.match(m2Vm0Host, /kSeedBytes = 332/);
 assert.match(m2Vm0Host, /kSeedAsset = "vm0_seed\.bin"/);

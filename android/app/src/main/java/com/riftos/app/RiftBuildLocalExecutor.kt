@@ -915,7 +915,7 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             "Could not create Codynex M2-A VM0 asset directory"
         }
 
-        val manifestBytes = buildMc1bBinaryManifest()
+        val manifestBytes = buildM2Vm0BinaryManifest()
         val manifestOutput = File(preparedRoot, "AndroidManifest.xml").canonicalFile
         val hostOutput = File(libRoot, M2_VM0_LIBRARY_FILE).canonicalFile
         val seedOutput = File(assetRoot, "vm0_seed.bin").canonicalFile
