@@ -6,6 +6,82 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.32 — N1.8 staged-scan architecture + foundation torture gate lock
+
+### Docs-only architecture lock
+
+No observer/runtime source is changed by this patch.
+
+The future normal execution model is now locked as a hybrid:
+
+- everyday observer work should eventually use staged subsystem/domain scans;
+- a changed file/fact starts with its owning subsystem/domain;
+- that domain is reconciled completely;
+- the scan frontier expands only when dependency, contract, ownership or proof evidence crosses into another domain;
+- the planner repeats until the frontier and proof obligations are empty;
+- clean full-repository rebuilds remain the independent correctness oracle.
+
+Subsystem/domain boundaries must come from deterministic repository evidence where available (ownership, package/module boundaries, build/source sets, imports, manifests, protocols, docs/config ownership and PI-v2 graph evidence), not folder names alone.
+
+The staged planner supports conceptual escalation from changed-file scope through owning subsystem, direct cross-boundary contracts, affected transitive closure, repository-wide semantic sweep and finally clean full-repository oracle rebuild.
+
+A staged result may claim cleanliness only for the coverage it actually proved. Repository-wide clean requires complete trusted closure with oracle-valid state or a clean full-repository oracle pass.
+
+### Hard sequencing rule
+
+The staged planner is **architecture-locked but implementation-blocked** until N1.8.0 is promoted.
+
+N1.8.0 must first survive the installed torture-promotion matrix. If any foundation case fails, the current foundation is hardened and re-tested. A second scan/planning system must not be stacked on top of a known-incomplete, nondeterministic or cache-unsafe foundation.
+
+### N1.8.0 torture-promotion matrix
+
+The canonical observer spec now requires adversarial installed proof across:
+
+- full-repository completeness and PI-v2 count reconciliation;
+- at least ten identical warm runs with stable graph SHA/ID;
+- cold/no-cache rebuild;
+- cache delete/rebuild;
+- content-only source edits;
+- content-only documentation edits;
+- whitespace-only edits;
+- add/delete/rename/move/copy/replace mutations;
+- dependency add/remove/change;
+- stale/corrupt/malformed/wrong-version/wrong-hash/oversized cache;
+- process force-stop/restart;
+- repeated restart cycles;
+- simultaneous consistency readers;
+- overlap with other PI-v2 read/graph work;
+- rapid/duplicate requests;
+- repository mutation while a scan is running;
+- exact below/at/above file, dependency, fact, edge and cache bounds;
+- PI-v2 per-file and total-index size limits where practical;
+- deep/long/space/punctuation/Unicode/same-name/case-sensitive path identity cases;
+- rename chains, move+edit, copy+edit and delete/recreate;
+- supported sources/docs/config/build files;
+- binary/generated/vendor/cache/unsupported/empty/oversized-file behavior;
+- dependency graphs with zero/one/chain/fan-out/fan-in/diamond/cycle/self/unresolved cases;
+- cold/warm/repeated latency, cache size, response size and memory where measurable;
+- compact/full result parity;
+- preview independence from canonical graph identity;
+- cold/warm/restart/enumeration-order differential graph comparisons.
+
+### Automatic promotion blockers
+
+N1.8.0 fails promotion if any test demonstrates:
+
+- `complete=true` despite skipped/truncated tracked evidence;
+- a tracked mutation leaves canonical repository state falsely unchanged when the foundation is expected to represent it;
+- nondeterministic graph identity for identical state;
+- corrupt or stale cache accepted as truth;
+- stale nodes after delete/rename;
+- identity collision/cross-wiring;
+- mixed before/after race state published as clean;
+- hang, deadlock or crash under bounded stress;
+- result omission interpreted as success;
+- observer mutation/authority behavior.
+
+Every defect discovered by the torture pass must become permanent regression coverage before promotion.
+
 ## Patch 10.31 — N1.8.0 full-repository PI-v2 coverage feed
 
 ### Why promotion remained blocked

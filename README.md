@@ -120,7 +120,7 @@ Ordinary filesystem/Code Mode tools execute in `RiftToolSandbox` and are confine
 - deterministic project export;
 - Project Intelligence v2 indexing;
 - symbol/reference/dependency views;
-- N1.8 Repository Consistency Observer foundation source-implemented above PI-v2/Workspace Records: stable fact/edge/finding schema, deterministic graph hashing, verified rebuildable private cache and compact `project kind=consistency` surface; full-repo coverage feed hardened beyond the public PI-v2 preview caps; rebuilt install must prove `complete=true` before promotion;
+- N1.8 Repository Consistency Observer foundation source-implemented above PI-v2/Workspace Records: stable fact/edge/finding schema, deterministic graph hashing, verified rebuildable private cache and compact `project kind=consistency` surface; full-repo coverage feed hardened beyond the public PI-v2 preview caps; rebuilt install must pass the full N1.8.0 torture matrix before promotion, and the future staged subsystem/domain scan planner remains design-only until that gate passes;
 - guarded range/hunk patches;
 - guarded one-operation Code Mode mutations with copy-on-write rollback; multi-op/batch execution is fail-fast disabled;
 - bounded archive/extract;
@@ -134,7 +134,7 @@ The optional relay is outbound-only and does not widen filesystem authority.
 
 The current built-in Workspace Records UI is native. The old `workspace-live` HTML/JS component remains repository reference source and is not the live built-in.
 
-The locked N1.8 Repository Consistency Observer reuses Workspace Records + Project Intelligence V2 rather than creating a second index. Its canonical architecture, benchmark corpus and N1.8.0-N1.8.7 promotion gates are in `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`. N2 is blocked until N1.8 promotion.
+The locked N1.8 Repository Consistency Observer reuses Workspace Records + Project Intelligence V2 rather than creating a second index. N1.8.0 must survive the installed full-repository torture gate before promotion; if it fails, the foundation is hardened and re-tested rather than stacking another observer layer on top. The future everyday execution model is design-locked as staged subsystem/domain scanning with graph-driven frontier expansion, while clean full-repository scans remain the independent correctness oracle. That staged planner is not implemented until N1.8.0 promotion. The canonical architecture, torture matrix, benchmark corpus and N1.8.0-N1.8.7 gates are in `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`. N2 is blocked until N1.8 promotion.
 
 ## Git and secrets
 

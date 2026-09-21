@@ -346,6 +346,364 @@ Only where required:
 
 Deep analysis must not become the per-keystroke hot path.
 
+## Future staged scan planner — ARCHITECTURE LOCKED, IMPLEMENTATION BLOCKED
+
+This is the intended everyday execution architecture after N1.8.0 is fully promoted. It is **not implemented yet** and must not be layered onto an unstable foundation.
+
+Hard sequencing rule:
+
+> N1.8.0 must first pass the installed full-repository torture promotion matrix below. If any foundation test fails, fix and re-test N1.8.0. Do not add the staged planner until N1.8.0 is promoted.
+
+The normal observer path should eventually be **staged and graph-driven**, while a clean whole-repository scan remains the correctness oracle.
+
+### Subsystem domains
+
+A scan stage is a bounded analysis domain such as a subsystem, engine, module, build target or owned documentation surface. Folder names are useful hints but are not authority.
+
+Subsystem membership should be derived from available deterministic evidence such as:
+
+- SOURCE_OWNERSHIP;
+- package/module namespaces;
+- build targets and source sets;
+- imports/includes;
+- Android manifest registration;
+- protocol/tool/route ownership;
+- README/subsystem documentation ownership;
+- config/schema ownership;
+- existing PI-v2 dependency evidence;
+- historical stable graph evidence.
+
+### Staged execution
+
+Conceptual flow:
+
+```text
+changed fact/file
+    -> identify owning subsystem/domain
+    -> scan that domain completely
+    -> reconcile local syntax/facts/contracts/tests/docs
+    -> inspect outgoing and reverse edges
+    -> enqueue only externally affected domains
+    -> repeat until frontier is empty
+```
+
+A stage may expand into another domain only because deterministic or explicitly marked inferred evidence connects them. Mere repository proximity is not enough.
+
+Each stage should eventually record at minimum:
+
+- stage ID and subsystem/domain ID;
+- input graph hash;
+- scanner/rule versions;
+- files/facts covered;
+- outgoing frontier edges;
+- proof obligations created/satisfied;
+- output graph hash;
+- completeness state and reasons;
+- duration;
+- peak/estimated memory where measurable;
+- whether the result was reused from cache.
+
+### Escalation levels
+
+The planner should support explicit escalation:
+
+- L0 — changed file/fact only;
+- L1 — owning subsystem/domain;
+- L2 — direct cross-boundary contracts;
+- L3 — reverse/transitive affected closure;
+- L4 — repository-wide semantic sweep;
+- L5 — clean whole-repository oracle rebuild.
+
+Most ordinary edits should stop at L1-L2. Shared APIs/protocols may reach L3. Uncertain, contradictory or corrupted observer state escalates toward L4/L5.
+
+### Stop and expansion rules
+
+The staged planner may stop only when:
+
+- the active domain is complete;
+- all deterministic affected edges have been reconciled;
+- no unresolved proof obligation requires another domain;
+- no incomplete/truncated evidence requires escalation;
+- the frontier is empty.
+
+If a dependency edge is missing or the graph is uncertain, the planner must expand/escalate rather than assume isolation.
+
+### Clean-verdict rule
+
+A staged scan may only claim cleanliness for the exact coverage it proved.
+
+A repository-wide clean verdict requires one of:
+
+1. complete traversal of the trusted affected closure with no unresolved/incomplete evidence and a graph state already validated against a clean oracle; or
+2. a clean full-repository oracle pass.
+
+The staged optimization must never turn partial coverage into a repository-wide "clean" claim.
+
+### Why both staged and full scans remain
+
+Staged scans are the normal performance path and should scale with the affected dependency closure rather than total repository size.
+
+Full scans remain necessary because they do not depend on the incremental/staged graph already being correct. They are the independent oracle that catches:
+
+- missing dependency edges;
+- stale nodes;
+- bad subsystem ownership;
+- cache divergence;
+- missed cross-boundary relationships;
+- nondeterministic incremental state.
+
+The final architecture is therefore hybrid:
+
+```text
+normal path: mutation -> staged planner -> affected closure -> findings/proofs
+oracle path: clean full-repo rebuild -> canonical comparison
+```
+
+## N1.8.0 installed torture promotion matrix
+
+N1.8.0 is not promoted by one successful full-repo scan. The installed build must survive an adversarial foundation test intended to expose every practical way the graph/schema/cache layer can lie or become inconsistent.
+
+Tests should use the real RiftOS repository read-only where safe and a disposable fixture repository for destructive mutation/boundary cases. No fixture failure may be repaired by weakening the expected invariant.
+
+### A. Full-repository completeness baseline
+
+- cold full-repo scan returns without response omission;
+- `complete=true`;
+- no file/edge/fact/cache bound reason;
+- observed file/dependency totals reconcile with the PI-v2 source evidence;
+- fact/edge counts remain within declared graph bounds;
+- zero silent skipped tracked inputs;
+- repeated full scans do not progressively lose facts/edges.
+
+### B. Determinism and ordering
+
+For an identical repository state:
+
+- run the observer repeatedly, including at least ten consecutive warm runs;
+- every run must produce the same canonical graph SHA-256 and graph ID;
+- second/subsequent cache state reports unchanged;
+- traversal/directory enumeration order must not alter the graph;
+- process restart must not alter the graph for identical input;
+- cache deletion followed by rebuild must reconstruct the same canonical graph.
+
+Any hash drift with identical repository state is a promotion blocker.
+
+### C. Input-change sensitivity
+
+Using disposable fixtures, mutate one thing at a time and prove the foundation observes the changed repository state rather than reusing stale identity:
+
+- content-only source edit that changes no import;
+- content-only documentation edit;
+- whitespace-only edit;
+- add file;
+- delete file;
+- rename file;
+- move file between directories;
+- copy file;
+- replace file contents while preserving path;
+- change one local dependency/import;
+- add/remove a dependency edge;
+- reorder declarations/imports where semantic relationships are otherwise unchanged.
+
+Stable logical IDs may remain stable where designed, but relevant content/version facts and the canonical repository state must not remain falsely unchanged when a tracked input changed. If N1.8.0 lacks enough source facts to observe a tracked mutation, promotion is blocked until the foundation is hardened.
+
+### D. Cache integrity and recovery
+
+Exercise:
+
+- no cache present;
+- valid warm cache;
+- cache deleted;
+- truncated cache file;
+- malformed JSON cache;
+- wrong graph hash;
+- wrong format/version;
+- oversized cache;
+- stale cache from an older repository state;
+- temporary-file residue;
+- restart after a successful cache write.
+
+Expected behavior:
+
+- corrupt/untrusted cache is rejected;
+- repository truth is rebuilt from authoritative evidence;
+- no corrupt cache can produce a clean verdict;
+- rebuilt graph converges to the same canonical state as a clean scan.
+
+### E. Process death / restart
+
+Test clean process boundaries:
+
+- scan, force-stop RiftOS, reopen, rescan;
+- force-stop after a previous warm-cache run;
+- restart with cache present;
+- restart with cache removed/corrupted in a disposable scenario;
+- repeat restart cycles.
+
+Expected:
+
+- no stale in-memory-only facts survive incorrectly;
+- canonical graph is reconstructed deterministically;
+- cache verification remains valid;
+- observer authority remains read-only.
+
+Where safe tooling permits, attempt interruption during a long disposable scan/cache operation. A partially completed operation must not be accepted as complete repository truth.
+
+### F. Concurrency and reentrancy
+
+Against a disposable or read-only target:
+
+- multiple simultaneous consistency reads;
+- consistency read while ordinary PI-v2 graph/read operations run;
+- rapid sequential consistency requests;
+- duplicate identical requests;
+- concurrent reads around a restart/reconnect boundary.
+
+Expected:
+
+- no graph corruption;
+- no mixed-result cache state;
+- no deadlock/hang;
+- identical-state requests converge on identical canonical graph identity;
+- bounds/completeness remain truthful.
+
+### G. Mutation-during-scan race
+
+In a disposable repository, mutate repository state while a scan is in progress:
+
+- edit a file;
+- add/delete a file;
+- rename/move a dependency target.
+
+The observer must not silently publish a graph that mixes incompatible before/after states while claiming complete. Acceptable outcomes are a coherent snapshot, explicit invalidation/retry, or explicit incomplete/changed-during-scan state. A false clean mixed-state graph blocks promotion.
+
+### H. Boundary and overflow tests
+
+Generate disposable fixtures around every relevant limit:
+
+- just below / exactly at / just above consistency input file bound;
+- just below / exactly at / just above consistency dependency-edge bound;
+- just below / exactly at / just above observer fact bound;
+- just below / exactly at / just above observer edge bound;
+- cache-size boundary;
+- PI-v2 per-file size boundary;
+- PI-v2 total indexed-byte boundary where practical.
+
+Expected above a bound:
+
+- explicit incomplete/bound reason;
+- never silent truncation;
+- never repository-wide clean.
+
+Also verify ordinary RiftOS remains comfortably below bounds with measured headroom.
+
+### I. Path and identity stress
+
+Disposable fixtures should include:
+
+- deeply nested paths;
+- long but valid paths;
+- spaces;
+- punctuation;
+- Unicode names;
+- same filename in different directories;
+- case-distinct paths on the actual filesystem semantics;
+- rename chains A -> B -> C;
+- move + edit;
+- copy + edit;
+- delete then recreate same path with different content.
+
+Stable identities must not collide, cross-wire or retain stale relationships.
+
+### J. File-type and exclusion stress
+
+Verify behavior for:
+
+- supported source files;
+- README/Markdown/docs;
+- JSON/config files;
+- build files;
+- binary files;
+- generated/build/cache directories;
+- intentionally excluded/vendor content;
+- unsupported text formats;
+- empty files;
+- very large files near the index limit.
+
+Intentional exclusions must be deterministic and documented. A tracked/owned file that is skipped for size/type/bounds must make coverage incomplete unless the architecture explicitly classifies it as outside observer authority.
+
+### K. Dependency-shape stress
+
+Disposable graphs should include:
+
+- no dependencies;
+- one dependency;
+- long chain;
+- wide fan-out;
+- wide fan-in;
+- diamond dependency;
+- cycle;
+- self-reference;
+- unresolved external dependency;
+- unresolved local dependency;
+- multiple same-name targets in different domains;
+- dependency deletion/rename.
+
+The foundation must remain deterministic and must not confuse unresolved external references with silently missing local coverage.
+
+### L. Resource/latency pressure
+
+Measure:
+
+- cold full-repo latency;
+- warm full-repo latency;
+- repeated-run latency;
+- peak/estimated memory where available;
+- cache size;
+- response size.
+
+Stress fixtures should scale upward until a declared bound is reached. The observer must degrade by explicit incompleteness/rejection, not by hang, crash, silent omission or false clean.
+
+### M. Result-surface integrity
+
+Verify:
+
+- compact full-repo response stays within Code Mode result budget;
+- full detail mode is explicit;
+- compact counts/hash/cache/completeness match the underlying full graph;
+- previews never affect canonical graph identity;
+- result omission cannot be mistaken for scan success;
+- malformed/partial result surfaces cannot be interpreted as complete by callers.
+
+### N. Differential/oracle tests
+
+For the same fixture state:
+
+- build from cold/no cache;
+- build from warm cache;
+- restart and rebuild;
+- vary file creation/enumeration order;
+- where later incremental machinery exists, compare incremental/staged output against clean rebuild.
+
+Canonical deterministic state must agree. Any divergence is a correctness bug, not an acceptable optimization difference.
+
+### O. False-clean kill conditions
+
+N1.8.0 automatically fails promotion if any test demonstrates:
+
+- `complete=true` despite known skipped/truncated tracked evidence;
+- unchanged canonical repository state after a tracked mutation that the foundation is expected to represent;
+- nondeterministic graph hash for identical state;
+- corrupt/stale cache accepted as truth;
+- stale nodes after delete/rename;
+- identity collision;
+- mixed before/after race state published as clean;
+- hang/deadlock/crash under bounded stress;
+- result omission interpreted as success;
+- any mutation/authority action performed by the observer itself.
+
+Every real defect found by this torture pass becomes a permanent regression case before promotion.
+
 ## Incremental correctness oracle
 
 Incremental speed is not trusted by assumption.

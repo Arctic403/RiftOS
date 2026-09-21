@@ -143,6 +143,10 @@ N1.8 is the locked next observer layer above Workspace Records + Project Intelli
 
 Deterministic evidence outranks inference. Inferred documentation links may request review but cannot block promotion alone. Every deterministic finding must carry exact evidence and a graph path. Incremental results must periodically match a clean graph rebuild exactly. The observer remains evidence-only and may not edit, approve or push changes itself.
 
+The future everyday execution path is design-locked as a **staged subsystem/domain scan planner**, but it is not allowed into code until N1.8.0 passes the installed torture-promotion suite. Once implemented, a change starts in its owning subsystem/domain and expands only across affected dependency/contract/proof edges; full-repository clean rebuilds remain the independent correctness oracle and are mandatory whenever graph/coverage state is uncertain. A staged scan may only claim cleanliness for the coverage it actually proved.
+
+N1.8.0 promotion itself requires adversarial proof across full-repo completeness, deterministic repeated scans, tracked content-only mutations, add/delete/rename/move/copy, cache corruption/recovery, process restart, concurrent reads, mutation-during-scan races, exact bounds, path/identity stress, exclusions/oversized inputs, dependency graph shapes, resource pressure, result-surface parity and cold/warm/restart differential rebuilds. Any false-clean or silent incompleteness blocks promotion.
+
 Canonical specification and N1.8.0-N1.8.7 promotion gates: [`REPOSITORY_CONSISTENCY_OBSERVER.md`](REPOSITORY_CONSISTENCY_OBSERVER.md).
 
 ## Dev Lab relationship
