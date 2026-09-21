@@ -6,6 +6,28 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.27 — N1.7 deterministic SSE lifecycle
+
+### Live stress finding
+
+External browser stress on 2026-09-21 proved the relay's separate eight-client SSE ceiling and fail-closed backpressure path, but also proved backpressure cannot be the primary stale-client detector. Eight browser streams were accepted, the ninth was correctly rejected, and closing all visible tabs left all eight Durable Object entries registered. Event pressure evicted six through `backpressureDropped`, while two idle streams remained because the outer Worker/Chrome path continued to appear writable.
+
+The failure had three concrete causes. Direct browser SSE requests carried no stable `Mcp-Session-Id`, so same-session replacement and explicit close could not identify them. The Worker wrapped the Durable Object response in a second `ReadableStream`, introducing another buffering boundary between the room's `desiredSize` and the real browser connection. The Cloudflare Worker configuration also did not explicitly enable incoming `Request.signal` cancellation, and there was no absolute lease to guarantee eventual cleanup if abort and backpressure both failed.
+
+### Source repair
+
+Production SSE now requires a stable `Mcp-Session-Id`. Manual browser diagnostics may instead supply a validated `?subscriber=<id>` value limited to 128 characters from `[A-Za-z0-9._:-]`; the Worker prefixes it internally as `diag:<id>` so diagnostic identities cannot silently become anonymous streams. Anonymous SSE opens fail closed and increment `anonymousRejected`.
+
+The outer Worker now returns the Durable Object SSE response directly instead of copying it through `proxySseResponse`. `relay/wrangler.jsonc` explicitly enables `enable_request_signal` and `request_signal_passthrough`, allowing client cancellation to propagate to the request signal used by the room.
+
+Every SSE client also receives an absolute 180-second lease plus up to 30 seconds of jitter. Lease expiry removes the client, clears heartbeat/lease timers and abort listeners, closes the stream, increments `leaseExpired`, and relies on `Last-Event-ID` for cursor-safe reconnect. The existing byte backpressure and two-heartbeat no-drain checks remain secondary memory/liveness protection.
+
+No Durable Object storage, event payload persistence or offline queue was added.
+
+### Validation and status
+
+`test-rift-cli-push-channel.mjs` and `validate-rift-transport.mjs` now require the stable identity, lease cleanup, direct-streaming contract and Cloudflare request-signal flags. This patch is source-complete pending Builder validation and live Worker deployment. N1.7 remains unpromoted until external browser re-test proves closed streams return `sseClients` to zero without event pressure and the subsequent Android force-stop/reopen test proves restart recovery from the persisted ACK cursor.
+
 ## Patch 10.26 — N1.7 force-stop cursor durability and stale-SSE cleanup
 
 ### Live stress finding

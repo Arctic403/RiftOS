@@ -246,7 +246,11 @@ The first cursor-recovery source fix was then installed and live-proven on sourc
 
 The same live pass proved the external SSE ceiling: eight browser SSE streams opened and the ninth returned `Too many MCP SSE subscribers`. Closing all tabs exposed a second lifecycle defect: Cloudflare/Chrome did not propagate abort/cancel for every stream, leaving eight server-side SSE clients registered. Deliberate ~37 KiB CLI event pressure then evicted six via `backpressureDropped`, proving the bounded 512 KiB queue and fail-closed backpressure path work live; two idle streams remained because they continued to appear drainable to the Worker.
 
-Current source now closes the two remaining restart/liveness gaps. `RiftRelaySettings` persists the highest relay-ACKed CLI sequence as a monotonic app-private scalar and `RiftMcpRelayClient` restores it before the first `device.hello`, so Android process death no longer resets the recovery cursor to zero. The Worker also tracks SSE queue drain progress across heartbeats and evicts a stream after two consecutive heartbeat observations with queued data and no drain progress. These latest source changes still require a new APK/Worker deployment plus the explicit force-stop/reopen and idle-tab cleanup re-tests before N1.7 promotion.
+Current source now closes the remaining restart/liveness gaps in two layers. `RiftRelaySettings` persists the highest relay-ACKed CLI sequence as a monotonic app-private scalar and `RiftMcpRelayClient` restores it before the first `device.hello`, so Android process death no longer resets the recovery cursor to zero.
+
+For SSE lifecycle, stable identity is now mandatory: production clients provide `Mcp-Session-Id`, while browser diagnostics may use a validated `?subscriber=<id>` that becomes an isolated `diag:<id>` session. Anonymous streams are rejected. The Worker returns the Durable Object stream directly, Cloudflare request-signal cancellation/passthrough are explicitly enabled, and every SSE connection has an absolute 180-second lease plus up to 30 seconds of jitter. Lease expiry closes/removes the stream and reconnect relies on `Last-Event-ID`. Existing byte backpressure and two-heartbeat no-drain eviction remain secondary protection.
+
+These latest source changes still require Builder validation and live Worker deployment plus the explicit close-all-tabs and force-stop/reopen re-tests before N1.7 promotion.
 
 ### Gate N2 — Federated Rift Memory Kernel
 

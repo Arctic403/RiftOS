@@ -11,6 +11,8 @@ const MAX_CLI_EVENT_BYTES = 128_000;
 const MAX_SSE_BUFFER_BYTES = 512_000;
 const SSE_HEARTBEAT_MS = 15_000;
 const MAX_SSE_NO_DRAIN_HEARTBEATS = 2;
+const SSE_LEASE_MS = 180_000;
+const SSE_LEASE_JITTER_MS = 30_000;
 
 const SSE_CLIENT_RETRY_MS = 2_000;
 const SSE_RECONNECT_MIN_MS = 1_000;
@@ -115,6 +117,16 @@ function readSessionId(request) {
   return value;
 }
 
+function readDiagnosticSubscriberId(url) {
+  const value = url.searchParams.get("subscriber")?.trim() || "";
+
+  if (!value || !/^[A-Za-z0-9._:-]{1,128}$/.test(value)) {
+    return "";
+  }
+
+  return `diag:${value}`;
+}
+
 function parseResumeAfter(value) {
   const raw = String(value ?? "0");
 
@@ -181,116 +193,8 @@ async function readBoundedText(request, maxBytes = MAX_BODY_BYTES) {
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
-async function proxySseResponse(clientRequest, upstreamResponse, ctx) {
-  const contentType =
-    upstreamResponse.headers.get("content-type") || "";
-
-  if (
-    !upstreamResponse.body ||
-    !contentType.toLowerCase().includes("text/event-stream")
-  ) {
-    return upstreamResponse;
-  }
-
-  const reader = upstreamResponse.body.getReader();
-  let finished = false;
-
-  const detachAbortListener = () => {
-    try {
-      clientRequest.signal.removeEventListener(
-        "abort",
-        onClientAbort,
-      );
-    } catch {
-      // Incoming request signals may already be detached.
-    }
-  };
-
-  const cancelUpstream = async (reason) => {
-    if (finished) {
-      return;
-    }
-
-    finished = true;
-    detachAbortListener();
-
-    try {
-      await reader.cancel(reason);
-    } catch {
-      // Upstream stream was already cancelled/closed.
-    }
-  };
-
-  const onClientAbort = () => {
-    const task = cancelUpstream(
-      "RiftCLI SSE client disconnected",
-    );
-
-    try {
-      ctx?.waitUntil?.(task);
-    } catch {
-      // Best-effort cleanup; stream cancellation is still attempted.
-    }
-  };
-
-  if (clientRequest.signal.aborted) {
-    await cancelUpstream(
-      "RiftCLI SSE client already disconnected",
-    );
-  } else {
-    clientRequest.signal.addEventListener(
-      "abort",
-      onClientAbort,
-      { once: true },
-    );
-  }
-
-  const stream = new ReadableStream({
-    async pull(controller) {
-      if (finished) {
-        controller.close();
-        return;
-      }
-
-      try {
-        const { done, value } = await reader.read();
-
-        if (done) {
-          finished = true;
-          detachAbortListener();
-          controller.close();
-          return;
-        }
-
-        controller.enqueue(value);
-      } catch (error) {
-        finished = true;
-        detachAbortListener();
-
-        try {
-          controller.error(error);
-        } catch {
-          // Downstream was already closed.
-        }
-      }
-    },
-
-    async cancel(reason) {
-      await cancelUpstream(
-        reason || "RiftCLI SSE downstream cancelled",
-      );
-    },
-  });
-
-  return new Response(stream, {
-    status: upstreamResponse.status,
-    statusText: upstreamResponse.statusText,
-    headers: new Headers(upstreamResponse.headers),
-  });
-}
-
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
@@ -394,13 +298,15 @@ export default {
         const headers = new Headers();
         headers.set("accept", "text/event-stream");
 
-        const sessionId = readSessionId(request);
+        const sessionId =
+          readSessionId(request) ||
+          readDiagnosticSubscriberId(url);
 
         if (sessionId) {
           headers.set("mcp-session-id", sessionId);
         }
 
-        const upstream = await room.fetch(
+        return room.fetch(
           new Request(
             `https://relay.internal/events-sse?after=${after}`,
             {
@@ -410,14 +316,14 @@ export default {
             },
           ),
         );
-
-        return proxySseResponse(request, upstream, ctx);
       }
 
       if (request.method === "DELETE") {
         const room = env.RIFT_RELAY.getByName("primary");
         const headers = new Headers();
-        const sessionId = readSessionId(request);
+        const sessionId =
+          readSessionId(request) ||
+          readDiagnosticSubscriberId(url);
 
         if (sessionId) {
           headers.set("mcp-session-id", sessionId);
@@ -574,6 +480,8 @@ export class RiftRelayRoom {
       backpressureDropped: 0,
       deliveryFailed: 0,
       heartbeatFailed: 0,
+      leaseExpired: 0,
+      anonymousRejected: 0,
     };
 
     const deviceAttachment =
@@ -802,6 +710,23 @@ export class RiftRelayRoom {
     const now = Date.now();
     this.pruneSseOpenState(now);
 
+    if (!sessionId) {
+      this.sseStats.anonymousRejected += 1;
+
+      return json(
+        {
+          error:
+            "Mcp-Session-Id or diagnostic subscriber is required for SSE",
+        },
+        400,
+        {
+          "access-control-allow-origin": "*",
+          "access-control-expose-headers":
+            "mcp-session-id",
+        },
+      );
+    }
+
     const sameSessionIds = sessionId
       ? [...this.sseClients.entries()]
           .filter(([, client]) => client.sessionId === sessionId)
@@ -882,7 +807,7 @@ export class RiftRelayRoom {
     }
 
     const id = crypto.randomUUID();
-    const sessionKey = sessionId || `client:${id}`;
+    const sessionKey = sessionId;
     const room = this;
 
     const stream = new ReadableStream(
@@ -911,6 +836,8 @@ export class RiftRelayRoom {
             connectedAt: Date.now(),
             lastDeliveryAt: Date.now(),
             heartbeatTimer: null,
+            leaseTimer: null,
+            leaseExpiresAt: 0,
             heartbeatDesiredSize: controller.desiredSize,
             noDrainHeartbeats: 0,
             requestSignal: request.signal,
@@ -919,6 +846,19 @@ export class RiftRelayRoom {
 
           room.sseClients.set(id, clientState);
           room.sseStats.opened += 1;
+
+          const leaseMs =
+            SSE_LEASE_MS +
+            Math.floor(Math.random() * (SSE_LEASE_JITTER_MS + 1));
+          clientState.leaseExpiresAt = Date.now() + leaseMs;
+          clientState.leaseTimer = setTimeout(() => {
+            room.dropSseClient(
+              id,
+              "leaseExpired",
+              "MCP SSE lease expired; reconnect with Last-Event-ID",
+              "close",
+            );
+          }, leaseMs);
 
           if (request.signal.aborted) {
             onAbort();
@@ -1156,6 +1096,10 @@ export class RiftRelayRoom {
       clearTimeout(client.heartbeatTimer);
     }
 
+    if (client.leaseTimer) {
+      clearTimeout(client.leaseTimer);
+    }
+
     try {
       client.requestSignal?.removeEventListener(
         "abort",
@@ -1183,6 +1127,9 @@ export class RiftRelayRoom {
         break;
       case "heartbeat":
         this.sseStats.heartbeatFailed += 1;
+        break;
+      case "leaseExpired":
+        this.sseStats.leaseExpired += 1;
         break;
     }
 

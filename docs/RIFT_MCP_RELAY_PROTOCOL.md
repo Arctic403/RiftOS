@@ -48,7 +48,9 @@ The same device WebSocket also carries bounded RiftCLI lifecycle events:
 
 The device owns a process-local replay ring of 256 events. Events are capped at 96 KiB and small results may be inlined up to 48 KiB; larger results advertise result metadata and remain recoverable through explicit job polling.
 
-A driver may subscribe with `GET /mcp/<secret>?after=<sequence>` as a WebSocket upgrade or as SSE. `Last-Event-ID` is accepted as the SSE resume cursor. At most four event subscribers are retained across WebSocket and SSE combined. Slow SSE consumers are dropped instead of allowing an unbounded write queue.
+A driver may subscribe with `GET /mcp/<secret>?after=<sequence>` as a WebSocket upgrade or as SSE. Driver WebSockets are bounded at four. SSE connections are bounded separately at eight and require stable identity: production clients send `Mcp-Session-Id`; manual browser diagnostics may use `?subscriber=<id>` with a validated 1-128 character `[A-Za-z0-9._:-]` identifier. Diagnostic IDs are isolated internally as `diag:<id>`. Anonymous SSE opens are rejected.
+
+`Last-Event-ID` is the SSE resume cursor. Every SSE connection has an absolute 180-second lease plus up to 30 seconds of jitter; expiry closes/removes the subscriber and the client reconnects from its last event ID. The outer Worker returns the Durable Object stream directly, and Cloudflare request-signal cancellation/passthrough are enabled so client disconnect can propagate to the room. Slow or non-draining SSE consumers are still dropped through bounded backpressure protection.
 
 The relay requests device replay with `cli.replay.request`, acknowledges accepted device events with `cli.ack`, and tracks per-subscriber cursors so replayed events are not rebroadcast to subscribers that already consumed them. On device reconnect, `relay.ready.cliResumeAfter` is the oldest active subscriber cursor the relay still needs. Replay payloads remain device-owned; the Durable Object does not write each event to storage.
 

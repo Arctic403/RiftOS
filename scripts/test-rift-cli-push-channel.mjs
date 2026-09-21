@@ -10,6 +10,7 @@ const relaySettings=read('android/app/src/main/java/com/riftos/app/RiftRelaySett
 const toolHost=read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
 const shell=read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const relay=read('relay/src/index.js');
+const wrangler=read('relay/wrangler.jsonc');
 
 assert.match(gradle,/RiftCliEventBus\.kt/,'exact Android source snapshot must include the CLI event bus');
 assert.match(runtime,/fun cliEvents\(\): RiftCliEventBus/,'runtime must own one process-wide CLI event bus');
@@ -72,6 +73,20 @@ assert.match(relay,/MAX_DRIVER_SOCKETS = 4/);
 assert.match(relay,/existing\.length >= MAX_DRIVER_SOCKETS/,'WebSocket subscribers must stay within their bounded ceiling');
 assert.match(relay,/effectiveClientCount >= MAX_SSE_CLIENTS/,'SSE subscribers must stay within their bounded ceiling');
 assert.match(relay,/MAX_SSE_NO_DRAIN_HEARTBEATS = 2/,'idle SSE streams must have a bounded no-drain grace');
+assert.match(relay,/SSE_LEASE_MS = 180_000/,'SSE subscribers must have an absolute bounded lease');
+assert.match(relay,/SSE_LEASE_JITTER_MS = 30_000/,'SSE lease expirations must be jittered');
+assert.match(relay,/readDiagnosticSubscriberId\(url\)/,'browser diagnostics must use a validated stable subscriber identity');
+assert.match(relay,/Mcp-Session-Id or diagnostic subscriber is required for SSE/,'anonymous SSE streams must fail closed');
+assert.match(relay,/leaseTimer: null/,'SSE client state must own its lease timer');
+assert.match(relay,/leaseExpiresAt: 0/,'SSE client state must expose bounded lease state');
+assert.match(relay,/MCP SSE lease expired; reconnect with Last-Event-ID/,'lease expiry must instruct cursor-based reconnect');
+assert.match(relay,/clearTimeout\(client\.leaseTimer\)/,'SSE cleanup must clear the lease timer');
+assert.match(relay,/case "leaseExpired"/,'lease expiry must be counted explicitly');
+assert.match(relay,/leaseExpired: 0/,'health stats must expose lease expiry');
+assert.match(relay,/anonymousRejected: 0/,'health stats must expose anonymous SSE rejection');
+assert.ok(!relay.includes('proxySseResponse'),'outer Worker must not add a second SSE ReadableStream buffering layer');
+assert.match(wrangler,/"enable_request_signal"/,'Cloudflare must expose incoming Request.signal cancellation');
+assert.match(wrangler,/"request_signal_passthrough"/,'incoming abort signals must propagate to forwarded SSE requests');
 assert.match(relay,/heartbeatDesiredSize: controller\.desiredSize/,'SSE client state must remember observed queue drain position');
 assert.match(relay,/noDrainHeartbeats: 0/,'SSE client state must count consecutive no-drain heartbeats');
 assert.match(relay,/madeDrainProgress[\s\S]{0,320}MAX_SSE_NO_DRAIN_HEARTBEATS/,'heartbeat liveness must evict a stream that stops draining');
