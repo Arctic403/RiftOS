@@ -7,7 +7,7 @@ package com.riftos.app
  * symbol and dependency interpretation cannot drift between the two evidence paths.
  */
 internal object RiftSourceIntelligenceV2 {
-    const val VERSION = 3
+    const val VERSION = 4
     const val MAX_SEMANTIC_DELTA_ENTRIES = 1_000
     const val MAX_ANALYSIS_SYMBOLS = 4_096
     const val MAX_ANALYSIS_DEPENDENCIES = 4_096
@@ -326,7 +326,7 @@ internal object RiftSourceIntelligenceV2 {
                 "kotlin", "java" -> Regex("^\\s*import\\s+([A-Za-z0-9_.*]+)")
                     .find(line)?.let { add(it.groupValues[1], "import", index + 1) }
                 "javascript" -> {
-                    Regex("\\bfrom\\s*[\"']([^\"']+)[\"']")
+                    Regex("^\\s*(?:import|export)\\b.*\\bfrom\\s*[\"']([^\"']+)[\"']")
                         .find(line)?.let {
                             val specifier = it.groupValues[1]
                             add(specifier, "import", index + 1, specifier.startsWith("."))
@@ -394,6 +394,60 @@ internal object RiftSourceIntelligenceV2 {
             issues += SyntaxIssue(code, line.coerceAtLeast(1), column.coerceAtLeast(1), detail)
         }
 
+        fun kotlinInterpolatedStringEnd(line: String, startIndex: Int): Int {
+            if (line.indexOf("\${", startIndex + 1) < 0) return -1
+            var candidate = line.lastIndex
+            while (candidate > startIndex) {
+                if (line[candidate] == '"') {
+                    var slashCount = 0
+                    var cursor = candidate - 1
+                    while (cursor >= 0 && line[cursor] == '\\') {
+                        slashCount += 1
+                        cursor -= 1
+                    }
+                    if (slashCount % 2 == 0) return candidate
+                }
+                candidate -= 1
+            }
+            return -1
+        }
+
+        fun javascriptRegexMayStart(line: String, slashIndex: Int): Boolean {
+            var cursor = slashIndex - 1
+            while (cursor >= 0 && line[cursor].isWhitespace()) cursor -= 1
+            if (cursor < 0) return true
+            if (line[cursor] in "([{:;,=!?&|+-*%^~<>") return true
+            val prefix = line.substring(0, cursor + 1)
+            val token = Regex("([A-Za-z_$][A-Za-z0-9_$]*)\\s*$")
+                .find(prefix)?.groupValues?.getOrNull(1)
+            return token in setOf(
+                "return", "throw", "case", "delete", "typeof", "void", "new",
+                "yield", "await", "else", "do", "in", "of"
+            )
+        }
+
+        fun javascriptRegexEnd(line: String, slashIndex: Int): Int {
+            var cursor = slashIndex + 1
+            var escapedRegex = false
+            var characterClass = false
+            while (cursor < line.length) {
+                val value = line[cursor]
+                if (escapedRegex) {
+                    escapedRegex = false
+                } else if (value == '\\') {
+                    escapedRegex = true
+                } else if (value == '[') {
+                    characterClass = true
+                } else if (value == ']' && characterClass) {
+                    characterClass = false
+                } else if (value == '/' && !characterClass) {
+                    return cursor
+                }
+                cursor += 1
+            }
+            return -1
+        }
+
         var blockComment = false
         var blockCommentLine = 1
         var blockCommentColumn = 1
@@ -457,6 +511,20 @@ internal object RiftSourceIntelligenceV2 {
                     continue
                 }
 
+                if (language == "javascript" &&
+                    c == '/' &&
+                    next != '/' &&
+                    next != '*' &&
+                    javascriptRegexMayStart(sourceLine, index)
+                ) {
+                    val regexEnd = javascriptRegexEnd(sourceLine, index)
+                    if (regexEnd > index) {
+                        index = regexEnd + 1
+                        while (index < sourceLine.length && sourceLine[index].isLetter()) index += 1
+                        continue
+                    }
+                }
+
                 if (supportsSlashComments && c == '/' && next == '/') break
                 if (supportsHashComments && c == '#') break
                 if (supportsBlockComments && c == '/' && next == '*') {
@@ -478,6 +546,14 @@ internal object RiftSourceIntelligenceV2 {
                     tripleColumn = column
                     index += 3
                     continue
+                }
+
+                if (language == "kotlin" && c == '"') {
+                    val conservativeEnd = kotlinInterpolatedStringEnd(sourceLine, index)
+                    if (conservativeEnd > index) {
+                        index = conservativeEnd + 1
+                        continue
+                    }
                 }
 
                 if (c == '"' || c == '\'' || (supportsBacktickStrings && c == 96.toChar())) {
@@ -559,7 +635,7 @@ internal object RiftSourceIntelligenceV2 {
         }
 
         return SyntaxEvidence(
-            mode = "bounded-structural-v1",
+            mode = "bounded-structural-v2-conservative",
             valid = issues.isEmpty(),
             issues = issues
         )

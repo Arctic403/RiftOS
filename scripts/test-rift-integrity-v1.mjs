@@ -8,14 +8,14 @@ const sandbox = read(k + 'RiftToolSandbox.kt');
 const observer = read(k + 'RiftRepositoryConsistencyObserver.kt');
 const pkg = JSON.parse(read('package.json'));
 
-assert.match(source, /const val VERSION = 3/);
+assert.match(source, /const val VERSION = 4/);
 assert.match(source, /const val MAX_SYNTAX_ISSUES = 128/);
 assert.match(source, /data class SyntaxIssue\(/);
 assert.match(source, /data class SyntaxEvidence\(/);
 assert.match(source, /val localIntent: Boolean\? = null/);
 assert.match(source, /syntax = analyzeSyntax\(language, normalized\)/);
 assert.match(source, /private fun analyzeSyntax\(language: String, text: String\): SyntaxEvidence/);
-assert.match(source, /mode = "bounded-structural-v1"/);
+assert.match(source, /mode = "bounded-structural-v2-conservative"/);
 for (const code of [
   'unexpected-closing-delimiter',
   'mismatched-delimiter',
@@ -32,8 +32,12 @@ assert.ok(source.includes('localIntent = it.groupValues[1]'), 'quoted include lo
 assert.match(source, /specifier\.startsWith\("\."\)/);
 assert.match(source, /specifier\.startsWith\("crate::"\)/);
 assert.match(source, /add\(it\.groupValues\[1\], "module", index \+ 1, true\)/);
+assert.match(source, /fun kotlinInterpolatedStringEnd\(/);
+assert.match(source, /fun javascriptRegexMayStart\(/);
+assert.match(source, /fun javascriptRegexEnd\(/);
+assert.ok(source.includes('(?:import|export)'), 'static JS from-import extraction must be statement-anchored');
 
-assert.match(sandbox, /PROJECT_INTELLIGENCE_CACHE_VERSION = 6/);
+assert.match(sandbox, /PROJECT_INTELLIGENCE_CACHE_VERSION = 7/);
 assert.match(sandbox, /MAX_INTEGRITY_FILES = 4_096/);
 assert.match(sandbox, /MAX_INTEGRITY_DEPENDENCIES = 4_096/);
 assert.match(sandbox, /MAX_INTEGRITY_FINDINGS = 1_024/);
@@ -54,6 +58,17 @@ assert.match(sandbox, /dependency\.localIntent/);
 assert.match(sandbox, /analysis\.syntax\.issues/);
 assert.match(sandbox, /syntaxMode = analysis\.syntax\.mode/);
 assert.match(sandbox, /syntaxValid = analysis\.syntax\.valid/);
+assert.match(sandbox, /"not-applicable" -> Unit/);
+assert.match(sandbox, /"bounded-structural-v2-conservative"/);
+assert.match(sandbox, /rift-source-intelligence-v4-bounded-structural-v2/);
+assert.match(sandbox, /fun sourcePackagePath\(/);
+assert.match(sandbox, /"\/src\/main\/java\/"/);
+assert.match(sandbox, /"qualified-package-not-local"/);
+assert.match(sandbox, /"qualified-local-symbol-resolved"/);
+assert.match(sandbox, /"local-package-symbol-missing"/);
+assert.match(sandbox, /"local-package-wildcard"/);
+assert.ok(!sandbox.includes('projectQualifiedIntent'), 'path-substring package guessing must not return');
+assert.ok(!sandbox.includes('candidate.contains("/" + packagePath + "/")'), 'repository path text must not prove Kotlin/Java package locality');
 
 assert.match(sandbox, /if \(kind == "integrity"\) return projectIntegrity\(path, query\)/);
 assert.match(sandbox, /private fun projectIntegrity\(path: String, query: String\): JSONObject/);

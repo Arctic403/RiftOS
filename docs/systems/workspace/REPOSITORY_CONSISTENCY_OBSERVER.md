@@ -836,10 +836,10 @@ Patch 10.42 strengthened the remaining cache-failure proof in the permanent Buil
 
 Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING BUILDER + INSTALLED TORTURE.**
 
-N1.8.1 extends the existing PI-v2 evidence path rather than introducing a second parser/index. `RiftSourceIntelligenceV2` advances to analyzer v3 and PI persistence advances to cache schema v6 so changed files are re-analyzed incrementally while warm unchanged rows retain bounded syntax and dependency-intent evidence across restart.
+N1.8.1 extends the existing PI-v2 evidence path rather than introducing a second parser/index. After the first installed torture run exposed false-positive semantics in the initial v3/v6 implementation, `RiftSourceIntelligenceV2` is now analyzer v4 and PI persistence is cache schema v7 so corrected syntax/import evidence cannot reuse stale v6 rows. Changed files are still re-analyzed incrementally while warm unchanged rows retain bounded syntax and dependency-intent evidence across restart.
 
 Current source provides:
-- bounded structural syntax evidence (`bounded-structural-v1`) with at most 128 deterministic delimiter/comment/string issues per file; this is a hot-path structural check, not a compiler AST or replacement for build/compiler proof;
+- conservative bounded structural syntax evidence (`bounded-structural-v2-conservative`) with at most 128 deterministic issues per file; Kotlin interpolated-string bodies and JavaScript regex/template constructs are masked when the lightweight scanner cannot safely reason through them, preferring incomplete structural coverage over false syntax errors. This remains a hot-path structural check, not a compiler AST or replacement for build/compiler proof;
 - dependency `localIntent` evidence for explicit local forms such as relative JavaScript/Python imports, quoted C/C++ includes and Rust local module/use forms;
 - a separate read-only `project kind=integrity` view so the promoted N1.8.0 canonical graph is not changed by an unpromoted N1.8.1 lane;
 - full clean-oracle mode when the integrity query is blank and focused-seed mode when a path/query is supplied;

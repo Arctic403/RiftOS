@@ -6,6 +6,28 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.45 — N1.8.1 live false-positive hardening
+
+The first installed Patch 10.44 N1.8.1 integrity run proved the new surface was live and that PI cache migration failed closed as intended, but it also exposed three promotion-blocking correctness defects:
+- the first full integrity scan rebuilt from cache schema v5 to v6 with analyzer v3, then reported `complete=false`, `clean=false`, `syntax-evidence-unavailable`, 32 syntax-invalid files and 176 findings on a repository whose promoted N1.8.0 consistency graph remained complete/clean;
+- generic indexed text rows used syntax mode `not-applicable` but were incorrectly treated as missing syntax evidence, making completeness false without missing data;
+- the bounded structural scanner emitted false syntax errors on valid Kotlin interpolated strings and JavaScript regex/template-heavy source;
+- Kotlin/Java import locality used repository path substrings as package evidence, causing external SDK imports such as `android.app.Activity` to be classified as missing local dependencies, while same-name symbols such as `EditorState` could not be disambiguated by package;
+- JavaScript dependency extraction could match `from './riftvm.js'` inside an ordinary source string and create a fake local dependency.
+
+Patch 10.45 hardens the contract instead of suppressing findings:
+- `RiftSourceIntelligenceV2.VERSION` advances to v4;
+- PI persistence advances to cache schema v7 so no v6 row can be reused under corrected evidence semantics;
+- syntax mode becomes `bounded-structural-v2-conservative`; Kotlin interpolated-string bodies and JavaScript regex/template content are masked when the lightweight structural scanner cannot safely reason through them, preferring missed structural detail over false errors;
+- `not-applicable` syntax evidence is accepted as complete rather than mapped to `syntax-evidence-unavailable`;
+- JavaScript static `from` extraction is anchored to actual import/export statements rather than matching arbitrary string contents;
+- Kotlin/Java qualified imports resolve through recognized source roots (`src/main|test|androidTest` Java/Kotlin package paths) and package-local symbols. External packages with no local source package remain `external-or-unclassified`; a local package with a missing symbol becomes `local-missing`; duplicate package-local symbols become `ambiguous-local`; wildcard imports resolve at the package level;
+- the old `projectQualifiedIntent` repository-substring heuristic is removed;
+- `scripts/test-rift-integrity-v1.mjs` now permanently locks analyzer v4/cache v7, structural-v2 masking hooks, `not-applicable` completeness, package-aware resolution and the absence of the retired path-substring heuristic. The dependent semantic-impact and N1.8.0 consistency source gates are updated to the new analyzer/cache contract.
+
+Local Android source validation remains green. The promoted N1.8.0 consistency oracle also remains complete with zero findings/incomplete reasons after the hardening source edits and stabilizes warm at 1037 facts / 1091 edges / 261 repository files with graph SHA-256 `c362268b76110f331227d730e2e72bc4d817fa0cefa3d3a3593a5106d00b8f9f`, verified cache and `changed=false`. The repository audit is unchanged except for the pre-existing medium `RiftSecretStore.kt` sensitive-looking-filename heuristic.
+
+Patch 10.45 is **not N1.8.1 promotion**. Builder Node/Kotlin compilation, install, v6→v7 migration/restart, full-repository integrity rerun and the remaining adversarial import/syntax/path-drift/frontier parity matrix are still required.
 ## Patch 10.44 — N1.8.1 syntax/import integrity staging foundation
 
 N1.8.1 starts from the promoted N1.8.0 observer without changing its canonical graph contract.

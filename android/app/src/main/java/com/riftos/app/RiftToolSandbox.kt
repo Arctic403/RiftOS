@@ -55,7 +55,7 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_INTEGRITY_PREVIEW = 240
         private const val MAX_PERSISTED_INDEX_FILES = 4000
         private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
-        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 6
+        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 7
         private const val MAX_HUNKS = 128
         private const val MAX_SNAPSHOT_FILES = 50_000
         private const val MAX_ARCHIVE_ENTRIES = 50_000
@@ -1662,10 +1662,10 @@ internal class RiftToolSandbox(context: Context) {
                 .put("syntaxValid", indexedFile.syntaxValid)
                 .put("syntaxIssues", syntaxRows))
 
-            if (indexedFile.syntaxMode == "bounded-structural-v1") {
-                syntaxChecked += 1
-            } else {
-                incompleteReasons += "syntax-evidence-unavailable"
+            when (indexedFile.syntaxMode) {
+                "bounded-structural-v2-conservative" -> syntaxChecked += 1
+                "not-applicable" -> Unit
+                else -> incompleteReasons += "syntax-evidence-unavailable"
             }
             if (!indexedFile.syntaxValid) {
                 syntaxInvalid += 1
@@ -1679,7 +1679,7 @@ internal class RiftToolSandbox(context: Context) {
                         .put("line", issue.line)
                         .put("column", issue.column)
                         .put("detail", issue.detail)
-                        .put("proofSource", "rift-source-intelligence-v3-bounded-structural")
+                        .put("proofSource", "rift-source-intelligence-v4-bounded-structural-v2")
                         .put("blocksN181Promotion", true))
                 }
             }
@@ -1830,7 +1830,7 @@ internal class RiftToolSandbox(context: Context) {
                 .put("cacheLoadStatus", indexStats.optString("cacheLoadStatus"))
                 .put("cacheRejectedReason", indexStats.opt("cacheRejectedReason") ?: JSONObject.NULL))
             .put("syntax", JSONObject()
-                .put("mode", "bounded-structural-v1")
+                .put("mode", "bounded-structural-v2-conservative")
                 .put("filesChecked", syntaxChecked)
                 .put("invalidFiles", syntaxInvalid))
             .put("counts", JSONObject()
@@ -2405,9 +2405,9 @@ internal class RiftToolSandbox(context: Context) {
             if (relative in allPaths) candidates += relative
         }
 
-        fun addRelativeCandidates(raw: String) {
+        fun addRelativeCandidates(rawSpecifier: String) {
             val sourceParent = parent ?: return
-            val direct = File(sourceParent, raw)
+            val direct = File(sourceParent, rawSpecifier)
             listOf(
                 direct,
                 File(direct.path + ".kt"),
@@ -2423,6 +2423,21 @@ internal class RiftToolSandbox(context: Context) {
                 File(direct, "index.js"),
                 File(direct, "index.ts")
             ).forEach(::addExisting)
+        }
+
+        fun sourcePackagePath(candidatePath: String): String? {
+            val normalized = candidatePath.replace('\\', '/')
+            val markers = listOf(
+                "/src/main/java/",
+                "/src/main/kotlin/",
+                "/src/test/java/",
+                "/src/test/kotlin/",
+                "/src/androidTest/java/",
+                "/src/androidTest/kotlin/"
+            )
+            val marker = markers.firstOrNull { normalized.contains(it) } ?: return null
+            val tail = normalized.substringAfter(marker)
+            return tail.substringBeforeLast('/', "")
         }
 
         if (specifier.startsWith(".")) {
@@ -2442,31 +2457,81 @@ internal class RiftToolSandbox(context: Context) {
             addExisting(File(File(parent, specifier), "mod.rs"))
         }
 
-        var projectQualifiedIntent = false
+        val sourceLanguage = RiftSourceIntelligenceV2.languageForPath(sourcePath)
         if (dependency.kind == "import" &&
+            sourceLanguage in setOf("kotlin", "java") &&
             !specifier.startsWith(".") &&
             !specifier.contains('/')
         ) {
-            val qualified = specifier.removeSuffix(".*").trimEnd('.').replace('.', '/')
-            if (qualified.isNotBlank()) {
-                allPaths.asSequence()
-                    .filter { it.endsWith("/" + qualified + ".kt") || it.endsWith("/" + qualified + ".java") }
-                    .take(3)
-                    .forEach(candidates::add)
+            val wildcard = specifier.endsWith(".*")
+            val qualified = specifier.removeSuffix(".*").trimEnd('.')
+            val packageName = if (wildcard) {
+                qualified
+            } else {
+                qualified.substringBeforeLast('.', "")
+            }
+            val symbolName = if (wildcard) "" else qualified.substringAfterLast('.', "")
+            val packagePath = packageName.replace('.', '/')
+            val packageFiles = symbolIndex.entries.asSequence()
+                .filter { (candidatePath, _) -> isPathWithin(candidatePath, projectPath) }
+                .filter { (candidatePath, _) -> sourcePackagePath(candidatePath) == packagePath }
+                .toList()
 
-                val packagePath = qualified.substringBeforeLast('/', "")
-                if (packagePath.isNotBlank()) {
-                    projectQualifiedIntent = allPaths.any { candidate ->
-                        candidate.contains("/" + packagePath + "/")
-                    }
-                }
+            if (packageFiles.isEmpty()) {
+                return IntegrityDependencyResolution(
+                    target = null,
+                    status = "external-or-unclassified",
+                    localIntent = false,
+                    reason = "qualified-package-not-local",
+                    candidateCount = 0
+                )
+            }
+
+            if (wildcard) {
+                return IntegrityDependencyResolution(
+                    target = null,
+                    status = "local-resolved",
+                    localIntent = true,
+                    reason = "local-package-wildcard",
+                    candidateCount = packageFiles.size
+                )
+            }
+
+            packageFiles.asSequence()
+                .filter { (_, indexed) -> indexed.symbols.any { it.name == symbolName } }
+                .map { it.key }
+                .take(3)
+                .forEach(candidates::add)
+
+            return when (candidates.size) {
+                0 -> IntegrityDependencyResolution(
+                    target = null,
+                    status = "local-missing",
+                    localIntent = true,
+                    reason = "local-package-symbol-missing",
+                    candidateCount = 0
+                )
+                1 -> IntegrityDependencyResolution(
+                    target = candidates.first(),
+                    status = "local-resolved",
+                    localIntent = true,
+                    reason = "qualified-local-symbol-resolved",
+                    candidateCount = 1
+                )
+                else -> IntegrityDependencyResolution(
+                    target = null,
+                    status = "ambiguous-local",
+                    localIntent = true,
+                    reason = "multiple-qualified-local-symbols",
+                    candidateCount = candidates.size
+                )
             }
         }
 
         val target = resolveDependency(projectPath, sourcePath, dependency, allPaths)
         if (target != null) candidates += target
 
-        val localIntent = dependency.localIntent == true || projectQualifiedIntent || target != null
+        val localIntent = dependency.localIntent == true || target != null
         if (localIntent && candidates.size > 1) {
             return IntegrityDependencyResolution(
                 target = null,
@@ -2490,7 +2555,7 @@ internal class RiftToolSandbox(context: Context) {
                 target = null,
                 status = "local-missing",
                 localIntent = true,
-                reason = if (dependency.localIntent == true) "explicit-local-target-missing" else "project-qualified-target-missing",
+                reason = "explicit-local-target-missing",
                 candidateCount = candidates.size
             )
         }
