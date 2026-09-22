@@ -1,0 +1,140 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RiftCLI Relay API",
+    "version": "1.0.0",
+    "description": "Independent direct-driver API for RiftCLI. This API does not expose MCP JSON-RPC."
+  },
+  "servers": [
+    {
+      "url": "https://YOUR-RIFT-CLI-RELAY.workers.dev"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "driverBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "CliRequest": {
+        "type": "object",
+        "required": ["command"],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "command": {
+            "type": "string",
+            "description": "Must be exactly 'rift-cli' or begin with 'rift-cli '."
+          },
+          "cwd": {
+            "type": "string",
+            "default": "/",
+            "maxLength": 4096
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "security": [
+    {
+      "driverBearer": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "riftCliHealth",
+        "summary": "Read RiftCLI relay health",
+        "responses": {
+          "200": {
+            "description": "Current independent CLI relay state"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/request": {
+      "post": {
+        "operationId": "riftCliRequest",
+        "summary": "Submit one RiftCLI command",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CliRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "CLI response or asynchronous job submission"
+          },
+          "400": {
+            "description": "Invalid or non-CLI request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "requestId conflict or still pending"
+          },
+          "429": {
+            "description": "Pending request capacity reached"
+          },
+          "503": {
+            "description": "Device unavailable or delivery uncertain"
+          },
+          "504": {
+            "description": "Device response timeout; requestId tombstoned"
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "operationId": "riftCliEvents",
+        "summary": "Read bounded RiftCLI lifecycle events",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "default": 32
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded event page; replayRequested indicates device refill was requested"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    }
+  }
+}

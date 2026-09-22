@@ -16,6 +16,7 @@
         <package android:name="com.codynex.m2bproof" />
         <package android:name="com.codynex.mc2aproof" />
         <package android:name="com.codynex.editor" />
+        <package android:name="com.riftcloud.app" />
         <package android:name="com.riftpp.nativeproof" />
         <package android:name="com.samsung.android.honeyboard" />
     </queries>
@@ -67,6 +68,18 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="riftos" android:host="mcp" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".RiftCliRelayActivity"
+            android:exported="true"
+            android:label="RiftCLI Relay"
+            android:resizeableActivity="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="riftos" android:host="cli" />
             </intent-filter>
         </activity>
         <activity

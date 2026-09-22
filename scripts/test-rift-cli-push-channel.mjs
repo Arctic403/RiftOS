@@ -2,120 +2,154 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const read=(path)=>readFileSync(path,'utf8');
+
 const gradle=read('android/app/build.gradle.kts');
-const runtime=read('android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt');
-const bus=read('android/app/src/main/java/com/riftos/app/RiftCliEventBus.kt');
-const relayClient=read('android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt');
-const relaySettings=read('android/app/src/main/java/com/riftos/app/RiftRelaySettings.kt');
+const main=read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
+const manifest=read('android/app/src/main/AndroidManifest.xml');
+
+const mcpRuntime=read('android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt');
+const mcpClient=read('android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt');
+const mcpSettings=read('android/app/src/main/java/com/riftos/app/RiftRelaySettings.kt');
+
+const cliRuntime=read('android/app/src/main/java/com/riftos/app/RiftCliRuntime.kt');
+const cliEvents=read('android/app/src/main/java/com/riftos/app/RiftCliEventBus.kt');
+const cliClient=read('android/app/src/main/java/com/riftos/app/RiftCliRelayClient.kt');
+const cliSettings=read('android/app/src/main/java/com/riftos/app/RiftCliRelaySettings.kt');
+const cliActivity=read('android/app/src/main/java/com/riftos/app/RiftCliRelayActivity.kt');
+
 const toolHost=read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
 const shell=read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
-const relay=read('relay/src/index.js');
-const wrangler=read('relay/wrangler.jsonc');
 
-assert.match(gradle,/RiftCliEventBus\.kt/,'exact Android source snapshot must include the CLI event bus');
-assert.match(runtime,/fun cliEvents\(\): RiftCliEventBus/,'runtime must own one process-wide CLI event bus');
-assert.match(runtime,/RiftCliEventBus\(debugHub\(\)\)/,'process-wide CLI event bus must publish into the passive debugger');
-assert.match(runtime,/RiftMcpRelayClient\([\s\S]*server\(context\),[\s\S]*cliEvents\(\),[\s\S]*debugHub\(\)/,'relay client must share the process-wide event bus and debugger');
+const mcpRelay=read('relay/src/index.js');
+const mcpWrangler=read('relay/wrangler.jsonc');
+const cliRelay=read('cli-relay/src/index.js');
+const cliWrangler=read('cli-relay/wrangler.jsonc');
 
-assert.match(bus,/SCHEMA = "rift\.cli-event\/1"/);
-assert.match(bus,/MAX_EVENTS = 256/);
-assert.match(bus,/MAX_EVENT_BYTES = 96 \* 1024/);
-assert.match(bus,/MAX_INLINE_RESULT_BYTES = 48 \* 1024/);
-assert.match(bus,/AtomicLong\(System\.currentTimeMillis\(\) \* 1000L\)/,'event sequence must stay ahead across normal process restarts');
-assert.match(bus,/fun replayAfter\(afterSequence: Long\)/);
-assert.match(bus,/stepKey = extra\?\.optString\("stepId"\)/,'batch step events must not be coalesced together');
-assert.match(bus,/lastJobState\[jobId\] == key/,'duplicate job-state events must be coalesced');
-assert.match(bus,/type\.trim\(\)\.take\(128\)/,'event type must be bounded');
-assert.match(bus,/key\.length in 1\.\.128/,'extra metadata keys must be bounded');
-assert.match(bus,/extraKeys\.forEach \{ event\.remove\(it\) \}/,'oversized extra metadata must be stripped');
-assert.match(bus,/val sequenceValue = event\.optLong\("sequence"\)/,'oversized events must retain their allocated sequence');
-assert.match(bus,/put\("eventTruncated", true\)/,'oversized events must collapse to a bounded fallback instead of creating replay gaps');
-assert.match(bus,/events\.addLast\(frozen\)/);
-assert.match(bus,/while \(events\.size > MAX_EVENTS\) events\.removeFirst\(\)/);
-assert.match(bus,/debugHub\?\.sink\("riftcli\.event-bus"\)/,'event creation must be visible to RiftDebugHub');
-assert.match(bus,/operation = "event\.created"/,'debugger must distinguish local event creation from transport delivery');
-assert.match(bus,/runCatching \{[\s\S]{0,1200}debugSink\?\.emit\(/,'debugger failure must not block relay listeners');
+for (const file of [
+  'RiftCliEventBus.kt',
+  'RiftCliRelayActivity.kt',
+  'RiftCliRelayClient.kt',
+  'RiftCliRelaySettings.kt',
+  'RiftCliRuntime.kt',
+]) {
+  assert.match(gradle,new RegExp(file.replace('.','\\.')),'exact Android source snapshot must include '+file);
+}
 
-assert.match(relayClient,/private val cliEvents: RiftCliEventBus/);
-assert.match(relayClient,/cliEvents\.addListener\(cliEventListener\)/);
-assert.match(relayClient,/\.put\("type", "cli\.event"\)/);
-assert.match(relayClient,/sendCliReplay\(webSocket, resumeAfter\)/);
-assert.match(relayClient,/"cli\.replay\.request"/);
-assert.match(relayClient,/"cli\.ack"/);
-assert.match(relayClient,/cliEvents\.replayAfter\(afterSequence\)/);
-assert.match(relayClient,/cliLastAckSequence/);
-assert.match(relayClient,/\.put\("cliAckSequence", lastCliAckSequence\)/,'device hello must carry the last relay-ACKed CLI cursor across socket replacement');
-assert.match(relayClient,/settings\.loadCliAckSequence\(\)/,'device process restart must restore the last persisted relay ACK cursor');
-assert.match(relayClient,/settings\.saveCliAckSequence\(sequence\)/,'new relay ACK cursors must be persisted before process death can erase them');
-assert.match(relaySettings,/KEY_CLI_ACK_SEQUENCE = "cliAckSequence"/);
-assert.match(relaySettings,/fun loadCliAckSequence\(\): Long/);
-assert.match(relaySettings,/fun saveCliAckSequence\(sequence: Long\): Boolean/);
-assert.match(relaySettings,/\.putLong\(KEY_CLI_ACK_SEQUENCE, sequence\)[\s\S]{0,80}\.commit\(\)/,'ACK persistence must be synchronous and monotonic for force-stop durability');
-assert.match(relayClient,/debugHub\?\.sink\("mcp\.relay"\)/,'relay transport must be visible to RiftDebugHub');
-assert.match(relayClient,/operation = "cli\.event\.send"/,'debugger must observe device WebSocket queue attempts');
-assert.match(relayClient,/operation = "cli\.ack"/,'debugger must observe Cloudflare acknowledgement receipt');
-assert.match(relayClient,/operation = "relay\.ready"/,'debugger must observe relay resume handshakes');
-assert.match(relayClient,/operation = "cli\.replay\.request"/,'debugger must observe replay requests');
-assert.match(relayClient,/operation = "cli\.replay\.send"/,'debugger must observe replay fan-out attempts');
-assert.match(relayClient,/private fun debug\([\s\S]*runCatching \{[\s\S]{0,500}debugSink\?\.emit\(/,'relay debugger failure must be non-fatal');
+assert.match(main,/RiftMcpRuntime\.relayClient\(this\)\.start\(\)/,'MCP relay must still start independently');
+assert.match(main,/RiftCliRuntime\.relayClient\(this\)\.start\(\)/,'CLI relay must start independently');
+assert.match(manifest,/android:name="\.RiftCliRelayActivity"/);
+assert.match(manifest,/android:host="cli"/);
 
-assert.match(toolHost,/emitCliJob\(job, "job\.submitted"\)/);
-assert.match(toolHost,/emitCliJob\(job, "job\.started"\)/);
-assert.match(toolHost,/"job\.cancelling"/);
-assert.match(toolHost,/"job\.completed"/);
-assert.match(shell,/emitCliShellJob\(job, "job\.submitted"/);
-assert.match(shell,/emitCliShellJob\(job, "job\.started"/);
-assert.match(shell,/type = "driver\.need_more_info"/);
-assert.match(shell,/type = "cli\.enabled"/);
-assert.match(shell,/type = "cli\.disabled"/);
+assert.match(cliRuntime,/object RiftCliRuntime/);
+assert.match(cliRuntime,/fun events\(\): RiftCliEventBus/);
+assert.match(cliRuntime,/RiftCliEventBus\(RiftMcpRuntime\.debugHub\(\)\)/,'CLI events may share only the passive process debugger');
+assert.match(cliRuntime,/fun relayClient\(context: Context\): RiftCliRelayClient/);
+assert.match(cliRuntime,/RiftCliRelayClient\([\s\S]*RiftMcpRuntime\.nativeShell\(context\),[\s\S]*events\(\),[\s\S]*RiftMcpRuntime\.debugHub\(\)/);
 
-assert.match(relay,/MAX_DRIVER_SOCKETS = 4/);
-assert.match(relay,/existing\.length >= MAX_DRIVER_SOCKETS/,'WebSocket subscribers must stay within their bounded ceiling');
-assert.match(relay,/effectiveClientCount >= MAX_SSE_CLIENTS/,'SSE subscribers must stay within their bounded ceiling');
-assert.match(relay,/MAX_SSE_NO_DRAIN_HEARTBEATS = 2/,'idle SSE streams must have a bounded no-drain grace');
-assert.match(relay,/SSE_LEASE_MS = 180_000/,'SSE subscribers must have an absolute bounded lease');
-assert.match(relay,/SSE_LEASE_JITTER_MS = 30_000/,'SSE lease expirations must be jittered');
-assert.match(relay,/readDiagnosticSubscriberId\(url\)/,'browser diagnostics must use a validated stable subscriber identity');
-assert.match(relay,/Mcp-Session-Id or diagnostic subscriber is required for SSE/,'anonymous SSE streams must fail closed');
-assert.match(relay,/leaseTimer: null/,'SSE client state must own its lease timer');
-assert.match(relay,/leaseExpiresAt: 0/,'SSE client state must expose bounded lease state');
-assert.match(relay,/MCP SSE lease expired; reconnect with Last-Event-ID/,'lease expiry must instruct cursor-based reconnect');
-assert.match(relay,/clearTimeout\(client\.leaseTimer\)/,'SSE cleanup must clear the lease timer');
-assert.match(relay,/case "leaseExpired"/,'lease expiry must be counted explicitly');
-assert.match(relay,/leaseExpired: 0/,'health stats must expose lease expiry');
-assert.match(relay,/anonymousRejected: 0/,'health stats must expose anonymous SSE rejection');
-assert.ok(!relay.includes('proxySseResponse'),'outer Worker must not add a second SSE ReadableStream buffering layer');
-assert.match(wrangler,/"enable_request_signal"/,'Cloudflare must expose incoming Request.signal cancellation');
-assert.match(wrangler,/"request_signal_passthrough"/,'incoming abort signals must propagate to forwarded SSE requests');
-assert.match(relay,/heartbeatDesiredSize: controller\.desiredSize/,'SSE client state must remember observed queue drain position');
-assert.match(relay,/noDrainHeartbeats: 0/,'SSE client state must count consecutive no-drain heartbeats');
-assert.match(relay,/madeDrainProgress[\s\S]{0,320}MAX_SSE_NO_DRAIN_HEARTBEATS/,'heartbeat liveness must evict a stream that stops draining');
-assert.match(relay,/MCP SSE subscriber stopped draining/,'stale SSE eviction must be explicit in source');
-assert.match(relay,/client\.controller\.desiredSize != null &&[\s\S]{0,120}client\.controller\.desiredSize < sse\.byteLength/,'slow SSE subscribers must fail closed instead of building an unbounded queue');
-assert.match(relay,/MAX_CLI_EVENT_BYTES = 128_000/);
-assert.match(relay,/request\.headers\.get\("last-event-id"\)/);
-assert.match(relay,/ctx\.getWebSockets\("driver"\)/);
-assert.match(relay,/acceptWebSocket\(server, \["driver"\]\)/);
-assert.match(relay,/acceptWebSocket\(server, \["device"\]\)/);
-assert.match(relay,/sentThrough: after/,'driver attachment must initialize its sent-through cursor from the requested resume point');
-assert.match(relay,/type: "cli\.events\.ready"/);
-assert.match(relay,/requestCliReplay\([\s\S]{0,120}after/,'subscriber open must request replay from its resume cursor');
-assert.match(relay,/lastCliSequence: this\.lastCliSequence/,'device WebSocket attachment must persist the CLI resume cursor across Durable Object hibernation');
-assert.match(relay,/deviceAttachment\.lastCliSequence/,'constructor must restore the hibernated CLI cursor without Durable Object storage');
-assert.match(relay,/message\.cliAckSequence \?\? 0/,'device reconnect must restore the server cursor from the device-owned ACK when the old socket attachment is gone');
-assert.match(relay,/this\.lastCliSequence = Math\.max\([\s\S]{0,160}this\.lastCliSequence,[\s\S]{0,160}deviceAckSequence/,'device ACK restoration must be monotonic');
-assert.match(relay,/minimumCliResumeAfter\(\)/,'device reconnect must honor the oldest active subscriber cursor');
-assert.match(relay,/cliResumeAfter:[\s\S]{0,80}this\.minimumCliResumeAfter\(\)/);
-assert.match(relay,/deliveredThrough >= sequence/,'replayed WebSocket events must not be rebroadcast to caught-up subscribers');
-assert.match(relay,/after >= sequence/,'replayed SSE events must not be rebroadcast to caught-up subscribers');
-assert.match(relay,/sentThrough:[\s\S]{0,120}Math\.max\(sentThrough, sequence\)/,'driver delivery cursor must advance monotonically after delivery');
-assert.match(relay,/room\.sseClients\.set\(id, clientState\)/,'SSE subscribers must retain independent connection state and replay cursors');
-assert.match(relay,/method: "notifications\/riftcli\/event"/,'SSE fallback must carry valid JSON-RPC MCP notifications');
-assert.match(relay,/method: "notifications\/riftcli\/ready"/);
-assert.match(relay,/id: \$\{sequence\}/);
-assert.match(relay,/message\.type === "cli\.event"/);
-assert.match(relay,/socket\.send\([\s\S]{0,120}JSON\.stringify\([\s\S]{0,120}type: "cli\.ack"[\s\S]{0,120}sequence/);
-assert.match(relay,/sequence > current/,'driver acknowledgements must not regress replay cursors');
-assert.ok(!relay.includes('ctx.storage'),'CLI push replay must stay device-owned and avoid Durable Object storage writes');
+assert.ok(!mcpRuntime.includes('RiftCliEventBus'),'MCP runtime must not own CLI event state');
+assert.ok(!mcpRuntime.includes('cliEvents'),'MCP runtime must not expose CLI event state');
+assert.ok(!mcpClient.includes('RiftCli'),'MCP relay client must not depend on CLI runtime/types');
+assert.ok(!mcpClient.includes('"cli.'),'MCP relay client must not carry CLI protocol messages');
+assert.ok(!mcpClient.includes('cliAck'),'MCP relay client must not carry CLI ACK state');
+assert.ok(!mcpSettings.includes('cliAck'),'MCP settings must not persist CLI ACK state');
+assert.ok(!mcpSettings.includes('rift.cli'),'MCP settings must not reuse CLI secrets');
 
-console.log('ok - RiftCLI N1.5 persistent push channel is bounded, replayable and hibernatable');
+assert.match(mcpClient,/PROTOCOL = "rift-mcp-relay-v1"/);
+assert.match(mcpClient,/"mcp\.request" -> handleMcpRequest/);
+assert.match(mcpClient,/"mcp\.notification" -> handleMcpNotification/);
+assert.match(mcpClient,/debugHub\?\.sink\("mcp\.relay"\)/);
+
+assert.match(cliSettings,/PREFS = "rift-cli-relay"/);
+assert.match(cliSettings,/TOKEN_SECRET = "rift\.cli\.relay\.token"/);
+assert.match(cliSettings,/KEY_ACK_SEQUENCE = "ackSequence"/);
+assert.match(cliSettings,/fun loadAckSequence\(\): Long/);
+assert.match(cliSettings,/fun saveAckSequence\(sequence: Long\): Boolean/);
+assert.match(cliSettings,/\.putLong\(KEY_ACK_SEQUENCE, sequence\)[\s\S]{0,80}\.commit\(\)/,'CLI ACK cursor must be synchronously persisted');
+assert.ok(!cliSettings.includes('rift-mcp-relay'),'CLI settings must not reuse MCP preferences');
+assert.ok(!cliSettings.includes('rift.relay.token'),'CLI settings must not reuse MCP token');
+
+assert.match(cliActivity,/title = "RiftCLI Relay"/);
+assert.match(cliActivity,/RiftCliRuntime\.relayClient\(this\)/);
+assert.match(cliActivity,/RiftCliRelaySettings\(this\)/);
+assert.ok(!cliActivity.includes('RiftMcpActivity'),'CLI settings surface must be independent from MCP activity');
+
+assert.match(cliEvents,/SCHEMA = "rift\.cli-event\/1"/);
+assert.match(cliEvents,/MAX_EVENTS = 256/);
+assert.match(cliEvents,/MAX_EVENT_BYTES = 96 \* 1024/);
+assert.match(cliEvents,/MAX_INLINE_RESULT_BYTES = 48 \* 1024/);
+assert.match(cliEvents,/AtomicLong\(System\.currentTimeMillis\(\) \* 1000L\)/);
+assert.match(cliEvents,/fun replayAfter\(afterSequence: Long\)/);
+assert.match(cliEvents,/events\.addLast\(frozen\)/);
+assert.match(cliEvents,/while \(events\.size > MAX_EVENTS\) events\.removeFirst\(\)/);
+assert.match(cliEvents,/debugHub\?\.sink\("riftcli\.event-bus"\)/);
+
+assert.match(toolHost,/RiftCliRuntime\.events\(\)\.emitJob\(/,'ToolHost CLI jobs must publish to CLI runtime, not MCP runtime');
+assert.match(shell,/RiftCliRuntime\.events\(\)\.emitJob\(/,'RiftShell CLI jobs must publish to CLI runtime');
+assert.match(shell,/RiftCliRuntime\.events\(\)\.emit\(/,'CLI lifecycle events must publish to CLI runtime');
+assert.ok(!toolHost.includes('RiftMcpRuntime.cliEvents()'));
+assert.ok(!shell.includes('RiftMcpRuntime.cliEvents()'));
+
+assert.match(cliClient,/PROTOCOL = "rift-cli-relay-v1"/);
+assert.match(cliClient,/debugHub\?\.sink\("cli\.relay"\)/);
+assert.match(cliClient,/private val settings = RiftCliRelaySettings/);
+assert.match(cliClient,/cliEvents\.addListener\(eventListener\)/);
+assert.match(cliClient,/"relay\.ready" ->/);
+assert.match(cliClient,/"cli\.request" -> handleCliRequest/);
+assert.match(cliClient,/"cli\.replay\.request" ->/);
+assert.match(cliClient,/"cli\.ack" ->/);
+assert.match(cliClient,/settings\.saveAckSequence\(sequence\)/);
+assert.match(cliClient,/cliEvents\.replayAfter\(afterSequence\)/);
+assert.match(cliClient,/command == "rift-cli" \|\| command\.startsWith\("rift-cli "\)/,'device CLI transport must reject non-CLI shell commands');
+assert.ok(!cliClient.includes('mcp.request'),'CLI relay client must not carry MCP request envelopes');
+assert.ok(!cliClient.includes('mcp.notification'),'CLI relay client must not carry MCP notification envelopes');
+assert.ok(!cliClient.includes('rift-mcp-relay-v1'),'CLI client must not reuse MCP protocol');
+
+assert.match(mcpRelay,/const PROTOCOL = "rift-mcp-relay-v1"/);
+assert.match(mcpRelay,/type: "mcp\.request"/);
+assert.match(mcpRelay,/type: "mcp\.notification"/);
+assert.match(mcpRelay,/MAX_SSE_CLIENTS = 8/);
+assert.match(mcpRelay,/MAX_SSE_NO_DRAIN_HEARTBEATS = 2/);
+assert.match(mcpRelay,/SSE_LEASE_MS = 180_000/);
+assert.match(mcpRelay,/MCP SSE subscriber stopped draining/);
+assert.match(mcpRelay,/MCP SSE lease expired; reconnect with Last-Event-ID/);
+assert.ok(!mcpRelay.includes('cli.event'),'MCP Worker must not carry CLI events');
+assert.ok(!mcpRelay.includes('cli.events'),'MCP Worker must not expose CLI event subscribers');
+assert.ok(!mcpRelay.includes('notifications/riftcli'),'MCP SSE must not carry CLI notifications');
+assert.ok(!mcpRelay.includes('MAX_DRIVER_SOCKETS'),'MCP Worker must not own CLI driver sockets');
+assert.ok(!mcpRelay.includes('MAX_CLI_EVENT_BYTES'),'MCP Worker must not own CLI event bounds');
+assert.ok(!mcpRelay.includes('lastCliSequence'),'MCP Worker must not own CLI replay cursors');
+assert.ok(!mcpRelay.includes('requestCliReplay'),'MCP Worker must not request CLI replay');
+assert.ok(!mcpRelay.includes('broadcastCliEvent'),'MCP Worker must not fan out CLI events');
+assert.ok(!mcpRelay.includes('getWebSockets("driver")'),'MCP Worker must not own CLI driver sockets');
+assert.match(mcpRelay,/: rift-mcp-ready/,'MCP SSE may establish the stream without emitting a CLI notification');
+
+assert.match(cliRelay,/const PROTOCOL = "rift-cli-relay-v1"/);
+assert.match(cliRelay,/const MAX_PENDING_REQUESTS = 64/);
+assert.match(cliRelay,/const MAX_EVENTS = 256/);
+assert.match(cliRelay,/const MAX_EVENT_BYTES = 128_000/);
+assert.match(cliRelay,/url\.pathname === "\/device"/);
+assert.match(cliRelay,/url\.pathname === "\/request"/);
+assert.match(cliRelay,/url\.pathname === "\/events"/);
+assert.match(cliRelay,/env\.DEVICE_TOKEN/);
+assert.match(cliRelay,/env\.DRIVER_TOKEN/);
+assert.match(cliRelay,/Only commands rooted at rift-cli are allowed/);
+assert.match(cliRelay,/type: "cli\.request"/);
+assert.match(cliRelay,/envelope\.type === "cli\.response"/);
+assert.match(cliRelay,/envelope\.type === "cli\.error"/);
+assert.match(cliRelay,/envelope\.type === "cli\.event"/);
+assert.match(cliRelay,/event\.schema !== "rift\.cli-event\/1"/);
+assert.match(cliRelay,/type: "cli\.ack"/);
+assert.match(cliRelay,/resumeAfter: this\.lastSequence/);
+assert.match(cliRelay,/while \(this\.events\.length > MAX_EVENTS\) this\.events\.shift\(\)/);
+assert.ok(!cliRelay.includes('mcp.request'),'CLI Worker must not carry MCP requests');
+assert.ok(!cliRelay.includes('mcp.notification'),'CLI Worker must not carry MCP notifications');
+assert.ok(!cliRelay.includes('rift-mcp-relay-v1'),'CLI Worker must not reuse MCP protocol');
+assert.ok(!cliRelay.includes('ctx.storage'),'CLI event replay remains bounded and in-memory/device-owned');
+
+assert.match(mcpWrangler,/"name": "rift-mcp-relay"/);
+assert.match(mcpWrangler,/"name": "RIFT_RELAY"/);
+assert.match(cliWrangler,/"name": "rift-cli-relay"/);
+assert.match(cliWrangler,/"name": "RIFT_CLI_RELAY"/);
+assert.match(cliWrangler,/"class_name": "RiftCliRelayRoom"/);
+
+console.log('ok - RiftCLI transport is independent from MCP and both relay boundaries fail closed');

@@ -122,7 +122,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "cancelled_may_have_applied",
             "completed_after_cancel_request"
         )
-        RiftMcpRuntime.cliEvents().emitJob(
+        RiftCliRuntime.events().emitJob(
             type = type,
             jobId = job.id,
             requestId = job.requestId,
@@ -343,7 +343,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val cli = RiftCliHost.executeShell(args, cwd)
 
         if (cli.result.optString("state") == "need_more_info") {
-            RiftMcpRuntime.cliEvents().emit(
+            RiftCliRuntime.events().emit(
                 type = "driver.need_more_info",
                 requestId = cli.result.optString("requestId").takeIf { it.isNotBlank() },
                 lane = "driver",
@@ -358,7 +358,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             )
         }
         if (cli.result.optString("command") == "enable" && cli.result.optBoolean("enabled", false)) {
-            RiftMcpRuntime.cliEvents().emit(
+            RiftCliRuntime.events().emit(
                 type = "cli.enabled",
                 lane = "driver",
                 status = "enabled",
@@ -373,7 +373,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             val result = JSONObject(cli.result.toString())
                 .put("cliShellJobCancellationsRequested", shellCancelled)
                 .put("cliToolJobCancellationsRequested", toolCancellation.optInt("cancellationRequested", 0))
-            RiftMcpRuntime.cliEvents().emit(
+            RiftCliRuntime.events().emit(
                 type = "cli.disabled",
                 lane = "driver",
                 status = "disabled",
@@ -822,7 +822,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         } else {
             runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault("")
         }
-        RiftMcpRuntime.cliEvents().emit(
+        RiftCliRuntime.events().emit(
             type = type,
             requestId = job.requestId,
             jobId = job.id,
@@ -884,7 +884,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val plan = parseCliBatchPlan(args, toolHost)
         val planSummary = cliBatchPlanSummary(plan)
         if (plan.mode == "validate") {
-            RiftMcpRuntime.cliEvents().emit(
+            RiftCliRuntime.events().emit(
                 type = "batch.validated",
                 requestId = cliResult.optString("requestId").takeIf { it.isNotBlank() },
                 lane = "batch",

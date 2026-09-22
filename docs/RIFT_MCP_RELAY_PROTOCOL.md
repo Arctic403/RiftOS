@@ -1,70 +1,78 @@
-# Rift MCP Relay Protocol v1
+# Rift MCP Relay Protocol
 
-The relay connects ChatGPT's public Streamable HTTP MCP endpoint to a RiftOS device without exposing a listener on Android. The device always initiates an encrypted WebSocket connection.
+Current protocol: `rift-mcp-relay-v1`.
 
-## Device handshake
+The Rift MCP relay is the independent Cloudflare transport for MCP JSON-RPC and MCP SSE lifecycle only. RiftCLI transport was removed from this protocol and now uses the separate `rift-cli-relay-v1` service documented in `docs/RIFT_CLI_RELAY_PROTOCOL.md`.
 
-The device connects to its configured `wss://` URL with:
+## Device connection
 
-- `Authorization: Bearer <pairing token>`
-- `X-Rift-Device-Id: <stable device UUID>`
-- `X-Rift-Protocol: rift-mcp-relay-v1`
+RiftOS opens an outbound authenticated WebSocket to the MCP Worker's `/device` endpoint with:
 
-After the WebSocket opens, RiftOS sends:
+- `Authorization: Bearer <DEVICE_TOKEN>`;
+- `X-Rift-Device-Id`;
+- `X-Rift-Protocol: rift-mcp-relay-v1`.
 
-```json
-{"type":"device.hello","protocol":"rift-mcp-relay-v1","deviceId":"...","client":{"name":"RiftOS","version":"0.11.0"}}
-```
-
-The relay confirms authentication and device registration with:
+The device sends:
 
 ```json
-{"type":"relay.ready","cliResumeAfter":123}
+{
+  "type": "device.hello",
+  "protocol": "rift-mcp-relay-v1",
+  "deviceId": "...",
+  "client": {
+    "name": "RiftOS",
+    "version": "...",
+    "sourceSha": "...",
+    "buildRunId": "..."
+  }
+}
 ```
 
-## MCP exchange
-
-The relay sends one MCP JSON-RPC object per request:
+The Worker replies with:
 
 ```json
-{"type":"mcp.request","requestId":"unique-relay-id","payload":{"jsonrpc":"2.0","id":1,"method":"tools/list"}}
+{"type":"relay.ready"}
 ```
 
-RiftOS answers with the correlated result:
+No RiftCLI sequence, replay or ACK state is carried in this handshake.
 
-```json
-{"type":"mcp.response","requestId":"unique-relay-id","payload":{"jsonrpc":"2.0","id":1,"result":{}}}
-```
+## MCP forwarding
 
-Protocol-level failures use `mcp.error` with the same `requestId`. Relay keepalives use `relay.ping` and `device.pong`.
+The public `/mcp/<secret>` path remains the MCP surface.
 
-## RiftCLI persistent event channel
+POST forwards one JSON-RPC request or notification. Request envelopes sent to the device use `mcp.request`; notifications use `mcp.notification`. Device terminal envelopes are `mcp.response` or `mcp.error`.
 
-The same device WebSocket also carries bounded RiftCLI lifecycle events:
+The relay preserves bounded pending-request correlation, request fingerprint dedupe, waiter limits and timeout behavior. MCP payloads are not persisted in Durable Object storage.
 
-```json
-{"type":"cli.event","protocol":"rift-mcp-relay-v1","event":{"schema":"rift.cli-event/1","sequence":123,"type":"job.completed","jobId":"...","terminal":true}}
-```
+## MCP SSE
 
-The device owns a process-local replay ring of 256 events. Events are capped at 96 KiB and small results may be inlined up to 48 KiB; larger results advertise result metadata and remain recoverable through explicit job polling.
+GET opens the MCP SSE lifecycle stream. Existing protections remain in force:
 
-A driver may subscribe with `GET /mcp/<secret>?after=<sequence>` as a WebSocket upgrade or as SSE. Driver WebSockets are bounded at four. SSE connections are bounded separately at eight and require stable identity: production clients send `Mcp-Session-Id`; manual browser diagnostics may use `?subscriber=<id>` with a validated 1-128 character `[A-Za-z0-9._:-]` identifier. Diagnostic IDs are isolated internally as `diag:<id>`. Anonymous SSE opens are rejected.
+- stable `Mcp-Session-Id` or bounded diagnostic subscriber identity;
+- eight-client ceiling;
+- reconnect throttling;
+- same-session replacement;
+- bounded stream buffer;
+- heartbeat drain detection;
+- bounded lease with reconnect;
+- explicit DELETE session close.
 
-`Last-Event-ID` is the SSE resume cursor. Every SSE connection has an absolute 180-second lease plus up to 30 seconds of jitter; expiry closes/removes the subscriber and the client reconnects from its last event ID. The outer Worker returns the Durable Object stream directly, and Cloudflare request-signal cancellation/passthrough are enabled so client disconnect can propagate to the room. Slow or non-draining SSE consumers are still dropped through bounded backpressure protection.
+The initial stream record is an SSE comment (`: rift-mcp-ready`), not a RiftCLI JSON-RPC notification. The MCP Worker no longer exposes RiftCLI driver WebSockets, CLI replay requests, CLI event fan-out or CLI ACK handling.
 
-The relay requests device replay with `cli.replay.request`, acknowledges accepted device events with `cli.ack`, and tracks per-subscriber cursors so replayed events are not rebroadcast to subscribers that already consumed them. On device reconnect, `relay.ready.cliResumeAfter` is the oldest active subscriber cursor the relay still needs. Replay payloads remain device-owned; the Durable Object does not write each event to storage.
+## Separation invariant
 
-SSE events are valid JSON-RPC notifications using `notifications/riftcli/event`. Job list/poll/cancel remain recovery/debug fallbacks rather than the normal progress loop.
+The MCP relay must not contain `cli.event`, `cli.replay.request`, `cli.ack`, RiftCLI subscriber state or CLI pending requests.
 
-## Security requirements
+RiftCLI uses a different Worker, protocol, device WebSocket, token, device identity, request table and replay cursor. Removing or restarting the CLI relay must not alter the MCP/local-agent transport, and vice versa.
 
-- Reject non-TLS device endpoints.
-- Never place the bearer token inside message bodies or logs.
-- Bind each authenticated token to one device ID.
-- Allow only one active socket per device; a newer authenticated socket replaces the older one.
-- Generate unpredictable request IDs and enforce request timeouts.
-- Limit relay envelopes to 1,000,000 UTF-8 bytes on-device and at the Worker boundary; apply the tighter RiftCLI event bounds before relay send.
-- Never interpret tool arguments in the relay. Forward complete MCP JSON-RPC objects unchanged.
-- Never persist MCP payloads, tool results, or RiftCLI event payloads in Durable Object storage; socket/correlation/subscriber cursors remain ephemeral.
-- Coalesce identical retried `tools/call` requests inside the on-device `RiftMcpServer`, including requests already in flight.
-- Keep `RiftToolHost` permissions and `RiftToolSandbox` as the final authority.
+## Bounds
+
+- Relay/device message limit: 1,000,000 UTF-8 bytes.
+- Pending MCP requests: 64.
+- MCP relay request timeout: 75 seconds.
+- MCP SSE clients: 8.
+- SSE buffer: 512,000 bytes.
+- SSE heartbeat: 15 seconds.
+- No Durable Object payload persistence.
+
+See `relay/src/index.js`, `RiftMcpRelayClient.kt`, and `docs/systems/mcp/relay/README.md` for the source-defined contract.

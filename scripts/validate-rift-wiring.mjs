@@ -127,8 +127,11 @@ if (!buildInstaller.includes('class RiftBuildInstallReceiver : BroadcastReceiver
 const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
 const runtime = read(`${kotlinDir}/RiftMcpRuntime.kt`);
 const cliEvents = read(`${kotlinDir}/RiftCliEventBus.kt`);
+const cliRuntime = read(`${kotlinDir}/RiftCliRuntime.kt`);
 const relayClient = read(`${kotlinDir}/RiftMcpRelayClient.kt`);
+const cliRelayClient = read(`${kotlinDir}/RiftCliRelayClient.kt`);
 const relayWorker = read('relay/src/index.js');
+const cliRelayWorker = read('cli-relay/src/index.js');
 const browserWindow = read(`${kotlinDir}/RiftBrowserWindow.kt`);
 const browserEngine = read(`${kotlinDir}/RiftBrowserAndroidWebViewEngine.kt`);
 const browserHost = read(`${kotlinDir}/RiftBrowserAppHost.kt`);
@@ -238,28 +241,37 @@ if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
     !toolSandbox.includes('internal fun executeCliBatchRequest') ||
     !toolSandbox.includes('executeRequest(raw, "rift-cli-batch")')) fail('RiftCLI N1 dispatcher/provenance/Batch V2 boundary drifted');
 if (!gradle.includes('RiftCliEventBus.kt') ||
-    !runtime.includes('fun cliEvents(): RiftCliEventBus') ||
-    !runtime.includes('RiftMcpRelayClient(') ||
-    !runtime.includes('server(context)') ||
-    !runtime.includes('cliEvents()') ||
-    !runtime.includes('debugHub()') ||
+    !gradle.includes('RiftCliRelayClient.kt') ||
+    !gradle.includes('RiftCliRelaySettings.kt') ||
+    !gradle.includes('RiftCliRuntime.kt') ||
     !cliEvents.includes('SCHEMA = "rift.cli-event/1"') ||
     !cliEvents.includes('MAX_EVENTS = 256') ||
     !cliEvents.includes('stepKey = extra?.optString("stepId")') ||
     !cliEvents.includes('debugHub?.sink("riftcli.event-bus")') ||
     !cliEvents.includes('operation = "event.created"') ||
-    !relayClient.includes('cliEvents.addListener(cliEventListener)') ||
-    !relayClient.includes('debugHub?.sink("mcp.relay")') ||
-    !relayClient.includes('operation = "cli.event.send"') ||
-    !relayClient.includes('operation = "relay.ready"') ||
-    !relayClient.includes('operation = "cli.replay.request"') ||
-    !relayClient.includes('operation = "cli.replay.send"') ||
-    !relayClient.includes('operation = "cli.ack"') ||
-    !relayClient.includes('"cli.replay.request"') ||
-    !relayClient.includes('"cli.ack"') ||
-    !relayWorker.includes('acceptWebSocket(server, ["driver"])') ||
-    !relayWorker.includes('notifications/riftcli/event') ||
-    relayWorker.includes('ctx.storage')) fail('RiftCLI N1.5 persistent push wiring drifted');
+    !cliRuntime.includes('fun events(): RiftCliEventBus') ||
+    !cliRuntime.includes('fun relayClient(context: Context): RiftCliRelayClient') ||
+    !cliRelayClient.includes('PROTOCOL = "rift-cli-relay-v1"') ||
+    !cliRelayClient.includes('debugHub?.sink("cli.relay")') ||
+    !cliRelayClient.includes('cliEvents.addListener(eventListener)') ||
+    !cliRelayClient.includes('operation = "cli.event.send"') ||
+    !cliRelayClient.includes('operation = "relay.ready"') ||
+    !cliRelayClient.includes('operation = "cli.replay.request"') ||
+    !cliRelayClient.includes('operation = "cli.replay.send"') ||
+    !cliRelayClient.includes('operation = "cli.ack"') ||
+    !cliRelayClient.includes('"cli.replay.request"') ||
+    !cliRelayClient.includes('"cli.ack"') ||
+    !cliRelayWorker.includes('const PROTOCOL = "rift-cli-relay-v1"') ||
+    !cliRelayWorker.includes('url.pathname === "/request"') ||
+    !cliRelayWorker.includes('url.pathname === "/events"') ||
+    !cliRelayWorker.includes('type: "cli.request"') ||
+    !cliRelayWorker.includes('envelope.type === "cli.event"') ||
+    relayClient.includes('"cli.') ||
+    runtime.includes('RiftCliEventBus') ||
+    relayWorker.includes('notifications/riftcli') ||
+    relayWorker.includes('getWebSockets("driver")') ||
+    cliRelayWorker.includes('mcp.request') ||
+    cliRelayWorker.includes('ctx.storage')) fail('RiftCLI independent relay boundary drifted');
 if (cliJni.includes('GetStringUTFChars') || cliJni.includes('NewStringUTF') ||
     !cliJni.includes('GetStringChars') || !cliJni.includes('utf8ToUtf16')) fail('RiftCLI JNI UTF boundary drifted');
 

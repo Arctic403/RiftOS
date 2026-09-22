@@ -90,8 +90,9 @@ class MainActivity : Activity() {
         populateNativeLauncher()
         nativeDesktop.handle("desktop.window.bootstrap", JSONObject())
 
-        // MCP/relay is process-owned and independent of renderer lifecycle.
+        // MCP and RiftCLI relays are process-owned, independent transports.
         RiftMcpRuntime.relayClient(this).start()
+        RiftCliRuntime.relayClient(this).start()
     }
 
     private fun populateNativeLauncher() {
@@ -134,12 +135,13 @@ class MainActivity : Activity() {
         add("tasks", "Tasks", "≡")
         add("settings", "Settings", "⚙")
         add("mcp", "Rift MCP", "⇄")
+        add("cli-relay", "RiftCLI Relay", "↯")
 
         if (!includeInstalled) return apps
 
         val used = linkedSetOf(
             "files", "workspace-live", "terminal", "browser",
-            "editor", "devlab", "tasks", "settings", "mcp"
+            "editor", "devlab", "tasks", "settings", "mcp", "cli-relay"
         )
         var scannedPrograms = 0
         var scannedBytes = 0L
@@ -234,6 +236,10 @@ class MainActivity : Activity() {
             if (::nativeWorkspaceApps.isInitialized && nativeWorkspaceApps.openFromLauncher(id)) return@runOnUiThread
             if (id == "mcp") {
                 startActivity(Intent(this, RiftMcpActivity::class.java))
+                return@runOnUiThread
+            }
+            if (id == "cli-relay") {
+                startActivity(Intent(this, RiftCliRelayActivity::class.java))
                 return@runOnUiThread
             }
             if (id == "browser") {

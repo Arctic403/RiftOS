@@ -8,6 +8,9 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Future
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -60,6 +63,14 @@ class RiftToolHost(
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val sandbox: RiftToolSandbox
+    private val riftCloud = RiftCloudToolBridge(appContext)
+    private val riftCloudExecutor = ThreadPoolExecutor(
+        0,
+        2,
+        30L,
+        TimeUnit.SECONDS,
+        SynchronousQueue()
+    )
     private data class CliJob(
         val id: String,
         val requestId: String,
@@ -88,7 +99,7 @@ class RiftToolHost(
             "cancelled_may_have_applied",
             "completed_after_cancel_request"
         )
-        RiftMcpRuntime.cliEvents().emitJob(
+        RiftCliRuntime.events().emitJob(
             type = type,
             jobId = job.id,
             requestId = job.requestId,
@@ -126,9 +137,9 @@ class RiftToolHost(
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v2")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug", "rift_cloud")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")))
-        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
+        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec", "rift_cloud")))
 
     fun setAccess(read: Boolean, write: Boolean): JSONObject {
         prefs.edit()
@@ -297,6 +308,46 @@ class RiftToolHost(
                     .put("component", stringProperty("Optional exact component filter."))
                     .put("sinceSequence", JSONObject().put("type", "integer").put("description", "Only return events newer than this sequence."))
                     .put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 200))
+            )
+        ))
+        .put(tool(
+            "rift_cloud",
+            "Use the installed RiftCloud app through its explicit local Binder bridge. Cloudflare credentials remain inside RiftCloud and are never returned. Supports account verification/diagnostics, Worker listing, source open/pull, source replacement/upload from RiftOS workspace, Worker delete, secrets, settings, workers.dev subdomain controls, versions, deployments, and deployment creation. Read permission is required for all operations; RiftOS write permission is additionally required for mutating operations.",
+            objectSchema(
+                JSONObject()
+                    .put("op", JSONObject()
+                        .put("type", "string")
+                        .put("enum", JSONArray(listOf(
+                            "status", "open_app", "verify", "diagnose", "workers",
+                            "source_open", "source_read", "source_close", "source_pull",
+                            "replace_begin", "replace_from_workspace",
+                            "upload_begin", "upload_write", "upload_abort", "upload_commit", "upload_from_workspace",
+                            "worker_delete",
+                            "secrets", "secret_put", "secret_delete",
+                            "settings_get", "settings_patch",
+                            "subdomain_get", "subdomain_update", "subdomain_delete",
+                            "versions", "deployments", "deployment_create"
+                        ))))
+                    .put("workerId", stringProperty("Cloudflare Worker script name."))
+                    .put("path", stringProperty("RiftOS workspace path used by source_pull, replace_from_workspace, or upload_from_workspace."))
+                    .put("overwrite", booleanProperty("Allow source_pull to replace an existing workspace destination."))
+                    .put("handle", stringProperty("Opaque RiftCloud source handle returned by source_open."))
+                    .put("offset", JSONObject().put("type", "integer").put("minimum", 0))
+                    .put("maxBytes", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 98304))
+                    .put("stage", stringProperty("Opaque RiftCloud upload stage id."))
+                    .put("data", stringProperty("Base64 upload chunk for upload_write. Prefer upload_from_workspace for large source."))
+                    .put("metadata", JSONObject().put("type", "object").put("description", "Cloudflare Worker upload metadata, including main_module/body_part, bindings, migrations, compatibility settings, and related script metadata."))
+                    .put("partName", stringProperty("Worker source multipart part name; defaults to index.js."))
+                    .put("contentType", stringProperty("Worker source MIME type; defaults to application/javascript+module."))
+                    .put("confirm", stringProperty("For worker_delete, must exactly equal workerId."))
+                    .put("name", stringProperty("Worker secret/binding name."))
+                    .put("value", stringProperty("Secret value for secret_put. It is sent to RiftCloud and is not returned."))
+                    .put("settings", JSONObject().put("type", "object").put("description", "Cloudflare script-settings PATCH payload."))
+                    .put("enabled", booleanProperty("workers.dev subdomain enabled state."))
+                    .put("previewsEnabled", booleanProperty("workers.dev preview URLs enabled state."))
+                    .put("versions", JSONObject().put("type", "array").put("description", "Deployment version rows: {version_id, percentage}."))
+                    .put("message", stringProperty("Optional deployment annotation/message.")),
+                listOf("op")
             )
         ))
         // Keep the published rift_workspace_exec schema/description stable while Project Intelligence v2 evolves behind it.
@@ -805,6 +856,57 @@ class RiftToolHost(
             }
             return
         }
+        if (name == "rift_cloud") {
+            val normalizedArgs = JSONObject(args.toString())
+            val mutatingRequest = riftCloud.mutates(normalizedArgs)
+            if (!bypassAccess && (!allowRead() || (mutatingRequest && !allowWrite()))) {
+                val error = if (!allowRead()) {
+                    "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
+                } else {
+                    "Rift MCP write access is disabled on this device. Enable it for mutating RiftCloud operations."
+                }
+                recordAudit(name, normalizedArgs, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return
+            }
+
+            val startedAt = SystemClock.elapsedRealtime()
+            try {
+                riftCloudExecutor.execute {
+                    try {
+                        val value = riftCloud.execute(normalizedArgs)
+                        recordAudit(
+                            name,
+                            normalizedArgs,
+                            true,
+                            null,
+                            SystemClock.elapsedRealtime() - startedAt
+                        )
+                        reply(
+                            JSONObject()
+                                .put("ok", true)
+                                .put("name", name)
+                                .put("value", value)
+                        )
+                    } catch (failure: Throwable) {
+                        val error = failure.message ?: "RiftCloud bridge call failed"
+                        recordAudit(
+                            name,
+                            normalizedArgs,
+                            false,
+                            error,
+                            SystemClock.elapsedRealtime() - startedAt
+                        )
+                        reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                    }
+                }
+            } catch (failure: java.util.concurrent.RejectedExecutionException) {
+                val error = "RiftCloud bridge workers are occupied by stalled calls"
+                recordAudit(name, normalizedArgs, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+            }
+            return
+        }
         if (name == "rift_shell_exec") {
             val command = args.optString("command").trim()
             if (command.isBlank()) {
@@ -941,6 +1043,8 @@ class RiftToolHost(
     fun shutdown() {
         cancelAllCliJobs("RiftToolHost shutdown")
         cliJobs.clear()
+        riftCloud.close()
+        riftCloudExecutor.shutdownNow()
         sandbox.shutdown()
     }
 
@@ -1030,6 +1134,7 @@ class RiftToolHost(
         "projectExport", "rift_project_export" -> "rift_project_export"
         "workspaceDiff", "rift_workspace_diff" -> "rift_workspace_diff"
         "debug", "rift_debug" -> "rift_debug"
+        "riftcloud", "rift_cloud" -> "rift_cloud"
         else -> raw.trim()
     }
 
@@ -1103,6 +1208,13 @@ class RiftToolHost(
         "rift_workspace_diff" -> args.optString("path").ifBlank { "workspace" }.take(300)
         "rift_info" -> "sandbox"
         "rift_debug" -> args.optString("action", "status").trim().lowercase().ifBlank { "status" }
+        "rift_cloud" -> buildString {
+            append(args.optString("op").trim().lowercase().ifBlank { "unknown" })
+            val worker = args.optString("workerId").trim()
+            val path = args.optString("path").trim()
+            if (worker.isNotBlank()) append(" · worker=").append(worker.take(180))
+            if (path.isNotBlank()) append(" · path=").append(path.take(180))
+        }.take(300)
         "rift_shell_exec" -> args.optString("command").trim().takeWhile { !it.isWhitespace() }
             .take(48).replace(Regex("[^A-Za-z0-9_-]"), "?") + " [arguments omitted]"
         else -> args.optString("path").take(300)

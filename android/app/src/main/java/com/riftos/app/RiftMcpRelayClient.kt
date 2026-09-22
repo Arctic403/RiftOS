@@ -21,7 +21,6 @@ import kotlin.random.Random
 class RiftMcpRelayClient(
     context: Context,
     private val server: RiftMcpServer,
-    private val cliEvents: RiftCliEventBus,
     debugHub: RiftDebugHub? = null
 ) {
     companion object {
@@ -44,16 +43,9 @@ class RiftMcpRelayClient(
     @Volatile private var state = "disabled"
     @Volatile private var detail = "Relay is disabled"
     @Volatile private var connectedAt = 0L
-    @Volatile private var lastCliAckSequence = settings.loadCliAckSequence()
     private var attempts = 0
     private var socket: WebSocket? = null
     private var reconnect: ScheduledFuture<*>? = null
-    private val cliEventListener: (JSONObject) -> Unit = { event -> sendCliEvent(event) }
-
-    init {
-        cliEvents.addListener(cliEventListener)
-    }
-
     fun start() {
         val config = settings.load()
         if (!config.enabled) {
@@ -98,8 +90,6 @@ class RiftMcpRelayClient(
             .put("deviceId", config.deviceId)
             .put("connectedAt", connectedAt)
             .put("attempts", attempts)
-            .put("cliLastAckSequence", lastCliAckSequence)
-            .put("cliEvents", cliEvents.status())
     }
 
     private fun open(config: RiftRelayConfig) {
@@ -146,7 +136,6 @@ class RiftMcpRelayClient(
                     .put("type", "device.hello")
                     .put("protocol", PROTOCOL)
                     .put("deviceId", config.deviceId)
-                    .put("cliAckSequence", lastCliAckSequence)
                     .put("client", JSONObject()
                         .put("name", "RiftOS")
                         .put("version", BuildConfig.VERSION_NAME)
@@ -171,44 +160,16 @@ class RiftMcpRelayClient(
                     attempts = 0
                     connectedAt = System.currentTimeMillis()
                     update("connected", "ChatGPT relay connected")
-                    val resumeAfter = message.optLong("cliResumeAfter", 0L).coerceAtLeast(0L)
                     debug(
                         operation = "relay.ready",
-                        outcome = "ok",
-                        attributes = mapOf("resumeAfter" to resumeAfter.toString())
+                        outcome = "ok"
                     )
-                    sendCliReplay(webSocket, resumeAfter)
                 }
                 "relay.ping" -> webSocket.send(
                     JSONObject().put("type", "device.pong").put("at", System.currentTimeMillis()).toString()
                 )
                 "mcp.request" -> handleMcpRequest(webSocket, message)
                 "mcp.notification" -> handleMcpNotification(message)
-                "cli.replay.request" -> {
-                    val after = message.optLong("after", 0L).coerceAtLeast(0L)
-                    debug(
-                        operation = "cli.replay.request",
-                        outcome = "received",
-                        attributes = mapOf("after" to after.toString())
-                    )
-                    sendCliReplay(webSocket, after)
-                }
-                "cli.ack" -> {
-                    val sequence = message.optLong("sequence", 0L)
-                    val advanced = sequence > lastCliAckSequence
-                    if (advanced) {
-                        lastCliAckSequence = sequence
-                        settings.saveCliAckSequence(sequence)
-                    }
-                    debug(
-                        operation = "cli.ack",
-                        outcome = if (sequence > 0L) "received" else "invalid",
-                        attributes = mapOf(
-                            "eventSequence" to sequence.toString(),
-                            "advanced" to advanced.toString()
-                        )
-                    )
-                }
                 "relay.error" -> update("relay-error", message.optString("message", "Relay rejected the connection"))
                 else -> sendProtocolError(webSocket, message.optString("requestId").takeIf { it.isNotBlank() }, "Unknown relay message")
             }
@@ -287,58 +248,6 @@ class RiftMcpRelayClient(
         }
     }
 
-    private fun sendCliEvent(event: JSONObject) {
-        val webSocket = synchronized(lock) { socket }
-        if (webSocket == null || !isCurrent(webSocket)) {
-            debug(
-                operation = "cli.event.send",
-                outcome = "deferred_no_socket",
-                attributes = cliEventDebugAttributes(event)
-            )
-            return
-        }
-        sendCliEvent(webSocket, event)
-    }
-
-    private fun sendCliEvent(webSocket: WebSocket, event: JSONObject) {
-        val envelope = JSONObject()
-            .put("type", "cli.event")
-            .put("protocol", PROTOCOL)
-            .put("event", event)
-            .toString()
-        val envelopeBytes = envelope.toByteArray(Charsets.UTF_8).size
-        if (envelopeBytes > MAX_MESSAGE_BYTES) {
-            debug(
-                operation = "cli.event.send",
-                outcome = "rejected_oversize",
-                attributes = cliEventDebugAttributes(event) + mapOf("bytes" to envelopeBytes.toString())
-            )
-            return
-        }
-        val queued = webSocket.send(envelope)
-        debug(
-            operation = "cli.event.send",
-            outcome = if (queued) "queued" else "queue_rejected",
-            attributes = cliEventDebugAttributes(event) + mapOf("bytes" to envelopeBytes.toString())
-        )
-    }
-
-    private fun sendCliReplay(webSocket: WebSocket, afterSequence: Long) {
-        val replay = cliEvents.replayAfter(afterSequence)
-        debug(
-            operation = "cli.replay.send",
-            outcome = "start",
-            attributes = mapOf(
-                "after" to afterSequence.toString(),
-                "count" to replay.size.toString()
-            )
-        )
-        replay.forEach { event ->
-            if (!isCurrent(webSocket)) return
-            sendCliEvent(webSocket, event)
-        }
-    }
-
     private fun sendProtocolError(webSocket: WebSocket, requestId: String?, message: String) {
         webSocket.send(
             JSONObject()
@@ -378,14 +287,6 @@ class RiftMcpRelayClient(
         socket = null
         true
     }
-
-    private fun cliEventDebugAttributes(event: JSONObject): Map<String, String> = linkedMapOf(
-        "eventSequence" to event.optLong("sequence", 0L).toString(),
-        "eventType" to event.optString("type").take(128),
-        "lane" to event.optString("lane").take(64),
-        "status" to event.optString("status").take(64),
-        "terminal" to event.optBoolean("terminal", false).toString()
-    )
 
     private fun debug(
         operation: String,

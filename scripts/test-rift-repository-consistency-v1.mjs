@@ -136,6 +136,25 @@ const sameEdge = edge('resolves-to', dep, b, dep.stableKey, { note: 'content-onl
 assert.equal(e2.id, sameEdge.id, 'edge content changes must retain stable edge identity');
 assert.notEqual(e2.contentSha256, sameEdge.contentSha256, 'edge content hash must detect changed edge content');
 
+const MAX_STABLE_KEY_CHARS = 2048;
+function boundedStableKeyForTest(value) {
+  const normalized = value.trim();
+  assert.notEqual(normalized, '', 'stable keys must not be blank');
+  if (normalized.length <= MAX_STABLE_KEY_CHARS) return normalized;
+  const digestSuffix = `…#sha256:${sha(normalized)}`;
+  return normalized.slice(0, MAX_STABLE_KEY_CHARS - digestSuffix.length) + digestSuffix;
+}
+
+const longStablePrefix = 'workspace/Test/' + 'x'.repeat(2100);
+const longStableA = longStablePrefix + '/A.kt';
+const longStableB = longStablePrefix + '/B.kt';
+const boundedLongA = boundedStableKeyForTest(longStableA);
+const boundedLongB = boundedStableKeyForTest(longStableB);
+assert.equal(boundedLongA.length, MAX_STABLE_KEY_CHARS, 'overlong stored stable keys must be bounded exactly');
+assert.equal(boundedLongB.length, MAX_STABLE_KEY_CHARS, 'overlong stored stable keys must be bounded exactly');
+assert.notEqual(boundedLongA, boundedLongB, 'digest suffix must prevent shared-prefix truncation collisions');
+assert.notEqual(factId('file', longStableA), factId('file', longStableB), 'full normalized long key must drive fact identity');
+
 assert.match(observer, /internal class RiftRepositoryConsistencyObserver/);
 assert.match(observer, /const val VERSION = 2/);
 assert.match(observer, /const val FORMAT = "rift-repository-fact-graph-v2"/);
@@ -145,6 +164,14 @@ assert.match(observer, /MAX_FACTS = 4_096/);
 assert.match(observer, /MAX_EDGES = 4_096/);
 assert.match(observer, /MAX_FINDINGS = 1_024/);
 assert.match(observer, /MAX_CACHE_BYTES = 4 \* 1024 \* 1024/);
+assert.match(observer, /MAX_STABLE_KEY_CHARS = 2_048/);
+assert.match(observer, /private fun normalizedStableKey\(value: String\): String/);
+assert.match(observer, /private fun boundedStableKey\(value: String\): String/);
+assert.match(observer, /val digestSuffix = "…#sha256:\$\{RiftPatchManifestV1\.sha256Canonical\(normalized\)\}"/);
+assert.match(observer, /return normalized\.take\(prefixLength\) \+ digestSuffix/);
+assert.match(observer, /\.put\("stableKey", normalizedStableKey\(stableKey\)\)/);
+assert.match(observer, /\.put\("stableKey", boundedStableKey\(stableKey\)\)/);
+assert.ok(!observer.includes('Repository consistency stable key exceeds $MAX_STABLE_KEY_CHARS characters'), 'overlong valid stable keys must be compacted, not rejected');
 assert.match(observer, /contentHashSeparateFromIdentity/);
 assert.match(observer, /fileContentBound/);
 assert.match(observer, /sourceOfTruth", "project-intelligence-v2-content-verified"/);
