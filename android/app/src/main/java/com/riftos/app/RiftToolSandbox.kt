@@ -1406,12 +1406,16 @@ internal class RiftToolSandbox(context: Context) {
         val boundedFileLimit = fileLimit.coerceAtLeast(1)
         val boundedEdgeLimit = edgeLimit.coerceAtLeast(1)
         val q = query.trim().lowercase()
-        val indexed = symbolIndex.filterKeys { isPathWithin(it, path) }
-        val repositoryFiles = repositoryFileIndex.filterKeys { isPathWithin(it, path) }
-        val resolutionPaths = if (includeFileEvidence) repositoryFiles.keys.toSet() else indexed.keys.toSet()
+        val indexed = symbolIndex.filterKeys { isPathWithin(it, path) }.toSortedMap()
+        val repositoryFiles = repositoryFileIndex.filterKeys { isPathWithin(it, path) }.toSortedMap()
+        val resolutionPaths = if (includeFileEvidence) {
+            repositoryFiles.keys.toSortedSet()
+        } else {
+            indexed.keys.toSortedSet()
+        }
         val selected = indexed.filter { (sourcePath, file) ->
             q.isEmpty() || sourcePath.lowercase().contains(q) || file.symbols.any { it.name.lowercase().contains(q) }
-        }
+        }.toSortedMap()
 
         val edges = JSONArray()
         var resolved = 0
@@ -2050,6 +2054,11 @@ internal class RiftToolSandbox(context: Context) {
         return score
     }
 
+    private fun uniqueDependencyCandidate(candidates: Sequence<String>): String? {
+        val distinct = candidates.distinct().take(2).toList()
+        return distinct.singleOrNull()
+    }
+
     private fun resolveDependency(projectPath: String, sourcePath: String, dependency: DependencyRecord, allPaths: Set<String>): String? {
         val specifier = dependency.specifier.trim().replace('\\', '/')
         if (specifier.isBlank()) return null
@@ -2079,13 +2088,30 @@ internal class RiftToolSandbox(context: Context) {
         }
         if (dependency.kind == "python") {
             val module = specifier.substringBefore(' ').replace('.', '/')
-            allPaths.firstOrNull { it.endsWith("/$module.py") || it.endsWith("/$module/__init__.py") }?.let { return it }
+            return uniqueDependencyCandidate(
+                allPaths.asSequence().filter {
+                    it.endsWith("/$module.py") || it.endsWith("/$module/__init__.py")
+                }
+            )
+        }
+        if (dependency.kind == "import" && !specifier.startsWith(".") && !specifier.contains('/')) {
+            val qualified = specifier.removeSuffix(".*").trimEnd('.').replace('.', '/')
+            if (qualified.isNotBlank()) {
+                uniqueDependencyCandidate(
+                    allPaths.asSequence().filter {
+                        it.endsWith("/$qualified.kt") || it.endsWith("/$qualified.java")
+                    }
+                )?.let { return it }
+            }
         }
         val tail = specifier.substringAfterLast('.').substringAfterLast('/').substringAfterLast(':').trim('*')
         if (tail.isNotBlank()) {
-            symbolIndex.entries.firstOrNull { (candidatePath, indexed) ->
-                isPathWithin(candidatePath, projectPath) && indexed.symbols.any { it.name == tail }
-            }?.key?.let { return it }
+            return uniqueDependencyCandidate(
+                symbolIndex.entries.asSequence()
+                    .filter { (candidatePath, _) -> isPathWithin(candidatePath, projectPath) }
+                    .filter { (_, indexed) -> indexed.symbols.any { it.name == tail } }
+                    .map { it.key }
+            )
         }
         return null
     }

@@ -205,4 +205,39 @@ assert.match(sandbox, /responseMode", "compact"/);
 assert.match(sandbox, /requestedLimit\.coerceIn\(1, 40\)/);
 assert.match(gradle, /RiftRepositoryConsistencyObserver\.kt/);
 
-console.log('ok - N1.8.0 file facts are content-bound, PI cache v4 is bound to analyzer/build provenance, metadata-only files remain represented, and consistency forces verified content without a second observer scan');
+function uniqueDependencyCandidate(candidates) {
+  const distinct = [...new Set(candidates)].slice(0, 2);
+  return distinct.length === 1 ? distinct[0] : null;
+}
+
+assert.equal(
+  uniqueDependencyCandidate(['workspace/Test/z/Foo.kt', 'workspace/Test/a/Foo.kt']),
+  null,
+  'ambiguous dependency candidates must fail closed instead of picking traversal order'
+);
+assert.equal(
+  uniqueDependencyCandidate(['workspace/Test/a/Foo.kt', 'workspace/Test/z/Foo.kt']),
+  null,
+  'reversing ambiguous candidate order must not create a resolution'
+);
+assert.equal(
+  uniqueDependencyCandidate(['workspace/Test/a/Foo.kt']),
+  'workspace/Test/a/Foo.kt',
+  'a unique dependency candidate must still resolve'
+);
+
+assert.match(sandbox, /val indexed = symbolIndex\.filterKeys \{ isPathWithin\(it, path\) \}\.toSortedMap\(\)/);
+assert.match(sandbox, /val repositoryFiles = repositoryFileIndex\.filterKeys \{ isPathWithin\(it, path\) \}\.toSortedMap\(\)/);
+assert.match(sandbox, /repositoryFiles\.keys\.toSortedSet\(\)/);
+assert.match(sandbox, /indexed\.keys\.toSortedSet\(\)/);
+assert.match(sandbox, /private fun uniqueDependencyCandidate\(candidates: Sequence<String>\): String\?/);
+assert.match(sandbox, /return distinct\.singleOrNull\(\)/);
+assert.match(sandbox, /specifier\.removeSuffix\("\.\*"\)\.trimEnd\('\.'\)\.replace\('\.', '\/'\)/);
+const resolverStart = sandbox.indexOf('private fun uniqueDependencyCandidate');
+const resolverEnd = sandbox.indexOf('\n    private fun searchText', resolverStart);
+assert.ok(resolverStart >= 0 && resolverEnd > resolverStart, 'dependency resolver source must be locatable');
+const resolver = sandbox.slice(resolverStart, resolverEnd);
+assert.ok(!resolver.includes('allPaths.firstOrNull'), 'Python resolution must not pick the first traversal-order match');
+assert.ok(!resolver.includes('symbolIndex.entries.firstOrNull'), 'symbol resolution must not pick the first traversal-order match');
+
+console.log('ok - N1.8.0 file facts are content-bound, PI cache v4 is producer-bound, repository graph traversal is canonicalized, and ambiguous semantic dependency resolution fails closed');

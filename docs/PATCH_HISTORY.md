@@ -6,6 +6,59 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.35 — N1.8.0 semantic dependency order-determinism hardening
+
+### Restart torture failure
+
+Patch 10.34 installed source `1c0e644f7424d30f20acdc1da5cf540833802ff2` passed the producer-bound cache restart proof after a true Android force-stop/reopen:
+
+- installed version/source remained `0.11.11-relay-client` / `1c0e644f7424d30f20acdc1da5cf540833802ff2`;
+- RiftCLI correctly returned to its process-default OFF state;
+- the first PI-v2 graph read reported cache schema 4, `cacheLoadStatus=loaded`, `cacheRejectedReason=null`, analyzer version 2, the exact installed source SHA and `semanticProducerTrusted=true`;
+- PI-v2 reused all 258 RiftOS semantic files from the trusted cache.
+
+The subsequent consistency read found a new hard promotion blocker. Git remained on the same clean HEAD with no modified, deleted or untracked files. Counts also remained 1017 facts / 1072 edges / 258 repository files, but canonical graph SHA changed from the pre-restart `93bc7228ea90278bbb1d2421bad89850c1422c590bdd0113698f4f24de06736b` to `e3868cc6f0a260036a7383d5a78fa26eedb805d97e3fdb191f0e9d3856241dbd`. A second warm read stayed on `e3868...` with `changed=false`, proving a restart/reload divergence rather than random per-read drift.
+
+### Root cause
+
+PI-v2 persisted repository/index entries in sorted path order, so a process restart could change in-memory iteration order relative to the original scan history. `resolveDependency(...)` still used traversal-order first-match fallbacks:
+
+- Python module lookup used `allPaths.firstOrNull`;
+- generic symbol-tail lookup used `symbolIndex.entries.firstOrNull`.
+
+When more than one candidate matched, the selected `resolves-to` target could therefore depend on index insertion order. The number of resolved edges could stay unchanged while one or more targets changed, which changes the canonical observer graph for identical repository bytes.
+
+Sorting the candidate list and continuing to pick the first item would make the bug reproducible but would still publish a potentially false dependency edge, so that was rejected as insufficient hardening.
+
+### Hardening
+
+`RiftToolSandbox.kt` now:
+
+- canonicalizes in-scope semantic and repository maps with `toSortedMap()`;
+- canonicalizes the resolver path set with `toSortedSet()`;
+- keeps explicit relative-path candidate precedence deterministic;
+- resolves package-qualified Kotlin/Java imports to local `.kt`/`.java` targets only when the qualified path has exactly one candidate;
+- resolves Python module candidates only when exactly one path matches;
+- resolves generic symbol-tail candidates only when exactly one project-local semantic file owns that symbol;
+- leaves ambiguous candidates unresolved rather than choosing whichever entry appears first.
+
+This makes ambiguity fail closed and prevents cache reload/enumeration order from manufacturing deterministic-looking local dependency evidence.
+
+### Permanent regression
+
+`scripts/test-rift-repository-consistency-v1.mjs` now locks the semantic-order contract:
+
+- ambiguous candidate sets return no target regardless of candidate order;
+- a unique candidate still resolves;
+- graph input maps/path sets are required to use canonical ordering;
+- the dependency resolver source must not contain `allPaths.firstOrNull` or `symbolIndex.entries.firstOrNull`.
+
+### Validation and promotion state
+
+Local `riftbuild validate android` is green on Android project SHA `58e280df0672481719baba96ab1390427fd85ace56ddaf507fa66324aa0d7f00`.
+
+Patch 10.35 is **source-implemented only** at this point. N1.8.0 remains unpromoted. Required next proof is external Builder/Kotlin compilation, install of the new source, true process restart, and canonical graph parity across cold/warm/reloaded-cache states before the remaining torture matrix resumes. The staged subsystem/domain planner, N1.8.1 and N2 remain blocked.
+
 ## Patch 10.34 — N1.8.0 semantic-cache producer provenance hardening
 
 ### Second installed torture round
