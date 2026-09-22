@@ -8,14 +8,14 @@ const sandbox = read(k + 'RiftToolSandbox.kt');
 const observer = read(k + 'RiftRepositoryConsistencyObserver.kt');
 const pkg = JSON.parse(read('package.json'));
 
-assert.match(source, /const val VERSION = 5/);
+assert.match(source, /const val VERSION = 6/);
 assert.match(source, /const val MAX_SYNTAX_ISSUES = 128/);
 assert.match(source, /data class SyntaxIssue\(/);
 assert.match(source, /data class SyntaxEvidence\(/);
 assert.match(source, /val localIntent: Boolean\? = null/);
 assert.match(source, /syntax = analyzeSyntax\(language, normalized\)/);
 assert.match(source, /private fun analyzeSyntax\(language: String, text: String\): SyntaxEvidence/);
-assert.match(source, /mode = "bounded-structural-v3-conservative"/);
+assert.match(source, /mode = "bounded-structural-v4-conservative"/);
 for (const code of [
   'unexpected-closing-delimiter',
   'mismatched-delimiter',
@@ -37,6 +37,8 @@ assert.match(source, /fun kotlinInterpolationEnd\(/);
 assert.match(source, /fun maskKotlinInterpolatedStrings\(/);
 assert.match(source, /fun javascriptRegexMayStart\(/);
 assert.match(source, /fun javascriptRegexEnd\(/);
+assert.ok(source.includes('index = regexEnd'), 'structural scanner must resume exactly after the regex literal');
+assert.ok(!source.includes('index = regexEnd + 1'), 'regex scanning must not skip the token immediately after a regex literal');
 assert.match(source, /fun javascriptTemplateEnd\(/);
 assert.match(source, /fun javascriptTemplateExpressionEnd\(/);
 assert.match(source, /fun maskJavascriptTemplates\(/);
@@ -45,7 +47,7 @@ assert.match(source, /filter\(::javascriptMatchStartsInCode\)/);
 assert.ok(!source.includes('fun kotlinInterpolatedStringEnd('), 'retired last-quote Kotlin interpolation heuristic must not return');
 assert.ok(source.includes('(?:import|export)'), 'static JS from-import extraction must be statement-anchored');
 
-assert.match(sandbox, /PROJECT_INTELLIGENCE_CACHE_VERSION = 8/);
+assert.match(sandbox, /PROJECT_INTELLIGENCE_CACHE_VERSION = 9/);
 assert.match(sandbox, /MAX_INTEGRITY_FILES = 4_096/);
 assert.match(sandbox, /MAX_INTEGRITY_DEPENDENCIES = 4_096/);
 assert.match(sandbox, /MAX_INTEGRITY_FINDINGS = 1_024/);
@@ -67,8 +69,8 @@ assert.match(sandbox, /analysis\.syntax\.issues/);
 assert.match(sandbox, /syntaxMode = analysis\.syntax\.mode/);
 assert.match(sandbox, /syntaxValid = analysis\.syntax\.valid/);
 assert.match(sandbox, /"not-applicable" -> Unit/);
-assert.match(sandbox, /"bounded-structural-v3-conservative"/);
-assert.match(sandbox, /rift-source-intelligence-v5-bounded-structural-v3/);
+assert.match(sandbox, /"bounded-structural-v4-conservative"/);
+assert.match(sandbox, /rift-source-intelligence-v6-bounded-structural-v4/);
 assert.match(sandbox, /fun sourcePackagePath\(/);
 assert.match(sandbox, /"\/src\/main\/java\/"/);
 assert.match(sandbox, /"qualified-package-not-local"/);

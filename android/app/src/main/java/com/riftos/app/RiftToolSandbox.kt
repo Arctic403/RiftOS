@@ -55,7 +55,7 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_INTEGRITY_PREVIEW = 240
         private const val MAX_PERSISTED_INDEX_FILES = 4000
         private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
-        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 8
+        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 9
         private const val MAX_HUNKS = 128
         private const val MAX_SNAPSHOT_FILES = 50_000
         private const val MAX_ARCHIVE_ENTRIES = 50_000
@@ -1663,7 +1663,7 @@ internal class RiftToolSandbox(context: Context) {
                 .put("syntaxIssues", syntaxRows))
 
             when (indexedFile.syntaxMode) {
-                "bounded-structural-v3-conservative" -> syntaxChecked += 1
+                "bounded-structural-v4-conservative" -> syntaxChecked += 1
                 "not-applicable" -> Unit
                 else -> incompleteReasons += "syntax-evidence-unavailable"
             }
@@ -1679,7 +1679,7 @@ internal class RiftToolSandbox(context: Context) {
                         .put("line", issue.line)
                         .put("column", issue.column)
                         .put("detail", issue.detail)
-                        .put("proofSource", "rift-source-intelligence-v5-bounded-structural-v3")
+                        .put("proofSource", "rift-source-intelligence-v6-bounded-structural-v4")
                         .put("blocksN181Promotion", true))
                 }
             }
@@ -1830,7 +1830,7 @@ internal class RiftToolSandbox(context: Context) {
                 .put("cacheLoadStatus", indexStats.optString("cacheLoadStatus"))
                 .put("cacheRejectedReason", indexStats.opt("cacheRejectedReason") ?: JSONObject.NULL))
             .put("syntax", JSONObject()
-                .put("mode", "bounded-structural-v3-conservative")
+                .put("mode", "bounded-structural-v4-conservative")
                 .put("filesChecked", syntaxChecked)
                 .put("invalidFiles", syntaxInvalid))
             .put("counts", JSONObject()

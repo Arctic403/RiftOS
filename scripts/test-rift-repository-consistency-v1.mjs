@@ -248,7 +248,7 @@ assert.match(sandbox, /private data class RepositoryFileEvidence\(/);
 assert.match(sandbox, /val sha256: String\?/);
 assert.match(sandbox, /private val repositoryFileIndex = LinkedHashMap<String, RepositoryFileEvidence>\(\)/);
 assert.match(sandbox, /val sha256: String,/);
-assert.match(sandbox, /PROJECT_INTELLIGENCE_CACHE_VERSION = 8/);
+assert.match(sandbox, /PROJECT_INTELLIGENCE_CACHE_VERSION = 9/);
 assert.match(sandbox, /root\.optInt\("version", 0\) != PROJECT_INTELLIGENCE_CACHE_VERSION/);
 assert.match(sandbox, /\.put\("version", PROJECT_INTELLIGENCE_CACHE_VERSION\)/);
 assert.match(sandbox, /private fun projectIntelligenceCacheIntegrityFailure\(root: JSONObject\): String\?/);

@@ -6,6 +6,29 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.47 — N1.8.1 regex-resume off-by-one recovery
+
+Installed Patch 10.46 proved the v7→v8 cache migration and eliminated the remaining dynamic-import false positives (`localMissing=0`), but it exposed one structural-v3 contract bug severe enough to invalidate the full integrity verdict.
+
+Live Patch 10.46 evidence:
+- analyzer v5 / cache v8 loaded live and rejected the old cache with `cacheRejectedReason=cache-schema-version` before rebuilding;
+- `localMissing=0`, confirming the executable-code dynamic-import filter fixed the three assertion-string dependency false positives from Patch 10.45;
+- the full integrity oracle returned `complete=false`, `clean=false`, `syntax-issue-bound`, 260 selected/indexed files, 31 syntax-invalid files and 922 findings;
+- representative failures were valid Node regressions such as `assert.match(..., /regex/)` reported as many unclosed `(` delimiters.
+
+Root cause was exact and deterministic: `javascriptRegexEnd()` returns the index immediately after the regex literal, but the structural scanner caller still resumed at `regexEnd + 1`. That skipped the token immediately after every regex; in common assertion forms that token was the closing `)`, causing the delimiter stack to accumulate false unclosed openings until the 128-issue per-file bound was hit.
+
+Patch 10.47 fixes the contract:
+- structural scanning resumes at `index = regexEnd`, never `regexEnd + 1`;
+- `RiftSourceIntelligenceV2.VERSION` advances to v6;
+- PI persistence advances to cache schema v9 so syntax rows produced by the broken v8 scanner cannot be reused;
+- syntax mode advances to `bounded-structural-v4-conservative` and finding proof source to `rift-source-intelligence-v6-bounded-structural-v4`;
+- `scripts/test-rift-integrity-v1.mjs` permanently asserts the exact regex-resume convention and forbids the old `regexEnd + 1` call site;
+- neighboring semantic-impact and N1.8.0 consistency source gates are updated to analyzer/cache v6/v9.
+
+The installed v5 runtime also propagates `syntax-issue-bound` into the N1.8.0 PI completeness result while scanning the current workspace, although repository-consistency findings remain zero. The old runtime therefore cannot certify the fix that replaces it. Exact N1.8.0 completeness recovery and N1.8.1 cleanliness are explicit post-install requirements for Patch 10.47.
+
+Local Android source validation is green. Patch 10.47 remains unpromoted until Builder Node/Kotlin compilation, install, v8→v9 migration/restart, exact N1.8.0 recovery and the full N1.8.1 oracle plus remaining adversarial matrix pass.
 ## Patch 10.46 — N1.8.1 recursive lexical hardening
 
 Installed Patch 10.45 proved analyzer v4/cache v7 was a major improvement but not yet promotion-safe. The full live integrity oracle returned `complete=true`, `clean=false`, 261 indexed/selected files, 772 dependencies, 56 local-resolved, 3 local-missing, 0 ambiguous, 713 external/unclassified and 37 findings. This was down from 176 findings in Patch 10.44, and the v6→v7 cache migration correctly failed closed with `cacheRejectedReason=cache-schema-version` before rebuilding all 261 files.

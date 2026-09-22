@@ -7,7 +7,7 @@ package com.riftos.app
  * symbol and dependency interpretation cannot drift between the two evidence paths.
  */
 internal object RiftSourceIntelligenceV2 {
-    const val VERSION = 5
+    const val VERSION = 6
     const val MAX_SEMANTIC_DELTA_ENTRIES = 1_000
     const val MAX_ANALYSIS_SYMBOLS = 4_096
     const val MAX_ANALYSIS_DEPENDENCIES = 4_096
@@ -839,7 +839,7 @@ internal object RiftSourceIntelligenceV2 {
                 ) {
                     val regexEnd = javascriptRegexEnd(sourceLine, index)
                     if (regexEnd > index) {
-                        index = regexEnd + 1
+                        index = regexEnd
                         while (index < sourceLine.length && sourceLine[index].isLetter()) index += 1
                         continue
                     }
@@ -947,7 +947,7 @@ internal object RiftSourceIntelligenceV2 {
         }
 
         return SyntaxEvidence(
-            mode = "bounded-structural-v3-conservative",
+            mode = "bounded-structural-v4-conservative",
             valid = issues.isEmpty(),
             issues = issues
         )
