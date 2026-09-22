@@ -309,6 +309,16 @@ class RiftNativeShellServices(context: Context) {
         }
         val activity=RiftMcpRuntime.activeActivity()
         val context=activity?:appContext
+        if(args.firstOrNull()?.lowercase()=="cli"){
+            args.removeAt(0)
+            if(args.isEmpty()) args.add("help")
+            val request=JSONObject()
+                .put("op","intelligence")
+                .put("cwd",cwd)
+                .put("argv",JSONArray(args))
+            val value=RiftOsLocalAgent.execute(context,request)
+            return Result(value.toString(2),value)
+        }
         return localAgent("riftos-agent",args){ request -> RiftOsLocalAgent.execute(context,request) }
     }
 
@@ -357,9 +367,10 @@ class RiftNativeShellServices(context: Context) {
         val sub=args.removeFirstOrNull()?.lowercase()?:"help"
         if(sub=="help") {
             require(args.isEmpty()) { "usage: $name help" }
+            val cliHelp=if(name=="riftos-agent") "\n$name cli [help|status|architecture|enable|disable|driver ...]" else ""
             return Result(
                 "$name Android-native local agent\n$name status\n$name open\n$name tree [limit]\n$name click <target>\n" +
-                    "$name tap <x> <y>\n$name swipe <x1> <y1> <x2> <y2> [ms]\n$name type <target> <text>\n$name back"
+                    "$name tap <x> <y>\n$name swipe <x1> <y1> <x2> <y2> [ms]\n$name type <target> <text>\n$name back" + cliHelp
             )
         }
         val request=JSONObject().put("op",sub)

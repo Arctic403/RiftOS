@@ -67,6 +67,17 @@ check(
 );
 
 check(
+  'RiftOS Local Agent exposes a bounded CLI compatibility namespace without exposing raw intelligence',
+  services.includes('if(args.firstOrNull()?.lowercase()=="cli")') &&
+    services.includes('.put("op","intelligence")') &&
+    services.includes('.put("cwd",cwd)') &&
+    services.includes('.put("argv",JSONArray(args))') &&
+    services.includes('$name cli [help|status|architecture|enable|disable|driver ...]') &&
+    services.includes('RiftOsLocalAgent.execute(context,request)') &&
+    !services.includes('if(args.firstOrNull()?.lowercase()=="intelligence")')
+);
+
+check(
   'CMake builds a dedicated shared native core',
   cmake.includes('add_library(') &&
     cmake.includes('riftcli') &&

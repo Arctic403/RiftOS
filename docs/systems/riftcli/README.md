@@ -73,7 +73,7 @@ Both ABIs are declared in the Android native build contract. A release is not co
 
 Gate N0 proved the native bootstrap on-device. The enable switch remains process-local, defaults OFF after every RiftOS process start, and still requires the literal `CONFIRM-EXPERIMENTAL` acknowledgement.
 
-The current host boundary is now fixed: MCP/RiftShell ingress enters the existing RiftOS Local Agent, the Local Agent invokes RiftCLI as an internal intelligence/tool layer, and the existing CLI execution supervisor delegates only through bounded RiftOS authorities. The `rift-cli` shell command is retained as a compatibility/development surface, but it is routed through `RiftOsLocalAgent` before reaching the native CLI core.
+The current host boundary is now fixed: MCP/RiftShell ingress enters the existing RiftOS Local Agent, the Local Agent invokes RiftCLI as an internal intelligence/tool layer, and the existing CLI execution supervisor delegates only through bounded RiftOS authorities. The `rift-cli` shell command is retained as a compatibility/development surface, and `riftos-agent cli ...` exposes the same bounded path specifically for Local Agent hosting tests. Both route through `RiftOsLocalAgent` before reaching the native CLI core; raw `riftos-agent intelligence ...` remains unexposed.
 
 **Freeze:** after this Local Agent hosting boundary is validated, no new CLI intelligence capability is added until N1.8.0 Repository Consistency Observer is fully torture-tested and promoted. Observer integration, Memory, Planner, Command Registry, Execution Supervisor expansion, Debug/history expansion, and Security/validation expansion remain blocked behind that gate.
 
@@ -92,6 +92,13 @@ rift-cli architecture
 rift-cli enable CONFIRM-EXPERIMENTAL
 rift-cli disable
 rift-cli driver request ...
+
+# equivalent Local Agent-host boundary test surface
+riftos-agent cli help
+riftos-agent cli status
+riftos-agent cli architecture
+riftos-agent cli enable CONFIRM-EXPERIMENTAL
+riftos-agent cli disable
 ```
 
 Each accepted N1 driver request authorizes at most **one RiftOS action**. Dependent work is issued as later external-driver requests after inspecting the previous result.
