@@ -6,6 +6,25 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.46 — N1.8.1 recursive lexical hardening
+
+Installed Patch 10.45 proved analyzer v4/cache v7 was a major improvement but not yet promotion-safe. The full live integrity oracle returned `complete=true`, `clean=false`, 261 indexed/selected files, 772 dependencies, 56 local-resolved, 3 local-missing, 0 ambiguous, 713 external/unclassified and 37 findings. This was down from 176 findings in Patch 10.44, and the v6→v7 cache migration correctly failed closed with `cacheRejectedReason=cache-schema-version` before rebuilding all 261 files.
+
+Remaining live defects were deterministic false positives:
+- 34 syntax findings across 9 valid files remained. Kotlin errors came from the v2 last-quote interpolation masking heuristic swallowing code after an interpolated string on the same line. JavaScript errors came from nested template literals/interpolations causing the outer template to terminate at an inner backtick, after which valid braces/comments/strings were misclassified;
+- the three `local-missing` findings were not executable imports. They came from literal assertion strings in `scripts/test-rift-shell-batch.mjs` and `scripts/test-riftpp-shell.mjs` containing text such as `import("./riftpp-core.js")` and `import("./riftvm.js")`.
+
+Patch 10.46 hardens the lexical layer:
+- `RiftSourceIntelligenceV2.VERSION` advances to v5 and PI persistence advances to cache schema v8, forcing stale v7 semantic rows to fail closed;
+- syntax mode advances to `bounded-structural-v3-conservative`;
+- the retired `kotlinInterpolatedStringEnd` last-quote heuristic is removed. Kotlin normal strings now use bounded quote scanning plus balanced interpolation-expression matching; only successfully parsed interpolated-string spans are masked, preserving code after the actual closing quote;
+- JavaScript template literals are parsed recursively: nested `${...}` expressions, nested template literals, quoted strings, comments and regex literals are walked to find the correct matching backtick. Successfully parsed template spans are masked while preserving newlines; malformed/unterminated templates remain unmasked so structural checking can still report them;
+- JavaScript dependency extraction builds a whole-text executable-code mask after template masking. Static import/export and dynamic `import()`/`require()` candidates are accepted only when the call token begins in executable code, preventing assertion strings/comments/templates/regex from creating fake dependency edges;
+- `scripts/test-rift-integrity-v1.mjs` permanently locks analyzer v5/cache v8, structural-v3, recursive template/interpolation helpers, executable-code filtering and absence of the retired Kotlin last-quote heuristic. Neighboring semantic-impact and N1.8.0 consistency gates are updated to the new contract.
+
+Local Android source validation is green. The promoted N1.8.0 consistency foundation remains complete with zero findings/incomplete reasons and stabilizes warm at 1034 facts / 1088 edges / 261 files, verified cache and `changed=false` on the warm pre-documentation validation read. Repository audit remains unchanged except for the pre-existing medium `RiftSecretStore.kt` sensitive-looking-filename heuristic.
+
+Patch 10.46 is not N1.8.1 promotion. Builder Node/Kotlin compilation, install, v7→v8 migration/restart, a clean full-repository integrity rerun and the remaining adversarial syntax/import/path-drift/frontier-parity matrix are still required.
 ## Patch 10.45 — N1.8.1 live false-positive hardening
 
 The first installed Patch 10.44 N1.8.1 integrity run proved the new surface was live and that PI cache migration failed closed as intended, but it also exposed three promotion-blocking correctness defects:

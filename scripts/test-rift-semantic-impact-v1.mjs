@@ -11,7 +11,7 @@ const gradle = read('android/app/build.gradle.kts');
 const ownership = read('docs/SOURCE_OWNERSHIP.md');
 
 assert.match(source, /internal object RiftSourceIntelligenceV2/);
-assert.match(source, /const val VERSION = 4/);
+assert.match(source, /const val VERSION = 5/);
 assert.match(source, /MAX_SEMANTIC_DELTA_ENTRIES = 1_000/);
 assert.match(source, /fun analyze\(/);
 assert.match(source, /fun diff\(/);

@@ -7,7 +7,7 @@ package com.riftos.app
  * symbol and dependency interpretation cannot drift between the two evidence paths.
  */
 internal object RiftSourceIntelligenceV2 {
-    const val VERSION = 4
+    const val VERSION = 5
     const val MAX_SEMANTIC_DELTA_ENTRIES = 1_000
     const val MAX_ANALYSIS_SYMBOLS = 4_096
     const val MAX_ANALYSIS_DEPENDENCIES = 4_096
@@ -298,6 +298,363 @@ internal object RiftSourceIntelligenceV2 {
         return out.distinctBy { "${it.path}:${it.line}:${it.name}:${it.kind}" }
     }
 
+    private fun maskRangePreservingNewlines(chars: CharArray, start: Int, endExclusive: Int) {
+        var index = start.coerceAtLeast(0)
+        val end = endExclusive.coerceAtMost(chars.size)
+        while (index < end) {
+            if (chars[index] != '\n') chars[index] = ' '
+            index += 1
+        }
+    }
+
+    private fun javascriptRegexMayStart(text: String, slashIndex: Int): Boolean {
+        var cursor = slashIndex - 1
+        while (cursor >= 0 && text[cursor].isWhitespace()) cursor -= 1
+        if (cursor < 0) return true
+        if (text[cursor] in "([{:;,=!?&|+-*%^~<>") return true
+        val lineStart = text.lastIndexOf('\n', cursor).let { if (it < 0) 0 else it + 1 }
+        val prefix = text.substring(lineStart, cursor + 1)
+        val token = Regex("([A-Za-z_$][A-Za-z0-9_$]*)\\s*$")
+            .find(prefix)?.groupValues?.getOrNull(1)
+        return token in setOf(
+            "return", "throw", "case", "delete", "typeof", "void", "new",
+            "yield", "await", "else", "do", "in", "of"
+        )
+    }
+
+    private fun javascriptRegexEnd(text: String, slashIndex: Int): Int {
+        var cursor = slashIndex + 1
+        var escaped = false
+        var characterClass = false
+        while (cursor < text.length) {
+            val value = text[cursor]
+            if (value == '\n' || value == '\r') return -1
+            if (escaped) {
+                escaped = false
+            } else if (value == '\\') {
+                escaped = true
+            } else if (value == '[') {
+                characterClass = true
+            } else if (value == ']' && characterClass) {
+                characterClass = false
+            } else if (value == '/' && !characterClass) {
+                return cursor + 1
+            }
+            cursor += 1
+        }
+        return -1
+    }
+
+    private fun javascriptQuotedEnd(text: String, startIndex: Int, quote: Char): Int {
+        var cursor = startIndex + 1
+        var escaped = false
+        while (cursor < text.length) {
+            val value = text[cursor]
+            if (value == '\n' || value == '\r') return -1
+            if (escaped) {
+                escaped = false
+            } else if (value == '\\') {
+                escaped = true
+            } else if (value == quote) {
+                return cursor + 1
+            }
+            cursor += 1
+        }
+        return -1
+    }
+
+    private fun javascriptTemplateExpressionEnd(text: String, startIndex: Int): Int {
+        var cursor = startIndex
+        var depth = 1
+        while (cursor < text.length) {
+            val value = text[cursor]
+            val next = text.getOrNull(cursor + 1)
+            if (value == '\'' || value == '"') {
+                val end = javascriptQuotedEnd(text, cursor, value)
+                if (end < 0) return -1
+                cursor = end
+                continue
+            }
+            if (value == 96.toChar()) {
+                val end = javascriptTemplateEnd(text, cursor)
+                if (end < 0) return -1
+                cursor = end
+                continue
+            }
+            if (value == '/' && next == '/') {
+                val newline = text.indexOf('\n', cursor + 2)
+                cursor = if (newline < 0) text.length else newline + 1
+                continue
+            }
+            if (value == '/' && next == '*') {
+                val end = text.indexOf("*/", cursor + 2)
+                if (end < 0) return -1
+                cursor = end + 2
+                continue
+            }
+            if (value == '/' && next != '/' && next != '*' && javascriptRegexMayStart(text, cursor)) {
+                val end = javascriptRegexEnd(text, cursor)
+                if (end > cursor) {
+                    cursor = end
+                    while (cursor < text.length && text[cursor].isLetter()) cursor += 1
+                    continue
+                }
+            }
+            if (value == '{') {
+                depth += 1
+            } else if (value == '}') {
+                depth -= 1
+                if (depth == 0) return cursor + 1
+            }
+            cursor += 1
+        }
+        return -1
+    }
+
+    private fun javascriptTemplateEnd(text: String, startIndex: Int): Int {
+        var cursor = startIndex + 1
+        while (cursor < text.length) {
+            val value = text[cursor]
+            if (value == '\\') {
+                cursor += 2
+                continue
+            }
+            if (value == 96.toChar()) return cursor + 1
+            if (value == '$' && text.getOrNull(cursor + 1) == '{') {
+                val end = javascriptTemplateExpressionEnd(text, cursor + 2)
+                if (end < 0) return -1
+                cursor = end
+                continue
+            }
+            cursor += 1
+        }
+        return -1
+    }
+
+    private fun maskJavascriptTemplates(text: String): String {
+        val chars = text.toCharArray()
+        var cursor = 0
+        var blockComment = false
+        while (cursor < text.length) {
+            val value = text[cursor]
+            val next = text.getOrNull(cursor + 1)
+            if (blockComment) {
+                if (value == '*' && next == '/') {
+                    blockComment = false
+                    cursor += 2
+                } else {
+                    cursor += 1
+                }
+                continue
+            }
+            if (value == '/' && next == '/') {
+                val newline = text.indexOf('\n', cursor + 2)
+                cursor = if (newline < 0) text.length else newline + 1
+                continue
+            }
+            if (value == '/' && next == '*') {
+                blockComment = true
+                cursor += 2
+                continue
+            }
+            if (value == '\'' || value == '"') {
+                val end = javascriptQuotedEnd(text, cursor, value)
+                cursor = if (end > cursor) end else cursor + 1
+                continue
+            }
+            if (value == '/' && next != '/' && next != '*' && javascriptRegexMayStart(text, cursor)) {
+                val end = javascriptRegexEnd(text, cursor)
+                if (end > cursor) {
+                    cursor = end
+                    while (cursor < text.length && text[cursor].isLetter()) cursor += 1
+                    continue
+                }
+            }
+            if (value == 96.toChar()) {
+                val end = javascriptTemplateEnd(text, cursor)
+                if (end > cursor) {
+                    maskRangePreservingNewlines(chars, cursor, end)
+                    cursor = end
+                    continue
+                }
+                break
+            }
+            cursor += 1
+        }
+        return String(chars)
+    }
+
+    private fun javascriptDependencyCodeMask(text: String): BooleanArray {
+        val masked = maskJavascriptTemplates(text)
+        val code = BooleanArray(masked.length)
+        var cursor = 0
+        var blockComment = false
+        while (cursor < masked.length) {
+            val value = masked[cursor]
+            val next = masked.getOrNull(cursor + 1)
+            if (blockComment) {
+                if (value == '*' && next == '/') {
+                    blockComment = false
+                    cursor += 2
+                } else {
+                    cursor += 1
+                }
+                continue
+            }
+            if (value == '/' && next == '/') {
+                val newline = masked.indexOf('\n', cursor + 2)
+                cursor = if (newline < 0) masked.length else newline + 1
+                continue
+            }
+            if (value == '/' && next == '*') {
+                blockComment = true
+                cursor += 2
+                continue
+            }
+            if (value == '\'' || value == '"') {
+                val end = javascriptQuotedEnd(masked, cursor, value)
+                cursor = if (end > cursor) end else cursor + 1
+                continue
+            }
+            if (value == '/' && next != '/' && next != '*' && javascriptRegexMayStart(masked, cursor)) {
+                val end = javascriptRegexEnd(masked, cursor)
+                if (end > cursor) {
+                    cursor = end
+                    while (cursor < masked.length && masked[cursor].isLetter()) cursor += 1
+                    continue
+                }
+            }
+            if (!value.isWhitespace()) code[cursor] = true
+            cursor += 1
+        }
+        return code
+    }
+
+    private fun kotlinQuotedEnd(text: String, startIndex: Int, quote: Char): Int {
+        var cursor = startIndex + 1
+        var escaped = false
+        while (cursor < text.length) {
+            val value = text[cursor]
+            if (value == '\n' || value == '\r') return -1
+            if (escaped) {
+                escaped = false
+            } else if (value == '\\') {
+                escaped = true
+            } else if (value == quote) {
+                return cursor + 1
+            }
+            cursor += 1
+        }
+        return -1
+    }
+
+    private fun kotlinInterpolationEnd(text: String, startIndex: Int): Int {
+        var cursor = startIndex
+        var depth = 1
+        while (cursor < text.length) {
+            val value = text[cursor]
+            val next = text.getOrNull(cursor + 1)
+            if (value == '\'' || value == '"') {
+                val end = kotlinQuotedEnd(text, cursor, value)
+                if (end < 0) return -1
+                cursor = end
+                continue
+            }
+            if (value == '/' && next == '*') {
+                val end = text.indexOf("*/", cursor + 2)
+                if (end < 0) return -1
+                cursor = end + 2
+                continue
+            }
+            if (value == '{') {
+                depth += 1
+            } else if (value == '}') {
+                depth -= 1
+                if (depth == 0) return cursor + 1
+            }
+            cursor += 1
+        }
+        return -1
+    }
+
+    private fun kotlinStringEnd(text: String, startIndex: Int): Int {
+        var cursor = startIndex + 1
+        var escaped = false
+        while (cursor < text.length) {
+            val value = text[cursor]
+            if (value == '\n' || value == '\r') return -1
+            if (escaped) {
+                escaped = false
+                cursor += 1
+                continue
+            }
+            if (value == '\\') {
+                escaped = true
+                cursor += 1
+                continue
+            }
+            if (value == '$' && text.getOrNull(cursor + 1) == '{') {
+                val end = kotlinInterpolationEnd(text, cursor + 2)
+                if (end < 0) return -1
+                cursor = end
+                continue
+            }
+            if (value == '"') return cursor + 1
+            cursor += 1
+        }
+        return -1
+    }
+
+    private fun maskKotlinInterpolatedStrings(text: String): String {
+        val chars = text.toCharArray()
+        var cursor = 0
+        var blockComment = false
+        while (cursor < text.length) {
+            val value = text[cursor]
+            val next = text.getOrNull(cursor + 1)
+            if (blockComment) {
+                if (value == '*' && next == '/') {
+                    blockComment = false
+                    cursor += 2
+                } else {
+                    cursor += 1
+                }
+                continue
+            }
+            if (value == '/' && next == '/') {
+                val newline = text.indexOf('\n', cursor + 2)
+                cursor = if (newline < 0) text.length else newline + 1
+                continue
+            }
+            if (value == '/' && next == '*') {
+                blockComment = true
+                cursor += 2
+                continue
+            }
+            if (value == '\'') {
+                val end = kotlinQuotedEnd(text, cursor, value)
+                cursor = if (end > cursor) end else cursor + 1
+                continue
+            }
+            if (value == '"' && text.getOrNull(cursor + 1) == '"' && text.getOrNull(cursor + 2) == '"') {
+                val end = text.indexOf("\"\"\"", cursor + 3)
+                cursor = if (end < 0) text.length else end + 3
+                continue
+            }
+            if (value == '"') {
+                val end = kotlinStringEnd(text, cursor)
+                if (end > cursor) {
+                    val body = text.substring(cursor + 1, end - 1)
+                    if (body.contains("\${")) maskRangePreservingNewlines(chars, cursor, end)
+                    cursor = end
+                    continue
+                }
+            }
+            cursor += 1
+        }
+        return String(chars)
+    }
+
     private fun extractDependencies(language: String, lines: List<String>): List<Dependency> {
         val out = ArrayList<Dependency>()
         val seen = HashSet<String>()
@@ -312,7 +669,18 @@ internal object RiftSourceIntelligenceV2 {
             out += Dependency(value, kind, line, localIntent)
         }
 
+        val javascriptText = if (language == "javascript") lines.joinToString("\n") else ""
+        val javascriptCodeMask = if (language == "javascript") javascriptDependencyCodeMask(javascriptText) else BooleanArray(0)
+        var javascriptOffset = 0
+
         lines.forEachIndexed { index, line ->
+            fun javascriptMatchStartsInCode(match: MatchResult): Boolean {
+                if (language != "javascript") return true
+                val firstCode = match.value.indexOfFirst { !it.isWhitespace() }
+                val localOffset = match.range.first + firstCode.coerceAtLeast(0)
+                return javascriptCodeMask.getOrNull(javascriptOffset + localOffset) == true
+            }
+
             when (language) {
                 "cpp" -> Regex("^\\s*#\\s*include\\s*([<\"])([^>\"]+)[>\"]")
                     .find(line)?.let {
@@ -327,17 +695,17 @@ internal object RiftSourceIntelligenceV2 {
                     .find(line)?.let { add(it.groupValues[1], "import", index + 1) }
                 "javascript" -> {
                     Regex("^\\s*(?:import|export)\\b.*\\bfrom\\s*[\"']([^\"']+)[\"']")
-                        .find(line)?.let {
+                        .find(line)?.takeIf(::javascriptMatchStartsInCode)?.let {
                             val specifier = it.groupValues[1]
                             add(specifier, "import", index + 1, specifier.startsWith("."))
                         }
                     Regex("^\\s*import\\s*[\"']([^\"']+)[\"']")
-                        .find(line)?.let {
+                        .find(line)?.takeIf(::javascriptMatchStartsInCode)?.let {
                             val specifier = it.groupValues[1]
                             add(specifier, "import", index + 1, specifier.startsWith("."))
                         }
                     Regex("\\b(?:require|import)\\s*\\(\\s*[\"']([^\"']+)[\"']")
-                        .findAll(line).forEach {
+                        .findAll(line).filter(::javascriptMatchStartsInCode).forEach {
                             val specifier = it.groupValues[1]
                             add(specifier, "require", index + 1, specifier.startsWith("."))
                         }
@@ -370,6 +738,7 @@ internal object RiftSourceIntelligenceV2 {
                 "go" -> Regex("^\\s*import\\s+\"([^\"]+)\"")
                     .find(line)?.let { add(it.groupValues[1], "import", index + 1) }
             }
+            if (language == "javascript") javascriptOffset += line.length + 1
         }
         return out.distinctBy { "${it.line}:${it.kind}:${it.specifier}" }
     }
@@ -379,6 +748,11 @@ internal object RiftSourceIntelligenceV2 {
             return SyntaxEvidence("not-applicable", true, emptyList())
         }
 
+        val structuralText = when (language) {
+            "javascript" -> maskJavascriptTemplates(text)
+            "kotlin" -> maskKotlinInterpolatedStrings(text)
+            else -> text
+        }
         val issues = ArrayList<SyntaxIssue>()
         val delimiters = ArrayList<Triple<Char, Int, Int>>()
         val supportsSlashComments = language != "python"
@@ -394,60 +768,6 @@ internal object RiftSourceIntelligenceV2 {
             issues += SyntaxIssue(code, line.coerceAtLeast(1), column.coerceAtLeast(1), detail)
         }
 
-        fun kotlinInterpolatedStringEnd(line: String, startIndex: Int): Int {
-            if (line.indexOf("\${", startIndex + 1) < 0) return -1
-            var candidate = line.lastIndex
-            while (candidate > startIndex) {
-                if (line[candidate] == '"') {
-                    var slashCount = 0
-                    var cursor = candidate - 1
-                    while (cursor >= 0 && line[cursor] == '\\') {
-                        slashCount += 1
-                        cursor -= 1
-                    }
-                    if (slashCount % 2 == 0) return candidate
-                }
-                candidate -= 1
-            }
-            return -1
-        }
-
-        fun javascriptRegexMayStart(line: String, slashIndex: Int): Boolean {
-            var cursor = slashIndex - 1
-            while (cursor >= 0 && line[cursor].isWhitespace()) cursor -= 1
-            if (cursor < 0) return true
-            if (line[cursor] in "([{:;,=!?&|+-*%^~<>") return true
-            val prefix = line.substring(0, cursor + 1)
-            val token = Regex("([A-Za-z_$][A-Za-z0-9_$]*)\\s*$")
-                .find(prefix)?.groupValues?.getOrNull(1)
-            return token in setOf(
-                "return", "throw", "case", "delete", "typeof", "void", "new",
-                "yield", "await", "else", "do", "in", "of"
-            )
-        }
-
-        fun javascriptRegexEnd(line: String, slashIndex: Int): Int {
-            var cursor = slashIndex + 1
-            var escapedRegex = false
-            var characterClass = false
-            while (cursor < line.length) {
-                val value = line[cursor]
-                if (escapedRegex) {
-                    escapedRegex = false
-                } else if (value == '\\') {
-                    escapedRegex = true
-                } else if (value == '[') {
-                    characterClass = true
-                } else if (value == ']' && characterClass) {
-                    characterClass = false
-                } else if (value == '/' && !characterClass) {
-                    return cursor
-                }
-                cursor += 1
-            }
-            return -1
-        }
-
         var blockComment = false
         var blockCommentLine = 1
         var blockCommentColumn = 1
@@ -459,7 +779,7 @@ internal object RiftSourceIntelligenceV2 {
         var tripleColumn = 1
         var escaped = false
 
-        text.split('\n').forEachIndexed { lineIndex, sourceLine ->
+        structuralText.split('\n').forEachIndexed { lineIndex, sourceLine ->
             val lineNumber = lineIndex + 1
             var index = 0
             while (index < sourceLine.length) {
@@ -548,14 +868,6 @@ internal object RiftSourceIntelligenceV2 {
                     continue
                 }
 
-                if (language == "kotlin" && c == '"') {
-                    val conservativeEnd = kotlinInterpolatedStringEnd(sourceLine, index)
-                    if (conservativeEnd > index) {
-                        index = conservativeEnd + 1
-                        continue
-                    }
-                }
-
                 if (c == '"' || c == '\'' || (supportsBacktickStrings && c == 96.toChar())) {
                     quote = c
                     quoteLine = lineNumber
@@ -635,7 +947,7 @@ internal object RiftSourceIntelligenceV2 {
         }
 
         return SyntaxEvidence(
-            mode = "bounded-structural-v2-conservative",
+            mode = "bounded-structural-v3-conservative",
             valid = issues.isEmpty(),
             issues = issues
         )
