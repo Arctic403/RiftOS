@@ -400,7 +400,7 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
         val identity = JSONObject()
             .put("schema", VERSION)
             .put("kind", kind)
-            .put("stableKey", normalizedStableKey(stableKey))
+            .put("stableKey", boundedStableKey(stableKey))
         return "$FACT_ID_PREFIX${RiftPatchManifestV1.sha256Canonical(identity).take(32)}"
     }
 
@@ -415,7 +415,7 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
             .put("relation", relation)
             .put("sourceFactId", sourceFactId)
             .put("targetFactId", targetFactId)
-            .put("stableKey", normalizedStableKey(stableKey))
+            .put("stableKey", boundedStableKey(stableKey))
         return "$EDGE_ID_PREFIX${RiftPatchManifestV1.sha256Canonical(identity).take(32)}"
     }
 
@@ -475,23 +475,17 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
             .put("category", category)
             .put("sourceFactId", sourceFactId)
             .put("conflictFactId", conflictFactId ?: JSONObject.NULL)
-            .put("stableKey", normalizedStableKey(stableKey))
+            .put("stableKey", boundedStableKey(stableKey))
         return "$FINDING_ID_PREFIX${RiftPatchManifestV1.sha256Canonical(identity).take(32)}"
     }
 
-    private fun normalizedStableKey(value: String): String {
+    private fun boundedStableKey(value: String): String {
         val normalized = value.trim()
         require(normalized.isNotBlank()) { "Repository consistency stable key must not be blank" }
+        require(normalized.length <= MAX_STABLE_KEY_CHARS) {
+            "Repository consistency stable key exceeds $MAX_STABLE_KEY_CHARS characters"
+        }
         return normalized
-    }
-
-    private fun boundedStableKey(value: String): String {
-        val normalized = normalizedStableKey(value)
-        if (normalized.length <= MAX_STABLE_KEY_CHARS) return normalized
-
-        val digestSuffix = "…#sha256:${RiftPatchManifestV1.sha256Canonical(normalized)}"
-        val prefixLength = (MAX_STABLE_KEY_CHARS - digestSuffix.length).coerceAtLeast(0)
-        return normalized.take(prefixLength) + digestSuffix
     }
 
     private fun persistSnapshot(projectRoot: String, snapshot: JSONObject): JSONObject {

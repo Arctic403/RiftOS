@@ -4,7 +4,9 @@ const MAX_BODY_BYTES = 1_000_000;
 const REQUEST_TIMEOUT_MS = 75_000;
 const MAX_PENDING_REQUESTS = 64;
 
+const MAX_DRIVER_SOCKETS = 4;
 const MAX_SSE_CLIENTS = 8;
+const MAX_CLI_EVENT_BYTES = 128_000;
 
 const MAX_SSE_BUFFER_BYTES = 512_000;
 const SSE_HEARTBEAT_MS = 15_000;
@@ -17,6 +19,10 @@ const SSE_RECONNECT_MIN_MS = 1_000;
 const SSE_OPEN_WINDOW_MS = 10_000;
 const MAX_SSE_OPEN_ATTEMPTS_PER_WINDOW = 24;
 const SSE_FULL_RETRY_AFTER_SECONDS = 2;
+
+const REPLAY_MIN_INTERVAL_MS = 1_000;
+const REPLAY_WINDOW_MS = 10_000;
+const MAX_REPLAY_REQUESTS_PER_WINDOW = 64;
 
 const encoder = new TextEncoder();
 
@@ -277,6 +283,18 @@ export default {
             "0",
         );
 
+        if (
+          request.headers.get("upgrade")?.toLowerCase() ===
+          "websocket"
+        ) {
+          return room.fetch(
+            new Request(
+              `https://relay.internal/events-ws?after=${after}`,
+              request,
+            ),
+          );
+        }
+
         const headers = new Headers();
         headers.set("accept", "text/event-stream");
 
@@ -446,6 +464,10 @@ export class RiftRelayRoom {
     this.sseOpenAttempts = [];
     this.sseLastOpenBySession = new Map();
 
+    this.replayRequestTimes = [];
+    this.replayLastRequestBySource = new Map();
+    this.deferredReplay = null;
+
     this.sseStats = {
       opened: 0,
       disconnected: 0,
@@ -453,12 +475,27 @@ export class RiftRelayRoom {
       sessionReplaced: 0,
       fullRejected: 0,
       reconnectThrottled: 0,
+      replayThrottled: 0,
+      replayDeferred: 0,
       backpressureDropped: 0,
       deliveryFailed: 0,
       heartbeatFailed: 0,
       leaseExpired: 0,
       anonymousRejected: 0,
     };
+
+    const deviceAttachment =
+      this.socket?.deserializeAttachment?.() || {};
+
+    const attachedSequence = Number(
+      deviceAttachment.lastCliSequence ?? 0,
+    );
+
+    this.lastCliSequence =
+      Number.isSafeInteger(attachedSequence) &&
+      attachedSequence >= 0
+        ? attachedSequence
+        : 0;
   }
 
   async fetch(request) {
@@ -469,8 +506,13 @@ export class RiftRelayRoom {
         ok: true,
         deviceConnected: Boolean(this.socket),
         pendingRequests: this.pending.size,
+        driverSockets:
+          this.ctx.getWebSockets("driver").length,
         sseClients: this.sseClients.size,
+        maxDriverSockets: MAX_DRIVER_SOCKETS,
         maxSseClients: MAX_SSE_CLIENTS,
+        cliSequence: this.lastCliSequence,
+        deferredReplayPending: Boolean(this.deferredReplay),
         sseStats: {
           ...this.sseStats,
         },
@@ -479,6 +521,14 @@ export class RiftRelayRoom {
 
     if (url.pathname === "/device") {
       return this.acceptDevice();
+    }
+
+    if (url.pathname === "/events-ws") {
+      const after = parseResumeAfter(
+        url.searchParams.get("after"),
+      );
+
+      return this.acceptDriver(after);
     }
 
     if (url.pathname === "/events-sse") {
@@ -518,6 +568,7 @@ export class RiftRelayRoom {
         "explicitClosed",
       );
       this.sseLastOpenBySession.delete(sessionId);
+      this.cancelDeferredReplayIfIdle();
 
       return new Response(null, {
         status: 204,
@@ -592,9 +643,62 @@ export class RiftRelayRoom {
 
     server.serializeAttachment({
       role: "device",
+      lastCliSequence: this.lastCliSequence,
     });
 
     this.socket = server;
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+    });
+  }
+
+  acceptDriver(after) {
+    const existing =
+      this.ctx.getWebSockets("driver");
+
+    if (existing.length >= MAX_DRIVER_SOCKETS) {
+      return json(
+        {
+          error:
+            "Too many RiftCLI WebSocket subscribers",
+        },
+        429,
+        {
+          "retry-after": String(SSE_FULL_RETRY_AFTER_SECONDS),
+        },
+      );
+    }
+
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+
+    this.ctx.acceptWebSocket(server, ["driver"]);
+
+    const subscriberId = crypto.randomUUID();
+
+    server.serializeAttachment({
+      role: "driver",
+      subscriberId,
+      after,
+      sentThrough: after,
+    });
+
+    server.send(
+      JSON.stringify({
+        type: "cli.events.ready",
+        protocol: PROTOCOL,
+        transport: "websocket",
+        after,
+      }),
+    );
+
+    this.requestCliReplay(
+      after,
+      `driver:${subscriberId}`,
+    );
 
     return new Response(null, {
       status: 101,
@@ -679,7 +783,14 @@ export class RiftRelayRoom {
 
     this.sseOpenAttempts.push(now);
 
-    const effectiveAfter = after;
+    let effectiveAfter = after;
+
+    if (
+      this.lastCliSequence > 0 &&
+      effectiveAfter > this.lastCliSequence
+    ) {
+      effectiveAfter = this.lastCliSequence;
+    }
 
     // Same-session replacement does not consume an extra capacity slot.
     // Never evict an unrelated stream to create room.
@@ -696,6 +807,7 @@ export class RiftRelayRoom {
     }
 
     const id = crypto.randomUUID();
+    const sessionKey = sessionId;
     const room = this;
 
     const stream = new ReadableStream(
@@ -720,6 +832,7 @@ export class RiftRelayRoom {
             after: effectiveAfter,
 
             sessionId,
+            sessionKey,
             connectedAt: Date.now(),
             lastDeliveryAt: Date.now(),
             heartbeatTimer: null,
@@ -761,7 +874,15 @@ export class RiftRelayRoom {
           try {
             controller.enqueue(
               encoder.encode(
-                `retry: ${SSE_CLIENT_RETRY_MS}\n: rift-mcp-ready\n\n`,
+                `retry: ${SSE_CLIENT_RETRY_MS}\nevent: message\ndata: ${JSON.stringify({
+                  jsonrpc: "2.0",
+                  method: "notifications/riftcli/ready",
+                  params: {
+                    protocol: PROTOCOL,
+                    transport: "sse",
+                    after: effectiveAfter,
+                  },
+                })}\n\n`,
               ),
             );
             clientState.heartbeatDesiredSize =
@@ -778,6 +899,13 @@ export class RiftRelayRoom {
 
           room.scheduleSseHeartbeat(id);
 
+          // Replay recovery is coalesced when throttled. It is not silently
+          // discarded while a live subscriber still requires recovery.
+          room.requestCliReplay(
+            effectiveAfter,
+            `sse:${sessionKey}`,
+            { defer: true },
+          );
         },
 
         cancel(reason) {
@@ -962,6 +1090,7 @@ export class RiftRelayRoom {
 
     this.sseClients.delete(id);
 
+    this.cancelDeferredReplayIfIdle();
 
     if (client.heartbeatTimer) {
       clearTimeout(client.heartbeatTimer);
@@ -1061,7 +1190,399 @@ export class RiftRelayRoom {
       );
     }
 
+    this.cancelDeferredReplayIfIdle();
     return targets.length;
+  }
+
+  pruneReplayState(now = Date.now()) {
+    this.replayRequestTimes = this.replayRequestTimes.filter(
+      (at) => now - at < REPLAY_WINDOW_MS,
+    );
+
+    for (const [key, at] of this.replayLastRequestBySource) {
+      if (now - at >= REPLAY_WINDOW_MS) {
+        this.replayLastRequestBySource.delete(key);
+      }
+    }
+  }
+
+  hasReplayConsumers() {
+    return (
+      this.sseClients.size > 0 ||
+      this.ctx.getWebSockets("driver").length > 0
+    );
+  }
+
+  normalizeReplayAfter(after) {
+    let normalizedAfter = Number(after);
+
+    if (
+      !Number.isSafeInteger(normalizedAfter) ||
+      normalizedAfter < 0
+    ) {
+      normalizedAfter = 0;
+    }
+
+    if (
+      this.lastCliSequence > 0 &&
+      normalizedAfter > this.lastCliSequence
+    ) {
+      normalizedAfter = this.lastCliSequence;
+    }
+
+    return normalizedAfter;
+  }
+
+  requestCliReplay(
+    after,
+    sourceKey = "relay",
+    options = {},
+  ) {
+    const socket = this.socket;
+
+    if (!socket) {
+      // Device reconnect uses minimumCliResumeAfter(), so no in-memory retry
+      // timer is needed while the device is offline.
+      return "offline";
+    }
+
+    const defer = options.defer !== false;
+    const now = Date.now();
+    const normalizedAfter =
+      this.normalizeReplayAfter(after);
+
+    this.pruneReplayState(now);
+
+    const lastSourceRequest = Number(
+      this.replayLastRequestBySource.get(sourceKey) ?? 0,
+    );
+
+    if (
+      lastSourceRequest > 0 &&
+      now - lastSourceRequest < REPLAY_MIN_INTERVAL_MS
+    ) {
+      this.sseStats.replayThrottled += 1;
+
+      if (defer) {
+        this.deferCliReplay(
+          REPLAY_MIN_INTERVAL_MS - (now - lastSourceRequest),
+        );
+        return "deferred";
+      }
+
+      return "throttled";
+    }
+
+    if (
+      this.replayRequestTimes.length >=
+      MAX_REPLAY_REQUESTS_PER_WINDOW
+    ) {
+      this.sseStats.replayThrottled += 1;
+
+      const oldest = this.replayRequestTimes[0] ?? now;
+      const retryMs = Math.max(
+        25,
+        REPLAY_WINDOW_MS - (now - oldest),
+      );
+
+      if (defer) {
+        this.deferCliReplay(retryMs);
+        return "deferred";
+      }
+
+      return "throttled";
+    }
+
+    return this.sendCliReplayNow(
+      normalizedAfter,
+      sourceKey,
+      now,
+    )
+      ? "sent"
+      : "failed";
+  }
+
+  sendCliReplayNow(after, sourceKey, now = Date.now()) {
+    const socket = this.socket;
+
+    if (!socket) {
+      return false;
+    }
+
+    this.replayRequestTimes.push(now);
+    this.replayLastRequestBySource.set(sourceKey, now);
+
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "cli.replay.request",
+          after,
+        }),
+      );
+      return true;
+    } catch {
+      // Device reconnect logic owns recovery.
+      return false;
+    }
+  }
+
+  deferCliReplay(delayMs) {
+    if (!this.hasReplayConsumers()) {
+      return false;
+    }
+
+    const dueAt =
+      Date.now() + Math.max(25, Number(delayMs) || 25);
+    const existing = this.deferredReplay;
+
+    // One room-wide deferred replay is enough: replay from the oldest active
+    // cursor covers every subscriber with a newer cursor and cannot overflow
+    // a per-source deferred queue.
+    if (existing && existing.dueAt <= dueAt) {
+      return true;
+    }
+
+    if (existing?.timer) {
+      clearTimeout(existing.timer);
+    }
+
+    const timer = setTimeout(() => {
+      this.flushDeferredReplay();
+    }, Math.max(25, dueAt - Date.now()));
+
+    this.deferredReplay = {
+      timer,
+      dueAt,
+    };
+    this.sseStats.replayDeferred += 1;
+    return true;
+  }
+
+  flushDeferredReplay() {
+    const pending = this.deferredReplay;
+    this.deferredReplay = null;
+
+    if (pending?.timer) {
+      clearTimeout(pending.timer);
+    }
+
+    if (!this.socket || !this.hasReplayConsumers()) {
+      return;
+    }
+
+    const now = Date.now();
+    this.pruneReplayState(now);
+
+    if (
+      this.replayRequestTimes.length >=
+      MAX_REPLAY_REQUESTS_PER_WINDOW
+    ) {
+      const oldest = this.replayRequestTimes[0] ?? now;
+
+      this.deferCliReplay(
+        Math.max(
+          25,
+          REPLAY_WINDOW_MS - (now - oldest),
+        ),
+      );
+      return;
+    }
+
+    this.sendCliReplayNow(
+      this.minimumCliResumeAfter(),
+      "deferred",
+      now,
+    );
+  }
+
+  cancelDeferredReplayIfIdle() {
+    if (this.hasReplayConsumers()) {
+      return false;
+    }
+
+    const pending = this.deferredReplay;
+
+    if (!pending) {
+      return false;
+    }
+
+    this.deferredReplay = null;
+
+    if (pending.timer) {
+      clearTimeout(pending.timer);
+    }
+
+    return true;
+  }
+
+  minimumCliResumeAfter() {
+    let resume =
+      Number.isSafeInteger(this.lastCliSequence) &&
+      this.lastCliSequence >= 0
+        ? this.lastCliSequence
+        : 0;
+
+    for (
+      const driver of
+      this.ctx.getWebSockets("driver")
+    ) {
+      const after = Number(
+        driver.deserializeAttachment?.()?.after ?? 0,
+      );
+
+      if (
+        Number.isSafeInteger(after) &&
+        after >= 0
+      ) {
+        resume = Math.min(resume, after);
+      }
+    }
+
+    for (const client of this.sseClients.values()) {
+      const after = Number(client?.after ?? 0);
+
+      if (
+        Number.isSafeInteger(after) &&
+        after >= 0
+      ) {
+        resume = Math.min(resume, after);
+      }
+    }
+
+    return resume;
+  }
+
+  broadcastCliEvent(event) {
+    const sequence = Number(event.sequence);
+
+    if (
+      !Number.isSafeInteger(sequence) ||
+      sequence <= 0
+    ) {
+      return;
+    }
+
+    const message = JSON.stringify({
+      type: "cli.event",
+      event,
+    });
+
+    for (
+      const driver of
+      this.ctx.getWebSockets("driver")
+    ) {
+      const attachment =
+        driver.deserializeAttachment?.() || {};
+
+      const after = Number(
+        attachment.after ?? 0,
+      );
+
+      const sentThrough = Number(
+        attachment.sentThrough ?? after,
+      );
+
+      const deliveredThrough = Math.max(
+        Number.isSafeInteger(after) && after >= 0
+          ? after
+          : 0,
+        Number.isSafeInteger(sentThrough) && sentThrough >= 0
+          ? sentThrough
+          : 0,
+      );
+
+      if (deliveredThrough >= sequence) {
+        continue;
+      }
+
+      try {
+        driver.send(message);
+
+        driver.serializeAttachment({
+          role: "driver",
+          subscriberId:
+            typeof attachment.subscriberId === "string"
+              ? attachment.subscriberId
+              : crypto.randomUUID(),
+          after:
+            Number.isSafeInteger(after) && after >= 0
+              ? after
+              : 0,
+          sentThrough:
+            Number.isSafeInteger(sentThrough) && sentThrough >= 0
+              ? Math.max(sentThrough, sequence)
+              : sequence,
+        });
+      } catch {
+        try {
+          driver.close(
+            1011,
+            "RiftCLI event delivery failed",
+          );
+        } catch {
+          // Driver socket was already closed.
+        }
+      }
+    }
+
+    const sse = encoder.encode(
+      `id: ${sequence}\nevent: message\ndata: ${JSON.stringify(
+        {
+          jsonrpc: "2.0",
+          method: "notifications/riftcli/event",
+          params: event,
+        },
+      )}\n\n`,
+    );
+
+    const deliveredSessions = new Set();
+
+    for (
+      const [id, client] of
+      [...this.sseClients.entries()]
+    ) {
+      const sessionKey = client.sessionKey || `client:${id}`;
+
+      if (deliveredSessions.has(sessionKey)) {
+        continue;
+      }
+
+      const after = Number(client?.after ?? 0);
+
+      if (
+        Number.isSafeInteger(after) &&
+        after >= sequence
+      ) {
+        continue;
+      }
+
+      if (
+        client.controller.desiredSize != null &&
+        client.controller.desiredSize < sse.byteLength
+      ) {
+        this.dropSseClient(
+          id,
+          "backpressure",
+          "MCP SSE subscriber is not keeping up",
+          "error",
+        );
+        continue;
+      }
+
+      try {
+        client.controller.enqueue(sse);
+        client.after = sequence;
+        client.lastDeliveryAt = Date.now();
+        deliveredSessions.add(sessionKey);
+      } catch {
+        this.dropSseClient(
+          id,
+          "delivery",
+          "MCP SSE delivery failed",
+          "error",
+        );
+      }
+    }
   }
 
   forwardNotification(payload) {
@@ -1204,6 +1725,17 @@ export class RiftRelayRoom {
   }
 
   webSocketMessage(socket, raw) {
+    const role =
+      socket.deserializeAttachment?.()?.role ||
+      (socket === this.socket
+        ? "device"
+        : "unknown");
+
+    if (role === "driver") {
+      this.handleDriverMessage(socket, raw);
+      return;
+    }
+
     if (socket !== this.socket) {
       return;
     }
@@ -1242,9 +1774,31 @@ export class RiftRelayRoom {
         return;
       }
 
+      const deviceAckSequence = Number(
+        message.cliAckSequence ?? 0,
+      );
+
+      if (
+        Number.isSafeInteger(deviceAckSequence) &&
+        deviceAckSequence >= 0
+      ) {
+        this.lastCliSequence = Math.max(
+          this.lastCliSequence,
+          deviceAckSequence,
+        );
+
+        socket.serializeAttachment({
+          role: "device",
+          lastCliSequence:
+            this.lastCliSequence,
+        });
+      }
+
       socket.send(
         JSON.stringify({
           type: "relay.ready",
+          cliResumeAfter:
+            this.minimumCliResumeAfter(),
         }),
       );
 
@@ -1252,6 +1806,66 @@ export class RiftRelayRoom {
     }
 
     if (message.type === "device.pong") {
+      return;
+    }
+
+    if (message.type === "cli.event") {
+      const event = message.event;
+
+      if (
+        !event ||
+        Array.isArray(event) ||
+        typeof event !== "object"
+      ) {
+        return;
+      }
+
+      const serialized = JSON.stringify(event);
+
+      if (
+        encoder.encode(serialized).byteLength >
+        MAX_CLI_EVENT_BYTES
+      ) {
+        return;
+      }
+
+      if (event.schema !== "rift.cli-event/1") {
+        return;
+      }
+
+      const sequence = Number(event.sequence);
+
+      if (
+        !Number.isSafeInteger(sequence) ||
+        sequence <= 0
+      ) {
+        return;
+      }
+
+      this.lastCliSequence = Math.max(
+        this.lastCliSequence,
+        sequence,
+      );
+
+      socket.serializeAttachment({
+        role: "device",
+        lastCliSequence:
+          this.lastCliSequence,
+      });
+
+      this.broadcastCliEvent(event);
+
+      try {
+        socket.send(
+          JSON.stringify({
+            type: "cli.ack",
+            sequence,
+          }),
+        );
+      } catch {
+        // Device will reconnect and replay.
+      }
+
       return;
     }
 
@@ -1333,7 +1947,145 @@ export class RiftRelayRoom {
     }
   }
 
+  handleDriverMessage(socket, raw) {
+    if (
+      typeof raw !== "string" ||
+      encoder.encode(raw).byteLength > 32_000
+    ) {
+      socket.close(
+        1009,
+        "Driver message too large",
+      );
+
+      return;
+    }
+
+    let message;
+
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      socket.send(
+        JSON.stringify({
+          type: "cli.events.error",
+          message: "Invalid driver JSON",
+        }),
+      );
+
+      return;
+    }
+
+    if (message.type === "cli.events.replay") {
+      const after = parseResumeAfter(
+        message.after,
+      );
+
+      const attachment =
+        socket.deserializeAttachment?.() || {};
+
+      const subscriberId =
+        typeof attachment.subscriberId === "string" &&
+        attachment.subscriberId
+          ? attachment.subscriberId
+          : crypto.randomUUID();
+
+      const replayState = this.requestCliReplay(
+        after,
+        `driver:${subscriberId}`,
+        { defer: false },
+      );
+
+      if (replayState !== "sent") {
+        try {
+          socket.send(
+            JSON.stringify({
+              type: "cli.events.error",
+              message:
+                replayState === "offline"
+                  ? "RiftOS device is offline"
+                  : replayState === "failed"
+                    ? "Replay request failed"
+                    : "Replay request throttled",
+              retryAfterMs:
+                replayState === "throttled"
+                  ? REPLAY_MIN_INTERVAL_MS
+                  : undefined,
+            }),
+          );
+        } catch {
+          // Driver socket closed while reporting replay failure.
+        }
+
+        return;
+      }
+
+      socket.serializeAttachment({
+        role: "driver",
+        subscriberId,
+        after,
+        sentThrough: after,
+      });
+
+      return;
+    }
+
+    if (message.type === "cli.events.ack") {
+      const sequence = Number(
+        message.sequence ?? 0,
+      );
+
+      const attachment =
+        socket.deserializeAttachment?.() || {};
+
+      const current = Number(
+        attachment.after ?? 0,
+      );
+
+      const sentThrough = Number(
+        attachment.sentThrough ?? current,
+      );
+
+      if (
+        Number.isSafeInteger(sequence) &&
+        sequence >= 0 &&
+        Number.isSafeInteger(sentThrough) &&
+        sequence <= sentThrough &&
+        (!Number.isSafeInteger(current) ||
+          sequence > current)
+      ) {
+        socket.serializeAttachment({
+          role: "driver",
+          subscriberId:
+            typeof attachment.subscriberId === "string"
+              ? attachment.subscriberId
+              : crypto.randomUUID(),
+          after: sequence,
+          sentThrough,
+        });
+      }
+
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: "cli.events.error",
+        message:
+          "Unsupported driver event message",
+      }),
+    );
+  }
+
   webSocketClose(socket) {
+    const attachment =
+      socket.deserializeAttachment?.() || {};
+    const role = attachment.role;
+
+    if (role === "driver") {
+      this.cancelDeferredReplayIfIdle();
+      return;
+    }
+
     if (socket !== this.socket) {
       return;
     }
@@ -1346,6 +2098,15 @@ export class RiftRelayRoom {
   }
 
   webSocketError(socket) {
+    const attachment =
+      socket.deserializeAttachment?.() || {};
+    const role = attachment.role;
+
+    if (role === "driver") {
+      this.cancelDeferredReplayIfIdle();
+      return;
+    }
+
     if (socket !== this.socket) {
       return;
     }
