@@ -51,7 +51,7 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_CONSISTENCY_INPUT_EDGES = 1_024
         private const val MAX_PERSISTED_INDEX_FILES = 4000
         private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
-        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 4
+        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 5
         private const val MAX_HUNKS = 128
         private const val MAX_SNAPSHOT_FILES = 50_000
         private const val MAX_ARCHIVE_ENTRIES = 50_000
@@ -2407,6 +2407,21 @@ internal class RiftToolSandbox(context: Context) {
         BuildConfig.RIFT_SOURCE_SHA.trim().lowercase()
             .takeIf { it.matches(Regex("^(?:[0-9a-f]{40}|[0-9a-f]{64})$")) }
 
+    private fun projectIntelligenceCacheIntegrityFailure(root: JSONObject): String? {
+        val expected = root.optString("cacheSha256").trim().lowercase()
+        if (!expected.matches(Regex("^[0-9a-f]{64}$"))) return "cache-integrity-missing"
+
+        val payload = JSONObject()
+        root.keys().asSequence().toList().sorted().forEach { key ->
+            if (key != "cacheSha256") payload.put(key, root.get(key))
+        }
+        return if (RiftPatchManifestV1.sha256Canonical(payload) == expected) {
+            null
+        } else {
+            "cache-integrity-mismatch"
+        }
+    }
+
     private fun ensurePersistentIndexLoaded() {
         if (persistentIndexLoaded) return
         persistentIndexLoaded = true
@@ -2430,6 +2445,13 @@ internal class RiftToolSandbox(context: Context) {
         if (root.optInt("version", 0) != PROJECT_INTELLIGENCE_CACHE_VERSION) {
             persistentIndexLoadStatus = "rejected"
             persistentIndexRejectedReason = "cache-schema-version"
+            return
+        }
+
+        val integrityFailure = projectIntelligenceCacheIntegrityFailure(root)
+        if (integrityFailure != null) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = integrityFailure
             return
         }
 
@@ -2551,14 +2573,15 @@ internal class RiftToolSandbox(context: Context) {
                 .put("symbols", symbols)
                 .put("dependencies", dependencies))
         }
-        val payload = JSONObject()
+        val payloadObject = JSONObject()
             .put("version", PROJECT_INTELLIGENCE_CACHE_VERSION)
             .put("producer", JSONObject()
                 .put("sourceIntelligenceVersion", RiftSourceIntelligenceV2.VERSION)
                 .put("sourceSha", trustedProjectIntelligenceProducerSourceSha() ?: BuildConfig.RIFT_SOURCE_SHA))
             .put("generatedAt", System.currentTimeMillis())
             .put("files", files)
-            .toString()
+        payloadObject.put("cacheSha256", RiftPatchManifestV1.sha256Canonical(payloadObject))
+        val payload = payloadObject.toString()
         val bytes = payload.toByteArray(Charsets.UTF_8)
         if (bytes.size.toLong() > MAX_PERSISTED_INDEX_BYTES) {
             runCatching { projectIntelligenceCache.delete() }
@@ -2827,7 +2850,7 @@ internal class RiftToolSandbox(context: Context) {
             .put("repositoryHashFailures", hashFailures)
             .put("cachedFiles", symbolIndex.size)
             .put("repositoryFiles", repositoryFileIndex.size)
-            .put("persistence", "app-private-v4")
+            .put("persistence", "app-private-v5")
             .put("cacheSchemaVersion", PROJECT_INTELLIGENCE_CACHE_VERSION)
             .put("cacheLoadStatus", persistentIndexLoadStatus)
             .put("cacheRejectedReason", persistentIndexRejectedReason ?: JSONObject.NULL)

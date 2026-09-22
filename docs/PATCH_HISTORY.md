@@ -6,6 +6,47 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.36 — N1.8.0 PI semantic-cache integrity sealing
+
+### Torture finding
+
+Installed Patch 10.35 source `8ecc5433dcca153a669b09f942bc91e64965c0fa` passed the restart-order hardening proof and a broad live torture round:
+
+- true Android force-stop/reopen preserved canonical graph SHA `d9064a2ba8f1742116aa0f88e67110a5022907a9bf699bab9d61f2a27e7109d7` with 1017 facts / 1071 edges / 258 files and `changed=false`;
+- ten warm runs and concurrent/reentrant consistency/PI reads stayed identical;
+- ambiguous local symbol candidates failed closed while qualified Kotlin imports still resolved to the unique package-qualified target;
+- exact 1024-file and 1024-dependency inputs remained complete while above-bound fixtures failed closed;
+- exact 2 MiB semantic files remained indexed while 2 MiB + 1 byte became explicit metadata-only evidence with `semantic-file-size-bound`;
+- mutation-during-scan returned a coherent old snapshot, the next authoritative scan changed, and byte-for-byte restore returned the original graph;
+- spaces, Unicode, case-distinct names, long paths, rename/move/copy/delete/recreate identity and content-only changes behaved deterministically;
+- binary/non-text files remained explicit metadata-only evidence;
+- the 32-project observer snapshot cache evicted older entries and rebuilt them to the exact same graph SHA; the real RiftOS observer snapshot likewise rebuilt to `d9064a2b...` after eviction.
+
+The deeper cache-integrity audit found a remaining false-clean risk in PI cache v4. The cache was producer-bound and each row carried the repository file SHA, but the persisted semantic payload itself — language, symbols and dependencies — had no integrity seal. A syntactically valid corrupted cache row could therefore retain the correct file SHA while altering or dropping semantic facts. Because `verifyContent=true` hashes repository bytes and reuses a cached semantic row when its source SHA matches, that corrupted semantic payload could be accepted after restart.
+
+### Hardening
+
+`RiftToolSandbox.kt` now upgrades PI persistence to schema v5:
+
+- every persisted PI payload is sealed with `cacheSha256 = RiftPatchManifestV1.sha256Canonical(payload)`;
+- load reconstructs the canonical body excluding only `cacheSha256` and verifies the seal before producer validation or semantic-row loading;
+- a missing/invalid seal rejects with `cache-integrity-missing`;
+- a mismatched seal rejects with `cache-integrity-mismatch`;
+- old v4 caches are rejected by schema version and rebuilt;
+- the public persistence diagnostic now reports `app-private-v5`.
+
+This integrity seal complements, rather than replaces, the existing exact file-SHA verification and producer binding to `RiftSourceIntelligenceV2.VERSION` plus trusted `BuildConfig.RIFT_SOURCE_SHA`.
+
+### Permanent regression
+
+`scripts/test-rift-repository-consistency-v1.mjs` now requires cache schema v5, the integrity verifier, both fail-closed reasons, canonical whole-payload sealing, and verification before producer-bound semantic rows are loaded.
+
+### Validation and promotion state
+
+Local `riftbuild validate android` is green on Android project SHA `bdfdd8aa8386d9b12bb23dd07252bf023121976179a1daabd179259b75e7d6d5`. Native RiftShell has no Node runtime, so the JS regression and Kotlin compile remain Builder-authoritative.
+
+Patch 10.36 is **source-implemented only**. N1.8.0 remains unpromoted. Required next proof is external Builder/test success, install of v5 source, live v4→v5 rejection/rebuild, true process restart with trusted v5 reload, and exact `d9064a2b...` canonical graph parity before torture resumes.
+
 ## Patch 10.35 — N1.8.0 semantic dependency order-determinism hardening
 
 ### Restart torture failure
@@ -57,7 +98,7 @@ This makes ambiguity fail closed and prevents cache reload/enumeration order fro
 
 Local `riftbuild validate android` is green on Android project SHA `58e280df0672481719baba96ab1390427fd85ace56ddaf507fa66324aa0d7f00`.
 
-Patch 10.35 is **source-implemented only** at this point. N1.8.0 remains unpromoted. Required next proof is external Builder/Kotlin compilation, install of the new source, true process restart, and canonical graph parity across cold/warm/reloaded-cache states before the remaining torture matrix resumes. The staged subsystem/domain planner, N1.8.1 and N2 remain blocked.
+Patch 10.35 was subsequently built, installed and live-proved on source `8ecc5433dcca153a669b09f942bc91e64965c0fa`. The first post-install PI run rejected the old producer cache, rebuilt all 258 RiftOS semantic files, and established canonical graph `d9064a2ba8f1742116aa0f88e67110a5022907a9bf699bab9d61f2a27e7109d7` with 1017 facts / 1071 edges / 258 files. A true Android force-stop/reopen then loaded the trusted cache with 258/258 semantic entries reused and preserved the exact same graph with `changed=false`. Ten additional warm runs, concurrent/reentrant reads, ambiguity fixtures, exact/above bounds, mutation coherence, path/content identity and observer-cache eviction/rebuild also passed. N1.8.0 nevertheless remains unpromoted because continued torture found the separate PI semantic-payload integrity defect addressed by Patch 10.36. The staged subsystem/domain planner, N1.8.1 and N2 remain blocked.
 
 ## Patch 10.34 — N1.8.0 semantic-cache producer provenance hardening
 
