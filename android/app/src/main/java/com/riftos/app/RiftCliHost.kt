@@ -6,8 +6,9 @@ import org.json.JSONObject
  * Thin Android host for the native C++ RiftCLI core.
  *
  * This file must stay transport-only: no planner, memory, research, verification, model/API,
- * project-graph, or mutation policy belongs in Kotlin. Those capabilities are added to the
- * native RiftCLI core only after their own promotion gates.
+ * project-graph, or replaceable mutation policy belongs in Kotlin. Future CLI intelligence lives
+ * in the Local Agent-owned /workspace/.riftcli package after its promotion gates; the native core
+ * remains the trust kernel/protocol authority.
  */
 internal object RiftCliHost {
     data class CommandResult(

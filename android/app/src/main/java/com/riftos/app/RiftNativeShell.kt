@@ -69,6 +69,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     )
     private val watchdog = Executors.newSingleThreadScheduledExecutor()
     private val headlessJs = RiftHeadlessJsRuntime(appContext)
+    private val localCliPackage = RiftLocalCliPackage(appContext, headlessJs)
     private val services = RiftNativeShellServices(appContext)
     private val riftBuild = RiftBuildLocalExecutor(appContext)
     private val nativeGit = RiftMcpRuntime.nativeGit(appContext)
@@ -349,6 +350,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val result = hosted.opt("result") ?: JSONObject.NULL
         return ShellOutcome(output, cwd, result)
     }
+
+    internal fun localCliPackageStatus(): JSONObject = localCliPackage.status()
+
+    internal fun executeLocalCliForLocalAgent(cwd: String, args: List<String>): JSONObject =
+        localCliPackage.execute(cwd, args)
 
     internal fun executeCliForLocalAgent(cwd: String, args: List<String>): JSONObject {
         require(args.isNotEmpty()) { "Local Agent CLI request requires at least one argument" }

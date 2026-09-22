@@ -24,6 +24,7 @@ This inventory separates live packaged authority from retained reference/compati
 
 | Surface | Owner | Purpose |
 | --- | --- | --- |
+| Replaceable RiftCLI local intelligence package | `RiftLocalCliPackage.kt` + `RiftVortexLocalAgent.kt` + `/workspace/.riftcli/` | Source-implemented local package boundary pending next APK install. Package code executes in bounded headless QuickJS with read-only RiftFS visibility and no direct file-write/process/network/Android/Git/shell/ToolHost authority; authority-bearing requests may re-enter only the compiled native `driver` protocol after the process gate is enabled. |
 | Codynex LR0 local bridge | `RiftCodynexBridgeClient.kt`, `RiftMcpRuntime.kt`, `RiftNativeShellServices.kt` | Explicit-package Binder bridge exposed only through the fixed `codynex` shell family; bounded request/response/timeout/source limits; next RiftOS Builder/install pass must prove installed-device behavior. |
 | Codynex E0 local editor packaging | `RiftBuildLocalExecutor.kt` + mirrored `com.codynex.editor*` payload + `codynex_editor_vm` | `prepare-codynex-editor` verifies local Codynex source hashes, extracts compiled DEX/native payload from the installed RiftOS APK, materializes canonical VM/compiler/source assets, then uses the local pack/sign/verify/install path; installed-device promotion is pending the next RiftOS rebuild. |
 

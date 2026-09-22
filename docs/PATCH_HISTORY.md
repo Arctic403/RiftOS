@@ -6,6 +6,31 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.39 — Replaceable local RiftCLI intelligence boundary
+
+### Architecture decision
+
+RiftCLI is now split deliberately into two layers:
+
+- a small compiled trust kernel and Local Agent execution supervisor that own the process-local enable gate, authority declaration, replay protection, request/loop bounds, cancellation/job reservation, recursion prevention, native driver protocol and final dispatch validation;
+- a replaceable local intelligence package at `/workspace/.riftcli/` for future planner, memory content, skills, command policy, Observer interpretation, retry/procedure knowledge and debugger/history interpretation.
+
+The local package is intentionally outside the APK and outside the RiftOS source repository. It executes only in the existing bounded headless QuickJS runtime with read-only RiftFS visibility and no direct file-write, process, network, Android, Git, shell or ToolHost authority.
+
+### Implementation
+
+`RiftLocalCliPackage.kt` validates a versioned manifest, exact package-root containment, entry size, response size and native re-entry shape. Local package execution requires the native RiftCLI gate to already be enabled. The only authority-bearing handoff the package may return is `nativeArgv` beginning with `driver`; Local Agent then re-enters the existing native driver protocol and execution supervisor.
+
+`RiftVortexLocalAgent.kt` now reserves only the six actual native trust-kernel commands — `help`, `status`, `architecture`, `enable`, `disable`, and `driver`. Any other enabled CLI command is routed through the replaceable local package.
+
+`RiftNativeShell.kt` owns the process-local package loader instance beside the existing headless QuickJS runtime. Android source validation now requires `RiftLocalCliPackage.kt`, and `scripts/test-rift-cli-native-bootstrap.mjs` locks the package root, gate-before-local-execution rule, no-direct-authority contract, exactly-one structured response contract and driver-only native re-entry.
+
+The live workspace package is seeded at `/workspace/.riftcli/` with `manifest.json`, `config.json`, `runtime/main.js` and reserved `commands/`, `skills/`, `planner/`, `memory/`, `observer/`, and `policies/` lanes. The current package intentionally exposes only `local-status`; all intelligence lanes remain inactive until N1.8.0 promotion.
+
+A direct bounded QuickJS syntax run of the seeded package returned the expected `rift.cli-local-response/1` envelope with `riftFsWrite=false`, `processAuthority=false`, `networkAuthority=false`, and `androidAuthority=false`.
+
+This patch is **source-implemented and locally package-syntax-proven only** until Builder validation and the next installed APK prove Local Agent routing, gate enforcement, package status reporting and driver-only re-entry on-device. N1.8.0 remains unpromoted.
+
 ## Patch 10.38 — N1.8.0 warm-cache semantic byte-budget parity
 
 ### Torture finding

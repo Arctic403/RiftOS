@@ -11,6 +11,7 @@ const host = read(k + 'RiftCliHost.kt');
 const shell = read(k + 'RiftNativeShell.kt');
 const services = read(k + 'RiftNativeShellServices.kt');
 const localAgent = read(k + 'RiftVortexLocalAgent.kt');
+const localPackage = read(k + 'RiftLocalCliPackage.kt');
 const gradle = read('android/app/build.gradle.kts');
 const cmake = read(cpp + 'CMakeLists.txt');
 const core = read(cpp + 'riftcli/rift_cli_core.cpp');
@@ -56,7 +57,11 @@ check(
     shell.includes('origin = "rift-local-agent-cli"') &&
     localAgent.includes('private object RiftLocalAgentCliIntelligence') &&
     localAgent.includes('if (op == "intelligence") return RiftLocalAgentCliIntelligence.execute(context, args)') &&
-    localAgent.includes('RiftMcpRuntime.nativeShell(context).executeCliForLocalAgent(cwd, argv)') &&
+    localAgent.includes('private val TRUST_KERNEL_COMMANDS = setOf("help", "status", "architecture", "enable", "disable", "driver")') &&
+    localAgent.includes('if (command in TRUST_KERNEL_COMMANDS)') &&
+    localAgent.includes('executeLocalCliForLocalAgent(cwd, argv)') &&
+    localAgent.includes('RiftCLI is disabled; enable it through the native process gate before local intelligence execution') &&
+    localAgent.includes('Local RiftCLI package may re-enter only the native driver protocol') &&
     !shell.includes('RiftExperimentalCli')
 );
 
@@ -64,6 +69,38 @@ check(
   'Local Agent remains an independent RiftOS authority',
   services.includes('RiftOsLocalAgent.execute(context,request)') &&
     !services.includes('RiftAgentRouter')
+);
+
+check(
+  'replaceable local RiftCLI package is sandboxed and cannot self-grant authority',
+  localPackage.includes('private const val PACKAGE_RELATIVE = "workspace/.riftcli"') &&
+    localPackage.includes('private const val MANIFEST_SCHEMA = "rift.cli-local-package/1"') &&
+    localPackage.includes('runtime.executeQuickJs(') &&
+    localPackage.includes('.put("riftFsWrite", false)') &&
+    localPackage.includes('.put("processAuthority", false)') &&
+    localPackage.includes('.put("networkAuthority", false)') &&
+    localPackage.includes('.put("androidAuthority", false)') &&
+    localPackage.includes('.put("gitAuthority", false)') &&
+    localPackage.includes('.put("shellAuthority", false)') &&
+    localPackage.includes('.put("toolHostAuthority", false)') &&
+    localPackage.includes('responseLines.size == 1') &&
+    localPackage.includes('val entrySnapshotName = "entry-$invocationId.js"') &&
+    localPackage.includes('entrySnapshot.writeText(manifest.entryFile.readText(Charsets.UTF_8), Charsets.UTF_8)') &&
+    localPackage.includes('runCatching { entrySnapshot.delete() }') &&
+    localPackage.includes('values.first().trim().lowercase() == "driver"') &&
+    localPackage.includes('RiftCLI local package may request only the native driver protocol') &&
+    shell.includes('private val localCliPackage = RiftLocalCliPackage(appContext, headlessJs)') &&
+    shell.includes('internal fun localCliPackageStatus()') &&
+    shell.includes('internal fun executeLocalCliForLocalAgent')
+);
+
+check(
+  'docs lock compiled trust kernel plus local replaceable intelligence without activating blocked cognition',
+  docs.includes('compiled RiftCLI trust kernel') &&
+    docs.includes('/workspace/.riftcli/') &&
+    docs.includes('may propose/request work but can never grant itself authority') &&
+    docs.includes('Planner, project memory, skills, command policy, Observer interpretation') &&
+    docs.includes('no new CLI intelligence capability is added until N1.8.0 Repository Consistency Observer is fully torture-tested and promoted')
 );
 
 check(
@@ -101,6 +138,7 @@ for (const required of [
   'src/main/cpp/riftcli/rift_cli_core.h',
   'src/main/cpp/riftcli/rift_cli_jni.cpp',
   'src/main/java/com/riftos/app/RiftCliHost.kt',
+  'src/main/java/com/riftos/app/RiftLocalCliPackage.kt',
 ]) {
   check(`Android exact source snapshot includes ${required}`, gradle.includes(required));
 }

@@ -1,14 +1,14 @@
-# RiftCLI Native Architecture
+# RiftCLI Trust Kernel + Local Intelligence Architecture
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-21.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-22.**
 
 Gate N0 is proven on the installed Android device. Gate N1 plus its replay/job/cancellation/provenance hardening is also proven on the installed Android device (Builder run #255 / source `121edf6b3255beca33a45351d3952c7026b5cb4b`) on `armeabi-v7a`.
 
 Status: **N1, N1.5 persistent push/events, and N1.6 Batch V2 are live-proven on the installed Android device. N1.5 was promoted on 2026-09-21 from installed source `0814fb8cf8ca31186d6e639fc7ad3b965d822897`: an external Chrome SSE subscriber received the same sequenced lifecycle events that DebugHub recorded through `event.created -> cli.event.send -> cli.ack`, without polling, and a forced disconnect/reconnect replayed only the missed cursor range with no duplicates.**
 
-RiftCLI is being rebuilt from scratch as RiftOS's native engineering supervisor. The previous Experimental RiftCLI Kotlin/swarm/IR/lifecycle implementation was intentionally retired rather than used as the new foundation.
+RiftCLI is being rebuilt from scratch as RiftOS's engineering supervisor with a compiled native trust kernel and a replaceable Local Agent-owned intelligence package. The previous Experimental RiftCLI Kotlin/swarm/IR/lifecycle implementation was intentionally retired rather than used as the new foundation.
 
 ## Permanent dependency direction
 
@@ -21,32 +21,35 @@ MCP / RiftShell
         v
 RiftOS Local Agent
         |
-        v
-RiftCLI intelligence/tool layer
+        +--> replaceable local RiftCLI intelligence package
+        |      /workspace/.riftcli/
+        |      planner / memory / skills / observer / policies / commands
+        |      bounded QuickJS; no direct authority
         |
         v
-thin Kotlin/JNI host -> C++ RiftCLI core
+compiled RiftCLI trust kernel
+C++ gate + driver/replay/loop protocol + dispatch safety
+        |
+        v
+compiled Local Agent execution supervisor
         |
         v
 bounded RiftOS authorities
 ```
 
-The external reasoning source may be ChatGPT, another AI client, a human, or deterministic automation, but it does **not** host RiftCLI directly. The RiftOS Local Agent owns the CLI host boundary and uses RiftCLI as an internal gated tool/intelligence layer.
+The external reasoning source may be ChatGPT, another AI client, a human, or deterministic automation, but it does **not** host RiftCLI directly. The RiftOS Local Agent owns the CLI host boundary.
+
+**Architecture lock:** RiftCLI is split into a small compiled trust kernel and a replaceable local intelligence package. The local package lives under `/workspace/.riftcli/`, executes only inside bounded headless QuickJS, and may propose/request work but can never grant itself authority. All authority still comes from the compiled process-local gate plus the existing Local Agent/native execution supervisor.
+
+The compiled trust kernel owns only security/protocol invariants: enable/disable state, authority declaration, replay protection, loop/request bounds, recursion prevention, dispatch validation, cancellation/job reservation and the native driver contract. Planner, project memory, skills, command policy, Observer interpretation, retry strategy, procedure knowledge and future CLI cognition belong in the replaceable local package unless a later proof shows a specific invariant must be native.
 
 RiftCLI **never calls a model or inference API**. There is no model-backend interface inside the CLI. The native process-local enable switch remains the only CLI enable gate, defaults OFF after each process start, and is non-persistent.
 
 ## Language and host boundary
 
-The canonical RiftCLI implementation language is **C++**.
+The canonical **trust-kernel/protocol** implementation language is C++. Kotlin remains Android host/supervisor glue. The canonical **replaceable intelligence layer** is local package code/data executed by the Local Agent in the bounded headless runtime.
 
-Kotlin is Android host glue only:
-
-- load `libriftcli.so`;
-- marshal shell arguments and the current working directory through JNI;
-- parse the native result envelope;
-- return the result to RiftShell/MCP.
-
-Kotlin must not become the owner of planning, project memory, architecture reasoning, research, verification, task state, or mutation policy.
+Compiled code must not become the owner of planner policy, project memory content, skills, architecture reasoning, research procedures, task strategy or replaceable command behavior. Local package code must not gain direct process, network, Android, Git, shell or ToolHost authority; it can only return bounded request envelopes for the compiled supervisor to validate.
 
 ## Source ownership
 
@@ -57,7 +60,9 @@ Current owners:
 - `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp` — UTF-safe JNI adapter only.
 - `android/app/src/main/cpp/CMakeLists.txt` — native build definition.
 - `android/app/src/main/java/com/riftos/app/RiftCliHost.kt` — thin Android JNI host.
-- `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` — RiftOS Local Agent ownership boundary; hosts the internal RiftCLI intelligence adapter.
+- `android/app/src/main/java/com/riftos/app/RiftLocalCliPackage.kt` — bounded loader/validator for the replaceable `/workspace/.riftcli/` intelligence package; local code has no direct authority and may re-enter only the native driver protocol.
+- `/workspace/.riftcli/` — local replaceable package root (outside the APK and outside the RiftOS source repo); future commands/skills/planner/memory/observer/policies live here after their gates.
+- `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` — RiftOS Local Agent ownership boundary; routes trust-kernel commands native and all other enabled CLI commands through the local package.
 - `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — compatibility `rift-cli` shell entry plus the existing CLI execution supervisor; direct shell entry is routed through `RiftOsLocalAgent` before native CLI execution.
 
 ## Target ABIs

@@ -678,6 +678,7 @@ private object RiftLocalAgentCliIntelligence {
     private const val MAX_ARG_BYTES = 128 * 1024
     private const val MAX_TOTAL_ARG_BYTES = 256 * 1024
     private const val MAX_CWD_CHARS = 4096
+    private val TRUST_KERNEL_COMMANDS = setOf("help", "status", "architecture", "enable", "disable", "driver")
 
     fun execute(context: Context, args: JSONObject): JSONObject {
         val cwd = args.optString("cwd", "/").trim().ifBlank { "/" }
@@ -708,12 +709,69 @@ private object RiftLocalAgentCliIntelligence {
             argv.add(value)
         }
 
-        val hosted = RiftMcpRuntime.nativeShell(context).executeCliForLocalAgent(cwd, argv)
-        hosted.put("owner", "riftos-local-agent")
-        hosted.put("switchOwner", "riftcli-native-process-gate")
-        hosted.put("defaultEnabled", false)
-        hosted.put("persistentEnable", false)
-        return hosted
+        val nativeShell = RiftMcpRuntime.nativeShell(context)
+        val command = argv.first().trim().lowercase()
+
+        if (command in TRUST_KERNEL_COMMANDS) {
+            val hosted = nativeShell.executeCliForLocalAgent(cwd, argv)
+            hosted.put("owner", "riftos-local-agent")
+            hosted.put("switchOwner", "riftcli-native-process-gate")
+            hosted.put("defaultEnabled", false)
+            hosted.put("persistentEnable", false)
+            hosted.put("localPackage", nativeShell.localCliPackageStatus())
+            return hosted
+        }
+
+        val gate = nativeShell.executeCliForLocalAgent(cwd, listOf("status"))
+        val gateResult = gate.optJSONObject("result")
+            ?: throw IllegalStateException("RiftCLI native status result is unavailable")
+        require(gateResult.optBoolean("enabled", false)) {
+            "RiftCLI is disabled; enable it through the native process gate before local intelligence execution"
+        }
+
+        val local = nativeShell.executeLocalCliForLocalAgent(cwd, argv)
+        val nativeRaw = local.opt("nativeArgv")
+        if (nativeRaw is JSONArray) {
+            val requested = ArrayList<String>(nativeRaw.length())
+            var nativeBytes = 0
+            for (index in 0 until nativeRaw.length()) {
+                val value = nativeRaw.opt(index)
+                require(value is String) { "Local RiftCLI nativeArgv[$index] must be a string" }
+                val bytes = value.toByteArray(Charsets.UTF_8).size
+                require(bytes <= MAX_ARG_BYTES) { "Local RiftCLI nativeArgv[$index] exceeds $MAX_ARG_BYTES bytes" }
+                nativeBytes += bytes
+                require(nativeBytes <= MAX_TOTAL_ARG_BYTES) { "Local RiftCLI nativeArgv exceeds $MAX_TOTAL_ARG_BYTES bytes" }
+                requested += value
+            }
+            require(requested.isNotEmpty() && requested.first().trim().lowercase() == "driver") {
+                "Local RiftCLI package may re-enter only the native driver protocol"
+            }
+
+            val hosted = nativeShell.executeCliForLocalAgent(cwd, requested)
+            hosted.put("owner", "riftos-local-agent")
+            hosted.put("switchOwner", "riftcli-native-process-gate")
+            hosted.put("defaultEnabled", false)
+            hosted.put("persistentEnable", false)
+            hosted.put("localExecution", true)
+            hosted.put("localPackage", local.optJSONObject("package") ?: nativeShell.localCliPackageStatus())
+            hosted.put("localOutput", local.optString("output"))
+            hosted.put("localResult", local.opt("result") ?: JSONObject.NULL)
+            return hosted
+        }
+
+        return JSONObject()
+            .put("schema", "rift.local-agent-cli/1")
+            .put("host", "riftos-local-agent")
+            .put("owner", "riftos-local-agent")
+            .put("switchOwner", "riftcli-native-process-gate")
+            .put("defaultEnabled", false)
+            .put("persistentEnable", false)
+            .put("enabled", true)
+            .put("localExecution", true)
+            .put("output", local.optString("output"))
+            .put("result", local.opt("result") ?: JSONObject.NULL)
+            .put("localPackage", local.optJSONObject("package") ?: nativeShell.localCliPackageStatus())
+            .put("localDiagnostics", local.opt("diagnostics") ?: JSONObject.NULL)
     }
 }
 
