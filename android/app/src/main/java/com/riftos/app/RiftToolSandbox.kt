@@ -2622,6 +2622,7 @@ internal class RiftToolSandbox(context: Context) {
         var metadataOnly = 0
         var truncated = false
         var bytesScanned = 0L
+        var semanticBytesAccounted = 0L
         var hashBytes = 0L
         var hashFailures = 0
         val incompleteReasons = linkedSetOf<String>()
@@ -2716,7 +2717,7 @@ internal class RiftToolSandbox(context: Context) {
                 return
             }
 
-            if (size > MAX_INDEX_TOTAL_BYTES - bytesScanned) {
+            if (size > MAX_INDEX_TOTAL_BYTES - semanticBytesAccounted) {
                 updateEvidence(
                     path,
                     RepositoryFileEvidence(
@@ -2732,6 +2733,7 @@ internal class RiftToolSandbox(context: Context) {
                 skipped += 1
                 return
             }
+            semanticBytesAccounted += size
 
             val cached = symbolIndex[path]
             if (cached != null && cached.sha256 == contentSha) {

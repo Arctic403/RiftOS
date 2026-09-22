@@ -6,6 +6,30 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.38 — N1.8.0 warm-cache semantic byte-budget parity
+
+### Torture finding
+
+The installed Patch 10.37 build at source `164843c6613a2d7433b2d7ffd160725930863839` passed the v5 restart proof, Local Agent-hosted RiftCLI proof, long-stable-key proof, fail-soft >4 MiB observer-cache proof, 4096/4097 symbol and dependency bounds, and the consistency resolver CPU bound. The continuing regression sweep then found a hard false-clean in the semantic total-byte budget.
+
+The existing 128 MiB + 1 fixture is exactly 134,217,729 bytes across 65 Kotlin files. A cold scan could fail closed correctly, but a warm scan later returned `complete=true`. Runtime diagnostics showed all 65 semantic rows reused from cache with `semanticEvidenceComplete=true`.
+
+Source audit isolated the cause in `RiftToolSandbox.refreshSymbolIndex()`: `bytesScanned` was used both as an actual re-analysis diagnostic and as the 128 MiB semantic budget counter. Cached rows returned before `bytesScanned` increased, so warm reuse could bypass the total semantic budget.
+
+### Hardening
+
+Current source separates those meanings:
+
+- `bytesScanned` remains the count of bytes actually re-analyzed;
+- `semanticBytesAccounted` advances for every semantically eligible file;
+- the subtraction-style bound checks `size > MAX_INDEX_TOTAL_BYTES - semanticBytesAccounted`;
+- the semantic budget advances before the cached-row reuse branch, so cold and warm scans enforce the same 128 MiB limit;
+- the +1 file remains explicit metadata-only evidence with `semantic-total-byte-bound` instead of becoming falsely clean on cache reuse.
+
+`scripts/test-rift-repository-consistency-v1.mjs` now locks the dedicated semantic-budget counter, forbids using `bytesScanned` for the total budget, and asserts that budget accounting occurs before cached semantic reuse.
+
+This patch is **source-implemented only** until Builder validation, installation and live cold/warm exact/+1 replay succeed. N1.8.0 remains unpromoted.
+
 ## Patch 10.37 — Local Agent-hosted RiftCLI + N1.8.0 torture hardening
 
 ### Architecture lock

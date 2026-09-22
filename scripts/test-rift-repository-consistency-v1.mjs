@@ -234,6 +234,16 @@ assert.match(sandbox, /cached\.sha256 == contentSha/);
 assert.match(sandbox, /repository-content-hash-byte-bound/);
 assert.match(sandbox, /repository-content-hash-failure/);
 assert.match(sandbox, /semantic-total-byte-bound/);
+assert.match(sandbox, /var semanticBytesAccounted = 0L/);
+assert.match(sandbox, /MAX_INDEX_TOTAL_BYTES - semanticBytesAccounted/);
+assert.match(sandbox, /semanticBytesAccounted \+= size/);
+assert.ok(!sandbox.includes('MAX_INDEX_TOTAL_BYTES - bytesScanned'), 'semantic total-byte bound must not depend only on cold-scan bytes');
+const semanticBudgetAccount = sandbox.indexOf('semanticBytesAccounted += size');
+const semanticCacheReuse = sandbox.indexOf('val cached = symbolIndex[path]');
+assert.ok(
+  semanticBudgetAccount >= 0 && semanticCacheReuse > semanticBudgetAccount,
+  'semantic total-byte budget must account every eligible file before cached semantic reuse'
+);
 assert.ok(
   (sandbox.match(/RiftSourceIntelligenceV2\.AnalysisBoundExceeded/g) || []).length >= 2,
   'semantic analysis bounds must fail closed in both project indexing and candidate semantic-delta analysis'
