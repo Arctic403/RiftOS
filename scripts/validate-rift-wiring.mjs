@@ -138,6 +138,7 @@ const desktop = read(`${kotlinDir}/RiftNativeDesktop.kt`);
 const workspaceApps = read(`${kotlinDir}/RiftNativeWorkspaceApps.kt`);
 const browserBridge = read(`${kotlinDir}/RiftBrowserMcpAppBridge.kt`);
 const cliHost = read(`${kotlinDir}/RiftCliHost.kt`);
+const localCliPackage = read(`${kotlinDir}/RiftLocalCliPackage.kt`);
 const toolHost = read(`${kotlinDir}/RiftToolHost.kt`);
 const toolSandbox = read(`${kotlinDir}/RiftToolSandbox.kt`);
 const cliCmake = read('android/app/src/main/cpp/CMakeLists.txt');
@@ -165,11 +166,26 @@ if (!cliHost.includes('System.loadLibrary("riftcli")') || !cliHost.includes('pri
 if (!nativeShell.includes('"rift-cli" -> executeHostedCliCommand(cwd, args)') ||
     !nativeShell.includes('RiftOsLocalAgent.execute(appContext, request)') ||
     !nativeShell.includes('internal fun executeCliForLocalAgent') ||
+    !nativeShell.includes('internal fun executeLocalCliForLocalAgent') ||
+    !nativeShell.includes('private val localCliPackage = RiftLocalCliPackage(appContext, headlessJs)') ||
     !nativeShell.includes('RiftCliHost.executeShell(args, cwd)') ||
     !localAgent.includes('private object RiftLocalAgentCliIntelligence') ||
     !localAgent.includes('if (op == "intelligence") return RiftLocalAgentCliIntelligence.execute(context, args)') ||
-    !localAgent.includes('RiftMcpRuntime.nativeShell(context).executeCliForLocalAgent(cwd, argv)')) {
-  fail('RiftCLI is not hosted behind the RiftOS Local Agent boundary');
+    !localAgent.includes('private val TRUST_KERNEL_COMMANDS = setOf("help", "status", "architecture", "enable", "disable", "driver")') ||
+    !localAgent.includes('if (command in TRUST_KERNEL_COMMANDS)') ||
+    !localAgent.includes('executeLocalCliForLocalAgent(cwd, argv)') ||
+    !localAgent.includes('RiftCLI is disabled; enable it through the native process gate before local intelligence execution') ||
+    !localAgent.includes('Local RiftCLI package may re-enter only the native driver protocol') ||
+    !localCliPackage.includes('private const val PACKAGE_RELATIVE = "workspace/.riftcli"') ||
+    !localCliPackage.includes('runtime.executeQuickJs(') ||
+    !localCliPackage.includes('values.first().trim().lowercase() == "driver"') ||
+    !localCliPackage.includes('.put("processAuthority", false)') ||
+    !localCliPackage.includes('.put("networkAuthority", false)') ||
+    !localCliPackage.includes('.put("androidAuthority", false)') ||
+    !localCliPackage.includes('.put("gitAuthority", false)') ||
+    !localCliPackage.includes('.put("shellAuthority", false)') ||
+    !localCliPackage.includes('.put("toolHostAuthority", false)')) {
+  fail('RiftCLI Local Agent trust-kernel/local-package boundary is incomplete');
 }
 if (!gradle.includes('ndkVersion = "28.2.13676358"') ||
     !gradle.includes('abiFilters += listOf("arm64-v8a", "armeabi-v7a")') ||

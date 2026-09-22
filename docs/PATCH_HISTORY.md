@@ -6,6 +6,24 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.40 — Builder wiring validator follows the replaceable RiftCLI boundary
+
+Builder run `35778126690` at source `8a4da45f7c9530ab14e08793736aec3f7cc3a8cf` failed during `npm run check:transport` before Kotlin/NDK compilation. The failure was isolated to `scripts/validate-rift-wiring.mjs`: its Local Agent assertion still required the retired Patch 10.37 direct form `RiftMcpRuntime.nativeShell(context).executeCliForLocalAgent(cwd, argv)`, while Patch 10.39 deliberately routes non-trust-kernel commands through `executeLocalCliForLocalAgent(cwd, argv)`.
+
+The validator is now updated to enforce the Patch 10.39 architecture instead of weakening validation. It requires:
+
+- the compatibility `rift-cli` entry to enter `RiftOsLocalAgent`;
+- the compiled native supervisor and `RiftCliHost` path to remain present;
+- the exact native trust-kernel command set: `help`, `status`, `architecture`, `enable`, `disable`, `driver`;
+- non-kernel Local Agent routing through `executeLocalCliForLocalAgent`;
+- the native gate-before-local-execution rejection;
+- `RiftLocalCliPackage` at fixed `workspace/.riftcli`;
+- bounded headless QuickJS execution;
+- driver-only native re-entry;
+- explicit absence of direct process, network, Android, Git, shell and ToolHost authority in the local package contract.
+
+No runtime authority or CLI behavior changed in this patch; it repairs the source validation contract so Builder can evaluate the actual Patch 10.39 implementation. Installed-device proof remains pending the next successful Builder/install pass.
+
 ## Patch 10.39 — Replaceable local RiftCLI intelligence boundary
 
 ### Architecture decision
