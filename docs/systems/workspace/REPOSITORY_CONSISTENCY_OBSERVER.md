@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.1+ PENDING**
+Status: **N1.8.0 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.1 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.2+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -792,7 +792,7 @@ No "best" claim is allowed without measured comparable evidence.
 
 ### N1.8.0 — fact graph/schema
 
-**N1.8.0 is promoted.** The installed ARM32-compatible Android build from source `9d196567e38e781d97a24bb2c808b47cbc2303eb` passed the strengthened Builder source gate and the exact-current-build process-boundary proof. Before restart the clean repository stabilized at `complete=true`, 1034 facts / 1088 edges / 260 files, graph SHA-256 `25869f703a8a4a7fe36b28ae6f9c3ab34daece15925c21b98166100eaab57d87`, with verified unchanged cache state. After a real Android force-stop/reopen, the **first** consistency read reproduced the exact same SHA, graph ID, counts, completeness, and verified `changed=false` cache state. RiftCLI also returned to `enabled=false`, confirming the process-local non-persistent gate reset. Earlier torture evidence covers cache integrity/recovery, mutation sensitivity, concurrency/reentrancy, mutation-during-scan coherence, path/identity stress, file/dependency/symbol boundaries, exact/+1 byte budgets, oversized snapshot fail-soft behavior, cache eviction/rebuild, and safe result omission. No N1.8.0 false-clean kill condition remains open. N1.8.1-N1.8.7 remain pending.
+**N1.8.0 is promoted.** The installed ARM32-compatible Android build from source `9d196567e38e781d97a24bb2c808b47cbc2303eb` passed the strengthened Builder source gate and the exact-current-build process-boundary proof. Before restart the clean repository stabilized at `complete=true`, 1034 facts / 1088 edges / 260 files, graph SHA-256 `25869f703a8a4a7fe36b28ae6f9c3ab34daece15925c21b98166100eaab57d87`, with verified unchanged cache state. After a real Android force-stop/reopen, the **first** consistency read reproduced the exact same SHA, graph ID, counts, completeness, and verified `changed=false` cache state. RiftCLI also returned to `enabled=false`, confirming the process-local non-persistent gate reset. Earlier torture evidence covers cache integrity/recovery, mutation sensitivity, concurrency/reentrancy, mutation-during-scan coherence, path/identity stress, file/dependency/symbol boundaries, exact/+1 byte budgets, oversized snapshot fail-soft behavior, cache eviction/rebuild, and safe result omission. No N1.8.0 false-clean kill condition remains open. N1.8.1 is now source-implemented with promotion pending Builder/install/torture; N1.8.2-N1.8.7 remain pending.
 
 Current source provides:
 - canonical fact/edge/finding required-field schema in `RiftRepositoryConsistencyObserver.kt`;
@@ -834,6 +834,23 @@ Patch 10.42 strengthened the remaining cache-failure proof in the permanent Buil
 
 ### N1.8.1 — syntax/import integrity
 
+Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING BUILDER + INSTALLED TORTURE.**
+
+N1.8.1 extends the existing PI-v2 evidence path rather than introducing a second parser/index. `RiftSourceIntelligenceV2` advances to analyzer v3 and PI persistence advances to cache schema v6 so changed files are re-analyzed incrementally while warm unchanged rows retain bounded syntax and dependency-intent evidence across restart.
+
+Current source provides:
+- bounded structural syntax evidence (`bounded-structural-v1`) with at most 128 deterministic delimiter/comment/string issues per file; this is a hot-path structural check, not a compiler AST or replacement for build/compiler proof;
+- dependency `localIntent` evidence for explicit local forms such as relative JavaScript/Python imports, quoted C/C++ includes and Rust local module/use forms;
+- a separate read-only `project kind=integrity` view so the promoted N1.8.0 canonical graph is not changed by an unpromoted N1.8.1 lane;
+- full clean-oracle mode when the integrity query is blank and focused-seed mode when a path/query is supplied;
+- deterministic dependency classification into `local-resolved`, `local-missing`, `ambiguous-local`, or `external-or-unclassified`, with error findings only where local intent is provable;
+- bounded direct outgoing/reverse dependency frontier output for staged scan expansion without claiming repository-wide cleanliness from focused coverage;
+- distinct `complete` and `clean` states, explicit incomplete reasons/bounds, and deterministic `integritySha256` over the exact file/dependency/finding/frontier evidence;
+- permanent source regression `scripts/test-rift-integrity-v1.mjs`, wired into the main Builder source gate and ownership ledger.
+
+Promotion still requires Builder/compile proof, installed cold/warm/cache-v5→v6/restart parity, syntax false-positive/adversarial fixtures, local/external/ambiguous import fixtures, delete/rename/move path-drift cases, focused-frontier bounds and full-oracle parity. Any false clean or unclassified formerly-local drift exposed by those fixtures must be hardened rather than waived.
+
+Required outcomes remain:
 - incremental changed-file analysis;
 - local import/include/module resolution;
 - deletion/rename/path drift detection;

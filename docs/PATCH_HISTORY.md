@@ -6,6 +6,25 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.44 — N1.8.1 syntax/import integrity staging foundation
+
+N1.8.1 starts from the promoted N1.8.0 observer without changing its canonical graph contract.
+
+Source changes:
+- `RiftSourceIntelligenceV2` advances to analyzer v3 and adds bounded `bounded-structural-v1` syntax evidence with at most 128 deterministic structural issues per file;
+- dependency evidence now carries tri-state `localIntent`, preserving explicit local forms such as relative JavaScript/Python imports, quoted C/C++ includes and Rust local module/use forms;
+- PI persistence advances from schema v5 to v6 so syntax evidence and local-intent metadata survive warm reuse and process restart under the existing integrity-sealed producer-bound cache contract;
+- `RiftToolSandbox` adds a separate read-only `project kind=integrity` lane. Blank query runs a clean full-repository oracle; a focused query seeds a bounded scan and emits direct outgoing/reverse frontier paths for staged expansion;
+- integrity results distinguish `complete` from `clean`, classify dependencies as `local-resolved`, `local-missing`, `ambiguous-local` or `external-or-unclassified`, and bind exact evidence to `integritySha256`;
+- deterministic error findings are emitted only for bounded structural syntax failures, provably missing local dependencies, or ambiguous local candidates. Unresolved external/unclassified imports are not promoted into false local errors;
+- the N1.8.1 lane is deliberately isolated from `RiftRepositoryConsistencyObserver.foundationView`, so the promoted N1.8.0 canonical graph remains unchanged until N1.8.1 itself passes promotion;
+- new permanent regression `scripts/test-rift-integrity-v1.mjs` is wired into `npm check` and Source Ownership.
+
+Bounds are explicit: 4096 integrity files, 4096 dependency rows, 1024 findings, 240 preview/frontier rows and 128 structural syntax issues per file. Bound or upstream PI incompleteness prevents a complete verdict.
+
+The structural syntax scanner is intentionally a bounded lexical/structural hot-path check, not a compiler AST. Compiler/build/test verification remains a stronger separate proof tier. The focused frontier is also not a repository-wide clean verdict: N1.8.1 promotion still requires the full clean oracle.
+
+Local Android source validation is green. Raw Node execution is not exposed by the device RiftShell, so the new Node regression and Kotlin compilation remain external Builder obligations. N1.8.1 is **source-implemented only** until Builder success, install, v5→v6 cache migration/restart parity, syntax false-positive/adversarial fixtures, local/external/ambiguous import fixtures, rename/delete/move path-drift cases, frontier-bound testing and focused-vs-oracle parity all pass.
 ## Patch 10.43 — N1.8.0 promotion
 
 Installed source `9d196567e38e781d97a24bb2c808b47cbc2303eb` completed the final N1.8.0 promotion gate.

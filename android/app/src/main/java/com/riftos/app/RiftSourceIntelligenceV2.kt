@@ -7,10 +7,11 @@ package com.riftos.app
  * symbol and dependency interpretation cannot drift between the two evidence paths.
  */
 internal object RiftSourceIntelligenceV2 {
-    const val VERSION = 2
+    const val VERSION = 3
     const val MAX_SEMANTIC_DELTA_ENTRIES = 1_000
     const val MAX_ANALYSIS_SYMBOLS = 4_096
     const val MAX_ANALYSIS_DEPENDENCIES = 4_096
+    const val MAX_SYNTAX_ISSUES = 128
 
     class AnalysisBoundExceeded(
         val reason: String
@@ -28,14 +29,29 @@ internal object RiftSourceIntelligenceV2 {
     data class Dependency(
         val specifier: String,
         val kind: String,
-        val line: Int
+        val line: Int,
+        val localIntent: Boolean? = null
+    )
+
+    data class SyntaxIssue(
+        val code: String,
+        val line: Int,
+        val column: Int,
+        val detail: String
+    )
+
+    data class SyntaxEvidence(
+        val mode: String,
+        val valid: Boolean,
+        val issues: List<SyntaxIssue>
     )
 
     data class Analysis(
         val path: String,
         val language: String,
         val symbols: List<Symbol>,
-        val dependencies: List<Dependency>
+        val dependencies: List<Dependency>,
+        val syntax: SyntaxEvidence
     )
 
     data class SignatureChange(val before: Symbol, val after: Symbol)
@@ -55,12 +71,14 @@ internal object RiftSourceIntelligenceV2 {
 
     fun analyze(path: String, text: String, maxPreviewChars: Int = 320): Analysis {
         val language = languageForPath(path)
-        val lines = normalize(text).split('\n')
+        val normalized = normalize(text)
+        val lines = normalized.split('\n')
         return Analysis(
             path = path,
             language = language,
             symbols = extractSymbols(path, language, lines, maxPreviewChars),
-            dependencies = extractDependencies(language, lines)
+            dependencies = extractDependencies(language, lines),
+            syntax = analyzeSyntax(language, normalized)
         )
     }
 
@@ -77,9 +95,21 @@ internal object RiftSourceIntelligenceV2 {
         require(!afterExists || afterText != null) { "Existing after-state text is required for semantic diff" }
 
         val before = if (beforeExists) analyze(path, beforeText.orEmpty())
-            else Analysis(path, languageForPath(path), emptyList(), emptyList())
+            else Analysis(
+                path,
+                languageForPath(path),
+                emptyList(),
+                emptyList(),
+                SyntaxEvidence("absent", true, emptyList())
+            )
         val after = if (afterExists) analyze(path, afterText.orEmpty())
-            else Analysis(path, languageForPath(path), emptyList(), emptyList())
+            else Analysis(
+                path,
+                languageForPath(path),
+                emptyList(),
+                emptyList(),
+                SyntaxEvidence("absent", true, emptyList())
+            )
 
         val addedSymbols = ArrayList<Symbol>()
         val removedSymbols = ArrayList<Symbol>()
@@ -271,7 +301,7 @@ internal object RiftSourceIntelligenceV2 {
     private fun extractDependencies(language: String, lines: List<String>): List<Dependency> {
         val out = ArrayList<Dependency>()
         val seen = HashSet<String>()
-        fun add(specifier: String?, kind: String, line: Int) {
+        fun add(specifier: String?, kind: String, line: Int, localIntent: Boolean? = null) {
             val value = specifier?.trim()?.trimEnd(';')?.trim().orEmpty()
             if (value.isBlank() || value.length > 500) return
             val key = "$line:$kind:$value"
@@ -279,33 +309,61 @@ internal object RiftSourceIntelligenceV2 {
             if (out.size >= MAX_ANALYSIS_DEPENDENCIES) {
                 throw AnalysisBoundExceeded("semantic-dependency-bound")
             }
-            out += Dependency(value, kind, line)
+            out += Dependency(value, kind, line, localIntent)
         }
 
         lines.forEachIndexed { index, line ->
             when (language) {
-                "cpp" -> Regex("^\\s*#\\s*include\\s*[<\"]([^>\"]+)[>\"]")
-                    .find(line)?.let { add(it.groupValues[1], "include", index + 1) }
+                "cpp" -> Regex("^\\s*#\\s*include\\s*([<\"])([^>\"]+)[>\"]")
+                    .find(line)?.let {
+                        add(
+                            it.groupValues[2],
+                            "include",
+                            index + 1,
+                            localIntent = it.groupValues[1] == "\""
+                        )
+                    }
                 "kotlin", "java" -> Regex("^\\s*import\\s+([A-Za-z0-9_.*]+)")
                     .find(line)?.let { add(it.groupValues[1], "import", index + 1) }
                 "javascript" -> {
                     Regex("\\bfrom\\s*[\"']([^\"']+)[\"']")
-                        .find(line)?.let { add(it.groupValues[1], "import", index + 1) }
+                        .find(line)?.let {
+                            val specifier = it.groupValues[1]
+                            add(specifier, "import", index + 1, specifier.startsWith("."))
+                        }
                     Regex("^\\s*import\\s*[\"']([^\"']+)[\"']")
-                        .find(line)?.let { add(it.groupValues[1], "import", index + 1) }
+                        .find(line)?.let {
+                            val specifier = it.groupValues[1]
+                            add(specifier, "import", index + 1, specifier.startsWith("."))
+                        }
                     Regex("\\b(?:require|import)\\s*\\(\\s*[\"']([^\"']+)[\"']")
-                        .findAll(line).forEach { add(it.groupValues[1], "require", index + 1) }
+                        .findAll(line).forEach {
+                            val specifier = it.groupValues[1]
+                            add(specifier, "require", index + 1, specifier.startsWith("."))
+                        }
                 }
                 "python" -> {
                     Regex("^\\s*from\\s+([A-Za-z0-9_.]+)\\s+import\\b")
-                        .find(line)?.let { add(it.groupValues[1], "python", index + 1) }
+                        .find(line)?.let {
+                            val specifier = it.groupValues[1]
+                            add(specifier, "python", index + 1, specifier.startsWith("."))
+                        }
                     Regex("^\\s*import\\s+([A-Za-z0-9_.]+)")
-                        .find(line)?.let { add(it.groupValues[1], "python", index + 1) }
+                        .find(line)?.let {
+                            val specifier = it.groupValues[1]
+                            add(specifier, "python", index + 1, specifier.startsWith("."))
+                        }
                 }
                 "rust" -> {
-                    Regex("^\\s*use\\s+([^;]+)").find(line)?.let { add(it.groupValues[1], "use", index + 1) }
+                    Regex("^\\s*use\\s+([^;]+)").find(line)?.let {
+                        val specifier = it.groupValues[1].trim()
+                        val localIntent = specifier.startsWith("crate::") ||
+                            specifier.startsWith("self::") ||
+                            specifier.startsWith("super::")
+                        add(specifier, "use", index + 1, localIntent)
+                    }
                     Regex("^\\s*mod\\s+([A-Za-z_][A-Za-z0-9_]*)")
-                        .find(line)?.let { add(it.groupValues[1], "module", index + 1) }
+                        .find(line)?.let { add(it.groupValues[1], "module", index + 1, true) }
                 }
                 "csharp" -> Regex("^\\s*using\\s+([A-Za-z0-9_.]+)")
                     .find(line)?.let { add(it.groupValues[1], "import", index + 1) }
@@ -314,6 +372,197 @@ internal object RiftSourceIntelligenceV2 {
             }
         }
         return out.distinctBy { "${it.line}:${it.kind}:${it.specifier}" }
+    }
+
+    private fun analyzeSyntax(language: String, text: String): SyntaxEvidence {
+        if (language == "generic") {
+            return SyntaxEvidence("not-applicable", true, emptyList())
+        }
+
+        val issues = ArrayList<SyntaxIssue>()
+        val delimiters = ArrayList<Triple<Char, Int, Int>>()
+        val supportsSlashComments = language != "python"
+        val supportsHashComments = language == "python"
+        val supportsBlockComments = language != "python"
+        val supportsTripleQuotes = language == "python" || language == "kotlin" || language == "java"
+        val supportsBacktickStrings = language == "javascript"
+
+        fun addIssue(code: String, line: Int, column: Int, detail: String) {
+            if (issues.size >= MAX_SYNTAX_ISSUES) {
+                throw AnalysisBoundExceeded("syntax-issue-bound")
+            }
+            issues += SyntaxIssue(code, line.coerceAtLeast(1), column.coerceAtLeast(1), detail)
+        }
+
+        var blockComment = false
+        var blockCommentLine = 1
+        var blockCommentColumn = 1
+        var quote: Char? = null
+        var quoteLine = 1
+        var quoteColumn = 1
+        var tripleQuote: Char? = null
+        var tripleLine = 1
+        var tripleColumn = 1
+        var escaped = false
+
+        text.split('\n').forEachIndexed { lineIndex, sourceLine ->
+            val lineNumber = lineIndex + 1
+            var index = 0
+            while (index < sourceLine.length) {
+                val c = sourceLine[index]
+                val next = sourceLine.getOrNull(index + 1)
+                val column = index + 1
+
+                if (blockComment) {
+                    if (c == '*' && next == '/') {
+                        blockComment = false
+                        index += 2
+                    } else {
+                        index += 1
+                    }
+                    continue
+                }
+
+                val activeTriple = tripleQuote
+                if (activeTriple != null) {
+                    if (index + 2 < sourceLine.length &&
+                        sourceLine[index] == activeTriple &&
+                        sourceLine[index + 1] == activeTriple &&
+                        sourceLine[index + 2] == activeTriple
+                    ) {
+                        tripleQuote = null
+                        index += 3
+                    } else {
+                        index += 1
+                    }
+                    continue
+                }
+
+                val activeQuote = quote
+                if (activeQuote != null) {
+                    if (escaped) {
+                        escaped = false
+                        index += 1
+                        continue
+                    }
+                    if (c == '\\') {
+                        escaped = true
+                        index += 1
+                        continue
+                    }
+                    if (c == activeQuote) {
+                        quote = null
+                    }
+                    index += 1
+                    continue
+                }
+
+                if (supportsSlashComments && c == '/' && next == '/') break
+                if (supportsHashComments && c == '#') break
+                if (supportsBlockComments && c == '/' && next == '*') {
+                    blockComment = true
+                    blockCommentLine = lineNumber
+                    blockCommentColumn = column
+                    index += 2
+                    continue
+                }
+
+                if (supportsTripleQuotes &&
+                    (c == '"' || c == '\'') &&
+                    index + 2 < sourceLine.length &&
+                    sourceLine[index + 1] == c &&
+                    sourceLine[index + 2] == c
+                ) {
+                    tripleQuote = c
+                    tripleLine = lineNumber
+                    tripleColumn = column
+                    index += 3
+                    continue
+                }
+
+                if (c == '"' || c == '\'' || (supportsBacktickStrings && c == 96.toChar())) {
+                    quote = c
+                    quoteLine = lineNumber
+                    quoteColumn = column
+                    escaped = false
+                    index += 1
+                    continue
+                }
+
+                if (c == '(' || c == '[' || c == '{') {
+                    delimiters += Triple(c, lineNumber, column)
+                    index += 1
+                    continue
+                }
+
+                if (c == ')' || c == ']' || c == '}') {
+                    val expectedOpen = when (c) {
+                        ')' -> '('
+                        ']' -> '['
+                        else -> '{'
+                    }
+                    val top = delimiters.lastOrNull()
+                    if (top == null) {
+                        addIssue(
+                            "unexpected-closing-delimiter",
+                            lineNumber,
+                            column,
+                            "Unexpected closing delimiter " + c
+                        )
+                    } else if (top.first != expectedOpen) {
+                        addIssue(
+                            "mismatched-delimiter",
+                            lineNumber,
+                            column,
+                            "Closing delimiter " + c + " does not match opening " + top.first
+                        )
+                        delimiters.removeAt(delimiters.lastIndex)
+                    } else {
+                        delimiters.removeAt(delimiters.lastIndex)
+                    }
+                }
+                index += 1
+            }
+        }
+
+        if (blockComment) {
+            addIssue(
+                "unterminated-block-comment",
+                blockCommentLine,
+                blockCommentColumn,
+                "Block comment is not terminated"
+            )
+        }
+        tripleQuote?.let {
+            addIssue(
+                "unterminated-triple-string",
+                tripleLine,
+                tripleColumn,
+                "Triple-quoted string is not terminated"
+            )
+        }
+        quote?.let {
+            addIssue(
+                "unterminated-string",
+                quoteLine,
+                quoteColumn,
+                "String literal is not terminated"
+            )
+        }
+        delimiters.asReversed().forEach { frame ->
+            addIssue(
+                "unclosed-delimiter",
+                frame.second,
+                frame.third,
+                "Opening delimiter " + frame.first + " is not closed"
+            )
+        }
+
+        return SyntaxEvidence(
+            mode = "bounded-structural-v1",
+            valid = issues.isEmpty(),
+            issues = issues
+        )
     }
 
     private fun symbolEndLine(lines: List<String>, startIndex: Int, language: String): Int {

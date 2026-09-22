@@ -49,9 +49,13 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_GRAPH_EDGES = 600
         private const val MAX_CONSISTENCY_INPUT_FILES = 1_024
         private const val MAX_CONSISTENCY_INPUT_EDGES = 1_024
+        private const val MAX_INTEGRITY_FILES = 4_096
+        private const val MAX_INTEGRITY_DEPENDENCIES = 4_096
+        private const val MAX_INTEGRITY_FINDINGS = 1_024
+        private const val MAX_INTEGRITY_PREVIEW = 240
         private const val MAX_PERSISTED_INDEX_FILES = 4000
         private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
-        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 5
+        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 6
         private const val MAX_HUNKS = 128
         private const val MAX_SNAPSHOT_FILES = 50_000
         private const val MAX_ARCHIVE_ENTRIES = 50_000
@@ -124,7 +128,23 @@ internal class RiftToolSandbox(context: Context) {
     private data class DependencyRecord(
         val specifier: String,
         val kind: String,
-        val line: Int
+        val line: Int,
+        val localIntent: Boolean? = null
+    )
+
+    private data class SyntaxIssueRecord(
+        val code: String,
+        val line: Int,
+        val column: Int,
+        val detail: String
+    )
+
+    private data class IntegrityDependencyResolution(
+        val target: String?,
+        val status: String,
+        val localIntent: Boolean,
+        val reason: String,
+        val candidateCount: Int
     )
 
     private data class RepositoryFileEvidence(
@@ -141,7 +161,10 @@ internal class RiftToolSandbox(context: Context) {
         val sha256: String,
         val language: String,
         val symbols: List<SymbolRecord>,
-        val dependencies: List<DependencyRecord>
+        val dependencies: List<DependencyRecord>,
+        val syntaxMode: String = "unavailable",
+        val syntaxValid: Boolean = true,
+        val syntaxIssues: List<SyntaxIssueRecord> = emptyList()
     )
 
     private fun executeRequest(raw: String, origin: String): String {
@@ -1340,6 +1363,7 @@ internal class RiftToolSandbox(context: Context) {
         if (kind == "impact") return projectImpact(path, query, requestedLimit)
         if (kind == "validation") return projectValidation(path, query)
         if (kind == "consistency") return projectConsistency(path, query, requestedLimit)
+        if (kind == "integrity") return projectIntegrity(path, query)
         val indexStats = refreshSymbolIndex(base)
 
         val children = (base.listFiles()
@@ -1378,8 +1402,8 @@ internal class RiftToolSandbox(context: Context) {
                 .put("index", indexStats)
                 .put("languages", languages)
                 .put("dependencyEdges", dependencyEdges)
-                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency")))
-                .put("viewUsage", "project kind=graph|impact|validation|consistency; query is used by focused graph/impact/validation views"))
+                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity")))
+                .put("viewUsage", "project kind=graph|impact|validation|consistency|integrity; integrity query optionally seeds a focused direct-frontier scan"))
             .put("operations", JSONArray(listOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")))
     }
 
@@ -1547,6 +1571,288 @@ internal class RiftToolSandbox(context: Context) {
             .put("findingPreview", preview("findings"))
             .put("fullResultAvailable", true)
             .put("fullResultUsage", "project kind=consistency query=full")
+    }
+
+    private fun projectIntegrity(path: String, query: String): JSONObject {
+        val base = sandboxFile(path)
+        require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
+
+        val indexStats = refreshSymbolIndex(base, verifyContent = true)
+        val indexed = symbolIndex.filterKeys { isPathWithin(it, path) }.toSortedMap()
+        val repositoryFiles = repositoryFileIndex.filterKeys { isPathWithin(it, path) }.toSortedMap()
+        val allPaths = repositoryFiles.keys.toSortedSet()
+        val incompleteReasons = linkedSetOf<String>()
+
+        if (!indexStats.optBoolean("contentVerified", false)) {
+            incompleteReasons += "repository-content-unverified"
+        }
+        if (!indexStats.optBoolean("repositoryEvidenceComplete", false)) {
+            incompleteReasons += "repository-evidence-incomplete"
+        }
+        if (!indexStats.optBoolean("semanticEvidenceComplete", false)) {
+            incompleteReasons += "semantic-evidence-incomplete"
+        }
+        val upstreamReasons = indexStats.optJSONArray("incompleteReasons") ?: JSONArray()
+        for (reasonIndex in 0 until upstreamReasons.length()) {
+            upstreamReasons.optString(reasonIndex).trim()
+                .takeIf { it.isNotBlank() }
+                ?.let(incompleteReasons::add)
+        }
+
+        val seed = query.trim().replace('\\', '/')
+        val matchingPaths = if (seed.isBlank()) {
+            indexed.keys.toList()
+        } else {
+            indexed.keys.filter { candidate ->
+                candidate == seed ||
+                    candidate.endsWith("/" + seed) ||
+                    candidate.contains(seed, ignoreCase = true)
+            }
+        }
+        if (seed.isNotBlank() && matchingPaths.isEmpty()) {
+            incompleteReasons += "integrity-seed-not-indexed"
+        }
+        if (matchingPaths.size > MAX_INTEGRITY_FILES) {
+            incompleteReasons += "integrity-file-bound"
+        }
+        val selectedPaths = matchingPaths.take(MAX_INTEGRITY_FILES).toSortedSet()
+        val selectedSet = selectedPaths.toSet()
+
+        val findings = JSONArray()
+        val fileEvidence = JSONArray()
+        val dependencyEvidence = JSONArray()
+        val dependencyPreview = JSONArray()
+        val frontierPaths = linkedSetOf<String>()
+
+        var syntaxChecked = 0
+        var syntaxInvalid = 0
+        var dependencyCount = 0
+        var localResolved = 0
+        var localMissing = 0
+        var ambiguousLocal = 0
+        var externalOrUnclassified = 0
+        var findingBoundHit = false
+        var dependencyBoundHit = false
+
+        fun addFinding(row: JSONObject) {
+            if (findings.length() >= MAX_INTEGRITY_FINDINGS) {
+                findingBoundHit = true
+                incompleteReasons += "integrity-finding-bound"
+                return
+            }
+            findings.put(row)
+        }
+
+        selectedPaths.forEach { sourcePath ->
+            val indexedFile = indexed[sourcePath] ?: return@forEach
+            val repositoryEvidence = repositoryFiles[sourcePath]
+            val syntaxRows = JSONArray()
+            indexedFile.syntaxIssues.forEach { issue ->
+                syntaxRows.put(JSONObject()
+                    .put("code", issue.code)
+                    .put("line", issue.line)
+                    .put("column", issue.column)
+                    .put("detail", issue.detail))
+            }
+            fileEvidence.put(JSONObject()
+                .put("path", sourcePath)
+                .put("sha256", repositoryEvidence?.sha256 ?: indexedFile.sha256)
+                .put("language", indexedFile.language)
+                .put("syntaxMode", indexedFile.syntaxMode)
+                .put("syntaxValid", indexedFile.syntaxValid)
+                .put("syntaxIssues", syntaxRows))
+
+            if (indexedFile.syntaxMode == "bounded-structural-v1") {
+                syntaxChecked += 1
+            } else {
+                incompleteReasons += "syntax-evidence-unavailable"
+            }
+            if (!indexedFile.syntaxValid) {
+                syntaxInvalid += 1
+                indexedFile.syntaxIssues.forEach { issue ->
+                    addFinding(JSONObject()
+                        .put("ruleId", "n1.8.1-syntax-" + issue.code)
+                        .put("category", "syntax")
+                        .put("severity", "error")
+                        .put("deterministic", true)
+                        .put("path", sourcePath)
+                        .put("line", issue.line)
+                        .put("column", issue.column)
+                        .put("detail", issue.detail)
+                        .put("proofSource", "rift-source-intelligence-v3-bounded-structural")
+                        .put("blocksN181Promotion", true))
+                }
+            }
+
+            indexedFile.dependencies.forEach dependencyLoop@{ dependency ->
+                if (dependencyCount >= MAX_INTEGRITY_DEPENDENCIES) {
+                    dependencyBoundHit = true
+                    incompleteReasons += "integrity-dependency-bound"
+                    return@dependencyLoop
+                }
+                dependencyCount += 1
+                val resolution = integrityResolveDependency(
+                    projectPath = path,
+                    sourcePath = sourcePath,
+                    dependency = dependency,
+                    allPaths = allPaths
+                )
+                when (resolution.status) {
+                    "local-resolved" -> localResolved += 1
+                    "local-missing" -> localMissing += 1
+                    "ambiguous-local" -> ambiguousLocal += 1
+                    else -> externalOrUnclassified += 1
+                }
+
+                val row = JSONObject()
+                    .put("source", sourcePath)
+                    .put("kind", dependency.kind)
+                    .put("specifier", dependency.specifier)
+                    .put("line", dependency.line)
+                    .put("localIntent", resolution.localIntent)
+                    .put("status", resolution.status)
+                    .put("reason", resolution.reason)
+                    .put("candidateCount", resolution.candidateCount)
+                    .put("target", resolution.target ?: JSONObject.NULL)
+                dependencyEvidence.put(row)
+                if (dependencyPreview.length() < MAX_INTEGRITY_PREVIEW) {
+                    dependencyPreview.put(JSONObject(row.toString()))
+                }
+
+                val outgoingTarget = resolution.target
+                if (outgoingTarget != null &&
+                    seed.isNotBlank() &&
+                    outgoingTarget !in selectedSet
+                ) {
+                    frontierPaths += outgoingTarget
+                }
+
+                if (resolution.status == "local-missing") {
+                    addFinding(JSONObject()
+                        .put("ruleId", "n1.8.1-local-dependency-missing")
+                        .put("category", "import-integrity")
+                        .put("severity", "error")
+                        .put("deterministic", true)
+                        .put("path", sourcePath)
+                        .put("line", dependency.line)
+                        .put("specifier", dependency.specifier)
+                        .put("detail", "Dependency is explicitly local but no repository target resolves")
+                        .put("proofSource", "project-intelligence-v2-local-resolution")
+                        .put("blocksN181Promotion", true))
+                } else if (resolution.status == "ambiguous-local") {
+                    addFinding(JSONObject()
+                        .put("ruleId", "n1.8.1-local-dependency-ambiguous")
+                        .put("category", "import-integrity")
+                        .put("severity", "error")
+                        .put("deterministic", true)
+                        .put("path", sourcePath)
+                        .put("line", dependency.line)
+                        .put("specifier", dependency.specifier)
+                        .put("candidateCount", resolution.candidateCount)
+                        .put("detail", "Local dependency resolves to more than one repository candidate")
+                        .put("proofSource", "project-intelligence-v2-local-resolution")
+                        .put("blocksN181Promotion", true))
+                }
+            }
+        }
+
+        if (seed.isNotBlank() && selectedSet.isNotEmpty()) {
+            var frontierChecks = 0
+            var frontierBoundHit = false
+            indexed.forEach sourceLoop@{ (sourcePath, indexedFile) ->
+                if (sourcePath in selectedSet || frontierBoundHit) return@sourceLoop
+                indexedFile.dependencies.forEach dependencyLoop@{ dependency ->
+                    if (frontierChecks >= MAX_INTEGRITY_DEPENDENCIES) {
+                        frontierBoundHit = true
+                        incompleteReasons += "integrity-frontier-bound"
+                        return@dependencyLoop
+                    }
+                    frontierChecks += 1
+                    val resolution = integrityResolveDependency(
+                        projectPath = path,
+                        sourcePath = sourcePath,
+                        dependency = dependency,
+                        allPaths = allPaths
+                    )
+                    val reverseTarget = resolution.target
+                    if (reverseTarget != null && reverseTarget in selectedSet) {
+                        frontierPaths += sourcePath
+                    }
+                }
+            }
+        }
+
+        val sortedFrontier = frontierPaths.toList().sorted()
+        val frontierTruncated = sortedFrontier.size > MAX_INTEGRITY_PREVIEW
+        if (frontierTruncated) {
+            incompleteReasons += "integrity-frontier-output-bound"
+        }
+        val frontier = JSONArray()
+        sortedFrontier.take(MAX_INTEGRITY_PREVIEW).forEach(frontier::put)
+
+        val complete = incompleteReasons.isEmpty()
+        val clean = findings.length() == 0
+        val canonicalPayload = JSONObject()
+            .put("schema", "rift-repository-integrity-v1")
+            .put("phase", "N1.8.1")
+            .put("projectRoot", normalizedPath(path))
+            .put("scopeMode", if (seed.isBlank()) "clean-oracle" else "focused-seed")
+            .put("seed", seed)
+            .put("complete", complete)
+            .put("clean", clean)
+            .put("incompleteReasons", JSONArray(incompleteReasons.sorted()))
+            .put("files", fileEvidence)
+            .put("dependencies", dependencyEvidence)
+            .put("findings", findings)
+            .put("frontier", JSONArray(sortedFrontier))
+        val integritySha256 = RiftPatchManifestV1.sha256Canonical(canonicalPayload)
+
+        return JSONObject()
+            .put("schema", "rift-repository-integrity-v1")
+            .put("phase", "N1.8.1")
+            .put("view", "integrity")
+            .put("projectIntelligence", "v2")
+            .put("sourceAnalyzerVersion", RiftSourceIntelligenceV2.VERSION)
+            .put("projectRoot", normalizedPath(path))
+            .put("authority", "evidence-only")
+            .put("scopeMode", if (seed.isBlank()) "clean-oracle" else "focused-seed")
+            .put("seed", seed)
+            .put("complete", complete)
+            .put("clean", clean)
+            .put("incompleteReasons", JSONArray(incompleteReasons.sorted()))
+            .put("integritySha256", integritySha256)
+            .put("incremental", JSONObject()
+                .put("filesReanalyzed", indexStats.optInt("indexed"))
+                .put("filesReused", indexStats.optInt("reused"))
+                .put("filesRemoved", indexStats.optInt("removed"))
+                .put("bytesReanalyzed", indexStats.optLong("bytesScanned"))
+                .put("cacheSchemaVersion", indexStats.optInt("cacheSchemaVersion"))
+                .put("cacheLoadStatus", indexStats.optString("cacheLoadStatus"))
+                .put("cacheRejectedReason", indexStats.opt("cacheRejectedReason") ?: JSONObject.NULL))
+            .put("syntax", JSONObject()
+                .put("mode", "bounded-structural-v1")
+                .put("filesChecked", syntaxChecked)
+                .put("invalidFiles", syntaxInvalid))
+            .put("counts", JSONObject()
+                .put("indexedFiles", indexed.size)
+                .put("selectedFiles", selectedPaths.size)
+                .put("dependencies", dependencyCount)
+                .put("localResolved", localResolved)
+                .put("localMissing", localMissing)
+                .put("ambiguousLocal", ambiguousLocal)
+                .put("externalOrUnclassified", externalOrUnclassified)
+                .put("findings", findings.length()))
+            .put("findings", findings)
+            .put("dependencyPreview", dependencyPreview)
+            .put("dependencyPreviewLimit", MAX_INTEGRITY_PREVIEW)
+            .put("dependencyEvidenceTruncated", dependencyBoundHit)
+            .put("findingEvidenceTruncated", findingBoundHit)
+            .put("staging", JSONObject()
+                .put("strategy", "focused-seed-direct-frontier-v1")
+                .put("frontier", frontier)
+                .put("frontierCount", sortedFrontier.size)
+                .put("frontierTruncated", frontierTruncated)
+                .put("fullRepositoryOracleRequiredForPromotion", true))
     }
 
     private fun projectImpact(path: String, query: String, requestedLimit: Int): JSONObject {
@@ -2073,6 +2379,130 @@ internal class RiftToolSandbox(context: Context) {
         return distinct.singleOrNull()
     }
 
+    private fun integrityResolveDependency(
+        projectPath: String,
+        sourcePath: String,
+        dependency: DependencyRecord,
+        allPaths: Set<String>
+    ): IntegrityDependencyResolution {
+        val specifier = dependency.specifier.trim().replace('\\', '/')
+        if (specifier.isBlank()) {
+            return IntegrityDependencyResolution(
+                target = null,
+                status = "external-or-unclassified",
+                localIntent = false,
+                reason = "blank-specifier",
+                candidateCount = 0
+            )
+        }
+
+        val sourceFile = sandboxFile(sourcePath)
+        val parent = sourceFile.parentFile
+        val candidates = linkedSetOf<String>()
+
+        fun addExisting(candidate: File) {
+            val relative = runCatching { relativePath(candidate) }.getOrNull() ?: return
+            if (relative in allPaths) candidates += relative
+        }
+
+        fun addRelativeCandidates(raw: String) {
+            val sourceParent = parent ?: return
+            val direct = File(sourceParent, raw)
+            listOf(
+                direct,
+                File(direct.path + ".kt"),
+                File(direct.path + ".java"),
+                File(direct.path + ".js"),
+                File(direct.path + ".ts"),
+                File(direct.path + ".cpp"),
+                File(direct.path + ".cc"),
+                File(direct.path + ".c"),
+                File(direct.path + ".h"),
+                File(direct.path + ".hpp"),
+                File(direct.path + ".py"),
+                File(direct, "index.js"),
+                File(direct, "index.ts")
+            ).forEach(::addExisting)
+        }
+
+        if (specifier.startsWith(".")) {
+            addRelativeCandidates(specifier)
+        }
+
+        if (dependency.kind == "include" && dependency.localIntent == true) {
+            addRelativeCandidates(specifier)
+            allPaths.asSequence()
+                .filter { it.endsWith("/" + specifier) }
+                .take(3)
+                .forEach(candidates::add)
+        }
+
+        if (dependency.kind == "module" && dependency.localIntent == true && parent != null) {
+            addExisting(File(parent, specifier + ".rs"))
+            addExisting(File(File(parent, specifier), "mod.rs"))
+        }
+
+        var projectQualifiedIntent = false
+        if (dependency.kind == "import" &&
+            !specifier.startsWith(".") &&
+            !specifier.contains('/')
+        ) {
+            val qualified = specifier.removeSuffix(".*").trimEnd('.').replace('.', '/')
+            if (qualified.isNotBlank()) {
+                allPaths.asSequence()
+                    .filter { it.endsWith("/" + qualified + ".kt") || it.endsWith("/" + qualified + ".java") }
+                    .take(3)
+                    .forEach(candidates::add)
+
+                val packagePath = qualified.substringBeforeLast('/', "")
+                if (packagePath.isNotBlank()) {
+                    projectQualifiedIntent = allPaths.any { candidate ->
+                        candidate.contains("/" + packagePath + "/")
+                    }
+                }
+            }
+        }
+
+        val target = resolveDependency(projectPath, sourcePath, dependency, allPaths)
+        if (target != null) candidates += target
+
+        val localIntent = dependency.localIntent == true || projectQualifiedIntent || target != null
+        if (localIntent && candidates.size > 1) {
+            return IntegrityDependencyResolution(
+                target = null,
+                status = "ambiguous-local",
+                localIntent = true,
+                reason = "multiple-local-candidates",
+                candidateCount = candidates.size
+            )
+        }
+        if (target != null) {
+            return IntegrityDependencyResolution(
+                target = target,
+                status = "local-resolved",
+                localIntent = true,
+                reason = if (dependency.localIntent == true) "explicit-local-resolved" else "repository-target-resolved",
+                candidateCount = maxOf(1, candidates.size)
+            )
+        }
+        if (localIntent) {
+            return IntegrityDependencyResolution(
+                target = null,
+                status = "local-missing",
+                localIntent = true,
+                reason = if (dependency.localIntent == true) "explicit-local-target-missing" else "project-qualified-target-missing",
+                candidateCount = candidates.size
+            )
+        }
+        return IntegrityDependencyResolution(
+            target = null,
+            status = "external-or-unclassified",
+            localIntent = false,
+            reason = "no-deterministic-local-intent",
+            candidateCount = candidates.size
+        )
+    }
+
     private fun resolveDependency(projectPath: String, sourcePath: String, dependency: DependencyRecord, allPaths: Set<String>): String? {
         val specifier = dependency.specifier.trim().replace('\\', '/')
         if (specifier.isBlank()) return null
@@ -2542,7 +2972,32 @@ internal class RiftToolSandbox(context: Context) {
                 val dependency = dependencyRows.optJSONObject(dependencyIndex) ?: continue
                 val specifier = dependency.optString("specifier").trim()
                 if (specifier.isBlank()) continue
-                dependencies += DependencyRecord(specifier, dependency.optString("kind"), dependency.optInt("line", 1))
+                val rawLocalIntent = dependency.opt("localIntent")
+                val localIntent = if (rawLocalIntent == null || rawLocalIntent == JSONObject.NULL) {
+                    null
+                } else {
+                    dependency.optBoolean("localIntent")
+                }
+                dependencies += DependencyRecord(
+                    specifier,
+                    dependency.optString("kind"),
+                    dependency.optInt("line", 1),
+                    localIntent
+                )
+            }
+            val syntaxIssues = ArrayList<SyntaxIssueRecord>()
+            val syntaxRows = row.optJSONArray("syntaxIssues") ?: JSONArray()
+            val syntaxLimit = minOf(syntaxRows.length(), RiftSourceIntelligenceV2.MAX_SYNTAX_ISSUES)
+            for (syntaxIndex in 0 until syntaxLimit) {
+                val issue = syntaxRows.optJSONObject(syntaxIndex) ?: continue
+                val code = issue.optString("code").trim()
+                if (code.isBlank()) continue
+                syntaxIssues += SyntaxIssueRecord(
+                    code = code,
+                    line = issue.optInt("line", 1).coerceAtLeast(1),
+                    column = issue.optInt("column", 1).coerceAtLeast(1),
+                    detail = issue.optString("detail").take(500)
+                )
             }
             symbolIndex[path] = IndexedFile(
                 modified = modified,
@@ -2550,7 +3005,10 @@ internal class RiftToolSandbox(context: Context) {
                 sha256 = sha,
                 language = row.optString("language", "generic"),
                 symbols = symbols,
-                dependencies = dependencies
+                dependencies = dependencies,
+                syntaxMode = row.optString("syntaxMode").trim().ifBlank { "unavailable" },
+                syntaxValid = row.optBoolean("syntaxValid", false),
+                syntaxIssues = syntaxIssues
             )
         }
     }
@@ -2574,7 +3032,16 @@ internal class RiftToolSandbox(context: Context) {
                 dependencies.put(JSONObject()
                     .put("specifier", dependency.specifier)
                     .put("kind", dependency.kind)
-                    .put("line", dependency.line))
+                    .put("line", dependency.line)
+                    .put("localIntent", dependency.localIntent ?: JSONObject.NULL))
+            }
+            val syntaxIssues = JSONArray()
+            indexed?.syntaxIssues?.forEach { issue ->
+                syntaxIssues.put(JSONObject()
+                    .put("code", issue.code)
+                    .put("line", issue.line)
+                    .put("column", issue.column)
+                    .put("detail", issue.detail))
             }
             files.put(JSONObject()
                 .put("path", path)
@@ -2585,7 +3052,10 @@ internal class RiftToolSandbox(context: Context) {
                 .put("semanticReason", evidence.semanticReason ?: JSONObject.NULL)
                 .put("language", indexed?.language ?: JSONObject.NULL)
                 .put("symbols", symbols)
-                .put("dependencies", dependencies))
+                .put("dependencies", dependencies)
+                .put("syntaxMode", indexed?.syntaxMode ?: JSONObject.NULL)
+                .put("syntaxValid", indexed?.syntaxValid ?: false)
+                .put("syntaxIssues", syntaxIssues))
         }
         val payloadObject = JSONObject()
             .put("version", PROJECT_INTELLIGENCE_CACHE_VERSION)
@@ -2812,7 +3282,15 @@ internal class RiftToolSandbox(context: Context) {
                 SymbolRecord(symbol.name, symbol.kind, symbol.path, symbol.line, symbol.endLine, symbol.signature)
             }
             val dependencies = analysis.dependencies.map { dependency ->
-                DependencyRecord(dependency.specifier, dependency.kind, dependency.line)
+                DependencyRecord(
+                    dependency.specifier,
+                    dependency.kind,
+                    dependency.line,
+                    dependency.localIntent
+                )
+            }
+            val syntaxIssues = analysis.syntax.issues.map { issue ->
+                SyntaxIssueRecord(issue.code, issue.line, issue.column, issue.detail)
             }
             val indexed = IndexedFile(
                 modified = modified,
@@ -2820,7 +3298,10 @@ internal class RiftToolSandbox(context: Context) {
                 sha256 = contentSha,
                 language = analysis.language,
                 symbols = symbols,
-                dependencies = dependencies
+                dependencies = dependencies,
+                syntaxMode = analysis.syntax.mode,
+                syntaxValid = analysis.syntax.valid,
+                syntaxIssues = syntaxIssues
             )
             if (symbolIndex[path] != indexed) {
                 symbolIndex[path] = indexed
