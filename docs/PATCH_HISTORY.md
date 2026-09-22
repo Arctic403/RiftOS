@@ -6,6 +6,18 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.43 — N1.8.0 promotion
+
+Installed source `9d196567e38e781d97a24bb2c808b47cbc2303eb` completed the final N1.8.0 promotion gate.
+
+The exact-current-build baseline stabilized at `complete=true`, 1034 facts / 1088 edges / 260 repository files, canonical graph SHA-256 `25869f703a8a4a7fe36b28ae6f9c3ab34daece15925c21b98166100eaab57d87`, with app-private observer cache `persisted=true`, `verified=true`, and `changed=false`. After a real Android force-stop/reopen, the first consistency read reproduced the exact same graph SHA, graph ID, counts, completeness and verified unchanged cache state. RiftCLI also restarted at `enabled=false`, confirming its process-local non-persistent authority gate reset across process death.
+
+This closes the remaining exact-current-build process-boundary obligation after Patch 10.42's strengthened Builder cache-failure gate. Combined with the retained torture evidence for content sensitivity, cache integrity/recovery, deterministic warm/concurrent reads, mutation-during-scan coherence, path/identity stress, bounded symbol/dependency extraction, exact/+1 semantic and repository byte budgets, observer-cache eviction/rebuild, oversized snapshot fail-soft behavior and safe result omission, no N1.8.0 false-clean kill condition remains open.
+
+**N1.8.0 is promoted.** This clears the N1.8.0 freeze but does not automatically activate Planner, Memory, Skills, Observer interpretation or other future intelligence lanes. N1.8.1-N1.8.7 remain pending, and N2 remains blocked until the full N1.8 program is promoted.
+
+This patch is documentation/evidence only; runtime source is unchanged and no APK rebuild is required for the promotion record.
+
 ## Patch 10.42 — N1.8.0 final installed sweep + cache-failure control-flow proof
 
 The installed source `ce8fbbd3f7179c8b153f44daaa2aedb6f2734ea4` closes the Patch 10.38 warm-cache semantic-byte blocker and re-proves the current-build observer baseline.
