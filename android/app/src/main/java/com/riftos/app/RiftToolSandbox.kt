@@ -51,6 +51,7 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_CONSISTENCY_INPUT_EDGES = 1_024
         private const val MAX_PERSISTED_INDEX_FILES = 4000
         private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
+        private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 4
         private const val MAX_HUNKS = 128
         private const val MAX_SNAPSHOT_FILES = 50_000
         private const val MAX_ARCHIVE_ENTRIES = 50_000
@@ -96,6 +97,8 @@ internal class RiftToolSandbox(context: Context) {
     private val pendingIndexInvalidations = LinkedHashSet<String>()
     private var persistentIndexLoaded = false
     private var persistentIndexDirty = false
+    private var persistentIndexLoadStatus = "not-loaded"
+    private var persistentIndexRejectedReason: String? = null
     @Volatile private var batchInvalidationDepth = 0
     private val ignoredDirectoryNames = setOf(
         ".git", ".gradle", ".idea", ".next", ".cache", ".turbo", ".parcel-cache", ".vortex-bridge",
@@ -2374,13 +2377,66 @@ internal class RiftToolSandbox(context: Context) {
         return lines.joinToString(newline) + if (hadFinalNewline) newline else ""
     }
 
+    private fun trustedProjectIntelligenceProducerSourceSha(): String? =
+        BuildConfig.RIFT_SOURCE_SHA.trim().lowercase()
+            .takeIf { it.matches(Regex("^(?:[0-9a-f]{40}|[0-9a-f]{64})$")) }
+
     private fun ensurePersistentIndexLoaded() {
         if (persistentIndexLoaded) return
         persistentIndexLoaded = true
-        if (!projectIntelligenceCache.isFile || projectIntelligenceCache.length() > MAX_PERSISTED_INDEX_BYTES) return
-        val root = runCatching { JSONObject(projectIntelligenceCache.readText(Charsets.UTF_8)) }.getOrNull() ?: return
-        if (root.optInt("version", 0) != 3) return
-        val files = root.optJSONArray("files") ?: return
+        persistentIndexLoadStatus = "missing"
+        persistentIndexRejectedReason = null
+
+        if (!projectIntelligenceCache.isFile) return
+        if (projectIntelligenceCache.length() > MAX_PERSISTED_INDEX_BYTES) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = "cache-size-bound"
+            return
+        }
+
+        val root = runCatching { JSONObject(projectIntelligenceCache.readText(Charsets.UTF_8)) }.getOrNull()
+        if (root == null) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = "cache-malformed"
+            return
+        }
+
+        if (root.optInt("version", 0) != PROJECT_INTELLIGENCE_CACHE_VERSION) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = "cache-schema-version"
+            return
+        }
+
+        val producer = root.optJSONObject("producer")
+        val trustedSourceSha = trustedProjectIntelligenceProducerSourceSha()
+        if (producer == null) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = "producer-missing"
+            return
+        }
+        if (producer.optInt("sourceIntelligenceVersion", -1) != RiftSourceIntelligenceV2.VERSION) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = "producer-analyzer-version"
+            return
+        }
+        if (trustedSourceSha == null) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = "producer-source-untrusted"
+            return
+        }
+        if (producer.optString("sourceSha").trim().lowercase() != trustedSourceSha) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = "producer-source-sha"
+            return
+        }
+
+        val files = root.optJSONArray("files")
+        if (files == null) {
+            persistentIndexLoadStatus = "rejected"
+            persistentIndexRejectedReason = "cache-files-missing"
+            return
+        }
+        persistentIndexLoadStatus = "loaded"
         for (index in 0 until files.length()) {
             val row = files.optJSONObject(index) ?: continue
             val path = row.optString("path").trim()
@@ -2470,7 +2526,10 @@ internal class RiftToolSandbox(context: Context) {
                 .put("dependencies", dependencies))
         }
         val payload = JSONObject()
-            .put("version", 3)
+            .put("version", PROJECT_INTELLIGENCE_CACHE_VERSION)
+            .put("producer", JSONObject()
+                .put("sourceIntelligenceVersion", RiftSourceIntelligenceV2.VERSION)
+                .put("sourceSha", trustedProjectIntelligenceProducerSourceSha() ?: BuildConfig.RIFT_SOURCE_SHA))
             .put("generatedAt", System.currentTimeMillis())
             .put("files", files)
             .toString()
@@ -2742,7 +2801,13 @@ internal class RiftToolSandbox(context: Context) {
             .put("repositoryHashFailures", hashFailures)
             .put("cachedFiles", symbolIndex.size)
             .put("repositoryFiles", repositoryFileIndex.size)
-            .put("persistence", "app-private-v3")
+            .put("persistence", "app-private-v4")
+            .put("cacheSchemaVersion", PROJECT_INTELLIGENCE_CACHE_VERSION)
+            .put("cacheLoadStatus", persistentIndexLoadStatus)
+            .put("cacheRejectedReason", persistentIndexRejectedReason ?: JSONObject.NULL)
+            .put("semanticProducerVersion", RiftSourceIntelligenceV2.VERSION)
+            .put("semanticProducerSourceSha", trustedProjectIntelligenceProducerSourceSha() ?: JSONObject.NULL)
+            .put("semanticProducerTrusted", trustedProjectIntelligenceProducerSourceSha() != null)
             .put("contentVerified", verifyContent)
             .put("repositoryEvidenceComplete", incompleteReasons.none { it.startsWith("repository-") })
             .put("semanticEvidenceComplete", incompleteReasons.none { it.startsWith("semantic-") })

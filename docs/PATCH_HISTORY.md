@@ -6,6 +6,80 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.34 — N1.8.0 semantic-cache producer provenance hardening
+
+### Second installed torture round
+
+Installed source `7ee74c5034bb14c30945d28971c56f35424e5301` re-ran the three promotion-killing content-truth cases from Patch 10.33 successfully:
+
+- full RiftOS baseline returned `complete=true`, 1017 facts / 1072 edges, zero incompleteness reasons, verified cache and content-verified PI-v2 source-of-truth;
+- same-size `Main.kt` content-only edit (`42 -> 43`) retained the stable path fact ID but changed the real file SHA-256, file-fact content hash, graph ID/SHA and cache state;
+- README content-only edit at the same path likewise changed file SHA/fact content hash/canonical graph state;
+- deleting `Case.kt` removed its fact; recreating the same path with unrelated bytes kept path identity where intended but produced new content-bound fact/graph state instead of snapping back to the old pre-delete graph.
+
+The original content-identity defect is therefore live-proven fixed.
+
+### New promotion blocker found by cache provenance review
+
+The second-round torture review found a separate stale-semantics risk.
+
+PI-v2 cache v3 bound semantic entries to repository file SHA, but the persisted symbols/dependencies were not bound to the analyzer/build that produced them. Because Android app-private files survive ordinary app updates, an unchanged source file could retain the same byte SHA across an app update while `RiftSourceIntelligenceV2` itself changed. The new build could then reuse semantic facts produced by the old analyzer.
+
+That violates the clean-oracle requirement even though repository bytes are unchanged.
+
+### Hardening
+
+PI-v2 persistent cache schema is bumped to **v4**.
+
+The cache root now carries producer provenance:
+
+- `sourceIntelligenceVersion = RiftSourceIntelligenceV2.VERSION`;
+- `sourceSha = BuildConfig.RIFT_SOURCE_SHA`.
+
+Load is fail-closed:
+
+- wrong cache schema -> reject;
+- missing producer -> reject;
+- analyzer-version mismatch -> reject;
+- build/source-SHA mismatch -> reject;
+- malformed/oversized cache -> reject;
+- local/unknown build source identity -> reject trusted persisted semantic reuse.
+
+A build source identity is trusted only when it is a full 40- or 64-hex SHA. Builder installs satisfy this contract; local fallback `"local"` deliberately does not.
+
+This means an app update cannot carry old semantic facts forward merely because repository bytes are unchanged. The new process rebuilds current semantic evidence from repository content instead.
+
+### Diagnostics / proof surface
+
+PI-v2 refresh diagnostics now expose:
+
+- `cacheSchemaVersion`;
+- `cacheLoadStatus`;
+- `cacheRejectedReason`;
+- `semanticProducerVersion`;
+- `semanticProducerSourceSha`;
+- `semanticProducerTrusted`.
+
+The rejection reason is retained through the rebuild in the current process so installed testing can prove that an old cache was rejected rather than silently reused. After restart, the newly written v4 cache should load with the current producer.
+
+Canonical repository graph identity remains based on repository facts/relationships rather than app build SHA. Producer provenance controls cache validity; it does not intentionally make identical repository truth hash differently across builds.
+
+### Regression lock
+
+`test-rift-repository-consistency-v1.mjs` now locks:
+
+- PI cache schema v4;
+- analyzer-version producer binding;
+- Builder source-SHA producer binding;
+- local/untrusted source rejection;
+- analyzer/source mismatch rejection paths;
+- observable load/rejection diagnostics;
+- all Patch 10.33 content-bound graph invariants.
+
+Local `riftbuild validate android` is green with project SHA-256 `4d2c3d99f6e1abe999d9e9ce34b48e8e8b39191c2e7faef0d56f2eeedf47b615`. Repository audit/scan reports no new finding beyond the pre-existing `RiftSecretStore.kt` filename heuristic.
+
+N1.8.0 remains **unpromoted**. Next installed proof must show the previous cache rejected/rebuilt by v4, then a process restart must load the newly produced cache under the current analyzer/build identity before the remaining torture matrix resumes. The staged subsystem planner remains implementation-blocked.
+
 ## Patch 10.33 — N1.8.0 content-truth hardening after torture failure
 
 ### Torture result

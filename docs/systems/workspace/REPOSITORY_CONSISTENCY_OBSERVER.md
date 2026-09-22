@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 CONTENT-IDENTITY HARDENING SOURCE-IMPLEMENTED — BUILDER/INSTALLED TORTURE RESTART PENDING; N1.8.1+ PENDING**
+Status: **N1.8.0 CONTENT-TRUTH + CACHE-PROVENANCE HARDENING SOURCE-IMPLEMENTED — BUILDER/INSTALLED TORTURE RESTART PENDING; N1.8.1+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -792,7 +792,7 @@ No "best" claim is allowed without measured comparable evidence.
 
 ### N1.8.0 — fact graph/schema
 
-**Foundation behavior is live-proven, but promotion remains blocked after the torture suite exposed content-only repository changes that the installed v1 graph did not represent. Content-identity hardening is source-implemented and must rebuild/install before the torture suite restarts.**
+**Foundation behavior and the original content-only regressions are live-proven fixed, but promotion remains blocked after the second torture round exposed that persisted semantic PI-v2 cache entries were not bound to the analyzer/build that produced them. Cache-provenance hardening is source-implemented and must rebuild/install before the torture suite continues.**
 
 Current source provides:
 - canonical fact/edge/finding required-field schema in `RiftRepositoryConsistencyObserver.kt`;
@@ -803,7 +803,7 @@ Current source provides:
 - derivation from the existing PI-v2 graph only, with no observer-owned source scan/index;
 - existing Code Mode `project kind=consistency` read-only view with compact-by-default whole-repo output and explicit `query=full` detail mode;
 - content-verified repository file evidence separated from the semantic symbol index: every non-policy-excluded file carries exact size/SHA-256 plus semantic status/reason, while binary/non-text files may remain explicit metadata-only evidence;
-- Project Intelligence cache schema v3 binds semantically parsed entries to exact content SHA and invalidates the older mtime+size-only cache generation;
+- Project Intelligence cache schema v4 binds semantically parsed entries to exact content SHA **and** producer provenance (`RiftSourceIntelligenceV2.VERSION` + trusted `BuildConfig.RIFT_SOURCE_SHA`); caches from another analyzer/build, malformed/oversized caches, or local/untrusted source identities are rejected instead of reused;
 - consistency forces repository-content verification, while ordinary PI-v2 views retain their lighter reuse path; all existing mutation/rollback invalidation clears semantic and repository-file evidence together;
 - Repository Fact Graph schema/cache v2 binds file-fact content to repository byte SHA without making SHA part of stable file identity;
 - independent regression coverage in `scripts/test-rift-repository-consistency-v1.mjs` wired into the main Builder chain.
@@ -812,7 +812,7 @@ Earlier installed proof on source `6dfaea915aa47ca61f5efb9a55a72379b9efb77f` exp
 
 The torture suite then found a hard promotion blocker in the installed v1 foundation. A content-only `Main.kt` edit from `42` to `43` changed the real file SHA-256 from `3e25f46c18b15829f424ae91a11fd3efd4fcbd17c2c764b07b22da08b1191abc` to `e136706cf5c3316f63fa875516ee48dbc1d5eeb0c32f7f66ed35fbc59430719e`, but the repository graph stayed `b60ea1716d94b36239a3a8dff440f3e4223a766c399d3db643feb4b177da224c`, the file fact content hash stayed unchanged and cache reported `changed=false`. A README content-only edit reproduced the same defect. Deleting `Case.kt` and recreating the same path with completely different bytes caused the graph to return to the exact old pre-delete graph identity, proving path existence—not file bytes—was driving the file fact. N1.8.0 therefore failed promotion exactly as the torture gate required.
 
-Source hardening now corrects the foundation rather than weakening the test: PI-v2 persists repository-file evidence in cache schema v3, consistency forces exact content verification, metadata-only/non-semantic files remain explicitly represented, stale semantic entries are removed when files become unindexable, mutation invalidation clears both evidence layers, and Repository Fact Graph v2 includes file size/SHA-256/semantic status in file-fact content while stable identity remains `{kind,path}`. Local Android source validation is green. N1.8.0 remains unpromoted until this source passes external Builder/Kotlin compilation, is installed, and the entire torture matrix restarts from the beginning; the staged subsystem planner remains implementation-blocked.
+Source hardening first corrected the content-truth defect: PI-v2 persists repository-file evidence, consistency forces exact content verification, metadata-only/non-semantic files remain explicitly represented, stale semantic entries are removed when files become unindexable, mutation invalidation clears both evidence layers, and Repository Fact Graph v2 includes file size/SHA-256/semantic status in file-fact content while stable identity remains `{kind,path}`. Installed source `7ee74c5034bb14c30945d28971c56f35424e5301` then re-ran the three original kill cases successfully: same-size `Main.kt` content-only change changed file SHA/fact content hash/graph identity while retaining stable path ID; README content-only change did the same; delete/recreate of `Case.kt` at the same path with unrelated bytes produced a new content-bound graph instead of snapping back to the old pre-delete identity. The second-round review then found a separate stale-semantics risk: persisted semantic entries were SHA-bound to repository bytes but not to the analyzer/build that produced the symbols/dependencies. PI cache schema v4 now requires producer provenance using `RiftSourceIntelligenceV2.VERSION` and a trusted full `BuildConfig.RIFT_SOURCE_SHA`; mismatched/missing/untrusted producer caches are rejected and diagnostics expose cache load/rejection state. Local Android source validation is green. N1.8.0 remains unpromoted until this v4 source passes external Builder/Kotlin compilation, is installed, proves old-cache rejection/rebuild followed by current-producer cache load after restart, and then continues the remaining torture matrix; the staged subsystem planner remains implementation-blocked.
 
 ### N1.8.1 — syntax/import integrity
 
