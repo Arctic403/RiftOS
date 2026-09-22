@@ -184,6 +184,48 @@ assert.match(observer, /reason = "snapshot-too-large"/);
 assert.match(observer, /reason = "cache-write-failed"/);
 assert.match(observer, /reason = "cache-verification-failed"/);
 assert.match(observer, /\.put\("persisted", persisted\)/);
+
+const persistSnapshotStart = observer.indexOf('private fun persistSnapshot(projectRoot: String, snapshot: JSONObject): JSONObject {');
+const verifiedSnapshotStart = observer.indexOf('private fun readVerifiedSnapshot(file: File): JSONObject?', persistSnapshotStart);
+assert.ok(
+  persistSnapshotStart >= 0 && verifiedSnapshotStart > persistSnapshotStart,
+  'observer cache persistence function must remain structurally inspectable'
+);
+const persistSnapshot = observer.slice(persistSnapshotStart, verifiedSnapshotStart);
+const writeAttempt = persistSnapshot.indexOf('val writeFailure = runCatching {');
+const writeFailureBranch = persistSnapshot.indexOf('if (writeFailure != null) {');
+const verificationRead = persistSnapshot.indexOf('val verified = readVerifiedSnapshot(target)');
+const verificationFailureBranch = persistSnapshot.indexOf('if (verified == null) {');
+const successReturn = persistSnapshot.lastIndexOf('persisted = true');
+assert.ok(
+  writeAttempt >= 0 &&
+    writeFailureBranch > writeAttempt &&
+    verificationRead > writeFailureBranch &&
+    verificationFailureBranch > verificationRead &&
+    successReturn > verificationFailureBranch,
+  'cache write must be trapped before verification and success may occur only after verification'
+);
+const writeFailureBody = persistSnapshot.slice(writeFailureBranch, verificationRead);
+assert.match(writeFailureBody, /persisted = false/);
+assert.match(writeFailureBody, /verified = false/);
+assert.match(writeFailureBody, /reason = "cache-write-failed"/);
+assert.ok(
+  !writeFailureBody.includes('throw '),
+  'observer cache write failure must return fail-soft diagnostics rather than abort graph construction'
+);
+const verificationFailureBody = persistSnapshot.slice(verificationFailureBranch, successReturn);
+assert.match(verificationFailureBody, /persisted = false/);
+assert.match(verificationFailureBody, /verified = false/);
+assert.match(verificationFailureBody, /reason = "cache-verification-failed"/);
+assert.ok(
+  !verificationFailureBody.includes('throw '),
+  'observer cache verification failure must return fail-soft diagnostics rather than abort graph construction'
+);
+assert.ok(
+  persistSnapshot.indexOf('temporary.delete()') > writeAttempt &&
+    persistSnapshot.indexOf('runCatching { target.delete() }', verificationFailureBranch) > verificationFailureBranch,
+  'temporary/corrupt cache residue must be cleaned on failure paths'
+);
 assert.ok(!observer.includes('Repository consistency snapshot exceeds'), 'optional observer-cache oversize must not crash a valid graph');
 assert.match(observer, /contentHashSeparateFromIdentity/);
 assert.match(observer, /fileContentBound/);

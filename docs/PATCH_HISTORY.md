@@ -6,6 +6,28 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.42 — N1.8.0 final installed sweep + cache-failure control-flow proof
+
+The installed source `ce8fbbd3f7179c8b153f44daaa2aedb6f2734ea4` closes the Patch 10.38 warm-cache semantic-byte blocker and re-proves the current-build observer baseline.
+
+Installed evidence:
+- clean RiftOS repository baseline: `complete=true`, zero incomplete reasons, 1034 facts / 1088 edges / 260 repository files, canonical graph SHA-256 `2551bb5c0ee03b329bc7de068b9afdbc06d98c39f94839f7b5e5b2ba148aee25`;
+- ten consecutive warm RiftOS consistency reads returned that exact SHA/graph ID/counts with `cache.changed=false`, `persisted=true`, and `verified=true`;
+- three concurrent consistency reads while an ordinary PI graph read ran beside them converged on the same canonical graph with no corruption or hang;
+- a fresh disposable exact-128-MiB semantic fixture produced cold `indexed=64/reused=0/bytesScanned=134217728` and warm `indexed=0/reused=64/bytesScanned=0`, with semantic evidence complete both times;
+- a fresh 128-MiB-plus-one-byte fixture produced cold 64 indexed + 1 skipped and warm 64 reused + 1 skipped; both remained `semanticEvidenceComplete=false` with `semantic-total-byte-bound`, while repository evidence remained complete;
+- observer propagation is truthful: exact 128 MiB remains `complete=true`; +1 is `complete=false` with both `semantic-evidence-incomplete` and `semantic-total-byte-bound`;
+- compact consistency output remains within the Code Mode surface and reports the canonical counts/hash/completeness; explicit full-detail output exceeds the wrapper budget and is safely marked `resultTruncated=true` and `resultOmitted=true` rather than being mistaken for a complete partial graph.
+
+The remaining cache-failure proof was audited. The existing regression only checked that `cache-write-failed` and `cache-verification-failed` strings existed, which is insufficient. Patch 10.42 strengthens `scripts/test-rift-repository-consistency-v1.mjs` to isolate `persistSnapshot()` structurally and fail unless:
+- the write attempt is trapped before verification;
+- write failure returns `persisted=false`, `verified=false`, reason `cache-write-failed`, and does not throw;
+- post-write verification failure returns `persisted=false`, `verified=false`, reason `cache-verification-failed`, and does not throw;
+- temporary/corrupt cache residue is cleaned;
+- the success path is reachable only after verification.
+
+Runtime observer code is unchanged by this patch. N1.8.0 remains unpromoted until Builder executes the strengthened source gate and the remaining exact-current-build process-boundary proof is closed.
+
 ## Patch 10.41 — Repository-consistency regression follows Patch 10.38 warm-cache hardening
 
 Builder run `35778724101` at source `ab25caa191ffb27e309dbeb970b2c0d9dfd93272` proved the Patch 10.40 wiring-validator repair: native wiring, transport, documentation, Workspace Records, Diff V2, File Identity V2, patch sessions, Patch Manifest V1 and semantic-impact checks all passed. The source-check chain then stopped in `scripts/test-rift-repository-consistency-v1.mjs`.
