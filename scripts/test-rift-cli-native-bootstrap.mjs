@@ -116,10 +116,10 @@ check(
 check(
   'RiftOS Local Agent owns the CLI host boundary while the native core remains gated',
   core.includes('MCP/RiftShell -> RiftOS Local Agent -> RiftCLI') &&
-    core.includes('"hostOwner\\":\"riftos-local-agent') &&
-    core.includes('"hostedByLocalAgent\\":true') &&
-    core.includes('"directExternalHost\\":false') &&
-    core.includes('"cliCallsDriver\\":false') &&
+    core.includes(String.raw`\"hostOwner\":\"riftos-local-agent`) &&
+    core.includes(String.raw`\"hostedByLocalAgent\":true`) &&
+    core.includes(String.raw`\"directExternalHost\":false`) &&
+    core.includes(String.raw`\"cliCallsDriver\":false`) &&
     docs.includes('RiftCLI **never calls a model or inference API**')
 );
 
