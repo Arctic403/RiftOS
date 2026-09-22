@@ -92,6 +92,7 @@ internal class RiftToolSandbox(context: Context) {
         mkdirs()
     }
     private val symbolIndex = LinkedHashMap<String, IndexedFile>()
+    private val repositoryFileIndex = LinkedHashMap<String, RepositoryFileEvidence>()
     private val pendingIndexInvalidations = LinkedHashSet<String>()
     private var persistentIndexLoaded = false
     private var persistentIndexDirty = false
@@ -123,9 +124,18 @@ internal class RiftToolSandbox(context: Context) {
         val line: Int
     )
 
+    private data class RepositoryFileEvidence(
+        val modified: Long,
+        val size: Long,
+        val sha256: String?,
+        val semanticStatus: String,
+        val semanticReason: String?
+    )
+
     private data class IndexedFile(
         val modified: Long,
         val size: Long,
+        val sha256: String,
         val language: String,
         val symbols: List<SymbolRecord>,
         val dependencies: List<DependencyRecord>
@@ -1375,25 +1385,31 @@ internal class RiftToolSandbox(context: Context) {
             path = path,
             query = query,
             fileLimit = MAX_GRAPH_FILES_PREVIEW,
-            edgeLimit = requestedLimit.coerceIn(1, MAX_GRAPH_EDGES)
+            edgeLimit = requestedLimit.coerceIn(1, MAX_GRAPH_EDGES),
+            includeFileEvidence = false,
+            verifyRepositoryContent = false
         )
 
     private fun buildProjectGraph(
         path: String,
         query: String,
         fileLimit: Int,
-        edgeLimit: Int
+        edgeLimit: Int,
+        includeFileEvidence: Boolean,
+        verifyRepositoryContent: Boolean
     ): JSONObject {
         val base = sandboxFile(path)
-        val indexStats = refreshSymbolIndex(base)
+        val indexStats = refreshSymbolIndex(base, verifyContent = verifyRepositoryContent)
         val boundedFileLimit = fileLimit.coerceAtLeast(1)
         val boundedEdgeLimit = edgeLimit.coerceAtLeast(1)
         val q = query.trim().lowercase()
         val indexed = symbolIndex.filterKeys { isPathWithin(it, path) }
-        val allPaths = indexed.keys.toSet()
+        val repositoryFiles = repositoryFileIndex.filterKeys { isPathWithin(it, path) }
+        val resolutionPaths = if (includeFileEvidence) repositoryFiles.keys.toSet() else indexed.keys.toSet()
         val selected = indexed.filter { (sourcePath, file) ->
             q.isEmpty() || sourcePath.lowercase().contains(q) || file.symbols.any { it.name.lowercase().contains(q) }
         }
+
         val edges = JSONArray()
         var resolved = 0
         var unresolved = 0
@@ -1401,7 +1417,7 @@ internal class RiftToolSandbox(context: Context) {
         selected.forEach { (sourcePath, file) ->
             file.dependencies.forEach { dependency ->
                 total += 1
-                val target = resolveDependency(path, sourcePath, dependency, allPaths)
+                val target = resolveDependency(path, sourcePath, dependency, resolutionPaths)
                 if (target == null) unresolved += 1 else resolved += 1
                 if (edges.length() < boundedEdgeLimit) {
                     edges.put(JSONObject()
@@ -1413,11 +1429,13 @@ internal class RiftToolSandbox(context: Context) {
                 }
             }
         }
+
         val files = JSONArray()
         selected.keys.take(boundedFileLimit).forEach { files.put(it) }
         val filesTruncated = selected.size > boundedFileLimit
         val edgesTruncated = total > boundedEdgeLimit
-        return JSONObject()
+
+        val out = JSONObject()
             .put("root", normalizedPath(path))
             .put("projectIntelligence", "v2")
             .put("view", "graph")
@@ -1434,7 +1452,30 @@ internal class RiftToolSandbox(context: Context) {
             .put("edgeLimit", boundedEdgeLimit)
             .put("filesTruncated", filesTruncated)
             .put("edgesTruncated", edgesTruncated)
-            .put("truncated", filesTruncated || edgesTruncated)
+
+        if (includeFileEvidence) {
+            val evidenceRows = JSONArray()
+            repositoryFiles.entries.sortedBy { it.key }.take(boundedFileLimit).forEach { (filePath, evidence) ->
+                evidenceRows.put(JSONObject()
+                    .put("path", filePath)
+                    .put("size", evidence.size)
+                    .put("sha256", evidence.sha256 ?: JSONObject.NULL)
+                    .put("semanticStatus", evidence.semanticStatus)
+                    .put("semanticReason", evidence.semanticReason ?: JSONObject.NULL))
+            }
+            val repositoryFilesTruncated = repositoryFiles.size > boundedFileLimit
+            out.put("repositoryFilesMatched", repositoryFiles.size)
+                .put("repositoryFileEvidence", evidenceRows)
+                .put("repositoryFilesTruncated", repositoryFilesTruncated)
+                .put("repositoryContentVerified", indexStats.optBoolean("contentVerified", false))
+                .put("repositoryEvidenceComplete", indexStats.optBoolean("repositoryEvidenceComplete", false))
+                .put("semanticEvidenceComplete", indexStats.optBoolean("semanticEvidenceComplete", false))
+                .put("repositoryEvidenceIncompleteReasons", indexStats.optJSONArray("incompleteReasons") ?: JSONArray())
+                .put("truncated", filesTruncated || edgesTruncated || repositoryFilesTruncated)
+        } else {
+            out.put("truncated", filesTruncated || edgesTruncated)
+        }
+        return out
     }
 
     private fun projectConsistency(path: String, query: String, requestedLimit: Int): JSONObject {
@@ -1442,7 +1483,9 @@ internal class RiftToolSandbox(context: Context) {
             path = path,
             query = "",
             fileLimit = MAX_CONSISTENCY_INPUT_FILES,
-            edgeLimit = MAX_CONSISTENCY_INPUT_EDGES
+            edgeLimit = MAX_CONSISTENCY_INPUT_EDGES,
+            includeFileEvidence = true,
+            verifyRepositoryContent = true
         )
         val result = repositoryConsistencyObserver.foundationView(
             projectRoot = normalizedPath(path),
@@ -2336,12 +2379,30 @@ internal class RiftToolSandbox(context: Context) {
         persistentIndexLoaded = true
         if (!projectIntelligenceCache.isFile || projectIntelligenceCache.length() > MAX_PERSISTED_INDEX_BYTES) return
         val root = runCatching { JSONObject(projectIntelligenceCache.readText(Charsets.UTF_8)) }.getOrNull() ?: return
-        if (root.optInt("version", 0) != 2) return
+        if (root.optInt("version", 0) != 3) return
         val files = root.optJSONArray("files") ?: return
         for (index in 0 until files.length()) {
             val row = files.optJSONObject(index) ?: continue
             val path = row.optString("path").trim()
             if (!path.startsWith("$WORKSPACE_ROOT/")) continue
+            val sha = row.optString("sha256").trim().takeIf { it.matches(Regex("^[0-9a-f]{64}$")) }
+            val semanticStatus = row.optString("semanticStatus").trim().ifBlank { "unavailable" }
+            val semanticReason = row.opt("semanticReason")
+                ?.takeUnless { it == JSONObject.NULL }
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+            val modified = row.optLong("modified")
+            val size = row.optLong("size")
+            repositoryFileIndex[path] = RepositoryFileEvidence(
+                modified = modified,
+                size = size,
+                sha256 = sha,
+                semanticStatus = semanticStatus,
+                semanticReason = semanticReason
+            )
+            if (semanticStatus != "indexed" || sha == null) continue
+
             val symbols = ArrayList<SymbolRecord>()
             val symbolRows = row.optJSONArray("symbols") ?: JSONArray()
             for (symbolIndex in 0 until symbolRows.length()) {
@@ -2366,11 +2427,12 @@ internal class RiftToolSandbox(context: Context) {
                 dependencies += DependencyRecord(specifier, dependency.optString("kind"), dependency.optInt("line", 1))
             }
             symbolIndex[path] = IndexedFile(
-                row.optLong("modified"),
-                row.optLong("size"),
-                row.optString("language", "generic"),
-                symbols,
-                dependencies
+                modified = modified,
+                size = size,
+                sha256 = sha,
+                language = row.optString("language", "generic"),
+                symbols = symbols,
+                dependencies = dependencies
             )
         }
     }
@@ -2378,9 +2440,10 @@ internal class RiftToolSandbox(context: Context) {
     private fun persistProjectIntelligence() {
         if (!persistentIndexLoaded || !persistentIndexDirty) return
         val files = JSONArray()
-        symbolIndex.entries.sortedBy { it.key }.take(MAX_PERSISTED_INDEX_FILES).forEach { (path, indexed) ->
+        repositoryFileIndex.entries.sortedBy { it.key }.take(MAX_PERSISTED_INDEX_FILES).forEach { (path, evidence) ->
+            val indexed = symbolIndex[path]
             val symbols = JSONArray()
-            indexed.symbols.forEach { symbol ->
+            indexed?.symbols?.forEach { symbol ->
                 symbols.put(JSONObject()
                     .put("name", symbol.name)
                     .put("kind", symbol.kind)
@@ -2389,7 +2452,7 @@ internal class RiftToolSandbox(context: Context) {
                     .put("signature", symbol.signature))
             }
             val dependencies = JSONArray()
-            indexed.dependencies.forEach { dependency ->
+            indexed?.dependencies?.forEach { dependency ->
                 dependencies.put(JSONObject()
                     .put("specifier", dependency.specifier)
                     .put("kind", dependency.kind)
@@ -2397,14 +2460,17 @@ internal class RiftToolSandbox(context: Context) {
             }
             files.put(JSONObject()
                 .put("path", path)
-                .put("modified", indexed.modified)
-                .put("size", indexed.size)
-                .put("language", indexed.language)
+                .put("modified", evidence.modified)
+                .put("size", evidence.size)
+                .put("sha256", evidence.sha256 ?: JSONObject.NULL)
+                .put("semanticStatus", evidence.semanticStatus)
+                .put("semanticReason", evidence.semanticReason ?: JSONObject.NULL)
+                .put("language", indexed?.language ?: JSONObject.NULL)
                 .put("symbols", symbols)
                 .put("dependencies", dependencies))
         }
         val payload = JSONObject()
-            .put("version", 2)
+            .put("version", 3)
             .put("generatedAt", System.currentTimeMillis())
             .put("files", files)
             .toString()
@@ -2425,81 +2491,295 @@ internal class RiftToolSandbox(context: Context) {
         }.onFailure { temporary.delete() }
     }
 
-    private fun refreshSymbolIndex(base: File): JSONObject {
+    private fun refreshSymbolIndex(base: File, verifyContent: Boolean = false): JSONObject {
         ensurePersistentIndexLoaded()
         var scanned = 0
         var reused = 0
         var skipped = 0
         var removed = 0
+        var metadataOnly = 0
         var truncated = false
         var bytesScanned = 0L
+        var hashBytes = 0L
+        var hashFailures = 0
+        val incompleteReasons = linkedSetOf<String>()
         val seen = HashSet<String>()
+        var changed = false
+
+        fun removeSemantic(path: String) {
+            if (symbolIndex.remove(path) != null) changed = true
+        }
+
+        fun updateEvidence(path: String, evidence: RepositoryFileEvidence) {
+            if (repositoryFileIndex[path] != evidence) {
+                repositoryFileIndex[path] = evidence
+                changed = true
+            }
+        }
+
         fun visit(file: File) {
             RiftDeadline.check("project index")
-            if (truncated || !file.isFile || isIgnoredFile(file)) return
-            if (seen.size >= MAX_INDEX_FILES) { truncated = true; return }
-            val path = relativePath(file)
-            seen += path
-            val cached = symbolIndex[path]
-            if (cached != null && cached.modified == file.lastModified() && cached.size == file.length()) { reused += 1; return }
-            if (file.length() <= MAX_INDEX_FILE_BYTES && !isIgnoredFile(file)) {
-                require(bytesScanned + file.length() <= MAX_INDEX_TOTAL_BYTES) {
-                    "Project index refresh exceeds ${MAX_INDEX_TOTAL_BYTES / (1024 * 1024)} MiB source budget"
-                }
-                bytesScanned += file.length()
+            if (truncated || !file.isFile || isPolicyExcludedFile(file)) return
+            if (seen.size >= MAX_INDEX_FILES) {
+                truncated = true
+                incompleteReasons += "repository-file-bound"
+                return
             }
-            val indexed = indexFile(file)
-            if (indexed == null) skipped += 1 else scanned += 1
+
+            val path = relativePath(file)
+            val size = file.length()
+            val modified = file.lastModified()
+            seen += path
+
+            val previousEvidence = repositoryFileIndex[path]
+            val mustVerifyHash =
+                verifyContent ||
+                previousEvidence == null ||
+                previousEvidence.modified != modified ||
+                previousEvidence.size != size ||
+                previousEvidence.sha256 == null
+
+            var contentSha = previousEvidence?.sha256
+            var hashFailureReason: String? = null
+            if (mustVerifyHash) {
+                if (hashBytes + size > MAX_HASH_TOTAL_BYTES) {
+                    contentSha = null
+                    hashFailureReason = "content-hash-byte-bound"
+                    incompleteReasons += "repository-content-hash-byte-bound"
+                } else {
+                    hashBytes += size
+                    contentSha = runCatching { fileSha256(file) }.getOrElse {
+                        hashFailures += 1
+                        hashFailureReason = "content-hash-failure"
+                        incompleteReasons += "repository-content-hash-failure"
+                        null
+                    }
+                }
+            }
+
+            if (contentSha == null) {
+                updateEvidence(
+                    path,
+                    RepositoryFileEvidence(
+                        modified = modified,
+                        size = size,
+                        sha256 = null,
+                        semanticStatus = "unavailable",
+                        semanticReason = hashFailureReason ?: "content-hash-unavailable"
+                    )
+                )
+                removeSemantic(path)
+                skipped += 1
+                return
+            }
+
+            val classification = semanticClassification(file)
+            if (classification.first != "indexed") {
+                updateEvidence(
+                    path,
+                    RepositoryFileEvidence(
+                        modified = modified,
+                        size = size,
+                        sha256 = contentSha,
+                        semanticStatus = classification.first,
+                        semanticReason = classification.second
+                    )
+                )
+                if (classification.second == "semantic-file-size-bound") {
+                    incompleteReasons += "semantic-file-size-bound"
+                }
+                removeSemantic(path)
+                metadataOnly += 1
+                skipped += 1
+                return
+            }
+
+            if (bytesScanned + size > MAX_INDEX_TOTAL_BYTES) {
+                updateEvidence(
+                    path,
+                    RepositoryFileEvidence(
+                        modified = modified,
+                        size = size,
+                        sha256 = contentSha,
+                        semanticStatus = "metadata-only",
+                        semanticReason = "semantic-total-byte-bound"
+                    )
+                )
+                removeSemantic(path)
+                incompleteReasons += "semantic-total-byte-bound"
+                skipped += 1
+                return
+            }
+
+            val cached = symbolIndex[path]
+            if (cached != null && cached.sha256 == contentSha) {
+                val refreshed = if (cached.modified != modified || cached.size != size) {
+                    cached.copy(modified = modified, size = size)
+                } else cached
+                if (refreshed !== cached) {
+                    symbolIndex[path] = refreshed
+                    changed = true
+                }
+                updateEvidence(
+                    path,
+                    RepositoryFileEvidence(
+                        modified = modified,
+                        size = size,
+                        sha256 = contentSha,
+                        semanticStatus = "indexed",
+                        semanticReason = null
+                    )
+                )
+                reused += 1
+                return
+            }
+
+            bytesScanned += size
+            val text = runCatching { file.readText(Charsets.UTF_8) }.getOrElse {
+                updateEvidence(
+                    path,
+                    RepositoryFileEvidence(
+                        modified = modified,
+                        size = size,
+                        sha256 = contentSha,
+                        semanticStatus = "metadata-only",
+                        semanticReason = "semantic-read-failure"
+                    )
+                )
+                removeSemantic(path)
+                incompleteReasons += "semantic-read-failure"
+                skipped += 1
+                return
+            }
+            val analysis = runCatching {
+                RiftSourceIntelligenceV2.analyze(path, text, MAX_SEARCH_PREVIEW_CHARS)
+            }.getOrElse {
+                updateEvidence(
+                    path,
+                    RepositoryFileEvidence(
+                        modified = modified,
+                        size = size,
+                        sha256 = contentSha,
+                        semanticStatus = "metadata-only",
+                        semanticReason = "semantic-analysis-failure"
+                    )
+                )
+                removeSemantic(path)
+                incompleteReasons += "semantic-analysis-failure"
+                skipped += 1
+                return
+            }
+            val symbols = analysis.symbols.map { symbol ->
+                SymbolRecord(symbol.name, symbol.kind, symbol.path, symbol.line, symbol.endLine, symbol.signature)
+            }
+            val dependencies = analysis.dependencies.map { dependency ->
+                DependencyRecord(dependency.specifier, dependency.kind, dependency.line)
+            }
+            val indexed = IndexedFile(
+                modified = modified,
+                size = size,
+                sha256 = contentSha,
+                language = analysis.language,
+                symbols = symbols,
+                dependencies = dependencies
+            )
+            if (symbolIndex[path] != indexed) {
+                symbolIndex[path] = indexed
+                changed = true
+            }
+            updateEvidence(
+                path,
+                RepositoryFileEvidence(
+                    modified = modified,
+                    size = size,
+                    sha256 = contentSha,
+                    semanticStatus = "indexed",
+                    semanticReason = null
+                )
+            )
+            scanned += 1
         }
-        if (base.isFile) visit(base) else base.walkTopDown().onEnter { directory ->
-            directory == base || !isIgnoredDirectory(directory)
-        }.forEach(::visit)
+
+        if (base.isFile) {
+            visit(base)
+        } else {
+            base.walkTopDown().onEnter { directory ->
+                directory == base || !isIgnoredDirectory(directory)
+            }.forEach(::visit)
+        }
+
         val prefix = relativePath(base).let { if (it == WORKSPACE_ROOT) "$WORKSPACE_ROOT/" else "$it/" }
-        symbolIndex.keys.filter { key -> (base.isDirectory && key.startsWith(prefix) || base.isFile && key == relativePath(base)) && key !in seen }
-            .toList().forEach { key -> symbolIndex.remove(key); removed += 1 }
-        if (scanned > 0 || removed > 0) {
+        val inScope: (String) -> Boolean = { key ->
+            base.isDirectory && key.startsWith(prefix) || base.isFile && key == relativePath(base)
+        }
+
+        symbolIndex.keys.filter { key -> inScope(key) && key !in seen }
+            .toList().forEach { key ->
+                symbolIndex.remove(key)
+                removed += 1
+                changed = true
+            }
+        repositoryFileIndex.keys.filter { key -> inScope(key) && key !in seen }
+            .toList().forEach { key ->
+                repositoryFileIndex.remove(key)
+                changed = true
+            }
+
+        if (truncated) incompleteReasons += "repository-file-bound"
+        if (changed) {
             persistentIndexDirty = true
             persistProjectIntelligence()
         }
+
         return JSONObject()
             .put("indexed", scanned)
             .put("reused", reused)
             .put("skipped", skipped)
+            .put("metadataOnly", metadataOnly)
             .put("removed", removed)
             .put("bytesScanned", bytesScanned)
+            .put("repositoryHashBytes", hashBytes)
+            .put("repositoryHashFailures", hashFailures)
             .put("cachedFiles", symbolIndex.size)
-            .put("persistence", "app-private-v2")
+            .put("repositoryFiles", repositoryFileIndex.size)
+            .put("persistence", "app-private-v3")
+            .put("contentVerified", verifyContent)
+            .put("repositoryEvidenceComplete", incompleteReasons.none { it.startsWith("repository-") })
+            .put("semanticEvidenceComplete", incompleteReasons.none { it.startsWith("semantic-") })
+            .put("incompleteReasons", JSONArray(incompleteReasons.sorted()))
             .put("truncated", truncated)
     }
 
     private fun indexFile(file: File): IndexedFile? {
         ensurePersistentIndexLoaded()
-        if (!file.isFile || file.length() > MAX_INDEX_FILE_BYTES || isIgnoredFile(file) || !isTextFile(file)) return null
-        val path = relativePath(file)
-        val cached = symbolIndex[path]
-        if (cached != null && cached.modified == file.lastModified() && cached.size == file.length()) return cached
-        val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return null
-        val analysis = RiftSourceIntelligenceV2.analyze(path, text, MAX_SEARCH_PREVIEW_CHARS)
-        val symbols = analysis.symbols.map { symbol ->
-            SymbolRecord(symbol.name, symbol.kind, symbol.path, symbol.line, symbol.endLine, symbol.signature)
-        }
-        val dependencies = analysis.dependencies.map { dependency ->
-            DependencyRecord(dependency.specifier, dependency.kind, dependency.line)
-        }
-        persistentIndexDirty = true
-        return IndexedFile(
-            file.lastModified(),
-            file.length(),
-            analysis.language,
-            symbols,
-            dependencies
-        ).also { symbolIndex[path] = it }
+        if (!file.isFile || isPolicyExcludedFile(file)) return null
+        refreshSymbolIndex(file, verifyContent = true)
+        return symbolIndex[relativePath(file)]
     }
 
     private fun symbolJson(symbol: SymbolRecord): JSONObject = JSONObject()
         .put("name", symbol.name).put("kind", symbol.kind).put("path", symbol.path)
         .put("line", symbol.line).put("endLine", symbol.endLine).put("signature", symbol.signature)
     private fun isIgnoredDirectory(directory: File): Boolean = directory.name in ignoredDirectoryNames
+
+    private fun isPolicyExcludedFile(file: File): Boolean {
+        if (file.name in ignoredFileNames) return true
+        var parent = file.parentFile
+        while (parent != null) {
+            if (parent == workspaceRoot) break
+            if (isIgnoredDirectory(parent)) return true
+            parent = parent.parentFile
+        }
+        return false
+    }
+
+    private fun semanticClassification(file: File): Pair<String, String?> {
+        if (file.extension.lowercase() in binaryExtensions) return "metadata-only" to "binary-extension"
+        if (file.length() > MAX_INDEX_FILE_BYTES) return "metadata-only" to "semantic-file-size-bound"
+        if (!isTextFile(file)) return "metadata-only" to "non-text"
+        return "indexed" to null
+    }
+
     private fun isIgnoredFile(file: File): Boolean = file.name in ignoredFileNames || file.extension.lowercase() in binaryExtensions || file.parentFile?.let(::isIgnoredDirectory) == true
     private fun isTextFile(file: File): Boolean {
         if (!file.isFile || file.extension.lowercase() in binaryExtensions) return false
@@ -2519,9 +2799,11 @@ internal class RiftToolSandbox(context: Context) {
             pendingIndexInvalidations.add(normalized)
             return
         }
-        val removed = symbolIndex.keys.filter { it == normalized || it.startsWith("$normalized/") }.toList()
-        removed.forEach(symbolIndex::remove)
-        if (removed.isNotEmpty()) {
+        val semanticRemoved = symbolIndex.keys.filter { it == normalized || it.startsWith("$normalized/") }.toList()
+        val evidenceRemoved = repositoryFileIndex.keys.filter { it == normalized || it.startsWith("$normalized/") }.toList()
+        semanticRemoved.forEach(symbolIndex::remove)
+        evidenceRemoved.forEach(repositoryFileIndex::remove)
+        if (semanticRemoved.isNotEmpty() || evidenceRemoved.isNotEmpty()) {
             persistentIndexDirty = true
             persistProjectIntelligence()
         }
@@ -2533,9 +2815,11 @@ internal class RiftToolSandbox(context: Context) {
         pendingIndexInvalidations.clear()
         var removedAny = false
         pending.forEach { path ->
-            val removed = symbolIndex.keys.filter { it == path || it.startsWith("$path/") }.toList()
-            removed.forEach(symbolIndex::remove)
-            if (removed.isNotEmpty()) removedAny = true
+            val semanticRemoved = symbolIndex.keys.filter { it == path || it.startsWith("$path/") }.toList()
+            val evidenceRemoved = repositoryFileIndex.keys.filter { it == path || it.startsWith("$path/") }.toList()
+            semanticRemoved.forEach(symbolIndex::remove)
+            evidenceRemoved.forEach(repositoryFileIndex::remove)
+            if (semanticRemoved.isNotEmpty() || evidenceRemoved.isNotEmpty()) removedAny = true
         }
         if (removedAny) {
             persistentIndexDirty = true

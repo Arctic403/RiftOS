@@ -6,6 +6,72 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.33 — N1.8.0 content-truth hardening after torture failure
+
+### Torture result
+
+Installed source `5de7f5065160b2bbe263e8cc0d179f6099af4347` passed the repaired full-repository coverage baseline:
+
+- `complete=true`;
+- 1017 facts / 1072 edges;
+- no incompleteness reasons;
+- verified private cache;
+- ten consecutive warm full-repository runs produced identical graph SHA-256 `195d7567eaa4ef0cc7a71ca2d7f17251427c346ca4198d7b3456d086fdbc1e4f`, identical graph ID/counts and `changed=false`.
+
+The disposable torture fixture also passed structural add/delete/rename/copy/move, dependency-target change, unresolved-target representation, three concurrent consistency reads, Unicode/space paths and case-distinct path identity.
+
+The first content-only mutation exposed a promotion-blocking defect. `Main.kt` changed from `42` to `43`; its real file SHA changed from `3e25f46c18b15829f424ae91a11fd3efd4fcbd17c2c764b07b22da08b1191abc` to `e136706cf5c3316f63fa875516ee48dbc1d5eeb0c32f7f66ed35fbc59430719e`, but the repository graph remained `b60ea1716d94b36239a3a8dff440f3e4223a766c399d3db643feb4b177da224c`, the file fact content hash did not change, and cache reported `changed=false`. A README content-only edit reproduced the same failure. Deleting `Case.kt` and recreating the same path with unrelated bytes caused the graph to return to the exact old pre-delete identity.
+
+N1.8.0 therefore **failed promotion** as required by the torture gate.
+
+### Root-cause audit
+
+The audit found four coupled foundation defects:
+
+1. file facts were synthesized from path/existence only and did not include authoritative file-byte identity;
+2. persisted PI-v2 semantic entries carried only modified-time + size + language/symbol/dependency data;
+3. PI-v2 reuse trusted modified-time + size, so same-size/same-mtime byte changes could reuse stale semantics;
+4. a path was marked `seen` before semantic indexing succeeded, so a previously indexed file that became oversized/non-text/unreadable could preserve stale semantic state; non-semantic files could also disappear from repository-completeness coverage because the observer consumed only `symbolIndex`.
+
+### Hardening
+
+The source now separates two roles inside the existing PI-v2 refresh pipeline:
+
+- `symbolIndex` remains semantic-only;
+- `repositoryFileIndex` records every non-policy-excluded file with size, exact SHA-256, semantic status and explicit reason.
+
+No second observer scanner/parser/index is introduced.
+
+Additional changes:
+
+- PI-v2 persisted cache schema is bumped to v3; old v2 cache entries are deliberately not loaded as verified content evidence;
+- semantically indexed entries are bound to exact content SHA;
+- `project kind=consistency` forces repository-content verification, while normal PI-v2 views may use lighter cached reuse;
+- binary/non-text files remain explicit metadata-only repository evidence;
+- oversized text / semantic total-byte/read/analyzer failures are explicit semantic incompleteness;
+- content-hash byte-bound/failure is explicit repository incompleteness;
+- all existing write/replace/patch/range/hunk/remove/move/copy/archive/extract/rollback invalidation clears both semantic and repository-file evidence through the same canonical invalidation hook;
+- consistency receives a structured `repositoryFileEvidence` feed without changing the existing public `matchedFiles` contract;
+- dependency resolution in consistency may resolve against represented repository files even when a target is metadata-only;
+- Repository Fact Graph/cache schema is bumped to v2 and uses a separate `rift-repository-consistency-v2` cache root;
+- file fact stable identity remains path-based, but file fact content now includes size, SHA-256, semantic status and semantic reason;
+- canonical graph SHA therefore changes on content-only tracked-file mutations without turning content SHA into identity.
+
+`test-rift-repository-consistency-v1.mjs` is rewritten to lock graph schema v2, PI cache v3, content-bound file facts, metadata-only representation, forced consistency verification and the prohibition on the old mtime+size-only reuse rule.
+
+Local Android source validation is green. Final local evidence after the content-truth hardening:
+
+- `riftbuild validate android` reports `sourceReady=true` and Android project SHA-256 `3fb42a56e99d79e526f5bd95c50e728189f1936273fb8745b80f6228dcd7494b`;
+- repository audit/scan covers 258 files with no new finding beyond the pre-existing `RiftSecretStore.kt` sensitive-looking-filename heuristic;
+- the old mtime+size-only cache reuse predicate is absent;
+- PI persisted cache v3 load/save guards are present;
+- repository-file evidence is wired through refresh, persistence, consistency feed and invalidation;
+- consistency explicitly sets `verifyRepositoryContent=true`;
+- Repository Fact Graph/cache v2 are present;
+- the observer still contains no `walkTopDown`, source parser call or observer-owned PI refresh.
+
+External Builder/Kotlin compile + installed torture restart remain mandatory. The staged subsystem scan planner stays implementation-blocked until the hardened N1.8.0 foundation passes the complete torture matrix.
+
 ## Patch 10.32 — N1.8 staged-scan architecture + foundation torture gate lock
 
 ### Docs-only architecture lock

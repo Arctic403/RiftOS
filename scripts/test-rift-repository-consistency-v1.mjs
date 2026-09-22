@@ -26,55 +26,48 @@ function canonical(value) {
 }
 
 const sha = value => createHash('sha256').update(canonical(value)).digest('hex');
+const FACT_SCHEMA = 2;
 
 const factId = (kind, stableKey) =>
-  'fact-' + sha({ schema: 1, kind, stableKey }).slice(0, 32);
+  'fact-' + sha({ schema: FACT_SCHEMA, kind, stableKey }).slice(0, 32);
 
 const edgeId = (relation, sourceFactId, targetFactId, stableKey) =>
-  'edge-' + sha({ schema: 1, relation, sourceFactId, targetFactId, stableKey }).slice(0, 32);
+  'edge-' + sha({ schema: FACT_SCHEMA, relation, sourceFactId, targetFactId, stableKey }).slice(0, 32);
 
-function fact(kind, stableKey, attributes = {}) {
+function fact(kind, stableKey, attributes = {}, evidenceType = 'project-intelligence-v2') {
   const body = {
     kind,
     stableKey,
     path: stableKey,
     line: null,
-    evidenceType: 'project-intelligence-v2',
+    evidenceType,
     provenance: 'project-intelligence-v2',
     attributes
   };
-  return {
-    ...body,
-    id: factId(kind, stableKey),
-    contentSha256: sha(body)
-  };
+  return { ...body, id: factId(kind, stableKey), contentSha256: sha(body) };
 }
 
-function edge(relation, source, target, stableKey, attributes = {}) {
+function edge(relation, source, target, stableKey, attributes = {}, evidenceType = 'project-intelligence-v2') {
   const body = {
     relation,
     sourceFactId: source.id,
     targetFactId: target.id,
     stableKey,
-    evidenceType: 'project-intelligence-v2',
+    evidenceType,
     provenance: 'project-intelligence-v2',
     attributes
   };
-  return {
-    ...body,
-    id: edgeId(relation, source.id, target.id, stableKey),
-    contentSha256: sha(body)
-  };
+  return { ...body, id: edgeId(relation, source.id, target.id, stableKey), contentSha256: sha(body) };
 }
 
 function graphHash(facts, edges) {
   const payload = {
-    format: 'rift-repository-fact-graph-v1',
-    version: 1,
+    format: 'rift-repository-fact-graph-v2',
+    version: 2,
     phase: 'N1.8.0',
     projectRoot: 'workspace/Test',
     projectIntelligence: 'v2',
-    sourceOfTruth: 'project-intelligence-v2-derived',
+    sourceOfTruth: 'project-intelligence-v2-content-verified',
     authoritative: false,
     rebuildableCache: true,
     complete: true,
@@ -86,8 +79,18 @@ function graphHash(facts, edges) {
   return sha(payload);
 }
 
-const a = fact('file', 'workspace/Test/a.kt', { language: 'kotlin' });
-const b = fact('file', 'workspace/Test/b.kt', { language: 'kotlin' });
+const a = fact(
+  'file',
+  'workspace/Test/a.kt',
+  { size: 40, sha256: 'a'.repeat(64), semanticStatus: 'indexed', semanticReason: null },
+  'project-intelligence-v2-file-evidence'
+);
+const b = fact(
+  'file',
+  'workspace/Test/b.kt',
+  { size: 20, sha256: 'b'.repeat(64), semanticStatus: 'indexed', semanticReason: null },
+  'project-intelligence-v2-file-evidence'
+);
 const dep = fact('dependency-specifier', 'workspace/Test/a.kt|import|2|test.b');
 const e1 = edge('declares-dependency', a, dep, dep.stableKey);
 const e2 = edge('resolves-to', dep, b, dep.stableKey);
@@ -95,72 +98,101 @@ const e2 = edge('resolves-to', dep, b, dep.stableKey);
 assert.equal(
   graphHash([a, b, dep], [e1, e2]),
   graphHash([dep, a, b], [e2, e1]),
-  'graph hash must be independent of map/traversal ordering'
+  'graph hash must be traversal-order independent'
 );
 
-const aChangedContent = fact('file', 'workspace/Test/a.kt', { language: 'kotlin', changed: true });
-assert.equal(a.id, aChangedContent.id, 'fact content changes must retain stable identity');
-assert.notEqual(a.contentSha256, aChangedContent.contentSha256, 'fact content hash must detect changed content');
+const aChangedBytes = fact(
+  'file',
+  'workspace/Test/a.kt',
+  { size: 40, sha256: 'c'.repeat(64), semanticStatus: 'indexed', semanticReason: null },
+  'project-intelligence-v2-file-evidence'
+);
+assert.equal(a.id, aChangedBytes.id, 'same path must retain stable file fact identity');
+assert.notEqual(a.contentSha256, aChangedBytes.contentSha256, 'file byte SHA must change file fact content hash');
 assert.notEqual(
   graphHash([a, b, dep], [e1, e2]),
-  graphHash([aChangedContent, b, dep], [e1, e2]),
-  'graph hash must change when fact content changes'
+  graphHash([aChangedBytes, b, dep], [e1, e2]),
+  'content-only file changes must change canonical repository graph hash'
 );
 
-const renamed = fact('file', 'workspace/Test/a-renamed.kt', { language: 'kotlin' });
-assert.notEqual(a.id, renamed.id, 'identity changes must produce a new fact id');
+const metadataOnly = fact(
+  'file',
+  'workspace/Test/a.kt',
+  { size: 40, sha256: 'a'.repeat(64), semanticStatus: 'metadata-only', semanticReason: 'binary-extension' },
+  'project-intelligence-v2-file-evidence'
+);
+assert.equal(a.id, metadataOnly.id, 'semantic classification must not change file identity');
+assert.notEqual(a.contentSha256, metadataOnly.contentSha256, 'semantic classification must be represented in fact content');
+
+const renamed = fact(
+  'file',
+  'workspace/Test/a-renamed.kt',
+  { size: 40, sha256: 'a'.repeat(64), semanticStatus: 'indexed', semanticReason: null },
+  'project-intelligence-v2-file-evidence'
+);
+assert.notEqual(a.id, renamed.id, 'path identity changes must produce a new file fact id');
 
 const sameEdge = edge('resolves-to', dep, b, dep.stableKey, { note: 'content-only' });
 assert.equal(e2.id, sameEdge.id, 'edge content changes must retain stable edge identity');
 assert.notEqual(e2.contentSha256, sameEdge.contentSha256, 'edge content hash must detect changed edge content');
 
 assert.match(observer, /internal class RiftRepositoryConsistencyObserver/);
-assert.match(observer, /const val VERSION = 1/);
-assert.match(observer, /const val FORMAT = "rift-repository-fact-graph-v1"/);
+assert.match(observer, /const val VERSION = 2/);
+assert.match(observer, /const val FORMAT = "rift-repository-fact-graph-v2"/);
 assert.match(observer, /const val PHASE = "N1\.8\.0"/);
+assert.match(observer, /rift-repository-consistency-v2/);
 assert.match(observer, /MAX_FACTS = 4_096/);
 assert.match(observer, /MAX_EDGES = 4_096/);
 assert.match(observer, /MAX_FINDINGS = 1_024/);
 assert.match(observer, /MAX_CACHE_BYTES = 4 \* 1024 \* 1024/);
-assert.match(observer, /RiftPatchManifestV1\.sha256Canonical/);
 assert.match(observer, /contentHashSeparateFromIdentity/);
-assert.match(observer, /sourceOfTruth", "project-intelligence-v2-derived"/);
-assert.match(observer, /authoritative", false/);
-assert.match(observer, /rebuildableCache", true/);
+assert.match(observer, /fileContentBound/);
+assert.match(observer, /sourceOfTruth", "project-intelligence-v2-content-verified"/);
+assert.match(observer, /repositoryFileEvidence/);
+assert.match(observer, /repository-content-unverified/);
+assert.match(observer, /repository-file-content-unavailable/);
+assert.match(observer, /repository-file-evidence-missing/);
+assert.match(observer, /project-intelligence-v2-file-evidence/);
 assert.match(observer, /ATOMIC_MOVE/);
 assert.match(observer, /readVerifiedSnapshot/);
 assert.match(observer, /private fun findingRecord/);
-assert.match(observer, /"ruleId", "category", "severity", "deterministic"/);
-assert.match(observer, /"graphPath"/);
-assert.match(observer, /"blocksPromotion"/);
-assert.match(observer, /"evidenceIncomplete"/);
 assert.match(observer, /private fun stableFindingId/);
 assert.match(observer, /inferenceMayBlockPromotion", false/);
-assert.match(observer, /pi-v2-file-bound/);
-assert.match(observer, /pi-v2-edge-bound/);
+assert.ok(!observer.includes('walkTopDown('), 'observer must not create a second filesystem scan');
+assert.ok(!observer.includes('RiftSourceIntelligenceV2.analyze('), 'observer must consume PI-v2 evidence');
+assert.ok(!observer.includes('refreshSymbolIndex('), 'observer must not own PI-v2 refresh');
 
-assert.ok(!observer.includes('walkTopDown('), 'observer must not create a second filesystem index');
-assert.ok(!observer.includes('RiftSourceIntelligenceV2.analyze('), 'observer must consume PI-v2 instead of reparsing source');
-assert.ok(!observer.includes('refreshSymbolIndex('), 'observer must not own PI-v2 index refresh');
-
-assert.match(sandbox, /private val repositoryConsistencyObserver = RiftRepositoryConsistencyObserver\(appContext\)/);
-assert.match(sandbox, /if \(kind == "consistency"\) return projectConsistency\(path, query, requestedLimit\)/);
-assert.match(sandbox, /private fun projectConsistency\(path: String, query: String, requestedLimit: Int\)/);
-assert.match(sandbox, /MAX_GRAPH_FILES_PREVIEW = 120/);
-assert.match(sandbox, /MAX_GRAPH_EDGES = 600/);
-assert.match(sandbox, /MAX_CONSISTENCY_INPUT_FILES = 1_024/);
-assert.match(sandbox, /MAX_CONSISTENCY_INPUT_EDGES = 1_024/);
-assert.match(sandbox, /private fun buildProjectGraph\(/);
+assert.match(sandbox, /private data class RepositoryFileEvidence\(/);
+assert.match(sandbox, /val sha256: String\?/);
+assert.match(sandbox, /private val repositoryFileIndex = LinkedHashMap<String, RepositoryFileEvidence>\(\)/);
+assert.match(sandbox, /val sha256: String,/);
+assert.match(sandbox, /root\.optInt\("version", 0\) != 3/);
+assert.match(sandbox, /\.put\("version", 3\)/);
+assert.match(sandbox, /private fun refreshSymbolIndex\(base: File, verifyContent: Boolean = false\)/);
+assert.match(sandbox, /verifyContent \|\|/);
+assert.match(sandbox, /cached\.sha256 == contentSha/);
+assert.match(sandbox, /repository-content-hash-byte-bound/);
+assert.match(sandbox, /repository-content-hash-failure/);
+assert.match(sandbox, /semantic-total-byte-bound/);
+assert.match(sandbox, /private fun isPolicyExcludedFile\(/);
+assert.match(sandbox, /private fun semanticClassification\(/);
+assert.match(sandbox, /"metadata-only" to "binary-extension"/);
+assert.match(sandbox, /repositoryFileIndex\.remove/);
+assert.match(sandbox, /repositoryFileEvidence/);
+assert.match(sandbox, /repositoryContentVerified/);
+assert.match(sandbox, /includeFileEvidence = true/);
+assert.match(sandbox, /verifyRepositoryContent = true/);
 assert.match(sandbox, /fileLimit = MAX_CONSISTENCY_INPUT_FILES/);
 assert.match(sandbox, /edgeLimit = MAX_CONSISTENCY_INPUT_EDGES/);
-assert.match(sandbox, /filesTruncated/);
-assert.match(sandbox, /edgesTruncated/);
+assert.ok(
+  !sandbox.includes('cached.modified == file.lastModified() && cached.size == file.length()'),
+  'content-verified consistency must not rely on mtime+size identity'
+);
+
 assert.match(sandbox, /repositoryConsistencyObserver\.foundationView/);
 assert.match(sandbox, /if \(mode == "full"\)/);
 assert.match(sandbox, /responseMode", "compact"/);
-assert.match(sandbox, /project kind=consistency query=full/);
 assert.match(sandbox, /requestedLimit\.coerceIn\(1, 40\)/);
-assert.match(sandbox, /"graph", "impact", "validation", "consistency"/);
 assert.match(gradle, /RiftRepositoryConsistencyObserver\.kt/);
 
-console.log('ok - N1.8.0 repository fact graph has stable identities, separate content hashes, deterministic graph hashing, bounded verified private cache, and reuses PI-v2 without a second index');
+console.log('ok - N1.8.0 file facts are content-bound, PI cache v3 carries exact repository evidence, metadata-only files remain represented, and consistency forces verified content without a second observer scan');

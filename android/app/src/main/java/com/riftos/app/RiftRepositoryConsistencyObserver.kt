@@ -17,8 +17,8 @@ import java.util.UUID
  */
 internal class RiftRepositoryConsistencyObserver(context: Context) {
     companion object {
-        const val VERSION = 1
-        const val FORMAT = "rift-repository-fact-graph-v1"
+        const val VERSION = 2
+        const val FORMAT = "rift-repository-fact-graph-v2"
         const val PHASE = "N1.8.0"
 
         const val MAX_FACTS = 4_096
@@ -35,7 +35,7 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
     }
 
     private val appContext = context.applicationContext
-    private val cacheRoot = File(appContext.filesDir, "rift-repository-consistency-v1").apply { mkdirs() }
+    private val cacheRoot = File(appContext.filesDir, "rift-repository-consistency-v2").apply { mkdirs() }
 
     fun foundationView(projectRoot: String, projectGraph: JSONObject): JSONObject {
         require(projectGraph.optString("projectIntelligence") == "v2") {
@@ -120,22 +120,107 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
                 .put("observerPhase", PHASE)
         )
 
-        val matchedFiles = projectGraph.optJSONArray("matchedFiles") ?: JSONArray()
-        val filesMatched = projectGraph.optInt("filesMatched", matchedFiles.length())
-        val filesTruncated = projectGraph.optBoolean("filesTruncated", filesMatched > matchedFiles.length())
-        val edgesTruncated = projectGraph.optBoolean("edgesTruncated", projectGraph.optBoolean("truncated", false) && !filesTruncated)
-        if (filesTruncated || filesMatched > matchedFiles.length()) incompleteReasons += "pi-v2-file-bound"
-        if (edgesTruncated) incompleteReasons += "pi-v2-edge-bound"
+        val fileEvidenceRows = projectGraph.optJSONArray("repositoryFileEvidence") ?: JSONArray()
+        val repositoryFilesMatched = projectGraph.optInt("repositoryFilesMatched", fileEvidenceRows.length())
+        val repositoryFilesTruncated = projectGraph.optBoolean(
+            "repositoryFilesTruncated",
+            repositoryFilesMatched > fileEvidenceRows.length()
+        )
+        val edgesTruncated = projectGraph.optBoolean("edgesTruncated", false)
 
-        for (index in 0 until matchedFiles.length()) {
-            val path = matchedFiles.optString(index).trim()
+        if (repositoryFilesTruncated || repositoryFilesMatched > fileEvidenceRows.length()) {
+            incompleteReasons += "pi-v2-file-bound"
+        }
+        if (edgesTruncated) incompleteReasons += "pi-v2-edge-bound"
+        if (!projectGraph.optBoolean("repositoryContentVerified", false)) {
+            incompleteReasons += "repository-content-unverified"
+        }
+        if (!projectGraph.optBoolean("repositoryEvidenceComplete", false)) {
+            incompleteReasons += "repository-evidence-incomplete"
+        }
+        if (!projectGraph.optBoolean("semanticEvidenceComplete", false)) {
+            incompleteReasons += "semantic-evidence-incomplete"
+        }
+
+        val upstreamIncomplete = projectGraph.optJSONArray("repositoryEvidenceIncompleteReasons") ?: JSONArray()
+        for (index in 0 until upstreamIncomplete.length()) {
+            upstreamIncomplete.optString(index).trim().takeIf { it.isNotBlank() }?.let(incompleteReasons::add)
+        }
+
+        val fileAttributes = linkedMapOf<String, JSONObject>()
+        for (index in 0 until fileEvidenceRows.length()) {
+            val row = fileEvidenceRows.optJSONObject(index) ?: continue
+            val path = row.optString("path").trim()
             if (path.isBlank()) continue
-            val fileFactId = addFact("file", path, path = path)
+            val sha = row.opt("sha256")
+                ?.takeUnless { it == JSONObject.NULL }
+                ?.toString()
+                ?.trim()
+                .orEmpty()
+            val size = row.optLong("size", -1L)
+            val semanticStatus = row.optString("semanticStatus").trim().ifBlank { "unavailable" }
+            val semanticReason = row.opt("semanticReason")
+                ?.takeUnless { it == JSONObject.NULL }
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+
+            if (!sha.matches(Regex("^[0-9a-f]{64}$"))) {
+                incompleteReasons += "repository-file-content-unavailable"
+            }
+            if (size < 0L) incompleteReasons += "repository-file-size-unavailable"
+
+            val attributes = JSONObject()
+                .put("size", size)
+                .put("sha256", if (sha.isBlank()) JSONObject.NULL else sha)
+                .put("semanticStatus", semanticStatus)
+                .put("semanticReason", semanticReason ?: JSONObject.NULL)
+            fileAttributes[path] = attributes
+
+            val fileFactId = addFact(
+                kind = "file",
+                stableKey = path,
+                path = path,
+                evidenceType = "project-intelligence-v2-file-evidence",
+                attributes = attributes
+            )
             addEdge(
                 relation = "contains",
                 sourceFactId = projectFactId,
                 targetFactId = fileFactId,
-                stableKey = path
+                stableKey = path,
+                evidenceType = "project-intelligence-v2-file-evidence"
+            )
+        }
+
+        if (fileEvidenceRows.length() == 0 && (projectGraph.optJSONArray("matchedFiles")?.length() ?: 0) > 0) {
+            incompleteReasons += "repository-file-evidence-missing"
+            val matchedFiles = projectGraph.optJSONArray("matchedFiles") ?: JSONArray()
+            for (index in 0 until matchedFiles.length()) {
+                val path = matchedFiles.optString(index).trim()
+                if (path.isBlank()) continue
+                val fileFactId = addFact("file", path, path = path)
+                addEdge(
+                    relation = "contains",
+                    sourceFactId = projectFactId,
+                    targetFactId = fileFactId,
+                    stableKey = path
+                )
+            }
+        }
+
+        fun fileFactId(path: String): String {
+            val attributes = fileAttributes[path]
+            if (attributes == null) {
+                incompleteReasons += "repository-file-evidence-missing"
+                return addFact("file", path, path = path)
+            }
+            return addFact(
+                kind = "file",
+                stableKey = path,
+                path = path,
+                evidenceType = "project-intelligence-v2-file-evidence",
+                attributes = attributes
             )
         }
 
@@ -160,7 +245,7 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
 
             if (sourcePath.isBlank() || specifier.isBlank()) continue
 
-            val sourceFactId = addFact("file", sourcePath, path = sourcePath)
+            val sourceFactId = fileFactId(sourcePath)
             addEdge(
                 relation = "contains",
                 sourceFactId = projectFactId,
@@ -195,7 +280,7 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
             )
 
             if (targetPath.isNotBlank()) {
-                val targetFactId = addFact("file", targetPath, path = targetPath)
+                val targetFactId = fileFactId(targetPath)
                 addEdge(
                     relation = "resolves-to",
                     sourceFactId = dependencyFactId,
@@ -223,7 +308,7 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
             .put("phase", PHASE)
             .put("projectRoot", normalizedRoot)
             .put("projectIntelligence", "v2")
-            .put("sourceOfTruth", "project-intelligence-v2-derived")
+            .put("sourceOfTruth", "project-intelligence-v2-content-verified")
             .put("authoritative", false)
             .put("rebuildableCache", true)
             .put("complete", incompleteReasons.isEmpty())
@@ -245,7 +330,8 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
             .put("counts", JSONObject()
                 .put("facts", factRows.length())
                 .put("edges", edgeRows.length())
-                .put("findings", findingRows.length()))
+                .put("findings", findingRows.length())
+                .put("repositoryFiles", fileEvidenceRows.length()))
     }
 
     fun schemaSummary(): JSONObject = JSONObject()
@@ -256,7 +342,8 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
             .put("fact", "{kind,stableKey}")
             .put("edge", "{relation,sourceFactId,targetFactId,stableKey}")
             .put("finding", "{ruleId,category,sourceFactId,conflictFactId,stableKey}")
-            .put("contentHashSeparateFromIdentity", true))
+            .put("contentHashSeparateFromIdentity", true)
+            .put("fileContentBound", true))
         .put("requiredFields", JSONObject()
             .put("fact", JSONArray(listOf(
                 "id", "kind", "stableKey", "path", "line", "evidenceType",

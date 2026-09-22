@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 SOURCE/LIVE-PROVEN BUT PROMOTION PENDING FULL-REPO COMPLETENESS; N1.8.1+ PENDING**
+Status: **N1.8.0 CONTENT-IDENTITY HARDENING SOURCE-IMPLEMENTED — BUILDER/INSTALLED TORTURE RESTART PENDING; N1.8.1+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -792,7 +792,7 @@ No "best" claim is allowed without measured comparable evidence.
 
 ### N1.8.0 — fact graph/schema
 
-**Source/live behavior proven, but promotion is blocked until the full-repository graph reports complete.**
+**Foundation behavior is live-proven, but promotion remains blocked after the torture suite exposed content-only repository changes that the installed v1 graph did not represent. Content-identity hardening is source-implemented and must rebuild/install before the torture suite restarts.**
 
 Current source provides:
 - canonical fact/edge/finding required-field schema in `RiftRepositoryConsistencyObserver.kt`;
@@ -802,9 +802,17 @@ Current source provides:
 - verified atomic app-private cache that is non-authoritative and rebuildable;
 - derivation from the existing PI-v2 graph only, with no observer-owned source scan/index;
 - existing Code Mode `project kind=consistency` read-only view with compact-by-default whole-repo output and explicit `query=full` detail mode;
+- content-verified repository file evidence separated from the semantic symbol index: every non-policy-excluded file carries exact size/SHA-256 plus semantic status/reason, while binary/non-text files may remain explicit metadata-only evidence;
+- Project Intelligence cache schema v3 binds semantically parsed entries to exact content SHA and invalidates the older mtime+size-only cache generation;
+- consistency forces repository-content verification, while ordinary PI-v2 views retain their lighter reuse path; all existing mutation/rollback invalidation clears semantic and repository-file evidence together;
+- Repository Fact Graph schema/cache v2 binds file-fact content to repository byte SHA without making SHA part of stable file identity;
 - independent regression coverage in `scripts/test-rift-repository-consistency-v1.mjs` wired into the main Builder chain.
 
-Installed proof on source `6dfaea915aa47ca61f5efb9a55a72379b9efb77f` verified compact whole-repository response delivery, deterministic graph SHA-256, verified cache reuse and `changed=false` on the second identical run. However, that same proof reported `complete=false` because the observer was consuming PI-v2's human-facing graph preview caps: 120 matched files and 600 dependency edges. Source now refactors graph construction into one shared PI-v2 builder. The public graph view keeps those preview caps, while consistency uses observer-only internal bounds of 1024 files and 1024 dependency edges. The current RiftOS repository contains 258 indexed files and 758 dependency edges (56 resolved / 702 unresolved), which yields about 1017 facts and 1072 graph edges—well below the observer's 4096/4096 ceilings. N1.8.0 therefore remains unpromoted until a rebuilt installed APK returns full-repository `complete=true` with no PI-v2 file/edge-bound reason.
+Earlier installed proof on source `6dfaea915aa47ca61f5efb9a55a72379b9efb77f` exposed the PI-v2 120-file/600-edge presentation-cap problem; Patch 10.31 moved consistency onto the shared 1024-file/1024-edge internal feed. Installed source `5de7f5065160b2bbe263e8cc0d179f6099af4347` then returned the full RiftOS repository as `complete=true` with 1017 facts, 1072 edges, zero incompleteness reasons and verified cache state. Ten consecutive warm full-repository runs produced the identical graph SHA-256 `195d7567eaa4ef0cc7a71ca2d7f17251427c346ca4198d7b3456d086fdbc1e4f`, identical graph ID/counts and `changed=false`. Structural fixture cases also behaved correctly for add/delete/rename/copy/move, dependency-target changes, unresolved-target state, three concurrent consistency reads, Unicode/space paths and case-distinct paths.
+
+The torture suite then found a hard promotion blocker in the installed v1 foundation. A content-only `Main.kt` edit from `42` to `43` changed the real file SHA-256 from `3e25f46c18b15829f424ae91a11fd3efd4fcbd17c2c764b07b22da08b1191abc` to `e136706cf5c3316f63fa875516ee48dbc1d5eeb0c32f7f66ed35fbc59430719e`, but the repository graph stayed `b60ea1716d94b36239a3a8dff440f3e4223a766c399d3db643feb4b177da224c`, the file fact content hash stayed unchanged and cache reported `changed=false`. A README content-only edit reproduced the same defect. Deleting `Case.kt` and recreating the same path with completely different bytes caused the graph to return to the exact old pre-delete graph identity, proving path existence—not file bytes—was driving the file fact. N1.8.0 therefore failed promotion exactly as the torture gate required.
+
+Source hardening now corrects the foundation rather than weakening the test: PI-v2 persists repository-file evidence in cache schema v3, consistency forces exact content verification, metadata-only/non-semantic files remain explicitly represented, stale semantic entries are removed when files become unindexable, mutation invalidation clears both evidence layers, and Repository Fact Graph v2 includes file size/SHA-256/semantic status in file-fact content while stable identity remains `{kind,path}`. Local Android source validation is green. N1.8.0 remains unpromoted until this source passes external Builder/Kotlin compilation, is installed, and the entire torture matrix restarts from the beginning; the staged subsystem planner remains implementation-blocked.
 
 ### N1.8.1 — syntax/import integrity
 

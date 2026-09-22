@@ -120,7 +120,7 @@ Ordinary filesystem/Code Mode tools execute in `RiftToolSandbox` and are confine
 - deterministic project export;
 - Project Intelligence v2 indexing;
 - symbol/reference/dependency views;
-- N1.8 Repository Consistency Observer foundation source-implemented above PI-v2/Workspace Records: stable fact/edge/finding schema, deterministic graph hashing, verified rebuildable private cache and compact `project kind=consistency` surface; full-repo coverage feed hardened beyond the public PI-v2 preview caps; rebuilt install must pass the full N1.8.0 torture matrix before promotion, and the future staged subsystem/domain scan planner remains design-only until that gate passes;
+- N1.8 Repository Consistency Observer content-identity hardening source-implemented above PI-v2/Workspace Records: installed torture proved full-repo coverage/determinism but exposed content-only false-clean behavior; PI-v2 cache v3 now carries exact per-file SHA/size + semantic status, Repository Fact Graph/cache v2 binds file-fact content to byte identity, and consistency forces verified repository content; Builder/install + full torture restart remain required before promotion, while the staged subsystem/domain planner stays design-only;
 - guarded range/hunk patches;
 - guarded one-operation Code Mode mutations with copy-on-write rollback; multi-op/batch execution is fail-fast disabled;
 - bounded archive/extract;
