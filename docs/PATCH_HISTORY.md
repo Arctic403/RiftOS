@@ -6,6 +6,39 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.48 — N1.8.1 promotion
+
+Installed source `198a3f31e22a5d385378fee087aa5f115aed6d5a` completes and promotes N1.8.1 syntax/import integrity.
+
+Exact installed proof:
+- N1.8.0 foundation recovered on analyzer v6 / PI cache v9 after the Patch 10.46 structural-v3 failure: `complete=true`, no incomplete reasons, 1031 facts / 1085 edges / 261 repository files, graph SHA-256 `c7a4c3ad246d0e3fa8fee7e5b04a3370437550031d5a3dd17b53cb8a15b0ad7a`, verified cache. After a real Android force-stop/reopen, the first consistency read reproduced that exact graph with `changed=false`;
+- full RiftOS-main integrity returned `complete=true`, `clean=true`, 261 selected files, 144 syntax-checked files, 0 invalid files, 769 dependencies, 56 `local-resolved`, 0 `local-missing`, 0 `ambiguous-local`, 713 `external-or-unclassified`, 0 findings, integrity SHA-256 `d73568a332d466d2c137a5899288b8fe06c5b4e8640463d859479c49c376b0ab`;
+- warm reads reproduced the exact integrity SHA with 261 reused, 0 reanalyzed and 0 bytes reanalyzed;
+- after a real force-stop/reopen, the first RiftOS-main integrity read again reproduced `d73568a332d466d2c137a5899288b8fe06c5b4e8640463d859479c49c376b0ab` with PI cache v9 `loaded`, 261 reused and 0 bytes reanalyzed;
+- a disposable 4-file adversarial fixture independently reproduced restart parity at integrity SHA-256 `f6ef4058f96c326f9172c1c1d791b897cd50b4bb105719755ec53bd7b7d54e68`, cache v9 `loaded`, 4 reused and 0 bytes reanalyzed.
+
+Adversarial syntax/import/path proof on the disposable fixture:
+- clean JavaScript with regex literals, nested template literals and a literal `import("./ghost.js")` string remained `complete=true`, `clean=true`; the fake import string created no dependency;
+- real relative JS import resolved locally while `node:fs` remained external/unclassified;
+- Kotlin interpolation containing nested calls remained structurally valid; package-qualified `com.example.Helper` resolved locally while `android.app.Activity` remained external/unclassified;
+- an intentionally malformed JS file reanalyzed alone and produced two deterministic `unclosed-delimiter` findings with `complete=true`, `clean=false`; removing it restored clean state;
+- renaming a relative JS target immediately produced `local-missing`; updating the importer restored clean state with only the changed importer reanalyzed;
+- removing the package-local Kotlin `Helper` symbol produced `local-package-symbol-missing`; adding a second same-package `Helper` produced one `ambiguous-local` finding with `candidateCount=2`; restoring a single symbol returned clean;
+- deleting and cross-directory moving the JS target both failed closed as `local-missing`; updating the import path after the move restored clean state;
+- focused `main.js` correctly emitted its resolved target as outgoing frontier; focusing the target emitted `main.js` as reverse frontier; focused views remained explicitly non-authoritative for full-repository cleanliness.
+
+Focused-frontier bound proof:
+- a disposable fan-out fixture created 241 real resolvable local targets from one focused seed;
+- the focused scan resolved all 241 local dependencies, returned `frontierCount=241`, emitted only the bounded 240-entry frontier preview, set `frontierTruncated=true`, remained `clean=true`, and failed closed as `complete=false` with `integrity-frontier-output-bound`;
+- the full oracle over the same 246-file fixture then returned `complete=true`, `clean=true`, 246 selected/checked files, 245 dependencies, 243 local-resolved, 0 local-missing, 0 ambiguous, 2 external/unclassified and 0 findings with integrity SHA-256 `6c56c3bf9d0d3cd851a8f7285357a009979c3120e814c74a9171e5e3aadd4d5c`.
+
+`incremental.filesRemoved` is refresh-pruning telemetry, not a count of every user-visible deletion since the prior oracle. Workspace mutation APIs eagerly invalidate affected index rows, so an API-driven delete/move can correctly produce `filesRemoved=0` on the following refresh because the stale row was already removed before that refresh. Deletion/path-drift correctness is established by repository/index contents plus the deterministic missing-local findings, not by that counter alone.
+
+All N1.8.1 promotion obligations are closed: Builder/compile, installed cold/warm migration, deterministic clean oracle, syntax false-positive/adversarial cases, local/external/ambiguous dependency classification, rename/delete/move drift, focused outgoing/reverse frontier behavior, fail-closed frontier bounds, full-oracle parity and true Android process-restart persistence.
+
+**N1.8.1 is promoted.** N1.8.2-N1.8.7 remain pending; N2 remains blocked until the full N1.8 program is promoted.
+
+This patch is documentation/evidence only. Runtime source is unchanged and no APK rebuild is required.
 ## Patch 10.47 — N1.8.1 regex-resume off-by-one recovery
 
 Installed Patch 10.46 proved the v7→v8 cache migration and eliminated the remaining dynamic-import false positives (`localMissing=0`), but it exposed one structural-v3 contract bug severe enough to invalidate the full integrity verdict.

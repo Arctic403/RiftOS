@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.1 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.2+ PENDING**
+Status: **N1.8.0 + N1.8.1 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.2+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -834,21 +834,21 @@ Patch 10.42 strengthened the remaining cache-failure proof in the permanent Buil
 
 ### N1.8.1 — syntax/import integrity
 
-Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING BUILDER + INSTALLED TORTURE.**
+Status: **PROMOTED ON INSTALLED SOURCE `198a3f31e22a5d385378fee087aa5f115aed6d5a`.**
 
 N1.8.1 extends the existing PI-v2 evidence path rather than introducing a second parser/index. After the installed torture runs exposed false-positive semantics in the v3/v6 and v4/v7 implementations plus the structural-v3 regex-resume defect in v5/v8, `RiftSourceIntelligenceV2` is now analyzer v6 and PI persistence is cache schema v9 so syntax/import evidence produced by the broken v8 scanner cannot be reused. Changed files are still re-analyzed incrementally while warm unchanged rows retain bounded syntax and dependency-intent evidence across restart.
 
 Current source provides:
 - conservative bounded structural syntax evidence (`bounded-structural-v4-conservative`) with at most 128 deterministic issues per file; Kotlin interpolation remains bounded to its matching expression, JavaScript template literals remain recursively masked including nested templates/interpolations while preserving newlines, dynamic `import()`/`require()` extraction remains executable-code-only, and regex scanning now resumes exactly at the first token after the closing `/` rather than skipping that token. Successfully parsed complex string/template spans are masked; malformed or unterminated constructs remain visible. This remains a hot-path structural check, not a compiler AST or replacement for build/compiler proof;
 - dependency `localIntent` evidence for explicit local forms such as relative JavaScript/Python imports, quoted C/C++ includes and Rust local module/use forms;
-- a separate read-only `project kind=integrity` view so the promoted N1.8.0 canonical graph is not changed by an unpromoted N1.8.1 lane;
+- a separate read-only `project kind=integrity` view so the promoted N1.8.0 canonical graph remains isolated from N1.8.1 integrity evidence;
 - full clean-oracle mode when the integrity query is blank and focused-seed mode when a path/query is supplied;
 - deterministic dependency classification into `local-resolved`, `local-missing`, `ambiguous-local`, or `external-or-unclassified`, with error findings only where local intent is provable;
 - bounded direct outgoing/reverse dependency frontier output for staged scan expansion without claiming repository-wide cleanliness from focused coverage;
 - distinct `complete` and `clean` states, explicit incomplete reasons/bounds, and deterministic `integritySha256` over the exact file/dependency/finding/frontier evidence;
 - permanent source regression `scripts/test-rift-integrity-v1.mjs`, wired into the main Builder source gate and ownership ledger.
 
-Promotion still requires Builder/compile proof, installed cold/warm/cache-v5→v6/restart parity, syntax false-positive/adversarial fixtures, local/external/ambiguous import fixtures, delete/rename/move path-drift cases, focused-frontier bounds and full-oracle parity. Any false clean or unclassified formerly-local drift exposed by those fixtures must be hardened rather than waived.
+Promotion evidence is complete. Builder/compile and installed analyzer v6/cache v9 proof passed; the first post-install integrity oracle on RiftOS-main returned `complete=true`, `clean=true`, 261 selected files, 144 syntax-checked files, 0 invalid files, 769 dependencies, 56 local-resolved, 0 local-missing, 0 ambiguous-local, 713 external/unclassified and 0 findings with deterministic integrity SHA-256 `d73568a332d466d2c137a5899288b8fe06c5b4e8640463d859479c49c376b0ab`. Warm and first post-force-stop reads reproduced the exact hash with 261 reused, 0 bytes reanalyzed and cache v9 `loaded`. Installed torture fixtures proved malformed syntax detection without incompleteness, clean nested JS templates/regex/Kotlin interpolation, fake dynamic-import text suppression, external Node/Android imports, relative and package-qualified local resolution, local-missing and ambiguity findings, rename/delete/move path drift and recovery, outgoing/reverse focused frontiers, and full-oracle parity. A 241-target focused fan-out proved fail-closed output bounds: `frontierCount=241`, preview 240, `frontierTruncated=true`, `clean=true`, `complete=false`, reason `integrity-frontier-output-bound`; the same 246-file fixture then returned `complete=true`, `clean=true`, 243 local-resolved and 0 findings under the full oracle. `incremental.filesRemoved` counts stale semantic rows pruned during refresh; API-driven mutations may show 0 when eager invalidation removed the row before refresh. No N1.8.1 false-clean kill condition remains open.
 
 Required outcomes remain:
 - incremental changed-file analysis;
