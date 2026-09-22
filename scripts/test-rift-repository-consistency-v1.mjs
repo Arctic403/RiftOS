@@ -258,7 +258,7 @@ assert.match(read(k + 'RiftSourceIntelligenceV2.kt'), /throw AnalysisBoundExceed
 assert.match(read(k + 'RiftSourceIntelligenceV2.kt'), /throw AnalysisBoundExceeded\("semantic-dependency-bound"\)/);
 assert.equal(4096 >= 4096, true, '4097th unique semantic row must fail before insertion');
 assert.match(sandbox, /if \(size > MAX_HASH_TOTAL_BYTES - hashBytes\)/);
-assert.match(sandbox, /if \(size > MAX_INDEX_TOTAL_BYTES - bytesScanned\)/);
+assert.match(sandbox, /if \(size > MAX_INDEX_TOTAL_BYTES - semanticBytesAccounted\)/);
 assert.equal(128 * 1024 * 1024 > 128 * 1024 * 1024 - 0, false, 'exact semantic total byte bound must remain allowed');
 assert.equal(128 * 1024 * 1024 + 1 > 128 * 1024 * 1024 - 0, true, 'semantic total byte bound +1 must fail closed');
 assert.equal(256 * 1024 * 1024 > 256 * 1024 * 1024 - 0, false, 'exact repository hash byte bound must remain allowed');

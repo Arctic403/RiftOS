@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.41 — Repository-consistency regression follows Patch 10.38 warm-cache hardening
+
+Builder run `35778724101` at source `ab25caa191ffb27e309dbeb970b2c0d9dfd93272` proved the Patch 10.40 wiring-validator repair: native wiring, transport, documentation, Workspace Records, Diff V2, File Identity V2, patch sessions, Patch Manifest V1 and semantic-impact checks all passed. The source-check chain then stopped in `scripts/test-rift-repository-consistency-v1.mjs`.
+
+That regression had become self-contradictory after Patch 10.38. It correctly asserted that `MAX_INDEX_TOTAL_BYTES - bytesScanned` must be absent and that `semanticBytesAccounted` must advance before cache reuse, but a later legacy line still required the old buggy expression `if (size > MAX_INDEX_TOTAL_BYTES - bytesScanned)`.
+
+Patch 10.41 replaces that stale positive assertion with the hardened expression `if (size > MAX_INDEX_TOTAL_BYTES - semanticBytesAccounted)`. A full scripts sweep confirms the only remaining occurrence of the old expression is the intentional negative assertion that forbids it. No runtime behavior changed.
+
+Builder source-check must still rerun to continue through the remaining regression chain; installed-device proof remains pending.
+
 ## Patch 10.40 — Builder wiring validator follows the replaceable RiftCLI boundary
 
 Builder run `35778126690` at source `8a4da45f7c9530ab14e08793736aec3f7cc3a8cf` failed during `npm run check:transport` before Kotlin/NDK compilation. The failure was isolated to `scripts/validate-rift-wiring.mjs`: its Local Agent assertion still required the retired Patch 10.37 direct form `RiftMcpRuntime.nativeShell(context).executeCliForLocalAgent(cwd, argv)`, while Patch 10.39 deliberately routes non-trust-kernel commands through `executeLocalCliForLocalAgent(cwd, argv)`.
