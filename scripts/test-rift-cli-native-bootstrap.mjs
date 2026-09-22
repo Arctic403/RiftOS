@@ -10,6 +10,7 @@ const cpp = 'android/app/src/main/cpp/';
 const host = read(k + 'RiftCliHost.kt');
 const shell = read(k + 'RiftNativeShell.kt');
 const services = read(k + 'RiftNativeShellServices.kt');
+const localAgent = read(k + 'RiftVortexLocalAgent.kt');
 const gradle = read('android/app/build.gradle.kts');
 const cmake = read(cpp + 'CMakeLists.txt');
 const core = read(cpp + 'riftcli/rift_cli_core.cpp');
@@ -47,10 +48,15 @@ check(
 );
 
 check(
-  'RiftShell routes rift-cli into the native host and N1 dispatcher',
-  shell.includes('"rift-cli" -> executeCliCommand(cwd, args)') &&
+  'RiftShell routes rift-cli through RiftOS Local Agent into the existing native supervisor',
+  shell.includes('"rift-cli" -> executeHostedCliCommand(cwd, args)') &&
+    shell.includes('RiftOsLocalAgent.execute(appContext, request)') &&
+    shell.includes('internal fun executeCliForLocalAgent') &&
     shell.includes('RiftCliHost.executeShell(args, cwd)') &&
-    shell.includes('origin = "rift-cli-driver"') &&
+    shell.includes('origin = "rift-local-agent-cli"') &&
+    localAgent.includes('private object RiftLocalAgentCliIntelligence') &&
+    localAgent.includes('if (op == "intelligence") return RiftLocalAgentCliIntelligence.execute(context, args)') &&
+    localAgent.includes('RiftMcpRuntime.nativeShell(context).executeCliForLocalAgent(cwd, argv)') &&
     !shell.includes('RiftExperimentalCli')
 );
 
@@ -108,8 +114,11 @@ check(
 );
 
 check(
-  'external driver dependency direction remains one-way into CLI',
-  core.includes('external-driver -> MCP/RiftShell -> RiftCLI') &&
+  'RiftOS Local Agent owns the CLI host boundary while the native core remains gated',
+  core.includes('MCP/RiftShell -> RiftOS Local Agent -> RiftCLI') &&
+    core.includes('"hostOwner\\":\"riftos-local-agent') &&
+    core.includes('"hostedByLocalAgent\\":true') &&
+    core.includes('"directExternalHost\\":false') &&
     core.includes('"cliCallsDriver\\":false') &&
     docs.includes('RiftCLI **never calls a model or inference API**')
 );

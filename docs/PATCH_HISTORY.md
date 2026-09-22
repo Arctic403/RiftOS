@@ -2,9 +2,61 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-21.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-22.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.37 — Local Agent-hosted RiftCLI + N1.8.0 torture hardening
+
+### Architecture lock
+
+RiftCLI is no longer documented or routed as a sibling controller owned directly by an external driver. The permanent host boundary is now:
+
+`external reasoning source -> MCP/RiftShell -> RiftOS Local Agent -> RiftCLI -> bounded RiftOS authorities`.
+
+The compatibility `rift-cli` shell command now enters `RiftOsLocalAgent` first. The Local Agent's internal `intelligence` adapter validates/bounds the argument envelope and reuses the existing `RiftNativeShell.executeCliCommand` execution supervisor, preserving existing ToolHost/shell jobs, cancellation, event and provenance behavior instead of creating a second authority path. The native C++ switch remains the only enable gate: `g_enabled` defaults false, enable remains process-local/non-persistent and still requires `CONFIRM-EXPERIMENTAL`.
+
+After this boundary is validated, all further CLI intelligence expansion is frozen until N1.8.0 promotion. Memory, Planner, Command Registry, Execution Supervisor expansion, Debug/history expansion and Security/validation expansion are not started by this patch.
+
+### N1.8.0 torture findings and hardening
+
+The continuing foundation audit found additional cases where valid bounded repository input could still create a crash or excessive work:
+
+- stable keys longer than 2048 characters threw before graph identity could be produced;
+- fact/edge/finding IDs hashed the stored bounded stable key instead of the full semantic identity;
+- the optional/rebuildable observer snapshot threw when serialized output exceeded 4 MiB or persistence/verification failed;
+- semantic/hash byte-budget checks used addition forms that were exact-bound correct but unnecessarily overflow-prone;
+- PI-v2 semantic extraction had no explicit per-file symbol/dependency cardinality bound;
+- the internal consistency feed could resolve every dependency even after its 1024-edge evidence output was already full.
+
+Current source hardens those lanes:
+
+- fact/edge/finding IDs hash the full normalized stable key;
+- stored/display stable keys remain bounded to 2048 characters and long values carry a deterministic SHA-256 suffix, preserving distinct long shared-prefix identities without bloating graph rows;
+- observer cache persistence is explicitly optional/non-authoritative: snapshot >4 MiB, cache write failure or post-write verification failure returns `persisted=false` diagnostics instead of aborting a valid graph;
+- semantic total-byte and repository hash-byte checks use subtraction-based exact-bound arithmetic;
+- PI-v2 now caps each semantic file at 4096 unique symbols and 4096 unique dependencies; overflow raises a typed analysis-bound signal and becomes explicit `semantic-symbol-bound` / `semantic-dependency-bound` incomplete evidence while repository byte evidence remains retained;
+- candidate semantic-delta analysis handles the same bound signal as incomplete evidence instead of failing the whole impact view;
+- consistency/internal-evidence graph construction counts all dependency rows for truncation evidence but resolves targets only for the bounded 1024-edge observer feed.
+
+### Live torture evidence retained in this patch
+
+Using disposable workspace fixtures on the currently installed pre-Patch-10.37 runtime:
+
+- exactly 128 MiB of semantic files completed with no `semantic-total-byte-bound`;
+- 128 MiB + 1 byte failed closed with `semantic-total-byte-bound` and `semantic-evidence-incomplete`;
+- exactly 256 MiB of repository content produced no `repository-content-hash-byte-bound` reason; semantic incompleteness at that size remained expected because the separate semantic budget is 128 MiB;
+- 256 MiB + 1 byte failed closed with `repository-content-hash-byte-bound`, `repository-evidence-incomplete` and `repository-file-content-unavailable`.
+
+These live byte-budget results prove existing exact/+1 runtime semantics. They do **not** prove the new long-key/cache/resource source hardening, which requires a rebuilt installed APK.
+
+### Regression and validation
+
+`scripts/test-rift-cli-native-bootstrap.mjs`, `scripts/test-rift-cli-driver-protocol.mjs`, `scripts/validate-rift-wiring.mjs` and `scripts/test-rift-repository-consistency-v1.mjs` now lock the Local Agent host boundary and N1.8.0 hardening contracts.
+
+Local `riftbuild validate android` is green on Android project SHA `3e180b8b4a3add97251860880556c4e5b37cd3441c481e04437e2afcfcd13550`. Native RiftShell still does not expose Node/npm, so JavaScript regression execution plus Kotlin/C++ compile remain Builder-authoritative.
+
+Patch 10.37 is **source-implemented only**. N1.8.0 remains unpromoted. Required next proof is Builder/Kotlin/C++/JS regression success, install, PI v4->v5 rejection/rebuild, trusted v5 true-restart reload with canonical graph parity, long-key runtime proof, fail-soft oversized observer-cache proof and semantic symbol/dependency-bound runtime proof.
 
 ## Patch 10.36 — N1.8.0 PI semantic-cache integrity sealing
 

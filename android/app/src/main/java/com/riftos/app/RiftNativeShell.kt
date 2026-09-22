@@ -332,11 +332,39 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 val value = headlessJs.executeDeveloperTool(args)
                 ShellOutcome(value.output, cwd, value.result)
             }
-            "rift-cli" -> executeCliCommand(cwd, args)
+            "rift-cli" -> executeHostedCliCommand(cwd, args)
             "mount", "umount" -> throw IllegalStateException("Legacy shell mount entry point is retired during native Files migration; no renderer fallback exists.")
             "rift" -> throw IllegalStateException("Legacy RiftLocalPlatform shell wrapper is retired; use native Git, Workspace Records, Dev Lab and fixed native build/training services.")
             else -> throw IllegalArgumentException("unsupported native RiftShell command: $command")
         }
+    }
+
+    private fun executeHostedCliCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val request = JSONObject()
+            .put("op", "intelligence")
+            .put("cwd", cwd)
+            .put("argv", JSONArray(args))
+        val hosted = RiftOsLocalAgent.execute(appContext, request)
+        val output = hosted.optString("output")
+        val result = hosted.opt("result") ?: JSONObject.NULL
+        return ShellOutcome(output, cwd, result)
+    }
+
+    internal fun executeCliForLocalAgent(cwd: String, args: List<String>): JSONObject {
+        require(args.isNotEmpty()) { "Local Agent CLI request requires at least one argument" }
+        val outcome = executeCliCommand(cwd, args.toMutableList())
+        val resultValue = when (val value = outcome.result) {
+            null -> JSONObject.NULL
+            is JSONObject -> JSONObject(value.toString())
+            is JSONArray -> JSONArray(value.toString())
+            else -> value
+        }
+        return JSONObject()
+            .put("schema", "rift.local-agent-cli/1")
+            .put("host", "riftos-local-agent")
+            .put("output", outcome.output)
+            .put("cwd", outcome.cwd)
+            .put("result", resultValue)
     }
 
     private fun executeCliCommand(cwd: String, args: MutableList<String>): ShellOutcome {
@@ -367,7 +395,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         }
 
         if (cli.result.optString("command") == "disable" && !cli.result.optBoolean("enabled", true)) {
-            val reason = "RiftCLI disabled by external driver"
+            val reason = "RiftCLI disabled by RiftOS Local Agent host"
             val shellCancelled = cancelAllCliShellJobs(reason)
             val toolCancellation = RiftMcpRuntime.toolHost(appContext).cancelAllCliJobs(reason)
             val result = JSONObject(cli.result.toString())
@@ -416,7 +444,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val nestedCommand = nestedArgs.firstOrNull()?.lowercase().orEmpty()
         require(nestedCommand.isNotBlank()) { "RiftCLI dispatch command is blank" }
         require(nestedCommand != "rift-cli") {
-            "Internal RiftCLI recursion is forbidden; external driver continuation must send the next bounded loop request"
+            "Internal RiftCLI recursion is forbidden; RiftOS Local Agent host must send the next bounded loop request"
         }
 
         pruneCliShellJobs()
@@ -472,7 +500,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         if (started) emitCliShellJob(job, "job.started")
                         val nestedSession = RiftPatchSessions.begin(
                             appContext,
-                            origin = "rift-cli-driver",
+                            origin = "rift-local-agent-cli",
                             operation = nestedCommand,
                             intent = cliResult.optString("goal").takeIf { it.isNotBlank() },
                             requestId = cliResult.optString("requestId").takeIf { it.isNotBlank() },

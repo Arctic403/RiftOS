@@ -122,6 +122,7 @@ for (const dependency of ['verifyRiftOsAndroidSources', 'validateRiftBrowserWebV
 
 const main = read(`${kotlinDir}/MainActivity.kt`);
 const nativeShell = read(`${kotlinDir}/RiftNativeShell.kt`);
+const localAgent = read(`${kotlinDir}/RiftVortexLocalAgent.kt`);
 const buildInstaller = read(`${kotlinDir}/RiftBuildInstaller.kt`);
 if (!buildInstaller.includes('class RiftBuildInstallReceiver : BroadcastReceiver()')) fail('RiftBuild manifest receiver source is missing');
 const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
@@ -161,7 +162,15 @@ if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP i
 if (!cliHost.includes('System.loadLibrary("riftcli")') || !cliHost.includes('private external fun nativeExecute')) {
   fail('RiftCLI Kotlin host is not a thin JNI loader');
 }
-if (!nativeShell.includes('RiftCliHost.executeShell(args, cwd)')) fail('RiftShell does not route rift-cli into the native C++ host');
+if (!nativeShell.includes('"rift-cli" -> executeHostedCliCommand(cwd, args)') ||
+    !nativeShell.includes('RiftOsLocalAgent.execute(appContext, request)') ||
+    !nativeShell.includes('internal fun executeCliForLocalAgent') ||
+    !nativeShell.includes('RiftCliHost.executeShell(args, cwd)') ||
+    !localAgent.includes('private object RiftLocalAgentCliIntelligence') ||
+    !localAgent.includes('if (op == "intelligence") return RiftLocalAgentCliIntelligence.execute(context, args)') ||
+    !localAgent.includes('RiftMcpRuntime.nativeShell(context).executeCliForLocalAgent(cwd, argv)')) {
+  fail('RiftCLI is not hosted behind the RiftOS Local Agent boundary');
+}
 if (!gradle.includes('ndkVersion = "28.2.13676358"') ||
     !gradle.includes('abiFilters += listOf("arm64-v8a", "armeabi-v7a")') ||
     !gradle.includes('path = file("src/main/cpp/CMakeLists.txt")')) fail('RiftCLI pinned dual-ABI native Gradle wiring is missing');
@@ -169,7 +178,10 @@ if (!cliCmake.includes('add_library(') || !cliCmake.includes('riftcli') || !cliC
   fail('RiftCLI native CMake shared library contract is missing');
 }
 const cliN1CoreContracts = [
-  ['dependency direction', 'external-driver -> MCP/RiftShell -> RiftCLI'],
+  ['dependency direction', 'MCP/RiftShell -> RiftOS Local Agent -> RiftCLI'],
+  ['local-agent host owner', String.raw`\"hostOwner\":\"riftos-local-agent\"`],
+  ['local-agent hosted flag', String.raw`\"hostedByLocalAgent\":true`],
+  ['direct external host disabled', String.raw`\"directExternalHost\":false`],
   ['authority mode', 'full-riftos-when-enabled'],
   ['no direct model backend', String.raw`\"directModelBackend\":false`],
   ['no direct network client', String.raw`\"directNetworkClient\":false`],
@@ -199,14 +211,14 @@ for (const [name, fragment] of cliN1CoreContracts) {
 if (cliCore.includes('g_recentRequestIds.clear()')) {
   fail('RiftCLI N1 replay contract drifted: request IDs must not be cleared in-process');
 }
-if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
+if (!nativeShell.includes('executeCliCommand(cwd, args.toMutableList())') ||
     !nativeShell.includes('executeCliShellDispatch') ||
     !nativeShell.includes('executeCliToolDispatch') ||
     !nativeShell.includes('private val cliWorker = ThreadPoolExecutor(') ||
     !nativeShell.includes('rift_cli_job_list') ||
     !nativeShell.includes('rift_cli_job_poll') ||
     !nativeShell.includes('rift_cli_job_cancel') ||
-    !nativeShell.includes('origin = "rift-cli-driver"') ||
+    !nativeShell.includes('origin = "rift-local-agent-cli"') ||
     !nativeShell.includes('requestId = cliResult.optString("requestId")') ||
     !nativeShell.includes('Internal RiftCLI recursion is forbidden') ||
     nativeShell.includes('CountDownLatch') ||

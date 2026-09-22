@@ -400,7 +400,7 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
         val identity = JSONObject()
             .put("schema", VERSION)
             .put("kind", kind)
-            .put("stableKey", boundedStableKey(stableKey))
+            .put("stableKey", normalizedStableKey(stableKey))
         return "$FACT_ID_PREFIX${RiftPatchManifestV1.sha256Canonical(identity).take(32)}"
     }
 
@@ -415,7 +415,7 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
             .put("relation", relation)
             .put("sourceFactId", sourceFactId)
             .put("targetFactId", targetFactId)
-            .put("stableKey", boundedStableKey(stableKey))
+            .put("stableKey", normalizedStableKey(stableKey))
         return "$EDGE_ID_PREFIX${RiftPatchManifestV1.sha256Canonical(identity).take(32)}"
     }
 
@@ -475,21 +475,26 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
             .put("category", category)
             .put("sourceFactId", sourceFactId)
             .put("conflictFactId", conflictFactId ?: JSONObject.NULL)
-            .put("stableKey", boundedStableKey(stableKey))
+            .put("stableKey", normalizedStableKey(stableKey))
         return "$FINDING_ID_PREFIX${RiftPatchManifestV1.sha256Canonical(identity).take(32)}"
     }
 
-    private fun boundedStableKey(value: String): String {
+    private fun normalizedStableKey(value: String): String {
         val normalized = value.trim()
         require(normalized.isNotBlank()) { "Repository consistency stable key must not be blank" }
-        require(normalized.length <= MAX_STABLE_KEY_CHARS) {
-            "Repository consistency stable key exceeds $MAX_STABLE_KEY_CHARS characters"
-        }
         return normalized
     }
 
+    private fun boundedStableKey(value: String): String {
+        val normalized = normalizedStableKey(value)
+        if (normalized.length <= MAX_STABLE_KEY_CHARS) return normalized
+
+        val digestSuffix = "…#sha256:${RiftPatchManifestV1.sha256Canonical(normalized)}"
+        val prefixLength = (MAX_STABLE_KEY_CHARS - digestSuffix.length).coerceAtLeast(0)
+        return normalized.take(prefixLength) + digestSuffix
+    }
+
     private fun persistSnapshot(projectRoot: String, snapshot: JSONObject): JSONObject {
-        pruneCache()
         val rootIdentity = JSONObject()
             .put("format", FORMAT)
             .put("projectRoot", projectRoot)
@@ -498,50 +503,92 @@ internal class RiftRepositoryConsistencyObserver(context: Context) {
 
         val previousSha = readVerifiedSnapshot(target)?.optString("graphSha256")
             ?.takeIf { it.matches(Regex("^[0-9a-f]{64}$")) }
+        val currentSha = snapshot.optString("graphSha256")
+            .takeIf { it.matches(Regex("^[0-9a-f]{64}$")) }
+            ?: throw IllegalStateException("Repository consistency snapshot graph SHA-256 is invalid")
 
-        val payload = snapshot.toString()
-        val bytes = payload.toByteArray(Charsets.UTF_8)
-        require(bytes.size <= MAX_CACHE_BYTES) {
-            "Repository consistency snapshot exceeds $MAX_CACHE_BYTES bytes"
-        }
-
-        val temporary = File(cacheRoot, ".tmp-${UUID.randomUUID()}.json")
-        try {
-            temporary.outputStream().buffered().use { stream ->
-                stream.write(bytes)
-                stream.flush()
-            }
-            try {
-                Files.move(
-                    temporary.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-                )
-            } catch (_: Throwable) {
-                Files.move(
-                    temporary.toPath(),
-                    target.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                )
-            }
-        } finally {
-            if (temporary.exists()) temporary.delete()
-        }
-
-        val verified = readVerifiedSnapshot(target)
-            ?: throw IllegalStateException("Repository consistency cache verification failed after write")
-        val currentSha = verified.getString("graphSha256")
-
-        return JSONObject()
+        fun state(
+            persisted: Boolean,
+            verified: Boolean,
+            reason: String? = null
+        ): JSONObject = JSONObject()
             .put("privateAppCache", true)
             .put("authoritative", false)
             .put("rebuildable", true)
             .put("file", fileName)
-            .put("verified", true)
+            .put("persisted", persisted)
+            .put("verified", verified)
             .put("graphSha256", currentSha)
             .put("previousGraphSha256", previousSha ?: JSONObject.NULL)
             .put("changed", previousSha == null || previousSha != currentSha)
+            .also { out ->
+                if (!reason.isNullOrBlank()) out.put("reason", reason)
+            }
+
+        val payload = snapshot.toString()
+        val bytes = payload.toByteArray(Charsets.UTF_8)
+        if (bytes.size > MAX_CACHE_BYTES) {
+            return state(
+                persisted = false,
+                verified = false,
+                reason = "snapshot-too-large"
+            )
+                .put("bytes", bytes.size)
+                .put("maxBytes", MAX_CACHE_BYTES)
+        }
+
+        runCatching { pruneCache() }
+
+        val temporary = File(cacheRoot, ".tmp-${UUID.randomUUID()}.json")
+        val writeFailure = runCatching {
+            try {
+                temporary.outputStream().buffered().use { stream ->
+                    stream.write(bytes)
+                    stream.flush()
+                }
+                try {
+                    Files.move(
+                        temporary.toPath(),
+                        target.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE
+                    )
+                } catch (_: Throwable) {
+                    Files.move(
+                        temporary.toPath(),
+                        target.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                }
+            } finally {
+                if (temporary.exists()) temporary.delete()
+            }
+        }.exceptionOrNull()
+
+        if (writeFailure != null) {
+            return state(
+                persisted = false,
+                verified = false,
+                reason = "cache-write-failed"
+            )
+                .put("failureClass", writeFailure.javaClass.simpleName.take(96))
+                .put("failureMessage", writeFailure.message?.take(240) ?: JSONObject.NULL)
+        }
+
+        val verified = readVerifiedSnapshot(target)
+        if (verified == null) {
+            runCatching { target.delete() }
+            return state(
+                persisted = false,
+                verified = false,
+                reason = "cache-verification-failed"
+            )
+        }
+
+        return state(
+            persisted = true,
+            verified = true
+        )
     }
 
     private fun readVerifiedSnapshot(file: File): JSONObject? {

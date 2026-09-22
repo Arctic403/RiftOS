@@ -134,7 +134,10 @@ std::string baseStatus(const std::string& command, const std::string& cwd) {
         << "\"driverEventReplay\":\"device-ring-256\","
         << "\"batchV2\":true,"
         << "\"batchV2MaxSteps\":16,"
-        << "\"driverDirection\":\"external-driver -> MCP/RiftShell -> RiftCLI\","
+        << "\"driverDirection\":\"MCP/RiftShell -> RiftOS Local Agent -> RiftCLI\","
+        << "\"hostOwner\":\"riftos-local-agent\","
+        << "\"hostedByLocalAgent\":true,"
+        << "\"directExternalHost\":false,"
         << "\"cliCallsDriver\":false,"
         << "\"driverContinuationExternalOnly\":true,"
         << "\"modelBackend\":false,"
@@ -525,8 +528,8 @@ CommandResponse driverRequest(const std::vector<std::string>& args, const std::s
         result
             << ",\"requestMoreInfo\":" << quote(request.requestMoreInfo) << ","
             << "\"continuationRequired\":true,"
-            << "\"acceptanceReasons\":[\"external driver explicitly requested another bounded information round trip\"],"
-            << "\"nextSafeActionHints\":[\"external driver must send exactly the next loop step with matching identity and loop-max\"]";
+            << "\"acceptanceReasons\":[\"RiftOS Local Agent host explicitly requested another bounded information round trip\"],"
+            << "\"nextSafeActionHints\":[\"RiftOS Local Agent host must send exactly the next loop step with matching identity and loop-max\"]";
     } else if (wantsTool) {
         result
             << ",\"dispatch\":{"
@@ -554,7 +557,7 @@ CommandResponse driverRequest(const std::vector<std::string>& args, const std::s
     result << "}";
     return {
         wantsInfo
-            ? "RiftCLI requests one bounded external-driver continuation."
+            ? "RiftCLI requests one bounded Local Agent continuation."
             : (wantsTool
                 ? (jobControl ? "RiftCLI accepted one idempotent job-control request."
                               : "RiftCLI authorized one RiftOS tool action for execution.")
@@ -572,7 +575,7 @@ CommandResponse execute(const std::vector<std::string>& args, const std::string&
         const std::string output =
             "RiftCLI N1 native driver protocol\n"
             "Core: C++ / thin Kotlin JNI host\n"
-            "Dependency: external driver -> MCP/RiftShell -> RiftCLI -> bounded RiftOS authorities\n\n"
+            "Dependency: MCP/RiftShell -> RiftOS Local Agent -> RiftCLI -> bounded RiftOS authorities\n\n"
             "rift-cli help\n"
             "rift-cli status\n"
             "rift-cli architecture\n"
@@ -601,7 +604,10 @@ CommandResponse execute(const std::vector<std::string>& args, const std::string&
             << "\"coreLanguage\":\"c++\","
             << "\"hostLanguage\":\"kotlin\","
             << "\"boundary\":\"jni\","
-            << "\"driverDirection\":\"external-driver -> MCP/RiftShell -> RiftCLI -> bounded RiftOS authorities\","
+            << "\"driverDirection\":\"MCP/RiftShell -> RiftOS Local Agent -> RiftCLI -> bounded RiftOS authorities\","
+            << "\"hostOwner\":\"riftos-local-agent\","
+            << "\"hostedByLocalAgent\":true,"
+            << "\"directExternalHost\":false,"
             << "\"cliCallsDriver\":false,"
             << "\"driverContinuationExternalOnly\":true,"
             << "\"driverLoopMax\":" << kMaxDriverLoopSteps << ","
@@ -620,7 +626,7 @@ CommandResponse execute(const std::vector<std::string>& args, const std::string&
             << "\"globalPlanningLocalActing\":true,"
             << "\"fullRiftOsAuthorityWhenEnabled\":true,"
             << "\"authority\":" << authorityJson() << ","
-            << "\"n1Rule\":\"external driver owns reasoning loop; native CLI owns authorization and bounded RiftOS execution\""
+            << "\"n1Rule\":\"RiftOS Local Agent owns the CLI host boundary; native CLI remains gated and owns bounded authorization/execution\""
             << "}";
         return {result.str(), result.str()};
     }

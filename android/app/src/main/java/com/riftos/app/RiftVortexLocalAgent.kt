@@ -672,7 +672,52 @@ private object RiftOsKeyboardAgent {
     }
 }
 
-/** RiftOS-self-only fixed local UI authority used for shell-driven UI acceptance testing. */
+/** Internal RiftCLI intelligence adapter hosted only by the RiftOS Local Agent boundary. */
+private object RiftLocalAgentCliIntelligence {
+    private const val MAX_ARGS = 128
+    private const val MAX_ARG_BYTES = 128 * 1024
+    private const val MAX_TOTAL_ARG_BYTES = 256 * 1024
+    private const val MAX_CWD_CHARS = 4096
+
+    fun execute(context: Context, args: JSONObject): JSONObject {
+        val cwd = args.optString("cwd", "/").trim().ifBlank { "/" }
+        require(cwd.length <= MAX_CWD_CHARS) { "Local Agent CLI cwd is too long" }
+
+        val raw = args.optJSONArray("argv")
+            ?: throw IllegalArgumentException("Local Agent intelligence argv is required")
+        require(raw.length() in 1..MAX_ARGS) {
+            "Local Agent intelligence argv must contain 1..$MAX_ARGS arguments"
+        }
+
+        var totalBytes = 0
+        val argv = ArrayList<String>(raw.length())
+        for (index in 0 until raw.length()) {
+            val rawValue = raw.opt(index)
+            require(rawValue is String) {
+                "Local Agent intelligence argv[$index] must be a string"
+            }
+            val value = rawValue
+            val bytes = value.toByteArray(Charsets.UTF_8).size
+            require(bytes <= MAX_ARG_BYTES) {
+                "Local Agent intelligence argv[$index] exceeds $MAX_ARG_BYTES UTF-8 bytes"
+            }
+            totalBytes += bytes
+            require(totalBytes <= MAX_TOTAL_ARG_BYTES) {
+                "Local Agent intelligence argv exceeds $MAX_TOTAL_ARG_BYTES UTF-8 bytes"
+            }
+            argv.add(value)
+        }
+
+        val hosted = RiftMcpRuntime.nativeShell(context).executeCliForLocalAgent(cwd, argv)
+        hosted.put("owner", "riftos-local-agent")
+        hosted.put("switchOwner", "riftcli-native-process-gate")
+        hosted.put("defaultEnabled", false)
+        hosted.put("persistentEnable", false)
+        return hosted
+    }
+}
+
+/** RiftOS-self-only fixed local UI authority used for shell-driven UI acceptance testing and internal intelligence hosting. */
 object RiftOsLocalAgent {
     private const val TARGET_PACKAGE = "com.riftos.app"
     private const val SELF_BACK_SETTLE_MS = 400L
@@ -680,6 +725,7 @@ object RiftOsLocalAgent {
 
     fun execute(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
+        if (op == "intelligence") return RiftLocalAgentCliIntelligence.execute(context, args)
         if (op == "devlab") return RiftDevLabLocalAgent.execute(context, args)
         if (op == "keyboard") return RiftOsKeyboardAgent.execute(context, args)
         if (op == "browser-inspect") {

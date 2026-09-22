@@ -13,24 +13,27 @@ RiftCLI is being rebuilt from scratch as RiftOS's native engineering supervisor.
 ## Permanent dependency direction
 
 ```text
-external reasoning driver
+external reasoning source
         |
         v
 MCP / RiftShell
         |
         v
-thin Kotlin JNI host
+RiftOS Local Agent
         |
         v
-C++ RiftCLI core
+RiftCLI intelligence/tool layer
+        |
+        v
+thin Kotlin/JNI host -> C++ RiftCLI core
         |
         v
 bounded RiftOS authorities
 ```
 
-The driver may be ChatGPT, another AI client, a human, or deterministic automation.
+The external reasoning source may be ChatGPT, another AI client, a human, or deterministic automation, but it does **not** host RiftCLI directly. The RiftOS Local Agent owns the CLI host boundary and uses RiftCLI as an internal gated tool/intelligence layer.
 
-RiftCLI **never calls a model or inference API**. There is no model-backend interface inside the CLI. The reasoning driver is replaceable; project engineering state and verification policy will remain local.
+RiftCLI **never calls a model or inference API**. There is no model-backend interface inside the CLI. The native process-local enable switch remains the only CLI enable gate, defaults OFF after each process start, and is non-persistent.
 
 ## Language and host boundary
 
@@ -54,7 +57,8 @@ Current owners:
 - `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp` — UTF-safe JNI adapter only.
 - `android/app/src/main/cpp/CMakeLists.txt` — native build definition.
 - `android/app/src/main/java/com/riftos/app/RiftCliHost.kt` — thin Android JNI host.
-- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — existing `rift-cli` shell routing entry.
+- `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` — RiftOS Local Agent ownership boundary; hosts the internal RiftCLI intelligence adapter.
+- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — compatibility `rift-cli` shell entry plus the existing CLI execution supervisor; direct shell entry is routed through `RiftOsLocalAgent` before native CLI execution.
 
 ## Target ABIs
 
@@ -68,6 +72,10 @@ Both ABIs are declared in the Android native build contract. A release is not co
 ## N0 proof and N1 authority model
 
 Gate N0 proved the native bootstrap on-device. The enable switch remains process-local, defaults OFF after every RiftOS process start, and still requires the literal `CONFIRM-EXPERIMENTAL` acknowledgement.
+
+The current host boundary is now fixed: MCP/RiftShell ingress enters the existing RiftOS Local Agent, the Local Agent invokes RiftCLI as an internal intelligence/tool layer, and the existing CLI execution supervisor delegates only through bounded RiftOS authorities. The `rift-cli` shell command is retained as a compatibility/development surface, but it is routed through `RiftOsLocalAgent` before reaching the native CLI core.
+
+**Freeze:** after this Local Agent hosting boundary is validated, no new CLI intelligence capability is added until N1.8.0 Repository Consistency Observer is fully torture-tested and promoted. Observer integration, Memory, Planner, Command Registry, Execution Supervisor expansion, Debug/history expansion, and Security/validation expansion remain blocked behind that gate.
 
 Gate N1 changes the authority model deliberately: once RiftCLI is explicitly enabled, it may authorize **full RiftOS authority** through existing RiftOS subsystem boundaries. That includes mutation, Git, build, device/local-agent, browser/network-backed RiftOS services, and other currently exposed native RiftOS actions.
 

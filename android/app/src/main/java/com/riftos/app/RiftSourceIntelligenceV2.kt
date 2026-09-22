@@ -9,6 +9,12 @@ package com.riftos.app
 internal object RiftSourceIntelligenceV2 {
     const val VERSION = 2
     const val MAX_SEMANTIC_DELTA_ENTRIES = 1_000
+    const val MAX_ANALYSIS_SYMBOLS = 4_096
+    const val MAX_ANALYSIS_DEPENDENCIES = 4_096
+
+    class AnalysisBoundExceeded(
+        val reason: String
+    ) : RuntimeException(reason)
 
     data class Symbol(
         val name: String,
@@ -186,6 +192,16 @@ internal object RiftSourceIntelligenceV2 {
         maxPreviewChars: Int
     ): List<Symbol> {
         val out = ArrayList<Symbol>()
+        val seen = HashSet<String>()
+        fun addSymbol(symbol: Symbol) {
+            val key = "${symbol.path}:${symbol.line}:${symbol.name}:${symbol.kind}"
+            if (!seen.add(key)) return
+            if (out.size >= MAX_ANALYSIS_SYMBOLS) {
+                throw AnalysisBoundExceeded("semantic-symbol-bound")
+            }
+            out += symbol
+        }
+
         val typePattern = Regex(
             "^\\s*(?:(?:public|private|protected|internal|open|final|abstract|static|export|default|data|sealed|partial|pub(?:\\([^)]*\\))?)\\s+)*" +
                 "(class|interface|object|struct|trait|record|enum(?:\\s+class)?)\\s+([A-Za-z_$][A-Za-z0-9_$]*)"
@@ -208,28 +224,28 @@ internal object RiftSourceIntelligenceV2 {
                     rawKind == "interface" || rawKind == "trait" -> "interface"
                     else -> "type"
                 }
-                out += Symbol(
+                addSymbol(Symbol(
                     typeMatch.groupValues[2], kind, path, index + 1,
                     symbolEndLine(lines, index, language), compactPreview(line, maxPreviewChars)
-                )
+                ))
             }
 
             if (language == "go") {
                 Regex("^\\s*type\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(?:struct|interface)\\b")
                     .find(line)?.let { match ->
-                        out += Symbol(
+                        addSymbol(Symbol(
                             match.groupValues[1], "type", path, index + 1,
                             symbolEndLine(lines, index, language), compactPreview(line, maxPreviewChars)
-                        )
+                        ))
                     }
             }
 
             patterns.forEach { (kind, pattern) ->
                 val match = pattern.find(line) ?: return@forEach
-                out += Symbol(
+                addSymbol(Symbol(
                     match.groupValues[1], kind, path, index + 1,
                     symbolEndLine(lines, index, language), compactPreview(line, maxPreviewChars)
-                )
+                ))
             }
 
             if (language in setOf("java", "csharp", "cpp") &&
@@ -241,10 +257,10 @@ internal object RiftSourceIntelligenceV2 {
                 ).find(line)
                 val name = method?.groupValues?.getOrNull(1)
                 if (!name.isNullOrBlank() && name !in setOf("if", "for", "while", "switch", "catch")) {
-                    out += Symbol(
+                    addSymbol(Symbol(
                         name, "method", path, index + 1,
                         symbolEndLine(lines, index, language), compactPreview(line, maxPreviewChars)
-                    )
+                    ))
                 }
             }
         }
@@ -254,9 +270,16 @@ internal object RiftSourceIntelligenceV2 {
 
     private fun extractDependencies(language: String, lines: List<String>): List<Dependency> {
         val out = ArrayList<Dependency>()
+        val seen = HashSet<String>()
         fun add(specifier: String?, kind: String, line: Int) {
             val value = specifier?.trim()?.trimEnd(';')?.trim().orEmpty()
-            if (value.isNotBlank() && value.length <= 500) out += Dependency(value, kind, line)
+            if (value.isBlank() || value.length > 500) return
+            val key = "$line:$kind:$value"
+            if (!seen.add(key)) return
+            if (out.size >= MAX_ANALYSIS_DEPENDENCIES) {
+                throw AnalysisBoundExceeded("semantic-dependency-bound")
+            }
+            out += Dependency(value, kind, line)
         }
 
         lines.forEachIndexed { index, line ->

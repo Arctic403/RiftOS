@@ -1422,8 +1422,14 @@ internal class RiftToolSandbox(context: Context) {
         var unresolved = 0
         var total = 0
         selected.forEach { (sourcePath, file) ->
-            file.dependencies.forEach { dependency ->
-                total += 1
+            total += file.dependencies.size
+            val dependenciesForResolution = if (includeFileEvidence) {
+                val remaining = (boundedEdgeLimit - edges.length()).coerceAtLeast(0)
+                file.dependencies.take(remaining)
+            } else {
+                file.dependencies
+            }
+            dependenciesForResolution.forEach { dependency ->
                 val target = resolveDependency(path, sourcePath, dependency, resolutionPaths)
                 if (target == null) unresolved += 1 else resolved += 1
                 if (edges.length() < boundedEdgeLimit) {
@@ -1668,13 +1674,21 @@ internal class RiftToolSandbox(context: Context) {
                     val afterExists = !row.isNull("after")
                     val beforeText = if (row.isNull("beforeText")) null else row.optString("beforeText")
                     val afterText = if (row.isNull("afterText")) null else row.optString("afterText")
-                    val delta = RiftSourceIntelligenceV2.diff(
-                        path = path,
-                        beforeExists = beforeExists,
-                        beforeText = beforeText,
-                        afterExists = afterExists,
-                        afterText = afterText
-                    )
+                    val delta = try {
+                        RiftSourceIntelligenceV2.diff(
+                            path = path,
+                            beforeExists = beforeExists,
+                            beforeText = beforeText,
+                            afterExists = afterExists,
+                            afterText = afterText
+                        )
+                    } catch (bound: RiftSourceIntelligenceV2.AnalysisBoundExceeded) {
+                        incompleteReasons += bound.reason
+                        out.put("semanticComplete", false)
+                            .put("semanticReason", bound.reason)
+                        semanticRows.put(out)
+                        continue
+                    }
                     semanticDeltas[path] = delta
                     if (delta.truncated) incompleteReasons += "semantic-delta-truncated"
                     if (delta.apiSurfaceChanged) apiChangedPaths += path
@@ -2650,7 +2664,7 @@ internal class RiftToolSandbox(context: Context) {
             var contentSha = previousEvidence?.sha256
             var hashFailureReason: String? = null
             if (mustVerifyHash) {
-                if (hashBytes + size > MAX_HASH_TOTAL_BYTES) {
+                if (size > MAX_HASH_TOTAL_BYTES - hashBytes) {
                     contentSha = null
                     hashFailureReason = "content-hash-byte-bound"
                     incompleteReasons += "repository-content-hash-byte-bound"
@@ -2702,7 +2716,7 @@ internal class RiftToolSandbox(context: Context) {
                 return
             }
 
-            if (bytesScanned + size > MAX_INDEX_TOTAL_BYTES) {
+            if (size > MAX_INDEX_TOTAL_BYTES - bytesScanned) {
                 updateEvidence(
                     path,
                     RepositoryFileEvidence(
@@ -2759,9 +2773,24 @@ internal class RiftToolSandbox(context: Context) {
                 skipped += 1
                 return
             }
-            val analysis = runCatching {
+            val analysis = try {
                 RiftSourceIntelligenceV2.analyze(path, text, MAX_SEARCH_PREVIEW_CHARS)
-            }.getOrElse {
+            } catch (bound: RiftSourceIntelligenceV2.AnalysisBoundExceeded) {
+                updateEvidence(
+                    path,
+                    RepositoryFileEvidence(
+                        modified = modified,
+                        size = size,
+                        sha256 = contentSha,
+                        semanticStatus = "metadata-only",
+                        semanticReason = bound.reason
+                    )
+                )
+                removeSemantic(path)
+                incompleteReasons += bound.reason
+                skipped += 1
+                return
+            } catch (_: Throwable) {
                 updateEvidence(
                     path,
                     RepositoryFileEvidence(

@@ -67,6 +67,11 @@ RiftOS additionally supports:
 - browser-inspect
 - keyboard
 - devlab
+- intelligence — internal Local Agent host boundary for RiftCLI. The Local Agent validates/bounds CLI arguments, invokes the existing native CLI supervisor, and preserves the native process-local OFF-by-default `CONFIRM-EXPERIMENTAL` gate.
+
+RiftCLI is not a sibling agent or separate Android authority. The fixed ownership direction is MCP/RiftShell -> RiftOS Local Agent -> RiftCLI -> existing bounded RiftOS authorities. The compatibility `rift-cli` shell entry is routed through `RiftOsLocalAgent` before native CLI execution.
+
+After this host boundary is validated, further CLI intelligence expansion is frozen until N1.8.0 Repository Consistency Observer is promoted.
 
 No operation accepts an arbitrary Android package name.
 

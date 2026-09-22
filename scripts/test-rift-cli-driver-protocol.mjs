@@ -258,7 +258,7 @@ check(
 
 check(
   'CLI shell mutations retain request-bound patch provenance',
-  shell.includes('origin = "rift-cli-driver"') &&
+  shell.includes('origin = "rift-local-agent-cli"') &&
     shell.includes('requestId = cliResult.optString("requestId")') &&
     shell.includes('RiftPatchSessions.begin(') &&
     shell.includes('RiftPatchSessions.commit') &&
@@ -283,11 +283,11 @@ check(
 );
 
 check(
-  'driver requests more information only through explicit external continuation',
+  'hosted driver requests more information only through explicit Local Agent continuation',
   core.includes('need_more_info') &&
     core.includes('requestMoreInfo') &&
     core.includes('continuationRequired') &&
-    core.includes('external driver must send exactly the next loop step') &&
+    core.includes('RiftOS Local Agent host must send exactly the next loop step') &&
     core.includes('"cliCallsDriver\\":false')
 );
 

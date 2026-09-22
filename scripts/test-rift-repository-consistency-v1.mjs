@@ -27,6 +27,15 @@ function canonical(value) {
 
 const sha = value => createHash('sha256').update(canonical(value)).digest('hex');
 const FACT_SCHEMA = 2;
+const MAX_STABLE_KEY_CHARS = 2048;
+
+const boundedStableKey = value => {
+  const normalized = String(value).trim();
+  assert.ok(normalized.length > 0, 'stable key must not be blank');
+  if (normalized.length <= MAX_STABLE_KEY_CHARS) return normalized;
+  const suffix = '…#sha256:' + sha(normalized);
+  return normalized.slice(0, MAX_STABLE_KEY_CHARS - suffix.length) + suffix;
+};
 
 const factId = (kind, stableKey) =>
   'fact-' + sha({ schema: FACT_SCHEMA, kind, stableKey }).slice(0, 32);
@@ -136,6 +145,22 @@ const sameEdge = edge('resolves-to', dep, b, dep.stableKey, { note: 'content-onl
 assert.equal(e2.id, sameEdge.id, 'edge content changes must retain stable edge identity');
 assert.notEqual(e2.contentSha256, sameEdge.contentSha256, 'edge content hash must detect changed edge content');
 
+const longSharedPrefix = 'workspace/Test/' + 'deep-segment/'.repeat(190);
+const longStableKeyA = longSharedPrefix + 'Long-A.kt';
+const longStableKeyB = longSharedPrefix + 'Long-B.kt';
+assert.ok(longStableKeyA.length > MAX_STABLE_KEY_CHARS && longStableKeyB.length > MAX_STABLE_KEY_CHARS);
+assert.notEqual(
+  factId('file', longStableKeyA),
+  factId('file', longStableKeyB),
+  'full long stable keys sharing the same >2048-char prefix must retain distinct identities'
+);
+const boundedLongA = boundedStableKey(longStableKeyA);
+const boundedLongB = boundedStableKey(longStableKeyB);
+assert.equal(boundedLongA.length, MAX_STABLE_KEY_CHARS);
+assert.equal(boundedLongB.length, MAX_STABLE_KEY_CHARS);
+assert.notEqual(boundedLongA, boundedLongB, 'bounded display keys must carry distinct digest suffixes');
+assert.match(boundedLongA, /…#sha256:[0-9a-f]{64}$/);
+
 assert.match(observer, /internal class RiftRepositoryConsistencyObserver/);
 assert.match(observer, /const val VERSION = 2/);
 assert.match(observer, /const val FORMAT = "rift-repository-fact-graph-v2"/);
@@ -145,6 +170,21 @@ assert.match(observer, /MAX_FACTS = 4_096/);
 assert.match(observer, /MAX_EDGES = 4_096/);
 assert.match(observer, /MAX_FINDINGS = 1_024/);
 assert.match(observer, /MAX_CACHE_BYTES = 4 \* 1024 \* 1024/);
+assert.match(observer, /private fun normalizedStableKey\(value: String\): String/);
+assert.equal(
+  (observer.match(/\.put\("stableKey", normalizedStableKey\(stableKey\)\)/g) || []).length,
+  3,
+  'fact/edge/finding IDs must hash the full normalized stable key'
+);
+assert.match(observer, /val digestSuffix = "…#sha256:\$\{RiftPatchManifestV1\.sha256Canonical\(normalized\)\}"/);
+assert.match(observer, /val prefixLength = \(MAX_STABLE_KEY_CHARS - digestSuffix\.length\)\.coerceAtLeast\(0\)/);
+assert.ok(!observer.includes('Repository consistency stable key exceeds'), 'valid long stable keys must not crash the observer');
+assert.match(observer, /if \(bytes\.size > MAX_CACHE_BYTES\)/);
+assert.match(observer, /reason = "snapshot-too-large"/);
+assert.match(observer, /reason = "cache-write-failed"/);
+assert.match(observer, /reason = "cache-verification-failed"/);
+assert.match(observer, /\.put\("persisted", persisted\)/);
+assert.ok(!observer.includes('Repository consistency snapshot exceeds'), 'optional observer-cache oversize must not crash a valid graph');
 assert.match(observer, /contentHashSeparateFromIdentity/);
 assert.match(observer, /fileContentBound/);
 assert.match(observer, /sourceOfTruth", "project-intelligence-v2-content-verified"/);
@@ -194,6 +234,25 @@ assert.match(sandbox, /cached\.sha256 == contentSha/);
 assert.match(sandbox, /repository-content-hash-byte-bound/);
 assert.match(sandbox, /repository-content-hash-failure/);
 assert.match(sandbox, /semantic-total-byte-bound/);
+assert.ok(
+  (sandbox.match(/RiftSourceIntelligenceV2\.AnalysisBoundExceeded/g) || []).length >= 2,
+  'semantic analysis bounds must fail closed in both project indexing and candidate semantic-delta analysis'
+);
+assert.match(sandbox, /semanticRows\.put\(out\)\s*\n\s*continue/);
+assert.match(sandbox, /semanticStatus = "metadata-only"/);
+assert.match(sandbox, /semanticReason = bound\.reason/);
+assert.match(sandbox, /incompleteReasons \+= bound\.reason/);
+assert.match(read(k + 'RiftSourceIntelligenceV2.kt'), /MAX_ANALYSIS_SYMBOLS = 4_096/);
+assert.match(read(k + 'RiftSourceIntelligenceV2.kt'), /MAX_ANALYSIS_DEPENDENCIES = 4_096/);
+assert.match(read(k + 'RiftSourceIntelligenceV2.kt'), /throw AnalysisBoundExceeded\("semantic-symbol-bound"\)/);
+assert.match(read(k + 'RiftSourceIntelligenceV2.kt'), /throw AnalysisBoundExceeded\("semantic-dependency-bound"\)/);
+assert.equal(4096 >= 4096, true, '4097th unique semantic row must fail before insertion');
+assert.match(sandbox, /if \(size > MAX_HASH_TOTAL_BYTES - hashBytes\)/);
+assert.match(sandbox, /if \(size > MAX_INDEX_TOTAL_BYTES - bytesScanned\)/);
+assert.equal(128 * 1024 * 1024 > 128 * 1024 * 1024 - 0, false, 'exact semantic total byte bound must remain allowed');
+assert.equal(128 * 1024 * 1024 + 1 > 128 * 1024 * 1024 - 0, true, 'semantic total byte bound +1 must fail closed');
+assert.equal(256 * 1024 * 1024 > 256 * 1024 * 1024 - 0, false, 'exact repository hash byte bound must remain allowed');
+assert.equal(256 * 1024 * 1024 + 1 > 256 * 1024 * 1024 - 0, true, 'repository hash byte bound +1 must fail closed');
 assert.match(sandbox, /private fun isPolicyExcludedFile\(/);
 assert.match(sandbox, /private fun semanticClassification\(/);
 assert.match(sandbox, /"metadata-only" to "binary-extension"/);
@@ -204,6 +263,9 @@ assert.match(sandbox, /includeFileEvidence = true/);
 assert.match(sandbox, /verifyRepositoryContent = true/);
 assert.match(sandbox, /fileLimit = MAX_CONSISTENCY_INPUT_FILES/);
 assert.match(sandbox, /edgeLimit = MAX_CONSISTENCY_INPUT_EDGES/);
+assert.match(sandbox, /val dependenciesForResolution = if \(includeFileEvidence\)/);
+assert.match(sandbox, /val remaining = \(boundedEdgeLimit - edges\.length\(\)\)\.coerceAtLeast\(0\)/);
+assert.match(sandbox, /file\.dependencies\.take\(remaining\)/);
 assert.ok(
   !sandbox.includes('cached.modified == file.lastModified() && cached.size == file.length()'),
   'content-verified consistency must not rely on mtime+size identity'
