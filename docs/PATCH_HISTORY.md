@@ -2095,3 +2095,23 @@ Changes:
 - retained no-raw-process and bounded-package rules.
 
 MC1-B is not yet claimed as a device pass. A rebuilt RiftOS APK is required so the new ARM32 host can be extracted and materialized into the proof APK, followed by the frozen real-device 96-check run.
+
+
+## 2026-09-22 — Codynex L0-D3 real-device VM1 proof lane
+
+Added a bounded ARM32 proof path for Codynex L0-D3 compiler output without modifying the frozen VM1 runtime.
+
+Changes:
+
+- added `codynex_l0_d3_host` NativeActivity proof host;
+- added exact native-source snapshot ownership for `m2/codynex_l0_d3_host.cpp`;
+- added `prepare-codynex-l0-d3 <codynex-root>` to bounded RiftBuild routing/help;
+- pinned frozen VM1 authority at 812 bytes / SHA-256 `7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5`;
+- pinned compiler-emitted success fixture at 108 bytes / SHA-256 `d0ec06c5ec09474d6a687f22bea707dffc82848d720597f11dd849e872b4336a`;
+- pinned compiler-emitted checked-overflow trap fixture at 232 bytes / SHA-256 `15bb8cab754593eb5b799ecb42e5d4e9dff6763d106610638183108cc0ac46c0`;
+- added `com.codynex.l0d3proof` package visibility and bounded installer allowlist entry;
+- added deterministic binary-manifest generation and materialization receipts for VM1 + both fixtures;
+- added static regression assertions for package/host/hash/anti-contamination contracts;
+- proof host validates fixture shape, executes the success program expecting VM status 0/result 3, and executes the trap program expecting VM status -1 with the result canary unchanged.
+
+This patch does not add or modify any VM1 opcode. The source lane must be rebuilt into RiftOS before `prepare-codynex-l0-d3` can extract the new ARM32 host from the installed APK. Real-device proof is not claimed until that rebuilt RiftOS is installed and the generated L0-D3 proof APK reports `L0-D3 PASS` on ARM32.

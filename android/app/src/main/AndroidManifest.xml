@@ -15,6 +15,7 @@
         <package android:name="com.codynex.m2vm0proof" />
         <package android:name="com.codynex.m2bproof" />
         <package android:name="com.codynex.mc2aproof" />
+        <package android:name="com.codynex.l0d3proof" />
         <package android:name="com.codynex.editor" />
         <package android:name="com.riftpp.nativeproof" />
         <package android:name="com.samsung.android.honeyboard" />

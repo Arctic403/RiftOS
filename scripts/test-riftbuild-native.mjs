@@ -93,6 +93,7 @@ for (const required of [
   'MC0_TARGET_PACKAGE = "com.codynex.mc0proof"',
   'MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"',
   'MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"',
+  'L0_D3_TARGET_PACKAGE = "com.codynex.l0d3proof"',
   'EDITOR_TARGET_PACKAGE = "com.codynex.editor"',
   'EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"',
   'ALLOWED_PROOF_PACKAGES',
@@ -252,6 +253,34 @@ assert.ok(!mc2aHost.includes('std::string'), 'MC2-A host must remain C-style pro
 assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-rtti/);
 
+const l0d3Host = read('android/app/src/main/cpp/m2/codynex_l0_d3_host.cpp');
+assert.match(nativeBuild, /prepare-codynex-l0-d3/);
+assert.match(nativeBuild, /L0_D3_VM_BYTES = 812/);
+assert.match(nativeBuild, /L0_D3_VM_SHA256 = "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"/);
+assert.match(nativeBuild, /L0_D3_SUCCESS_BYTES = 108/);
+assert.match(nativeBuild, /L0_D3_SUCCESS_SHA256 = "d0ec06c5ec09474d6a687f22bea707dffc82848d720597f11dd849e872b4336a"/);
+assert.match(nativeBuild, /L0_D3_TRAP_BYTES = 232/);
+assert.match(nativeBuild, /L0_D3_TRAP_SHA256 = "15bb8cab754593eb5b799ecb42e5d4e9dff6763d106610638183108cc0ac46c0"/);
+assert.match(nativeBuild, /L0_D3_PACKAGE = "com\.codynex\.l0d3proof"/);
+assert.match(nativeBuild, /buildL0D3BinaryManifest/);
+assert.match(nativeBuild, /fun prepareCodynexL0D3[\s\S]*?val manifestBytes = buildL0D3BinaryManifest\(\)/);
+assert.match(nativeBuild, /successAuthority", "assets\/success\.vm1\.bin"/);
+assert.match(nativeBuild, /trapAuthority", "assets\/trap\.vm1\.bin"/);
+assert.match(l0d3Host, /kVmBytes = 812/);
+assert.match(l0d3Host, /kSuccessBytes = 108/);
+assert.match(l0d3Host, /kTrapBytes = 232/);
+assert.match(l0d3Host, /kSuccessTrapInstruction = 12/);
+assert.match(l0d3Host, /kTrapTrapInstruction = 54/);
+assert.match(l0d3Host, /L0-D3 PASS/);
+assert.match(l0d3Host, /success-vm-status/);
+assert.match(l0d3Host, /success-result/);
+assert.match(l0d3Host, /trap-vm-status/);
+assert.match(l0d3Host, /trap-result-unchanged/);
+assert.ok(!l0d3Host.includes('#include <string>'), 'L0-D3 host must not depend on std::string');
+assert.ok(!l0d3Host.includes('std::string'), 'L0-D3 host must remain C-style proof glue');
+assert.match(cmake, /codynex_l0_d3_host[\s\S]*?-fno-exceptions/);
+assert.match(cmake, /codynex_l0_d3_host[\s\S]*?-fno-rtti/);
+
 const editorCoreModel = read('android/app/src/main/java/com/codynex/editor/EditorModel.kt');
 const editorCorePorts = read('android/app/src/main/java/com/codynex/editor/EditorPorts.kt');
 const editorCoreController = read('android/app/src/main/java/com/codynex/editor/CodynexEditorController.kt');
@@ -334,6 +363,7 @@ assert.ok(manifest.includes('com.codynex.mc1bproof'), 'RiftOS manifest omitted C
 assert.ok(manifest.includes('com.codynex.m2vm0proof'), 'RiftOS manifest omitted Codynex M2 VM0 proof-package visibility');
 assert.ok(manifest.includes('com.codynex.m2bproof'), 'RiftOS manifest omitted Codynex M2-B proof-package visibility');
 assert.ok(manifest.includes('com.codynex.mc2aproof'), 'RiftOS manifest omitted Codynex MC2-A proof-package visibility');
+assert.ok(manifest.includes('com.codynex.l0d3proof'), 'RiftOS manifest omitted Codynex L0-D3 proof-package visibility');
 assert.ok(manifest.includes('com.codynex.editor'), 'RiftOS manifest omitted Codynex editor package visibility');
 assert.ok(gradle.includes('src/main/cpp/mc0/codynex_mc0_host.cpp'), 'Gradle exact native source snapshot omitted MC0 host');
 assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1a_host.cpp'), 'Gradle exact native source snapshot omitted MC1-A host');
@@ -341,6 +371,7 @@ assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1b_host.cpp'), 'Gradle exa
 assert.ok(gradle.includes('src/main/cpp/m2/codynex_m2_vm0_host.cpp'), 'Gradle exact native source snapshot omitted M2 VM0 host');
 assert.ok(gradle.includes('src/main/cpp/m2/codynex_m2b_host.cpp'), 'Gradle exact native source snapshot omitted M2-B host');
 assert.ok(gradle.includes('src/main/cpp/m2/codynex_mc2a_host.cpp'), 'Gradle exact native source snapshot omitted MC2-A host');
+assert.ok(gradle.includes('src/main/cpp/m2/codynex_l0_d3_host.cpp'), 'Gradle exact native source snapshot omitted L0-D3 host');
 assert.match(manifest, /android:name="\.RiftBuildInstallReceiver"[\s\S]*?android:exported="false"/);
 
 assert.match(retained, /RiftBuild doctor blocked local execution/);

@@ -26,6 +26,7 @@ class RiftBuildInstaller(context: Context) {
         const val M2_VM0_TARGET_PACKAGE = "com.codynex.m2vm0proof"
         const val M2_B_TARGET_PACKAGE = "com.codynex.m2bproof"
         const val MC2_A_TARGET_PACKAGE = "com.codynex.mc2aproof"
+        const val L0_D3_TARGET_PACKAGE = "com.codynex.l0d3proof"
         const val EDITOR_TARGET_PACKAGE = "com.codynex.editor"
         const val TARGET_ACTIVITY = "android.app.NativeActivity"
         const val EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"
@@ -39,6 +40,7 @@ class RiftBuildInstaller(context: Context) {
             M2_VM0_TARGET_PACKAGE,
             M2_B_TARGET_PACKAGE,
             MC2_A_TARGET_PACKAGE,
+            L0_D3_TARGET_PACKAGE,
             EDITOR_TARGET_PACKAGE
         )
 

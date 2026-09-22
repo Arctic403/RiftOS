@@ -104,7 +104,7 @@ Chromium is not the OS engine. It is owned only by explicit `RiftBrowser*` class
 
 `MainActivity` scans valid package manifests already present under `C:/Programs`, and `RiftBrowserAppHost` can run those HTML/JS programs in dedicated capability-gated WebViews at `https://app.riftos.local`.
 
-Current source contains the bounded `RiftBuildInstaller` proof installer, restricted to verified signed `com.riftpp.nativeproof` artifacts, Android-managed unknown-source/user confirmation, persisted install status and an exact NativeActivity launch proof. That newest signer/install path is still source-only until the next Builder/install pass; it is **not** a general Rift app installer. The old `src/riftapps.js` installer/runtime remains retained repository/reference source and is not packaged by Gradle.
+Current source contains the bounded `RiftBuildInstaller` proof installer for an explicit allowlist of verified signed proof packages, including Rift++ native proof lanes and Codynex MC0/MC1/M2/MC2/L0-D3 proof packages plus the Codynex editor. Android still owns unknown-source/user confirmation, install status is persisted, and NativeActivity launch proof remains exact-package scoped. The new Codynex L0-D3 lane packages compiler-emitted success/trap VM1 fixtures together with the frozen 812-byte VM1 and a dedicated ARM32 proof host; it remains source-only until the next Builder/install pass. RiftBuild is **not** a general Rift app installer. The old `src/riftapps.js` installer/runtime remains retained repository/reference source and is not packaged by Gradle.
 
 ## Rift MCP
 
