@@ -153,6 +153,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-app-import.mjs` | `docs/systems/build-validation/README.md` + apps |
 | `scripts/test-rift-dev-lab.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/dev-lab/README.md` |
 | `scripts/test-rift-raw-protocol.mjs` | `docs/systems/build-validation/README.md` + browser MCP compatibility |
+| `scripts/test-rift-mcp-cancellation.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/mcp/server/README.md` + `docs/systems/relay-service/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-workspace-records.mjs` | `docs/systems/build-validation/README.md` + workspace records |
 | `scripts/test-rift-diff-engine-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` |
 | `scripts/test-rift-file-identity-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` |
