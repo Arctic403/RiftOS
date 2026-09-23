@@ -418,7 +418,7 @@ object RiftTrainDataV2AdversarialLab {
         }
         val fd = Os.open(
             directory.absolutePath,
-            OsConstants.O_RDONLY,
+            OsConstants.O_RDONLY or OsConstants.O_DIRECTORY,
             0
         )
         try {
