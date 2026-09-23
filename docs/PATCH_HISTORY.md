@@ -29,6 +29,7 @@ Local/source proof so far:
 - `riftbuild validate /workspace/RiftOS-main/android` reports `sourceReady=true`, `androidGradleProject=true` and all structural Android checks green;
 - Builder run `35928287800` at source `602c335badecc2af40983b0c9bd0657e0b472b94` passed native wiring plus every transport invariant, including the new MCP cancellation invariant, then stopped only in documentation validation because `scripts/test-rift-mcp-cancellation.mjs` lacked its required `docs/SOURCE_OWNERSHIP.md` ledger row;
 - the missing ownership row is now registered to build validation, MCP relay/server, relay-service and Patch History documentation, matching the validator's exact `ledgerSources` contract;
+- Builder run `35928968230` at source `fd7f48461f13a110e68288c1c0a8378124d19c13` then passed documentation validation and all preceding source contracts, but `scripts/test-rift-debug-hub.mjs` still asserted the retired `toolHost.callAsync(...)` server wiring; that assertion now targets `toolHost.callAsyncCancellable(...)`, matching the cancellation-owned server path;
 - no release/installed APK proof has been claimed yet; the corrected source still requires the normal builder/CI pass.
 
 Rollback scope is limited to the relay cancellation protocol, MCP request ownership handles, ToolHost/sandbox/native-shell async return handles, the dedicated regression, and their documentation.

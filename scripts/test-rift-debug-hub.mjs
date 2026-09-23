@@ -41,7 +41,7 @@ assert.match(runtime, /RiftMcpRelayClient\([\s\S]*cliEvents\(\),[\s\S]*debugHub\
 
 assert.match(server, /component = "mcp\.server"/);
 assert.match(server, /operation = "tools\.call"/);
-assert.match(server, /toolHost\.callAsync\(name, args, mcpSpan\.context\)/);
+assert.match(server, /toolHost\.callAsyncCancellable\(name, args, mcpSpan\.context\)/);
 assert.match(server, /"riftos\/traceId"/);
 assert.match(server, /mcpSpan\.success/);
 assert.match(server, /mcpSpan\.failure/);
