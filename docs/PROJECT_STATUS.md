@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**CURRENT ENGINE STATUS VERIFIED AGAINST CURRENT SOURCE — 2026-09-23.**
+**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-23.**
 
 This file reports both current local source state and explicitly identified installed-device proof. New signer/installer source in the current working tree is not called installed until a subsequent Builder/install pass proves it.
 
