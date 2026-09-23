@@ -6,6 +6,46 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.55 — N1.8.3 cross-boundary contracts foundation
+
+N1.8.3 begins from the promoted N1.8.0-N1.8.2 observer stack and adds a separate read-only cross-boundary contract oracle. This patch is **source-implemented only**; no N1.8.3 promotion is claimed until Builder compilation and installed torture pass.
+
+Architecture:
+- new `RiftCrossBoundaryContractsV1.kt` owns schema `rift-cross-boundary-contracts-v1` / phase `N1.8.3`;
+- `project kind=contracts` is exposed through a thin `RiftToolSandbox` dispatch rather than adding another large implementation body to the sandbox god-file;
+- authority remains `evidence-only`: the view reads repository text/evidence and emits deterministic findings, never mutating project state;
+- exact result evidence is bound by `contractsSha256`, with `complete` separate from `clean`.
+
+Initial deterministic cross-boundary rules:
+- Android `namespace` and `applicationId` literal mirrors must agree;
+- Gradle `externalNativeBuild` CMake paths must resolve;
+- manifest activities/services/receivers/providers must resolve to managed classes under the module namespace;
+- managed `System.loadLibrary(...)` consumers must have CMake `add_library` producers;
+- Kotlin `external fun` and Java `native` declarations must have corresponding JNI export symbols using JNI name mangling, and native JNI exports must resolve back to a managed declaration;
+- every advertised `rift_*` MCP tool must have normal `methodFor()` routing or an explicit special dispatch path;
+- Android relay client and relay worker must agree on `rift-mcp-relay-v1`;
+- CLI event producer and relay consumer must agree on `rift.cli-event/1`;
+- synchronous timeout ownership must remain strictly ordered 45s sandbox < 60s native shell < 65s MCP server < 70s relay client < 75s relay worker.
+
+Fail-closed scan bounds:
+- 4096 files;
+- 2 MiB per scanned text/source file;
+- 64 MiB aggregate scanned bytes;
+- 1024 findings;
+- bound/read failures add explicit `contracts-*` incomplete reasons instead of returning a false clean verdict.
+
+Permanent regression:
+- `scripts/test-rift-cross-boundary-contracts-v1.mjs` is wired into root `npm check`;
+- it checks the real repository mirrors plus deliberate protocol-mismatch and timeout-order mutation cases;
+- the new Kotlin source and regression are registered in `docs/SOURCE_OWNERSHIP.md` and the exact Android source snapshot.
+
+Local structural proof before Builder:
+- N1.8.1 integrity remains `complete=true`, `clean=true`, with 274/274 files selected, 157 syntax-checked files, zero invalid syntax, zero local missing/ambiguity and zero findings;
+- `riftbuild validate android` reports `sourceReady=true`, `androidGradleProject=true`, 94 Android source files and all structural project checks green;
+- actual Kotlin compilation and Node regression execution remain Builder authority and are still required.
+
+Promotion remains blocked on a green Builder, installation of the exact resulting APK, a clean installed full-repository contracts read, destructive disposable mismatch fixtures for each finding family, exact/+1 bound behavior, warm determinism, real force-stop/restart first-read parity and fresh N1.8.0/N1.8.1/N1.8.2 continuity proof.
+
 ## Patch 10.54 — N1.8.2 installed promotion
 
 **N1.8.2 semantic dependency propagation is PROMOTED on installed source `9cc74b25c94fd3e23e93f64d3d132e65e63fe3a6`, Builder run `35929751856` / run number `317`.**

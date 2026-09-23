@@ -1392,6 +1392,7 @@ internal class RiftToolSandbox(context: Context) {
         if (kind == "consistency") return projectConsistency(path, query, requestedLimit)
         if (kind == "integrity") return projectIntegrity(path, query)
         if (kind == "propagation") return projectPropagation(path, query, requestedLimit)
+        if (kind == "contracts") return RiftCrossBoundaryContractsV1(workspaceRoot).analyze(base)
         val indexStats = refreshSymbolIndex(base)
 
         val children = (base.listFiles()
@@ -1430,8 +1431,8 @@ internal class RiftToolSandbox(context: Context) {
                 .put("index", indexStats)
                 .put("languages", languages)
                 .put("dependencyEdges", dependencyEdges)
-                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity", "propagation")))
-                .put("viewUsage", "project kind=graph|impact|validation|consistency|integrity|propagation; integrity query seeds a focused frontier and propagation query selects a symbol or path seed"))
+                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity", "propagation", "contracts")))
+                .put("viewUsage", "project kind=graph|impact|validation|consistency|integrity|propagation|contracts; integrity query seeds a focused frontier, propagation query selects a symbol or path seed, and contracts verifies deterministic cross-boundary mirrors"))
             .put("operations", JSONArray(listOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")))
     }
 

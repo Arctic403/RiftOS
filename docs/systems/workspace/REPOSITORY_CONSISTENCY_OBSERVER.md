@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.3+ PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.3 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.4+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -899,10 +899,24 @@ Promoted outcomes:
 
 ### N1.8.3 — cross-boundary contracts
 
-- config/schema/manifest/build mirrors;
-- JNI/native pairs;
-- MCP/CLI/protocol producer-consumer contracts;
-- registry/count/limit consistency.
+Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING BUILDER + INSTALLED TORTURE.**
+
+N1.8.3 adds the separate read-only `project kind=contracts` oracle with schema `rift-cross-boundary-contracts-v1`. The implementation is isolated in `RiftCrossBoundaryContractsV1.kt`; `RiftToolSandbox` only dispatches the project view, so this phase does not deepen the existing sandbox god-file before the post-N1.8 refactor.
+
+Current deterministic checks cover:
+- config/build mirrors: literal Android `namespace` must equal literal `applicationId`, and every declared Gradle externalNativeBuild CMake path must exist;
+- manifest/source mirrors: Android activity/service/receiver/provider names resolve to a matching managed class under the module namespace;
+- native build pairs: each managed `System.loadLibrary()` consumer resolves to a CMake `add_library` producer;
+- JNI/native pairs: Kotlin `external fun` and Java `native` declarations resolve to JNI-export symbols with JNI name mangling, and JNI exports resolve back to managed declarations;
+- MCP registry consistency: each advertised `rift_*` tool has either normal `methodFor()` dispatch or an explicit special dispatch path;
+- protocol producer/consumer mirrors: the Android relay client and Cloudflare relay worker agree on `rift-mcp-relay-v1`, and the CLI event producer/relay consumer agree on `rift.cli-event/1`;
+- limit ordering: end-to-end synchronous timeout ownership remains strictly ordered as 45s sandbox < 60s native shell < 65s MCP server < 70s relay client < 75s relay worker.
+
+The scan is fail-closed with bounds of 4096 text/source files, 2 MiB per file, 64 MiB aggregate bytes and 1024 findings. Hitting a file, per-file, aggregate-byte, read or finding bound adds an explicit `contracts-*` incomplete reason. `complete` and `clean` are separate, findings/evidence are deterministic, the view has zero mutation authority and exact evidence is bound by `contractsSha256`.
+
+Permanent regression: `scripts/test-rift-cross-boundary-contracts-v1.mjs`, wired into root `npm check`. It verifies the real source mirrors and includes deliberate protocol/timeout mismatch fixtures so the gate cannot pass only because the current repository happens to be clean.
+
+Promotion still requires Builder Node/Kotlin compilation, a clean installed full-repository contracts read, destructive disposable fixtures for each finding class, bound exact/+1 behavior, deterministic warm reads, real process-restart parity and fresh N1.8.0/N1.8.1/N1.8.2 regression continuity.
 
 ### N1.8.4 — documentation/roadmap/TODO claims
 
