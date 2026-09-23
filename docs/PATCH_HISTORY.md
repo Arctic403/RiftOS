@@ -6,6 +6,32 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.49 — N1.8.2 semantic propagation foundation
+
+N1.8.2 starts from the promoted N1.8.0 consistency and N1.8.1 integrity lanes without changing either canonical contract.
+
+Source changes:
+- `RiftToolSandbox` adds a separate read-only `project kind=propagation` view with schema `rift-semantic-propagation-v1` / phase `N1.8.2`;
+- query seeds resolve by exact `symbolId`, exact symbol name or matching path;
+- symbol identity is deterministic from `path|kind|name|ordinal` and hashed to a stable `symbolId`, deliberately independent of declaration line number;
+- `signatureId` is separately bound to `symbolId|normalized declaration signature`, so changing a signature does not invent a new symbol identity;
+- API-surface classification preserves the existing private/internal visibility convention;
+- selected seed names are scanned once for bounded exact identifier references;
+- cross-file references resolve only when the promoted local dependency resolver links source and target; same-file references require a unique local symbol candidate, while ambiguous/unresolved references remain evidence but do not create propagation edges;
+- caller attribution selects the smallest indexed symbol range containing the resolved reference line;
+- type/interface evidence extracts `extends`, `implements`, Kotlin inheritance/interface lists and C++ inheritance, preserving resolved/unresolved/ambiguous relation status;
+- reverse propagation closure is a bounded breadth-first traversal over local dependency, resolved-reference and resolved type-relation edges;
+- exact bounded evidence is hashed to deterministic `propagationSha256`; returned previews are separately bounded and do not silently alter completeness;
+- explicit incomplete reasons cover seed, symbol, reference, caller, type-relation, closure-node, closure-edge and depth bounds;
+- the propagation view has `authority=evidence-only`, contains no mutation calls and does not invoke `RiftRepositoryConsistencyObserver.foundationView`.
+
+Hard limits are 64 seeds, 8192 symbol nodes, 1024 references, 512 callers, 512 type relations, 1024 reverse-closure paths, 4096 reverse edges, depth 16 and 240 preview rows.
+
+Permanent regression `scripts/test-rift-propagation-v1.mjs` is wired into `npm check` and Source Ownership. It locks identity/signature separation, dependency-backed references, caller containment, type relation support, every propagation bound, deterministic hashing, preview surfaces, zero mutation authority and isolation from N1.8.0.
+
+Local Android source validation is green. On the modified source tree, the already-installed runtime still reports N1.8.0 `complete=true` with zero consistency findings and N1.8.1 `complete=true`, `clean=true`, zero integrity findings, proving source-tree isolation. The installed runtime does not contain the new propagation implementation yet.
+
+Patch 10.49 is **source-implemented only**. N1.8.2 promotion requires Builder Node/Kotlin compilation, install, deterministic warm/restart `propagationSha256`, line-shift and overload identity fixtures, signature-only change proof, exact caller attribution, same-name and false-reference stress, interface/implementation fixtures, direct and multi-hop dependency/reference/type propagation, cycles and exact/+1 seed/symbol/reference/caller/type/node/edge/depth bounds.
 ## Patch 10.48 — N1.8.1 promotion
 
 Installed source `198a3f31e22a5d385378fee087aa5f115aed6d5a` completes and promotes N1.8.1 syntax/import integrity.

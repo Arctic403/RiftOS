@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.2+ PENDING**
+Status: **N1.8.0 + N1.8.1 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.2 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.3+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -858,6 +858,40 @@ Required outcomes remain:
 
 ### N1.8.2 — semantic dependency propagation
 
+Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING BUILDER + INSTALLED TORTURE.**
+
+N1.8.2 adds a separate read-only `project kind=propagation` lane above the already promoted N1.8.0/N1.8.1 evidence paths. It reuses the existing PI-v2 symbol/dependency index and local dependency resolver rather than creating a second source index.
+
+Current source provides:
+- deterministic symbol identity from `path|kind|name|ordinal`, producing a stable `symbolId` that does not depend on declaration line number;
+- a separate `signatureId` bound to the normalized declaration signature, so an API/signature change does not pretend the symbol itself became a different identity;
+- explicit API-surface classification using the existing private/internal visibility rule;
+- query seeds by exact `symbolId`, exact symbol name, or matching path;
+- one-pass bounded lexical reference evidence for selected seed symbol names;
+- conservative cross-file reference resolution: a textual reference only resolves across files when the existing local dependency resolver links the source file to the target file; same-file references resolve only when the local symbol candidate is unique;
+- caller ownership from the smallest indexed symbol range containing the reference line;
+- current local dependency reverse edges, resolved reference reverse edges and type/interface reverse edges;
+- type relation extraction for `extends`, `implements`, Kotlin inheritance/interface lists and C++ inheritance, with explicit resolved/unresolved/ambiguous status;
+- bounded breadth-first transitive reverse closure with explicit seed/symbol/reference/caller/type-relation/node/edge/depth limits;
+- deterministic `propagationSha256` over the exact bounded seed/reference/caller/type/closure evidence;
+- bounded output previews separate from completeness: preview truncation does not hide internal evidence, while hitting an analysis bound adds an explicit incomplete reason;
+- permanent Builder source regression `scripts/test-rift-propagation-v1.mjs`, wired into `npm check` and Source Ownership;
+- zero mutation authority inside the propagation view, and no call into the N1.8.0 canonical observer graph.
+
+Initial bounds:
+- 64 seed symbols/paths;
+- 8192 symbol nodes;
+- 1024 references;
+- 512 callers;
+- 512 type relations;
+- 1024 reverse-closure paths;
+- 4096 reverse edges;
+- depth 16;
+- 240 returned preview rows.
+
+Promotion still requires Builder/Kotlin/Node regression proof, installation, deterministic warm/restart hashes, overload/line-shift symbol identity, signature-only change behavior, exact caller attribution, same-name ambiguity, false lexical-reference stress, interface/implementation fixtures, direct dependency/reference propagation, multi-hop reverse closure, cycles, exact/+1 node/edge/depth/reference/type-relation bounds and a proof that N1.8.0/N1.8.1 remain unchanged and green.
+
+Required outcomes remain:
 - symbol/signature identity;
 - references/callers/dependents;
 - interface/implementation and API propagation;

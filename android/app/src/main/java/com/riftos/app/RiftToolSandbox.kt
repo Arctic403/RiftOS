@@ -53,6 +53,15 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_INTEGRITY_DEPENDENCIES = 4_096
         private const val MAX_INTEGRITY_FINDINGS = 1_024
         private const val MAX_INTEGRITY_PREVIEW = 240
+        private const val MAX_PROPAGATION_SEEDS = 64
+        private const val MAX_PROPAGATION_SYMBOLS = 8_192
+        private const val MAX_PROPAGATION_REFERENCES = 1_024
+        private const val MAX_PROPAGATION_CALLERS = 512
+        private const val MAX_PROPAGATION_TYPE_RELATIONS = 512
+        private const val MAX_PROPAGATION_CLOSURE_NODES = 1_024
+        private const val MAX_PROPAGATION_CLOSURE_EDGES = 4_096
+        private const val MAX_PROPAGATION_DEPTH = 16
+        private const val MAX_PROPAGATION_PREVIEW = 240
         private const val MAX_PERSISTED_INDEX_FILES = 4000
         private const val MAX_PERSISTED_INDEX_BYTES = 8L * 1024L * 1024L
         private const val PROJECT_INTELLIGENCE_CACHE_VERSION = 9
@@ -145,6 +154,24 @@ internal class RiftToolSandbox(context: Context) {
         val localIntent: Boolean,
         val reason: String,
         val candidateCount: Int
+    )
+
+    private data class PropagationSymbolNode(
+        val symbol: SymbolRecord,
+        val ordinal: Int,
+        val symbolId: String,
+        val signatureId: String,
+        val apiSurface: Boolean
+    )
+
+    private data class PropagationTypeRelation(
+        val sourceId: String,
+        val sourcePath: String,
+        val targetId: String?,
+        val targetPath: String?,
+        val targetName: String,
+        val relation: String,
+        val status: String
     )
 
     private data class RepositoryFileEvidence(
@@ -1364,6 +1391,7 @@ internal class RiftToolSandbox(context: Context) {
         if (kind == "validation") return projectValidation(path, query)
         if (kind == "consistency") return projectConsistency(path, query, requestedLimit)
         if (kind == "integrity") return projectIntegrity(path, query)
+        if (kind == "propagation") return projectPropagation(path, query, requestedLimit)
         val indexStats = refreshSymbolIndex(base)
 
         val children = (base.listFiles()
@@ -1402,8 +1430,8 @@ internal class RiftToolSandbox(context: Context) {
                 .put("index", indexStats)
                 .put("languages", languages)
                 .put("dependencyEdges", dependencyEdges)
-                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity")))
-                .put("viewUsage", "project kind=graph|impact|validation|consistency|integrity; integrity query optionally seeds a focused direct-frontier scan"))
+                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity", "propagation")))
+                .put("viewUsage", "project kind=graph|impact|validation|consistency|integrity|propagation; integrity query seeds a focused frontier and propagation query selects a symbol or path seed"))
             .put("operations", JSONArray(listOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")))
     }
 
@@ -1853,6 +1881,462 @@ internal class RiftToolSandbox(context: Context) {
                 .put("frontierCount", sortedFrontier.size)
                 .put("frontierTruncated", frontierTruncated)
                 .put("fullRepositoryOracleRequiredForPromotion", true))
+    }
+
+    private fun projectPropagation(path: String, query: String, requestedLimit: Int): JSONObject {
+        val needle = query.trim()
+        require(needle.isNotEmpty()) { "project propagation view requires a symbol or path query" }
+        val base = sandboxFile(path)
+        require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
+
+        val indexStats = refreshSymbolIndex(base, verifyContent = true)
+        val indexed = symbolIndex.filterKeys { isPathWithin(it, path) }.toSortedMap()
+        val allPaths = indexed.keys.toSortedSet()
+        val incompleteReasons = linkedSetOf<String>()
+        if (!indexStats.optBoolean("contentVerified", false)) incompleteReasons += "repository-content-unverified"
+        if (!indexStats.optBoolean("repositoryEvidenceComplete", false)) incompleteReasons += "repository-evidence-incomplete"
+        if (!indexStats.optBoolean("semanticEvidenceComplete", false)) incompleteReasons += "semantic-evidence-incomplete"
+        val upstreamReasons = indexStats.optJSONArray("incompleteReasons") ?: JSONArray()
+        for (reasonIndex in 0 until upstreamReasons.length()) {
+            upstreamReasons.optString(reasonIndex).trim()
+                .takeIf { it.isNotBlank() }
+                ?.let(incompleteReasons::add)
+        }
+
+        val nodes = propagationSymbolNodes(indexed, incompleteReasons)
+        val nodesById = nodes.associateBy { it.symbolId }
+        val nodesByName = nodes.groupBy { it.symbol.name }
+        val nodesByPath = nodes.groupBy { it.symbol.path }
+        val queryPathMatches = indexed.keys.filter { candidate ->
+            candidate == needle ||
+                candidate.endsWith("/" + needle) ||
+                candidate.contains(needle, ignoreCase = true)
+        }.sorted()
+
+        val exactIdSeeds = nodes.filter { it.symbolId == needle }
+        val exactNameSeeds = if (exactIdSeeds.isEmpty()) nodes.filter { it.symbol.name == needle } else emptyList()
+        val selectedNodesRaw = when {
+            exactIdSeeds.isNotEmpty() -> exactIdSeeds
+            exactNameSeeds.isNotEmpty() -> exactNameSeeds
+            else -> queryPathMatches.flatMap { nodesByPath[it].orEmpty() }
+        }
+        if (selectedNodesRaw.size > MAX_PROPAGATION_SEEDS) incompleteReasons += "propagation-seed-bound"
+        val seedNodes = selectedNodesRaw
+            .sortedWith(compareBy({ it.symbol.path }, { it.symbol.line }, { it.symbolId }))
+            .take(MAX_PROPAGATION_SEEDS)
+        val seedPaths = linkedSetOf<String>()
+        seedNodes.forEach { seedPaths += it.symbol.path }
+        if (seedNodes.isEmpty()) {
+            queryPathMatches.take(MAX_PROPAGATION_SEEDS).forEach(seedPaths::add)
+            if (queryPathMatches.size > MAX_PROPAGATION_SEEDS) incompleteReasons += "propagation-seed-bound"
+        }
+        if (seedPaths.isEmpty()) incompleteReasons += "propagation-seed-not-found"
+
+        val seedSymbols = JSONArray()
+        seedNodes.forEach { seedSymbols.put(propagationSymbolJson(it)) }
+        val seedPathJson = JSONArray()
+        seedPaths.sorted().forEach(seedPathJson::put)
+
+        val resolvedDependencyTargets = linkedMapOf<String, Set<String>>()
+        val reverseEdges = linkedMapOf<String, MutableList<Pair<String, String>>>()
+        var closureEdgeEvidence = 0
+        fun addReverseEdge(targetPath: String, sourcePath: String, reason: String) {
+            if (targetPath == sourcePath) return
+            if (closureEdgeEvidence >= MAX_PROPAGATION_CLOSURE_EDGES) {
+                incompleteReasons += "propagation-closure-edge-bound"
+                return
+            }
+            val rows = reverseEdges.getOrPut(targetPath) { ArrayList() }
+            if (rows.none { it.first == sourcePath && it.second == reason }) {
+                rows += sourcePath to reason
+                closureEdgeEvidence += 1
+            }
+        }
+
+        indexed.forEach { (sourcePath, indexedFile) ->
+            val targets = linkedSetOf<String>()
+            indexedFile.dependencies
+                .sortedWith(compareBy({ it.kind }, { it.specifier }, { it.line }))
+                .forEach { dependency ->
+                    val resolution = integrityResolveDependency(
+                        projectPath = path,
+                        sourcePath = sourcePath,
+                        dependency = dependency,
+                        allPaths = allPaths
+                    )
+                    val target = resolution.target
+                    if (resolution.status == "local-resolved" && target != null) {
+                        targets += target
+                        addReverseEdge(target, sourcePath, "dependency")
+                    }
+                }
+            resolvedDependencyTargets[sourcePath] = targets
+        }
+
+        val relationRows = ArrayList<PropagationTypeRelation>()
+        outerRelation@ for (node in nodes) {
+            val language = indexed[node.symbol.path]?.language ?: continue
+            for ((relation, targetName) in propagationTypeTargets(language, node)) {
+                if (relationRows.size >= MAX_PROPAGATION_TYPE_RELATIONS) {
+                    incompleteReasons += "propagation-type-relation-bound"
+                    break@outerRelation
+                }
+                val candidates = nodesByName[targetName].orEmpty()
+                    .filter { it.symbol.kind == "type" || it.symbol.kind == "interface" }
+                    .sortedWith(compareBy({ it.symbol.path }, { it.symbol.line }, { it.symbolId }))
+                val resolved = candidates.singleOrNull()
+                val status = when (candidates.size) {
+                    0 -> "unresolved"
+                    1 -> "resolved"
+                    else -> "ambiguous"
+                }
+                relationRows += PropagationTypeRelation(
+                    sourceId = node.symbolId,
+                    sourcePath = node.symbol.path,
+                    targetId = resolved?.symbolId,
+                    targetPath = resolved?.symbol?.path,
+                    targetName = targetName,
+                    relation = relation,
+                    status = status
+                )
+                val targetPath = resolved?.symbol?.path
+                if (targetPath != null) addReverseEdge(targetPath, node.symbol.path, "type-" + relation)
+            }
+        }
+
+        val referenceNames = seedNodes.map { it.symbol.name }.distinct().sorted()
+        val referenceRows = JSONArray()
+        val callerRows = JSONArray()
+        val callerKeys = linkedSetOf<String>()
+        var referenceCount = 0
+        var referenceTruncated = false
+        var ambiguousReferences = 0
+        var unresolvedReferences = 0
+        if (referenceNames.isNotEmpty()) {
+            val pattern = Regex(
+                "(?<![A-Za-z0-9_$])(" +
+                    referenceNames.joinToString("|") { Regex.escape(it) } +
+                    ")(?![A-Za-z0-9_$])"
+            )
+            outerReference@ for ((sourcePath, indexedFile) in indexed) {
+                val file = sandboxFile(sourcePath)
+                if (!file.isFile || file.length() > MAX_WORKSPACE_SEARCH_FILE_BYTES || !isTextFile(file)) continue
+                file.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                    lines.forEachIndexed { lineIndex, line ->
+                        if (referenceTruncated) return@forEachIndexed
+                        pattern.findAll(line).forEach matchLoop@{ match ->
+                            if (referenceCount >= MAX_PROPAGATION_REFERENCES) {
+                                referenceTruncated = true
+                                incompleteReasons += "propagation-reference-bound"
+                                return@matchLoop
+                            }
+                            val name = match.value
+                            val lineNumber = lineIndex + 1
+                            val definition = indexedFile.symbols.any {
+                                it.name == name && it.line == lineNumber
+                            }
+                            if (definition) return@matchLoop
+
+                            val nameCandidates = nodesByName[name].orEmpty()
+                            val sameFileCandidates = nameCandidates.filter { it.symbol.path == sourcePath }
+                            val dependencyTargets = resolvedDependencyTargets[sourcePath].orEmpty()
+                            val dependencyCandidates = nameCandidates.filter { it.symbol.path in dependencyTargets }
+                            val resolvedCandidates = when {
+                                sameFileCandidates.size == 1 -> sameFileCandidates
+                                dependencyCandidates.size == 1 -> dependencyCandidates
+                                else -> emptyList()
+                            }
+                            val resolvedTarget = resolvedCandidates.singleOrNull()
+                            val status = when {
+                                resolvedTarget != null -> "resolved"
+                                sameFileCandidates.size > 1 || dependencyCandidates.size > 1 -> "ambiguous"
+                                else -> "unresolved"
+                            }
+                            if (status == "ambiguous") ambiguousReferences += 1
+                            if (status == "unresolved") unresolvedReferences += 1
+
+                            val caller = nodesByPath[sourcePath].orEmpty()
+                                .filter {
+                                    lineNumber >= it.symbol.line &&
+                                        lineNumber <= it.symbol.endLine &&
+                                        !(it.symbol.name == name && it.symbol.line == lineNumber)
+                                }
+                                .minWithOrNull(
+                                    compareBy<PropagationSymbolNode>(
+                                        { it.symbol.endLine - it.symbol.line },
+                                        { it.symbol.line },
+                                        { it.symbolId }
+                                    )
+                                )
+
+                            referenceRows.put(JSONObject()
+                                .put("symbol", name)
+                                .put("path", sourcePath)
+                                .put("line", lineNumber)
+                                .put("column", match.range.first + 1)
+                                .put("status", status)
+                                .put("targetId", resolvedTarget?.symbolId ?: JSONObject.NULL)
+                                .put("targetPath", resolvedTarget?.symbol?.path ?: JSONObject.NULL)
+                                .put("callerId", caller?.symbolId ?: JSONObject.NULL)
+                                .put("callerName", caller?.symbol?.name ?: JSONObject.NULL)
+                                .put("preview", compactPreview(line)))
+                            referenceCount += 1
+
+                            if (resolvedTarget != null) {
+                                addReverseEdge(resolvedTarget.symbol.path, sourcePath, "reference")
+                                if (caller != null) {
+                                    val callerKey = caller.symbolId + "|" + resolvedTarget.symbolId
+                                    if (callerKeys.add(callerKey)) {
+                                        if (callerRows.length() >= MAX_PROPAGATION_CALLERS) {
+                                            incompleteReasons += "propagation-caller-bound"
+                                        } else {
+                                            callerRows.put(JSONObject()
+                                                .put("callerId", caller.symbolId)
+                                                .put("callerName", caller.symbol.name)
+                                                .put("callerPath", caller.symbol.path)
+                                                .put("targetId", resolvedTarget.symbolId)
+                                                .put("targetName", resolvedTarget.symbol.name)
+                                                .put("targetPath", resolvedTarget.symbol.path))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (referenceTruncated) break@outerReference
+            }
+        }
+
+        val depthByPath = linkedMapOf<String, Int>()
+        val reasonsByPath = linkedMapOf<String, MutableSet<String>>()
+        val queue = ArrayDeque<Pair<String, Int>>()
+        seedPaths.sorted().forEach { seed ->
+            depthByPath[seed] = 0
+            reasonsByPath.getOrPut(seed) { linkedSetOf() }.add("seed")
+            queue.add(seed to 0)
+        }
+        while (queue.isNotEmpty()) {
+            val (current, depth) = queue.removeFirst()
+            val neighbors = reverseEdges[current].orEmpty()
+                .sortedWith(compareBy<Pair<String, String>>({ it.first }, { it.second }))
+            if (depth >= MAX_PROPAGATION_DEPTH) {
+                if (neighbors.isNotEmpty()) incompleteReasons += "propagation-depth-bound"
+                continue
+            }
+            for ((neighbor, reason) in neighbors) {
+                reasonsByPath.getOrPut(neighbor) { linkedSetOf() }.add(reason)
+                if (neighbor in depthByPath) continue
+                if (depthByPath.size >= MAX_PROPAGATION_CLOSURE_NODES) {
+                    incompleteReasons += "propagation-closure-node-bound"
+                    continue
+                }
+                depthByPath[neighbor] = depth + 1
+                queue.add(neighbor to depth + 1)
+            }
+        }
+
+        val closureRows = JSONArray()
+        depthByPath.entries
+            .sortedWith(compareBy<Map.Entry<String, Int>>({ it.value }, { it.key }))
+            .forEach { (closurePath, depth) ->
+                val reasonJson = JSONArray()
+                reasonsByPath[closurePath].orEmpty().sorted().forEach(reasonJson::put)
+                closureRows.put(JSONObject()
+                    .put("path", closurePath)
+                    .put("depth", depth)
+                    .put("seed", depth == 0)
+                    .put("reasons", reasonJson))
+            }
+
+        val relationJson = JSONArray()
+        relationRows
+            .sortedWith(compareBy({ it.sourcePath }, { it.sourceId }, { it.relation }, { it.targetName }))
+            .forEach { relation ->
+                relationJson.put(JSONObject()
+                    .put("sourceId", relation.sourceId)
+                    .put("sourcePath", relation.sourcePath)
+                    .put("relation", relation.relation)
+                    .put("targetName", relation.targetName)
+                    .put("status", relation.status)
+                    .put("targetId", relation.targetId ?: JSONObject.NULL)
+                    .put("targetPath", relation.targetPath ?: JSONObject.NULL))
+            }
+
+        val previewLimit = requestedLimit.coerceIn(1, MAX_PROPAGATION_PREVIEW)
+        fun prefixJson(source: JSONArray): JSONArray {
+            val out = JSONArray()
+            val count = minOf(source.length(), previewLimit)
+            for (index in 0 until count) out.put(source.get(index))
+            return out
+        }
+
+        val canonicalPayload = JSONObject()
+            .put("schema", "rift-semantic-propagation-v1")
+            .put("phase", "N1.8.2")
+            .put("projectRoot", normalizedPath(path))
+            .put("query", needle)
+            .put("complete", incompleteReasons.isEmpty())
+            .put("incompleteReasons", JSONArray(incompleteReasons.sorted()))
+            .put("seedSymbols", seedSymbols)
+            .put("seedPaths", seedPathJson)
+            .put("references", referenceRows)
+            .put("callers", callerRows)
+            .put("typeRelations", relationJson)
+            .put("reverseClosure", closureRows)
+        val propagationSha256 = RiftPatchManifestV1.sha256Canonical(canonicalPayload)
+
+        return JSONObject()
+            .put("schema", "rift-semantic-propagation-v1")
+            .put("phase", "N1.8.2")
+            .put("view", "propagation")
+            .put("projectIntelligence", "v2")
+            .put("authority", "evidence-only")
+            .put("projectRoot", normalizedPath(path))
+            .put("query", needle)
+            .put("complete", incompleteReasons.isEmpty())
+            .put("incompleteReasons", JSONArray(incompleteReasons.sorted()))
+            .put("propagationSha256", propagationSha256)
+            .put("identity", JSONObject()
+                .put("symbolKey", "path|kind|name|ordinal")
+                .put("symbolIdStableAcrossLineShift", true)
+                .put("signatureIdChangesWithSignature", true))
+            .put("seed", JSONObject()
+                .put("symbols", seedSymbols)
+                .put("paths", seedPathJson)
+                .put("apiSurface", seedNodes.any { it.apiSurface })
+                .put("interfaceOrType", seedNodes.any {
+                    it.symbol.kind == "interface" || it.symbol.kind == "type"
+                }))
+            .put("counts", JSONObject()
+                .put("indexedFiles", indexed.size)
+                .put("symbolNodes", nodes.size)
+                .put("references", referenceRows.length())
+                .put("resolvedReferences", referenceRows.length() - ambiguousReferences - unresolvedReferences)
+                .put("ambiguousReferences", ambiguousReferences)
+                .put("unresolvedReferences", unresolvedReferences)
+                .put("callers", callerRows.length())
+                .put("typeRelations", relationJson.length())
+                .put("closurePaths", closureRows.length())
+                .put("reverseEdges", closureEdgeEvidence))
+            .put("references", prefixJson(referenceRows))
+            .put("referencesTotal", referenceRows.length())
+            .put("referencesPreviewTruncated", referenceRows.length() > previewLimit)
+            .put("callers", prefixJson(callerRows))
+            .put("callersTotal", callerRows.length())
+            .put("callersPreviewTruncated", callerRows.length() > previewLimit)
+            .put("typeRelations", prefixJson(relationJson))
+            .put("typeRelationsTotal", relationJson.length())
+            .put("typeRelationsPreviewTruncated", relationJson.length() > previewLimit)
+            .put("reverseClosure", prefixJson(closureRows))
+            .put("reverseClosureTotal", closureRows.length())
+            .put("reverseClosurePreviewTruncated", closureRows.length() > previewLimit)
+            .put("bounds", JSONObject()
+                .put("maxSeeds", MAX_PROPAGATION_SEEDS)
+                .put("maxSymbols", MAX_PROPAGATION_SYMBOLS)
+                .put("maxReferences", MAX_PROPAGATION_REFERENCES)
+                .put("maxCallers", MAX_PROPAGATION_CALLERS)
+                .put("maxTypeRelations", MAX_PROPAGATION_TYPE_RELATIONS)
+                .put("maxClosureNodes", MAX_PROPAGATION_CLOSURE_NODES)
+                .put("maxClosureEdges", MAX_PROPAGATION_CLOSURE_EDGES)
+                .put("maxDepth", MAX_PROPAGATION_DEPTH)
+                .put("preview", previewLimit))
+            .put("index", indexStats)
+    }
+
+    private fun propagationSymbolNodes(
+        indexed: Map<String, IndexedFile>,
+        incompleteReasons: MutableSet<String>
+    ): List<PropagationSymbolNode> {
+        val out = ArrayList<PropagationSymbolNode>()
+        for ((path, indexedFile) in indexed.toSortedMap()) {
+            val ordinals = linkedMapOf<String, Int>()
+            indexedFile.symbols
+                .sortedWith(compareBy({ it.line }, { it.endLine }, { it.kind }, { it.name }, { it.signature }))
+                .forEach { symbol ->
+                    if (out.size >= MAX_PROPAGATION_SYMBOLS) {
+                        incompleteReasons += "propagation-symbol-bound"
+                        return out
+                    }
+                    val baseKey = path + "|" + symbol.kind + "|" + symbol.name
+                    val ordinal = ordinals[baseKey] ?: 0
+                    ordinals[baseKey] = ordinal + 1
+                    val symbolId = "sym-" + sha256(baseKey + "|" + ordinal).take(24)
+                    val normalizedSignature = symbol.signature.trim().replace(Regex("\\s+"), " ")
+                    val signatureId = "sig-" + sha256(symbolId + "|" + normalizedSignature).take(24)
+                    val apiSurface = !Regex("\\b(private|internal)\\b", RegexOption.IGNORE_CASE)
+                        .containsMatchIn(symbol.signature)
+                    out += PropagationSymbolNode(
+                        symbol = symbol,
+                        ordinal = ordinal,
+                        symbolId = symbolId,
+                        signatureId = signatureId,
+                        apiSurface = apiSurface
+                    )
+                }
+        }
+        return out
+    }
+
+    private fun propagationSymbolJson(node: PropagationSymbolNode): JSONObject = JSONObject()
+        .put("symbolId", node.symbolId)
+        .put("signatureId", node.signatureId)
+        .put("ordinal", node.ordinal)
+        .put("name", node.symbol.name)
+        .put("kind", node.symbol.kind)
+        .put("path", node.symbol.path)
+        .put("line", node.symbol.line)
+        .put("endLine", node.symbol.endLine)
+        .put("signature", node.symbol.signature)
+        .put("apiSurface", node.apiSurface)
+
+    private fun propagationTypeTargets(
+        language: String,
+        node: PropagationSymbolNode
+    ): List<Pair<String, String>> {
+        if (node.symbol.kind != "type" && node.symbol.kind != "interface") return emptyList()
+        val signature = node.symbol.signature
+        val out = ArrayList<Pair<String, String>>()
+        fun add(relation: String, raw: String?) {
+            val value = raw.orEmpty()
+                .trim()
+                .replace(Regex("^[:\\s]+"), "")
+                .replace(Regex("\\b(public|private|protected|virtual|open|abstract)\\b"), "")
+                .trim()
+            val name = Regex("[A-Za-z_$][A-Za-z0-9_$.]*").find(value)?.value
+                ?.substringAfterLast('.')
+                ?.substringAfterLast('$')
+                ?.trim()
+                .orEmpty()
+            if (name.isNotBlank() && name != node.symbol.name && out.none { it.first == relation && it.second == name }) {
+                out += relation to name
+            }
+        }
+
+        Regex("\\bextends\\s+([A-Za-z_$][A-Za-z0-9_$.]*)")
+            .find(signature)?.let { add("extends", it.groupValues[1]) }
+
+        Regex("\\bimplements\\s+([^\\{]+)")
+            .find(signature)?.groupValues?.getOrNull(1)
+            ?.split(',')
+            ?.forEach { add("implements", it) }
+
+        if (language == "kotlin") {
+            val tail = signature.substringAfter(node.symbol.name, "")
+            val inheritance = tail.substringAfter(':', "").substringBefore('{').substringBefore(" where ")
+            inheritance.split(',')
+                .map { it.substringBefore('(').substringBefore('<') }
+                .forEach {
+                    add(if (node.symbol.kind == "interface") "extends" else "inherits-or-implements", it)
+                }
+        }
+
+        if (language == "cpp") {
+            val tail = signature.substringAfter(node.symbol.name, "")
+            val inheritance = tail.substringAfter(':', "").substringBefore('{')
+            inheritance.split(',').forEach { add("inherits", it) }
+        }
+        return out
     }
 
     private fun projectImpact(path: String, query: String, requestedLimit: Int): JSONObject {
