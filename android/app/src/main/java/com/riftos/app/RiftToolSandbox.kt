@@ -1924,6 +1924,7 @@ internal class RiftToolSandbox(context: Context) {
         val seedNodes = selectedNodesRaw
             .sortedWith(compareBy({ it.symbol.path }, { it.symbol.line }, { it.symbolId }))
             .take(MAX_PROPAGATION_SEEDS)
+        val seedIds = seedNodes.map { it.symbolId }.toSet()
         val seedPaths = linkedSetOf<String>()
         seedNodes.forEach { seedPaths += it.symbol.path }
         if (seedNodes.isEmpty()) {
@@ -2012,6 +2013,7 @@ internal class RiftToolSandbox(context: Context) {
         var referenceTruncated = false
         var ambiguousReferences = 0
         var unresolvedReferences = 0
+        var ignoredNameMatches = 0
         if (referenceNames.isNotEmpty()) {
             val pattern = Regex(
                 "(?<![A-Za-z0-9_$])(" +
@@ -2021,88 +2023,106 @@ internal class RiftToolSandbox(context: Context) {
             outerReference@ for ((sourcePath, indexedFile) in indexed) {
                 val file = sandboxFile(sourcePath)
                 if (!file.isFile || file.length() > MAX_WORKSPACE_SEARCH_FILE_BYTES || !isTextFile(file)) continue
-                file.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                    lines.forEachIndexed { lineIndex, line ->
-                        if (referenceTruncated) return@forEachIndexed
-                        pattern.findAll(line).forEach matchLoop@{ match ->
-                            if (referenceCount >= MAX_PROPAGATION_REFERENCES) {
-                                referenceTruncated = true
-                                incompleteReasons += "propagation-reference-bound"
-                                return@matchLoop
-                            }
-                            val name = match.value
-                            val lineNumber = lineIndex + 1
-                            val definition = indexedFile.symbols.any {
-                                it.name == name && it.line == lineNumber
-                            }
-                            if (definition) return@matchLoop
+                val referenceText = file.readText(Charsets.UTF_8)
+                    .replace("\r\n", "\n")
+                    .replace('\r', '\n')
+                val codeMask = RiftSourceIntelligenceV2.referenceCodeMask(sourcePath, referenceText)
+                var lineOffset = 0
+                referenceText.split('\n').forEachIndexed { lineIndex, line ->
+                    if (referenceTruncated) return@forEachIndexed
+                    pattern.findAll(line).forEach matchLoop@{ match ->
+                        if (referenceCount >= MAX_PROPAGATION_REFERENCES) {
+                            referenceTruncated = true
+                            incompleteReasons += "propagation-reference-bound"
+                            return@matchLoop
+                        }
+                        val absoluteIndex = lineOffset + match.range.first
+                        if (codeMask.getOrNull(absoluteIndex) != true) {
+                            ignoredNameMatches += 1
+                            return@matchLoop
+                        }
+                        val name = match.value
+                        val lineNumber = lineIndex + 1
+                        val definition = indexedFile.symbols.any {
+                            it.name == name && it.line == lineNumber
+                        }
+                        if (definition) return@matchLoop
 
-                            val nameCandidates = nodesByName[name].orEmpty()
-                            val sameFileCandidates = nameCandidates.filter { it.symbol.path == sourcePath }
-                            val dependencyTargets = resolvedDependencyTargets[sourcePath].orEmpty()
-                            val dependencyCandidates = nameCandidates.filter { it.symbol.path in dependencyTargets }
-                            val resolvedCandidates = when {
-                                sameFileCandidates.size == 1 -> sameFileCandidates
-                                dependencyCandidates.size == 1 -> dependencyCandidates
-                                else -> emptyList()
-                            }
-                            val resolvedTarget = resolvedCandidates.singleOrNull()
-                            val status = when {
-                                resolvedTarget != null -> "resolved"
-                                sameFileCandidates.size > 1 || dependencyCandidates.size > 1 -> "ambiguous"
-                                else -> "unresolved"
-                            }
-                            if (status == "ambiguous") ambiguousReferences += 1
-                            if (status == "unresolved") unresolvedReferences += 1
+                        val nameCandidates = nodesByName[name].orEmpty()
+                        val sameFileCandidates = nameCandidates.filter { it.symbol.path == sourcePath }
+                        val dependencyTargets = resolvedDependencyTargets[sourcePath].orEmpty()
+                        val dependencyCandidates = nameCandidates.filter { it.symbol.path in dependencyTargets }
+                        val candidatePool = when {
+                            sameFileCandidates.isNotEmpty() -> sameFileCandidates
+                            dependencyCandidates.isNotEmpty() -> dependencyCandidates
+                            else -> emptyList()
+                        }
+                        val resolvedTarget = candidatePool.singleOrNull()
+                        val status = when {
+                            resolvedTarget != null -> "resolved"
+                            candidatePool.size > 1 -> "ambiguous"
+                            else -> "unresolved"
+                        }
+                        val relevantToSeed = when {
+                            resolvedTarget != null -> resolvedTarget.symbolId in seedIds
+                            candidatePool.isNotEmpty() -> candidatePool.any { it.symbolId in seedIds }
+                            else -> false
+                        }
+                        if (!relevantToSeed) {
+                            ignoredNameMatches += 1
+                            return@matchLoop
+                        }
+                        if (status == "ambiguous") ambiguousReferences += 1
+                        if (status == "unresolved") unresolvedReferences += 1
 
-                            val caller = nodesByPath[sourcePath].orEmpty()
-                                .filter {
-                                    lineNumber >= it.symbol.line &&
-                                        lineNumber <= it.symbol.endLine &&
-                                        !(it.symbol.name == name && it.symbol.line == lineNumber)
-                                }
-                                .minWithOrNull(
-                                    compareBy<PropagationSymbolNode>(
-                                        { it.symbol.endLine - it.symbol.line },
-                                        { it.symbol.line },
-                                        { it.symbolId }
-                                    )
+                        val caller = nodesByPath[sourcePath].orEmpty()
+                            .filter {
+                                lineNumber >= it.symbol.line &&
+                                    lineNumber <= it.symbol.endLine &&
+                                    !(it.symbol.name == name && it.symbol.line == lineNumber)
+                            }
+                            .minWithOrNull(
+                                compareBy<PropagationSymbolNode>(
+                                    { it.symbol.endLine - it.symbol.line },
+                                    { it.symbol.line },
+                                    { it.symbolId }
                                 )
+                            )
 
-                            referenceRows.put(JSONObject()
-                                .put("symbol", name)
-                                .put("path", sourcePath)
-                                .put("line", lineNumber)
-                                .put("column", match.range.first + 1)
-                                .put("status", status)
-                                .put("targetId", resolvedTarget?.symbolId ?: JSONObject.NULL)
-                                .put("targetPath", resolvedTarget?.symbol?.path ?: JSONObject.NULL)
-                                .put("callerId", caller?.symbolId ?: JSONObject.NULL)
-                                .put("callerName", caller?.symbol?.name ?: JSONObject.NULL)
-                                .put("preview", compactPreview(line)))
-                            referenceCount += 1
+                        referenceRows.put(JSONObject()
+                            .put("symbol", name)
+                            .put("path", sourcePath)
+                            .put("line", lineNumber)
+                            .put("column", match.range.first + 1)
+                            .put("status", status)
+                            .put("targetId", resolvedTarget?.symbolId ?: JSONObject.NULL)
+                            .put("targetPath", resolvedTarget?.symbol?.path ?: JSONObject.NULL)
+                            .put("callerId", caller?.symbolId ?: JSONObject.NULL)
+                            .put("callerName", caller?.symbol?.name ?: JSONObject.NULL)
+                            .put("preview", compactPreview(line)))
+                        referenceCount += 1
 
-                            if (resolvedTarget != null) {
-                                addReverseEdge(resolvedTarget.symbol.path, sourcePath, "reference")
-                                if (caller != null) {
-                                    val callerKey = caller.symbolId + "|" + resolvedTarget.symbolId
-                                    if (callerKeys.add(callerKey)) {
-                                        if (callerRows.length() >= MAX_PROPAGATION_CALLERS) {
-                                            incompleteReasons += "propagation-caller-bound"
-                                        } else {
-                                            callerRows.put(JSONObject()
-                                                .put("callerId", caller.symbolId)
-                                                .put("callerName", caller.symbol.name)
-                                                .put("callerPath", caller.symbol.path)
-                                                .put("targetId", resolvedTarget.symbolId)
-                                                .put("targetName", resolvedTarget.symbol.name)
-                                                .put("targetPath", resolvedTarget.symbol.path))
-                                        }
+                        if (resolvedTarget != null) {
+                            addReverseEdge(resolvedTarget.symbol.path, sourcePath, "reference")
+                            if (caller != null) {
+                                val callerKey = caller.symbolId + "|" + resolvedTarget.symbolId
+                                if (callerKeys.add(callerKey)) {
+                                    if (callerRows.length() >= MAX_PROPAGATION_CALLERS) {
+                                        incompleteReasons += "propagation-caller-bound"
+                                    } else {
+                                        callerRows.put(JSONObject()
+                                            .put("callerId", caller.symbolId)
+                                            .put("callerName", caller.symbol.name)
+                                            .put("callerPath", caller.symbol.path)
+                                            .put("targetId", resolvedTarget.symbolId)
+                                            .put("targetName", resolvedTarget.symbol.name)
+                                            .put("targetPath", resolvedTarget.symbol.path))
                                     }
                                 }
                             }
                         }
                     }
+                    lineOffset += line.length + 1
                 }
                 if (referenceTruncated) break@outerReference
             }
@@ -2149,8 +2169,23 @@ internal class RiftToolSandbox(context: Context) {
                     .put("reasons", reasonJson))
             }
 
+        val closurePathSet = depthByPath.keys.toSet()
+        var closureRelevantEdgeCount = 0
+        reverseEdges.forEach { (targetPath, rows) ->
+            if (targetPath in closurePathSet) {
+                closureRelevantEdgeCount += rows.count { it.first in closurePathSet }
+            }
+        }
+
+        val relevantRelationRows = relationRows.filter { relation ->
+            relation.sourcePath in closurePathSet ||
+                relation.targetPath?.let { it in closurePathSet } == true ||
+                relation.sourceId in seedIds ||
+                relation.targetId?.let { it in seedIds } == true
+        }
+
         val relationJson = JSONArray()
-        relationRows
+        relevantRelationRows
             .sortedWith(compareBy({ it.sourcePath }, { it.sourceId }, { it.relation }, { it.targetName }))
             .forEach { relation ->
                 relationJson.put(JSONObject()
@@ -2180,6 +2215,7 @@ internal class RiftToolSandbox(context: Context) {
             .put("incompleteReasons", JSONArray(incompleteReasons.sorted()))
             .put("seedSymbols", seedSymbols)
             .put("seedPaths", seedPathJson)
+            .put("ignoredNameMatches", ignoredNameMatches)
             .put("references", referenceRows)
             .put("callers", callerRows)
             .put("typeRelations", relationJson)
@@ -2215,10 +2251,11 @@ internal class RiftToolSandbox(context: Context) {
                 .put("resolvedReferences", referenceRows.length() - ambiguousReferences - unresolvedReferences)
                 .put("ambiguousReferences", ambiguousReferences)
                 .put("unresolvedReferences", unresolvedReferences)
+                .put("ignoredNameMatches", ignoredNameMatches)
                 .put("callers", callerRows.length())
                 .put("typeRelations", relationJson.length())
                 .put("closurePaths", closureRows.length())
-                .put("reverseEdges", closureEdgeEvidence))
+                .put("reverseEdges", closureRelevantEdgeCount))
             .put("references", prefixJson(referenceRows))
             .put("referencesTotal", referenceRows.length())
             .put("referencesPreviewTruncated", referenceRows.length() > previewLimit)
@@ -2322,13 +2359,63 @@ internal class RiftToolSandbox(context: Context) {
             ?.forEach { add("implements", it) }
 
         if (language == "kotlin") {
-            val tail = signature.substringAfter(node.symbol.name, "")
-            val inheritance = tail.substringAfter(':', "").substringBefore('{').substringBefore(" where ")
-            inheritance.split(',')
-                .map { it.substringBefore('(').substringBefore('<') }
-                .forEach {
-                    add(if (node.symbol.kind == "interface") "extends" else "inherits-or-implements", it)
+            fun topLevelInheritanceClause(tail: String): String {
+                var parenDepth = 0
+                var angleDepth = 0
+                var bracketDepth = 0
+                tail.forEachIndexed { index, c ->
+                    when (c) {
+                        '(' -> parenDepth += 1
+                        ')' -> if (parenDepth > 0) parenDepth -= 1
+                        '<' -> angleDepth += 1
+                        '>' -> if (angleDepth > 0) angleDepth -= 1
+                        '[' -> bracketDepth += 1
+                        ']' -> if (bracketDepth > 0) bracketDepth -= 1
+                        ':' -> if (parenDepth == 0 && angleDepth == 0 && bracketDepth == 0) {
+                            return tail.substring(index + 1)
+                                .substringBefore('{')
+                                .substringBefore(" where ")
+                                .trim()
+                        }
+                    }
                 }
+                return ""
+            }
+
+            fun splitTopLevelTypes(raw: String): List<String> {
+                if (raw.isBlank()) return emptyList()
+                val outTypes = ArrayList<String>()
+                var start = 0
+                var parenDepth = 0
+                var angleDepth = 0
+                var bracketDepth = 0
+                raw.forEachIndexed { index, c ->
+                    when (c) {
+                        '(' -> parenDepth += 1
+                        ')' -> if (parenDepth > 0) parenDepth -= 1
+                        '<' -> angleDepth += 1
+                        '>' -> if (angleDepth > 0) angleDepth -= 1
+                        '[' -> bracketDepth += 1
+                        ']' -> if (bracketDepth > 0) bracketDepth -= 1
+                        ',' -> if (parenDepth == 0 && angleDepth == 0 && bracketDepth == 0) {
+                            raw.substring(start, index).trim()
+                                .takeIf { it.isNotBlank() }
+                                ?.let(outTypes::add)
+                            start = index + 1
+                        }
+                    }
+                }
+                raw.substring(start).trim()
+                    .takeIf { it.isNotBlank() }
+                    ?.let(outTypes::add)
+                return outTypes
+            }
+
+            val tail = signature.substringAfter(node.symbol.name, "")
+            val inheritance = topLevelInheritanceClause(tail)
+            splitTopLevelTypes(inheritance).forEach {
+                add(if (node.symbol.kind == "interface") "extends" else "inherits-or-implements", it)
+            }
         }
 
         if (language == "cpp") {

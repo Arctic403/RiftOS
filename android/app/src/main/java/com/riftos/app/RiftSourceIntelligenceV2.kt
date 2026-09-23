@@ -187,6 +187,15 @@ internal object RiftSourceIntelligenceV2 {
 
     fun isSourcePath(path: String): Boolean = languageForPath(path) != "generic"
 
+    fun referenceCodeMask(path: String, text: String): BooleanArray {
+        val normalized = normalize(text)
+        return when (val language = languageForPath(path)) {
+            "javascript" -> javascriptDependencyCodeMask(normalized)
+            "generic" -> BooleanArray(normalized.length) { index -> !normalized[index].isWhitespace() }
+            else -> genericReferenceCodeMask(language, normalized)
+        }
+    }
+
     fun isDocumentationPath(path: String): Boolean {
         val lower = path.lowercase()
         return lower.endsWith(".md") || lower.endsWith(".mdx") || lower.endsWith(".rst") ||
@@ -524,6 +533,132 @@ internal object RiftSourceIntelligenceV2 {
                     continue
                 }
             }
+            if (!value.isWhitespace()) code[cursor] = true
+            cursor += 1
+        }
+        return code
+    }
+
+
+    private fun genericReferenceCodeMask(language: String, text: String): BooleanArray {
+        val code = BooleanArray(text.length)
+        val slashComments = language != "python"
+        val hashComments = language == "python"
+        val blockComments = language != "python"
+        val tripleQuotes = language == "kotlin" || language == "java" || language == "python"
+        val backtickStrings = language == "go"
+
+        fun quotedEnd(startIndex: Int, quote: Char): Int {
+            var cursor = startIndex + 1
+            var escaped = false
+            val csharpVerbatim = language == "csharp" && startIndex > 0 && text[startIndex - 1] == '@'
+            while (cursor < text.length) {
+                val value = text[cursor]
+                if (!csharpVerbatim && (value == '\n' || value == '\r')) return -1
+                if (csharpVerbatim && value == '"' && text.getOrNull(cursor + 1) == '"') {
+                    cursor += 2
+                    continue
+                }
+                if (escaped) {
+                    escaped = false
+                } else if (!csharpVerbatim && value == '\\') {
+                    escaped = true
+                } else if (value == quote) {
+                    return cursor + 1
+                }
+                cursor += 1
+            }
+            return -1
+        }
+
+        fun tripleEnd(startIndex: Int, quote: Char): Int {
+            var cursor = startIndex + 3
+            while (cursor + 2 < text.length) {
+                if (text[cursor] == quote &&
+                    text[cursor + 1] == quote &&
+                    text[cursor + 2] == quote
+                ) {
+                    return cursor + 3
+                }
+                cursor += 1
+            }
+            return -1
+        }
+
+        var cursor = 0
+        var blockComment = false
+        while (cursor < text.length) {
+            val value = text[cursor]
+            val next = text.getOrNull(cursor + 1)
+
+            if (blockComment) {
+                if (value == '*' && next == '/') {
+                    blockComment = false
+                    cursor += 2
+                } else {
+                    cursor += 1
+                }
+                continue
+            }
+
+            if (slashComments && value == '/' && next == '/') {
+                val newline = text.indexOf('\n', cursor + 2)
+                cursor = if (newline < 0) text.length else newline + 1
+                continue
+            }
+
+            if (hashComments && value == '#') {
+                val newline = text.indexOf('\n', cursor + 1)
+                cursor = if (newline < 0) text.length else newline + 1
+                continue
+            }
+
+            if (blockComments && value == '/' && next == '*') {
+                blockComment = true
+                cursor += 2
+                continue
+            }
+
+            if (tripleQuotes &&
+                (value == '"' || value == '\'') &&
+                text.getOrNull(cursor + 1) == value &&
+                text.getOrNull(cursor + 2) == value
+            ) {
+                val end = tripleEnd(cursor, value)
+                cursor = if (end > cursor) end else text.length
+                continue
+            }
+
+            if (backtickStrings && value == 96.toChar()) {
+                val end = text.indexOf(96.toChar(), cursor + 1)
+                cursor = if (end < 0) text.length else end + 1
+                continue
+            }
+
+            if (value == '\'' && language == "rust") {
+                val lifetimeNext = text.getOrNull(cursor + 1)
+                val lifetimeTerminator = text.getOrNull(cursor + 2)
+                if (lifetimeNext != null &&
+                    (lifetimeNext.isLetter() || lifetimeNext == '_') &&
+                    lifetimeTerminator != '\''
+                ) {
+                    code[cursor] = true
+                    cursor += 1
+                    continue
+                }
+            }
+
+            if (value == '"' || value == '\'') {
+                val end = quotedEnd(cursor, value)
+                cursor = if (end > cursor) {
+                    end
+                } else {
+                    val newline = text.indexOf('\n', cursor + 1)
+                    if (newline < 0) text.length else newline + 1
+                }
+                continue
+            }
+
             if (!value.isWhitespace()) code[cursor] = true
             cursor += 1
         }

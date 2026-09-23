@@ -3,9 +3,14 @@ import { readFileSync } from 'node:fs';
 
 const read = file => readFileSync(file, 'utf8');
 const k = 'android/app/src/main/java/com/riftos/app/';
+const source = read(k + 'RiftSourceIntelligenceV2.kt');
 const sandbox = read(k + 'RiftToolSandbox.kt');
 const observer = read(k + 'RiftRepositoryConsistencyObserver.kt');
 const pkg = JSON.parse(read('package.json'));
+
+assert.match(source, /fun referenceCodeMask\(path: String, text: String\): BooleanArray/);
+assert.match(source, /private fun genericReferenceCodeMask\(language: String, text: String\): BooleanArray/);
+assert.match(source, /javascriptDependencyCodeMask\(normalized\)/);
 
 for (const token of [
   'MAX_PROPAGATION_SEEDS = 64',
@@ -40,7 +45,15 @@ assert.match(sandbox, /"signatureIdChangesWithSignature", true/);
 assert.match(sandbox, /integrityResolveDependency\(/);
 assert.match(sandbox, /addReverseEdge\(target, sourcePath, "dependency"\)/);
 assert.match(sandbox, /dependencyCandidates = nameCandidates\.filter \{ it\.symbol\.path in dependencyTargets \}/);
-assert.match(sandbox, /sameFileCandidates\.size == 1/);
+assert.match(sandbox, /val seedIds = seedNodes\.map \{ it\.symbolId \}\.toSet\(\)/);
+assert.match(sandbox, /val relevantToSeed = when/);
+assert.match(sandbox, /RiftSourceIntelligenceV2\.referenceCodeMask\(sourcePath, referenceText\)/);
+assert.match(sandbox, /val absoluteIndex = lineOffset \+ match\.range\.first/);
+assert.match(sandbox, /codeMask\.getOrNull\(absoluteIndex\) != true/);
+assert.match(sandbox, /ignoredNameMatches \+= 1/);
+assert.match(sandbox, /val relevantRelationRows = relationRows\.filter/);
+assert.match(sandbox, /var closureRelevantEdgeCount = 0/);
+assert.match(sandbox, /sameFileCandidates\.isNotEmpty\(\)/);
 assert.match(sandbox, /"ambiguousReferences"/);
 assert.match(sandbox, /"unresolvedReferences"/);
 
@@ -51,6 +64,10 @@ assert.match(sandbox, /"callerId"/);
 assert.match(sandbox, /"callerPath"/);
 
 assert.match(sandbox, /private fun propagationTypeTargets\(/);
+assert.match(sandbox, /fun topLevelInheritanceClause\(/);
+assert.match(sandbox, /fun splitTopLevelTypes\(/);
+assert.ok(!sandbox.includes('tail.substringAfter(\':\', "").substringBefore(\'{\')'), 'Kotlin inheritance must not use the retired constructor-colon heuristic');
+assert.ok(sandbox.includes("':' -> if (parenDepth == 0 && angleDepth == 0 && bracketDepth == 0)"), 'Kotlin inheritance colon must be top-level');
 assert.match(sandbox, /"extends"/);
 assert.match(sandbox, /"implements"/);
 assert.match(sandbox, /"inherits-or-implements"/);

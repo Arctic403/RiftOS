@@ -867,8 +867,8 @@ Current source provides:
 - a separate `signatureId` bound to the normalized declaration signature, so an API/signature change does not pretend the symbol itself became a different identity;
 - explicit API-surface classification using the existing private/internal visibility rule;
 - query seeds by exact `symbolId`, exact symbol name, or matching path;
-- one-pass bounded lexical reference evidence for selected seed symbol names;
-- conservative cross-file reference resolution: a textual reference only resolves across files when the existing local dependency resolver links the source file to the target file; same-file references resolve only when the local symbol candidate is unique;
+- one-pass bounded reference evidence for selected seed symbol names, filtered through `RiftSourceIntelligenceV2.referenceCodeMask()` so supported-language comments/string-like regions do not become false references;
+- seed-relevant candidate filtering: same-file symbol candidates take precedence, otherwise only candidates in resolved local dependency targets are considered; unrelated same-name matches are counted in `ignoredNameMatches` and do not consume the bounded reference evidence, while multi-candidate seed-relevant pools remain explicitly ambiguous;
 - caller ownership from the smallest indexed symbol range containing the reference line;
 - current local dependency reverse edges, resolved reference reverse edges and type/interface reverse edges;
 - type relation extraction for `extends`, `implements`, Kotlin inheritance/interface lists and C++ inheritance, with explicit resolved/unresolved/ambiguous status;

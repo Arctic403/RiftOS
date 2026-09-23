@@ -2,9 +2,33 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-22.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-23.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.50 — RiftTrainData V2 candidate + propagation reference precision hardening
+
+This source checkpoint reconciles two source-first work streams without claiming installed promotion.
+
+RiftLLM training-data changes:
+- extracted one frozen runtime authority in `RiftFrozenByteBpeV1`; the existing V1 canary builder now reuses it while retaining fast-vs-reference encoder parity;
+- added a separate RiftTrainData V2 candidate ABI with canonical header/index/record parsing, immutable train/validation/challenge generations, provenance/policy identities and deep descriptor/pack/manifest/CURRENT cross-validation;
+- added global source-id/sample/content exact dedup plus source-group split isolation using bounded SQLite state;
+- added `rift-b2-bottomk-v1` sketching, a disk-backed global cross-split comparator, fail-closed ceilings of 16,000,000 indexed fingerprints / 5,000,000 scored candidate pairs, and cooperative cancellation;
+- added fixed-path labeled threshold qualification that computes an admissible interval only; threshold evidence is bound to the exact input SHA, frozen tokenizer identity and current installed APK SHA-256 and cannot mark production eligibility;
+- added a real-writer/real-parser adversarial lab covering truncation, trailing bytes, header corruption, repaired-SHA index-reserved corruption and repaired-SHA BOS-boundary corruption; persisted proof is accepted only for the same current APK;
+- added fixed `train-v2-*` shell routes with no caller-selected path surface and permanent regression `scripts/test-riftllm-training-v2.mjs`;
+- `productionPretrainingEligible=false` remains hard. Labeled threshold evidence, policy freeze, current-APK adversarial proof and Hardware Target A evidence are still required before production freeze.
+
+N1.8.2 propagation hardening:
+- `RiftSourceIntelligenceV2.referenceCodeMask()` now masks comments/string-like regions before propagation reference matching;
+- `RiftToolSandbox` retains only same-file/dependency candidate pools capable of referring to selected seed symbols; unrelated same-name matches increment `ignoredNameMatches` rather than consuming the bounded reference budget;
+- unique seed-relevant pools resolve, multi-candidate pools remain ambiguous, and caller/reference/reverse-edge evidence is generated only from retained seed-relevant matches;
+- permanent `test-rift-propagation-v1.mjs` coverage is updated for false-reference precision. N1.8.2 remains source-only pending Builder/install/torture promotion.
+
+Documentation/source ownership/build-validation contracts are updated for both work streams. The external Builder workspace is synchronized so its independent source preflight requires both the N1.8.2 propagation regression and the RiftLLM V2 regression, while its final signed-APK smoke requires the N1.8.2 `rift-semantic-propagation-v1`/`ignoredNameMatches` markers plus stable V2 runtime/qualification markers in DEX.
+
+This checkpoint is **source-implemented only**. No Builder compile, signed-APK smoke, installation, threshold qualification corpus run, adversarial device run or Hardware Target A production-data run is claimed by this entry.
 
 ## Patch 10.49 — N1.8.2 semantic propagation foundation
 

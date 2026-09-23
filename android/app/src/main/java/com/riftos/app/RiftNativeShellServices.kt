@@ -328,6 +328,9 @@ class RiftNativeShellServices(context: Context) {
             "RiftLLM native Dev API bridge\nriftllm-agent status\nriftllm-agent unpair\n" +
                 "riftllm-agent train-data-status\nriftllm-agent train-data-build\nriftllm-agent train-data-build-status\nriftllm-agent train-data-build-cancel\n" +
                 "riftllm-agent train-data-upload\nriftllm-agent train-data-remote-status\nriftllm-agent train-canary-start\nriftllm-agent train-canary-status\n" +
+                "riftllm-agent train-v2-status\nriftllm-agent train-v2-build\nriftllm-agent train-v2-build-status\nriftllm-agent train-v2-build-cancel\n" +
+                "riftllm-agent train-v2-dedup-qualify-status\nriftllm-agent train-v2-dedup-qualify-start\nriftllm-agent train-v2-dedup-qualify-job-status\nriftllm-agent train-v2-dedup-qualify-cancel\n" +
+                "riftllm-agent train-v2-adversarial-status\nriftllm-agent train-v2-adversarial-lab\n" +
                 "Pairing is entered only in native Settings. Legacy corpus-* helpers are unavailable unless explicitly reintroduced behind a bounded native/headless service."
         )
         if(sub=="pair") throw IllegalStateException("RiftLLM pairing token must be entered in native Settings; shell arguments are intentionally rejected.")
@@ -342,6 +345,16 @@ class RiftNativeShellServices(context: Context) {
             "train-data-remote-status" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","remote-status"))
             "train-canary-start" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","canary-start"))
             "train-canary-status" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","canary-status"))
+            "train-v2-status" -> RiftTrainDataV2TaskRunner.execute(appContext,JSONObject().put("op","status"))
+            "train-v2-build" -> RiftTrainDataV2TaskRunner.execute(appContext,JSONObject().put("op","build"))
+            "train-v2-build-status" -> RiftTrainDataV2TaskRunner.execute(appContext,JSONObject().put("op","build-status"))
+            "train-v2-build-cancel" -> RiftTrainDataV2TaskRunner.execute(appContext,JSONObject().put("op","build-cancel"))
+            "train-v2-dedup-qualify-status" -> RiftB2ThresholdQualificationTask.execute(appContext,JSONObject().put("op","status"))
+            "train-v2-dedup-qualify-start" -> RiftB2ThresholdQualificationTask.execute(appContext,JSONObject().put("op","start"))
+            "train-v2-dedup-qualify-job-status" -> RiftB2ThresholdQualificationTask.execute(appContext,JSONObject().put("op","job-status"))
+            "train-v2-dedup-qualify-cancel" -> RiftB2ThresholdQualificationTask.execute(appContext,JSONObject().put("op","cancel"))
+            "train-v2-adversarial-status" -> RiftTrainDataV2AdversarialLab.status(appContext)
+            "train-v2-adversarial-lab" -> RiftTrainDataV2AdversarialLab.run(appContext)
             else -> {
                 if (sub == "preview" || sub == "publish") throw IllegalStateException(
                     "RiftLLM '$sub' requires the retired workspace patch preview/apply composite and is intentionally unavailable until a bounded native publisher is implemented."

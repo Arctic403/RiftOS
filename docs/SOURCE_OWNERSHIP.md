@@ -100,6 +100,14 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/cpp/riftcli/rift_cli_core.cpp` | `docs/systems/riftcli/README.md` |
 | `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp` | `docs/systems/riftcli/README.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftFrozenByteBpeV1.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftB2BottomKDedupV1.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftB2NearDedupIndexV1.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftB2ThresholdQualificationV1.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftB2ThresholdQualificationTask.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftTrainDataV2Format.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftTrainDataV2TaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftTrainDataV2AdversarialLab.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/engine/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
@@ -167,6 +175,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-riftllm-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/test-riftllm-text-encoding-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/test-riftllm-training-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
+| `scripts/test-riftllm-training-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/validate-rift-wiring.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` |
 | `scripts/validate-rift-transport.mjs` | `docs/systems/build-validation/README.md` |
 | `scripts/validate-rift-docs.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` |

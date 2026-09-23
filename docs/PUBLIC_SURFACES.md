@@ -18,7 +18,7 @@ This inventory separates live packaged authority from retained reference/compati
 | Native Git | `RiftNativeGit.kt` | Git/GitHub workflow with Android Keystore credential access. |
 | Native RiftBuild | `RiftBuildLocalExecutor.kt`, `RiftApkV2Signer.kt`, `RiftBuildInstaller.kt` | Workspace-bounded Android validation/materialization/package flow plus bounded APK v2 signing/verification and allowlisted PackageInstaller handoff; supports NativeActivity proofs and the code-bearing Codynex E0 editor via `classes*.dex`, with no raw process or arbitrary package authority. |
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
-| RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands. |
+| RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftFrozenByteBpeV1.kt`, `RiftTrainDataV2Format.kt`, `RiftTrainDataV2TaskRunner.kt`, `RiftB2BottomKDedupV1.kt`, `RiftB2NearDedupIndexV1.kt`, `RiftB2ThresholdQualificationV1.kt`, `RiftB2ThresholdQualificationTask.kt`, `RiftTrainDataV2AdversarialLab.kt`, `RiftNativeShellServices.kt` | Fixed bounded canary + production-data-V2 candidate build/status/qualification/adversarial commands. V2 remains fail-closed with `productionPretrainingEligible=false` until threshold, policy, device and parser evidence is frozen. |
 
 ## Current source pending installed-device promotion
 

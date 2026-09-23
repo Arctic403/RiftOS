@@ -3,22 +3,27 @@ import assert from 'node:assert/strict';
 
 const read=file=>fs.readFileSync(file,'utf8');
 const runner=read('android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt');
+const bpe=read('android/app/src/main/java/com/riftos/app/RiftFrozenByteBpeV1.kt');
 const services=read('android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt');
 const client=read('android/app/src/main/java/com/riftos/app/RiftLlmDevClient.kt');
 const bridge=read('src/riftllm-bridge.js');
 const gradle=read('android/app/build.gradle.kts');
 
 assert.match(runner,/PACK_MAGIC = "RIFT_TRAIN_DATA_V1\\n"/);
-assert.match(runner,/TOKENIZER_ID = "rift-token-b-balanced-v2"/);
-assert.match(runner,/314e3a732d4cc4c31c40c9b0add3fffcec38c8a4b40e0d228bdc4eed1addbbd1/);
-assert.match(runner,/b88b0ab8d3a7dc784e2e4b20d33b5c5fab222542880cea197f529d5c996e9a05/);
-assert.match(runner,/9d442860e3ed407fe10f10e72ad41fabc2854cfc3cdcaeb654b35ddad506faba/);
+assert.match(runner,/TOKENIZER_ID = RiftFrozenByteBpeV1\.CANDIDATE_ID/);
+assert.match(runner,/RiftFrozenByteBpeV1\.loadFrozen\(artifactFile\)/);
+assert.match(runner,/RiftFrozenByteBpeV1\.Encoder\(artifact\)/);
+assert.match(bpe,/CANDIDATE_ID = "rift-token-b-balanced-v2"/);
+assert.match(bpe,/314e3a732d4cc4c31c40c9b0add3fffcec38c8a4b40e0d228bdc4eed1addbbd1/);
+assert.match(bpe,/b88b0ab8d3a7dc784e2e4b20d33b5c5fab222542880cea197f529d5c996e9a05/);
+assert.match(bpe,/9d442860e3ed407fe10f10e72ad41fabc2854cfc3cdcaeb654b35ddad506faba/);
+assert.match(bpe,/fun referenceEncode\(/);
+assert.match(bpe,/fun encode\(/);
 assert.match(runner,/TRAIN_RELATIVE = "tokenizer\/private\/build-v2\/train"/);
 assert.match(runner,/OUTPUT_RELATIVE = "training\/private\/canary-v1\/rift-train-data-v1\.rifttok"/);
 assert.match(runner,/productionPretrainingEligible", false/);
 assert.match(runner,/payloadEncoding", "sample-u32le-count-u16le-token-ids"/);
 assert.match(runner,/boundaryPolicy", "bos-text-eos-v1"/);
-assert.match(runner,/fun referenceEncode\(/);
 assert.match(runner,/encoded\.contentEquals\(reference\)/);
 assert.match(runner,/postBuildSourceSha == TOKENIZER_TRAINING_SHA/);
 assert.match(runner,/StandardCopyOption\.ATOMIC_MOVE/);
@@ -37,6 +42,7 @@ for (const pair of [
   assert.ok(services.includes(`"${pair[0]}" -> RiftTrainDataTaskRunner.execute`), `native shell service missing ${pair[0]}`);
   assert.ok(services.includes(`.put("op",${pair[1]})`), `native shell service op mismatch for ${pair[0]}`);
 }
+assert.match(gradle,/RiftFrozenByteBpeV1\.kt/);
 assert.match(gradle,/RiftTrainDataTaskRunner\.kt/);
 assert.ok(!gradle.includes('riftllm-bridge.js'),'retained RiftLLM training bridge JavaScript must not be packaged');
 

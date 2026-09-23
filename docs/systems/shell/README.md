@@ -284,7 +284,7 @@ It delegates to existing owners:
 - vortex -> RiftVortexBridgeClient
 - vortex-agent -> RiftVortexLocalAgent
 - riftos-agent -> RiftOsLocalAgent
-- riftllm-agent -> RiftLlmDevClient / RiftTrainDataTaskRunner
+- riftllm-agent -> RiftLlmDevClient / RiftTrainDataTaskRunner / RiftTrainDataV2TaskRunner / RiftB2ThresholdQualificationTask / RiftTrainDataV2AdversarialLab
 
 The shell does not reimplement those subsystems.
 

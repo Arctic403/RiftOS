@@ -15,7 +15,6 @@ import java.nio.charset.CodingErrorAction
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
-import java.util.PriorityQueue
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,18 +32,18 @@ object RiftTrainDataTaskRunner {
     private const val PACK_FORMAT = "rift-train-data-v1"
     private const val PURPOSE = "canary"
     private const val ARCHITECTURE_ID = "rift-micro-v1-hardware-a"
-    private const val TOKENIZER_ID = "rift-token-b-balanced-v2"
-    private const val TOKENIZER_ARTIFACT_SHA = "314e3a732d4cc4c31c40c9b0add3fffcec38c8a4b40e0d228bdc4eed1addbbd1"
-    private const val TOKENIZER_TRAINING_SHA = "b88b0ab8d3a7dc784e2e4b20d33b5c5fab222542880cea197f529d5c996e9a05"
-    private const val TOKENIZER_CONFIG_SHA = "9d442860e3ed407fe10f10e72ad41fabc2854cfc3cdcaeb654b35ddad506faba"
+    private const val TOKENIZER_ID = RiftFrozenByteBpeV1.CANDIDATE_ID
+    private const val TOKENIZER_ARTIFACT_SHA = RiftFrozenByteBpeV1.ARTIFACT_SHA256
+    private const val TOKENIZER_TRAINING_SHA = RiftFrozenByteBpeV1.TRAINING_CORPUS_SHA256
+    private const val TOKENIZER_CONFIG_SHA = RiftFrozenByteBpeV1.TRAINER_CONFIG_SHA256
     private const val TOKENIZER_ARTIFACT_RELATIVE = "tokenizer/output/rift-token-b-balanced-v2.riftbpe"
     private const val TRAIN_RELATIVE = "tokenizer/private/build-v2/train"
     private const val OUTPUT_RELATIVE = "training/private/canary-v1/rift-train-data-v1.rifttok"
     private const val MANIFEST_RELATIVE = "training/private/canary-v1/rift-train-data-v1.manifest.json"
-    private const val VOCAB_SIZE = 32768
-    private const val BYTE_TOKENS = 256
-    private const val MERGE_COUNT = 32504
-    private const val MAX_TOKEN_BYTES = 24
+    private const val VOCAB_SIZE = RiftFrozenByteBpeV1.VOCAB_SIZE
+    private const val BYTE_TOKENS = RiftFrozenByteBpeV1.BYTE_TOKENS
+    private const val MERGE_COUNT = RiftFrozenByteBpeV1.MERGE_COUNT
+    private const val MAX_TOKEN_BYTES = RiftFrozenByteBpeV1.MAX_TOKEN_BYTES
     private const val MAX_SAMPLE_BYTES = 16 * 1024
     private const val MAX_PACK_BYTES = 8L * 1024L * 1024L
     private const val MAX_TRAINING_BYTES = 64L * 1024L * 1024L
@@ -53,23 +52,7 @@ object RiftTrainDataTaskRunner {
     private const val REMOTE_CHUNK_BYTES = 192 * 1024
     private const val SHARD_SET_ID = "rift-shard-set-v1"
     private val SHARD_NAME_RE = Regex("[A-Za-z0-9._-]{1,96}\\.jsonl")
-    private val SPECIALS = listOf(
-        "<|bos|>", "<|eos|>", "<|pad|>", "<|system|>",
-        "<|user|>", "<|assistant|>", "<|tool|>", "<|end|>"
-    )
-
-    private data class Merge(val left: Int, val right: Int)
-    private data class Artifact(
-        val candidateId: String,
-        val trainingCorpusSha256: String,
-        val trainerConfigSha256: String,
-        val vocabSize: Int,
-        val normalization: String,
-        val byteFallback: Boolean,
-        val merges: List<Merge>,
-        val specialIds: Map<String, Int>
-    )
-    private data class Event(val rank: Int, val left: Int, val right: Int)
+    private val SPECIALS = RiftFrozenByteBpeV1.SPECIALS
     private data class ShardInfo(val name: String, val bytes: Long, val sha256: String, var samples: Int = 0)
     private data class BuildJob(
         val id: String,
@@ -239,10 +222,8 @@ object RiftTrainDataTaskRunner {
     private fun buildBlocking(context: Context, job: BuildJob, cancel: AtomicBoolean): JSONObject {
         val root = projectRoot(context)
         val artifactFile = exactPath(root, TOKENIZER_ARTIFACT_RELATIVE)
-        require(artifactFile.isFile && artifactFile.length() in 1..(4L * 1024L * 1024L)) { "frozen B2 artifact is missing" }
-        require(sha256File(artifactFile) == TOKENIZER_ARTIFACT_SHA) { "frozen B2 artifact SHA-256 drifted" }
-        val artifact = parseArtifact(artifactFile)
-        val encoder = ByteBpe(artifact)
+        val artifact = RiftFrozenByteBpeV1.loadFrozen(artifactFile)
+        val encoder = RiftFrozenByteBpeV1.Encoder(artifact)
         val trainDir = exactPath(root, TRAIN_RELATIVE)
         val (shards, sourceSha) = trainingSource(trainDir)
         require(sourceSha == TOKENIZER_TRAINING_SHA) { "V2 training shard-set SHA-256 drifted" }
@@ -451,119 +432,6 @@ object RiftTrainDataTaskRunner {
             .toString()
     }
 
-    private fun parseArtifact(file: File): Artifact {
-        val lines = file.readText(Charsets.UTF_8).lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith('#') }.toList()
-        require(lines.firstOrNull() == "RIFT_BYTE_BPE_V1") { "frozen tokenizer artifact magic mismatch" }
-        var candidate = ""
-        var trainingSha = ""
-        var configSha = ""
-        var vocab = -1
-        var normalization = ""
-        var fallback = false
-        val merges = ArrayList<Merge>(MERGE_COUNT)
-        val specials = linkedMapOf<String, Int>()
-        var inMerges = false
-        lines.drop(1).forEach { line ->
-            when {
-                line == "merges_begin" -> { require(!inMerges); inMerges = true }
-                line == "merges_end" -> { require(inMerges); inMerges = false }
-                inMerges -> {
-                    val p = line.split(Regex("\\s+")); require(p.size == 2); merges += Merge(p[0].toInt(), p[1].toInt())
-                }
-                line.startsWith("candidate_id=") -> candidate = line.substringAfter('=').trim()
-                line.startsWith("training_corpus_sha256=") -> trainingSha = line.substringAfter('=').trim().lowercase()
-                line.startsWith("trainer_config_sha256=") -> configSha = line.substringAfter('=').trim().lowercase()
-                line.startsWith("vocab_size=") -> vocab = line.substringAfter('=').toInt()
-                line.startsWith("normalization=") -> normalization = line.substringAfter('=').trim()
-                line.startsWith("byte_fallback=") -> fallback = line.substringAfter('=').trim().toBooleanStrict()
-                line.startsWith("special=") -> {
-                    val payload = line.substringAfter('='); val colon = payload.indexOf(':'); require(colon > 0)
-                    val id = payload.substring(0, colon).toInt(); val literal = String(hexToBytes(payload.substring(colon + 1)), Charsets.UTF_8)
-                    specials[literal] = id
-                }
-                else -> error("unknown tokenizer artifact field: $line")
-            }
-        }
-        require(!inMerges && candidate == TOKENIZER_ID && trainingSha == TOKENIZER_TRAINING_SHA && configSha == TOKENIZER_CONFIG_SHA) { "frozen tokenizer provenance mismatch" }
-        require(vocab == VOCAB_SIZE && normalization == "identity-utf8" && fallback && merges.size == MERGE_COUNT) { "frozen tokenizer contract mismatch" }
-        require(SPECIALS.all { specials[it] == BYTE_TOKENS + MERGE_COUNT + SPECIALS.indexOf(it) }) { "frozen special-token mapping mismatch" }
-        return Artifact(candidate, trainingSha, configSha, vocab, normalization, fallback, merges, specials)
-    }
-
-    private class ByteBpe(artifact: Artifact) {
-        private val merges = artifact.merges
-        private val ranks = HashMap<Long, Int>(merges.size * 2)
-        private fun pairKey(left: Int, right: Int): Long = (left.toLong() shl 32) or (right.toLong() and 0xffffffffL)
-        init { merges.forEachIndexed { rank, merge -> require(ranks.put(pairKey(merge.left, merge.right), rank) == null) } }
-
-        fun referenceEncode(bytes: ByteArray): IntArray {
-            if (bytes.isEmpty()) return IntArray(0)
-            val ids = ArrayList<Int>(bytes.size)
-            bytes.forEach { ids += it.toInt() and 0xff }
-            while (ids.size > 1) {
-                var bestRank = Int.MAX_VALUE
-                for (i in 0 until ids.lastIndex) {
-                    val rank = ranks[pairKey(ids[i], ids[i + 1])] ?: continue
-                    if (rank < bestRank) bestRank = rank
-                }
-                if (bestRank == Int.MAX_VALUE) break
-                val merge = merges[bestRank]
-                val mergedId = BYTE_TOKENS + bestRank
-                val nextIds = ArrayList<Int>(ids.size)
-                var i = 0
-                while (i < ids.size) {
-                    if (i + 1 < ids.size && ids[i] == merge.left && ids[i + 1] == merge.right) {
-                        nextIds += mergedId; i += 2
-                    } else nextIds += ids[i++]
-                }
-                ids.clear(); ids.addAll(nextIds)
-            }
-            return ids.toIntArray()
-        }
-
-        fun encode(bytes: ByteArray): IntArray {
-            if (bytes.isEmpty()) return IntArray(0)
-            val n = bytes.size
-            val token = IntArray(n) { bytes[it].toInt() and 0xff }
-            val prev = IntArray(n) { it - 1 }
-            val next = IntArray(n) { if (it + 1 < n) it + 1 else -1 }
-            val alive = BooleanArray(n) { true }
-            val queue = PriorityQueue<Event>(compareBy<Event> { it.rank }.thenBy { it.left })
-            fun enqueue(left: Int) {
-                if (left < 0 || !alive[left]) return
-                val right = next[left]
-                if (right < 0 || !alive[right]) return
-                val rank = ranks[pairKey(token[left], token[right])] ?: return
-                queue.add(Event(rank, left, right))
-            }
-            for (i in 0 until n - 1) enqueue(i)
-            while (queue.isNotEmpty()) {
-                val event = queue.poll()
-                val left = event.left; val right = event.right
-                if (!alive[left] || !alive[right] || next[left] != right || prev[right] != left) continue
-                val rank = ranks[pairKey(token[left], token[right])] ?: continue
-                if (rank != event.rank) continue
-                token[left] = BYTE_TOKENS + rank
-                alive[right] = false
-                val after = next[right]
-                next[left] = after
-                if (after >= 0) prev[after] = left
-                next[right] = -1
-                val before = prev[left]
-                enqueue(before)
-                enqueue(left)
-            }
-            val out = IntArray(n)
-            var count = 0
-            var cursor = 0
-            while (cursor >= 0) {
-                if (alive[cursor]) out[count++] = token[cursor]
-                cursor = next[cursor]
-            }
-            return out.copyOf(count)
-        }
-    }
-
     private fun writeU16Le(out: java.io.OutputStream, value: Int) {
         require(value in 0..0xffff); out.write(value and 0xff); out.write((value ushr 8) and 0xff)
     }
@@ -590,8 +458,4 @@ object RiftTrainDataTaskRunner {
     }
     private fun sha256Bytes(bytes: ByteArray): String = hex(MessageDigest.getInstance("SHA-256").digest(bytes))
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
-    private fun hexToBytes(value: String): ByteArray {
-        require(value.length % 2 == 0)
-        return ByteArray(value.length / 2) { i -> value.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
-    }
 }

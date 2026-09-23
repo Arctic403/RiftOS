@@ -2,11 +2,11 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-23.**
 
 ## Purpose
 
-RiftOS communicates with the standalone RiftLLM APK through one fixed local Android ContentProvider contract plus one fixed-purpose canary training-data controller.
+RiftOS communicates with the standalone RiftLLM APK through one fixed local Android ContentProvider contract, the frozen V1 canary training-data controller, and a separate fixed-path RiftTrainData V2 production-data candidate/qualification stack.
 
 RiftOS does not own RiftLLM model state/private storage, does not expose arbitrary Provider method names, and adds no dedicated MCP tool.
 
@@ -17,6 +17,18 @@ Primary provider client:
 
 Fixed canary-data controller:
 - `RiftTrainDataTaskRunner.kt`
+
+Shared frozen tokenizer runtime:
+- `RiftFrozenByteBpeV1.kt`
+
+RiftTrainData V2 candidate owners:
+- `RiftTrainDataV2Format.kt`
+- `RiftTrainDataV2TaskRunner.kt`
+- `RiftB2BottomKDedupV1.kt`
+- `RiftB2NearDedupIndexV1.kt`
+- `RiftB2ThresholdQualificationV1.kt`
+- `RiftB2ThresholdQualificationTask.kt`
+- `RiftTrainDataV2AdversarialLab.kt`
 
 Live shell routing:
 - `RiftNativeShellServices.kt`
@@ -155,8 +167,18 @@ Current shell provides:
 - train-data-remote-status
 - train-canary-start
 - train-canary-status
+- train-v2-status
+- train-v2-build
+- train-v2-build-status
+- train-v2-build-cancel
+- train-v2-dedup-qualify-status
+- train-v2-dedup-qualify-start
+- train-v2-dedup-qualify-job-status
+- train-v2-dedup-qualify-cancel
+- train-v2-adversarial-status
+- train-v2-adversarial-lab
 
-During this audit stale aliases that called nonexistent Provider methods were corrected.
+The `train-v2-*` routes are local fixed-path RiftOS qualification/build owners; they do not widen the RiftLLM Provider method catalog and do not accept caller-selected filesystem paths. During this audit stale aliases that called nonexistent Provider methods were corrected.
 
 ## Preview / publish
 
@@ -284,6 +306,52 @@ Only then is `train_canary_start` called with the pack SHA.
 
 The controller does not mark this pack as production pretraining eligible.
 
+## RiftTrainData V2 production-data candidate
+
+The V2 lane is separate from the frozen V1 canary path. It does not change the Provider upload/canary contract and it does not make the current corpus production eligible.
+
+Fixed owners:
+- `RiftFrozenByteBpeV1` — one runtime authority for the frozen B2 artifact/parser/fast+reference encoders;
+- `RiftTrainDataV2Format` — canonical binary pack writer/parser, random-access index and deep validation;
+- `RiftTrainDataV2TaskRunner` — fixed-path immutable generation builder/status/cancel owner;
+- `RiftB2BottomKDedupV1` — 13-token / bottom-128 deterministic sketch and integer similarity contract;
+- `RiftB2NearDedupIndexV1` — disk-backed cross-split comparator with fail-closed work bounds;
+- `RiftB2ThresholdQualificationV1` + `RiftB2ThresholdQualificationTask` — labeled threshold evidence only;
+- `RiftTrainDataV2AdversarialLab` — current-APK parser corruption proof.
+
+V2 invariants:
+- exact frozen architecture/tokenizer identity;
+- train/validation/challenge are separate immutable packs;
+- repository/source-group isolation determines train-vs-validation assignment;
+- challenge material is independently isolated;
+- global exact source-id/sample/content dedup uses bounded SQLite state rather than unbounded RAM;
+- pack headers, generation descriptor, canonical provenance, final manifest and CURRENT pointer are cross-validated;
+- generation files are synced, the staging directory is fsynced, publication is atomic, the generations parent is fsynced, the moved generation is revalidated, then CURRENT is atomically replaced and its parent fsynced;
+- all V2 fixed paths reject traversal/symlink substitution;
+- each record is bounded to the qualified 2048-token context and source records are never silently truncated.
+
+Near-dedup candidate:
+- `rift-b2-bottomk-v1`: 13-token shingles, SHA-256-derived 64-bit fingerprints, bottom-128 unique sketch;
+- global cross-split comparison is implemented with a bounded SQLite inverted index;
+- successful comparison records candidate-pair count, positive-pair count, maximum score/pair and deterministic histogram;
+- the comparator fails closed above 16,000,000 indexed fingerprints or 5,000,000 scored candidate pairs and checks cancellation during hot loops;
+- threshold freeze is separate: the fixed `near-dedup-cases.jsonl` qualification lane computes only an admissible integer interval from labeled near-duplicate/distinct evidence;
+- threshold evidence is valid only when its input SHA, frozen tokenizer identity and current installed APK SHA-256 still match; `train-v2-status` exposes `thresholdEvidenceExists`, `thresholdEvidenceValid` and `thresholdQualifiedIntervalExists` separately so file presence cannot be mistaken for a passed qualification gate.
+
+Adversarial parser proof:
+- `train-v2-adversarial-lab` builds a valid control with the real V2 writer/parser;
+- malformed cases cover truncation, trailing bytes, header corruption, nonzero index-reserved bytes and BOS-boundary corruption;
+- deep index/BOS cases repair their affected region SHA-256 first so rejection must reach the ABI invariant rather than stop at the checksum layer;
+- persisted evidence is accepted only for the same package/version and exact installed APK SHA-256.
+
+Current qualification state:
+- `productionPretrainingEligible=false`;
+- near-dedup threshold is not frozen and rejection is not yet enabled;
+- labeled threshold corpus/evidence is still required;
+- installed-device adversarial evidence must be valid for the current APK;
+- Hardware Target A streaming/storage evidence remains required;
+- V2 must remain fail-closed until every production gate is explicitly frozen.
+
 ## Retired Experimental CLI text encoder
 
 The former `RiftTextEncoderTaskRunner` / `RiftExperimentalCli` path was removed during the Native RiftCLI reset. No replacement tokenizer authority was added to this bridge.
@@ -311,7 +379,10 @@ The bridge itself does not widen MCP authority.
 - implemented the previously missing native Settings pairing/status/unpair surface;
 - retained shell rejection of pairing-token arguments;
 - exposed existing fixed build cancellation as `train-data-build-cancel`;
-- confirmed frozen canary controller remains fixed-input and was not executed.
+- extracted one shared frozen B2 runtime and kept the V1 canary lane on fast-vs-reference parity;
+- added the separate fixed-path RiftTrainData V2 binary format/builder, exact/group-safe dedup, bounded global near-dedup comparator, threshold qualification task and adversarial parser lab;
+- added current-input/current-APK evidence binding for threshold/adversarial qualification and immutable deep-validated generation publication;
+- confirmed frozen canary controller remains fixed-input and `productionPretrainingEligible` remains false.
 
 ## Critical invariants
 
@@ -329,7 +400,12 @@ The bridge itself does not widen MCP authority.
 - one cancellable build at a time;
 - upload uses exact 192 KiB chunk contract and cumulative acknowledgements;
 - canary starts only from matching local/remote pack SHA;
-- productionPretrainingEligible remains false;
+- V2 accepts no caller-selected project/input/output path and never reuses V1 canary purpose/eligibility semantics;
+- V2 descriptor/provenance/packs/manifest/CURRENT identities are deep-cross-validated before publication;
+- V2 exact dedup is global across source/challenge inputs and source groups cannot cross train/validation/challenge roles;
+- global near-dedup work is fail-closed at 16,000,000 indexed fingerprints and 5,000,000 candidate pairs;
+- threshold/adversarial evidence is rejected when its input/tokenizer/current APK identity is stale;
+- productionPretrainingEligible remains false until every V2 policy/threshold/device/parser gate is frozen;
 - frozen data is not rerun merely to audit bridge source.
 
 ## Failure signatures
@@ -343,7 +419,13 @@ The bridge itself does not widen MCP authority.
 - build accepts different tokenizer/shard hash -> frozen-input regression;
 - build has no reachable cancellation -> task-lifecycle regression;
 - remote append acknowledgement drifts but upload continues -> transfer-integrity regression;
-- canary starts with different remote SHA -> canary-integrity regression.
+- canary starts with different remote SHA -> canary-integrity regression;
+- V2 accepts a caller-selected path or symlink-substituted fixed path -> authority/confinement regression;
+- V2 CURRENT points at a generation that was not deep-validated after atomic publication -> publication regression;
+- V2 pack/descriptor/manifest/provenance identities disagree but status/build still succeeds -> generation-integrity regression;
+- threshold/adversarial evidence remains valid after labeled input or installed APK bytes change -> stale-evidence regression;
+- near-dedup silently truncates work above its fingerprint/pair ceiling -> qualification-integrity regression;
+- V2 reports `productionPretrainingEligible=true` before frozen threshold/policy/device/parser evidence -> production-gate regression.
 
 ## Fix map
 
@@ -354,6 +436,18 @@ Secure pairing UI -> `RiftNativeWorkspaceApps.kt`.
 Shell command mapping -> `RiftNativeShellServices.kt`.
 
 Fixed canary pack build/upload/start -> `RiftTrainDataTaskRunner.kt`.
+
+Frozen B2 artifact/runtime parity -> `RiftFrozenByteBpeV1.kt`.
+
+RiftTrainData V2 binary ABI + parser/writer -> `RiftTrainDataV2Format.kt`.
+
+V2 fixed-path generation build/status/publication -> `RiftTrainDataV2TaskRunner.kt`.
+
+V2 bottom-k sketches/global comparator -> `RiftB2BottomKDedupV1.kt` + `RiftB2NearDedupIndexV1.kt`.
+
+V2 threshold evidence -> `RiftB2ThresholdQualificationV1.kt` + `RiftB2ThresholdQualificationTask.kt`.
+
+V2 parser corruption proof/current-APK evidence -> `RiftTrainDataV2AdversarialLab.kt`.
 
 Retired Experimental CLI text encoder -> removed; no active owner in RiftOS.
 
@@ -373,6 +467,14 @@ Second source audit must verify:
 - single-job cancellation;
 - 192 KiB upload contract and ack checks;
 - local/remote canary SHA equality;
+- all fixed `train-v2-*` shell routes and absence of caller-selected path parameters;
+- shared B2 fast/reference parity and exact frozen artifact identity;
+- V2 canonical pack/header/index/record/provenance/descriptor/manifest/CURRENT cross-validation;
+- global source-id/sample/content dedup and source-group split isolation;
+- bounded global near-dedup comparator, fail-closed work ceilings and cancellation;
+- threshold evidence current-input/current-tokenizer/current-APK validation;
+- adversarial parser evidence exact-case/current-APK validation;
+- `productionPretrainingEligible=false` until explicit freeze/device gates pass;
 - no direct local-agent/MCP expansion.
 
-Installed-device validation is still required for actual ContentProvider visibility, token pairing, process restart persistence, upload and canary lifecycle.
+Installed-device validation is still required for actual ContentProvider visibility, token pairing, process restart persistence, upload/canary lifecycle, V2 adversarial-lab evidence and Hardware Target A production-pack streaming/storage proof.
