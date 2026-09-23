@@ -868,7 +868,7 @@ Current source provides:
 - explicit API-surface classification using the existing private/internal visibility rule;
 - query seeds by exact `symbolId`, exact symbol name, or matching path;
 - one-pass bounded reference evidence for selected seed symbol names, filtered through `RiftSourceIntelligenceV2.referenceCodeMask()` so supported-language comments/string-like regions do not become false references;
-- seed-relevant candidate filtering: same-file symbol candidates take precedence, otherwise only candidates in resolved local dependency targets are considered; unrelated same-name matches are counted in `ignoredNameMatches` and do not consume the bounded reference evidence, while multi-candidate seed-relevant pools remain explicitly ambiguous;
+- seed-relevant candidate filtering: same-file symbol candidates take precedence, otherwise only candidates in resolved local dependency targets are considered; unrelated same-name matches are counted in `ignoredNameMatches` and do not consume the bounded reference evidence, while multi-candidate seed-relevant pools remain explicitly ambiguous; the 1024-reference analysis bound is checked only after code-position, definition and seed-relevance filtering, immediately before a real reference row is emitted;
 - caller ownership from the smallest indexed symbol range containing the reference line;
 - current local dependency reverse edges, resolved reference reverse edges and type/interface reverse edges;
 - type relation extraction for `extends`, `implements`, Kotlin inheritance/interface lists and C++ inheritance, with explicit resolved/unresolved/ambiguous status;

@@ -19,6 +19,7 @@ These scripts are fast source/protocol regression tests run by root `npm run che
 - `test-rift-dev-lab.mjs` — native Dev Lab staging/snapshot/guarded-publish regression contract.
 - `test-rift-ai-adapters.mjs` — AI site adapter contract.
 - `test-rift-raw-protocol.mjs` — browser raw tool-call parser/protocol.
+- `test-rift-mcp-cancellation.mjs` — locks the end-to-end MCP caller-cancellation contract: HTTP AbortSignal propagation, retry-waiter removal, `mcp.cancel` device signaling, server execution ownership, and sandbox/native-shell Future interruption.
 - `test-rift-shell-batch.mjs` — regression lock proving RiftShell batch remains fail-fast disabled and the retired batch implementation cannot silently regain mutation authority.
 - `test-rift-shell-bridge.mjs` — native RiftShell migration guard: process-owned shell authority, no renderer fallback, headless QuickJS and browser-only Chromium ownership; WebView exclusion is based on actual WebKit dependencies rather than harmless comments/text.
 - `test-rift-shell-git.mjs` — native RiftGit source contract: Keystore credential boundary, bounded GitHub transport, metadata validation, stable atomic push, staged pull/switch/clone rollback, path confinement and Workspace Records checkpoints. Retained `src/riftgit.js` is not treated as live authority.

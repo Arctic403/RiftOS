@@ -90,7 +90,7 @@ The server deadline is intentionally outside the local execution deadlines and i
 
 The ordering is an invariant: an outer transport must not report failure while an inner mutation is still expected to keep running.
 
-`RiftBoundedAsync` guarantees exactly-once terminal callbacks for local worker owners, cancels the submitted Future on timeout, and carries a cooperative monotonic `RiftDeadline` through nested filesystem/runtime work.
+`RiftBoundedAsync` guarantees exactly-once terminal callbacks for local worker owners, returns a `RiftAsyncHandle` that can explicitly cancel the submitted Future, cancels that Future on timeout, and carries a cooperative monotonic `RiftDeadline` through nested filesystem/runtime work. Relay-scoped in-flight requests retain this execution handle, so `mcp.cancel`, relay-socket loss, or a server timeout can interrupt the actual ToolHost/sandbox/native-shell worker instead of merely discarding its eventual reply.
 
 ## Error behavior
 

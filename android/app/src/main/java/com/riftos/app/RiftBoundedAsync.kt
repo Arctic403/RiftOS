@@ -16,6 +16,39 @@ import java.util.concurrent.atomic.AtomicReference
  * not when a queued worker eventually begins. Timeout interrupts the worker and cooperative
  * long-running code can call RiftDeadline.check() to stop promptly.
  */
+class RiftAsyncHandle internal constructor(
+    private val terminal: AtomicBoolean = AtomicBoolean(false),
+    private val taskRef: AtomicReference<Future<*>?> = AtomicReference(null),
+    private val timeoutRef: AtomicReference<ScheduledFuture<*>?> = AtomicReference(null)
+) {
+    fun cancel(): Boolean {
+        if (!terminal.compareAndSet(false, true)) return false
+        timeoutRef.get()?.cancel(false)
+        taskRef.get()?.cancel(true)
+        return true
+    }
+
+    internal fun attachTask(task: Future<*>) {
+        taskRef.set(task)
+        if (terminal.get()) task.cancel(true)
+    }
+
+    internal fun attachTimeout(timeout: ScheduledFuture<*>) {
+        timeoutRef.set(timeout)
+        if (terminal.get()) timeout.cancel(false)
+    }
+
+    internal fun tryComplete(): Boolean = terminal.compareAndSet(false, true)
+
+    internal fun cancelTimeout() {
+        timeoutRef.get()?.cancel(false)
+    }
+
+    companion object {
+        fun completed(): RiftAsyncHandle = RiftAsyncHandle(AtomicBoolean(true))
+    }
+}
+
 internal object RiftBoundedAsync {
     fun <T> submit(
         executor: ExecutorService,
@@ -25,11 +58,9 @@ internal object RiftBoundedAsync {
         failureValue: (Throwable) -> T,
         work: () -> T,
         reply: (T) -> Unit
-    ) {
+    ): RiftAsyncHandle {
         require(timeoutMs > 0L) { "timeoutMs must be positive" }
-        val terminal = AtomicBoolean(false)
-        val taskRef = AtomicReference<Future<*>?>()
-        val timeoutRef = AtomicReference<ScheduledFuture<*>?>()
+        val handle = RiftAsyncHandle()
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
 
         val task = try {
@@ -39,33 +70,33 @@ internal object RiftBoundedAsync {
                 } catch (error: Throwable) {
                     failureValue(error)
                 }
-                if (terminal.compareAndSet(false, true)) {
-                    timeoutRef.get()?.cancel(false)
+                if (handle.tryComplete()) {
+                    handle.cancelTimeout()
                     runCatching { reply(value) }
                 }
             }
         } catch (error: Throwable) {
-            if (terminal.compareAndSet(false, true)) runCatching { reply(failureValue(error)) }
-            return
+            if (handle.tryComplete()) runCatching { reply(failureValue(error)) }
+            return handle
         }
-        taskRef.set(task)
+        handle.attachTask(task)
 
         val timeout = try {
             watchdog.schedule({
-                if (terminal.compareAndSet(false, true)) {
-                    taskRef.get()?.cancel(true)
+                if (handle.tryComplete()) {
+                    task.cancel(true)
                     runCatching { reply(timeoutValue()) }
                 }
             }, timeoutMs, TimeUnit.MILLISECONDS)
         } catch (error: Throwable) {
-            taskRef.get()?.cancel(true)
-            if (terminal.compareAndSet(false, true)) {
+            task.cancel(true)
+            if (handle.tryComplete()) {
                 runCatching { reply(failureValue(error)) }
             }
-            return
+            return handle
         }
-        timeoutRef.set(timeout)
-        if (terminal.get()) timeout.cancel(false)
+        handle.attachTimeout(timeout)
+        return handle
     }
 }
 

@@ -172,6 +172,7 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - stale socket events ignored;
 - one bounded reconnect schedule;
 - relay request id forwarded for server retry dedupe;
+- `mcp.cancel` is accepted from the relay and cancels the matching server-owned execution; socket loss cancels every request owned by that socket;
 - local forwarding terminates within 70 seconds, before the public relay's 75-second timeout;
 - RiftCLI events use the process-wide bounded device ring and the existing WSS;
 - reconnect replay is sequence-based and does not give the relay execution authority;

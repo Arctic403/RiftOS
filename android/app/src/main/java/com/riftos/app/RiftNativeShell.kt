@@ -135,13 +135,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         )
     }
 
-    override fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit) {
+    override fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit): RiftAsyncHandle {
         if (closed) {
             reply(errorResult(cwd ?: "/", "Native RiftShell is closed"))
-            return
+            return RiftAsyncHandle.completed()
         }
         val requestedCwd = normalizeDisplay(cwd ?: "/")
-        RiftBoundedAsync.submit(
+        return RiftBoundedAsync.submit(
             executor = worker,
             watchdog = watchdog,
             timeoutMs = SHELL_TIMEOUT_MS,

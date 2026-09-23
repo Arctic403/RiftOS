@@ -80,6 +80,15 @@ assert.match(sandbox, /"propagation-depth-bound"/);
 assert.match(sandbox, /"propagation-closure-node-bound"/);
 assert.match(sandbox, /"propagation-closure-edge-bound"/);
 assert.match(sandbox, /"propagation-reference-bound"/);
+const relevantSeedIndex = sandbox.indexOf('if (!relevantToSeed) {');
+const referenceBoundIndex = sandbox.indexOf('if (referenceCount >= MAX_PROPAGATION_REFERENCES) {');
+const referenceEmitIndex = sandbox.indexOf('referenceRows.put(JSONObject()', referenceBoundIndex);
+assert.ok(
+  relevantSeedIndex >= 0 &&
+  referenceBoundIndex > relevantSeedIndex &&
+  referenceEmitIndex > referenceBoundIndex,
+  'reference bound must run after lexical/seed filtering and immediately before real row emission'
+);
 assert.match(sandbox, /"propagation-caller-bound"/);
 assert.match(sandbox, /"propagation-seed-bound"/);
 assert.match(sandbox, /"propagation-symbol-bound"/);

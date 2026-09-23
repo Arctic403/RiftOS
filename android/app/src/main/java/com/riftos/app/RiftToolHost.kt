@@ -339,6 +339,14 @@ class RiftToolHost(
         callAsyncInternal(rawName, args, bypassAccess = false, debugContext = debugContext, rawReply = reply)
     }
 
+    internal fun callAsyncCancellable(
+        rawName: String,
+        args: JSONObject,
+        debugContext: RiftDebugContext?,
+        reply: (JSONObject) -> Unit
+    ): RiftAsyncHandle =
+        callAsyncInternal(rawName, args, bypassAccess = false, debugContext = debugContext, rawReply = reply)
+
     internal fun validateCliBatchTool(rawName: String, args: JSONObject): JSONObject {
         val name = canonicalName(rawName)
         val forbidden = setOf(
@@ -766,7 +774,7 @@ class RiftToolHost(
         bypassAccess: Boolean,
         debugContext: RiftDebugContext?,
         rawReply: (JSONObject) -> Unit
-    ) {
+    ): RiftAsyncHandle {
         val name = canonicalName(rawName)
         val method = methodFor(name)
         val hostSpan = debugHub.start(
@@ -792,7 +800,7 @@ class RiftToolHost(
                 val error = "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", error))
-                return
+                return RiftAsyncHandle.completed()
             }
             try {
                 val value = debugHub.query(args)
@@ -803,21 +811,21 @@ class RiftToolHost(
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", error))
             }
-            return
+            return RiftAsyncHandle.completed()
         }
         if (name == "rift_shell_exec") {
             val command = args.optString("command").trim()
             if (command.isBlank()) {
                 recordAudit(name, args, false, "command required")
                 reply(JSONObject().put("ok", false).put("error", "command required"))
-                return
+                return RiftAsyncHandle.completed()
             }
             val shellCommandName = command.takeWhile { !it.isWhitespace() }.lowercase()
             if (shellCommandName == "batch") {
                 val error = "DISABLED: RiftShell batch commands are disabled because they can hang the agent/runtime. Do not use batch or batch --dry-run; use individual commands or MCP file operations instead."
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("error", error))
-                return
+                return RiftAsyncHandle.completed()
             }
             if (!bypassAccess && !isAllowed(name, args)) {
                 val error = when {
@@ -827,10 +835,17 @@ class RiftToolHost(
                 }
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("error", error))
-                return
+                return RiftAsyncHandle.completed()
+            }
+            val executor = shellExecutor
+            if (executor == null) {
+                val error = "RiftShell executor unavailable"
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("error", error))
+                return RiftAsyncHandle.completed()
             }
             val startedAt = SystemClock.elapsedRealtime()
-            shellExecutor?.execute(command, args.optString("cwd", "/")) { result ->
+            return executor.execute(command, args.optString("cwd", "/")) { result ->
                 val ok = result.optBoolean("ok", false)
                 val error = if (ok) null else result.optString("error", "RiftShell execution failed")
                 recordAudit(name, args, ok, error, SystemClock.elapsedRealtime() - startedAt)
@@ -844,18 +859,13 @@ class RiftToolHost(
                 } else {
                     reply(JSONObject().put("ok", false).put("error", error ?: "RiftShell execution failed"))
                 }
-            } ?: run {
-                val error = "RiftShell executor unavailable"
-                recordAudit(name, args, false, error)
-                reply(JSONObject().put("ok", false).put("error", error))
             }
-            return
         }
         if (method == null) {
             val error = "Unsupported Rift tool: $rawName"
             recordAudit(rawName.take(120), args, false, error)
             reply(JSONObject().put("ok", false).put("name", rawName).put("error", error))
-            return
+            return RiftAsyncHandle.completed()
         }
 
         val normalizedArgs = try {
@@ -864,7 +874,7 @@ class RiftToolHost(
             val message = error.message ?: "Invalid Rift tool arguments"
             recordAudit(name, args, false, message)
             reply(JSONObject().put("ok", false).put("name", name).put("error", message))
-            return
+            return RiftAsyncHandle.completed()
         }
 
         if (name == "rift_workspace_exec") {
@@ -873,7 +883,7 @@ class RiftToolHost(
                 val error = "DISABLED: Rift Code Mode multi-op/batch execution is disabled because it can hang the agent/runtime. Send exactly one operation per rift_workspace_exec call."
                 recordAudit(name, normalizedArgs, false, error)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", error))
-                return
+                return RiftAsyncHandle.completed()
             }
         }
 
@@ -889,7 +899,7 @@ class RiftToolHost(
             }
             recordAudit(name, normalizedArgs, false, error)
             reply(JSONObject().put("ok", false).put("name", name).put("error", error))
-            return
+            return RiftAsyncHandle.completed()
         }
 
         val requestId = "tool-${System.currentTimeMillis()}-${System.nanoTime()}"
@@ -898,7 +908,7 @@ class RiftToolHost(
             .put("method", method)
             .put("args", normalizedArgs)
 
-        sandbox.handleAsync(request.toString()) { raw ->
+        return sandbox.handleAsync(request.toString()) { raw ->
             val response = runCatching { JSONObject(raw) }.getOrNull()
             if (response?.optBoolean("ok", false) == true) {
                 recordAudit(name, normalizedArgs, true, null)

@@ -6,6 +6,79 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.53 — End-to-end MCP caller cancellation and orphan-work prevention
+
+The live MCP/relay audit found a transport ownership split that could make ChatGPT appear hung while RiftOS continued mutating the workspace. SSE GET requests already propagated the upstream `AbortSignal`, but public MCP POST forwarding did not. Once an `mcp.request` reached the device, cancellation of the originating HTTP/model turn could therefore discard the response path without cancelling the local execution. A later chat turn could see source changes that were never returned as tool results to the interrupted turn.
+
+Patch 10.53 closes that ownership gap end-to-end:
+- public MCP POST forwarding now carries `request.signal` into the relay room;
+- every deduplicated relay waiter owns an independent abort listener, so one retry can disappear without cancelling surviving callers;
+- when the final waiter disappears, or the 75-second relay timeout wins, the relay removes the pending request and sends `mcp.cancel` over the existing device WebSocket;
+- `RiftMcpRelayClient` tracks active request ownership, accepts `mcp.cancel`, and cancels all requests owned by a socket when that socket closes or fails;
+- `RiftMcpServer` retains a real `RiftAsyncHandle` for each relay-scoped execution and cancels it on explicit cancellation or server timeout;
+- `RiftToolHost`, `RiftToolSandbox`, `RiftShellExecutor` and `RiftNativeShell` now propagate the same cancellation authority down to the actual bounded worker Future;
+- `RiftAsyncHandle.cancel()` cancels the watchdog and interrupts the worker Future, reusing the existing cooperative `RiftDeadline`/thread-interruption path rather than adding a parallel cancellation mechanism;
+- intentionally detached RiftCLI jobs remain a separate job-owned lane and are not converted into caller-owned synchronous MCP work.
+
+Regression coverage:
+- `scripts/test-rift-mcp-cancellation.mjs` locks the full AbortSignal -> waiter -> `mcp.cancel` -> server execution -> Future interruption chain;
+- `validate-rift-transport.mjs` now has an explicit end-to-end, retry-aware MCP cancellation invariant;
+- the new regression is included in `npm run check:transport`.
+
+Local source proof so far:
+- `riftbuild validate /workspace/RiftOS-main/android` reports `sourceReady=true`, `androidGradleProject=true` and all structural Android checks green;
+- no release/installed APK proof has been claimed yet; Kotlin compilation and the full Node/source-check chain still require the normal builder/CI pass.
+
+Rollback scope is limited to the relay cancellation protocol, MCP request ownership handles, ToolHost/sandbox/native-shell async return handles, the dedicated regression, and their documentation.
+
+## Patch 10.52 — N1.8.2 exact reference-bound semantics
+
+Installed source `4ae5329cfe79b6d7b36f391fdc91f04b25a9f2b1` (Builder run 313) advanced the N1.8.2 installed torture matrix substantially before exposing one remaining exact-bound defect.
+
+Installed 10.51 proof completed before this patch:
+- Kotlin constructor/property colons no longer become bogus inheritance relations; real `Api -> Impl -> Use` propagation remains correct;
+- exact `symbolId` queries isolate references/callers/type evidence to the selected seed chain; unrelated same-name evidence is excluded;
+- same-file comments/string-like matches are removed from reference evidence and counted only in `ignoredNameMatches`;
+- cycle closure terminates deterministically without recursion blow-up, and same-file overload calls remain explicitly ambiguous rather than guessed;
+- caller +1 behavior still fails closed at 512 callers, and the exact 512-caller boundary is complete;
+- reverse-closure node bound is exact: 1025 potential paths fails only with `propagation-closure-node-bound`, while exact 1024 paths is complete;
+- reverse-edge bound is exact: 4097 attempted edges fails only with `propagation-closure-edge-bound`, while exact 4096 edges is complete;
+- the exact 4096-edge graph is warm-deterministic on a clean 257-file fixture at propagation SHA-256 `d2de4151c6db1f384460fc4b63f97978adea489f9f6933cca50fe44958bb97ca`; two consecutive installed reads reproduced `complete=true`, 257 closure paths and exactly 4096 reverse edges with no incomplete reasons.
+
+Remaining defect found by exact reference-bound torture:
+- the +1 reference fixture correctly failed closed at the 1024-reference cap;
+- however, a fixture containing exactly 1024 real seed-relevant references also returned `propagation-reference-bound`;
+- root cause: the bound check ran before code-position, definition and seed-relevance filtering, so a later harmless symbol-name occurrence could trip the cap even though no 1025th real reference row would be emitted.
+
+Patch 10.52 fixes the contract:
+- `referenceCount >= MAX_PROPAGATION_REFERENCES` is now evaluated only after code-mask, definition and seed-relevance filtering, immediately before a real reference row is emitted;
+- ignored lexical matches, symbol definitions and unrelated same-name matches therefore cannot consume or trip the reference-analysis bound;
+- `scripts/test-rift-propagation-v1.mjs` permanently verifies this ordering: the reference-bound check must occur after `!relevantToSeed` filtering and before `referenceRows.put(...)`;
+- the repository-consistency observer spec and Builder validation docs now define the 1024-reference limit using the same emitted-row semantics.
+
+Local source proof after the fix:
+- the propagation regression parses cleanly;
+- `riftbuild validate android` reports `sourceReady=true` with all Android project checks green;
+- N1.8.0 remains `complete=true` with zero findings across 271 files;
+- N1.8.1 remains `complete=true`, `clean=true`, 154 syntax-checked files, zero invalid files and zero findings.
+
+N1.8.2 remains unpromoted. The next installed build must prove exact 1024 references complete, +1 still fail-closed, then finish restart persistence and any remaining exact-bound continuity checks before promotion.
+## Patch 10.51 — RiftTrainData V2 Kotlin/Android build compatibility hotfix
+
+Builder source `373ed95feb72e1c2af8f51ad8434a04b52643d25` passed the full Node/source-check chain, documentation validation, N1.8.0/N1.8.1/N1.8.2 regressions and Gradle source validation, then failed only at `:app:compileReleaseKotlin` on seven RiftTrainData V2 compatibility errors.
+
+Compiler fixes:
+- replaced three unavailable Android `OsConstants.O_DIRECTORY` uses with `OsConstants.O_RDONLY` in directory-fsync helpers; every helper already requires an existing directory before `Os.open`, so the directory-only precondition remains explicit while using the Android API surface actually exposed to Kotlin;
+- made four heterogeneous SQLite `execSQL` bind arrays explicit as `arrayOf<Any?>(...)` so Kotlin 2.x does not infer a reified `Comparable & Serializable` intersection type;
+- affected source is limited to `RiftB2NearDedupIndexV1.kt`, `RiftB2ThresholdQualificationTask.kt`, `RiftTrainDataV2AdversarialLab.kt` and `RiftTrainDataV2TaskRunner.kt`.
+
+Post-fix local proof:
+- `riftbuild validate android` reports `sourceReady=true` and all Android project checks green; the only prepared-package blocker is the expected absent prepared directory;
+- N1.8.0 consistency remains `complete=true` with zero findings across 271 repository files;
+- N1.8.1 integrity remains `complete=true`, `clean=true`, 154 syntax-checked files, zero invalid files, zero missing/ambiguous local imports and zero findings;
+- targeted source sweep confirms no remaining `OsConstants.O_DIRECTORY` in the four affected files and the compiler-reported heterogeneous bind arrays are explicitly typed.
+
+No N1.8 promotion state changes in this patch. Builder Kotlin compilation remains the next authority for the full APK build.
 ## Patch 10.50 — RiftTrainData V2 candidate + propagation reference precision hardening
 
 This source checkpoint reconciles two source-first work streams without claiming installed promotion.

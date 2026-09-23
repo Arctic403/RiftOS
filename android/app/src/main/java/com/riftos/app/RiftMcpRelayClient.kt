@@ -7,6 +7,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -39,6 +40,12 @@ class RiftMcpRelayClient(
         .retryOnConnectionFailure(true)
         .build()
     private val lock = Any()
+    private class ActiveMcpRequest(
+        val socket: WebSocket,
+        val terminal: AtomicBoolean = AtomicBoolean(false),
+        @Volatile var timeout: ScheduledFuture<*>? = null
+    )
+    private val activeMcpRequests = ConcurrentHashMap<String, ActiveMcpRequest>()
 
     @Volatile private var desiredRunning = false
     @Volatile private var state = "disabled"
@@ -183,6 +190,7 @@ class RiftMcpRelayClient(
                     JSONObject().put("type", "device.pong").put("at", System.currentTimeMillis()).toString()
                 )
                 "mcp.request" -> handleMcpRequest(webSocket, message)
+                "mcp.cancel" -> handleMcpCancel(message)
                 "mcp.notification" -> handleMcpNotification(message)
                 "cli.replay.request" -> {
                     val after = message.optLong("after", 0L).coerceAtLeast(0L)
@@ -219,6 +227,7 @@ class RiftMcpRelayClient(
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            cancelMcpRequestsForSocket(webSocket, "relay socket closed")
             if (!clearCurrent(webSocket)) return
             connectedAt = 0L
             debug(
@@ -230,6 +239,7 @@ class RiftMcpRelayClient(
         }
 
         override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
+            cancelMcpRequestsForSocket(webSocket, "relay socket failed")
             if (!clearCurrent(webSocket)) return
             connectedAt = 0L
             debug(
@@ -255,16 +265,28 @@ class RiftMcpRelayClient(
             sendProtocolError(webSocket, requestId.takeIf { it.isNotBlank() }, "mcp.request requires requestId and payload")
             return
         }
-        val terminal = AtomicBoolean(false)
-        val timeout = scheduler.schedule({
-            if (terminal.compareAndSet(false, true) && isCurrent(webSocket)) {
-                sendProtocolError(webSocket, requestId, "Local MCP forwarding timed out")
+
+        val active = ActiveMcpRequest(webSocket)
+        if (activeMcpRequests.putIfAbsent(requestId, active) != null) {
+            sendProtocolError(webSocket, requestId, "Duplicate active MCP request")
+            return
+        }
+
+        active.timeout = scheduler.schedule({
+            if (active.terminal.compareAndSet(false, true)) {
+                activeMcpRequests.remove(requestId, active)
+                server.cancelRequest(requestId)
+                if (isCurrent(webSocket)) {
+                    sendProtocolError(webSocket, requestId, "Local MCP forwarding timed out")
+                }
             }
         }, REQUEST_FORWARD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+
         runCatching {
             server.handleAsync(payload, requestId) { result ->
-                if (!terminal.compareAndSet(false, true)) return@handleAsync
-                timeout.cancel(false)
+                if (!active.terminal.compareAndSet(false, true)) return@handleAsync
+                activeMcpRequests.remove(requestId, active)
+                active.timeout?.cancel(false)
                 if (!isCurrent(webSocket)) return@handleAsync
                 val responseText = JSONObject()
                     .put("type", "mcp.response")
@@ -278,12 +300,50 @@ class RiftMcpRelayClient(
                 webSocket.send(responseText)
             }
         }.onFailure { error ->
-            if (terminal.compareAndSet(false, true)) {
-                timeout.cancel(false)
+            if (active.terminal.compareAndSet(false, true)) {
+                activeMcpRequests.remove(requestId, active)
+                active.timeout?.cancel(false)
+                server.cancelRequest(requestId)
                 if (isCurrent(webSocket)) {
                     sendProtocolError(webSocket, requestId, error.message ?: "Local MCP execution failed")
                 }
             }
+        }
+    }
+
+    private fun handleMcpCancel(envelope: JSONObject) {
+        val requestId = envelope.optString("requestId").trim()
+        if (requestId.isBlank()) return
+
+        val active = activeMcpRequests.remove(requestId)
+        if (active != null) {
+            active.timeout?.cancel(false)
+            active.terminal.compareAndSet(false, true)
+        }
+        val cancelled = server.cancelRequest(requestId)
+        debug(
+            operation = "mcp.cancel",
+            outcome = if (cancelled || active != null) "cancelled" else "not_found",
+            attributes = mapOf("requestId" to requestId.take(160))
+        )
+    }
+
+    private fun cancelMcpRequestsForSocket(webSocket: WebSocket, reason: String) {
+        val matching = activeMcpRequests.entries
+            .filter { it.value.socket === webSocket }
+        matching.forEach { entry ->
+            val requestId = entry.key
+            val active = entry.value
+            if (!activeMcpRequests.remove(requestId, active)) return@forEach
+            active.timeout?.cancel(false)
+            active.terminal.compareAndSet(false, true)
+            server.cancelRequest(requestId)
+            debug(
+                operation = "mcp.cancel",
+                outcome = "socket_lost",
+                message = reason,
+                attributes = mapOf("requestId" to requestId.take(160))
+            )
         }
     }
 

@@ -132,9 +132,11 @@ Outgoing Android mcp.response envelopes are serialized and byte-checked before s
 
 REQUEST_TIMEOUT_MS = 75,000 ms.
 
-Timeout deletes the logical pending request and resolves every joined waiter with its own 504 relay-timeout response. The Worker timeout intentionally sits outside the 70-second Android forwarding watchdog, 65-second MCP server watchdog, 60-second shell deadline and 45-second sandbox deadline so transport failure cannot normally race ahead of an inner mutation.
+Timeout deletes the logical pending request, sends `mcp.cancel` to the connected device, removes every waiter abort listener and resolves every joined waiter with its own 504 relay-timeout response. The Worker timeout intentionally sits outside the 70-second Android forwarding watchdog, 65-second MCP server watchdog, 60-second shell deadline and 45-second sandbox deadline so transport failure cannot normally race ahead of an inner mutation.
 
-Active-device disconnect/error clears the current socket, clears every timer, resolves every pending request with 503 and empties the map.
+Public MCP POSTs propagate the caller `AbortSignal` into the relay room. Each retry/deduplicated HTTP waiter owns its own abort listener: one disconnected waiter is removed without disturbing surviving waiters, while loss of the final waiter immediately deletes the pending request and sends `mcp.cancel` over the device WebSocket. This prevents an abandoned ChatGPT/tool HTTP turn from silently leaving a normal MCP mutation running behind it.
+
+Active-device disconnect/error clears the current socket, clears every timer, removes waiter abort listeners, resolves every pending request with 503 and empties the map.
 
 Device replacement performs the same immediate pending failure before switching ownership.
 

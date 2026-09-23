@@ -233,9 +233,9 @@ internal class RiftToolSandbox(context: Context) {
         }
     }
 
-    fun handleAsync(raw: String, reply: (String) -> Unit) {
+    fun handleAsync(raw: String, reply: (String) -> Unit): RiftAsyncHandle {
         val id = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
-        RiftBoundedAsync.submit(
+        return RiftBoundedAsync.submit(
             executor = executor,
             watchdog = watchdog,
             timeoutMs = REQUEST_TIMEOUT_MS,
@@ -2031,11 +2031,6 @@ internal class RiftToolSandbox(context: Context) {
                 referenceText.split('\n').forEachIndexed { lineIndex, line ->
                     if (referenceTruncated) return@forEachIndexed
                     pattern.findAll(line).forEach matchLoop@{ match ->
-                        if (referenceCount >= MAX_PROPAGATION_REFERENCES) {
-                            referenceTruncated = true
-                            incompleteReasons += "propagation-reference-bound"
-                            return@matchLoop
-                        }
                         val absoluteIndex = lineOffset + match.range.first
                         if (codeMask.getOrNull(absoluteIndex) != true) {
                             ignoredNameMatches += 1
@@ -2070,6 +2065,11 @@ internal class RiftToolSandbox(context: Context) {
                         }
                         if (!relevantToSeed) {
                             ignoredNameMatches += 1
+                            return@matchLoop
+                        }
+                        if (referenceCount >= MAX_PROPAGATION_REFERENCES) {
+                            referenceTruncated = true
+                            incompleteReasons += "propagation-reference-bound"
                             return@matchLoop
                         }
                         if (status == "ambiguous") ambiguousReferences += 1

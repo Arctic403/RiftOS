@@ -7,6 +7,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /** Small in-process MCP JSON-RPC server backed by RiftToolHost. */
 class RiftMcpServer(
@@ -28,7 +29,8 @@ class RiftMcpServer(
     private data class RequestWaiter(val id: Any, val reply: (JSONObject) -> Unit)
     private class InFlightRequest(
         val waiters: MutableList<RequestWaiter>,
-        var timeout: ScheduledFuture<*>? = null
+        var timeout: ScheduledFuture<*>? = null,
+        var execution: RiftAsyncHandle? = null
     )
     private val requestLock = Any()
     private val watchdog = Executors.newSingleThreadScheduledExecutor()
@@ -85,6 +87,8 @@ class RiftMcpServer(
         }
         if (joinedInFlight) return
         val timeout = watchdog.schedule({
+            val execution = synchronized(requestLock) { inFlight[key]?.execution }
+            execution?.cancel()
             completeRequest(
                 key,
                 error(id, -32001, "Local MCP request timed out after ${REQUEST_TIMEOUT_MS}ms")
@@ -96,44 +100,79 @@ class RiftMcpServer(
         }
 
         try {
-            dispatch(request) { response -> completeRequest(key, response) }
+            val execution = dispatch(request) { response -> completeRequest(key, response) }
+            val retained = synchronized(requestLock) {
+                val pending = inFlight[key]
+                if (pending != null) {
+                    pending.execution = execution
+                    true
+                } else {
+                    false
+                }
+            }
+            if (!retained) execution.cancel()
         } catch (failure: Throwable) {
             completeRequest(key, error(id, -32603, failure.message ?: "Local MCP execution failed"))
         }
     }
 
+    fun cancelRequest(retryKey: String): Boolean {
+        val normalized = retryKey.trim()
+        if (normalized.isBlank()) return false
+        val prefix = "$normalized:"
+        val pending = synchronized(requestLock) {
+            val entry = inFlight.entries.firstOrNull { it.key.startsWith(prefix) } ?: return@synchronized null
+            inFlight.remove(entry.key)
+            entry.value
+        } ?: return false
+        pending.timeout?.cancel(false)
+        pending.execution?.cancel()
+        return true
+    }
+
     private fun dispatchBounded(request: JSONObject, reply: (JSONObject) -> Unit) {
         val id = request.opt("id") ?: JSONObject.NULL
         val terminal = AtomicBoolean(false)
+        val executionRef = AtomicReference<RiftAsyncHandle?>()
         val timeout = watchdog.schedule({
             if (terminal.compareAndSet(false, true)) {
+                executionRef.get()?.cancel()
                 reply(error(id, -32001, "Local MCP request timed out after ${REQUEST_TIMEOUT_MS}ms"))
             }
         }, REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         try {
-            dispatch(request) { response ->
+            val execution = dispatch(request) { response ->
                 if (terminal.compareAndSet(false, true)) {
                     timeout.cancel(false)
                     reply(response)
                 }
             }
+            executionRef.set(execution)
+            if (terminal.get()) execution.cancel()
         } catch (failure: Throwable) {
             if (terminal.compareAndSet(false, true)) {
                 timeout.cancel(false)
+                executionRef.get()?.cancel()
                 reply(error(id, -32603, failure.message ?: "Local MCP execution failed"))
             }
         }
     }
 
-    private fun dispatch(request: JSONObject, reply: (JSONObject) -> Unit) {
+    private fun dispatch(request: JSONObject, reply: (JSONObject) -> Unit): RiftAsyncHandle {
         val id = request.opt("id") ?: JSONObject.NULL
         val method = request.optString("method")
         val params = request.optJSONObject("params") ?: JSONObject()
 
-        when (method) {
-            "initialize" -> reply(success(id, initializeResult()))
-            "ping" -> reply(success(id, JSONObject()))
-            "notifications/initialized" -> Unit
+        return when (method) {
+            "initialize" -> {
+                reply(success(id, initializeResult()))
+                RiftAsyncHandle.completed()
+            }
+            "ping" -> {
+                reply(success(id, JSONObject()))
+                RiftAsyncHandle.completed()
+            }
+            "notifications/initialized" -> RiftAsyncHandle.completed()
             "tools/list" -> {
                 val tools = toolHost.tools()
                 val manifest = toolHost.manifest()
@@ -142,9 +181,13 @@ class RiftMcpServer(
                     .put("_meta", JSONObject()
                         .put("riftos/toolCount", manifest.getInt("count"))
                         .put("riftos/toolManifestHash", manifest.getString("sha256")))))
+                RiftAsyncHandle.completed()
             }
             "tools/call" -> handleToolCall(id, params, reply)
-            else -> reply(error(id, -32601, "Method not found: $method"))
+            else -> {
+                reply(error(id, -32601, "Method not found: $method"))
+                RiftAsyncHandle.completed()
+            }
         }
     }
 
@@ -207,11 +250,11 @@ class RiftMcpServer(
         else -> JSONObject.quote(value.toString())
     }
 
-    private fun handleToolCall(id: Any, params: JSONObject, reply: (JSONObject) -> Unit) {
+    private fun handleToolCall(id: Any, params: JSONObject, reply: (JSONObject) -> Unit): RiftAsyncHandle {
         val name = params.optString("name").trim()
         if (name.isBlank()) {
             reply(error(id, -32602, "tools/call requires a tool name"))
-            return
+            return RiftAsyncHandle.completed()
         }
         val args = params.optJSONObject("arguments") ?: JSONObject()
         val requestMeta = params.optJSONObject("_meta") ?: JSONObject()
@@ -224,7 +267,7 @@ class RiftMcpServer(
             traceId = modelCallId,
             attributes = mapOf("tool" to name)
         )
-        toolHost.callAsync(name, args, mcpSpan.context) { call ->
+        return toolHost.callAsyncCancellable(name, args, mcpSpan.context) { call ->
             val ok = call.optBoolean("ok", false)
             val rawValue = if (ok) call.opt("value") else null
             val image = if (name == "rift_shell_exec" && rawValue is JSONObject) {

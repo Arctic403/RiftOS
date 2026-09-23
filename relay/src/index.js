@@ -436,6 +436,7 @@ export default {
             "content-type": "application/json",
           },
           body: text,
+          signal: request.signal,
         }),
       );
     }
@@ -598,7 +599,7 @@ export class RiftRelayRoom {
         );
       }
 
-      return this.forwardMcp(payload);
+      return this.forwardMcp(payload, request.signal);
     }
 
     if (
@@ -1612,7 +1613,7 @@ export class RiftRelayRoom {
     }
   }
 
-  async forwardMcp(payload) {
+  async forwardMcp(payload, signal) {
     const socket = this.socket;
 
     if (!socket) {
@@ -1621,6 +1622,15 @@ export class RiftRelayRoom {
         -32002,
         "RiftOS device is offline",
         503,
+      );
+    }
+
+    if (signal?.aborted) {
+      return rpcError(
+        payload?.id,
+        -32007,
+        "MCP caller disconnected",
+        499,
       );
     }
 
@@ -1638,6 +1648,57 @@ export class RiftRelayRoom {
             )}-${await requestFingerprint(payload)}`
         : crypto.randomUUID();
 
+    const addWaiter = (pending) =>
+      new Promise((resolve) => {
+        const waiter = {
+          resolve,
+          rpcId: payload?.id,
+          signal,
+          onAbort: null,
+        };
+
+        const onAbort = () => {
+          const current = this.pending.get(requestId);
+          if (current !== pending) {
+            return;
+          }
+
+          const index = pending.waiters.indexOf(waiter);
+          if (index < 0) {
+            return;
+          }
+
+          pending.waiters.splice(index, 1);
+          this.releasePendingWaiter(waiter);
+          waiter.resolve(
+            rpcError(
+              waiter.rpcId,
+              -32007,
+              "MCP caller disconnected",
+              499,
+            ),
+          );
+
+          if (pending.waiters.length === 0) {
+            clearTimeout(pending.timer);
+            this.pending.delete(requestId);
+            this.cancelDeviceRequest(requestId);
+          }
+        };
+
+        waiter.onAbort = onAbort;
+        pending.waiters.push(waiter);
+
+        if (signal) {
+          signal.addEventListener("abort", onAbort, {
+            once: true,
+          });
+          if (signal.aborted) {
+            onAbort();
+          }
+        }
+      });
+
     const existing = this.pending.get(requestId);
 
     if (existing) {
@@ -1650,12 +1711,7 @@ export class RiftRelayRoom {
         );
       }
 
-      return new Promise((resolve) => {
-        existing.waiters.push({
-          resolve,
-          rpcId: payload?.id,
-        });
-      });
+      return addWaiter(existing);
     }
 
     if (
@@ -1669,59 +1725,96 @@ export class RiftRelayRoom {
       );
     }
 
-    return new Promise((resolve) => {
-      const waiters = [
-        {
-          resolve,
-          rpcId: payload?.id,
-        },
-      ];
+    const pending = {
+      waiters: [],
+      timer: null,
+      rpcId: payload?.id,
+    };
 
-      const timer = setTimeout(() => {
-        this.pending.delete(requestId);
+    this.pending.set(requestId, pending);
+    const response = addWaiter(pending);
 
-        for (const waiter of waiters) {
-          waiter.resolve(
-            rpcError(
-              waiter.rpcId,
-              -32003,
-              "RiftOS device timed out",
-              504,
-            ),
-          );
-        }
-      }, REQUEST_TIMEOUT_MS);
+    if (pending.waiters.length === 0) {
+      return response;
+    }
 
-      this.pending.set(requestId, {
-        waiters,
-        timer,
-        rpcId: payload?.id,
-      });
-
-      try {
-        socket.send(
-          JSON.stringify({
-            type: "mcp.request",
-            requestId,
-            payload,
-          }),
-        );
-      } catch {
-        clearTimeout(timer);
-        this.pending.delete(requestId);
-
-        for (const waiter of waiters) {
-          waiter.resolve(
-            rpcError(
-              waiter.rpcId,
-              -32002,
-              "RiftOS device disconnected",
-              503,
-            ),
-          );
-        }
+    pending.timer = setTimeout(() => {
+      if (this.pending.get(requestId) !== pending) {
+        return;
       }
-    });
+
+      this.pending.delete(requestId);
+      this.cancelDeviceRequest(requestId);
+
+      for (const waiter of pending.waiters) {
+        this.releasePendingWaiter(waiter);
+        waiter.resolve(
+          rpcError(
+            waiter.rpcId,
+            -32003,
+            "RiftOS device timed out",
+            504,
+          ),
+        );
+      }
+      pending.waiters.length = 0;
+    }, REQUEST_TIMEOUT_MS);
+
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "mcp.request",
+          requestId,
+          payload,
+        }),
+      );
+    } catch {
+      clearTimeout(pending.timer);
+      this.pending.delete(requestId);
+
+      for (const waiter of pending.waiters) {
+        this.releasePendingWaiter(waiter);
+        waiter.resolve(
+          rpcError(
+            waiter.rpcId,
+            -32002,
+            "RiftOS device disconnected",
+            503,
+          ),
+        );
+      }
+      pending.waiters.length = 0;
+    }
+
+    return response;
+  }
+
+  releasePendingWaiter(waiter) {
+    if (waiter?.signal && waiter?.onAbort) {
+      waiter.signal.removeEventListener(
+        "abort",
+        waiter.onAbort,
+      );
+    }
+  }
+
+  cancelDeviceRequest(requestId) {
+    const socket = this.socket;
+    if (!socket) {
+      return false;
+    }
+
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "mcp.cancel",
+          requestId,
+        }),
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   webSocketMessage(socket, raw) {
@@ -1885,6 +1978,9 @@ export class RiftRelayRoom {
 
     clearTimeout(pending.timer);
     this.pending.delete(message.requestId);
+    for (const waiter of pending.waiters) {
+      this.releasePendingWaiter(waiter);
+    }
 
     if (
       message.type === "mcp.response" &&
@@ -2123,6 +2219,7 @@ export class RiftRelayRoom {
       clearTimeout(pending.timer);
 
       for (const waiter of pending.waiters) {
+        this.releasePendingWaiter(waiter);
         waiter.resolve(
           rpcError(
             waiter.rpcId,
@@ -2132,6 +2229,7 @@ export class RiftRelayRoom {
           ),
         );
       }
+      pending.waiters.length = 0;
     }
 
     this.pending.clear();
