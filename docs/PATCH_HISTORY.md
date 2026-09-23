@@ -6,6 +6,23 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.54 — N1.8.2 installed promotion
+
+**N1.8.2 semantic dependency propagation is PROMOTED on installed source `9cc74b25c94fd3e23e93f64d3d132e65e63fe3a6`, Builder run `35929751856` / run number `317`.**
+
+Final installed promotion evidence:
+- Patch 10.52 exact-reference semantics are proven on-device: exactly 1024 real seed-relevant references returns `complete=true` with 1024 resolved rows and no incomplete reasons; adding a 1025th real reference retains 1024 rows, returns `complete=false`, and reports only `propagation-reference-bound`;
+- reverse-closure node bounds are exact: 1024 total closure paths is complete, while the +1 fixture fails closed only with `propagation-closure-node-bound`;
+- reverse-edge bounds are exact: 4096 edges is complete, while the 4097th attempted edge fails closed only with `propagation-closure-edge-bound`;
+- the exact-edge fixture is warm deterministic at propagation SHA-256 `d2de4151c6db1f384460fc4b63f97978adea489f9f6933cca50fe44958bb97ca`; the repeat reused all 257 indexed files and rescanned 0 bytes;
+- the stable exact-symbol restart baseline used `sym-fe7d7a7785f3f1497082b4e8` / signature `sig-1a94645b06d3ffd54874a3e1`, propagation SHA-256 `d23531420d8d3da679ae24022c1a419b336782e7e6343d848d42910d8b98a9a3`, and closure `base.js -> caller.js -> top.js` at depths 0/1/2;
+- after a real Android force-stop/reopen, the **first** propagation read reproduced that exact SHA, identities, counts and closure with cache v9 `loaded`, 37/37 files reused and 0 bytes rescanned;
+- post-restart N1.8.0 remained `complete=true` with 0 findings, 1121 facts / 1176 edges / 272 repository files, graph SHA-256 `63031280817f503c995da6969588431b7e26c895df1a56e279e529d8b0ea5271`, verified cache and `changed=false`;
+- post-restart N1.8.1 remained `complete=true`, `clean=true`, 155 syntax-checked files, 0 invalid files, 848 dependencies, 56 local-resolved, 0 local-missing, 0 ambiguous-local and 0 findings at integrity SHA-256 `1752e660c1a71aa2342f4a00e8210287258d2ea7a971ff520ad00c26ae00023e`;
+- `riftbuild validate android` reports `sourceReady=true`, `androidGradleProject=true` and all structural Android checks green; the missing prepared directory remains the expected non-source-failure state.
+
+Together with the already-installed identity, signature-change, overload ambiguity, caller attribution, dependency/reference resolution, false lexical suppression, exact-symbol isolation, Kotlin interface/inheritance, constructor-colon suppression, multi-hop, cycle, seed, symbol, caller, type-relation and depth torture evidence recorded in Patch 10.51/10.52, the N1.8.2 promotion matrix is complete. N1.8.3 is now the next active N1.8 phase. N2 remains blocked until the full N1.8.0-N1.8.7 program is promoted.
+
 ## Patch 10.53 — End-to-end MCP caller cancellation and orphan-work prevention
 
 The live MCP/relay audit found a transport ownership split that could make ChatGPT appear hung while RiftOS continued mutating the workspace. SSE GET requests already propagated the upstream `AbortSignal`, but public MCP POST forwarding did not. Once an `mcp.request` reached the device, cancellation of the originating HTTP/model turn could therefore discard the response path without cancelling the local execution. A later chat turn could see source changes that were never returned as tool results to the interrupted turn.

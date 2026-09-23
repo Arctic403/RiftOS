@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.2 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.3+ PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.3+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -858,7 +858,7 @@ Required outcomes remain:
 
 ### N1.8.2 — semantic dependency propagation
 
-Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING BUILDER + INSTALLED TORTURE.**
+Status: **PROMOTED ON INSTALLED SOURCE `9cc74b25c94fd3e23e93f64d3d132e65e63fe3a6`, BUILDER RUN `35929751856` / RUN NUMBER `317`.**
 
 N1.8.2 adds a separate read-only `project kind=propagation` lane above the already promoted N1.8.0/N1.8.1 evidence paths. It reuses the existing PI-v2 symbol/dependency index and local dependency resolver rather than creating a second source index.
 
@@ -889,13 +889,13 @@ Initial bounds:
 - depth 16;
 - 240 returned preview rows.
 
-Promotion still requires Builder/Kotlin/Node regression proof, installation, deterministic warm/restart hashes, overload/line-shift symbol identity, signature-only change behavior, exact caller attribution, same-name ambiguity, false lexical-reference stress, interface/implementation fixtures, direct dependency/reference propagation, multi-hop reverse closure, cycles, exact/+1 node/edge/depth/reference/type-relation bounds and a proof that N1.8.0/N1.8.1 remain unchanged and green.
+Promotion evidence is complete on installed source `9cc74b25c94fd3e23e93f64d3d132e65e63fe3a6`. Builder run `35929751856` / run number `317` supplied the installed artifact. Exact 1024-reference evidence is complete while the 1025th real reference fails closed only with `propagation-reference-bound`; exact 1024 closure paths are complete while +1 fails only with `propagation-closure-node-bound`; exact 4096 reverse edges are complete while +1 fails only with `propagation-closure-edge-bound`. The exact-edge fixture repeats at propagation SHA-256 `d2de4151c6db1f384460fc4b63f97978adea489f9f6933cca50fe44958bb97ca` with full warm reuse and zero rescanned bytes. A real Android force-stop/reopen reproduced the exact-symbol baseline SHA-256 `d23531420d8d3da679ae24022c1a419b336782e7e6343d848d42910d8b98a9a3`, symbol/signature identities and 0/1/2 closure on the **first** propagation read with cache v9 loaded, 37/37 files reused and 0 bytes rescanned. Post-restart N1.8.0 remained complete with zero findings and `changed=false` at graph SHA-256 `63031280817f503c995da6969588431b7e26c895df1a56e279e529d8b0ea5271`; N1.8.1 remained complete/clean with zero invalid, missing, ambiguous or finding rows at integrity SHA-256 `1752e660c1a71aa2342f4a00e8210287258d2ea7a971ff520ad00c26ae00023e`. Earlier installed torture already covered overload/line-shift identity, signature-only change behavior, caller attribution, ambiguity, lexical false-match suppression, inheritance/interface propagation, multi-hop closure, cycles, and the remaining exact/+1 bounds.
 
-Required outcomes remain:
-- symbol/signature identity;
-- references/callers/dependents;
+Promoted outcomes:
+- stable symbol/signature identity;
+- resolved/ambiguous references, callers and dependents;
 - interface/implementation and API propagation;
-- transitive reverse closure with explicit bounds.
+- deterministic transitive reverse closure with explicit fail-closed bounds.
 
 ### N1.8.3 — cross-boundary contracts
 
