@@ -951,7 +951,7 @@ object RiftTrainDataV2TaskRunner {
                             "INSERT INTO provenance(" +
                                 "id,idx,origin,group_id,revision) " +
                                 "VALUES(?,?,?,?,?)",
-                            arrayOf(
+                            arrayOf<Any?>(
                                 row.id,
                                 count,
                                 row.origin,
@@ -1438,7 +1438,7 @@ object RiftTrainDataV2TaskRunner {
 
         db.execSQL(
             "INSERT INTO groups(hash,role,split) VALUES(?,?,?)",
-            arrayOf(hash, role, split)
+            arrayOf<Any?>(hash, role, split)
         )
         return split
     }
@@ -2224,7 +2224,7 @@ object RiftTrainDataV2TaskRunner {
 
         db.execSQL(
             "INSERT INTO group_identity(hash,role,split) VALUES(?,?,?)",
-            arrayOf(
+            arrayOf<Any?>(
                 identity.sourceGroupSha256,
                 role,
                 identity.splitId
@@ -2926,7 +2926,7 @@ object RiftTrainDataV2TaskRunner {
         }
         val fd = Os.open(
             directory.absolutePath,
-            OsConstants.O_RDONLY or OsConstants.O_DIRECTORY,
+            OsConstants.O_RDONLY,
             0
         )
         try {

@@ -6,6 +6,22 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.51 — RiftTrainData V2 Kotlin/Android build compatibility hotfix
+
+Builder source `373ed95feb72e1c2af8f51ad8434a04b52643d25` passed the full Node/source-check chain, documentation validation, N1.8.0/N1.8.1/N1.8.2 regressions and Gradle source validation, then failed only at `:app:compileReleaseKotlin` on seven RiftTrainData V2 compatibility errors.
+
+Compiler fixes:
+- replaced three unavailable Android `OsConstants.O_DIRECTORY` uses with `OsConstants.O_RDONLY` in directory-fsync helpers; every helper already requires an existing directory before `Os.open`, so the directory-only precondition remains explicit while using the Android API surface actually exposed to Kotlin;
+- made four heterogeneous SQLite `execSQL` bind arrays explicit as `arrayOf<Any?>(...)` so Kotlin 2.x does not infer a reified `Comparable & Serializable` intersection type;
+- affected source is limited to `RiftB2NearDedupIndexV1.kt`, `RiftB2ThresholdQualificationTask.kt`, `RiftTrainDataV2AdversarialLab.kt` and `RiftTrainDataV2TaskRunner.kt`.
+
+Post-fix local proof:
+- `riftbuild validate android` reports `sourceReady=true` and all Android project checks green; the only prepared-package blocker is the expected absent prepared directory;
+- N1.8.0 consistency remains `complete=true` with zero findings across 271 repository files;
+- N1.8.1 integrity remains `complete=true`, `clean=true`, 154 syntax-checked files, zero invalid files, zero missing/ambiguous local imports and zero findings;
+- targeted source sweep confirms no remaining `OsConstants.O_DIRECTORY` in the four affected files and the compiler-reported heterogeneous bind arrays are explicitly typed.
+
+No N1.8 promotion state changes in this patch. Builder Kotlin compilation remains the next authority for the full APK build.
 ## Patch 10.50 — RiftTrainData V2 candidate + propagation reference precision hardening
 
 This source checkpoint reconciles two source-first work streams without claiming installed promotion.

@@ -647,7 +647,7 @@ object RiftB2ThresholdQualificationTask {
         }
         val fd = Os.open(
             directory.absolutePath,
-            OsConstants.O_RDONLY or OsConstants.O_DIRECTORY,
+            OsConstants.O_RDONLY,
             0
         )
         try {

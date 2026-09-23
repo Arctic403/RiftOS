@@ -247,7 +247,7 @@ object RiftB2NearDedupIndexV1 {
                 if ((index and 31) == 0) ensureRunning()
                 db.execSQL(
                     "INSERT INTO near_fingerprint(fp,sample_id) VALUES(?,?)",
-                    arrayOf(fingerprint, sampleId)
+                    arrayOf<Any?>(fingerprint, sampleId)
                 )
             }
             indexedFingerprints = nextFingerprintCount
