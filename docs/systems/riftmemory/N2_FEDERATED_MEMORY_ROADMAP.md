@@ -2,7 +2,7 @@
 
 ## Status
 
-**N2.0 CONTRACT/CORRECTNESS BASELINE SOURCE-IMPLEMENTED / PROMOTION PENDING; N2 RUNTIME INACTIVE — 2026-09-24.**
+**N2.0 CONTRACT/CORRECTNESS BASELINE PROMOTED on installed source `f6bf12b9fb452cc128e9290fd73599297ba134f2`, Builder run 341; N2 RUNTIME INACTIVE — 2026-09-24.**
 
 This document freezes the intended N2 architecture and promotion program before N3 begins.
 
@@ -1127,6 +1127,19 @@ Before implementation:
 - confirm retained `riftmemory-control.js` remains inactive.
 
 **Exit:** reproducible pre-N2 baseline exists and N2 interfaces are frozen enough to implement without moving the goalposts.
+
+## N2 macro implementation compaction
+
+N2.1-N2.11 execute as six implementation patches while preserving all eleven logical phase authorities:
+
+1. **N2-M1 — Canonical kernel foundation:** N2.1 + N2.2.
+2. **N2-M2 — Reconciliation and temporal truth:** N2.3 + N2.4.
+3. **N2-M3 — Core cognitive memory:** N2.5 + N2.6.
+4. **N2-M4 — Procedural and failure intelligence:** N2.7 + N2.8.
+5. **N2-M5 — Retrieval and closed loop:** N2.9.
+6. **N2-M6 — Storage conformance and hardening:** N2.10 + N2.11.
+
+Macro patches are execution/build groupings only. Every contained N2.x subphase retains separate correctness evidence and promotion authority; a later subphase cannot hide an earlier failure. **N2.12 remains a separate final correctness/adversarial promotion gate.**
 
 ### N2.1 — Canonical JSON model + evidence/event ledger
 

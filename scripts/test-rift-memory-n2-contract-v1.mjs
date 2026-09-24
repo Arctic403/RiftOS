@@ -52,20 +52,38 @@ const n2Contract = JSON.parse(n2Read(N2_CONTRACT_PATH));
 const n2PhaseAuthority = JSON.parse(n2Read('riftmemory/n2-phase-authority.json'));
 n2Assert.equal(n2PhaseAuthority.schema, 'rift-memory-n2-phase-authority-v1');
 n2Assert.equal(n2PhaseAuthority.program, 'N2 Federated Rift Memory Kernel');
-n2Assert.equal(n2PhaseAuthority.programStatus, 'N2.0 SOURCE-IMPLEMENTED / PROMOTION PENDING; N2.1-N2.12 PENDING');
+n2Assert.equal(n2PhaseAuthority.programStatus, 'N2.0 PROMOTED; N2.1-N2.12 PENDING');
 n2Assert.equal(n2PhaseAuthority.runtimeStatus, 'N2 RUNTIME INACTIVE');
 n2Assert.equal(n2PhaseAuthority.n18Prerequisite, 'SATISFIED');
 n2Assert.equal(n2PhaseAuthority.benchmarkRule, N2_EXPECTED.benchmarkRule);
 n2Assert.equal(n2PhaseAuthority.contractPath, N2_CONTRACT_PATH);
+n2Assert.equal(
+  n2PhaseAuthority.contractLifecycleSemantics,
+  'immutable-N2.0-freeze-snapshot; current lifecycle is authoritative only in this phase-authority file',
+);
+n2Assert.equal(n2PhaseAuthority.macroImplementationPlan.length, 6);
+n2Assert.deepEqual(
+  n2PhaseAuthority.macroImplementationPlan.map(row => row.phases),
+  [
+    ['N2.1', 'N2.2'],
+    ['N2.3', 'N2.4'],
+    ['N2.5', 'N2.6'],
+    ['N2.7', 'N2.8'],
+    ['N2.9'],
+    ['N2.10', 'N2.11'],
+  ],
+);
+n2Assert.ok(n2PhaseAuthority.macroPlanRule.includes('execution groupings only'));
+n2Assert.ok(n2PhaseAuthority.macroPlanRule.includes('N2.12 remains a separate final correctness/adversarial promotion gate'));
 n2Assert.equal(n2PhaseAuthority.phases.length, 13);
 n2Assert.deepEqual(n2PhaseAuthority.phases.map(row => row.phase), [
   'N2.0','N2.1','N2.2','N2.3','N2.4','N2.5','N2.6','N2.7','N2.8','N2.9','N2.10','N2.11','N2.12',
 ]);
-n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 1);
+n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 1);
 n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'pending').length, 12);
-n2Assert.equal(n2PhaseAuthority.phases[0].status, 'source-implemented');
-n2Assert.equal(n2PhaseAuthority.phases[0].promotedSourceSha, null);
-n2Assert.equal(n2PhaseAuthority.phases[0].builderRunNumber, null);
+n2Assert.equal(n2PhaseAuthority.phases[0].status, 'promoted');
+n2Assert.equal(n2PhaseAuthority.phases[0].promotedSourceSha, 'f6bf12b9fb452cc128e9290fd73599297ba134f2');
+n2Assert.equal(n2PhaseAuthority.phases[0].builderRunNumber, '341');
 for (const row of n2PhaseAuthority.phases.slice(1)) {
   n2Assert.equal(row.status, 'pending');
   n2Assert.equal(row.promotedSourceSha, null);

@@ -274,7 +274,7 @@ The SSE lifecycle and true Android process-restart portions are now live-proven 
 
 ### Gate N1.8 — Repository Consistency Observer
 
-**Hard pre-N2 gate; N1.8.0 source-implemented, promotion pending.**
+**N1.8.0-N1.8.7 are fully promoted; the N1.8 Observer prerequisite for N2 is satisfied.**
 
 N1.8.0 now provides the repository fact-graph substrate in `RiftRepositoryConsistencyObserver.kt`. It consumes the existing PI-v2 graph rather than rescanning source, assigns stable content-independent IDs to facts/edges/findings, keeps content hashes separate, canonicalizes graph ordering into a deterministic SHA-256 identity, uses a bounded verified rebuildable app-private cache and exposes the foundation through existing `project kind=consistency`. Whole-repository consistency reuses the shared PI-v2 builder with observer-only 1024-file/1024-edge input bounds, forces exact repository-content verification, and consumes a separate repository-file evidence set so metadata-only files remain represented. Installed source `7ee74c5034bb14c30945d28971c56f35424e5301` live-proved the original content-only false-clean regressions fixed. The current source additionally hardens persisted semantics with PI cache schema v4 producer provenance: semantic cache reuse requires both `RiftSourceIntelligenceV2.VERSION` and a trusted full `BuildConfig.RIFT_SOURCE_SHA`; mismatched/missing/untrusted producer caches are rejected and cache load/rejection state is observable.
 
@@ -288,7 +288,7 @@ Promotion is split into N1.8.0-N1.8.7: fact graph/schema, syntax/import integrit
 
 ### Gate N2 — Federated Rift Memory Kernel
 
-**Hard pre-N3 program. N2.0 is source-implemented/promotion-pending; N2.1-N2.12 remain pending and the N2 runtime remains inactive. Performance/comparative benchmarking stays deferred until the full RiftCLI stack is 100% complete and live.**
+**Hard pre-N3 program. N2.0 is promoted on installed source `f6bf12b9fb452cc128e9290fd73599297ba134f2`, Builder run 341; N2.1-N2.12 remain pending and the N2 runtime remains inactive. N2.1-N2.11 execute in six macro patches (1+2, 3+4, 5+6, 7+8, 9, 10+11) while retaining separate per-phase evidence gates; N2.12 remains separate. Performance/comparative benchmarking stays deferred until the full RiftCLI stack is 100% complete and live.**
 
 N2 is no longer a generic "engineering state" bucket. It is one canonical Rift Memory Kernel with multiple specialized cognitive engines operating over the same canonical IDs/evidence/transactions.
 

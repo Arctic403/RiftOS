@@ -131,9 +131,9 @@ validate-rift-docs enforces:
 - required local source-area READMEs;
 - Markdown relative-link validity;
 - retired protocol markers absent;
-- N2.0 is machine-frozen as source-implemented/promotion-pending while the N2 runtime remains inactive;
+- N2.0 is promoted on installed source `f6bf12b9fb452cc128e9290fd73599297ba134f2`, Builder run 341, while the immutable freeze contract remains byte-frozen and the N2 runtime remains inactive;
 - `riftmemory/n2-contract-v1.json` preserves the exact canonical-kernel/specialist authority split, backend-neutral MemoryStore API, correctness corpus/hashes, installed ARM baseline and benchmark-deferral rule;
-- `riftmemory/n2-phase-authority.json` preserves exactly one source-implemented phase (`N2.0`) and twelve pending phases (`N2.1`-`N2.12`);
+- `riftmemory/n2-phase-authority.json` preserves exactly one promoted phase (`N2.0`, source `f6bf12b9fb452cc128e9290fd73599297ba134f2`, run 341), twelve pending phases (`N2.1`-`N2.12`), and the six-macro N2.1-N2.11 execution plan without merging per-phase authority;
 - the retained `src/riftmemory-control.js` controller remains unpackaged/non-authoritative;
 - Project Intelligence classifies only the exact versioned Observer/N2 machine-authority JSON paths as build-config repository state, preventing machine authority edits from becoming unclassified proof changes without broadly treating JSON as config;
 - ROADMAP.md and the N2 spec retain the hard N2.12-before-N3 correctness-promotion barrier.
