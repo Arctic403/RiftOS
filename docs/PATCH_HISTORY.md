@@ -32,7 +32,11 @@ Project-wide benchmark policy is now locked: no Observer or comparative/performa
 
 The same run-334 source also proved the real docs-only planner branch using the benchmark-policy/status edits as the fixture: four documentation changes produced `mode=focused`, `complete=true`, zero unresolved obligations, no selected tests, and exactly two required obligations (`documentation-claims` and `repository-consistency`). The corresponding claims and consistency oracles both completed clean with zero findings.
 
-Restart continuity, remaining N1.8.5 bounds/fixture matrix and N1.8.0-N1.8.4 continuity remain required before N1.8.5 promotion.
+Run 334 then exercised additional correctness-only planner branches on the installed source: docs-only changes produced focused claims+consistency obligations with no test noise; source deletion escalated to deep verification with API-surface risk and directly evidenced tests; build-config-only change selected the repository check plus build/contracts/consistency obligations; test-only change selected only the changed test as strong evidence while path-affinity matches stayed supplemental; and an unreferenced source file with shell-like naming produced heuristic-only supplemental tests plus an unresolved affected-test obligation exactly as required. All reversible fixtures returned to exact clean candidate/proof identity after restoration.
+
+The final run-334 isolation fixture exposed another source blocker: a candidate wholly inside a different workspace project correctly gave RiftOS `mode=none` / zero obligations, but `proofsSha256` still changed because the hash included workspace-global `candidateId`, `semanticImpactSha256` and changed-symbol state. Current source fixes that by introducing `hashScope=project-local-plan-v1`: `proofsSha256` now binds only project-local canonical plan inputs, global impact incompleteness/multi-project escalation is ignored when this project has no local changes, and workspace-global candidate/semantic evidence remains diagnostic-only. Permanent regression now rejects reintroduction of those global fields into the proof hash and covers the unrelated-project case. Builder signed-DEX proof now requires `project-local-plan-v1`.
+
+A new Builder/install is required to prove project-isolation parity on-device. Restart continuity, remaining N1.8.5 exact-bound fixtures and N1.8.0-N1.8.4 continuity remain required before N1.8.5 promotion.
 
 ## Patch 10.66 — N1.8.5 proof obligations and focused verification foundation
 

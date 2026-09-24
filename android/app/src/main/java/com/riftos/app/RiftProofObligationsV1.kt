@@ -14,6 +14,7 @@ internal class RiftProofObligationsV1 {
     companion object {
         const val SCHEMA = "rift-proof-obligations-v1"
         const val PHASE = "N1.8.5"
+        private const val HASH_SCOPE = "project-local-plan-v1"
 
         private const val MAX_CHANGES = 1_024
         private const val MAX_SELECTED_TESTS = 512
@@ -50,17 +51,19 @@ internal class RiftProofObligationsV1 {
 
         val impactComplete = impact.optBoolean("complete", false)
         val impactReasons = stringArray(impact.optJSONArray("incompleteReasons"))
-        if (!impactComplete) {
-            if (impactReasons.isEmpty()) incomplete += "impact-incomplete"
-            impactReasons.forEach { incomplete += "impact:" + it }
-            deepReasons += "impact-evidence-incomplete"
-        }
 
         val allChanges = objectArray(impact.optJSONArray("changes"))
             .filter { row -> pathWithin(row.optString("path"), root) }
             .sortedBy { it.optString("path") }
         if (allChanges.size > MAX_CHANGES) incomplete += "proof-change-bound"
         val changes = allChanges.take(MAX_CHANGES)
+        val hasChanges = changes.isNotEmpty()
+
+        if (hasChanges && !impactComplete) {
+            if (impactReasons.isEmpty()) incomplete += "impact-incomplete"
+            impactReasons.forEach { incomplete += "impact:" + it }
+            deepReasons += "impact-evidence-incomplete"
+        }
 
         val sourceChanges = changes.filter { it.optString("category") == "source" }
         val testChanges = changes.filter { it.optString("category") == "test" }
@@ -76,7 +79,6 @@ internal class RiftProofObligationsV1 {
         val apiPaths = stringArray(impact.optJSONArray("apiSurfaceChangedPaths"))
             .filter { pathWithin(it, root) }
             .sorted()
-        val changedSymbols = stringArray(impact.optJSONArray("changedSymbols")).sorted()
 
         val strongEvidence = linkedMapOf<String, LinkedHashSet<String>>()
         fun addStrong(path: String, reason: String) {
@@ -115,7 +117,7 @@ internal class RiftProofObligationsV1 {
         val supplementalTests = supplementalAll.take(MAX_SUPPLEMENTAL_TESTS)
 
         val projectRows = objectArray(impact.optJSONArray("projects"))
-        if (projectRows.size > 1) deepReasons += "multi-project-candidate"
+        if (hasChanges && projectRows.size > 1) deepReasons += "multi-project-candidate"
         if (apiPaths.isNotEmpty()) deepReasons += "api-surface-changed"
         if (buildChanges.isNotEmpty()) deepReasons += "build-config-changed"
         if (sourceChanges.any { it.optString("status") == "deleted" }) deepReasons += "source-deletion"
@@ -152,7 +154,6 @@ internal class RiftProofObligationsV1 {
             )
         }
 
-        val hasChanges = changes.isNotEmpty()
         if (hasChanges) {
             addObligation(
                 kind = "repository-consistency",
@@ -349,9 +350,8 @@ internal class RiftProofObligationsV1 {
         val hashPayload = JSONObject()
             .put("schema", SCHEMA)
             .put("phase", PHASE)
+            .put("hashScope", HASH_SCOPE)
             .put("projectRoot", root)
-            .put("candidateId", impact.optJSONObject("candidate")?.optString("candidateId") ?: "")
-            .put("semanticImpactSha256", impact.optString("semanticImpactSha256"))
             .put("complete", incomplete.isEmpty())
             .put("incompleteReasons", JSONArray(incomplete.sorted()))
             .put("mode", mode)
@@ -361,7 +361,6 @@ internal class RiftProofObligationsV1 {
             .put("supplementalTests", JSONArray(supplementalRows))
             .put("selectedChecks", JSONArray(checkRows))
             .put("externalChecks", JSONArray(externalChecks.sorted()))
-            .put("changedSymbols", JSONArray(changedSymbols))
             .put("apiSurfaceChangedPaths", JSONArray(apiPaths))
 
         val proofsSha = RiftPatchManifestV1.sha256Canonical(hashPayload)
@@ -370,6 +369,7 @@ internal class RiftProofObligationsV1 {
             .put("schema", SCHEMA)
             .put("phase", PHASE)
             .put("view", "proofs")
+            .put("hashScope", HASH_SCOPE)
             .put("projectRoot", root)
             .put("evidenceOnly", true)
             .put("executesVerification", false)

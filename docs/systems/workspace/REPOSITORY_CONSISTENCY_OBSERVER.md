@@ -961,7 +961,7 @@ The proof plan is deterministic and evidence-linked:
 - deep verification escalates for incomplete candidate impact, API-surface changes, build-config changes, source deletion, multi-project candidates, unclassified changes, missing affected-test evidence, or unavailable required build verification;
 - source add/delete requires the documentation-claims lane because source-ownership obligations can change;
 - source/build changes require the cross-boundary-contracts lane;
-- all selected checks/tests/obligations are bounded and `proofsSha256` binds the full canonical plan while previews remain capped;
+- all selected checks/tests/obligations are bounded and `proofsSha256` binds the full canonical **project-local** plan (`hashScope=project-local-plan-v1`) while previews remain capped; workspace-global candidate IDs, semantic-impact hashes and global changed-symbol lists remain diagnostic evidence and cannot perturb an unrelated project's proof identity;
 - the planner is evidence-only: `executesVerification=false` and no result is represented as passed merely because it was selected.
 
 Permanent regression `scripts/test-rift-proof-obligations-v1.mjs`, Gradle mandatory-source coverage, source ownership and `npm check` wiring are present. Builder compilation/signed-DEX proof, installed semantic fixtures, exact-bound/determinism/restart torture and N1.8.0-N1.8.4 continuity remain required before promotion.

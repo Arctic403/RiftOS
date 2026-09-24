@@ -16,6 +16,7 @@ const pkg = JSON.parse(read('package.json'));
 for (const marker of [
   'const val SCHEMA = "rift-proof-obligations-v1"',
   'const val PHASE = "N1.8.5"',
+  'private const val HASH_SCOPE = "project-local-plan-v1"',
   'private const val MAX_CHANGES = 1_024',
   'private const val MAX_SELECTED_TESTS = 512',
   'private const val MAX_SUPPLEMENTAL_TESTS = 512',
@@ -70,6 +71,17 @@ assert.ok(
   'N1.8.5 regression must be reachable from npm check',
 );
 
+const hashPayloadBody = proof.slice(
+  proof.indexOf('val hashPayload = JSONObject()'),
+  proof.indexOf('val proofsSha = RiftPatchManifestV1.sha256Canonical(hashPayload)'),
+);
+assert.match(hashPayloadBody, /"hashScope", HASH_SCOPE/);
+assert.ok(!hashPayloadBody.includes('"candidateId"'), 'workspace-global candidateId must not enter project proof identity');
+assert.ok(!hashPayloadBody.includes('"semanticImpactSha256"'), 'workspace-global semantic hash must not enter project proof identity');
+assert.ok(!hashPayloadBody.includes('"changedSymbols"'), 'workspace-global changed symbols must not enter project proof identity');
+assert.match(proof, /if \(hasChanges && !impactComplete\)/);
+assert.match(proof, /if \(hasChanges && projectRows\.size > 1\)/);
+
 function plan({ source = false, changedTest = false, directTest = false, referenceTest = false, heuristicTest = false, api = false, build = false, docs = false, deleted = false, incomplete = false, projects = 1 }) {
   const selected = [];
   if (changedTest) selected.push(['tests/changed.test.js', 'changed-test']);
@@ -79,8 +91,9 @@ function plan({ source = false, changedTest = false, directTest = false, referen
   const deepReasons = [];
   const obligations = [];
 
-  if (incomplete) deepReasons.push('impact-evidence-incomplete');
-  if (projects > 1) deepReasons.push('multi-project-candidate');
+  const localActivity = source || changedTest || docs || build;
+  if (localActivity && incomplete) deepReasons.push('impact-evidence-incomplete');
+  if (localActivity && projects > 1) deepReasons.push('multi-project-candidate');
   if (api) deepReasons.push('api-surface-changed');
   if (build) deepReasons.push('build-config-changed');
   if (deleted) deepReasons.push('source-deletion');
@@ -104,7 +117,7 @@ function plan({ source = false, changedTest = false, directTest = false, referen
     supplemental,
     obligations,
     deepReasons: [...new Set(deepReasons)].sort(),
-    mode: source || changedTest || docs || build
+    mode: localActivity
       ? (deepReasons.length ? 'deep' : 'focused')
       : 'none',
     unrelatedCanSatisfy: false,
@@ -142,6 +155,11 @@ assert.deepEqual(docs.obligations, ['documentation-claims']);
 const none = plan({});
 assert.equal(none.mode, 'none');
 assert.equal(none.obligations.length, 0);
+
+const unrelated = plan({ projects: 2, incomplete: true });
+assert.equal(unrelated.mode, 'none');
+assert.deepEqual(unrelated.deepReasons, []);
+assert.equal(unrelated.obligations.length, 0);
 
 const multi = plan({ source: true, directTest: true, projects: 2 });
 assert.equal(multi.mode, 'deep');
