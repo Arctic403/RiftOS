@@ -13,7 +13,7 @@ Retained implementation:
 
 Current Android source contains no native RiftMemory owner or command, and Gradle does not package the module.
 
-The RiftCLI N2 memory architecture is implemented incrementally from a **separate canonical roadmap** and does not activate the retained legacy cache controller:
+The RiftCLI N2 memory architecture is implemented incrementally from a **separate canonical roadmap** and does not activate this retained cache controller:
 
 - `N2_FEDERATED_MEMORY_ROADMAP.md` — one canonical Rift Memory Kernel, multiple specialist cognitive engines, SQLite-first replaceable storage, RiftStore interface/conformance experimentation, Observer/Validator reconciliation and hard pre-N3 correctness-promotion gates.
 - `../../../riftmemory/n2-contract-v1.json` — machine-readable N2.0 terminology, MemoryStore API, correctness corpus, zero-tolerance thresholds, installed baseline and benchmark-deferral contract.
