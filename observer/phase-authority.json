@@ -1,7 +1,7 @@
 {
   "schema": "rift-observer-phase-authority-v1",
-  "roadmapStatus": "N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 PROMOTED; N1.8.6 ACTIVE; N1.8.7 PENDING",
-  "observerStatus": "N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.6 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.7 PENDING",
+  "roadmapStatus": "N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 + N1.8.6 PROMOTED; N1.8.7 PENDING",
+  "observerStatus": "N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 + N1.8.6 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.7 PENDING",
   "phases": [
     {
       "phase": "N1.8.0",
@@ -41,9 +41,9 @@
     },
     {
       "phase": "N1.8.6",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "b54aac2386555bdd5a784ce2965c23da6a3babb3",
+      "builderRunNumber": "338"
     },
     {
       "phase": "N1.8.7",

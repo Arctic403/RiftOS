@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.6 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.7 PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 + N1.8.6 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.7 PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
