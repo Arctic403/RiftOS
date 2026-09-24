@@ -72,10 +72,12 @@ internal class RiftCrossBoundaryContractsV1(
                 totalBytes += size
             }
 
+        val scanIncomplete = incomplete.isNotEmpty()
         val findings = mutableListOf<Finding>()
         val evidence = mutableListOf<JSONObject>()
 
         fun finding(ruleId: String, category: String, path: String, message: String) {
+            if (scanIncomplete) return
             if (findings.size >= MAX_FINDINGS) {
                 incomplete += "contracts-finding-bound"
             } else {
@@ -124,6 +126,7 @@ internal class RiftCrossBoundaryContractsV1(
             .put("complete", incomplete.isEmpty())
             .put("clean", incomplete.isEmpty() && orderedFindings.isEmpty())
             .put("incompleteReasons", JSONArray(incomplete.sorted()))
+            .put("partialFindingsSuppressed", scanIncomplete)
             .put("contractsSha256", sha256(shaInput))
             .put("counts", JSONObject()
                 .put("filesScanned", files.size)

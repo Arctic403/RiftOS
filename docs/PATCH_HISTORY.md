@@ -6,6 +6,27 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.58 — N1.8.3 partial-scan finding suppression
+
+Installed aggregate-byte torture on source `a626ac19810effc062aa29b5319e05e66c9c3dcb`, Builder run `35946225021` / run number `321`, proved the exact 64 MiB boundary but exposed misleading secondary findings on the +1 case. The scan correctly returned only `contracts-byte-bound` in `incompleteReasons`, but because one contract member file was necessarily skipped after the aggregate-byte cap fired, later absence-based checks reported three false “member missing” findings from the partial dataset.
+
+Patch 10.58 hardens incomplete-scan semantics instead of weakening any contract:
+- `scanIncomplete` is captured immediately after bounded file collection;
+- when file-count, per-file-size, aggregate-byte or read bounds already make the repository scan incomplete, contract findings are suppressed rather than asserted from partial evidence;
+- `complete=false` / `clean=false` and the exact `contracts-*` incomplete reason remain authoritative;
+- deterministic partial evidence still contributes to `contractsSha256`;
+- the result exposes `partialFindingsSuppressed=true` so callers can distinguish intentional suppression from an actually clean complete scan;
+- finding-bound behavior is unchanged because `contracts-finding-bound` is reached during the finding phase after a complete source scan, so the retained 1024 findings and 240-row previews remain observable.
+
+Installed evidence already green before this patch:
+- exact 1024 findings: complete scan, 1024 retained findings, 240/240 bounded previews;
+- 1025th attempted finding: only `contracts-finding-bound`;
+- exact 2 MiB file: complete/clean; +1 byte: only `contracts-file-size-bound`;
+- exact 4096-file clean project: complete/clean; 4097th file: only `contracts-file-bound`;
+- exact 64 MiB aggregate clean project: complete/clean at 67,108,864 bytes.
+
+N1.8.3 remains **source-implemented / promotion pending** until Patch 10.58 is rebuilt/installed, the 64 MiB +1 fixture returns only `contracts-byte-bound` with zero contract findings, and warm/restart plus N1.8.0-N1.8.2 continuity gates pass.
+
 ## Patch 10.57 — N1.8.3 bounded result previews
 
 Installed finding-bound torture exposed a transport-level weakness in the N1.8.3 contracts view: the scan itself was bounded, but the returned JSON still serialized every retained finding and every evidence row. At the 1024-finding boundary this could overflow the project-tool response path before the caller could observe the exact bound result.
