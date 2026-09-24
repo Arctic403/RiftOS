@@ -2501,7 +2501,7 @@ internal class RiftToolSandbox(context: Context) {
         val candidate = JSONObject()
             .put("version", candidateSeed.getInt("version"))
             .put("candidateId", candidateSeed.getString("candidateId"))
-            .put("manifestSha256", candidateSeed.getString("manifestSha256"))
+            .put("candidateStateSha256", candidateSeed.getString("candidateStateSha256"))
             .put("baseTreeSha256", candidateSeed.getString("baseTreeSha256"))
             .put("resultTreeSha256", candidateSeed.getString("resultTreeSha256"))
             .put("changeSetSha256", candidateSeed.getString("changeSetSha256"))
@@ -2756,6 +2756,7 @@ internal class RiftToolSandbox(context: Context) {
 
         val semanticSha = RiftPatchManifestV1.sha256Canonical(payload)
         payload.put("semanticImpactSha256", semanticSha)
+        candidate.put("evidenceManifestSha256", candidateSeed.getString("manifestSha256"))
         payload.put("indexDiagnostics", indexStats)
         return payload
     }

@@ -10,6 +10,20 @@ assert.match(records,/MAX_RECORDS = 256/,'Workspace Records history must stay co
 assert.match(records,/RECORD_OPERATION_TIMEOUT_MS = 60_000L/,'Workspace Records bounded operation budget drifted');
 assert.match(records,/TRACKING_POLICY_VERSION = 2/,'Workspace Records tracking policy migration missing');
 assert.match(records,/candidateSessionsByPath/,'active candidate session evidence must be persisted separately');
+assert.match(records,/candidateStateSha256/,'stable candidate-state identity must be separate from the full evidence manifest');
+assert.match(records,/sealedManifest\.put\("candidateId", "candidate-\$\{candidateStateSha\.take\(24\)\}"\)/,'candidateId must derive from candidate-state evidence');
+const candidateManifestBody = records.slice(
+  records.indexOf('private fun buildCandidateManifest('),
+  records.indexOf('private fun manifestEntryJson(')
+);
+const candidateStateBody = candidateManifestBody.slice(
+  candidateManifestBody.indexOf('val candidateState = JSONObject()'),
+  candidateManifestBody.indexOf('val candidateStateSha =')
+);
+assert.ok(!candidateStateBody.includes('recordChain'),'record-chain diagnostics must not affect candidate identity');
+assert.ok(!candidateStateBody.includes('oldestRetainedAt'),'retained-history age must not affect candidate identity');
+assert.ok(!candidateStateBody.includes('prunedThroughSequence'),'history pruning must not affect candidate identity');
+assert.ok(!candidateStateBody.includes('sessionEvidence'),'patch/session provenance must not affect candidate identity');
 assert.match(records,/prepareForRead\("semantic-impact-seed", requireCurrent = true\)/,'semantic impact must use watcher-aware currentness');
 assert.match(records,/IGNORED_DIRECTORY_NAMES/,'generated/cache tracking policy missing');
 assert.match(watcher,/records\.shouldTrackDirectory/,'watcher must share Workspace Records tracking policy');
