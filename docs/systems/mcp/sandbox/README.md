@@ -8,7 +8,7 @@
 
 `RiftToolSandbox` is the workspace-only execution engine behind normal Rift MCP filesystem tools, project inspection and Rift Code Mode / Project Intelligence v2.
 
-It owns canonical workspace containment, single-operation filesystem methods, bounded search/read results, per-call transaction/rollback safety, snapshots, project intelligence and archive safety. Model-facing `rift_workspace_exec` is hard-limited by `RiftToolHost` to exactly one operation per call; multi-op/batch execution is fail-fast disabled.
+It owns canonical workspace containment, single-operation filesystem methods, bounded search/read results, per-call transaction/rollback safety, snapshots, project intelligence and archive safety. Model-facing `rift_workspace_exec` is hard-limited by `RiftToolHost` to exactly one operation per call; multi-op/batch execution is fail-fast disabled. **That one-operation MCP boundary remains permanent even after batching returns externally.** The only approved future batch path is one bounded job submitted through MCP/relay to RiftOS Local Agent and then to RiftCLI `rift_cli_batch`, after the entire RiftCLI stack is 100% complete/live and its final integration gate passes. The retired RiftShell batch path and multi-op `rift_workspace_exec` are not fallback mechanisms and remain disabled.
 
 ## Source ownership
 

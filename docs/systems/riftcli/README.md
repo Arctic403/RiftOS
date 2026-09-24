@@ -147,6 +147,16 @@ One Batch V2 job reserves the same global `RiftCliExecutionGate` for its entire 
 
 The retired RiftShell batch implementation and multi-operation `rift_workspace_exec` remain fail-fast disabled.
 
+### Future external Batch V2 exposure policy
+
+Batch V2 is an internal RiftCLI multi-step authority lane today. **External/model-facing batch submission remains deferred until the entire RiftCLI stack is 100% complete and live.** When that final integration gate is opened, batching must follow exactly:
+
+`external reasoning -> MCP/relay -> RiftOS Local Agent -> RiftCLI -> rift_cli_batch -> bounded RiftOS authorities`
+
+The external side submits one bounded batch job, not a list of independent MCP mutations. Local Agent/RiftCLI own full-plan prevalidation, step sequencing, one global authority reservation, cancellation/recovery, explicit `stop`/`continue` failure policy, bounded per-step results, per-step push events and `rift-cli-batch` provenance. The initial exposed cap remains **16 steps**. A transport disconnect must never justify replaying the mutation plan: request/job identity remains authoritative, and reconnect uses job/event recovery to continue observation. Observer, Validator, source-ownership and security/authority checks remain mandatory for batch work exactly as for single-step work.
+
+This policy **does not** re-enable multi-operation `rift_workspace_exec` or the retired RiftShell `batch` command. Those remain disabled even after external Batch V2 exposure. Model-facing `rift_workspace_exec` stays one operation per call; restored batching is only the Local Agent-hosted RiftCLI job lane.
+
 ## JNI text contract
 
 JNI does not use modified-UTF shortcuts for the CLI payload boundary.
