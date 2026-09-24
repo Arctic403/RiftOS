@@ -131,9 +131,18 @@ function promotedSourceMatches(text, phase, expected) {
   return line?.match(/PROMOTED on installed source `([0-9a-f]{40})`/)?.[1] === expected;
 }
 assert.equal(promotedSourceMatches(projectStatus, 'N1.8.3', phaseAuthority.get('N1.8.3')), true);
+const n183StatusLine = projectStatus.split('\n').find(line => line.startsWith('- **N1.8.3'));
+assert.ok(n183StatusLine, 'N1.8.3 status line missing');
+const mutatedProjectStatus = projectStatus.replace(
+  n183StatusLine,
+  n183StatusLine.replace(
+    phaseAuthority.get('N1.8.3'),
+    '0000000000000000000000000000000000000000',
+  ),
+);
 assert.equal(
   promotedSourceMatches(
-    projectStatus.replace(phaseAuthority.get('N1.8.3'), '0000000000000000000000000000000000000000'),
+    mutatedProjectStatus,
     'N1.8.3',
     phaseAuthority.get('N1.8.3'),
   ),

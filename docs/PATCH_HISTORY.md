@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.62 — N1.8.4 regression fixture targeting fix
+
+The first Builder execution of N1.8.4 source `2e0f2c7e8fd4956e4fbdba345eb7022d4342807c` stopped during `npm run check` in `test-rift-documentation-claims-v1.mjs`, before Kotlin/Gradle compilation.
+
+The failure was in the regression fixture, not the runtime oracle. The negative promoted-source test used a global first-occurrence string replacement for the N1.8.3 promoted source SHA. Because that SHA also appears earlier in `docs/PROJECT_STATUS.md`, the fixture mutated the wrong prose occurrence while leaving the authoritative N1.8.3 status line unchanged, producing the false failure `promotion-source mutation was not detected`.
+
+The regression now deterministically selects the exact current-state line beginning `- **N1.8.3` and mutates the SHA only inside that line before calling `promotedSourceMatches`. This preserves the intended adversarial proof while removing dependence on unrelated earlier mentions of the same SHA.
+
+No N1.8.4 runtime-oracle semantics changed.
+
 ## Patch 10.61 — N1.8.4 deterministic documentation claims foundation
 
 N1.8.4 is now **source-implemented / promotion pending** with a separate read-only `project kind=claims` oracle implemented by `RiftDocumentationClaimsV1.kt`.
