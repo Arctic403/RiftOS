@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.4+ PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.4 ACTIVE / ARCHITECTURE-LOCKED / RUNTIME PENDING; N1.8.5+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -920,6 +920,22 @@ Promotion evidence is complete. Installed precursor builds proved each complete-
 
 ### N1.8.4 — documentation/roadmap/TODO claims
 
+**Hard authority rule: documentation is never repository truth.** N1.8.4 treats README/docs, ROADMAP entries, TODOs, status files and source comments as non-authoritative claims that must be checked against stronger evidence.
+
+Authority is directional:
+1. current source, manifests, build configuration, generated registries and other machine-readable repository state are authoritative for implementation/existence/configuration claims;
+2. exact Builder artifacts and installed-device/runtime evidence are authoritative for build/install/promotion claims;
+3. Observer outputs derived from those authorities may summarize the evidence but do not supersede it;
+4. README/docs, ROADMAP, TODOs, status prose and comments are claim surfaces only and may never override, repair, reinterpret or manufacture source/runtime truth.
+
+Required behavior:
+- if documentation disagrees with authoritative evidence, the contradiction finding points at the documentation/claim surface as stale or unsupported;
+- the Observer must never mutate source or lower-confidence evidence to make it agree with documentation;
+- documentation agreement cannot prove that a feature exists, is wired, is built, is installed or is promoted without corresponding authoritative evidence;
+- absent or incomplete authoritative evidence yields unresolved/insufficient-evidence state rather than trusting documentation as a fallback;
+- historical documents are excluded from current-state contradiction findings only when they are explicitly and deterministically classified as historical;
+- promotion/current-state claims must bind to exact source/build/install evidence when that evidence class is required;
+- TODO lifecycle claims are checked against source/evidence state: completed work still marked TODO and TODOs marked complete without supporting authority are both contradictions;
 - README/docs current-state claims;
 - ROADMAP state;
 - TODO lifecycle;

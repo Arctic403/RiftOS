@@ -6,6 +6,21 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.60 — N1.8.4 source-of-truth authority lock
+
+N1.8.4 documentation/roadmap/TODO verification is now architecture-locked around a hard directional authority rule:
+
+- current source, manifests, build configuration, generated registries and other machine-readable repository state are authoritative for implementation/existence/configuration claims;
+- exact Builder artifacts and installed-device/runtime evidence are authoritative for build/install/promotion claims;
+- Observer outputs may summarize those authorities but do not supersede them;
+- README/docs, ROADMAP, TODOs, status prose and comments are non-authoritative claim surfaces only and can never override source/build/runtime truth;
+- when prose contradicts stronger evidence, the claim surface is stale or unsupported;
+- incomplete authoritative evidence remains unresolved/insufficient rather than falling back to documentation;
+- the Observer must never mutate or reinterpret source to make it agree with documentation;
+- historical documents are excluded from current-state contradiction findings only when explicitly and deterministically classified as historical.
+
+This patch locks N1.8.4 semantics only. No N1.8.4 runtime implementation is claimed yet.
+
 ## Patch 10.59 — N1.8.3 installed promotion
 
 N1.8.3 cross-boundary contracts is promoted on installed source `e6de353ead6e9377e36e1602e301e3e8231a5e43`, Builder run `35949668024` / run number `322`.
