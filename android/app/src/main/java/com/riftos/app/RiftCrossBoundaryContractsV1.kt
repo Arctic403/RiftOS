@@ -221,16 +221,20 @@ internal class RiftCrossBoundaryContractsV1(
                 .findAll(cmake.text).forEach { libraries += it.groupValues[1] }
         }
         files.filter { it.file.extension.lowercase() in setOf("kt", "java") }.forEach { source ->
-            Regex("""System\.loadLibrary\(["']([^"']+)["']\)""").findAll(source.text).forEach { match ->
-                val library = match.groupValues[1]
-                val resolved = library in libraries
-                evidence += row("native-library-load", "build-native", "resolves",
-                    listOf(source.path to library, "resolved" to resolved.toString()))
-                if (!resolved) {
-                    finding("native-library-producer-missing", "build-native", source.path,
-                        "System.loadLibrary('$library') has no matching CMake add_library producer.")
+            val codeMask = RiftSourceIntelligenceV2.referenceCodeMask(source.path, source.text)
+            Regex("""System\.loadLibrary\(["']([^"']+)["']\)""")
+                .findAll(source.text)
+                .filter { codeMask.getOrNull(it.range.first) == true }
+                .forEach { match ->
+                    val library = match.groupValues[1]
+                    val resolved = library in libraries
+                    evidence += row("native-library-load", "build-native", "resolves",
+                        listOf(source.path to library, "resolved" to resolved.toString()))
+                    if (!resolved) {
+                        finding("native-library-producer-missing", "build-native", source.path,
+                            "System.loadLibrary('$library') has no matching CMake add_library producer.")
+                    }
                 }
-            }
         }
     }
 
@@ -250,11 +254,29 @@ internal class RiftCrossBoundaryContractsV1(
                 .findAll(source.text)
                 .firstOrNull { isCode(it.range.first) }
                 ?.groupValues?.get(1).orEmpty()
+            val braceDepth = IntArray(source.text.length + 1)
+            var depth = 0
+            for (index in source.text.indices) {
+                braceDepth[index] = depth
+                if (!isCode(index)) continue
+                when (source.text[index]) {
+                    '{' -> depth += 1
+                    '}' -> depth = maxOf(0, depth - 1)
+                }
+            }
+            braceDepth[source.text.length] = depth
+            data class Owner(val name: String, val offset: Int, val depth: Int)
             val owners = ownerPattern.findAll(source.text)
                 .filter { isCode(it.range.first) }
+                .map { Owner(it.groupValues[2], it.range.first, braceDepth[it.range.first]) }
                 .toList()
-            fun ownerAt(offset: Int): String? =
-                owners.lastOrNull { it.range.first < offset }?.groupValues?.get(2)
+            fun ownerAt(offset: Int): String? {
+                val declarationDepth = braceDepth[offset]
+                return owners
+                    .filter { it.offset < offset && it.depth < declarationDepth }
+                    .maxWithOrNull(compareBy<Owner>({ it.depth }, { it.offset }))
+                    ?.name
+            }
 
             val declarations = mutableListOf<Pair<Int, String>>()
             Regex("""\bexternal\s+fun\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(""")

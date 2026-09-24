@@ -6,6 +6,20 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.56 — N1.8.3 installed false-positive hardening
+
+The first installed N1.8.3 build, source `29222aca534a0fdb9b711d3264676e5e4d1f60b9`, Builder run `35935936280` / run number `318`, successfully exposed `project kind=contracts` on-device but returned three findings on the clean RiftOS repository. Direct inspection proved all three were oracle false positives rather than contract drift:
+- the native-library scanner matched the oracle's own diagnostic string `System.loadLibrary('$library')` as if it were executable code;
+- JNI owner attribution selected the nearest preceding nested type `CommandResult` instead of the lexically enclosing `RiftCliHost` object for `nativeExecute`;
+- that owner mistake also caused the real JNI export `Java_com_riftos_app_RiftCliHost_nativeExecute` to appear orphaned.
+
+Patch 10.56 hardens the detector instead of weakening the contracts:
+- managed `System.loadLibrary(...)` matches now reuse `RiftSourceIntelligenceV2.referenceCodeMask(...)` and accept executable-code positions only;
+- JNI declaration ownership now derives lexical brace depth and selects the deepest enclosing class/object whose declaration depth is strictly outside the native declaration, preventing nested sibling/helper declarations from stealing ownership;
+- the permanent N1.8.3 regression now requires executable-code filtering and includes a nested `RiftCliHost { data class CommandResult ... external fun nativeExecute(...) }` fixture that must resolve the owner as `RiftCliHost`.
+
+N1.8.3 remains **source-implemented / promotion pending**. A new Builder compile/install is required before the clean contracts baseline, finding-family mutation torture, exact/+1 bounds, warm determinism and restart parity can continue.
+
 ## Patch 10.55 — N1.8.3 cross-boundary contracts foundation
 
 N1.8.3 begins from the promoted N1.8.0-N1.8.2 observer stack and adds a separate read-only cross-boundary contract oracle. This patch is **source-implemented only**; no N1.8.3 promotion is claimed until Builder compilation and installed torture pass.

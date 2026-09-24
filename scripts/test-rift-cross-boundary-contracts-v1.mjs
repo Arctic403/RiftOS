@@ -54,6 +54,42 @@ assert.ok(
   "Gradle exact source snapshot does not declare the contracts oracle",
 );
 
+
+assert.ok(
+  contracts.includes("Regex(\"\"\"System\\.loadLibrary") &&
+  contracts.includes(".filter { codeMask.getOrNull(it.range.first) == true }"),
+  "native-library contract must ignore string/comment self-matches",
+);
+assert.ok(
+  contracts.includes("val braceDepth = IntArray(source.text.length + 1)") &&
+  contracts.includes("it.depth < declarationDepth"),
+  "JNI owner attribution must use lexical brace depth",
+);
+
+const nestedOwnerFixture = [
+  "internal object RiftCliHost {",
+  "  data class CommandResult(val output: String)",
+  "  private external fun nativeExecute(args: Array<String>): String",
+  "}",
+].join("\n");
+const fixtureDepth = new Int32Array(nestedOwnerFixture.length + 1);
+let fixtureBraceDepth = 0;
+for (let i = 0; i < nestedOwnerFixture.length; i++) {
+  fixtureDepth[i] = fixtureBraceDepth;
+  if (nestedOwnerFixture[i] === "{") fixtureBraceDepth++;
+  else if (nestedOwnerFixture[i] === "}") fixtureBraceDepth = Math.max(0, fixtureBraceDepth - 1);
+}
+fixtureDepth[nestedOwnerFixture.length] = fixtureBraceDepth;
+const fixtureOwners = [...nestedOwnerFixture.matchAll(/\b(?:class|object)\s+([A-Za-z_][A-Za-z0-9_]*)\b/g)]
+  .map((m) => ({ name: m[1], offset: m.index, depth: fixtureDepth[m.index] }));
+const nativeOffset = nestedOwnerFixture.indexOf("nativeExecute");
+const nativeDepth = fixtureDepth[nativeOffset];
+const fixtureOwner = fixtureOwners
+  .filter((owner) => owner.offset < nativeOffset && owner.depth < nativeDepth)
+  .sort((a, b) => a.depth - b.depth || a.offset - b.offset)
+  .at(-1)?.name;
+assert.equal(fixtureOwner, "RiftCliHost", "nested helper type stole outer JNI declaration ownership");
+
 const namespace = gradle.match(/\bnamespace\s*=\s*"([^"]+)"/)?.[1];
 const applicationId = gradle.match(/\bapplicationId\s*=\s*"([^"]+)"/)?.[1];
 assert.equal(namespace, applicationId, "current Android namespace/applicationId mirror drifted");
