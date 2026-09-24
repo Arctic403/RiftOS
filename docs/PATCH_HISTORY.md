@@ -6,6 +6,41 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.61 — N1.8.4 deterministic documentation claims foundation
+
+N1.8.4 is now **source-implemented / promotion pending** with a separate read-only `project kind=claims` oracle implemented by `RiftDocumentationClaimsV1.kt`.
+
+The authority contract is directional and fail-closed:
+- current source, manifests, build configuration and other machine-readable repository state are authoritative for implementation/existence/configuration claims;
+- exact Builder/install/runtime evidence is authoritative for build/install/promotion claims;
+- README/docs, ROADMAP, TODO/FIXME, status prose and comments are claim surfaces only and cannot override authority;
+- incomplete authority remains unresolved rather than falling back to prose;
+- free-form prose inference is explicitly disabled (`freeFormProseInference=false`) rather than guessing.
+
+The first deterministic claim set covers:
+- required current document existence;
+- relative Markdown target existence and project-escape rejection;
+- `docs/SOURCE_OWNERSHIP.md` source/owner existence and maintained-source coverage;
+- hard documentation-trust/ownership/Observer authority-policy markers;
+- source-owned N1.8 ROADMAP phase state;
+- PROJECT_STATUS promoted source bindings for N1.8.0-N1.8.3 and exact promoted run bindings where available;
+- canonical Observer current-state status;
+- structured `TODO:` / `FIXME:` and unchecked Markdown-task discovery;
+- deterministic historical-document classification, including `docs/PATCH_HISTORY.md` and archive/history paths.
+
+The lane reports claim states `verified`, `contradicted`, `stale`, `orphaned`, `unverified`, `superseded` and `heuristic-link`; contradiction-class states block `clean`. Open TODO/FIXME claims are retained as `unverified` until stronger evidence proves lifecycle drift, rather than being treated as errors merely for existing.
+
+Hard bounds are 4096 text files, 2 MiB/file, 64 MiB aggregate bytes, 8192 claims, 1024 findings and 240 returned preview rows. `claimsSha256` binds the full ordered authority/claim set. Incomplete scans suppress contradiction findings from partial evidence.
+
+Integration:
+- `RiftToolSandbox` adds only the thin `claims` dispatch;
+- `rift_info.codeMode.projectViews` now honestly advertises all implemented views: graph, impact, validation, consistency, integrity, propagation, contracts and claims;
+- Gradle's mandatory Android source snapshot includes `RiftDocumentationClaimsV1.kt`;
+- `scripts/test-rift-documentation-claims-v1.mjs` is wired into `npm check` and locks authority direction, phase/source/run bindings, historical classification, deterministic traversal, link mutation behavior, bounds and zero free-form truth inference;
+- source ownership and subsystem/build-validation documentation are updated with the new class and regression.
+
+N1.8.4 is **not promoted** by this patch. Builder Kotlin/Node proof, signed-APK proof, installed clean/mutation/bound/warm/restart torture and fresh N1.8.0-N1.8.3 continuity are still mandatory.
+
 ## Patch 10.60 — N1.8.4 source-of-truth authority lock
 
 N1.8.4 documentation/roadmap/TODO verification is now architecture-locked around a hard directional authority rule:

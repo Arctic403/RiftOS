@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.4 ACTIVE / ARCHITECTURE-LOCKED / RUNTIME PENDING; N1.8.5+ PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.4 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.5+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -919,6 +919,8 @@ Permanent regression: `scripts/test-rift-cross-boundary-contracts-v1.mjs`, wired
 Promotion evidence is complete. Installed precursor builds proved each complete-scan finding family (config/application ID, Gradle/CMake, manifest/source, native-library producer, both JNI directions, MCP registry, relay protocol, CLI event schema and timeout ordering) plus exact/+1 finding, per-file-size and file-count bounds. Patch 10.58 changed only already-incomplete source-scan handling; final installed source `e6de353ead6e9377e36e1602e301e3e8231a5e43` / Builder run `35949668024` / run 322 re-proved the changed aggregate path: exact 64 MiB remains complete, while 64 MiB + 1 returns only `contracts-byte-bound`, `partialFindingsSuppressed=true` and zero secondary findings. The full RiftOS contracts read is `complete=true`, `clean=true`, 166 files / 3,401,644 bytes / 18 contracts / 0 findings with SHA-256 `d13a5edb0d3d3fb82ba6c013ad3a24a71c174ff09d6499782a0223ad66f2edd4`; its warm repeat and the first read after a real force-stop/reopen reproduced that exact SHA and counts. Post-restart N1.8.0 consistency, N1.8.1 integrity and N1.8.2 propagation all remain green. N1.8.3 is promoted; N1.8.4 is next.
 
 ### N1.8.4 — documentation/roadmap/TODO claims
+
+Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING BUILDER + INSTALLED TORTURE.** The read-only `project kind=claims` lane is implemented by `RiftDocumentationClaimsV1.kt` and exposed through a thin `RiftToolSandbox` dispatch. It uses a source-owned N1.8 phase registry and deterministic repository evidence to verify required current docs, relative Markdown link targets, source-ownership existence/coverage, authority-policy markers, ROADMAP phase state, PROJECT_STATUS promoted source/run bindings, canonical Observer status, structured TODO/FIXME discovery and deterministic historical-document classification. Scans are bounded at 4096 text files, 2 MiB/file, 64 MiB aggregate bytes, 8192 claims, 1024 findings and 240 preview rows. `claimsSha256` binds the full ordered authority/claim set. Free-form prose inference is explicitly disabled (`freeFormProseInference=false`); unsupported language is never treated as truth by guesswork. Builder compilation, installed clean/mutation/bound/determinism/restart torture and N1.8.0-N1.8.3 continuity remain required before promotion.
 
 **Hard authority rule: documentation is never repository truth.** N1.8.4 treats README/docs, ROADMAP entries, TODOs, status files and source comments as non-authoritative claims that must be checked against stronger evidence.
 

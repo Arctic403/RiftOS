@@ -113,6 +113,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/engine/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRepositoryConsistencyObserver.kt` | `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md` + `docs/systems/workspace/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCrossBoundaryContractsV1.kt` | `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
+| `android/app/src/main/java/com/riftos/app/RiftDocumentationClaimsV1.kt` | `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` + `docs/PROJECT_STATUS.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` | `docs/systems/vortex-bridge/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` | `docs/systems/vortex-agent/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftChatHandoff.kt` | `docs/systems/chat-handoff/README.md` |
@@ -165,6 +166,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-integrity-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-propagation-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cross-boundary-contracts-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-documentation-claims-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md` + `docs/PATCH_HISTORY.md` + `scripts/README.md` |
 | `scripts/test-rift-cli-native-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-driver-protocol.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-push-channel.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` + `docs/PATCH_HISTORY.md` |

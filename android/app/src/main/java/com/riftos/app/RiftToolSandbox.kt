@@ -1393,6 +1393,7 @@ internal class RiftToolSandbox(context: Context) {
         if (kind == "integrity") return projectIntegrity(path, query)
         if (kind == "propagation") return projectPropagation(path, query, requestedLimit)
         if (kind == "contracts") return RiftCrossBoundaryContractsV1(workspaceRoot).analyze(base)
+        if (kind == "claims") return RiftDocumentationClaimsV1(workspaceRoot).analyze(base)
         val indexStats = refreshSymbolIndex(base)
 
         val children = (base.listFiles()
@@ -4341,7 +4342,7 @@ internal class RiftToolSandbox(context: Context) {
                 .put("dryRun", true)
                 .put("symbolIndex", "persistent-incremental")
                 .put("dependencyGraph", true)
-                .put("projectViews", JSONArray(listOf("graph", "impact", "validation")))
+                .put("projectViews", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity", "propagation", "contracts", "claims")))
                 .put("ignoredDirectories", JSONArray(ignoredDirectoryNames.sorted())))
             .put("capabilities", JSONArray(listOf(
                 "stat", "hash", "list", "readText", "writeText", "mkdir", "remove", "move", "copy", "archive", "extract", "workspaceExec",
