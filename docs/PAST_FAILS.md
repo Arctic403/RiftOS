@@ -159,4 +159,67 @@ When Observer gains compiler-evidence obligations, this failure should become a 
 - exact candidate compile pass → compiler obligation resolvable;
 - nullable argument into non-null parameter is surfaced by semantic diagnostics when that analysis exists.
 
+---
+
+## FAIL-2026-09-24-003 — N2-M2 promotion metadata rejected by stale N2-M1 lifecycle assertion
+
+**Status:** OPEN — root cause confirmed; source fix not yet bound to a commit.
+
+**Date:** 2026-09-24
+
+**Failed RiftOS source:** `86adc7c59700e36f031500130d4e7920ace73eb7`
+
+**Builder run ID:** `36068835303`
+
+**Signing mode:** `alpha-development`
+
+**Failure stage:** Builder source checks, `npm run check` → `npm run check:transport` → `scripts/test-rift-memory-n2-m1-v1.mjs`.
+
+**Observed failure:**
+
+`AssertionError: assert.ok(phase.programStatus.includes('N2.0-N2.2 PROMOTED / N2-M1 PROMOTED'))`
+
+The N2-M2 promotion commit correctly advanced machine lifecycle authority to:
+
+`N2.0-N2.4 PROMOTED / N2-M1 + N2-M2 PROMOTED; N2.5-N2.12 PENDING`
+
+but the older M1 regression still required the previous exact program-status wording.
+
+### Root cause
+
+This was a **stale regression-oracle dependency**, not a failure of N2-M1 or N2-M2 runtime semantics.
+
+The M1 regression already independently checks the actual N2.1/N2.2 phase statuses, promotion source SHA and Builder run number. Its additional `programStatus.includes(...)` assertion unnecessarily coupled an M1 invariant to a mutable whole-program lifecycle summary. Promoting a later phase therefore made the older regression fail even though all M1 evidence remained unchanged and valid.
+
+The correct invariant for the M1 gate is that N2.1/N2.2 remain promoted with their frozen evidence and the N2-M1 macro remains promoted. It must not freeze later-phase lifecycle wording.
+
+### Why the Observer did not prevent it
+
+The N2-M2 promotion candidate changed `riftmemory/n2-phase-authority.json` and the Observer proof plan reported deep verification with two selected tests and zero unresolved obligations. The affected M1 regression was **not selected**, even though it consumes the changed phase-authority file.
+
+This exposes a dependency-impact hole: changing machine lifecycle authority did not propagate to every maintained regression that reads that authority.
+
+### Observer coverage that would have prevented this failure
+
+Primary prevention requirement:
+
+1. **Test-dependency impact propagation.** A change to a machine-authority/config source must select every maintained regression that directly or semantically consumes that source. `riftmemory/n2-phase-authority.json` changes must therefore pull in N2 contract, M1, M2 and any later phase/lifecycle tests that read it.
+
+2. **Mutable-summary coupling detection.** Phase-specific regressions should not freeze mutable whole-program summary strings when more stable structured phase/macro fields exist. Observer/Validator should flag exact or partial lifecycle-summary assertions in older phase tests when the same invariant can be expressed against structured machine authority.
+
+3. **Selected-test execution evidence.** Impact selection must still require fresh execution/pass evidence for every selected affected test on the exact candidate SHA before obligations resolve.
+
+4. **Authority-consumer graph.** Future Project Intelligence should model `readFile/readJson` test dependencies on machine-authority files so lifecycle/config edits produce deterministic reverse-impact closure.
+
+### Future regression target
+
+When Observer is hardened around this failure, fixtures should prove:
+
+- phase-authority edit selects every direct consumer regression;
+- later-phase promotion does not invalidate frozen earlier-phase evidence;
+- older phase tests assert structured phase/macro invariants rather than mutable whole-program wording;
+- omitted authority consumer leaves an unresolved impact/proof obligation;
+- exact candidate execution of all impacted lifecycle tests is required before promotion metadata is considered green.
+
+
 

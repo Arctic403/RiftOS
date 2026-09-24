@@ -159,8 +159,8 @@ assert.equal(phase.phases.find(row => row.phase === 'N2.1')?.promotedSourceSha, 
 assert.equal(phase.phases.find(row => row.phase === 'N2.2')?.promotedSourceSha, '694c1e31a6c3f4bd4317edd121208be894be2586');
 assert.equal(phase.phases.find(row => row.phase === 'N2.1')?.builderRunNumber, '346');
 assert.equal(phase.phases.find(row => row.phase === 'N2.2')?.builderRunNumber, '346');
-assert.ok(phase.programStatus.includes('N2.0-N2.2 PROMOTED / N2-M1 PROMOTED'));
-assert.equal(phase.runtimeStatus, 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M2 DIAGNOSTIC ONLY');
+assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M1')?.status, 'promoted');
+assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
 assert.ok(pkg.scripts['check:transport'].includes('node scripts/test-rift-memory-n2-m1-v1.mjs'));
 
 console.log('ok - N2-M1 source: N2.1 canonical model/ledger + N2.2 SQLite reference backend are independently gated; diagnostic only, runtime authority inactive');
