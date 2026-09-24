@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.65 — N1.8.4 promoted-lifecycle regression fix
+
+The first Builder execution of promotion commit `2e482489ae78f2d3daab9945313c88e2cfb4e43c` stopped during `npm run check` in `scripts/test-rift-documentation-claims-v1.mjs`, before Kotlin/Gradle compilation.
+
+The failure was in the regression fixture, not the runtime claims oracle. The negative test for the invariant “at most one N1.8 phase may be `source-implemented`” assumed N1.8.4 itself was still `source-implemented` and changed only N1.8.5 to that state. After Patch 10.64 promoted N1.8.4, the mutation created exactly one `source-implemented` phase, which is valid, so the assertion falsely failed with `multiple source-implemented phases were accepted`.
+
+The regression now constructs the invalid case explicitly and future-proofly: it clones the machine authority and converts the final two N1.8 phase rows to `source-implemented`, clearing any promoted source/run evidence on both before validation. The fixture therefore continues to test the exact cardinality invariant regardless of which earlier N1.8 phases have since been promoted.
+
+No N1.8.4 runtime-oracle behavior, machine authority, promotion evidence, or installed-runtime semantics changed.
+
 ## Patch 10.64 — N1.8.4 installed promotion
 
 N1.8.4 documentation/roadmap/TODO claim verification is promoted on installed source `be1e3ddedec2512145ec7132c3a47419c139cb4e`, Builder run `35957909835` / run number `328`.

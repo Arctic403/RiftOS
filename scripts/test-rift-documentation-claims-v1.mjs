@@ -129,12 +129,14 @@ assert.equal(
   'short phase authority was accepted',
 );
 const duplicateSourceImplemented = JSON.parse(JSON.stringify(authority));
-duplicateSourceImplemented.phases[5] = {
-  phase: 'N1.8.5',
-  status: 'source-implemented',
-  promotedSourceSha: null,
-  builderRunNumber: null,
-};
+for (const index of [duplicateSourceImplemented.phases.length - 2, duplicateSourceImplemented.phases.length - 1]) {
+  duplicateSourceImplemented.phases[index] = {
+    ...duplicateSourceImplemented.phases[index],
+    status: 'source-implemented',
+    promotedSourceSha: null,
+    builderRunNumber: null,
+  };
+}
 assert.equal(validateAuthority(duplicateSourceImplemented), false, 'multiple source-implemented phases were accepted');
 
 for (const phase of authority.phases.filter(row => row.status === 'promoted')) {
