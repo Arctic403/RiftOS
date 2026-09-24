@@ -82,6 +82,68 @@ assert.ok(!hashPayloadBody.includes('"changedSymbols"'), 'workspace-global chang
 assert.match(proof, /if \(hasChanges && !impactComplete\)/);
 assert.match(proof, /if \(hasChanges && projectRows\.size > 1\)/);
 
+const LIMITS = Object.freeze({
+  changes: 1024,
+  selectedTests: 512,
+  supplementalTests: 512,
+  checks: 128,
+  obligations: 1024,
+  previewRows: 240,
+});
+
+for (const [pattern, message] of [
+  [/if \(allChanges\.size > MAX_CHANGES\) incomplete \+= "proof-change-bound"/, 'change +1 guard'],
+  [/allChanges\.take\(MAX_CHANGES\)/, 'change cap'],
+  [/if \(selectedTestsAll\.size > MAX_SELECTED_TESTS\) incomplete \+= "proof-selected-test-bound"/, 'selected-test +1 guard'],
+  [/selectedTestsAll\.take\(MAX_SELECTED_TESTS\)/, 'selected-test cap'],
+  [/if \(supplementalAll\.size > MAX_SUPPLEMENTAL_TESTS\) incomplete \+= "proof-supplemental-test-bound"/, 'supplemental-test +1 guard'],
+  [/supplementalAll\.take\(MAX_SUPPLEMENTAL_TESTS\)/, 'supplemental-test cap'],
+  [/selectedChecks\.size >= MAX_CHECKS/, 'check pre-add cap'],
+  [/obligations\.size >= MAX_OBLIGATIONS/, 'obligation pre-add cap'],
+  [/obligationRows\.size > MAX_PREVIEW_ROWS/, 'obligation preview +1 guard'],
+  [/selectedTestRows\.size > MAX_PREVIEW_ROWS/, 'selected preview +1 guard'],
+  [/supplementalRows\.size > MAX_PREVIEW_ROWS/, 'supplemental preview +1 guard'],
+  [/checkRows\.size > MAX_PREVIEW_ROWS/, 'check preview +1 guard'],
+  [/obligationRows\.take\(MAX_PREVIEW_ROWS\)/, 'obligation preview cap'],
+  [/selectedTestRows\.take\(MAX_PREVIEW_ROWS\)/, 'selected preview cap'],
+  [/supplementalRows\.take\(MAX_PREVIEW_ROWS\)/, 'supplemental preview cap'],
+  [/checkRows\.take\(MAX_PREVIEW_ROWS\)/, 'check preview cap'],
+]) {
+  assert.match(proof, pattern, `missing N1.8.5 bound semantics: ${message}`);
+}
+
+function listBound(count, max) {
+  return { kept: Math.min(count, max), incomplete: count > max };
+}
+function guardedAdds(attempts, max) {
+  let kept = 0;
+  let incomplete = false;
+  for (let i = 0; i < attempts; i += 1) {
+    if (kept >= max) {
+      incomplete = true;
+    } else {
+      kept += 1;
+    }
+  }
+  return { kept, incomplete };
+}
+
+for (const max of [LIMITS.changes, LIMITS.selectedTests, LIMITS.supplementalTests, LIMITS.previewRows]) {
+  assert.deepEqual(listBound(max, max), { kept: max, incomplete: false });
+  assert.deepEqual(listBound(max + 1, max), { kept: max, incomplete: true });
+}
+for (const max of [LIMITS.checks, LIMITS.obligations]) {
+  assert.deepEqual(guardedAdds(max, max), { kept: max, incomplete: false });
+  assert.deepEqual(guardedAdds(max + 1, max), { kept: max, incomplete: true });
+}
+
+const addCommandCalls = [...proof.matchAll(/\baddCommand\(/g)].length - 1;
+const addObligationCalls = [...proof.matchAll(/\baddObligation\(/g)].length - 1;
+assert.equal(addCommandCalls, 4, 'current planner check cardinality changed; reassess MAX_CHECKS reachability');
+assert.equal(addObligationCalls, 11, 'current planner obligation cardinality changed; reassess MAX_OBLIGATIONS reachability');
+assert.ok(addCommandCalls < LIMITS.checks);
+assert.ok(addObligationCalls < LIMITS.obligations);
+
 function plan({ source = false, changedTest = false, directTest = false, referenceTest = false, heuristicTest = false, api = false, build = false, docs = false, deleted = false, incomplete = false, projects = 1 }) {
   const selected = [];
   if (changedTest) selected.push(['tests/changed.test.js', 'changed-test']);
