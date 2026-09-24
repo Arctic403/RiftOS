@@ -95,7 +95,6 @@ const fixtures = Object.freeze([
 assert.equal(sha256(fixtures), EXPECTED_CORPUS_SHA256, 'N1.8.6 mutation corpus identity drifted');
 
 const markerSources = Object.freeze({
-  'n1.8.1-syntax-unclosed-delimiter': sandbox,
   'n1.8.1-local-dependency-missing': sandbox,
   'documentation-roadmap-state-stale': claims,
   'historical-document-classification': claims,
@@ -131,6 +130,14 @@ for (const fixture of fixtures) {
   }
 
   for (const marker of fixture.expected) {
+    if (marker === 'n1.8.1-syntax-unclosed-delimiter') {
+      assert.ok(
+        sandbox.includes('"n1.8.1-syntax-" + issue.code') &&
+        source.includes('"unclosed-delimiter"'),
+        fixture.id + ' lost dynamic syntax rule-id construction contract',
+      );
+      continue;
+    }
     const text = markerSources[marker];
     assert.ok(text, fixture.id + ' references unbound contract marker: ' + marker);
     assert.ok(text.includes(marker), fixture.id + ' lost contract marker: ' + marker);
