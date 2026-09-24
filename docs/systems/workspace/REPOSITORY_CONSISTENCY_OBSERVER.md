@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.3 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.4+ PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.4+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -899,7 +899,7 @@ Promoted outcomes:
 
 ### N1.8.3 — cross-boundary contracts
 
-Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING BUILDER + INSTALLED TORTURE.**
+Status: **PROMOTED on installed source `e6de353ead6e9377e36e1602e301e3e8231a5e43`, Builder run `35949668024` / run number `322`.**
 
 N1.8.3 adds the separate read-only `project kind=contracts` oracle with schema `rift-cross-boundary-contracts-v1`. The implementation is isolated in `RiftCrossBoundaryContractsV1.kt`; `RiftToolSandbox` only dispatches the project view, so this phase does not deepen the existing sandbox god-file before the post-N1.8 refactor.
 
@@ -916,7 +916,7 @@ The scan is fail-closed with bounds of 4096 text/source files, 2 MiB per file, 6
 
 Permanent regression: `scripts/test-rift-cross-boundary-contracts-v1.mjs`, wired into root `npm check`. It verifies the real source mirrors and includes deliberate protocol/timeout mismatch fixtures so the gate cannot pass only because the current repository happens to be clean.
 
-Promotion still requires Builder Node/Kotlin compilation, a clean installed full-repository contracts read, destructive disposable fixtures for each finding class, bound exact/+1 behavior, deterministic warm reads, real process-restart parity and fresh N1.8.0/N1.8.1/N1.8.2 regression continuity.
+Promotion evidence is complete. Installed precursor builds proved each complete-scan finding family (config/application ID, Gradle/CMake, manifest/source, native-library producer, both JNI directions, MCP registry, relay protocol, CLI event schema and timeout ordering) plus exact/+1 finding, per-file-size and file-count bounds. Patch 10.58 changed only already-incomplete source-scan handling; final installed source `e6de353ead6e9377e36e1602e301e3e8231a5e43` / Builder run `35949668024` / run 322 re-proved the changed aggregate path: exact 64 MiB remains complete, while 64 MiB + 1 returns only `contracts-byte-bound`, `partialFindingsSuppressed=true` and zero secondary findings. The full RiftOS contracts read is `complete=true`, `clean=true`, 166 files / 3,401,644 bytes / 18 contracts / 0 findings with SHA-256 `d13a5edb0d3d3fb82ba6c013ad3a24a71c174ff09d6499782a0223ad66f2edd4`; its warm repeat and the first read after a real force-stop/reopen reproduced that exact SHA and counts. Post-restart N1.8.0 consistency, N1.8.1 integrity and N1.8.2 propagation all remain green. N1.8.3 is promoted; N1.8.4 is next.
 
 ### N1.8.4 — documentation/roadmap/TODO claims
 

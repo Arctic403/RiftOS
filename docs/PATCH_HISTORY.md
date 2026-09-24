@@ -6,6 +6,43 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.59 — N1.8.3 installed promotion
+
+N1.8.3 cross-boundary contracts is promoted on installed source `e6de353ead6e9377e36e1602e301e3e8231a5e43`, Builder run `35949668024` / run number `322`.
+
+Final installed authority:
+- full RiftOS `project kind=contracts`: `complete=true`, `clean=true`, 166 scanned files, 3,401,644 scanned bytes, 18 contracts, 0 findings;
+- deterministic contracts SHA-256: `d13a5edb0d3d3fb82ba6c013ad3a24a71c174ff09d6499782a0223ad66f2edd4`;
+- complete scans expose `partialFindingsSuppressed=false`;
+- a warm repeat reproduced the exact SHA and counts;
+- after a real Android force-stop/reopen, the **first** contracts read again reproduced the exact SHA, counts, completeness and zero findings.
+
+Installed torture accumulated across the N1.8.3 hardening sequence and remained protected by the final Builder regression:
+- Android namespace/applicationId mismatch;
+- missing Gradle-to-CMake target;
+- missing manifest-to-managed component;
+- missing CMake producer for a managed native-library load;
+- missing JNI export for a managed native declaration;
+- orphan JNI export with no managed declaration;
+- advertised MCP tool without dispatch;
+- relay protocol mismatch;
+- CLI event-schema mismatch;
+- timeout-chain ordering violation;
+- exact 1024 findings accepted with full count/hash authority and 240-row previews; attempted finding 1025 fails closed with `contracts-finding-bound`;
+- exact 2 MiB file accepted; +1 byte fails closed with `contracts-file-size-bound`;
+- exact 4096 files accepted; file 4097 fails closed with `contracts-file-bound`;
+- exact 64 MiB aggregate accepted;
+- final Patch 10.58 installed proof: 64 MiB + 1 returns only `contracts-byte-bound`, `partialFindingsSuppressed=true`, 0 contract findings and no fabricated missing-member findings from skipped source.
+
+Patch 10.56's executable-code masking/JNI lexical-owner fixes, Patch 10.57's bounded result previews, and Patch 10.58's partial-scan finding suppression are now part of the promoted contract and permanent `test-rift-cross-boundary-contracts-v1.mjs` / Builder final-DEX gates.
+
+Final post-restart continuity:
+- N1.8.0 consistency: `complete=true`, 1130 facts / 1185 edges / 274 files / 0 findings, graph SHA-256 `841ca9ab93633fcf1d63663a772d8cec3a35883206a7e9300e36076fc8dae083`, verified cache, warm `changed=false`;
+- N1.8.1 integrity: `complete=true`, `clean=true`, integrity SHA-256 `c2642fce8c83c12dfea696ca2ed9676abcd86ef40e6e6ee42c7536f6623abd64`, 157 syntax-checked files, 0 invalid files, 0 local missing/ambiguity and 0 findings;
+- N1.8.2 propagation: exact promoted fixture SHA-256 `d23531420d8d3da679ae24022c1a419b336782e7e6343d848d42910d8b98a9a3`, `complete=true`, no incomplete reasons.
+
+N1.8.4 — documentation/roadmap/TODO claims — is the next active Observer phase. N2 remains blocked until N1.8.0-N1.8.7 are all promoted.
+
 ## Patch 10.58 — N1.8.3 partial-scan finding suppression
 
 Installed aggregate-byte torture on source `a626ac19810effc062aa29b5319e05e66c9c3dcb`, Builder run `35946225021` / run number `321`, proved the exact 64 MiB boundary but exposed misleading secondary findings on the +1 case. The scan correctly returned only `contracts-byte-bound` in `incompleteReasons`, but because one contract member file was necessarily skipped after the aggregate-byte cap fired, later absence-based checks reported three false “member missing” findings from the partial dataset.
