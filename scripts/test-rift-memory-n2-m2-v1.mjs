@@ -50,8 +50,8 @@ assert.ok(reconcile.includes('candidateRank > currentRank'));
 assert.ok(reconcile.includes('scope = record.scope'));
 assert.ok(reconcile.includes('projectId = record.scope.projectId'));
 assert.ok(reconcile.includes('offset = MAX_CONFLICT_SCAN, limit = 1'));
-assert.ok((reconcile.match(/runCatching \\{\\s*handle\\.markProjectionDirty/g) || []).length >= 4, 'post-commit projection dirty markers must fail soft');
-assert.ok(!reconcile.includes('val commit = handle.commitTransaction(tx)\\n            handle.markProjectionDirty('), 'canonical commit result must not depend on disposable projection marker success');
+assert.ok((reconcile.match(/runCatching\s*\{\s*handle\.markProjectionDirty/g) || []).length >= 4, 'post-commit projection dirty markers must fail soft');
+assert.ok(!/val commit = handle\.commitTransaction\(tx\)\s*handle\.markProjectionDirty/.test(reconcile), 'canonical commit result must not depend on disposable projection marker success');
 
 for (const marker of [
   'const val PROJECTION_SCHEMA = "rift-memory-temporal-graph-v1"',

@@ -13,6 +13,8 @@ RiftOS uses two separate validation layers:
 
 Neither layer replaces installed-device testing.
 
+Every failed RiftOS/Builder build from 2026-09-24 forward must be appended to `docs/PAST_FAILS.md` with the exact source/run evidence, root cause, and the Observer check/evidence that would have prevented the failure. The ledger is retained after fixes so future Observer hardening can convert escaped failure classes into deterministic pre-build coverage.
+
 ## Source ownership
 
 RiftOS repository:

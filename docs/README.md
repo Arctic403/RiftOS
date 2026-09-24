@@ -12,6 +12,8 @@ Changing relevant source invalidates the affected document's trusted status unti
 
 [`PATCH_HISTORY.md`](PATCH_HISTORY.md) records source-first patch notes. It is descriptive evidence, not an authority substitute for source/tests/builds.
 
+[`PAST_FAILS.md`](PAST_FAILS.md) is the permanent Builder/build failure ledger. Every failed build from 2026-09-24 forward must be appended there with the root cause and the Observer evidence/check that would have prevented it.
+
 ## Current verified set
 
 | System | Status | Documentation | Live/source basis |
