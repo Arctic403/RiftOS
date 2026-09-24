@@ -1,7 +1,7 @@
 {
   "schema": "rift-memory-n2-phase-authority-v1",
   "program": "N2 Federated Rift Memory Kernel",
-  "programStatus": "N2.0-N2.2 PROMOTED / N2-M1 PROMOTED; N2.3 + N2.4 SOURCE-IMPLEMENTED / N2-M2 PROMOTION PENDING; N2.5-N2.12 PENDING",
+  "programStatus": "N2.0-N2.4 PROMOTED / N2-M1 + N2-M2 PROMOTED; N2.5-N2.12 PENDING",
   "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M2 DIAGNOSTIC ONLY",
   "n18Prerequisite": "SATISFIED",
   "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
@@ -26,7 +26,7 @@
       ],
       "title": "Reconciliation and temporal truth",
       "rule": "Both subphases require separate evidence before this macro patch is green.",
-      "status": "source-implemented/promotion-pending"
+      "status": "promoted"
     },
     {
       "patch": "N2-M3",
@@ -90,15 +90,15 @@
     },
     {
       "phase": "N2.3",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "18f1156075e08cb94573a9392031ac64552313f2",
+      "builderRunNumber": "350"
     },
     {
       "phase": "N2.4",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "18f1156075e08cb94573a9392031ac64552313f2",
+      "builderRunNumber": "350"
     },
     {
       "phase": "N2.5",

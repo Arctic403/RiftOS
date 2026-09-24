@@ -97,7 +97,7 @@ When Observer is upgraded to consume execution evidence, this failure should bec
 
 ## FAIL-2026-09-24-002 — N2-M2 Kotlin nullability compile failure in contradiction event path
 
-**Status:** FIXED IN SOURCE / AWAITING BUILDER VERIFICATION.
+**Status:** RESOLVED — Builder run `36067080197` / run number `350` compiled and installed source `18f1156075e08cb94573a9392031ac64552313f2`; live `riftMemoryN2M2.ok=true` and the nullability fix is therefore verified.
 
 **Date:** 2026-09-24
 

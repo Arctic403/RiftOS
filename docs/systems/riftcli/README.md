@@ -298,7 +298,7 @@ Promotion is split into N1.8.0-N1.8.7: fact graph/schema, syntax/import integrit
 
 ### Gate N2 — Federated Rift Memory Kernel
 
-**Hard pre-N3 program. N2.0-N2.2 are promoted; N2-M1 is promoted on installed source `694c1e31a6c3f4bd4317edd121208be894be2586`, Builder run `36048901054` / run number `346`, after real process restart proved committed-state recovery, process-death rollback and `restartPromotionReady=true`; N2.3 + N2.4 are source-implemented as N2-M2 / promotion-pending, N2.5-N2.12 remain pending, and canonical memory runtime authority remains inactive. N2.1-N2.11 execute in six macro patches (1+2, 3+4, 5+6, 7+8, 9, 10+11) while retaining separate per-phase evidence gates; N2.12 remains separate. Performance/comparative benchmarking stays deferred until the full RiftCLI stack is 100% complete and live.**
+**Hard pre-N3 program. N2.0-N2.4 are promoted; N2-M1 is promoted on installed source `694c1e31a6c3f4bd4317edd121208be894be2586`, Builder run `36048901054` / run number `346`, and N2-M2 is promoted on installed source `18f1156075e08cb94573a9392031ac64552313f2`, Builder run `36067080197` / run number `350`, with all N2.3/N2.4 diagnostics green and clean post-install Observer continuity; N2.5-N2.12 remain pending, and canonical memory runtime authority remains inactive. N2.1-N2.11 execute in six macro patches (1+2, 3+4, 5+6, 7+8, 9, 10+11) while retaining separate per-phase evidence gates; N2.12 remains separate. Performance/comparative benchmarking stays deferred until the full RiftCLI stack is 100% complete and live.**
 
 N2 is no longer a generic "engineering state" bucket. It is one canonical Rift Memory Kernel with multiple specialized cognitive engines operating over the same canonical IDs/evidence/transactions.
 
