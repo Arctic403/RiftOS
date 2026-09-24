@@ -44,6 +44,14 @@ assert.ok(!sandbox.includes('private fun languageFor('), 'PI-v2 language parser 
 
 assert.match(sandbox, /private fun candidateImpact\(\): JSONObject/);
 assert.match(sandbox, /workspaceRecords\.semanticImpactSeed\(\)/);
+const candidateImpactBody = sandbox.slice(
+  sandbox.indexOf('private fun candidateImpact(): JSONObject'),
+  sandbox.indexOf('private fun candidateReferences(')
+);
+assert.match(candidateImpactBody, /refreshSymbolIndex\(sandboxFile\(root\)\)/);
+assert.match(candidateImpactBody, /"candidate-projects"/);
+assert.match(candidateImpactBody, /"no-candidate-changes"/);
+assert.ok(!candidateImpactBody.includes('refreshSymbolIndex(workspaceRoot)'), 'candidate impact must never refresh the entire workspace');
 assert.match(sandbox, /semanticImpactSha256/);
 assert.match(sandbox, /ownershipDocsFor/);
 assert.match(sandbox, /SOURCE_OWNERSHIP\.md/);

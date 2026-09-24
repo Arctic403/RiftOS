@@ -2511,11 +2511,37 @@ internal class RiftToolSandbox(context: Context) {
         val incompleteReasons = linkedSetOf<String>()
         if (!seed.optBoolean("complete", false)) incompleteReasons += "semantic-seed-incomplete"
 
-        val indexStats = refreshSymbolIndex(workspaceRoot)
-        if (indexStats.optBoolean("truncated", false)) incompleteReasons += "project-index-truncated"
-
         val changes = seed.getJSONArray("changes")
         val projectRoots = linkedSetOf<String>()
+        for (index in 0 until changes.length()) {
+            val rawPath = changes.getJSONObject(index).getString("path").trim('/')
+            projectRoots += candidateProjectRoot("$WORKSPACE_ROOT/$rawPath")
+        }
+        if (projectRoots.size > MAX_CANDIDATE_PROJECTS) incompleteReasons += "project-root-bound"
+        val selectedProjectRoots = projectRoots.sorted().take(MAX_CANDIDATE_PROJECTS).toSet()
+
+        val indexScopes = JSONArray()
+        var indexTruncated = false
+        for (root in selectedProjectRoots.sorted()) {
+            val stats = refreshSymbolIndex(sandboxFile(root))
+            if (stats.optBoolean("truncated", false)) indexTruncated = true
+            indexScopes.put(
+                JSONObject()
+                    .put("root", root)
+                    .put("diagnostics", stats)
+            )
+        }
+        if (indexTruncated) incompleteReasons += "project-index-truncated"
+        val indexStats = JSONObject()
+            .put("scope", "candidate-projects")
+            .put("scopes", indexScopes)
+            .put("truncated", indexTruncated)
+            .put("skipped", selectedProjectRoots.isEmpty())
+            .put(
+                "reason",
+                if (selectedProjectRoots.isEmpty()) "no-candidate-changes" else JSONObject.NULL
+            )
+
         val sourceTargets = linkedSetOf<String>()
         val changedTests = linkedSetOf<String>()
         val changedDocs = linkedSetOf<String>()
@@ -2585,8 +2611,6 @@ internal class RiftToolSandbox(context: Context) {
             semanticRows.put(out)
         }
 
-        if (projectRoots.size > MAX_CANDIDATE_PROJECTS) incompleteReasons += "project-root-bound"
-        val selectedProjectRoots = projectRoots.sorted().take(MAX_CANDIDATE_PROJECTS).toSet()
         val indexed = symbolIndex.filterKeys { path ->
             selectedProjectRoots.any { root -> isPathWithin(path, root) }
         }

@@ -22,7 +22,9 @@ The normal MCP request timeout chain is widened while preserving strict inner-to
 
 Focused regressions now lock the 256-record bound, tracking-policy migration, persisted candidate-session evidence, watcher-aware semantic currentness, shared ignore policy, 60-second Workspace Records budget, widened timeout chain and 300-second SSE lease. Current architecture docs are synchronized; historical Patch History entries retain the timeout values that were true for those earlier source versions.
 
-Builder compilation/source checks, installed migration behavior, live Workspace Records latency, `project kind=proofs` completion, restart continuity and N1.8.0-N1.8.4 oracle continuity remain required before N1.8.5 promotion.
+Installed run 332 at source `1ee0437d9bfa266039a09773db3a27176e28bb0e` proved the first half of the repair: `rift_workspace_diff` returned normally with a clean candidate (0 changed files / 0 records / 0 patch sessions), confirming Workspace Records itself was no longer the timeout source. The same installed `project kind=proofs` request still timed out. Source audit then found the next hot-path defect in `candidateImpact()`: it called `refreshSymbolIndex(workspaceRoot)` before inspecting whether the candidate contained any changes. Current source now derives affected project roots from the exact candidate first, skips PI refresh entirely for a zero-change candidate (`no-candidate-changes`), and refreshes only the bounded affected project roots (`candidate-projects`) for real candidates. The semantic-impact regression permanently forbids a whole-workspace refresh from `candidateImpact()`.
+
+Builder compilation/source checks, installed zero-change proof completion, candidate-scoped semantic fixtures, migration/latency behavior, restart continuity and N1.8.0-N1.8.4 oracle continuity remain required before N1.8.5 promotion.
 
 ## Patch 10.66 — N1.8.5 proof obligations and focused verification foundation
 
