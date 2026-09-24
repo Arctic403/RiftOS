@@ -152,7 +152,7 @@ for (const file of [
 assert.equal(phase.phases.find(row => row.phase === 'N2.0')?.status, 'promoted');
 assert.equal(phase.phases.find(row => row.phase === 'N2.1')?.status, 'source-implemented');
 assert.equal(phase.phases.find(row => row.phase === 'N2.2')?.status, 'source-implemented');
-assert.ok(phase.programStatus.includes('N2.1 + N2.2 SOURCE-IMPLEMENTED / M1 PROMOTION PENDING'));
+assert.ok(phase.programStatus.includes('N2.1 + N2.2 SOURCE-IMPLEMENTED / N2-M1 PROMOTION PENDING'));
 assert.equal(phase.runtimeStatus, 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 DIAGNOSTIC ONLY');
 assert.ok(pkg.scripts['check:transport'].includes('node scripts/test-rift-memory-n2-m1-v1.mjs'));
 
