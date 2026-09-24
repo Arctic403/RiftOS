@@ -61,6 +61,7 @@ class RiftToolHost(
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val sandbox: RiftToolSandbox
     private val n2M1Diagnostic: JSONObject
+    private val n2M2Diagnostic: JSONObject
     private data class CliJob(
         val id: String,
         val requestId: String,
@@ -117,6 +118,7 @@ class RiftToolHost(
         migrateLegacyState()
         sandbox = RiftToolSandbox(appContext)
         n2M1Diagnostic = RiftMemoryN2M1SelfTest.run(appContext)
+        n2M2Diagnostic = RiftMemoryN2M2SelfTest.run(appContext)
     }
 
     fun access(): JSONObject = JSONObject()
@@ -462,6 +464,7 @@ class RiftToolHost(
         if (name == "rift_info" && value is JSONObject) {
             value.put("mcpManifest", manifest())
             value.put("riftMemoryN2M1", JSONObject(n2M1Diagnostic.toString()))
+                            value.put("riftMemoryN2M2", JSONObject(n2M2Diagnostic.toString()))
         }
         recordAudit(name, normalizedArgs, true, null, duration)
         return JSONObject()
@@ -583,6 +586,7 @@ class RiftToolHost(
                                     .put("refreshClientActionsWhenCountDiffers", true)
                                     .put("note", "If a client exposes fewer tools than mcpManifest.count, refresh/rescan that client's MCP app actions; reconnecting the relay alone does not replace a cached client action catalog."))
                                 value.put("riftMemoryN2M1", JSONObject(n2M1Diagnostic.toString()))
+                                value.put("riftMemoryN2M2", JSONObject(n2M2Diagnostic.toString()))
                             }
                             recordAudit(name, normalizedArgs, true, null)
                             JSONObject().put("ok", true).put("name", name).put("value", value)
@@ -926,6 +930,7 @@ class RiftToolHost(
                         .put("refreshClientActionsWhenCountDiffers", true)
                         .put("note", "If a client exposes fewer tools than mcpManifest.count, refresh/rescan that client's MCP app actions; reconnecting the relay alone does not replace a cached client action catalog."))
                     value.put("riftMemoryN2M1", JSONObject(n2M1Diagnostic.toString()))
+                    value.put("riftMemoryN2M2", JSONObject(n2M2Diagnostic.toString()))
                 }
                 reply(
                     JSONObject()
