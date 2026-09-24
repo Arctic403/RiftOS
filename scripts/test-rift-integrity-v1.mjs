@@ -8,14 +8,15 @@ const sandbox = read(k + 'RiftToolSandbox.kt');
 const observer = read(k + 'RiftRepositoryConsistencyObserver.kt');
 const pkg = JSON.parse(read('package.json'));
 
-assert.match(source, /const val VERSION = 6/);
+assert.match(source, /const val VERSION = 7/);
 assert.match(source, /const val MAX_SYNTAX_ISSUES = 128/);
+assert.match(source, /const val MAX_KOTLIN_NULLABLE_LOCALS = 256/);
 assert.match(source, /data class SyntaxIssue\(/);
 assert.match(source, /data class SyntaxEvidence\(/);
 assert.match(source, /val localIntent: Boolean\? = null/);
 assert.match(source, /syntax = analyzeSyntax\(language, normalized\)/);
 assert.match(source, /private fun analyzeSyntax\(language: String, text: String\): SyntaxEvidence/);
-assert.match(source, /mode = "bounded-structural-v4-conservative"/);
+assert.match(source, /mode = "bounded-structural-v5-conservative"/);
 for (const code of [
   'unexpected-closing-delimiter',
   'mismatched-delimiter',
@@ -23,10 +24,17 @@ for (const code of [
   'unterminated-triple-string',
   'unterminated-string',
   'unclosed-delimiter',
+  'kotlin-nullable-dereference',
 ]) {
   assert.ok(source.includes(code), 'missing structural syntax issue: ' + code);
 }
 assert.match(source, /AnalysisBoundExceeded\("syntax-issue-bound"\)/);
+assert.match(source, /AnalysisBoundExceeded\("kotlin-nullable-local-bound"\)/);
+assert.match(source, /private fun kotlinNullableDereferenceIssues\(text: String\): List<SyntaxIssue>/);
+assert.ok(source.includes('"getCanonicalRecord("'), 'nullable flow must cover MemoryStore.getCanonicalRecord');
+assert.ok(source.includes('"getContentBlob("'), 'nullable flow must cover MemoryStore.getContentBlob');
+assert.match(source, /requireNotNull\|checkNotNull/);
+assert.match(source, /kotlinNullableDereferenceIssues\(text\)\.forEach/);
 assert.ok(source.includes('"cpp" -> Regex'), 'C/C++ dependency extraction must remain present');
 assert.ok(source.includes('localIntent = it.groupValues[1]'), 'quoted include local-intent classification must remain present');
 assert.match(source, /specifier\.startsWith\("\."\)/);
@@ -47,7 +55,7 @@ assert.match(source, /filter\(::javascriptMatchStartsInCode\)/);
 assert.ok(!source.includes('fun kotlinInterpolatedStringEnd('), 'retired last-quote Kotlin interpolation heuristic must not return');
 assert.ok(source.includes('(?:import|export)'), 'static JS from-import extraction must be statement-anchored');
 
-assert.match(sandbox, /PROJECT_INTELLIGENCE_CACHE_VERSION = 9/);
+assert.match(sandbox, /PROJECT_INTELLIGENCE_CACHE_VERSION = 10/);
 assert.match(sandbox, /MAX_INTEGRITY_FILES = 4_096/);
 assert.match(sandbox, /MAX_INTEGRITY_DEPENDENCIES = 4_096/);
 assert.match(sandbox, /MAX_INTEGRITY_FINDINGS = 1_024/);
@@ -69,8 +77,8 @@ assert.match(sandbox, /analysis\.syntax\.issues/);
 assert.match(sandbox, /syntaxMode = analysis\.syntax\.mode/);
 assert.match(sandbox, /syntaxValid = analysis\.syntax\.valid/);
 assert.match(sandbox, /"not-applicable" -> Unit/);
-assert.match(sandbox, /"bounded-structural-v4-conservative"/);
-assert.match(sandbox, /rift-source-intelligence-v6-bounded-structural-v4/);
+assert.match(sandbox, /"bounded-structural-v5-conservative"/);
+assert.match(sandbox, /rift-source-intelligence-v7-bounded-structural-v5-nullability-v1/);
 assert.match(sandbox, /fun sourcePackagePath\(/);
 assert.match(sandbox, /"\/src\/main\/java\/"/);
 assert.match(sandbox, /"qualified-package-not-local"/);

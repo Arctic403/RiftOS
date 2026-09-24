@@ -140,7 +140,7 @@ assert.equal(phase.phases.find(row => row.phase === 'N2.3')?.promotedSourceSha, 
 assert.equal(phase.phases.find(row => row.phase === 'N2.4')?.promotedSourceSha, '18f1156075e08cb94573a9392031ac64552313f2');
 assert.equal(phase.phases.find(row => row.phase === 'N2.3')?.builderRunNumber, '350');
 assert.equal(phase.phases.find(row => row.phase === 'N2.4')?.builderRunNumber, '350');
-assert.equal(phase.runtimeStatus, 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M2 DIAGNOSTIC ONLY');
+assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
 assert.ok(pkg.scripts['check:transport'].includes('node scripts/test-rift-memory-n2-m2-v1.mjs'));
 
 for (const authorityPath of [

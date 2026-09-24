@@ -7,11 +7,12 @@ package com.riftos.app
  * symbol and dependency interpretation cannot drift between the two evidence paths.
  */
 internal object RiftSourceIntelligenceV2 {
-    const val VERSION = 6
+    const val VERSION = 7
     const val MAX_SEMANTIC_DELTA_ENTRIES = 1_000
     const val MAX_ANALYSIS_SYMBOLS = 4_096
     const val MAX_ANALYSIS_DEPENDENCIES = 4_096
     const val MAX_SYNTAX_ISSUES = 128
+    const val MAX_KOTLIN_NULLABLE_LOCALS = 256
 
     class AnalysisBoundExceeded(
         val reason: String
@@ -884,6 +885,104 @@ internal object RiftSourceIntelligenceV2 {
         return out.distinctBy { "${it.line}:${it.kind}:${it.specifier}" }
     }
 
+
+    private fun kotlinNullableDereferenceIssues(text: String): List<SyntaxIssue> {
+        val codeMask = genericReferenceCodeMask("kotlin", text)
+        val masked = CharArray(text.length)
+        for (index in text.indices) {
+            val value = text[index]
+            masked[index] = when {
+                value == '\n' || value == '\r' -> value
+                codeMask[index] -> value
+                else -> ' '
+            }
+        }
+        val lines = String(masked).split('\n')
+        val declaration = Regex("""\bval\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)""")
+        val nullableProducers = listOf(
+            "getCanonicalRecord(",
+            "getContentBlob("
+        )
+        val tracked = linkedMapOf<String, Int>()
+        for ((index, line) in lines.withIndex()) {
+            val match = declaration.find(line) ?: continue
+            val name = match.groupValues[1]
+            val rhs = match.groupValues[2]
+            if (nullableProducers.none { producer -> rhs.contains(producer) }) continue
+            if (rhs.contains("?:") || rhs.contains("!!")) continue
+            if (!tracked.containsKey(name)) tracked[name] = index
+            if (tracked.size > MAX_KOTLIN_NULLABLE_LOCALS) {
+                throw AnalysisBoundExceeded("kotlin-nullable-local-bound")
+            }
+        }
+        if (tracked.isEmpty()) return emptyList()
+
+        val depthBefore = IntArray(lines.size)
+        var depth = 0
+        for (index in lines.indices) {
+            depthBefore[index] = depth
+            val line = lines[index]
+            depth += line.count { it == '{' } - line.count { it == '}' }
+            if (depth < 0) depth = 0
+        }
+
+        val issues = ArrayList<SyntaxIssue>()
+        for ((name, declarationLine) in tracked) {
+            val escaped = Regex.escape(name)
+            val unsafeDereference = Regex("""\b$escaped\.""")
+            val redeclaration = Regex("""\b(?:val|var)\s+$escaped\b""")
+            val sameLineProof = Regex("""\b$escaped\s*!=\s*null\b""")
+            val guardBlock = Regex("""\bif\s*\(\s*$escaped\s*!=\s*null\s*\)\s*\{""")
+            val earlyExitGuard = Regex(
+                """\bif\s*\(\s*$escaped\s*==\s*null\s*\)\s*(?:return\b|throw\b|continue\b|break\b)"""
+            )
+            val contractGuard = Regex("""\b(?:requireNotNull|checkNotNull)\s*\(\s*$escaped\s*\)""")
+            val elvisExitGuard = Regex("""\b$escaped\s*\?:\s*(?:return\b|throw\b)""")
+
+            var permanentlyNonNull = false
+            var guardedDepth: Int? = null
+            for (lineIndex in declarationLine + 1 until lines.size) {
+                val line = lines[lineIndex]
+                if (redeclaration.containsMatchIn(line)) break
+
+                val currentDepth = depthBefore[lineIndex]
+                if (guardedDepth != null && currentDepth < guardedDepth!!) guardedDepth = null
+
+                if (earlyExitGuard.containsMatchIn(line) ||
+                    contractGuard.containsMatchIn(line) ||
+                    elvisExitGuard.containsMatchIn(line)
+                ) {
+                    permanentlyNonNull = true
+                }
+
+                val guardMatch = guardBlock.find(line)
+                if (guardMatch != null) {
+                    guardedDepth = currentDepth + 1
+                }
+
+                for (match in unsafeDereference.findAll(line)) {
+                    val prefix = line.substring(0, match.range.first)
+                    val sameLineGuard = sameLineProof.find(prefix)?.let { proof ->
+                        prefix.substring(proof.range.last + 1).contains("&&")
+                    } == true
+                    if (permanentlyNonNull || guardedDepth != null || sameLineGuard) continue
+                    issues += SyntaxIssue(
+                        code = "kotlin-nullable-dereference",
+                        line = lineIndex + 1,
+                        column = match.range.first + 1,
+                        detail = "Nullable local '$name' is dereferenced without a recognized non-null proof."
+                    )
+                    if (issues.size >= MAX_SYNTAX_ISSUES) {
+                        throw AnalysisBoundExceeded("syntax-issue-bound")
+                    }
+                }
+            }
+        }
+        return issues
+            .distinctBy { Triple(it.line, it.column, it.detail) }
+            .sortedWith(compareBy<SyntaxIssue> { it.line }.thenBy { it.column }.thenBy { it.detail })
+    }
+
     private fun analyzeSyntax(language: String, text: String): SyntaxEvidence {
         if (language == "generic") {
             return SyntaxEvidence("not-applicable", true, emptyList())
@@ -1087,8 +1186,14 @@ internal object RiftSourceIntelligenceV2 {
             )
         }
 
+        if (language == "kotlin") {
+            kotlinNullableDereferenceIssues(text).forEach { issue ->
+                addIssue(issue.code, issue.line, issue.column, issue.detail)
+            }
+        }
+
         return SyntaxEvidence(
-            mode = "bounded-structural-v4-conservative",
+            mode = "bounded-structural-v5-conservative",
             valid = issues.isEmpty(),
             issues = issues
         )
