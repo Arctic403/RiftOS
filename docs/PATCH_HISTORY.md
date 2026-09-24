@@ -36,7 +36,9 @@ Run 334 then exercised additional correctness-only planner branches on the insta
 
 The final run-334 isolation fixture exposed another source blocker: a candidate wholly inside a different workspace project correctly gave RiftOS `mode=none` / zero obligations, but `proofsSha256` still changed because the hash included workspace-global `candidateId`, `semanticImpactSha256` and changed-symbol state. Current source fixes that by introducing `hashScope=project-local-plan-v1`: `proofsSha256` now binds only project-local canonical plan inputs, global impact incompleteness/multi-project escalation is ignored when this project has no local changes, and workspace-global candidate/semantic evidence remains diagnostic-only. Permanent regression now rejects reintroduction of those global fields into the proof hash and covers the unrelated-project case. Builder signed-DEX proof now requires `project-local-plan-v1`.
 
-A new Builder/install is required to prove project-isolation parity on-device. Restart continuity, remaining N1.8.5 exact-bound fixtures and N1.8.0-N1.8.4 continuity remain required before N1.8.5 promotion.
+Source `08146ba30ef713ac895e390adf5d515ef78fa728`, Builder run `36014191151` / run number `335`, live-proved project isolation. Clean RiftOS produced `hashScope=project-local-plan-v1`, `mode=none`, zero obligations and `proofsSha256=a4f92d9d654407528cbf7a48c30d5f12b4aa5ab503d2903ce8952d1ecbf0aecc`. A disposable candidate created wholly in `workspace/n185-isolation-live` changed the workspace-global candidate/evidence identity but RiftOS remained `mode=none`, zero obligations and kept the exact same `proofsSha256`; deleting the external project restored the clean candidate-state identity while preserving the same project-local proof hash. Run 335 also re-proved N1.8.0/.1/.3/.4 continuity: contracts, claims, consistency and integrity all completed with zero findings.
+
+Restart continuity and remaining N1.8.5 exact-bound fixtures remain required before N1.8.5 promotion.
 
 ## Patch 10.66 — N1.8.5 proof obligations and focused verification foundation
 
