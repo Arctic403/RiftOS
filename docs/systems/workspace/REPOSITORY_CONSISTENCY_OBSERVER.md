@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 + N1.8.6 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.7 PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 + N1.8.6 + N1.8.7 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET — FULL N1.8 OBSERVER PROGRAM COMPLETE**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -980,6 +980,8 @@ The external benchmark subsets, precision/recall/F1, latency, memory, throughput
 
 ### N1.8.7 — installed-device promotion
 
+Status: **PROMOTED on installed source `b9910bb2f88b198619ce34e4ccebf12e6c60352a`, Builder run `36024616083` / run number `339`.** The real-device sweep completed the full N1.8 promotion program. Under the global no-benchmark rule, the bounded RAM/latency item was satisfied only as verification of finite caps and the 75/90/100/110/120-second fail-closed request ladder; no performance timing, memory profiling or comparative scoring was run.
+
 On the real ARM32-compatible Android target:
 
 - mutate disposable repo fixtures;
@@ -1020,7 +1022,7 @@ Any later auto-repair system must consume observer findings through a separate a
 
 ## Relationship to later gates
 
-N1.8 becomes a hard precondition for N2.
+N1.8 is the hard precondition for N2, and that prerequisite is now satisfied by the fully promoted N1.8.0-N1.8.7 program. This does not itself activate N2; N2 begins only through its own implementation and promotion sequence.
 
 The Federated Rift Memory Kernel may ingest observer findings/evidence later, but memory is not allowed to become the source of repository truth. Repository facts remain rebuildable from code/config/docs/history.
 

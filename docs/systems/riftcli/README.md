@@ -284,11 +284,11 @@ The future staged subsystem scan planner is **architecture-locked and no longer 
 
 Deterministic evidence outranks inference; inferred links cannot block promotion alone. Every deterministic finding must include evidence and the graph path explaining the mismatch. Incremental state must periodically equal a clean graph rebuild. The observer remains evidence-only and cannot mutate/approve/push by itself.
 
-Promotion is split into N1.8.0-N1.8.7: fact graph/schema, syntax/import integrity, semantic propagation, cross-boundary contracts, documentation claims, focused proof obligations, adversarial benchmarks/ablations, and installed-device promotion. Canonical specification: `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`.
+Promotion is split into N1.8.0-N1.8.7: fact graph/schema, syntax/import integrity, semantic propagation, cross-boundary contracts, documentation claims, focused proof obligations, adversarial correctness/layer-isolation proof, and installed-device promotion. Performance/comparative benchmarking remains deferred until the full RiftCLI stack is 100% complete and live. Canonical specification: `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md`.
 
 ### Gate N2 — Federated Rift Memory Kernel
 
-**Hard pre-N3 program; roadmap only until implemented and promoted. N2 is blocked until N1.8 promotion.**
+**Hard pre-N3 program; roadmap only until implemented and promoted. The N1.8 prerequisite is satisfied, but N2 remains inactive until its own implementation begins. Performance/comparative benchmarking stays deferred until the full RiftCLI stack is 100% complete and live.**
 
 N2 is no longer a generic "engineering state" bucket. It is one canonical Rift Memory Kernel with multiple specialized cognitive engines operating over the same canonical IDs/evidence/transactions.
 
