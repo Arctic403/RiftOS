@@ -6,6 +6,41 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.63 — N1.8.4 machine-readable phase authority bootstrap fix
+
+Installed N1.8.4 source `67482c788a34d3296df3740886a4063b7a00b912`, Builder run `35954577401` / run number `327`, passed the original documentation-claims runtime torture:
+
+- full RiftOS claims view: `complete=true`, `clean=true`, 265 files / 4,509,337 bytes / 877 claims / 876 verified / 1 historical-superseded / 0 findings at `claimsSha256=fcac2c3fb6db97d6033982849fdea1662a5fe555af1646ff69a294e6f1ba6e2d`;
+- stale ROADMAP, promoted-source SHA, promoted-run, broken-link, documentation-authority and source-ownership mutations each produced the expected single contradiction/stale finding;
+- open TODO remained visible as `unverified` without becoming a false contradiction;
+- historical `docs/PATCH_HISTORY.md` bad-link/TODO content remained isolated as `superseded`;
+- exact 2 MiB file accepted; +1 byte returned only `claims-file-size-bound` with partial-finding suppression;
+- exact 4096 files accepted; file 4097 returned only `claims-file-bound`;
+- exact 64 MiB aggregate accepted; +1 byte returned only `claims-byte-bound`;
+- exact 8192 claims accepted; attempted claim 8193 returned only `claims-claim-bound`;
+- warm full-repo reads were deterministic;
+- the first post-force-stop claims read reproduced the exact `fcac2c3f...` SHA and counts;
+- final N1.8.0 consistency, N1.8.1 integrity, N1.8.2 propagation and N1.8.3 contracts continuity all remained green.
+
+Final promotion audit found one architecture blocker despite those runtime passes: N1.8 lifecycle/source/run authority was compiled directly into `RiftDocumentationClaimsV1.kt`. Updating ROADMAP/PROJECT_STATUS/Observer text to record N1.8.4 promotion would therefore make the still-running promoted binary immediately label those synchronized docs stale until another binary was built, creating a self-referential promotion/bootstrap loop.
+
+Patch 10.63 moves mutable lifecycle authority into versioned machine-readable repository source `observer/phase-authority.json` with schema `rift-observer-phase-authority-v1`. The claims oracle now reads that file at scan time and validates it fail-closed before evaluating documentation:
+
+- exact N1.8.0 through N1.8.7 ordering;
+- monotonic `promoted -> source-implemented -> pending` lifecycle ordering;
+- at most one `source-implemented` phase;
+- promoted phases require exact 40-hex source SHAs;
+- optional Builder run numbers are numeric and bounded;
+- non-promoted phases cannot carry promoted source/run evidence;
+- ROADMAP and canonical Observer expected status strings are authoritative fields in the same file;
+- authority file size is capped at 64 KiB;
+- missing, oversized, unreadable or invalid authority files make the claims view incomplete instead of falling back to prose;
+- `claimsSha256` now binds the canonical phase authority state as well as the ordered claims.
+
+The permanent Node regression now consumes the same JSON authority rather than duplicating phase SHAs/status strings in test code, and source ownership explicitly covers `observer/phase-authority.json`.
+
+N1.8.4 remains **SOURCE-IMPLEMENTED / PROMOTION PENDING**. The run-327 semantic/bound/restart evidence remains valid; only Builder/install proof of this authority-bootstrap refactor plus installed authority-file mutation/restart parity remains before promotion.
+
 ## Patch 10.62 — N1.8.4 regression fixture targeting fix
 
 The first Builder execution of N1.8.4 source `2e0f2c7e8fd4956e4fbdba345eb7022d4342807c` stopped during `npm run check` in `test-rift-documentation-claims-v1.mjs`, before Kotlin/Gradle compilation.

@@ -1,0 +1,55 @@
+{
+  "schema": "rift-observer-phase-authority-v1",
+  "roadmapStatus": "N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 PROMOTED; N1.8.5-N1.8.7 PENDING",
+  "observerStatus": "N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.5+ PENDING",
+  "phases": [
+    {
+      "phase": "N1.8.0",
+      "status": "promoted",
+      "promotedSourceSha": "9d196567e38e781d97a24bb2c808b47cbc2303eb",
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N1.8.1",
+      "status": "promoted",
+      "promotedSourceSha": "198a3f31e22a5d385378fee087aa5f115aed6d5a",
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N1.8.2",
+      "status": "promoted",
+      "promotedSourceSha": "9cc74b25c94fd3e23e93f64d3d132e65e63fe3a6",
+      "builderRunNumber": "317"
+    },
+    {
+      "phase": "N1.8.3",
+      "status": "promoted",
+      "promotedSourceSha": "e6de353ead6e9377e36e1602e301e3e8231a5e43",
+      "builderRunNumber": "322"
+    },
+    {
+      "phase": "N1.8.4",
+      "status": "promoted",
+      "promotedSourceSha": "67482c788a34d3296df3740886a4063b7a00b912",
+      "builderRunNumber": "327"
+    },
+    {
+      "phase": "N1.8.5",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N1.8.6",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N1.8.7",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    }
+  ]
+}

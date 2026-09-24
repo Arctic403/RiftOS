@@ -40,22 +40,16 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
             val runNumber: String? = null
         )
 
-        private val PHASE_AUTHORITY = listOf(
-            PhaseAuthority("N1.8.0", "promoted", "9d196567e38e781d97a24bb2c808b47cbc2303eb"),
-            PhaseAuthority("N1.8.1", "promoted", "198a3f31e22a5d385378fee087aa5f115aed6d5a"),
-            PhaseAuthority("N1.8.2", "promoted", "9cc74b25c94fd3e23e93f64d3d132e65e63fe3a6", "317"),
-            PhaseAuthority("N1.8.3", "promoted", "e6de353ead6e9377e36e1602e301e3e8231a5e43", "322"),
-            PhaseAuthority("N1.8.4", "source-implemented"),
-            PhaseAuthority("N1.8.5", "pending"),
-            PhaseAuthority("N1.8.6", "pending"),
-            PhaseAuthority("N1.8.7", "pending")
-        )
-
-        private const val ROADMAP_STATUS =
-            "N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED; N1.8.4 ACTIVE; N1.8.5-N1.8.7 PENDING"
-        private const val OBSERVER_STATUS =
-            "N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.4 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.5+ PENDING"
+        private const val PHASE_AUTHORITY_PATH = "observer/phase-authority.json"
+        private const val PHASE_AUTHORITY_SCHEMA = "rift-observer-phase-authority-v1"
+        private const val MAX_PHASE_AUTHORITY_BYTES = 64L * 1024L
     }
+
+    private data class PhaseAuthorityState(
+        val phases: List<PhaseAuthority>,
+        val roadmapStatus: String,
+        val observerStatus: String
+    )
 
     private data class TextFile(
         val file: File,
@@ -83,6 +77,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         require(root.toPath().startsWith(workspace.toPath())) { "Project root escaped workspace" }
 
         val incomplete = linkedSetOf<String>()
+        val phaseAuthority = loadPhaseAuthority(root, incomplete)
         val files = mutableListOf<TextFile>()
         var totalBytes = 0L
 
@@ -139,7 +134,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         checkRelativeLinks(root, files, ::add)
         checkOwnership(root, files, ::add)
         checkAuthorityPolicy(files, ::add)
-        checkPhaseState(files, ::add)
+        checkPhaseState(files, phaseAuthority, ::add)
         checkTodoLifecycle(files, ::add)
         classifyHistorical(files, ::add)
 
@@ -152,7 +147,9 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
 
         val shaInput = buildString {
             append(SCHEMA).append('\n')
-            PHASE_AUTHORITY.forEach {
+            append("authority-roadmap|").append(phaseAuthority.roadmapStatus).append('\n')
+            append("authority-observer|").append(phaseAuthority.observerStatus).append('\n')
+            phaseAuthority.phases.forEach {
                 append("authority|").append(it.phase).append('|').append(it.status).append('|')
                     .append(it.sourceSha.orEmpty()).append('|').append(it.runNumber.orEmpty()).append('\n')
             }
@@ -189,6 +186,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
             .put("phase", PHASE)
             .put("view", "claims")
             .put("authority", "source-build-runtime-over-documentation")
+            .put("phaseAuthorityPath", PHASE_AUTHORITY_PATH)
             .put("projectRoot", relative(workspace, root))
             .put("complete", incomplete.isEmpty())
             .put("clean", incomplete.isEmpty() && bad.isEmpty())
@@ -207,6 +205,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                 "relative-markdown-link-targets",
                 "source-ownership-ledger-existence-and-coverage",
                 "documentation-authority-policy",
+                "machine-readable-phase-authority",
                 "n1.8-roadmap-current-state",
                 "n1.8-project-status-promoted-source-bindings",
                 "canonical-observer-current-state",
@@ -233,14 +232,15 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                 .put("maxTotalBytes", MAX_TOTAL_BYTES)
                 .put("maxClaims", MAX_CLAIMS)
                 .put("maxFindings", MAX_FINDINGS)
-                .put("maxPreviewRows", MAX_PREVIEW_ROWS))
+                .put("maxPreviewRows", MAX_PREVIEW_ROWS)
+                .put("maxPhaseAuthorityBytes", MAX_PHASE_AUTHORITY_BYTES))
             .put("preview", JSONObject()
                 .put("claimRows", claimRows.length())
                 .put("findingRows", findingRows.length())
                 .put("claimsTruncated", ordered.size > MAX_PREVIEW_ROWS)
                 .put("findingsTruncated", findings.size > MAX_PREVIEW_ROWS))
             .put("phaseAuthority", JSONArray().also { array ->
-                PHASE_AUTHORITY.forEach { phase ->
+                phaseAuthority.phases.forEach { phase ->
                     array.put(JSONObject()
                         .put("phase", phase.phase)
                         .put("status", phase.status)
@@ -252,6 +252,85 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
             .put("findings", findingRows)
     }
 
+
+    private fun loadPhaseAuthority(root: File, incomplete: MutableSet<String>): PhaseAuthorityState {
+        val fallback = PhaseAuthorityState(emptyList(), "", "")
+        val file = File(root, PHASE_AUTHORITY_PATH)
+        if (!file.isFile) {
+            incomplete += "claims-phase-authority-missing"
+            return fallback
+        }
+        val size = file.length()
+        if (size < 0L || size > MAX_PHASE_AUTHORITY_BYTES) {
+            incomplete += "claims-phase-authority-size-bound"
+            return fallback
+        }
+        val text = runCatching { file.readText(Charsets.UTF_8) }.getOrElse {
+            incomplete += "claims-phase-authority-read-failure"
+            return fallback
+        }
+        val json = runCatching { JSONObject(text) }.getOrElse {
+            incomplete += "claims-phase-authority-invalid"
+            return fallback
+        }
+        if (json.optString("schema") != PHASE_AUTHORITY_SCHEMA) {
+            incomplete += "claims-phase-authority-invalid"
+            return fallback
+        }
+        val roadmapStatus = json.optString("roadmapStatus").trim()
+        val observerStatus = json.optString("observerStatus").trim()
+        if (roadmapStatus.isBlank() || observerStatus.isBlank() ||
+            roadmapStatus.length > 4_096 || observerStatus.length > 4_096
+        ) {
+            incomplete += "claims-phase-authority-invalid"
+            return fallback
+        }
+        val array = json.optJSONArray("phases")
+        if (array == null || array.length() != 8) {
+            incomplete += "claims-phase-authority-invalid"
+            return fallback
+        }
+        val phases = mutableListOf<PhaseAuthority>()
+        val statusOrder = mapOf("promoted" to 0, "source-implemented" to 1, "pending" to 2)
+        var previousStatus = -1
+        var sourceImplementedCount = 0
+        for (index in 0 until array.length()) {
+            val row = array.optJSONObject(index)
+            if (row == null) {
+                incomplete += "claims-phase-authority-invalid"
+                return fallback
+            }
+            val phase = row.optString("phase")
+            val expectedPhase = "N1.8.$index"
+            val status = row.optString("status")
+            val order = statusOrder[status]
+            val source = if (row.has("promotedSourceSha") && !row.isNull("promotedSourceSha"))
+                row.optString("promotedSourceSha").takeIf { it.isNotBlank() } else null
+            val run = if (row.has("builderRunNumber") && !row.isNull("builderRunNumber"))
+                row.optString("builderRunNumber").takeIf { it.isNotBlank() } else null
+            val validSource = source == null || Regex("^[0-9a-f]{40}$").matches(source)
+            val validRun = run == null || Regex("^[0-9]{1,20}$").matches(run)
+            val lifecycleValid = when (status) {
+                "promoted" -> source != null
+                "source-implemented", "pending" -> source == null && run == null
+                else -> false
+            }
+            if (phase != expectedPhase || order == null || order < previousStatus ||
+                !validSource || !validRun || !lifecycleValid
+            ) {
+                incomplete += "claims-phase-authority-invalid"
+                return fallback
+            }
+            if (status == "source-implemented") sourceImplementedCount += 1
+            if (sourceImplementedCount > 1) {
+                incomplete += "claims-phase-authority-invalid"
+                return fallback
+            }
+            phases += PhaseAuthority(phase, status, source, run)
+            previousStatus = order
+        }
+        return PhaseAuthorityState(phases, roadmapStatus, observerStatus)
+    }
     private fun checkRequiredDocs(root: File, add: (Claim) -> Unit) {
         REQUIRED_CURRENT_DOCS.forEach { path ->
             val exists = File(root, path).isFile
@@ -369,22 +448,22 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         }
     }
 
-    private fun checkPhaseState(files: List<TextFile>, add: (Claim) -> Unit) {
+    private fun checkPhaseState(files: List<TextFile>, authority: PhaseAuthorityState, add: (Claim) -> Unit) {
         files.firstOrNull { it.path == "ROADMAP.md" && !it.historical }?.let { roadmap ->
             val observed = roadmap.text.lineSequence()
                 .firstOrNull { it.contains("N1.8 Repository Consistency Observer") }
                 ?.trim()
             add(Claim(
                 "roadmap-phase-state",
-                if (roadmap.text.contains(ROADMAP_STATUS)) "verified" else "stale",
+                if (roadmap.text.contains(authority.roadmapStatus)) "verified" else "stale",
                 roadmap.path,
                 roadmap.text.lineSequence().indexOfFirst { it.contains("N1.8 Repository Consistency Observer") } + 1,
-                "N1.8 phase state", "source-phase-registry", ROADMAP_STATUS, observed ?: "missing"
+                "N1.8 phase state", "repository-phase-authority", authority.roadmapStatus, observed ?: "missing"
             ))
         }
 
         files.firstOrNull { it.path == "docs/PROJECT_STATUS.md" && !it.historical }?.let { status ->
-            PHASE_AUTHORITY.filter { it.status == "promoted" }.forEach { phase ->
+            authority.phases.filter { it.status == "promoted" }.forEach { phase ->
                 val lines = status.text.lineSequence().toList()
                 val lineIndex = lines.indexOfFirst { it.startsWith("- **${phase.phase}") }
                 val line = lines.getOrNull(lineIndex)
@@ -400,7 +479,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                         else -> "stale"
                     },
                     status.path, if (lineIndex >= 0) lineIndex + 1 else 0,
-                    phase.phase, "source-phase-registry", phase.sourceSha, source ?: "missing"
+                    phase.phase, "repository-phase-authority", phase.sourceSha, source ?: "missing"
                 ))
                 if (phase.runNumber != null) {
                     val run = line?.let {
@@ -414,22 +493,25 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                             else -> "stale"
                         },
                         status.path, if (lineIndex >= 0) lineIndex + 1 else 0,
-                        phase.phase, "source-phase-registry", phase.runNumber, run ?: "missing"
+                        phase.phase, "repository-phase-authority", phase.runNumber, run ?: "missing"
                     ))
                 }
             }
-            val lines = status.text.lineSequence().toList()
-            val activeIndex = lines.indexOfFirst { it.startsWith("- **N1.8.4") }
-            val activeLine = lines.getOrNull(activeIndex)
-            val sourceImplemented = activeLine?.contains("SOURCE-IMPLEMENTED", ignoreCase = true) == true &&
-                activeLine.contains("promotion-pending", ignoreCase = true)
-            add(Claim(
-                "project-status-active-phase",
-                if (sourceImplemented) "verified" else "stale",
-                status.path, if (activeIndex >= 0) activeIndex + 1 else 0,
-                "N1.8.4", "source-phase-registry", "source-implemented/promotion-pending",
-                if (sourceImplemented) "source-implemented/promotion-pending" else "missing-or-wrong-lifecycle"
-            ))
+            val current = authority.phases.lastOrNull { it.status != "pending" }
+            if (current?.status == "source-implemented") {
+                val lines = status.text.lineSequence().toList()
+                val activeIndex = lines.indexOfFirst { it.startsWith("- **${current.phase}") }
+                val activeLine = lines.getOrNull(activeIndex)
+                val sourceImplemented = activeLine?.contains("SOURCE-IMPLEMENTED", ignoreCase = true) == true &&
+                    activeLine.contains("promotion-pending", ignoreCase = true)
+                add(Claim(
+                    "project-status-active-phase",
+                    if (sourceImplemented) "verified" else "stale",
+                    status.path, if (activeIndex >= 0) activeIndex + 1 else 0,
+                    current.phase, "repository-phase-authority", "source-implemented/promotion-pending",
+                    if (sourceImplemented) "source-implemented/promotion-pending" else "missing-or-wrong-lifecycle"
+                ))
+            }
         }
 
         files.firstOrNull {
@@ -439,9 +521,9 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
             val lineIndex = lines.indexOfFirst { it.startsWith("Status:") }
             add(Claim(
                 "canonical-observer-phase-state",
-                if (observer.text.contains(OBSERVER_STATUS)) "verified" else "stale",
+                if (observer.text.contains(authority.observerStatus)) "verified" else "stale",
                 observer.path, if (lineIndex >= 0) lineIndex + 1 else 0,
-                "N1.8 canonical status", "source-phase-registry", OBSERVER_STATUS,
+                "N1.8 canonical status", "repository-phase-authority", authority.observerStatus,
                 lines.getOrNull(lineIndex)?.trim() ?: "missing"
             ))
         }
@@ -489,7 +571,8 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
             "android/app/build.gradle.kts", "android/app/src/main/AndroidManifest.xml",
             "android/app/src/main/res/values/styles.xml",
             "android/app/src/main/res/xml/vortex_agent_accessibility.xml",
-            "android/riftos-debug.keystore.b64"
+            "android/riftos-debug.keystore.b64",
+            PHASE_AUTHORITY_PATH
         ).filter { File(root, it).isFile }.forEach(result::add)
 
         addMatching(root, "src", result) { it.extension.lowercase() in setOf("js", "css") }

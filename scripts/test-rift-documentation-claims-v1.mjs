@@ -6,10 +6,13 @@ const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 const claimsPath = 'android/app/src/main/java/com/riftos/app/RiftDocumentationClaimsV1.kt';
+const authorityPath = 'observer/phase-authority.json';
 const sandboxPath = 'android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt';
 const gradlePath = 'android/app/build.gradle.kts';
 
 const claims = read(claimsPath);
+const authorityText = read(authorityPath);
+const authority = JSON.parse(authorityText);
 const sandbox = read(sandboxPath);
 const gradle = read(gradlePath);
 const ownership = read('docs/SOURCE_OWNERSHIP.md');
@@ -26,10 +29,18 @@ for (const marker of [
   'private const val MAX_CLAIMS = 8_192',
   'private const val MAX_FINDINGS = 1_024',
   'private const val MAX_PREVIEW_ROWS = 240',
+  'private const val PHASE_AUTHORITY_PATH = "observer/phase-authority.json"',
+  'private const val PHASE_AUTHORITY_SCHEMA = "rift-observer-phase-authority-v1"',
+  'private const val MAX_PHASE_AUTHORITY_BYTES = 64L * 1024L',
+  'claims-phase-authority-missing',
+  'claims-phase-authority-size-bound',
+  'claims-phase-authority-read-failure',
+  'claims-phase-authority-invalid',
   '.put("authority", "source-build-runtime-over-documentation")',
   '.put("direction", "authority->claims")',
   '.put("documentationMayOverrideAuthority", false)',
   '.put("freeFormProseInference", false)',
+  '"machine-readable-phase-authority"',
   '"historical-document-classification"',
   '"todo-lifecycle"',
   '"project-status-promoted-source"',
@@ -43,6 +54,10 @@ for (const marker of [
   assert.ok(claims.includes(marker), `missing claims-oracle contract marker: ${marker}`);
 }
 
+assert.ok(!claims.includes('private val PHASE_AUTHORITY ='), 'compiled phase registry must not return');
+assert.ok(!claims.includes('private const val ROADMAP_STATUS'), 'compiled ROADMAP lifecycle must not return');
+assert.ok(!claims.includes('private const val OBSERVER_STATUS'), 'compiled Observer lifecycle must not return');
+
 assert.ok(
   claims.indexOf('documentationMayOverrideAuthority", false') >= 0 &&
   claims.indexOf('freeFormProseInference", false') >= 0,
@@ -53,7 +68,6 @@ assert.ok(
   'claim scan traversal must be deterministic',
 );
 assert.ok(
-  claims.includes('if (incomplete.isNotEmpty())') ||
   claims.includes('val initiallyIncomplete = incomplete.isNotEmpty()'),
   'claim scan must expose fail-closed incomplete state',
 );
@@ -69,59 +83,92 @@ assert.ok(
   gradle.includes('"src/main/java/com/riftos/app/RiftDocumentationClaimsV1.kt"'),
   'claims oracle is missing from mandatory Android source snapshot',
 );
-assert.ok(
-  ownership.includes(`| \`${claimsPath}\` |`),
-  'claims oracle is missing from source ownership',
+assert.ok(ownership.includes(`| \`${claimsPath}\` |`), 'claims oracle is missing from source ownership');
+assert.ok(ownership.includes(`| \`${authorityPath}\` |`), 'phase authority is missing from source ownership');
+assert.ok(Buffer.byteLength(authorityText, 'utf8') <= 64 * 1024, 'phase authority exceeded 64 KiB');
+
+function validateAuthority(value) {
+  if (!value || value.schema !== 'rift-observer-phase-authority-v1') return false;
+  if (typeof value.roadmapStatus !== 'string' || !value.roadmapStatus.trim() || value.roadmapStatus.length > 4096) return false;
+  if (typeof value.observerStatus !== 'string' || !value.observerStatus.trim() || value.observerStatus.length > 4096) return false;
+  if (!Array.isArray(value.phases) || value.phases.length !== 8) return false;
+
+  const rank = new Map([['promoted', 0], ['source-implemented', 1], ['pending', 2]]);
+  let previous = -1;
+  let sourceImplementedCount = 0;
+
+  for (let index = 0; index < value.phases.length; index++) {
+    const row = value.phases[index];
+    if (!row || row.phase !== `N1.8.${index}`) return false;
+    const order = rank.get(row.status);
+    if (order === undefined || order < previous) return false;
+
+    const source = row.promotedSourceSha ?? null;
+    const run = row.builderRunNumber ?? null;
+    if (source !== null && !/^[0-9a-f]{40}$/.test(source)) return false;
+    if (run !== null && !/^[0-9]{1,20}$/.test(String(run))) return false;
+
+    if (row.status === 'promoted') {
+      if (source === null) return false;
+    } else if (source !== null || run !== null) {
+      return false;
+    }
+
+    if (row.status === 'source-implemented') sourceImplementedCount++;
+    if (sourceImplementedCount > 1) return false;
+    previous = order;
+  }
+  return true;
+}
+
+assert.equal(validateAuthority(authority), true, 'phase authority file is invalid');
+assert.equal(validateAuthority({...authority, schema: 'broken'}), false, 'bad authority schema was accepted');
+assert.equal(
+  validateAuthority({...authority, phases: authority.phases.slice(0, 7)}),
+  false,
+  'short phase authority was accepted',
 );
+const duplicateSourceImplemented = JSON.parse(JSON.stringify(authority));
+duplicateSourceImplemented.phases[5] = {
+  phase: 'N1.8.5',
+  status: 'source-implemented',
+  promotedSourceSha: null,
+  builderRunNumber: null,
+};
+assert.equal(validateAuthority(duplicateSourceImplemented), false, 'multiple source-implemented phases were accepted');
 
-const phaseAuthority = new Map([
-  ['N1.8.0', '9d196567e38e781d97a24bb2c808b47cbc2303eb'],
-  ['N1.8.1', '198a3f31e22a5d385378fee087aa5f115aed6d5a'],
-  ['N1.8.2', '9cc74b25c94fd3e23e93f64d3d132e65e63fe3a6'],
-  ['N1.8.3', 'e6de353ead6e9377e36e1602e301e3e8231a5e43'],
-]);
-for (const [phase, sha] of phaseAuthority) {
-  assert.ok(claims.includes(`PhaseAuthority("${phase}", "promoted", "${sha}"`), `${phase} source authority missing`);
-  const statusLine = projectStatus.split('\n').find(line => line.startsWith(`- **${phase}`));
-  assert.ok(statusLine, `${phase} project-status line missing`);
-  const observed = statusLine.match(/PROMOTED on installed source `([0-9a-f]{40})`/)?.[1];
-  assert.equal(observed, sha, `${phase} project-status source claim drifted from source authority`);
-}
-for (const [phase, run] of [['N1.8.2', '317'], ['N1.8.3', '322']]) {
-  assert.ok(claims.includes(`"${phase}", "promoted"`) && claims.includes(`"${run}"`), `${phase} run authority missing`);
-  const statusLine = projectStatus.split('\n').find(line => line.startsWith(`- **${phase}`));
-  assert.equal(statusLine?.match(/run number `([0-9]+)`/)?.[1], run, `${phase} promoted run drifted from source authority`);
-}
-for (const marker of [
-  'Documentation is **UNVERIFIED by default**',
-  'Ownership does **not** imply that a source is packaged, live, verified, trusted or device-proven.',
-  'documentation agreement cannot prove',
-]) {
-  assert.ok(claims.includes(marker), `source authority-policy marker missing: ${marker}`);
+for (const phase of authority.phases.filter(row => row.status === 'promoted')) {
+  const statusLine = projectStatus.split('\n').find(line => line.startsWith(`- **${phase.phase}`));
+  assert.ok(statusLine, `${phase.phase} project-status line missing`);
+  const observedSource = statusLine.match(/PROMOTED on installed source `([0-9a-f]{40})`/)?.[1];
+  assert.equal(observedSource, phase.promotedSourceSha, `${phase.phase} source claim drifted from machine authority`);
+  if (phase.builderRunNumber !== null) {
+    const observedRun = statusLine.match(/run number `([0-9]+)`/)?.[1];
+    assert.equal(observedRun, String(phase.builderRunNumber), `${phase.phase} run claim drifted from machine authority`);
+  }
 }
 
-const roadmapStatus =
-  'N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED; N1.8.4 ACTIVE; N1.8.5-N1.8.7 PENDING';
-assert.ok(roadmap.includes(roadmapStatus), 'ROADMAP current N1.8 phase state disagrees with source authority');
+assert.ok(roadmap.includes(authority.roadmapStatus), 'ROADMAP current N1.8 phase state disagrees with machine authority');
+assert.ok(observer.includes(authority.observerStatus), 'canonical Observer state disagrees with machine authority');
 
-const observerStatus =
-  'N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.4 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.5+ PENDING';
-assert.ok(observer.includes(observerStatus), 'canonical Observer current phase state disagrees with source authority');
-assert.ok(
-  projectStatus.split('\n').some(line =>
-    line.startsWith('- **N1.8.4') &&
-    /SOURCE-IMPLEMENTED/i.test(line) &&
-    /promotion-pending/i.test(line)
-  ),
-  'PROJECT_STATUS does not expose N1.8.4 as source-implemented/promotion-pending',
-);
+const current = [...authority.phases].reverse().find(row => row.status !== 'pending');
+if (current?.status === 'source-implemented') {
+  assert.ok(
+    projectStatus.split('\n').some(line =>
+      line.startsWith(`- **${current.phase}`) &&
+      /SOURCE-IMPLEMENTED/i.test(line) &&
+      /promotion-pending/i.test(line)
+    ),
+    `${current.phase} project status does not expose source-implemented/promotion-pending`,
+  );
+}
 
 function roadmapStateIsValid(text) {
-  return text.includes(roadmapStatus);
+  return text.includes(authority.roadmapStatus);
 }
-assert.equal(roadmapStateIsValid(roadmap), true, 'clean ROADMAP fixture should match source authority');
+assert.equal(roadmapStateIsValid(roadmap), true, 'clean ROADMAP fixture should match machine authority');
 assert.equal(
-  roadmapStateIsValid(roadmap.replace('N1.8.4 ACTIVE', 'N1.8.4 PENDING')),
+  roadmapStateIsValid(roadmap.replace(authority.roadmapStatus, 'N1.8 BROKEN STATUS')),
   false,
   'stale ROADMAP state mutation was not detected',
 );
@@ -130,25 +177,28 @@ function promotedSourceMatches(text, phase, expected) {
   const line = text.split('\n').find(row => row.startsWith(`- **${phase}`));
   return line?.match(/PROMOTED on installed source `([0-9a-f]{40})`/)?.[1] === expected;
 }
-assert.equal(promotedSourceMatches(projectStatus, 'N1.8.3', phaseAuthority.get('N1.8.3')), true);
-const n183StatusLine = projectStatus.split('\n').find(line => line.startsWith('- **N1.8.3'));
-assert.ok(n183StatusLine, 'N1.8.3 status line missing');
+const mutationPhase = [...authority.phases].reverse().find(row => row.status === 'promoted');
+assert.ok(mutationPhase, 'no promoted phase available for mutation fixture');
+assert.equal(promotedSourceMatches(projectStatus, mutationPhase.phase, mutationPhase.promotedSourceSha), true);
+const mutationLine = projectStatus.split('\n').find(line => line.startsWith(`- **${mutationPhase.phase}`));
+assert.ok(mutationLine, `${mutationPhase.phase} status line missing`);
 const mutatedProjectStatus = projectStatus.replace(
-  n183StatusLine,
-  n183StatusLine.replace(
-    phaseAuthority.get('N1.8.3'),
-    '0000000000000000000000000000000000000000',
-  ),
+  mutationLine,
+  mutationLine.replace(mutationPhase.promotedSourceSha, '0000000000000000000000000000000000000000'),
 );
 assert.equal(
-  promotedSourceMatches(
-    mutatedProjectStatus,
-    'N1.8.3',
-    phaseAuthority.get('N1.8.3'),
-  ),
+  promotedSourceMatches(mutatedProjectStatus, mutationPhase.phase, mutationPhase.promotedSourceSha),
   false,
   'promotion-source mutation was not detected',
 );
+
+for (const marker of [
+  'Documentation is **UNVERIFIED by default**',
+  'Ownership does **not** imply that a source is packaged, live, verified, trusted or device-proven.',
+  'documentation agreement cannot prove',
+]) {
+  assert.ok(claims.includes(marker), `source authority-policy marker missing: ${marker}`);
+}
 
 function isHistoricalDocumentation(file) {
   const lower = file.toLowerCase();
