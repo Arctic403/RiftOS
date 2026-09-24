@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.5 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.6+ PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.6+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -948,7 +948,7 @@ Required behavior:
 
 ### N1.8.5 — proof obligations and focused verification
 
-Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING.**
+Status: **PROMOTED on installed source `08146ba30ef713ac895e390adf5d515ef78fa728`, Builder run `36014191151` / run number `335`.**
 
 `RiftProofObligationsV1.kt` adds the read-only `project kind=proofs` planner. It consumes the exact `rift-semantic-impact-v1` candidate evidence already produced from Patch Manifest V1 plus the existing project-validation command surface; it does not create a second change detector and it executes no verification itself.
 
