@@ -1141,7 +1141,7 @@ N2.1-N2.11 execute as six implementation patches while preserving all eleven log
 
 Macro patches are execution/build groupings only. Every contained N2.x subphase retains separate correctness evidence and promotion authority; a later subphase cannot hide an earlier failure. **N2.12 remains a separate final correctness/adversarial promotion gate.**
 
-**Current source status:** N2.0 is promoted. **N2-M1 is SOURCE-IMPLEMENTED / PROMOTION PENDING:** N2.1 and N2.2 are both source-implemented with separate evidence gates. Canonical memory authority remains inactive; only the bounded app-private `RiftMemoryN2M1SelfTest` diagnostic runs, with read-only evidence exposed through `rift_info`. Builder/install and real process-restart recovery remain required before N2.1/N2.2 promotion.
+**Current source status:** N2.0-N2.2 are promoted. **N2-M1 is PROMOTED:** N2.1 and N2.2 retain separate promotion authority and are both promoted on installed source `694c1e31a6c3f4bd4317edd121208be894be2586`, Builder run `36048901054` / run number `346`. The real close/reopen proof recovered the prior committed process token, proved the deliberately uncommitted crash transaction absent after process death, and produced `processRestartRecovered=true`, `crashRollbackRecovered=true`, `restartPromotionReady=true`; post-restart Observer continuity was clean and proofs returned exact baseline `a4f92d9d654407528cbf7a48c30d5f12b4aa5ab503d2903ce8952d1ecbf0aecc`. Canonical memory authority remains inactive; `RiftMemoryN2M1SelfTest` remains diagnostic-only/read-only through `rift_info`.
 
 ### N2.1 — Canonical JSON model + evidence/event ledger
 

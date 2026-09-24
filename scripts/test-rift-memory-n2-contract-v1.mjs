@@ -52,7 +52,7 @@ const n2Contract = JSON.parse(n2Read(N2_CONTRACT_PATH));
 const n2PhaseAuthority = JSON.parse(n2Read('riftmemory/n2-phase-authority.json'));
 n2Assert.equal(n2PhaseAuthority.schema, 'rift-memory-n2-phase-authority-v1');
 n2Assert.equal(n2PhaseAuthority.program, 'N2 Federated Rift Memory Kernel');
-n2Assert.equal(n2PhaseAuthority.programStatus, 'N2.0 PROMOTED; N2.1 + N2.2 SOURCE-IMPLEMENTED / N2-M1 PROMOTION PENDING; N2.3-N2.12 PENDING');
+n2Assert.equal(n2PhaseAuthority.programStatus, 'N2.0-N2.2 PROMOTED / N2-M1 PROMOTED; N2.3-N2.12 PENDING');
 n2Assert.equal(n2PhaseAuthority.runtimeStatus, 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 DIAGNOSTIC ONLY');
 n2Assert.equal(n2PhaseAuthority.n18Prerequisite, 'SATISFIED');
 n2Assert.equal(n2PhaseAuthority.benchmarkRule, N2_EXPECTED.benchmarkRule);
@@ -79,23 +79,23 @@ n2Assert.equal(n2PhaseAuthority.phases.length, 13);
 n2Assert.deepEqual(n2PhaseAuthority.phases.map(row => row.phase), [
   'N2.0','N2.1','N2.2','N2.3','N2.4','N2.5','N2.6','N2.7','N2.8','N2.9','N2.10','N2.11','N2.12',
 ]);
-n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 1);
-n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 2);
+n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 3);
+n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 0);
 n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'pending').length, 10);
 n2Assert.equal(n2PhaseAuthority.phases[0].status, 'promoted');
 n2Assert.equal(n2PhaseAuthority.phases[0].promotedSourceSha, 'f6bf12b9fb452cc128e9290fd73599297ba134f2');
 n2Assert.equal(n2PhaseAuthority.phases[0].builderRunNumber, '341');
 for (const row of n2PhaseAuthority.phases.slice(1, 3)) {
-  n2Assert.equal(row.status, 'source-implemented');
-  n2Assert.equal(row.promotedSourceSha, null);
-  n2Assert.equal(row.builderRunNumber, null);
+  n2Assert.equal(row.status, 'promoted');
+  n2Assert.equal(row.promotedSourceSha, '694c1e31a6c3f4bd4317edd121208be894be2586');
+  n2Assert.equal(row.builderRunNumber, '346');
 }
 for (const row of n2PhaseAuthority.phases.slice(3)) {
   n2Assert.equal(row.status, 'pending');
   n2Assert.equal(row.promotedSourceSha, null);
   n2Assert.equal(row.builderRunNumber, null);
 }
-n2Assert.equal(n2PhaseAuthority.macroImplementationPlan[0].status, 'source-implemented/promotion-pending');
+n2Assert.equal(n2PhaseAuthority.macroImplementationPlan[0].status, 'promoted');
 n2Assert.ok(n2PhaseAuthority.macroImplementationPlan.slice(1).every(row => row.status === 'pending'));
 
 n2Assert.equal(n2Contract.schema, N2_EXPECTED.schema);
