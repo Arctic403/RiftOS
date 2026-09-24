@@ -41,6 +41,8 @@ assert.ok(model.includes('data class RiftCanonicalMemoryRecordV1'));
 assert.ok(model.includes('data class RiftMemoryEventV1'));
 assert.ok(model.includes('fun toJson(previousEventHash: String?)'));
 assert.ok(model.includes('fun isProtectedNamespace(value: String)'));
+assert.ok(model.includes('fun migrateRecord(value: JSONObject): JSONObject'));
+assert.ok(model.includes('Unsupported Rift memory record schemaVersion='));
 assert.ok(model.includes('it == JSONObject.NULL'), 'optional canonical fields must preserve JSON null rather than literal "null"');
 assert.ok(sqlite.includes('json.opt("previousEventHash").takeUnless { it == null || it == JSONObject.NULL }'), 'event-chain integrity must preserve null previous hash');
 
@@ -116,6 +118,13 @@ for (const marker of [
   'contentAddressedEvidence',
   'protectedNamespaceGuard',
   'branchRoundTrip',
+  'structuredMigration',
+  'crashRollbackRecovered',
+  'crashProbeArmed',
+  'corruptionDetected',
+  'restartPromotionReady',
+  'process-death-rollback',
+  'n2-m1-tamper-proof.sqlite',
   'handle.close()',
   'handle = store.open(config)',
 ]) {
@@ -124,6 +133,9 @@ for (const marker of [
 assert.equal((host.match(/riftMemoryN2M1/g) || []).length, 3);
 assert.ok(host.includes('n2M1Diagnostic = RiftMemoryN2M1SelfTest.run(appContext)'));
 assert.ok(!host.includes('runtimeAuthority", true'));
+assert.ok(selftest.includes('.put("restartPromotionReady", processRestartRecovered && crashRollbackRecovered)'));
+assert.ok(selftest.includes('SQLiteDatabase.openDatabase('));
+assert.ok(selftest.includes('private var crashProbeHandle: RiftMemoryStoreHandleV1? = null'));
 
 for (const file of [
   'RiftMemoryModelV1.kt',

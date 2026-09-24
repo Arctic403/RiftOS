@@ -63,6 +63,18 @@ assert.match(sandbox, /SOURCE_OWNERSHIP\.md/);
 assert.match(sandbox, /MAX_CANDIDATE_PROJECTS = 32/);
 assert.match(sandbox, /MAX_CANDIDATE_REFERENCE_SYMBOLS = 80/);
 assert.match(sandbox, /MAX_CANDIDATE_REFERENCES = 800/);
+const candidateReferencesBody = sandbox.slice(
+  sandbox.indexOf('private fun candidateReferences('),
+  sandbox.indexOf('private fun ownershipDocsFor(')
+);
+assert.match(candidateReferencesBody, /symbolTargets: Map<String, Set<String>>/);
+assert.match(candidateReferencesBody, /RiftSourceIntelligenceV2\.isSourcePath\(path\)/);
+assert.match(candidateReferencesBody, /RiftSourceIntelligenceV2\.referenceCodeMask\(path, referenceText\)/);
+assert.match(candidateReferencesBody, /resolveDependency\(projectRoot, path, dependency, resolutionPaths\)/);
+assert.match(candidateReferencesBody, /val sameFile = path in targets/);
+assert.match(candidateReferencesBody, /val resolvedDependency = targets\.any \{ it in dependencyTargets \}/);
+assert.match(candidateReferencesBody, /if \(!sameFile && !resolvedDependency\) return@matchLoop/);
+assert.match(sandbox, /candidateReferences\(indexed, referenceNames, changedSymbolTargets, resolutionPaths\)/);
 assert.match(sandbox, /MAX_CANDIDATE_DEPENDENCIES = 800/);
 assert.match(sandbox, /MAX_CANDIDATE_DEPENDENTS = 800/);
 assert.match(sandbox, /MAX_CANDIDATE_TESTS = 300/);

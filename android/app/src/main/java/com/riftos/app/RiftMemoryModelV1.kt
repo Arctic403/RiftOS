@@ -181,19 +181,18 @@ data class RiftCanonicalMemoryRecordV1(
 
     companion object {
         fun fromJson(value: JSONObject): RiftCanonicalMemoryRecordV1 {
-            require(value.getString("schema") == RiftMemoryModelV1.RECORD_SCHEMA)
-            require(value.getInt("schemaVersion") == RiftMemoryModelV1.SCHEMA_VERSION)
-            val refs = value.getJSONArray("evidenceRefs")
+            val migrated = RiftMemoryModelV1.migrateRecord(value)
+            val refs = migrated.getJSONArray("evidenceRefs")
             return RiftCanonicalMemoryRecordV1(
-                id = value.getString("id"),
-                kind = RiftMemoryRecordKindV1.valueOf(value.getString("kind")),
-                scope = RiftMemoryScopeV1.fromJson(value.getJSONObject("scope")),
-                branch = RiftMemoryBranchV1.valueOf(value.getString("branch")),
-                trustState = RiftMemoryTrustStateV1.valueOf(value.getString("trustState")),
-                time = RiftMemoryBiTemporalV1.fromJson(value.getJSONObject("time")),
-                payload = JSONObject(value.getJSONObject("payload").toString()),
+                id = migrated.getString("id"),
+                kind = RiftMemoryRecordKindV1.valueOf(migrated.getString("kind")),
+                scope = RiftMemoryScopeV1.fromJson(migrated.getJSONObject("scope")),
+                branch = RiftMemoryBranchV1.valueOf(migrated.getString("branch")),
+                trustState = RiftMemoryTrustStateV1.valueOf(migrated.getString("trustState")),
+                time = RiftMemoryBiTemporalV1.fromJson(migrated.getJSONObject("time")),
+                payload = JSONObject(migrated.getJSONObject("payload").toString()),
                 evidenceRefs = List(refs.length()) { refs.getString(it) },
-                authorityNamespace = value.opt("authorityNamespace").takeUnless { it == null || it == JSONObject.NULL }?.toString()?.takeIf { it.isNotBlank() }
+                authorityNamespace = migrated.opt("authorityNamespace").takeUnless { it == null || it == JSONObject.NULL }?.toString()?.takeIf { it.isNotBlank() }
             )
         }
     }
@@ -252,6 +251,31 @@ object RiftMemoryModelV1 {
 
     fun isProtectedNamespace(value: String): Boolean =
         value.startsWith(POLICY_NAMESPACE_PREFIX) || value.startsWith(CONFIG_NAMESPACE_PREFIX)
+
+    fun migrateRecord(value: JSONObject): JSONObject {
+        require(value.getString("schema") == RECORD_SCHEMA)
+        val version = value.optInt("schemaVersion", 0)
+        return when (version) {
+            SCHEMA_VERSION -> JSONObject(value.toString())
+            0 -> {
+                val migrated = JSONObject(value.toString())
+                val recordedAt = migrated.getLong("recordedAt")
+                val validFrom = migrated.optLong("validFrom", recordedAt)
+                migrated.remove("recordedAt")
+                migrated.remove("validFrom")
+                migrated.put("schemaVersion", SCHEMA_VERSION)
+                migrated.put(
+                    "time",
+                    JSONObject()
+                        .put("validFrom", validFrom)
+                        .put("validTo", JSONObject.NULL)
+                        .put("recordedAt", recordedAt)
+                )
+                migrated
+            }
+            else -> error("Unsupported Rift memory record schemaVersion=$version")
+        }
+    }
 
     fun canonicalSha256(value: JSONObject): String =
         RiftPatchManifestV1.sha256Canonical(value)

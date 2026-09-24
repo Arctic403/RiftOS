@@ -1,6 +1,8 @@
 package com.riftos.app
 
+import android.content.ContentValues
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.os.Process
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,6 +13,7 @@ object RiftMemoryN2M1SelfTest {
     const val SCHEMA = "rift-memory-n2-m1-selftest-v1"
     private val lock = Any()
     private var cached: JSONObject? = null
+    private var crashProbeHandle: RiftMemoryStoreHandleV1? = null
 
     fun run(context: Context): JSONObject = synchronized(lock) {
         cached?.let { return@synchronized JSONObject(it.toString()) }
@@ -33,6 +36,22 @@ object RiftMemoryN2M1SelfTest {
         val dbFile = File(proofDir, "n2-m1-proof.sqlite")
         val store = RiftSqliteMemoryStoreV1()
         val config = RiftMemoryStoreConfigV1(dbFile.absolutePath)
+        val crashDbFile = File(proofDir, "n2-m1-crash-proof.sqlite")
+        val crashMarkerFile = File(proofDir, "n2-m1-crash-marker.txt")
+        val previousCrashProbeId = crashMarkerFile.takeIf { it.isFile }
+            ?.readText(Charsets.UTF_8)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val crashRollbackRecovered = if (previousCrashProbeId != null && crashDbFile.isFile) {
+            val recoveryHandle = store.open(RiftMemoryStoreConfigV1(crashDbFile.absolutePath, createIfMissing = false))
+            try {
+                recoveryHandle.getCanonicalRecord(previousCrashProbeId) == null
+            } finally {
+                recoveryHandle.close()
+            }
+        } else {
+            false
+        }
         val pid = Process.myPid()
         val processToken = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
@@ -185,7 +204,117 @@ object RiftMemoryN2M1SelfTest {
             ).toJson()
         ).branch == RiftMemoryBranchV1.SIMULATION
 
+        val legacyRecord = JSONObject()
+            .put("schema", RiftMemoryModelV1.RECORD_SCHEMA)
+            .put("id", "n2-m1-legacy-v0")
+            .put("kind", RiftMemoryRecordKindV1.BELIEF.name)
+            .put("scope", scope.toJson())
+            .put("branch", RiftMemoryBranchV1.HYPOTHESIS.name)
+            .put("trustState", RiftMemoryTrustStateV1.PROVISIONAL.name)
+            .put("recordedAt", now - 10)
+            .put("validFrom", now - 20)
+            .put("payload", JSONObject().put("legacy", true))
+            .put("evidenceRefs", JSONArray())
+            .put("authorityNamespace", JSONObject.NULL)
+        val migratedRecord = RiftCanonicalMemoryRecordV1.fromJson(legacyRecord)
+        val structuredMigration = migratedRecord.time.recordedAt == now - 10 &&
+            migratedRecord.time.validFrom == now - 20 &&
+            migratedRecord.toJson().getInt("schemaVersion") == RiftMemoryModelV1.SCHEMA_VERSION &&
+            migratedRecord.branch == RiftMemoryBranchV1.HYPOTHESIS
+
         handle.close()
+
+        val tamperFile = File(proofDir, "n2-m1-tamper-proof.sqlite")
+        dbFile.copyTo(tamperFile, overwrite = true)
+        val tamperDb = SQLiteDatabase.openDatabase(
+            tamperFile.absolutePath,
+            null,
+            SQLiteDatabase.OPEN_READWRITE
+        )
+        val tamperValues = ContentValues().apply {
+            put("bytes", "rift-memory-n2-m1-corrupted".toByteArray(Charsets.UTF_8))
+        }
+        val tamperedRows = try {
+            tamperDb.update("blobs", tamperValues, "hash=?", arrayOf(second.blobHash))
+        } finally {
+            tamperDb.close()
+        }
+        val tamperHandle = store.open(
+            RiftMemoryStoreConfigV1(tamperFile.absolutePath, createIfMissing = false)
+        )
+        val tamperIntegrity = try {
+            tamperHandle.verifyIntegrity(
+                RiftMemoryQueryV1(namespace = scope.namespace),
+                RiftMemoryBoundsV1(limit = 1_000)
+            )
+        } finally {
+            tamperHandle.close()
+        }
+        val corruptionDetected = tamperedRows == 1 &&
+            !tamperIntegrity.clean &&
+            tamperIntegrity.findings.any { it == "blob-hash:${second.blobHash}" }
+        tamperFile.delete()
+        File(tamperFile.absolutePath + "-journal").delete()
+
+        crashProbeHandle?.close()
+        val crashProbeId = "n2-m1-crash-" + processToken
+        val crashHandle = store.open(RiftMemoryStoreConfigV1(crashDbFile.absolutePath))
+        try {
+            val crashTx = crashHandle.beginTransaction(
+                JSONObject().put("probe", "process-death-rollback")
+            )
+            val crashBlob = crashHandle.putContentBlob(
+                crashTx,
+                "uncommitted-crash-probe".toByteArray(Charsets.UTF_8),
+                JSONObject().put("mediaType", "text/plain")
+            )
+            val crashEvidence = RiftMemoryEvidenceV1(
+                id = "ev-" + UUID.randomUUID(),
+                contentSha256 = crashBlob,
+                mediaType = "text/plain",
+                sourceType = "diagnostic",
+                sourceRef = "n2-m1/process-death",
+                scope = scope,
+                branch = RiftMemoryBranchV1.REALITY,
+                observedAt = now + 3,
+                recordedAt = now + 3,
+                trustState = RiftMemoryTrustStateV1.VERIFIED
+            )
+            crashHandle.appendEvidence(crashTx, crashEvidence)
+            val crashRecord = RiftCanonicalMemoryRecordV1(
+                id = crashProbeId,
+                kind = RiftMemoryRecordKindV1.CLAIM,
+                scope = scope,
+                branch = RiftMemoryBranchV1.REALITY,
+                trustState = RiftMemoryTrustStateV1.VERIFIED,
+                time = RiftMemoryBiTemporalV1(now + 3, recordedAt = now + 3),
+                payload = JSONObject()
+                    .put("uncommitted", true)
+                    .put("processToken", processToken),
+                evidenceRefs = listOf(crashEvidence.id)
+            )
+            crashHandle.putCanonicalRecord(crashTx, crashRecord)
+            crashHandle.appendEvent(
+                crashTx,
+                RiftMemoryEventV1(
+                    id = "event-" + UUID.randomUUID(),
+                    type = "diagnostic.process-death-probe",
+                    recordId = crashRecord.id,
+                    evidenceId = crashEvidence.id,
+                    scope = scope,
+                    branch = RiftMemoryBranchV1.REALITY,
+                    at = now + 3,
+                    validFrom = now + 3,
+                    payload = JSONObject().put("record", crashRecord.toJson())
+                )
+            )
+            crashMarkerFile.writeText(crashProbeId, Charsets.UTF_8)
+            crashProbeHandle = crashHandle
+        } catch (failure: Throwable) {
+            crashHandle.close()
+            throw failure
+        }
+        val crashProbeArmed = crashProbeHandle === crashHandle
 
         val currentTime = current?.time
         val n21 = JSONObject()
@@ -194,6 +323,7 @@ object RiftMemoryN2M1SelfTest {
             .put("eventLedger", history.events.size >= 2)
             .put("biTemporal", currentTime != null && currentTime.recordedAt >= currentTime.validFrom)
             .put("branchRoundTrip", branchRoundTrip)
+            .put("structuredMigration", structuredMigration)
             .put("protectedNamespaceGuard", protectedNamespaceGuard)
             .put("currentReconstruction", currentReconstructed)
             .put("historyReconstruction", historyReconstructed)
@@ -206,6 +336,10 @@ object RiftMemoryN2M1SelfTest {
             .put("rollbackInvisibleAfterReopen", rollbackInvisibleAfterReopen)
             .put("closeReopenRecovery", currentReconstructed)
             .put("processRestartRecovered", processRestartRecovered)
+            .put("crashRollbackRecovered", crashRollbackRecovered)
+            .put("crashProbeArmed", crashProbeArmed)
+            .put("previousCrashProbeId", previousCrashProbeId ?: JSONObject.NULL)
+            .put("corruptionDetected", corruptionDetected)
             .put("priorProcessPid", priorPid ?: JSONObject.NULL)
             .put("currentPid", pid)
             .put("integrityClean", integrity.clean)
@@ -222,7 +356,9 @@ object RiftMemoryN2M1SelfTest {
             n22.optBoolean("rollbackInvisibleAfterReopen") &&
             n22.optBoolean("closeReopenRecovery") &&
             n22.optBoolean("integrityClean") &&
-            n22.optBoolean("contentAddressedEvidence")
+            n22.optBoolean("contentAddressedEvidence") &&
+            n22.optBoolean("corruptionDetected") &&
+            n22.optBoolean("crashProbeArmed")
 
         return JSONObject()
             .put("schema", SCHEMA)
@@ -232,7 +368,9 @@ object RiftMemoryN2M1SelfTest {
             .put("database", "app-private/riftmemory-diagnostics/n2-m1-proof.sqlite")
             .put("n2_1", n21)
             .put("n2_2", n22)
+            .put("restartPromotionReady", processRestartRecovered && crashRollbackRecovered)
             .put("integrityFindings", JSONArray(integrity.findings))
+            .put("tamperIntegrityFindings", JSONArray(tamperIntegrity.findings))
     }
 
     private data class WriteResult(
