@@ -35,7 +35,7 @@ internal class RiftToolSandbox(context: Context) {
         private const val MAX_HASH_TOTAL_BYTES = 256L * 1024L * 1024L
         private const val MAX_BATCH_ROLLBACK_BYTES = 64L * 1024L * 1024L
         private const val MAX_BATCH_ROLLBACK_ENTRIES = 50_000
-        private const val REQUEST_TIMEOUT_MS = 45_000L
+        private const val REQUEST_TIMEOUT_MS = 75_000L
         private const val LEGACY_MIGRATION_TIMEOUT_MS = 15_000L
         private const val MAX_LEGACY_MIGRATION_ENTRIES = 20_000
         private const val MAX_LEGACY_MIGRATION_BYTES = 256L * 1024L * 1024L

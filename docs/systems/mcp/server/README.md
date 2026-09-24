@@ -82,11 +82,11 @@ Canonical JSON sorts object keys recursively; array order remains significant.
 
 ## Bounded request lifecycle
 
-Every request carrying an id has a server-side terminal deadline of 65 seconds. Relay-scoped requests also remove their in-flight entry when that deadline wins, so later retries cannot join an immortal request.
+Every request carrying an id has a server-side terminal deadline of 100 seconds. Relay-scoped requests also remove their in-flight entry when that deadline wins, so later retries cannot join an immortal request.
 
 The server deadline is intentionally outside the local execution deadlines and inside the transport deadlines:
 
-`RiftToolSandbox 45s -> RiftNativeShell 60s -> RiftMcpServer 65s -> RiftMcpRelayClient 70s -> relay Worker 75s`.
+`RiftToolSandbox 75s -> RiftNativeShell 90s -> RiftMcpServer 100s -> RiftMcpRelayClient 110s -> relay Worker 120s`.
 
 The ordering is an invariant: an outer transport must not report failure while an inner mutation is still expected to keep running.
 
@@ -124,7 +124,7 @@ Added standard `notifications/initialized` handling as a no-response notificatio
 - tools/list and execution use same ToolHost;
 - private call correlation is echoed, not published as a tool schema;
 - initialized notification gets no response;
-- request deadlines remain ordered 45s < 60s < 65s < 70s < 75s;
+- request deadlines remain ordered 75s < 90s < 100s < 110s < 120s;
 - one logical request has at most 8 retry waiters and the server has at most 64 in-flight relay requests.
 
 ## Failure signatures

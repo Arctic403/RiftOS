@@ -82,7 +82,7 @@ Watcher paths are canonicalized and rejected when outside the workspace.
 
 ## Reconciliation
 
-A query triggers a full reconciliation when the last reconciliation is older than 30 seconds.
+Workspace Records now treats the watcher as the fast current-state path. When recursive watcher coverage is complete, reads flush pending path captures and do not perform periodic full-tree reconciliation. If watcher coverage is inactive/incomplete, ordinary queries fall back to a full reconciliation after 60 seconds; proof/freeze reads require a current fallback reconciliation immediately. Full-tree reconciliation also remains mandatory for queued tree-level events.
 
 Unchanged files whose size and mtime still match observed metadata avoid a full hash on every reconciliation.
 
@@ -103,6 +103,8 @@ Snapshot paths are canonicalized beneath the private observed/checkpoint roots.
 Snapshot writes use temporary-file + rename publication.
 
 ## Event records
+
+Workspace Records keeps a rolling maximum of 256 recent event JSON records for local diagnostics and record-chain verification. Long-term source history remains RiftGit authority. Active candidate patch/session provenance is maintained separately in bounded persisted state, so semantic-impact reads do not replay the event history to reconstruct the current candidate. Tracking policy v2 excludes the same generated/cache directory families used by Project Intelligence and performs a one-time operational rebaseline when upgrading from the old all-files policy.
 
 Each event record contains:
 - format;

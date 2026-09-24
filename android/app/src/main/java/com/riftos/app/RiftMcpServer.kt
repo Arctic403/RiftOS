@@ -18,7 +18,7 @@ class RiftMcpServer(
         private const val PROTOCOL_VERSION = "2025-06-18"
         private const val SERVER_VERSION = "0.19.0-debug-hub"
         private const val COMPLETED_TTL_MS = 2 * 60 * 1000L
-        private const val REQUEST_TIMEOUT_MS = 65_000L
+        private const val REQUEST_TIMEOUT_MS = 100_000L
         private const val MAX_IN_FLIGHT_REQUESTS = 64
         private const val MAX_WAITERS_PER_REQUEST = 8
         private const val MAX_COMPLETED_REQUESTS = 128

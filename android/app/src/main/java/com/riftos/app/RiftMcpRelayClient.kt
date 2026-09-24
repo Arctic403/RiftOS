@@ -28,7 +28,7 @@ class RiftMcpRelayClient(
     companion object {
         private const val PROTOCOL = "rift-mcp-relay-v1"
         private const val MAX_MESSAGE_BYTES = 1_000_000
-        private const val REQUEST_FORWARD_TIMEOUT_MS = 70_000L
+        private const val REQUEST_FORWARD_TIMEOUT_MS = 110_000L
     }
 
     private val settings = RiftRelaySettings(context.applicationContext)

@@ -6,6 +6,24 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.67 — Workspace Records hot-path compaction and transport budget hardening
+
+N1.8.5 remains source-implemented/promotion-pending. This patch fixes the Workspace Records bottleneck exposed by the first installed `project kind=proofs` attempt; it is not itself promotion evidence.
+
+Workspace Records is now explicitly the fast local working-tree evidence layer rather than a second long-term history database:
+- recent event history is capped at 256 records instead of 2,000; RiftGit remains long-term source-history authority;
+- active candidate patch/session provenance is maintained in a separate bounded persisted `candidateSessionsByPath` index, so candidate/semantic-impact construction no longer rereads event JSON history to rediscover current provenance;
+- tracking policy v2 shares the generated/cache exclusions used by Project Intelligence and the recursive watcher, including Git/build/dependency/cache trees;
+- the v2 migration clears stale event/snapshot/frozen-manifest operational state and rebaselines current tracked files instead of manufacturing deletion events for old generated/test trees;
+- complete recursive watcher coverage is now a currentness authority: proof/freeze reads flush pending path captures and avoid unconditional full-workspace reconciliation when coverage is complete; tree events or incomplete/inactive coverage still force bounded reconciliation;
+- ordinary incomplete-coverage queries use a 60-second fallback reconcile window; Workspace Records operations have a 60-second cooperative deadline.
+
+The normal MCP request timeout chain is widened while preserving strict inner-to-outer ownership: 75s sandbox < 90s native shell < 100s MCP server < 110s Android relay client < 120s public relay Worker. SSE lifetime is deliberately separate from request timeout: the stream retains 15-second heartbeats, request-abort propagation, byte-bounded backpressure and same-session replacement, with the stale-stream lease widened to 300 seconds plus up to 60 seconds of jitter.
+
+Focused regressions now lock the 256-record bound, tracking-policy migration, persisted candidate-session evidence, watcher-aware semantic currentness, shared ignore policy, 60-second Workspace Records budget, widened timeout chain and 300-second SSE lease. Current architecture docs are synchronized; historical Patch History entries retain the timeout values that were true for those earlier source versions.
+
+Builder compilation/source checks, installed migration behavior, live Workspace Records latency, `project kind=proofs` completion, restart continuity and N1.8.0-N1.8.4 oracle continuity remain required before N1.8.5 promotion.
+
 ## Patch 10.66 — N1.8.5 proof obligations and focused verification foundation
 
 N1.8.5 is source-implemented/promotion-pending.

@@ -109,7 +109,7 @@ This gives the installed-device promotion test three separate evidence points:
 
 A separate external subscriber proof is still required to prove Cloudflare -> driver SSE/WebSocket delivery.
 
-Responses are sent only if the WebSocket is still the current socket. Each forwarded request also gets a 70-second Android-side forwarding watchdog; if the local MCP callback never terminates, the client emits one bounded `mcp.error` instead of leaving the relay request open forever.
+Responses are sent only if the WebSocket is still the current socket. Each forwarded request also gets a 110-second Android-side forwarding watchdog; if the local MCP callback never terminates, the client emits one bounded `mcp.error` instead of leaving the relay request open forever.
 
 ## Stale-socket protection
 
@@ -173,7 +173,7 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - one bounded reconnect schedule;
 - relay request id forwarded for server retry dedupe;
 - `mcp.cancel` is accepted from the relay and cancels the matching server-owned execution; socket loss cancels every request owned by that socket;
-- local forwarding terminates within 70 seconds, before the public relay's 75-second timeout;
+- local forwarding terminates within 110 seconds, before the public relay's 120-second request timeout;
 - RiftCLI events use the process-wide bounded device ring and the existing WSS;
 - reconnect replay is sequence-based and does not give the relay execution authority;
 - debugger instrumentation remains passive and metadata-only;
@@ -206,6 +206,6 @@ MCP semantics/retry cache -> `RiftMcpServer.kt`.
 
 ## Validation
 
-Second source audit must recheck URI/token validation, encrypted token storage, outbound headers, 1M input bound, current-socket checks, reconnect cap/jitter, 70-second forwarding watchdog, request-id forwarding, token-free status, process-wide event-bus subscription, replay/ACK handling and bounded event status.
+Second source audit must recheck URI/token validation, encrypted token storage, outbound headers, 1M input bound, current-socket checks, reconnect cap/jitter, 110-second forwarding watchdog, request-id forwarding, token-free status, process-wide event-bus subscription, replay/ACK handling and bounded event status.
 
 Public relay-service behavior is a separate subsystem audit.

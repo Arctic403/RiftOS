@@ -31,7 +31,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         private const val MAX_COMMAND_BYTES = 2 * 1024 * 1024
         private const val MAX_ARGUMENTS = 16_384
         private const val MAX_TREE_ROWS = 5_000
-        private const val SHELL_TIMEOUT_MS = 60_000L
+        private const val SHELL_TIMEOUT_MS = 90_000L
         private const val MAX_CLI_SHELL_JOBS = 16
         private const val CLI_SHELL_JOB_RETENTION_MS = 5 * 60 * 1000L
         private const val MAX_CLI_SHELL_RETAINED_RESULT_BYTES = 2 * 1024 * 1024

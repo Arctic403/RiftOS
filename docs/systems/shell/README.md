@@ -116,7 +116,7 @@ Bounds:
 - aggregate run scripts <=8 MiB;
 - <=64 scripts per run;
 - captured output <=256 KiB;
-- QuickJS evaluation timeout 30 seconds (the outer native shell deadline remains 60 seconds).
+- QuickJS evaluation timeout 30 seconds (the normal outer native shell request deadline is 90 seconds; hosted CLI intelligence remains governed by its separate no-fixed-wall-clock lane).
 
 There is no live generic batch command.
 

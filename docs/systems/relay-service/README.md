@@ -130,7 +130,7 @@ Outgoing Android mcp.response envelopes are serialized and byte-checked before s
 
 ## Timeout and cleanup
 
-REQUEST_TIMEOUT_MS = 75,000 ms.
+REQUEST_TIMEOUT_MS = 120,000 ms.
 
 Timeout deletes the logical pending request, sends `mcp.cancel` to the connected device, removes every waiter abort listener and resolves every joined waiter with its own 504 relay-timeout response. The Worker timeout intentionally sits outside the 70-second Android forwarding watchdog, 65-second MCP server watchdog, 60-second shell deadline and 45-second sandbox deadline so transport failure cannot normally race ahead of an inner mutation.
 
@@ -148,7 +148,7 @@ Driver WebSocket subscribers are bounded independently at four, while SSE subscr
 
 SSE output uses JSON-RPC notifications `notifications/riftcli/event` and SSE `id` equal to the event sequence. Production SSE requires a stable `Mcp-Session-Id`; manual browser diagnostics may use a validated `?subscriber=<id>` value, which is isolated internally as a `diag:<id>` session. Anonymous SSE opens fail closed and increment `anonymousRejected`. Same-session reconnect can therefore replace the old stream deterministically instead of creating a second anonymous entry.
 
-The outer Worker now returns the Durable Object SSE response directly instead of copying it through another `ReadableStream`. Cloudflare request cancellation and signal passthrough are explicitly enabled in `wrangler.jsonc`, so a browser/client abort can reach the room's request signal. Every SSE client also has an absolute 180-second lease plus up to 30 seconds of jitter; lease expiry removes the client, clears timers/listeners, closes the stream and increments `leaseExpired`. Reconnect uses `Last-Event-ID`.
+The outer Worker returns the Durable Object SSE response directly instead of copying it through another `ReadableStream`. Cloudflare request cancellation and signal passthrough are explicitly enabled in `wrangler.jsonc`, so a browser/client abort can reach the room's request signal. SSE itself is not governed by the MCP request watchdog: 15-second heartbeats, abort handling and byte backpressure keep the stream live/bounded, while an absolute 300-second lease plus up to 60 seconds of jitter recycles stale streams. Lease expiry removes the client, clears timers/listeners, closes the stream and increments `leaseExpired`. Reconnect uses `Last-Event-ID`.
 
 Backpressure remains secondary fail-closed protection against memory growth: the stream queue is byte-bounded at 512,000 bytes, and heartbeats track whether queued data makes drain progress. Two consecutive heartbeat observations with queued data and no forward progress evict the subscriber as backpressure.
 
@@ -272,7 +272,7 @@ Second source audit must verify:
 - JSON-RPC ingress validation;
 - notification forwarding;
 - 64 distinct pending limit plus 8 retry waiters per logical request;
-- 75-second outer timeout cleanup ordered after Android/local deadlines;
+- 120-second outer request-timeout cleanup ordered after Android/local deadlines;
 - replacement/disconnect cleanup;
 - three stale-socket guards;
 - response id/shape correlation;

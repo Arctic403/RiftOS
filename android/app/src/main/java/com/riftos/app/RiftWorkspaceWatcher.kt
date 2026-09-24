@@ -52,6 +52,7 @@ class RiftWorkspaceWatcher(
             active = true
             watcherLimitReached = false
             installTree(workspaceRoot)
+            records.updateWatcherCoverage(true, !watcherLimitReached)
             emit("watch-start", workspaceRoot, true)
         }
         return state()
@@ -64,6 +65,7 @@ class RiftWorkspaceWatcher(
             observers.values.forEach { runCatching { it.stopWatching() } }
             observers.clear()
             watcherLimitReached = false
+            records.updateWatcherCoverage(false, false)
         }
         return state()
     }
@@ -81,7 +83,13 @@ class RiftWorkspaceWatcher(
         .put("sequence", sequence.get())
 
     private fun installTree(directory: File) {
-        if (!active || !directory.exists() || !directory.isDirectory || !isInsideRoot(directory)) return
+        if (
+            !active ||
+            !directory.exists() ||
+            !directory.isDirectory ||
+            !isInsideRoot(directory) ||
+            !records.shouldTrackDirectory(directory)
+        ) return
         val deadline = SystemClock.elapsedRealtime() + INSTALL_BUDGET_MS
         val queue = ArrayDeque<File>()
         queue.add(directory)
@@ -95,7 +103,11 @@ class RiftWorkspaceWatcher(
             install(current)
             val children = current.listFiles() ?: continue
             for (child in children) {
-                if (child.isDirectory && isInsideRoot(child)) queue.addLast(child)
+                if (
+                    child.isDirectory &&
+                    isInsideRoot(child) &&
+                    records.shouldTrackDirectory(child)
+                ) queue.addLast(child)
             }
         }
     }
@@ -122,6 +134,7 @@ class RiftWorkspaceWatcher(
                 val type = eventName(baseEvent) ?: return
                 if (isDirectory && (baseEvent == FileObserver.CREATE || baseEvent == FileObserver.MOVED_TO)) {
                     installTree(target)
+                    records.updateWatcherCoverage(true, !watcherLimitReached)
                 }
                 if (baseEvent == FileObserver.DELETE_SELF || baseEvent == FileObserver.MOVE_SELF) {
                     observers.remove(key)?.let { runCatching { it.stopWatching() } }

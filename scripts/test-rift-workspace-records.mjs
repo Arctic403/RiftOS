@@ -4,6 +4,16 @@ import { mountWorkspaceRecords } from '../workspace-live/app.js';
 
 const gradle=fs.readFileSync('android/app/build.gradle.kts','utf8');
 const nativeApps=fs.readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt','utf8');
+const records=fs.readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt','utf8');
+const watcher=fs.readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt','utf8');
+assert.match(records,/MAX_RECORDS = 256/,'Workspace Records history must stay compact');
+assert.match(records,/RECORD_OPERATION_TIMEOUT_MS = 60_000L/,'Workspace Records bounded operation budget drifted');
+assert.match(records,/TRACKING_POLICY_VERSION = 2/,'Workspace Records tracking policy migration missing');
+assert.match(records,/candidateSessionsByPath/,'active candidate session evidence must be persisted separately');
+assert.match(records,/prepareForRead\("semantic-impact-seed", requireCurrent = true\)/,'semantic impact must use watcher-aware currentness');
+assert.match(records,/IGNORED_DIRECTORY_NAMES/,'generated/cache tracking policy missing');
+assert.match(watcher,/records\.shouldTrackDirectory/,'watcher must share Workspace Records tracking policy');
+assert.match(watcher,/records\.updateWatcherCoverage/,'watcher completeness must feed Workspace Records currentness');
 assert.ok(!gradle.includes('workspace-live'),'retained Workspace Records HTML adapter must not be packaged');
 assert.ok(nativeApps.includes('WORKSPACE RECORDS · LOCAL ONLY'),'native Workspace Records owner marker missing');
 

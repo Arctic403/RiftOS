@@ -33,7 +33,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         private const val MAX_TEXT_BYTES = 1024L * 1024L
         private const val MAX_DIFF_CHARS = 64_000
         private const val MAX_DIFF_LINES = 420
-        private const val MAX_RECORDS = 2_000
+        private const val MAX_RECORDS = 256
         private const val MAX_QUERY_RECORDS = 250
         // Tool results are duplicated in MCP text and structured content, then JSON-escaped
         // again by the relay. Keep the raw query far below its 1 MB WebSocket envelope.
@@ -42,8 +42,18 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         private const val MAX_SEMANTIC_SEED_SOURCE_FILES = 1_024
         private const val MAX_SEMANTIC_SEED_TEXT_BYTES = 8L * 1024L * 1024L
         private const val MAX_SEMANTIC_SEED_OWNERSHIP_PROJECTS = 64
+        private const val MAX_CANDIDATE_SESSION_EVIDENCE = 512
         private const val MAX_PENDING_WATCH_EVENTS = 512
         private const val EVENT_SETTLE_MS = 220L
+        private const val RECORD_OPERATION_TIMEOUT_MS = 60_000L
+        private const val INCOMPLETE_WATCH_RECONCILE_MAX_AGE_MS = 60_000L
+        private const val TRACKING_POLICY_VERSION = 2
+        private val IGNORED_DIRECTORY_NAMES = setOf(
+            ".git", ".gradle", ".idea", ".next", ".cache", ".turbo", ".parcel-cache", ".vortex-bridge",
+            "node_modules", "build", "dist", "out", "target", "vendor", "Pods",
+            ".venv", "venv", "__pycache__", "coverage", ".pytest_cache", ".mypy_cache"
+        )
+        private val IGNORED_FILE_NAMES = setOf(".DS_Store", "Thumbs.db")
         @Volatile private var instance: RiftWorkspaceRecords? = null
 
         fun get(context: Context): RiftWorkspaceRecords =
@@ -75,8 +85,14 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     private val sequence = AtomicLong(0L)
     private val observed = LinkedHashMap<String, Entry>()
     private val checkpoint = LinkedHashMap<String, Entry>()
+    private val candidateSessionsByPath = LinkedHashMap<String, LinkedHashMap<String, JSONObject>>()
     @Volatile private var initialized = false
     @Volatile private var lastReconcileAt = 0L
+    @Volatile private var watcherActive = false
+    @Volatile private var watcherCoverageComplete = false
+    @Volatile private var treeReconcilePending = false
+    private var trackingPolicyVersion = 0
+    private var candidateSessionEvidenceComplete = true
     private var checkpointAt = 0L
     private var checkpointSequence = -1L
     private var checkpointReason = "initial"
@@ -96,17 +112,29 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         if (initialized) return
         executor.execute {
             runCatching {
-                RiftDeadline.runUntil(SystemClock.elapsedRealtime() + 30_000L) {
+                RiftDeadline.runUntil(SystemClock.elapsedRealtime() + RECORD_OPERATION_TIMEOUT_MS) {
                     ensureInitialized()
                 }
             }
         }
     }
 
+    fun updateWatcherCoverage(active: Boolean, complete: Boolean) {
+        watcherActive = active
+        watcherCoverageComplete = active && complete
+    }
+
+    fun shouldTrackDirectory(file: File): Boolean {
+        val relative = relativePath(file) ?: return false
+        return relative.isBlank() || shouldTrackPath(relative)
+    }
+
     fun observe(type: String, file: File, directory: Boolean) {
         val relative = relativePath(file) ?: return
+        if (relative.isNotBlank() && !shouldTrackPath(relative)) return
         start()
         if (directory || type in setOf("move-from", "move-to", "delete-self", "move-self")) {
+            treeReconcilePending = true
             schedule("__tree__", 420L) { reconcileAll("watch:$type") }
             return
         }
@@ -136,7 +164,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     fun freezeCandidate(): JSONObject =
         runBounded("workspace candidate freeze") {
             ensureInitialized()
-            reconcileAll("manifest-freeze")
+            prepareForRead("manifest-freeze", requireCurrent = true)
             val manifest = buildCandidateManifest()
             val receipt = RiftPatchManifestV1.freeze(manifestRoot, manifest)
             receipt.put("recordChain", verifyRecordChain())
@@ -149,22 +177,57 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     fun semanticImpactSeed(): JSONObject =
         runBounded("workspace semantic impact") {
             ensureInitialized()
-            reconcileAll("semantic-impact-seed")
+            prepareForRead("semantic-impact-seed", requireCurrent = true)
             buildSemanticImpactSeed(buildCandidateManifest())
         }
 
+    private fun prepareForRead(source: String, requireCurrent: Boolean) {
+        flushPendingChanges(source)
+        val incompleteCoverage = !watcherActive || !watcherCoverageComplete
+        val incompleteNeedsReconcile =
+            incompleteCoverage &&
+                (requireCurrent ||
+                    System.currentTimeMillis() - lastReconcileAt >
+                        INCOMPLETE_WATCH_RECONCILE_MAX_AGE_MS)
+        if (treeReconcilePending || incompleteNeedsReconcile) reconcileAll(source)
+    }
+
+    private fun flushPendingChanges(source: String) {
+        val entries = pending.entries.toList()
+        if (entries.isEmpty()) return
+
+        if (entries.any { it.key == "__tree__" }) {
+            for (entry in entries) {
+                if (pending.remove(entry.key, entry.value)) {
+                    entry.value.cancel(false)
+                }
+            }
+            treeReconcilePending = true
+            reconcileAll("$source:pending-tree")
+            return
+        }
+
+        for (entry in entries) {
+            if (!pending.remove(entry.key, entry.value)) continue
+            entry.value.cancel(false)
+            if (shouldTrackPath(entry.key)) {
+                capturePath(entry.key, "$source:pending-path")
+            }
+        }
+    }
+
     private fun <T> runBounded(label: String, block: () -> T): T {
         val future = executor.submit<T> {
-            RiftDeadline.runUntil(SystemClock.elapsedRealtime() + 30_000L) {
+            RiftDeadline.runUntil(SystemClock.elapsedRealtime() + RECORD_OPERATION_TIMEOUT_MS) {
                 checkActive(label)
                 block()
             }
         }
         return try {
-            future.get(30, TimeUnit.SECONDS)
+            future.get(RECORD_OPERATION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         } catch (error: TimeoutException) {
             future.cancel(true)
-            throw IllegalStateException("$label timed out after 30 seconds", error)
+            throw IllegalStateException("$label timed out after ${RECORD_OPERATION_TIMEOUT_MS}ms", error)
         } catch (error: InterruptedException) {
             future.cancel(true)
             Thread.currentThread().interrupt()
@@ -183,6 +246,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
                     entry.value.cancel(false)
                 }
             }
+            treeReconcilePending = true
             schedule("__tree__", 420L) { reconcileAll("watch:burst") }
             return
         }
@@ -191,7 +255,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         val holder = AtomicReference<ScheduledFuture<*>?>()
         val future = executor.schedule({
             try {
-                RiftDeadline.runUntil(SystemClock.elapsedRealtime() + 30_000L) { block() }
+                RiftDeadline.runUntil(SystemClock.elapsedRealtime() + RECORD_OPERATION_TIMEOUT_MS) { block() }
             } finally {
                 holder.get()?.let { completed -> pending.remove(key, completed) }
             }
@@ -203,21 +267,62 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     private fun ensureInitialized() {
         checkActive("workspace records initialization")
         if (initialized) return
+        val hadPersistedState = stateFile.isFile
         loadState()
-        ensureEventChain()
-        if (observed.isEmpty() && checkpoint.isEmpty()) {
-            seedInitialState()
+        if (!hadPersistedState) {
+            trackingPolicyVersion = TRACKING_POLICY_VERSION
+            ensureEventChain()
+            seedInitialState("initial", resetSnapshots = true)
+        } else if (trackingPolicyVersion != TRACKING_POLICY_VERSION) {
+            migrateTrackingPolicy()
         } else {
-            reconcileAll("startup")
+            ensureEventChain()
+            pruneRecords()
+            if (observed.isEmpty() && checkpoint.isEmpty()) {
+                seedInitialState("initial", resetSnapshots = true)
+            } else {
+                reconcileAll("startup")
+            }
         }
         initialized = true
     }
 
-    private fun seedInitialState() {
+    private fun migrateTrackingPolicy() {
         observed.clear()
         checkpoint.clear()
-        resetSnapshotRoot(observedRoot)
-        resetSnapshotRoot(checkpointRoot)
+        candidateSessionsByPath.clear()
+        candidateSessionEvidenceComplete = true
+        eventRoot.listFiles()?.forEach { file ->
+            checkActive("workspace record migration")
+            if (file.isFile && file.extension == "json") {
+                require(file.delete() || !file.exists()) { "Could not compact old workspace record history" }
+            }
+        }
+        sequence.set(0L)
+        eventChainEpoch = ""
+        eventChainStartSequence = 0L
+        eventChainAnchorHash = RiftPatchManifestV1.GENESIS
+        eventChainLastHash = RiftPatchManifestV1.GENESIS
+        eventPrunedThroughSequence = 0L
+        eventPrunedThroughAt = 0L
+        trustedCheckpointAt = 0L
+        trustedManifestSha256 = null
+        trustedTreeSha256 = null
+        trackingPolicyVersion = TRACKING_POLICY_VERSION
+        resetSnapshotRoot(manifestRoot)
+        ensureEventChain()
+        seedInitialState("tracking-policy-v2", resetSnapshots = true)
+    }
+
+    private fun seedInitialState(reason: String, resetSnapshots: Boolean) {
+        observed.clear()
+        checkpoint.clear()
+        candidateSessionsByPath.clear()
+        candidateSessionEvidenceComplete = true
+        if (resetSnapshots) {
+            resetSnapshotRoot(observedRoot)
+            resetSnapshotRoot(checkpointRoot)
+        }
         val current = scanCurrentFiles()
         for ((path, file) in current) {
             val snapshot = snapshot(file)
@@ -228,7 +333,9 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         }
         checkpointAt = System.currentTimeMillis()
         checkpointSequence = sequence.get()
-        checkpointReason = "initial"
+        checkpointReason = reason
+        treeReconcilePending = false
+        lastReconcileAt = checkpointAt
         saveState()
     }
 
@@ -302,6 +409,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             recordChange(path, previous, null, source)
         }
         if (metadataDirty) saveState()
+        treeReconcilePending = false
         lastReconcileAt = System.currentTimeMillis()
     }
 
@@ -408,6 +516,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             observed[path] = after.entry
             writeSnapshot(observedRoot, path, after.text)
         }
+        rememberCandidateSession(path, provenance)
         pruneRecords()
         saveState()
     }
@@ -464,9 +573,63 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         }
         observed[relation.toPath] = after.entry
         writeSnapshot(observedRoot, relation.toPath, after.text)
+        rememberCandidateSession(relation.toPath, provenance)
         pruneRecords()
         saveState()
     }
+
+    private fun rememberCandidateSession(path: String, provenance: JSONObject) {
+        if (sameEntry(checkpoint[path], observed[path])) {
+            candidateSessionsByPath.remove(path)
+            return
+        }
+        val patchId = provenance.optString("patchId").trim()
+        if (patchId.isBlank()) {
+            candidateSessionEvidenceComplete = false
+            return
+        }
+        val sessionsForPath = candidateSessionsByPath.getOrPut(path) { LinkedHashMap() }
+        if (sessionsForPath.containsKey(patchId)) return
+        val totalSessions = candidateSessionsByPath.values.sumOf { it.size }
+        if (totalSessions >= MAX_CANDIDATE_SESSION_EVIDENCE) {
+            candidateSessionEvidenceComplete = false
+            return
+        }
+        sessionsForPath[patchId] = JSONObject()
+            .put("patchId", patchId)
+            .put("origin", provenance.optString("origin", "unknown"))
+            .put("operation", provenance.optString("operation", "unknown"))
+            .put("intent", if (provenance.isNull("intent")) JSONObject.NULL else provenance.optString("intent"))
+            .put("requestId", if (provenance.isNull("requestId")) JSONObject.NULL else provenance.optString("requestId"))
+            .put("confidence", provenance.optString("confidence", "none"))
+            .put("attributed", provenance.optBoolean("attributed", false))
+            .put("startedAt", provenance.optLong("startedAt", 0L))
+            .put("committedAt", provenance.optLong("committedAt", 0L))
+    }
+
+    private fun candidateSessionRows(changedPaths: Set<String>): JSONArray {
+        val sessionsById = LinkedHashMap<String, JSONObject>()
+        for (path in changedPaths.sorted()) {
+            val sessions = candidateSessionsByPath[path] ?: continue
+            for ((patchId, session) in sessions.toSortedMap()) {
+                if (!sessionsById.containsKey(patchId)) {
+                    sessionsById[patchId] = JSONObject(session.toString())
+                }
+            }
+        }
+        val rows = JSONArray()
+        for (session in sessionsById.toSortedMap().values) rows.put(session)
+        return rows
+    }
+
+    private fun oldestRetainedEventAt(): Long? =
+        eventRoot.listFiles()
+            ?.asSequence()
+            ?.filter { it.isFile && it.extension == "json" }
+            ?.mapNotNull { file ->
+                file.nameWithoutExtension.substringAfter('-', "").toLongOrNull()
+            }
+            ?.minOrNull()
 
     private fun createCheckpoint(reason: String, gitRoot: String?, gitHeadSha: String?): JSONObject {
         reconcileAll("checkpoint")
@@ -484,12 +647,14 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         checkpointReason = reason
         checkpointGitRoot = gitRoot
         checkpointGitHeadSha = gitHeadSha
+        candidateSessionsByPath.clear()
+        candidateSessionEvidenceComplete = true
         saveState()
         return checkpointSummary()
     }
 
     private fun queryInternal(args: JSONObject): JSONObject {
-        if (System.currentTimeMillis() - lastReconcileAt > 30_000L) reconcileAll("query")
+        prepareForRead("query", requireCurrent = false)
         val prefix = normalizePrefix(args.optString("path"))
         val includeDiff = !args.has("includeDiff") || args.optBoolean("includeDiff", true)
         val limit = args.optInt("limit", 120).coerceIn(1, MAX_QUERY_RECORDS)
@@ -675,43 +840,9 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             .sortedWith(compareBy({ it.fromPath }, { it.toPath }, { it.kind }))
             .forEach { relationRows.put(relationJson(it)) }
 
-        val sessionsById = LinkedHashMap<String, JSONObject>()
-        val eventFiles = eventRoot.listFiles()
-            ?.filter { it.isFile && it.extension == "json" }
-            ?.sortedBy { it.name }
-            .orEmpty()
-        var oldestRetainedAt: Long? = null
-        for (file in eventFiles) {
-            val row = runCatching { JSONObject(file.readText(Charsets.UTF_8)) }.getOrNull() ?: continue
-            val at = row.optLong("at", 0L)
-            val rowSequence = row.optLong("sequence", 0L)
-            val currentOldest = oldestRetainedAt
-            if (at > 0L && (currentOldest == null || at < currentOldest)) oldestRetainedAt = at
-            val afterCheckpoint = if (checkpointSequence >= 0L) {
-                rowSequence > checkpointSequence
-            } else {
-                at >= checkpointAt
-            }
-            if (!afterCheckpoint) continue
-            if (row.optString("path") !in changedPaths) continue
-            val patchId = row.optString("patchId")
-            val provenance = row.optJSONObject("provenance") ?: continue
-            if (patchId.isBlank() || sessionsById.containsKey(patchId)) continue
-            sessionsById[patchId] = JSONObject()
-                .put("patchId", patchId)
-                .put("origin", provenance.optString("origin", "unknown"))
-                .put("operation", provenance.optString("operation", "unknown"))
-                .put("intent", if (provenance.isNull("intent")) JSONObject.NULL else provenance.optString("intent"))
-                .put("requestId", if (provenance.isNull("requestId")) JSONObject.NULL else provenance.optString("requestId"))
-                .put("confidence", provenance.optString("confidence", "none"))
-                .put("attributed", provenance.optBoolean("attributed", false))
-                .put("startedAt", provenance.optLong("startedAt", 0L))
-                .put("committedAt", provenance.optLong("committedAt", 0L))
-        }
-        val sessionRows = JSONArray()
-        for (session in sessionsById.toSortedMap().values) sessionRows.put(session)
-        val sessionComplete = changedPaths.isEmpty() ||
-            (checkpointSequence >= 0L && eventPrunedThroughSequence <= checkpointSequence)
+        val oldestRetainedAt = oldestRetainedEventAt()
+        val sessionRows = candidateSessionRows(changedPaths)
+        val sessionComplete = changedPaths.isEmpty() || candidateSessionEvidenceComplete
 
         val structural = JSONObject()
             .put("changes", changeRows)
@@ -978,14 +1109,25 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             val children = directory.listFiles()?.sortedBy { it.name.lowercase() }.orEmpty()
             for (child in children) {
                 checkActive("workspace record scan")
+                if (child.name in IGNORED_DIRECTORY_NAMES || child.name in IGNORED_FILE_NAMES) continue
                 val canonical = runCatching { child.canonicalFile }.getOrNull() ?: continue
                 if (!insideWorkspace(canonical)) continue
+                val relative = relativePath(canonical) ?: continue
+                if (!shouldTrackPath(relative)) continue
                 if (canonical.isDirectory) walk(canonical)
-                else if (canonical.isFile) relativePath(canonical)?.let { out[it] = canonical }
+                else if (canonical.isFile) out[relative] = canonical
             }
         }
         walk(workspaceRoot)
         return out
+    }
+
+    private fun shouldTrackPath(path: String): Boolean {
+        val normalized = path.replace('\\', '/').trim('/')
+        if (normalized.isBlank()) return true
+        val segments = normalized.split('/').filter { it.isNotBlank() }
+        if (segments.any { it in IGNORED_DIRECTORY_NAMES }) return false
+        return segments.lastOrNull() !in IGNORED_FILE_NAMES
     }
 
     private fun snapshot(file: File): Snapshot {
@@ -1145,6 +1287,11 @@ class RiftWorkspaceRecords private constructor(context: Context) {
     private fun loadState() {
         if (!stateFile.isFile) return
         val state = runCatching { JSONObject(stateFile.readText(Charsets.UTF_8)) }.getOrNull() ?: return
+        trackingPolicyVersion = state.optInt("trackingPolicyVersion", 0)
+        candidateSessionEvidenceComplete = state.optBoolean(
+            "candidateSessionEvidenceComplete",
+            trackingPolicyVersion == TRACKING_POLICY_VERSION
+        )
         sequence.set(state.optLong("sequence", 0L))
         checkpointAt = state.optLong("checkpointAt", 0L)
         checkpointSequence = state.optLong("checkpointSequence", -1L)
@@ -1162,11 +1309,14 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         trustedTreeSha256 = if (state.isNull("trustedTreeSha256")) null else state.optString("trustedTreeSha256").takeIf { it.isNotBlank() }
         readEntryMap(state.optJSONObject("observed"), observed)
         readEntryMap(state.optJSONObject("checkpoint"), checkpoint)
+        readCandidateSessions(state.optJSONObject("candidateSessionsByPath"))
     }
 
     private fun saveState() {
         val state = JSONObject()
             .put("format", FORMAT)
+            .put("trackingPolicyVersion", trackingPolicyVersion)
+            .put("candidateSessionEvidenceComplete", candidateSessionEvidenceComplete)
             .put("sequence", sequence.get())
             .put("checkpointAt", checkpointAt)
             .put("checkpointSequence", checkpointSequence)
@@ -1182,6 +1332,7 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             .put("trustedCheckpointAt", trustedCheckpointAt)
             .put("trustedManifestSha256", trustedManifestSha256 ?: JSONObject.NULL)
             .put("trustedTreeSha256", trustedTreeSha256 ?: JSONObject.NULL)
+            .put("candidateSessionsByPath", candidateSessionsJson())
             .put("observed", entryMapJson(observed))
             .put("checkpoint", entryMapJson(checkpoint))
         writeJsonAtomic(stateFile, state)
@@ -1207,6 +1358,46 @@ class RiftWorkspaceRecords private constructor(context: Context) {
         val out = JSONObject()
         for ((path, entry) in source) out.put(path, entryJson(entry))
         return out
+    }
+
+    private fun candidateSessionsJson(): JSONObject {
+        val out = JSONObject()
+        for (path in candidateSessionsByPath.keys.sorted()) {
+            val sessions = candidateSessionsByPath[path] ?: continue
+            val rows = JSONObject()
+            for ((patchId, session) in sessions.toSortedMap()) {
+                rows.put(patchId, JSONObject(session.toString()))
+            }
+            out.put(path, rows)
+        }
+        return out
+    }
+
+    private fun readCandidateSessions(source: JSONObject?) {
+        candidateSessionsByPath.clear()
+        if (source == null) {
+            if (trackingPolicyVersion == TRACKING_POLICY_VERSION) {
+                candidateSessionEvidenceComplete = false
+            }
+            return
+        }
+        var total = 0
+        for (path in source.keys().asSequence().toList().sorted()) {
+            if (!shouldTrackPath(path)) continue
+            val rows = source.optJSONObject(path) ?: continue
+            val sessions = LinkedHashMap<String, JSONObject>()
+            for (patchId in rows.keys().asSequence().toList().sorted()) {
+                if (total >= MAX_CANDIDATE_SESSION_EVIDENCE) {
+                    candidateSessionEvidenceComplete = false
+                    break
+                }
+                val row = rows.optJSONObject(patchId) ?: continue
+                sessions[patchId] = JSONObject(row.toString())
+                total++
+            }
+            if (sessions.isNotEmpty()) candidateSessionsByPath[path] = sessions
+            if (total >= MAX_CANDIDATE_SESSION_EVIDENCE) break
+        }
     }
 
     private fun writeJsonAtomic(file: File, json: JSONObject) {
