@@ -29,11 +29,13 @@ Do not delete old entries after fixes. Mark them resolved and retain them as reg
 
 ## FAIL-2026-09-24-001 — N2-M2 source gate regex false-failed fail-soft projection markers
 
-**Status:** OPEN — documented; source fix not recorded here yet.
+**Status:** FIXED IN SOURCE / AWAITING BUILDER VERIFICATION.
 
 **Date:** 2026-09-24
 
-**RiftOS source:** `8ecdfefb30545598b6937925b6e68da3a1d92b04`
+**Failed RiftOS source:** `8ecdfefb30545598b6937925b6e68da3a1d92b04`
+
+**Fixing source SHA:** `e0344344c11fb8d83d20bb8baddb76ff1118c4cd` — corrected the over-escaped fail-soft matcher and replaced the adjacent post-commit check with a real whitespace-aware regex. Builder re-verification is still required before this entry becomes RESOLVED.
 
 **Builder run ID:** `36058344281`
 
