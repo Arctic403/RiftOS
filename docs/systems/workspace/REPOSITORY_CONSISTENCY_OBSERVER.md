@@ -720,9 +720,11 @@ Required invariants:
 
 Any incremental/clean divergence is a correctness failure.
 
-## Benchmark program
+## Deferred post-CLI benchmark program
 
-N1.8 ships with a dedicated mutation benchmark rather than judging itself by feature count.
+Performance/comparative benchmarking is intentionally deferred until the full RiftCLI stack is 100% complete and live. N1.8 promotion is correctness-only: deterministic mutation torture, exact/+1 bounds, restart parity, fail-closed behavior, false-positive stress and cross-oracle continuity remain mandatory, but no precision/recall/F1, latency, memory, throughput or external benchmark comparison is an N1.8 promotion gate.
+
+The Rift mutation corpus remains active during N1.8 as a correctness/adversarial fixture corpus. After the complete CLI is live, the same corpus becomes part of the unified benchmark campaign alongside the external benchmark families and performance metrics below.
 
 ### Rift mutation corpus
 
@@ -964,13 +966,15 @@ The proof plan is deterministic and evidence-linked:
 
 Permanent regression `scripts/test-rift-proof-obligations-v1.mjs`, Gradle mandatory-source coverage, source ownership and `npm check` wiring are present. Builder compilation/signed-DEX proof, installed semantic fixtures, exact-bound/determinism/restart torture and N1.8.0-N1.8.4 continuity remain required before promotion.
 
-### N1.8.6 — adversarial benchmark and ablation
+### N1.8.6 — adversarial correctness and layer-isolation proof
 
-- Rift mutation corpus;
-- external benchmark subsets where applicable;
-- precision/recall/latency/memory reporting;
-- ablation proving the value of syntax, graph, claim and historical layers separately;
-- false-positive stress.
+- Rift mutation corpus as deterministic correctness fixtures;
+- false-positive/false-negative stress with explicit expected outcomes;
+- layer-isolation fixtures proving syntax, graph, claim and historical layers fail/hold independently;
+- exact/+1 bounds, deterministic replay and fail-closed behavior;
+- no external comparative benchmark or performance score is run here.
+
+The external benchmark subsets, precision/recall/F1, latency, memory, throughput and comparative ablation campaign are deferred until the full CLI is 100% complete and live.
 
 ### N1.8.7 — installed-device promotion
 
