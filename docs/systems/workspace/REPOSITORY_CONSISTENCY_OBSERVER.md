@@ -912,7 +912,7 @@ Current deterministic checks cover:
 - protocol producer/consumer mirrors: the Android relay client and Cloudflare relay worker agree on `rift-mcp-relay-v1`, and the CLI event producer/relay consumer agree on `rift.cli-event/1`;
 - limit ordering: end-to-end synchronous timeout ownership remains strictly ordered as 45s sandbox < 60s native shell < 65s MCP server < 70s relay client < 75s relay worker.
 
-The scan is fail-closed with bounds of 4096 text/source files, 2 MiB per file, 64 MiB aggregate bytes and 1024 findings. Hitting a file, per-file, aggregate-byte, read or finding bound adds an explicit `contracts-*` incomplete reason. `complete` and `clean` are separate, findings/evidence are deterministic, the view has zero mutation authority and exact evidence is bound by `contractsSha256`.
+The scan is fail-closed with bounds of 4096 text/source files, 2 MiB per file, 64 MiB aggregate bytes and 1024 findings. Hitting a file, per-file, aggregate-byte, read or finding bound adds an explicit `contracts-*` incomplete reason. Full ordered findings/evidence remain part of `contractsSha256` and full counts, while returned `findings`/`evidence` previews are capped at 240 rows each with explicit row counts and truncation flags so boundary-scale scans cannot overflow the project-tool response path. `complete` and `clean` are separate, the view has zero mutation authority and preview truncation alone does not make the scan incomplete.
 
 Permanent regression: `scripts/test-rift-cross-boundary-contracts-v1.mjs`, wired into root `npm check`. It verifies the real source mirrors and includes deliberate protocol/timeout mismatch fixtures so the gate cannot pass only because the current repository happens to be clean.
 

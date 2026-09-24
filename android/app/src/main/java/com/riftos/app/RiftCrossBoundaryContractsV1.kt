@@ -16,6 +16,7 @@ internal class RiftCrossBoundaryContractsV1(
         private const val MAX_FILE_BYTES = 2L * 1024L * 1024L
         private const val MAX_TOTAL_BYTES = 64L * 1024L * 1024L
         private const val MAX_FINDINGS = 1_024
+        private const val MAX_PREVIEW_ROWS = 240
         private val TEXT_EXTENSIONS = setOf(
             "kt", "java", "kts", "gradle", "xml", "cpp", "cc", "cxx", "c", "h", "hpp",
             "js", "mjs", "json", "jsonc", "properties"
@@ -103,7 +104,7 @@ internal class RiftCrossBoundaryContractsV1(
         }
 
         val findingRows = JSONArray()
-        orderedFindings.forEach {
+        orderedFindings.take(MAX_PREVIEW_ROWS).forEach {
             findingRows.put(JSONObject()
                 .put("ruleId", it.ruleId)
                 .put("category", it.category)
@@ -112,7 +113,7 @@ internal class RiftCrossBoundaryContractsV1(
                 .put("message", it.message))
         }
         val evidenceRows = JSONArray()
-        orderedEvidence.forEach(evidenceRows::put)
+        orderedEvidence.take(MAX_PREVIEW_ROWS).forEach(evidenceRows::put)
 
         return JSONObject()
             .put("schema", SCHEMA)
@@ -133,7 +134,13 @@ internal class RiftCrossBoundaryContractsV1(
                 .put("maxFiles", MAX_FILES)
                 .put("maxFileBytes", MAX_FILE_BYTES)
                 .put("maxTotalBytes", MAX_TOTAL_BYTES)
-                .put("maxFindings", MAX_FINDINGS))
+                .put("maxFindings", MAX_FINDINGS)
+                .put("maxPreviewRows", MAX_PREVIEW_ROWS))
+            .put("preview", JSONObject()
+                .put("findingRows", findingRows.length())
+                .put("evidenceRows", evidenceRows.length())
+                .put("findingsTruncated", orderedFindings.size > MAX_PREVIEW_ROWS)
+                .put("evidenceTruncated", orderedEvidence.size > MAX_PREVIEW_ROWS))
             .put("findings", findingRows)
             .put("evidence", evidenceRows)
     }

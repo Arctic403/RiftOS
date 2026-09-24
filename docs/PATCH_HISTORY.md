@@ -6,6 +6,21 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.57 — N1.8.3 bounded result previews
+
+Installed finding-bound torture exposed a transport-level weakness in the N1.8.3 contracts view: the scan itself was bounded, but the returned JSON still serialized every retained finding and every evidence row. At the 1024-finding boundary this could overflow the project-tool response path before the caller could observe the exact bound result.
+
+Patch 10.57 keeps full bounded evidence authoritative while bounding only the returned preview:
+- `MAX_PREVIEW_ROWS = 240`;
+- full ordered findings and evidence continue to feed `contractsSha256`;
+- `counts.findings` and `counts.contracts` continue to report full retained totals;
+- returned `findings` and `evidence` arrays are limited with `.take(MAX_PREVIEW_ROWS)`;
+- `bounds.maxPreviewRows` exposes the preview limit;
+- `preview.findingRows`, `preview.evidenceRows`, `preview.findingsTruncated` and `preview.evidenceTruncated` make truncation explicit;
+- truncating the preview does not make an otherwise complete scan incomplete and does not weaken fail-closed scan/finding limits.
+
+The permanent N1.8.3 regression now requires the 240-row cap and truncation metadata. N1.8.3 remains **source-implemented / promotion pending** until a rebuilt installed APK proves the exact/+1 finding boundary can be observed without tool-response failure, followed by the remaining file/byte bounds, warm/restart determinism and N1.8.0-N1.8.2 continuity gates.
+
 ## Patch 10.56 — N1.8.3 installed false-positive hardening
 
 The first installed N1.8.3 build, source `29222aca534a0fdb9b711d3264676e5e4d1f60b9`, Builder run `35935936280` / run number `318`, successfully exposed `project kind=contracts` on-device but returned three findings on the clean RiftOS repository. Direct inspection proved all three were oracle false positives rather than contract drift:
