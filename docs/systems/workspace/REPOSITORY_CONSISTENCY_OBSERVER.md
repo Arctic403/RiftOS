@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.6+ PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 + N1.8.5 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.6 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.7 PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -967,6 +967,8 @@ The proof plan is deterministic and evidence-linked:
 Permanent regression `scripts/test-rift-proof-obligations-v1.mjs`, Gradle mandatory-source coverage, source ownership and `npm check` wiring are present. Builder compilation/signed-DEX proof, installed semantic fixtures, exact-bound/determinism/restart torture and N1.8.0-N1.8.4 continuity remain required before promotion.
 
 ### N1.8.6 — adversarial correctness and layer-isolation proof
+
+Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING.** Permanent regression `scripts/test-rift-observer-adversarial-v1.mjs` defines a canonical seven-fixture corpus (`da0fd2e1313a9c00fc3e0e382abf3e32cc8d33503e922e11365041953ec55012`) with explicit `mustFail`/`mustHold` outcomes across syntax, graph, claims and historical layers. The corpus contains four isolated true-positive failures and three false-positive controls, is replay-deterministic, chains every promoted Observer regression into the mandatory source gate, and performs no performance/comparative scoring.
 
 - Rift mutation corpus as deterministic correctness fixtures;
 - false-positive/false-negative stress with explicit expected outcomes;
