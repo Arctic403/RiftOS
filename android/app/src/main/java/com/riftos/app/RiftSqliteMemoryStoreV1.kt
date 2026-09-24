@@ -34,7 +34,12 @@ class RiftSqliteMemoryStoreV1 : RiftMemoryStoreV1 {
     }
 
     private fun configure(db: SQLiteDatabase) {
-        db.execSQL("PRAGMA journal_mode=DELETE")
+        db.rawQuery("PRAGMA journal_mode=DELETE", null).use { cursor ->
+            check(cursor.moveToFirst()) { "SQLite journal_mode query returned no row." }
+            check(cursor.getString(0).equals("delete", ignoreCase = true)) {
+                "SQLite journal_mode must be DELETE; got ${cursor.getString(0)}"
+            }
+        }
         db.execSQL("PRAGMA synchronous=FULL")
         db.execSQL("PRAGMA foreign_keys=ON")
         db.execSQL("PRAGMA temp_store=MEMORY")

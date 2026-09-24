@@ -97,6 +97,9 @@ for (const marker of [
   assert.ok(sqlite.includes(marker), `missing N2.2 SQLite marker: ${marker}`);
 }
 assert.ok(sqlite.includes('class RiftSqliteMemoryStoreV1 : RiftMemoryStoreV1'));
+assert.ok(sqlite.includes('db.rawQuery("PRAGMA journal_mode=DELETE", null)'), 'journal_mode must use the Android query API');
+assert.ok(sqlite.includes('SQLite journal_mode must be DELETE; got'), 'journal_mode result must be verified');
+assert.ok(!sqlite.includes('db.execSQL("PRAGMA journal_mode=DELETE")'), 'query-returning journal_mode must never use execSQL');
 assert.ok(sqlite.includes('Single memory content blob exceeds 8 MiB bound.'));
 assert.ok(sqlite.includes('Snapshot scope exceeds bounded N2.2 baseline of 1000 current records.'));
 assert.ok(sqlite.includes('if (db.isOpen && db.inTransaction())'));
