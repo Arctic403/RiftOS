@@ -97,11 +97,13 @@ When Observer is upgraded to consume execution evidence, this failure should bec
 
 ## FAIL-2026-09-24-002 — N2-M2 Kotlin nullability compile failure in contradiction event path
 
-**Status:** OPEN — root cause confirmed; source fix not yet bound to a commit.
+**Status:** FIXED IN SOURCE / AWAITING BUILDER VERIFICATION.
 
 **Date:** 2026-09-24
 
 **Failed RiftOS source:** `2bb9fd24e26fdc82e71e9fe8f05f35accc346467`
+
+**Fixing source SHA:** `3ab31e33bda34972c9de4abb8598a51c650c74db` — added the explicit `prior != null` guard on the contradiction-event call path and permanently gated that non-null proof in the M2 regression. Builder re-verification is required before this entry becomes RESOLVED.
 
 **Builder run ID:** `36060038399`
 
