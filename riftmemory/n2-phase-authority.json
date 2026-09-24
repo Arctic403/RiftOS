@@ -1,0 +1,24 @@
+{
+  "schema": "rift-memory-n2-phase-authority-v1",
+  "program": "N2 Federated Rift Memory Kernel",
+  "programStatus": "N2.0 SOURCE-IMPLEMENTED / PROMOTION PENDING; N2.1-N2.12 PENDING",
+  "runtimeStatus": "N2 RUNTIME INACTIVE",
+  "n18Prerequisite": "SATISFIED",
+  "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
+  "contractPath": "riftmemory/n2-contract-v1.json",
+  "phases": [
+    {"phase": "N2.0", "status": "source-implemented", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.1", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.2", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.3", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.4", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.5", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.6", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.7", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.8", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.9", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.10", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.11", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
+    {"phase": "N2.12", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null}
+  ]
+}

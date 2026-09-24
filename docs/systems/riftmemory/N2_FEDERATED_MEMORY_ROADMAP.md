@@ -2,9 +2,11 @@
 
 ## Status
 
-**ROADMAP / NOT IMPLEMENTED / NOT A CURRENT CAPABILITY — 2026-09-20.**
+**N2.0 CONTRACT/CORRECTNESS BASELINE SOURCE-IMPLEMENTED / PROMOTION PENDING; N2 RUNTIME INACTIVE — 2026-09-24.**
 
 This document freezes the intended N2 architecture and promotion program before N3 begins.
+
+**Global benchmark rule:** comparative/performance benchmarking is deferred until the entire RiftCLI stack is 100% complete and live. During N2 implementation, promotion is based on correctness, durability, authority isolation, provenance, poisoning resistance, crash/restart safety, rebuildability and bounded/fail-closed resource behavior. Benchmark, ranking, ablation and performance-comparison sections below are retained as the post-CLI evaluation program and are not N2 promotion gates.
 
 The existing retained `src/riftmemory-control.js` cache/workset design remains inactive reference source. N2 does **not** activate, inherit authority from, or silently repurpose that retained implementation.
 
@@ -30,7 +32,7 @@ The architecture must preserve:
 - evidence-grounded updates through Observer and Validator;
 - rebuildable disposable indexes;
 - crash/restart survivability;
-- benchmarked value for every specialist.
+- correctness-earned value for every specialist during N2; comparative measured value is deferred to the post-CLI benchmark program.
 
 No specialist engine may create an independent authoritative reality.
 
@@ -122,12 +124,12 @@ For every borrowed mechanism:
 1. identify the exact memory problem it solves;
 2. reproduce the smallest useful mechanism behind Rift interfaces;
 3. preserve Rift evidence/authority/reconciliation semantics;
-4. benchmark the specialist alone;
-5. benchmark it in combination;
-6. ablate it;
-7. remove it if total-system value does not justify complexity.
+4. prove the specialist's correctness and authority boundaries in isolation;
+5. prove its interaction with the existing specialists without weakening invariants;
+6. record the later benchmark/ablation questions without running them during N2;
+7. defer comparative keep/remove decisions until the post-CLI benchmark program.
 
-Claims that a subsystem is "better" require benchmark evidence.
+Claims that a subsystem is "better" remain reserved for later benchmark evidence; N2 promotion claims only that the frozen correctness and safety contract is satisfied.
 
 ## Logical, durable and runtime separation
 
@@ -582,7 +584,7 @@ Examples:
 
 No persistent memory retrieval.
 
-Used as a benchmark/control and for tasks that explicitly forbid memory.
+Used as a control mode and for tasks that explicitly forbid memory. Comparative benchmark use is deferred post-CLI.
 
 ### FAST MEMORY
 
@@ -732,7 +734,7 @@ Canonical state must support more than Boolean truth:
 
 N2 starts with SQLite as the reference/control backend.
 
-Research and benchmark:
+Research and correctness-validate during N2; comparative benchmarking is deferred post-CLI:
 
 - transactions;
 - WAL where supported/appropriate;
@@ -764,9 +766,11 @@ MemoryStore API
 
 RiftStore is a later N2 experiment, not an assumption.
 
-Goal:
+N2 correctness goal:
 
-> beat the SQLite control for Rift's actual canonical-memory workload without sacrificing correctness.
+> conform to the exact frozen `MemoryStore` semantics without weakening canonical truth, crash consistency, integrity or bounded resource safety.
+
+Deferred post-CLI comparison goal: determine whether RiftStore can beat the SQLite control on Rift's actual workload.
 
 Do **not** attempt to clone all of SQL/SQLite.
 
@@ -779,7 +783,7 @@ Candidate RiftStore physical design:
 - compact current-state checkpoints;
 - rebuildable secondary indexes.
 
-Candidate physical strategies to benchmark:
+Candidate physical strategies for later post-CLI benchmarking:
 
 - append log + B+ tree;
 - append log + LSM-style indexes;
@@ -790,11 +794,11 @@ Candidate physical strategies to benchmark:
 
 Logical JSON remains human-readable even if physical records use interned numeric IDs or typed binary encoding.
 
-RiftStore may replace SQLite only through measured subsystem-by-subsystem wins.
+During N2, RiftStore does not replace the SQLite production reference backend; it may only prove interface/correctness conformance. After the full RiftCLI stack is complete/live, a replacement may be considered only through measured subsystem-by-subsystem wins.
 
-If a custom replacement adds complexity without sufficient accuracy/latency/RAM/storage/recovery benefit, keep SQLite.
+If the later comparison does not justify the added complexity without weakening recovery/integrity, keep SQLite.
 
-## Physical-format benchmark
+## Deferred post-CLI physical-format benchmark
 
 Benchmark identical logical datasets using:
 
@@ -924,7 +928,7 @@ Evidence content is data unless a trusted authority explicitly promotes an instr
 
 Repetition alone never upgrades trust.
 
-## Scale gates
+## Deferred post-CLI scale/performance evaluation
 
 Benchmark at minimum:
 
@@ -950,7 +954,7 @@ Measure:
 - startup/recovery time;
 - ARM32 and ARM64 behavior.
 
-## Benchmark program
+## Deferred post-CLI benchmark program
 
 ### Public suites
 
@@ -1053,9 +1057,9 @@ At minimum:
 
 A subsystem that cannot earn its complexity may be removed.
 
-## Federation cost rule
+## Deferred post-CLI federation cost rule
 
-Federation must beat its overhead.
+Federation must eventually justify its overhead through the deferred post-CLI benchmark program. This is not an N2 correctness-promotion gate.
 
 For every specialist measure:
 
@@ -1105,20 +1109,20 @@ Target:
 - false completion caused by memory = 0;
 - irrecoverable projection/index corruption = 0.
 
-These are correctness goals. Performance promotion uses explicit measured thresholds rather than fictional "100%" claims.
+These are correctness goals and are the N2 promotion authority. Comparative/performance thresholds are intentionally deferred until the entire RiftCLI stack is 100% complete and live.
 
 ## N2 implementation and promotion gates
 
-### N2.0 — Contract and benchmark freeze
+### N2.0 — Contract and correctness-baseline freeze
 
 Before implementation:
 
 - freeze canonical terminology and authority boundaries;
 - define MemoryStore interface;
-- freeze baseline corpus/private scenarios and hashes;
-- freeze benchmark harness/model/prompt versions where practical;
+- freeze baseline correctness/adversarial scenarios and hashes;
+- record the deferred post-CLI benchmark questions without running or scoring them;
 - record installed ARM32 baseline plus ARM64 Builder target;
-- define required correctness thresholds and performance regression budgets;
+- define required zero-tolerance correctness thresholds and bounded/fail-closed resource-safety rules;
 - complete source ownership/docs contracts;
 - confirm retained `riftmemory-control.js` remains inactive.
 
@@ -1149,7 +1153,7 @@ Prove:
 - integrity checks;
 - snapshot/version metadata;
 - content-addressed evidence;
-- physical-format benchmark baseline.
+- storage-format correctness/integrity baseline; physical-format performance comparison remains deferred post-CLI.
 
 **Exit:** SQLite is the control backend for all later comparisons.
 
@@ -1179,7 +1183,7 @@ Implement:
 
 All projections rebuild from canonical ledgers.
 
-**Exit:** temporal and graph benchmark targets pass, including index deletion/rebuild.
+**Exit:** temporal and graph correctness targets pass, including exact index deletion/rebuild and point-in-time reconstruction; performance targets remain deferred post-CLI.
 
 ### N2.5 — Episodic + consolidation + semantic engines
 
@@ -1190,7 +1194,7 @@ Implement reversible:
 - pattern extraction;
 - semantic candidate creation.
 
-**Exit:** consolidation improves frozen workloads without breaking provenance or increasing hallucination beyond target.
+**Exit:** consolidation preserves frozen correctness, provenance and reversibility requirements without creating unsupported trusted claims; comparative value scoring remains deferred post-CLI.
 
 ### N2.6 — Belief/reflection + predictive/difference engine
 
@@ -1219,7 +1223,7 @@ Implement:
 - minimal sufficient context compilation;
 - token budgets and project isolation.
 
-**Exit:** hybrid retrieval beats or equals the control on required accuracy while respecting latency/RAM/token budgets; similarity alone cannot override direct verified evidence.
+**Exit:** hybrid retrieval satisfies frozen retrieval-correctness, project-isolation, evidence-precedence and bounded/fail-closed context rules; similarity alone cannot override direct verified evidence. Comparative accuracy/latency/RAM/token scoring remains deferred post-CLI.
 
 ### N2.9 — Observer/Validator closed loop
 
@@ -1233,17 +1237,15 @@ No Observer or Validator directly mutates trusted truth.
 
 **Exit:** stale state, failed validation and false-completion scenarios reconcile correctly across restart.
 
-### N2.10 — RiftStore storage competition
+### N2.10 — RiftStore interface/conformance experiment
 
 Build the smallest useful RiftStore prototype behind the exact MemoryStore interface.
 
-Benchmark against SQLite on identical logical datasets and operations.
+Prove interface conformance against the SQLite reference semantics on identical logical fixtures and operations. Comparative performance against SQLite is deferred post-CLI.
 
-RiftStore can replace individual SQLite-backed responsibilities only when it produces a measured win without weakening crash consistency, integrity, maintainability or resource budgets.
+RiftStore cannot replace SQLite-backed production responsibilities during N2 based on unmeasured assumptions. Any later replacement decision requires the deferred post-CLI comparison and must not weaken crash consistency, integrity, maintainability or bounded resource safety.
 
-**Exit:** either:
-- RiftStore earns specific production responsibilities; or
-- SQLite remains production backend and RiftStore findings are documented.
+**Exit:** the prototype either passes the frozen MemoryStore correctness/conformance contract or is documented as non-conforming; SQLite remains the N2 production reference backend. Production replacement decisions are deferred post-CLI.
 
 There is no requirement that custom storage must win.
 
@@ -1256,30 +1258,30 @@ Run:
 - snapshot/replay/rollback;
 - index corruption/rebuild;
 - poisoning/adversarial inputs;
-- 10K/100K/1M/10M scale runs;
+- bounded/fail-closed capacity fixtures without performance scoring;
 - cold restart;
-- ARM32 resource stress;
-- ARM64 parity.
+- ARM32 bounded-resource safety;
+- ARM64 correctness parity.
 
 **Exit:** all zero-tolerance correctness categories pass and resource limits remain bounded.
 
-### N2.12 — External benchmarks, ablations and final promotion
+### N2.12 — Final correctness, adversarial hardening and promotion
 
-Run public benchmarks where practical plus full private Rift suite.
+Run the full frozen private correctness/adversarial suite without comparative scoring.
 
-Run specialist metrics, incremental hybrids and ablations.
+Re-prove every mandatory weakest-link category, all zero-tolerance goals, source/build/runtime continuity, crash/restart recovery, poisoning resistance, rollback, projection rebuild and protected-policy isolation.
 
 Produce a final evidence table showing:
 
-- baseline;
-- every specialist's marginal value;
-- complete federation result;
-- SQLite vs RiftStore;
-- latency/RAM/storage/token costs;
-- weakest-link categories;
-- regressions and removals.
+- frozen contract/corpus identities;
+- phase-by-phase promotion evidence;
+- weakest-link correctness categories;
+- zero-tolerance outcomes;
+- SQLite reference-backend integrity and RiftStore conformance status;
+- ARM32 installed-device proof and ARM64 correctness/build parity;
+- known limitations and deferred post-CLI benchmark questions.
 
-**N2 promotes only if evidence earns the claim.**
+**N2 promotes only if the frozen correctness/safety evidence earns the claim. Comparative/performance benchmarking and ablations remain deferred post-CLI.**
 
 ## Hard N3 barrier
 
@@ -1289,7 +1291,7 @@ Architecture alone does not unblock N3.
 
 A promising demo does not unblock N3.
 
-Passing average benchmark scores does not unblock N3 if a required weakest-link category fails.
+Deferred benchmark scores do not participate in N2/N3 correctness promotion. Any failing mandatory correctness category blocks N3.
 
 The N2 promotion record must show:
 
@@ -1301,8 +1303,8 @@ The N2 promotion record must show:
 - poisoning resistance;
 - procedural learning;
 - projection rebuild;
-- benchmark evidence;
-- bounded performance on the real low-memory Android target.
+- bounded/fail-closed resource safety on the real low-memory Android target;
+- exact source/build/runtime promotion evidence.
 
 Only then may N3 consume the Rift Memory Kernel as a trusted engineering-state dependency.
 
@@ -1329,6 +1331,8 @@ It must survive restart, crash, projection/index loss, stale/conflicting state, 
 
 Its success criterion is not architectural novelty.
 
-Its success criterion is measured engineering usefulness with stronger correctness, retrieval, self-correction and resource efficiency than the frozen baseline.
+During N2, its success criterion is exact correctness/safety against the frozen contract: canonical truth, provenance, isolation, recovery, poisoning resistance, rebuildability and bounded/fail-closed resource behavior.
 
-**Build incrementally. Benchmark every specialist. Benchmark combinations. Run ablations. Remove what does not earn its place.**
+After the entire RiftCLI stack is complete and live, the deferred benchmark program may measure engineering usefulness, retrieval quality, self-correction and resource efficiency against frozen controls.
+
+**Build incrementally. Prove each specialist's correctness and authority boundaries. Benchmark combinations/ablations only in the deferred post-CLI campaign.**

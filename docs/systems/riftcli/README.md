@@ -288,7 +288,7 @@ Promotion is split into N1.8.0-N1.8.7: fact graph/schema, syntax/import integrit
 
 ### Gate N2 — Federated Rift Memory Kernel
 
-**Hard pre-N3 program; roadmap only until implemented and promoted. The N1.8 prerequisite is satisfied, but N2 remains inactive until its own implementation begins. Performance/comparative benchmarking stays deferred until the full RiftCLI stack is 100% complete and live.**
+**Hard pre-N3 program. N2.0 is source-implemented/promotion-pending; N2.1-N2.12 remain pending and the N2 runtime remains inactive. Performance/comparative benchmarking stays deferred until the full RiftCLI stack is 100% complete and live.**
 
 N2 is no longer a generic "engineering state" bucket. It is one canonical Rift Memory Kernel with multiple specialized cognitive engines operating over the same canonical IDs/evidence/transactions.
 
@@ -322,9 +322,9 @@ The retrieval path is Memory Router -> specialist retrieval -> fusion/arbitratio
 
 The learning/update path is Planner -> Tools -> Observer -> Validator -> Difference/Surprise -> Reconciliation -> governed canonical memory transaction.
 
-Storage starts with a replaceable SQLite reference `MemoryStore`. A later RiftStore backend may replace SQLite responsibilities only after identical benchmark workloads prove enough benefit to justify its complexity without weakening crash consistency or integrity.
+Storage starts with a replaceable SQLite reference `MemoryStore`. During N2, RiftStore may only prove exact MemoryStore correctness/conformance and cannot replace the SQLite production reference. Any comparative replacement decision is deferred until the full RiftCLI stack is complete/live and then requires measured benefit without weakening crash consistency or integrity.
 
-N2 is implemented and promoted as N2.0-N2.12: contract/baseline freeze; canonical JSON/evidence/event ledgers; SQLite backend; reconciliation; temporal graph; episodic/consolidation/semantic; belief/predictive; skill/failure/causal/commitment/policy; router/fusion/Context Compiler; Observer/Validator closed loop; RiftStore competition; fsck/poisoning/crash/scale hardening; public/private benchmarks plus incremental hybrids and ablations.
+N2 is implemented and promoted as N2.0-N2.12: contract/correctness-baseline freeze; canonical JSON/evidence/event ledgers; SQLite backend; reconciliation; temporal graph; episodic/consolidation/semantic; belief/predictive; skill/failure/causal/commitment/policy; router/fusion/Context Compiler; Observer/Validator closed loop; RiftStore interface/conformance; fsck/poisoning/crash/bounded-capacity hardening; and final correctness/adversarial promotion. Public/private comparative benchmarks, incremental hybrid scoring and ablations are deferred post-CLI.
 
 Full frozen program: `../riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md`.
 

@@ -203,14 +203,20 @@ internal object RiftSourceIntelligenceV2 {
     }
 
     fun isBuildConfigPath(path: String): Boolean {
-        val lower = path.lowercase()
+        val lower = path.lowercase().replace('\\', '/')
         val name = lower.substringAfterLast('/')
-        return name in setOf(
-            "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
-            "gradle.properties", "package.json", "package-lock.json", "bun.lock", "bun.lockb",
-            "pnpm-lock.yaml", "yarn.lock", "cmakelists.txt", "cargo.toml", "cargo.lock",
-            "pyproject.toml", "requirements.txt", "androidmanifest.xml"
-        ) || lower.contains("/.github/workflows/") ||
+        val machineAuthority = listOf(
+            "observer/phase-authority.json",
+            "riftmemory/n2-contract-v1.json",
+            "riftmemory/n2-phase-authority.json"
+        ).any { suffix -> lower == suffix || lower.endsWith("/$suffix") }
+        return machineAuthority ||
+            name in setOf(
+                "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+                "gradle.properties", "package.json", "package-lock.json", "bun.lock", "bun.lockb",
+                "pnpm-lock.yaml", "yarn.lock", "cmakelists.txt", "cargo.toml", "cargo.lock",
+                "pyproject.toml", "requirements.txt", "androidmanifest.xml"
+            ) || lower.contains("/.github/workflows/") ||
             lower.contains("/gradle/") ||
             lower.endsWith(".pro") ||
             lower.endsWith(".mk")

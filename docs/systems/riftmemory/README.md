@@ -15,9 +15,11 @@ Current Android source contains no native RiftMemory owner or command, and Gradl
 
 The future RiftCLI N2 memory architecture is a **separate roadmap** and does not activate this retained cache controller:
 
-- `N2_FEDERATED_MEMORY_ROADMAP.md` — one canonical Rift Memory Kernel, multiple specialist cognitive engines, SQLite-first replaceable storage, benchmarked RiftStore competition, Observer/Validator reconciliation and hard pre-N3 promotion gates.
+- `N2_FEDERATED_MEMORY_ROADMAP.md` — one canonical Rift Memory Kernel, multiple specialist cognitive engines, SQLite-first replaceable storage, RiftStore interface/conformance experimentation, Observer/Validator reconciliation and hard pre-N3 correctness-promotion gates.
+- `../../../riftmemory/n2-contract-v1.json` — machine-readable N2.0 terminology, MemoryStore API, correctness corpus, zero-tolerance thresholds, installed baseline and benchmark-deferral contract.
+- `../../../riftmemory/n2-phase-authority.json` — machine-readable N2.0-N2.12 lifecycle authority.
 
-That N2 document is roadmap-only until source, packaging, tests, Builder output and installed-device proof establish otherwise.
+N2.0 is source-implemented/promotion-pending, but the N2 runtime remains inactive. The retained cache controller is still not packaged or authoritative. Comparative/performance benchmarking is deferred until the entire RiftCLI stack is 100% complete and live.
 
 ## Source ownership
 

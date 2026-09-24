@@ -1,0 +1,143 @@
+{
+  "schema": "rift-memory-n2-contract-v1",
+  "phase": "N2.0",
+  "status": "source-implemented",
+  "promotion": "pending-builder-install-proof",
+  "runtimeActivation": false,
+  "globalBenchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
+  "installedBaseline": {
+    "riftosSourceSha": "a0dd61ac71dcdd9b84871df0edd6d8813ea7a4b7",
+    "builderRunId": "36027418624",
+    "builderRunNumber": "340",
+    "builderRepoSha": "ab0fb44c9fc4587c0f6332c0ef939a0529a565e0",
+    "androidPackage": "com.riftos.app",
+    "supportedAbis": [
+      "arm64-v8a",
+      "armeabi-v7a"
+    ]
+  },
+  "retainedController": {
+    "path": "src/riftmemory-control.js",
+    "sha256": "6e3b7fd8294e65358fbf99a658ae1e4606d10316ff46187e76ca98d929dfabc3",
+    "classification": "retained-inactive-reference",
+    "androidOwner": false,
+    "gradlePackaged": false,
+    "mayBecomeN2Authority": false
+  },
+  "authority": {
+    "canonicalRealityOwner": "Rift Memory Kernel",
+    "specialistsAuthoritative": false,
+    "projectionsAuthoritative": false,
+    "observerMayMutateTrustedTruth": false,
+    "validatorMayMutateTrustedTruth": false,
+    "protectedPolicyMayBeOverwrittenByLearnedMemory": false
+  },
+  "terminology": {
+    "canonicalReality": "kernel-owned authoritative memory state; specialists are projections or candidate producers only",
+    "evidence": "immutable/append-only record of what was observed or reported",
+    "claim": "interpreted assertion grounded by evidence but not automatically trusted",
+    "belief": "possibly probabilistic/conflicted interpretation distinct from evidence",
+    "event": "append-only canonical mutation/history record",
+    "transaction": "atomic canonical mutation unit with explicit outcome",
+    "projection": "rebuildable non-authoritative derived index/view",
+    "authority": "protected source/policy class that determines what may establish or change canonical truth",
+    "branch": [
+      "REALITY",
+      "HYPOTHESIS",
+      "SIMULATION",
+      "COUNTERFACTUAL"
+    ],
+    "trustState": [
+      "VERIFIED",
+      "TRUSTED",
+      "PROVISIONAL",
+      "UNVERIFIED",
+      "CONFLICTED",
+      "QUARANTINED",
+      "SUPERSEDED",
+      "INVALIDATED",
+      "HISTORICAL",
+      "ARCHIVED"
+    ],
+    "transactionOutcome": [
+      "COMMITTED",
+      "PROVISIONAL",
+      "QUARANTINED",
+      "REJECTED"
+    ]
+  },
+  "terminologySha256": "bf18c5f2db272c5a66723879ab021a3ffc42483c4cd4fc6597d10bd96fc949d8",
+  "memoryStore": {
+    "name": "MemoryStore",
+    "version": 1,
+    "backendNeutral": true,
+    "methods": [
+      {"name": "open", "args": ["config"], "result": "StoreHandle"},
+      {"name": "close", "args": [], "result": "void"},
+      {"name": "beginTransaction", "args": ["metadata"], "result": "TransactionHandle"},
+      {"name": "appendEvidence", "scope": "transaction", "args": ["evidence"], "result": "EvidenceId"},
+      {"name": "appendEvent", "scope": "transaction", "args": ["event"], "result": "EventId"},
+      {"name": "putCanonicalRecord", "scope": "transaction", "args": ["record"], "result": "RecordId"},
+      {"name": "putContentBlob", "scope": "transaction", "args": ["bytes", "metadata"], "result": "ContentHash"},
+      {"name": "commitTransaction", "args": ["transaction"], "result": "CommitResult"},
+      {"name": "rollbackTransaction", "args": ["transaction"], "result": "RollbackResult"},
+      {"name": "getCanonicalRecord", "args": ["id"], "result": "CanonicalRecord|null"},
+      {"name": "scanCanonicalRecords", "args": ["query", "bounds"], "result": "BoundedRecordPage"},
+      {"name": "readEvents", "args": ["query", "bounds"], "result": "BoundedEventPage"},
+      {"name": "readEvidence", "args": ["query", "bounds"], "result": "BoundedEvidencePage"},
+      {"name": "getContentBlob", "args": ["hash", "bounds"], "result": "ContentBlob|null"},
+      {"name": "createSnapshot", "args": ["scope"], "result": "SnapshotMetadata"},
+      {"name": "verifyIntegrity", "args": ["scope", "bounds"], "result": "IntegrityReport"},
+      {"name": "markProjectionDirty", "args": ["projection", "reason"], "result": "void"},
+      {"name": "listDirtyProjections", "args": ["scope", "bounds"], "result": "BoundedProjectionPage"}
+    ],
+    "guarantees": [
+      "canonical commit is atomic",
+      "partial transaction never masquerades as committed",
+      "canonical durability never depends on disposable projection success",
+      "backend semantics do not establish trust or authority",
+      "all reads are bounded",
+      "content-addressed blobs verify hash on read",
+      "history is append-preserving; rollback never silently erases history"
+    ]
+  },
+  "memoryStoreSha256": "68c46266e926e546e95543eb7a2092576c91499f810bcc5d483671d706823d16",
+  "correctnessCorpus": [
+    {"id": "evidence-not-truth", "input": "untrusted tool reports X", "expected": "evidence recorded; X not auto-promoted to trusted canonical truth"},
+    {"id": "repetition-no-trust-upgrade", "input": "same unsupported assertion repeated", "expected": "trust does not increase from repetition alone"},
+    {"id": "supersession-retains-history", "input": "stronger verified evidence replaces current value", "expected": "new current state plus retained superseded history/provenance"},
+    {"id": "conflict-no-fabricated-consensus", "input": "two authoritative-looking claims conflict without decisive evidence", "expected": "CONFLICTED state or provisional resolution; no silent overwrite"},
+    {"id": "cross-project-isolation", "input": "same entity label exists in two projects", "expected": "records and retrieval remain scope-isolated"},
+    {"id": "protected-policy-overwrite", "input": "learned/untrusted memory attempts to change protected policy", "expected": "QUARANTINED or REJECTED; protected policy unchanged"},
+    {"id": "projection-loss-rebuild", "input": "all disposable projections deleted", "expected": "canonical knowledge remains and projections rebuild from canonical ledgers"},
+    {"id": "partial-transaction-crash", "input": "process dies before canonical commit completes", "expected": "partial transaction is not visible as COMMITTED after restart"},
+    {"id": "committed-restart-reconstruction", "input": "process dies after durable commit acknowledgement", "expected": "committed canonical state reconstructs exactly after restart"},
+    {"id": "commitment-restart", "input": "unfinished required work exists before restart", "expected": "commitment remains discoverable after restart"},
+    {"id": "simulation-isolation", "input": "simulation/counterfactual produces candidate result", "expected": "candidate cannot become REALITY without real evidence and reconciliation"},
+    {"id": "content-hash-corruption", "input": "stored content bytes no longer match referenced hash", "expected": "integrity check fails closed; corrupted content is not trusted"}
+  ],
+  "correctnessCorpusSha256": "4ec6cd3e133de7c9a4f5f4d91c48b0873df02fb79a7b19727c96256b6e4687c4",
+  "correctnessThresholds": {
+    "falseTrustedMemory": 0,
+    "crossProjectContamination": 0,
+    "unsupportedTrustedClaims": 0,
+    "successfulPolicyOrMemoryPoisoning": 0,
+    "lostRequiredPersistentMemory": 0,
+    "brokenProvenance": 0,
+    "falseCompletionCausedByMemory": 0,
+    "irrecoverableProjectionCorruption": 0,
+    "performanceComparativeBenchmarks": "DEFERRED_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE"
+  },
+  "correctnessThresholdsSha256": "a6307031907834e0bb4060d24209a98706df4d0bfe39a7936cc5750fb06f6801",
+  "deferredPostCli": [
+    "public comparative benchmarks",
+    "private comparative benchmark scoring",
+    "specialist performance comparisons",
+    "incremental hybrid benchmark scoring",
+    "ablations for performance/value ranking",
+    "SQLite-vs-RiftStore performance competition",
+    "physical-format performance benchmark",
+    "scale performance runs and latency percentile scoring"
+  ],
+  "contractPayloadSha256": "bf70f093f303f745b2e861431f2890be87367160c7cfbbd1c1a22004c49b4bb2"
+}

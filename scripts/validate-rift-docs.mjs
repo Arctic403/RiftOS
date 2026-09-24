@@ -278,12 +278,13 @@ const n2MemoryRoadmap = fs.readFileSync(
   'utf8'
 );
 for (const required of [
-  '**ROADMAP / NOT IMPLEMENTED / NOT A CURRENT CAPABILITY — 2026-09-20.**',
+  '**N2.0 CONTRACT/CORRECTNESS BASELINE SOURCE-IMPLEMENTED / PROMOTION PENDING; N2 RUNTIME INACTIVE — 2026-09-24.**',
   'ONE MEMORY KERNEL. MANY SPECIALIZED COGNITIVE ENGINES.',
   'MemoryStore API',
   'SQLite reference backend',
   'RiftStore experimental backend',
-  '### N2.12 — External benchmarks, ablations and final promotion',
+  '### N2.12 — Final correctness, adversarial hardening and promotion',
+  'comparative/performance benchmarking is deferred until the entire RiftCLI stack is 100% complete and live',
   '**N3 MUST NOT START until N2.12 is promoted.**',
 ]) {
   if (!n2MemoryRoadmap.includes(required)) {
@@ -291,10 +292,35 @@ for (const required of [
   }
 }
 
+const n2Contract = JSON.parse(fs.readFileSync(path.join(root, 'riftmemory/n2-contract-v1.json'), 'utf8'));
+const n2PhaseAuthority = JSON.parse(fs.readFileSync(path.join(root, 'riftmemory/n2-phase-authority.json'), 'utf8'));
+if (n2Contract.schema !== 'rift-memory-n2-contract-v1' ||
+    n2Contract.phase !== 'N2.0' ||
+    n2Contract.status !== 'source-implemented' ||
+    n2Contract.runtimeActivation !== false ||
+    n2Contract.globalBenchmarkRule !== 'NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE') {
+  failures.push('N2.0 machine contract lifecycle/benchmark rule drifted');
+}
+if (n2Contract.terminologySha256 !== 'bf18c5f2db272c5a66723879ab021a3ffc42483c4cd4fc6597d10bd96fc949d8' ||
+    n2Contract.memoryStoreSha256 !== '68c46266e926e546e95543eb7a2092576c91499f810bcc5d483671d706823d16' ||
+    n2Contract.correctnessCorpusSha256 !== '4ec6cd3e133de7c9a4f5f4d91c48b0873df02fb79a7b19727c96256b6e4687c4' ||
+    n2Contract.correctnessThresholdsSha256 !== 'a6307031907834e0bb4060d24209a98706df4d0bfe39a7936cc5750fb06f6801') {
+  failures.push('N2.0 machine contract frozen component hash drifted');
+}
+if (n2PhaseAuthority.schema !== 'rift-memory-n2-phase-authority-v1' ||
+    n2PhaseAuthority.programStatus !== 'N2.0 SOURCE-IMPLEMENTED / PROMOTION PENDING; N2.1-N2.12 PENDING' ||
+    n2PhaseAuthority.runtimeStatus !== 'N2 RUNTIME INACTIVE' ||
+    n2PhaseAuthority.n18Prerequisite !== 'SATISFIED' ||
+    n2PhaseAuthority.phases?.length !== 13 ||
+    n2PhaseAuthority.phases?.[0]?.status !== 'source-implemented' ||
+    n2PhaseAuthority.phases?.slice(1).some(row => row.status !== 'pending')) {
+  failures.push('N2 phase authority lifecycle drifted');
+}
+
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
-if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — HARD PRE-N3 PROGRAM') ||
+if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0 SOURCE-IMPLEMENTED / PROMOTION PENDING; N2.1-N2.12 PENDING; N2 RUNTIME INACTIVE') ||
     !rootRoadmap.includes('N3 Architecture/impact engine — BLOCKED until N2.12 promotion')) {
-  failures.push('ROADMAP.md no longer carries the hard N2-before-N3 promotion barrier');
+  failures.push('ROADMAP.md no longer carries the current N2 lifecycle and hard N2-before-N3 promotion barrier');
 }
 
 const docsIndex = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');
