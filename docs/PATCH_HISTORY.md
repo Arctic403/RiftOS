@@ -2,9 +2,40 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-23.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-24.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.64 — N1.8.4 installed promotion
+
+N1.8.4 documentation/roadmap/TODO claim verification is promoted on installed source `be1e3ddedec2512145ec7132c3a47419c139cb4e`, Builder run `35957909835` / run number `328`.
+
+Promotion evidence is cumulative across the N1.8.4 hardening sequence:
+- run 327 / source `67482c788a34d3296df3740886a4063b7a00b912` passed the full semantic mutation matrix: stale ROADMAP state, promoted-source SHA drift, promoted-run drift, broken relative link, documentation-authority policy drift and source-ownership drift each produced the expected contradiction/stale result;
+- open TODO remained visible as `unverified` without becoming a false contradiction;
+- historical `docs/PATCH_HISTORY.md` content remained isolated as `superseded`;
+- exact 2 MiB file, 4096-file, 64 MiB aggregate and 8192-claim boundaries were accepted, while each +1 case failed closed with its exact bound reason, `partialFindingsSuppressed=true`, and zero fabricated secondary findings;
+- run 327 warm reads were deterministic and the first post-force-stop claims read reproduced `claimsSha256=fcac2c3fb6db97d6033982849fdea1662a5fe555af1646ff69a294e6f1ba6e2d`;
+- final run-327 N1.8.0 consistency, N1.8.1 integrity, N1.8.2 propagation and N1.8.3 contracts continuity all remained green.
+
+Patch 10.63 then removed the promotion bootstrap loop by moving mutable phase/source/run/current-status authority out of compiled lifecycle constants and into versioned repository source `observer/phase-authority.json` with schema `rift-observer-phase-authority-v1`.
+
+Final installed run 328 proved that refactor itself:
+- clean full-repo claims baseline: `complete=true`, `clean=true`, 266 files / 4,523,661 bytes / 883 claims / 882 verified / 1 historical-superseded / 0 findings at `claimsSha256=42182e5625905d101567ed4ced43f557a17db1aeb207a1db4f1fd378dde0a804`;
+- missing phase authority fails closed with only `claims-phase-authority-missing`, partial findings suppressed and zero secondary findings;
+- invalid phase authority fails closed with only `claims-phase-authority-invalid`, partial findings suppressed and zero secondary findings;
+- two warm full-repo reads reproduced the exact `42182e56...` SHA and counts;
+- after a real Android force-stop/reopen, the **first** claims read again reproduced the exact `42182e56...` SHA, counts, completeness and zero findings;
+- N1.8.0 stabilized at graph SHA-256 `1ec4fa271317a3d6387bb6c6cfd34fd26603140936c084ca2742113a13b76006`, 1140 facts / 1195 edges / 277 files / 0 findings with `changed=false`;
+- N1.8.1 remained complete/clean with zero findings;
+- N1.8.2 reproduced exact promoted propagation SHA-256 `d23531420d8d3da679ae24022c1a419b336782e7e6343d848d42910d8b98a9a3`;
+- N1.8.3 reproduced exact promoted contracts SHA-256 `d13a5edb0d3d3fb82ba6c013ad3a24a71c174ff09d6499782a0223ad66f2edd4`.
+
+Promotion was then recorded in the machine authority first: N1.8.4 now has `status=promoted`, promoted source `be1e3ddedec2512145ec7132c3a47419c139cb4e` and Builder run number `328`. ROADMAP, PROJECT_STATUS and the canonical Observer status were synchronized from that authority.
+
+Crucially, the already-running run-328 oracle immediately accepted the promoted repository state without a rebuild: `complete=true`, `clean=true`, 266 files / 884 claims / 883 verified / 1 superseded / 0 findings at promoted-state `claimsSha256=efbfc8ed69b75adb80724e76f7474bb2becb40d9f8d701010f81f5c505a5c0b4`. Its returned `phaseAuthority` identifies N1.8.0 through N1.8.4 as promoted and N1.8.5-N1.8.7 as pending.
+
+N1.8.4 is **PROMOTED**. N1.8.5 is next.
 
 ## Patch 10.63 — N1.8.4 machine-readable phase authority bootstrap fix
 
