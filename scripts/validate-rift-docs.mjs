@@ -316,15 +316,18 @@ const n2ExpectedMacroPhases = [
   ['N2.10', 'N2.11'],
 ];
 if (n2PhaseAuthority.schema !== 'rift-memory-n2-phase-authority-v1' ||
-    n2PhaseAuthority.programStatus !== 'N2.0 PROMOTED; N2.1-N2.12 PENDING' ||
-    n2PhaseAuthority.runtimeStatus !== 'N2 RUNTIME INACTIVE' ||
+    n2PhaseAuthority.programStatus !== 'N2.0 PROMOTED; N2.1 + N2.2 SOURCE-IMPLEMENTED / N2-M1 PROMOTION PENDING; N2.3-N2.12 PENDING' ||
+    n2PhaseAuthority.runtimeStatus !== 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 DIAGNOSTIC ONLY' ||
     n2PhaseAuthority.n18Prerequisite !== 'SATISFIED' ||
     n2PhaseAuthority.contractLifecycleSemantics !== 'immutable-N2.0-freeze-snapshot; current lifecycle is authoritative only in this phase-authority file' ||
     n2PhaseAuthority.phases?.length !== 13 ||
     n2PhaseAuthority.phases?.[0]?.status !== 'promoted' ||
     n2PhaseAuthority.phases?.[0]?.promotedSourceSha !== 'f6bf12b9fb452cc128e9290fd73599297ba134f2' ||
     String(n2PhaseAuthority.phases?.[0]?.builderRunNumber) !== '341' ||
-    n2PhaseAuthority.phases?.slice(1).some(row => row.status !== 'pending') ||
+    n2PhaseAuthority.phases?.slice(1, 3).some(row => row.status !== 'source-implemented') ||
+    n2PhaseAuthority.phases?.slice(3).some(row => row.status !== 'pending') ||
+    n2PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'source-implemented/promotion-pending' ||
+    n2PhaseAuthority.macroImplementationPlan?.slice(1).some(row => row.status !== 'pending') ||
     JSON.stringify(n2PhaseAuthority.macroImplementationPlan?.map(row => row.phases)) !== JSON.stringify(n2ExpectedMacroPhases) ||
     !String(n2PhaseAuthority.macroPlanRule || '').includes('execution groupings only') ||
     !String(n2PhaseAuthority.macroPlanRule || '').includes('N2.12 remains a separate final correctness/adversarial promotion gate')) {
@@ -332,7 +335,7 @@ if (n2PhaseAuthority.schema !== 'rift-memory-n2-phase-authority-v1' ||
 }
 
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
-if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0 PROMOTED; N2.1-N2.12 PENDING; N2 RUNTIME INACTIVE') ||
+if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0 PROMOTED; N2.1 + N2.2 SOURCE-IMPLEMENTED / N2-M1 PROMOTION PENDING; N2.3-N2.12 PENDING; CANONICAL MEMORY RUNTIME INACTIVE') ||
     !rootRoadmap.includes('N3 Architecture/impact engine — BLOCKED until N2.12 promotion')) {
   failures.push('ROADMAP.md no longer carries the current N2 lifecycle and hard N2-before-N3 promotion barrier');
 }

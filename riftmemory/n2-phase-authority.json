@@ -1,8 +1,8 @@
 {
   "schema": "rift-memory-n2-phase-authority-v1",
   "program": "N2 Federated Rift Memory Kernel",
-  "programStatus": "N2.0 PROMOTED; N2.1-N2.12 PENDING",
-  "runtimeStatus": "N2 RUNTIME INACTIVE",
+  "programStatus": "N2.0 PROMOTED; N2.1 + N2.2 SOURCE-IMPLEMENTED / N2-M1 PROMOTION PENDING; N2.3-N2.12 PENDING",
+  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 DIAGNOSTIC ONLY",
   "n18Prerequisite": "SATISFIED",
   "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
   "contractPath": "riftmemory/n2-contract-v1.json",
@@ -10,55 +10,143 @@
   "macroImplementationPlan": [
     {
       "patch": "N2-M1",
-      "phases": ["N2.1", "N2.2"],
+      "phases": [
+        "N2.1",
+        "N2.2"
+      ],
       "title": "Canonical kernel foundation",
-      "rule": "Both subphases require separate evidence before this macro patch is green."
+      "rule": "Both subphases require separate evidence before this macro patch is green.",
+      "status": "source-implemented/promotion-pending"
     },
     {
       "patch": "N2-M2",
-      "phases": ["N2.3", "N2.4"],
+      "phases": [
+        "N2.3",
+        "N2.4"
+      ],
       "title": "Reconciliation and temporal truth",
-      "rule": "Both subphases require separate evidence before this macro patch is green."
+      "rule": "Both subphases require separate evidence before this macro patch is green.",
+      "status": "pending"
     },
     {
       "patch": "N2-M3",
-      "phases": ["N2.5", "N2.6"],
+      "phases": [
+        "N2.5",
+        "N2.6"
+      ],
       "title": "Core cognitive memory",
-      "rule": "Both subphases require separate evidence before this macro patch is green."
+      "rule": "Both subphases require separate evidence before this macro patch is green.",
+      "status": "pending"
     },
     {
       "patch": "N2-M4",
-      "phases": ["N2.7", "N2.8"],
+      "phases": [
+        "N2.7",
+        "N2.8"
+      ],
       "title": "Procedural and failure intelligence",
-      "rule": "Both subphases require separate evidence before this macro patch is green."
+      "rule": "Both subphases require separate evidence before this macro patch is green.",
+      "status": "pending"
     },
     {
       "patch": "N2-M5",
-      "phases": ["N2.9"],
+      "phases": [
+        "N2.9"
+      ],
       "title": "Retrieval and closed loop",
-      "rule": "N2.9 keeps its own evidence gate."
+      "rule": "N2.9 keeps its own evidence gate.",
+      "status": "pending"
     },
     {
       "patch": "N2-M6",
-      "phases": ["N2.10", "N2.11"],
+      "phases": [
+        "N2.10",
+        "N2.11"
+      ],
       "title": "Storage conformance and hardening",
-      "rule": "Both subphases require separate evidence before this macro patch is green."
+      "rule": "Both subphases require separate evidence before this macro patch is green.",
+      "status": "pending"
     }
   ],
   "macroPlanRule": "Macro patches are execution groupings only. They never merge phase authority, skip subphase evidence, or allow a later subphase to hide an earlier failure. N2.12 remains a separate final correctness/adversarial promotion gate.",
   "phases": [
-    {"phase": "N2.0", "status": "promoted", "promotedSourceSha": "f6bf12b9fb452cc128e9290fd73599297ba134f2", "builderRunNumber": "341"},
-    {"phase": "N2.1", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.2", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.3", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.4", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.5", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.6", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.7", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.8", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.9", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.10", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.11", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null},
-    {"phase": "N2.12", "status": "pending", "promotedSourceSha": null, "builderRunNumber": null}
+    {
+      "phase": "N2.0",
+      "status": "promoted",
+      "promotedSourceSha": "f6bf12b9fb452cc128e9290fd73599297ba134f2",
+      "builderRunNumber": "341"
+    },
+    {
+      "phase": "N2.1",
+      "status": "source-implemented",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.2",
+      "status": "source-implemented",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.3",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.4",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.5",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.6",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.7",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.8",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.9",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.10",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.11",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    },
+    {
+      "phase": "N2.12",
+      "status": "pending",
+      "promotedSourceSha": null,
+      "builderRunNumber": null
+    }
   ]
 }

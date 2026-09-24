@@ -13,13 +13,13 @@ Retained implementation:
 
 Current Android source contains no native RiftMemory owner or command, and Gradle does not package the module.
 
-The future RiftCLI N2 memory architecture is a **separate roadmap** and does not activate this retained cache controller:
+The RiftCLI N2 memory architecture is implemented incrementally from a **separate canonical roadmap** and does not activate the retained legacy cache controller:
 
 - `N2_FEDERATED_MEMORY_ROADMAP.md` — one canonical Rift Memory Kernel, multiple specialist cognitive engines, SQLite-first replaceable storage, RiftStore interface/conformance experimentation, Observer/Validator reconciliation and hard pre-N3 correctness-promotion gates.
 - `../../../riftmemory/n2-contract-v1.json` — machine-readable N2.0 terminology, MemoryStore API, correctness corpus, zero-tolerance thresholds, installed baseline and benchmark-deferral contract.
 - `../../../riftmemory/n2-phase-authority.json` — machine-readable N2.0-N2.12 lifecycle authority.
 
-N2.0 is promoted on installed source `f6bf12b9fb452cc128e9290fd73599297ba134f2`, Builder run 341, while the N2 runtime remains inactive. N2.1-N2.11 are executed as six macro patches (1+2, 3+4, 5+6, 7+8, 9, 10+11) without merging their individual evidence/promotion gates; N2.12 stays separate. The retained cache controller is still not packaged or authoritative. Comparative/performance benchmarking is deferred until the entire RiftCLI stack is 100% complete and live.
+N2.0 is promoted on installed source `f6bf12b9fb452cc128e9290fd73599297ba134f2`, Builder run 341. N2.1 and N2.2 are source-implemented together as N2-M1 / promotion-pending: `RiftMemoryModelV1.kt` owns the canonical model/ledger schema, `RiftMemoryStoreV1.kt` owns the frozen backend-neutral interface, `RiftSqliteMemoryStoreV1.kt` is the Android SQLite reference backend, and `RiftMemoryN2M1SelfTest.kt` provides diagnostic-only commit/rollback/reopen/restart/integrity evidence surfaced through `rift_info`. Canonical memory runtime authority remains inactive. N2.1-N2.11 are executed as six macro patches (1+2, 3+4, 5+6, 7+8, 9, 10+11) without merging their individual evidence/promotion gates; N2.12 stays separate. The retained cache controller is still not packaged or authoritative. Comparative/performance benchmarking is deferred until the entire RiftCLI stack is 100% complete and live.
 
 ## Source ownership
 

@@ -2549,6 +2549,12 @@ internal class RiftToolSandbox(context: Context) {
         val semanticRows = JSONArray()
         val semanticDeltas = LinkedHashMap<String, RiftSourceIntelligenceV2.Delta>()
         val changedSymbolNames = linkedSetOf<String>()
+        val changedSymbolTargets = linkedMapOf<String, LinkedHashSet<String>>()
+        fun addChangedSymbol(symbol: RiftSourceIntelligenceV2.Symbol, fallbackPath: String) {
+            changedSymbolNames += symbol.name
+            changedSymbolTargets.getOrPut(symbol.name) { linkedSetOf() }
+                .add(symbol.path.ifBlank { fallbackPath })
+        }
         val apiChangedPaths = linkedSetOf<String>()
 
         for (index in 0 until changes.length()) {
@@ -2598,11 +2604,11 @@ internal class RiftToolSandbox(context: Context) {
                     semanticDeltas[path] = delta
                     if (delta.truncated) incompleteReasons += "semantic-delta-truncated"
                     if (delta.apiSurfaceChanged) apiChangedPaths += path
-                    delta.addedSymbols.forEach { changedSymbolNames += it.name }
-                    delta.removedSymbols.forEach { changedSymbolNames += it.name }
+                    delta.addedSymbols.forEach { addChangedSymbol(it, path) }
+                    delta.removedSymbols.forEach { addChangedSymbol(it, path) }
                     delta.changedSignatures.forEach {
-                        changedSymbolNames += it.before.name
-                        changedSymbolNames += it.after.name
+                        addChangedSymbol(it.before, path)
+                        addChangedSymbol(it.after, path)
                     }
                     out.put("semanticComplete", !delta.truncated)
                         .put("semantic", semanticDeltaJson(delta))
@@ -2678,7 +2684,7 @@ internal class RiftToolSandbox(context: Context) {
         if (changedNames.size > MAX_CANDIDATE_CHANGED_SYMBOLS) incompleteReasons += "changed-symbol-bound"
         val referenceNames = changedNames.take(MAX_CANDIDATE_REFERENCE_SYMBOLS)
         if (changedNames.size > referenceNames.size) incompleteReasons += "reference-symbol-bound"
-        val referenceRows = candidateReferences(indexed, referenceNames)
+        val referenceRows = candidateReferences(indexed, referenceNames, changedSymbolTargets, resolutionPaths)
         if (referenceRows.second) incompleteReasons += "reference-bound"
         referenceRows.first.forEach { row ->
             if (isTestPath(row.getString("path"))) changedTests += row.getString("path")
@@ -2763,7 +2769,9 @@ internal class RiftToolSandbox(context: Context) {
 
     private fun candidateReferences(
         indexed: Map<String, IndexedFile>,
-        symbolNames: List<String>
+        symbolNames: List<String>,
+        symbolTargets: Map<String, Set<String>>,
+        resolutionPaths: Set<String>
     ): Pair<List<JSONObject>, Boolean> {
         if (symbolNames.isEmpty()) return Pair(emptyList(), false)
         val escaped = symbolNames.distinct().sorted().map { Regex.escape(it) }
@@ -2776,27 +2784,50 @@ internal class RiftToolSandbox(context: Context) {
         val out = ArrayList<JSONObject>()
         var truncated = false
         outer@ for (path in indexed.keys.sorted()) {
+            if (!RiftSourceIntelligenceV2.isSourcePath(path)) continue
+            val indexedFile = indexed[path] ?: continue
             val file = sandboxFile(path)
             if (!file.isFile || file.length() > MAX_WORKSPACE_SEARCH_FILE_BYTES || !isTextFile(file)) continue
-            file.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                lines.forEachIndexed { lineIndex, line ->
-                    if (truncated) return@forEachIndexed
-                    for (match in pattern.findAll(line)) {
-                        if (out.size >= MAX_CANDIDATE_REFERENCES) {
-                            truncated = true
-                            break
-                        }
-                        val symbol = match.value
-                        val key = "$symbol@$path:${lineIndex + 1}"
-                        out += JSONObject()
-                            .put("symbol", symbol)
-                            .put("path", path)
-                            .put("line", lineIndex + 1)
-                            .put("column", match.range.first + 1)
-                            .put("definition", key in definitionLines)
-                            .put("preview", compactPreview(line))
-                    }
+
+            val projectRoot = candidateProjectRoot(path)
+            val dependencyTargets = indexedFile.dependencies.asSequence()
+                .mapNotNull { dependency ->
+                    resolveDependency(projectRoot, path, dependency, resolutionPaths)
                 }
+                .toSet()
+            val referenceText = file.readText(Charsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+            val codeMask = RiftSourceIntelligenceV2.referenceCodeMask(path, referenceText)
+            var lineOffset = 0
+
+            referenceText.split('\n').forEachIndexed { lineIndex, line ->
+                if (truncated) return@forEachIndexed
+                pattern.findAll(line).forEach matchLoop@{ match ->
+                    val absoluteIndex = lineOffset + match.range.first
+                    if (codeMask.getOrNull(absoluteIndex) != true) return@matchLoop
+
+                    val symbol = match.value
+                    val targets = symbolTargets[symbol].orEmpty()
+                    if (targets.isEmpty()) return@matchLoop
+                    val sameFile = path in targets
+                    val resolvedDependency = targets.any { it in dependencyTargets }
+                    if (!sameFile && !resolvedDependency) return@matchLoop
+
+                    if (out.size >= MAX_CANDIDATE_REFERENCES) {
+                        truncated = true
+                        return@matchLoop
+                    }
+                    val key = "$symbol@$path:${lineIndex + 1}"
+                    out += JSONObject()
+                        .put("symbol", symbol)
+                        .put("path", path)
+                        .put("line", lineIndex + 1)
+                        .put("column", match.range.first + 1)
+                        .put("definition", key in definitionLines)
+                        .put("preview", compactPreview(line))
+                }
+                lineOffset += line.length + 1
             }
             if (truncated) break@outer
         }

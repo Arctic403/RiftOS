@@ -1141,6 +1141,8 @@ N2.1-N2.11 execute as six implementation patches while preserving all eleven log
 
 Macro patches are execution/build groupings only. Every contained N2.x subphase retains separate correctness evidence and promotion authority; a later subphase cannot hide an earlier failure. **N2.12 remains a separate final correctness/adversarial promotion gate.**
 
+**Current source status:** N2.0 is promoted. **N2-M1 is SOURCE-IMPLEMENTED / PROMOTION PENDING:** N2.1 and N2.2 are both source-implemented with separate evidence gates. Canonical memory authority remains inactive; only the bounded app-private `RiftMemoryN2M1SelfTest` diagnostic runs, with read-only evidence exposed through `rift_info`. Builder/install and real process-restart recovery remain required before N2.1/N2.2 promotion.
+
 ### N2.1 — Canonical JSON model + evidence/event ledger
 
 Implement:

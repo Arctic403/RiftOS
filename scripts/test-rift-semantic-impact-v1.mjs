@@ -69,6 +69,18 @@ assert.match(sandbox, /MAX_CANDIDATE_TESTS = 300/);
 assert.match(sandbox, /MAX_CANDIDATE_DOCS = 300/);
 assert.match(sandbox, /"changed-symbol-bound"/);
 assert.match(sandbox, /"reference-symbol-bound"/);
+assert.match(sandbox, /changedSymbolTargets/);
+assert.match(sandbox, /RiftSourceIntelligenceV2\.referenceCodeMask\(path, referenceText\)/);
+assert.match(sandbox, /RiftSourceIntelligenceV2\.isSourcePath\(path\)/);
+assert.match(sandbox, /resolveDependency\(projectRoot, path, dependency, resolutionPaths\)/);
+assert.match(sandbox, /val sameFile = path in targets/);
+assert.match(sandbox, /val resolvedDependency = targets\.any \{ it in dependencyTargets \}/);
+assert.match(sandbox, /if \(!sameFile && !resolvedDependency\) return@matchLoop/);
+assert.doesNotMatch(
+  sandbox.slice(sandbox.indexOf('private fun candidateReferences('), sandbox.indexOf('private fun ownershipDocsFor(')),
+  /bufferedReader\(Charsets\.UTF_8\)\.useLines/,
+  'candidate references must use code-masked semantic text, not raw line scanning',
+);
 assert.match(sandbox, /"project-index-truncated"/);
 assert.match(sandbox, /RiftPatchManifestV1\.sha256Canonical\(payload\)/);
 
