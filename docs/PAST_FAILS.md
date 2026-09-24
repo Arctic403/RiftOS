@@ -29,7 +29,7 @@ Do not delete old entries after fixes. Mark them resolved and retain them as reg
 
 ## FAIL-2026-09-24-001 — N2-M2 source gate regex false-failed fail-soft projection markers
 
-**Status:** FIXED IN SOURCE / AWAITING BUILDER VERIFICATION.
+**Status:** RESOLVED — Builder run `36060038399` passed the corrected N2-M2 source gate on source `2bb9fd24e26fdc82e71e9fe8f05f35accc346467`; the build later failed at Kotlin compilation for a separate issue recorded as FAIL-2026-09-24-002.
 
 **Date:** 2026-09-24
 
@@ -92,4 +92,69 @@ When Observer is upgraded to consume execution evidence, this failure should bec
 - changed gate executed and passed against the exact candidate → resolvable;
 - stale pass from another source SHA → rejected;
 - malformed static matcher/cardinality detectable where the static oracle can prove the mismatch.
+
+---
+
+## FAIL-2026-09-24-002 — N2-M2 Kotlin nullability compile failure in contradiction event path
+
+**Status:** OPEN — root cause confirmed; source fix not yet bound to a commit.
+
+**Date:** 2026-09-24
+
+**Failed RiftOS source:** `2bb9fd24e26fdc82e71e9fe8f05f35accc346467`
+
+**Builder run ID:** `36060038399`
+
+**Signing mode:** `alpha-development`
+
+**Failure stage:** Android/Gradle Kotlin compilation after all RiftOS source gates passed.
+
+**Observed failure:**
+
+`RiftMemoryReconciliationV1.kt:527:78 Argument type mismatch: actual type is 'RiftCanonicalMemoryRecordV1?', but 'RiftCanonicalMemoryRecordV1' was expected.`
+
+The failing call was:
+
+`appendContradictionEvent(handle, tx, contradictionCandidate, prior)`
+
+inside a branch that checked `conflict && contradictionCandidate != null`, but did not also prove `prior != null` to the Kotlin compiler.
+
+### Root cause
+
+`persistRecordDecision(...)` accepts `prior: RiftCanonicalMemoryRecordV1?`.
+
+The equal-authority contradiction caller logically supplies a non-null prior/current record, but the callee's branch only guarded `conflict` and `contradictionCandidate`. Kotlin correctly refused to infer that `prior` must be non-null from those unrelated booleans.
+
+This is a real compile-time source defect, not a false Builder failure. Source-owned JavaScript regressions passed, but they did not type-check Kotlin.
+
+### Why the Observer did not prevent it
+
+The proof planner selected the M2 regression and returned zero unresolved obligations, and all source-owned regressions passed. However, the validation view explicitly treats Android/Gradle compilation as an external check. No fresh Kotlin compiler result was required before the candidate was considered locally obligation-complete.
+
+The current Observer also has no Kotlin type-aware nullability analysis capable of proving that a nullable argument reaches a non-null parameter at this call site.
+
+### Observer coverage that would have prevented this failure
+
+Primary prevention requirement:
+
+1. **Compiler execution evidence obligation for Kotlin changes.** Any candidate that changes maintained Kotlin/Java/native build sources must retain an unresolved build-validation obligation until a compiler result is bound to the exact candidate SHA. Source-pattern regressions alone cannot discharge compile/type obligations.
+
+Secondary hardening:
+
+2. **Kotlin nullability/type-flow evidence.** Future semantic analysis may add compiler-grade or language-server-grade diagnostics for nullable-to-non-null calls, smart-cast invalidation, overload resolution, and other type errors. If implemented, those diagnostics should be evidence-only and must not replace the real compiler gate.
+
+3. **Proof-state separation.** Observer should distinguish `source-regressions-passed` from `compiler-passed`. A candidate may be source-clean while still remaining build-unverified.
+
+4. **Evidence provenance binding.** Compiler evidence must bind candidate source SHA, Builder/Gradle/Kotlin compiler identity, ABI/build variant, exit status, and log/output hashes so stale compile success cannot satisfy a later source candidate.
+
+### Future regression target
+
+When Observer gains compiler-evidence obligations, this failure should become a fixture proving:
+
+- Kotlin source changed + no compile evidence → unresolved;
+- source regressions pass but Kotlin compile fails → build-unverified/failing;
+- stale compile pass for a different SHA → rejected;
+- exact candidate compile pass → compiler obligation resolvable;
+- nullable argument into non-null parameter is surfaced by semantic diagnostics when that analysis exists.
+
 

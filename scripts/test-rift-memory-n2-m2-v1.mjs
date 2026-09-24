@@ -47,6 +47,7 @@ assert.ok(reconcile.includes('handle.putCanonicalRecord(tx, superseded)'));
 assert.ok(reconcile.includes('appendRecordVersionEvent(handle, tx, superseded, "SUPERSEDED")'));
 assert.ok(reconcile.includes('candidateRank == currentRank'));
 assert.ok(reconcile.includes('candidateRank > currentRank'));
+assert.ok(reconcile.includes('conflict && contradictionCandidate != null && prior != null'), 'contradiction event path must prove nullable prior non-null before call');
 assert.ok(reconcile.includes('scope = record.scope'));
 assert.ok(reconcile.includes('projectId = record.scope.projectId'));
 assert.ok(reconcile.includes('offset = MAX_CONFLICT_SCAN, limit = 1'));

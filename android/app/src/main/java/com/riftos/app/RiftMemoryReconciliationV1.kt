@@ -523,7 +523,7 @@ class RiftMemoryReconciliationV1 {
             handle.putCanonicalRecord(tx, record)
             appendRecordVersionEvent(handle, tx, record, outcome.name)
             if (invalidation && prior != null) appendInvalidationEvent(handle, tx, prior, record)
-            if (conflict && contradictionCandidate != null) {
+            if (conflict && contradictionCandidate != null && prior != null) {
                 appendContradictionEvent(handle, tx, contradictionCandidate, prior)
             }
             appendReconciliationEvent(handle, tx, candidate, record, outcome, reasons, true)
