@@ -25,6 +25,14 @@ A selected test is **not** equivalent to an executed/passed test. Future Observe
 
 Do not delete old entries after fixes. Mark them resolved and retain them as regression/hardening evidence.
 
+## Execution order
+
+Build/runtime defects are fixed immediately when discovered so CLI development does not knowingly continue on broken source. The corresponding Observer prevention lesson is recorded here at the same time, but Observer itself is not redesigned mid-phase merely to absorb each new lesson.
+
+Observer hardening from this ledger is deferred into one dedicated post-N2.12 gate. After the full RiftCLI stack is complete, every still-applicable prevention lesson in this file must be implemented, regression-fixtured, live-proven and returned to a clean Observer baseline before any comparative/performance benchmark begins.
+
+Required order: **fix failures as found → finish RiftCLI/N2.12 → harden all PAST_FAILS Observer lessons → live correctness proof → benchmark.**
+
 ---
 
 ## FAIL-2026-09-24-001 — N2-M2 source gate regex false-failed fail-soft projection markers
@@ -163,7 +171,7 @@ When Observer gains compiler-evidence obligations, this failure should become a 
 
 ## FAIL-2026-09-24-003 — N2-M2 promotion metadata rejected by stale N2-M1 lifecycle assertion
 
-**Status:** FIXED IN SOURCE / AWAITING BUILDER VERIFICATION.
+**Status:** RESOLVED — Builder run `36069462067` / run number `352` compiled and installed source `0b35904c90039a5ee5acef3e801085a89ffdb2c0`; the corrected M1 lifecycle gate passed, live M1/M2 diagnostics remained green, and post-install Observer continuity returned zero findings with proofs `mode=none`.
 
 **Date:** 2026-09-24
 
