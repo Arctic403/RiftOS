@@ -1,6 +1,6 @@
 # N1.8 Repository Consistency Observer
 
-Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.5+ PENDING**
+Status: **N1.8.0 + N1.8.1 + N1.8.2 + N1.8.3 + N1.8.4 PROMOTED ON INSTALLED ARM32-COMPATIBLE ANDROID TARGET; N1.8.5 SOURCE-IMPLEMENTED / PROMOTION PENDING; N1.8.6+ PENDING**
 
 This document is the canonical architecture for RiftOS N1.8. It defines the repository-wide observer that sits above Workspace Records and Project Intelligence V2. The observer does not replace those systems. It consumes their evidence and adds the missing consistency/proof layer.
 
@@ -946,10 +946,23 @@ Required behavior:
 
 ### N1.8.5 — proof obligations and focused verification
 
-- affected test/check selection;
-- deterministic unresolved obligations;
-- deep verification escalation;
-- no unrelated-test substitution.
+Status: **SOURCE-IMPLEMENTED / PROMOTION PENDING.**
+
+`RiftProofObligationsV1.kt` adds the read-only `project kind=proofs` planner. It consumes the exact `rift-semantic-impact-v1` candidate evidence already produced from Patch Manifest V1 plus the existing project-validation command surface; it does not create a second change detector and it executes no verification itself.
+
+The proof plan is deterministic and evidence-linked:
+
+- directly affected tests are selected only from changed-test evidence, direct dependency/dependent evidence, or changed-symbol references;
+- path/name-affinity tests remain explicitly supplemental and cannot discharge the affected-test obligation;
+- `npm run check` / lint / build / general test-suite commands are classified as general or build checks and cannot substitute for a directly affected test;
+- when source changes have no strongly evidenced affected test, the planner emits a stable `affected-tests` unresolved obligation rather than choosing an unrelated test;
+- deep verification escalates for incomplete candidate impact, API-surface changes, build-config changes, source deletion, multi-project candidates, unclassified changes, missing affected-test evidence, or unavailable required build verification;
+- source add/delete requires the documentation-claims lane because source-ownership obligations can change;
+- source/build changes require the cross-boundary-contracts lane;
+- all selected checks/tests/obligations are bounded and `proofsSha256` binds the full canonical plan while previews remain capped;
+- the planner is evidence-only: `executesVerification=false` and no result is represented as passed merely because it was selected.
+
+Permanent regression `scripts/test-rift-proof-obligations-v1.mjs`, Gradle mandatory-source coverage, source ownership and `npm check` wiring are present. Builder compilation/signed-DEX proof, installed semantic fixtures, exact-bound/determinism/restart torture and N1.8.0-N1.8.4 continuity remain required before promotion.
 
 ### N1.8.6 — adversarial benchmark and ablation
 

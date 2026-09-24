@@ -6,6 +6,29 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.66 — N1.8.5 proof obligations and focused verification foundation
+
+N1.8.5 is source-implemented/promotion-pending.
+
+The new read-only `project kind=proofs` lane is implemented by `RiftProofObligationsV1.kt`. It does not add a second change detector: it consumes the exact `rift-semantic-impact-v1` candidate evidence already derived from Patch Manifest V1 plus the existing project-validation command surface, then emits a deterministic evidence-only verification plan.
+
+The first source contract locks:
+- directly affected tests only from changed-test, direct dependency/dependent or changed-symbol-reference evidence;
+- path/name-affinity tests as supplemental only;
+- no unrelated, heuristic or general-suite substitution for an affected-test obligation;
+- stable unresolved `affected-tests` obligations when strong evidence is absent;
+- deterministic deep-verification escalation for incomplete impact evidence, API-surface changes, build-config changes, source deletion, multi-project candidates, unclassified changes, unavailable required build verification or missing affected-test evidence;
+- focused consistency/integrity/propagation/contracts/claims/build/test obligations mapped from the changed evidence class;
+- evidence-only authority: `executesVerification=false`; selection never means pass;
+- bounded change/test/check/obligation/preview sets and deterministic `proofsSha256` over the full canonical plan;
+- thin `RiftToolSandbox` dispatch that obtains exact `candidateImpact()` plus existing `projectValidation()` evidence and delegates policy to the dedicated planner.
+
+Permanent regression `scripts/test-rift-proof-obligations-v1.mjs` is reachable from `npm check`; Gradle mandatory-source coverage, source ownership and script documentation are updated. Machine lifecycle authority now marks N1.8.5 `source-implemented`, with ROADMAP, PROJECT_STATUS and the canonical Observer status synchronized to ACTIVE / promotion-pending.
+
+The already-installed run-330 N1.8.4 claims oracle verified the new source state without trusting documentation as authority: `complete=true`, `clean=true`, 268 files / 898 claims / 897 verified / 1 historical-superseded / 0 findings at `claimsSha256=f56912d33c21f2461aaaaa0de85561ed34239d4b8af7f02ec3a6b2397bb02c08`, and returned N1.8.5 as `source-implemented` with null promoted source/run evidence.
+
+Builder compilation/signed-DEX proof, installed `project kind=proofs` semantic fixtures, exact bounds, deterministic warm/restart proof and N1.8.0-N1.8.4 continuity remain required before promotion.
+
 ## Patch 10.65 — N1.8.4 promoted-lifecycle regression fix
 
 The first Builder execution of promotion commit `2e482489ae78f2d3daab9945313c88e2cfb4e43c` stopped during `npm run check` in `scripts/test-rift-documentation-claims-v1.mjs`, before Kotlin/Gradle compilation.

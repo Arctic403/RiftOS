@@ -1394,6 +1394,7 @@ internal class RiftToolSandbox(context: Context) {
         if (kind == "propagation") return projectPropagation(path, query, requestedLimit)
         if (kind == "contracts") return RiftCrossBoundaryContractsV1(workspaceRoot).analyze(base)
         if (kind == "claims") return RiftDocumentationClaimsV1(workspaceRoot).analyze(base)
+        if (kind == "proofs") return projectProofs(path)
         val indexStats = refreshSymbolIndex(base)
 
         val children = (base.listFiles()
@@ -1432,7 +1433,7 @@ internal class RiftToolSandbox(context: Context) {
                 .put("index", indexStats)
                 .put("languages", languages)
                 .put("dependencyEdges", dependencyEdges)
-                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity", "propagation", "contracts")))
+                .put("views", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity", "propagation", "contracts", "claims", "proofs")))
                 .put("viewUsage", "project kind=graph|impact|validation|consistency|integrity|propagation|contracts; integrity query seeds a focused frontier, propagation query selects a symbol or path seed, and contracts verifies deterministic cross-boundary mirrors"))
             .put("operations", JSONArray(listOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")))
     }
@@ -2850,6 +2851,18 @@ internal class RiftToolSandbox(context: Context) {
         val relative = normalized.removePrefix("$WORKSPACE_ROOT/")
         if (!relative.contains('/')) return WORKSPACE_ROOT
         return "$WORKSPACE_ROOT/${relative.substringBefore('/')}"
+    }
+
+    private fun projectProofs(path: String): JSONObject {
+        val base = sandboxFile(path)
+        require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
+        val impact = candidateImpact()
+        val validation = projectValidation(path, "")
+        return RiftProofObligationsV1().analyze(
+            projectPath = normalizedPath(path),
+            impact = impact,
+            validation = validation
+        )
     }
 
     private fun projectValidation(path: String, query: String): JSONObject {
@@ -4342,7 +4355,7 @@ internal class RiftToolSandbox(context: Context) {
                 .put("dryRun", true)
                 .put("symbolIndex", "persistent-incremental")
                 .put("dependencyGraph", true)
-                .put("projectViews", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity", "propagation", "contracts", "claims")))
+                .put("projectViews", JSONArray(listOf("graph", "impact", "validation", "consistency", "integrity", "propagation", "contracts", "claims", "proofs")))
                 .put("ignoredDirectories", JSONArray(ignoredDirectoryNames.sorted())))
             .put("capabilities", JSONArray(listOf(
                 "stat", "hash", "list", "readText", "writeText", "mkdir", "remove", "move", "copy", "archive", "extract", "workspaceExec",
