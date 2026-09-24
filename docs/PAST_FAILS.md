@@ -163,11 +163,13 @@ When Observer gains compiler-evidence obligations, this failure should become a 
 
 ## FAIL-2026-09-24-003 — N2-M2 promotion metadata rejected by stale N2-M1 lifecycle assertion
 
-**Status:** OPEN — root cause confirmed; source fix not yet bound to a commit.
+**Status:** FIXED IN SOURCE / AWAITING BUILDER VERIFICATION.
 
 **Date:** 2026-09-24
 
 **Failed RiftOS source:** `86adc7c59700e36f031500130d4e7920ace73eb7`
+
+**Fixing source SHA:** `9c21d16f3cc008307cd463b624d814cc8aeb4374` — replaced the stale whole-program M1 lifecycle-summary assertion with structured N2-M1 macro evidence and relaxed the later-stage runtime check to the invariant that canonical N2 runtime remains inactive. Builder re-verification is required before this entry becomes RESOLVED.
 
 **Builder run ID:** `36068835303`
 
