@@ -3,7 +3,7 @@ import fs from 'node:fs';
 
 const read = file => fs.readFileSync(file, 'utf8');
 
-const store = read('android/app/src/main/java/com/riftos/app/RiftStoreMemoryStoreV1.kt');
+const RiftStoreMemoryStoreV1 = read('android/app/src/main/java/com/riftos/app/RiftStoreMemoryStoreV1.kt');
 const selftest = read('android/app/src/main/java/com/riftos/app/RiftMemoryN2M6SelfTest.kt');
 const host = read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
 const localAgent = read('android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt');
@@ -42,7 +42,7 @@ for (const marker of [
   'override fun markProjectionDirty(',
   'override fun listDirtyProjections(',
 ]) {
-  assert.ok(store.includes(marker), 'missing RiftStore conformance marker: ' + marker);
+  assert.ok(RiftStoreMemoryStoreV1.includes(marker), 'missing RiftStore conformance marker: ' + marker);
 }
 
 for (const marker of [
@@ -92,7 +92,7 @@ for (const marker of [
 
 assert.ok(selftest.includes('.put("productionReplacement", false)'));
 assert.ok(selftest.includes('.put("comparativePerformanceDeferred", true)'));
-assert.ok(!store.includes('RiftSqliteMemoryStoreV1'), 'RiftStore prototype must be independent of SQLite implementation');
+assert.ok(!RiftStoreMemoryStoreV1.includes('RiftSqliteMemoryStoreV1'), 'RiftStore prototype must be independent of SQLite implementation');
 
 assert.ok(host.includes('private val n2M6Diagnostic: JSONObject'));
 assert.ok(host.includes('n2M6Diagnostic = RiftMemoryN2M6SelfTest.run(appContext)'));

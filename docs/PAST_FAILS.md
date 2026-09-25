@@ -542,6 +542,22 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-25-015 — RiftStore used nonexistent AtomicFile.exists() API
+
+**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+
+**Affected source:** `656f633b9b12371757244f60f322cb81b54ea034` (`Fix promoted diagnostic clause parsing`), Builder run `36106725483`.
+
+**Stage:** Android Kotlin compilation after source-check passed completely, including the N2-M6 source regression. Gradle reached `compileDebugKotlin`.
+
+**Observed failure:** `RiftStoreMemoryStoreV1.kt` failed at three calls to `AtomicFile.exists()` with `Unresolved reference 'exists'`. The Android `AtomicFile` API in this build exposes the backing `baseFile`; existence must be checked with `atomic.baseFile.exists()`.
+
+**Root cause:** M6 used a convenience-style existence check that is not part of the Android `AtomicFile` API surface. Static source integrity accepted the syntax because the call is valid Kotlin syntax; only the Android/Kotlin compiler could resolve the concrete SDK type and reject the missing member.
+
+**Classification:** real M6 compile/API mismatch. The preceding source-check proves M4/M5 parser repair and the M6 JavaScript/source contracts passed; this Builder run does not validate M6 runtime/device behavior because compilation stopped before packaging.
+
+**Hardening added:** all three RiftStore open-path existence checks now use `atomic.baseFile.exists()`. The semantic behavior is unchanged: fail closed when `createIfMissing=false` and the backing file is absent; read sealed state when present; initialize and atomically write new state when absent.
+
 ## FAIL-2026-09-25-014 — Promoted-diagnostics parser still assumed terminal lifecycle clause
 
 **Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.

@@ -22,14 +22,14 @@ class RiftStoreMemoryStoreV1 : RiftMemoryStoreV1 {
         file.parentFile?.mkdirs()
         val atomic = AtomicFile(file)
         if (!config.createIfMissing) {
-            require(atomic.exists()) { "RiftStore database does not exist: ${config.databasePath}" }
+            require(atomic.baseFile.exists()) { "RiftStore database does not exist: ${config.databasePath}" }
         }
-        val state = if (atomic.exists()) {
+        val state = if (atomic.baseFile.exists()) {
             RiftStoreCodecV1.read(atomic)
         } else {
             RiftStoreStateV1()
         }
-        if (!atomic.exists()) {
+        if (!atomic.baseFile.exists()) {
             RiftStoreCodecV1.write(atomic, state)
         }
         return RiftStoreMemoryStoreHandleV1(atomic, state)
