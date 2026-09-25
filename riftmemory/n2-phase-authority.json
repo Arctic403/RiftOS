@@ -1,8 +1,8 @@
 {
   "schema": "rift-memory-n2-phase-authority-v1",
   "program": "N2 Federated Rift Memory Kernel",
-  "programStatus": "N2.0-N2.8 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 PROMOTED; N2.9 SOURCE IMPLEMENTED / N2-M5 SOURCE IMPLEMENTED; N2.10-N2.12 PENDING",
-  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 PROMOTED DIAGNOSTICS; N2-M5 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY",
+  "programStatus": "N2.0-N2.9 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 PROMOTED; N2.10-N2.12 PENDING",
+  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 PROMOTED DIAGNOSTICS",
   "n18Prerequisite": "SATISFIED",
   "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
   "contractPath": "riftmemory/n2-contract-v1.json",
@@ -55,7 +55,7 @@
       ],
       "title": "Retrieval and closed loop",
       "rule": "N2.9 keeps its own evidence gate.",
-      "status": "source-implemented"
+      "status": "promoted"
     },
     {
       "patch": "N2-M6",
@@ -126,9 +126,9 @@
     },
     {
       "phase": "N2.9",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "d650e57dff09a878f02edfef7e175ed02d42f750",
+      "builderRunNumber": "370"
     },
     {
       "phase": "N2.10",

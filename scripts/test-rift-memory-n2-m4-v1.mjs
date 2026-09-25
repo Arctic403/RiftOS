@@ -154,7 +154,7 @@ assert.ok(phase.runtimeStatus.includes('N2-M4 PROMOTED DIAGNOSTICS'));
 assert.ok(pkg.scripts['check:transport'].includes('node scripts/test-rift-memory-n2-m4-v1.mjs'));
 
 for (const marker of [
-  "n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 9",
+  "n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 10",
   "n2PhaseAuthority.macroImplementationPlan[3].status, 'promoted'",
   'd39960832a701311461058670b5b93597ae612c9',
   "row.builderRunNumber, '368'",

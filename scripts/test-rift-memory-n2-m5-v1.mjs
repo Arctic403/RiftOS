@@ -86,18 +86,20 @@ for (const file of [
 }
 
 const n29 = phase.phases.find(row => row.phase === 'N2.9');
-assert.equal(n29?.status, 'source-implemented');
-assert.equal(n29?.promotedSourceSha, null);
-assert.equal(n29?.builderRunNumber, null);
-assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M5')?.status, 'source-implemented');
-assert.ok(phase.programStatus.includes('N2.9 SOURCE IMPLEMENTED / N2-M5 SOURCE IMPLEMENTED'));
+assert.equal(n29?.status, 'promoted');
+assert.equal(n29?.promotedSourceSha, 'd650e57dff09a878f02edfef7e175ed02d42f750');
+assert.equal(n29?.builderRunNumber, '370');
+assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M5')?.status, 'promoted');
+assert.ok(phase.programStatus.includes('N2.0-N2.9 PROMOTED'));
 assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
-assert.ok(phase.runtimeStatus.includes('N2-M5 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY'));
+assert.ok(phase.runtimeStatus.includes('N2-M5 PROMOTED DIAGNOSTICS'));
 
 for (const marker of [
-  "n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 1",
-  "n2PhaseAuthority.phases[9].status, 'source-implemented'",
-  "n2PhaseAuthority.macroImplementationPlan[4].status, 'source-implemented'",
+  "n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 10",
+  "n2PhaseAuthority.phases[9].status, 'promoted'",
+  "n2PhaseAuthority.macroImplementationPlan[4].status, 'promoted'",
+  'd650e57dff09a878f02edfef7e175ed02d42f750',
+  "n2PhaseAuthority.phases[9].builderRunNumber, '370'",
   'android/app/src/main/java/com/riftos/app/RiftMemoryObserverValidatorLoopV1.kt',
   'android/app/src/main/java/com/riftos/app/RiftMemoryN2M5SelfTest.kt',
 ]) {
@@ -111,4 +113,4 @@ for (const body of [localAgent, cliHost]) {
   assert.ok(!body.includes('RiftMemoryN2M5SelfTest'), 'M5 diagnostic must not become Local Agent/RiftCLI authority');
 }
 
-console.log('ok - N2-M5 source: N2.9 Observer/Validator evidence closes through canonical reconciliation; diagnostic only, runtime authority inactive');
+console.log('ok - N2-M5 promoted: N2.9 closed-loop evidence is pinned to installed run 370; diagnostic only, runtime authority inactive');
