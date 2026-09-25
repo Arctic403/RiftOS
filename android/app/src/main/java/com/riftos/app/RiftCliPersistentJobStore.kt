@@ -29,7 +29,10 @@ internal class RiftCliPersistentJobStore(context: Context) {
             "failed",
             "cancelled",
             "cancelled_may_have_applied",
-            "completed_after_cancel_request"
+            "completed_after_cancel_request",
+            "rolled_back",
+            "rollback_failed",
+            "cancelled_during_rollback"
         )
     }
 

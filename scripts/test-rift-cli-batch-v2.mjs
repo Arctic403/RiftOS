@@ -47,12 +47,24 @@ assert.match(shell,/"rift_cli_batch" -> startCliBatch/);
 assert.match(shell,/kind", if \(job\.lane == "batch"\) "rift-cli-batch" else "rift-shell"/);
 assert.match(shell,/RiftCLI Batch V2 cancellation observed after step/);
 assert.match(shell,/catch \(error: InterruptedException\) \{\s*throw error/,'batch steps must not swallow cancellation interrupts');
-assert.ok(
-  shell.indexOf('if (job.cancelRequested || Thread.currentThread().isInterrupted) {\n                                throw InterruptedException("RiftCLI Batch V2 cancellation observed after step') <
-    shell.indexOf('if (!ok && plan.failurePolicy == "stop")'),
-  'cancellation must be classified before stop-on-error after a step'
+const cancellationAfterStep = shell.indexOf('RiftCLI Batch V2 cancellation observed after step');
+const cancellationGuardAfterStep = shell.lastIndexOf(
+  'if (job.cancelRequested || Thread.currentThread().isInterrupted)',
+  cancellationAfterStep
 );
-
+const stopOnErrorAfterCancellation = shell.indexOf(
+  'if (!ok && plan.failurePolicy == "stop")',
+  cancellationAfterStep
+);
+assert.ok(
+  cancellationAfterStep >= 0 &&
+  cancellationGuardAfterStep >= 0 &&
+  cancellationGuardAfterStep < cancellationAfterStep &&
+  stopOnErrorAfterCancellation > cancellationAfterStep,
+  'cancellation must still be classified before ordinary stop-on-error after a step'
+);
+assert.match(shell,/plan\.rollbackPolicy == "on-failure"/,
+  'rollback-enabled failed steps may transition into rollback before terminal cancellation classification');
 assert.match(host,/MAX_CLI_BATCH_TOOL_ARGS_BYTES = 64 \* 1024/);
 assert.match(host,/internal fun validateCliBatchTool/);
 assert.match(host,/internal fun executeCliBatchTool/);
@@ -92,7 +104,8 @@ assert.match(recoveryPolicy,/policyOwner", "riftos"/);
 assert.match(recoveryPolicy,/callerMayOverride", false/);
 assert.match(recoveryPolicy,/wholeJobReplayAllowed", false/);
 assert.match(recoveryPolicy,/automaticRetryAllowed", false/);
-assert.match(recoveryPolicy,/rollbackSupported", false/);
+assert.match(recoveryPolicy,/ROLLBACK_CAPABLE_SHELL_COMMANDS = setOf\("write", "touch", "mkdir"\)/);
+assert.match(recoveryPolicy,/rollbackSupported = operation in ROLLBACK_CAPABLE_SHELL_COMMANDS/);
 assert.match(recoveryPolicy,/RETRY_SAFE_TOOLS/);
 assert.match(recoveryPolicy,/"rift_read_text"/);
 assert.match(recoveryPolicy,/MUTATING_TOOLS/);
@@ -110,7 +123,8 @@ assert.match(shell,/private fun submitCliBatchExecution/);
 assert.match(shell,/private fun recoverCliPersistedJob/);
 assert.match(shell,/action in setOf\("resume", "fail", "rollback"\)/);
 assert.match(shell,/Recovered RiftCLI job failed closed by explicit recovery resolution/);
-assert.match(shell,/B2A does not claim rollback without an explicit bounded authority-owned rollback contract/);
+assert.match(shell,/private fun submitRecoveredCliRollback/);
+assert.match(shell,/validateRecoveredRollbackJournal\(plan, currentStep, journal\)/);
 assert.match(shell,/parseCliBatchPlan\(persistedPlan, toolHost\)/,
   'recovery must revalidate the normalized full plan under current authority rules');
 assert.match(shell,/recomputedPlanHash != storedPlanHash/);
@@ -158,6 +172,69 @@ assert.ok(batchStepStartedEvent >= 0 && batchStepStartedPersist >= 0 && batchSte
 assert.match(shell,/jobPersistenceRequired/);
 assert.match(shell,/"cancelled_after_recovery"/);
 
+assert.match(shell,/MAX_CLI_ROLLBACK_SNAPSHOT_BYTES = 128 \* 1024/);
+assert.match(shell,/MAX_CLI_ROLLBACK_TOTAL_BYTES = 512 \* 1024/);
+assert.match(shell,/rollbackPolicy == "none" \|\| rollbackPolicy == "on-failure"/);
+assert.match(shell,/rollbackPolicy != "on-failure" \|\| failurePolicy == "stop"/);
+assert.match(shell,/supportedMutation = policy\.optBoolean\("rollbackSupported", false\)/,
+  'rollback-enabled plan validation must consume the system-owned rollback registry');
+assert.match(shell,/rollbackPolicy=on-failure forbids tool mutation without an explicit rollback contract/);
+assert.match(shell,/rollbackPolicy=on-failure forbids shell mutation without an explicit rollback contract/);
+assert.match(shell,/\.put\("rollbackPolicy", plan\.rollbackPolicy\)/);
+
+assert.match(shell,/private fun prepareCliBatchRollbackEntry/);
+assert.match(shell,/private fun rollbackFileMatchesState/);
+assert.match(shell,/private fun applyCliRollbackEntry/);
+assert.match(shell,/private fun executeCliRollback/);
+assert.match(shell,/rollbackPreparationFailed/);
+assert.match(shell,/rollbackPostStateMismatch/);
+assert.match(shell,/rollbackFileMatchesState\(/);
+assert.match(shell,/executeCliRollback\(job, "failure"\)/,
+  'stop-on-error rollback plans must enter the bounded rollback engine before terminalization');
+assert.match(shell,/rift\.cli-rollback-entry\/1/);
+assert.match(shell,/RiftCLI rollback contract requires an existing parent directory/);
+assert.match(shell,/rollback snapshot exceeds/);
+assert.match(shell,/rollback journal exceeds/);
+assert.match(shell,/Rollback target no longer matches the batch-produced post-state/);
+assert.match(shell,/delete-created-empty-directory/);
+assert.match(shell,/target\.listFiles\(\)\?\.isEmpty\(\) == true/);
+assert.match(shell,/for \(index in job\.rollbackJournal\.length\(\) - 1 downTo 0\)/);
+assert.match(shell,/"rolling_back"/);
+assert.match(shell,/"rolled_back"/);
+assert.match(shell,/"rollback_failed"/);
+assert.match(shell,/"cancelled_during_rollback"/);
+assert.match(shell,/"released_after_rollback"/);
+assert.match(shell,/"released_after_rollback_failure"/);
+assert.match(shell,/"released_after_rollback_cancel"/);
+assert.match(shell,/"batch\.rollback\.started"/);
+assert.match(shell,/"batch\.rolled_back"/);
+assert.match(shell,/"batch\.rollback\.failed"/);
+assert.match(shell,/"batch\.rollback\.cancelled"/);
+
+assert.match(shell,/private fun publicRollbackJournal/);
+assert.match(shell,/pre\.remove\("bytesBase64"\)/);
+assert.match(shell,/"snapshotBytesRetainedPrivately", true/);
+assert.match(shell,/private fun publicPersistedCliJob/);
+assert.match(shell,/\.put\("rollbackJournal", JSONArray\(job\.rollbackJournal\.toString\(\)\)\)/,
+  'private persistence must retain bounded rollback bytes');
+assert.match(shell,/\.put\("rollbackJournal", publicRollbackJournal\(job\.rollbackJournal\)\)/,
+  'public live job snapshots must redact rollback bytes');
+
+assert.match(shell,/private fun validateRecoveredRollbackJournal/);
+assert.match(shell,/Recovered rollback journal refers to a future\/unstarted step/);
+assert.match(shell,/Recovered uncertain write is missing its pre-step rollback journal/);
+assert.match(shell,/private fun submitRecoveredCliRollback/);
+assert.match(shell,/state", "reserved_for_recovery_rollback"/);
+assert.match(shell,/state", "active_recovery_rollback"/);
+assert.match(shell,/"released_after_recovery_rollback"/);
+assert.match(shell,/action == "rollback"/);
+assert.match(shell,/rollbackJournal = persisted\.optJSONArray\("rollbackJournal"\)/,
+  'safe resume must carry forward private rollback evidence');
+
+assert.match(jobStore,/"rolled_back"/);
+assert.match(jobStore,/"rollback_failed"/);
+assert.match(jobStore,/"cancelled_during_rollback"/);
+
 assert.match(host,/private val cliJobStore = RiftCliPersistentJobStore/);
 assert.match(host,/private fun persistCliJob/);
 assert.match(host,/"persistentJobs", true/);
@@ -174,4 +251,4 @@ assert.match(oldBatch,/DISABLED: RiftShell batch commands are disabled/);
 assert.match(oldBatch,/disabled:true/);
 assert.ok(!shell.includes('"batch" ->'),'native RiftShell must not resurrect the retired batch command');
 
-console.log('ok - RiftCLI Batch V2 B1+B2A are bounded, sealed, restart-recoverable under system-owned retry policy, non-bypass and still externally unexposed');
+console.log('ok - RiftCLI Batch V2 B1+B2A+B2B source contract is bounded, sealed, retry-safe, rollback-journaled, non-bypass and still externally unexposed');

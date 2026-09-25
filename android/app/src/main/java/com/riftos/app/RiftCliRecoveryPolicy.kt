@@ -6,9 +6,9 @@ import org.json.JSONObject
  * System-owned recovery policy for RiftCLI Batch V2.
  *
  * Callers may request recovery, but they cannot declare an operation retry-safe, idempotent or
- * rollback-capable. This policy is deliberately conservative: B2A allows replay only for
- * non-authoritative read/context operations whose repeated execution cannot duplicate a mutation.
- * Mutation recovery stays fail-closed until B2B provides an explicit bounded rollback contract.
+ * rollback-capable. Retry remains deliberately conservative: only non-authoritative read/context
+ * operations may replay. B2B separately marks the narrow shell mutation set that has an explicit
+ * bounded pre-state rollback contract; rollback capability never makes a mutation retry-safe.
  */
 internal object RiftCliRecoveryPolicy {
     const val SCHEMA = "rift.cli-recovery-policy/1"
@@ -35,6 +35,8 @@ internal object RiftCliRecoveryPolicy {
         "rift_archive",
         "rift_extract"
     )
+
+    private val ROLLBACK_CAPABLE_SHELL_COMMANDS = setOf("write", "touch", "mkdir")
 
     private val RETRY_SAFE_SHELL_COMMANDS = setOf(
         "help",
@@ -86,10 +88,12 @@ internal object RiftCliRecoveryPolicy {
             idempotent = retrySafe,
             authoritativeMutation = !retrySafe,
             statefulExecutionContext = operation == "cd" || operation == "home",
-            reason = if (retrySafe) {
-                "RiftOS classifies this shell command as read/context-only for Batch recovery."
-            } else {
-                "Shell command is not present in the system-owned retry-safe registry."
+            rollbackSupported = operation in ROLLBACK_CAPABLE_SHELL_COMMANDS,
+            reason = when {
+                retrySafe -> "RiftOS classifies this shell command as read/context-only for Batch recovery."
+                operation in ROLLBACK_CAPABLE_SHELL_COMMANDS ->
+                    "Mutation replay is forbidden; B2B permits rollback only with a persisted bounded pre-state contract."
+                else -> "Shell command is neither retry-safe nor rollback-capable under the system-owned registry."
             }
         ).put("argumentCount", args.size)
     }
@@ -123,6 +127,7 @@ internal object RiftCliRecoveryPolicy {
         idempotent: Boolean,
         authoritativeMutation: Boolean,
         statefulExecutionContext: Boolean,
+        rollbackSupported: Boolean = false,
         reason: String
     ): JSONObject = JSONObject()
         .put("schema", SCHEMA)
@@ -134,7 +139,7 @@ internal object RiftCliRecoveryPolicy {
         .put("idempotent", idempotent)
         .put("authoritativeMutation", authoritativeMutation)
         .put("statefulExecutionContext", statefulExecutionContext)
-        .put("rollbackSupported", false)
+        .put("rollbackSupported", rollbackSupported)
         .put("automaticRetryAllowed", false)
         .put("wholeJobReplayAllowed", false)
         .put("reason", reason)

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Process
 import android.os.StatFs
 import android.os.SystemClock
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -39,6 +40,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         private const val MAX_CLI_BATCH_BYTES = 128 * 1024
         private const val MAX_CLI_BATCH_STEP_BYTES = 64 * 1024
         private const val MAX_CLI_BATCH_STEP_RESULT_BYTES = 128 * 1024
+        private const val MAX_CLI_ROLLBACK_SNAPSHOT_BYTES = 128 * 1024
+        private const val MAX_CLI_ROLLBACK_TOTAL_BYTES = 512 * 1024
         private val CLI_BATCH_ALLOWED_SHELL_COMMANDS = setOf(
             "help", "pwd", "cd", "home", "ps", "kill", "apps", "permissions",
             "drives", "df", "sysinfo", "native", "uptime", "version",
@@ -97,6 +100,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         @Volatile var currentStep: Int = 0,
         @Volatile var completedSteps: Int = 0,
         @Volatile var stepResults: JSONArray = JSONArray(),
+        @Volatile var rollbackJournal: JSONArray = JSONArray(),
+        @Volatile var rollbackState: String = "none",
         @Volatile var cancellationState: String = "none",
         @Volatile var authorityLease: JSONObject? = null,
         @Volatile var recoveryMetadata: JSONObject = JSONObject()
@@ -115,13 +120,38 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private data class CliBatchPlan(
         val mode: String,
         val failurePolicy: String,
+        val rollbackPolicy: String,
         val steps: List<CliBatchStep>
     )
 
     private val cliShellJobs = ConcurrentHashMap<String, CliShellJob>()
 
+    private fun publicRollbackJournal(journal: JSONArray): JSONArray {
+        val rows = JSONArray()
+        for (index in 0 until journal.length()) {
+            val source = journal.optJSONObject(index) ?: continue
+            val row = JSONObject(source.toString())
+            row.optJSONObject("preState")?.let { pre ->
+                if (pre.has("bytesBase64")) {
+                    pre.remove("bytesBase64")
+                    pre.put("snapshotBytesRetainedPrivately", true)
+                }
+            }
+            rows.put(row)
+        }
+        return rows
+    }
+
+    private fun publicPersistedCliJob(row: JSONObject): JSONObject =
+        JSONObject(row.toString()).also { copy ->
+            val journal = copy.optJSONArray("rollbackJournal") ?: JSONArray()
+            copy.put("rollbackJournal", publicRollbackJournal(journal))
+        }
+
     private fun persistCliShellJob(job: CliShellJob) {
-        cliJobStore.save(cliShellJobSnapshot(job))
+        val persisted = cliShellJobSnapshot(job)
+            .put("rollbackJournal", JSONArray(job.rollbackJournal.toString()))
+        cliJobStore.save(persisted)
     }
 
     private fun emitCliShellJob(
@@ -137,7 +167,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "failed",
             "cancelled",
             "cancelled_may_have_applied",
-            "completed_after_cancel_request"
+            "completed_after_cancel_request",
+            "rolled_back",
+            "rollback_failed",
+            "cancelled_during_rollback"
         )
         RiftMcpRuntime.cliEvents().emitJob(
             type = type,
@@ -616,7 +649,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 } catch (error: Throwable) {
                     var changed = false
                     synchronized(job) {
-                        if (job.status !in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                        if (job.status !in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request", "rolled_back", "rollback_failed", "cancelled_during_rollback")) {
                             job.error = error.message ?: error.javaClass.simpleName
                             job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) "cancelled" else "failed"
                             job.updatedAt = SystemClock.elapsedRealtime()
@@ -674,7 +707,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "failed",
             "cancelled",
             "cancelled_may_have_applied",
-            "completed_after_cancel_request"
+            "completed_after_cancel_request",
+            "rolled_back",
+            "rollback_failed",
+            "cancelled_during_rollback"
         )
         val lease = job.authorityLease?.let { JSONObject(it.toString()) }
             ?: JSONObject()
@@ -687,7 +723,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("ok", true)
             .put("jobOk", when (job.status) {
                 "completed", "completed_result_too_large", "completed_after_cancel_request" -> true
-                "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied" -> false
+                "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied",
+                "rolled_back", "rollback_failed", "cancelled_during_rollback" -> false
                 else -> JSONObject.NULL
             })
             .put("jobId", job.id)
@@ -710,6 +747,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("currentStep", job.currentStep)
             .put("completedSteps", job.completedSteps)
             .put("stepResults", JSONArray(job.stepResults.toString()))
+            .put("rollbackJournal", publicRollbackJournal(job.rollbackJournal))
+            .put("rollbackState", job.rollbackState)
             .put("authorityLease", lease)
             .put("recoveryMetadata", JSONObject(job.recoveryMetadata.toString()))
             .put("elapsedMs", (nowElapsed - job.createdAt).coerceAtLeast(0L))
@@ -739,7 +778,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             val row = persisted.optJSONObject(index) ?: continue
             val kind = row.optString("kind")
             if (kind in setOf("rift-shell", "rift-cli-batch") && row.optString("jobId") !in activeIds) {
-                rows.put(JSONObject(row.toString()).put("persistedOnly", true))
+                rows.put(publicPersistedCliJob(row).put("persistedOnly", true))
             }
         }
         return rows
@@ -751,7 +790,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         if (job != null) return cliShellJobSnapshot(job)
         val persisted = runCatching { cliJobStore.load(jobId) }.getOrNull() ?: return null
         return if (persisted.optString("kind") in setOf("rift-shell", "rift-cli-batch")) {
-            JSONObject(persisted.toString()).put("persistedOnly", true)
+            publicPersistedCliJob(persisted).put("persistedOnly", true)
         } else null
     }
 
@@ -762,8 +801,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             val kind = persisted.optString("kind")
             if (kind !in setOf("rift-shell", "rift-cli-batch")) return null
             val status = persisted.optString("status")
-            if (status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
-                return JSONObject(persisted.toString()).put("persistedOnly", true)
+            if (status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request", "rolled_back", "rollback_failed", "cancelled_during_rollback")) {
+                return publicPersistedCliJob(persisted).put("persistedOnly", true)
             }
             val lease = JSONObject(persisted.optJSONObject("authorityLease")?.toString() ?: "{}")
                 .put("active", false)
@@ -796,10 +835,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 terminal = true,
                 message = "Recovered RiftCLI job cancelled without replay"
             )
-            return JSONObject(persisted.toString()).put("persistedOnly", true)
+            return publicPersistedCliJob(persisted).put("persistedOnly", true)
         }
         synchronized(job) {
-            if (job.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+            if (job.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request", "rolled_back", "rollback_failed", "cancelled_during_rollback")) {
                 return cliShellJobSnapshot(job)
             }
             job.cancelRequested = true
@@ -837,7 +876,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val changed = ArrayList<CliShellJob>()
         cliShellJobs.values.forEach { job ->
             synchronized(job) {
-                if (job.status !in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                if (job.status !in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request", "rolled_back", "rollback_failed", "cancelled_during_rollback")) {
                     job.cancelRequested = true
                     val wasQueued = job.status == "queued"
                     val cancelled = job.future?.cancel(true) == true
@@ -868,7 +907,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun pruneCliShellJobs(forceTerminalTrim: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
         val terminal = cliShellJobs.values
-            .filter { it.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request") }
+            .filter { it.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request", "rolled_back", "rollback_failed", "cancelled_during_rollback") }
             .sortedBy { it.updatedAt }
 
         terminal.forEach { job ->
@@ -895,6 +934,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val failurePolicy = args.optString("failurePolicy", "stop").trim().lowercase().ifBlank { "stop" }
         require(failurePolicy == "stop" || failurePolicy == "continue") {
             "RiftCLI Batch V2 failurePolicy must be stop or continue"
+        }
+        val rollbackPolicy = args.optString("rollbackPolicy", "none").trim().lowercase().ifBlank { "none" }
+        require(rollbackPolicy == "none" || rollbackPolicy == "on-failure") {
+            "RiftCLI Batch V2 rollbackPolicy must be none or on-failure"
+        }
+        require(rollbackPolicy != "on-failure" || failurePolicy == "stop") {
+            "RiftCLI Batch V2 rollbackPolicy=on-failure requires failurePolicy=stop"
         }
         val rawSteps = args.optJSONArray("steps")
             ?: throw IllegalArgumentException("RiftCLI Batch V2 requires steps[]")
@@ -956,7 +1002,33 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 )
             }
         }
-        return CliBatchPlan(mode = mode, failurePolicy = failurePolicy, steps = steps)
+        if (rollbackPolicy == "on-failure") {
+            steps.forEach { step ->
+                if (step.kind == "tool") {
+                    val policy = RiftCliRecoveryPolicy.forTool(
+                        step.toolName.orEmpty(),
+                        step.toolArgs ?: JSONObject()
+                    )
+                    require(!policy.optBoolean("authoritativeMutation", true)) {
+                        "RiftCLI Batch V2 rollbackPolicy=on-failure forbids tool mutation without an explicit rollback contract: ${step.toolName}"
+                    }
+                } else {
+                    val tokens = tokenize(step.shellCommand.orEmpty())
+                    val commandName = tokens.firstOrNull()?.lowercase().orEmpty()
+                    val policy = RiftCliRecoveryPolicy.forShell(commandName, tokens.drop(1))
+                    val supportedMutation = policy.optBoolean("rollbackSupported", false)
+                    require(!policy.optBoolean("authoritativeMutation", true) || supportedMutation) {
+                        "RiftCLI Batch V2 rollbackPolicy=on-failure forbids shell mutation without an explicit rollback contract: $commandName"
+                    }
+                }
+            }
+        }
+        return CliBatchPlan(
+            mode = mode,
+            failurePolicy = failurePolicy,
+            rollbackPolicy = rollbackPolicy,
+            steps = steps
+        )
     }
 
     private fun cliBatchPlanSummary(plan: CliBatchPlan): JSONObject {
@@ -977,6 +1049,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("schema", "rift.cli-batch/2")
             .put("mode", plan.mode)
             .put("failurePolicy", plan.failurePolicy)
+            .put("rollbackPolicy", plan.rollbackPolicy)
             .put("stepCount", plan.steps.size)
             .put("steps", rows)
     }
@@ -1000,6 +1073,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("schema", "rift.cli-batch-plan/2")
             .put("mode", plan.mode)
             .put("failurePolicy", plan.failurePolicy)
+            .put("rollbackPolicy", plan.rollbackPolicy)
             .put("stepCount", plan.steps.size)
             .put("steps", rows)
     }
@@ -1008,6 +1082,295 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
+
+    private fun sha256Bytes(value: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value)
+            .joinToString("") { "%02x".format(it) }
+
+    private fun rollbackJournalSnapshotBytes(journal: JSONArray): Int {
+        var total = 0L
+        for (index in 0 until journal.length()) {
+            total += journal.optJSONObject(index)?.optLong("snapshotBytes", 0L) ?: 0L
+        }
+        require(total <= Int.MAX_VALUE) { "RiftCLI rollback snapshot accounting overflow" }
+        return total.toInt()
+    }
+
+    private fun prepareCliBatchRollbackEntry(
+        job: CliShellJob,
+        step: CliBatchStep,
+        index: Int,
+        cwd: String
+    ): JSONObject? {
+        if (step.kind != "shell") return null
+        val tokens = tokenize(step.shellCommand.orEmpty())
+        val command = tokens.firstOrNull()?.lowercase().orEmpty()
+        if (command !in setOf("write", "touch", "mkdir")) return null
+
+        val rawPath = tokens.getOrNull(1)
+            ?: throw IllegalArgumentException("RiftCLI rollback contract requires a target path for $command")
+        val path = resolveDisplay(cwd, rawPath)
+        val target = resolveFile(path)
+        require(target != riftRoot && !RiftVolumePaths.isVolumeRoot(path)) {
+            "RiftCLI rollback contract refuses a RiftFS root target"
+        }
+        val parent = target.parentFile
+        require(parent != null && parent.isDirectory) {
+            "RiftCLI rollback contract requires an existing parent directory: $path"
+        }
+
+        val preState = JSONObject()
+        var snapshotBytes = 0
+        when {
+            !target.exists() -> preState.put("exists", false)
+            target.isFile -> {
+                require(command != "mkdir") { "RiftCLI rollback mkdir target already exists as a file: $path" }
+                require(target.length() <= MAX_CLI_ROLLBACK_SNAPSHOT_BYTES) {
+                    "RiftCLI rollback snapshot exceeds $MAX_CLI_ROLLBACK_SNAPSHOT_BYTES bytes: $path"
+                }
+                val bytes = target.readBytes()
+                snapshotBytes = bytes.size
+                preState
+                    .put("exists", true)
+                    .put("kind", "file")
+                    .put("size", bytes.size)
+                    .put("sha256", sha256Bytes(bytes))
+                    .put("bytesBase64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+            }
+            target.isDirectory -> {
+                require(command == "mkdir") { "RiftCLI rollback file target is a directory: $path" }
+                return null
+            }
+            else -> throw IllegalStateException("RiftCLI rollback target has unsupported file type: $path")
+        }
+
+        val action: String
+        val expectedPost = JSONObject().put("exists", true)
+        when (command) {
+            "write" -> {
+                require(tokens.size >= 2) { "usage: write <file> <text>" }
+                val postBytes = tokens.drop(2).joinToString(" ").toByteArray(Charsets.UTF_8)
+                require(postBytes.size <= MAX_TEXT_BYTES) { "native shell write exceeds $MAX_TEXT_BYTES bytes" }
+                expectedPost
+                    .put("kind", "file")
+                    .put("size", postBytes.size)
+                    .put("sha256", sha256Bytes(postBytes))
+                action = if (preState.optBoolean("exists", false)) "restore-file" else "delete-created-file"
+            }
+            "touch" -> {
+                if (preState.optBoolean("exists", false)) return null
+                val empty = ByteArray(0)
+                expectedPost
+                    .put("kind", "file")
+                    .put("size", 0)
+                    .put("sha256", sha256Bytes(empty))
+                action = "delete-created-file"
+            }
+            "mkdir" -> {
+                if (preState.optBoolean("exists", false)) return null
+                expectedPost.put("kind", "directory")
+                action = "delete-created-empty-directory"
+            }
+            else -> return null
+        }
+
+        val total = rollbackJournalSnapshotBytes(job.rollbackJournal) + snapshotBytes
+        require(total <= MAX_CLI_ROLLBACK_TOTAL_BYTES) {
+            "RiftCLI rollback journal exceeds $MAX_CLI_ROLLBACK_TOTAL_BYTES snapshot bytes"
+        }
+
+        return JSONObject()
+            .put("schema", "rift.cli-rollback-entry/1")
+            .put("stepId", step.id)
+            .put("stepIndex", index)
+            .put("kind", "shell")
+            .put("operation", command)
+            .put("path", path)
+            .put("action", action)
+            .put("rollbackSupported", true)
+            .put("snapshotBytes", snapshotBytes)
+            .put("preState", preState)
+            .put("expectedPostState", expectedPost)
+            .put("state", "prepared")
+            .put("preparedAtEpochMs", System.currentTimeMillis())
+    }
+
+    private fun rollbackFileMatchesState(file: File, state: JSONObject): Boolean {
+        val exists = state.optBoolean("exists", false)
+        if (!exists) return !file.exists()
+        if (!file.exists()) return false
+        return when (state.optString("kind")) {
+            "file" -> {
+                if (!file.isFile) false
+                else {
+                    val expectedSize = state.optLong("size", -1L)
+                    if (expectedSize >= 0L && file.length() != expectedSize) false
+                    else {
+                        val expectedSha = state.optString("sha256")
+                        expectedSha.isNotBlank() && sha256Bytes(file.readBytes()) == expectedSha
+                    }
+                }
+            }
+            "directory" -> file.isDirectory
+            else -> false
+        }
+    }
+
+    private fun applyCliRollbackEntry(entry: JSONObject): JSONObject {
+        val path = entry.optString("path")
+        require(path.isNotBlank()) { "RiftCLI rollback entry missing path" }
+        val target = resolveFile(path)
+        val pre = entry.optJSONObject("preState")
+            ?: throw IllegalStateException("RiftCLI rollback entry missing preState")
+        val expectedPost = entry.optJSONObject("expectedPostState")
+            ?: throw IllegalStateException("RiftCLI rollback entry missing expectedPostState")
+        val action = entry.optString("action")
+
+        if (rollbackFileMatchesState(target, pre)) {
+            return JSONObject()
+                .put("ok", true)
+                .put("path", path)
+                .put("action", action)
+                .put("alreadyAtPreState", true)
+                .put("changed", false)
+        }
+        if (!rollbackFileMatchesState(target, expectedPost)) {
+            return JSONObject()
+                .put("ok", false)
+                .put("path", path)
+                .put("action", action)
+                .put("stateDrift", true)
+                .put("error", "Rollback target no longer matches the batch-produced post-state")
+        }
+
+        when (action) {
+            "restore-file" -> {
+                val encoded = pre.optString("bytesBase64")
+                require(encoded.isNotBlank()) { "RiftCLI rollback restore is missing bounded file bytes" }
+                val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+                require(bytes.size <= MAX_CLI_ROLLBACK_SNAPSHOT_BYTES) {
+                    "RiftCLI rollback restore exceeds snapshot bound"
+                }
+                require(sha256Bytes(bytes) == pre.optString("sha256")) {
+                    "RiftCLI rollback snapshot hash mismatch"
+                }
+                atomicWrite(target, bytes)
+            }
+            "delete-created-file" -> {
+                require(target.isFile) { "RiftCLI rollback expected created file: $path" }
+                require(target.delete()) { "RiftCLI rollback could not delete created file: $path" }
+            }
+            "delete-created-empty-directory" -> {
+                require(target.isDirectory) { "RiftCLI rollback expected created directory: $path" }
+                require(target.listFiles()?.isEmpty() == true) {
+                    "RiftCLI rollback refuses non-empty created directory: $path"
+                }
+                require(target.delete()) { "RiftCLI rollback could not delete created directory: $path" }
+            }
+            else -> throw IllegalStateException("Unsupported RiftCLI rollback action: $action")
+        }
+
+        require(rollbackFileMatchesState(target, pre)) {
+            "RiftCLI rollback postcondition failed for $path"
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("path", path)
+            .put("action", action)
+            .put("alreadyAtPreState", false)
+            .put("changed", true)
+    }
+
+    private fun executeCliRollback(job: CliShellJob, trigger: String): JSONObject {
+        val results = JSONArray()
+        var attempted = 0
+        var completed = 0
+        synchronized(job) {
+            job.rollbackState = "rolling_back"
+            job.status = "rolling_back"
+            job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                .put("rollbackTrigger", trigger)
+                .put("rollbackStartedAtEpochMs", System.currentTimeMillis())
+                .put("blindReplayAllowed", false)
+            job.updatedAt = SystemClock.elapsedRealtime()
+        }
+        persistCliShellJob(job)
+        emitCliShellJob(job, "batch.rollback.started", message = "RiftCLI Batch rollback started")
+
+        for (index in job.rollbackJournal.length() - 1 downTo 0) {
+            if (job.cancelRequested || Thread.currentThread().isInterrupted) {
+                synchronized(job) {
+                    job.rollbackState = "cancelled_partial"
+                    job.cancellationState = "cancelled_during_rollback"
+                    job.updatedAt = SystemClock.elapsedRealtime()
+                }
+                persistCliShellJob(job)
+                return JSONObject()
+                    .put("schema", "rift.cli-rollback-result/1")
+                    .put("ok", false)
+                    .put("cancelled", true)
+                    .put("trigger", trigger)
+                    .put("attempted", attempted)
+                    .put("completed", completed)
+                    .put("results", results)
+            }
+
+            val entry = job.rollbackJournal.optJSONObject(index) ?: continue
+            attempted++
+            val result = try {
+                applyCliRollbackEntry(entry)
+            } catch (error: Throwable) {
+                JSONObject()
+                    .put("ok", false)
+                    .put("path", entry.optString("path"))
+                    .put("action", entry.optString("action"))
+                    .put("error", error.message ?: error.javaClass.simpleName)
+            }
+            results.put(result)
+            entry
+                .put("rollbackState", if (result.optBoolean("ok", false)) "rolled_back" else "failed")
+                .put("rollbackResult", result)
+                .put("rolledBackAtEpochMs", System.currentTimeMillis())
+            if (result.optBoolean("ok", false)) completed++
+
+            synchronized(job) {
+                job.rollbackJournal = JSONArray(job.rollbackJournal.toString())
+                job.updatedAt = SystemClock.elapsedRealtime()
+            }
+            persistCliShellJob(job)
+
+            if (!result.optBoolean("ok", false)) {
+                synchronized(job) {
+                    job.rollbackState = "failed"
+                    job.updatedAt = SystemClock.elapsedRealtime()
+                }
+                persistCliShellJob(job)
+                return JSONObject()
+                    .put("schema", "rift.cli-rollback-result/1")
+                    .put("ok", false)
+                    .put("cancelled", false)
+                    .put("trigger", trigger)
+                    .put("attempted", attempted)
+                    .put("completed", completed)
+                    .put("results", results)
+            }
+        }
+
+        synchronized(job) {
+            job.rollbackState = "completed"
+            job.updatedAt = SystemClock.elapsedRealtime()
+        }
+        persistCliShellJob(job)
+        return JSONObject()
+            .put("schema", "rift.cli-rollback-result/1")
+            .put("ok", true)
+            .put("cancelled", false)
+            .put("trigger", trigger)
+            .put("attempted", attempted)
+            .put("completed", completed)
+            .put("results", results)
+    }
 
     private fun emitCliBatchStep(
         job: CliShellJob,
@@ -1134,6 +1497,22 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 } else {
                                     runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault("")
                                 }
+                                var rollbackEntry: JSONObject? = null
+                                var rollbackPreparationError: String? = null
+                                if (plan.rollbackPolicy == "on-failure") {
+                                    try {
+                                        rollbackEntry = prepareCliBatchRollbackEntry(job, step, index, currentCwd)
+                                        if (rollbackEntry != null) {
+                                            synchronized(job) {
+                                                job.rollbackJournal.put(rollbackEntry)
+                                                job.rollbackState = "armed"
+                                                job.updatedAt = SystemClock.elapsedRealtime()
+                                            }
+                                        }
+                                    } catch (error: Throwable) {
+                                        rollbackPreparationError = error.message ?: error.javaClass.simpleName
+                                    }
+                                }
                                 synchronized(job) {
                                     val recoveryAttempt = job.recoveryMetadata.optJSONObject("recoveryAttempt")
                                         ?.let { JSONObject(it.toString()) }
@@ -1166,7 +1545,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 } else {
                                     "${job.requestId}:${step.id}"
                                 }
-                                val stepResponse = try {
+                                var stepResponse = if (rollbackPreparationError != null) {
+                                    JSONObject()
+                                        .put("ok", false)
+                                        .put("rollbackPreparationFailed", true)
+                                        .put("error", rollbackPreparationError)
+                                } else try {
                                     if (step.kind == "tool") {
                                         toolHost.executeCliBatchTool(
                                             step.toolName.orEmpty(),
@@ -1197,6 +1581,28 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                     JSONObject()
                                         .put("ok", false)
                                         .put("error", error.message ?: error.javaClass.simpleName)
+                                }
+
+                                rollbackEntry?.let { entry ->
+                                    val producedExpectedState = runCatching {
+                                        rollbackFileMatchesState(
+                                            resolveFile(entry.optString("path")),
+                                            entry.optJSONObject("expectedPostState") ?: JSONObject()
+                                        )
+                                    }.getOrDefault(false)
+                                    if (stepResponse.optBoolean("ok", false) && !producedExpectedState) {
+                                        stepResponse = JSONObject()
+                                            .put("ok", false)
+                                            .put("rollbackPostStateMismatch", true)
+                                            .put("error", "RiftCLI rollback contract post-state verification failed")
+                                    }
+                                    entry
+                                        .put(
+                                            "state",
+                                            if (stepResponse.optBoolean("ok", false)) "applied" else "uncertain_or_failed"
+                                        )
+                                        .put("postStateVerified", producedExpectedState)
+                                        .put("stepFinishedAtEpochMs", System.currentTimeMillis())
                                 }
 
                                 val duration = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
@@ -1246,6 +1652,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 )
 
                                 if (job.cancelRequested || Thread.currentThread().isInterrupted) {
+                                    if (!ok && plan.failurePolicy == "stop" && plan.rollbackPolicy == "on-failure") {
+                                        stopped = true
+                                        break
+                                    }
                                     throw InterruptedException("RiftCLI Batch V2 cancellation observed after step ${step.id}")
                                 }
                                 if (!ok && plan.failurePolicy == "stop") {
@@ -1255,16 +1665,29 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             }
                         }
 
+                        val rollbackResult = if (
+                            failedSteps > 0 &&
+                            plan.failurePolicy == "stop" &&
+                            plan.rollbackPolicy == "on-failure"
+                        ) {
+                            executeCliRollback(job, "failure")
+                        } else null
+
                         val finalResult = JSONObject()
                             .put("schema", "rift.cli-batch/2")
                             .put("mode", "execute")
                             .put("failurePolicy", plan.failurePolicy)
+                            .put("rollbackPolicy", plan.rollbackPolicy)
                             .put("stepCount", plan.steps.size)
                             .put("executedSteps", executedSteps)
                             .put("failedSteps", failedSteps)
                             .put("stoppedOnFailure", stopped)
                             .put("cwd", currentCwd)
                             .put("steps", stepRows)
+                            .put("rollbackState", job.rollbackState)
+                            .also { result ->
+                                if (rollbackResult != null) result.put("rollback", rollbackResult)
+                            }
                         val finalBytes = finalResult.toString().toByteArray(Charsets.UTF_8).size
                         val retainedFinal = if (finalBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES) {
                             JSONObject()
@@ -1275,34 +1698,55 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 .put("stepCount", plan.steps.size)
                                 .put("executedSteps", executedSteps)
                                 .put("failedSteps", failedSteps)
+                                .put("rollbackPolicy", plan.rollbackPolicy)
+                                .put("rollbackState", job.rollbackState)
+                                .also { result ->
+                                    if (rollbackResult != null) result.put("rollback", rollbackResult)
+                                }
                         } else finalResult
 
                         synchronized(job) {
                             job.output = "RiftCLI Batch V2 executed $executedSteps/${plan.steps.size} steps; failures=$failedSteps"
                             job.result = retainedFinal
                             job.status = when {
+                                rollbackResult?.optBoolean("cancelled", false) == true -> "cancelled_during_rollback"
+                                rollbackResult != null && rollbackResult.optBoolean("ok", false) -> "rolled_back"
+                                rollbackResult != null -> "rollback_failed"
                                 job.cancelRequested -> "completed_after_cancel_request"
                                 failedSteps > 0 && plan.failurePolicy == "continue" -> "completed_with_failures"
                                 failedSteps > 0 -> "failed"
                                 finalBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES -> "completed_result_too_large"
                                 else -> "completed"
                             }
-                            job.error = if (failedSteps > 0 && plan.failurePolicy == "stop") {
-                                "RiftCLI Batch V2 stopped after a failed step"
-                            } else null
+                            job.error = when (job.status) {
+                                "rolled_back" -> "RiftCLI Batch V2 failed and all journaled mutations were rolled back"
+                                "rollback_failed" -> "RiftCLI Batch V2 failed and rollback did not fully restore state"
+                                "cancelled_during_rollback" -> "RiftCLI Batch V2 rollback was cancelled before full restoration"
+                                else -> if (failedSteps > 0 && plan.failurePolicy == "stop") {
+                                    "RiftCLI Batch V2 stopped after a failed step"
+                                } else null
+                            }
                             job.cancellationState = when {
+                                job.status == "cancelled_during_rollback" -> "cancelled_during_rollback"
                                 job.status == "completed_after_cancel_request" -> "completed_after_cancel_request"
                                 job.cancelRequested -> "requested"
                                 else -> "none"
                             }
+                            val releaseState = when (job.status) {
+                                "rolled_back" -> "released_after_rollback"
+                                "rollback_failed" -> "released_after_rollback_failure"
+                                "cancelled_during_rollback" -> "released_after_rollback_cancel"
+                                else -> if (recovered) "released_after_recovery" else "released"
+                            }
                             job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
                                 .put("active", false)
-                                .put("state", if (recovered) "released_after_recovery" else "released")
+                                .put("state", releaseState)
                                 .put("releasedAtEpochMs", System.currentTimeMillis())
                             job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
                                 .put("terminal", true)
                                 .put("terminalStatus", job.status)
                                 .put("recoveryResolved", recovered)
+                                .put("rollbackState", job.rollbackState)
                                 .put("blindReplayAllowed", false)
                             job.updatedAt = SystemClock.elapsedRealtime()
                         }
@@ -1311,6 +1755,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             job,
                             when (job.status) {
                                 "completed", "completed_result_too_large", "completed_with_failures", "completed_after_cancel_request" -> "batch.completed"
+                                "rolled_back" -> "batch.rolled_back"
+                                "rollback_failed" -> "batch.rollback.failed"
+                                "cancelled_during_rollback" -> "batch.rollback.cancelled"
                                 else -> "batch.failed"
                             },
                             retainedFinal,
@@ -1327,7 +1774,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 "failed",
                                 "cancelled",
                                 "cancelled_may_have_applied",
-                                "completed_after_cancel_request"
+                                "completed_after_cancel_request",
+                                "rolled_back",
+                                "rollback_failed",
+                                "cancelled_during_rollback"
                             )) {
                             job.error = error.message ?: error.javaClass.simpleName
                             job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) {
@@ -1493,6 +1943,281 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         return cliShellJobSnapshot(job)
     }
 
+    private fun validateRecoveredRollbackJournal(
+        plan: CliBatchPlan,
+        currentStep: Int,
+        journal: JSONArray
+    ) {
+        require(plan.rollbackPolicy == "on-failure") {
+            "Recovered Batch V2 job did not opt into rollbackPolicy=on-failure"
+        }
+        require(journal.length() <= MAX_CLI_BATCH_STEPS) {
+            "Recovered rollback journal exceeds step bound"
+        }
+        var totalSnapshotBytes = 0L
+        val journalStepIds = HashSet<String>()
+        val maxStartedStep = maxOf(currentStep, 0)
+        for (index in 0 until journal.length()) {
+            val entry = journal.optJSONObject(index)
+                ?: throw IllegalStateException("Recovered rollback journal entry ${index + 1} is invalid")
+            require(entry.optString("schema") == "rift.cli-rollback-entry/1") {
+                "Recovered rollback journal schema mismatch"
+            }
+            require(entry.optBoolean("rollbackSupported", false)) {
+                "Recovered rollback journal contains unsupported entry"
+            }
+            val stepIndex = entry.optInt("stepIndex", 0)
+            require(stepIndex in 1..plan.steps.size) {
+                "Recovered rollback journal step index is out of range"
+            }
+            require(stepIndex <= maxStartedStep) {
+                "Recovered rollback journal refers to a future/unstarted step"
+            }
+            val planStep = plan.steps[stepIndex - 1]
+            require(planStep.kind == "shell" && planStep.id == entry.optString("stepId")) {
+                "Recovered rollback journal step identity mismatch"
+            }
+            val command = tokenize(planStep.shellCommand.orEmpty()).firstOrNull()?.lowercase().orEmpty()
+            require(command == entry.optString("operation") && command in setOf("write", "touch", "mkdir")) {
+                "Recovered rollback journal operation mismatch"
+            }
+            require(journalStepIds.add(planStep.id)) {
+                "Recovered rollback journal contains duplicate step entry"
+            }
+            val snapshotBytes = entry.optLong("snapshotBytes", -1L)
+            require(snapshotBytes in 0..MAX_CLI_ROLLBACK_SNAPSHOT_BYTES.toLong()) {
+                "Recovered rollback journal snapshot exceeds per-entry bound"
+            }
+            totalSnapshotBytes += snapshotBytes
+            require(totalSnapshotBytes <= MAX_CLI_ROLLBACK_TOTAL_BYTES.toLong()) {
+                "Recovered rollback journal exceeds total snapshot bound"
+            }
+        }
+
+        if (currentStep in 1..plan.steps.size) {
+            val uncertain = plan.steps[currentStep - 1]
+            if (uncertain.kind == "shell") {
+                val command = tokenize(uncertain.shellCommand.orEmpty()).firstOrNull()?.lowercase().orEmpty()
+                if (command == "write") {
+                    require(uncertain.id in journalStepIds) {
+                        "Recovered uncertain write is missing its pre-step rollback journal"
+                    }
+                }
+            }
+        }
+    }
+
+    private fun submitRecoveredCliRollback(
+        persisted: JSONObject,
+        plan: CliBatchPlan,
+        normalizedPlan: JSONObject,
+        jobId: String,
+        storedPlanHash: String,
+        executionCwd: String,
+        currentStep: Int,
+        completedSteps: Int,
+        stepRows: JSONArray
+    ): JSONObject {
+        val journal = persisted.optJSONArray("rollbackJournal")?.let { JSONArray(it.toString()) } ?: JSONArray()
+        try {
+            validateRecoveredRollbackJournal(plan, currentStep, journal)
+        } catch (error: Throwable) {
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("terminal", false)
+                .put("rollbackSupported", false)
+                .put("error", error.message ?: error.javaClass.simpleName)
+                .put("persistedOnly", true)
+        }
+
+        if (!RiftCliExecutionGate.tryReserve(jobId)) {
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", "RiftCLI already has one outstanding authority job")
+                .put("outstandingJobId", RiftCliExecutionGate.outstandingJob() ?: JSONObject.NULL)
+                .put("persistedOnly", true)
+        }
+
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val nowEpoch = System.currentTimeMillis()
+        val submittedEpoch = persisted.optLong("submittedAtEpochMs", nowEpoch)
+        val ageMs = (nowEpoch - submittedEpoch).coerceAtLeast(0L)
+        val createdAt = (nowElapsed - ageMs).coerceAtLeast(0L)
+        val recovery = JSONObject(persisted.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
+            .put("lastRecoveryAction", "rollback")
+            .put("rollbackRequestedAtEpochMs", nowEpoch)
+            .put("rollbackState", "queued")
+            .put("blindReplayAllowed", false)
+            .put("wholeJobReplayAllowed", false)
+        val lease = JSONObject(persisted.optJSONObject("authorityLease")?.toString() ?: "{}")
+            .put("active", true)
+            .put("state", "reserved_for_recovery_rollback")
+            .put("reacquiredAtEpochMs", nowEpoch)
+            .put("authorizationBypass", false)
+            .put("perOperationAuthorizationRequired", true)
+            .put("observerValidatorBypass", false)
+
+        val job = CliShellJob(
+            id = jobId,
+            requestId = persisted.optString("requestId"),
+            operation = "batch",
+            cwd = persisted.optString("cwd", "/").ifBlank { "/" },
+            executionCwd = executionCwd,
+            createdAt = createdAt,
+            updatedAt = nowElapsed,
+            status = "queued",
+            cancelRequested = false,
+            output = "",
+            result = null,
+            error = null,
+            lane = "batch",
+            planHash = storedPlanHash,
+            plan = normalizedPlan,
+            currentStep = currentStep,
+            completedSteps = completedSteps,
+            stepResults = JSONArray(stepRows.toString()),
+            rollbackJournal = journal,
+            rollbackState = "queued",
+            cancellationState = "none",
+            authorityLease = lease,
+            recoveryMetadata = recovery
+        )
+        cliShellJobs[jobId] = job
+        try {
+            persistCliShellJob(job)
+        } catch (error: Throwable) {
+            cliShellJobs.remove(jobId, job)
+            RiftCliExecutionGate.release(jobId)
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", error.message ?: "Recovered rollback persistence failed before execution")
+                .put("jobPersistenceRequired", true)
+                .put("persistedOnly", true)
+        }
+
+        val future = try {
+            cliWorker.submit {
+                RiftDeadline.clearInterrupt()
+                try {
+                    RiftCliExecutionGate.run {
+                        synchronized(job) {
+                            job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                                .put("active", true)
+                                .put("state", "active_recovery_rollback")
+                                .put("activatedAtEpochMs", System.currentTimeMillis())
+                            job.updatedAt = SystemClock.elapsedRealtime()
+                        }
+                        persistCliShellJob(job)
+                        val rollbackResult = executeCliRollback(job, "recovery")
+                        synchronized(job) {
+                            job.result = JSONObject()
+                                .put("schema", "rift.cli-recovery-rollback/1")
+                                .put("planHash", storedPlanHash)
+                                .put("rollback", rollbackResult)
+                            job.status = when {
+                                rollbackResult.optBoolean("cancelled", false) -> "cancelled_during_rollback"
+                                rollbackResult.optBoolean("ok", false) -> "rolled_back"
+                                else -> "rollback_failed"
+                            }
+                            job.error = when (job.status) {
+                                "rolled_back" -> null
+                                "cancelled_during_rollback" -> "Recovered Batch V2 rollback was cancelled before full restoration"
+                                else -> "Recovered Batch V2 rollback did not fully restore state"
+                            }
+                            job.cancellationState = if (job.status == "cancelled_during_rollback") {
+                                "cancelled_during_rollback"
+                            } else "none"
+                            val releaseState = when (job.status) {
+                                "rolled_back" -> "released_after_recovery_rollback"
+                                "cancelled_during_rollback" -> "released_after_recovery_rollback_cancel"
+                                else -> "released_after_recovery_rollback_failure"
+                            }
+                            job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                                .put("active", false)
+                                .put("state", releaseState)
+                                .put("releasedAtEpochMs", System.currentTimeMillis())
+                            job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                                .put("resolutionAction", "rollback")
+                                .put("resolutionState", job.status)
+                                .put("resolvedAtEpochMs", System.currentTimeMillis())
+                                .put("rollbackState", job.rollbackState)
+                                .put("terminal", true)
+                                .put("terminalStatus", job.status)
+                                .put("blindReplayAllowed", false)
+                                .put("wholeJobReplayAllowed", false)
+                            job.updatedAt = SystemClock.elapsedRealtime()
+                        }
+                        persistCliShellJob(job)
+                        emitCliShellJob(
+                            job,
+                            when (job.status) {
+                                "rolled_back" -> "batch.rolled_back"
+                                "cancelled_during_rollback" -> "batch.rollback.cancelled"
+                                else -> "batch.rollback.failed"
+                            },
+                            job.result,
+                            job.error
+                        )
+                    }
+                } catch (error: Throwable) {
+                    synchronized(job) {
+                        job.status = "rollback_failed"
+                        job.rollbackState = "failed"
+                        job.error = error.message ?: error.javaClass.simpleName
+                        job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                            .put("active", false)
+                            .put("state", "released_after_recovery_rollback_failure")
+                            .put("releasedAtEpochMs", System.currentTimeMillis())
+                        job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                            .put("resolutionAction", "rollback")
+                            .put("resolutionState", "rollback_failed")
+                            .put("terminal", true)
+                            .put("terminalStatus", "rollback_failed")
+                            .put("blindReplayAllowed", false)
+                            .put("wholeJobReplayAllowed", false)
+                        job.updatedAt = SystemClock.elapsedRealtime()
+                    }
+                    runCatching { persistCliShellJob(job) }
+                    emitCliShellJob(job, "batch.rollback.failed", message = job.error)
+                } finally {
+                    RiftCliExecutionGate.release(jobId)
+                    RiftDeadline.clearInterrupt()
+                }
+            }
+        } catch (error: Throwable) {
+            synchronized(job) {
+                job.status = "recovery_required"
+                job.rollbackState = "schedule_failed"
+                job.error = error.message ?: error.javaClass.simpleName
+                job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                    .put("active", false)
+                    .put("state", "released_after_recovery_rollback_schedule_failure")
+                    .put("releasedAtEpochMs", System.currentTimeMillis())
+                job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                    .put("rollbackState", "schedule_failed")
+                    .put("rollbackError", job.error)
+                    .put("blindReplayAllowed", false)
+                    .put("wholeJobReplayAllowed", false)
+                job.updatedAt = SystemClock.elapsedRealtime()
+            }
+            runCatching { persistCliShellJob(job) }
+            cliShellJobs.remove(jobId, job)
+            RiftCliExecutionGate.release(jobId)
+            null
+        }
+        job.future = future
+        return cliShellJobSnapshot(job)
+            .put("recoveryActionAccepted", future != null)
+            .put("rollbackSupported", true)
+            .put("persistedOnly", false)
+    }
+
     private fun recoverCliPersistedJob(
         jobId: String,
         action: String,
@@ -1516,7 +2241,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val kind = persisted.optString("kind")
         val status = persisted.optString("status").trim().lowercase()
         if (status != "recovery_required") {
-            return JSONObject(persisted.toString())
+            return publicPersistedCliJob(persisted)
                 .put("persistedOnly", true)
                 .put("recoveryActionAccepted", false)
                 .put("recoveryActionReason", "job status is not recovery_required")
@@ -1555,35 +2280,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 terminal = true,
                 message = "Recovered RiftCLI job failed closed without replay"
             )
-            return JSONObject(persisted.toString())
+            return publicPersistedCliJob(persisted)
                 .put("persistedOnly", true)
                 .put("recoveryActionAccepted", true)
-        }
-
-        if (action == "rollback") {
-            val policy = JSONObject()
-                .put("schema", RiftCliRecoveryPolicy.SCHEMA)
-                .put("policyOwner", "riftos")
-                .put("callerMayOverride", false)
-                .put("rollbackSupported", false)
-                .put("automaticRetryAllowed", false)
-                .put("wholeJobReplayAllowed", false)
-                .put("reason", "B2A does not claim rollback without an explicit bounded authority-owned rollback contract; B2B remains required.")
-            val recovery = JSONObject(persisted.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
-                .put("lastRecoveryDecisionAtEpochMs", System.currentTimeMillis())
-                .put("lastRecoveryAction", "rollback")
-                .put("lastRecoveryPolicy", policy)
-                .put("blindReplayAllowed", false)
-            persisted.put("recoveryMetadata", recovery)
-            cliJobStore.save(persisted)
-            return JSONObject()
-                .put("ok", false)
-                .put("jobId", jobId)
-                .put("status", "recovery_required")
-                .put("terminal", false)
-                .put("rollbackSupported", false)
-                .put("recoveryPolicy", policy)
-                .put("persistedOnly", true)
         }
 
         if (kind != "rift-cli-batch") {
@@ -1686,6 +2385,20 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 .put("error", "Recovered Batch V2 job lacks persisted executionCwd after completed steps")
                 .put("recoveryExecutionContextMissing", true)
                 .put("persistedOnly", true)
+        }
+
+        if (action == "rollback") {
+            return submitRecoveredCliRollback(
+                persisted = persisted,
+                plan = plan,
+                normalizedPlan = normalizedPlan,
+                jobId = jobId,
+                storedPlanHash = storedPlanHash,
+                executionCwd = executionCwd,
+                currentStep = currentStep,
+                completedSteps = completedSteps,
+                stepRows = stepRows
+            )
         }
 
         var startIndex0: Int
@@ -1810,6 +2523,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             currentStep = currentStep,
             completedSteps = completedSteps,
             stepResults = stepRows,
+            rollbackJournal = persisted.optJSONArray("rollbackJournal")?.let { JSONArray(it.toString()) } ?: JSONArray(),
+            rollbackState = persisted.optString("rollbackState", "none"),
             cancellationState = "none",
             authorityLease = lease,
             recoveryMetadata = recovery
