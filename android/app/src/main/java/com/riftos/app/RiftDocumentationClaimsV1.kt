@@ -423,6 +423,11 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
     }
 
 
+    private fun decodeRegressionLiteral(raw: String): String =
+        raw.replace("\\'", "'")
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+
     private fun checkRegressionLiteralOwnership(
         files: List<TextFile>,
         incomplete: MutableSet<String>,
@@ -463,7 +468,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                     pattern.findAll(test.text).forEach directLoop@ { direct ->
                         if (codeMask.getOrNull(direct.range.first) != true) return@directLoop
                         val targetAlias = direct.groupValues[1]
-                        val marker = direct.groupValues[2]
+                        val marker = decodeRegressionLiteral(direct.groupValues[2])
                         val targetPath = aliases[targetAlias] ?: return@directLoop
                         if (assertionCount >= MAX_REGRESSION_LITERAL_ASSERTIONS) {
                             incomplete += "claims-regression-literal-bound"
@@ -514,10 +519,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                         }
                         assertionCount += 1
                         val rawMarker = markerMatch.groupValues[1].ifBlank { markerMatch.groupValues[2] }
-                        val marker = rawMarker
-                            .replace("\\'", "'")
-                            .replace("\\\"", "\"")
-                            .replace("\\\\", "\\")
+                        val marker = decodeRegressionLiteral(rawMarker)
                         if (marker.isBlank()) return@markerLoop
 
                         val present = target?.text?.contains(marker) == true

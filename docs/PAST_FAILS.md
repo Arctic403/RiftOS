@@ -285,7 +285,7 @@ The M3 regression itself is corrected so the four shared cognitive constants are
 
 ## FAIL-2026-09-24-005 — M3 promotion advanced lifecycle but older M2 regression froze the pre-M3 program summary
 
-**Status:** FIXED IN SOURCE / AWAITING BUILDER + LIVE OBSERVER VERIFICATION.
+**Status:** RESOLVED — Builder run `36082319213` / run number `359` installed source `7be822794fb590be2116e74f9f4302b2a1014bb4`; the live whitespace-only `n2-phase-authority.json` fixture selected contract + M1 + M2 + M3, emitted `authority-consumer-tests=required`, had zero unresolved obligations, and exact restoration returned proofs to `mode=none` / zero changes.
 
 **Date:** 2026-09-24
 
@@ -325,19 +325,18 @@ This confirms the authority-consumer impact gap already foreshadowed by FAIL-003
 6. The stale M2 global-summary assertion is removed, and the same mutable-summary assertion is proactively removed from M3. Their structured per-phase/macro promotion evidence remains authoritative.
 7. Exact-candidate execution remains Builder authority; the new Observer layer guarantees the complete bounded direct-consumer set is explicit before Builder.
 
-### Resolution target
+### Live proof completed
 
-- remove the stale M2 whole-program summary assertion while preserving its structured M2 promotion checks;
-- harden proof-impact selection for direct machine-authority consumers;
-- permanently regression-gate that `n2-phase-authority.json` selects every maintained direct consumer;
-- Builder must pass the corrected M2/M3 regressions plus semantic-impact and proof-obligation gates before this entry becomes resolved;
-- after install, a whitespace-only valid JSON edit to `riftmemory/n2-phase-authority.json` must make live proofs select contract + M1 + M2 + M3 and emit `authority-consumer-tests` as required, then exact file restoration must return the repository clean.
+- run `359` passed the corrected M2/M3 regressions plus semantic-impact and proof-obligation gates;
+- a whitespace-only valid JSON edit to `riftmemory/n2-phase-authority.json` made live proofs select exactly contract + M1 + M2 + M3;
+- `authority-consumer-tests` was `required` with all four tests in `satisfiesBy`, zero unresolved obligations and no incomplete reasons;
+- exact JSON restoration returned proofs to `mode=none`, zero changes/tests/obligations and a clean Git tree.
 
 ---
 
 ## FAIL-2026-09-24-006 — Semantic-impact regression silently scanned zero test files because its discovery regex was over-escaped
 
-**Status:** FIXED IN SOURCE / AWAITING BUILDER + LIVE CLAIMS VERIFICATION.
+**Status:** BUILDER GREEN / LIVE DISCOVERY DETECTION PASSED / CLEAN-RESTORE PENDING ESCAPED-LITERAL FALSE-POSITIVE REBUILD. Builder run `36082319213` / run number `359` installed source `7be822794fb590be2116e74f9f4302b2a1014bb4`; the temporary zero-match discovery fixture produced `regression-discovery-pattern-empty` exactly as required.
 
 **Date:** 2026-09-24
 
@@ -371,18 +370,18 @@ The failed HEAD was inspected before any source fix. Claims, consistency, integr
 4. `scripts/test-rift-documentation-claims-v1.mjs` permanently gates the new coverage label, bound, helper call, claim kind, finding code and incomplete reason.
 5. Exact Builder execution remains authoritative; this claims-layer rule only proves that a maintained regression's own file-discovery oracle is non-vacuous.
 
-### Resolution target
+### Live proof status
 
-- the over-escaped file-discovery regex in `test-rift-semantic-impact-v1.mjs` is corrected to `/^test-.*\.(?:mjs|js)$/`;
-- bounded regression-discovery sanity is implemented in the claims Observer and permanently source-gated;
-- Builder must pass semantic-impact + documentation-claims + proof-obligation gates;
-- after install, a temporary wrong discovery regex must produce the new claims finding and exact restoration must return claims clean before FAIL-006 is RESOLVED.
+- run `359` passed semantic-impact + documentation-claims + proof-obligation Builder gates;
+- a temporary zero-match discovery regex produced `regression-discovery-pattern-empty` exactly as required;
+- after fixture removal, that discovery finding disappeared, proving the FAIL-006 detector itself;
+- claims did not return fully clean only because FAIL-007's newly generalized direct-literal parser exposed an unrelated escaped-JavaScript-literal false positive in `test-rift-shell-git.mjs`; FAIL-006 will close after the decoder rebuild restores a clean claims baseline.
 
 ---
 
 ## FAIL-2026-09-24-007 — N2 contract regression froze a refactored Source Intelligence implementation detail
 
-**Status:** FIXED IN SOURCE / AWAITING BUILDER + LIVE CLAIMS VERIFICATION.
+**Status:** SOURCE FIX EXTENDED / AWAITING REBUILD + LIVE CLAIMS VERIFICATION. Builder run `36082319213` / run number `359` passed the original FAIL-007 source repair, but the live claims proof exposed an escaped-JavaScript-literal false positive in the new direct-literal parser.
 
 **Date:** 2026-09-24
 
@@ -417,14 +416,17 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 3. Direct and loop assertions share the existing `MAX_REGRESSION_LITERAL_ASSERTIONS=2048` fail-closed budget and the same blocking `regression-literal-marker-missing` rule.
 4. The generalized pass reuses `RiftSourceIntelligenceV2.referenceCodeMask(...)` so comment/string lookalikes do not become source claims.
 5. `scripts/test-rift-documentation-claims-v1.mjs` permanently gates `*Read`, `*Assert`, direct-literal and executable-code-mask coverage.
-6. Exact Builder execution remains authoritative; dynamic/template includes remain outside the deterministic grammar unless the literal target can be resolved exactly.
+6. Live run `359` exposed one false positive: raw JavaScript literal text such as `\\$input` was compared before JavaScript escape normalization, even though the runtime string and Kotlin source both contain `\$input`. Current source centralizes deterministic minimal escape decoding in `decodeRegressionLiteral(...)` and applies it to both direct assertions and marker-loop assertions.
+7. The independent Builder regression now scans maintained `*Read(...)` aliases and direct/prefixed `*Assert.ok(alias.includes('literal'))` assertions itself, using its own `decodeRegressionMarker(...)`; the existing RiftGit escaped `$input` assertion therefore becomes a permanent false-positive control.
+8. Exact Builder execution remains authoritative; dynamic/template includes remain outside the deterministic grammar unless the literal target can be resolved exactly.
 
 ### Resolution target
 
 - the obsolete `val machineAuthority = listOf(` contract assertion is replaced with the stable `fun isMachineAuthorityPath(` surface while exact authority-path checks remain;
 - claims regression-literal ownership is generalized to direct `*Assert.ok(alias.includes('literal'))` assertions and `*Read(...)` aliases with executable-code masking;
-- Builder must pass N2 contract + documentation-claims regressions;
-- after install, a temporary direct wrong-literal assertion must produce `regression-literal-marker-missing`, then exact restoration must return claims clean before FAIL-007 is RESOLVED.
+- run `359` already passed the original N2 contract + documentation-claims regressions, but the live claims pass exposed the escaped-literal false positive described above;
+- the decoder rebuild must pass the strengthened documentation-claims regression, including the existing RiftGit escaped-literal false-positive control;
+- after install, baseline claims must be clean, then a temporary direct wrong-literal assertion must produce `regression-literal-marker-missing`, and exact restoration must return claims clean before FAIL-007 is RESOLVED.
 
 
 

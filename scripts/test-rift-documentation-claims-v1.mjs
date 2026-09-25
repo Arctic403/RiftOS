@@ -32,6 +32,7 @@ for (const marker of [
   'private const val MAX_REGRESSION_LITERAL_ASSERTIONS = 2_048',
   'private const val MAX_REGRESSION_DISCOVERY_PATTERNS = 512',
   'checkRegressionLiteralOwnership(files, incomplete, ::add)',
+  'private fun decodeRegressionLiteral(raw: String): String =',
   'val directLiteralPatterns = listOf(',
   '[A-Za-z_][A-Za-z0-9_]*Read',
   '[A-Za-z_][A-Za-z0-9_]*Assert',
@@ -104,14 +105,34 @@ for (const name of fs.readdirSync(path.join(root, 'scripts')).sort()) {
   const testPath = path.join('scripts', name);
   const testText = read(testPath);
   const aliases = new Map();
-  for (const match of testText.matchAll(/^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:JSON\.parse\(\s*)?read\(['"]([^'"]+)['"]\)\s*\)?\s*;/gm)) {
+  for (const match of testText.matchAll(/^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:JSON\.parse\(\s*)?(?:read|[A-Za-z_][A-Za-z0-9_]*Read)\(['"]([^'"]+)['"]\)\s*\)?\s*;/gm)) {
     aliases.set(match[1], match[2]);
   }
-  const loopPattern = /for\s*\(\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s+of\s*\[(.*?)]\s*\)\s*\{(.*?assert\.ok\(.*?\);\s*)\}/gs;
+
+  const directLiteralPatterns = [
+    /(?:assert|[A-Za-z_][A-Za-z0-9_]*Assert)\.ok\(\s*([A-Za-z_][A-Za-z0-9_]*)\.includes\(\s*'([^']*)'\s*\)/g,
+    /(?:assert|[A-Za-z_][A-Za-z0-9_]*Assert)\.ok\(\s*([A-Za-z_][A-Za-z0-9_]*)\.includes\(\s*"([^"]*)"\s*\)/g,
+  ];
+  for (const pattern of directLiteralPatterns) {
+    for (const direct of testText.matchAll(pattern)) {
+      const targetPath = aliases.get(direct[1]);
+      if (!targetPath) continue;
+      const targetText = fs.existsSync(path.join(root, targetPath)) ? read(targetPath) : null;
+      regressionLiteralAssertions += 1;
+      assert.ok(regressionLiteralAssertions <= 2048, 'regression literal assertion bound exceeded');
+      const marker = decodeRegressionMarker(direct[2]);
+      if (!marker) continue;
+      if (targetText === null || !targetText.includes(marker)) {
+        regressionLiteralMismatches.push(testPath + ' -> ' + targetPath + ': ' + marker);
+      }
+    }
+  }
+
+  const loopPattern = /for\s*\(\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s+of\s*\[(.*?)]\s*\)\s*\{(.*?(?:assert|[A-Za-z_][A-Za-z0-9_]*Assert)\.ok\(.*?\);\s*)\}/gs;
   for (const loop of testText.matchAll(loopPattern)) {
     const variable = loop[1];
     const body = loop[3];
-    const includes = new RegExp('assert\\.ok\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\.includes\\(\\s*' + variable + '\\s*\\)').exec(body);
+    const includes = new RegExp('(?:assert|[A-Za-z_][A-Za-z0-9_]*Assert)\\.ok\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\.includes\\(\\s*' + variable + '\\s*\\)').exec(body);
     if (!includes) continue;
     const targetPath = aliases.get(includes[1]);
     if (!targetPath) continue;
