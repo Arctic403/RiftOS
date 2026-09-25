@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-018 — Local Agent Batch transport validator froze split poll/cancel usage strings
 
-**Status:** SOURCE FIXED / BUILDER RERUN PENDING.
+**Status:** SOURCE FIXED — fixing source `b929f4075ac42ec345671d7a0089d06c4c4cc6d4`; Builder rerun pending.
 
 **Affected source:** `39e11ca1bab25ab415c7ac05952d0aabdcc220a7` (`Expose Batch V2 through Local Agent`), Builder run `36189514137`.
 
