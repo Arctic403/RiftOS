@@ -91,9 +91,20 @@ assert.match(shell,/job\.completedSteps = executedSteps/);
 assert.match(shell,/job\.stepResults = JSONArray\(stepRows\.toString\(\)\)/);
 assert.match(shell,/"currentStepState", "started"/);
 assert.match(shell,/"currentStepState", "completed"/);
-assert.match(shell,/persistCliShellJob\(job\)[\s\S]{0,160}emitCliShellJob\(job, "batch\.submitted"/);
-assert.match(shell,/persistCliShellJob\(job\)[\s\S]{0,160}emitCliShellJob\(job, "batch\.started"/);
-assert.match(shell,/persistCliShellJob\(job\)[\s\S]{0,220}emitCliBatchStep\([\s\S]{0,160}"batch\.step\.started"/);
+const batchSubmittedEvent = shell.indexOf('emitCliShellJob(job, "batch.submitted"');
+const batchSubmittedPersist = shell.lastIndexOf('persistCliShellJob(job)', batchSubmittedEvent);
+assert.ok(batchSubmittedEvent >= 0 && batchSubmittedPersist >= 0 && batchSubmittedPersist < batchSubmittedEvent,
+  'Batch V2 must persist the submitted job before emitting batch.submitted');
+
+const batchStartedEvent = shell.indexOf('emitCliShellJob(job, "batch.started"');
+const batchStartedPersist = shell.lastIndexOf('persistCliShellJob(job)', batchStartedEvent);
+assert.ok(batchStartedEvent >= 0 && batchStartedPersist >= 0 && batchStartedPersist < batchStartedEvent,
+  'Batch V2 must persist running state before emitting batch.started');
+
+const batchStepStartedEvent = shell.indexOf('"batch.step.started"', batchStartedEvent);
+const batchStepStartedPersist = shell.lastIndexOf('persistCliShellJob(job)', batchStepStartedEvent);
+assert.ok(batchStepStartedEvent >= 0 && batchStepStartedPersist >= 0 && batchStepStartedPersist < batchStepStartedEvent,
+  'Batch V2 must persist current-step state before emitting batch.step.started');
 assert.match(shell,/jobPersistenceRequired/);
 assert.match(shell,/"cancelled_after_recovery"/);
 

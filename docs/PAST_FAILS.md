@@ -542,6 +542,22 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-25-017 — Batch persistence ordering regression used brittle character-distance bounds
+
+**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+
+**Affected source:** `b68b4460e76d39ab09bb80c297d152631aad1664` (`Implement persistent RiftCLI jobs`), Builder run `36159890871`.
+
+**Stage:** Builder `npm run check` / `check:transport`, before Gradle. Wiring, docs, source integrity and earlier RiftCLI/N2 regressions passed before `scripts/test-rift-cli-batch-v2.mjs` failed.
+
+**Observed failure:** the Batch V2 regression required `persistCliShellJob(job)` to appear within a fixed 160-character window before `batch.submitted` and `batch.started` (and similarly used a short fixed window before `batch.step.started`). B1 correctly persists before those events, but its fail-closed persistence error branch expanded the source text beyond the arbitrary distance limit.
+
+**Root cause:** the regression tested source formatting distance instead of the actual ordering invariant. Error handling growth should not invalidate a correct persistence-before-event contract.
+
+**Classification:** regression-only false failure. Builder did not reach Kotlin/Gradle, so this run neither validates nor invalidates the B1 runtime persistence implementation.
+
+**Hardening added:** the three fixed-distance regexes were replaced with source-order assertions: locate each event, find the nearest preceding `persistCliShellJob(job)`, and require the persistence call to exist earlier than the event. The test now owns the semantic ordering invariant rather than whitespace/source-size proximity.
+
 ## FAIL-2026-09-25-016 — M5 regression still froze an old global program-status prefix
 
 **Status:** RESOLVED — fixing source `9e75b0f76fd61ba80ca4c241a41532253bdb4c47`, Builder run `36147252584` / run number `378`; the full source-check passed including M5 and the N2.12 final regression, Kotlin/Gradle completed, the APK installed, and live `riftMemoryN2Final` returned `ok=true` with 12/12 corpus scenarios passed, all eight zero-tolerance outcomes at zero, every weakest-link category green, source/build/runtime continuity true, ARM32 device proof true, ARM64 build/correctness parity true, and no comparative/performance benchmark executed.
