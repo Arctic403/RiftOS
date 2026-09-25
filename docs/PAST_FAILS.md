@@ -291,6 +291,8 @@ The M3 regression itself is corrected so the four shared cognitive constants are
 
 **Failed RiftOS source:** `754fc0e860a6d4f3a97697c62f84733081f73286`
 
+**Fixing source SHA:** `deaa85a7ff20eff75e3339419f28beded354843a` — removes mutable whole-program lifecycle assertions from M2/M3 regressions, adds bounded machine-authority config-read direct-dependent discovery, and adds required/unresolved authority-consumer proof obligations. Builder and installed live verification are still required before this entry becomes RESOLVED.
+
 **Builder run ID:** `36078454699`
 
 **Signing mode:** `alpha-development`
