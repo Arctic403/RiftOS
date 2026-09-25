@@ -542,6 +542,24 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-25-013 — Phase-local N2 regression froze mutable global lifecycle wording
+
+**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+
+**Affected source:** `457a7d0c819aebfe7bc6f378dbd468153e2b77a7` (`Promote N2-M5 memory`), Builder run `36101879988`.
+
+**Stage:** Builder `npm run check` / `check:transport`, before Gradle. Source integrity was clean and syntax preflight was empty/clean.
+
+**Observed failure:** `scripts/test-rift-memory-n2-m4-v1.mjs` failed on `assert.ok(phase.runtimeStatus.includes('N2-M4 PROMOTED DIAGNOSTICS'))` after M5 promotion changed the authoritative runtime summary to `N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 PROMOTED DIAGNOSTICS`. The M4 diagnostic itself did not fail; the regression rejected a valid later lifecycle state.
+
+**Root cause:** the phase-local M4 regression duplicated mutable global lifecycle presentation owned by `n2-phase-authority.json` / `test-rift-memory-n2-contract-v1.mjs` / `validate-rift-docs.mjs`. It assumed M4 would remain immediately adjacent to the terminal `PROMOTED DIAGNOSTICS` suffix and also froze the global promoted-phase count at `10`. The M5 regression carried the same latent defects and would have failed when M6 promotes N2.10 + N2.11.
+
+**Classification:** regression-only false failure. Installed M5 evidence on source `d650e57dff09a878f02edfef7e175ed02d42f750`, Builder run `36100246139` / `370`, remains valid; canonical runtime authority remains inactive.
+
+**Why Observer did not reject it before push:** Claims/Integrity/Consistency/Contracts/Proofs correctly validated ownership, structure, dependencies and proof selection, but they do not execute arbitrary JavaScript assertion semantics. Claims had already caught the stale promoted-count literal during promotion, but the contiguous runtime-status substring remained syntactically and structurally valid until Builder executed the regression. Builder source execution therefore remains a required independent authority.
+
+**Hardening added:** M4 and M5 phase-local regressions now parse the authoritative promoted-diagnostics chain and assert that their own macro ID is a member, while the N2 contract regression and docs validator retain ownership of the exact whole `runtimeStatus`. M4/M5 no longer require a literal global promoted-phase count from the N2 contract test. Their stable phase-specific source/run/macro assertions remain intact. This prevents later M6 promotion from breaking older phase regressions solely because the global lifecycle advances.
+
 ## FAIL-2026-09-25-012 — Repo-scoped Git pushes advanced the whole Workspace Records checkpoint
 
 **Status:** RESOLVED — fixing/live runtime source `384f3d3a9a93a875bb531f07a519fb2df8f2d487`, Builder run `36097190735` / run number `369`; live cross-repo isolation passed and exact restoration returned the workspace and all Observer views clean.

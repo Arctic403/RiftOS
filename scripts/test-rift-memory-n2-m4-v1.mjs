@@ -150,11 +150,11 @@ assert.equal(phase.phases.find(row => row.phase === 'N2.7')?.builderRunNumber, '
 assert.equal(phase.phases.find(row => row.phase === 'N2.8')?.builderRunNumber, '368');
 assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M4')?.status, 'promoted');
 assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
-assert.ok(phase.runtimeStatus.includes('N2-M4 PROMOTED DIAGNOSTICS'));
+const promotedDiagnostics = phase.runtimeStatus.match(/^N2 CANONICAL MEMORY RUNTIME INACTIVE; (.+) PROMOTED DIAGNOSTICS$/)?.[1]?.split(' + ') ?? [];
+assert.ok(promotedDiagnostics.includes('N2-M4'));
 assert.ok(pkg.scripts['check:transport'].includes('node scripts/test-rift-memory-n2-m4-v1.mjs'));
 
 for (const marker of [
-  "n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 10",
   "n2PhaseAuthority.macroImplementationPlan[3].status, 'promoted'",
   'd39960832a701311461058670b5b93597ae612c9',
   "row.builderRunNumber, '368'",
