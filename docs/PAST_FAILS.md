@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-013 — Phase-local N2 regression froze mutable global lifecycle wording
 
-**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+**Status:** RESOLVED — fixing source `0cc1b507271015ae99e270b7ad557a41c6e8be29`, Builder run `36102430488` / run number `372`; Builder completed successfully, the repaired APK was installed from the exact fixing source, M1-M5 diagnostics remained green, and the post-install Observer baseline returned claims/integrity/consistency/contracts clean with proofs `mode=none`.
 
 **Affected source:** `457a7d0c819aebfe7bc6f378dbd468153e2b77a7` (`Promote N2-M5 memory`), Builder run `36101879988`.
 
