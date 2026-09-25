@@ -12,6 +12,7 @@ const localAgent=read('android/app/src/main/java/com/riftos/app/RiftVortexLocalA
 const mcpServer=read('android/app/src/main/java/com/riftos/app/RiftMcpServer.kt');
 const gradle=read('android/app/build.gradle.kts');
 const oldBatch=read('src/riftshell-batch.js');
+const transportValidator=read('scripts/validate-rift-transport.mjs');
 
 assert.ok(core.includes(String.raw`\"batchV2\":true`));
 assert.ok(core.includes(String.raw`\"batchV2MaxSteps\":16`));
@@ -255,6 +256,10 @@ assert.match(localAgent,/toolName = "rift_cli_job_recover"/);
 assert.match(localAgent,/nativeShell\.executeCliForLocalAgent\(cwd, argv\)/,
   'Local Agent Batch must re-enter the existing native RiftCLI driver instead of executing jobs itself');
 assert.match(localAgent,/executionOwner", "riftcli"/);
+assert.ok(transportValidator.includes('services.includes(\'"poll","cancel"->{\')'));
+assert.ok(transportValidator.includes('services.includes(\'require(args.size==1){"usage: riftos-agent batch $action <job-id>"}\')'));
+assert.ok(!transportValidator.includes('usage: riftos-agent batch poll <job-id>'));
+assert.ok(!transportValidator.includes('usage: riftos-agent batch cancel <job-id>'));
 assert.ok(!mcpServer.includes('rift_cli_batch'),'Batch V2 must remain unexposed from dedicated MCP tools until Local Agent exposure is live-proven');
 assert.ok(!mcpServer.includes('rift_cli_job_recover'),'recovery must remain unexposed from dedicated MCP tools until Local Agent exposure is live-proven');
 

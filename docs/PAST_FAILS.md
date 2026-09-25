@@ -542,6 +542,28 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-25-018 — Local Agent Batch transport validator froze split poll/cancel usage strings
+
+**Status:** SOURCE FIXED / BUILDER RERUN PENDING.
+
+**Affected source:** `39e11ca1bab25ab415c7ac05952d0aabdcc220a7` (`Expose Batch V2 through Local Agent`), Builder run `36189514137`.
+
+**Stage:** Builder `npm run check` / `check:transport`, before Gradle. Source syntax, source integrity, native wiring, the 19-tool MCP surface and all transport checks before the new Local Agent Batch assertion passed.
+
+**Observed failure:** `validate-rift-transport.mjs` required literal source strings for separate `riftos-agent batch poll <job-id>` and `riftos-agent batch cancel <job-id>` guards. The implementation intentionally uses one fixed `"poll","cancel"` branch with `require(args.size==1){"usage: riftos-agent batch $action <job-id>"}`, so the validator false-failed even though only those two actions can enter the branch and exactly one job ID is required.
+
+**Root cause:** the transport validator asserted one source spelling rather than the bounded grammar invariant. A shared branch for two fixed actions is semantically equivalent to two duplicate branches and is preferable because it keeps their input contract identical.
+
+**Classification:** validation-only false failure. Builder never reached Kotlin/Gradle, so this run neither validates nor invalidates the Local Agent Batch runtime implementation.
+
+**Why Observer did not prevent it:** Proofs correctly selected the changed Batch regression/check surface with zero unresolved obligations, but selected source checks are not equivalent to executed Builder `npm run check`. The stale literal was inside the validation program itself, so semantic repository consistency remained clean.
+
+**Hardening added:** the transport check now requires the fixed `"poll","cancel"` branch plus the single bounded `require(args.size==1)` usage guard, rather than requiring duplicated poll/cancel usage literals. It still separately requires bounded submit, recover grammar and Local Agent Batch plan decoding. `test-rift-cli-batch-v2.mjs` now reads the transport validator directly and requires the shared branch/guard while forbidding the obsolete split poll/cancel literals, giving Proofs a directly affected regression for this failure class.
+
+**Resolution target:** push the validator repair, require the full Builder source-check to pass the Local Agent Batch transport assertion, then continue through Kotlin/Gradle/install and on-device Local Agent Batch proof before promotion.
+
+---
+
 ## FAIL-2026-09-25-017 — Batch persistence ordering regression used brittle character-distance bounds
 
 **Status:** RESOLVED — fixing source `cacbc36dca906f226953a926a9eb66138817863b`, Builder run `36161133278` / run number `381`, passed the corrected Batch V2 regression and full Builder/install path; the installed build then passed B1 force-stop recovery with the same persisted job returning `recovery_required`, no blind replay, released-on-process-loss lease state, explicit recovered cancellation, and clean post-proof Observer.
