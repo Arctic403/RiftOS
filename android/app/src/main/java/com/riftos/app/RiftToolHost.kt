@@ -64,6 +64,7 @@ class RiftToolHost(
     private val n2M2Diagnostic: JSONObject
     private val n2M3Diagnostic: JSONObject
     private val n2M4Diagnostic: JSONObject
+    private val n2M5Diagnostic: JSONObject
     private data class CliJob(
         val id: String,
         val requestId: String,
@@ -123,6 +124,7 @@ class RiftToolHost(
         n2M2Diagnostic = RiftMemoryN2M2SelfTest.run(appContext)
         n2M3Diagnostic = RiftMemoryN2M3SelfTest.run(appContext)
         n2M4Diagnostic = RiftMemoryN2M4SelfTest.run(appContext)
+        n2M5Diagnostic = RiftMemoryN2M5SelfTest.run(appContext)
     }
 
     fun access(): JSONObject = JSONObject()
@@ -471,6 +473,7 @@ class RiftToolHost(
             value.put("riftMemoryN2M2", JSONObject(n2M2Diagnostic.toString()))
             value.put("riftMemoryN2M3", JSONObject(n2M3Diagnostic.toString()))
             value.put("riftMemoryN2M4", JSONObject(n2M4Diagnostic.toString()))
+            value.put("riftMemoryN2M5", JSONObject(n2M5Diagnostic.toString()))
         }
         recordAudit(name, normalizedArgs, true, null, duration)
         return JSONObject()
@@ -595,6 +598,7 @@ class RiftToolHost(
                                 value.put("riftMemoryN2M2", JSONObject(n2M2Diagnostic.toString()))
                                 value.put("riftMemoryN2M3", JSONObject(n2M3Diagnostic.toString()))
                                 value.put("riftMemoryN2M4", JSONObject(n2M4Diagnostic.toString()))
+                                value.put("riftMemoryN2M5", JSONObject(n2M5Diagnostic.toString()))
                             }
                             recordAudit(name, normalizedArgs, true, null)
                             JSONObject().put("ok", true).put("name", name).put("value", value)
@@ -941,6 +945,7 @@ class RiftToolHost(
                     value.put("riftMemoryN2M2", JSONObject(n2M2Diagnostic.toString()))
                     value.put("riftMemoryN2M3", JSONObject(n2M3Diagnostic.toString()))
                     value.put("riftMemoryN2M4", JSONObject(n2M4Diagnostic.toString()))
+                    value.put("riftMemoryN2M5", JSONObject(n2M5Diagnostic.toString()))
                 }
                 reply(
                     JSONObject()

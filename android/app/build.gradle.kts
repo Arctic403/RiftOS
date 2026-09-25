@@ -102,6 +102,8 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftMemoryProceduralFailureV1.kt",
         "src/main/java/com/riftos/app/RiftMemoryRetrievalContextV1.kt",
         "src/main/java/com/riftos/app/RiftMemoryN2M4SelfTest.kt",
+        "src/main/java/com/riftos/app/RiftMemoryObserverValidatorLoopV1.kt",
+        "src/main/java/com/riftos/app/RiftMemoryN2M5SelfTest.kt",
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
         "src/main/java/com/riftos/app/RiftFrozenByteBpeV1.kt",
