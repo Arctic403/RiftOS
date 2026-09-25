@@ -333,6 +333,49 @@ This confirms the authority-consumer impact gap already foreshadowed by FAIL-003
 - Builder must pass the corrected M2/M3 regressions plus semantic-impact and proof-obligation gates before this entry becomes resolved;
 - after install, a whitespace-only valid JSON edit to `riftmemory/n2-phase-authority.json` must make live proofs select contract + M1 + M2 + M3 and emit `authority-consumer-tests` as required, then exact file restoration must return the repository clean.
 
+---
+
+## FAIL-2026-09-24-006 — Semantic-impact regression silently scanned zero test files because its discovery regex was over-escaped
+
+**Status:** FIXED IN SOURCE / AWAITING BUILDER + LIVE CLAIMS VERIFICATION.
+
+**Date:** 2026-09-24
+
+**Failed RiftOS source:** `274facf5148e008b1bc093c2eb62e55d882145cc`
+
+**Builder run ID:** `36080113265`
+
+**Signing mode:** `alpha-development`
+
+**Failure stage:** Builder source checks, `npm run check` → `npm run check:transport` → `scripts/test-rift-semantic-impact-v1.mjs`.
+
+**Observed failure:** `AssertionError: phase-authority direct consumer not detected: test-rift-memory-n2-contract-v1.mjs`.
+
+### Root cause
+
+The new FAIL-005 regression attempted to discover maintained test files with the JavaScript regex literal `/^test-.*\\\\.(?:mjs|js)$/`. In a JavaScript regex literal, `\\\\.` matches a literal backslash followed by any character rather than a literal dot. Normal files such as `test-rift-memory-n2-contract-v1.mjs` therefore did not match, so the regression scanned zero candidate test files and incorrectly concluded that the known direct phase-authority consumer was absent.
+
+The actual phase-authority literal-read matcher was not the failing component; test-file discovery prevented it from seeing any maintained regression files.
+
+### Why the Observer did not prevent it
+
+The failed HEAD was inspected before any source fix. Claims, consistency, integrity and contracts were complete/clean with zero findings; proofs returned `mode=none`, zero selected tests and zero obligations. The claims oracle validates regression literal ownership but does not currently validate that a maintained regression's own discovery/filter regex actually selects any sibling maintained test files.
+
+### Observer hardening added
+
+1. `RiftDocumentationClaimsV1` now scans bounded maintained regressions that explicitly enumerate `scripts` with `readdirSync(...)` and validates their `.filter(name => /.../.test(name))` discovery regexes.
+2. Discovery regexes are compiled deterministically against the real sibling maintained `test-*.mjs/js` names. Invalid/unsupported patterns or a compiled regex that matches zero sibling tests become contradicted `regression-discovery-pattern` claims and blocking `regression-discovery-pattern-empty` findings.
+3. The scan is bounded by `MAX_REGRESSION_DISCOVERY_PATTERNS=512`; overflow fails closed with `claims-regression-discovery-bound`.
+4. `scripts/test-rift-documentation-claims-v1.mjs` permanently gates the new coverage label, bound, helper call, claim kind, finding code and incomplete reason.
+5. Exact Builder execution remains authoritative; this claims-layer rule only proves that a maintained regression's own file-discovery oracle is non-vacuous.
+
+### Resolution target
+
+- the over-escaped file-discovery regex in `test-rift-semantic-impact-v1.mjs` is corrected to `/^test-.*\.(?:mjs|js)$/`;
+- bounded regression-discovery sanity is implemented in the claims Observer and permanently source-gated;
+- Builder must pass semantic-impact + documentation-claims + proof-obligation gates;
+- after install, a temporary wrong discovery regex must produce the new claims finding and exact restoration must return claims clean before FAIL-006 is RESOLVED.
+
 
 
 

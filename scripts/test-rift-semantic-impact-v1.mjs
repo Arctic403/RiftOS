@@ -119,7 +119,7 @@ const directReadPatterns = [
   new RegExp('\\breadFileSync\\s*\\(\\s*[\\\'"]' + authorityLiteral + '[\\\'"]'),
 ];
 const authorityConsumers = readdirSync('scripts')
-  .filter(name => /^test-.*\\.(?:mjs|js)$/.test(name))
+  .filter(name => /^test-.*\.(?:mjs|js)$/.test(name))
   .filter(name => directReadPatterns.some(pattern => pattern.test(read('scripts/' + name))))
   .sort();
 

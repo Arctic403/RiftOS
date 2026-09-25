@@ -18,6 +18,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         private const val MAX_FINDINGS = 1_024
         private const val MAX_PREVIEW_ROWS = 240
         private const val MAX_REGRESSION_LITERAL_ASSERTIONS = 2_048
+        private const val MAX_REGRESSION_DISCOVERY_PATTERNS = 512
 
         private val IGNORED_DIRS = setOf(
             ".git", ".gradle", ".idea", "build", "dist", "node_modules", "out", "target",
@@ -135,6 +136,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         checkRelativeLinks(root, files, ::add)
         checkOwnership(root, files, ::add)
         checkRegressionLiteralOwnership(files, incomplete, ::add)
+        checkRegressionDiscoveryPatterns(files, incomplete, ::add)
         checkAuthorityPolicy(files, ::add)
         checkPhaseState(files, phaseAuthority, ::add)
         checkTodoLifecycle(files, ::add)
@@ -207,6 +209,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                 "relative-markdown-link-targets",
                 "source-ownership-ledger-existence-and-coverage",
                 "regression-literal-target-consistency",
+                "regression-discovery-pattern-sanity",
                 "documentation-authority-policy",
                 "machine-readable-phase-authority",
                 "n1.8-roadmap-current-state",
@@ -237,6 +240,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                 .put("maxFindings", MAX_FINDINGS)
                 .put("maxPreviewRows", MAX_PREVIEW_ROWS)
                 .put("maxRegressionLiteralAssertions", MAX_REGRESSION_LITERAL_ASSERTIONS)
+                .put("maxRegressionDiscoveryPatterns", MAX_REGRESSION_DISCOVERY_PATTERNS)
                 .put("maxPhaseAuthorityBytes", MAX_PHASE_AUTHORITY_BYTES))
             .put("preview", JSONObject()
                 .put("claimRows", claimRows.length())
@@ -498,6 +502,95 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
             }
     }
 
+
+    private fun checkRegressionDiscoveryPatterns(
+        files: List<TextFile>,
+        incomplete: MutableSet<String>,
+        add: (Claim) -> Unit
+    ) {
+        val siblingNames = files.asSequence()
+            .map { it.path }
+            .filter { it.startsWith("scripts/") && !it.removePrefix("scripts/").contains('/') }
+            .map { it.substringAfterLast('/') }
+            .filter { it.startsWith("test-") && (it.endsWith(".mjs") || it.endsWith(".js")) }
+            .distinct()
+            .sorted()
+            .toList()
+
+        val discoveryPattern = Regex(
+            "\\.filter\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=>\\s*/((?:\\\\.|[^/])*)/([A-Za-z]*)\\.test\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)\\s*\\)"
+        )
+        var patternCount = 0
+
+        files.asSequence()
+            .filter {
+                val lower = it.path.lowercase()
+                !it.historical &&
+                    lower.startsWith("scripts/test-") &&
+                    (lower.endsWith(".mjs") || lower.endsWith(".js")) &&
+                    (it.text.contains("readdirSync('scripts')") || it.text.contains("readdirSync(\"scripts\")"))
+            }
+            .forEach testLoop@ { test ->
+                discoveryPattern.findAll(test.text).forEach patternLoop@ { match ->
+                    if (patternCount >= MAX_REGRESSION_DISCOVERY_PATTERNS) {
+                        incomplete += "claims-regression-discovery-bound"
+                        return@testLoop
+                    }
+                    patternCount += 1
+
+                    val lhs = match.groupValues[1]
+                    val regexBody = match.groupValues[2]
+                    val flags = match.groupValues[3]
+                    val rhs = match.groupValues[4]
+                    if (lhs != rhs) return@patternLoop
+
+                    val options = linkedSetOf<RegexOption>()
+                    var unsupportedFlag = false
+                    for (flag in flags) {
+                        when (flag) {
+                            'i' -> options += RegexOption.IGNORE_CASE
+                            'm' -> options += RegexOption.MULTILINE
+                            's' -> options += RegexOption.DOT_MATCHES_ALL
+                            'g', 'y', 'u', 'd' -> Unit
+                            else -> unsupportedFlag = true
+                        }
+                    }
+
+                    val compiled = if (unsupportedFlag) {
+                        null
+                    } else {
+                        runCatching { Regex(regexBody, options) }.getOrNull()
+                    }
+                    val matches = compiled?.let { regex ->
+                        siblingNames.filter { name -> regex.containsMatchIn(name) }
+                    }.orEmpty()
+
+                    val state = when {
+                        compiled == null -> "contradicted"
+                        matches.isEmpty() -> "contradicted"
+                        else -> "verified"
+                    }
+                    add(
+                        Claim(
+                            kind = "regression-discovery-pattern",
+                            state = state,
+                            path = test.path,
+                            line = lineAt(test.text, match.range.first),
+                            subject = regexBody,
+                            authority = "regression-discovery-source",
+                            expected = "valid-regex-with-nonempty-script-test-match",
+                            observed = when {
+                                unsupportedFlag -> "unsupported-flags:" + flags
+                                compiled == null -> "invalid-regex"
+                                matches.isEmpty() -> "zero-matches"
+                                else -> "matches:" + matches.size
+                            }
+                        )
+                    )
+                }
+            }
+    }
+
     private fun checkAuthorityPolicy(files: List<TextFile>, add: (Claim) -> Unit) {
         val required = listOf(
             Triple(
@@ -725,6 +818,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         "ownership-document-existence" -> "documentation-ownership-owner-missing"
         "ownership-ledger-coverage" -> "documentation-ownership-entry-missing"
         "regression-literal-ownership" -> "regression-literal-marker-missing"
+        "regression-discovery-pattern" -> "regression-discovery-pattern-empty"
         "documentation-authority-policy" -> "documentation-authority-policy-missing"
         "roadmap-phase-state" -> "documentation-roadmap-state-stale"
         "project-status-promoted-source" -> "documentation-promotion-source-stale"
