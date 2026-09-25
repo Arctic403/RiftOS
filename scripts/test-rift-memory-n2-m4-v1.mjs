@@ -156,6 +156,7 @@ assert.ok(pkg.scripts['check:transport'].includes('node scripts/test-rift-memory
 for (const marker of [
   "n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 2",
   "n2PhaseAuthority.macroImplementationPlan[3].status, 'source-implemented'",
+  'android/app/src/main/java/com/riftos/app/RiftMemoryN2M4SelfTest.kt',
 ]) {
   assert.ok(contractTest.includes(marker), `N2 contract lifecycle regression missing M4 marker: ${marker}`);
 }

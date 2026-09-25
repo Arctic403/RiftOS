@@ -482,3 +482,33 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 **Resolution target:** Builder/source checks must pass the repaired docs validator and semantic-impact regression; after install, a harmless machine-authority edit must make live proofs select `validate-rift-docs.mjs` alongside the N2 direct consumers with zero unresolved obligations, then exact restoration must return the repository clean.
 
+**Builder follow-up:** run `36090570284` / run number `366` on source `ac1f5558f232f079f13baa973013c73415dbee30` passed the former FAIL-009 docs-validator failure point and advanced into the N2 contract regression. FAIL-009 therefore has source-gate evidence, but remains open for its required installed/live Observer verification until an APK reaches device proof.
+
+---
+
+## FAIL-2026-09-24-010 — N2 canonical-memory owner allowlist omitted the intentional M4 diagnostic self-test
+
+**Status:** FIX IN SOURCE / AWAITING BUILDER + DEVICE VERIFICATION.
+
+**Failed RiftOS source:** `ac1f5558f232f079f13baa973013c73415dbee30`
+
+**Builder run:** `36090570284` / run number `366`
+
+**Builder source:** `d1f159c341f583dc7901a25aa2ea8f3f6ed3a883`
+
+**Stage:** RiftOS source checks, `npm run check` -> `npm run check:transport` -> `scripts/test-rift-memory-n2-contract-v1.mjs`, before Gradle/Kotlin compilation.
+
+**Observed error:** `SQLite N2 memory leaked into an unauthorized Android owner: android/app/src/main/java/com/riftos/app/RiftMemoryN2M4SelfTest.kt`.
+
+**Root cause:** N2-M4 intentionally added `RiftMemoryN2M4SelfTest.kt` as a diagnostic-only app-private SQLite proof owner, matching the established M1/M2/M3 self-test pattern. The frozen N2 contract regression's explicit `n2AllowedMemoryKotlin` set was not advanced to include that new diagnostic owner. M4's runtime architecture was not disproven: the self-test remains `diagnosticOnly=true`, `runtimeAuthority=false`, and Local Agent/RiftCLI remain explicitly forbidden from owning the canonical/SQLite backend.
+
+**Classification:** stale source-owned N2 regression allowlist; not a Builder defect and not a canonical-runtime activation defect.
+
+**Observer result before fix:** exact failed HEAD `ac1f5558...` was clean: claims `complete=true`, `clean=true`, 0 findings; integrity `complete=true`, `clean=true`, 0 findings; consistency `complete=true`, 0 findings; contracts `complete=true`, `clean=true`, 0 findings; proofs `complete=true`, `mode=none`, 0 changes/tests/obligations/unresolved.
+
+**Why Observer missed it:** the existing claims engine can statically verify maintained regression `target.includes(literal)` ownership, but M4's regression only asserted lifecycle markers in `test-rift-memory-n2-contract-v1.mjs`; it did not assert that the M4 diagnostic self-test path itself was present in the contract's canonical-memory owner allowlist. On a clean committed tree the proof planner also does not execute the JS regression, so the stale allowlist remained invisible until Builder ran `npm check`.
+
+**Hardening added:** add `RiftMemoryN2M4SelfTest.kt` to the N2 contract's explicit allowed canonical/SQLite owners and bind the exact path into the M4 regression's `contractTest.includes(marker)` loop. This brings the relationship under the already-promoted regression-literal claims rule, so future removal/drift is statically visible to claims in addition to Builder execution. Future N2 phases that intentionally add a diagnostic canonical-memory owner must bind that owner into their phase regression rather than relying only on the global allowlist. A temporary removal fixture produced exactly one blocking `regression-literal-marker-missing` finding with subject `contractTest:android/app/src/main/java/com/riftos/app/RiftMemoryN2M4SelfTest.kt`; exact restoration returned claims to `complete=true`, `clean=true`, 0 findings.
+
+**Resolution target:** claims/integrity/consistency/contracts must remain clean on the fix, proofs must select the affected N2 contract/M4 gates with zero unresolved obligations, Builder must pass `npm check`, Gradle/Kotlin and packaging, then installed M4 diagnostics plus M1/M2/M3 continuity and the pending FAIL-009 live authority-consumer proof must pass before either failure is closed.
+

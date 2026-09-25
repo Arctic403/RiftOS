@@ -267,6 +267,7 @@ const n2AllowedMemoryKotlin = new Set([
   'android/app/src/main/java/com/riftos/app/RiftMemoryConsolidationV1.kt',
   'android/app/src/main/java/com/riftos/app/RiftMemoryBeliefDifferenceV1.kt',
   'android/app/src/main/java/com/riftos/app/RiftMemoryN2M3SelfTest.kt',
+  'android/app/src/main/java/com/riftos/app/RiftMemoryN2M4SelfTest.kt',
   'android/app/src/main/java/com/riftos/app/RiftToolHost.kt',
 ]);
 const n2KotlinFiles = n2Walk('android/app/src/main/java/com/riftos/app').filter(file => file.endsWith('.kt'));
