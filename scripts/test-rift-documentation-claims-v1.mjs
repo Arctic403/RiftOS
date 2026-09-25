@@ -29,6 +29,11 @@ for (const marker of [
   'private const val MAX_CLAIMS = 8_192',
   'private const val MAX_FINDINGS = 1_024',
   'private const val MAX_PREVIEW_ROWS = 240',
+  'private const val MAX_REGRESSION_LITERAL_ASSERTIONS = 2_048',
+  'checkRegressionLiteralOwnership(files, incomplete, ::add)',
+  'regression-literal-ownership',
+  'regression-literal-marker-missing',
+  'regression-literal-target-consistency',
   'private const val PHASE_AUTHORITY_PATH = "observer/phase-authority.json"',
   'private const val PHASE_AUTHORITY_SCHEMA = "rift-observer-phase-authority-v1"',
   'private const val MAX_PHASE_AUTHORITY_BYTES = 64L * 1024L',
@@ -70,6 +75,49 @@ assert.ok(
 assert.ok(
   claims.includes('val initiallyIncomplete = incomplete.isNotEmpty()'),
   'claim scan must expose fail-closed incomplete state',
+);
+
+function decodeRegressionMarker(value) {
+  return value
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
+}
+
+const regressionLiteralMismatches = [];
+let regressionLiteralAssertions = 0;
+for (const name of fs.readdirSync(path.join(root, 'scripts')).sort()) {
+  if (!/^test-.*\.(?:mjs|js)$/.test(name)) continue;
+  const testPath = path.join('scripts', name);
+  const testText = read(testPath);
+  const aliases = new Map();
+  for (const match of testText.matchAll(/^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:JSON\.parse\(\s*)?read\(['"]([^'"]+)['"]\)\s*\)?\s*;/gm)) {
+    aliases.set(match[1], match[2]);
+  }
+  const loopPattern = /for\s*\(\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s+of\s*\[(.*?)]\s*\)\s*\{(.*?assert\.ok\(.*?\);\s*)\}/gs;
+  for (const loop of testText.matchAll(loopPattern)) {
+    const variable = loop[1];
+    const body = loop[3];
+    const includes = new RegExp('assert\\.ok\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\.includes\\(\\s*' + variable + '\\s*\\)').exec(body);
+    if (!includes) continue;
+    const targetPath = aliases.get(includes[1]);
+    if (!targetPath) continue;
+    const targetText = fs.existsSync(path.join(root, targetPath)) ? read(targetPath) : null;
+    for (const markerMatch of loop[2].matchAll(/'([^']*)'|"([^"]*)"/g)) {
+      regressionLiteralAssertions += 1;
+      assert.ok(regressionLiteralAssertions <= 2048, 'regression literal assertion bound exceeded');
+      const marker = decodeRegressionMarker(markerMatch[1] || markerMatch[2]);
+      if (!marker) continue;
+      if (targetText === null || !targetText.includes(marker)) {
+        regressionLiteralMismatches.push(testPath + ' -> ' + targetPath + ': ' + marker);
+      }
+    }
+  }
+}
+assert.deepEqual(
+  regressionLiteralMismatches,
+  [],
+  'regression literal marker targets drifted from source ownership',
 );
 
 assert.ok(

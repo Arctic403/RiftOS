@@ -231,5 +231,54 @@ When Observer is hardened around this failure, fixtures should prove:
 - omitted authority consumer leaves an unresolved impact/proof obligation;
 - exact candidate execution of all impacted lifecycle tests is required before promotion metadata is considered green.
 
+---
+
+## FAIL-2026-09-24-004 — N2-M3 regression asserted shared cognitive constants against the wrong source file
+
+**Status:** FIXED IN SOURCE / AWAITING BUILDER VERIFICATION.
+
+**Date:** 2026-09-24
+
+**Failed RiftOS source:** `740a10a18f8fcf626b6156b85df1c32aeed82542`
+
+**Builder run ID:** `36074643676`
+
+**Signing mode:** `alpha-development`
+
+**Failure stage:** Builder source checks, `npm run check` → `npm run check:transport` → `scripts/test-rift-memory-n2-m3-v1.mjs`.
+
+**Observed failure:** `AssertionError: missing N2.6 belief/difference marker: const val BELIEF = "BELIEF"`.
+
+### Root cause
+
+The shared `RiftMemoryCognitiveClassV1` object intentionally lives in `RiftMemoryConsolidationV1.kt` and owns all cognitive class constants, including `BELIEF`, `PREDICTION`, `REFLECTION` and `DISCREPANCY`. The M3 regression correctly checked the N2.5 constants against the consolidation source, but incorrectly repeated those four shared constants in the marker list asserted against `RiftMemoryBeliefDifferenceV1.kt`.
+
+The runtime/source implementation was not missing those classes; the regression oracle pointed at the wrong source owner.
+
+### Why the Observer did not prevent it
+
+Before the regression was fixed, the failed source was checked exactly as HEAD. Claims, consistency, integrity and contracts all reported zero findings and proofs returned `mode=none` / zero obligations because no dirty candidate remained. The installed Observer also had no deterministic rule validating literal marker assertions inside maintained regression scripts against the source file alias they claimed to inspect.
+
+This exposes two related gaps:
+
+1. external Builder execution can disprove a clean pushed HEAD while the repository-only Observer remains unaware of that execution result;
+2. regression-oracle literal ownership was not statically validated.
+
+### Observer hardening added
+
+`RiftDocumentationClaimsV1` now includes a bounded `regression-literal-ownership` pass over maintained `scripts/test-*.mjs/js` files. It resolves `const alias = read('path')`, recognizes literal marker loops asserted via `alias.includes(marker)`, and checks every literal against the referenced source file. Missing literals become deterministic blocking findings with rule ID `regression-literal-marker-missing`.
+
+The pass is capped at 2,048 literal assertions and fails closed with `claims-regression-literal-bound`. `scripts/test-rift-documentation-claims-v1.mjs` permanently gates the new Observer rule.
+
+The M3 regression itself is corrected so the four shared cognitive constants are asserted against `RiftMemoryConsolidationV1.kt`; `RiftMemoryBeliefDifferenceV1.kt` is checked only for the N2.6 implementation it actually owns.
+
+### Future/live proof target
+
+- the pre-fix M3 regression must produce `regression-literal-marker-missing` under the installed claims oracle;
+- the corrected M3 regression must return claims clean;
+- exact/+1 regression-literal assertion bounds must fail closed;
+- Builder execution must pass `test-rift-documentation-claims-v1.mjs` and `test-rift-memory-n2-m3-v1.mjs` on the exact fixing SHA before this entry becomes RESOLVED.
+
+
 
 

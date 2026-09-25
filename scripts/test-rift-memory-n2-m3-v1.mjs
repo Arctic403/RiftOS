@@ -18,6 +18,10 @@ for (const marker of [
   'const val EPISODE_CLUSTER = "EPISODE_CLUSTER"',
   'const val PATTERN = "PATTERN"',
   'const val SEMANTIC = "SEMANTIC"',
+  'const val BELIEF = "BELIEF"',
+  'const val PREDICTION = "PREDICTION"',
+  'const val REFLECTION = "REFLECTION"',
+  'const val DISCREPANCY = "DISCREPANCY"',
   'const val MAX_OBSERVATIONS_PER_EPISODE = 64',
   'const val MAX_EPISODES_PER_CLUSTER = 64',
   'const val MAX_CLUSTERS_PER_PATTERN = 32',
@@ -41,10 +45,6 @@ for (const marker of [
 
 for (const marker of [
   'data class RiftMemoryDifferenceResultV1',
-  'const val BELIEF = "BELIEF"',
-  'const val PREDICTION = "PREDICTION"',
-  'const val REFLECTION = "REFLECTION"',
-  'const val DISCREPANCY = "DISCREPANCY"',
   'fun createBeliefCandidate(',
   'fun createPredictionCandidate(',
   'fun comparePredictionToObservation(',

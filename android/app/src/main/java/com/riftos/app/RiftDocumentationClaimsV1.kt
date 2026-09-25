@@ -17,6 +17,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         private const val MAX_CLAIMS = 8_192
         private const val MAX_FINDINGS = 1_024
         private const val MAX_PREVIEW_ROWS = 240
+        private const val MAX_REGRESSION_LITERAL_ASSERTIONS = 2_048
 
         private val IGNORED_DIRS = setOf(
             ".git", ".gradle", ".idea", "build", "dist", "node_modules", "out", "target",
@@ -133,6 +134,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         checkRequiredDocs(root, ::add)
         checkRelativeLinks(root, files, ::add)
         checkOwnership(root, files, ::add)
+        checkRegressionLiteralOwnership(files, incomplete, ::add)
         checkAuthorityPolicy(files, ::add)
         checkPhaseState(files, phaseAuthority, ::add)
         checkTodoLifecycle(files, ::add)
@@ -204,6 +206,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                 "required-current-document-existence",
                 "relative-markdown-link-targets",
                 "source-ownership-ledger-existence-and-coverage",
+                "regression-literal-target-consistency",
                 "documentation-authority-policy",
                 "machine-readable-phase-authority",
                 "n1.8-roadmap-current-state",
@@ -233,6 +236,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                 .put("maxClaims", MAX_CLAIMS)
                 .put("maxFindings", MAX_FINDINGS)
                 .put("maxPreviewRows", MAX_PREVIEW_ROWS)
+                .put("maxRegressionLiteralAssertions", MAX_REGRESSION_LITERAL_ASSERTIONS)
                 .put("maxPhaseAuthorityBytes", MAX_PHASE_AUTHORITY_BYTES))
             .put("preview", JSONObject()
                 .put("claimRows", claimRows.length())
@@ -412,6 +416,86 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                 "ownership-entry-present", if (covered) "present" else "missing"
             ))
         }
+    }
+
+
+    private fun checkRegressionLiteralOwnership(
+        files: List<TextFile>,
+        incomplete: MutableSet<String>,
+        add: (Claim) -> Unit
+    ) {
+        val byPath = files.associateBy { it.path }
+        val readAliasPattern = Regex(
+            "(?m)^\\s*const\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(?:JSON\\.parse\\(\\s*)?read\\(['\\\"]([^'\\\"]+)['\\\"]\\)\\s*\\)?\\s*;"
+        )
+        val markerLoopPattern = Regex(
+            "for\\s*\\(\\s*const\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+of\\s*\\[(.*?)]\\s*\\)\\s*\\{(.*?assert\\.ok\\(.*?\\);\\s*)\\}",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val stringLiteralPattern = Regex("'([^']*)'|\\\"([^\\\"]*)\\\"")
+        var assertionCount = 0
+
+        files.asSequence()
+            .filter {
+                val lower = it.path.lowercase()
+                !it.historical &&
+                    lower.startsWith("scripts/test-") &&
+                    (lower.endsWith(".mjs") || lower.endsWith(".js"))
+            }
+            .forEach testLoop@ { test ->
+                val aliases = linkedMapOf<String, String>()
+                readAliasPattern.findAll(test.text).forEach { match ->
+                    aliases[match.groupValues[1]] = match.groupValues[2]
+                }
+                if (aliases.isEmpty()) return@testLoop
+
+                markerLoopPattern.findAll(test.text).forEach loopLoop@ { loop ->
+                    val markerVariable = loop.groupValues[1]
+                    val markerArray = loop.groupValues[2]
+                    val body = loop.groupValues[3]
+                    val includesPattern = Regex(
+                        "assert\\.ok\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\.includes\\(\\s*" +
+                            Regex.escape(markerVariable) +
+                            "\\s*\\)"
+                    )
+                    val targetAlias = includesPattern.find(body)?.groupValues?.getOrNull(1)
+                        ?: return@loopLoop
+                    val targetPath = aliases[targetAlias] ?: return@loopLoop
+                    val target = byPath[targetPath]
+
+                    stringLiteralPattern.findAll(markerArray).forEach markerLoop@ { markerMatch ->
+                        if (assertionCount >= MAX_REGRESSION_LITERAL_ASSERTIONS) {
+                            incomplete += "claims-regression-literal-bound"
+                            return@testLoop
+                        }
+                        assertionCount += 1
+                        val rawMarker = markerMatch.groupValues[1].ifBlank { markerMatch.groupValues[2] }
+                        val marker = rawMarker
+                            .replace("\\'", "'")
+                            .replace("\\\"", "\"")
+                            .replace("\\\\", "\\")
+                        if (marker.isBlank()) return@markerLoop
+
+                        val present = target?.text?.contains(marker) == true
+                        add(
+                            Claim(
+                                kind = "regression-literal-ownership",
+                                state = if (present) "verified" else "contradicted",
+                                path = test.path,
+                                line = lineAt(test.text, loop.range.first),
+                                subject = targetAlias + ":" + marker,
+                                authority = "regression-target-source",
+                                expected = "literal-present-in:" + targetPath,
+                                observed = when {
+                                    target == null -> "target-unavailable:" + targetPath
+                                    present -> "literal-present"
+                                    else -> "literal-missing"
+                                }
+                            )
+                        )
+                    }
+                }
+            }
     }
 
     private fun checkAuthorityPolicy(files: List<TextFile>, add: (Claim) -> Unit) {
@@ -640,6 +724,7 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
         "ownership-source-existence" -> "documentation-ownership-source-missing"
         "ownership-document-existence" -> "documentation-ownership-owner-missing"
         "ownership-ledger-coverage" -> "documentation-ownership-entry-missing"
+        "regression-literal-ownership" -> "regression-literal-marker-missing"
         "documentation-authority-policy" -> "documentation-authority-policy-missing"
         "roadmap-phase-state" -> "documentation-roadmap-state-stale"
         "project-status-promoted-source" -> "documentation-promotion-source-stale"
