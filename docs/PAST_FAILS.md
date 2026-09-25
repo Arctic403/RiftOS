@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-019 — Local Agent Batch list duplicated unbounded native job payloads
 
-**Status:** SOURCE FIXED / BUILDER RERUN PENDING.
+**Status:** SOURCE FIXED — fixing source `da3cd71ada28dea6f4c09c83a829c541a329d7b4`; Builder rerun pending.
 
 **Affected installed source:** `72a3fdd49d00a5e9679522a3c7bc1f33689ba45c`, Builder run `36200028464` / run number `385`.
 
