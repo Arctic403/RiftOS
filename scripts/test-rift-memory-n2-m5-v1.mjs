@@ -90,7 +90,6 @@ assert.equal(n29?.status, 'promoted');
 assert.equal(n29?.promotedSourceSha, 'd650e57dff09a878f02edfef7e175ed02d42f750');
 assert.equal(n29?.builderRunNumber, '370');
 assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M5')?.status, 'promoted');
-assert.ok(phase.programStatus.includes('N2.0-N2.9 PROMOTED'));
 assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
 const parsePromotedDiagnostics = runtimeStatus => {
   const clause = String(runtimeStatus)

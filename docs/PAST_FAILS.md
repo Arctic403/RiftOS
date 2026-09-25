@@ -542,6 +542,22 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-25-016 — M5 regression still froze an old global program-status prefix
+
+**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+
+**Affected source:** `72eb89c54ef7d3abac0f422353b20deb0eb90b4c` (`Implement N2.12 final correctness gate`), Builder run `36115242218`.
+
+**Stage:** Builder `npm run check` / `check:transport`, before Gradle. Source syntax and source-integrity preflight were clean. N2 contract, M1-M4 regressions passed before M5 failed.
+
+**Observed failure:** `scripts/test-rift-memory-n2-m5-v1.mjs` still asserted `phase.programStatus.includes('N2.0-N2.9 PROMOTED')`. N2.12 source implementation legitimately advanced the authoritative global lifecycle string to `N2.0-N2.11 PROMOTED ...; N2.12 SOURCE IMPLEMENTED ...`, so the old global prefix no longer existed even though the N2.9 row, run-370 promotion evidence, M5 macro status and promoted-diagnostics membership all remained correct.
+
+**Root cause:** a leftover phase-local regression assertion still owned mutable global lifecycle presentation. This is the same ownership class established by FAIL-013/014: phase regressions may assert their own phase row, promotion evidence, macro status and diagnostic membership, but the N2 contract regression/docs validator/final N2 regression own the exact global lifecycle string.
+
+**Classification:** regression-only false failure. Builder did not reach the N2.12 final regression or Gradle, so this run neither validates nor invalidates the N2.12 Kotlin implementation.
+
+**Hardening added:** the stale M5 global program-status prefix assertion was removed. Repository-wide search confirmed no other phase-local regression retains an old `N2.0-N2.x` global-prefix assertion; exact current lifecycle wording remains owned by `test-rift-memory-n2-contract-v1.mjs`, `validate-rift-docs.mjs` and `test-rift-memory-n2-final-v1.mjs`.
+
 ## FAIL-2026-09-25-015 — RiftStore used nonexistent AtomicFile.exists() API
 
 **Status:** RESOLVED — fixing/live source `921d32ff295921be8783ca4ce8395ba5ee029553`, Builder run `36110733372` / run number `376`; source-check passed, Kotlin compiled, APK packaged/installed, M6 diagnostics passed, and the post-install real process restart proved crash rollback plus cold-restart recovery.
