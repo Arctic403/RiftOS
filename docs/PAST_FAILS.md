@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-017 — Batch persistence ordering regression used brittle character-distance bounds
 
-**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+**Status:** RESOLVED — fixing source `cacbc36dca906f226953a926a9eb66138817863b`, Builder run `36161133278` / run number `381`, passed the corrected Batch V2 regression and full Builder/install path; the installed build then passed B1 force-stop recovery with the same persisted job returning `recovery_required`, no blind replay, released-on-process-loss lease state, explicit recovered cancellation, and clean post-proof Observer.
 
 **Affected source:** `b68b4460e76d39ab09bb80c297d152631aad1664` (`Implement persistent RiftCLI jobs`), Builder run `36159890871`.
 
