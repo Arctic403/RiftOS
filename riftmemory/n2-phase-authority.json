@@ -1,8 +1,8 @@
 {
   "schema": "rift-memory-n2-phase-authority-v1",
   "program": "N2 Federated Rift Memory Kernel",
-  "programStatus": "N2.0-N2.9 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 PROMOTED; N2.10-N2.11 SOURCE IMPLEMENTED / N2-M6 SOURCE IMPLEMENTED; N2.12 PENDING",
-  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 PROMOTED DIAGNOSTICS; N2-M6 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY",
+  "programStatus": "N2.0-N2.11 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2.12 PENDING",
+  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED DIAGNOSTICS",
   "n18Prerequisite": "SATISFIED",
   "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
   "contractPath": "riftmemory/n2-contract-v1.json",
@@ -65,7 +65,7 @@
       ],
       "title": "Storage conformance and hardening",
       "rule": "Both subphases require separate evidence before this macro patch is green.",
-      "status": "source-implemented"
+      "status": "promoted"
     }
   ],
   "macroPlanRule": "Macro patches are execution groupings only. They never merge phase authority, skip subphase evidence, or allow a later subphase to hide an earlier failure. N2.12 remains a separate final correctness/adversarial promotion gate.",
@@ -132,15 +132,15 @@
     },
     {
       "phase": "N2.10",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "921d32ff295921be8783ca4ce8395ba5ee029553",
+      "builderRunNumber": "376"
     },
     {
       "phase": "N2.11",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "921d32ff295921be8783ca4ce8395ba5ee029553",
+      "builderRunNumber": "376"
     },
     {
       "phase": "N2.12",

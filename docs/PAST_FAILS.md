@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-015 — RiftStore used nonexistent AtomicFile.exists() API
 
-**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+**Status:** RESOLVED — fixing/live source `921d32ff295921be8783ca4ce8395ba5ee029553`, Builder run `36110733372` / run number `376`; source-check passed, Kotlin compiled, APK packaged/installed, M6 diagnostics passed, and the post-install real process restart proved crash rollback plus cold-restart recovery.
 
 **Affected source:** `656f633b9b12371757244f60f322cb81b54ea034` (`Fix promoted diagnostic clause parsing`), Builder run `36106725483`.
 
@@ -560,7 +560,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-014 — Promoted-diagnostics parser still assumed terminal lifecycle clause
 
-**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+**Status:** RESOLVED — fixing parser shipped through installed source `921d32ff295921be8783ca4ce8395ba5ee029553`, Builder run `36110733372` / run number `376`; source-check executed M4/M5/M6 regressions successfully before Kotlin compilation, and the resulting APK installed/live with M1-M6 diagnostics green.
 
 **Affected source:** `53ab0980924f2921f2a3ff7a272979fc3a9309c1` (`Implement N2-M6 RiftStore conformance and hardening`), Builder run `36106222439`.
 

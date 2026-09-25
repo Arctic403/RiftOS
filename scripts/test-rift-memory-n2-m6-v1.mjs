@@ -115,21 +115,23 @@ assert.ok(contractTest.includes("'RiftStoreMemoryStoreV1'"), 'N2 contract must f
 
 const n210 = phase.phases.find(row => row.phase === 'N2.10');
 const n211 = phase.phases.find(row => row.phase === 'N2.11');
-assert.equal(n210?.status, 'source-implemented');
-assert.equal(n211?.status, 'source-implemented');
-assert.equal(n210?.promotedSourceSha, null);
-assert.equal(n211?.promotedSourceSha, null);
-assert.equal(n210?.builderRunNumber, null);
-assert.equal(n211?.builderRunNumber, null);
-assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M6')?.status, 'source-implemented');
+assert.equal(n210?.status, 'promoted');
+assert.equal(n211?.status, 'promoted');
+assert.equal(n210?.promotedSourceSha, '921d32ff295921be8783ca4ce8395ba5ee029553');
+assert.equal(n211?.promotedSourceSha, '921d32ff295921be8783ca4ce8395ba5ee029553');
+assert.equal(n210?.builderRunNumber, '376');
+assert.equal(n211?.builderRunNumber, '376');
+assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M6')?.status, 'promoted');
 assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
 assert.equal(phase.phases.find(row => row.phase === 'N2.12')?.status, 'pending');
 
 for (const marker of [
-  "n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 2",
+  "n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 12",
   "n2PhaseAuthority.phases.filter(row => row.status === 'pending').length, 1",
   "n2PhaseAuthority.phases.slice(10, 12)",
-  "n2PhaseAuthority.macroImplementationPlan[5].status, 'source-implemented'",
+  "n2PhaseAuthority.macroImplementationPlan[5].status, 'promoted'",
+  '921d32ff295921be8783ca4ce8395ba5ee029553',
+  "n2PhaseAuthority.phases[12].status, 'pending'",
   'android/app/src/main/java/com/riftos/app/RiftStoreMemoryStoreV1.kt',
   'android/app/src/main/java/com/riftos/app/RiftMemoryN2M6SelfTest.kt',
 ]) {
