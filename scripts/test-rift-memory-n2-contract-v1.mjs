@@ -246,7 +246,7 @@ for (const n2AuthorityPath of [
   );
 }
 n2Assert.ok(
-  n2SourceIntelligence.includes('return machineAuthority ||'),
+  n2SourceIntelligence.includes('return isMachineAuthorityPath(path) ||'),
   'machine authority must enter build-config classification before ordinary filename rules',
 );
 

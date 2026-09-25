@@ -388,6 +388,8 @@ The failed HEAD was inspected before any source fix. Claims, consistency, integr
 
 **Failed RiftOS source:** `11d8c4abc804767677c2ceccb92f91017fd374b5`
 
+**Fixing source SHA:** `33c6e0daa984d338e63f74cd4157a73110e59553` — replaces the stale implementation-detail contract assertion with the stable machine-authority helper surface and generalizes claims regression-literal ownership to maintained `*Read(...)` aliases plus direct/prefixed `*Assert.ok(alias.includes('literal'))` assertions under executable-code masking. Builder and live claims verification are still required before this entry becomes RESOLVED.
+
 **Builder run ID:** `36080971930`
 
 **Signing mode:** `alpha-development`
