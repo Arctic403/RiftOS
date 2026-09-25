@@ -1,6 +1,7 @@
 package com.riftos.app
 
 import android.content.Context
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -319,6 +320,54 @@ class RiftNativeShellServices(context: Context) {
             val value=RiftOsLocalAgent.execute(context,request)
             return Result(value.toString(2),value)
         }
+        if(args.firstOrNull()?.lowercase()=="batch"){
+            args.removeAt(0)
+            val action=args.removeFirstOrNull()?.lowercase()?:"help"
+            if(action=="help"){
+                require(args.isEmpty()){"usage: riftos-agent batch help"}
+                return Result(
+                    "RiftOS Local Agent Batch V2 test surface\n" +
+                        "riftos-agent batch submit-b64 <base64-json-plan>\n" +
+                        "riftos-agent batch list [filter-request-id]\n" +
+                        "riftos-agent batch poll <job-id>\n" +
+                        "riftos-agent batch cancel <job-id>\n" +
+                        "riftos-agent batch recover <job-id> <resume|fail|rollback>"
+                )
+            }
+            val request=JSONObject()
+                .put("op","batch")
+                .put("cwd",cwd)
+            when(action){
+                "submit-b64"->{
+                    require(args.size==1){"usage: riftos-agent batch submit-b64 <base64-json-plan>"}
+                    val encoded=args[0]
+                    require(encoded.length<=192*1024){"Local Agent Batch encoded plan is too large"}
+                    val bytes=runCatching{Base64.decode(encoded,Base64.DEFAULT)}
+                        .getOrElse{throw IllegalArgumentException("Local Agent Batch plan must be valid base64")}
+                    require(bytes.size<=128*1024){"Local Agent Batch plan exceeds 131072 bytes"}
+                    val text=bytes.toString(Charsets.UTF_8)
+                    val plan=runCatching{JSONObject(text)}
+                        .getOrElse{throw IllegalArgumentException("Local Agent Batch plan must decode to a JSON object")}
+                    request.put("action","submit").put("plan",plan)
+                }
+                "list"->{
+                    require(args.size<=1){"usage: riftos-agent batch list [filter-request-id]"}
+                    request.put("action","list")
+                    args.firstOrNull()?.let{request.put("filterRequestId",it)}
+                }
+                "poll","cancel"->{
+                    require(args.size==1){"usage: riftos-agent batch $action <job-id>"}
+                    request.put("action",action).put("jobId",args[0])
+                }
+                "recover"->{
+                    require(args.size==2){"usage: riftos-agent batch recover <job-id> <resume|fail|rollback>"}
+                    request.put("action","recover").put("jobId",args[0]).put("resolution",args[1])
+                }
+                else->throw IllegalArgumentException("unknown riftos-agent batch action: $action")
+            }
+            val value=RiftOsLocalAgent.execute(context,request)
+            return Result(value.toString(2),value)
+        }
         return localAgent("riftos-agent",args){ request -> RiftOsLocalAgent.execute(context,request) }
     }
 
@@ -380,7 +429,10 @@ class RiftNativeShellServices(context: Context) {
         val sub=args.removeFirstOrNull()?.lowercase()?:"help"
         if(sub=="help") {
             require(args.isEmpty()) { "usage: $name help" }
-            val cliHelp=if(name=="riftos-agent") "\n$name cli [help|status|architecture|enable|disable|driver ...]" else ""
+            val cliHelp=if(name=="riftos-agent") {
+                "\n$name cli [help|status|architecture|enable|disable|driver ...]" +
+                    "\n$name batch [help|submit-b64|list|poll|cancel|recover]"
+            } else ""
             return Result(
                 "$name Android-native local agent\n$name status\n$name open\n$name tree [limit]\n$name click <target>\n" +
                     "$name tap <x> <y>\n$name swipe <x1> <y1> <x2> <y2> [ms]\n$name type <target> <text>\n$name back" + cliHelp

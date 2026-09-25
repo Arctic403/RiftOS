@@ -242,13 +242,24 @@ assert.match(host,/"persistedOnly", true/);
 assert.match(host,/"authorizationBypass", false/);
 assert.match(host,/"perOperationAuthorizationRequired", true/);
 
-assert.ok(!localAgent.includes('rift_cli_batch'),'Batch V2 must remain unexposed from Local Agent until the Batch hardening chain is complete');
-assert.ok(!mcpServer.includes('rift_cli_batch'),'Batch V2 must remain unexposed from MCP until the Batch hardening chain is complete');
-assert.ok(!localAgent.includes('rift_cli_job_recover'),'B2A recovery must remain internal to RiftCLI');
-assert.ok(!mcpServer.includes('rift_cli_job_recover'),'B2A recovery must remain unexposed from MCP');
+assert.match(localAgent,/private object RiftLocalAgentBatch/);
+assert.match(localAgent,/SCHEMA = "rift\.local-agent-batch\/1"/);
+assert.match(localAgent,/MAX_PLAN_BYTES = 128 \* 1024/);
+assert.match(localAgent,/ACTIONS = setOf\("submit", "list", "poll", "cancel", "recover"\)/);
+assert.match(localAgent,/RECOVERY_ACTIONS = setOf\("resume", "fail", "rollback"\)/);
+assert.match(localAgent,/if \(op == "batch"\) return RiftLocalAgentBatch\.execute\(context, args\)/);
+assert.match(localAgent,/toolName = "rift_cli_batch"/);
+assert.match(localAgent,/toolName = "rift_cli_job_list"/);
+assert.match(localAgent,/toolName = if \(action == "poll"\) "rift_cli_job_poll" else "rift_cli_job_cancel"/);
+assert.match(localAgent,/toolName = "rift_cli_job_recover"/);
+assert.match(localAgent,/nativeShell\.executeCliForLocalAgent\(cwd, argv\)/,
+  'Local Agent Batch must re-enter the existing native RiftCLI driver instead of executing jobs itself');
+assert.match(localAgent,/executionOwner", "riftcli"/);
+assert.ok(!mcpServer.includes('rift_cli_batch'),'Batch V2 must remain unexposed from dedicated MCP tools until Local Agent exposure is live-proven');
+assert.ok(!mcpServer.includes('rift_cli_job_recover'),'recovery must remain unexposed from dedicated MCP tools until Local Agent exposure is live-proven');
 
 assert.match(oldBatch,/DISABLED: RiftShell batch commands are disabled/);
 assert.match(oldBatch,/disabled:true/);
 assert.ok(!shell.includes('"batch" ->'),'native RiftShell must not resurrect the retired batch command');
 
-console.log('ok - RiftCLI Batch V2 B1+B2A+B2B source contract is bounded, sealed, retry-safe, rollback-journaled, non-bypass and still externally unexposed');
+console.log('ok - RiftCLI Batch V2 B1+B2A+B2B contract is bounded, sealed, retry-safe, rollback-journaled, exposed through bounded Local Agent translation, and still absent from dedicated MCP tools');

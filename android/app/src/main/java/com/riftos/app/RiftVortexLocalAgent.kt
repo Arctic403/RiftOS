@@ -775,6 +775,124 @@ private object RiftLocalAgentCliIntelligence {
     }
 }
 
+
+private object RiftLocalAgentBatch {
+    private const val SCHEMA = "rift.local-agent-batch/1"
+    private const val MAX_CWD_CHARS = 4096
+    private const val MAX_PLAN_BYTES = 128 * 1024
+    private const val MAX_ID_CHARS = 256
+    private val ACTIONS = setOf("submit", "list", "poll", "cancel", "recover")
+    private val RECOVERY_ACTIONS = setOf("resume", "fail", "rollback")
+
+    fun execute(context: Context, args: JSONObject): JSONObject {
+        val action = args.optString("action").trim().lowercase()
+        require(action in ACTIONS) {
+            "Local Agent Batch action must be submit, list, poll, cancel, or recover"
+        }
+
+        val cwd = args.optString("cwd", "/").trim().ifBlank { "/" }
+        require(cwd.length <= MAX_CWD_CHARS) { "Local Agent Batch cwd is too long" }
+
+        val driverRequestId = args.optString("requestId").trim().ifBlank {
+            "rift-local-agent-batch-${SystemClock.elapsedRealtimeNanos()}"
+        }
+        require(driverRequestId.length <= MAX_ID_CHARS) {
+            "Local Agent Batch requestId exceeds $MAX_ID_CHARS characters"
+        }
+
+        val toolName: String
+        val toolArgs = JSONObject()
+        when (action) {
+            "submit" -> {
+                val plan = args.optJSONObject("plan")
+                    ?: throw IllegalArgumentException("Local Agent Batch submit requires plan")
+                val planBytes = plan.toString().toByteArray(Charsets.UTF_8).size
+                require(planBytes <= MAX_PLAN_BYTES) {
+                    "Local Agent Batch plan exceeds $MAX_PLAN_BYTES UTF-8 bytes"
+                }
+                toolName = "rift_cli_batch"
+                val keys = plan.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    toolArgs.put(key, plan.opt(key))
+                }
+            }
+            "list" -> {
+                toolName = "rift_cli_job_list"
+                val filterRequestId = args.optString("filterRequestId").trim()
+                if (filterRequestId.isNotBlank()) {
+                    require(filterRequestId.length <= MAX_ID_CHARS) {
+                        "Local Agent Batch filterRequestId exceeds $MAX_ID_CHARS characters"
+                    }
+                    toolArgs.put("requestId", filterRequestId)
+                }
+            }
+            "poll", "cancel" -> {
+                val jobId = args.optString("jobId").trim()
+                require(jobId.isNotBlank() && jobId.length <= MAX_ID_CHARS) {
+                    "Local Agent Batch $action requires a bounded jobId"
+                }
+                toolName = if (action == "poll") "rift_cli_job_poll" else "rift_cli_job_cancel"
+                toolArgs.put("jobId", jobId)
+            }
+            "recover" -> {
+                val jobId = args.optString("jobId").trim()
+                require(jobId.isNotBlank() && jobId.length <= MAX_ID_CHARS) {
+                    "Local Agent Batch recover requires a bounded jobId"
+                }
+                val resolution = args.optString("resolution").trim().lowercase()
+                require(resolution in RECOVERY_ACTIONS) {
+                    "Local Agent Batch recover resolution must be resume, fail, or rollback"
+                }
+                toolName = "rift_cli_job_recover"
+                toolArgs.put("jobId", jobId).put("action", resolution)
+            }
+            else -> throw IllegalStateException("Unsupported Local Agent Batch action")
+        }
+
+        val argv = listOf(
+            "driver", "request",
+            "--request-id", driverRequestId,
+            "--session", "riftos-local-agent-batch",
+            "--task", "batch-$action",
+            "--project", "RiftOS",
+            "--goal", "local-agent-batch-$action",
+            "--capability", "riftos",
+            "--tool", toolName,
+            "--tool-args", toolArgs.toString()
+        )
+
+        val nativeShell = RiftMcpRuntime.nativeShell(context)
+        val hosted = nativeShell.executeCliForLocalAgent(cwd, argv)
+        val driver = hosted.optJSONObject("result")
+            ?: throw IllegalStateException("Local Agent Batch native driver result is unavailable")
+        val dispatchResult = driver.opt("dispatchResult")
+
+        return JSONObject()
+            .put("schema", SCHEMA)
+            .put("host", "riftos-local-agent")
+            .put("owner", "riftos-local-agent")
+            .put("executionOwner", "riftcli")
+            .put("action", action)
+            .put("tool", toolName)
+            .put("requestId", driverRequestId)
+            .put("cwd", cwd)
+            .put("ok", driver.optBoolean("ok", false))
+            .put("accepted", driver.optBoolean("accepted", false))
+            .put("state", driver.optString("state"))
+            .put("driver", JSONObject(driver.toString()))
+            .put(
+                "dispatchResult",
+                when (dispatchResult) {
+                    null -> JSONObject.NULL
+                    is JSONObject -> JSONObject(dispatchResult.toString())
+                    is JSONArray -> JSONArray(dispatchResult.toString())
+                    else -> dispatchResult
+                }
+            )
+    }
+}
+
 /** RiftOS-self-only fixed local UI authority used for shell-driven UI acceptance testing and internal intelligence hosting. */
 object RiftOsLocalAgent {
     private const val TARGET_PACKAGE = "com.riftos.app"
@@ -784,6 +902,7 @@ object RiftOsLocalAgent {
     fun execute(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
         if (op == "intelligence") return RiftLocalAgentCliIntelligence.execute(context, args)
+        if (op == "batch") return RiftLocalAgentBatch.execute(context, args)
         if (op == "devlab") return RiftDevLabLocalAgent.execute(context, args)
         if (op == "keyboard") return RiftOsKeyboardAgent.execute(context, args)
         if (op == "browser-inspect") {

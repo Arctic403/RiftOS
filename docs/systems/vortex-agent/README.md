@@ -69,10 +69,11 @@ RiftOS additionally supports:
 - devlab
 - intelligence — internal-only Local Agent host boundary for RiftCLI. The Local Agent validates/bounds CLI arguments, invokes the existing native CLI supervisor, and preserves the native process-local OFF-by-default `CONFIRM-EXPERIMENTAL` gate.
 - cli — public bounded test/compatibility namespace. `riftos-agent cli ...` maps to the internal intelligence operation; raw `riftos-agent intelligence ...` remains unavailable. It does not add a second CLI authority or bypass the native gate.
+- batch — source-implemented bounded Batch V2 Local Agent namespace. Internal callers use `RiftOsLocalAgent op=batch` with exactly `submit|list|poll|cancel|recover`; the translator hard-maps those actions to the existing `rift_cli_*` driver controls, caps submit plans at 128 KiB, bounds IDs, accepts only `resume|fail|rollback` for recovery, and re-enters `executeCliForLocalAgent`. It has no independent executor or arbitrary tool-name input. The shell-only acceptance-test form is `riftos-agent batch submit-b64|list|poll|cancel|recover`. Dedicated MCP Batch exposure remains closed until this Local Agent layer is installed/live-proven.
 
 RiftCLI is not a sibling agent or separate Android authority. The fixed ownership direction is MCP/RiftShell -> RiftOS Local Agent -> RiftCLI -> existing bounded RiftOS authorities. Both the compatibility `rift-cli` shell entry and `riftos-agent cli ...` test surface route through `RiftOsLocalAgent` before native CLI execution.
 
-After this host boundary is validated, further CLI intelligence expansion is frozen until N1.8.0 Repository Consistency Observer is promoted.
+The original N1.8.0 freeze condition is satisfied. Post-N2 Batch re-exposure now follows the separately promoted B1/B2A/B2B chain: Local Agent Batch exposure must be Builder/install/live-proven before any dedicated MCP Batch surface is added.
 
 No operation accepts an arbitrary Android package name.
 

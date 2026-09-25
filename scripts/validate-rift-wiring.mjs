@@ -122,6 +122,7 @@ for (const dependency of ['verifyRiftOsAndroidSources', 'validateRiftBrowserWebV
 
 const main = read(`${kotlinDir}/MainActivity.kt`);
 const nativeShell = read(`${kotlinDir}/RiftNativeShell.kt`);
+const shellServices = read(`${kotlinDir}/RiftNativeShellServices.kt`);
 const localAgent = read(`${kotlinDir}/RiftVortexLocalAgent.kt`);
 const buildInstaller = read(`${kotlinDir}/RiftBuildInstaller.kt`);
 if (!buildInstaller.includes('class RiftBuildInstallReceiver : BroadcastReceiver()')) fail('RiftBuild manifest receiver source is missing');
@@ -186,6 +187,25 @@ if (!nativeShell.includes('"rift-cli" -> executeHostedCliCommand(cwd, args)') ||
     !localCliPackage.includes('.put("shellAuthority", false)') ||
     !localCliPackage.includes('.put("toolHostAuthority", false)')) {
   fail('RiftCLI Local Agent trust-kernel/local-package boundary is incomplete');
+}
+if (!localAgent.includes('private object RiftLocalAgentBatch') ||
+    !localAgent.includes('SCHEMA = "rift.local-agent-batch/1"') ||
+    !localAgent.includes('MAX_PLAN_BYTES = 128 * 1024') ||
+    !localAgent.includes('ACTIONS = setOf("submit", "list", "poll", "cancel", "recover")') ||
+    !localAgent.includes('RECOVERY_ACTIONS = setOf("resume", "fail", "rollback")') ||
+    !localAgent.includes('if (op == "batch") return RiftLocalAgentBatch.execute(context, args)') ||
+    !localAgent.includes('toolName = "rift_cli_batch"') ||
+    !localAgent.includes('toolName = "rift_cli_job_list"') ||
+    !localAgent.includes('toolName = if (action == "poll") "rift_cli_job_poll" else "rift_cli_job_cancel"') ||
+    !localAgent.includes('toolName = "rift_cli_job_recover"') ||
+    !localAgent.includes('nativeShell.executeCliForLocalAgent(cwd, argv)') ||
+    !localAgent.includes('.put("executionOwner", "riftcli")') ||
+    !shellServices.includes('riftos-agent batch submit-b64 <base64-json-plan>') ||
+    !shellServices.includes('.put("op","batch")') ||
+    !shellServices.includes('Base64.decode(encoded,Base64.DEFAULT)') ||
+    !shellServices.includes('require(bytes.size<=128*1024)') ||
+    !shellServices.includes('request.put("action","submit").put("plan",plan)')) {
+  fail('RiftCLI Local Agent Batch exposure contract is incomplete');
 }
 if (!gradle.includes('ndkVersion = "28.2.13676358"') ||
     !gradle.includes('abiFilters += listOf("arm64-v8a", "armeabi-v7a")') ||
