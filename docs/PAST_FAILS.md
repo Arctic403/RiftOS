@@ -336,7 +336,7 @@ This confirms the authority-consumer impact gap already foreshadowed by FAIL-003
 
 ## FAIL-2026-09-24-006 — Semantic-impact regression silently scanned zero test files because its discovery regex was over-escaped
 
-**Status:** BUILDER GREEN / LIVE DISCOVERY DETECTION PASSED / CLEAN-RESTORE PENDING ESCAPED-LITERAL FALSE-POSITIVE REBUILD. Builder run `36082319213` / run number `359` installed source `7be822794fb590be2116e74f9f4302b2a1014bb4`; the temporary zero-match discovery fixture produced `regression-discovery-pattern-empty` exactly as required.
+**Status:** RESOLVED — Builder run `36083623058` / run number `360` installed source `aa03a7a4a1229ff942a0b35ec086a9a9c81c35bf`; baseline claims were clean, the earlier run-359 zero-match discovery fixture produced `regression-discovery-pattern-empty`, the decoder follow-up removed the escaped-literal false positive, and exact fixture removal/restoration returned claims to clean hash `e62d20d0a10deafcaf65a91c7b209b2beec0d058d46756ffe0eec6cf286e22f1`.
 
 **Date:** 2026-09-24
 
@@ -370,18 +370,18 @@ The failed HEAD was inspected before any source fix. Claims, consistency, integr
 4. `scripts/test-rift-documentation-claims-v1.mjs` permanently gates the new coverage label, bound, helper call, claim kind, finding code and incomplete reason.
 5. Exact Builder execution remains authoritative; this claims-layer rule only proves that a maintained regression's own file-discovery oracle is non-vacuous.
 
-### Live proof status
+### Live proof completed
 
 - run `359` passed semantic-impact + documentation-claims + proof-obligation Builder gates;
 - a temporary zero-match discovery regex produced `regression-discovery-pattern-empty` exactly as required;
-- after fixture removal, that discovery finding disappeared, proving the FAIL-006 detector itself;
-- claims did not return fully clean only because FAIL-007's newly generalized direct-literal parser exposed an unrelated escaped-JavaScript-literal false positive in `test-rift-shell-git.mjs`; FAIL-006 will close after the decoder rebuild restores a clean claims baseline.
+- run `360` installed the decoder follow-up source and baseline claims returned `complete=true`, `clean=true`, 0 findings;
+- after the final FAIL-007 direct-literal fixture was removed, claims returned to the identical clean hash `e62d20d0a10deafcaf65a91c7b209b2beec0d058d46756ffe0eec6cf286e22f1`.
 
 ---
 
 ## FAIL-2026-09-24-007 — N2 contract regression froze a refactored Source Intelligence implementation detail
 
-**Status:** SOURCE FIX EXTENDED / AWAITING REBUILD + LIVE CLAIMS VERIFICATION. Builder run `36082319213` / run number `359` passed the original FAIL-007 source repair, but the live claims proof exposed an escaped-JavaScript-literal false positive in the new direct-literal parser.
+**Status:** RESOLVED — Builder run `36083623058` / run number `360` installed source `aa03a7a4a1229ff942a0b35ec086a9a9c81c35bf`; baseline claims were clean, the escaped-literal false positive was gone, a representative maintained-test fixture using imported `*Assert`, arrow `*Read`, and direct `.includes(...)` produced `regression-literal-marker-missing`, and exact fixture removal restored claims to clean hash `e62d20d0a10deafcaf65a91c7b209b2beec0d058d46756ffe0eec6cf286e22f1`.
 
 **Date:** 2026-09-24
 
@@ -424,9 +424,10 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 - the obsolete `val machineAuthority = listOf(` contract assertion is replaced with the stable `fun isMachineAuthorityPath(` surface while exact authority-path checks remain;
 - claims regression-literal ownership is generalized to direct `*Assert.ok(alias.includes('literal'))` assertions and `*Read(...)` aliases with executable-code masking;
-- run `359` already passed the original N2 contract + documentation-claims regressions, but the live claims pass exposed the escaped-literal false positive described above;
-- the decoder rebuild must pass the strengthened documentation-claims regression, including the existing RiftGit escaped-literal false-positive control;
-- after install, baseline claims must be clean, then a temporary direct wrong-literal assertion must produce `regression-literal-marker-missing`, and exact restoration must return claims clean before FAIL-007 is RESOLVED.
+- run `360` passed the strengthened documentation-claims regression with the RiftGit escaped-literal false-positive control;
+- baseline claims were clean before the fixture;
+- a representative maintained-test direct wrong-literal assertion produced `regression-literal-marker-missing` exactly as required;
+- exact fixture removal returned claims to the identical clean baseline hash, closing FAIL-007.
 
 
 
