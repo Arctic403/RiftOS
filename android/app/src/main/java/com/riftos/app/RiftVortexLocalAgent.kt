@@ -784,6 +784,84 @@ private object RiftLocalAgentBatch {
     private val ACTIONS = setOf("submit", "list", "poll", "cancel", "recover")
     private val RECOVERY_ACTIONS = setOf("resume", "fail", "rollback")
 
+
+    private fun compactJob(job: JSONObject): JSONObject {
+        val compact = JSONObject()
+        for (key in listOf(
+            "ok", "jobOk", "jobId", "requestId", "kind", "operation", "tool",
+            "status", "state", "terminal", "planHash", "currentStep", "completedSteps",
+            "cancelRequested", "cancellationState", "rollbackState", "persistedOnly"
+        )) {
+            if (job.has(key)) compact.put(key, job.opt(key))
+        }
+        val output = job.optString("output")
+        if (output.isNotBlank()) compact.put("output", output.take(4096))
+        val error = job.optString("error")
+        if (error.isNotBlank()) compact.put("error", error.take(4096))
+        job.optJSONObject("authorityLease")?.let { lease ->
+            compact.put(
+                "authorityLease",
+                JSONObject()
+                    .put("leaseId", lease.optString("leaseId"))
+                    .put("state", lease.optString("state"))
+                    .put("active", lease.optBoolean("active", false))
+                    .put("expectedOperations", lease.optInt("expectedOperations", 0))
+                    .put("authorizationBypass", lease.optBoolean("authorizationBypass", false))
+                    .put("perOperationAuthorizationRequired", lease.optBoolean("perOperationAuthorizationRequired", true))
+                    .put("observerValidatorBypass", lease.optBoolean("observerValidatorBypass", false))
+            )
+        }
+        job.optJSONObject("recoveryMetadata")?.let { recovery ->
+            compact.put(
+                "recoveryMetadata",
+                JSONObject()
+                    .put("blindReplayAllowed", recovery.optBoolean("blindReplayAllowed", false))
+                    .put("retrySafeResumeRequired", recovery.optBoolean("retrySafeResumeRequired", true))
+                    .put("previousStatus", recovery.optString("previousStatus"))
+                    .put("currentStepId", recovery.optString("currentStepId"))
+                    .put("currentStepIndex", recovery.optInt("currentStepIndex", 0))
+                    .put("currentStepState", recovery.optString("currentStepState"))
+                    .put("disposition", recovery.optString("disposition"))
+                    .put("resolutionAction", recovery.optString("resolutionAction"))
+                    .put("resolutionState", recovery.optString("resolutionState"))
+                    .put("wholeJobReplayAllowed", recovery.optBoolean("wholeJobReplayAllowed", false))
+            )
+        }
+        return compact
+    }
+
+    private fun compactDispatch(action: String, raw: Any?): Any {
+        if (raw !is JSONObject) return raw ?: JSONObject.NULL
+        if (action == "list") {
+            val jobs = raw.optJSONArray("jobs") ?: JSONArray()
+            val rows = JSONArray()
+            val limit = minOf(jobs.length(), 32)
+            for (index in 0 until limit) {
+                val job = jobs.optJSONObject(index) ?: continue
+                rows.put(compactJob(job))
+            }
+            return JSONObject()
+                .put("ok", raw.optBoolean("ok", false))
+                .put("jobs", rows)
+                .put("returnedJobs", rows.length())
+                .put("totalJobs", jobs.length())
+                .put("truncated", jobs.length() > rows.length())
+        }
+        return if (raw.has("jobId") || raw.has("status") || raw.has("terminal")) {
+            compactJob(raw)
+        } else {
+            val encoded = raw.toString()
+            if (encoded.toByteArray(Charsets.UTF_8).size <= 128 * 1024) {
+                JSONObject(encoded)
+            } else {
+                JSONObject()
+                    .put("ok", raw.optBoolean("ok", false))
+                    .put("responseCompacted", true)
+                    .put("responseBytes", encoded.toByteArray(Charsets.UTF_8).size)
+            }
+        }
+    }
+
     fun execute(context: Context, args: JSONObject): JSONObject {
         val action = args.optString("action").trim().lowercase()
         require(action in ACTIONS) {
@@ -880,16 +958,9 @@ private object RiftLocalAgentBatch {
             .put("ok", driver.optBoolean("ok", false))
             .put("accepted", driver.optBoolean("accepted", false))
             .put("state", driver.optString("state"))
-            .put("driver", JSONObject(driver.toString()))
-            .put(
-                "dispatchResult",
-                when (dispatchResult) {
-                    null -> JSONObject.NULL
-                    is JSONObject -> JSONObject(dispatchResult.toString())
-                    is JSONArray -> JSONArray(dispatchResult.toString())
-                    else -> dispatchResult
-                }
-            )
+            .put("reason", driver.optString("reason"))
+            .put("error", driver.optString("error"))
+            .put("dispatchResult", compactDispatch(action, dispatchResult))
     }
 }
 

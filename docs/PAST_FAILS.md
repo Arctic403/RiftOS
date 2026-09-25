@@ -542,6 +542,28 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-25-019 — Local Agent Batch list duplicated unbounded native job payloads
+
+**Status:** SOURCE FIXED / BUILDER RERUN PENDING.
+
+**Affected installed source:** `72a3fdd49d00a5e9679522a3c7bc1f33689ba45c`, Builder run `36200028464` / run number `385`.
+
+**Stage:** installed-device Local Agent Batch acceptance proof after successful Builder/install. Exact installed provenance matched source and the native CLI correctly defaulted OFF.
+
+**Observed failure:** `riftos-agent batch help` returned normally, but `riftos-agent batch list` failed inside the shell/MCP call. The underlying native `rift_cli_job_list` remained functional and returned persisted jobs, proving the Batch/job store itself was not broken.
+
+**Root cause:** `RiftLocalAgentBatch.execute` copied the full native driver result into a `driver` field and then copied the same `dispatchResult` again. For `rift_cli_job_list`, persisted job snapshots can be large; historical Batch jobs include normalized plans, retained results, rollback journals and recovery metadata. The Local Agent wrapper therefore amplified a large but valid native control response into an unnecessarily duplicated response that could exceed the shell/MCP response path.
+
+**Classification:** Local Agent response-contract bug. B1/B2A/B2B execution, persistence, rollback and recovery semantics remained authoritative and functional; the newly added Local Agent observation wrapper was not sufficiently bounded.
+
+**Why pre-build evidence missed it:** source gates proved bounded Local Agent request inputs and fixed action mapping, but did not assert bounded response shaping or forbid duplication of the native driver envelope. Builder/Gradle could not expose a history-size-dependent installed response amplification.
+
+**Hardening added:** Local Agent Batch now returns compact job metadata instead of duplicating the full driver body. `list` is capped at 32 metadata rows and reports `returnedJobs`, `totalJobs` and `truncated`; job snapshots retain job/status/step/plan-hash/lease/recovery/error-summary fields without full plans/results. Non-job dispatch responses inline only when at most 128 KiB, otherwise return a compact size marker. The focused Batch regression and wiring validator require this compaction and explicitly forbid the previous `.put("driver", JSONObject(driver.toString()))` duplication.
+
+**Resolution target:** Builder/npm/Kotlin/Gradle must pass; install the repaired APK; with CLI OFF require Local Agent Batch `list` to return bounded metadata and Local Agent Batch `submit` to be rejected by the native gate; after enable prove submit/list/poll/cancel and process-loss recover through `riftos-agent batch` before promotion.
+
+---
+
 ## FAIL-2026-09-25-018 — Local Agent Batch transport validator froze split poll/cancel usage strings
 
 **Status:** SOURCE FIXED — fixing source `b929f4075ac42ec345671d7a0089d06c4c4cc6d4`; Builder rerun pending.

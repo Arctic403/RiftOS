@@ -200,6 +200,14 @@ if (!localAgent.includes('private object RiftLocalAgentBatch') ||
     !localAgent.includes('toolName = "rift_cli_job_recover"') ||
     !localAgent.includes('nativeShell.executeCliForLocalAgent(cwd, argv)') ||
     !localAgent.includes('.put("executionOwner", "riftcli")') ||
+    !localAgent.includes('private fun compactJob(job: JSONObject): JSONObject') ||
+    !localAgent.includes('private fun compactDispatch(action: String, raw: Any?): Any') ||
+    !localAgent.includes('val limit = minOf(jobs.length(), 32)') ||
+    !localAgent.includes('.put("returnedJobs", rows.length())') ||
+    !localAgent.includes('.put("totalJobs", jobs.length())') ||
+    !localAgent.includes('.put("truncated", jobs.length() > rows.length())') ||
+    !localAgent.includes('.put("dispatchResult", compactDispatch(action, dispatchResult))') ||
+    localAgent.includes('.put("driver", JSONObject(driver.toString()))') ||
     !shellServices.includes('riftos-agent batch submit-b64 <base64-json-plan>') ||
     !shellServices.includes('.put("op","batch")') ||
     !shellServices.includes('Base64.decode(encoded,Base64.DEFAULT)') ||

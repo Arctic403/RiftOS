@@ -256,6 +256,15 @@ assert.match(localAgent,/toolName = "rift_cli_job_recover"/);
 assert.match(localAgent,/nativeShell\.executeCliForLocalAgent\(cwd, argv\)/,
   'Local Agent Batch must re-enter the existing native RiftCLI driver instead of executing jobs itself');
 assert.match(localAgent,/executionOwner", "riftcli"/);
+assert.match(localAgent,/private fun compactJob\(job: JSONObject\): JSONObject/);
+assert.match(localAgent,/private fun compactDispatch\(action: String, raw: Any\?\): Any/);
+assert.match(localAgent,/val limit = minOf\(jobs\.length\(\), 32\)/);
+assert.match(localAgent,/\.put\("returnedJobs", rows\.length\(\)\)/);
+assert.match(localAgent,/\.put\("totalJobs", jobs\.length\(\)\)/);
+assert.match(localAgent,/\.put\("truncated", jobs\.length\(\) > rows\.length\(\)\)/);
+assert.match(localAgent,/\.put\("dispatchResult", compactDispatch\(action, dispatchResult\)\)/);
+assert.ok(!localAgent.includes('.put("driver", JSONObject(driver.toString()))'),
+  'Local Agent Batch must not duplicate the full native driver body in its response');
 assert.ok(transportValidator.includes('services.includes(\'"poll","cancel"->{\')'));
 assert.ok(transportValidator.includes('services.includes(\'require(args.size==1){"usage: riftos-agent batch $action <job-id>"}\')'));
 assert.ok(!transportValidator.includes('usage: riftos-agent batch poll <job-id>'));
