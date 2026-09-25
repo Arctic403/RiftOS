@@ -7,6 +7,7 @@ const shell=read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const host=read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
 const sandbox=read('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt');
 const jobStore=read('android/app/src/main/java/com/riftos/app/RiftCliPersistentJobStore.kt');
+const recoveryPolicy=read('android/app/src/main/java/com/riftos/app/RiftCliRecoveryPolicy.kt');
 const localAgent=read('android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt');
 const mcpServer=read('android/app/src/main/java/com/riftos/app/RiftMcpServer.kt');
 const gradle=read('android/app/build.gradle.kts');
@@ -77,6 +78,55 @@ assert.match(jobStore,/"blindReplayAllowed", false/);
 assert.match(jobStore,/"retrySafeResumeRequired", true/);
 assert.match(jobStore,/"released_on_process_loss"/);
 
+
+const driverJobControl=core.match(/bool isDriverJobControl\(const std::string& name\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+assert.ok(driverJobControl.includes('rift_cli_job_list'));
+assert.ok(driverJobControl.includes('rift_cli_job_poll'));
+assert.ok(driverJobControl.includes('rift_cli_job_cancel'));
+assert.ok(!driverJobControl.includes('rift_cli_job_recover'),
+  'recovery/resume is authority-bearing and must require the explicit CLI enable gate');
+
+assert.match(gradle,/RiftCliRecoveryPolicy\.kt/);
+assert.match(recoveryPolicy,/rift\.cli-recovery-policy\/1/);
+assert.match(recoveryPolicy,/policyOwner", "riftos"/);
+assert.match(recoveryPolicy,/callerMayOverride", false/);
+assert.match(recoveryPolicy,/wholeJobReplayAllowed", false/);
+assert.match(recoveryPolicy,/automaticRetryAllowed", false/);
+assert.match(recoveryPolicy,/rollbackSupported", false/);
+assert.match(recoveryPolicy,/RETRY_SAFE_TOOLS/);
+assert.match(recoveryPolicy,/"rift_read_text"/);
+assert.match(recoveryPolicy,/MUTATING_TOOLS/);
+assert.match(recoveryPolicy,/"rift_write_text"/);
+assert.match(recoveryPolicy,/RETRY_SAFE_SHELL_COMMANDS/);
+assert.match(recoveryPolicy,/"tree"/);
+
+assert.match(jobStore,/JSONObject\(row\.optJSONObject\("recoveryMetadata"\)\?\.toString\(\) \?: "\{\}"\)/,
+  'process-loss recovery must preserve the pre-crash step journal');
+
+assert.match(shell,/executionCwd/);
+assert.match(shell,/"executionCwd", job\.executionCwd/);
+assert.match(shell,/"currentStepCwd", currentCwd/);
+assert.match(shell,/private fun submitCliBatchExecution/);
+assert.match(shell,/private fun recoverCliPersistedJob/);
+assert.match(shell,/action in setOf\("resume", "fail", "rollback"\)/);
+assert.match(shell,/Recovered RiftCLI job failed closed by explicit recovery resolution/);
+assert.match(shell,/B2A does not claim rollback without an explicit bounded authority-owned rollback contract/);
+assert.match(shell,/parseCliBatchPlan\(persistedPlan, toolHost\)/,
+  'recovery must revalidate the normalized full plan under current authority rules');
+assert.match(shell,/recomputedPlanHash != storedPlanHash/);
+assert.match(shell,/stepRows\.length\(\) != completedSteps/);
+assert.match(shell,/currentStep == completedSteps \+ 1/);
+assert.match(shell,/RiftCliRecoveryPolicy\.forTool/);
+assert.match(shell,/RiftCliRecoveryPolicy\.forShell/);
+assert.match(shell,/policy\.optBoolean\("retrySafe", false\) && policy\.optBoolean\("idempotent", false\)/);
+assert.match(shell,/RiftCliExecutionGate\.tryReserve\(jobId\)/);
+assert.match(shell,/state", "reserved_after_recovery"/);
+assert.match(shell,/initialStepRows = stepRows/);
+assert.match(shell,/recovered = true/);
+assert.match(shell,/"wholeJobReplayAllowed", false/);
+assert.match(shell,/"rift_cli_job_recover" ->/);
+assert.match(host,/"rift_cli_job_recover"/);
+
 assert.match(shell,/private val cliJobStore = RiftCliPersistentJobStore/);
 assert.match(shell,/private fun persistCliShellJob/);
 assert.match(shell,/private fun cliBatchPersistentPlan/);
@@ -115,11 +165,13 @@ assert.match(host,/"persistedOnly", true/);
 assert.match(host,/"authorizationBypass", false/);
 assert.match(host,/"perOperationAuthorizationRequired", true/);
 
-assert.ok(!localAgent.includes('rift_cli_batch'),'Batch V2 must remain unexposed from Local Agent until persistence/recovery is live-proven');
-assert.ok(!mcpServer.includes('rift_cli_batch'),'Batch V2 must remain unexposed from MCP until persistence/recovery is live-proven');
+assert.ok(!localAgent.includes('rift_cli_batch'),'Batch V2 must remain unexposed from Local Agent until the Batch hardening chain is complete');
+assert.ok(!mcpServer.includes('rift_cli_batch'),'Batch V2 must remain unexposed from MCP until the Batch hardening chain is complete');
+assert.ok(!localAgent.includes('rift_cli_job_recover'),'B2A recovery must remain internal to RiftCLI');
+assert.ok(!mcpServer.includes('rift_cli_job_recover'),'B2A recovery must remain unexposed from MCP');
 
 assert.match(oldBatch,/DISABLED: RiftShell batch commands are disabled/);
 assert.match(oldBatch,/disabled:true/);
 assert.ok(!shell.includes('"batch" ->'),'native RiftShell must not resurrect the retired batch command');
 
-console.log('ok - RiftCLI Batch V2 + B1 persistent jobs are bounded, sealed, restart-recoverable without blind replay, non-bypass and still externally unexposed');
+console.log('ok - RiftCLI Batch V2 B1+B2A are bounded, sealed, restart-recoverable under system-owned retry policy, non-bypass and still externally unexposed');

@@ -43,7 +43,7 @@ Current ordered flow:
 4. validate-rift-docs.mjs;
 5. every focused test-rift-*.mjs listed in package.json.
 
-The external Builder also requires package.json to keep the wiring, transport, docs, RiftCLI push, Batch V2 and DebugHub entrypoints reachable from npm run check. Post-N2 Batch hardening additionally requires `RiftCliPersistentJobStore.kt` in the mandatory Android source snapshot and `scripts/test-rift-cli-batch-v2.mjs` to lock sealed bounded persistence, exact plan hashing, step-progress journaling, non-bypass lease metadata, restart `recovery_required` semantics, blind-replay prohibition, restart-aware job controls, and the still-closed Local Agent/MCP batch exposure boundary.
+The external Builder also requires package.json to keep the wiring, transport, docs, RiftCLI push, Batch V2 and DebugHub entrypoints reachable from npm run check. Post-N2 Batch hardening additionally requires `RiftCliPersistentJobStore.kt` and `RiftCliRecoveryPolicy.kt` in the mandatory Android source snapshot and `scripts/test-rift-cli-batch-v2.mjs` to lock sealed bounded persistence, exact plan hashing, step-progress/execution-CWD journaling, non-bypass lease metadata, restart `recovery_required` semantics, blind/whole-job replay prohibition, system-owned retry/idempotency policy with no caller override, recovery plan revalidation/hash checks, enabled-gate recovery authority, explicit rollback denial until B2B, restart-aware job controls, and the still-closed Local Agent/MCP batch exposure boundary.
 
 validate-rift-wiring now also auto-discovers every scripts/test-*.mjs and fails if a focused test exists but is not executed by a package script.
 

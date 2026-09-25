@@ -137,7 +137,7 @@ internal class RiftCliPersistentJobStore(context: Context) {
                         .put("perOperationAuthorizationRequired", true)
                 }
 
-                val recovery = JSONObject()
+                val recovery = JSONObject(row.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
                     .put("detectedAtEpochMs", System.currentTimeMillis())
                     .put("previousStatus", status)
                     .put("disposition", "explicit-recovery-required")

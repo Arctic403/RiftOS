@@ -374,7 +374,8 @@ class RiftToolHost(
             "rift_cli_batch",
             "rift_cli_job_list",
             "rift_cli_job_poll",
-            "rift_cli_job_cancel"
+            "rift_cli_job_cancel",
+            "rift_cli_job_recover"
         )
         if (name in forbidden) {
             return JSONObject()

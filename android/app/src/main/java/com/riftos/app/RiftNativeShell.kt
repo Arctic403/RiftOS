@@ -91,6 +91,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         @Volatile var error: String? = null,
         @Volatile var future: Future<*>? = null,
         val lane: String = "shell",
+        @Volatile var executionCwd: String = cwd,
         @Volatile var planHash: String? = null,
         @Volatile var plan: JSONObject? = null,
         @Volatile var currentStep: Int = 0,
@@ -694,6 +695,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("kind", if (job.lane == "batch") "rift-cli-batch" else "rift-shell")
             .put("operation", job.operation.take(80))
             .put("cwd", job.cwd)
+            .put("executionCwd", job.executionCwd)
             .put("status", job.status)
             .put("state", job.status)
             .put("terminal", terminal)
@@ -1075,6 +1077,331 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         }
     }
 
+    private fun submitCliBatchExecution(
+        job: CliShellJob,
+        plan: CliBatchPlan,
+        toolHost: RiftToolHost,
+        cliResult: JSONObject,
+        startIndex0: Int,
+        initialStepRows: JSONArray = JSONArray(),
+        initialFailedSteps: Int = 0,
+        initialStopped: Boolean = false,
+        recovered: Boolean = false
+    ): Future<*>? {
+        val jobId = job.id
+        val planSummary = cliBatchPlanSummary(plan)
+            .put("planHash", job.planHash ?: JSONObject.NULL)
+            .put("authorizationBypass", false)
+            .put("perOperationAuthorizationRequired", true)
+        val future = try {
+            cliWorker.submit {
+                RiftDeadline.clearInterrupt()
+                try {
+                    RiftCliExecutionGate.run {
+                        synchronized(job) {
+                            if (job.status == "queued") {
+                                job.status = "running"
+                                job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                                    .put("active", true)
+                                    .put("state", if (recovered) "active_after_recovery" else "active")
+                                    .put("activatedAtEpochMs", System.currentTimeMillis())
+                                if (recovered) {
+                                    job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                                        .put("resumeState", "running")
+                                        .put("blindReplayAllowed", false)
+                                }
+                                job.updatedAt = SystemClock.elapsedRealtime()
+                            }
+                        }
+                        persistCliShellJob(job)
+                        emitCliShellJob(job, "batch.started", planSummary)
+
+                        val stepRows = JSONArray(initialStepRows.toString())
+                        var currentCwd = job.executionCwd
+                        var failedSteps = initialFailedSteps
+                        var executedSteps = job.completedSteps
+                        var stopped = initialStopped
+
+                        if (!stopped) {
+                            for (index0 in startIndex0 until plan.steps.size) {
+                                val step = plan.steps[index0]
+                                if (job.cancelRequested || Thread.currentThread().isInterrupted) {
+                                    throw InterruptedException("RiftCLI Batch V2 cancelled before step ${step.id}")
+                                }
+                                val index = index0 + 1
+                                val operation = if (step.kind == "tool") {
+                                    step.toolName.orEmpty()
+                                } else {
+                                    runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault("")
+                                }
+                                synchronized(job) {
+                                    val recoveryAttempt = job.recoveryMetadata.optJSONObject("recoveryAttempt")
+                                        ?.let { JSONObject(it.toString()) }
+                                    val recoveryAttemptCount = job.recoveryMetadata.optInt("recoveryAttemptCount", 0)
+                                    job.currentStep = index
+                                    job.executionCwd = currentCwd
+                                    job.recoveryMetadata = JSONObject()
+                                        .put("blindReplayAllowed", false)
+                                        .put("retrySafeResumeRequired", true)
+                                        .put("currentStepId", step.id)
+                                        .put("currentStepIndex", index)
+                                        .put("currentStepKind", step.kind)
+                                        .put("currentStepOperation", operation.take(80))
+                                        .put("currentStepCwd", currentCwd)
+                                        .put("currentStepState", "started")
+                                        .put("startedAtEpochMs", System.currentTimeMillis())
+                                        .also { metadata ->
+                                            if (recoveryAttempt != null) metadata.put("recoveryAttempt", recoveryAttempt)
+                                            if (recoveryAttemptCount > 0) metadata.put("recoveryAttemptCount", recoveryAttemptCount)
+                                        }
+                                    job.updatedAt = SystemClock.elapsedRealtime()
+                                }
+                                persistCliShellJob(job)
+                                emitCliBatchStep(job, "batch.step.started", step, index, plan.steps.size, "running")
+
+                                val started = SystemClock.elapsedRealtime()
+                                val recoveryAttempt = job.recoveryMetadata.optInt("recoveryAttemptCount", 0)
+                                val stepAttemptId = if (recovered && recoveryAttempt > 0) {
+                                    "${job.requestId}:${step.id}:recovery-$recoveryAttempt"
+                                } else {
+                                    "${job.requestId}:${step.id}"
+                                }
+                                val stepResponse = try {
+                                    if (step.kind == "tool") {
+                                        toolHost.executeCliBatchTool(
+                                            step.toolName.orEmpty(),
+                                            step.toolArgs ?: JSONObject(),
+                                            stepAttemptId
+                                        )
+                                    } else {
+                                        val outcome = executeCliBatchShellStep(
+                                            step.shellCommand.orEmpty(),
+                                            currentCwd,
+                                            stepAttemptId,
+                                            cliResult.optString("goal").takeIf { it.isNotBlank() }
+                                        )
+                                        currentCwd = outcome.cwd
+                                        JSONObject()
+                                            .put("ok", true)
+                                            .put(
+                                                "operation",
+                                                runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault("")
+                                            )
+                                            .put("cwd", outcome.cwd)
+                                            .put("output", outcome.output)
+                                            .put("result", outcome.result ?: JSONObject.NULL)
+                                    }
+                                } catch (error: InterruptedException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    JSONObject()
+                                        .put("ok", false)
+                                        .put("error", error.message ?: error.javaClass.simpleName)
+                                }
+
+                                val duration = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+                                val ok = stepResponse.optBoolean("ok", false)
+                                if (!ok) failedSteps++
+                                executedSteps++
+
+                                val responseBytes = stepResponse.toString().toByteArray(Charsets.UTF_8).size
+                                val retained = if (responseBytes > MAX_CLI_BATCH_STEP_RESULT_BYTES) {
+                                    JSONObject()
+                                        .put("ok", ok)
+                                        .put("resultRetained", false)
+                                        .put("resultBytes", responseBytes)
+                                        .put("retentionLimitBytes", MAX_CLI_BATCH_STEP_RESULT_BYTES)
+                                } else {
+                                    JSONObject(stepResponse.toString())
+                                }
+                                val stepRow = JSONObject()
+                                    .put("id", step.id)
+                                    .put("kind", step.kind)
+                                    .put("ok", ok)
+                                    .put("durationMs", duration)
+                                    .put("result", retained)
+                                stepRows.put(stepRow)
+
+                                synchronized(job) {
+                                    job.completedSteps = executedSteps
+                                    job.executionCwd = currentCwd
+                                    job.stepResults = JSONArray(stepRows.toString())
+                                    job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                                        .put("currentStepState", "completed")
+                                        .put("lastCompletedStepId", step.id)
+                                        .put("lastCompletedStepIndex", index)
+                                        .put("completedAtEpochMs", System.currentTimeMillis())
+                                    job.updatedAt = SystemClock.elapsedRealtime()
+                                }
+                                persistCliShellJob(job)
+                                emitCliBatchStep(
+                                    job,
+                                    if (ok) "batch.step.completed" else "batch.step.failed",
+                                    step,
+                                    index,
+                                    plan.steps.size,
+                                    if (ok) "completed" else "failed",
+                                    retained,
+                                    if (ok) null else stepResponse.optString("error").takeIf { it.isNotBlank() }
+                                )
+
+                                if (job.cancelRequested || Thread.currentThread().isInterrupted) {
+                                    throw InterruptedException("RiftCLI Batch V2 cancellation observed after step ${step.id}")
+                                }
+                                if (!ok && plan.failurePolicy == "stop") {
+                                    stopped = true
+                                    break
+                                }
+                            }
+                        }
+
+                        val finalResult = JSONObject()
+                            .put("schema", "rift.cli-batch/2")
+                            .put("mode", "execute")
+                            .put("failurePolicy", plan.failurePolicy)
+                            .put("stepCount", plan.steps.size)
+                            .put("executedSteps", executedSteps)
+                            .put("failedSteps", failedSteps)
+                            .put("stoppedOnFailure", stopped)
+                            .put("cwd", currentCwd)
+                            .put("steps", stepRows)
+                        val finalBytes = finalResult.toString().toByteArray(Charsets.UTF_8).size
+                        val retainedFinal = if (finalBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES) {
+                            JSONObject()
+                                .put("schema", "rift.cli-batch/2")
+                                .put("resultRetained", false)
+                                .put("resultBytes", finalBytes)
+                                .put("retentionLimitBytes", MAX_CLI_SHELL_RETAINED_RESULT_BYTES)
+                                .put("stepCount", plan.steps.size)
+                                .put("executedSteps", executedSteps)
+                                .put("failedSteps", failedSteps)
+                        } else finalResult
+
+                        synchronized(job) {
+                            job.output = "RiftCLI Batch V2 executed $executedSteps/${plan.steps.size} steps; failures=$failedSteps"
+                            job.result = retainedFinal
+                            job.status = when {
+                                job.cancelRequested -> "completed_after_cancel_request"
+                                failedSteps > 0 && plan.failurePolicy == "continue" -> "completed_with_failures"
+                                failedSteps > 0 -> "failed"
+                                finalBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES -> "completed_result_too_large"
+                                else -> "completed"
+                            }
+                            job.error = if (failedSteps > 0 && plan.failurePolicy == "stop") {
+                                "RiftCLI Batch V2 stopped after a failed step"
+                            } else null
+                            job.cancellationState = when {
+                                job.status == "completed_after_cancel_request" -> "completed_after_cancel_request"
+                                job.cancelRequested -> "requested"
+                                else -> "none"
+                            }
+                            job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                                .put("active", false)
+                                .put("state", if (recovered) "released_after_recovery" else "released")
+                                .put("releasedAtEpochMs", System.currentTimeMillis())
+                            job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                                .put("terminal", true)
+                                .put("terminalStatus", job.status)
+                                .put("recoveryResolved", recovered)
+                                .put("blindReplayAllowed", false)
+                            job.updatedAt = SystemClock.elapsedRealtime()
+                        }
+                        persistCliShellJob(job)
+                        emitCliShellJob(
+                            job,
+                            when (job.status) {
+                                "completed", "completed_result_too_large", "completed_with_failures", "completed_after_cancel_request" -> "batch.completed"
+                                else -> "batch.failed"
+                            },
+                            retainedFinal,
+                            job.error
+                        )
+                    }
+                } catch (error: Throwable) {
+                    var changed = false
+                    synchronized(job) {
+                        if (job.status !in setOf(
+                                "completed",
+                                "completed_result_too_large",
+                                "completed_with_failures",
+                                "failed",
+                                "cancelled",
+                                "cancelled_may_have_applied",
+                                "completed_after_cancel_request"
+                            )) {
+                            job.error = error.message ?: error.javaClass.simpleName
+                            job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) {
+                                "cancelled_may_have_applied"
+                            } else {
+                                "failed"
+                            }
+                            job.cancellationState = if (job.status == "cancelled_may_have_applied") {
+                                "cancelled_may_have_applied"
+                            } else {
+                                job.cancellationState
+                            }
+                            job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                                .put("active", false)
+                                .put("state", if (recovered) "released_after_recovery" else "released")
+                                .put("releasedAtEpochMs", System.currentTimeMillis())
+                            job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                                .put("terminal", true)
+                                .put("terminalStatus", job.status)
+                                .put("currentStepState", "terminal_after_interrupt_or_failure")
+                                .put("recoveryResolved", recovered)
+                                .put("blindReplayAllowed", false)
+                            job.updatedAt = SystemClock.elapsedRealtime()
+                            changed = true
+                        }
+                    }
+                    if (changed) {
+                        persistCliShellJob(job)
+                        emitCliShellJob(
+                            job,
+                            if (job.status == "cancelled_may_have_applied") "batch.cancelled" else "batch.failed",
+                            message = job.error
+                        )
+                    }
+                } finally {
+                    RiftCliExecutionGate.release(jobId)
+                    RiftDeadline.clearInterrupt()
+                }
+            }
+        } catch (error: Throwable) {
+            synchronized(job) {
+                job.error = error.message ?: error.javaClass.simpleName
+                job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                    .put("active", false)
+                    .put("state", if (recovered) "released_after_recovery_schedule_failure" else "released")
+                    .put("releasedAtEpochMs", System.currentTimeMillis())
+                if (recovered) {
+                    job.status = "recovery_required"
+                    job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                        .put("resumeState", "schedule_failed")
+                        .put("resumeError", job.error)
+                        .put("blindReplayAllowed", false)
+                } else {
+                    job.status = "failed"
+                    job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                        .put("terminal", true)
+                        .put("terminalStatus", "failed")
+                        .put("blindReplayAllowed", false)
+                }
+                job.updatedAt = SystemClock.elapsedRealtime()
+            }
+            runCatching { persistCliShellJob(job) }
+            emitCliShellJob(
+                job,
+                if (recovered) "job.recovery.required" else "batch.failed",
+                message = job.error
+            )
+            RiftCliExecutionGate.release(jobId)
+            null
+        }
+        job.future = future
+        return future
+    }
+
     private fun startCliBatch(
         cwd: String,
         cliResult: JSONObject,
@@ -1156,269 +1483,382 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         }
         emitCliShellJob(job, "batch.submitted", planSummary)
 
-        val future = try {
-            cliWorker.submit {
-                RiftDeadline.clearInterrupt()
-                try {
-                    RiftCliExecutionGate.run {
-                        synchronized(job) {
-                            if (job.status == "queued") {
-                                job.status = "running"
-                                job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
-                                    .put("active", true)
-                                    .put("state", "active")
-                                    .put("activatedAtEpochMs", System.currentTimeMillis())
-                                job.updatedAt = SystemClock.elapsedRealtime()
-                            }
-                        }
-                        persistCliShellJob(job)
-                        emitCliShellJob(job, "batch.started", planSummary)
-                        val stepRows = JSONArray()
-                        var currentCwd = cwd
-                        var failedSteps = 0
-                        var executedSteps = 0
-                        var stopped = false
-
-                        for ((index0, step) in plan.steps.withIndex()) {
-                            if (job.cancelRequested || Thread.currentThread().isInterrupted) {
-                                throw InterruptedException("RiftCLI Batch V2 cancelled before step ${step.id}")
-                            }
-                            val index = index0 + 1
-                            val operation = if (step.kind == "tool") {
-                                step.toolName.orEmpty()
-                            } else {
-                                runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault("")
-                            }
-                            synchronized(job) {
-                                job.currentStep = index
-                                job.recoveryMetadata = JSONObject()
-                                    .put("blindReplayAllowed", false)
-                                    .put("retrySafeResumeRequired", true)
-                                    .put("currentStepId", step.id)
-                                    .put("currentStepIndex", index)
-                                    .put("currentStepKind", step.kind)
-                                    .put("currentStepOperation", operation.take(80))
-                                    .put("currentStepState", "started")
-                                    .put("startedAtEpochMs", System.currentTimeMillis())
-                                job.updatedAt = SystemClock.elapsedRealtime()
-                            }
-                            persistCliShellJob(job)
-                            emitCliBatchStep(job, "batch.step.started", step, index, plan.steps.size, "running")
-                            val started = SystemClock.elapsedRealtime()
-                            val stepResponse = try {
-                                if (step.kind == "tool") {
-                                    toolHost.executeCliBatchTool(
-                                        step.toolName.orEmpty(),
-                                        step.toolArgs ?: JSONObject(),
-                                        "${job.requestId}:${step.id}"
-                                    )
-                                } else {
-                                    val outcome = executeCliBatchShellStep(
-                                        step.shellCommand.orEmpty(),
-                                        currentCwd,
-                                        "${job.requestId}:${step.id}",
-                                        cliResult.optString("goal").takeIf { it.isNotBlank() }
-                                    )
-                                    currentCwd = outcome.cwd
-                                    JSONObject()
-                                        .put("ok", true)
-                                        .put("operation", runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault(""))
-                                        .put("cwd", outcome.cwd)
-                                        .put("output", outcome.output)
-                                        .put("result", outcome.result ?: JSONObject.NULL)
-                                }
-                            } catch (error: InterruptedException) {
-                                throw error
-                            } catch (error: Exception) {
-                                JSONObject()
-                                    .put("ok", false)
-                                    .put("error", error.message ?: error.javaClass.simpleName)
-                            }
-                            val duration = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
-                            val ok = stepResponse.optBoolean("ok", false)
-                            if (!ok) failedSteps++
-                            executedSteps++
-
-                            val responseBytes = stepResponse.toString().toByteArray(Charsets.UTF_8).size
-                            val retained = if (responseBytes > MAX_CLI_BATCH_STEP_RESULT_BYTES) {
-                                JSONObject()
-                                    .put("ok", ok)
-                                    .put("resultRetained", false)
-                                    .put("resultBytes", responseBytes)
-                                    .put("retentionLimitBytes", MAX_CLI_BATCH_STEP_RESULT_BYTES)
-                            } else {
-                                JSONObject(stepResponse.toString())
-                            }
-                            val stepRow = JSONObject()
-                                .put("id", step.id)
-                                .put("kind", step.kind)
-                                .put("ok", ok)
-                                .put("durationMs", duration)
-                                .put("result", retained)
-                            stepRows.put(stepRow)
-                            synchronized(job) {
-                                job.completedSteps = executedSteps
-                                job.stepResults = JSONArray(stepRows.toString())
-                                job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
-                                    .put("currentStepState", "completed")
-                                    .put("lastCompletedStepId", step.id)
-                                    .put("lastCompletedStepIndex", index)
-                                    .put("completedAtEpochMs", System.currentTimeMillis())
-                                job.updatedAt = SystemClock.elapsedRealtime()
-                            }
-                            persistCliShellJob(job)
-                            emitCliBatchStep(
-                                job,
-                                if (ok) "batch.step.completed" else "batch.step.failed",
-                                step,
-                                index,
-                                plan.steps.size,
-                                if (ok) "completed" else "failed",
-                                retained,
-                                if (ok) null else stepResponse.optString("error").takeIf { it.isNotBlank() }
-                            )
-
-                            if (job.cancelRequested || Thread.currentThread().isInterrupted) {
-                                throw InterruptedException("RiftCLI Batch V2 cancellation observed after step ${step.id}")
-                            }
-                            if (!ok && plan.failurePolicy == "stop") {
-                                stopped = true
-                                break
-                            }
-                        }
-
-                        val finalResult = JSONObject()
-                            .put("schema", "rift.cli-batch/2")
-                            .put("mode", "execute")
-                            .put("failurePolicy", plan.failurePolicy)
-                            .put("stepCount", plan.steps.size)
-                            .put("executedSteps", executedSteps)
-                            .put("failedSteps", failedSteps)
-                            .put("stoppedOnFailure", stopped)
-                            .put("cwd", currentCwd)
-                            .put("steps", stepRows)
-                        val finalBytes = finalResult.toString().toByteArray(Charsets.UTF_8).size
-                        val retainedFinal = if (finalBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES) {
-                            JSONObject()
-                                .put("schema", "rift.cli-batch/2")
-                                .put("resultRetained", false)
-                                .put("resultBytes", finalBytes)
-                                .put("retentionLimitBytes", MAX_CLI_SHELL_RETAINED_RESULT_BYTES)
-                                .put("stepCount", plan.steps.size)
-                                .put("executedSteps", executedSteps)
-                                .put("failedSteps", failedSteps)
-                        } else finalResult
-
-                        synchronized(job) {
-                            job.output = "RiftCLI Batch V2 executed $executedSteps/${plan.steps.size} steps; failures=$failedSteps"
-                            job.result = retainedFinal
-                            job.status = when {
-                                job.cancelRequested -> "completed_after_cancel_request"
-                                failedSteps > 0 && plan.failurePolicy == "continue" -> "completed_with_failures"
-                                failedSteps > 0 -> "failed"
-                                finalBytes > MAX_CLI_SHELL_RETAINED_RESULT_BYTES -> "completed_result_too_large"
-                                else -> "completed"
-                            }
-                            job.error = if (failedSteps > 0 && plan.failurePolicy == "stop") {
-                                "RiftCLI Batch V2 stopped after a failed step"
-                            } else null
-                            job.cancellationState = when {
-                                job.status == "completed_after_cancel_request" -> "completed_after_cancel_request"
-                                job.cancelRequested -> "requested"
-                                else -> "none"
-                            }
-                            job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
-                                .put("active", false)
-                                .put("state", "released")
-                                .put("releasedAtEpochMs", System.currentTimeMillis())
-                            job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
-                                .put("terminal", true)
-                                .put("terminalStatus", job.status)
-                                .put("blindReplayAllowed", false)
-                            job.updatedAt = SystemClock.elapsedRealtime()
-                        }
-                        persistCliShellJob(job)
-                        emitCliShellJob(
-                            job,
-                            when (job.status) {
-                                "completed", "completed_result_too_large", "completed_with_failures", "completed_after_cancel_request" -> "batch.completed"
-                                else -> "batch.failed"
-                            },
-                            retainedFinal,
-                            job.error
-                        )
-                    }
-                } catch (error: Throwable) {
-                    var changed = false
-                    synchronized(job) {
-                        if (job.status !in setOf(
-                                "completed",
-                                "completed_result_too_large",
-                                "completed_with_failures",
-                                "failed",
-                                "cancelled",
-                                "cancelled_may_have_applied",
-                                "completed_after_cancel_request"
-                            )) {
-                            job.error = error.message ?: error.javaClass.simpleName
-                            job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) {
-                                "cancelled_may_have_applied"
-                            } else {
-                                "failed"
-                            }
-                            job.cancellationState = if (job.status == "cancelled_may_have_applied") {
-                                "cancelled_may_have_applied"
-                            } else {
-                                job.cancellationState
-                            }
-                            job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
-                                .put("active", false)
-                                .put("state", "released")
-                                .put("releasedAtEpochMs", System.currentTimeMillis())
-                            job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
-                                .put("terminal", true)
-                                .put("terminalStatus", job.status)
-                                .put("currentStepState", "terminal_after_interrupt_or_failure")
-                                .put("blindReplayAllowed", false)
-                            job.updatedAt = SystemClock.elapsedRealtime()
-                            changed = true
-                        }
-                    }
-                    if (changed) {
-                        persistCliShellJob(job)
-                        emitCliShellJob(
-                            job,
-                            if (job.status == "cancelled_may_have_applied") "batch.cancelled" else "batch.failed",
-                            message = job.error
-                        )
-                    }
-                } finally {
-                    RiftCliExecutionGate.release(jobId)
-                    RiftDeadline.clearInterrupt()
-                }
-            }
-        } catch (error: Throwable) {
-            synchronized(job) {
-                job.error = error.message ?: error.javaClass.simpleName
-                job.status = "failed"
-                job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
-                    .put("active", false)
-                    .put("state", "released")
-                    .put("releasedAtEpochMs", System.currentTimeMillis())
-                job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
-                    .put("terminal", true)
-                    .put("terminalStatus", "failed")
-                    .put("blindReplayAllowed", false)
-                job.updatedAt = SystemClock.elapsedRealtime()
-            }
-            runCatching { persistCliShellJob(job) }
-            emitCliShellJob(job, "batch.failed", message = job.error)
-            RiftCliExecutionGate.release(jobId)
-            null
-        }
-        job.future = future
+        submitCliBatchExecution(
+            job = job,
+            plan = plan,
+            toolHost = toolHost,
+            cliResult = cliResult,
+            startIndex0 = 0
+        )
         return cliShellJobSnapshot(job)
     }
+
+    private fun recoverCliPersistedJob(
+        jobId: String,
+        action: String,
+        toolHost: RiftToolHost,
+        cliResult: JSONObject
+    ): JSONObject {
+        require(jobId.isNotBlank()) { "rift_cli_job_recover requires jobId" }
+        require(action in setOf("resume", "fail", "rollback")) {
+            "rift_cli_job_recover action must be resume, fail or rollback"
+        }
+
+        cliShellJobs[jobId]?.let { live ->
+            return JSONObject()
+                .put("ok", false)
+                .put("error", "RiftCLI job is live; recovery controls apply only to persisted process-loss records")
+                .put("job", cliShellJobSnapshot(live))
+        }
+
+        val persisted = runCatching { cliJobStore.load(jobId) }.getOrNull()
+            ?: return JSONObject().put("ok", false).put("error", "RiftCLI job not found: $jobId")
+        val kind = persisted.optString("kind")
+        val status = persisted.optString("status").trim().lowercase()
+        if (status != "recovery_required") {
+            return JSONObject(persisted.toString())
+                .put("persistedOnly", true)
+                .put("recoveryActionAccepted", false)
+                .put("recoveryActionReason", "job status is not recovery_required")
+        }
+
+        if (action == "fail") {
+            val lease = JSONObject(persisted.optJSONObject("authorityLease")?.toString() ?: "{}")
+                .put("active", false)
+                .put("state", "released_after_recovery_fail")
+                .put("releasedAtEpochMs", System.currentTimeMillis())
+                .put("authorizationBypass", false)
+                .put("perOperationAuthorizationRequired", true)
+                .put("observerValidatorBypass", false)
+            val recovery = JSONObject(persisted.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
+                .put("resolutionAction", "fail")
+                .put("resolutionState", "failed_closed")
+                .put("resolvedAtEpochMs", System.currentTimeMillis())
+                .put("blindReplayAllowed", false)
+                .put("wholeJobReplayAllowed", false)
+            persisted
+                .put("status", "failed")
+                .put("state", "failed")
+                .put("terminal", true)
+                .put("jobOk", false)
+                .put("error", "Recovered RiftCLI job failed closed by explicit recovery resolution")
+                .put("authorityLease", lease)
+                .put("recoveryMetadata", recovery)
+                .put("updatedAtEpochMs", System.currentTimeMillis())
+            cliJobStore.save(persisted)
+            RiftMcpRuntime.cliEvents().emit(
+                type = "job.failed",
+                requestId = persisted.optString("requestId").takeIf { it.isNotBlank() },
+                jobId = jobId,
+                lane = if (kind == "rift-cli-batch") "batch" else if (kind == "rift-tool") "tool" else "shell",
+                status = "failed",
+                terminal = true,
+                message = "Recovered RiftCLI job failed closed without replay"
+            )
+            return JSONObject(persisted.toString())
+                .put("persistedOnly", true)
+                .put("recoveryActionAccepted", true)
+        }
+
+        if (action == "rollback") {
+            val policy = JSONObject()
+                .put("schema", RiftCliRecoveryPolicy.SCHEMA)
+                .put("policyOwner", "riftos")
+                .put("callerMayOverride", false)
+                .put("rollbackSupported", false)
+                .put("automaticRetryAllowed", false)
+                .put("wholeJobReplayAllowed", false)
+                .put("reason", "B2A does not claim rollback without an explicit bounded authority-owned rollback contract; B2B remains required.")
+            val recovery = JSONObject(persisted.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
+                .put("lastRecoveryDecisionAtEpochMs", System.currentTimeMillis())
+                .put("lastRecoveryAction", "rollback")
+                .put("lastRecoveryPolicy", policy)
+                .put("blindReplayAllowed", false)
+            persisted.put("recoveryMetadata", recovery)
+            cliJobStore.save(persisted)
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("terminal", false)
+                .put("rollbackSupported", false)
+                .put("recoveryPolicy", policy)
+                .put("persistedOnly", true)
+        }
+
+        if (kind != "rift-cli-batch") {
+            val policy = JSONObject()
+                .put("schema", RiftCliRecoveryPolicy.SCHEMA)
+                .put("policyOwner", "riftos")
+                .put("callerMayOverride", false)
+                .put("retrySafe", false)
+                .put("idempotent", false)
+                .put("rollbackSupported", false)
+                .put("automaticRetryAllowed", false)
+                .put("wholeJobReplayAllowed", false)
+                .put("reason", "Only Batch V2 persists the normalized full execution plan required for safe resume.")
+            val recovery = JSONObject(persisted.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
+                .put("lastRecoveryDecisionAtEpochMs", System.currentTimeMillis())
+                .put("lastRecoveryAction", "resume")
+                .put("lastRecoveryPolicy", policy)
+                .put("blindReplayAllowed", false)
+            persisted.put("recoveryMetadata", recovery)
+            cliJobStore.save(persisted)
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("terminal", false)
+                .put("resumeSupported", false)
+                .put("recoveryPolicy", policy)
+                .put("persistedOnly", true)
+        }
+
+        val persistedPlan = persisted.optJSONObject("plan")
+            ?: return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", "Recovered Batch V2 job is missing persisted plan")
+                .put("persistedOnly", true)
+        val storedPlanHash = persisted.optString("planHash").trim()
+        if (storedPlanHash.isBlank()) {
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", "Recovered Batch V2 job is missing planHash")
+                .put("persistedOnly", true)
+        }
+
+        val plan = try {
+            parseCliBatchPlan(persistedPlan, toolHost)
+        } catch (error: Throwable) {
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", "Recovered Batch V2 plan no longer validates: ${error.message ?: error.javaClass.simpleName}")
+                .put("persistedOnly", true)
+        }
+        require(plan.mode == "execute") { "Recovered Batch V2 plan must remain execute mode" }
+        val normalizedPlan = cliBatchPersistentPlan(plan)
+        val recomputedPlanHash = sha256Utf8(normalizedPlan.toString())
+        if (recomputedPlanHash != storedPlanHash) {
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", "Recovered Batch V2 planHash mismatch")
+                .put("expectedPlanHash", storedPlanHash)
+                .put("actualPlanHash", recomputedPlanHash)
+                .put("planHashMismatch", true)
+                .put("persistedOnly", true)
+        }
+
+        val completedSteps = persisted.optInt("completedSteps", 0)
+        val currentStep = persisted.optInt("currentStep", 0)
+        val stepRows = persisted.optJSONArray("stepResults")?.let { JSONArray(it.toString()) } ?: JSONArray()
+        if (completedSteps !in 0..plan.steps.size || stepRows.length() != completedSteps) {
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", "Recovered Batch V2 completed-step journal is inconsistent")
+                .put("completedSteps", completedSteps)
+                .put("stepResultCount", stepRows.length())
+                .put("persistedOnly", true)
+        }
+
+        var failedSteps = 0
+        for (index in 0 until stepRows.length()) {
+            if (!stepRows.optJSONObject(index)?.optBoolean("ok", false).orFalse()) failedSteps++
+        }
+
+        val hasExecutionCwd = persisted.has("executionCwd") && persisted.optString("executionCwd").isNotBlank()
+        val executionCwd = when {
+            hasExecutionCwd -> persisted.optString("executionCwd")
+            completedSteps == 0 -> persisted.optString("cwd", "/").ifBlank { "/" }
+            else -> return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", "Recovered Batch V2 job lacks persisted executionCwd after completed steps")
+                .put("recoveryExecutionContextMissing", true)
+                .put("persistedOnly", true)
+        }
+
+        var startIndex0: Int
+        val policy: JSONObject
+        when {
+            currentStep == 0 && completedSteps == 0 -> {
+                startIndex0 = 0
+                policy = RiftCliRecoveryPolicy.queuedBeforeFirstStep()
+            }
+            currentStep == completedSteps && completedSteps <= plan.steps.size -> {
+                startIndex0 = completedSteps
+                policy = RiftCliRecoveryPolicy.betweenSteps()
+            }
+            currentStep == completedSteps + 1 && currentStep in 1..plan.steps.size -> {
+                startIndex0 = currentStep - 1
+                val uncertainStep = plan.steps[startIndex0]
+                policy = if (uncertainStep.kind == "tool") {
+                    RiftCliRecoveryPolicy.forTool(
+                        uncertainStep.toolName.orEmpty(),
+                        uncertainStep.toolArgs ?: JSONObject()
+                    )
+                } else {
+                    val tokens = tokenize(uncertainStep.shellCommand.orEmpty())
+                    val command = tokens.firstOrNull()?.lowercase().orEmpty()
+                    RiftCliRecoveryPolicy.forShell(command, tokens.drop(1))
+                }
+            }
+            else -> {
+                return JSONObject()
+                    .put("ok", false)
+                    .put("jobId", jobId)
+                    .put("status", "recovery_required")
+                    .put("error", "Recovered Batch V2 current/completed step journal is inconsistent")
+                    .put("currentStep", currentStep)
+                    .put("completedSteps", completedSteps)
+                    .put("persistedOnly", true)
+            }
+        }
+
+        val safeResume = policy.optBoolean("retrySafe", false) && policy.optBoolean("idempotent", false)
+        val recoveryBeforeDecision = JSONObject(persisted.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
+        if (!safeResume) {
+            val recovery = JSONObject(recoveryBeforeDecision.toString())
+                .put("lastRecoveryDecisionAtEpochMs", System.currentTimeMillis())
+                .put("lastRecoveryAction", "resume")
+                .put("lastRecoveryPolicy", policy)
+                .put("resumeDenied", true)
+                .put("blindReplayAllowed", false)
+                .put("wholeJobReplayAllowed", false)
+            persisted.put("recoveryMetadata", recovery)
+            cliJobStore.save(persisted)
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("terminal", false)
+                .put("resumeSupported", false)
+                .put("recoveryPolicy", policy)
+                .put("persistedOnly", true)
+        }
+
+        if (!RiftCliExecutionGate.tryReserve(jobId)) {
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", "RiftCLI already has one outstanding authority job")
+                .put("outstandingJobId", RiftCliExecutionGate.outstandingJob() ?: JSONObject.NULL)
+                .put("persistedOnly", true)
+        }
+
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val nowEpoch = System.currentTimeMillis()
+        val submittedEpoch = persisted.optLong("submittedAtEpochMs", nowEpoch)
+        val ageMs = (nowEpoch - submittedEpoch).coerceAtLeast(0L)
+        val createdAt = (nowElapsed - ageMs).coerceAtLeast(0L)
+        val attemptCount = recoveryBeforeDecision.optInt("recoveryAttemptCount", 0) + 1
+        val recoveryAttempt = JSONObject()
+            .put("schema", "rift.cli-recovery-attempt/1")
+            .put("attempt", attemptCount)
+            .put("requestedAtEpochMs", nowEpoch)
+            .put("action", "resume")
+            .put("planHash", storedPlanHash)
+            .put("currentStep", currentStep)
+            .put("completedSteps", completedSteps)
+            .put("resumeStartStepIndex", startIndex0 + 1)
+            .put("policy", policy)
+            .put("previousRecovery", recoveryBeforeDecision)
+        val recovery = JSONObject(recoveryBeforeDecision.toString())
+            .put("recoveryAttemptCount", attemptCount)
+            .put("recoveryAttempt", recoveryAttempt)
+            .put("lastRecoveryAction", "resume")
+            .put("lastRecoveryPolicy", policy)
+            .put("resumeDenied", false)
+            .put("resumeState", "queued")
+            .put("blindReplayAllowed", false)
+            .put("wholeJobReplayAllowed", false)
+        val lease = JSONObject(persisted.optJSONObject("authorityLease")?.toString() ?: "{}")
+            .put("active", true)
+            .put("state", "reserved_after_recovery")
+            .put("reacquiredAtEpochMs", nowEpoch)
+            .put("authorizationBypass", false)
+            .put("perOperationAuthorizationRequired", true)
+            .put("observerValidatorBypass", false)
+
+        val job = CliShellJob(
+            id = jobId,
+            requestId = persisted.optString("requestId"),
+            operation = "batch",
+            cwd = persisted.optString("cwd", "/").ifBlank { "/" },
+            executionCwd = executionCwd,
+            createdAt = createdAt,
+            updatedAt = nowElapsed,
+            status = "queued",
+            cancelRequested = false,
+            output = "",
+            result = null,
+            error = null,
+            lane = "batch",
+            planHash = storedPlanHash,
+            plan = normalizedPlan,
+            currentStep = currentStep,
+            completedSteps = completedSteps,
+            stepResults = stepRows,
+            cancellationState = "none",
+            authorityLease = lease,
+            recoveryMetadata = recovery
+        )
+        cliShellJobs[jobId] = job
+        try {
+            persistCliShellJob(job)
+        } catch (error: Throwable) {
+            cliShellJobs.remove(jobId, job)
+            RiftCliExecutionGate.release(jobId)
+            return JSONObject()
+                .put("ok", false)
+                .put("jobId", jobId)
+                .put("status", "recovery_required")
+                .put("error", error.message ?: "Recovered Batch V2 persistence failed before resume")
+                .put("jobPersistenceRequired", true)
+                .put("persistedOnly", true)
+        }
+
+        RiftMcpRuntime.cliEvents().emit(
+            type = "job.recovery.resumed",
+            requestId = job.requestId.takeIf { it.isNotBlank() },
+            jobId = jobId,
+            lane = "batch",
+            status = "queued",
+            terminal = false,
+            result = policy,
+            message = "Recovered Batch V2 job accepted for system-authorized bounded resume"
+        )
+
+        val stoppedOnPriorFailure = plan.failurePolicy == "stop" && failedSteps > 0
+        submitCliBatchExecution(
+            job = job,
+            plan = plan,
+            toolHost = toolHost,
+            cliResult = cliResult,
+            startIndex0 = startIndex0,
+            initialStepRows = stepRows,
+            initialFailedSteps = failedSteps,
+            initialStopped = stoppedOnPriorFailure,
+            recovered = true
+        )
+        return cliShellJobSnapshot(job)
+            .put("recoveryActionAccepted", true)
+            .put("recoveryPolicy", policy)
+            .put("persistedOnly", false)
+    }
+
+    private fun Boolean?.orFalse(): Boolean = this == true
 
     private fun executeCliToolDispatch(
         cwd: String,
@@ -1460,6 +1900,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 require(jobId.isNotBlank()) { "rift_cli_job_cancel requires jobId" }
                 cancelCliShellJob(jobId) ?: toolHost.cancelCliJob(jobId)
             }
+            "rift_cli_job_recover" -> {
+                val jobId = toolArgs.optString("jobId").trim()
+                val action = toolArgs.optString("action").trim().lowercase()
+                recoverCliPersistedJob(jobId, action, toolHost, cliResult)
+            }
             else -> toolHost.startCliJob(toolName, toolArgs, cliResult.optString("requestId"))
         }
 
@@ -1468,7 +1913,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val terminal = response.optBoolean("terminal", false)
         val jobControl = toolName == "rift_cli_job_list" ||
             toolName == "rift_cli_job_poll" ||
-            toolName == "rift_cli_job_cancel"
+            toolName == "rift_cli_job_cancel" ||
+            toolName == "rift_cli_job_recover"
         val submitted = !jobControl && response.optString("jobId").isNotBlank()
         val asynchronous = submitted
         val executed = jobControl || terminal
