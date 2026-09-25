@@ -542,6 +542,24 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-25-014 — Promoted-diagnostics parser still assumed terminal lifecycle clause
+
+**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+
+**Affected source:** `53ab0980924f2921f2a3ff7a272979fc3a9309c1` (`Implement N2-M6 RiftStore conformance and hardening`), Builder run `36106222439`.
+
+**Stage:** Builder `npm run check` / `check:transport`, before Gradle. Source integrity was clean and Builder syntax preflight was empty/clean.
+
+**Observed failure:** `scripts/test-rift-memory-n2-m4-v1.mjs` failed at `assert.ok(promotedDiagnostics.includes('N2-M4'))`. FAIL-013 had replaced the brittle contiguous substring check with a parser, but that parser matched `^N2 CANONICAL MEMORY RUNTIME INACTIVE; (.+) PROMOTED DIAGNOSTICS$` against the entire runtime status. M6 source implementation legitimately appends `; N2-M6 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY`, so the end-anchored match returned no promoted diagnostics even though M4 remained promoted.
+
+**Root cause:** the FAIL-013 hardening correctly stopped phase-local regressions from owning the exact global promoted phase count, but still modeled `PROMOTED DIAGNOSTICS` as the terminal clause of the whole lifecycle string. The global authority allows later semicolon-delimited lifecycle clauses, so the parser was still coupled to presentation ordering. M5 carried the same latent parser defect.
+
+**Classification:** regression-only false failure. Builder had not reached M6 regression execution or Gradle, so this failure does not validate or invalidate the new M6 Kotlin implementation. Installed M1-M5 promotion evidence remains unaffected; canonical runtime authority remains inactive.
+
+**Why Observer did not reject it before push:** the parser was syntactically valid, referenced the authoritative runtime field, and preserved phase-specific ownership. Observer does not execute arbitrary JavaScript parser semantics against future lifecycle-string shapes, so Builder execution remains an independent authority for this class.
+
+**Hardening added:** M4 and M5 now parse semicolon-delimited lifecycle clauses, select the clause whose suffix is `PROMOTED DIAGNOSTICS`, strip only that clause suffix, then assert membership of their own macro ID. Each regression contains an explicit control fixture using the exact M6 lifecycle shape `N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M4 + N2-M5 PROMOTED DIAGNOSTICS; N2-M6 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY` and requires it to parse to `['N2-M4', 'N2-M5']`. The N2 contract regression and docs validator continue to own the exact whole runtime lifecycle string.
+
 ## FAIL-2026-09-25-013 — Phase-local N2 regression froze mutable global lifecycle wording
 
 **Status:** RESOLVED — fixing source `0cc1b507271015ae99e270b7ad557a41c6e8be29`, Builder run `36102430488` / run number `372`; Builder completed successfully, the repaired APK was installed from the exact fixing source, M1-M5 diagnostics remained green, and the post-install Observer baseline returned claims/integrity/consistency/contracts clean with proofs `mode=none`.

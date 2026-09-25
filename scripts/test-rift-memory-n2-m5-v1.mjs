@@ -92,7 +92,21 @@ assert.equal(n29?.builderRunNumber, '370');
 assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M5')?.status, 'promoted');
 assert.ok(phase.programStatus.includes('N2.0-N2.9 PROMOTED'));
 assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
-const promotedDiagnostics = phase.runtimeStatus.match(/^N2 CANONICAL MEMORY RUNTIME INACTIVE; (.+) PROMOTED DIAGNOSTICS$/)?.[1]?.split(' + ') ?? [];
+const parsePromotedDiagnostics = runtimeStatus => {
+  const clause = String(runtimeStatus)
+    .split(';')
+    .map(part => part.trim())
+    .find(part => part.endsWith('PROMOTED DIAGNOSTICS')) ?? '';
+  return clause
+    .replace(/ PROMOTED DIAGNOSTICS$/, '')
+    .split(' + ')
+    .filter(Boolean);
+};
+assert.deepEqual(
+  parsePromotedDiagnostics('N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M4 + N2-M5 PROMOTED DIAGNOSTICS; N2-M6 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY'),
+  ['N2-M4', 'N2-M5'],
+);
+const promotedDiagnostics = parsePromotedDiagnostics(phase.runtimeStatus);
 assert.ok(promotedDiagnostics.includes('N2-M5'));
 
 for (const marker of [

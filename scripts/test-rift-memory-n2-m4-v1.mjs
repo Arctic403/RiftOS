@@ -150,7 +150,21 @@ assert.equal(phase.phases.find(row => row.phase === 'N2.7')?.builderRunNumber, '
 assert.equal(phase.phases.find(row => row.phase === 'N2.8')?.builderRunNumber, '368');
 assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M4')?.status, 'promoted');
 assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
-const promotedDiagnostics = phase.runtimeStatus.match(/^N2 CANONICAL MEMORY RUNTIME INACTIVE; (.+) PROMOTED DIAGNOSTICS$/)?.[1]?.split(' + ') ?? [];
+const parsePromotedDiagnostics = runtimeStatus => {
+  const clause = String(runtimeStatus)
+    .split(';')
+    .map(part => part.trim())
+    .find(part => part.endsWith('PROMOTED DIAGNOSTICS')) ?? '';
+  return clause
+    .replace(/ PROMOTED DIAGNOSTICS$/, '')
+    .split(' + ')
+    .filter(Boolean);
+};
+assert.deepEqual(
+  parsePromotedDiagnostics('N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M4 + N2-M5 PROMOTED DIAGNOSTICS; N2-M6 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY'),
+  ['N2-M4', 'N2-M5'],
+);
+const promotedDiagnostics = parsePromotedDiagnostics(phase.runtimeStatus);
 assert.ok(promotedDiagnostics.includes('N2-M4'));
 assert.ok(pkg.scripts['check:transport'].includes('node scripts/test-rift-memory-n2-m4-v1.mjs'));
 
