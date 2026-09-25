@@ -633,22 +633,45 @@ class RiftWorkspaceRecords private constructor(context: Context) {
 
     private fun createCheckpoint(reason: String, gitRoot: String?, gitHeadSha: String?): JSONObject {
         reconcileAll("checkpoint")
-        checkpoint.clear()
-        resetSnapshotRoot(checkpointRoot)
-        for ((path, entry) in observed) {
-            checkpoint[path] = entry
-            if (entry.textStored) {
-                val text = readSnapshot(observedRoot, path)
-                writeSnapshot(checkpointRoot, path, text)
+        val prefix = gitRoot
+            ?.let(::normalizePrefix)
+            ?.takeIf { it.isNotBlank() }
+
+        if (prefix == null) {
+            checkpoint.clear()
+            resetSnapshotRoot(checkpointRoot)
+            for ((path, entry) in observed) {
+                checkpoint[path] = entry
+                if (entry.textStored) {
+                    val text = readSnapshot(observedRoot, path)
+                    writeSnapshot(checkpointRoot, path, text)
+                }
             }
+            candidateSessionsByPath.clear()
+            candidateSessionEvidenceComplete = true
+        } else {
+            checkpoint.keys
+                .filter { path -> matchesPrefix(path, prefix) }
+                .forEach { path -> checkpoint.remove(path) }
+            resetSnapshotPrefix(checkpointRoot, prefix)
+            for ((path, entry) in observed) {
+                if (!matchesPrefix(path, prefix)) continue
+                checkpoint[path] = entry
+                if (entry.textStored) {
+                    val text = readSnapshot(observedRoot, path)
+                    writeSnapshot(checkpointRoot, path, text)
+                }
+            }
+            candidateSessionsByPath.keys
+                .filter { path -> matchesPrefix(path, prefix) }
+                .forEach { path -> candidateSessionsByPath.remove(path) }
         }
+
         checkpointAt = System.currentTimeMillis()
         checkpointSequence = sequence.get()
         checkpointReason = reason
         checkpointGitRoot = gitRoot
         checkpointGitHeadSha = gitHeadSha
-        candidateSessionsByPath.clear()
-        candidateSessionEvidenceComplete = true
         saveState()
         return checkpointSummary()
     }
@@ -1441,6 +1464,26 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             require(remove(root)) { "Could not reset workspace record snapshot root" }
         }
         require(root.mkdirs() || root.isDirectory) { "Could not recreate workspace record snapshot root" }
+    }
+
+    private fun resetSnapshotPrefix(root: File, prefix: String) {
+        val target = snapshotFile(root, prefix)
+        if (!target.exists()) return
+        var entries = 0
+        fun remove(node: File): Boolean {
+            checkActive("workspace record scoped cleanup")
+            require(++entries <= 10_000) { "workspace record scoped cleanup exceeds 10,000 entries" }
+            if (node.isDirectory) {
+                val children = node.listFiles()
+                    ?: throw IllegalStateException("Could not read workspace record scoped snapshot directory")
+                children.forEach { child ->
+                    require(remove(child)) { "Could not delete workspace record scoped snapshot" }
+                }
+            }
+            return node.delete()
+        }
+        require(remove(target)) { "Could not reset workspace record scoped snapshot: $prefix" }
+        pruneEmptyParents(target.parentFile, root)
     }
 
     private fun digestFile(file: File, algorithm: String): String {

@@ -540,3 +540,29 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 **Resolution target:** Builder/source checks and Kotlin compilation must pass; install the repaired APK; repeat the exact harmless `n2-phase-authority.json` edit and require proofs to include `validate-rift-docs.mjs` alongside contract + M1 + M2 + M3 + M4 with `authority-consumer-tests` required and zero unresolved obligations; restore exactly and require all five Observer views clean before M4 promotion.
 
+---
+
+## FAIL-2026-09-25-012 — Repo-scoped Git pushes advanced the whole Workspace Records checkpoint
+
+**Status:** FIX IN SOURCE / AWAITING BUILDER + LIVE CROSS-REPO VERIFICATION.
+
+**Affected installed runtime:** `d39960832a701311461058670b5b93597ae612c9`, Builder run `36094853587` / run number `368`.
+
+**Promoted repository state containing the defect:** `9f59e77d5898597e99407b0a0e67f6c2eb900e39` (`Promote N2-M4 memory`).
+
+**Stage:** post-promotion Observer evidence audit while syncing RiftOS and the public Builder as separate repos inside the same `workspace`.
+
+**Observed failure:** after a repo-local Git push, Workspace Records could report `changedFiles=0` and proofs `mode=none` for unrelated workspace changes because the operational checkpoint had been advanced across the entire workspace rather than only the pushed repository.
+
+**Root cause:** `RiftNativeGit.checkpoint(...)` correctly passed `gitRoot` and the pushed head SHA into `RiftWorkspaceRecords.checkpoint(...)`, but `RiftWorkspaceRecords.createCheckpoint(...)` treated every checkpoint as global. It executed `checkpoint.clear()`, reset the entire checkpoint snapshot tree, copied every observed workspace file into the new baseline, cleared every `candidateSessionsByPath` entry, and reset `candidateSessionEvidenceComplete=true`. `gitRoot` was stored only as metadata and never used to scope the baseline update.
+
+**Classification:** source-owned Workspace Records / Observer candidate-boundary defect. M4 memory semantics and installed N2.7/N2.8 diagnostics were not disproven, but Observer promotion evidence taken after an unrelated repo push could not be trusted until the checkpoint boundary was repaired.
+
+**Why Observer missed it:** the Workspace Records regression verified bounds, candidate identity separation, watcher currentness, and retained UI behavior, but contained no `gitRoot` or cross-repository checkpoint-isolation invariant. The proof planner consumes `workspaceRecords.semanticImpactSeed()` / `buildCandidateManifest()`, so a globally advanced checkpoint directly changes the candidate seen by Observer proofs.
+
+**Hardening added:** repo-scoped checkpoints now derive a normalized prefix from `gitRoot`; remove and rebuild only checkpoint entries beneath that prefix; reset only that snapshot subtree; and remove only candidate-session mappings beneath that prefix. Scoped checkpoints do not call `checkpoint.clear()`, do not reset the entire snapshot root, do not clear unrelated candidate sessions, and do not upgrade global `candidateSessionEvidenceComplete` back to true. A null/global checkpoint retains the existing whole-workspace reset behavior. `test-rift-workspace-records.mjs` permanently asserts the RiftGit `gitRoot` handoff, scoped checkpoint branch, snapshot-prefix cleanup, path-filtered session cleanup, and absence of the former global resets in the scoped branch.
+
+**Pre-push source evidence:** before documenting the failure, the whole Workspace Records candidate was confirmed clean with `changedFiles=0`. On the fix candidate, claims/integrity/consistency/contracts were clean; proofs were `complete=true`, `mode=deep`, selected `scripts/test-rift-workspace-records.mjs`, required 6 obligations, and had 0 unresolved obligations. Direct `node` execution is not exposed by native RiftShell, so Builder `npm check` remains the execution authority for that JS regression.
+
+**Resolution target:** Builder must execute and pass `test-rift-workspace-records.mjs`, Kotlin compilation, APK packaging and install. On the repaired live APK, create harmless dirty candidates in two separate workspace repos, push only repo A, and prove repo B remains dirty in Workspace Records / proofs with its candidate identity preserved; then restore repo B exactly and require all Observer views clean. Revalidate the already-promoted M4 state under that repaired checkpoint boundary before starting M5.
+

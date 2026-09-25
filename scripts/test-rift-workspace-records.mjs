@@ -6,6 +6,7 @@ const gradle=fs.readFileSync('android/app/build.gradle.kts','utf8');
 const nativeApps=fs.readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt','utf8');
 const records=fs.readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt','utf8');
 const watcher=fs.readFileSync('android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt','utf8');
+const nativeGit=fs.readFileSync('android/app/src/main/java/com/riftos/app/RiftNativeGit.kt','utf8');
 assert.match(records,/MAX_RECORDS = 256/,'Workspace Records history must stay compact');
 assert.match(records,/RECORD_OPERATION_TIMEOUT_MS = 60_000L/,'Workspace Records bounded operation budget drifted');
 assert.match(records,/TRACKING_POLICY_VERSION = 2/,'Workspace Records tracking policy migration missing');
@@ -25,6 +26,28 @@ assert.ok(!candidateStateBody.includes('oldestRetainedAt'),'retained-history age
 assert.ok(!candidateStateBody.includes('prunedThroughSequence'),'history pruning must not affect candidate identity');
 assert.ok(!candidateStateBody.includes('sessionEvidence'),'patch/session provenance must not affect candidate identity');
 assert.match(records,/prepareForRead\("semantic-impact-seed", requireCurrent = true\)/,'semantic impact must use watcher-aware currentness');
+
+const checkpointBody = records.slice(
+  records.indexOf('private fun createCheckpoint('),
+  records.indexOf('private fun queryInternal(')
+);
+assert.ok(nativeGit.includes('.put("gitRoot", gitRoot ?: "")'),'RiftGit must pass repo scope into Workspace Records checkpoints');
+assert.ok(checkpointBody.includes('val prefix = gitRoot'),'repo checkpoint scope must be derived from gitRoot');
+assert.ok(checkpointBody.includes('if (prefix == null) {'),'global checkpoint behavior must be explicit');
+const scopedCheckpointBody = checkpointBody.slice(
+  checkpointBody.indexOf('} else {'),
+  checkpointBody.indexOf('checkpointAt =')
+);
+assert.ok(scopedCheckpointBody.includes('.filter { path -> matchesPrefix(path, prefix) }'),'scoped checkpoint must remove only paths inside the pushed repo');
+assert.ok(scopedCheckpointBody.includes('resetSnapshotPrefix(checkpointRoot, prefix)'),'scoped checkpoint must reset only the pushed repo snapshot subtree');
+assert.ok(scopedCheckpointBody.includes('if (!matchesPrefix(path, prefix)) continue'),'scoped checkpoint must copy only observed paths inside the pushed repo');
+assert.ok(scopedCheckpointBody.includes('candidateSessionsByPath.keys'),'scoped checkpoint must prune candidate sessions by repo path');
+assert.ok(!scopedCheckpointBody.includes('checkpoint.clear()'),'repo push must not clear the whole workspace checkpoint');
+assert.ok(!scopedCheckpointBody.includes('resetSnapshotRoot(checkpointRoot)'),'repo push must not reset the whole workspace checkpoint snapshot');
+assert.ok(!scopedCheckpointBody.includes('candidateSessionsByPath.clear()'),'repo push must not erase unrelated candidate session evidence');
+assert.ok(!scopedCheckpointBody.includes('candidateSessionEvidenceComplete = true'),'repo push must not globally upgrade incomplete session evidence');
+assert.ok(records.includes('private fun resetSnapshotPrefix(root: File, prefix: String)'),'scoped snapshot cleanup helper missing');
+
 assert.match(records,/IGNORED_DIRECTORY_NAMES/,'generated/cache tracking policy missing');
 assert.match(watcher,/records\.shouldTrackDirectory/,'watcher must share Workspace Records tracking policy');
 assert.match(watcher,/records\.updateWatcherCoverage/,'watcher completeness must feed Workspace Records currentness');

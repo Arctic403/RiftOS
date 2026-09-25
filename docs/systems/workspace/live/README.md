@@ -98,6 +98,8 @@ Observed text snapshots support per-event diffs.
 
 Checkpoint text snapshots support changed-since-baseline diffs.
 
+Git-owned operational checkpoints are repository-scoped. A push for `workspace/<repo>` may advance only checkpoint entries, checkpoint snapshots, and candidate-session mappings beneath that repository prefix; unrelated workspace candidates must remain dirty and retain their evidence. Only an explicit global checkpoint may replace the whole workspace baseline or reset global candidate-session completeness.
+
 Snapshot paths are canonicalized beneath the private observed/checkpoint roots.
 
 Snapshot writes use temporary-file + rename publication.
