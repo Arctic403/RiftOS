@@ -132,14 +132,14 @@ assert.ok(host.includes('n2FinalDiagnostic = RiftMemoryN2FinalSelfTest.run(appCo
 assert.equal((host.match(/riftMemoryN2Final/g) || []).length, 3, 'final N2 diagnostic must attach to exactly three rift_info lanes');
 
 assert.equal(phase.phases[12].phase, 'N2.12');
-assert.equal(phase.phases[12].status, 'source-implemented');
-assert.equal(phase.phases[12].promotedSourceSha, null);
-assert.equal(phase.phases[12].builderRunNumber, null);
-assert.equal(phase.phases.filter(row => row.status === 'promoted').length, 12);
-assert.equal(phase.phases.filter(row => row.status === 'source-implemented').length, 1);
+assert.equal(phase.phases[12].status, 'promoted');
+assert.equal(phase.phases[12].promotedSourceSha, '9e75b0f76fd61ba80ca4c241a41532253bdb4c47');
+assert.equal(phase.phases[12].builderRunNumber, '378');
+assert.equal(phase.phases.filter(row => row.status === 'promoted').length, 13);
+assert.equal(phase.phases.filter(row => row.status === 'source-implemented').length, 0);
 assert.equal(phase.phases.filter(row => row.status === 'pending').length, 0);
-assert.ok(phase.programStatus.includes('N2.12 SOURCE IMPLEMENTED / FINAL CORRECTNESS GATE PROMOTION PENDING'));
-assert.ok(phase.runtimeStatus.includes('N2.12 SOURCE-IMPLEMENTED FINAL DIAGNOSTIC ONLY'));
+assert.equal(phase.programStatus, 'N2.0-N2.12 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2 COMPLETE');
+assert.equal(phase.runtimeStatus, 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED DIAGNOSTICS; N2.12 FINAL CORRECTNESS GATE PROMOTED');
 assert.equal(phase.benchmarkRule, EXPECTED.benchmarkRule);
 
 for (const body of [localAgent, cliHost]) {

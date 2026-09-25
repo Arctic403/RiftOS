@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-016 — M5 regression still froze an old global program-status prefix
 
-**Status:** SOURCE FIXED / BUILDER REVALIDATION PENDING.
+**Status:** RESOLVED — fixing source `9e75b0f76fd61ba80ca4c241a41532253bdb4c47`, Builder run `36147252584` / run number `378`; the full source-check passed including M5 and the N2.12 final regression, Kotlin/Gradle completed, the APK installed, and live `riftMemoryN2Final` returned `ok=true` with 12/12 corpus scenarios passed, all eight zero-tolerance outcomes at zero, every weakest-link category green, source/build/runtime continuity true, ARM32 device proof true, ARM64 build/correctness parity true, and no comparative/performance benchmark executed.
 
 **Affected source:** `72eb89c54ef7d3abac0f422353b20deb0eb90b4c` (`Implement N2.12 final correctness gate`), Builder run `36115242218`.
 

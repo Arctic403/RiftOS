@@ -125,7 +125,6 @@ assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M6')?.s
 assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
 
 for (const marker of [
-  "n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 12",
   "n2PhaseAuthority.phases.slice(10, 12)",
   "n2PhaseAuthority.macroImplementationPlan[5].status, 'promoted'",
   '921d32ff295921be8783ca4ce8395ba5ee029553',

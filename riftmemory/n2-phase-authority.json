@@ -1,8 +1,8 @@
 {
   "schema": "rift-memory-n2-phase-authority-v1",
   "program": "N2 Federated Rift Memory Kernel",
-  "programStatus": "N2.0-N2.11 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2.12 SOURCE IMPLEMENTED / FINAL CORRECTNESS GATE PROMOTION PENDING",
-  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED DIAGNOSTICS; N2.12 SOURCE-IMPLEMENTED FINAL DIAGNOSTIC ONLY",
+  "programStatus": "N2.0-N2.12 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2 COMPLETE",
+  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED DIAGNOSTICS; N2.12 FINAL CORRECTNESS GATE PROMOTED",
   "n18Prerequisite": "SATISFIED",
   "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
   "contractPath": "riftmemory/n2-contract-v1.json",
@@ -144,9 +144,9 @@
     },
     {
       "phase": "N2.12",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "9e75b0f76fd61ba80ca4c241a41532253bdb4c47",
+      "builderRunNumber": "378"
     }
   ]
 }
