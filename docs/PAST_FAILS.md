@@ -432,3 +432,53 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 
 
+
+
+## FAIL-2026-09-24-008 — Public Builder froze pre-M4 N2 lifecycle and omitted the new M4 source gate
+
+**Status:** RESOLVED — public Builder source `d1f159c341f583dc7901a25aa2ea8f3f6ed3a883` advanced the lifecycle/source-gate contract, and rerun `36089605649` on the unchanged RiftOS source passed the Builder preflight and entered RiftOS `npm run check`.
+
+**Failed RiftOS source:** `bd452dde7e82814f8f00272aec68749aee793a1e`
+
+**Builder run:** `36088961911`
+
+**Stage:** public Builder source preflight in `scripts/riftos-build.sh`, before RiftOS `npm run check` and before Gradle.
+
+**Observed error:** `RiftOS N2 phase authority lifecycle/macro-plan mismatch`.
+
+**Root cause:** the public Builder still hard-coded the pre-M4 lifecycle contract: exact program/runtime strings ending at N2-M3, all N2.7+ phases `pending`, all M4+ macro patches `pending`, and source-gate syntax/`check:transport` coverage only through `test-rift-memory-n2-m3-v1.mjs`. RiftOS correctly advanced only the mutable phase authority to N2.7 + N2.8 / N2-M4 `source-implemented` with null promoted source/run and canonical runtime still inactive.
+
+**Classification:** stale external Builder gate, not a RiftOS source defect.
+
+**Observer result before fix:** exact failed RiftOS HEAD was clean: claims `complete=true`, `clean=true`, 0 findings; proofs `complete=true`, `mode=none`, 0 changes/tests/obligations/unresolved. This class lives outside the RiftOS repository Observer boundary, so no RiftOS Observer rule change is justified.
+
+**Prevention:** Builder lifecycle guards must advance with the structured N2 phase-authority state and independently require every newly maintained N2 source-gate entrypoint in both syntax preflight and `check:transport` reachability checks. Builder documentation must describe the same lifecycle state.
+
+**Resolution completed:** public Builder source `d1f159c341f583dc7901a25aa2ea8f3f6ed3a883` accepts N2.7/N2.8 + N2-M4 `source-implemented` with null promotion evidence, keeps N2.9-N2.12 pending and canonical runtime inactive, and requires `test-rift-memory-n2-m4-v1.mjs` in syntax preflight plus `check:transport`. Rerun `36089605649` on the same RiftOS source passed this Builder gate and exposed the next independent source-owned failure recorded as FAIL-009.
+
+---
+
+## FAIL-2026-09-24-009 — RiftOS docs validator and root roadmap froze the pre-M4 lifecycle
+
+**Status:** FIX IN SOURCE / AWAITING BUILDER + LIVE OBSERVER VERIFICATION.
+
+**Failed RiftOS source:** `bd452dde7e82814f8f00272aec68749aee793a1e`
+
+**Builder run:** `36089605649`
+
+**Stage:** RiftOS source checks, `npm run check` → `npm run check:transport` → `scripts/validate-rift-docs.mjs`.
+
+**Observed error:** `RiftOS documentation validation failed: - N2 phase authority lifecycle/macro-plan drifted`.
+
+**Root cause:** M4 correctly advanced `riftmemory/n2-phase-authority.json` to N2.7/N2.8 + N2-M4 `source-implemented`, but `scripts/validate-rift-docs.mjs` still required the pre-M4 program/runtime strings and all N2.7+ phases/M4+ macros pending. The root `ROADMAP.md` summary also still declared `N2.7-N2.12 PENDING`, so a one-line validator fix would only have exposed a second stale lifecycle assertion. A repository-wide stale-lifecycle sweep then found `test-rift-memory-n2-m3-v1.mjs` still requiring the obsolete runtime substring `N2-M3 DIAGNOSTIC ONLY`; that redundant mutable-summary fragment was removed while its structured M3 promotion checks and canonical-runtime-inactive invariant remain.
+
+**Classification:** stale source-owned documentation/lifecycle oracle plus stale root lifecycle summary; M4 runtime semantics were not disproven.
+
+**Observer result before fix:** the exact failed pushed HEAD had already returned claims `complete=true`, `clean=true`, 0 findings and proofs `complete=true`, `mode=none`, 0 changes/tests/obligations/unresolved.
+
+**Why Observer missed it:** machine-authority `config-read` reverse-impact discovery scanned only paths satisfying `isTestPath(...)`. `validate-rift-docs.mjs` directly reads `riftmemory/n2-phase-authority.json` through `readFileSync(path.join(...))`, but validators were excluded from the consumer candidate set. The proof planner therefore required the N2 regression consumers but omitted the source-owned docs validator.
+
+**Hardening added:** machine-authority config-read discovery now scans bounded maintained verification scripts — tests plus `scripts/validate-*.mjs/js` and `scripts/verify-*.mjs/js` — under the existing 300-consumer cap and code masking. The semantic-impact regression independently requires the live N2 authority-consumer set to contain contract + M1 + M2 + M3 + M4 + `validate-rift-docs.mjs`. The root roadmap and docs validator are advanced together to the same M4 source-implemented lifecycle, and the remaining stale M3 runtime-summary substring assertion is removed.
+
+**Resolution target:** Builder/source checks must pass the repaired docs validator and semantic-impact regression; after install, a harmless machine-authority edit must make live proofs select `validate-rift-docs.mjs` alongside the N2 direct consumers with zero unresolved obligations, then exact restoration must return the repository clean.
+

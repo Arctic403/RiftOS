@@ -83,8 +83,10 @@ assert.match(sandbox, /MAX_CANDIDATE_DOCS = 300/);
 assert.match(candidateImpactBody, /config-read-target-bound/);
 assert.match(candidateImpactBody, /config-read-test-bound/);
 assert.match(candidateImpactBody, /\.put\("kind", "config-read"\)/);
-assert.match(candidateImpactBody, /changedTests \+= testPath/);
-assert.match(candidateImpactBody, /RiftSourceIntelligenceV2\.referenceCodeMask\(testPath, testText\)/);
+assert.match(candidateImpactBody, /val configReadConsumerPathsAll = indexed\.keys\.filter\(::isVerificationScriptPath\)\.sorted\(\)/);
+assert.match(candidateImpactBody, /changedTests \+= consumerPath/);
+assert.match(candidateImpactBody, /RiftSourceIntelligenceV2\.referenceCodeMask\(consumerPath, consumerText\)/);
+assert.match(sandbox, /private fun isVerificationScriptPath\(path: String\): Boolean/);
 assert.match(sandbox, /"changed-symbol-bound"/);
 assert.match(sandbox, /"reference-symbol-bound"/);
 assert.match(sandbox, /changedSymbolTargets/);
@@ -119,7 +121,7 @@ const directReadPatterns = [
   new RegExp('\\breadFileSync\\s*\\(\\s*[\\\'"]' + authorityLiteral + '[\\\'"]'),
 ];
 const authorityConsumers = readdirSync('scripts')
-  .filter(name => /^test-.*\.(?:mjs|js)$/.test(name))
+  .filter(name => /^(?:test-|validate-|verify-).*\.(?:mjs|js)$/.test(name))
   .filter(name => directReadPatterns.some(pattern => pattern.test(read('scripts/' + name))))
   .sort();
 
@@ -128,6 +130,8 @@ for (const expected of [
   'test-rift-memory-n2-m1-v1.mjs',
   'test-rift-memory-n2-m2-v1.mjs',
   'test-rift-memory-n2-m3-v1.mjs',
+  'test-rift-memory-n2-m4-v1.mjs',
+  'validate-rift-docs.mjs',
 ]) {
   assert.ok(authorityConsumers.includes(expected), 'phase-authority direct consumer not detected: ' + expected);
 }

@@ -2686,20 +2686,20 @@ internal class RiftToolSandbox(context: Context) {
             incompleteReasons += "config-read-target-bound"
         }
         val configReadTargets = configReadTargetsAll.take(MAX_CANDIDATE_AFFINITY_TARGETS)
-        val configReadTestPathsAll = indexed.keys.filter(::isTestPath).sorted()
-        if (configReadTestPathsAll.size > MAX_CANDIDATE_TESTS) {
+        val configReadConsumerPathsAll = indexed.keys.filter(::isVerificationScriptPath).sorted()
+        if (configReadConsumerPathsAll.size > MAX_CANDIDATE_TESTS) {
             incompleteReasons += "config-read-test-bound"
         }
-        val configReadTestPaths = configReadTestPathsAll.take(MAX_CANDIDATE_TESTS)
+        val configReadConsumerPaths = configReadConsumerPathsAll.take(MAX_CANDIDATE_TESTS)
 
-        for (testPath in configReadTestPaths) {
-            val projectRoot = candidateProjectRoot(testPath)
-            val file = sandboxFile(testPath)
+        for (consumerPath in configReadConsumerPaths) {
+            val projectRoot = candidateProjectRoot(consumerPath)
+            val file = sandboxFile(consumerPath)
             if (!file.isFile || file.length() > MAX_WORKSPACE_SEARCH_FILE_BYTES || !isTextFile(file)) continue
-            val testText = file.readText(Charsets.UTF_8)
+            val consumerText = file.readText(Charsets.UTF_8)
                 .replace("\r\n", "\n")
                 .replace('\r', '\n')
-            val codeMask = RiftSourceIntelligenceV2.referenceCodeMask(testPath, testText)
+            val codeMask = RiftSourceIntelligenceV2.referenceCodeMask(consumerPath, consumerText)
 
             for (target in configReadTargets) {
                 if (!isPathWithin(target, projectRoot)) continue
@@ -2713,24 +2713,24 @@ internal class RiftToolSandbox(context: Context) {
                     Regex("""\breadFileSync\s*\(\s*["']$escapedTarget["']""")
                 )
                 val matched = patterns.any { pattern ->
-                    pattern.findAll(testText).any { match ->
+                    pattern.findAll(consumerText).any { match ->
                         codeMask.getOrNull(match.range.first) == true
                     }
                 }
                 if (!matched) continue
 
-                val key = "config-read|$testPath|$target|$relativeTarget"
+                val key = "config-read|$consumerPath|$target|$relativeTarget"
                 if (!dependentKeys.add(key)) continue
                 if (dependentRows.size >= MAX_CANDIDATE_DEPENDENTS) {
                     incompleteReasons += "dependent-bound"
                     break
                 }
                 dependentRows += JSONObject()
-                    .put("source", testPath)
+                    .put("source", consumerPath)
                     .put("target", target)
                     .put("kind", "config-read")
                     .put("specifier", relativeTarget)
-                changedTests += testPath
+                changedTests += consumerPath
             }
         }
 
@@ -3043,6 +3043,13 @@ internal class RiftToolSandbox(context: Context) {
         val lower = path.lowercase()
         return lower.contains("/test/") || lower.contains("/tests/") || lower.contains("__tests__") ||
             lower.contains("test-") || lower.contains("_test.") || lower.contains(".test.") || lower.contains(".spec.")
+    }
+
+    private fun isVerificationScriptPath(path: String): Boolean {
+        if (isTestPath(path)) return true
+        val lower = path.lowercase()
+        return (lower.endsWith(".mjs") || lower.endsWith(".js")) &&
+            (lower.contains("/scripts/validate-") || lower.contains("/scripts/verify-"))
     }
 
     private fun validationQueryTokens(query: String): Set<String> {
