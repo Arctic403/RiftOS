@@ -342,7 +342,7 @@ This confirms the authority-consumer impact gap already foreshadowed by FAIL-003
 
 **Failed RiftOS source:** `274facf5148e008b1bc093c2eb62e55d882145cc`
 
-**Fixing source SHA:** `8b4ea956901c` — corrects the over-escaped test discovery regex and adds bounded claims-oracle regression-discovery sanity. Builder and live claims verification are still required before this entry becomes RESOLVED.
+**Fixing source SHA:** `8b4ea956901c` — corrects the over-escaped test discovery regex and adds bounded claims-oracle regression-discovery sanity. **Decoder follow-up source SHA:** `9ea19f59971be96e6933aabb643d7bd70a76f3df` — normalizes escaped JavaScript literals in the generalized claims parser and strengthens the independent documentation-claims regression. One final rebuild/live clean-restoration proof is still required before this entry becomes RESOLVED.
 
 **Builder run ID:** `36080113265`
 
@@ -387,7 +387,7 @@ The failed HEAD was inspected before any source fix. Claims, consistency, integr
 
 **Failed RiftOS source:** `11d8c4abc804767677c2ceccb92f91017fd374b5`
 
-**Fixing source SHA:** `33c6e0daa984d338e63f74cd4157a73110e59553` — replaces the stale implementation-detail contract assertion with the stable machine-authority helper surface and generalizes claims regression-literal ownership to maintained `*Read(...)` aliases plus direct/prefixed `*Assert.ok(alias.includes('literal'))` assertions under executable-code masking. Builder and live claims verification are still required before this entry becomes RESOLVED.
+**Fixing source SHA:** `33c6e0daa984d338e63f74cd4157a73110e59553` — replaces the stale implementation-detail contract assertion with the stable machine-authority helper surface and generalizes claims regression-literal ownership to maintained `*Read(...)` aliases plus direct/prefixed `*Assert.ok(alias.includes('literal'))` assertions under executable-code masking. **Decoder follow-up source SHA:** `9ea19f59971be96e6933aabb643d7bd70a76f3df` — centralizes minimal deterministic escape normalization across direct + marker-loop literals and upgrades the independent Builder regression to scan the generalized grammar itself. Builder/live verification of this follow-up is still required before this entry becomes RESOLVED.
 
 **Builder run ID:** `36080971930`
 
