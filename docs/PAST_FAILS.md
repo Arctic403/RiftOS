@@ -402,7 +402,7 @@ The failed HEAD was inspected before any source fix. Claims, consistency, integr
 
 FAIL-005 hardening intentionally refactored machine-authority classification out of a local `val machineAuthority = listOf(...)` inside `isBuildConfigPath(...)` and into the reusable `RiftSourceIntelligenceV2.isMachineAuthorityPath(...)` helper so semantic impact and the proof planner share one authority definition.
 
-The N2 contract regression still asserted the old local implementation text. The behavioral contract remained present — the same three authority paths plus the new shared helper — but the regression froze an obsolete implementation detail and failed before Gradle.
+The N2 contract regression still asserted the old local implementation text. The behavioral contract remained present — the same three authority paths plus the new shared helper — but the regression froze an obsolete implementation detail and failed before Gradle. The pre-push generalized direct-literal audit also found a second stale assertion, `return machineAuthority ||`; it was corrected in the same repair to `return isMachineAuthorityPath(path) ||` so the full stale implementation-detail cluster is removed rather than waiting for another Builder failure.
 
 ### Why the Observer did not prevent it
 
