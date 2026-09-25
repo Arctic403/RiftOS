@@ -343,6 +343,8 @@ This confirms the authority-consumer impact gap already foreshadowed by FAIL-003
 
 **Failed RiftOS source:** `274facf5148e008b1bc093c2eb62e55d882145cc`
 
+**Fixing source SHA:** `8b4ea956901c` — corrects the over-escaped test discovery regex and adds bounded claims-oracle regression-discovery sanity. Builder and live claims verification are still required before this entry becomes RESOLVED.
+
 **Builder run ID:** `36080113265`
 
 **Signing mode:** `alpha-development`
