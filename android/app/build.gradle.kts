@@ -106,6 +106,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftMemoryN2M5SelfTest.kt",
         "src/main/java/com/riftos/app/RiftStoreMemoryStoreV1.kt",
         "src/main/java/com/riftos/app/RiftMemoryN2M6SelfTest.kt",
+        "src/main/java/com/riftos/app/RiftMemoryN2FinalSelfTest.kt",
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
         "src/main/java/com/riftos/app/RiftFrozenByteBpeV1.kt",

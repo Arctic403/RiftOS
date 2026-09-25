@@ -52,8 +52,8 @@ const n2Contract = JSON.parse(n2Read(N2_CONTRACT_PATH));
 const n2PhaseAuthority = JSON.parse(n2Read('riftmemory/n2-phase-authority.json'));
 n2Assert.equal(n2PhaseAuthority.schema, 'rift-memory-n2-phase-authority-v1');
 n2Assert.equal(n2PhaseAuthority.program, 'N2 Federated Rift Memory Kernel');
-n2Assert.equal(n2PhaseAuthority.programStatus, 'N2.0-N2.11 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2.12 PENDING');
-n2Assert.equal(n2PhaseAuthority.runtimeStatus, 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED DIAGNOSTICS');
+n2Assert.equal(n2PhaseAuthority.programStatus, 'N2.0-N2.11 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2.12 SOURCE IMPLEMENTED / FINAL CORRECTNESS GATE PROMOTION PENDING');
+n2Assert.equal(n2PhaseAuthority.runtimeStatus, 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED DIAGNOSTICS; N2.12 SOURCE-IMPLEMENTED FINAL DIAGNOSTIC ONLY');
 n2Assert.equal(n2PhaseAuthority.n18Prerequisite, 'SATISFIED');
 n2Assert.equal(n2PhaseAuthority.benchmarkRule, N2_EXPECTED.benchmarkRule);
 n2Assert.equal(n2PhaseAuthority.contractPath, N2_CONTRACT_PATH);
@@ -80,8 +80,8 @@ n2Assert.deepEqual(n2PhaseAuthority.phases.map(row => row.phase), [
   'N2.0','N2.1','N2.2','N2.3','N2.4','N2.5','N2.6','N2.7','N2.8','N2.9','N2.10','N2.11','N2.12',
 ]);
 n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 12);
-n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 0);
-n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'pending').length, 1);
+n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 1);
+n2Assert.equal(n2PhaseAuthority.phases.filter(row => row.status === 'pending').length, 0);
 n2Assert.equal(n2PhaseAuthority.phases[0].status, 'promoted');
 n2Assert.equal(n2PhaseAuthority.phases[0].promotedSourceSha, 'f6bf12b9fb452cc128e9290fd73599297ba134f2');
 n2Assert.equal(n2PhaseAuthority.phases[0].builderRunNumber, '341');
@@ -113,7 +113,7 @@ for (const row of n2PhaseAuthority.phases.slice(10, 12)) {
   n2Assert.equal(row.promotedSourceSha, '921d32ff295921be8783ca4ce8395ba5ee029553');
   n2Assert.equal(row.builderRunNumber, '376');
 }
-n2Assert.equal(n2PhaseAuthority.phases[12].status, 'pending');
+n2Assert.equal(n2PhaseAuthority.phases[12].status, 'source-implemented');
 n2Assert.equal(n2PhaseAuthority.phases[12].promotedSourceSha, null);
 n2Assert.equal(n2PhaseAuthority.phases[12].builderRunNumber, null);
 n2Assert.equal(n2PhaseAuthority.macroImplementationPlan[0].status, 'promoted');
@@ -279,6 +279,7 @@ const n2AllowedMemoryKotlin = new Set([
   'android/app/src/main/java/com/riftos/app/RiftMemoryN2M5SelfTest.kt',
   'android/app/src/main/java/com/riftos/app/RiftStoreMemoryStoreV1.kt',
   'android/app/src/main/java/com/riftos/app/RiftMemoryN2M6SelfTest.kt',
+  'android/app/src/main/java/com/riftos/app/RiftMemoryN2FinalSelfTest.kt',
   'android/app/src/main/java/com/riftos/app/RiftToolHost.kt',
 ]);
 const n2KotlinFiles = n2Walk('android/app/src/main/java/com/riftos/app').filter(file => file.endsWith('.kt'));

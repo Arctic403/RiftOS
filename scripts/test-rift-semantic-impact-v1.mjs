@@ -133,6 +133,7 @@ for (const expected of [
   'test-rift-memory-n2-m4-v1.mjs',
   'test-rift-memory-n2-m5-v1.mjs',
   'test-rift-memory-n2-m6-v1.mjs',
+  'test-rift-memory-n2-final-v1.mjs',
   'validate-rift-docs.mjs',
 ]) {
   assert.ok(authorityConsumers.includes(expected), 'phase-authority direct consumer not detected: ' + expected);

@@ -66,6 +66,7 @@ class RiftToolHost(
     private val n2M4Diagnostic: JSONObject
     private val n2M5Diagnostic: JSONObject
     private val n2M6Diagnostic: JSONObject
+    private val n2FinalDiagnostic: JSONObject
     private data class CliJob(
         val id: String,
         val requestId: String,
@@ -127,6 +128,7 @@ class RiftToolHost(
         n2M4Diagnostic = RiftMemoryN2M4SelfTest.run(appContext)
         n2M5Diagnostic = RiftMemoryN2M5SelfTest.run(appContext)
         n2M6Diagnostic = RiftMemoryN2M6SelfTest.run(appContext)
+        n2FinalDiagnostic = RiftMemoryN2FinalSelfTest.run(appContext)
     }
 
     fun access(): JSONObject = JSONObject()
@@ -477,6 +479,7 @@ class RiftToolHost(
             value.put("riftMemoryN2M4", JSONObject(n2M4Diagnostic.toString()))
             value.put("riftMemoryN2M5", JSONObject(n2M5Diagnostic.toString()))
             value.put("riftMemoryN2M6", JSONObject(n2M6Diagnostic.toString()))
+            value.put("riftMemoryN2Final", JSONObject(n2FinalDiagnostic.toString()))
         }
         recordAudit(name, normalizedArgs, true, null, duration)
         return JSONObject()
@@ -603,6 +606,7 @@ class RiftToolHost(
                                 value.put("riftMemoryN2M4", JSONObject(n2M4Diagnostic.toString()))
                                 value.put("riftMemoryN2M5", JSONObject(n2M5Diagnostic.toString()))
                                 value.put("riftMemoryN2M6", JSONObject(n2M6Diagnostic.toString()))
+            value.put("riftMemoryN2Final", JSONObject(n2FinalDiagnostic.toString()))
                             }
                             recordAudit(name, normalizedArgs, true, null)
                             JSONObject().put("ok", true).put("name", name).put("value", value)
@@ -951,6 +955,7 @@ class RiftToolHost(
                     value.put("riftMemoryN2M4", JSONObject(n2M4Diagnostic.toString()))
                     value.put("riftMemoryN2M5", JSONObject(n2M5Diagnostic.toString()))
                     value.put("riftMemoryN2M6", JSONObject(n2M6Diagnostic.toString()))
+            value.put("riftMemoryN2Final", JSONObject(n2FinalDiagnostic.toString()))
                 }
                 reply(
                     JSONObject()
