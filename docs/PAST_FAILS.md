@@ -241,6 +241,8 @@ When Observer is hardened around this failure, fixtures should prove:
 
 **Failed RiftOS source:** `740a10a18f8fcf626b6156b85df1c32aeed82542`
 
+**Fixing source SHA:** `8b337e7812deef9f681a0e9fdd7c323948d4e555` — moves the four shared cognitive-class markers to their actual source owner and adds bounded regression-literal ownership verification to the claims Observer plus its Builder regression. Builder re-verification is required before this entry becomes RESOLVED.
+
 **Builder run ID:** `36074643676`
 
 **Signing mode:** `alpha-development`
