@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-012 — Repo-scoped Git pushes advanced the whole Workspace Records checkpoint
 
-**Status:** FIX IN SOURCE / AWAITING BUILDER + LIVE CROSS-REPO VERIFICATION.
+**Status:** RESOLVED — fixing/live runtime source `384f3d3a9a93a875bb531f07a519fb2df8f2d487`, Builder run `36097190735` / run number `369`; live cross-repo isolation passed and exact restoration returned the workspace and all Observer views clean.
 
 **Affected installed runtime:** `d39960832a701311461058670b5b93597ae612c9`, Builder run `36094853587` / run number `368`.
 
@@ -564,5 +564,5 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 **Pre-push source evidence:** before documenting the failure, the whole Workspace Records candidate was confirmed clean with `changedFiles=0`. On the fix candidate, claims/integrity/consistency/contracts were clean; proofs were `complete=true`, `mode=deep`, selected `scripts/test-rift-workspace-records.mjs`, required 6 obligations, and had 0 unresolved obligations. Direct `node` execution is not exposed by native RiftShell, so Builder `npm check` remains the execution authority for that JS regression.
 
-**Resolution target:** Builder must execute and pass `test-rift-workspace-records.mjs`, Kotlin compilation, APK packaging and install. On the repaired live APK, create harmless dirty candidates in two separate workspace repos, push only repo A, and prove repo B remains dirty in Workspace Records / proofs with its candidate identity preserved; then restore repo B exactly and require all Observer views clean. Revalidate the already-promoted M4 state under that repaired checkpoint boundary before starting M5.
+**Live closure:** installed source `384f3d3a9a93a875bb531f07a519fb2df8f2d487` from Builder run `36097190735` / `369` reported M1-M4 green. A permanent Builder README change and a temporary one-character RiftOS documentation fixture created two repo candidates. Before pushing Builder, the RiftOS fixture was `aea6e3917374a0a0d4e9e46761709f34a46b4c999019ade8499aa9184d9719bd` -> `05dd4f8d9fc520e2fcb4b8de6e51713eba1c4b6aa48e5d633f1247137d669885`, with two total patch sessions. Pushing only `Riftos-builder-main` produced Builder commit `71419788d6552c213a40fa3c202d4d88440789c8`; the operational checkpoint correctly changed to `gitRoot=Riftos-builder-main`, while the RiftOS fixture retained the exact same before/after hashes, remained the sole dirty file, retained one patch session with `sessionEvidenceComplete=true`, and RiftOS proofs remained `focused` with 1 documentation change, 2 required obligations, and 0 unresolved. Exact restoration returned Workspace Records to `changedFiles=0`; claims, integrity, consistency and contracts were clean, and proofs returned to `mode=none`. M4 is therefore revalidated under the repaired checkpoint boundary and M5 may begin.
 
