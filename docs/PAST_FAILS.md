@@ -235,13 +235,13 @@ When Observer is hardened around this failure, fixtures should prove:
 
 ## FAIL-2026-09-24-004 — N2-M3 regression asserted shared cognitive constants against the wrong source file
 
-**Status:** FIXED IN SOURCE / AWAITING BUILDER VERIFICATION.
+**Status:** RESOLVED — Builder run `36075992479` / run number `355` compiled and installed source `62382a94f50dd6052e1754c1496da2a0f794c0af`; corrected M3 source gates passed, `riftMemoryN2M3.ok=true`, all N2.5/N2.6 diagnostics were true, SQLite integrity was clean, nullable-flow v7 live proof succeeded, regression-literal ownership live proof succeeded, and the 2,048 exact / +1 assertion bound behaved fail-closed as designed.
 
 **Date:** 2026-09-24
 
 **Failed RiftOS source:** `740a10a18f8fcf626b6156b85df1c32aeed82542`
 
-**Fixing source SHA:** `8b337e7812deef9f681a0e9fdd7c323948d4e555` — moves the four shared cognitive-class markers to their actual source owner and adds bounded regression-literal ownership verification to the claims Observer plus its Builder regression. Builder re-verification is required before this entry becomes RESOLVED.
+**Fixing source SHA:** `8b337e7812deef9f681a0e9fdd7c323948d4e555` — moves the four shared cognitive-class markers to their actual source owner and adds bounded regression-literal ownership verification to the claims Observer plus its Builder regression. Builder re-verification succeeded on installed source `62382a94f50dd6052e1754c1496da2a0f794c0af`, Builder run `36075992479` / run number `355`.
 
 **Builder run ID:** `36074643676`
 
@@ -274,12 +274,12 @@ The pass is capped at 2,048 literal assertions and fails closed with `claims-reg
 
 The M3 regression itself is corrected so the four shared cognitive constants are asserted against `RiftMemoryConsolidationV1.kt`; `RiftMemoryBeliefDifferenceV1.kt` is checked only for the N2.6 implementation it actually owns.
 
-### Future/live proof target
+### Live proof completed
 
-- the pre-fix M3 regression must produce `regression-literal-marker-missing` under the installed claims oracle;
-- the corrected M3 regression must return claims clean;
-- exact/+1 regression-literal assertion bounds must fail closed;
-- Builder execution must pass `test-rift-documentation-claims-v1.mjs` and `test-rift-memory-n2-m3-v1.mjs` on the exact fixing SHA before this entry becomes RESOLVED.
+- installed run `355` produced `regression-literal-marker-missing` for a temporary wrong-owner regression literal and returned claims clean after fixture removal;
+- the corrected M3 regression and claims regression passed Builder source gates in run `36075992479`;
+- the repository-wide regression-literal cap passed at exactly 2,048 assertions and failed closed at 2,049 with `claims-regression-literal-bound`;
+- installed source `62382a94f50dd6052e1754c1496da2a0f794c0af` contains fixing commit `8b337e7812deef9f681a0e9fdd7c323948d4e555` and live-proved `riftMemoryN2M3.ok=true` with clean SQLite integrity.
 
 
 
