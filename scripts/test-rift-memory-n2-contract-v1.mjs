@@ -234,7 +234,7 @@ n2Assert.ok(n2Gradle.includes('abiFilters += listOf("arm64-v8a", "armeabi-v7a")'
 n2Assert.ok(!n2Gradle.includes('riftmemory-control.js'), 'retained RiftMemory controller became Gradle-packaged');
 
 const n2SourceIntelligence = n2Read('android/app/src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt');
-n2Assert.ok(n2SourceIntelligence.includes('val machineAuthority = listOf('));
+n2Assert.ok(n2SourceIntelligence.includes('fun isMachineAuthorityPath('));
 for (const n2AuthorityPath of [
   'observer/phase-authority.json',
   'riftmemory/n2-contract-v1.json',

@@ -378,6 +378,52 @@ The failed HEAD was inspected before any source fix. Claims, consistency, integr
 - Builder must pass semantic-impact + documentation-claims + proof-obligation gates;
 - after install, a temporary wrong discovery regex must produce the new claims finding and exact restoration must return claims clean before FAIL-006 is RESOLVED.
 
+---
+
+## FAIL-2026-09-24-007 — N2 contract regression froze a refactored Source Intelligence implementation detail
+
+**Status:** FIXED IN SOURCE / AWAITING BUILDER + LIVE CLAIMS VERIFICATION.
+
+**Date:** 2026-09-24
+
+**Failed RiftOS source:** `11d8c4abc804767677c2ceccb92f91017fd374b5`
+
+**Builder run ID:** `36080971930`
+
+**Signing mode:** `alpha-development`
+
+**Failure stage:** Builder source checks, `npm run check` → `npm run check:transport` → `scripts/test-rift-memory-n2-contract-v1.mjs`.
+
+**Observed failure:** `AssertionError: n2Assert.ok(n2SourceIntelligence.includes('val machineAuthority = listOf('))`.
+
+### Root cause
+
+FAIL-005 hardening intentionally refactored machine-authority classification out of a local `val machineAuthority = listOf(...)` inside `isBuildConfigPath(...)` and into the reusable `RiftSourceIntelligenceV2.isMachineAuthorityPath(...)` helper so semantic impact and the proof planner share one authority definition.
+
+The N2 contract regression still asserted the old local implementation text. The behavioral contract remained present — the same three authority paths plus the new shared helper — but the regression froze an obsolete implementation detail and failed before Gradle.
+
+### Why the Observer did not prevent it
+
+The exact failed HEAD was inspected before any source fix. Claims, consistency, integrity and contracts were complete/clean with zero findings; proofs returned `mode=none`, zero selected tests and zero obligations.
+
+The claims oracle's existing regression-literal ownership hardening only recognizes marker-loop assertions whose aliases are created with `read(...)`. This failure used a direct `n2Assert.ok(n2SourceIntelligence.includes('literal'))` assertion and an alias created with `n2Read(...)`, so the stale literal claim was outside the current oracle grammar.
+
+### Observer hardening added
+
+1. Regression source aliases now accept deterministic literal-path `read(...)` and maintained `*Read(...)` helpers such as `n2Read(...)`.
+2. `checkRegressionLiteralOwnership(...)` now validates direct `assert.ok(alias.includes('literal'))` and prefixed forms such as `n2Assert.ok(...)` in addition to marker loops; marker-loop parsing is generalized to prefixed `*Assert.ok(...)` too.
+3. Direct and loop assertions share the existing `MAX_REGRESSION_LITERAL_ASSERTIONS=2048` fail-closed budget and the same blocking `regression-literal-marker-missing` rule.
+4. The generalized pass reuses `RiftSourceIntelligenceV2.referenceCodeMask(...)` so comment/string lookalikes do not become source claims.
+5. `scripts/test-rift-documentation-claims-v1.mjs` permanently gates `*Read`, `*Assert`, direct-literal and executable-code-mask coverage.
+6. Exact Builder execution remains authoritative; dynamic/template includes remain outside the deterministic grammar unless the literal target can be resolved exactly.
+
+### Resolution target
+
+- the obsolete `val machineAuthority = listOf(` contract assertion is replaced with the stable `fun isMachineAuthorityPath(` surface while exact authority-path checks remain;
+- claims regression-literal ownership is generalized to direct `*Assert.ok(alias.includes('literal'))` assertions and `*Read(...)` aliases with executable-code masking;
+- Builder must pass N2 contract + documentation-claims regressions;
+- after install, a temporary direct wrong-literal assertion must produce `regression-literal-marker-missing`, then exact restoration must return claims clean before FAIL-007 is RESOLVED.
+
 
 
 

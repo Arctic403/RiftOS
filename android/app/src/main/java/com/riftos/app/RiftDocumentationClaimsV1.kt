@@ -430,13 +430,17 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
     ) {
         val byPath = files.associateBy { it.path }
         val readAliasPattern = Regex(
-            "(?m)^\\s*const\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(?:JSON\\.parse\\(\\s*)?read\\(['\\\"]([^'\\\"]+)['\\\"]\\)\\s*\\)?\\s*;"
+            "(?m)^\\s*const\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(?:JSON\\.parse\\(\\s*)?(?:read|[A-Za-z_][A-Za-z0-9_]*Read)\\(['\\\"]([^'\\\"]+)['\\\"]\\)\\s*\\)?\\s*;"
         )
         val markerLoopPattern = Regex(
-            "for\\s*\\(\\s*const\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+of\\s*\\[(.*?)]\\s*\\)\\s*\\{(.*?assert\\.ok\\(.*?\\);\\s*)\\}",
+            "for\\s*\\(\\s*const\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+of\\s*\\[(.*?)]\\s*\\)\\s*\\{(.*?(?:assert|[A-Za-z_][A-Za-z0-9_]*Assert)\\.ok\\(.*?\\);\\s*)\\}",
             setOf(RegexOption.DOT_MATCHES_ALL)
         )
         val stringLiteralPattern = Regex("'([^']*)'|\\\"([^\\\"]*)\\\"")
+        val directLiteralPatterns = listOf(
+            Regex("(?:assert|[A-Za-z_][A-Za-z0-9_]*Assert)\\.ok\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\.includes\\(\\s*'([^']*)'\\s*\\)"),
+            Regex("(?:assert|[A-Za-z_][A-Za-z0-9_]*Assert)\\.ok\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\.includes\\(\\s*\\\"([^\\\"]*)\\\"\\s*\\)")
+        )
         var assertionCount = 0
 
         files.asSequence()
@@ -447,18 +451,54 @@ internal class RiftDocumentationClaimsV1(private val workspaceRoot: File) {
                     (lower.endsWith(".mjs") || lower.endsWith(".js"))
             }
             .forEach testLoop@ { test ->
+                val codeMask = RiftSourceIntelligenceV2.referenceCodeMask(test.path, test.text)
                 val aliases = linkedMapOf<String, String>()
-                readAliasPattern.findAll(test.text).forEach { match ->
+                readAliasPattern.findAll(test.text).forEach aliasLoop@ { match ->
+                    if (codeMask.getOrNull(match.range.first) != true) return@aliasLoop
                     aliases[match.groupValues[1]] = match.groupValues[2]
                 }
                 if (aliases.isEmpty()) return@testLoop
 
+                directLiteralPatterns.forEach { pattern ->
+                    pattern.findAll(test.text).forEach directLoop@ { direct ->
+                        if (codeMask.getOrNull(direct.range.first) != true) return@directLoop
+                        val targetAlias = direct.groupValues[1]
+                        val marker = direct.groupValues[2]
+                        val targetPath = aliases[targetAlias] ?: return@directLoop
+                        if (assertionCount >= MAX_REGRESSION_LITERAL_ASSERTIONS) {
+                            incomplete += "claims-regression-literal-bound"
+                            return@testLoop
+                        }
+                        assertionCount += 1
+                        if (marker.isBlank()) return@directLoop
+                        val target = byPath[targetPath]
+                        val present = target?.text?.contains(marker) == true
+                        add(
+                            Claim(
+                                kind = "regression-literal-ownership",
+                                state = if (present) "verified" else "contradicted",
+                                path = test.path,
+                                line = lineAt(test.text, direct.range.first),
+                                subject = targetAlias + ":" + marker,
+                                authority = "regression-target-source",
+                                expected = "literal-present-in:" + targetPath,
+                                observed = when {
+                                    target == null -> "target-unavailable:" + targetPath
+                                    present -> "literal-present"
+                                    else -> "literal-missing"
+                                }
+                            )
+                        )
+                    }
+                }
+
                 markerLoopPattern.findAll(test.text).forEach loopLoop@ { loop ->
+                    if (codeMask.getOrNull(loop.range.first) != true) return@loopLoop
                     val markerVariable = loop.groupValues[1]
                     val markerArray = loop.groupValues[2]
                     val body = loop.groupValues[3]
                     val includesPattern = Regex(
-                        "assert\\.ok\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\.includes\\(\\s*" +
+                        "(?:assert|[A-Za-z_][A-Za-z0-9_]*Assert)\\.ok\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\.includes\\(\\s*" +
                             Regex.escape(markerVariable) +
                             "\\s*\\)"
                     )
