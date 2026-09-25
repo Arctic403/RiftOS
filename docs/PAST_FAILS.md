@@ -460,7 +460,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-24-009 — RiftOS docs validator and root roadmap froze the pre-M4 lifecycle
 
-**Status:** FIX IN SOURCE / AWAITING BUILDER + LIVE OBSERVER VERIFICATION.
+**Status:** RESOLVED — final fixing/live source `d39960832a701311461058670b5b93597ae612c9`, Builder run `36094853587` / run number `368`; installed authority-consumer proof selected contract + M1 + M2 + M3 + M4 + `validate-rift-docs.mjs` with zero unresolved obligations, and exact restoration returned all Observer views clean.
 
 **Failed RiftOS source:** `bd452dde7e82814f8f00272aec68749aee793a1e`
 
@@ -488,7 +488,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-24-010 — N2 canonical-memory owner allowlist omitted the intentional M4 diagnostic self-test
 
-**Status:** FIX IN SOURCE / AWAITING BUILDER + DEVICE VERIFICATION.
+**Status:** RESOLVED — final closure source `d39960832a701311461058670b5b93597ae612c9`, Builder run `36094853587` / run number `368`; installed M1-M4 diagnostics were green, all N2.7/N2.8 fixture fields were true, `runtimeAuthority=false`, `integrityClean=true`, and `sqliteIntegrity=ok`.
 
 **Failed RiftOS source:** `ac1f5558f232f079f13baa973013c73415dbee30`
 
@@ -520,7 +520,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-24-011 — Proof planner filtered discovered authority validators back to test-only paths
 
-**Status:** FIX IN SOURCE / AWAITING BUILDER + LIVE OBSERVER VERIFICATION.
+**Status:** RESOLVED — fixing/final live source `d39960832a701311461058670b5b93597ae612c9`, Builder run `36094853587` / run number `368`; the exact harmless phase-authority fixture selected contract + M1 + M2 + M3 + M4 + `validate-rift-docs.mjs`, `authority-consumer-tests` was required with zero unresolved obligations, and exact restoration returned claims/integrity/consistency/contracts clean with proofs `mode=none`.
 
 **Observed installed source:** `e6c555421039bfc1366d8413e61932dc87698ce4`
 

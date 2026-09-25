@@ -316,8 +316,8 @@ const n2ExpectedMacroPhases = [
   ['N2.10', 'N2.11'],
 ];
 if (n2PhaseAuthority.schema !== 'rift-memory-n2-phase-authority-v1' ||
-    n2PhaseAuthority.programStatus !== 'N2.0-N2.6 PROMOTED / N2-M1 + N2-M2 + N2-M3 PROMOTED; N2.7-N2.8 SOURCE IMPLEMENTED / N2-M4 SOURCE IMPLEMENTED; N2.9-N2.12 PENDING' ||
-    n2PhaseAuthority.runtimeStatus !== 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 PROMOTED DIAGNOSTICS; N2-M4 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY' ||
+    n2PhaseAuthority.programStatus !== 'N2.0-N2.8 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 PROMOTED; N2.9-N2.12 PENDING' ||
+    n2PhaseAuthority.runtimeStatus !== 'N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 PROMOTED DIAGNOSTICS' ||
     n2PhaseAuthority.n18Prerequisite !== 'SATISFIED' ||
     n2PhaseAuthority.contractLifecycleSemantics !== 'immutable-N2.0-freeze-snapshot; current lifecycle is authoritative only in this phase-authority file' ||
     n2PhaseAuthority.phases?.length !== 13 ||
@@ -327,12 +327,12 @@ if (n2PhaseAuthority.schema !== 'rift-memory-n2-phase-authority-v1' ||
     n2PhaseAuthority.phases?.slice(1, 3).some(row => row.status !== 'promoted' || row.promotedSourceSha !== '694c1e31a6c3f4bd4317edd121208be894be2586' || String(row.builderRunNumber) !== '346') ||
     n2PhaseAuthority.phases?.slice(3, 5).some(row => row.status !== 'promoted' || row.promotedSourceSha !== '18f1156075e08cb94573a9392031ac64552313f2' || String(row.builderRunNumber) !== '350') ||
     n2PhaseAuthority.phases?.slice(5, 7).some(row => row.status !== 'promoted' || row.promotedSourceSha !== '62382a94f50dd6052e1754c1496da2a0f794c0af' || String(row.builderRunNumber) !== '355') ||
-    n2PhaseAuthority.phases?.slice(7, 9).some(row => row.status !== 'source-implemented' || row.promotedSourceSha !== null || row.builderRunNumber !== null) ||
+    n2PhaseAuthority.phases?.slice(7, 9).some(row => row.status !== 'promoted' || row.promotedSourceSha !== 'd39960832a701311461058670b5b93597ae612c9' || String(row.builderRunNumber) !== '368') ||
     n2PhaseAuthority.phases?.slice(9).some(row => row.status !== 'pending' || row.promotedSourceSha !== null || row.builderRunNumber !== null) ||
     n2PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'promoted' ||
     n2PhaseAuthority.macroImplementationPlan?.[1]?.status !== 'promoted' ||
     n2PhaseAuthority.macroImplementationPlan?.[2]?.status !== 'promoted' ||
-    n2PhaseAuthority.macroImplementationPlan?.[3]?.status !== 'source-implemented' ||
+    n2PhaseAuthority.macroImplementationPlan?.[3]?.status !== 'promoted' ||
     n2PhaseAuthority.macroImplementationPlan?.slice(4).some(row => row.status !== 'pending') ||
     JSON.stringify(n2PhaseAuthority.macroImplementationPlan?.map(row => row.phases)) !== JSON.stringify(n2ExpectedMacroPhases) ||
     !String(n2PhaseAuthority.macroPlanRule || '').includes('execution groupings only') ||
@@ -341,7 +341,7 @@ if (n2PhaseAuthority.schema !== 'rift-memory-n2-phase-authority-v1' ||
 }
 
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
-if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0-N2.6 PROMOTED / N2-M1 + N2-M2 + N2-M3 PROMOTED; N2.7-N2.8 SOURCE IMPLEMENTED / N2-M4 SOURCE IMPLEMENTED; N2.9-N2.12 PENDING; CANONICAL MEMORY RUNTIME INACTIVE') ||
+if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0-N2.8 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 PROMOTED; N2.9-N2.12 PENDING; CANONICAL MEMORY RUNTIME INACTIVE') ||
     !rootRoadmap.includes('N3 Architecture/impact engine — BLOCKED until N2.12 promotion')) {
   failures.push('ROADMAP.md no longer carries the current N2 lifecycle and hard N2-before-N3 promotion barrier');
 }

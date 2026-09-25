@@ -142,20 +142,22 @@ for (const file of [
   );
 }
 
-assert.equal(phase.phases.find(row => row.phase === 'N2.7')?.status, 'source-implemented');
-assert.equal(phase.phases.find(row => row.phase === 'N2.8')?.status, 'source-implemented');
-assert.equal(phase.phases.find(row => row.phase === 'N2.7')?.promotedSourceSha, null);
-assert.equal(phase.phases.find(row => row.phase === 'N2.8')?.promotedSourceSha, null);
-assert.equal(phase.phases.find(row => row.phase === 'N2.7')?.builderRunNumber, null);
-assert.equal(phase.phases.find(row => row.phase === 'N2.8')?.builderRunNumber, null);
-assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M4')?.status, 'source-implemented');
+assert.equal(phase.phases.find(row => row.phase === 'N2.7')?.status, 'promoted');
+assert.equal(phase.phases.find(row => row.phase === 'N2.8')?.status, 'promoted');
+assert.equal(phase.phases.find(row => row.phase === 'N2.7')?.promotedSourceSha, 'd39960832a701311461058670b5b93597ae612c9');
+assert.equal(phase.phases.find(row => row.phase === 'N2.8')?.promotedSourceSha, 'd39960832a701311461058670b5b93597ae612c9');
+assert.equal(phase.phases.find(row => row.phase === 'N2.7')?.builderRunNumber, '368');
+assert.equal(phase.phases.find(row => row.phase === 'N2.8')?.builderRunNumber, '368');
+assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M4')?.status, 'promoted');
 assert.ok(phase.runtimeStatus.startsWith('N2 CANONICAL MEMORY RUNTIME INACTIVE'));
-assert.ok(phase.runtimeStatus.includes('N2-M4 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY'));
+assert.ok(phase.runtimeStatus.includes('N2-M4 PROMOTED DIAGNOSTICS'));
 assert.ok(pkg.scripts['check:transport'].includes('node scripts/test-rift-memory-n2-m4-v1.mjs'));
 
 for (const marker of [
-  "n2PhaseAuthority.phases.filter(row => row.status === 'source-implemented').length, 2",
-  "n2PhaseAuthority.macroImplementationPlan[3].status, 'source-implemented'",
+  "n2PhaseAuthority.phases.filter(row => row.status === 'promoted').length, 9",
+  "n2PhaseAuthority.macroImplementationPlan[3].status, 'promoted'",
+  'd39960832a701311461058670b5b93597ae612c9',
+  "row.builderRunNumber, '368'",
   'android/app/src/main/java/com/riftos/app/RiftMemoryN2M4SelfTest.kt',
 ]) {
   assert.ok(contractTest.includes(marker), `N2 contract lifecycle regression missing M4 marker: ${marker}`);
@@ -167,4 +169,4 @@ for (const body of [localAgent, cliHost]) {
   assert.ok(!body.includes('RiftMemoryN2M4SelfTest'), 'M4 diagnostic must not become Local Agent/RiftCLI authority');
 }
 
-console.log('ok - N2-M4 source: N2.7 specialist lifecycle + N2.8 bounded hybrid retrieval/context are separately gated; diagnostic only, runtime authority inactive');
+console.log('ok - N2-M4 promoted: N2.7 + N2.8 promotion evidence is pinned to installed run 368; diagnostic only, runtime authority inactive');

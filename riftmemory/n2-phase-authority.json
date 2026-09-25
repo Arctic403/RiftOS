@@ -1,8 +1,8 @@
 {
   "schema": "rift-memory-n2-phase-authority-v1",
   "program": "N2 Federated Rift Memory Kernel",
-  "programStatus": "N2.0-N2.6 PROMOTED / N2-M1 + N2-M2 + N2-M3 PROMOTED; N2.7-N2.8 SOURCE IMPLEMENTED / N2-M4 SOURCE IMPLEMENTED; N2.9-N2.12 PENDING",
-  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 PROMOTED DIAGNOSTICS; N2-M4 SOURCE-IMPLEMENTED DIAGNOSTIC ONLY",
+  "programStatus": "N2.0-N2.8 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 PROMOTED; N2.9-N2.12 PENDING",
+  "runtimeStatus": "N2 CANONICAL MEMORY RUNTIME INACTIVE; N2-M1 + N2-M2 + N2-M3 + N2-M4 PROMOTED DIAGNOSTICS",
   "n18Prerequisite": "SATISFIED",
   "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
   "contractPath": "riftmemory/n2-contract-v1.json",
@@ -46,7 +46,7 @@
       ],
       "title": "Procedural and failure intelligence",
       "rule": "Both subphases require separate evidence before this macro patch is green.",
-      "status": "source-implemented"
+      "status": "promoted"
     },
     {
       "patch": "N2-M5",
@@ -114,15 +114,15 @@
     },
     {
       "phase": "N2.7",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "d39960832a701311461058670b5b93597ae612c9",
+      "builderRunNumber": "368"
     },
     {
       "phase": "N2.8",
-      "status": "source-implemented",
-      "promotedSourceSha": null,
-      "builderRunNumber": null
+      "status": "promoted",
+      "promotedSourceSha": "d39960832a701311461058670b5b93597ae612c9",
+      "builderRunNumber": "368"
     },
     {
       "phase": "N2.9",
