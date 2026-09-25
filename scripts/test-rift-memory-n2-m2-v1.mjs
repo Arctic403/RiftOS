@@ -135,7 +135,6 @@ for (const file of [
 assert.equal(phase.phases.find(row => row.phase === 'N2.3')?.status, 'promoted');
 assert.equal(phase.phases.find(row => row.phase === 'N2.4')?.status, 'promoted');
 assert.equal(phase.macroImplementationPlan.find(row => row.patch === 'N2-M2')?.status, 'promoted');
-assert.ok(phase.programStatus.includes('N2.0-N2.4 PROMOTED / N2-M1 + N2-M2 PROMOTED'));
 assert.equal(phase.phases.find(row => row.phase === 'N2.3')?.promotedSourceSha, '18f1156075e08cb94573a9392031ac64552313f2');
 assert.equal(phase.phases.find(row => row.phase === 'N2.4')?.promotedSourceSha, '18f1156075e08cb94573a9392031ac64552313f2');
 assert.equal(phase.phases.find(row => row.phase === 'N2.3')?.builderRunNumber, '350');

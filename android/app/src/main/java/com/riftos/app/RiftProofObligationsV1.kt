@@ -69,6 +69,9 @@ internal class RiftProofObligationsV1 {
         val testChanges = changes.filter { it.optString("category") == "test" }
         val documentationChanges = changes.filter { it.optString("category") == "documentation" }
         val buildChanges = changes.filter { it.optString("category") == "build-config" }
+        val authorityChanges = buildChanges.filter {
+            RiftSourceIntelligenceV2.isMachineAuthorityPath(it.optString("path"))
+        }
         val otherChanges = changes.filter { row ->
             row.optString("category") !in setOf("source", "test", "documentation", "build-config")
         }
@@ -115,11 +118,13 @@ internal class RiftProofObligationsV1 {
             .map { TestProof(it, sortedSetOf("path-affinity")) }
         if (supplementalAll.size > MAX_SUPPLEMENTAL_TESTS) incomplete += "proof-supplemental-test-bound"
         val supplementalTests = supplementalAll.take(MAX_SUPPLEMENTAL_TESTS)
+        val authorityConsumerTests = selectedTests.filter { "direct-dependent" in it.evidence }
 
         val projectRows = objectArray(impact.optJSONArray("projects"))
         if (hasChanges && projectRows.size > 1) deepReasons += "multi-project-candidate"
         if (apiPaths.isNotEmpty()) deepReasons += "api-surface-changed"
         if (buildChanges.isNotEmpty()) deepReasons += "build-config-changed"
+        if (authorityChanges.isNotEmpty()) deepReasons += "machine-authority-changed"
         if (sourceChanges.any { it.optString("status") == "deleted" }) deepReasons += "source-deletion"
         if (otherChanges.isNotEmpty()) deepReasons += "unclassified-change"
 
@@ -210,6 +215,29 @@ internal class RiftProofObligationsV1 {
                 )
             }
 
+        }
+
+        if (authorityChanges.isNotEmpty()) {
+            val satisfied = authorityConsumerTests.isNotEmpty()
+            if (!satisfied) deepReasons += "authority-consumer-evidence-missing"
+            addObligation(
+                kind = "authority-consumer-tests",
+                state = if (satisfied) "required" else "unresolved",
+                subject = root,
+                depth = "deep",
+                evidence = (
+                    authorityChanges.map { it.optString("path") } +
+                        authorityConsumerTests.flatMap { proof ->
+                            proof.evidence.map { reason -> proof.path + "|" + reason }
+                        }
+                    ).distinct(),
+                satisfiesBy = authorityConsumerTests.map { "test:" + it.path },
+                reason = if (satisfied) {
+                    "Machine-authority changes require every directly evidenced maintained regression consumer."
+                } else {
+                    "Machine-authority changed but no directly evidenced maintained regression consumer was found."
+                }
+            )
         }
 
         if (testChanges.isNotEmpty()) {

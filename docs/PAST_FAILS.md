@@ -281,6 +281,56 @@ The M3 regression itself is corrected so the four shared cognitive constants are
 - the repository-wide regression-literal cap passed at exactly 2,048 assertions and failed closed at 2,049 with `claims-regression-literal-bound`;
 - installed source `62382a94f50dd6052e1754c1496da2a0f794c0af` contains fixing commit `8b337e7812deef9f681a0e9fdd7c323948d4e555` and live-proved `riftMemoryN2M3.ok=true` with clean SQLite integrity.
 
+---
+
+## FAIL-2026-09-24-005 — M3 promotion advanced lifecycle but older M2 regression froze the pre-M3 program summary
+
+**Status:** FIXED IN SOURCE / AWAITING BUILDER + LIVE OBSERVER VERIFICATION.
+
+**Date:** 2026-09-24
+
+**Failed RiftOS source:** `754fc0e860a6d4f3a97697c62f84733081f73286`
+
+**Builder run ID:** `36078454699`
+
+**Signing mode:** `alpha-development`
+
+**Failure stage:** Builder source checks, `npm run check` → `npm run check:transport` → `scripts/test-rift-memory-n2-m2-v1.mjs`.
+
+**Observed failure:** `AssertionError: assert.ok(phase.programStatus.includes('N2.0-N2.4 PROMOTED / N2-M1 + N2-M2 PROMOTED'))`.
+
+### Root cause
+
+M3 promotion correctly advanced mutable N2 lifecycle authority to N2.0-N2.6 promoted. The older M2 regression already checks the stable structured invariants that actually belong to M2 — N2.3/N2.4 status, exact promoted source `18f1156075e08cb94573a9392031ac64552313f2`, exact Builder run `350`, M2 macro promoted and canonical N2 runtime inactive — but it also retained a redundant assertion against the mutable whole-program `programStatus` summary.
+
+That summary is expected to change as later N2 phases promote. The assertion therefore made a frozen M2 regression depend on unrelated later lifecycle wording.
+
+### Why the Observer did not prevent it
+
+The failed HEAD was inspected before any source fix. Claims, consistency, integrity and contracts all returned complete/clean with zero findings; proofs returned `mode=none`, zero selected tests, zero obligations and exact clean baseline `a4f92d9d654407528cbf7a48c30d5f12b4aa5ab503d2903ce8952d1ecbf0aecc`.
+
+During the preceding M3 promotion candidate, proofs selected only `test-rift-memory-n2-contract-v1.mjs` and `test-rift-memory-n2-m3-v1.mjs`. It did not select `test-rift-memory-n2-m2-v1.mjs`, even though that maintained regression directly reads `riftmemory/n2-phase-authority.json`. Builder then disproved the candidate by executing that omitted consumer.
+
+This confirms the authority-consumer impact gap already foreshadowed by FAIL-003: direct test/config consumers of mutable machine authority are not guaranteed to enter the proof closure, and older phase regressions can still freeze mutable global summaries.
+
+### Observer hardening added
+
+1. PI-v2 semantic impact now scans bounded maintained test sources for exact literal reads of changed machine-authority/build-config files and emits deterministic `config-read` direct-dependent edges. Supported forms cover the current `read(...)`, `*Read(...)`, direct `readFileSync(...)` and `readFileSync(path.join(...))` consumers. The scan is bounded by the existing candidate target/test limits and fails closed with `config-read-target-bound` or `config-read-test-bound`.
+2. `RiftSourceIntelligenceV2.isMachineAuthorityPath(...)` now exposes the same machine-authority definition used by build-config classification so the proof planner does not maintain a separate authority list.
+3. `RiftProofObligationsV1` now emits an explicit `authority-consumer-tests` obligation for machine-authority changes. Direct consumers make it `required`; no directly evidenced consumer makes it `unresolved` and adds `authority-consumer-evidence-missing`.
+4. `scripts/test-rift-semantic-impact-v1.mjs` permanently gates the config-read dependency scan and verifies that the current N2 phase-authority reader set contains contract + M1 + M2 + M3.
+5. `scripts/test-rift-proof-obligations-v1.mjs` permanently gates required-vs-unresolved machine-authority consumer behavior.
+6. The stale M2 global-summary assertion is removed, and the same mutable-summary assertion is proactively removed from M3. Their structured per-phase/macro promotion evidence remains authoritative.
+7. Exact-candidate execution remains Builder authority; the new Observer layer guarantees the complete bounded direct-consumer set is explicit before Builder.
+
+### Resolution target
+
+- remove the stale M2 whole-program summary assertion while preserving its structured M2 promotion checks;
+- harden proof-impact selection for direct machine-authority consumers;
+- permanently regression-gate that `n2-phase-authority.json` selects every maintained direct consumer;
+- Builder must pass the corrected M2/M3 regressions plus semantic-impact and proof-obligation gates before this entry becomes resolved;
+- after install, a whitespace-only valid JSON edit to `riftmemory/n2-phase-authority.json` must make live proofs select contract + M1 + M2 + M3 and emit `authority-consumer-tests` as required, then exact file restoration must return the repository clean.
+
 
 
 

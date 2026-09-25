@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const read = file => readFileSync(file, 'utf8');
 const k = 'android/app/src/main/java/com/riftos/app/';
@@ -21,6 +21,7 @@ assert.match(source, /changedSignatures/);
 assert.match(source, /addedDependencies/);
 assert.match(source, /removedDependencies/);
 assert.match(source, /apiSurfaceChanged/);
+assert.match(source, /isMachineAuthorityPath/);
 assert.match(source, /isBuildConfigPath/);
 assert.match(source, /classifyPath/);
 
@@ -79,6 +80,11 @@ assert.match(sandbox, /MAX_CANDIDATE_DEPENDENCIES = 800/);
 assert.match(sandbox, /MAX_CANDIDATE_DEPENDENTS = 800/);
 assert.match(sandbox, /MAX_CANDIDATE_TESTS = 300/);
 assert.match(sandbox, /MAX_CANDIDATE_DOCS = 300/);
+assert.match(candidateImpactBody, /config-read-target-bound/);
+assert.match(candidateImpactBody, /config-read-test-bound/);
+assert.match(candidateImpactBody, /\.put\("kind", "config-read"\)/);
+assert.match(candidateImpactBody, /changedTests \+= testPath/);
+assert.match(candidateImpactBody, /RiftSourceIntelligenceV2\.referenceCodeMask\(testPath, testText\)/);
 assert.match(sandbox, /"changed-symbol-bound"/);
 assert.match(sandbox, /"reference-symbol-bound"/);
 assert.match(sandbox, /changedSymbolTargets/);
@@ -103,5 +109,27 @@ assert.ok(!host.includes('rift_semantic_impact'));
 assert.match(gradle, /RiftSourceIntelligenceV2\.kt/);
 assert.match(ownership, /RiftSourceIntelligenceV2\.kt/);
 assert.match(ownership, /scripts\/test-rift-semantic-impact-v1\.mjs/);
+
+
+const authorityRelativePath = 'riftmemory/n2-phase-authority.json';
+const authorityLiteral = authorityRelativePath.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+const directReadPatterns = [
+  new RegExp('\\b(?:read|[A-Za-z_][A-Za-z0-9_]*Read)\\s*\\(\\s*[\\\'"]' + authorityLiteral + '[\\\'"]'),
+  new RegExp('\\breadFileSync\\s*\\(\\s*(?:path\\.)?join\\([^\\n)]*[\\\'"]' + authorityLiteral + '[\\\'"]'),
+  new RegExp('\\breadFileSync\\s*\\(\\s*[\\\'"]' + authorityLiteral + '[\\\'"]'),
+];
+const authorityConsumers = readdirSync('scripts')
+  .filter(name => /^test-.*\\.(?:mjs|js)$/.test(name))
+  .filter(name => directReadPatterns.some(pattern => pattern.test(read('scripts/' + name))))
+  .sort();
+
+for (const expected of [
+  'test-rift-memory-n2-contract-v1.mjs',
+  'test-rift-memory-n2-m1-v1.mjs',
+  'test-rift-memory-n2-m2-v1.mjs',
+  'test-rift-memory-n2-m3-v1.mjs',
+]) {
+  assert.ok(authorityConsumers.includes(expected), 'phase-authority direct consumer not detected: ' + expected);
+}
 
 console.log('ok - Patch 5 semantic impact reuses PI-v2, derives scope from the exact candidate, stays bounded/deterministic and is not an MCP tool');

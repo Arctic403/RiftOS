@@ -203,15 +203,19 @@ internal object RiftSourceIntelligenceV2 {
             lower.endsWith(".adoc") || lower.endsWith("/readme") || lower.endsWith("/readme.txt")
     }
 
-    fun isBuildConfigPath(path: String): Boolean {
+    fun isMachineAuthorityPath(path: String): Boolean {
         val lower = path.lowercase().replace('\\', '/')
-        val name = lower.substringAfterLast('/')
-        val machineAuthority = listOf(
+        return listOf(
             "observer/phase-authority.json",
             "riftmemory/n2-contract-v1.json",
             "riftmemory/n2-phase-authority.json"
         ).any { suffix -> lower == suffix || lower.endsWith("/$suffix") }
-        return machineAuthority ||
+    }
+
+    fun isBuildConfigPath(path: String): Boolean {
+        val lower = path.lowercase().replace('\\', '/')
+        val name = lower.substringAfterLast('/')
+        return isMachineAuthorityPath(path) ||
             name in setOf(
                 "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
                 "gradle.properties", "package.json", "package-lock.json", "bun.lock", "bun.lockb",

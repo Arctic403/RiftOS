@@ -33,6 +33,9 @@ for (const marker of [
   '"only-heuristic-tests"',
   '"api-surface-changed"',
   '"build-config-changed"',
+  '"machine-authority-changed"',
+  '"authority-consumer-evidence-missing"',
+  '"authority-consumer-tests"',
   '"source-deletion"',
   '"multi-project-candidate"',
   '"proofsSha256"',
@@ -81,6 +84,9 @@ assert.ok(!hashPayloadBody.includes('"semanticImpactSha256"'), 'workspace-global
 assert.ok(!hashPayloadBody.includes('"changedSymbols"'), 'workspace-global changed symbols must not enter project proof identity');
 assert.match(proof, /if \(hasChanges && !impactComplete\)/);
 assert.match(proof, /if \(hasChanges && projectRows\.size > 1\)/);
+assert.match(proof, /RiftSourceIntelligenceV2\.isMachineAuthorityPath/);
+assert.match(proof, /impact\.optJSONArray\("directDependents"\)/);
+assert.match(proof, /addStrong\(source, "direct-dependent"\)/);
 
 const LIMITS = Object.freeze({
   changes: 1024,
@@ -140,11 +146,11 @@ for (const max of [LIMITS.checks, LIMITS.obligations]) {
 const addCommandCalls = [...proof.matchAll(/\baddCommand\(/g)].length - 1;
 const addObligationCalls = [...proof.matchAll(/\baddObligation\(/g)].length - 1;
 assert.equal(addCommandCalls, 4, 'current planner check cardinality changed; reassess MAX_CHECKS reachability');
-assert.equal(addObligationCalls, 11, 'current planner obligation cardinality changed; reassess MAX_OBLIGATIONS reachability');
+assert.equal(addObligationCalls, 12, 'current planner obligation cardinality changed; reassess MAX_OBLIGATIONS reachability');
 assert.ok(addCommandCalls < LIMITS.checks);
 assert.ok(addObligationCalls < LIMITS.obligations);
 
-function plan({ source = false, changedTest = false, directTest = false, referenceTest = false, heuristicTest = false, api = false, build = false, docs = false, deleted = false, incomplete = false, projects = 1 }) {
+function plan({ source = false, changedTest = false, directTest = false, referenceTest = false, heuristicTest = false, api = false, build = false, authority = false, docs = false, deleted = false, incomplete = false, projects = 1 }) {
   const selected = [];
   if (changedTest) selected.push(['tests/changed.test.js', 'changed-test']);
   if (directTest) selected.push(['tests/direct.test.js', 'direct-dependent']);
@@ -158,6 +164,7 @@ function plan({ source = false, changedTest = false, directTest = false, referen
   if (localActivity && projects > 1) deepReasons.push('multi-project-candidate');
   if (api) deepReasons.push('api-surface-changed');
   if (build) deepReasons.push('build-config-changed');
+  if (authority) deepReasons.push('machine-authority-changed');
   if (deleted) deepReasons.push('source-deletion');
 
   if (source) {
@@ -169,6 +176,11 @@ function plan({ source = false, changedTest = false, directTest = false, referen
     } else {
       obligations.push('affected-tests:required');
     }
+  }
+  if (authority) {
+    const hasDirectConsumer = selected.some(([, reason]) => reason === 'direct-dependent');
+    obligations.push('authority-consumer-tests:' + (hasDirectConsumer ? 'required' : 'unresolved'));
+    if (!hasDirectConsumer) deepReasons.push('authority-consumer-evidence-missing');
   }
   if (changedTest) obligations.push('changed-tests');
   if (docs) obligations.push('documentation-claims');
@@ -209,6 +221,17 @@ const build = plan({ build: true });
 assert.equal(build.mode, 'deep');
 assert.ok(build.obligations.includes('build-pipeline'));
 assert.ok(build.deepReasons.includes('build-config-changed'));
+
+const authorityWithConsumer = plan({ build: true, authority: true, directTest: true });
+assert.equal(authorityWithConsumer.mode, 'deep');
+assert.ok(authorityWithConsumer.deepReasons.includes('machine-authority-changed'));
+assert.ok(authorityWithConsumer.obligations.includes('authority-consumer-tests:required'));
+
+const authorityMissingConsumer = plan({ build: true, authority: true });
+assert.equal(authorityMissingConsumer.mode, 'deep');
+assert.ok(authorityMissingConsumer.deepReasons.includes('machine-authority-changed'));
+assert.ok(authorityMissingConsumer.deepReasons.includes('authority-consumer-evidence-missing'));
+assert.ok(authorityMissingConsumer.obligations.includes('authority-consumer-tests:unresolved'));
 
 const docs = plan({ docs: true });
 assert.equal(docs.mode, 'focused');

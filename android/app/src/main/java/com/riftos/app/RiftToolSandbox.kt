@@ -2680,6 +2680,60 @@ internal class RiftToolSandbox(context: Context) {
             }
         }
 
+
+        val configReadTargetsAll = changedBuildConfigs.sorted()
+        if (configReadTargetsAll.size > MAX_CANDIDATE_AFFINITY_TARGETS) {
+            incompleteReasons += "config-read-target-bound"
+        }
+        val configReadTargets = configReadTargetsAll.take(MAX_CANDIDATE_AFFINITY_TARGETS)
+        val configReadTestPathsAll = indexed.keys.filter(::isTestPath).sorted()
+        if (configReadTestPathsAll.size > MAX_CANDIDATE_TESTS) {
+            incompleteReasons += "config-read-test-bound"
+        }
+        val configReadTestPaths = configReadTestPathsAll.take(MAX_CANDIDATE_TESTS)
+
+        for (testPath in configReadTestPaths) {
+            val projectRoot = candidateProjectRoot(testPath)
+            val file = sandboxFile(testPath)
+            if (!file.isFile || file.length() > MAX_WORKSPACE_SEARCH_FILE_BYTES || !isTextFile(file)) continue
+            val testText = file.readText(Charsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+            val codeMask = RiftSourceIntelligenceV2.referenceCodeMask(testPath, testText)
+
+            for (target in configReadTargets) {
+                if (!isPathWithin(target, projectRoot)) continue
+                val prefix = projectRoot + "/"
+                if (!target.startsWith(prefix)) continue
+                val relativeTarget = target.removePrefix(prefix)
+                val escapedTarget = Regex.escape(relativeTarget)
+                val patterns = listOf(
+                    Regex("""\b(?:read|[A-Za-z_][A-Za-z0-9_]*Read)\s*\(\s*["']$escapedTarget["']"""),
+                    Regex("""\breadFileSync\s*\(\s*(?:path\.)?join\([^\n)]*["']$escapedTarget["']"""),
+                    Regex("""\breadFileSync\s*\(\s*["']$escapedTarget["']""")
+                )
+                val matched = patterns.any { pattern ->
+                    pattern.findAll(testText).any { match ->
+                        codeMask.getOrNull(match.range.first) == true
+                    }
+                }
+                if (!matched) continue
+
+                val key = "config-read|$testPath|$target|$relativeTarget"
+                if (!dependentKeys.add(key)) continue
+                if (dependentRows.size >= MAX_CANDIDATE_DEPENDENTS) {
+                    incompleteReasons += "dependent-bound"
+                    break
+                }
+                dependentRows += JSONObject()
+                    .put("source", testPath)
+                    .put("target", target)
+                    .put("kind", "config-read")
+                    .put("specifier", relativeTarget)
+                changedTests += testPath
+            }
+        }
+
         val changedNames = changedSymbolNames.sorted()
         if (changedNames.size > MAX_CANDIDATE_CHANGED_SYMBOLS) incompleteReasons += "changed-symbol-bound"
         val referenceNames = changedNames.take(MAX_CANDIDATE_REFERENCE_SYMBOLS)
