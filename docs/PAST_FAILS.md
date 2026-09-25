@@ -512,3 +512,31 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 **Resolution target:** claims/integrity/consistency/contracts must remain clean on the fix, proofs must select the affected N2 contract/M4 gates with zero unresolved obligations, Builder must pass `npm check`, Gradle/Kotlin and packaging, then installed M4 diagnostics plus M1/M2/M3 continuity and the pending FAIL-009 live authority-consumer proof must pass before either failure is closed.
 
+**Builder/device follow-up:** Builder run `36091553998` / run number `367` succeeded for source `e6c555421039bfc1366d8413e61932dc87698ce4`. The installed APK reported the exact same source/run, M1/M2/M3 continuity stayed green, and M4 returned `ok=true`, `diagnosticOnly=true`, `runtimeAuthority=false`, all N2.7/N2.8 fixture fields true, `integrityClean=true`, and `sqliteIntegrity=ok`. FAIL-010 source/build/device semantics are therefore proven, but final closure remains coupled to the pending FAIL-009 live Observer consumer proof per the resolution target above.
+
+**FAIL-009 live follow-up:** on installed run 367, a harmless whitespace-only edit to `riftmemory/n2-phase-authority.json` correctly forced proofs to `mode=deep` and selected the N2 contract plus M1/M2/M3/M4 direct regression consumers with zero unresolved obligations, but `scripts/validate-rift-docs.mjs` was still absent. The fixture was restored exactly before any source mutation. This exposed the downstream proof-planner defect recorded as FAIL-011.
+
+---
+
+## FAIL-2026-09-24-011 — Proof planner filtered discovered authority validators back to test-only paths
+
+**Status:** FIX IN SOURCE / AWAITING BUILDER + LIVE OBSERVER VERIFICATION.
+
+**Observed installed source:** `e6c555421039bfc1366d8413e61932dc87698ce4`
+
+**Builder run:** `36091553998` / run number `367` — SUCCESS.
+
+**Stage:** installed-device Observer promotion fixture, `project kind=proofs`, using a harmless whitespace-only change to `riftmemory/n2-phase-authority.json`.
+
+**Observed failure:** semantic impact discovered maintained verification-script config readers, but the proof result selected only `test-rift-memory-n2-contract-v1.mjs` plus M1/M2/M3/M4. `validate-rift-docs.mjs` was omitted from `authority-consumer-tests`, so FAIL-009's required live closure condition was not satisfied.
+
+**Root cause:** `RiftToolSandbox` had already been hardened to scan `isVerificationScriptPath(...)` for config-read consumers, including `scripts/validate-*.mjs/js` and `scripts/verify-*.mjs/js`. However, `RiftProofObligationsV1.addStrong(...)` still required `isTestPath(...)` for every direct dependent. The validator therefore entered semantic impact and was then dropped by the proof planner before `authorityConsumerTests` was formed.
+
+**Classification:** source-owned Observer proof-selection defect inside the repository authority boundary. M4 memory behavior remained green and was not involved.
+
+**Observer evidence before fix:** clean baseline on installed run 367 had claims/integrity/consistency/contracts clean and proofs `mode=none`. The temporary machine-authority edit produced proofs `complete=true`, `mode=deep`, 1 build-config change, 5 selected tests, 4 obligations, 0 unresolved obligations, but the validator was missing from the authority-consumer evidence set. Exact restoration returned the repository to its clean baseline.
+
+**Hardening added:** keep ordinary affected-test selection test-only, but for direct dependents whose semantic-impact edge kind is `config-read`, permit maintained verification scripts through a proof-local `isVerificationScriptPath(...)` predicate matching the discovery layer's test + `validate-*` + `verify-*` policy. The proof-obligation regression now statically requires the config-read branch and verifier predicate and includes a validator-only authority-consumer behavioral case.
+
+**Resolution target:** Builder/source checks and Kotlin compilation must pass; install the repaired APK; repeat the exact harmless `n2-phase-authority.json` edit and require proofs to include `validate-rift-docs.mjs` alongside contract + M1 + M2 + M3 + M4 with `authority-consumer-tests` required and zero unresolved obligations; restore exactly and require all five Observer views clean before M4 promotion.
+

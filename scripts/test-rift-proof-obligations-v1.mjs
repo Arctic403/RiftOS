@@ -87,6 +87,11 @@ assert.match(proof, /if \(hasChanges && projectRows\.size > 1\)/);
 assert.match(proof, /RiftSourceIntelligenceV2\.isMachineAuthorityPath/);
 assert.match(proof, /impact\.optJSONArray\("directDependents"\)/);
 assert.match(proof, /addStrong\(source, "direct-dependent"\)/);
+assert.match(proof, /row\.optString\("kind"\) == "config-read"/);
+assert.match(proof, /isVerificationScriptPath\(source\)/);
+assert.match(proof, /private fun isVerificationScriptPath\(path: String\): Boolean/);
+assert.ok(proof.includes('lower.contains("/scripts/validate-")'));
+assert.ok(proof.includes('lower.contains("/scripts/verify-")'));
 
 const LIMITS = Object.freeze({
   changes: 1024,
@@ -150,10 +155,11 @@ assert.equal(addObligationCalls, 12, 'current planner obligation cardinality cha
 assert.ok(addCommandCalls < LIMITS.checks);
 assert.ok(addObligationCalls < LIMITS.obligations);
 
-function plan({ source = false, changedTest = false, directTest = false, referenceTest = false, heuristicTest = false, api = false, build = false, authority = false, docs = false, deleted = false, incomplete = false, projects = 1 }) {
+function plan({ source = false, changedTest = false, directTest = false, directVerification = false, referenceTest = false, heuristicTest = false, api = false, build = false, authority = false, docs = false, deleted = false, incomplete = false, projects = 1 }) {
   const selected = [];
   if (changedTest) selected.push(['tests/changed.test.js', 'changed-test']);
   if (directTest) selected.push(['tests/direct.test.js', 'direct-dependent']);
+  if (directVerification) selected.push(['scripts/validate-rift-docs.mjs', 'direct-dependent']);
   if (referenceTest) selected.push(['tests/reference.test.js', 'changed-symbol-reference']);
   const supplemental = heuristicTest ? ['tests/heuristic.test.js'] : [];
   const deepReasons = [];
@@ -226,6 +232,11 @@ const authorityWithConsumer = plan({ build: true, authority: true, directTest: t
 assert.equal(authorityWithConsumer.mode, 'deep');
 assert.ok(authorityWithConsumer.deepReasons.includes('machine-authority-changed'));
 assert.ok(authorityWithConsumer.obligations.includes('authority-consumer-tests:required'));
+
+const authorityWithVerificationConsumer = plan({ build: true, authority: true, directVerification: true });
+assert.equal(authorityWithVerificationConsumer.mode, 'deep');
+assert.deepEqual(authorityWithVerificationConsumer.selected, [['scripts/validate-rift-docs.mjs', 'direct-dependent']]);
+assert.ok(authorityWithVerificationConsumer.obligations.includes('authority-consumer-tests:required'));
 
 const authorityMissingConsumer = plan({ build: true, authority: true });
 assert.equal(authorityMissingConsumer.mode, 'deep');

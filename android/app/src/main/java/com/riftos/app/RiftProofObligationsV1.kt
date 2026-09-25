@@ -94,7 +94,15 @@ internal class RiftProofObligationsV1 {
         objectArray(impact.optJSONArray("directDependents")).forEach { row ->
             val source = row.optString("source")
             val target = row.optString("target")
-            if (pathWithin(target, root)) addStrong(source, "direct-dependent")
+            if (pathWithin(target, root)) {
+                if (row.optString("kind") == "config-read") {
+                    if (pathWithin(source, root) && isVerificationScriptPath(source)) {
+                        strongEvidence.getOrPut(source) { linkedSetOf() }.add("direct-dependent")
+                    }
+                } else {
+                    addStrong(source, "direct-dependent")
+                }
+            }
         }
 
         objectArray(impact.optJSONArray("references")).forEach { row ->
@@ -486,5 +494,12 @@ internal class RiftProofObligationsV1 {
             lower.contains("_test.") ||
             lower.contains(".test.") ||
             lower.contains(".spec.")
+    }
+
+    private fun isVerificationScriptPath(path: String): Boolean {
+        if (isTestPath(path)) return true
+        val lower = path.lowercase()
+        return (lower.endsWith(".mjs") || lower.endsWith(".js")) &&
+            (lower.contains("/scripts/validate-") || lower.contains("/scripts/verify-"))
     }
 }
