@@ -93,6 +93,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftCliHost.kt` | `docs/systems/riftcli/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftLocalCliPackage.kt` | `docs/systems/riftcli/README.md` + `ROADMAP.md` + `docs/PROJECT_STATUS.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCliEventBus.kt` | `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/relay-service/README.md` + `docs/systems/debugger/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCliPersistentJobStore.kt` | `docs/systems/riftcli/README.md` + `ROADMAP.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCodynexBridgeClient.kt` | `docs/CODYNEX_LR0_BRIDGE.md` + `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftcli/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/cpp/mc0/codynex_mc0_host.cpp` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |

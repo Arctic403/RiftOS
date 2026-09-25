@@ -85,6 +85,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftCliHost.kt",
         "src/main/java/com/riftos/app/RiftLocalCliPackage.kt",
         "src/main/java/com/riftos/app/RiftCliEventBus.kt",
+        "src/main/java/com/riftos/app/RiftCliPersistentJobStore.kt",
         "src/main/java/com/riftos/app/RiftCodynexBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftCrossBoundaryContractsV1.kt",
         "src/main/java/com/riftos/app/RiftDocumentationClaimsV1.kt",

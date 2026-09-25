@@ -147,9 +147,11 @@ One Batch V2 job reserves the same global `RiftCliExecutionGate` for its entire 
 
 The retired RiftShell batch implementation and multi-operation `rift_workspace_exec` remain fail-fast disabled.
 
-### Future external Batch V2 exposure policy
+**Post-N2 Batch hardening B1 is SOURCE IMPLEMENTED / LIVE RESTART PROOF PENDING.** `RiftCliPersistentJobStore.kt` now provides a sealed, bounded, app-private AtomicFile journal shared by hosted tool, shell and Batch V2 jobs. Every submitted job must persist before execution begins. Batch plans persist their normalized full plan plus SHA-256 `planHash`, current/completed step counters, bounded retained step results, cancellation state, recovery metadata and a batch-scoped authority lease. The lease reserves execution capacity only: it explicitly carries `authorizationBypass=false`, `perOperationAuthorizationRequired=true` and `observerValidatorBypass=false`; every tool/shell step still re-enters its normal authority/provenance path. Batch state is journaled before a step begins and again after its result commits. A nonterminal record found after process death becomes `recovery_required`; the store forbids blind whole-job replay and requires a later system-declared retry-safe/idempotent decision before any resume. `rift_cli_job_list/poll/cancel` can observe or close recovered jobs without re-executing them. Local Agent and MCP batch exposure remain intentionally absent until this persistence/recovery layer is Builder/install/force-stop proven.
 
-Batch V2 is an internal RiftCLI multi-step authority lane today. **External/model-facing batch submission remains deferred until the entire RiftCLI stack is 100% complete and live.** When that final integration gate is opened, batching must follow exactly:
+### Batch V2 exposure policy
+
+Batch V2 is an internal RiftCLI multi-step authority lane today. **External/model-facing batch submission is gated on the current Batch V2 hardening chain, not on completion of every future RiftCLI N-gate.** The required order is single-command persistence → process/disconnect recovery → cancellation → CLI-local batch recovery → failure/rollback semantics → Local Agent exposure → MCP exposure. Comparative/performance benchmarks remain separately forbidden until the entire RiftCLI roadmap is complete and live. When the Batch V2 integration gate is proven, batching follows exactly:
 
 `external reasoning -> MCP/relay -> RiftOS Local Agent -> RiftCLI -> rift_cli_batch -> bounded RiftOS authorities`
 

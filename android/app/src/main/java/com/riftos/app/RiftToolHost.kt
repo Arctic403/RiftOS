@@ -80,6 +80,11 @@ class RiftToolHost(
     )
 
     private val cliJobs = ConcurrentHashMap<String, CliJob>()
+    private val cliJobStore = RiftCliPersistentJobStore(appContext).also { it.recoverInterruptedJobs() }
+
+    private fun persistCliJob(job: CliJob) {
+        cliJobStore.save(cliJobSnapshot(job))
+    }
 
     private fun emitCliJob(
         job: CliJob,
@@ -541,6 +546,19 @@ class RiftToolHost(
         }
         val job = CliJob(jobId, driverRequestId, name, now, now, "queued")
         cliJobs[jobId] = job
+        try {
+            persistCliJob(job)
+        } catch (error: Throwable) {
+            cliJobs.remove(jobId, job)
+            RiftCliExecutionGate.release(jobId)
+            val message = error.message ?: "RiftCLI job persistence failed before execution"
+            recordAudit(name, normalizedArgs, false, message)
+            return JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", message)
+                .put("jobPersistenceRequired", true)
+        }
         emitCliJob(job, "job.submitted")
 
         if (name == "rift_debug") {
@@ -558,6 +576,7 @@ class RiftToolHost(
                 job.status = if (response.optBoolean("ok", false)) "completed" else "failed"
                 job.updatedAt = SystemClock.elapsedRealtime()
             }
+            persistCliJob(job)
             emitCliJob(
                 job,
                 if (job.status == "completed") "job.completed" else "job.failed",
@@ -585,7 +604,10 @@ class RiftToolHost(
                             started = true
                         }
                     }
-                    if (started) emitCliJob(job, "job.started")
+                    if (started) {
+                        persistCliJob(job)
+                        emitCliJob(job, "job.started")
+                    }
                 }
             ) { raw ->
                 try {
@@ -646,6 +668,7 @@ class RiftToolHost(
                         }
                         job.updatedAt = SystemClock.elapsedRealtime()
                     }
+                    persistCliJob(job)
                     emitCliJob(
                         job,
                         when (job.status) {
@@ -667,6 +690,7 @@ class RiftToolHost(
                 job.status = "failed"
                 job.updatedAt = SystemClock.elapsedRealtime()
             }
+            persistCliJob(job)
             emitCliJob(job, "job.failed", job.response)
             RiftCliExecutionGate.release(jobId)
             return cliJobSnapshot(job)
@@ -678,23 +702,76 @@ class RiftToolHost(
     internal fun listCliJobs(requestId: String? = null): JSONObject {
         pruneCliJobs()
         val rows = JSONArray()
+        val activeIds = LinkedHashSet<String>()
         cliJobs.values
             .filter { requestId.isNullOrBlank() || it.requestId == requestId }
             .sortedBy { it.createdAt }
-            .forEach { rows.put(cliJobSnapshot(it, includeResult = false)) }
-        return JSONObject().put("ok", true).put("jobs", rows)
+            .forEach {
+                activeIds += it.id
+                rows.put(cliJobSnapshot(it, includeResult = false))
+            }
+        val persisted = runCatching { cliJobStore.list(requestId) }.getOrElse { JSONArray() }
+        for (index in 0 until persisted.length()) {
+            val row = persisted.optJSONObject(index) ?: continue
+            if (row.optString("kind") == "rift-tool" && row.optString("jobId") !in activeIds) {
+                rows.put(JSONObject(row.toString()).put("persistedOnly", true))
+            }
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("jobs", rows)
+            .put("persistentJobs", true)
     }
 
     internal fun pollCliJob(jobId: String): JSONObject {
         pruneCliJobs()
         val job = cliJobs[jobId]
-            ?: return JSONObject().put("ok", false).put("error", "Unknown or expired RiftCLI job: $jobId")
-        return cliJobSnapshot(job)
+        if (job != null) return cliJobSnapshot(job)
+        val persisted = runCatching { cliJobStore.load(jobId) }.getOrNull()
+        if (persisted != null && persisted.optString("kind") == "rift-tool") {
+            return JSONObject(persisted.toString()).put("persistedOnly", true)
+        }
+        return JSONObject().put("ok", false).put("error", "Unknown or expired RiftCLI job: $jobId")
     }
 
     internal fun cancelCliJob(jobId: String): JSONObject {
         val job = cliJobs[jobId]
-            ?: return JSONObject().put("ok", false).put("error", "Unknown or expired RiftCLI job: $jobId")
+        if (job == null) {
+            val persisted = runCatching { cliJobStore.load(jobId) }.getOrNull()
+                ?: return JSONObject().put("ok", false).put("error", "Unknown or expired RiftCLI job: $jobId")
+            if (persisted.optString("kind") != "rift-tool") {
+                return JSONObject().put("ok", false).put("error", "Unknown or expired RiftCLI tool job: $jobId")
+            }
+            val status = persisted.optString("status")
+            if (status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                return JSONObject(persisted.toString()).put("persistedOnly", true)
+            }
+            persisted
+                .put("status", "cancelled")
+                .put("state", "cancelled")
+                .put("terminal", true)
+                .put("jobOk", false)
+                .put("cancelRequested", true)
+                .put("cancellationState", "cancelled_after_recovery")
+                .put("updatedAtEpochMs", System.currentTimeMillis())
+                .put(
+                    "recoveryMetadata",
+                    JSONObject(persisted.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
+                        .put("cancelledAfterRecovery", true)
+                        .put("blindReplayAllowed", false)
+                )
+            cliJobStore.save(persisted)
+            RiftMcpRuntime.cliEvents().emit(
+                type = "job.cancelled",
+                requestId = persisted.optString("requestId").takeIf { it.isNotBlank() },
+                jobId = jobId,
+                lane = persisted.optString("kind", "tool"),
+                status = "cancelled",
+                terminal = true,
+                message = "Recovered RiftCLI job cancelled without replay"
+            )
+            return JSONObject(persisted.toString()).put("persistedOnly", true)
+        }
         synchronized(job) {
             if (job.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
                 return cliJobSnapshot(job)
@@ -714,6 +791,7 @@ class RiftToolHost(
                 job.status = "cancelling"
             }
         }
+        persistCliJob(job)
         emitCliJob(
             job,
             if (job.status == "cancelled") "job.cancelled" else "job.cancelling",
@@ -748,6 +826,7 @@ class RiftToolHost(
             }
         }
         changed.forEach { job ->
+            runCatching { persistCliJob(job) }
             emitCliJob(
                 job,
                 if (job.status == "cancelled") "job.cancelled" else "job.cancelling",
@@ -759,6 +838,16 @@ class RiftToolHost(
     }
 
     private fun cliJobSnapshot(job: CliJob, includeResult: Boolean = true): JSONObject = synchronized(job) {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val nowEpoch = System.currentTimeMillis()
+        val terminal = job.status in setOf(
+            "completed",
+            "completed_result_too_large",
+            "failed",
+            "cancelled",
+            "cancelled_may_have_applied",
+            "completed_after_cancel_request"
+        )
         JSONObject()
             .put("ok", true)
             .put("jobOk", when (job.status) {
@@ -768,13 +857,41 @@ class RiftToolHost(
             })
             .put("jobId", job.id)
             .put("requestId", job.requestId)
+            .put("kind", "rift-tool")
             .put("tool", job.name)
             .put("status", job.status)
-            .put("terminal", job.status in setOf("completed", "completed_result_too_large", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request"))
+            .put("state", job.status)
+            .put("terminal", terminal)
             .put("createdAtElapsedMs", job.createdAt)
             .put("updatedAtElapsedMs", job.updatedAt)
+            .put("submittedAtEpochMs", nowEpoch - (nowElapsed - job.createdAt).coerceAtLeast(0L))
+            .put("updatedAtEpochMs", nowEpoch - (nowElapsed - job.updatedAt).coerceAtLeast(0L))
             .put("cancelRequested", job.cancelRequested)
-            .put("elapsedMs", (SystemClock.elapsedRealtime() - job.createdAt).coerceAtLeast(0L))
+            .put(
+                "cancellationState",
+                when {
+                    job.status == "cancelled" || job.status == "cancelled_may_have_applied" -> "cancelled"
+                    job.status == "cancelling" -> "cancelling"
+                    job.cancelRequested -> "requested"
+                    else -> "none"
+                }
+            )
+            .put(
+                "authorityLease",
+                JSONObject()
+                    .put("scope", "single-tool")
+                    .put("jobId", job.id)
+                    .put("active", !terminal)
+                    .put("authorizationBypass", false)
+                    .put("perOperationAuthorizationRequired", true)
+            )
+            .put(
+                "recoveryMetadata",
+                JSONObject()
+                    .put("blindReplayAllowed", false)
+                    .put("retrySafeResumeRequired", true)
+            )
+            .put("elapsedMs", (nowElapsed - job.createdAt).coerceAtLeast(0L))
             .also { snapshot ->
                 if (includeResult) snapshot.put("result", job.response ?: JSONObject.NULL)
             }

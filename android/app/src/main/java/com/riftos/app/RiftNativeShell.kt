@@ -73,6 +73,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private val services = RiftNativeShellServices(appContext)
     private val riftBuild = RiftBuildLocalExecutor(appContext)
     private val nativeGit = RiftMcpRuntime.nativeGit(appContext)
+    private val cliJobStore = RiftCliPersistentJobStore(appContext).also { it.recoverInterruptedJobs() }
     @Volatile private var closed = false
 
     private data class ShellOutcome(val output: String, val cwd: String, val result: Any? = null)
@@ -89,7 +90,17 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         @Volatile var result: Any? = null,
         @Volatile var error: String? = null,
         @Volatile var future: Future<*>? = null,
-        val lane: String = "shell"
+        val lane: String = "shell",
+        @Volatile var planHash: String? = null,
+        @Volatile var plan: JSONObject? = null,
+        @Volatile var currentStep: Int = 0,
+        @Volatile var completedSteps: Int = 0,
+        @Volatile var stepResults: JSONArray = JSONArray(),
+        @Volatile var cancellationState: String = "none",
+        @Volatile var authorityLease: JSONObject? = null,
+        @Volatile var recoveryMetadata: JSONObject = JSONObject()
+            .put("blindReplayAllowed", false)
+            .put("retrySafeResumeRequired", true)
     )
 
     private data class CliBatchStep(
@@ -107,6 +118,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     )
 
     private val cliShellJobs = ConcurrentHashMap<String, CliShellJob>()
+
+    private fun persistCliShellJob(job: CliShellJob) {
+        cliJobStore.save(cliShellJobSnapshot(job))
+    }
 
     private fun emitCliShellJob(
         job: CliShellJob,
@@ -488,6 +503,25 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "queued"
         )
         cliShellJobs[jobId] = job
+        try {
+            persistCliShellJob(job)
+        } catch (error: Throwable) {
+            cliShellJobs.remove(jobId, job)
+            RiftCliExecutionGate.release(jobId)
+            val response = JSONObject()
+                .put("ok", false)
+                .put("error", error.message ?: "RiftCLI shell job persistence failed before execution")
+                .put("jobPersistenceRequired", true)
+            val result = JSONObject(cliResult.toString())
+                .put("dispatchSubmitted", false)
+                .put("dispatchExecuted", false)
+                .put("dispatchOk", false)
+                .put("dispatchCommand", nestedCommand)
+                .put("dispatchCwd", cwd)
+                .put("dispatchOutput", response.toString(2))
+                .put("dispatchResult", response)
+            return ShellOutcome(response.toString(2), cwd, result)
+        }
         emitCliShellJob(job, "job.submitted")
 
         val future = try {
@@ -503,7 +537,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 started = true
                             }
                         }
-                        if (started) emitCliShellJob(job, "job.started")
+                        if (started) {
+                            persistCliShellJob(job)
+                            emitCliShellJob(job, "job.started")
+                        }
                         val nestedSession = RiftPatchSessions.begin(
                             appContext,
                             origin = "rift-local-agent-cli",
@@ -546,6 +583,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 }
                                 job.updatedAt = SystemClock.elapsedRealtime()
                             }
+                            persistCliShellJob(job)
                             val terminalResult = JSONObject()
                                 .put("output", job.output)
                                 .put("result", job.result ?: JSONObject.NULL)
@@ -566,6 +604,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 job.status = if (job.cancelRequested || Thread.currentThread().isInterrupted) "cancelled_may_have_applied" else "failed"
                                 job.updatedAt = SystemClock.elapsedRealtime()
                             }
+                            persistCliShellJob(job)
                             emitCliShellJob(
                                 job,
                                 if (job.status == "cancelled_may_have_applied") "job.cancelled" else "job.failed",
@@ -584,6 +623,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         }
                     }
                     if (changed) {
+                        persistCliShellJob(job)
                         emitCliShellJob(
                             job,
                             if (job.status == "cancelled") "job.cancelled" else "job.failed",
@@ -601,6 +641,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 job.status = "failed"
                 job.updatedAt = SystemClock.elapsedRealtime()
             }
+            runCatching { persistCliShellJob(job) }
             emitCliShellJob(job, "job.failed", message = job.error)
             RiftCliExecutionGate.release(jobId)
             null
@@ -623,6 +664,24 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     }
 
     private fun cliShellJobSnapshot(job: CliShellJob, includeResult: Boolean = true): JSONObject = synchronized(job) {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val nowEpoch = System.currentTimeMillis()
+        val terminal = job.status in setOf(
+            "completed",
+            "completed_result_too_large",
+            "completed_with_failures",
+            "failed",
+            "cancelled",
+            "cancelled_may_have_applied",
+            "completed_after_cancel_request"
+        )
+        val lease = job.authorityLease?.let { JSONObject(it.toString()) }
+            ?: JSONObject()
+                .put("scope", if (job.lane == "batch") "rift-cli-batch" else "rift-shell")
+                .put("jobId", job.id)
+                .put("active", !terminal)
+                .put("authorizationBypass", false)
+                .put("perOperationAuthorizationRequired", true)
         JSONObject()
             .put("ok", true)
             .put("jobOk", when (job.status) {
@@ -636,11 +695,22 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("operation", job.operation.take(80))
             .put("cwd", job.cwd)
             .put("status", job.status)
-            .put("terminal", job.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request"))
+            .put("state", job.status)
+            .put("terminal", terminal)
             .put("createdAtElapsedMs", job.createdAt)
             .put("updatedAtElapsedMs", job.updatedAt)
+            .put("submittedAtEpochMs", nowEpoch - (nowElapsed - job.createdAt).coerceAtLeast(0L))
+            .put("updatedAtEpochMs", nowEpoch - (nowElapsed - job.updatedAt).coerceAtLeast(0L))
             .put("cancelRequested", job.cancelRequested)
-            .put("elapsedMs", (SystemClock.elapsedRealtime() - job.createdAt).coerceAtLeast(0L))
+            .put("cancellationState", job.cancellationState)
+            .put("planHash", job.planHash ?: JSONObject.NULL)
+            .put("plan", job.plan?.let { JSONObject(it.toString()) } ?: JSONObject.NULL)
+            .put("currentStep", job.currentStep)
+            .put("completedSteps", job.completedSteps)
+            .put("stepResults", JSONArray(job.stepResults.toString()))
+            .put("authorityLease", lease)
+            .put("recoveryMetadata", JSONObject(job.recoveryMetadata.toString()))
+            .put("elapsedMs", (nowElapsed - job.createdAt).coerceAtLeast(0L))
             .also { snapshot ->
                 if (includeResult) {
                     snapshot
@@ -654,36 +724,103 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun listCliShellJobs(requestId: String? = null): JSONArray {
         pruneCliShellJobs()
         val rows = JSONArray()
+        val activeIds = LinkedHashSet<String>()
         cliShellJobs.values
             .filter { requestId.isNullOrBlank() || it.requestId == requestId }
             .sortedBy { it.createdAt }
-            .forEach { rows.put(cliShellJobSnapshot(it, includeResult = false)) }
+            .forEach {
+                activeIds += it.id
+                rows.put(cliShellJobSnapshot(it, includeResult = false))
+            }
+        val persisted = runCatching { cliJobStore.list(requestId) }.getOrElse { JSONArray() }
+        for (index in 0 until persisted.length()) {
+            val row = persisted.optJSONObject(index) ?: continue
+            val kind = row.optString("kind")
+            if (kind in setOf("rift-shell", "rift-cli-batch") && row.optString("jobId") !in activeIds) {
+                rows.put(JSONObject(row.toString()).put("persistedOnly", true))
+            }
+        }
         return rows
     }
 
     private fun pollCliShellJob(jobId: String): JSONObject? {
         pruneCliShellJobs()
-        val job = cliShellJobs[jobId] ?: return null
-        return cliShellJobSnapshot(job)
+        val job = cliShellJobs[jobId]
+        if (job != null) return cliShellJobSnapshot(job)
+        val persisted = runCatching { cliJobStore.load(jobId) }.getOrNull() ?: return null
+        return if (persisted.optString("kind") in setOf("rift-shell", "rift-cli-batch")) {
+            JSONObject(persisted.toString()).put("persistedOnly", true)
+        } else null
     }
 
     private fun cancelCliShellJob(jobId: String): JSONObject? {
-        val job = cliShellJobs[jobId] ?: return null
+        val job = cliShellJobs[jobId]
+        if (job == null) {
+            val persisted = runCatching { cliJobStore.load(jobId) }.getOrNull() ?: return null
+            val kind = persisted.optString("kind")
+            if (kind !in setOf("rift-shell", "rift-cli-batch")) return null
+            val status = persisted.optString("status")
+            if (status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
+                return JSONObject(persisted.toString()).put("persistedOnly", true)
+            }
+            val lease = JSONObject(persisted.optJSONObject("authorityLease")?.toString() ?: "{}")
+                .put("active", false)
+                .put("state", "released_after_recovery_cancel")
+                .put("releasedAtEpochMs", System.currentTimeMillis())
+                .put("authorizationBypass", false)
+                .put("perOperationAuthorizationRequired", true)
+            persisted
+                .put("status", "cancelled")
+                .put("state", "cancelled")
+                .put("terminal", true)
+                .put("jobOk", false)
+                .put("cancelRequested", true)
+                .put("cancellationState", "cancelled_after_recovery")
+                .put("authorityLease", lease)
+                .put("updatedAtEpochMs", System.currentTimeMillis())
+                .put(
+                    "recoveryMetadata",
+                    JSONObject(persisted.optJSONObject("recoveryMetadata")?.toString() ?: "{}")
+                        .put("cancelledAfterRecovery", true)
+                        .put("blindReplayAllowed", false)
+                )
+            cliJobStore.save(persisted)
+            RiftMcpRuntime.cliEvents().emit(
+                type = "job.cancelled",
+                requestId = persisted.optString("requestId").takeIf { it.isNotBlank() },
+                jobId = jobId,
+                lane = if (kind == "rift-cli-batch") "batch" else "shell",
+                status = "cancelled",
+                terminal = true,
+                message = "Recovered RiftCLI job cancelled without replay"
+            )
+            return JSONObject(persisted.toString()).put("persistedOnly", true)
+        }
         synchronized(job) {
             if (job.status in setOf("completed", "completed_result_too_large", "completed_with_failures", "failed", "cancelled", "cancelled_may_have_applied", "completed_after_cancel_request")) {
                 return cliShellJobSnapshot(job)
             }
             job.cancelRequested = true
+            job.cancellationState = "requested"
             val wasQueued = job.status == "queued"
             val cancelled = job.future?.cancel(true) == true
             job.updatedAt = SystemClock.elapsedRealtime()
             if (wasQueued && cancelled) {
                 job.status = "cancelled"
+                job.cancellationState = "cancelled"
                 job.error = "RiftCLI shell job cancelled before execution"
+                job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                    .put("active", false)
+                    .put("state", "released")
+                    .put("releasedAtEpochMs", System.currentTimeMillis())
+                    .put("authorizationBypass", false)
+                    .put("perOperationAuthorizationRequired", true)
                 RiftCliExecutionGate.release(job.id)
             } else {
                 job.status = "cancelling"
+                job.cancellationState = "cancelling"
             }
+            persistCliShellJob(job)
             emitCliShellJob(
                 job,
                 if (job.status == "cancelled") "job.cancelled" else "job.cancelling",
@@ -716,6 +853,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             }
         }
         changed.forEach { job ->
+            runCatching { persistCliShellJob(job) }
             emitCliShellJob(
                 job,
                 if (job.status == "cancelled") "job.cancelled" else "job.cancelling",
@@ -841,6 +979,34 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("steps", rows)
     }
 
+    private fun cliBatchPersistentPlan(plan: CliBatchPlan): JSONObject {
+        val rows = JSONArray()
+        plan.steps.forEach { step ->
+            val row = JSONObject()
+                .put("id", step.id)
+                .put("kind", step.kind)
+            if (step.kind == "tool") {
+                row
+                    .put("name", step.toolName ?: "")
+                    .put("args", step.toolArgs?.let { JSONObject(it.toString()) } ?: JSONObject())
+            } else {
+                row.put("command", step.shellCommand ?: "")
+            }
+            rows.put(row)
+        }
+        return JSONObject()
+            .put("schema", "rift.cli-batch-plan/2")
+            .put("mode", plan.mode)
+            .put("failurePolicy", plan.failurePolicy)
+            .put("stepCount", plan.steps.size)
+            .put("steps", rows)
+    }
+
+    private fun sha256Utf8(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
     private fun emitCliBatchStep(
         job: CliShellJob,
         type: String,
@@ -916,7 +1082,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         toolHost: RiftToolHost
     ): JSONObject {
         val plan = parseCliBatchPlan(args, toolHost)
+        val persistentPlan = cliBatchPersistentPlan(plan)
+        val planHash = sha256Utf8(persistentPlan.toString())
         val planSummary = cliBatchPlanSummary(plan)
+            .put("planHash", planHash)
+            .put("authorizationBypass", false)
+            .put("perOperationAuthorizationRequired", true)
         if (plan.mode == "validate") {
             RiftMcpRuntime.cliEvents().emit(
                 type = "batch.validated",
@@ -946,6 +1117,18 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 .put("error", "RiftCLI already has one outstanding authority job")
                 .put("outstandingJobId", RiftCliExecutionGate.outstandingJob() ?: JSONObject.NULL)
         }
+        val lease = JSONObject()
+            .put("schema", "rift.cli-authority-lease/1")
+            .put("leaseId", "cli-batch-lease-" + UUID.randomUUID().toString())
+            .put("jobId", jobId)
+            .put("scope", "rift-cli-batch")
+            .put("state", "reserved")
+            .put("active", true)
+            .put("reservedAtEpochMs", System.currentTimeMillis())
+            .put("expectedOperations", plan.steps.size)
+            .put("authorizationBypass", false)
+            .put("perOperationAuthorizationRequired", true)
+            .put("observerValidatorBypass", false)
         val job = CliShellJob(
             id = jobId,
             requestId = cliResult.optString("requestId"),
@@ -954,9 +1137,23 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             createdAt = now,
             updatedAt = now,
             status = "queued",
-            lane = "batch"
+            lane = "batch",
+            planHash = planHash,
+            plan = persistentPlan,
+            authorityLease = lease
         )
         cliShellJobs[jobId] = job
+        try {
+            persistCliShellJob(job)
+        } catch (error: Throwable) {
+            cliShellJobs.remove(jobId, job)
+            RiftCliExecutionGate.release(jobId)
+            return JSONObject()
+                .put("ok", false)
+                .put("error", error.message ?: "RiftCLI Batch V2 persistence failed before execution")
+                .put("jobPersistenceRequired", true)
+                .put("planHash", planHash)
+        }
         emitCliShellJob(job, "batch.submitted", planSummary)
 
         val future = try {
@@ -967,9 +1164,14 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         synchronized(job) {
                             if (job.status == "queued") {
                                 job.status = "running"
+                                job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                                    .put("active", true)
+                                    .put("state", "active")
+                                    .put("activatedAtEpochMs", System.currentTimeMillis())
                                 job.updatedAt = SystemClock.elapsedRealtime()
                             }
                         }
+                        persistCliShellJob(job)
                         emitCliShellJob(job, "batch.started", planSummary)
                         val stepRows = JSONArray()
                         var currentCwd = cwd
@@ -982,6 +1184,25 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 throw InterruptedException("RiftCLI Batch V2 cancelled before step ${step.id}")
                             }
                             val index = index0 + 1
+                            val operation = if (step.kind == "tool") {
+                                step.toolName.orEmpty()
+                            } else {
+                                runCatching { tokenize(step.shellCommand.orEmpty()).firstOrNull().orEmpty() }.getOrDefault("")
+                            }
+                            synchronized(job) {
+                                job.currentStep = index
+                                job.recoveryMetadata = JSONObject()
+                                    .put("blindReplayAllowed", false)
+                                    .put("retrySafeResumeRequired", true)
+                                    .put("currentStepId", step.id)
+                                    .put("currentStepIndex", index)
+                                    .put("currentStepKind", step.kind)
+                                    .put("currentStepOperation", operation.take(80))
+                                    .put("currentStepState", "started")
+                                    .put("startedAtEpochMs", System.currentTimeMillis())
+                                job.updatedAt = SystemClock.elapsedRealtime()
+                            }
+                            persistCliShellJob(job)
                             emitCliBatchStep(job, "batch.step.started", step, index, plan.steps.size, "running")
                             val started = SystemClock.elapsedRealtime()
                             val stepResponse = try {
@@ -1035,6 +1256,17 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 .put("durationMs", duration)
                                 .put("result", retained)
                             stepRows.put(stepRow)
+                            synchronized(job) {
+                                job.completedSteps = executedSteps
+                                job.stepResults = JSONArray(stepRows.toString())
+                                job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                                    .put("currentStepState", "completed")
+                                    .put("lastCompletedStepId", step.id)
+                                    .put("lastCompletedStepIndex", index)
+                                    .put("completedAtEpochMs", System.currentTimeMillis())
+                                job.updatedAt = SystemClock.elapsedRealtime()
+                            }
+                            persistCliShellJob(job)
                             emitCliBatchStep(
                                 job,
                                 if (ok) "batch.step.completed" else "batch.step.failed",
@@ -1090,8 +1322,22 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             job.error = if (failedSteps > 0 && plan.failurePolicy == "stop") {
                                 "RiftCLI Batch V2 stopped after a failed step"
                             } else null
+                            job.cancellationState = when {
+                                job.status == "completed_after_cancel_request" -> "completed_after_cancel_request"
+                                job.cancelRequested -> "requested"
+                                else -> "none"
+                            }
+                            job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                                .put("active", false)
+                                .put("state", "released")
+                                .put("releasedAtEpochMs", System.currentTimeMillis())
+                            job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                                .put("terminal", true)
+                                .put("terminalStatus", job.status)
+                                .put("blindReplayAllowed", false)
                             job.updatedAt = SystemClock.elapsedRealtime()
                         }
+                        persistCliShellJob(job)
                         emitCliShellJob(
                             job,
                             when (job.status) {
@@ -1120,11 +1366,26 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             } else {
                                 "failed"
                             }
+                            job.cancellationState = if (job.status == "cancelled_may_have_applied") {
+                                "cancelled_may_have_applied"
+                            } else {
+                                job.cancellationState
+                            }
+                            job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                                .put("active", false)
+                                .put("state", "released")
+                                .put("releasedAtEpochMs", System.currentTimeMillis())
+                            job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                                .put("terminal", true)
+                                .put("terminalStatus", job.status)
+                                .put("currentStepState", "terminal_after_interrupt_or_failure")
+                                .put("blindReplayAllowed", false)
                             job.updatedAt = SystemClock.elapsedRealtime()
                             changed = true
                         }
                     }
                     if (changed) {
+                        persistCliShellJob(job)
                         emitCliShellJob(
                             job,
                             if (job.status == "cancelled_may_have_applied") "batch.cancelled" else "batch.failed",
@@ -1140,8 +1401,17 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             synchronized(job) {
                 job.error = error.message ?: error.javaClass.simpleName
                 job.status = "failed"
+                job.authorityLease = JSONObject(job.authorityLease?.toString() ?: "{}")
+                    .put("active", false)
+                    .put("state", "released")
+                    .put("releasedAtEpochMs", System.currentTimeMillis())
+                job.recoveryMetadata = JSONObject(job.recoveryMetadata.toString())
+                    .put("terminal", true)
+                    .put("terminalStatus", "failed")
+                    .put("blindReplayAllowed", false)
                 job.updatedAt = SystemClock.elapsedRealtime()
             }
+            runCatching { persistCliShellJob(job) }
             emitCliShellJob(job, "batch.failed", message = job.error)
             RiftCliExecutionGate.release(jobId)
             null

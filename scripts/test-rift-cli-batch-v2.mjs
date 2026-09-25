@@ -6,6 +6,10 @@ const core=read('android/app/src/main/cpp/riftcli/rift_cli_core.cpp');
 const shell=read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const host=read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
 const sandbox=read('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt');
+const jobStore=read('android/app/src/main/java/com/riftos/app/RiftCliPersistentJobStore.kt');
+const localAgent=read('android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt');
+const mcpServer=read('android/app/src/main/java/com/riftos/app/RiftMcpServer.kt');
+const gradle=read('android/app/build.gradle.kts');
 const oldBatch=read('src/riftshell-batch.js');
 
 assert.ok(core.includes(String.raw`\"batchV2\":true`));
@@ -60,8 +64,51 @@ assert.match(host,/sandbox\.executeCliBatchRequest\(request\.toString\(\)\)/);
 assert.match(sandbox,/internal fun executeCliBatchRequest/);
 assert.match(sandbox,/executeRequest\(raw, "rift-cli-batch"\)/);
 
+assert.match(gradle,/RiftCliPersistentJobStore\.kt/);
+
+assert.match(jobStore,/class RiftCliPersistentJobStore/);
+assert.match(jobStore,/AtomicFile/);
+assert.match(jobStore,/MAX_JOB_FILES = 32/);
+assert.match(jobStore,/MAX_JOB_BYTES = 4 \* 1024 \* 1024L/);
+assert.match(jobStore,/payloadSha256/);
+assert.match(jobStore,/recoverInterruptedJobs\(\)/);
+assert.match(jobStore,/"recovery_required"/);
+assert.match(jobStore,/"blindReplayAllowed", false/);
+assert.match(jobStore,/"retrySafeResumeRequired", true/);
+assert.match(jobStore,/"released_on_process_loss"/);
+
+assert.match(shell,/private val cliJobStore = RiftCliPersistentJobStore/);
+assert.match(shell,/private fun persistCliShellJob/);
+assert.match(shell,/private fun cliBatchPersistentPlan/);
+assert.match(shell,/private fun sha256Utf8/);
+assert.match(shell,/planHash = sha256Utf8\(persistentPlan\.toString\(\)\)/);
+assert.match(shell,/"rift\.cli-authority-lease\/1"/);
+assert.match(shell,/"authorizationBypass", false/);
+assert.match(shell,/"perOperationAuthorizationRequired", true/);
+assert.match(shell,/"observerValidatorBypass", false/);
+assert.match(shell,/job\.currentStep = index/);
+assert.match(shell,/job\.completedSteps = executedSteps/);
+assert.match(shell,/job\.stepResults = JSONArray\(stepRows\.toString\(\)\)/);
+assert.match(shell,/"currentStepState", "started"/);
+assert.match(shell,/"currentStepState", "completed"/);
+assert.match(shell,/persistCliShellJob\(job\)[\s\S]{0,160}emitCliShellJob\(job, "batch\.submitted"/);
+assert.match(shell,/persistCliShellJob\(job\)[\s\S]{0,160}emitCliShellJob\(job, "batch\.started"/);
+assert.match(shell,/persistCliShellJob\(job\)[\s\S]{0,220}emitCliBatchStep\([\s\S]{0,160}"batch\.step\.started"/);
+assert.match(shell,/jobPersistenceRequired/);
+assert.match(shell,/"cancelled_after_recovery"/);
+
+assert.match(host,/private val cliJobStore = RiftCliPersistentJobStore/);
+assert.match(host,/private fun persistCliJob/);
+assert.match(host,/"persistentJobs", true/);
+assert.match(host,/"persistedOnly", true/);
+assert.match(host,/"authorizationBypass", false/);
+assert.match(host,/"perOperationAuthorizationRequired", true/);
+
+assert.ok(!localAgent.includes('rift_cli_batch'),'Batch V2 must remain unexposed from Local Agent until persistence/recovery is live-proven');
+assert.ok(!mcpServer.includes('rift_cli_batch'),'Batch V2 must remain unexposed from MCP until persistence/recovery is live-proven');
+
 assert.match(oldBatch,/DISABLED: RiftShell batch commands are disabled/);
 assert.match(oldBatch,/disabled:true/);
 assert.ok(!shell.includes('"batch" ->'),'native RiftShell must not resurrect the retired batch command');
 
-console.log('ok - RiftCLI N1.6 Batch V2 is bounded, prevalidated, single-authority and separate from retired batch paths');
+console.log('ok - RiftCLI Batch V2 + B1 persistent jobs are bounded, sealed, restart-recoverable without blind replay, non-bypass and still externally unexposed');
