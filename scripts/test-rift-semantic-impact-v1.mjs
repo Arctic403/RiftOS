@@ -25,13 +25,16 @@ assert.match(source, /isMachineAuthorityPath/);
 assert.match(source, /isBuildConfigPath/);
 assert.match(source, /classifyPath/);
 
-assert.match(records, /fun semanticImpactSeed\(\): JSONObject/);
+assert.match(records, /fun semanticImpactSeed\(projectPath: String\? = null\): JSONObject/);
 assert.match(records, /MAX_SEMANTIC_SEED_CHANGES = 4_096/);
 assert.match(records, /MAX_SEMANTIC_SEED_SOURCE_FILES = 1_024/);
 assert.match(records, /MAX_SEMANTIC_SEED_TEXT_BYTES = 8L \* 1024L \* 1024L/);
-assert.match(records, /buildSemanticImpactSeed\(buildCandidateManifest\(\)\)/);
+assert.match(records, /buildSemanticImpactSeed\(buildCandidateManifest\(\), projectPath\)/);
+assert.match(records, /private fun buildSemanticImpactSeed\(manifest: JSONObject, projectPath: String\? = null\): JSONObject/);
+assert.match(records, /val scopePrefix = projectPath/);
+assert.match(records, /matchesPrefix\(path, scopePrefix\)/);
 assert.match(records, /prepareForRead\("semantic-impact-seed", requireCurrent = true\)/);
-assert.doesNotMatch(records, /semanticImpactSeed\(\)[\s\S]{0,300}reconcileAll\("semantic-impact-seed"\)/);
+assert.doesNotMatch(records, /semanticImpactSeed\([^)]*\)[\s\S]{0,300}reconcileAll\("semantic-impact-seed"\)/);
 assert.match(records, /MAX_RECORDS = 256/);
 assert.match(records, /candidateSessionRows\(changedPaths\)/);
 assert.match(records, /"semanticTextComplete"/);
@@ -43,10 +46,10 @@ assert.ok(!sandbox.includes('private fun extractSymbols('), 'PI-v2 parser duplic
 assert.ok(!sandbox.includes('private fun extractDependencies('), 'PI-v2 dependency parser duplication returned');
 assert.ok(!sandbox.includes('private fun languageFor('), 'PI-v2 language parser duplication returned');
 
-assert.match(sandbox, /private fun candidateImpact\(\): JSONObject/);
-assert.match(sandbox, /workspaceRecords\.semanticImpactSeed\(\)/);
+assert.match(sandbox, /private fun candidateImpact\(projectPath: String\? = null\): JSONObject/);
+assert.match(sandbox, /workspaceRecords\.semanticImpactSeed\(projectPath\)/);
 const candidateImpactBody = sandbox.slice(
-  sandbox.indexOf('private fun candidateImpact(): JSONObject'),
+  sandbox.indexOf('private fun candidateImpact(projectPath: String? = null): JSONObject'),
   sandbox.indexOf('private fun candidateReferences(')
 );
 assert.match(candidateImpactBody, /refreshSymbolIndex\(sandboxFile\(root\)\)/);
@@ -54,9 +57,13 @@ assert.match(candidateImpactBody, /"candidate-projects"/);
 assert.match(candidateImpactBody, /"no-candidate-changes"/);
 assert.ok(!candidateImpactBody.includes('refreshSymbolIndex(workspaceRoot)'), 'candidate impact must never refresh the entire workspace');
 assert.match(candidateImpactBody, /candidateStateSha256/,'semantic candidate must carry stable state identity');
-assert.match(candidateImpactBody, /candidate\.put\("evidenceManifestSha256", candidateSeed\.getString\("manifestSha256"\)\)/,'full evidence manifest must be attached only as diagnostics');
+assert.match(candidateImpactBody, /val evidenceManifestSha = if \(scopeRoot == null\)/,'global and project-scoped evidence identities must be explicit');
+assert.match(candidateImpactBody, /candidateSeed\.getString\("manifestSha256"\)/,'global candidate impact must retain the original full evidence manifest identity');
+assert.match(candidateImpactBody, /\.put\("projectRoot", scopeRoot\)/,'project-scoped evidence identity must bind the selected project root');
+assert.match(candidateImpactBody, /\.put\("semanticImpactSha256", semanticSha\)/,'project-scoped evidence identity must bind semantic impact');
+assert.match(candidateImpactBody, /candidate\.put\("evidenceManifestSha256", evidenceManifestSha\)/,'candidate diagnostics must expose the selected evidence identity');
 const semanticHashIndex = candidateImpactBody.indexOf('val semanticSha = RiftPatchManifestV1.sha256Canonical(payload)');
-const evidenceManifestIndex = candidateImpactBody.indexOf('candidate.put("evidenceManifestSha256"');
+const evidenceManifestIndex = candidateImpactBody.indexOf('val evidenceManifestSha =');
 assert.ok(semanticHashIndex >= 0 && evidenceManifestIndex > semanticHashIndex,'evidence manifest SHA must not participate in semantic impact identity');
 assert.match(sandbox, /semanticImpactSha256/);
 assert.match(sandbox, /ownershipDocsFor/);
