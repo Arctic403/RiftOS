@@ -194,7 +194,7 @@ const toolDefs = new Set([...toolHost.matchAll(/\.put\(tool\(\s*"(rift_[a-z0-9_]
 const methodBlock = toolHost.split("private fun methodFor(name: String): String? = when (name) {")[1]?.split("\n    }")[0] ?? "";
 const dispatch = new Set([...methodBlock.matchAll(/"(rift_[a-z0-9_]+)"\s*->/g)].map((m) => m[1]));
 if (toolHost.includes('if (name == "rift_debug")') && toolHost.includes("debugHub.query(")) dispatch.add("rift_debug");
-assert.equal(toolDefs.size, 19, "unexpected MCP tool definition count");
+assert.equal(toolDefs.size, 24, "unexpected MCP tool definition count");
 for (const tool of toolDefs) assert.ok(dispatch.has(tool), "advertised MCP tool lacks dispatch: " + tool);
 
 assert.notEqual("rift-mcp-relay-v2", protocolKt, "protocol mutation fixture failed");

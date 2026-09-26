@@ -542,6 +542,26 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-25-020 — Cross-boundary regression retained the pre-exposure 19-tool MCP count
+
+**Status:** SOURCE REPAIRED — Builder confirmation pending.
+
+**Affected source:** `d5123d945766b20b6c3fd64ed70b1211a15497c3` (`Expose Batch V2 through MCP`), Builder run `36206957187`.
+
+**Stage:** Builder `npm run check` / `check:transport`, before Kotlin/Gradle. Native wiring passed, `validate-rift-transport.mjs` accepted the exact 24-tool MCP family and the new Local-Agent-routed Batch controls, documentation validation passed, and the Observer regressions before the cross-boundary test were green.
+
+**Observed failure:** `test-rift-cross-boundary-contracts-v1.mjs` still asserted `toolDefs.size === 19`. The intentional MCP surface expansion produced 24 definitions, so the regression failed with `24 !== 19`.
+
+**Root cause:** the MCP exposure patch updated the transport validator, Tool Host catalog, Contracts oracle, Batch regression and current documentation, but missed one independent exact-count assertion in the cross-boundary regression. Runtime routing and the 24-tool transport contract had already passed in the same Builder run.
+
+**Classification:** regression-test expectation drift / validation-only false failure. The Builder stopped before Kotlin/Gradle and installed-device proof, so this run does not promote or invalidate the new MCP Batch runtime path.
+
+**Hardening added:** the cross-boundary regression now freezes the intentional 24-tool catalog count. A repository-wide script search found no other live MCP tool-count assertion using 19; remaining numeric 19 occurrences are unrelated constants/fixtures or historical documentation evidence.
+
+**Resolution target:** rerun the Builder from the repaired source, require the full `npm run check` chain including `test-rift-cross-boundary-contracts-v1.mjs` and `test-rift-cli-batch-v2.mjs` to pass, then complete Kotlin/Gradle, install exact provenance, resync the MCP catalog to 24 tools, and run direct MCP Batch live proof before promotion.
+
+---
+
 ## FAIL-2026-09-25-019 — Local Agent Batch list duplicated unbounded native job payloads
 
 **Status:** RESOLVED — response hardening installed and live-proven on source `24937bbcfb6d717a5bddbe79de251bd39026dacc`, Builder run `36201078437` / run number `386`.
