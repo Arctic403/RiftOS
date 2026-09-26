@@ -17,7 +17,7 @@
 
 ## Canonical catalog
 
-`tools()` is authoritative. The current source publishes exactly 24 tools (installed run 386 remains the prior 19-tool build until this patch is built and installed):
+`tools()` is authoritative. Builder run `36207328573` / run number `388` installs exactly 24 model-visible tools, and ChatGPT resynced to the same 24-tool catalog:
 
 1. rift_shell_exec
 2. rift_info

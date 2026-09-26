@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-020 — Cross-boundary regression retained the pre-exposure 19-tool MCP count
 
-**Status:** SOURCE REPAIRED — Builder confirmation pending.
+**Status:** RESOLVED — repaired source `6127dccc8e27a0b3f88779d8292c6e71572b609f` passed Builder/install and first-class MCP Batch live proof on Builder run `36207328573` / run number `388`.
 
 **Affected source:** `d5123d945766b20b6c3fd64ed70b1211a15497c3` (`Expose Batch V2 through MCP`), Builder run `36206957187`.
 
@@ -558,7 +558,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 **Hardening added:** the cross-boundary regression now freezes the intentional 24-tool catalog count. A repository-wide script search found no other live MCP tool-count assertion using 19; remaining numeric 19 occurrences are unrelated constants/fixtures or historical documentation evidence.
 
-**Resolution target:** rerun the Builder from the repaired source, require the full `npm run check` chain including `test-rift-cross-boundary-contracts-v1.mjs` and `test-rift-cli-batch-v2.mjs` to pass, then complete Kotlin/Gradle, install exact provenance, resync the MCP catalog to 24 tools, and run direct MCP Batch live proof before promotion.
+**Resolution evidence:** repaired source `6127dccc8e27a0b3f88779d8292c6e71572b609f` passed the full Builder chain and installed as Builder run `36207328573` / run number `388`. Installed provenance matched exactly; the device manifest reported 24 tools with SHA-256 `78ee72f5865650742a7ad8ab381e22632fd4f295ef74d6e5584fd45519fdfb64`, and ChatGPT resynced to all 24. Direct first-class MCP proof then passed: submit/list/poll completed one two-step job with stable job/hash and all authority-bypass flags false; cancel stopped a 16-step read-only job and released the lease; `rollbackPolicy=on-failure` terminalized `rolled_back` and restored the disposable file; a real force-stop/reopen produced `recovery_required` at step 13 with 12 completed steps, `persistedOnly=true`, lease `released_on_process_loss`, no blind/whole-job replay, and direct `rift_batch_recover resume` was rejected while CLI was OFF; after explicit re-enable the same job/hash resumed and completed 16/16 with `released_after_recovery`. Validate-only submission returned terminal `validated` without creating/executing a job, and a 17-step request was rejected by the public MCP schema `maxItems: 16`. FAIL-020 is resolved.
 
 ---
 

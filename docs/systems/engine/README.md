@@ -113,7 +113,7 @@ External Android folders are not part of the engine root namespace by raw path. 
 
 `RiftMcpRuntime` constructs one process-owned `RiftToolHost` and `RiftMcpServer`.
 
-The current source-defined model-visible catalog is exactly 24 tools: the prior 19 plus five bounded `rift_batch_*` controls; installed run 386 remains the prior 19-tool build until this patch is built and installed. `rift_debug` remains passive/read-only. Ordinary filesystem/Code Mode operations execute in `RiftToolSandbox`; the five Batch controls are intercepted by `RiftToolHost` and routed through RiftOS Local Agent → RiftCLI; `rift_shell_exec` executes through process-owned `RiftNativeShell`.
+The installed/model-visible catalog is exactly 24 tools on Builder run `36207328573` / run number `388`: the prior 19 plus five bounded `rift_batch_*` controls. ChatGPT resynced to all 24. `rift_debug` remains passive/read-only. Ordinary filesystem/Code Mode operations execute in `RiftToolSandbox`; the five Batch controls are intercepted by `RiftToolHost` and routed through RiftOS Local Agent → RiftCLI; `rift_shell_exec` executes through process-owned `RiftNativeShell`.
 
 `RiftToolSandbox` owns:
 - workspace containment;
