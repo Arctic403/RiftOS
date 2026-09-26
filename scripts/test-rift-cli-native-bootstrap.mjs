@@ -154,7 +154,10 @@ check(
 check(
   'RiftCLI docs lock plan-global act-incremental and retired-batch isolation',
   docs.includes('plan globally but act incrementally') &&
-    docs.includes('N1.6 adds a **new** bounded batch mechanism') &&
+    docs.includes('RiftCLI Batch V2 — historical / retired') &&
+    docs.includes('batchV2=false') &&
+    docs.includes('batchV2MaxSteps=0') &&
+    docs.includes('batchOwner=riftos-local-agent') &&
     docs.includes('retired RiftShell batch implementation and multi-operation `rift_workspace_exec` remain fail-fast disabled')
 );
 
