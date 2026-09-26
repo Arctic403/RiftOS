@@ -1,0 +1,199 @@
+{
+  "schema": "rift-architecture-n3-contract-v1",
+  "phase": "N3.0",
+  "program": "RiftCLI N3 Architecture/Impact Engine",
+  "status": "source-implemented",
+  "promotion": "pending-builder-install-proof",
+  "runtimeAuthority": false,
+  "plannerAuthority": false,
+  "mutationAuthority": false,
+  "memoryRuntimeActivation": false,
+  "globalBenchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
+  "prerequisites": {
+    "observerN1_8": "PROMOTED",
+    "memoryN2": "N2.0-N2.12 PROMOTED; N2 COMPLETE; CANONICAL MEMORY RUNTIME INACTIVE",
+    "persistentBatch": "B1+B2A+B2B PROMOTED",
+    "localAgentBatch": "PROMOTED",
+    "firstClassMcpBatch": "PROMOTED",
+    "n3MachineAuthorityPrelude": "PROMOTED"
+  },
+  "installedBaseline": {
+    "riftosSourceSha": "3e9cfb5b7514e3a82d4d739fa0f3d92aba1ba23b",
+    "builderRunId": "36209390484",
+    "builderRunNumber": "389",
+    "androidPackage": "com.riftos.app",
+    "installedAbi": "armeabi-v7a",
+    "mcpToolCount": 24,
+    "mcpManifestSha256": "78ee72f5865650742a7ad8ab381e22632fd4f295ef74d6e5584fd45519fdfb64"
+  },
+  "authority": {
+    "sourceRuntimeEvidenceAuthoritative": true,
+    "documentationIsClaimData": true,
+    "architectureEngineAuthoritativeForMutation": false,
+    "architectureEngineMayGrantCapabilities": false,
+    "architectureEngineMayActivateMemory": false,
+    "memoryMayOverrideSourceOwnership": false,
+    "plannerMayConsumeOnlyAfterN3Promotion": true
+  },
+  "inputs": [
+    {
+      "name": "candidateImpact",
+      "schema": "rift-semantic-impact-v1",
+      "owner": "RiftToolSandbox/Project Intelligence v2"
+    },
+    {
+      "name": "propagation",
+      "schema": "rift-semantic-propagation-v1",
+      "owner": "RiftToolSandbox/Project Intelligence v2"
+    },
+    {
+      "name": "contracts",
+      "schema": "rift-cross-boundary-contracts-v1",
+      "owner": "RiftCrossBoundaryContractsV1"
+    },
+    {
+      "name": "claims",
+      "schema": "rift-documentation-claims-v1",
+      "owner": "RiftDocumentationClaimsV1"
+    },
+    {
+      "name": "proofs",
+      "schema": "rift-proof-obligations-v1",
+      "owner": "RiftProofObligationsV1"
+    },
+    {
+      "name": "memoryDiagnostics",
+      "schema": "N2 promoted diagnostics only",
+      "owner": "Rift Memory Kernel",
+      "authority": "non-authoritative context; canonical runtime remains inactive"
+    }
+  ],
+  "requiredOutputs": [
+    "owningSubsystem",
+    "dependencyImpact",
+    "architectureInvariants",
+    "requiredDocumentation",
+    "relevantTests",
+    "buildPackageImpact",
+    "securityCapabilityBoundaries",
+    "completeness",
+    "incompleteReasons",
+    "evidenceProvenance"
+  ],
+  "bounds": {
+    "maxProjects": 32,
+    "maxChangedFiles": 4096,
+    "maxChangedSymbols": 1000,
+    "maxReferenceSymbols": 80,
+    "maxReferences": 800,
+    "maxDependencies": 800,
+    "maxDependents": 800,
+    "maxTests": 300,
+    "maxDocumentation": 300,
+    "maxAffinityTargets": 128,
+    "maxPropagationSeeds": 64,
+    "maxPropagationClosureNodes": 1024,
+    "maxPropagationReverseEdges": 4096,
+    "maxPropagationDepth": 16
+  },
+  "failClosedRules": [
+    "any incomplete required input makes N3 analysis incomplete",
+    "ambiguous ownership is unresolved, never guessed",
+    "cross-project evidence never silently merges",
+    "source/build/runtime evidence outranks documentation and memory",
+    "missing or truncated dependency/propagation evidence cannot produce a clean impact conclusion",
+    "security/capability boundary uncertainty is surfaced explicitly",
+    "bound exhaustion is an incomplete result, never silent truncation-as-complete",
+    "N3 produces analysis only; it cannot plan, mutate, authorize, grant capability, or activate memory"
+  ],
+  "correctnessCorpus": [
+    {
+      "id": "ambiguous-owner",
+      "expected": "owner unresolved; analysis incomplete; no guessed subsystem"
+    },
+    {
+      "id": "api-change-propagates",
+      "expected": "direct dependents, references, relevant tests and owning docs are included or analysis fails closed"
+    },
+    {
+      "id": "dependency-cycle",
+      "expected": "bounded deterministic closure; no infinite traversal; cycle does not erase impact"
+    },
+    {
+      "id": "cross-project-same-symbol",
+      "expected": "project scopes remain isolated; no foreign owner/dependency/test leakage"
+    },
+    {
+      "id": "build-config-change",
+      "expected": "build/package impact and config-reading verification consumers are surfaced"
+    },
+    {
+      "id": "security-boundary-change",
+      "expected": "capability/security boundary impact is explicit and cannot be omitted from a complete result"
+    },
+    {
+      "id": "stale-or-truncated-pi",
+      "expected": "analysis incomplete; no false-clean architecture conclusion"
+    },
+    {
+      "id": "docs-conflict-with-source",
+      "expected": "source evidence wins; conflicting documentation remains claim data requiring update"
+    },
+    {
+      "id": "memory-conflicts-with-source",
+      "expected": "memory cannot override current source ownership/invariants and remains contextual evidence only"
+    },
+    {
+      "id": "bound-exhaustion",
+      "expected": "exact bound may complete; above bound fails closed with deterministic incomplete reason"
+    },
+    {
+      "id": "restart-determinism",
+      "expected": "same source/candidate inputs produce same bounded N3 evidence after process restart"
+    }
+  ],
+  "zeroTolerance": {
+    "guessedOwnerWhenAmbiguous": 0,
+    "missedDirectDependencyImpact": 0,
+    "crossProjectContamination": 0,
+    "architectureInvariantBypass": 0,
+    "securityCapabilityBoundaryOmission": 0,
+    "staleEvidenceFalseClean": 0,
+    "memoryAuthorityEscalation": 0,
+    "plannerOrMutationAuthority": 0,
+    "silentBoundTruncation": 0,
+    "performanceComparativeBenchmarks": "DEFERRED_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE"
+  },
+  "implementationPlan": [
+    {
+      "phase": "N3.1",
+      "title": "Owner/subsystem resolution",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.2",
+      "title": "Dependency/API/propagation impact",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.3",
+      "title": "Architecture invariants + security/capability boundaries",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.4",
+      "title": "Docs/tests/build/package derivation",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.5",
+      "title": "Unified candidate architecture report + bounded contextual memory",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.6",
+      "title": "Adversarial/restart/final promotion gate",
+      "status": "blocked-until-N3.0-promoted"
+    }
+  ]
+}

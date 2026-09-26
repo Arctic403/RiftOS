@@ -138,6 +138,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `observer/phase-authority.json` | `docs/systems/workspace/REPOSITORY_CONSISTENCY_OBSERVER.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` + `docs/PROJECT_STATUS.md` |
 | `riftmemory/n2-contract-v1.json` | `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` + `docs/systems/riftmemory/README.md` + `docs/systems/build-validation/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` |
 | `riftmemory/n2-phase-authority.json` | `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` + `docs/systems/riftmemory/README.md` + `docs/systems/build-validation/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` |
+| `riftarchitecture/n3-contract-v1.json` | `docs/systems/riftcli/N3_ARCHITECTURE_IMPACT_ROADMAP.md` + `docs/systems/riftcli/README.md` + `docs/systems/build-validation/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` |
+| `riftarchitecture/n3-phase-authority.json` | `docs/systems/riftcli/N3_ARCHITECTURE_IMPACT_ROADMAP.md` + `docs/systems/riftcli/README.md` + `docs/systems/build-validation/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` | `docs/systems/vortex-bridge/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` | `docs/systems/vortex-agent/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftChatHandoff.kt` | `docs/systems/chat-handoff/README.md` |
@@ -201,6 +203,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-memory-n2-m5-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` + `docs/systems/riftmemory/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` + `scripts/README.md` |
 | `scripts/test-rift-memory-n2-m6-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` + `docs/systems/riftmemory/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` + `scripts/README.md` |
 | `scripts/test-rift-memory-n2-final-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` + `docs/systems/riftmemory/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` + `scripts/README.md` |
+| `scripts/test-rift-cli-n3-contract-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/N3_ARCHITECTURE_IMPACT_ROADMAP.md` + `docs/systems/riftcli/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` + `scripts/README.md` |
 | `scripts/test-rift-cli-native-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-driver-protocol.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-push-channel.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` + `docs/PATCH_HISTORY.md` |

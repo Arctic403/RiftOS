@@ -340,13 +340,16 @@ N2 is implemented and promoted as N2.0-N2.12: contract/correctness-baseline free
 
 Full frozen program: `../riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md`.
 
-### Hard N3 barrier
+### N3 barrier — satisfied for N3.0
 
-N3 does not start because the N2 architecture exists or because one happy-path demo works. N2.12 must first prove the mandatory weakest-link categories: canonical integrity, temporal accuracy, Observer reconciliation, project isolation, provenance, poisoning resistance, procedural learning, cold restart, crash recovery, rollback, projection rebuild, integrity/security and bounded Android resource behavior.
+The hard N2-before-N3 barrier is satisfied: N2.12 is promoted, the full Batch V2 restoration chain through first-class MCP Batch is promoted, and the N3 machine-authority prelude is live on run 389. N3.0 is now source-implemented as a contract/baseline freeze. N3.1-N3.6 remain blocked until N3.0 itself is Builder/install/live-promoted. Canonical N2 memory runtime authority remains inactive.
 
 ### Gate N3 — Architecture and impact engine
 
-Before a proposed change, derive:
+Frozen program: `N3_ARCHITECTURE_IMPACT_ROADMAP.md`.
+Machine authority: `../../../riftarchitecture/n3-contract-v1.json` + `../../../riftarchitecture/n3-phase-authority.json`.
+
+Before a proposed change, N3 must derive:
 
 - owning subsystem;
 - dependency impact;
@@ -354,7 +357,11 @@ Before a proposed change, derive:
 - required docs;
 - relevant tests;
 - build/package impact;
-- security/capability boundaries.
+- security/capability boundaries;
+- completeness/incomplete reasons;
+- evidence provenance.
+
+N3 is analysis-only. It cannot plan, mutate, authorize, grant capabilities, execute Batch jobs, or activate canonical memory. N4 Planner remains blocked until N3.6 promotion.
 
 ### Gate N4 — Planner
 

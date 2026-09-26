@@ -347,15 +347,93 @@ if (n2PhaseAuthority.schema !== 'rift-memory-n2-phase-authority-v1' ||
   failures.push('N2 phase authority lifecycle/macro-plan drifted');
 }
 
+const n3Roadmap = fs.readFileSync(
+  path.join(root, 'docs/systems/riftcli/N3_ARCHITECTURE_IMPACT_ROADMAP.md'),
+  'utf8'
+);
+for (const required of [
+  'N3.0 CONTRACT/BASELINE SOURCE-IMPLEMENTED',
+  'N3 is analysis only',
+  'N4 may consume N3 only after N3.6 promotion',
+  '### N3.0 — Contract and baseline freeze',
+  '### N3.6 — Adversarial / restart / final promotion gate',
+  'Comparative/performance benchmarks remain deferred until the entire RiftCLI stack is complete and live',
+]) {
+  if (!n3Roadmap.includes(required)) {
+    failures.push(`N3 architecture/impact roadmap lost required frozen contract: ${required}`);
+  }
+}
+
+const n3Contract = JSON.parse(fs.readFileSync(path.join(root, 'riftarchitecture/n3-contract-v1.json'), 'utf8'));
+const n3PhaseAuthority = JSON.parse(fs.readFileSync(path.join(root, 'riftarchitecture/n3-phase-authority.json'), 'utf8'));
+if (n3Contract.schema !== 'rift-architecture-n3-contract-v1' ||
+    n3Contract.phase !== 'N3.0' ||
+    n3Contract.status !== 'source-implemented' ||
+    n3Contract.promotion !== 'pending-builder-install-proof' ||
+    n3Contract.runtimeAuthority !== false ||
+    n3Contract.plannerAuthority !== false ||
+    n3Contract.mutationAuthority !== false ||
+    n3Contract.memoryRuntimeActivation !== false ||
+    n3Contract.installedBaseline?.riftosSourceSha !== '3e9cfb5b7514e3a82d4d739fa0f3d92aba1ba23b' ||
+    String(n3Contract.installedBaseline?.builderRunNumber) !== '389' ||
+    n3Contract.globalBenchmarkRule !== 'NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE') {
+  failures.push('N3.0 machine contract lifecycle/authority/baseline/benchmark rule drifted');
+}
+if (n3Contract.bounds?.maxProjects !== 32 ||
+    n3Contract.bounds?.maxChangedFiles !== 4096 ||
+    n3Contract.bounds?.maxChangedSymbols !== 1000 ||
+    n3Contract.bounds?.maxReferences !== 800 ||
+    n3Contract.bounds?.maxDependencies !== 800 ||
+    n3Contract.bounds?.maxDependents !== 800 ||
+    n3Contract.bounds?.maxTests !== 300 ||
+    n3Contract.bounds?.maxDocumentation !== 300 ||
+    n3Contract.bounds?.maxPropagationSeeds !== 64 ||
+    n3Contract.bounds?.maxPropagationClosureNodes !== 1024 ||
+    n3Contract.bounds?.maxPropagationReverseEdges !== 4096 ||
+    n3Contract.bounds?.maxPropagationDepth !== 16) {
+  failures.push('N3.0 machine contract frozen bounds drifted');
+}
+if (n3Contract.zeroTolerance?.guessedOwnerWhenAmbiguous !== 0 ||
+    n3Contract.zeroTolerance?.missedDirectDependencyImpact !== 0 ||
+    n3Contract.zeroTolerance?.crossProjectContamination !== 0 ||
+    n3Contract.zeroTolerance?.architectureInvariantBypass !== 0 ||
+    n3Contract.zeroTolerance?.securityCapabilityBoundaryOmission !== 0 ||
+    n3Contract.zeroTolerance?.staleEvidenceFalseClean !== 0 ||
+    n3Contract.zeroTolerance?.memoryAuthorityEscalation !== 0 ||
+    n3Contract.zeroTolerance?.plannerOrMutationAuthority !== 0 ||
+    n3Contract.zeroTolerance?.silentBoundTruncation !== 0) {
+  failures.push('N3.0 zero-tolerance correctness rules drifted');
+}
+if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
+    !String(n3PhaseAuthority.programStatus || '').includes('N3.0 SOURCE IMPLEMENTED') ||
+    !String(n3PhaseAuthority.programStatus || '').includes('N3.1-N3.6 BLOCKED') ||
+    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3 ANALYSIS AUTHORITY INACTIVE') ||
+    !String(n3PhaseAuthority.runtimeStatus || '').includes('N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE') ||
+    n3PhaseAuthority.prerequisites?.N3MachineAuthorityPrelude !== 'SATISFIED' ||
+    n3PhaseAuthority.phases?.length !== 7 ||
+    n3PhaseAuthority.phases?.[0]?.status !== 'source-implemented' ||
+    n3PhaseAuthority.phases?.slice(1).some(row => row.status !== 'blocked-until-N3.0-promoted') ||
+    JSON.stringify(n3PhaseAuthority.macroImplementationPlan?.map(row => row.phases)) !== JSON.stringify([
+      ['N3.1', 'N3.2'],
+      ['N3.3', 'N3.4'],
+      ['N3.5'],
+    ]) ||
+    !String(n3PhaseAuthority.macroPlanRule || '').includes('N3.6 remains a separate final adversarial/restart promotion gate')) {
+  failures.push('N3 phase authority lifecycle/macro-plan drifted');
+}
+
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
 if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0-N2.12 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2 COMPLETE; CANONICAL MEMORY RUNTIME INACTIVE') ||
-    !rootRoadmap.includes('N3 Architecture/impact engine — N2 prerequisite SATISFIED; queued after Batch V2 restoration/hardening.')) {
-  failures.push('ROADMAP.md no longer carries the current N2 lifecycle and hard N2-before-N3 promotion barrier');
+    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 CONTRACT/BASELINE SOURCE IMPLEMENTED; BUILDER + INSTALL + LIVE PROOF PENDING; N3.1-N3.6 BLOCKED.')) {
+  failures.push('ROADMAP.md no longer carries the promoted N2 lifecycle and active N3.0 contract gate');
 }
 
 const docsIndex = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');
 if (!docsIndex.includes('systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md')) {
   failures.push('docs/README.md does not index the N2 federated memory roadmap');
+}
+if (!docsIndex.includes('systems/riftcli/N3_ARCHITECTURE_IMPACT_ROADMAP.md')) {
+  failures.push('docs/README.md does not index the N3 architecture/impact roadmap');
 }
 for (const discoverable of ['../LOCAL_MCP_MODE.md', '../ROADMAP.md', 'RIFT_RAW_CHAT_PROTOCOL.md']) {
   if (!docsIndex.includes(discoverable)) failures.push(`docs/README.md does not link operational document: ${discoverable}`);

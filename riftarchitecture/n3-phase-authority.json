@@ -1,0 +1,75 @@
+{
+  "schema": "rift-architecture-n3-phase-authority-v1",
+  "program": "RiftCLI N3 Architecture/Impact Engine",
+  "programStatus": "N3.0 SOURCE IMPLEMENTED / BUILDER + INSTALL + LIVE PROOF PENDING; N3.1-N3.6 BLOCKED",
+  "runtimeStatus": "N3 ANALYSIS AUTHORITY INACTIVE; N3.0 CONTRACT/BASELINE ONLY; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE",
+  "prerequisites": {
+    "N1_8": "SATISFIED",
+    "N2": "SATISFIED",
+    "BatchV2": "SATISFIED",
+    "N3MachineAuthorityPrelude": "SATISFIED"
+  },
+  "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
+  "contractPath": "riftarchitecture/n3-contract-v1.json",
+  "contractLifecycleSemantics": "immutable-N3.0-freeze-snapshot; current lifecycle is authoritative only in this phase-authority file",
+  "macroImplementationPlan": [
+    {
+      "patch": "N3-M1",
+      "phases": [
+        "N3.1",
+        "N3.2"
+      ],
+      "title": "Ownership and dependency impact",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "patch": "N3-M2",
+      "phases": [
+        "N3.3",
+        "N3.4"
+      ],
+      "title": "Invariant/boundary and required-evidence derivation",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "patch": "N3-M3",
+      "phases": [
+        "N3.5"
+      ],
+      "title": "Unified architecture report",
+      "status": "blocked-until-N3.0-promoted"
+    }
+  ],
+  "macroPlanRule": "Macro patches are execution groupings only. Each logical N3.x phase retains separate evidence/promotion authority. N3.6 remains a separate final adversarial/restart promotion gate.",
+  "phases": [
+    {
+      "phase": "N3.0",
+      "status": "source-implemented",
+      "promotion": "pending-builder-install-proof"
+    },
+    {
+      "phase": "N3.1",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.2",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.3",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.4",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.5",
+      "status": "blocked-until-N3.0-promoted"
+    },
+    {
+      "phase": "N3.6",
+      "status": "blocked-until-N3.0-promoted"
+    }
+  ]
+}
