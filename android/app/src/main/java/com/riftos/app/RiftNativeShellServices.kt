@@ -304,8 +304,9 @@ class RiftNativeShellServices(context: Context) {
     fun riftOsAgent(args: MutableList<String>, cwd: String): Result {
         if(args.firstOrNull()?.lowercase()=="devlab"){
             args.removeAt(0)
-            val native=devLab(args,cwd)
-            return native
+            return RiftLocalAgentExecutionGate.withAccess {
+                devLab(args,cwd)
+            }
         }
         val activity=RiftMcpRuntime.activeActivity()
         val context=activity?:appContext

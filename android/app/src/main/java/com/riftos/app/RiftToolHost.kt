@@ -126,9 +126,9 @@ class RiftToolHost(
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v2")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug", "rift_local_agent_batch")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")))
-        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
+        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec", "rift_local_agent_batch")))
 
     fun setAccess(read: Boolean, write: Boolean): JSONObject {
         prefs.edit()
@@ -299,6 +299,35 @@ class RiftToolHost(
                     .put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 200))
             )
         ))
+        .put(tool(
+            "rift_local_agent_batch",
+            "Submit and control one bounded RiftOS Local Agent batch. Actions: submit, status, result, cancel, list. Submit prevalidates 1..16 fixed-scope Local Agent steps, binds requestId to the exact normalized plan, reserves the Local Agent execution authority, and returns immediately. Execution persists locally without RiftCLI, RiftShell batch, workspace batch, SSE, or a long-lived MCP call. Unfinished jobs are never replayed after process restart.",
+            objectSchema(
+                JSONObject()
+                    .put("action", JSONObject()
+                        .put("type", "string")
+                        .put("enum", JSONArray(listOf("submit", "status", "result", "cancel", "list"))))
+                    .put("requestId", stringProperty("Required idempotency key for submit; 1..128 safe characters and permanently bound to that retained job's exact normalized plan."))
+                    .put("failurePolicy", JSONObject()
+                        .put("type", "string")
+                        .put("enum", JSONArray(listOf("stop", "continue"))))
+                    .put("steps", JSONObject()
+                        .put("type", "array")
+                        .put("minItems", 1)
+                        .put("maxItems", 16)
+                        .put("description", "Prevalidated fixed-scope RiftOS Local Agent steps. Each step requires a unique id and allowed op.")
+                        .put("items", JSONObject()
+                            .put("type", "object")
+                            .put("properties", JSONObject()
+                                .put("id", stringProperty("Unique step id."))
+                                .put("op", stringProperty("Local Agent operation.")))
+                            .put("required", JSONArray(listOf("id", "op")))))
+                    .put("jobId", stringProperty("Job id returned by submit; required by status, result, and cancel."))
+                    .put("offset", JSONObject().put("type", "integer").put("minimum", 0))
+                    .put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 4)),
+                listOf("action")
+            )
+        ))
         // Keep the published rift_workspace_exec schema/description stable while Project Intelligence v2 evolves behind it.
         // Changing this model-visible definition changes manifest().sha256 and can force cached MCP clients to rescan actions.
         .put(tool(
@@ -344,6 +373,7 @@ class RiftToolHost(
         val forbidden = setOf(
             "rift_shell_exec",
             "rift_workspace_exec",
+            "rift_local_agent_batch",
             "rift_cli_batch",
             "rift_cli_job_list",
             "rift_cli_job_poll",
@@ -805,6 +835,32 @@ class RiftToolHost(
             }
             return
         }
+        if (name == "rift_local_agent_batch") {
+            val action = args.optString("action").trim().lowercase()
+            val requiresWrite = action == "submit" || action == "cancel"
+            val allowed = if (requiresWrite) allowRead() && allowWrite() else allowRead()
+            if (!bypassAccess && !allowed) {
+                val error = if (requiresWrite) {
+                    "Rift MCP Local Agent batch submit/cancel requires read and write access on this device."
+                } else {
+                    "Rift MCP read access is disabled on this device."
+                }
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return
+            }
+            try {
+                val activity = RiftMcpRuntime.activeActivity()
+                val value = RiftLocalAgentBatch.execute(activity ?: appContext, args)
+                recordAudit(name, args, true, null)
+                reply(JSONObject().put("ok", true).put("name", name).put("value", value))
+            } catch (failure: Throwable) {
+                val error = failure.message ?: "Invalid Local Agent batch request"
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+            }
+            return
+        }
         if (name == "rift_shell_exec") {
             val command = args.optString("command").trim()
             if (command.isBlank()) {
@@ -1103,6 +1159,11 @@ class RiftToolHost(
         "rift_workspace_diff" -> args.optString("path").ifBlank { "workspace" }.take(300)
         "rift_info" -> "sandbox"
         "rift_debug" -> args.optString("action", "status").trim().lowercase().ifBlank { "status" }
+        "rift_local_agent_batch" -> {
+            val action = args.optString("action").trim().lowercase().ifBlank { "unknown" }
+            val identifier = args.optString("jobId").ifBlank { args.optString("requestId") }.take(128)
+            if (identifier.isBlank()) action else "$action · $identifier"
+        }
         "rift_shell_exec" -> args.optString("command").trim().takeWhile { !it.isWhitespace() }
             .take(48).replace(Regex("[^A-Za-z0-9_-]"), "?") + " [arguments omitted]"
         else -> args.optString("path").take(300)

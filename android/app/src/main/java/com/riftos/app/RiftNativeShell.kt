@@ -1136,7 +1136,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
         val toolHost = RiftMcpRuntime.toolHost(appContext)
         val response = when (toolName) {
-            "rift_cli_batch" -> startCliBatch(cwd, cliResult, toolArgs, toolHost)
+            "rift_cli_batch" -> throw IllegalStateException(
+                "RiftCLI Batch V2 is retired; use the direct RiftOS Local Agent batch authority"
+            )
             "rift_cli_job_list" -> {
                 val requestId = toolArgs.optString("requestId").trim().takeIf { it.isNotBlank() }
                 val rows = JSONArray()

@@ -132,8 +132,9 @@ std::string baseStatus(const std::string& command, const std::string& cwd) {
         << "\"pollFallbackOnly\":true,"
         << "\"driverEventDelivery\":\"persistent-relay-push\","
         << "\"driverEventReplay\":\"device-ring-256\","
-        << "\"batchV2\":true,"
-        << "\"batchV2MaxSteps\":16,"
+        << "\"batchV2\":false,"
+        << "\"batchV2MaxSteps\":0,"
+        << "\"batchOwner\":\"riftos-local-agent\","
         << "\"driverDirection\":\"external-driver -> MCP/RiftShell -> RiftCLI\","
         << "\"cliCallsDriver\":false,"
         << "\"driverContinuationExternalOnly\":true,"
@@ -583,7 +584,7 @@ CommandResponse execute(const std::vector<std::string>& args, const std::string&
             "[--loop-id <id> --loop-step <0..7> --loop-max <1..8>]\n\n"
             "When enabled, RiftCLI may authorize the full existing RiftOS authority surface through one bounded action at a time. "
             "CLI actions publish persistent relay events; automatic polling is disabled. rift_cli_job_list and rift_cli_job_poll are explicit recovery/debug fallbacks, while rift_cli_job_cancel remains an explicit control. "
-            "CLI Batch V2 is available as --tool rift_cli_batch with at most 16 prevalidated sequential steps; retired RiftShell/workspace-exec batch paths remain disabled. "
+            "RiftCLI-owned batching is retired; batching is owned directly by the RiftOS Local Agent. Retired RiftShell/workspace-exec batch paths remain disabled. "
             "Every authority-bearing request-id is replay-protected in-process. Driver continuation loops are external-only and capped at 8 steps.";
         return {output, baseStatus("help", cwd)};
     }
@@ -613,8 +614,9 @@ CommandResponse execute(const std::vector<std::string>& args, const std::string&
         << "\"pollFallbackOnly\":true,"
         << "\"driverEventDelivery\":\"persistent-relay-push\","
         << "\"driverEventReplay\":\"device-ring-256\","
-        << "\"batchV2\":true,"
-        << "\"batchV2MaxSteps\":16,"
+        << "\"batchV2\":false,"
+        << "\"batchV2MaxSteps\":0,"
+        << "\"batchOwner\":\"riftos-local-agent\","
             << "\"modelBackend\":false,"
             << "\"supportedTargetAbis\":[\"arm64-v8a\",\"armeabi-v7a\"],"
             << "\"globalPlanningLocalActing\":true,"

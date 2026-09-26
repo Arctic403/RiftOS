@@ -2,9 +2,35 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-21.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-26.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.28 — Direct Local Agent batching restored; RiftCLI batching retired
+
+### Architecture
+
+Batch ownership is now direct and local:
+
+`ChatGPT / MCP -> RiftOS Local Agent -> bounded Local Agent batch executor -> normal fixed-scope Local Agent operations`.
+
+`rift_local_agent_batch` is the only active batch authority. It prevalidates 1..16 fixed-scope steps before execution, binds each retained `requestId` to the exact normalized plan, persists bounded job state/results with `AtomicFile` + fsync, supports status/result/cancel/list, pages retained results, and never replays unfinished jobs after process restart.
+
+A process-local `RiftLocalAgentExecutionGate` now reserves the RiftOS Local Agent authority for the whole batch. Standalone `riftos-agent` work and the shell Dev Lab shortcut fail closed while that lease is held; batch steps must present the active job owner ID.
+
+### Truthful failure and restart semantics
+
+Cancellation after a completed step is reported as `cancelled_may_have_applied`. Stop-on-error and unexpected post-execution failures use `failed_may_have_applied` rather than implying rollback. Persistent-store loading is fail-closed: malformed state does not partially become authoritative, nonterminal jobs recover as `interrupted_on_restart`, and no UI action is replayed automatically.
+
+### RiftCLI retirement boundary
+
+Historical N1.6 Batch V2 proof is preserved as history only. Current RiftCLI reports `batchV2=false`, `batchV2MaxSteps=0`, and `batchOwner=riftos-local-agent`; its `rift_cli_batch` dispatcher fails closed. The retired RiftShell `batch` path and multi-operation workspace batching remain disabled. Existing private Batch V2 helper code is unreachable from the current dispatcher and is guarded by retirement regressions.
+
+### Validation and status
+
+Local source-contract assertions passed 35/35, covering the Local Agent lease, exact-plan idempotency, persistence/no-replay behavior, failure states, MCP publication, CLI retirement, documentation alignment and Gradle inclusion. `riftbuild validate android` reports `sourceReady=true` with all structural checks passing. Rift audit/runtime scan found no batch-related findings; the only reported item is the pre-existing medium filename heuristic for `RiftSecretStore.kt`.
+
+The installed rollback app is still the prior build, so this patch is **source-complete only**. Node/npm is not exposed by the installed RiftShell, therefore the repository `npm run check` gate and Android compile/package/install proof remain pending for the next Builder run.
 
 ## Patch 10.27 — N1.7 deterministic SSE lifecycle
 

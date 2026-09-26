@@ -89,6 +89,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
         "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",
         "src/main/java/com/riftos/app/RiftLlmDevClient.kt",
+        "src/main/java/com/riftos/app/RiftLocalAgentBatch.kt",
         "src/main/java/com/riftos/app/RiftMcpActivity.kt",
         "src/main/java/com/riftos/app/RiftMcpRelayClient.kt",
         "src/main/java/com/riftos/app/RiftMcpRuntime.kt",

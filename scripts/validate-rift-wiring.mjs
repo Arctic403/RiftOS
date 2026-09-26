@@ -122,6 +122,7 @@ for (const dependency of ['verifyRiftOsAndroidSources', 'validateRiftBrowserWebV
 
 const main = read(`${kotlinDir}/MainActivity.kt`);
 const nativeShell = read(`${kotlinDir}/RiftNativeShell.kt`);
+const localAgentBatch = read(`${kotlinDir}/RiftLocalAgentBatch.kt`);
 const buildInstaller = read(`${kotlinDir}/RiftBuildInstaller.kt`);
 if (!buildInstaller.includes('class RiftBuildInstallReceiver : BroadcastReceiver()')) fail('RiftBuild manifest receiver source is missing');
 const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
@@ -190,8 +191,9 @@ const cliN1CoreContracts = [
   ['automatic polling disabled', String.raw`\"automaticPolling\":false`],
   ['poll fallback only', String.raw`\"pollFallbackOnly\":true`],
   ['persistent relay push', String.raw`\"driverEventDelivery\":\"persistent-relay-push\"`],
-  ['Batch V2 enabled', String.raw`\"batchV2\":true`],
-  ['Batch V2 step cap', String.raw`\"batchV2MaxSteps\":16`],
+  ['CLI Batch V2 retired', String.raw`\"batchV2\":false`],
+  ['CLI Batch V2 step cap disabled', String.raw`\"batchV2MaxSteps\":0`],
+  ['direct Local Agent owns batching', String.raw`\"batchOwner\":\"riftos-local-agent\"`],
 ];
 for (const [name, fragment] of cliN1CoreContracts) {
   if (!cliCore.includes(fragment)) fail(`RiftCLI N1 core contract missing: ${name}`);
@@ -230,13 +232,13 @@ if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
     !toolSandbox.includes('RiftCliExecutionGate.run {') ||
     !toolSandbox.includes('internal fun submitCliJob(') ||
     !toolSandbox.includes('executeRequest(raw, "rift-cli")') ||
-    !nativeShell.includes('"rift_cli_batch" -> startCliBatch') ||
-    !nativeShell.includes('MAX_CLI_BATCH_STEPS = 16') ||
-    !nativeShell.includes('origin = "rift-cli-batch"') ||
-    !toolHost.includes('internal fun validateCliBatchTool') ||
-    !toolHost.includes('internal fun executeCliBatchTool') ||
-    !toolSandbox.includes('internal fun executeCliBatchRequest') ||
-    !toolSandbox.includes('executeRequest(raw, "rift-cli-batch")')) fail('RiftCLI N1 dispatcher/provenance/Batch V2 boundary drifted');
+    nativeShell.includes('"rift_cli_batch" -> startCliBatch') ||
+    !nativeShell.includes('"rift_cli_batch" -> throw IllegalStateException') ||
+    !nativeShell.includes('RiftCLI Batch V2 is retired') ||
+    !toolHost.includes('"rift_local_agent_batch"') ||
+    !localAgentBatch.includes('MAX_STEPS = 16') ||
+    !localAgentBatch.includes('RiftLocalAgentExecutionGate') ||
+    !localAgentBatch.includes('RiftOsLocalAgent.execute(executionContext, request, job.id)')) fail('RiftCLI N1 dispatcher / Local Agent batch ownership boundary drifted');
 if (!gradle.includes('RiftCliEventBus.kt') ||
     !runtime.includes('fun cliEvents(): RiftCliEventBus') ||
     !runtime.includes('RiftMcpRelayClient(') ||

@@ -678,7 +678,15 @@ object RiftOsLocalAgent {
     private const val SELF_BACK_SETTLE_MS = 400L
     private val delegate = RiftScopedLocalAgent(TARGET_PACKAGE, "RiftOS")
 
-    fun execute(context: Context, args: JSONObject): JSONObject {
+    fun execute(
+        context: Context,
+        args: JSONObject,
+        batchOwnerId: String? = null
+    ): JSONObject = RiftLocalAgentExecutionGate.withAccess(batchOwnerId) {
+        executeUnlocked(context, args)
+    }
+
+    private fun executeUnlocked(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
         if (op == "devlab") return RiftDevLabLocalAgent.execute(context, args)
         if (op == "keyboard") return RiftOsKeyboardAgent.execute(context, args)

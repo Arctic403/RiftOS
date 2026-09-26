@@ -2,11 +2,11 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-21.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-26.**
 
 Gate N0 is proven on the installed Android device. Gate N1 plus its replay/job/cancellation/provenance hardening is also proven on the installed Android device (Builder run #255 / source `121edf6b3255beca33a45351d3952c7026b5cb4b`) on `armeabi-v7a`.
 
-Status: **N1, N1.5 persistent push/events, and N1.6 Batch V2 are live-proven on the installed Android device. N1.5 was promoted on 2026-09-21 from installed source `0814fb8cf8ca31186d6e639fc7ad3b965d822897`: an external Chrome SSE subscriber received the same sequenced lifecycle events that DebugHub recorded through `event.created -> cli.event.send -> cli.ack`, without polling, and a forced disconnect/reconnect replayed only the missed cursor range with no duplicates.**
+Status: **N1 and N1.5 have historical installed-device proof. N1.6 RiftCLI Batch V2 also has historical proof, but it is intentionally retired in the current rollback branch: current RiftCLI reports `batchV2=false`, `batchV2MaxSteps=0`, and `batchOwner=riftos-local-agent`. Direct batching now belongs to the RiftOS Local Agent and is source-complete pending a new Builder/APK/install proof.** N1.5 was promoted on 2026-09-21 from installed source `0814fb8cf8ca31186d6e639fc7ad3b965d822897`; that historical push/replay evidence remains evidence for N1.5, not evidence that CLI batching is active now.
 
 RiftCLI is being rebuilt from scratch as RiftOS's native engineering supervisor. The previous Experimental RiftCLI Kotlin/swarm/IR/lifecycle implementation was intentionally retired rather than used as the new foundation.
 
@@ -94,7 +94,7 @@ Every authority-bearing driver request must carry a unique process-local `reques
 
 N1 does not keep ChatGPT/MCP blocked on long CLI work. N1.5 changes observation from rapid polling to a persistent push-first event stream while retaining list/poll/cancel as recovery and debugging controls.
 
-Both authority lanes are job-based, and RiftCLI permits **exactly one outstanding authority job globally** across shell + ToolHost + Batch V2. A second authority action is rejected until the current job reaches a terminal state; job controls remain available.
+Both active RiftCLI authority lanes are job-based, and RiftCLI permits **exactly one outstanding authority job globally** across shell + ToolHost. A second authority action is rejected until the current job reaches a terminal state; job controls remain available. Direct Local-Agent batching is separate from RiftCLI and owns its own process-local Local Agent execution lease.
 
 - RiftShell actions run on a dedicated single-thread CLI worker so the normal RiftShell worker remains free to service observation/cancellation requests.
 - Direct `rift_*` ToolHost actions run through the existing confined ToolSandbox on a CLI job lane with **no fixed CLI wall-clock timeout**.
@@ -117,13 +117,13 @@ Every submitted action returns a process-local `jobId`. The external driver norm
 
 Cancellation is explicit and observable. A queued job that is cancelled before execution ends as `cancelled`. A running operation first enters `cancelling`; if it still completes successfully, the terminal state is `completed_after_cancel_request`. If interruption is observed after execution may already have touched state, the terminal state is `cancelled_may_have_applied` instead of pretending rollback is proven. Disabling RiftCLI requests cancellation of both shell and ToolHost CLI jobs. The idempotent `rift_cli_job_list`, `rift_cli_job_poll`, and `rift_cli_job_cancel` controls remain available while CLI authority is disabled so the external driver can verify whether a previously-authorized job actually stopped.
 
-### RiftCLI Batch V2
+### RiftCLI Batch V2 — historical / retired
 
-N1.6 adds a **new** bounded batch mechanism and does not resurrect either retired batch path.
+N1.6 previously introduced a bounded CLI-owned batch mechanism and was live-proven on an older installed build. That evidence remains historical, but **the current rollback branch intentionally retires CLI-owned batching**.
 
-`rift_cli_batch` accepts at most 16 prevalidated sequential steps in `validate` or `execute` mode. Each step has a unique bounded ID and is either a ToolHost step or an allowlisted RiftShell step. The full plan is validated before authority execution begins. Nested `rift_cli_batch`, `rift_shell_exec`, `rift_workspace_exec`, CLI job-control tools, recursive `rift-cli`, and the old RiftShell `batch` command are rejected.
+Current RiftCLI reports `batchV2=false`, `batchV2MaxSteps=0`, and `batchOwner=riftos-local-agent`. The `rift_cli_batch` dispatcher fails closed instead of entering the legacy executor.
 
-One Batch V2 job reserves the same global `RiftCliExecutionGate` for its entire lifetime, so unrelated authority cannot interleave between steps. Per-step results are bounded, `stop` and `continue` failure policies are explicit, cancellation is checked before and after each step, cancellation interrupts are never converted into ordinary step failures, and mutations are recorded with `rift-cli-batch` provenance. Push events include unique `stepId` metadata so separate step transitions cannot be coalesced together.
+Direct batching now belongs to `rift_local_agent_batch`, which is owned by the RiftOS Local Agent rather than RiftCLI. It prevalidates at most 16 fixed-scope Local Agent steps, binds a retained `requestId` to the exact normalized plan, holds one process-local Local Agent execution lease for the job, persists bounded state/results, supports cancellation and paged result retrieval, and never replays unfinished jobs after process restart.
 
 The retired RiftShell batch implementation and multi-operation `rift_workspace_exec` remain fail-fast disabled.
 
@@ -150,7 +150,7 @@ A future task may require coordinated understanding of many files/subsystems, bu
 - recoverable;
 - followed by evidence/verification before dependent mutations proceed.
 
-RiftCLI must not reintroduce the retired opaque RiftShell/workspace-exec batch-edit model. Batch V2 is the only CLI multi-step lane: it is bounded, fully prevalidated, sequential, observable per step, provenance-recorded, cancellation-aware, and owns one global authority reservation for the whole plan.
+RiftCLI must not reintroduce the retired opaque RiftShell/workspace-exec batch-edit model. **There is no active CLI multi-step lane in the current branch.** Multi-step Local Agent work belongs to the separate direct `rift_local_agent_batch` authority.
 
 ## Reusable RiftOS infrastructure
 
@@ -234,7 +234,7 @@ Current source also feeds bounded N1.5 transport metadata into the passive proce
 
 ### Gate N1.6 — RiftCLI Batch V2
 
-**Live-proven on Builder run #259 / source `eaa2a390438784be435929e49283f9e6281b8ed0`.** `rift_cli_batch` provides at most 16 fully prevalidated sequential steps under one global authority reservation, with bounded results, per-step push events, stop/continue failure policy, truthful cancellation and `rift-cli-batch` provenance. Installed-device proof covered validation, successful 3-step mutation/readback, `rift-cli-batch` Workspace Records provenance, stop/continue failure semantics, nested/retired-batch rejection and replay protection. Retired RiftShell `batch` and multi-op `rift_workspace_exec` stay disabled.
+**Historical proof:** Builder run #259 / source `eaa2a390438784be435929e49283f9e6281b8ed0` proved the former `rift_cli_batch` implementation on-device. **Current status:** that lane is intentionally retired in this rollback branch and the dispatcher now fails closed. Direct `rift_local_agent_batch` is the current source-complete batch owner; new Builder/APK/install proof is still pending. Retired RiftShell `batch` and multi-op `rift_workspace_exec` stay disabled.
 
 ### Gate N1.7 — abuse/reconnect/batch stress
 
@@ -378,7 +378,7 @@ The source gate must verify:
 - native source contains no model/API/network/process execution surface;
 - documentation/source ownership points to this subsystem.
 
-The Builder must continue verifying both `libriftcli.so` ABI payloads in every final signed APK. RiftCLI regression coverage must include the native driver protocol, dispatcher/provenance bridge, persistent push/replay transport, and Batch V2 while separately locking the retired batch paths off.
+The Builder must continue verifying both `libriftcli.so` ABI payloads in every final signed APK. RiftCLI regression coverage must include the native driver protocol, dispatcher/provenance bridge, persistent push/replay transport, and the **Batch V2 retirement lock** while separately proving direct Local Agent batching remains the only active batch authority.
 
 
 ## Failure signatures
@@ -401,7 +401,7 @@ The Builder must continue verifying both `libriftcli.so` ABI payloads in every f
 - JNI uses modified UTF helpers instead of explicit UTF-16/UTF-8 conversion -> text-boundary regression.
 - a retired Experimental RiftCLI Kotlin/swarm/IR source returns -> reset regression.
 - retired RiftShell `batch` or multi-operation `rift_workspace_exec` becomes executable again -> retired-batch regression.
-- Batch V2 bypasses whole-plan prevalidation, global authority reservation, per-step bounds/events/provenance, or cancellation checks -> Batch V2 regression.
+- `rift_cli_batch` becomes executable again, RiftCLI reports `batchV2=true`, or current docs/validators treat CLI batching as active -> Batch V2 retirement regression.
 
 ## Fix map
 
@@ -450,7 +450,7 @@ Source validation must verify:
 - ToolHost dispatch dynamically accepts current/future `rift_*` tools but rejects `rift_shell_exec` and `rift_workspace_exec` in that lane;
 - driver loops are process-local, identity-bound, strictly monotonic, externally continued and capped at 8 steps;
 - CLI shell mutations retain `RiftPatchSessions` provenance and direct tool mutations retain ToolSandbox provenance;
-- Batch V2 accepts at most 16 prevalidated sequential steps, holds one global authority reservation for the whole plan, rejects nested/retired batch paths, emits unique per-step events, preserves `rift-cli-batch` provenance and does not swallow cancellation interrupts;
+- CLI Batch V2 is retired in the current branch: `batchV2=false`, `batchV2MaxSteps=0`, `batchOwner=riftos-local-agent`, and `rift_cli_batch` fails closed;
 - JNI uses explicit UTF-16/UTF-8 transcoding;
 - the native core itself still contains no model/API client or raw process/network execution primitive.
 
@@ -460,4 +460,4 @@ Builder validation must additionally prove the final signed APK contains:
 - `lib/armeabi-v7a/libriftcli.so`;
 - no x86/x86_64 RiftCLI library.
 
-N1, N1.5 and N1.6 are installed-device proven. N1.5 now has live external SSE push-without-poll proof plus disconnect/reconnect cursor replay with ACK correlation and no duplicate/older replay. Large-result fallback, slow-subscriber/backpressure behavior, subscriber caps, forced restart recovery, repeated reconnect abuse, cancellation/no-interleave and broader bounds remain N1.7 stress work. N2 remains roadmap-only and N3 stays blocked until the full N2.12 promotion evidence is complete.
+N1 and N1.5 retain installed-device proof. N1.6 retains historical installed-device proof for the former CLI Batch V2 implementation, but **that feature is not active in the current branch**. Direct Local Agent batching is source-complete and still needs a fresh Builder/APK/install proof. N1.5 retains live external SSE push-without-poll proof plus disconnect/reconnect cursor replay with ACK correlation and no duplicate/older replay.

@@ -150,8 +150,9 @@ check(
     core.includes(String.raw`\"pollFallbackOnly\":true`) &&
     core.includes(String.raw`\"driverEventDelivery\":\"persistent-relay-push\"`) &&
     core.includes(String.raw`\"driverEventReplay\":\"device-ring-256\"`) &&
-    core.includes(String.raw`\"batchV2\":true`) &&
-    core.includes(String.raw`\"batchV2MaxSteps\":16`)
+    core.includes(String.raw`\"batchV2\":false`) &&
+    core.includes(String.raw`\"batchV2MaxSteps\":0`) &&
+    core.includes(String.raw`\"batchOwner\":\"riftos-local-agent\"`)
 );
 
 check(
@@ -296,7 +297,9 @@ check(
   docs.includes('full RiftOS authority') &&
     docs.includes('persistent push') &&
     docs.includes('polling is **fallback only**') &&
-    docs.includes('RiftCLI Batch V2') &&
+    docs.includes('RiftCLI Batch V2 — historical / retired') &&
+    docs.includes('batchV2=false') &&
+    docs.includes('batchOwner=riftos-local-agent') &&
     docs.includes('request-id') &&
     docs.includes('external continuation') &&
     docs.includes('8')

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-18.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-26.**
 
 ## Purpose
 
@@ -52,7 +52,7 @@ There is no shell WebView executor and no general native dispatcher.
 
 The authoritative catalog is `RiftToolHost.tools()`.
 
-Current expected count: **19**:
+Current expected count: **20**:
 - rift_shell_exec
 - rift_info
 - rift_stat
@@ -71,6 +71,7 @@ Current expected count: **19**:
 - rift_project_export
 - rift_workspace_diff
 - rift_debug
+- rift_local_agent_batch
 - rift_workspace_exec
 
 `manifest()` hashes the complete tool-definition JSON with SHA-256 and reports names/count/scope.
@@ -84,6 +85,8 @@ ToolHost owns read/write grants in local preferences.
 Workspace tools never widen beyond the sandbox merely because the caller is Browser or Relay.
 
 `rift_shell_exec` is the stronger process-owned RiftShell capability and is permission-gated by ToolHost; it is not Android/Linux `/system/bin/sh`.
+
+`rift_local_agent_batch` status/result/list actions require read access; submit/cancel require read and write access. It prevalidates at most 16 steps, binds each retained `requestId` to the exact normalized plan, reserves the process-local RiftOS Local Agent execution authority for the job, runs steps sequentially through `RiftOsLocalAgent`, persists bounded status/results, and never replays unfinished UI actions after restart. Standalone `riftos-agent` work cannot interleave while that lease is held. It does not enter RiftCLI, RiftShell batch, workspace batch, relay transport, or SSE.
 
 `rift_workspace_exec` requires write permission only when the requested batch mutates. Its optional `intent` field is bounded provenance metadata only; ToolHost permission classification is still derived from the normalized operations.
 

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-26.**
 
 ## Purpose
 
@@ -364,6 +364,7 @@ Second source audit must verify:
 - 4096 keyboard scan limits and 128-character raw label bound;
 - strict shell arity/numeric parsing;
 - riftos-agent routes directly to fixed RiftOsLocalAgent with no RiftCLI interception;
+- standalone RiftOS Local Agent work and direct Local Agent batches share one fail-closed process-local execution lease, including the shell Dev Lab shortcut;
 - RiftOS-only type-focused;
 - native Dev Lab/browser delegation;
 - absence of process/shell/network authority.
