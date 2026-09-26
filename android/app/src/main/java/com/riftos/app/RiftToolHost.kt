@@ -7,6 +7,7 @@ import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.atomic.AtomicBoolean
@@ -35,6 +36,73 @@ internal object RiftCliExecutionGate {
     }
 }
 
+internal object RiftCliPayloadStore {
+    private const val MAX_ENTRIES = 4
+    private const val MAX_ENTRY_BYTES = 10 * 1024 * 1024
+    private const val MAX_TOTAL_BYTES = 20 * 1024 * 1024
+    private const val RETENTION_MS = 2 * 60 * 1000L
+
+    data class Entry(val name: String, val args: JSONObject, val bytes: Int)
+
+    private data class Stored(
+        val name: String,
+        val argsJson: String,
+        val bytes: Int,
+        val createdAt: Long
+    )
+
+    private val lock = Any()
+    private val entries = LinkedHashMap<String, Stored>()
+    private var totalBytes = 0
+
+    fun stage(name: String, args: JSONObject): String = synchronized(lock) {
+        pruneLocked(SystemClock.elapsedRealtime())
+        val argsJson = args.toString()
+        val bytes = argsJson.toByteArray(Charsets.UTF_8).size
+        require(bytes <= MAX_ENTRY_BYTES) {
+            "RiftCLI staged payload exceeds $MAX_ENTRY_BYTES UTF-8 bytes"
+        }
+        require(entries.size < MAX_ENTRIES) {
+            "RiftCLI staged payload capacity reached ($MAX_ENTRIES)"
+        }
+        require(totalBytes + bytes <= MAX_TOTAL_BYTES) {
+            "RiftCLI staged payload byte capacity reached ($MAX_TOTAL_BYTES)"
+        }
+        val id = "rift-cli-payload-${UUID.randomUUID()}"
+        entries[id] = Stored(name, argsJson, bytes, SystemClock.elapsedRealtime())
+        totalBytes += bytes
+        id
+    }
+
+    fun take(id: String): Entry = synchronized(lock) {
+        pruneLocked(SystemClock.elapsedRealtime())
+        val stored = entries.remove(id)
+            ?: throw IllegalArgumentException("Unknown, expired, or already-consumed RiftCLI payload")
+        totalBytes = (totalBytes - stored.bytes).coerceAtLeast(0)
+        Entry(stored.name, JSONObject(stored.argsJson), stored.bytes)
+    }
+
+    fun discard(id: String) = synchronized(lock) {
+        val stored = entries.remove(id) ?: return@synchronized
+        totalBytes = (totalBytes - stored.bytes).coerceAtLeast(0)
+    }
+
+    fun clear() = synchronized(lock) {
+        entries.clear()
+        totalBytes = 0
+    }
+
+    private fun pruneLocked(now: Long) {
+        val iterator = entries.entries.iterator()
+        while (iterator.hasNext()) {
+            val stored = iterator.next().value
+            if (now - stored.createdAt < RETENTION_MS) continue
+            totalBytes = (totalBytes - stored.bytes).coerceAtLeast(0)
+            iterator.remove()
+        }
+    }
+}
+
 /** Canonical device-side capability registry for the local Rift MCP server. */
 class RiftToolHost(
     context: Context,
@@ -53,8 +121,13 @@ class RiftToolHost(
         private const val CLI_JOB_RETENTION_MS = 5 * 60 * 1000L
         private const val MAX_CLI_RETAINED_RESULT_BYTES = 2 * 1024 * 1024
         private const val MAX_CLI_BATCH_TOOL_ARGS_BYTES = 64 * 1024
+        private const val MCP_CLI_ROUTE_TIMEOUT_MS = 95_000L
+        private const val MCP_CLI_ROUTE_POLL_MS = 40L
+        private const val MCP_CLI_ID_BYTES = 256
+        private const val MCP_CLI_GOAL_PREFIX = "mcp-authority:"
         private val MCP_BATCH_TOOLS = setOf("rift_batch_submit", "rift_batch_list", "rift_batch_poll", "rift_batch_cancel", "rift_batch_recover")
         private val MCP_BATCH_READ_ONLY_TOOLS = setOf("rift_batch_list", "rift_batch_poll")
+        private val DIRECT_CLI_CONTROL_COMMANDS = setOf("help", "status", "architecture", "enable", "disable")
         private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")
         const val SCOPE = "riftfs/workspace"
     }
@@ -83,6 +156,8 @@ class RiftToolHost(
 
     private val cliJobs = ConcurrentHashMap<String, CliJob>()
     private val cliJobStore = RiftCliPersistentJobStore(appContext).also { it.recoverInterruptedJobs() }
+    private val cliRouteExecutor = Executors.newSingleThreadExecutor()
+    private val cliRouteWatchdog = Executors.newSingleThreadScheduledExecutor()
 
     private fun persistCliJob(job: CliJob) {
         cliJobStore.save(cliJobSnapshot(job))
@@ -429,7 +504,6 @@ class RiftToolHost(
         val name = canonicalName(rawName)
         val forbidden = setOf(
             "rift_shell_exec",
-            "rift_workspace_exec",
             "rift_cli_batch",
             "rift_cli_job_list",
             "rift_cli_job_poll",
@@ -567,11 +641,18 @@ class RiftToolHost(
      * sandbox implementations, but the CLI lane has no fixed wall-clock timeout. The external
      * driver observes progress by polling and may explicitly cancel a job.
      */
-    internal fun startCliJob(rawName: String, args: JSONObject, driverRequestId: String): JSONObject {
+    internal fun startCliJob(
+        rawName: String,
+        args: JSONObject,
+        driverRequestId: String,
+        transportRequestId: String? = null,
+        modelCallId: String? = null,
+        traceId: String? = null
+    ): JSONObject {
         pruneCliJobs()
         val name = canonicalName(rawName)
-        if (name == "rift_shell_exec" || name == "rift_workspace_exec") {
-            val error = "RiftCLI tool lane forbids $name; use one bounded RiftCLI shell dispatch and never workspace-exec/batch."
+        if (name == "rift_shell_exec") {
+            val error = "RiftCLI tool lane forbids $name; use one bounded RiftCLI shell dispatch."
             recordAudit(name, args, false, error)
             return JSONObject().put("ok", false).put("name", name).put("error", error)
         }
@@ -653,10 +734,15 @@ class RiftToolHost(
         }
 
         val requestId = "cli-tool-$jobId"
+        val requestContext = JSONObject()
+            .put("traceId", traceId ?: JSONObject.NULL)
+            .put("transportRequestId", transportRequestId ?: JSONObject.NULL)
+            .put("modelCallId", modelCallId ?: JSONObject.NULL)
         val request = JSONObject()
             .put("id", requestId)
             .put("method", method)
             .put("args", normalizedArgs)
+            .put("_context", requestContext)
 
         val future = try {
             sandbox.submitCliJob(
@@ -981,6 +1067,324 @@ class RiftToolHost(
         }
     }
 
+    private fun routePublicMcpThroughCli(
+        name: String,
+        rawArgs: JSONObject,
+        traceId: String?,
+        transportRequestId: String?,
+        modelCallId: String?,
+        reply: (JSONObject) -> Unit
+    ): RiftAsyncHandle? {
+        if (name == "rift_info" || name == "rift_debug" || name in MCP_BATCH_TOOLS) return null
+        if (name.startsWith("rift_cli_")) {
+            val error = "Internal RiftCLI tools are not exposed through the public MCP authority route"
+            recordAudit(name, rawArgs, false, error)
+            reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+            return RiftAsyncHandle.completed()
+        }
+
+        if (name == "rift_shell_exec") {
+            val command = rawArgs.optString("command").trim()
+            if (command.isBlank()) {
+                recordAudit(name, rawArgs, false, "command required")
+                reply(JSONObject().put("ok", false).put("name", name).put("error", "command required"))
+                return RiftAsyncHandle.completed()
+            }
+            val shellCommandName = command.takeWhile { !it.isWhitespace() }.lowercase()
+            if (shellCommandName == "rift-cli") {
+                val control = command
+                    .split(Regex("\\s+"))
+                    .getOrNull(1)
+                    ?.trim()
+                    ?.lowercase()
+                if (control in DIRECT_CLI_CONTROL_COMMANDS) return null
+                val error = "Public MCP may call only RiftCLI trust-kernel controls directly; driver requests must enter through RiftOS Local Agent."
+                recordAudit(name, rawArgs, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return RiftAsyncHandle.completed()
+            }
+            if (shellCommandName == "batch") {
+                val error = "DISABLED: RiftShell batch commands are retired; use RiftCLI Batch V2."
+                recordAudit(name, rawArgs, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return RiftAsyncHandle.completed()
+            }
+        } else if (methodFor(name) == null) {
+            val error = "Unsupported Rift tool: $name"
+            recordAudit(name, rawArgs, false, error)
+            reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+            return RiftAsyncHandle.completed()
+        }
+
+        val normalizedArgs = try {
+            normalizeToolArgs(name, rawArgs)
+        } catch (error: Throwable) {
+            val message = error.message ?: "Invalid Rift tool arguments"
+            recordAudit(name, rawArgs, false, message)
+            reply(JSONObject().put("ok", false).put("name", name).put("error", message))
+            return RiftAsyncHandle.completed()
+        }
+
+        if (name == "rift_workspace_exec") {
+            val operationCount = normalizedArgs.optJSONArray("operations")?.length() ?: 0
+            if (operationCount > 1) {
+                val error = "Rift Code Mode public execution requires exactly one operation; use RiftCLI Batch V2 for multi-step work."
+                recordAudit(name, normalizedArgs, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return RiftAsyncHandle.completed()
+            }
+        }
+
+        val mutatingRequest = requiresWrite(name, normalizedArgs)
+        if (!isAllowed(name, normalizedArgs)) {
+            val error = when {
+                name == "rift_shell_exec" && !allowRead() && !allowWrite() ->
+                    "Rift MCP shell access is disabled on this device. Enable read and write access in Rift MCP settings."
+                name == "rift_shell_exec" && !allowRead() ->
+                    "Rift MCP shell access is disabled on this device. Enable read access in Rift MCP settings."
+                name == "rift_shell_exec" ->
+                    "Rift MCP shell access is disabled on this device. Enable write access in Rift MCP settings."
+                name == "rift_workspace_exec" && !allowRead() ->
+                    "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
+                mutatingRequest ->
+                    "Rift MCP write access is disabled on this device. Enable it in Rift MCP settings."
+                else ->
+                    "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
+            }
+            recordAudit(name, normalizedArgs, false, error)
+            reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+            return RiftAsyncHandle.completed()
+        }
+
+        return submitMcpCliAuthority(
+            name = name,
+            normalizedArgs = normalizedArgs,
+            traceId = traceId,
+            transportRequestId = transportRequestId,
+            modelCallId = modelCallId,
+            reply = reply
+        )
+    }
+
+    private fun submitMcpCliAuthority(
+        name: String,
+        normalizedArgs: JSONObject,
+        traceId: String?,
+        transportRequestId: String?,
+        modelCallId: String?,
+        reply: (JSONObject) -> Unit
+    ): RiftAsyncHandle {
+        val jobIdRef = AtomicReference<String?>(null)
+        return RiftBoundedAsync.submit(
+            executor = cliRouteExecutor,
+            watchdog = cliRouteWatchdog,
+            timeoutMs = MCP_CLI_ROUTE_TIMEOUT_MS,
+            timeoutValue = {
+                transportRequestId?.let(RiftMutationFence::cancelTransport)
+                val error = "RiftCLI authority route timed out after ${MCP_CLI_ROUTE_TIMEOUT_MS}ms"
+                recordAudit(name, normalizedArgs, false, error)
+                JSONObject().put("ok", false).put("name", name).put("error", error)
+            },
+            failureValue = { failure ->
+                val error = failure.message ?: "RiftCLI authority route failed"
+                recordAudit(name, normalizedArgs, false, error)
+                JSONObject().put("ok", false).put("name", name).put("error", error)
+            },
+            work = {
+                var terminal = false
+                try {
+                    val response = executeMcpCliAuthority(
+                        name = name,
+                        normalizedArgs = normalizedArgs,
+                        traceId = traceId,
+                        transportRequestId = transportRequestId,
+                        modelCallId = modelCallId,
+                        jobIdRef = jobIdRef
+                    )
+                    terminal = true
+                    response
+                } finally {
+                    if (!terminal) {
+                        jobIdRef.get()?.let { jobId ->
+                            runCatching { controlMcpCliJob(jobId, "cancel") }
+                        }
+                    }
+                }
+            },
+            reply = reply
+        )
+    }
+
+    private fun executeMcpCliAuthority(
+        name: String,
+        normalizedArgs: JSONObject,
+        traceId: String?,
+        transportRequestId: String?,
+        modelCallId: String?,
+        jobIdRef: AtomicReference<String?>
+    ): JSONObject {
+        val stamp = SystemClock.elapsedRealtimeNanos().toString()
+        val driverRequestId = boundedMcpCliIdentity(
+            transportRequestId,
+            "mcp-no-transport-$stamp",
+            "transport request id"
+        )
+        val driverSessionId = boundedMcpCliIdentity(
+            modelCallId,
+            "mcp-no-model",
+            "model call id"
+        )
+        val driverTaskId = boundedMcpCliIdentity(
+            traceId,
+            "mcp-no-trace",
+            "trace id"
+        )
+        val cwd = if (name == "rift_shell_exec") {
+            normalizedArgs.optString("cwd", "/").trim().ifBlank { "/" }
+        } else {
+            "/"
+        }
+
+        val payloadId = if (name == "rift_shell_exec") null else RiftCliPayloadStore.stage(name, normalizedArgs)
+        try {
+            val argv = arrayListOf(
+                "driver", "request",
+                "--request-id", driverRequestId,
+                "--session", driverSessionId,
+                "--task", driverTaskId,
+                "--project", "RiftOS",
+                "--goal", "$MCP_CLI_GOAL_PREFIX$name",
+                "--capability", "riftos"
+            )
+            if (name == "rift_shell_exec") {
+                argv += listOf("--action", normalizedArgs.optString("command"))
+            } else {
+                argv += listOf(
+                    "--tool", name,
+                    "--tool-payload-id", payloadId
+                )
+            }
+
+            val driver = executeLocalAgentCli(cwd, argv)
+            if (!driver.optBoolean("accepted", false)) {
+                val error = driver.optString("error").takeIf { it.isNotBlank() }
+                    ?: driver.optString("reason").takeIf { it.isNotBlank() }
+                    ?: "RiftCLI rejected the MCP authority request"
+                return JSONObject().put("ok", false).put("name", name).put("error", error)
+            }
+
+            var snapshot = driver.optJSONObject("dispatchResult")
+                ?: return JSONObject()
+                    .put("ok", false)
+                    .put("name", name)
+                    .put("error", "RiftCLI accepted the request without a dispatch result")
+            val jobId = snapshot.optString("jobId").trim()
+            if (jobId.isBlank()) {
+                val error = snapshot.optString("error").takeIf { it.isNotBlank() && it != "null" }
+                    ?: "RiftCLI dispatch did not create an authority job"
+                return JSONObject().put("ok", false).put("name", name).put("error", error)
+            }
+            jobIdRef.set(jobId)
+
+            while (!snapshot.optBoolean("terminal", false)) {
+                RiftDeadline.check("RiftCLI MCP authority route")
+                Thread.sleep(MCP_CLI_ROUTE_POLL_MS)
+                snapshot = controlMcpCliJob(jobId, "poll")
+            }
+            jobIdRef.set(null)
+            return normalizeMcpCliTerminal(name, snapshot)
+        } finally {
+            payloadId?.let(RiftCliPayloadStore::discard)
+        }
+    }
+
+    private fun controlMcpCliJob(jobId: String, action: String): JSONObject {
+        require(action == "poll" || action == "cancel") { "Unsupported RiftCLI job control action: $action" }
+        val tool = if (action == "poll") "rift_cli_job_poll" else "rift_cli_job_cancel"
+        val controlId = "mcp-$action-${SystemClock.elapsedRealtimeNanos()}"
+        val argv = listOf(
+            "driver", "request",
+            "--request-id", controlId,
+            "--session", "riftos-local-agent-authority",
+            "--task", action,
+            "--project", "RiftOS",
+            "--goal", "mcp-authority-control:$action",
+            "--capability", "riftos",
+            "--tool", tool,
+            "--tool-args", JSONObject().put("jobId", jobId).toString()
+        )
+        val driver = executeLocalAgentCli("/", argv)
+        return driver.optJSONObject("dispatchResult")
+            ?: throw IllegalStateException("RiftCLI $action did not return a dispatch result")
+    }
+
+    private fun executeLocalAgentCli(cwd: String, argv: List<String>): JSONObject {
+        val hosted = RiftOsLocalAgent.execute(
+            appContext,
+            JSONObject()
+                .put("op", "intelligence")
+                .put("cwd", cwd)
+                .put("argv", JSONArray(argv))
+        )
+        return hosted.optJSONObject("result")
+            ?: throw IllegalStateException("RiftOS Local Agent did not return a native RiftCLI result")
+    }
+
+    private fun boundedMcpCliIdentity(raw: String?, fallback: String, label: String): String {
+        val value = raw?.trim()?.takeIf { it.isNotBlank() } ?: fallback
+        require(value.toByteArray(Charsets.UTF_8).size <= MCP_CLI_ID_BYTES) {
+            "RiftCLI $label exceeds $MCP_CLI_ID_BYTES UTF-8 bytes"
+        }
+        return value
+    }
+
+    private fun normalizeMcpCliTerminal(name: String, snapshot: JSONObject): JSONObject {
+        return when (snapshot.optString("kind")) {
+            "rift-tool" -> {
+                val response = snapshot.optJSONObject("result")
+                if (response != null) {
+                    JSONObject(response.toString())
+                } else {
+                    JSONObject()
+                        .put("ok", false)
+                        .put("name", name)
+                        .put("error", cliSnapshotError(snapshot))
+                }
+            }
+            "rift-shell" -> {
+                if (!snapshot.optBoolean("jobOk", false)) {
+                    JSONObject()
+                        .put("ok", false)
+                        .put("name", name)
+                        .put("error", cliSnapshotError(snapshot))
+                } else {
+                    JSONObject()
+                        .put("ok", true)
+                        .put("name", name)
+                        .put(
+                            "value",
+                            JSONObject()
+                                .put("output", snapshot.optString("output"))
+                                .put("cwd", snapshot.optString("cwd", "/"))
+                                .put("result", snapshot.opt("result") ?: JSONObject.NULL)
+                        )
+                }
+            }
+            else -> JSONObject()
+                .put("ok", false)
+                .put("name", name)
+                .put("error", "Unexpected RiftCLI terminal job kind: ${snapshot.optString("kind")}")
+        }
+    }
+
+    private fun cliSnapshotError(snapshot: JSONObject): String {
+        val direct = snapshot.optString("error").takeIf { it.isNotBlank() && it != "null" }
+        if (direct != null) return direct
+        val result = snapshot.optJSONObject("result")
+        return result?.optString("error")?.takeIf { it.isNotBlank() && it != "null" }
+            ?: "RiftCLI authority job failed with status ${snapshot.optString("status", "unknown")}"
+    }
+
     private fun callAsyncInternal(
         rawName: String,
         args: JSONObject,
@@ -1054,6 +1458,18 @@ class RiftToolHost(
             }
             return RiftAsyncHandle.completed()
         }
+
+        if (!bypassAccess) {
+            routePublicMcpThroughCli(
+                name = name,
+                rawArgs = args,
+                traceId = hostSpan.context.traceId,
+                transportRequestId = transportRequestId,
+                modelCallId = modelCallId,
+                reply = reply
+            )?.let { return it }
+        }
+
         if (name == "rift_shell_exec") {
             val command = args.optString("command").trim()
             if (command.isBlank()) {
@@ -1204,6 +1620,9 @@ class RiftToolHost(
     fun shutdown() {
         cancelAllCliJobs("RiftToolHost shutdown")
         cliJobs.clear()
+        cliRouteExecutor.shutdownNow()
+        cliRouteWatchdog.shutdownNow()
+        RiftCliPayloadStore.clear()
         sandbox.shutdown()
     }
 

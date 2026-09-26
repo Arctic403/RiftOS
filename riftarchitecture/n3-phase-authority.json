@@ -1,8 +1,8 @@
 {
   "schema": "rift-architecture-n3-phase-authority-v1",
   "program": "RiftCLI N3 Architecture/Impact Engine",
-  "programStatus": "N3.0 PROMOTED; hidden PI bridge PROMOTED on run 391; N3-M1 (N3.1+N3.2) PROMOTED; run 393 exact-cap Batch admission repair + five-kind N3 evidence bridge LIVE-PROVEN; N3-M2 (N3.3+N3.4) READY; queued/manual-approved project-scoped Observer pre-push gate + per-repository AWOL mutation fence/provenance v2 SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING",
-  "runtimeStatus": "N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli; local package 0.2.1 passive DebugHub read lane LIVE; N3-M2 LOCAL IMPLEMENTATION READY; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE; N4 PLANNER REMAINS BLOCKED",
+  "programStatus": "N3.0 PROMOTED; hidden PI bridge PROMOTED on run 391; N3-M1 (N3.1+N3.2) PROMOTED; run 393 exact-cap Batch admission repair + five-kind N3 evidence bridge LIVE-PROVEN; run 397 push-gate/AWOL-fence source-build-install continuity PROVEN with first manual-approval live proof pending; universal public MCP -> Local Agent -> RiftCLI authority convergence SOURCE IMPLEMENTED / BUILDER + INSTALL + LIVE PROOF PENDING; N3-M2 (N3.3+N3.4) BLOCKED ON CLI AUTHORITY CONVERGENCE",
+  "runtimeStatus": "N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli; local package 0.2.1 passive DebugHub read lane LIVE; N3-M2 LOCAL IMPLEMENTATION READY BUT ACTIVATION BLOCKED ON CLI AUTHORITY CONVERGENCE; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE; N4 PLANNER REMAINS BLOCKED",
   "prerequisites": {
     "N1_8": "SATISFIED",
     "N2": "SATISFIED",
@@ -45,7 +45,7 @@
         "N3.4"
       ],
       "title": "Invariant/boundary and required-evidence derivation",
-      "status": "ready"
+      "status": "blocked-on-cli-authority-convergence"
     },
     {
       "patch": "N3-M3",

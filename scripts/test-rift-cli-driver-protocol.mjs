@@ -99,11 +99,12 @@ check(
 );
 
 check(
-  'future Rift tools delegate dynamically while recursive and workspace-exec lanes stay denied',
+  'future Rift tools delegate dynamically; workspace-exec uses the tool lane while shell stays action-only',
   core.includes('name.rfind("rift_", 0)') &&
-    core.includes('name != "rift_shell_exec"') &&
-    core.includes('name != "rift_workspace_exec"') &&
-    toolHost.includes('RiftCLI tool lane forbids')
+    core.includes('return name != "rift_shell_exec";') &&
+    !core.includes('name != "rift_workspace_exec"') &&
+    core.includes('rift_shell_exec is intentionally routed through the CLI action lane') &&
+    toolHost.includes('RiftCLI tool lane forbids $name; use one bounded RiftCLI shell dispatch.')
 );
 
 check(

@@ -422,18 +422,19 @@ internal class RiftToolSandbox(context: Context) {
         val maxPropagationQueries = 64
         if (propagationInputs.size > maxPropagationQueries) blockers += "propagation-query-bound"
 
+        val selectedPropagationInputs = propagationInputs.take(maxPropagationQueries)
         val propagationRows = JSONArray()
-        propagationInputs.take(maxPropagationQueries).forEach { query ->
-            val propagation = projectPropagation(projectPath, query, 240)
+        if (selectedPropagationInputs.isNotEmpty()) {
+            val propagation = projectPropagation(projectPath, selectedPropagationInputs, 240)
             val counts = propagation.optJSONObject("counts") ?: JSONObject()
             val ambiguous = counts.optInt("ambiguousReferences", 0)
             val unresolvedReferences = counts.optInt("unresolvedReferences", 0)
-            if (!propagation.optBoolean("complete", false)) blockers += "propagation-incomplete:$query"
-            if (ambiguous > 0) blockers += "propagation-ambiguous:$query"
-            if (unresolvedReferences > 0) blockers += "propagation-unresolved:$query"
+            if (!propagation.optBoolean("complete", false)) blockers += "propagation-incomplete"
+            if (ambiguous > 0) blockers += "propagation-ambiguous"
+            if (unresolvedReferences > 0) blockers += "propagation-unresolved"
             propagationRows.put(
                 JSONObject()
-                    .put("query", query)
+                    .put("queries", JSONArray(selectedPropagationInputs))
                     .put("complete", propagation.optBoolean("complete", false))
                     .put("propagationSha256", propagation.optString("propagationSha256"))
                     .put("ambiguousReferences", ambiguous)
@@ -2099,8 +2100,17 @@ internal class RiftToolSandbox(context: Context) {
     }
 
     private fun projectPropagation(path: String, query: String, requestedLimit: Int): JSONObject {
-        val needle = query.trim()
-        require(needle.isNotEmpty()) { "project propagation view requires a symbol or path query" }
+        return projectPropagation(path, listOf(query), requestedLimit)
+    }
+
+    private fun projectPropagation(path: String, queries: Collection<String>, requestedLimit: Int): JSONObject {
+        val needles = queries
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted()
+        require(needles.isNotEmpty()) { "project propagation view requires a symbol or path query" }
+        val queryLabel = if (needles.size == 1) needles.single() else "multi:${needles.size}"
         val base = sandboxFile(path)
         require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
 
@@ -2122,19 +2132,31 @@ internal class RiftToolSandbox(context: Context) {
         val nodesById = nodes.associateBy { it.symbolId }
         val nodesByName = nodes.groupBy { it.symbol.name }
         val nodesByPath = nodes.groupBy { it.symbol.path }
-        val queryPathMatches = indexed.keys.filter { candidate ->
-            candidate == needle ||
-                candidate.endsWith("/" + needle) ||
-                candidate.contains(needle, ignoreCase = true)
-        }.sorted()
+        val selectedNodeMap = linkedMapOf<String, PropagationSymbolNode>()
+        val pathOnlyMatches = linkedSetOf<String>()
 
-        val exactIdSeeds = nodes.filter { it.symbolId == needle }
-        val exactNameSeeds = if (exactIdSeeds.isEmpty()) nodes.filter { it.symbol.name == needle } else emptyList()
-        val selectedNodesRaw = when {
-            exactIdSeeds.isNotEmpty() -> exactIdSeeds
-            exactNameSeeds.isNotEmpty() -> exactNameSeeds
-            else -> queryPathMatches.flatMap { nodesByPath[it].orEmpty() }
+        for (needle in needles) {
+            val queryPathMatches = indexed.keys.filter { candidate ->
+                candidate == needle ||
+                    candidate.endsWith("/" + needle) ||
+                    candidate.contains(needle, ignoreCase = true)
+            }.sorted()
+
+            val exactIdSeeds = nodes.filter { it.symbolId == needle }
+            val exactNameSeeds = if (exactIdSeeds.isEmpty()) nodes.filter { it.symbol.name == needle } else emptyList()
+            val selectedForQuery = when {
+                exactIdSeeds.isNotEmpty() -> exactIdSeeds
+                exactNameSeeds.isNotEmpty() -> exactNameSeeds
+                else -> queryPathMatches.flatMap { nodesByPath[it].orEmpty() }
+            }
+            if (selectedForQuery.isNotEmpty()) {
+                selectedForQuery.forEach { selectedNodeMap.putIfAbsent(it.symbolId, it) }
+            } else {
+                queryPathMatches.forEach(pathOnlyMatches::add)
+            }
         }
+
+        val selectedNodesRaw = selectedNodeMap.values.toList()
         if (selectedNodesRaw.size > MAX_PROPAGATION_SEEDS) incompleteReasons += "propagation-seed-bound"
         val seedNodes = selectedNodesRaw
             .sortedWith(compareBy({ it.symbol.path }, { it.symbol.line }, { it.symbolId }))
@@ -2142,9 +2164,12 @@ internal class RiftToolSandbox(context: Context) {
         val seedIds = seedNodes.map { it.symbolId }.toSet()
         val seedPaths = linkedSetOf<String>()
         seedNodes.forEach { seedPaths += it.symbol.path }
-        if (seedNodes.isEmpty()) {
-            queryPathMatches.take(MAX_PROPAGATION_SEEDS).forEach(seedPaths::add)
-            if (queryPathMatches.size > MAX_PROPAGATION_SEEDS) incompleteReasons += "propagation-seed-bound"
+        for (candidate in pathOnlyMatches.sorted()) {
+            if (seedPaths.size >= MAX_PROPAGATION_SEEDS) {
+                incompleteReasons += "propagation-seed-bound"
+                break
+            }
+            seedPaths += candidate
         }
         if (seedPaths.isEmpty()) incompleteReasons += "propagation-seed-not-found"
 
@@ -2152,6 +2177,8 @@ internal class RiftToolSandbox(context: Context) {
         seedNodes.forEach { seedSymbols.put(propagationSymbolJson(it)) }
         val seedPathJson = JSONArray()
         seedPaths.sorted().forEach(seedPathJson::put)
+        val queryJson = JSONArray()
+        needles.forEach(queryJson::put)
 
         val resolvedDependencyTargets = linkedMapOf<String, Set<String>>()
         val reverseEdges = linkedMapOf<String, MutableList<Pair<String, String>>>()
@@ -2425,7 +2452,8 @@ internal class RiftToolSandbox(context: Context) {
             .put("schema", "rift-semantic-propagation-v1")
             .put("phase", "N1.8.2")
             .put("projectRoot", normalizedPath(path))
-            .put("query", needle)
+            .put("query", queryLabel)
+            .put("queries", queryJson)
             .put("complete", incompleteReasons.isEmpty())
             .put("incompleteReasons", JSONArray(incompleteReasons.sorted()))
             .put("seedSymbols", seedSymbols)
@@ -2444,7 +2472,8 @@ internal class RiftToolSandbox(context: Context) {
             .put("projectIntelligence", "v2")
             .put("authority", "evidence-only")
             .put("projectRoot", normalizedPath(path))
-            .put("query", needle)
+            .put("query", queryLabel)
+            .put("queries", queryJson)
             .put("complete", incompleteReasons.isEmpty())
             .put("incompleteReasons", JSONArray(incompleteReasons.sorted()))
             .put("propagationSha256", propagationSha256)

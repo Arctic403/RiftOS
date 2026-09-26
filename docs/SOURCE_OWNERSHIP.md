@@ -207,6 +207,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-cli-n3-contract-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/N3_ARCHITECTURE_IMPACT_ROADMAP.md` + `docs/systems/riftcli/README.md` + `docs/PROJECT_STATUS.md` + `docs/PATCH_HISTORY.md` + `scripts/README.md` |
 | `scripts/test-rift-cli-native-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-driver-protocol.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-cli-authority-convergence.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `scripts/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-push-channel.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-batch-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-debug-hub.mjs` | `docs/systems/debugger/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |

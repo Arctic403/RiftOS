@@ -453,6 +453,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             val reason = "RiftCLI disabled by RiftOS Local Agent host"
             val shellCancelled = cancelAllCliShellJobs(reason)
             val toolCancellation = RiftMcpRuntime.toolHost(appContext).cancelAllCliJobs(reason)
+            RiftCliPayloadStore.clear()
             val result = JSONObject(cli.result.toString())
                 .put("cliShellJobCancellationsRequested", shellCancelled)
                 .put("cliToolJobCancellationsRequested", toolCancellation.optInt("cancellationRequested", 0))
@@ -491,6 +492,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     ): ShellOutcome {
         val rawAction = dispatch.optString("command")
         require(rawAction.isNotBlank()) { "RiftCLI dispatch command is blank" }
+        val mcpAuthority = cliResult.optString("goal").startsWith("mcp-authority:")
+        val transportRequestId = cliResult.optString("requestId")
+            .takeIf { mcpAuthority && !it.startsWith("mcp-no-transport-") }
+        val modelCallId = cliResult.optString("sessionId")
+            .takeIf { mcpAuthority && it != "mcp-no-model" }
+        val traceId = cliResult.optString("taskId")
+            .takeIf { mcpAuthority && it != "mcp-no-trace" }
         require(rawAction.toByteArray(Charsets.UTF_8).size <= MAX_COMMAND_BYTES) {
             "RiftCLI dispatch exceeds $MAX_COMMAND_BYTES UTF-8 bytes"
         }
@@ -581,7 +589,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             operation = nestedCommand,
                             intent = cliResult.optString("goal").takeIf { it.isNotBlank() },
                             requestId = cliResult.optString("requestId").takeIf { it.isNotBlank() },
-                            rawPaths = shellMutationPaths(rawAction, cwd)
+                            rawPaths = shellMutationPaths(rawAction, cwd),
+                            transportRequestId = transportRequestId,
+                            modelCallId = modelCallId,
+                            traceId = traceId
                         )
                         try {
                             val nested = executeNative(rawAction, cwd)
@@ -2582,18 +2593,34 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     ): ShellOutcome {
         val toolName = dispatch.optString("name").trim()
         require(toolName.isNotBlank()) { "RiftCLI tool dispatch name is blank" }
-        require(toolName != "rift_shell_exec" && toolName != "rift_workspace_exec") {
-            "RiftCLI tool dispatch forbids $toolName"
+        require(toolName != "rift_shell_exec") {
+            "RiftCLI tool dispatch forbids recursive shell tool dispatch; use the driver action lane"
         }
 
         val argsJson = dispatch.optString("argsJson", "{}")
         require(argsJson.toByteArray(Charsets.UTF_8).size <= MAX_COMMAND_BYTES) {
             "RiftCLI tool args exceed $MAX_COMMAND_BYTES UTF-8 bytes"
         }
-        val toolArgs = runCatching { JSONObject(argsJson) }
-            .getOrElse { throw IllegalArgumentException("RiftCLI tool args must be a JSON object") }
+        val payloadId = dispatch.optString("payloadId").trim()
+        val toolArgs = if (payloadId.isNotBlank()) {
+            val entry = RiftCliPayloadStore.take(payloadId)
+            require(entry.name == toolName) {
+                "RiftCLI staged payload tool mismatch: expected $toolName"
+            }
+            entry.args
+        } else {
+            runCatching { JSONObject(argsJson) }
+                .getOrElse { throw IllegalArgumentException("RiftCLI tool args must be a JSON object") }
+        }
 
         val toolHost = RiftMcpRuntime.toolHost(appContext)
+        val mcpAuthority = cliResult.optString("goal").startsWith("mcp-authority:")
+        val transportRequestId = cliResult.optString("requestId")
+            .takeIf { mcpAuthority && !it.startsWith("mcp-no-transport-") }
+        val modelCallId = cliResult.optString("sessionId")
+            .takeIf { mcpAuthority && it != "mcp-no-model" }
+        val traceId = cliResult.optString("taskId")
+            .takeIf { mcpAuthority && it != "mcp-no-trace" }
         val response = when (toolName) {
             "rift_cli_batch" -> startCliBatch(cwd, cliResult, toolArgs, toolHost)
             "rift_cli_job_list" -> {
@@ -2620,7 +2647,14 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 val action = toolArgs.optString("action").trim().lowercase()
                 recoverCliPersistedJob(jobId, action, toolHost, cliResult)
             }
-            else -> toolHost.startCliJob(toolName, toolArgs, cliResult.optString("requestId"))
+            else -> toolHost.startCliJob(
+                toolName,
+                toolArgs,
+                cliResult.optString("requestId"),
+                transportRequestId = transportRequestId,
+                modelCallId = modelCallId,
+                traceId = traceId
+            )
         }
 
         val ok = response.optBoolean("ok", false)

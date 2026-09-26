@@ -50,12 +50,21 @@ assert(
 );
 assert(
   host.includes('callAsyncCancellable(') &&
+  host.includes('routePublicMcpThroughCli(') &&
+  host.includes('submitMcpCliAuthority(') &&
+  host.includes('controlMcpCliJob(jobId, "cancel")') &&
+  host.includes('RiftCliPayloadStore.stage') &&
+  host.includes('DIRECT_CLI_CONTROL_COMMANDS') &&
+  host.includes('Public MCP may call only RiftCLI trust-kernel controls directly') &&
   host.includes('transportRequestId') &&
   host.includes('modelCallId') &&
   host.includes('.put("_context", requestContext)') &&
-  host.includes('return sandbox.handleAsync(request.toString())') &&
-  host.includes('return executor.execute(command'),
-  'ToolHost must propagate model/transport identity and retain cancellation authority'
+  host.includes('"--tool-payload-id", payloadId') &&
+  host.includes('argv += listOf("--action", normalizedArgs.optString("command"))') &&
+  shell.includes('val payloadId = dispatch.optString("payloadId").trim()') &&
+  shell.includes('RiftCliPayloadStore.take(payloadId)') &&
+  shell.includes('entry.name == toolName'),
+  'public MCP authority must route through Local Agent/RiftCLI while preserving cancellation and provenance'
 );
 assert(
   sandbox.includes('fun handleAsync(raw: String, reply: (String) -> Unit): RiftAsyncHandle') &&
