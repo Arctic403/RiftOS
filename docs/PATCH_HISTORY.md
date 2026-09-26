@@ -92,7 +92,7 @@ The transport validator freezes the exact 24-tool family plus the Local-Agent-on
 
 ## N3.0 — Architecture/impact contract and baseline freeze
 
-**Status: SOURCE IMPLEMENTED / BUILDER + INSTALL + LIVE PROOF PENDING.** N3 begins only after N1.8, N2.0-N2.12, B1/B2A/B2B, Local Agent Batch, first-class MCP Batch and the N3 machine-authority prelude are promoted. The prelude is live on installed source `3e9cfb5b7514e3a82d4d739fa0f3d92aba1ba23b`, Builder run `36209390484` / run number `389`, ARM32 `armeabi-v7a`, with the installed 24-tool MCP manifest SHA-256 `78ee72f5865650742a7ad8ab381e22632fd4f295ef74d6e5584fd45519fdfb64`.
+**Status: PROMOTED on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`.** The machine-authority prelude remains proven from source `3e9cfb5b7514e3a82d4d739fa0f3d92aba1ba23b`, run `389`. Run 390 preserves ARM32 `armeabi-v7a`, the exact 24-tool MCP manifest SHA-256 `78ee72f5865650742a7ad8ab381e22632fd4f295ef74d6e5584fd45519fdfb64`, full N2 continuity with canonical memory runtime inactive, and the N3.0 source/check package.
 
 N3.0 adds machine authority in `riftarchitecture/n3-contract-v1.json` and `riftarchitecture/n3-phase-authority.json`, plus `docs/systems/riftcli/N3_ARCHITECTURE_IMPACT_ROADMAP.md` and focused regression `scripts/test-rift-cli-n3-contract-v1.mjs`. The frozen contract SHA-256 is `7a8e4f1e69c76643c5c5093d19615ce70b97eeafed644f1679265b21112094ba`; the initial phase-authority source SHA-256 is `78362a797d9a52c6481a1bab9a5d3bac2ee316db0007d6e2bf54c7b777a5e96a`.
 
@@ -100,9 +100,9 @@ N3.0 freezes the allowed inputs (`rift-semantic-impact-v1`, `rift-semantic-propa
 
 N3.0 is analysis-only. It has `runtimeAuthority=false`, `plannerAuthority=false`, `mutationAuthority=false` and `memoryRuntimeActivation=false`. It cannot execute tools, grant capabilities, authorize mutations, run Batch jobs or activate canonical memory. The run-389 prelude already taught Project Intelligence to classify the two exact N3 machine-authority JSON paths as build-config state before these files were introduced.
 
-Implementation is compacted without merging authority: N3-M1 = N3.1+N3.2 (owner/subsystem resolution + dependency/API/propagation impact), N3-M2 = N3.3+N3.4 (architecture/security boundaries + docs/tests/build/package derivation), N3-M3 = N3.5 (unified deterministic architecture report), and N3.6 remains a separate adversarial/restart final promotion gate. N3.1-N3.6 remain blocked until N3.0 is Builder/install/live-promoted. N4 Planner remains blocked until N3.6 promotion. Comparative/performance benchmarks remain deferred until the full RiftCLI stack is complete and live.
+Implementation is compacted without merging authority: N3-M1 = N3.1+N3.2 (owner/subsystem resolution + dependency/API/propagation impact), N3-M2 = N3.3+N3.4 (architecture/security boundaries + docs/tests/build/package derivation), N3-M3 = N3.5 (unified deterministic architecture report), and N3.6 remains a separate adversarial/restart final promotion gate. N3.0 promotion unblocks N3-M1, which now belongs in the replaceable `/workspace/.riftcli/` intelligence package unless a genuine missing native primitive is proven. N4 Planner remains blocked until N3.6 promotion. Comparative/performance benchmarks remain deferred until the full RiftCLI stack is complete and live.
 
-**N3.0 exit:** mandatory source/docs regressions pass, exact installed provenance matches the N3.0 source, frozen contract identities are preserved, N2 canonical memory runtime remains inactive, N3 still has no planner/mutation/capability authority, Observer continuity is clean, and N3.0 is promoted before any N3.1 implementation begins.
+**N3.0 exit satisfied:** source/docs checks passed in Builder run `390`; installed provenance exactly matches `001354552af5a0a8034af82a4341187a8abeda52`; frozen contract identity remains unchanged; N2 canonical memory runtime remains inactive; N3 has no mutation/capability authority; Observer continuity is clean. N3-M1 may begin in `/workspace/.riftcli/`.
 
 ## Architecture decision — post-CLI Batch V2 external exposure
 

@@ -352,7 +352,7 @@ const n3Roadmap = fs.readFileSync(
   'utf8'
 );
 for (const required of [
-  'N3.0 CONTRACT/BASELINE SOURCE-IMPLEMENTED',
+  'N3.0 CONTRACT/BASELINE PROMOTED',
   'N3 is analysis only',
   'N4 may consume N3 only after N3.6 promotion',
   '### N3.0 — Contract and baseline freeze',
@@ -405,14 +405,18 @@ if (n3Contract.zeroTolerance?.guessedOwnerWhenAmbiguous !== 0 ||
   failures.push('N3.0 zero-tolerance correctness rules drifted');
 }
 if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
-    !String(n3PhaseAuthority.programStatus || '').includes('N3.0 SOURCE IMPLEMENTED') ||
-    !String(n3PhaseAuthority.programStatus || '').includes('N3.1-N3.6 BLOCKED') ||
-    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3 ANALYSIS AUTHORITY INACTIVE') ||
+    !String(n3PhaseAuthority.programStatus || '').includes('N3.0 PROMOTED') ||
+    !String(n3PhaseAuthority.programStatus || '').includes('N3.1-N3.6 UNBLOCKED BY N3.0') ||
+    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3.0 CONTRACT/BASELINE PROMOTED') ||
     !String(n3PhaseAuthority.runtimeStatus || '').includes('N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE') ||
     n3PhaseAuthority.prerequisites?.N3MachineAuthorityPrelude !== 'SATISFIED' ||
     n3PhaseAuthority.phases?.length !== 7 ||
-    n3PhaseAuthority.phases?.[0]?.status !== 'source-implemented' ||
-    n3PhaseAuthority.phases?.slice(1).some(row => row.status !== 'blocked-until-N3.0-promoted') ||
+    n3PhaseAuthority.phases?.[0]?.status !== 'promoted' ||
+    n3PhaseAuthority.phases?.[0]?.sourceSha !== '001354552af5a0a8034af82a4341187a8abeda52' ||
+    String(n3PhaseAuthority.phases?.[0]?.builderRunNumber) !== '390' ||
+    n3PhaseAuthority.phases?.slice(1).some(row => row.status !== 'queued') ||
+    n3PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'ready' ||
+    n3PhaseAuthority.macroImplementationPlan?.slice(1).some(row => row.status !== 'queued-after-prior-n3-macro') ||
     JSON.stringify(n3PhaseAuthority.macroImplementationPlan?.map(row => row.phases)) !== JSON.stringify([
       ['N3.1', 'N3.2'],
       ['N3.3', 'N3.4'],
@@ -424,8 +428,8 @@ if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
 
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
 if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0-N2.12 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2 COMPLETE; CANONICAL MEMORY RUNTIME INACTIVE') ||
-    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 CONTRACT/BASELINE SOURCE IMPLEMENTED; BUILDER + INSTALL + LIVE PROOF PENDING; N3.1-N3.6 BLOCKED.')) {
-  failures.push('ROADMAP.md no longer carries the promoted N2 lifecycle and active N3.0 contract gate');
+    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`; N3-M1 (N3.1+N3.2) READY.')) {
+  failures.push('ROADMAP.md no longer carries the promoted N2 lifecycle and promoted N3.0 gate');
 }
 
 const docsIndex = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');

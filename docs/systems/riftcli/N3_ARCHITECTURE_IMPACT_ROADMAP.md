@@ -1,6 +1,6 @@
 # N3 Architecture / Impact Engine
 
-**N3.0 CONTRACT/BASELINE SOURCE-IMPLEMENTED; BUILDER + INSTALL + LIVE PROOF PENDING — 2026-09-25.**
+**N3.0 CONTRACT/BASELINE PROMOTED — installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390` — 2026-09-25.**
 
 Machine authority:
 - `riftarchitecture/n3-contract-v1.json`
@@ -237,6 +237,6 @@ Macro patches are execution groupings only. Every N3.x phase retains separate ev
 
 ## Current source status
 
-N3.0 is source-implemented and awaiting Builder/install/live proof. N3.1-N3.6 remain blocked until N3.0 promotion.
+N3.0 is promoted on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`. N3-M1 (N3.1+N3.2) is ready and should execute in `/workspace/.riftcli/`; later N3 phases remain sequenced by the phase authority.
 
 The N2 canonical memory runtime remains inactive. N4 Planner remains blocked. No performance/comparative benchmark is authorized.

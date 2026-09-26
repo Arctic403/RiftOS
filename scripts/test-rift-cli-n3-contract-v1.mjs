@@ -87,14 +87,18 @@ for (const [k,v] of Object.entries(contract.zeroTolerance)) {
 }
 
 assert.equal(phase.schema, "rift-architecture-n3-phase-authority-v1");
-assert.match(phase.programStatus, /N3\.0 SOURCE IMPLEMENTED/);
-assert.match(phase.programStatus, /N3\.1-N3\.6 BLOCKED/);
-assert.match(phase.runtimeStatus, /N3 ANALYSIS AUTHORITY INACTIVE/);
+assert.match(phase.programStatus, /N3\.0 PROMOTED/);
+assert.match(phase.programStatus, /N3\.1-N3\.6 UNBLOCKED BY N3\.0/);
+assert.match(phase.runtimeStatus, /N3\.0 CONTRACT\/BASELINE PROMOTED/);
 assert.match(phase.runtimeStatus, /N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE/);
 assert.equal(phase.prerequisites.N3MachineAuthorityPrelude, "SATISFIED");
 assert.equal(phase.phases.length, 7);
-assert.equal(phase.phases[0].status, "source-implemented");
-assert.ok(phase.phases.slice(1).every(x=>x.status === "blocked-until-N3.0-promoted"));
+assert.equal(phase.phases[0].status, "promoted");
+assert.equal(phase.phases[0].sourceSha, "001354552af5a0a8034af82a4341187a8abeda52");
+assert.equal(String(phase.phases[0].builderRunNumber), "390");
+assert.ok(phase.phases.slice(1).every(x=>x.status === "queued"));
+assert.equal(phase.macroImplementationPlan[0].status, "ready");
+assert.ok(phase.macroImplementationPlan.slice(1).every(x=>x.status === "queued-after-prior-n3-macro"));
 assert.deepEqual(phase.macroImplementationPlan.map(x=>x.phases), [["N3.1","N3.2"],["N3.3","N3.4"],["N3.5"]]);
 assert.match(phase.macroPlanRule, /N3\.6 remains a separate final adversarial\/restart promotion gate/);
 
@@ -103,7 +107,7 @@ assert.equal(n2Phase.phases.at(-1)?.status, "promoted");
 assert.match(n2Phase.runtimeStatus, /N2 CANONICAL MEMORY RUNTIME INACTIVE/);
 
 for (const required of [
-  "N3.0 CONTRACT/BASELINE SOURCE-IMPLEMENTED",
+  "N3.0 CONTRACT/BASELINE PROMOTED",
   "N3 is analysis only",
   "N4 may consume N3 only after N3.6 promotion",
   "### N3.0 — Contract and baseline freeze",
