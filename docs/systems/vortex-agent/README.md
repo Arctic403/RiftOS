@@ -73,7 +73,7 @@ RiftOS additionally supports:
 
 RiftCLI is not a sibling agent or separate Android authority. The fixed ownership direction is MCP/RiftShell -> RiftOS Local Agent -> RiftCLI -> existing bounded RiftOS authorities. Both the compatibility `rift-cli` shell entry and `riftos-agent cli ...` test surface route through `RiftOsLocalAgent` before native CLI execution.
 
-The original N1.8.0 freeze condition is satisfied. Post-N2 Batch re-exposure now follows the separately promoted B1/B2A/B2B chain: Local Agent Batch exposure must be Builder/install/live-proven before any dedicated MCP Batch surface is added.
+The original N1.8.0 freeze condition is satisfied. Post-N2 Batch re-exposure now has B1/B2A/B2B plus Local Agent Batch promoted; Local Agent Batch is Builder/install/live-proven on source `24937bbcfb6d717a5bddbe79de251bd39026dacc`, run number `386`. Dedicated MCP Batch exposure is the next gate and remains closed until implemented and separately proven.
 
 No operation accepts an arbitrary Android package name.
 

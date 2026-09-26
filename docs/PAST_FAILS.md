@@ -544,7 +544,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ## FAIL-2026-09-25-019 — Local Agent Batch list duplicated unbounded native job payloads
 
-**Status:** SOURCE FIXED — fixing source `da3cd71ada28dea6f4c09c83a829c541a329d7b4`; Builder rerun pending.
+**Status:** RESOLVED — response hardening installed and live-proven on source `24937bbcfb6d717a5bddbe79de251bd39026dacc`, Builder run `36201078437` / run number `386`.
 
 **Affected installed source:** `72a3fdd49d00a5e9679522a3c7bc1f33689ba45c`, Builder run `36200028464` / run number `385`.
 
@@ -560,13 +560,13 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 **Hardening added:** Local Agent Batch now returns compact job metadata instead of duplicating the full driver body. `list` is capped at 32 metadata rows and reports `returnedJobs`, `totalJobs` and `truncated`; job snapshots retain job/status/step/plan-hash/lease/recovery/error-summary fields without full plans/results. Non-job dispatch responses inline only when at most 128 KiB, otherwise return a compact size marker. The focused Batch regression and wiring validator require this compaction and explicitly forbid the previous `.put("driver", JSONObject(driver.toString()))` duplication.
 
-**Resolution target:** Builder/npm/Kotlin/Gradle must pass; install the repaired APK; with CLI OFF require Local Agent Batch `list` to return bounded metadata and Local Agent Batch `submit` to be rejected by the native gate; after enable prove submit/list/poll/cancel and process-loss recover through `riftos-agent batch` before promotion.
+**Resolution evidence:** Builder run `36201078437` / run number `386` installed exact source `24937bbcfb6d717a5bddbe79de251bd39026dacc` on ARM32. With the CLI OFF, Local Agent Batch `list` returned compact bounded metadata and fresh submit was rejected `cli-disabled`. After explicit enable, submit/list/poll completed a two-step read-only batch with stable job ID/plan hash and all authority-bypass flags false; cancellation stopped a 16-step read-only batch at step 2 and released its lease; force-stop/reopen recovered a second 16-step batch as `recovery_required` at step 9 with 8 completed steps, `persistedOnly=true`, lease `released_on_process_loss`, `wholeJobReplayAllowed=false`, and recovery rejected while CLI was OFF. After re-enable, the same job/hash resumed and completed 16/16 with lease `released_after_recovery`. A two-step rollback proof terminalized `rolled_back`, released `released_after_rollback`, and left the disposable proof file absent. Invalid action, invalid recovery resolution, and a 17-step plan all failed closed. FAIL-019 is resolved.
 
 ---
 
 ## FAIL-2026-09-25-018 — Local Agent Batch transport validator froze split poll/cancel usage strings
 
-**Status:** SOURCE FIXED — fixing source `b929f4075ac42ec345671d7a0089d06c4c4cc6d4`; Builder rerun pending.
+**Status:** RESOLVED — validator repair passed the Builder chain and installed-device Local Agent Batch proof; run `36201078437` / run number `386` is green.
 
 **Affected source:** `39e11ca1bab25ab415c7ac05952d0aabdcc220a7` (`Expose Batch V2 through Local Agent`), Builder run `36189514137`.
 
@@ -582,7 +582,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 **Hardening added:** the transport check now requires the fixed `"poll","cancel"` branch plus the single bounded `require(args.size==1)` usage guard, rather than requiring duplicated poll/cancel usage literals. It still separately requires bounded submit, recover grammar and Local Agent Batch plan decoding. `test-rift-cli-batch-v2.mjs` now reads the transport validator directly and requires the shared branch/guard while forbidding the obsolete split poll/cancel literals, giving Proofs a directly affected regression for this failure class.
 
-**Resolution target:** push the validator repair, require the full Builder source-check to pass the Local Agent Batch transport assertion, then continue through Kotlin/Gradle/install and on-device Local Agent Batch proof before promotion.
+**Resolution evidence:** The repaired shared poll/cancel grammar check passed the successful Builder chain, Kotlin/Gradle install, and the run-386 Local Agent Batch live proof. The bounded shell surface exercised help/list/submit/poll/cancel/recover behavior without requiring duplicated poll/cancel literals. FAIL-018 is resolved.
 
 ---
 
