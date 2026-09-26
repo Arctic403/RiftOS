@@ -13,6 +13,7 @@
 - `RiftMcpServer.kt`
 - `RiftDebugHub.kt` — passive trace/span owner shared with Tool Host
 - `RiftBoundedAsync.kt` — shared exactly-once deadline/cancellation primitive
+- `RiftMutationFence.kt` — per-repository writer lease plus retained downstream cancellation fence for model/MCP mutations
 - callers: Browser MCP bridge and outbound Relay client
 - execution authority: `RiftToolHost`
 
@@ -90,7 +91,7 @@ The server deadline is intentionally outside the local execution deadlines and i
 
 The ordering is an invariant: an outer transport must not report failure while an inner mutation is still expected to keep running.
 
-`RiftBoundedAsync` guarantees exactly-once terminal callbacks for local worker owners, returns a `RiftAsyncHandle` that can explicitly cancel the submitted Future, cancels that Future on timeout, and carries a cooperative monotonic `RiftDeadline` through nested filesystem/runtime work. Relay-scoped in-flight requests retain this execution handle, so `mcp.cancel`, relay-socket loss, or a server timeout can interrupt the actual ToolHost/sandbox/native-shell worker instead of merely discarding its eventual reply.
+`RiftBoundedAsync` guarantees exactly-once terminal callbacks for local worker owners, returns a `RiftAsyncHandle` that can explicitly cancel the submitted Future, cancels that Future on timeout, and carries a cooperative monotonic `RiftDeadline` through nested filesystem/runtime work. Relay-scoped in-flight requests retain this execution handle, so `mcp.cancel`, relay-socket loss, or a server timeout can interrupt the actual ToolHost/sandbox/native-shell worker instead of merely discarding its eventual reply. For model/MCP filesystem mutations, cancellation also poisons the transport request in `RiftMutationFence`; commit requires the originating request to remain un-cancelled and to still own the per-repository writer lease. This closes the UI-cancel/downstream-AWOL window when cancellation reaches RiftOS.
 
 ## Error behavior
 

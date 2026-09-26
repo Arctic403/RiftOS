@@ -1,8 +1,8 @@
 {
   "schema": "rift-architecture-n3-phase-authority-v1",
   "program": "RiftCLI N3 Architecture/Impact Engine",
-  "programStatus": "N3.0 PROMOTED; hidden PI bridge PROMOTED on run 391; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) READY; Batch exact-cap admission repair + five-kind N3 evidence bridge expansion SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING",
-  "runtimeStatus": "N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli; N3-M2 LOCAL IMPLEMENTATION READY AFTER PENDING FIVE-KIND READ-ONLY EVIDENCE BRIDGE INSTALL; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE; N4 PLANNER REMAINS BLOCKED",
+  "programStatus": "N3.0 PROMOTED; hidden PI bridge PROMOTED on run 391; N3-M1 (N3.1+N3.2) PROMOTED; run 393 exact-cap Batch admission repair + five-kind N3 evidence bridge LIVE-PROVEN; N3-M2 (N3.3+N3.4) READY; queued/manual-approved project-scoped Observer pre-push gate + per-repository AWOL mutation fence/provenance v2 SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING",
+  "runtimeStatus": "N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli; local package 0.2.1 passive DebugHub read lane LIVE; N3-M2 LOCAL IMPLEMENTATION READY; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE; N4 PLANNER REMAINS BLOCKED",
   "prerequisites": {
     "N1_8": "SATISFIED",
     "N2": "SATISFIED",
@@ -13,16 +13,16 @@
   "contractPath": "riftarchitecture/n3-contract-v1.json",
   "contractLifecycleSemantics": "immutable-N3.0-freeze-snapshot; current lifecycle is authoritative only in this phase-authority file",
   "n3M1LocalEvidence": {
-    "packageVersion": "0.2.0",
+    "packageVersion": "0.2.1",
     "packageRoot": "/workspace/.riftcli",
     "directAuthority": false,
     "nativeAuthorityBridge": "driver-only",
     "fileSha256": {
-      "runtime/main.js": "03c8d153716a6da9459b5f031d9506a6d291e5d6dff736e30499add43be73ff4",
+      "runtime/main.js": "63e55f26944d7b60e8741bb225715a54c18214a30e9dc261e9d6f2ab72db731d",
       "observer/n3-m1.js": "9ff52a40d9fc1cf7c366ea30f50ed7bdf273bed0276eb41b9958b06ab052a4de",
-      "manifest.json": "41de9cc0bf2e23592fd5302bc0bce286651471dbb19557954ac080fca4e55cc9",
+      "manifest.json": "a3958a4f56df8808d696f96e2768b1ed6eed06b302084687cdcd5bfe5aacdadb",
       "config.json": "88e3520c767ac53c11f4d41b21ac9da2916ef62a4c24f3ffceec212e8edbf075",
-      "README.md": "0e38ba87ca441c27709108cbe243a6f16dc13edc8e8629fb13e160354dbdc16f",
+      "README.md": "8d53717dd3828751a06e466ace3d854298e38dc22dfd039beddcbe9b3123cfa9",
       "SOURCE_OWNERSHIP.md": "22da112e56d04395442db577ac269fd238e0d6705425eb95824c12c9bbb05ec3"
     },
     "liveImpactSha256": "770f07853e190fc40b77751aa5dc0229e48a6b7d6404b09bddf8a4cf52429000",
@@ -133,5 +133,40 @@
       "phase": "N3.6",
       "status": "queued"
     }
-  ]
+  ],
+  "run393Evidence": {
+    "sourceSha": "f559194b107ea2a0d3787c45684ee41b8856633c",
+    "builderRunId": "36220917679",
+    "builderRunNumber": 393,
+    "batchExactCapAdmission": "live-pass",
+    "persistedJobCountAfterAdmission": 32,
+    "nonterminalJobsAfterProof": 0,
+    "fiveKindBridge": {
+      "kinds": [
+        "candidate-impact",
+        "propagation",
+        "contracts",
+        "claims",
+        "proofs"
+      ],
+      "contractsRequestId": "n3-run393-contracts",
+      "claimsRequestId": "n3-run393-claims",
+      "proofsRequestId": "n3-run393-proofs-2",
+      "contracts": "completed",
+      "claims": "completed",
+      "proofs": "completed",
+      "authorizationBypass": false,
+      "perOperationAuthorizationRequired": true
+    },
+    "publicMcpToolCount": 24
+  },
+  "localPackageMaintenance": {
+    "version": "0.2.1",
+    "purpose": "Reconnect passive RiftDebugHub read access to the replaceable local CLI command surface without adding direct QuickJS authority.",
+    "debugCommand": "debug <request-id> [status|events|active|components] [component] [traceId] [sinceSequence] [limit]",
+    "liveRequestId": "debughub-cli-001",
+    "liveStatus": "pass",
+    "authority": "passive-read-only-via-native-driver",
+    "directAuthority": false
+  }
 }

@@ -31,7 +31,8 @@ Core live owners:
 - `RiftWorkspaceRecords.kt` — private change/checkpoint store outside workspace.
 - `RiftDiffEngineV2.kt` — deterministic bounded multi-hunk text diff engine consumed by Workspace Records.
 - `RiftFileIdentityV2.kt` — deterministic bounded structural identity evidence for rename/copy/rewrite correlation.
-- `RiftPatchSessions.kt` — bounded writer provenance claims for workspace mutations; unknown writers remain explicitly unattributed.
+- `RiftPatchSessions.kt` — bounded writer provenance claims for workspace mutations; MCP claims persist transport request ID, model call ID and DebugHub trace ID; unknown writers remain explicitly unattributed.
+- `RiftMutationFence.kt` — process-local per-repository writer lease and retained cancellation state for model/MCP workspace mutations.
 - `RiftPatchManifestV1.kt` — deterministic candidate identity, immutable private freeze and tamper-evident event-chain primitives.
 - `RiftSourceIntelligenceV2.kt` — shared PI-v2 lexical source analyzer for candidate semantic deltas and normal indexing.
 - `RiftNativeGit.kt` — Git/project synchronization, including `/workspace/RiftOS-main`.
@@ -125,9 +126,9 @@ Git checkpoints can notify Workspace Records after applicable workspace operatio
 
 ## Mutation provenance
 
-Patch Session V1 overlays evidence on the same canonical filesystem rather than creating another workspace. MCP/Code Mode, direct native Shell file commands, internal native Editor saves, Dev Lab publication and native Git workspace replacement/metadata writes can register bounded provenance claims before Workspace Records observes the resulting bytes. Exact file claims are state-bound; directory claims are explicitly lower-confidence. Any writer without a valid claim is recorded as `unattributed-local` rather than inferred.
+Patch Session V2 overlays evidence on the same canonical filesystem rather than creating another workspace. MCP/Code Mode, direct native Shell file commands, internal native Editor saves, Dev Lab publication and native Git workspace replacement/metadata writes can register bounded provenance claims before Workspace Records observes the resulting bytes. Exact file claims are state-bound; directory claims are explicitly lower-confidence. MCP-origin claims now retain the ToolHost request ID plus the relay transport request ID, model call ID and DebugHub trace ID when supplied. Any writer without a valid claim is recorded as `unattributed-local` rather than inferred.
 
-This layer records origin/operation/intent evidence only. It does not change mutation authority or make the planned validation gate enforce anything while development mode remains OBSERVE.
+For model/MCP filesystem mutations, provenance is paired with `RiftMutationFence`: one active writer lease exists per canonical top-level repository, while different repositories may be mutated concurrently. Explicit relay cancellation, relay/socket loss, and MCP server timeout retain a cancellation fence long enough for a late worker to fail the final commit check and roll its bounded snapshot back. This fence does not claim knowledge of a UI cancellation that never reaches RiftOS; the manual Git push approval gate remains the final remote-publication boundary.
 
 ## Candidate identity and trust state
 

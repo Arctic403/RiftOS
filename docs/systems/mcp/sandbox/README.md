@@ -15,6 +15,7 @@ It owns canonical workspace containment, single-operation filesystem methods, bo
 Primary:
 - `RiftToolSandbox.kt`
 - `RiftBoundedAsync.kt` — 75-second normal MCP request deadline and cooperative cancellation
+- `RiftMutationFence.kt` — per-repository writer lease and retained cancellation fence checked immediately before mutation commit
 
 Related narrow owners:
 - `RiftToolHost.kt` — schemas/grants/aliases;
@@ -253,7 +254,7 @@ Entry count and expanded-byte limits are enforced before publish.
 
 Sandbox calls execute through one serialized worker with a bounded 16-request queue and a separate watchdog. Each normal MCP request has a 75-second deadline beginning at submission time, including queue delay. Timeout returns one terminal error, interrupts the Future and exposes the same monotonic deadline to long filesystem loops through `RiftDeadline.check()`.
 
-Code Mode checks the deadline around expensive archive/search/hash/index work and before/after the one normalized operation. Project Intelligence invalidations are coalesced within the call and flushed once. If cancellation occurs during a transactional mutation, the worker clears the interrupt only long enough to complete bounded rollback before accepting later work.
+Code Mode checks the deadline around expensive archive/search/hash/index work and before/after the one normalized operation. Project Intelligence invalidations are coalesced within the call and flushed once. Every model/MCP filesystem mutation now acquires a `RiftMutationFence` lease keyed by the canonical top-level workspace repository. Calls targeting the same repo serialize; calls targeting different repos remain independent. The sandbox snapshots the declared mutation paths before execution, checks the cancellation/lease fence immediately before commit, and performs bounded rollback if that fence fails. If cancellation occurs during rollback, the worker clears the interrupt only long enough to restore the pre-call state before accepting later work.
 
 ## Shutdown
 

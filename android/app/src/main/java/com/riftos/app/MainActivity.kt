@@ -1,11 +1,13 @@
 package com.riftos.app
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -38,6 +40,7 @@ class MainActivity : Activity() {
     private lateinit var browserWindow: RiftBrowserWindow
     private lateinit var workspaceRecords: RiftWorkspaceRecords
     private lateinit var workspaceWatcher: RiftWorkspaceWatcher
+    @Volatile private var gitApprovalDialogShowing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -341,11 +344,89 @@ class MainActivity : Activity() {
         super.onBackPressed()
     }
 
+    fun requestGitPushApprovalPrompt() {
+        if (isFinishing || isDestroyed) return
+        runOnUiThread { showNextGitPushApproval() }
+    }
+
+    private fun showNextGitPushApproval() {
+        if (gitApprovalDialogShowing || isFinishing || isDestroyed) return
+        val git = RiftMcpRuntime.nativeGit(this)
+        val pending = runCatching { git.pendingPushApprovals() }.getOrNull() ?: return
+        if (pending.length() == 0) return
+
+        val row = pending.getJSONObject(0)
+        val queueId = row.getString("queueId")
+        val candidate = row.getString("gitCandidateSha256")
+        val observer = if (row.optBoolean("observerConfigured", false)) "PASS" else "not configured"
+        val verification = if (row.optBoolean("verificationRequired", false)) {
+            "\nVerification required by proof plan: yes"
+        } else {
+            ""
+        }
+        val message =
+            "Repository: ${row.getString("repository")}\n" +
+                "Branch: ${row.getString("branch")}\n" +
+                "Changes: ${row.getInt("changes")}\n" +
+                "Message: ${row.getString("message")}\n" +
+                "Candidate: ${candidate.take(16)}…\n" +
+                "Observer: $observer" +
+                verification +
+                "\n\nApproval is bound to this exact candidate and Observer evidence. Any workspace change invalidates it."
+
+        gitApprovalDialogShowing = true
+        AlertDialog.Builder(this)
+            .setTitle("Approve Rift push?")
+            .setMessage(message)
+            .setPositiveButton("Approve") { _, _ ->
+                Thread({
+                    val outcome = runCatching { git.approveQueuedPush(queueId) }
+                    runOnUiThread {
+                        gitApprovalDialogShowing = false
+                        outcome.fold(
+                            onSuccess = { result ->
+                                Toast.makeText(
+                                    this,
+                                    "Rift push approved: ${result.optString("commitSha").take(12)}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            },
+                            onFailure = { error ->
+                                Toast.makeText(
+                                    this,
+                                    "Rift push blocked: ${error.message ?: error.javaClass.simpleName}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        )
+                        requestGitPushApprovalPrompt()
+                    }
+                }, "rift-git-manual-approval").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
+            .setNegativeButton("Reject") { _, _ ->
+                runCatching { git.rejectQueuedPush(queueId) }
+                gitApprovalDialogShowing = false
+                Toast.makeText(this, "Rift push rejected.", Toast.LENGTH_SHORT).show()
+                requestGitPushApprovalPrompt()
+            }
+            .setNeutralButton("Later") { _, _ ->
+                gitApprovalDialogShowing = false
+            }
+            .setOnCancelListener {
+                gitApprovalDialogShowing = false
+            }
+            .show()
+    }
+
     override fun onResume() {
         super.onResume()
         RiftMcpRuntime.registerActivity(this)
         if (::browserAppHost.isInitialized) browserAppHost.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
+        requestGitPushApprovalPrompt()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

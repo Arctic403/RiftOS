@@ -75,6 +75,8 @@ Signals contain operation/phase/correlation/outcome/duration/message and bounded
 
 The single read-only MCP tool is `rift_debug`.
 
+The replaceable `/workspace/.riftcli/` package also exposes a local `rift-cli debug <request-id> [status|events|active|components] [component] [traceId] [sinceSequence] [limit]` command. That command has no direct debugger authority: it returns a native driver request for `rift_debug`, so the process-local CLI enable gate, one-action driver protocol and passive DebugHub authority declaration remain authoritative. Package version 0.2.1 live-proved this path on installed run 393 with request `debughub-cli-001`.
+
 Actions:
 - `status` — capacity, counters, authority declaration and known components;
 - `events` — bounded event timeline, optionally filtered by exact trace or component;

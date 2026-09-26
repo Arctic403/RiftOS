@@ -8,6 +8,7 @@ const client = read(k + 'RiftMcpRelayClient.kt');
 const server = read(k + 'RiftMcpServer.kt');
 const host = read(k + 'RiftToolHost.kt');
 const sandbox = read(k + 'RiftToolSandbox.kt');
+const fence = read(k + 'RiftMutationFence.kt');
 const bounded = read(k + 'RiftBoundedAsync.kt');
 const shellContract = read(k + 'RiftShellExecutor.kt');
 const shell = read(k + 'RiftNativeShell.kt');
@@ -41,20 +42,36 @@ assert(
 assert(
   server.includes('var execution: RiftAsyncHandle? = null') &&
   server.includes('fun cancelRequest(retryKey: String): Boolean') &&
+  server.includes('RiftMutationFence.cancelTransport(normalized)') &&
+  server.includes('RiftMutationFence.cancelTransport(retryKey.trim())') &&
   server.includes('pending.execution?.cancel()') &&
   server.includes('executionRef.get()?.cancel()'),
-  'MCP server must retain and cancel the actual execution handle'
+  'MCP server cancellation and timeout must poison the downstream mutation fence before interrupting execution'
 );
 assert(
   host.includes('callAsyncCancellable(') &&
+  host.includes('transportRequestId') &&
+  host.includes('modelCallId') &&
+  host.includes('.put("_context", requestContext)') &&
   host.includes('return sandbox.handleAsync(request.toString())') &&
   host.includes('return executor.execute(command'),
-  'ToolHost must return cancellation authority for sandbox and shell calls'
+  'ToolHost must propagate model/transport identity and retain cancellation authority'
 );
 assert(
   sandbox.includes('fun handleAsync(raw: String, reply: (String) -> Unit): RiftAsyncHandle') &&
+  sandbox.includes('RiftMutationFence.begin(') &&
+  sandbox.includes('RiftMutationFence.commit(mutationLease, "$origin mutation commit")') &&
+  sandbox.includes('transaction.rollback()') &&
   sandbox.includes('return RiftBoundedAsync.submit('),
-  'sandbox async calls must return their bounded execution handle'
+  'sandbox mutation calls must acquire a repo writer lease and rollback when commit fencing fails'
+);
+assert(
+  fence.includes('Workspace writer lease is already held') &&
+  fence.includes('cancelledTransport') &&
+  fence.includes('cancelledModelCalls') &&
+  fence.includes('repoKeys.forEach { leases[it] = lease }') &&
+  fence.includes('return "workspace/$first"'),
+  'mutation fence must serialize writes per repo while allowing unrelated repo keys to remain independent'
 );
 assert(
   bounded.includes('class RiftAsyncHandle') &&
@@ -70,7 +87,6 @@ assert(
   'native shell execution must expose its bounded cancellation handle'
 );
 
-console.log('ok - MCP caller AbortSignal reaches the relay room');
-console.log('ok - retry waiters cancel independently and last-waiter loss cancels the device request');
-console.log('ok - mcp.cancel reaches MCP server execution ownership');
-console.log('ok - sandbox and native shell Futures are interruptible end-to-end');
+console.log('ok - MCP caller cancellation reaches a downstream mutation fence');
+console.log('ok - timeout/socket-loss cancellation cannot silently commit sandbox writes');
+console.log('ok - per-repo writer leases serialize same-repo AI mutation while keeping separate repos independent');

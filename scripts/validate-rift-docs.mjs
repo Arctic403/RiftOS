@@ -430,7 +430,10 @@ if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
     n3PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'promoted' ||
     n3PhaseAuthority.macroImplementationPlan?.[1]?.status !== 'ready' ||
     n3PhaseAuthority.macroImplementationPlan?.[2]?.status !== 'queued-after-n3-m2' ||
-    n3PhaseAuthority.n3M1LocalEvidence?.fileSha256?.['runtime/main.js'] !== '03c8d153716a6da9459b5f031d9506a6d291e5d6dff736e30499add43be73ff4' ||
+    n3PhaseAuthority.n3M1LocalEvidence?.packageVersion !== '0.2.1' ||
+    n3PhaseAuthority.n3M1LocalEvidence?.fileSha256?.['runtime/main.js'] !== '63e55f26944d7b60e8741bb225715a54c18214a30e9dc261e9d6f2ab72db731d' ||
+    n3PhaseAuthority.n3M1LocalEvidence?.fileSha256?.['manifest.json'] !== 'a3958a4f56df8808d696f96e2768b1ed6eed06b302084687cdcd5bfe5aacdadb' ||
+    n3PhaseAuthority.n3M1LocalEvidence?.fileSha256?.['README.md'] !== '8d53717dd3828751a06e466ace3d854298e38dc22dfd039beddcbe9b3123cfa9' ||
     n3PhaseAuthority.n3M1LocalEvidence?.fileSha256?.['observer/n3-m1.js'] !== '9ff52a40d9fc1cf7c366ea30f50ed7bdf273bed0276eb41b9958b06ab052a4de' ||
     n3PhaseAuthority.n3M1LocalEvidence?.liveImpactSha256 !== '770f07853e190fc40b77751aa5dc0229e48a6b7d6404b09bddf8a4cf52429000' ||
     n3PhaseAuthority.n3M1LocalEvidence?.livePropagationSha256 !== '1ce267e7aeff8680971c6e1e73960234ed2b74c49f96944c9d79064dd6e377c5' ||

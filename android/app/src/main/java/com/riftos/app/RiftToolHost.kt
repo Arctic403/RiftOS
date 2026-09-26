@@ -396,16 +396,34 @@ class RiftToolHost(
         debugContext: RiftDebugContext?,
         reply: (JSONObject) -> Unit
     ) {
-        callAsyncInternal(rawName, args, bypassAccess = false, debugContext = debugContext, rawReply = reply)
+        callAsyncInternal(
+            rawName,
+            args,
+            bypassAccess = false,
+            debugContext = debugContext,
+            transportRequestId = null,
+            modelCallId = null,
+            rawReply = reply
+        )
     }
 
     internal fun callAsyncCancellable(
         rawName: String,
         args: JSONObject,
         debugContext: RiftDebugContext?,
+        transportRequestId: String?,
+        modelCallId: String?,
         reply: (JSONObject) -> Unit
     ): RiftAsyncHandle =
-        callAsyncInternal(rawName, args, bypassAccess = false, debugContext = debugContext, rawReply = reply)
+        callAsyncInternal(
+            rawName,
+            args,
+            bypassAccess = false,
+            debugContext = debugContext,
+            transportRequestId = transportRequestId,
+            modelCallId = modelCallId,
+            rawReply = reply
+        )
 
     internal fun validateCliBatchTool(rawName: String, args: JSONObject): JSONObject {
         val name = canonicalName(rawName)
@@ -968,6 +986,8 @@ class RiftToolHost(
         args: JSONObject,
         bypassAccess: Boolean,
         debugContext: RiftDebugContext?,
+        transportRequestId: String?,
+        modelCallId: String?,
         rawReply: (JSONObject) -> Unit
     ): RiftAsyncHandle {
         val name = canonicalName(rawName)
@@ -1124,10 +1144,15 @@ class RiftToolHost(
         }
 
         val requestId = "tool-${System.currentTimeMillis()}-${System.nanoTime()}"
+        val requestContext = JSONObject()
+            .put("traceId", hostSpan.context.traceId)
+            .put("transportRequestId", transportRequestId ?: JSONObject.NULL)
+            .put("modelCallId", modelCallId ?: JSONObject.NULL)
         val request = JSONObject()
             .put("id", requestId)
             .put("method", method)
             .put("args", normalizedArgs)
+            .put("_context", requestContext)
 
         return sandbox.handleAsync(request.toString()) { raw ->
             val response = runCatching { JSONObject(raw) }.getOrNull()

@@ -15,7 +15,7 @@ import java.util.UUID
  * lower-confidence scope claims. Workspace Records never invents an attributed writer.
  */
 internal object RiftPatchSessions {
-    const val VERSION = 1
+    const val VERSION = 2
     private const val CLAIM_TTL_MS = 15_000L
     private const val MAX_PATHS = 512
     private const val MAX_ACTIVE_CLAIMS = 4096
@@ -36,6 +36,9 @@ internal object RiftPatchSessions {
         val operation: String,
         val intent: String?,
         val requestId: String?,
+        val transportRequestId: String?,
+        val modelCallId: String?,
+        val traceId: String?,
         val startedAt: Long,
         val paths: List<String>,
         val before: Map<String, FileState>
@@ -60,7 +63,10 @@ internal object RiftPatchSessions {
         operation: String,
         intent: String?,
         requestId: String?,
-        rawPaths: Collection<String>
+        rawPaths: Collection<String>,
+        transportRequestId: String? = null,
+        modelCallId: String? = null,
+        traceId: String? = null
     ): Handle? {
         val paths = rawPaths.mapNotNull(::normalizeWorkspacePath).distinct().sorted()
         if (paths.isEmpty()) return null
@@ -77,6 +83,9 @@ internal object RiftPatchSessions {
             operation = bounded(operation, MAX_LABEL_CHARS, "mutation"),
             intent = intent?.trim()?.take(MAX_INTENT_CHARS)?.takeIf { it.isNotBlank() },
             requestId = requestId?.trim()?.take(MAX_LABEL_CHARS)?.takeIf { it.isNotBlank() },
+            transportRequestId = transportRequestId?.trim()?.take(MAX_LABEL_CHARS)?.takeIf { it.isNotBlank() },
+            modelCallId = modelCallId?.trim()?.take(MAX_LABEL_CHARS)?.takeIf { it.isNotBlank() },
+            traceId = traceId?.trim()?.take(MAX_LABEL_CHARS)?.takeIf { it.isNotBlank() },
             startedAt = now,
             paths = paths,
             before = before
@@ -114,6 +123,9 @@ internal object RiftPatchSessions {
             .put("operation", handle.operation)
             .put("intent", handle.intent ?: JSONObject.NULL)
             .put("requestId", handle.requestId ?: JSONObject.NULL)
+            .put("transportRequestId", handle.transportRequestId ?: JSONObject.NULL)
+            .put("modelCallId", handle.modelCallId ?: JSONObject.NULL)
+            .put("traceId", handle.traceId ?: JSONObject.NULL)
             .put("startedAt", handle.startedAt)
             .put("committedAt", now)
             .put("paths", handle.paths.size)
@@ -154,6 +166,9 @@ internal object RiftPatchSessions {
             .put("operation", source.take(MAX_LABEL_CHARS))
             .put("intent", JSONObject.NULL)
             .put("requestId", JSONObject.NULL)
+            .put("transportRequestId", JSONObject.NULL)
+            .put("modelCallId", JSONObject.NULL)
+            .put("traceId", JSONObject.NULL)
             .put("startedAt", at)
             .put("committedAt", at)
             .put("attributed", false)
@@ -170,6 +185,9 @@ internal object RiftPatchSessions {
             .put("operation", claim.handle.operation)
             .put("intent", claim.handle.intent ?: JSONObject.NULL)
             .put("requestId", claim.handle.requestId ?: JSONObject.NULL)
+            .put("transportRequestId", claim.handle.transportRequestId ?: JSONObject.NULL)
+            .put("modelCallId", claim.handle.modelCallId ?: JSONObject.NULL)
+            .put("traceId", claim.handle.traceId ?: JSONObject.NULL)
             .put("startedAt", claim.handle.startedAt)
             .put("committedAt", claim.committedAt)
             .put("attributed", true)

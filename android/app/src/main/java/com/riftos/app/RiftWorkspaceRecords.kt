@@ -174,11 +174,11 @@ class RiftWorkspaceRecords private constructor(context: Context) {
      * Internal-only semantic working set derived from the exact Patch Manifest V1 candidate.
      * The Local Agent/PI-v2 path consumes this; it is not a model-selected scope or MCP tool.
      */
-    fun semanticImpactSeed(): JSONObject =
+    fun semanticImpactSeed(projectPath: String? = null): JSONObject =
         runBounded("workspace semantic impact") {
             ensureInitialized()
             prepareForRead("semantic-impact-seed", requireCurrent = true)
-            buildSemanticImpactSeed(buildCandidateManifest())
+            buildSemanticImpactSeed(buildCandidateManifest(), projectPath)
         }
 
     private fun prepareForRead(source: String, requireCurrent: Boolean) {
@@ -601,6 +601,9 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             .put("operation", provenance.optString("operation", "unknown"))
             .put("intent", if (provenance.isNull("intent")) JSONObject.NULL else provenance.optString("intent"))
             .put("requestId", if (provenance.isNull("requestId")) JSONObject.NULL else provenance.optString("requestId"))
+            .put("transportRequestId", if (provenance.isNull("transportRequestId")) JSONObject.NULL else provenance.optString("transportRequestId"))
+            .put("modelCallId", if (provenance.isNull("modelCallId")) JSONObject.NULL else provenance.optString("modelCallId"))
+            .put("traceId", if (provenance.isNull("traceId")) JSONObject.NULL else provenance.optString("traceId"))
             .put("confidence", provenance.optString("confidence", "none"))
             .put("attributed", provenance.optBoolean("attributed", false))
             .put("startedAt", provenance.optLong("startedAt", 0L))
@@ -929,8 +932,21 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             .put("size", entry.size)
             .put("sha256", entry.sha256)
 
-    private fun buildSemanticImpactSeed(manifest: JSONObject): JSONObject {
-        val manifestChanges = manifest.getJSONArray("changes")
+    private fun buildSemanticImpactSeed(manifest: JSONObject, projectPath: String? = null): JSONObject {
+        val allManifestChanges = manifest.getJSONArray("changes")
+        val scopePrefix = projectPath
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::normalizePrefix)
+            ?.trim('/')
+        val manifestChanges = JSONArray()
+        for (index in 0 until allManifestChanges.length()) {
+            val row = allManifestChanges.getJSONObject(index)
+            val path = row.getString("path").trim('/')
+            if (scopePrefix == null || matchesPrefix(path, scopePrefix)) {
+                manifestChanges.put(JSONObject(row.toString()))
+            }
+        }
         val rows = JSONArray()
         val omissions = JSONArray()
         var textBytes = 0L

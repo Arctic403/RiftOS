@@ -542,9 +542,27 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-26-022 — RiftGit allowed AI/MCP sessions to push without mandatory Observer closure or human release
+
+**Status:** SOURCE REPAIRED / BUILDER + INSTALL + LIVE UI PROOF PENDING.
+
+**Affected installed behavior:** through installed source `f559194b107ea2a0d3787c45684ee41b8856633c` / run 393, any session with access to native RiftShell Git could call `git push` after local edits. RiftGit still enforced remote-head concurrency and stable-snapshot checks, but it did not require a complete Observer sweep or a separate human approval before the GitHub mutation.
+
+**Observed failure:** after source `bb04342ab06c960473b2f39597635a4a06cfd279` had been pushed, the same ChatGPT/MCP workstream continued emitting direct `workspace.exec` / `fs.writeText` operations after the visible ChatGPT UI had frozen/cancelled, then a native Git push produced `f559194b107ea2a0d3787c45684ee41b8856633c`. Timestamp correlation and conversation history later tied the edits to the active push-gate/N3 work rather than Batch or a different repository session. The resulting code was coherent, but both local mutation and remote publication outlived the user's visible control boundary.
+
+**Root cause:** two trust boundaries were incomplete. First, push authorization and source validation were separate conventions rather than one enforced transition: `RiftNativeGit.atomicPush()` could proceed directly from a dirty tree to GraphQL after Git-specific stability checks, with no durable approval queue or human-only release primitive. Second, MCP cancellation primarily interrupted in-flight execution; RiftOS did not retain the relay/model call identity as a commit-time cancellation fence, so a request already accepted downstream could still mutate if the upstream UI cancellation did not arrive early enough.
+
+**Classification:** control-plane/promotion-boundary plus downstream-cancellation defect. This was not a Batch replay/release defect: Workspace Records provenance attributes the substantive edits to direct MCP operations, while the push itself was native Git. Batch remained bounded and did not expose the hidden Project Intelligence bridge.
+
+**Hardening added:** every normal RiftGit push entry point now queues instead of writing remotely. The queue stores only bounded metadata and exact candidate/evidence identities, never source bodies. Observer-configured repositories use project-scoped candidate impact/proof evidence so unrelated dirty repositories cannot consume another repository's semantic bounds. The native Android UI is the only approval surface; there is no shell, MCP, Batch or local-CLI approve command. Approval reruns Observer and recomputes the exact Git candidate; any candidate/evidence drift fails closed. In addition, `RiftMutationFence` serializes model/MCP writers per canonical top-level repository while allowing different repositories to write concurrently, retains downstream cancellation state, and requires an active un-cancelled lease at the sandbox commit boundary. Mutation paths are rollback-snapshotted. Patch Session V2 / Workspace Records persist ToolHost request ID plus relay transport request ID, model call ID and DebugHub trace ID when supplied.
+
+**Resolution target:** Builder must pass the full source gate and Android/Kotlin compilation; install the exact build; prove same-repository concurrent mutation is rejected while different repositories remain independent; prove relay cancel/server timeout after dispatch causes commit rejection + rollback; prove persisted mutation provenance includes transport/model/trace identity; prove an MCP/shell `git push` returns queued/awaiting-manual-approval with no remote advance; prove Reject leaves the remote unchanged; prove an edit after queueing invalidates approval; prove Observer failure blocks queueing; prove the native Android Approve button alone releases an unchanged candidate; then re-run Observer and public-surface continuity before closing this failure.
+
+---
+
 ## FAIL-2026-09-26-021 — Persisted RiftCLI job store deadlocked at exactly 32 retained jobs
 
-**Status:** SOURCE REPAIRED / BUILDER + INSTALL + LIVE CAPACITY PROOF PENDING.
+**Status:** RESOLVED — repaired source `f559194b107ea2a0d3787c45684ee41b8856633c` passed Builder/install as run `36220917679` / run number `393`, and the installed device live-proved exact-cap admission.
 
 **Affected installed source:** `f439e9bb6d61d41997ec92636b6e4e0ec89c5912`, Builder run `36216594210` / run number `391`.
 
@@ -558,7 +576,7 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 **Hardening added:** new-job admission now calls `pruneLocked(forceTerminalTrim = !target.exists())`. When a truly new job arrives at capacity, pruning may remove only the oldest record whose status is in the frozen terminal-status set, until one slot is free. Normal list/read paths retain the 24-hour policy. Nonterminal and recovery-required jobs are never eligible for admission trimming. `test-rift-cli-batch-v2.mjs` freezes the exact-cap behavior, terminal-only selector, default non-forced pruning and 24-hour retention constant.
 
-**Resolution target:** Builder/source checks and Kotlin compilation pass; install repaired APK; with the store at or near capacity, submit a new bounded Batch and require it to be accepted, completed, persisted, and listed while no nonterminal/recovery-required job is deleted. Public MCP tool count must remain 24 and all bypass flags remain false.
+**Resolution evidence:** installed run 393 reported exact source `f559194b107ea2a0d3787c45684ee41b8856633c`. With the persisted store again at its exact 32-record bound, a fresh first-class Batch job was accepted, completed 1/1, released its lease with `authorizationBypass=false`, `perOperationAuthorizationRequired=true` and `observerValidatorBypass=false`, and the bounded list remained exactly 32 records with zero nonterminal jobs. Subsequent hidden N3 Contracts/Claims/Proofs jobs were also admitted and completed, confirming the terminal-trim admission path remained usable under continued pressure. Public MCP remained exactly 24 tools.
 
 ---
 

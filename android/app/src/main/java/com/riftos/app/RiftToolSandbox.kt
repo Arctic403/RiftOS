@@ -197,6 +197,8 @@ internal class RiftToolSandbox(context: Context) {
     private fun executeRequest(raw: String, origin: String): String {
         val fallbackId = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
         var patchSession: RiftPatchSessions.Handle? = null
+        var mutationLease: RiftMutationFence.Context? = null
+        var mutationTransaction: BatchTransaction? = null
         return try {
             RiftDeadline.check("$origin sandbox request")
             val request = JSONObject(raw)
@@ -205,30 +207,66 @@ internal class RiftToolSandbox(context: Context) {
             require(requestId.isNotBlank()) { "Missing tool request id" }
             require(method.isNotBlank()) { "Missing tool method" }
             val args = request.optJSONObject("args") ?: JSONObject()
+            val requestContext = request.optJSONObject("_context") ?: JSONObject()
+            val transportRequestId = requestContext.optString("transportRequestId").trim().takeIf { it.isNotBlank() }
+            val modelCallId = requestContext.optString("modelCallId").trim().takeIf { it.isNotBlank() }
+            val traceId = requestContext.optString("traceId").trim().takeIf { it.isNotBlank() }
+            val mutationPaths = provenanceMutationPaths(method, args)
+
+            mutationLease = RiftMutationFence.begin(
+                transportRequestId = transportRequestId,
+                modelCallId = modelCallId,
+                traceId = traceId,
+                fallbackRequestId = requestId,
+                rawPaths = mutationPaths
+            )
+            if (mutationPaths.isNotEmpty()) {
+                mutationTransaction = BatchTransaction().also { transaction ->
+                    mutationPaths.forEach(transaction::capture)
+                }
+                RiftMutationFence.requireActive("$origin mutation execution")
+            }
+
             patchSession = RiftPatchSessions.begin(
                 appContext,
                 origin = origin,
                 operation = method,
                 intent = args.optString("intent").takeIf { it.isNotBlank() },
                 requestId = requestId,
-                rawPaths = provenanceMutationPaths(method, args)
+                transportRequestId = transportRequestId,
+                modelCallId = modelCallId,
+                traceId = traceId,
+                rawPaths = mutationPaths
             )
+
             val value = dispatch(method, args) ?: JSONObject.NULL
             if (origin != "rift-cli") RiftDeadline.check("$origin sandbox request")
+            RiftMutationFence.commit(mutationLease, "$origin mutation commit")
+            mutationTransaction?.close()
+            mutationTransaction = null
             patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
+
             JSONObject()
                 .put("id", requestId)
                 .put("ok", true)
                 .put("value", value)
                 .toString()
         } catch (error: Throwable) {
+            RiftDeadline.clearInterrupt()
+            val rollbackError = mutationTransaction?.let { transaction ->
+                runCatching { transaction.rollback() }.exceptionOrNull().also { transaction.close() }
+            }
+            mutationTransaction = null
             patchSession?.let(RiftPatchSessions::abort)
+            val detail = error.message ?: error.javaClass.simpleName
+            val rollbackDetail = rollbackError?.message?.let { "; rollback error: $it" }.orEmpty()
             JSONObject()
                 .put("id", fallbackId)
                 .put("ok", false)
-                .put("error", error.message ?: error.javaClass.simpleName)
+                .put("error", detail + rollbackDetail)
                 .toString()
         } finally {
+            RiftMutationFence.end(mutationLease)
             RiftDeadline.clearInterrupt()
         }
     }
@@ -294,6 +332,162 @@ internal class RiftToolSandbox(context: Context) {
                 .toString()
         }
         runCatching { reply(response) }
+    }
+
+    internal fun gitPrePushObserverGate(projectPath: String): JSONObject {
+        val projectRoot = normalizedPath(projectPath).trimEnd('/')
+        val consistency = projectConsistency(projectPath, "full", 40)
+        val integrity = projectIntegrity(projectPath, "")
+        val base = sandboxFile(projectPath)
+        require(base.exists() && base.isDirectory) { "Workspace directory not found: $projectPath" }
+        val contracts = RiftCrossBoundaryContractsV1(workspaceRoot).analyze(base)
+        val claims = RiftDocumentationClaimsV1(workspaceRoot).analyze(base)
+        val impact = candidateImpact(projectPath)
+        val validation = projectValidation(projectPath, "")
+        val proofs = RiftProofObligationsV1().analyze(
+            projectPath = projectRoot,
+            impact = impact,
+            validation = validation
+        )
+
+        val blockers = linkedSetOf<String>()
+
+        fun requireCleanView(name: String, value: JSONObject) {
+            if (!value.optBoolean("complete", false)) blockers += "$name-incomplete"
+            val findings = value.optJSONArray("findings") ?: JSONArray()
+            if (findings.length() > 0) blockers += "$name-findings"
+            val incomplete = value.optJSONArray("incompleteReasons") ?: JSONArray()
+            if (incomplete.length() > 0) blockers += "$name-incomplete-reasons"
+        }
+
+        requireCleanView("consistency", consistency)
+        requireCleanView("integrity", integrity)
+        requireCleanView("contracts", contracts)
+        requireCleanView("claims", claims)
+
+        val impactChanges = impact.optJSONArray("changes") ?: JSONArray()
+        val propagationQueries = linkedSetOf<String>()
+        val propagationFallbackPaths = linkedSetOf<String>()
+        var projectSourceChanges = 0
+
+        fun addSymbolNames(array: JSONArray?, onName: (String) -> Unit) {
+            if (array == null) return
+            for (index in 0 until array.length()) {
+                val name = array.optJSONObject(index)?.optString("name").orEmpty().trim()
+                if (name.isNotBlank()) onName(name)
+            }
+        }
+
+        for (index in 0 until impactChanges.length()) {
+            val row = impactChanges.optJSONObject(index) ?: continue
+            val path = row.optString("path").trim()
+            if (path != projectRoot && !path.startsWith("$projectRoot/")) continue
+            if (row.optString("category") != "source") continue
+            projectSourceChanges += 1
+
+            var seeded = false
+            val semantic = row.optJSONObject("semantic")
+            fun seed(name: String) {
+                val normalized = name.trim()
+                if (normalized.isNotBlank()) {
+                    propagationQueries += normalized
+                    seeded = true
+                }
+            }
+
+            addSymbolNames(semantic?.optJSONArray("addedSymbols")) { seed(it) }
+            addSymbolNames(semantic?.optJSONArray("removedSymbols")) { seed(it) }
+
+            val signatures = semantic?.optJSONArray("changedSignatures")
+            if (signatures != null) {
+                for (signatureIndex in 0 until signatures.length()) {
+                    val signature = signatures.optJSONObject(signatureIndex) ?: continue
+                    seed(signature.optJSONObject("before")?.optString("name").orEmpty())
+                    seed(signature.optJSONObject("after")?.optString("name").orEmpty())
+                }
+            }
+
+            if (!seeded && path.isNotBlank()) propagationFallbackPaths += path
+        }
+
+        if (projectSourceChanges > 0 && !impact.optBoolean("complete", false)) {
+            blockers += "impact-incomplete"
+        }
+        val impactReasons = impact.optJSONArray("incompleteReasons") ?: JSONArray()
+        if (projectSourceChanges > 0 && impactReasons.length() > 0) {
+            blockers += "impact-incomplete-reasons"
+        }
+
+        val propagationInputs = (propagationQueries + propagationFallbackPaths).toSortedSet()
+        val maxPropagationQueries = 64
+        if (propagationInputs.size > maxPropagationQueries) blockers += "propagation-query-bound"
+
+        val propagationRows = JSONArray()
+        propagationInputs.take(maxPropagationQueries).forEach { query ->
+            val propagation = projectPropagation(projectPath, query, 240)
+            val counts = propagation.optJSONObject("counts") ?: JSONObject()
+            val ambiguous = counts.optInt("ambiguousReferences", 0)
+            val unresolvedReferences = counts.optInt("unresolvedReferences", 0)
+            if (!propagation.optBoolean("complete", false)) blockers += "propagation-incomplete:$query"
+            if (ambiguous > 0) blockers += "propagation-ambiguous:$query"
+            if (unresolvedReferences > 0) blockers += "propagation-unresolved:$query"
+            propagationRows.put(
+                JSONObject()
+                    .put("query", query)
+                    .put("complete", propagation.optBoolean("complete", false))
+                    .put("propagationSha256", propagation.optString("propagationSha256"))
+                    .put("ambiguousReferences", ambiguous)
+                    .put("unresolvedReferences", unresolvedReferences)
+                    .put("incompleteReasons", propagation.optJSONArray("incompleteReasons") ?: JSONArray())
+            )
+        }
+
+        if (projectSourceChanges > 0 && propagationInputs.isEmpty()) {
+            blockers += "propagation-seed-unavailable"
+        }
+
+        if (!proofs.optBoolean("complete", false)) blockers += "proofs-incomplete"
+        if (!proofs.optBoolean("proofPlanReady", false)) blockers += "proofs-unresolved"
+        val unresolved = proofs.optJSONObject("counts")?.optInt("unresolvedObligations", 0) ?: 0
+        if (unresolved > 0) blockers += "proofs-unresolved-obligations"
+
+        val propagationEvidence = JSONObject()
+            .put("queries", JSONArray(propagationInputs.take(maxPropagationQueries)))
+            .put("rows", propagationRows)
+        val evidence = JSONObject()
+            .put("consistencySha256", consistency.optString("graphSha256"))
+            .put("integritySha256", integrity.optString("integritySha256"))
+            .put("contractsSha256", contracts.optString("contractsSha256"))
+            .put("claimsSha256", claims.optString("claimsSha256"))
+            .put("semanticImpactSha256", impact.optString("semanticImpactSha256"))
+            .put("propagationSha256", RiftPatchManifestV1.sha256Canonical(propagationEvidence))
+            .put("proofsSha256", proofs.optString("proofsSha256"))
+            .put("validationSha256", RiftPatchManifestV1.sha256Canonical(validation))
+
+        val evidenceSha = RiftPatchManifestV1.sha256Canonical(evidence)
+        return JSONObject()
+            .put("schema", "rift.git-pre-push-observer/1")
+            .put("projectRoot", projectRoot)
+            .put("pass", blockers.isEmpty())
+            .put("blockers", JSONArray(blockers.sorted()))
+            .put("evidence", evidence)
+            .put("evidenceSha256", evidenceSha)
+            .put("verificationRequired", proofs.optBoolean("verificationRequired", false))
+            .put("proofMode", proofs.optString("mode"))
+            .put("proofObligations", proofs.optJSONObject("counts")?.optInt("obligations", 0) ?: 0)
+            .put("unresolvedObligations", unresolved)
+            .put("propagationQueries", propagationInputs.size)
+            .put("selectedChecks", proofs.optJSONArray("selectedChecks") ?: JSONArray())
+            .put("externalChecks", proofs.optJSONArray("externalChecks") ?: validation.optJSONArray("externalChecks") ?: JSONArray())
+            .put("views", JSONObject()
+                .put("consistency", consistency)
+                .put("integrity", integrity)
+                .put("contracts", contracts)
+                .put("claims", claims)
+                .put("impact", impact)
+                .put("propagation", propagationRows)
+                .put("proofs", proofs)
+                .put("validation", validation))
     }
 
     internal fun candidateImpactAsync(reply: (JSONObject) -> Unit) {
@@ -2513,23 +2707,78 @@ internal class RiftToolSandbox(context: Context) {
             .put("validation", projectValidation(path, targetPaths.firstOrNull().orEmpty()))
     }
 
-    private fun candidateImpact(): JSONObject {
-        val seed = workspaceRecords.semanticImpactSeed()
+    private fun candidateImpact(projectPath: String? = null): JSONObject {
+        val seed = workspaceRecords.semanticImpactSeed(projectPath)
         val candidateSeed = seed.getJSONObject("candidate")
-        val candidate = JSONObject()
-            .put("version", candidateSeed.getInt("version"))
-            .put("candidateId", candidateSeed.getString("candidateId"))
-            .put("candidateStateSha256", candidateSeed.getString("candidateStateSha256"))
-            .put("baseTreeSha256", candidateSeed.getString("baseTreeSha256"))
-            .put("resultTreeSha256", candidateSeed.getString("resultTreeSha256"))
-            .put("changeSetSha256", candidateSeed.getString("changeSetSha256"))
-            .put("structuralDiffSha256", candidateSeed.getString("structuralDiffSha256"))
-            .put("changedFiles", candidateSeed.getInt("changedFiles"))
+        val scopeRoot = projectPath
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::normalizedPath)
+            ?.trimEnd('/')
+
+        val allChanges = seed.getJSONArray("changes")
+        val changes = JSONArray()
+        for (index in 0 until allChanges.length()) {
+            val row = allChanges.getJSONObject(index)
+            val rawPath = row.getString("path").trim('/')
+            val path = "$WORKSPACE_ROOT/$rawPath"
+            if (scopeRoot == null || isPathWithin(path, scopeRoot)) {
+                changes.put(JSONObject(row.toString()))
+            }
+        }
+
+        val candidate = if (scopeRoot == null) {
+            JSONObject()
+                .put("version", candidateSeed.getInt("version"))
+                .put("candidateId", candidateSeed.getString("candidateId"))
+                .put("candidateStateSha256", candidateSeed.getString("candidateStateSha256"))
+                .put("baseTreeSha256", candidateSeed.getString("baseTreeSha256"))
+                .put("resultTreeSha256", candidateSeed.getString("resultTreeSha256"))
+                .put("changeSetSha256", candidateSeed.getString("changeSetSha256"))
+                .put("structuralDiffSha256", candidateSeed.getString("structuralDiffSha256"))
+                .put("changedFiles", candidateSeed.getInt("changedFiles"))
+        } else {
+            val beforeRows = JSONArray()
+            val afterRows = JSONArray()
+            val changeRows = JSONArray()
+            val structuralRows = JSONArray()
+            for (index in 0 until changes.length()) {
+                val row = changes.getJSONObject(index)
+                val path = "$WORKSPACE_ROOT/${row.getString("path").trim('/')}"
+                beforeRows.put(JSONObject().put("path", path).put("entry", row.opt("before") ?: JSONObject.NULL))
+                afterRows.put(JSONObject().put("path", path).put("entry", row.opt("after") ?: JSONObject.NULL))
+                changeRows.put(JSONObject()
+                    .put("path", path)
+                    .put("status", row.optString("status"))
+                    .put("before", row.opt("before") ?: JSONObject.NULL)
+                    .put("after", row.opt("after") ?: JSONObject.NULL))
+                structuralRows.put(JSONObject().put("path", path).put("status", row.optString("status")))
+            }
+            val baseSha = RiftPatchManifestV1.sha256Canonical(JSONObject().put("projectRoot", scopeRoot).put("entries", beforeRows))
+            val resultSha = RiftPatchManifestV1.sha256Canonical(JSONObject().put("projectRoot", scopeRoot).put("entries", afterRows))
+            val changeSha = RiftPatchManifestV1.sha256Canonical(JSONObject().put("projectRoot", scopeRoot).put("changes", changeRows))
+            val structuralSha = RiftPatchManifestV1.sha256Canonical(JSONObject().put("projectRoot", scopeRoot).put("changes", structuralRows))
+            val stateSha = RiftPatchManifestV1.sha256Canonical(JSONObject()
+                .put("projectRoot", scopeRoot)
+                .put("baseTreeSha256", baseSha)
+                .put("resultTreeSha256", resultSha)
+                .put("changeSetSha256", changeSha)
+                .put("structuralDiffSha256", structuralSha))
+            JSONObject()
+                .put("version", candidateSeed.getInt("version"))
+                .put("candidateId", "candidate-${stateSha.take(24)}")
+                .put("candidateStateSha256", stateSha)
+                .put("baseTreeSha256", baseSha)
+                .put("resultTreeSha256", resultSha)
+                .put("changeSetSha256", changeSha)
+                .put("structuralDiffSha256", structuralSha)
+                .put("changedFiles", changes.length())
+                .put("projectRoot", scopeRoot)
+        }
 
         val incompleteReasons = linkedSetOf<String>()
         if (!seed.optBoolean("complete", false)) incompleteReasons += "semantic-seed-incomplete"
 
-        val changes = seed.getJSONArray("changes")
         val projectRoots = linkedSetOf<String>()
         for (index in 0 until changes.length()) {
             val rawPath = changes.getJSONObject(index).getString("path").trim('/')
@@ -2834,7 +3083,15 @@ internal class RiftToolSandbox(context: Context) {
 
         val semanticSha = RiftPatchManifestV1.sha256Canonical(payload)
         payload.put("semanticImpactSha256", semanticSha)
-        candidate.put("evidenceManifestSha256", candidateSeed.getString("manifestSha256"))
+        val evidenceManifestSha = if (scopeRoot == null) {
+            candidateSeed.getString("manifestSha256")
+        } else {
+            RiftPatchManifestV1.sha256Canonical(JSONObject()
+                .put("projectRoot", scopeRoot)
+                .put("candidateStateSha256", candidate.getString("candidateStateSha256"))
+                .put("semanticImpactSha256", semanticSha))
+        }
+        candidate.put("evidenceManifestSha256", evidenceManifestSha)
         payload.put("indexDiagnostics", indexStats)
         return payload
     }
@@ -2984,7 +3241,7 @@ internal class RiftToolSandbox(context: Context) {
     private fun projectProofs(path: String): JSONObject {
         val base = sandboxFile(path)
         require(base.exists() && base.isDirectory) { "Workspace directory not found: $path" }
-        val impact = candidateImpact()
+        val impact = candidateImpact(path)
         val validation = projectValidation(path, "")
         return RiftProofObligationsV1().analyze(
             projectPath = normalizedPath(path),

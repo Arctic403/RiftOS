@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-23.**
+**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-26.**
 
 This file reports both current local source state and explicitly identified installed-device proof. New signer/installer source in the current working tree is not called installed until a subsequent Builder/install pass proves it.
 
@@ -26,6 +26,10 @@ From `android/app/build.gradle.kts`:
 - Files, Editor, Dev Lab, Workspace Records and Settings are native through `RiftNativeWorkspaceApps`.
 - `RiftMcpRuntime` owns process-wide native shell, MCP host/server/relay, native Git, Vortex bridge and the Codynex LR0 Binder bridge.
 - `RiftMcpRuntime` also owns one process-wide passive `RiftDebugHub`; MCP Server and Tool Host publish correlated spans, and the reusable `RiftDebugAdapter` plug is ready for additional subsystems.
+- Installed run `393` (`f559194b107ea2a0d3787c45684ee41b8856633c`, Builder `36220917679`) closes the prior Batch exact-cap and five-kind hidden N3 evidence-bridge pending work: new jobs are admitted at the exact 32-record persisted bound, Contracts/Claims/Proofs complete through the hidden driver lane, and public MCP remains 24 tools.
+- Replaceable `/workspace/.riftcli/` package `0.2.1` is live and exposes passive `rift-cli debug` reads only by returning a native-driver `rift_debug` request; it gains no direct debugger or mutation authority.
+- **RiftGit queued/manual-approved Observer pre-push gate is SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING.** Every normal push path now queues after a project-scoped candidate seal and canonical Observer aggregate; unrelated dirty repositories are excluded from that repository’s impact/proof scope. The queue is bounded to 8 app-private metadata-only records; there is no shell/MCP/Batch/CLI approval command; Android Approve/Reject/Later is the only release surface; approval reruns Observer and rejects any candidate/evidence drift before the single GraphQL write path can run.
+- **AWOL MCP mutation fencing is SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING.** `RiftMutationFence` retains downstream cancellation state, serializes model/MCP writers per top-level repository while allowing different repositories to mutate concurrently, and requires an un-cancelled live lease at the sandbox commit boundary. Mutation paths are rollback-snapshotted; Patch Session V2 / Workspace Records retain ToolHost request ID, relay transport request ID, model call ID and DebugHub trace ID when supplied. Installed run 393 predates this fence and the project-scoped impact fix, so only the next built/installed source can provide live proof.
 - Current source adds the fixed `codynex` shell family over an explicit Binder binding to `com.codynex.lr0lab/.CodynexBridgeService`, with bounded JSON/source sizes, bounded bind/RPC timeouts and one reconnect after Binder death. `RiftCodynexBridgeClient.kt` is now part of the exact 46-file Gradle Kotlin snapshot; installed-device bridge proof still waits for the next RiftOS build/install.
 - `RiftNativeShell` is the live shell executor and has no renderer fallback.
 - **RiftBrowser bounded editor bridge is source-complete and awaiting Builder/install proof.** The active HTTPS-page inspector now supports explicit `edit` plus Base64-safe `edit-b64` for non-sensitive text inputs, textareas and contenteditable editor surfaces, with a 256 KiB UTF-8 ceiling, reset support and password/secret/token/API-key/authorization guards. It still exposes no arbitrary JavaScript execution, form submission/deploy authority, cookies, storage, headers or control-value readback.

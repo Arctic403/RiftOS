@@ -26,6 +26,10 @@ assert.ok(!candidateStateBody.includes('oldestRetainedAt'),'retained-history age
 assert.ok(!candidateStateBody.includes('prunedThroughSequence'),'history pruning must not affect candidate identity');
 assert.ok(!candidateStateBody.includes('sessionEvidence'),'patch/session provenance must not affect candidate identity');
 assert.match(records,/prepareForRead\("semantic-impact-seed", requireCurrent = true\)/,'semantic impact must use watcher-aware currentness');
+assert.match(records,/fun semanticImpactSeed\(projectPath: String\? = null\)/,'semantic impact seed must support optional project scoping');
+assert.match(records,/buildSemanticImpactSeed\(buildCandidateManifest\(\), projectPath\)/,'project scope must reach semantic seed construction');
+assert.match(records,/val scopePrefix = projectPath/,'scoped seed must derive a workspace prefix before budgeting');
+assert.match(records,/matchesPrefix\(path, scopePrefix\)/,'scoped seed must exclude unrelated repositories before source and text budgets are consumed');
 
 const checkpointBody = records.slice(
   records.indexOf('private fun createCheckpoint('),

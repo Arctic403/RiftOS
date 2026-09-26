@@ -1,6 +1,7 @@
 package com.riftos.app
 
 import android.content.Context
+import android.util.AtomicFile
 import android.util.Base64
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,6 +31,8 @@ class RiftNativeGit(context: Context) {
         private const val MAX_GRAPHQL_PUSH_REQUEST_BYTES = 16L * 1024L * 1024L
         private const val MAX_GRAPHQL_ERROR_CHARS = 2048
         private const val MAX_COMMIT_MESSAGE_BYTES = 16 * 1024
+        private const val PUSH_QUEUE_FILE = "rift-git-push-queue.json"
+        private const val MAX_PUSH_QUEUE = 8
         private const val DEFAULT_LOG_COMMITS = 20
         private const val MAX_LOG_COMMITS = 100
         private const val MAX_COMMIT_PARENTS = 32
@@ -72,6 +75,9 @@ class RiftNativeGit(context: Context) {
         .writeTimeout(45, TimeUnit.SECONDS)
         .callTimeout(50, TimeUnit.SECONDS)
         .build()
+    private val pushQueueBacking = File(appContext.filesDir, PUSH_QUEUE_FILE)
+    private val pushQueueFile = AtomicFile(pushQueueBacking)
+    private val pushObserverSandbox by lazy { RiftToolSandbox(appContext) }
 
     fun storeToken(raw: String): JSONObject {
         val token = raw.trim()
@@ -277,7 +283,270 @@ class RiftNativeGit(context: Context) {
             .put("localManagedCount", state.localManagedCount)
     }
 
+    private fun gitCandidateSha256(state: RepoStatus): String {
+        val meta = state.meta
+        val tracked = meta.optJSONObject("tracked") ?: JSONObject()
+        val rows = JSONArray()
+        val changed = (state.modified + state.deleted + state.untracked).distinct().sorted()
+        changed.forEach { path ->
+            val kind = when {
+                path in state.deleted -> "deleted"
+                path in state.untracked -> "untracked"
+                else -> "modified"
+            }
+            val current = if (kind == "deleted") "" else blobSha(repoFile(meta, path))
+            rows.put(
+                JSONObject()
+                    .put("path", path)
+                    .put("kind", kind)
+                    .put("baseBlobSha", tracked.optJSONObject(path)?.optString("blobSha").orEmpty())
+                    .put("currentBlobSha", current)
+            )
+        }
+        return RiftPatchManifestV1.sha256Canonical(
+            JSONObject()
+                .put("schema", "rift.git-candidate/1")
+                .put("repository", meta.optString("full"))
+                .put("branch", meta.optString("branch"))
+                .put("headSha", meta.optString("headSha"))
+                .put("changes", rows)
+        )
+    }
+
+    private fun observerGateFor(meta: JSONObject): JSONObject {
+        val full = meta.optString("full")
+        val repoRoot = resolveFile(meta.getString("root"), "/")
+        val configured =
+            full == "$WORKSPACE_OWNER/$WORKSPACE_REPO" ||
+                File(repoRoot, "observer/phase-authority.json").isFile ||
+                File(repoRoot, "riftarchitecture/n3-phase-authority.json").isFile
+        if (!configured) {
+            val evidence = JSONObject()
+                .put("configured", false)
+                .put("reason", "observer-not-configured-for-repository")
+            return JSONObject()
+                .put("schema", "rift.git-pre-push-observer/1")
+                .put("configured", false)
+                .put("pass", true)
+                .put("blockers", JSONArray())
+                .put("evidenceSha256", RiftPatchManifestV1.sha256Canonical(evidence))
+                .put("verificationRequired", false)
+                .put("proofObligations", 0)
+                .put("unresolvedObligations", 0)
+        }
+        val path = meta.getString("root").trim().trimStart('/')
+        return pushObserverSandbox.gitPrePushObserverGate(path).put("configured", true)
+    }
+
+    private fun readPushQueue(): MutableList<JSONObject> {
+        if (!pushQueueBacking.isFile) return mutableListOf()
+        val bytes = pushQueueFile.openRead().use { input ->
+            val data = input.readBytes()
+            require(data.size <= 256 * 1024) { "RiftGit push queue exceeds bounded state size" }
+            data
+        }
+        if (bytes.isEmpty()) return mutableListOf()
+        val rootJson = JSONObject(bytes.toString(Charsets.UTF_8))
+        require(rootJson.optString("schema") == "rift.git-push-queue/1") {
+            "RiftGit push queue schema mismatch"
+        }
+        val entries = rootJson.optJSONArray("entries") ?: JSONArray()
+        val out = mutableListOf<JSONObject>()
+        for (i in 0 until entries.length()) {
+            if (out.size >= MAX_PUSH_QUEUE) break
+            out += JSONObject(entries.getJSONObject(i).toString())
+        }
+        return out
+    }
+
+    private fun writePushQueue(entries: List<JSONObject>) {
+        require(entries.size <= MAX_PUSH_QUEUE) { "RiftGit push queue exceeds $MAX_PUSH_QUEUE entries" }
+        val rootJson = JSONObject()
+            .put("schema", "rift.git-push-queue/1")
+            .put("entries", JSONArray(entries))
+        val bytes = rootJson.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size <= 256 * 1024) { "RiftGit push queue exceeds bounded state size" }
+        val stream = pushQueueFile.startWrite()
+        try {
+            stream.write(bytes)
+            stream.flush()
+            pushQueueFile.finishWrite(stream)
+        } catch (error: Throwable) {
+            pushQueueFile.failWrite(stream)
+            throw error
+        }
+    }
+
+    internal fun pendingPushApprovals(): JSONArray = synchronized(this) {
+        JSONArray(
+            readPushQueue()
+                .sortedBy { it.optLong("createdAtEpochMs") }
+                .map { entry ->
+                    JSONObject()
+                        .put("queueId", entry.getString("queueId"))
+                        .put("repository", entry.getString("repository"))
+                        .put("branch", entry.getString("branch"))
+                        .put("message", entry.getString("message"))
+                        .put("changes", entry.getInt("changes"))
+                        .put("gitCandidateSha256", entry.getString("gitCandidateSha256"))
+                        .put("observerConfigured", entry.optBoolean("observerConfigured", false))
+                        .put("observerEvidenceSha256", entry.getString("observerEvidenceSha256"))
+                        .put("verificationRequired", entry.optBoolean("verificationRequired", false))
+                        .put("proofObligations", entry.optInt("proofObligations", 0))
+                        .put("createdAtEpochMs", entry.getLong("createdAtEpochMs"))
+                }
+        )
+    }
+
+    internal fun rejectQueuedPush(queueId: String): JSONObject = synchronized(this) {
+        val entries = readPushQueue()
+        val removed = entries.removeAll { it.optString("queueId") == queueId }
+        require(removed) { "Queued RiftGit push not found" }
+        writePushQueue(entries)
+        JSONObject()
+            .put("queueId", queueId)
+            .put("state", "rejected")
+            .put("pushed", false)
+    }
+
+    internal fun approveQueuedPush(queueId: String): JSONObject {
+        val entry = synchronized(this) {
+            readPushQueue().firstOrNull { it.optString("queueId") == queueId }
+                ?.let { JSONObject(it.toString()) }
+                ?: throw IllegalArgumentException("Queued RiftGit push not found")
+        }
+
+        val workspaceMode = entry.optBoolean("workspaceMode", false)
+        val cwd = entry.getString("cwd")
+        val currentMeta = if (workspaceMode) workspaceMeta() else loadMeta(cwd)
+        require(currentMeta.optString("full") == entry.getString("repository")) {
+            "Queued RiftGit repository changed before approval"
+        }
+        require(currentMeta.optString("branch") == entry.getString("branch")) {
+            "Queued RiftGit branch changed before approval"
+        }
+
+        val current = statusFor(currentMeta)
+        require(current.modified.isNotEmpty() || current.deleted.isNotEmpty() || current.untracked.isNotEmpty()) {
+            "Queued RiftGit candidate is now clean"
+        }
+        val currentCandidate = gitCandidateSha256(current)
+        require(currentCandidate == entry.getString("gitCandidateSha256")) {
+            "Queued RiftGit candidate changed after review; queue a fresh push"
+        }
+
+        val currentObserver = observerGateFor(currentMeta)
+        require(currentObserver.optBoolean("pass", false)) {
+            "Observer pre-push gate no longer passes: " +
+                (currentObserver.optJSONArray("blockers") ?: JSONArray()).toString()
+        }
+        require(currentObserver.getString("evidenceSha256") == entry.getString("observerEvidenceSha256")) {
+            "Observer evidence changed after review; queue a fresh push"
+        }
+
+        val result = performAtomicPush(
+            cwd = cwd,
+            rawMessage = entry.getString("message"),
+            suppliedMeta = if (workspaceMode) currentMeta else null,
+            print = { _ -> Unit }
+        )
+
+        synchronized(this) {
+            val entries = readPushQueue()
+            entries.removeAll { it.optString("queueId") == queueId }
+            writePushQueue(entries)
+        }
+        return JSONObject(result.toString())
+            .put("manualApproval", true)
+            .put("approvalSurface", "native-android-ui")
+            .put("queueId", queueId)
+            .put("gitCandidateSha256", currentCandidate)
+            .put("observerEvidenceSha256", currentObserver.getString("evidenceSha256"))
+    }
+
     private fun atomicPush(
+        cwd: String,
+        rawMessage: String,
+        suppliedMeta: JSONObject?,
+        print: (Any?) -> Unit
+    ): JSONObject {
+        requireToken()
+        val initial = statusFor(suppliedMeta ?: loadMeta(cwd))
+        val meta = initial.meta
+        val changes = initial.modified + initial.deleted + initial.untracked
+        if (changes.isEmpty()) {
+            print("nothing to push")
+            return JSONObject().put("pushed", false).put("reason", "clean")
+        }
+        require(changes.size <= MAX_FILES) { "Change set exceeds file limit" }
+
+        val observer = observerGateFor(meta)
+        require(observer.optBoolean("pass", false)) {
+            "Observer pre-push gate blocked push: " +
+                (observer.optJSONArray("blockers") ?: JSONArray()).toString()
+        }
+
+        val message = checkedCommitMessage(rawMessage.ifBlank {
+            meta.optString("pendingMessage").ifBlank { "RiftOS workspace update" }
+        })
+        val candidateSha = gitCandidateSha256(initial)
+        val queueId = UUID.randomUUID().toString()
+        val entry = JSONObject()
+            .put("schema", "rift.git-push-request/1")
+            .put("queueId", queueId)
+            .put("repository", meta.getString("full"))
+            .put("branch", meta.getString("branch"))
+            .put("cwd", cwd)
+            .put("root", meta.getString("root"))
+            .put("message", message)
+            .put("changes", changes.size)
+            .put("workspaceMode", suppliedMeta != null)
+            .put("gitCandidateSha256", candidateSha)
+            .put("observerConfigured", observer.optBoolean("configured", false))
+            .put("observerEvidenceSha256", observer.getString("evidenceSha256"))
+            .put("verificationRequired", observer.optBoolean("verificationRequired", false))
+            .put("proofObligations", observer.optInt("proofObligations", 0))
+            .put("createdAtEpochMs", System.currentTimeMillis())
+
+        synchronized(this) {
+            val entries = readPushQueue()
+            entries.removeAll {
+                it.optString("repository") == entry.getString("repository") &&
+                    it.optString("branch") == entry.getString("branch") &&
+                    it.optString("root") == entry.getString("root")
+            }
+            require(entries.size < MAX_PUSH_QUEUE) {
+                "RiftGit push approval queue is full ($MAX_PUSH_QUEUE); reject or approve a pending request first"
+            }
+            entries += entry
+            writePushQueue(entries)
+        }
+
+        print(
+            "Push queued for manual approval: " + queueId.take(12) +
+                " · Observer " + if (observer.optBoolean("configured", false)) "PASS" else "not configured" +
+                " · no remote write performed."
+        )
+        RiftMcpRuntime.activeActivity()?.requestGitPushApprovalPrompt()
+        return JSONObject()
+            .put("pushed", false)
+            .put("queued", true)
+            .put("queueId", queueId)
+            .put("state", "awaiting-manual-approval")
+            .put("changes", changes.size)
+            .put("gitCandidateSha256", candidateSha)
+            .put("observer", JSONObject()
+                .put("configured", observer.optBoolean("configured", false))
+                .put("pass", observer.optBoolean("pass", false))
+                .put("evidenceSha256", observer.getString("evidenceSha256"))
+                .put("verificationRequired", observer.optBoolean("verificationRequired", false))
+                .put("proofObligations", observer.optInt("proofObligations", 0))
+                .put("unresolvedObligations", observer.optInt("unresolvedObligations", 0)))
+            .put("approvalRequired", true)
+            .put("approvalSurface", "native-android-ui")
+    }
+
+    private fun performAtomicPush(
         cwd: String,
         rawMessage: String,
         suppliedMeta: JSONObject?,

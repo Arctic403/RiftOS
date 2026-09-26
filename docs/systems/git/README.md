@@ -250,6 +250,21 @@ push first computes the local status against the recorded metadata.
 
 If no changes exist it returns clean.
 
+For a dirty tree, **normal RiftGit push entry points do not write to GitHub directly**. `git push`, `git workspace push` and `sync` all enter the same native queue gate:
+
+1. compute a deterministic Git candidate SHA over repository/branch/head plus every modified/deleted/untracked path and its before/current blob identity;
+2. when the repository has RiftOS Observer authority configured (RiftOS itself is always configured), run the canonical Project Intelligence / Observer pre-push aggregate: repository consistency, integrity, cross-boundary contracts, documentation claims and proof obligations;
+3. require every mandatory view to be complete, require zero blocking findings and require the proof plan to have zero unresolved obligations;
+4. seal the Observer evidence identities into one evidence SHA;
+5. persist a bounded app-private approval record (maximum 8 pending pushes, no source-file bodies);
+6. show the native Android approval dialog with repository, branch, message, change count, candidate identity and Observer state.
+
+There is intentionally **no shell, MCP, Batch or local-CLI approval command**. Only the native Android UI button can call `approveQueuedPush()`.
+
+Approval is single-candidate authority, not blanket permission. Immediately before the remote write, RiftGit recomputes the entire Git candidate and reruns Observer. If either the candidate SHA or Observer evidence SHA changed, the approval fails closed and a fresh push must be queued/reviewed. Reject removes the request. Later leaves it pending. Process/UI recreation does not silently approve a queued request.
+
+Repositories without Observer machine authority are still queued and require manual Android approval; the Observer portion is explicitly recorded as not configured rather than being fabricated.
+
 Change-set limits:
 - <=10000 changes;
 - changed files <=48 MiB each;
@@ -258,7 +273,7 @@ Change-set limits:
 
 The 16 MiB request ceiling is intentionally stricter than the repository-size ceiling. RiftGit fails before network mutation when a dirty set is too large for this transport rather than falling back to the old per-file REST upload loop.
 
-Before the write request:
+After exact native approval and the approval-time candidate/Observer recheck, the write path:
 1. fetch the remote branch head;
 2. require recorded head is blank or equals the current remote head;
 3. read every modified/untracked file exactly once into the push snapshot;

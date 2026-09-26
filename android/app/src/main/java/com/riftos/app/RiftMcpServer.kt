@@ -87,6 +87,7 @@ class RiftMcpServer(
         }
         if (joinedInFlight) return
         val timeout = watchdog.schedule({
+            RiftMutationFence.cancelTransport(retryKey.trim())
             val execution = synchronized(requestLock) { inFlight[key]?.execution }
             execution?.cancel()
             completeRequest(
@@ -100,7 +101,7 @@ class RiftMcpServer(
         }
 
         try {
-            val execution = dispatch(request) { response -> completeRequest(key, response) }
+            val execution = dispatch(request, retryKey.trim()) { response -> completeRequest(key, response) }
             val retained = synchronized(requestLock) {
                 val pending = inFlight[key]
                 if (pending != null) {
@@ -119,12 +120,14 @@ class RiftMcpServer(
     fun cancelRequest(retryKey: String): Boolean {
         val normalized = retryKey.trim()
         if (normalized.isBlank()) return false
+        val fenced = RiftMutationFence.cancelTransport(normalized)
         val prefix = "$normalized:"
         val pending = synchronized(requestLock) {
             val entry = inFlight.entries.firstOrNull { it.key.startsWith(prefix) } ?: return@synchronized null
             inFlight.remove(entry.key)
             entry.value
-        } ?: return false
+        }
+        if (pending == null) return fenced
         pending.timeout?.cancel(false)
         pending.execution?.cancel()
         return true
@@ -158,7 +161,14 @@ class RiftMcpServer(
         }
     }
 
-    private fun dispatch(request: JSONObject, reply: (JSONObject) -> Unit): RiftAsyncHandle {
+    private fun dispatch(request: JSONObject, reply: (JSONObject) -> Unit): RiftAsyncHandle =
+        dispatch(request, transportRequestId = null, reply = reply)
+
+    private fun dispatch(
+        request: JSONObject,
+        transportRequestId: String?,
+        reply: (JSONObject) -> Unit
+    ): RiftAsyncHandle {
         val id = request.opt("id") ?: JSONObject.NULL
         val method = request.optString("method")
         val params = request.optJSONObject("params") ?: JSONObject()
@@ -183,7 +193,7 @@ class RiftMcpServer(
                         .put("riftos/toolManifestHash", manifest.getString("sha256")))))
                 RiftAsyncHandle.completed()
             }
-            "tools/call" -> handleToolCall(id, params, reply)
+            "tools/call" -> handleToolCall(id, params, transportRequestId, reply)
             else -> {
                 reply(error(id, -32601, "Method not found: $method"))
                 RiftAsyncHandle.completed()
@@ -250,7 +260,12 @@ class RiftMcpServer(
         else -> JSONObject.quote(value.toString())
     }
 
-    private fun handleToolCall(id: Any, params: JSONObject, reply: (JSONObject) -> Unit): RiftAsyncHandle {
+    private fun handleToolCall(
+        id: Any,
+        params: JSONObject,
+        transportRequestId: String?,
+        reply: (JSONObject) -> Unit
+    ): RiftAsyncHandle {
         val name = params.optString("name").trim()
         if (name.isBlank()) {
             reply(error(id, -32602, "tools/call requires a tool name"))
@@ -267,7 +282,13 @@ class RiftMcpServer(
             traceId = modelCallId,
             attributes = mapOf("tool" to name)
         )
-        return toolHost.callAsyncCancellable(name, args, mcpSpan.context) { call ->
+        return toolHost.callAsyncCancellable(
+            name,
+            args,
+            mcpSpan.context,
+            transportRequestId,
+            modelCallId
+        ) { call ->
             val ok = call.optBoolean("ok", false)
             val rawValue = if (ok) call.opt("value") else null
             val image = if (name == "rift_shell_exec" && rawValue is JSONObject) {

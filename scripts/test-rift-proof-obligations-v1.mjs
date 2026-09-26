@@ -53,7 +53,7 @@ assert.ok(
   'proofs project view is not dispatched',
 );
 assert.ok(
-  sandbox.includes('val impact = candidateImpact()') &&
+  sandbox.includes('val impact = candidateImpact(path)') &&
   sandbox.includes('val validation = projectValidation(path, "")') &&
   sandbox.includes('RiftProofObligationsV1().analyze('),
   'proofs view must consume exact candidate impact plus existing validation evidence',

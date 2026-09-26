@@ -147,6 +147,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftFileIdentityV2.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftPatchManifestV1.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftPatchSessions.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/shell/README.md` + `docs/systems/files-app/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/git/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftMutationFence.kt` | `docs/systems/mcp/server/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` |
 

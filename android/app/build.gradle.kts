@@ -131,6 +131,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt",
         "src/main/java/com/riftos/app/RiftPatchManifestV1.kt",
         "src/main/java/com/riftos/app/RiftPatchSessions.kt",
+        "src/main/java/com/riftos/app/RiftMutationFence.kt",
         "src/main/java/com/riftos/app/RiftProjectExporter.kt",
         "src/main/java/com/riftos/app/RiftRelaySettings.kt",
         "src/main/java/com/riftos/app/RiftRepositoryConsistencyObserver.kt",
