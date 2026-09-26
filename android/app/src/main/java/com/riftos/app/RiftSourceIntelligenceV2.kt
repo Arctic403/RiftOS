@@ -208,7 +208,9 @@ internal object RiftSourceIntelligenceV2 {
         return listOf(
             "observer/phase-authority.json",
             "riftmemory/n2-contract-v1.json",
-            "riftmemory/n2-phase-authority.json"
+            "riftmemory/n2-phase-authority.json",
+            "riftarchitecture/n3-contract-v1.json",
+            "riftarchitecture/n3-phase-authority.json"
         ).any { suffix -> lower == suffix || lower.endsWith("/$suffix") }
     }
 

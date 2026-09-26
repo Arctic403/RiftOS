@@ -9,6 +9,7 @@ const proofPath = 'android/app/src/main/java/com/riftos/app/RiftProofObligations
 const sandboxPath = 'android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt';
 const proof = read(proofPath);
 const sandbox = read(sandboxPath);
+const sourceIntelligence = read('android/app/src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt');
 const gradle = read('android/app/build.gradle.kts');
 const ownership = read('docs/SOURCE_OWNERSHIP.md');
 const pkg = JSON.parse(read('package.json'));
@@ -85,6 +86,15 @@ assert.ok(!hashPayloadBody.includes('"changedSymbols"'), 'workspace-global chang
 assert.match(proof, /if \(hasChanges && !impactComplete\)/);
 assert.match(proof, /if \(hasChanges && projectRows\.size > 1\)/);
 assert.match(proof, /RiftSourceIntelligenceV2\.isMachineAuthorityPath/);
+for (const futureAuthorityPath of [
+  'riftarchitecture/n3-contract-v1.json',
+  'riftarchitecture/n3-phase-authority.json',
+]) {
+  assert.ok(
+    sourceIntelligence.includes(`\"${futureAuthorityPath}\"`),
+    `future N3 machine-authority path must be pre-registered before N3.0 lands: ${futureAuthorityPath}`,
+  );
+}
 assert.match(proof, /impact\.optJSONArray\("directDependents"\)/);
 assert.match(proof, /addStrong\(source, "direct-dependent"\)/);
 assert.match(proof, /row\.optString\("kind"\) == "config-read"/);
