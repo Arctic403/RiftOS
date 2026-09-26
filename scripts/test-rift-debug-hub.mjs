@@ -41,8 +41,9 @@ assert.match(runtime, /RiftMcpRelayClient\([\s\S]*cliEvents\(\),[\s\S]*debugHub\
 
 assert.match(server, /component = "mcp\.server"/);
 assert.match(server, /operation = "tools\.call"/);
-assert.match(server, /toolHost\.callAsyncCancellable\(name, args, mcpSpan\.context\)/);
-assert.match(server, /"riftos\/traceId"/);
+assert.match(server, /toolHost\.callAsyncCancellable\([\s\S]{0,240}mcpSpan\.context,[\s\S]{0,160}transportRequestId,[\s\S]{0,160}modelCallId/);
+assert.notEqual(server.indexOf('val modelCallId = requestMeta.optString'), -1);
+assert.notEqual(server.indexOf('riftos/callId'), -1);
 assert.match(server, /mcpSpan\.success/);
 assert.match(server, /mcpSpan\.failure/);
 
