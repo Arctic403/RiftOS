@@ -359,6 +359,17 @@ internal class RiftCrossBoundaryContractsV1(
         if (host.text.contains("if (name == \"rift_debug\")") && host.text.contains("debugHub.query(")) {
             specialDispatched += "rift_debug"
         }
+        if (host.text.contains("if (name in MCP_BATCH_TOOLS)") &&
+            host.text.contains("RiftOsLocalAgent.execute(appContext, request)") &&
+            host.text.contains("mcpBatchLocalAgentRequest(name, args)")) {
+            specialDispatched += listOf(
+                "rift_batch_submit",
+                "rift_batch_list",
+                "rift_batch_poll",
+                "rift_batch_cancel",
+                "rift_batch_recover"
+            )
+        }
         val covered = dispatched + specialDispatched
 
         evidence += row("mcp-tool-registry-dispatch", "registry", "set-covered",

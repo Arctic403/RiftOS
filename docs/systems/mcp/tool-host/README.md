@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-25.**
 
 ## Purpose
 
@@ -17,7 +17,7 @@
 
 ## Canonical catalog
 
-`tools()` is authoritative. The current published set is exactly 19 tools:
+`tools()` is authoritative. The current source publishes exactly 24 tools (installed run 386 remains the prior 19-tool build until this patch is built and installed):
 
 1. rift_shell_exec
 2. rift_info
@@ -37,7 +37,12 @@
 16. rift_project_export
 17. rift_workspace_diff
 18. rift_debug
-19. rift_workspace_exec
+19. rift_batch_submit
+20. rift_batch_list
+21. rift_batch_poll
+22. rift_batch_cancel
+23. rift_batch_recover
+24. rift_workspace_exec
 
 `manifest()` hashes the complete definitions JSON with SHA-256 and reports count/names/scope.
 
@@ -57,6 +62,8 @@ Read-gated tools:
 - project export;
 - workspace diff, including bounded checkpoint file-identity evidence;
 - passive debugger status/events/active/components;
+- Batch list/poll compact persisted-job observation;
+- Batch submit when `mode=validate` because validation executes no steps;
 - workspace exec even when read-only.
 
 `rift_workspace_diff` remains one read-only tool; Patch 2 expands its result evidence with bounded `identity.relations` and similarity-budget metadata without adding mutation authority or another tool.
@@ -71,6 +78,8 @@ Write-gated fixed tools:
 - extract.
 
 `rift_workspace_exec` is always read-gated and additionally write-gated when any normalized operation mutates.
+
+First-class Batch authority controls are deliberately separate from the workspace sandbox. `rift_batch_submit` requires read+write in `execute` mode but only read in `validate` mode; `rift_batch_cancel` and `rift_batch_recover` require read+write; `rift_batch_list` and `rift_batch_poll` require read only. Tool Host routes all five through `RiftOsLocalAgent op=batch`, never directly to `RiftToolSandbox` or internal `rift_cli_*` controls. Public Batch controls cannot appear as nested Batch tool steps.
 
 `rift_shell_exec` requires **both read and write** because it has broader native RiftOS authority than the workspace sandbox.
 

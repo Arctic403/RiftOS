@@ -269,11 +269,24 @@ assert.ok(transportValidator.includes('services.includes(\'"poll","cancel"->{\')
 assert.ok(transportValidator.includes('services.includes(\'require(args.size==1){"usage: riftos-agent batch $action <job-id>"}\')'));
 assert.ok(!transportValidator.includes('usage: riftos-agent batch poll <job-id>'));
 assert.ok(!transportValidator.includes('usage: riftos-agent batch cancel <job-id>'));
-assert.ok(!mcpServer.includes('rift_cli_batch'),'Batch V2 must remain unexposed from dedicated MCP tools until Local Agent exposure is live-proven');
-assert.ok(!mcpServer.includes('rift_cli_job_recover'),'recovery must remain unexposed from dedicated MCP tools until Local Agent exposure is live-proven');
+for (const name of ['rift_batch_submit','rift_batch_list','rift_batch_poll','rift_batch_cancel','rift_batch_recover']) {
+  assert.ok(host.includes(`"${name}"`), `first-class MCP Batch control must be declared: ${name}`);
+}
+assert.match(host,/MCP_BATCH_TOOLS = setOf\("rift_batch_submit", "rift_batch_list", "rift_batch_poll", "rift_batch_cancel", "rift_batch_recover"\)/);
+assert.match(host,/if \(name in MCP_BATCH_TOOLS\)/);
+assert.match(host,/mcpBatchLocalAgentRequest\(name, args\)/);
+assert.match(host,/RiftOsLocalAgent\.execute\(appContext, request\)/,
+  'MCP Batch controls must enter the Local Agent instead of dispatching directly to RiftCLI or RiftToolSandbox');
+assert.match(host,/MCP_BATCH_READ_ONLY_TOOLS = setOf\("rift_batch_list", "rift_batch_poll"\)/);
+assert.match(host,/"rift_batch_cancel", "rift_batch_recover" -> true/);
+assert.match(host,/\.put\("steps", JSONObject\(\)\.put\("type", "array"\)\.put\("minItems", 1\)\.put\("maxItems", 16\)/);
+assert.ok(!mcpServer.includes('rift_cli_batch'),'internal RiftCLI batch control must not become a direct MCP server tool');
+assert.ok(!mcpServer.includes('rift_cli_job_recover'),'internal RiftCLI recovery control must not become a direct MCP server tool');
+assert.match(host,/"rift_batch_submit"/);
+assert.match(host,/"rift_batch_recover"/);
 
 assert.match(oldBatch,/DISABLED: RiftShell batch commands are disabled/);
 assert.match(oldBatch,/disabled:true/);
 assert.ok(!shell.includes('"batch" ->'),'native RiftShell must not resurrect the retired batch command');
 
-console.log('ok - RiftCLI Batch V2 B1+B2A+B2B contract is bounded, sealed, retry-safe, rollback-journaled, exposed through bounded Local Agent translation, and still absent from dedicated MCP tools');
+console.log('ok - RiftCLI Batch V2 B1+B2A+B2B contract is bounded, sealed, retry-safe, rollback-journaled, exposed through bounded Local Agent translation, and published as five bounded first-class MCP Batch controls');

@@ -27,7 +27,7 @@ RiftFS is app-private storage with fixed C:/D: display aliases. Workspace MCP/Pr
 
 ## MCP and shell
 
-The 19-tool MCP catalog is device-owned by `RiftToolHost`; `rift_debug` is a passive read-only diagnostics query. Normal filesystem/Code Mode tools use `RiftToolSandbox`; `rift_shell_exec` uses process-owned `RiftNativeShell`. There is no WebView compatibility fallback and no raw Linux/Android shell.
+The current source defines a 24-tool MCP catalog owned by `RiftToolHost`: the prior 19 tools plus five bounded `rift_batch_*` controls. `rift_debug` remains a passive read-only diagnostics query. Normal filesystem/Code Mode tools use `RiftToolSandbox`; the five Batch controls are intercepted by Tool Host and routed through `RiftOsLocalAgent op=batch` → RiftCLI → normal RiftOS authorities; `rift_shell_exec` uses process-owned `RiftNativeShell`. Internal `rift_cli_*` Batch controls are not model-visible. There is no WebView compatibility fallback and no raw Linux/Android shell.
 
 ## Runtime and apps
 

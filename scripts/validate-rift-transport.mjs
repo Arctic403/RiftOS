@@ -44,14 +44,16 @@ const relayWrangler = read('relay/wrangler.jsonc');
 const expectedTools = [
   'rift_shell_exec','rift_info','rift_stat','rift_hash','rift_list','rift_read_text','rift_write_text','rift_mkdir',
   'rift_remove','rift_move','rift_copy','rift_archive','rift_extract','rift_audit','rift_scan','rift_project_export',
-  'rift_workspace_diff','rift_debug','rift_workspace_exec'
+  'rift_workspace_diff','rift_debug','rift_workspace_exec','rift_batch_submit','rift_batch_list','rift_batch_poll',
+  'rift_batch_cancel','rift_batch_recover'
 ];
 const declaredTools = [...host.matchAll(/tool\(\s*"([^"]+)"/g)].map(match => match[1]);
 const uniqueDeclaredTools = [...new Set(declaredTools)].sort();
 const expectedSorted = [...expectedTools].sort();
 
 const checks = [
-  ['MCP surface remains exactly the expected 19-tool family', JSON.stringify(uniqueDeclaredTools) === JSON.stringify(expectedSorted)],
+  ['MCP surface remains exactly the expected 24-tool family', JSON.stringify(uniqueDeclaredTools) === JSON.stringify(expectedSorted)],
+  ['MCP Batch controls are bounded and Local-Agent-routed', host.includes('MCP_BATCH_TOOLS = setOf("rift_batch_submit", "rift_batch_list", "rift_batch_poll", "rift_batch_cancel", "rift_batch_recover")') && host.includes('if (name in MCP_BATCH_TOOLS)') && host.includes('mcpBatchLocalAgentRequest(name, args)') && host.includes('RiftOsLocalAgent.execute(appContext, request)') && host.includes('MCP_BATCH_READ_ONLY_TOOLS = setOf("rift_batch_list", "rift_batch_poll")') && host.includes('"rift_batch_submit" -> args.optString("mode", "execute")') && host.includes('"rift_batch_cancel", "rift_batch_recover" -> true') && host.includes('request = JSONObject().put("op", "batch").put("action", action)') && host.includes('.put("steps", JSONObject().put("type", "array").put("minItems", 1).put("maxItems", 16)') && !server.includes('rift_cli_batch') && !server.includes('rift_cli_job_recover')],
   ['global debugger remains passive and bounded', debugHub.includes('interface RiftDebugAdapter') && debugHub.includes('private val maxEvents: Int = 1_024') && debugHub.includes('.put("execute", false)') && debugHub.includes('.put("mutate", false)') && !debugHub.includes('ProcessBuilder') && !debugHub.includes('Runtime.getRuntime') && host.includes('"rift_debug"') && server.includes('"riftos/traceId"')],
   ['MCP shell execution is process-owned and native', runtime.includes('private var nativeShell: RiftNativeShell?') && runtime.includes('fun shellExecutor(): RiftShellExecutor? = nativeShell') && shell.includes('class RiftNativeShell(context: Context) : RiftShellExecutor') && shell.includes('.put("webViewRequired", false)')],
   ['renderer shell fallback is absent', !existsSync(k + 'RiftShellBridge.kt') && !existsSync(k + 'RiftSystemDump.kt') && !runtime.includes('registerShellBridge') && !runtime.includes('compatibilityFallback') && !shell.includes('compatibilityFallback')],

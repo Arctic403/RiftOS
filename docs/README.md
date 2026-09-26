@@ -35,7 +35,7 @@ Changing relevant source invalidates the affected document's trusted status unti
 | AI site adapters | **VERIFIED** | [`systems/browser/ai-adapters/README.md`](systems/browser/ai-adapters/README.md) | live selector/hostname/manual-send contract audit |
 | Rift MCP | **VERIFIED** | [`systems/mcp/README.md`](systems/mcp/README.md) | process-owner/shared-server/transport-boundary audit |
 | MCP server | **VERIFIED** | [`systems/mcp/server/README.md`](systems/mcp/server/README.md) | JSON-RPC/idempotency/result-framing audit |
-| MCP tool host | **VERIFIED** | [`systems/mcp/tool-host/README.md`](systems/mcp/tool-host/README.md) | 19-tool registry/grants/audit/normalization/debug-query audit |
+| MCP tool host | **VERIFIED** | [`systems/mcp/tool-host/README.md`](systems/mcp/tool-host/README.md) | 24-tool registry/grants/audit/normalization/debug-query audit, including five Local-Agent-routed `rift_batch_*` controls |
 | MCP sandbox / Code Mode | **VERIFIED** | [`systems/mcp/sandbox/README.md`](systems/mcp/sandbox/README.md) | workspace containment/transactions/PI-v2 audit |
 | MCP relay | **VERIFIED** | [`systems/mcp/relay/README.md`](systems/mcp/relay/README.md) | WSS transport/config/reconnect/authority audit |
 | Project exporter | **VERIFIED** | [`systems/mcp/project-exporter/README.md`](systems/mcp/project-exporter/README.md) | deterministic paging/snapshot/filter/cursor audit |
@@ -92,7 +92,7 @@ Every subsystem not listed in the verified set above remains **UNVERIFIED** unti
 | AI site adapters | **VERIFIED** | [`systems/browser/ai-adapters/README.md`](systems/browser/ai-adapters/README.md) | live selector/hostname/manual-send contract audit |
 | Rift MCP | **VERIFIED** | [`systems/mcp/README.md`](systems/mcp/README.md) | process-owner/shared-server/transport-boundary audit |
 | MCP server | **VERIFIED** | [`systems/mcp/server/README.md`](systems/mcp/server/README.md) | JSON-RPC/idempotency/result-framing audit |
-| MCP tool host | **VERIFIED** | [`systems/mcp/tool-host/README.md`](systems/mcp/tool-host/README.md) | 19-tool registry/grants/audit/normalization/debug-query audit |
+| MCP tool host | **VERIFIED** | [`systems/mcp/tool-host/README.md`](systems/mcp/tool-host/README.md) | 24-tool registry/grants/audit/normalization/debug-query audit, including five Local-Agent-routed `rift_batch_*` controls |
 | MCP sandbox / Code Mode | **VERIFIED** | [`systems/mcp/sandbox/README.md`](systems/mcp/sandbox/README.md) | workspace containment/transactions/PI-v2 audit |
 | MCP relay | **VERIFIED** | [`systems/mcp/relay/README.md`](systems/mcp/relay/README.md) | WSS transport/config/reconnect/authority audit |
 | Project exporter | **VERIFIED** | [`systems/mcp/project-exporter/README.md`](systems/mcp/project-exporter/README.md) | deterministic paging/snapshot/filter/cursor audit |

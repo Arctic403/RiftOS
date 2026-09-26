@@ -10,7 +10,7 @@ This inventory separates live packaged authority from retained reference/compati
 | Rift++ headless runtime | `RiftHeadlessJsRuntime.kt` | Loads trusted Rift++ Core/RiftVM assets in QuickJS; no DOM/WebView/network/process authority. |
 | Semnexis bootstrap runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Fixed bounded `semx` compiler/IR/backend commands over the packaged Semnexis asset; source/output/artifact budgets are enforced, only the two ARM32 artifact commands may write to exact fixed RiftFS paths, generated artifacts are not executed, and the host has no process/network authority. |
 | Bounded `qjs` developer runtime | `RiftHeadlessJsRuntime.kt` + `RiftNativeShell.kt` | Evaluates bounded classic JavaScript with captured output and read-only confined RiftFS text access; no file-write/process/network/Android/Git authority. |
-| MCP tool catalog | `RiftToolHost.kt` | Canonical fixed 19-tool schemas/permissions/audit, including passive `rift_debug`. |
+| MCP tool catalog | `RiftToolHost.kt` | Canonical fixed 24-tool source catalog: the prior 19 tools plus five bounded `rift_batch_*` controls routed through RiftOS Local Agent; passive `rift_debug` remains read-only. |
 | Workspace/Code Mode | `RiftToolSandbox.kt` + `RiftToolHost.kt` | Workspace-only filesystem and Project Intelligence; model-facing `rift_workspace_exec` is one operation per call with per-call rollback, while multi-op/batch execution is disabled. |
 | Workspace Records | `RiftWorkspaceRecords.kt` | Private local history/diff record source. |
 | Native desktop | `RiftNativeDesktop.kt` | Android window/taskbar/z-order/geometry authority. |

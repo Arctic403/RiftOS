@@ -53,6 +53,8 @@ class RiftToolHost(
         private const val CLI_JOB_RETENTION_MS = 5 * 60 * 1000L
         private const val MAX_CLI_RETAINED_RESULT_BYTES = 2 * 1024 * 1024
         private const val MAX_CLI_BATCH_TOOL_ARGS_BYTES = 64 * 1024
+        private val MCP_BATCH_TOOLS = setOf("rift_batch_submit", "rift_batch_list", "rift_batch_poll", "rift_batch_cancel", "rift_batch_recover")
+        private val MCP_BATCH_READ_ONLY_TOOLS = setOf("rift_batch_list", "rift_batch_poll")
         private val WORKSPACE_OPS = setOf("project", "snapshot", "stat", "hash", "list", "search", "symbols", "references", "read", "read_range", "read_symbol", "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy", "archive", "extract")
         const val SCOPE = "riftfs/workspace"
     }
@@ -145,9 +147,10 @@ class RiftToolHost(
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v2")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug", "rift_batch_list", "rift_batch_poll")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")))
-        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec")))
+        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec", "rift_batch_submit")))
+        .put("authorityControlTools", JSONArray(listOf("rift_batch_cancel", "rift_batch_recover")))
 
     fun setAccess(read: Boolean, write: Boolean): JSONObject {
         prefs.edit()
@@ -318,6 +321,44 @@ class RiftToolHost(
                     .put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 200))
             )
         ))
+        .put(tool(
+            "rift_batch_submit",
+            "Submit one bounded RiftCLI Batch V2 job through the RiftOS Local Agent. The plan is fully prevalidated, limited to 1..16 steps, and executed only by RiftCLI through normal RiftOS authorities. execute mode requires MCP read+write permission; validate mode requires read permission and does not execute steps. The native process-local CLI gate remains authoritative.",
+            objectSchema(
+                JSONObject()
+                    .put("mode", JSONObject().put("type", "string").put("enum", JSONArray(listOf("execute", "validate"))).put("description", "Batch mode; defaults to execute."))
+                    .put("failurePolicy", JSONObject().put("type", "string").put("enum", JSONArray(listOf("stop", "continue"))).put("description", "Failure policy; defaults to stop."))
+                    .put("rollbackPolicy", JSONObject().put("type", "string").put("enum", JSONArray(listOf("none", "on-failure"))).put("description", "Rollback policy; defaults to none. on-failure requires failurePolicy=stop."))
+                    .put("steps", JSONObject().put("type", "array").put("minItems", 1).put("maxItems", 16).put("items", batchStepSchema()).put("description", "Ordered Batch V2 steps."))
+                    .put("cwd", stringProperty("Optional RiftShell working directory for shell steps; defaults to /.")),
+                listOf("steps")
+            )
+        ))
+        .put(tool(
+            "rift_batch_list",
+            "List compact persisted RiftCLI Batch/job metadata through the RiftOS Local Agent. Read-only control; returns at most 32 compact job rows.",
+            objectSchema(JSONObject()
+                .put("filterRequestId", stringProperty("Optional bounded requestId filter; max 256 characters.")))
+        ))
+        .put(tool(
+            "rift_batch_poll",
+            "Poll one persisted RiftCLI Batch/job through the RiftOS Local Agent. Read-only control; does not execute or replay the job.",
+            objectSchema(JSONObject()
+                .put("jobId", stringProperty("Persisted RiftCLI job ID; max 256 characters.")), listOf("jobId"))
+        ))
+        .put(tool(
+            "rift_batch_cancel",
+            "Request cancellation of one persisted RiftCLI Batch/job through the RiftOS Local Agent. Requires MCP read+write permission; cancellation is honored at the native safe boundary and never bypasses authority checks.",
+            objectSchema(JSONObject()
+                .put("jobId", stringProperty("Persisted RiftCLI job ID; max 256 characters.")), listOf("jobId"))
+        ))
+        .put(tool(
+            "rift_batch_recover",
+            "Resolve one recovery_required RiftCLI Batch/job through the RiftOS Local Agent using resume, fail, or rollback. Requires MCP read+write permission and the native CLI enable gate for authority-bearing recovery.",
+            objectSchema(JSONObject()
+                .put("jobId", stringProperty("Persisted RiftCLI job ID; max 256 characters."))
+                .put("resolution", JSONObject().put("type", "string").put("enum", JSONArray(listOf("resume", "fail", "rollback"))).put("description", "Recovery resolution.")), listOf("jobId", "resolution"))
+        ))
         // Keep the published rift_workspace_exec schema/description stable while Project Intelligence v2 evolves behind it.
         // Changing this model-visible definition changes manifest().sha256 and can force cached MCP clients to rescan actions.
         .put(tool(
@@ -375,7 +416,12 @@ class RiftToolHost(
             "rift_cli_job_list",
             "rift_cli_job_poll",
             "rift_cli_job_cancel",
-            "rift_cli_job_recover"
+            "rift_cli_job_recover",
+            "rift_batch_submit",
+            "rift_batch_list",
+            "rift_batch_poll",
+            "rift_batch_cancel",
+            "rift_batch_recover"
         )
         if (name in forbidden) {
             return JSONObject()
@@ -943,6 +989,32 @@ class RiftToolHost(
             }
         }
 
+        if (name in MCP_BATCH_TOOLS) {
+            val requiresWrite = mcpBatchRequiresWrite(name, args)
+            if (!bypassAccess && (!allowRead() || (requiresWrite && !allowWrite()))) {
+                val error = when {
+                    !allowRead() && requiresWrite -> "Rift MCP Batch control is disabled on this device. Enable read and write access in Rift MCP settings."
+                    !allowRead() -> "Rift MCP Batch observation is disabled on this device. Enable read access in Rift MCP settings."
+                    else -> "Rift MCP Batch authority control is disabled on this device. Enable write access in Rift MCP settings."
+                }
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return RiftAsyncHandle.completed()
+            }
+            try {
+                val request = mcpBatchLocalAgentRequest(name, args)
+                val value = RiftOsLocalAgent.execute(appContext, request)
+                val accepted = value.optBoolean("ok", false)
+                recordAudit(name, args, accepted, if (accepted) null else value.optString("reason").ifBlank { value.optString("error") })
+                reply(JSONObject().put("ok", true).put("name", name).put("value", value))
+            } catch (failure: Throwable) {
+                val error = failure.message ?: "Invalid Rift MCP Batch request"
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+            }
+            return RiftAsyncHandle.completed()
+        }
+
         if (name == "rift_debug") {
             if (!bypassAccess && !allowRead()) {
                 val error = "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
@@ -1195,6 +1267,11 @@ class RiftToolHost(
         "projectExport", "rift_project_export" -> "rift_project_export"
         "workspaceDiff", "rift_workspace_diff" -> "rift_workspace_diff"
         "debug", "rift_debug" -> "rift_debug"
+        "rift_batch_submit" -> "rift_batch_submit"
+        "rift_batch_list" -> "rift_batch_list"
+        "rift_batch_poll" -> "rift_batch_poll"
+        "rift_batch_cancel" -> "rift_batch_cancel"
+        "rift_batch_recover" -> "rift_batch_recover"
         else -> raw.trim()
     }
 
@@ -1217,7 +1294,53 @@ class RiftToolHost(
         "rift_scan" -> "workspace.scan"
         "rift_project_export" -> "workspace.exportProject"
         "rift_workspace_diff" -> "workspace.diff"
+        // Registry routing tags only. callAsyncInternal intercepts these names and enters
+        // RiftOsLocalAgent before any RiftToolSandbox dispatch can occur.
+        "rift_batch_submit" -> "localAgent.batch.submit"
+        "rift_batch_list" -> "localAgent.batch.list"
+        "rift_batch_poll" -> "localAgent.batch.poll"
+        "rift_batch_cancel" -> "localAgent.batch.cancel"
+        "rift_batch_recover" -> "localAgent.batch.recover"
         else -> null
+    }
+
+    private fun mcpBatchRequiresWrite(name: String, args: JSONObject): Boolean {
+        if (name in MCP_BATCH_READ_ONLY_TOOLS) return false
+        return when (name) {
+            "rift_batch_submit" -> args.optString("mode", "execute").trim().lowercase().ifBlank { "execute" } != "validate"
+            "rift_batch_cancel", "rift_batch_recover" -> true
+            else -> true
+        }
+    }
+
+    private fun mcpBatchLocalAgentRequest(name: String, args: JSONObject): JSONObject {
+        val action = when (name) {
+            "rift_batch_submit" -> "submit"
+            "rift_batch_list" -> "list"
+            "rift_batch_poll" -> "poll"
+            "rift_batch_cancel" -> "cancel"
+            "rift_batch_recover" -> "recover"
+            else -> throw IllegalArgumentException("Unsupported Rift MCP Batch tool: $name")
+        }
+        val request = JSONObject().put("op", "batch").put("action", action)
+        when (name) {
+            "rift_batch_submit" -> {
+                if (args.has("cwd")) request.put("cwd", args.optString("cwd"))
+                val plan = JSONObject()
+                for (key in listOf("mode", "failurePolicy", "rollbackPolicy", "steps")) {
+                    if (args.has(key)) plan.put(key, args.opt(key))
+                }
+                request.put("plan", plan)
+            }
+            "rift_batch_list" -> if (args.has("filterRequestId")) {
+                request.put("filterRequestId", args.optString("filterRequestId"))
+            }
+            "rift_batch_poll", "rift_batch_cancel" -> request.put("jobId", args.optString("jobId"))
+            "rift_batch_recover" -> request
+                .put("jobId", args.optString("jobId"))
+                .put("resolution", args.optString("resolution"))
+        }
+        return request
     }
 
     private fun isWriteTool(name: String): Boolean = name in setOf(
@@ -1268,6 +1391,9 @@ class RiftToolHost(
         "rift_workspace_diff" -> args.optString("path").ifBlank { "workspace" }.take(300)
         "rift_info" -> "sandbox"
         "rift_debug" -> args.optString("action", "status").trim().lowercase().ifBlank { "status" }
+        "rift_batch_submit" -> "batch submit · ${args.optJSONArray("steps")?.length() ?: 0} step(s)"
+        "rift_batch_list" -> args.optString("filterRequestId").ifBlank { "batch list" }.take(300)
+        "rift_batch_poll", "rift_batch_cancel", "rift_batch_recover" -> args.optString("jobId").take(300)
         "rift_shell_exec" -> args.optString("command").trim().takeWhile { !it.isWhitespace() }
             .take(48).replace(Regex("[^A-Za-z0-9_-]"), "?") + " [arguments omitted]"
         else -> args.optString("path").take(300)
@@ -1313,6 +1439,17 @@ class RiftToolHost(
             .put("overwrite", booleanProperty("Replace an existing destination when true.")))
         .put("required", JSONArray(listOf("op")))
         .put("additionalProperties", true)
+
+    private fun batchStepSchema(): JSONObject = JSONObject()
+        .put("type", "object")
+        .put("properties", JSONObject()
+            .put("id", stringProperty("Unique step id matching [A-Za-z0-9._-]{1,64}."))
+            .put("kind", JSONObject().put("type", "string").put("enum", JSONArray(listOf("tool", "shell"))))
+            .put("name", stringProperty("For kind=tool, an allowed non-control Rift MCP tool name."))
+            .put("args", JSONObject().put("type", "object").put("additionalProperties", true).put("description", "Arguments for a tool step."))
+            .put("command", stringProperty("For kind=shell, one allowed RiftShell command.")))
+        .put("required", JSONArray(listOf("id", "kind")))
+        .put("additionalProperties", false)
 
     private fun objectSchema(properties: JSONObject = JSONObject(), required: List<String> = emptyList()): JSONObject {
         val schema = JSONObject()
