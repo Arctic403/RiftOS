@@ -99,11 +99,12 @@ check(
 );
 
 check(
-  'future Rift tools delegate dynamically while recursive and workspace-exec lanes stay denied',
+  'future Rift tools delegate dynamically; workspace-exec uses the tool lane while shell stays action-only',
   core.includes('name.rfind("rift_", 0)') &&
-    core.includes('name != "rift_shell_exec"') &&
-    core.includes('name != "rift_workspace_exec"') &&
-    toolHost.includes('RiftCLI tool lane forbids')
+    core.includes('return name != "rift_shell_exec";') &&
+    !core.includes('name != "rift_workspace_exec"') &&
+    core.includes('rift_shell_exec is intentionally routed through the CLI action lane') &&
+    toolHost.includes('RiftCLI tool lane forbids $name; use one bounded RiftCLI shell dispatch.')
 );
 
 check(
@@ -192,7 +193,7 @@ check(
   shell.includes('MAX_CLI_SHELL_RETAINED_RESULT_BYTES = 2 * 1024 * 1024') &&
     shell.includes('CLI_SHELL_JOB_RETENTION_MS = 5 * 60 * 1000L') &&
     shell.includes('"completed_result_too_large"') &&
-    toolHost.includes('MAX_CLI_RETAINED_RESULT_BYTES = 2 * 1024 * 1024') &&
+    toolHost.includes('MAX_CLI_RETAINED_RESULT_BYTES = 8 * 1024 * 1024') &&
     toolHost.includes('CLI_JOB_RETENTION_MS = 5 * 60 * 1000L') &&
     toolHost.includes('"completed_result_too_large"')
 );

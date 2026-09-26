@@ -13,6 +13,7 @@ This roadmap describes intended work, not shipped capability. Current implementa
 - Harden RiftBrowser move/resize/focus and long-chat behavior across phones, tablets and DeX.
 - Implement the RiftEngine/Servo migration behind a hardware compatibility gate; Android System WebView remains the current compatibility renderer until that gate passes.
 - Add focused on-device diagnostics and exported test results rather than emulator-heavy CI.
+- **RiftCLI execution convergence — SOURCE IMPLEMENTED / BUILDER + INSTALL + LIVE PROOF PENDING:** route ordinary executable MCP/file/workspace/RiftBuild/device/normal-Git actions through MCP → RiftOS Local Agent → RiftCLI → existing native authorities. This checkpoint does **not** move Project Intelligence, Observer or Validator behind RiftCLI, does not alter N3 machine authority, and does not move RiftGit release commands (`git push`, `git workspace push`, `git sync`) off their existing native release path. Public Project Intelligence remains a direct read-only sidecar; passive `rift_info`/`rift_debug` and first-class Batch controls remain bootstrap/control exceptions.
 
 ## In-house RiftBuild Android pipeline
 

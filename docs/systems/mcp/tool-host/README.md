@@ -83,6 +83,8 @@ First-class Batch authority controls are deliberately separate from the workspac
 
 `rift_shell_exec` requires **both read and write** because it has broader native RiftOS authority than the workspace sandbox.
 
+For ordinary public execution, Tool Host now routes file tools, one-operation non-`project` Code Mode calls, RiftBuild/device commands and normal Git commands through `RiftOsLocalAgent op=intelligence` → RiftCLI → the existing native authority. Public `rift_workspace_exec` with `op=project` remains direct sidecar evidence so Project Intelligence/Observer/Validator stay structurally independent. RiftGit release commands `git push`, `git workspace push` and `git sync` also remain on the existing native RiftGit release path. `rift_info`, passive `rift_debug`, and first-class Batch control calls remain bootstrap/control exceptions rather than ordinary execution routes.
+
 Shell denial messages now identify whether read, write, or both grants are missing.
 
 ## Workspace-operation normalization

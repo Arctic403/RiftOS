@@ -195,7 +195,7 @@ bool actionTargetsRiftCli(const std::string& action) {
 
 bool isAllowedDriverTool(const std::string& name) {
     if (name.size() < 6 || name.rfind("rift_", 0) != 0) return false;
-    return name != "rift_shell_exec" && name != "rift_workspace_exec";
+    return name != "rift_shell_exec";
 }
 
 bool isDriverJobControl(const std::string& name) {
@@ -251,6 +251,7 @@ struct DriverRequest {
     std::string action;
     std::string toolName;
     std::string toolArgsJson{"{}"};
+    std::string toolPayloadId;
     std::string loopId;
     unsigned int loopStep{0};
     unsigned int loopMax{1};
@@ -327,7 +328,7 @@ DriverRequest parseDriverRequest(const std::vector<std::string>& args) {
         throw std::invalid_argument(
             "usage: rift-cli driver request --request-id <id> --session <id> --task <id> --project <id> "
             "--goal <text> [--assumption <text>] [--evidence <ref>] --capability riftos "
-            "[--action <single-riftshell-command> | --tool <rift-tool> [--tool-args <json>] | "
+            "[--action <single-riftshell-command> | --tool <rift-tool> [--tool-args <json> | --tool-payload-id <id>] | "
             "--request-more-info <question>] [--loop-id <id> --loop-step <0..7> --loop-max <1..8>]"
         );
     }
@@ -359,6 +360,7 @@ DriverRequest parseDriverRequest(const std::vector<std::string>& args) {
         else if (flag == "--action") request.action = value;
         else if (flag == "--tool") request.toolName = lowerAscii(value);
         else if (flag == "--tool-args") request.toolArgsJson = value;
+        else if (flag == "--tool-payload-id") request.toolPayloadId = value;
         else if (flag == "--loop-id") request.loopId = value;
         else if (flag == "--loop-step") request.loopStep = parseUnsigned("loop-step", value, kMaxDriverLoopSteps - 1);
         else if (flag == "--loop-max") request.loopMax = parseUnsigned("loop-max", value, kMaxDriverLoopSteps);
@@ -380,6 +382,13 @@ DriverRequest parseDriverRequest(const std::vector<std::string>& args) {
     if (!request.toolName.empty()) requireBounded("tool", request.toolName, 128);
     if (request.toolArgsJson.size() > kMaxActionBytes) {
         throw std::invalid_argument("tool-args exceeds 131072 bytes");
+    }
+    if (!request.toolPayloadId.empty()) requireBounded("tool-payload-id", request.toolPayloadId, kMaxIdentityBytes);
+    if (!request.toolPayloadId.empty() && request.toolName.empty()) {
+        throw std::invalid_argument("tool-payload-id requires --tool");
+    }
+    if (!request.toolPayloadId.empty() && request.toolArgsJson != "{}") {
+        throw std::invalid_argument("tool-payload-id and tool-args are mutually exclusive");
     }
     if (!request.requestMoreInfo.empty() && request.requestMoreInfo.size() > kMaxGoalBytes) {
         throw std::invalid_argument("request-more-info exceeds 16384 bytes");
@@ -412,11 +421,11 @@ DriverRequest parseDriverRequest(const std::vector<std::string>& args) {
     }
     if (!request.toolName.empty() && !isAllowedDriverTool(request.toolName)) {
         throw std::invalid_argument(
-            "unsupported RiftCLI tool lane target; rift_shell_exec and rift_workspace_exec are intentionally forbidden"
+            "unsupported RiftCLI tool lane target; rift_shell_exec is intentionally routed through the CLI action lane"
         );
     }
-    if (request.toolName.empty() && request.toolArgsJson != "{}") {
-        throw std::invalid_argument("tool-args requires --tool");
+    if (request.toolName.empty() && (request.toolArgsJson != "{}" || !request.toolPayloadId.empty())) {
+        throw std::invalid_argument("tool arguments require --tool");
     }
 
     return request;
@@ -535,13 +544,14 @@ CommandResponse driverRequest(const std::vector<std::string>& args, const std::s
             << ",\"dispatch\":{"
             << "\"kind\":\"rift-tool\","
             << "\"name\":" << quote(request.toolName) << ","
-            << "\"argsJson\":" << quote(request.toolArgsJson)
+            << "\"argsJson\":" << quote(request.toolArgsJson) << ","
+            << "\"payloadId\":" << quote(request.toolPayloadId)
             << "},"
             << "\"acceptanceReasons\":["
             << quote(jobControl
                 ? "request is an idempotent RiftCLI job-control operation; observation/cancellation remains available while disabled"
                 : "RiftCLI is explicitly enabled and request is one bounded RiftOS tool action")
-            << ",\"tool lane excludes shell recursion and workspace-exec\"],"
+            << ",\"tool lane excludes shell recursion; public Project Intelligence sidecars remain outside the CLI tool lane\"],"
             << "\"nextSafeActionHints\":[\"inspect dispatchResult before issuing a dependent action\"]";
     } else {
         result
@@ -582,7 +592,7 @@ CommandResponse execute(const std::vector<std::string>& args, const std::string&
             "rift-cli enable CONFIRM-EXPERIMENTAL\n"
             "rift-cli disable\n"
             "rift-cli driver request --request-id <id> --session <id> --task <id> --project <id> --goal <text> "
-            "--capability riftos [--action <single-command> | --tool <rift-tool> [--tool-args <json>] | --request-more-info <question>] "
+            "--capability riftos [--action <single-command> | --tool <rift-tool> [--tool-args <json> | --tool-payload-id <id>] | --request-more-info <question>] "
             "[--loop-id <id> --loop-step <0..7> --loop-max <1..8>]\n\n"
             "When enabled, RiftCLI may authorize the full existing RiftOS authority surface through one bounded action at a time. "
             "CLI actions publish persistent relay events; automatic polling is disabled. rift_cli_job_list and rift_cli_job_poll are explicit recovery/debug fallbacks, while rift_cli_job_cancel remains an explicit control. "

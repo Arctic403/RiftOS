@@ -141,7 +141,7 @@ Cancellation is explicit and observable. A queued job that is cancelled before e
 
 N1.6 adds a **new** bounded batch mechanism and does not resurrect either retired batch path.
 
-`rift_cli_batch` accepts at most 16 prevalidated sequential steps in `validate` or `execute` mode. Each step has a unique bounded ID and is either a ToolHost step or an allowlisted RiftShell step. The full plan is validated before authority execution begins. Nested `rift_cli_batch`, `rift_shell_exec`, `rift_workspace_exec`, CLI job-control tools, recursive `rift-cli`, and the old RiftShell `batch` command are rejected.
+`rift_cli_batch` accepts at most 16 prevalidated sequential steps in `validate` or `execute` mode. Each step has a unique bounded ID and is either a ToolHost step or an allowlisted RiftShell step. The full plan is validated before authority execution begins. Nested `rift_cli_batch`, `rift_shell_exec`, CLI job-control tools, recursive `rift-cli`, and the old RiftShell `batch` command are rejected. `rift_workspace_exec` is permitted as a ToolHost step only when it contains exactly one non-`project` operation; public Project Intelligence remains an independent sidecar and is never Batch-owned.
 
 One Batch V2 job reserves the same global `RiftCliExecutionGate` for its entire lifetime, so unrelated authority cannot interleave between steps. Per-step results are bounded, `stop` and `continue` failure policies are explicit, cancellation is checked before and after each step, cancellation interrupts are never converted into ordinary step failures, and mutations are recorded with `rift-cli-batch` provenance. Push events include unique `stepId` metadata so separate step transitions cannot be coalesced together.
 
@@ -500,7 +500,7 @@ Source validation must verify:
 - jobs retain the original `request-id` so lost submit responses can be recovered without replay;
 - actual CLI execution is globally serialized across shell and ToolHost lanes while poll/list/cancel remain responsive;
 - cancellation exposes `cancelling`, `cancelled_may_have_applied` and `completed_after_cancel_request` truthfully;
-- ToolHost dispatch dynamically accepts current/future `rift_*` tools but rejects `rift_shell_exec` and `rift_workspace_exec` in that lane;
+- ToolHost dispatch dynamically accepts current/future `rift_*` tools, rejects recursive `rift_shell_exec`, and permits exactly one non-Project-Intelligence `rift_workspace_exec` operation in the tool lane;
 - driver loops are process-local, identity-bound, strictly monotonic, externally continued and capped at 8 steps;
 - CLI shell mutations retain `RiftPatchSessions` provenance and direct tool mutations retain ToolSandbox provenance;
 - Batch V2 accepts at most 16 prevalidated sequential steps, holds one global authority reservation for the whole plan, rejects nested/retired batch paths, emits unique per-step events, preserves `rift-cli-batch` provenance and does not swallow cancellation interrupts;

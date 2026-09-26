@@ -69,7 +69,13 @@ assert.match(shell,/plan\.rollbackPolicy == "on-failure"/,
 assert.match(host,/MAX_CLI_BATCH_TOOL_ARGS_BYTES = 64 \* 1024/);
 assert.match(host,/internal fun validateCliBatchTool/);
 assert.match(host,/internal fun executeCliBatchTool/);
-assert.match(host,/"rift_workspace_exec"/);
+const batchValidatorBody = host.slice(
+  host.indexOf('internal fun validateCliBatchTool'),
+  host.indexOf('/**\n     * Execute one already-authorized CLI Batch V2 tool step')
+);
+assert.ok(!batchValidatorBody.includes('"rift_workspace_exec"'),
+  'workspace exec must remain batch-capable through the CLI tool registry');
+assert.ok(host.includes('"rift_workspace_exec" -> "workspace.exec"'));
 assert.match(host,/"rift_cli_batch"/);
 assert.match(host,/"rift_cli_job_list"/);
 assert.match(host,/"rift_cli_job_poll"/);
