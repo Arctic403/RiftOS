@@ -86,6 +86,11 @@ assert.ok(!hashPayloadBody.includes('"changedSymbols"'), 'workspace-global chang
 assert.match(proof, /if \(hasChanges && !impactComplete\)/);
 assert.match(proof, /if \(hasChanges && projectRows\.size > 1\)/);
 assert.match(proof, /RiftSourceIntelligenceV2\.isMachineAuthorityPath/);
+assert.match(proof, /private fun isRepositoryMetadataPath\(path: String, root: String\): Boolean/);
+assert.match(proof, /val normalized = path\.replace\('\\\\', '\/'\)\.trim\('\/'\)/);
+assert.match(proof, /val normalizedRoot = root\.replace\('\\\\', '\/'\)\.trim\('\/'\)/);
+assert.match(proof, /normalized == "\.riftgit\.json" \|\| normalized == "\$normalizedRoot\/\.riftgit\.json"/);
+assert.match(proof, /filterNot \{ row -> isRepositoryMetadataPath\(row\.optString\("path"\), root\) \}/);
 for (const futureAuthorityPath of [
   'riftarchitecture/n3-contract-v1.json',
   'riftarchitecture/n3-phase-authority.json',

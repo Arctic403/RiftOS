@@ -408,9 +408,9 @@ if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
     !String(n3PhaseAuthority.programStatus || '').includes('N3.0 PROMOTED') ||
     !String(n3PhaseAuthority.programStatus || '').includes('hidden PI bridge PROMOTED on run 391') ||
     !String(n3PhaseAuthority.programStatus || '').includes('N3-M1 (N3.1+N3.2) PROMOTED') ||
-    !String(n3PhaseAuthority.programStatus || '').includes('N3-M2 (N3.3+N3.4) READY') ||
+    !String(n3PhaseAuthority.programStatus || '').includes('N3-M2 (N3.3+N3.4) BLOCKED ON CLI AUTHORITY CONVERGENCE') ||
     !String(n3PhaseAuthority.runtimeStatus || '').includes('N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli') ||
-    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3-M2 LOCAL IMPLEMENTATION READY') ||
+    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3-M2 LOCAL IMPLEMENTATION READY BUT ACTIVATION BLOCKED ON CLI AUTHORITY CONVERGENCE') ||
     !String(n3PhaseAuthority.runtimeStatus || '').includes('N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE') ||
     n3PhaseAuthority.prerequisites?.N3MachineAuthorityPrelude !== 'SATISFIED' ||
     n3PhaseAuthority.phases?.length !== 7 ||
@@ -428,7 +428,7 @@ if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
     n3PhaseAuthority.phases?.[4]?.status !== 'ready' ||
     n3PhaseAuthority.phases?.slice(5).some(row => row.status !== 'queued') ||
     n3PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'promoted' ||
-    n3PhaseAuthority.macroImplementationPlan?.[1]?.status !== 'ready' ||
+    n3PhaseAuthority.macroImplementationPlan?.[1]?.status !== 'blocked-on-cli-authority-convergence' ||
     n3PhaseAuthority.macroImplementationPlan?.[2]?.status !== 'queued-after-n3-m2' ||
     n3PhaseAuthority.n3M1LocalEvidence?.packageVersion !== '0.2.1' ||
     n3PhaseAuthority.n3M1LocalEvidence?.fileSha256?.['runtime/main.js'] !== '63e55f26944d7b60e8741bb225715a54c18214a30e9dc261e9d6f2ab72db731d' ||
@@ -448,8 +448,8 @@ if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
 
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
 if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0-N2.12 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2 COMPLETE; CANONICAL MEMORY RUNTIME INACTIVE') ||
-    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED; hidden PI bridge PROMOTED on run `391`; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) READY; Batch exact-cap admission repair + five-kind N3 evidence bridge expansion SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING.')) {
-  failures.push('ROADMAP.md no longer carries promoted N3-M1, ready N3-M2, and the shared pending Batch-capacity/five-kind evidence bridge gate');
+    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED; hidden PI bridge PROMOTED on run `391`; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) BLOCKED ON CLI AUTHORITY CONVERGENCE; run 393 exact-cap Batch admission repair + five-kind N3 evidence bridge LIVE-PROVEN; universal public MCP → Local Agent → RiftCLI authority convergence SOURCE IMPLEMENTED / BUILDER + INSTALL + LIVE PROOF PENDING.')) {
+  failures.push('ROADMAP.md no longer carries promoted N3-M1, blocked N3-M2, live-proven run393 Batch/five-kind evidence, and the pending universal CLI authority-convergence gate');
 }
 
 const docsIndex = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');

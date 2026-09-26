@@ -542,6 +542,43 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-26-023 — N3 docs validator retained the pre-convergence lifecycle and proof planning treated RiftGit metadata as product change
+
+**Status:** SOURCE REPAIRED / BUILDER + INSTALL PROOF PENDING.
+
+**Date:** 2026-09-26
+
+**Failed RiftOS source:** `b97c58a5e679bd7c91eb3d756192d84bc17c89ae`
+
+**Builder run ID:** `36248269439`
+
+**Signing mode:** `alpha-development`
+
+**Failure stage:** Builder source checks, `npm run check` → `npm run check:transport` → `scripts/validate-rift-docs.mjs`.
+
+**Observed failure:** all syntax/integrity/transport checks before documentation validation passed. Documentation validation then failed with `N3 phase authority lifecycle/macro-plan drifted` and `ROADMAP.md no longer carries promoted N3-M1, ready N3-M2, and the shared pending Batch-capacity/five-kind evidence bridge gate`.
+
+### Root cause
+
+The runtime/docs architecture had intentionally advanced: N3-M2 is blocked on universal CLI authority convergence, run393 Batch exact-cap/five-kind evidence is already live-proven, and the convergence checkpoint remains Builder/install/live-proof pending. `validate-rift-docs.mjs` still hardcoded the older pre-convergence lifecycle (`N3-M2 READY`, macro-plan status `ready`, and the old shared pending Batch/five-kind sentence). The failure was therefore a stale validator oracle, not a regression in the new architecture.
+
+During repair verification, the live installed run397 proof planner also exposed a separate fail-closed bookkeeping issue: direct GitHub bootstrap followed by RiftGit reattach updates `.riftgit.json`, and the installed planner categorized that internal repository metadata as an unclassified product change. Source now excludes only the exact project-root `.riftgit.json` from proof-category obligations, with leading-slash normalization and focused regression coverage. This source-side proof fix cannot live-prove itself until a new APK is installed because the current `project kind=proofs` view executes the installed planner.
+
+### Hardening added
+
+- Documentation validation now requires the current machine-authority lifecycle: promoted N3-M1, N3-M2 blocked on CLI authority convergence, run393 Batch/five-kind evidence live-proven, and universal CLI authority convergence pending Builder/install/live proof.
+- The N3 macro-plan validator now requires `blocked-on-cli-authority-convergence` for N3-M2.
+- `RiftProofObligationsV1` excludes only the exact project-root `.riftgit.json` control metadata before proof-category counting; all source/test/docs/build and other unknown files remain fail-closed.
+- `test-rift-proof-obligations-v1.mjs` freezes the exact metadata exclusion and leading-slash normalization.
+
+### Prevention lesson
+
+Machine-authority lifecycle changes must update every validator consumer in the same candidate, and proof planning must distinguish internal repository-control metadata from product candidate files without broad ignore patterns. Selected source gates are not equivalent to executed Builder checks, and installed Observer behavior cannot prove a source-only planner fix until the repaired APK is installed.
+
+**Resolution target:** corrected source validation must pass; Builder must execute the full `npm run check` chain and Kotlin/Gradle compile; install the exact repaired APK; require `project kind=proofs` to return zero unresolved obligations after RiftGit metadata refresh; then mark this entry resolved with the fixing source SHA/run.
+
+---
+
 ## FAIL-2026-09-26-022 — RiftGit allowed AI/MCP sessions to push without mandatory Observer closure or human release
 
 **Status:** SOURCE REPAIRED / BUILDER + INSTALL + LIVE UI PROOF PENDING.

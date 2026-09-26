@@ -29,6 +29,12 @@ internal class RiftProofObligationsV1 {
         val evidence: Set<String>
     )
 
+    private fun isRepositoryMetadataPath(path: String, root: String): Boolean {
+        val normalized = path.replace('\\', '/').trim('/')
+        val normalizedRoot = root.replace('\\', '/').trim('/')
+        return normalized == ".riftgit.json" || normalized == "$normalizedRoot/.riftgit.json"
+    }
+
     private data class Obligation(
         val id: String,
         val kind: String,
@@ -54,6 +60,7 @@ internal class RiftProofObligationsV1 {
 
         val allChanges = objectArray(impact.optJSONArray("changes"))
             .filter { row -> pathWithin(row.optString("path"), root) }
+            .filterNot { row -> isRepositoryMetadataPath(row.optString("path"), root) }
             .sortedBy { it.optString("path") }
         if (allChanges.size > MAX_CHANGES) incomplete += "proof-change-bound"
         val changes = allChanges.take(MAX_CHANGES)
