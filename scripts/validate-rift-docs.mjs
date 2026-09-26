@@ -445,8 +445,8 @@ if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
 
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
 if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0-N2.12 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2 COMPLETE; CANONICAL MEMORY RUNTIME INACTIVE') ||
-    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED; hidden PI bridge PROMOTED on run `391`; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) READY; Batch exact-cap admission repair SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING.')) {
-  failures.push('ROADMAP.md no longer carries promoted N3-M1, ready N3-M2, and the pending Batch exact-cap repair gate');
+    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED; hidden PI bridge PROMOTED on run `391`; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) READY; Batch exact-cap admission repair + five-kind N3 evidence bridge expansion SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING.')) {
+  failures.push('ROADMAP.md no longer carries promoted N3-M1, ready N3-M2, and the shared pending Batch-capacity/five-kind evidence bridge gate');
 }
 
 const docsIndex = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');

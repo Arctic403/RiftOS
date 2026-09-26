@@ -96,7 +96,9 @@ The transport validator freezes the exact 24-tool family plus the Local-Agent-on
 
 The repair keeps the 32-job bound and 24-hour normal terminal retention but makes new-job admission call `pruneLocked(forceTerminalTrim = !target.exists())`. At admission only, when the store is already full, the oldest record whose status is in the frozen terminal-status set may be deleted until one slot is free. Nonterminal and `recovery_required` work are never eligible. Existing-job updates do not trigger admission trimming. `test-rift-cli-batch-v2.mjs` now freezes the new-target gate, default non-forced pruning, exact `>= MAX_JOB_FILES` admission threshold, terminal-only selector and 24-hour retention constant. FAIL-021 is recorded in `docs/PAST_FAILS.md`.
 
-**Exit:** full Builder/source checks and Kotlin compilation pass; repaired APK installs; a new first-class Batch submission succeeds while the store is at/near capacity; resulting job persists/completes/lists normally; public MCP remains 24 tools and all authority-bypass flags remain false.
+The same pending build also completes the hidden N3 evidence bridge for the full frozen five-kind read-only set `candidate-impact|propagation|contracts|claims|proofs`. Contracts/Claims/Proofs reuse the existing canonical `projectOverview` analyzers; the bridge remains absent from public MCP `tools()`, forbidden in Batch, and never aliases to `workspace.exec`.
+
+**Exit:** full Builder/source checks and Kotlin compilation pass; repaired APK installs; a new first-class Batch submission succeeds while the store is at/near capacity; resulting job persists/completes/lists normally; direct hidden-driver calls for `contracts`, `claims`, and `proofs` return their canonical schemas; public MCP remains 24 tools and all authority-bypass flags remain false.
 
 ## N3.0 — Architecture/impact contract and baseline freeze
 

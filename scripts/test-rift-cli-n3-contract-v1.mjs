@@ -80,6 +80,14 @@ assert.match(sandboxSource, /"candidate-impact" -> candidateImpact\(\)/,
   "N3 evidence bridge must use the canonical candidateImpact authority");
 assert.match(sandboxSource, /"propagation" -> \{[\s\S]*projectPropagation\(path, query, limit\)/,
   "N3 evidence bridge must use the canonical bounded propagation authority");
+for (const kind of ["contracts", "claims", "proofs"]) {
+  assert.ok(toolHost.includes('"candidate-impact", "propagation", "contracts", "claims", "proofs"'),
+    "hidden N3 bridge must freeze the full five-kind evidence allowlist");
+  assert.ok(sandboxSource.includes('"contracts", "claims", "proofs" ->'),
+    "hidden N3 bridge must route contracts/claims/proofs through the canonical project analyzers");
+}
+assert.match(sandboxSource, /projectOverview\(path, 240, kind, ""\)/,
+  "contracts/claims/proofs must reuse canonical read-only Project Intelligence views");
 assert.ok(!sandboxSource.includes('workspace.projectIntelligenceReadOnly" -> workspaceExec'),
   "N3 evidence bridge must never alias back to workspace.exec");
 

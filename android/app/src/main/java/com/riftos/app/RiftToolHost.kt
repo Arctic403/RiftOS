@@ -1218,8 +1218,9 @@ class RiftToolHost(
         }
 
         val kind = args.optString("kind").trim().lowercase()
-        require(kind == "candidate-impact" || kind == "propagation") {
-            "rift_cli_project_intelligence kind must be candidate-impact or propagation"
+        val allowedKinds = setOf("candidate-impact", "propagation", "contracts", "claims", "proofs")
+        require(kind in allowedKinds) {
+            "rift_cli_project_intelligence kind must be candidate-impact, propagation, contracts, claims, or proofs"
         }
 
         if (kind == "candidate-impact") {
@@ -1231,6 +1232,16 @@ class RiftToolHost(
 
         val path = args.optString("path", "workspace").trim().ifBlank { "workspace" }
         require(path.length <= 4096) { "project intelligence path exceeds 4096 characters" }
+
+        if (kind == "contracts" || kind == "claims" || kind == "proofs") {
+            require(!args.has("query") && !args.has("limit")) {
+                "$kind accepts only kind + optional path"
+            }
+            return JSONObject()
+                .put("kind", kind)
+                .put("path", path)
+        }
+
         val query = args.optString("query").trim()
         require(query.isNotEmpty()) { "propagation requires a symbol or path query" }
         require(query.toByteArray(Charsets.UTF_8).size <= 4096) {

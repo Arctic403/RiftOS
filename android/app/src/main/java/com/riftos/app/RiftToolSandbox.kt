@@ -1383,13 +1383,17 @@ internal class RiftToolSandbox(context: Context) {
     }
 
     private fun projectIntelligenceReadOnly(args: JSONObject): JSONObject {
-        return when (args.getString("kind")) {
+        return when (val kind = args.getString("kind")) {
             "candidate-impact" -> candidateImpact()
             "propagation" -> {
                 val path = workspacePath(args.optString("path"))
                 val query = args.getString("query")
                 val limit = args.getInt("limit")
                 projectPropagation(path, query, limit)
+            }
+            "contracts", "claims", "proofs" -> {
+                val path = workspacePath(args.optString("path"))
+                projectOverview(path, 240, kind, "")
             }
             else -> throw IllegalArgumentException("Unsupported read-only project intelligence kind")
         }

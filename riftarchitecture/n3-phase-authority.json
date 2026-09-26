@@ -1,8 +1,8 @@
 {
   "schema": "rift-architecture-n3-phase-authority-v1",
   "program": "RiftCLI N3 Architecture/Impact Engine",
-  "programStatus": "N3.0 PROMOTED; hidden PI bridge PROMOTED on run 391; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) READY; Batch exact-cap admission repair SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING",
-  "runtimeStatus": "N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli; N3-M2 LOCAL IMPLEMENTATION READY; INTERNAL READ-ONLY PI BRIDGE LIVE; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE; N4 PLANNER REMAINS BLOCKED",
+  "programStatus": "N3.0 PROMOTED; hidden PI bridge PROMOTED on run 391; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) READY; Batch exact-cap admission repair + five-kind N3 evidence bridge expansion SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING",
+  "runtimeStatus": "N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli; N3-M2 LOCAL IMPLEMENTATION READY AFTER PENDING FIVE-KIND READ-ONLY EVIDENCE BRIDGE INSTALL; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE; N4 PLANNER REMAINS BLOCKED",
   "prerequisites": {
     "N1_8": "SATISFIED",
     "N2": "SATISFIED",
