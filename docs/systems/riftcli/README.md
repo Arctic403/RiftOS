@@ -342,7 +342,7 @@ Full frozen program: `../riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md`.
 
 ### N3 barrier — satisfied for N3.0
 
-The hard N2-before-N3 barrier is satisfied: N2.12 is promoted, the full Batch V2 restoration chain through first-class MCP Batch is promoted, and the N3 machine-authority prelude is live on run 389. N3.0 is promoted on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`. N3-M1 (N3.1+N3.2) is now unblocked and belongs in the replaceable `/workspace/.riftcli/` intelligence package unless a real missing native primitive is proven. Canonical N2 memory runtime authority remains inactive.
+The hard N2-before-N3 barrier is satisfied: N2.12 is promoted, the full Batch V2 restoration chain through first-class MCP Batch is promoted, and the N3 machine-authority prelude is live on run 389. N3.0 is promoted on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`. One genuine native gap was then proven before N3-M1 activation: `/workspace/.riftcli/` could not reach the frozen candidate-impact/propagation authorities because the native driver correctly forbids `rift_workspace_exec`. Source now adds hidden read-only `rift_cli_project_intelligence` → `workspace.projectIntelligenceReadOnly`, restricted to canonical `candidateImpact()` or bounded `projectPropagation()`. It is absent from public MCP `tools()`, forbidden in Batch, and never aliases to workspace-exec. N3-M1 remains blocked only until this bridge is Builder/install-proven; then N3.1+ moves into `/workspace/.riftcli/`. Canonical N2 memory runtime authority remains inactive.
 
 ### Gate N3 — Architecture and impact engine
 

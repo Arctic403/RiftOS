@@ -1,8 +1,8 @@
 {
   "schema": "rift-architecture-n3-phase-authority-v1",
   "program": "RiftCLI N3 Architecture/Impact Engine",
-  "programStatus": "N3.0 PROMOTED on installed source 001354552af5a0a8034af82a4341187a8abeda52 / Builder run 36210504706 / run 390; N3.1-N3.6 UNBLOCKED BY N3.0 BUT NOT YET PROMOTED",
-  "runtimeStatus": "N3.0 CONTRACT/BASELINE PROMOTED; N3 ANALYSIS ENGINE IMPLEMENTATION MAY BEGIN IN /workspace/.riftcli; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE",
+  "programStatus": "N3.0 PROMOTED on installed source 001354552af5a0a8034af82a4341187a8abeda52 / Builder run 36210504706 / run 390; N3-M1 NATIVE EVIDENCE BRIDGE SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING",
+  "runtimeStatus": "N3.0 CONTRACT/BASELINE PROMOTED; N3-M1 LOCAL INTELLIGENCE BLOCKED ONLY ON INTERNAL READ-ONLY PI BRIDGE INSTALL; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE",
   "prerequisites": {
     "N1_8": "SATISFIED",
     "N2": "SATISFIED",
@@ -20,7 +20,7 @@
         "N3.2"
       ],
       "title": "Ownership and dependency impact",
-      "status": "ready"
+      "status": "native-evidence-bridge-source-implemented-pending-builder-install-proof"
     },
     {
       "patch": "N3-M2",
@@ -52,11 +52,11 @@
     },
     {
       "phase": "N3.1",
-      "status": "queued"
+      "status": "blocked-pending-native-evidence-bridge-install"
     },
     {
       "phase": "N3.2",
-      "status": "queued"
+      "status": "blocked-pending-native-evidence-bridge-install"
     },
     {
       "phase": "N3.3",

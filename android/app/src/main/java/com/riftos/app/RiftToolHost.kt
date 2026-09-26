@@ -421,7 +421,8 @@ class RiftToolHost(
             "rift_batch_list",
             "rift_batch_poll",
             "rift_batch_cancel",
-            "rift_batch_recover"
+            "rift_batch_recover",
+            "rift_cli_project_intelligence"
         )
         if (name in forbidden) {
             return JSONObject()
@@ -1202,8 +1203,47 @@ class RiftToolHost(
     private fun allowRead(): Boolean = prefs.getBoolean(PREF_ALLOW_READ, true)
     private fun allowWrite(): Boolean = prefs.getBoolean(PREF_ALLOW_WRITE, false)
 
-    private fun normalizeToolArgs(name: String, args: JSONObject): JSONObject =
-        if (name == "rift_workspace_exec") normalizeWorkspaceExecArgs(args) else JSONObject(args.toString())
+    private fun normalizeToolArgs(name: String, args: JSONObject): JSONObject = when (name) {
+        "rift_workspace_exec" -> normalizeWorkspaceExecArgs(args)
+        "rift_cli_project_intelligence" -> normalizeCliProjectIntelligenceArgs(args)
+        else -> JSONObject(args.toString())
+    }
+
+    private fun normalizeCliProjectIntelligenceArgs(args: JSONObject): JSONObject {
+        val allowedKeys = setOf("kind", "path", "query", "limit")
+        val keys = args.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            require(key in allowedKeys) { "rift_cli_project_intelligence does not accept field: $key" }
+        }
+
+        val kind = args.optString("kind").trim().lowercase()
+        require(kind == "candidate-impact" || kind == "propagation") {
+            "rift_cli_project_intelligence kind must be candidate-impact or propagation"
+        }
+
+        if (kind == "candidate-impact") {
+            require(!args.has("path") && !args.has("query") && !args.has("limit")) {
+                "candidate-impact accepts no path/query/limit fields"
+            }
+            return JSONObject().put("kind", kind)
+        }
+
+        val path = args.optString("path", "workspace").trim().ifBlank { "workspace" }
+        require(path.length <= 4096) { "project intelligence path exceeds 4096 characters" }
+        val query = args.optString("query").trim()
+        require(query.isNotEmpty()) { "propagation requires a symbol or path query" }
+        require(query.toByteArray(Charsets.UTF_8).size <= 4096) {
+            "project intelligence query exceeds 4096 UTF-8 bytes"
+        }
+        val limit = if (args.has("limit")) args.getInt("limit") else 240
+        require(limit in 1..240) { "project intelligence limit must be between 1 and 240" }
+        return JSONObject()
+            .put("kind", kind)
+            .put("path", path)
+            .put("query", query)
+            .put("limit", limit)
+    }
 
     /**
      * Canonical Code Mode operations are flat objects: {"op":"stat","path":"workspace/..."}.
@@ -1294,6 +1334,9 @@ class RiftToolHost(
         "rift_scan" -> "workspace.scan"
         "rift_project_export" -> "workspace.exportProject"
         "rift_workspace_diff" -> "workspace.diff"
+        // Internal RiftCLI-only read lane for N3 evidence. This name is intentionally absent
+        // from tools() and the public MCP registry; only the native driver can reach it.
+        "rift_cli_project_intelligence" -> "workspace.projectIntelligenceReadOnly"
         // Registry routing tags only. callAsyncInternal intercepts these names and enters
         // RiftOsLocalAgent before any RiftToolSandbox dispatch can occur.
         "rift_batch_submit" -> "localAgent.batch.submit"

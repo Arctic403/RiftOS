@@ -406,16 +406,19 @@ if (n3Contract.zeroTolerance?.guessedOwnerWhenAmbiguous !== 0 ||
 }
 if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
     !String(n3PhaseAuthority.programStatus || '').includes('N3.0 PROMOTED') ||
-    !String(n3PhaseAuthority.programStatus || '').includes('N3.1-N3.6 UNBLOCKED BY N3.0') ||
+    !String(n3PhaseAuthority.programStatus || '').includes('N3-M1 NATIVE EVIDENCE BRIDGE SOURCE IMPLEMENTED') ||
     !String(n3PhaseAuthority.runtimeStatus || '').includes('N3.0 CONTRACT/BASELINE PROMOTED') ||
+    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3-M1 LOCAL INTELLIGENCE BLOCKED ONLY ON INTERNAL READ-ONLY PI BRIDGE INSTALL') ||
     !String(n3PhaseAuthority.runtimeStatus || '').includes('N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE') ||
     n3PhaseAuthority.prerequisites?.N3MachineAuthorityPrelude !== 'SATISFIED' ||
     n3PhaseAuthority.phases?.length !== 7 ||
     n3PhaseAuthority.phases?.[0]?.status !== 'promoted' ||
     n3PhaseAuthority.phases?.[0]?.sourceSha !== '001354552af5a0a8034af82a4341187a8abeda52' ||
     String(n3PhaseAuthority.phases?.[0]?.builderRunNumber) !== '390' ||
-    n3PhaseAuthority.phases?.slice(1).some(row => row.status !== 'queued') ||
-    n3PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'ready' ||
+    n3PhaseAuthority.phases?.[1]?.status !== 'blocked-pending-native-evidence-bridge-install' ||
+    n3PhaseAuthority.phases?.[2]?.status !== 'blocked-pending-native-evidence-bridge-install' ||
+    n3PhaseAuthority.phases?.slice(3).some(row => row.status !== 'queued') ||
+    n3PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'native-evidence-bridge-source-implemented-pending-builder-install-proof' ||
     n3PhaseAuthority.macroImplementationPlan?.slice(1).some(row => row.status !== 'queued-after-prior-n3-macro') ||
     JSON.stringify(n3PhaseAuthority.macroImplementationPlan?.map(row => row.phases)) !== JSON.stringify([
       ['N3.1', 'N3.2'],
@@ -428,8 +431,8 @@ if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
 
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
 if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0-N2.12 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2 COMPLETE; CANONICAL MEMORY RUNTIME INACTIVE') ||
-    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`; N3-M1 (N3.1+N3.2) READY.')) {
-  failures.push('ROADMAP.md no longer carries the promoted N2 lifecycle and promoted N3.0 gate');
+    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`; N3-M1 INTERNAL PI BRIDGE SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING.')) {
+  failures.push('ROADMAP.md no longer carries the promoted N3.0 gate and temporary N3-M1 native evidence bridge gate');
 }
 
 const docsIndex = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');

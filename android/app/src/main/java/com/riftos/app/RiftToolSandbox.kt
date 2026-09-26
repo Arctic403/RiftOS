@@ -455,6 +455,7 @@ internal class RiftToolSandbox(context: Context) {
         "workspace.audit" -> audit(args.optString("path"))
         "workspace.scan" -> scan(args.optString("path"), args.optString("mode", "all"))
         "workspace.exportProject" -> exportProject(args)
+        "workspace.projectIntelligenceReadOnly" -> projectIntelligenceReadOnly(args)
         "workspace.diff" -> workspaceRecords.query(args)
         else -> throw IllegalArgumentException("Unsupported Rift tool sandbox method: $method")
     }
@@ -1378,6 +1379,19 @@ internal class RiftToolSandbox(context: Context) {
             throw error
         } finally {
             deletePath(temporary)
+        }
+    }
+
+    private fun projectIntelligenceReadOnly(args: JSONObject): JSONObject {
+        return when (args.getString("kind")) {
+            "candidate-impact" -> candidateImpact()
+            "propagation" -> {
+                val path = workspacePath(args.optString("path"))
+                val query = args.getString("query")
+                val limit = args.getInt("limit")
+                projectPropagation(path, query, limit)
+            }
+            else -> throw IllegalArgumentException("Unsupported read-only project intelligence kind")
         }
     }
 

@@ -13,6 +13,8 @@ const phase = JSON.parse(read("riftarchitecture/n3-phase-authority.json"));
 const roadmap = read("docs/systems/riftcli/N3_ARCHITECTURE_IMPACT_ROADMAP.md");
 const sandbox = read("android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt");
 const sourceIntelligence = read("android/app/src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt");
+const toolHost = read("android/app/src/main/java/com/riftos/app/RiftToolHost.kt");
+const sandboxSource = read("android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt");
 const n2Phase = JSON.parse(read("riftmemory/n2-phase-authority.json"));
 const rootRoadmap = read("ROADMAP.md");
 
@@ -63,6 +65,24 @@ for (const p of ["riftarchitecture/n3-contract-v1.json","riftarchitecture/n3-pha
   assert.ok(sourceIntelligence.includes(`"${p}"`), "missing N3 machine-authority registration: " + p);
 }
 
+assert.ok(toolHost.includes('"rift_cli_project_intelligence" -> "workspace.projectIntelligenceReadOnly"'),
+  "hidden N3 driver tool must map to the dedicated read-only sandbox method");
+assert.ok(toolHost.includes('"rift_cli_project_intelligence"'),
+  "hidden N3 driver tool must be registered internally");
+assert.match(toolHost, /forbidden = setOf\([\s\S]*"rift_cli_project_intelligence"/,
+  "Batch V2 must forbid the hidden N3 Project Intelligence tool");
+const publicToolSection = toolHost.slice(toolHost.indexOf('fun tools()'), toolHost.indexOf('fun callAsync('));
+assert.ok(!publicToolSection.includes('rift_cli_project_intelligence'),
+  "hidden N3 Project Intelligence bridge must not appear in the public MCP tool catalog");
+assert.ok(sandboxSource.includes('"workspace.projectIntelligenceReadOnly" -> projectIntelligenceReadOnly(args)'),
+  "sandbox must expose the dedicated read-only N3 dispatch method");
+assert.match(sandboxSource, /"candidate-impact" -> candidateImpact\(\)/,
+  "N3 evidence bridge must use the canonical candidateImpact authority");
+assert.match(sandboxSource, /"propagation" -> \{[\s\S]*projectPropagation\(path, query, limit\)/,
+  "N3 evidence bridge must use the canonical bounded propagation authority");
+assert.ok(!sandboxSource.includes('workspace.projectIntelligenceReadOnly" -> workspaceExec'),
+  "N3 evidence bridge must never alias back to workspace.exec");
+
 for (const [literal, expected] of [
   ["MAX_CANDIDATE_PROJECTS",32],["MAX_CANDIDATE_CHANGED_FILES",4096],["MAX_CANDIDATE_CHANGED_SYMBOLS",1000],
   ["MAX_CANDIDATE_REFERENCE_SYMBOLS",80],["MAX_CANDIDATE_REFERENCES",800],["MAX_CANDIDATE_DEPENDENCIES",800],
@@ -88,16 +108,19 @@ for (const [k,v] of Object.entries(contract.zeroTolerance)) {
 
 assert.equal(phase.schema, "rift-architecture-n3-phase-authority-v1");
 assert.match(phase.programStatus, /N3\.0 PROMOTED/);
-assert.match(phase.programStatus, /N3\.1-N3\.6 UNBLOCKED BY N3\.0/);
+assert.match(phase.programStatus, /N3-M1 NATIVE EVIDENCE BRIDGE SOURCE IMPLEMENTED/);
 assert.match(phase.runtimeStatus, /N3\.0 CONTRACT\/BASELINE PROMOTED/);
+assert.match(phase.runtimeStatus, /N3-M1 LOCAL INTELLIGENCE BLOCKED ONLY ON INTERNAL READ-ONLY PI BRIDGE INSTALL/);
 assert.match(phase.runtimeStatus, /N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE/);
 assert.equal(phase.prerequisites.N3MachineAuthorityPrelude, "SATISFIED");
 assert.equal(phase.phases.length, 7);
 assert.equal(phase.phases[0].status, "promoted");
 assert.equal(phase.phases[0].sourceSha, "001354552af5a0a8034af82a4341187a8abeda52");
 assert.equal(String(phase.phases[0].builderRunNumber), "390");
-assert.ok(phase.phases.slice(1).every(x=>x.status === "queued"));
-assert.equal(phase.macroImplementationPlan[0].status, "ready");
+assert.equal(phase.phases[1].status, "blocked-pending-native-evidence-bridge-install");
+assert.equal(phase.phases[2].status, "blocked-pending-native-evidence-bridge-install");
+assert.ok(phase.phases.slice(3).every(x=>x.status === "queued"));
+assert.equal(phase.macroImplementationPlan[0].status, "native-evidence-bridge-source-implemented-pending-builder-install-proof");
 assert.ok(phase.macroImplementationPlan.slice(1).every(x=>x.status === "queued-after-prior-n3-macro"));
 assert.deepEqual(phase.macroImplementationPlan.map(x=>x.phases), [["N3.1","N3.2"],["N3.3","N3.4"],["N3.5"]]);
 assert.match(phase.macroPlanRule, /N3\.6 remains a separate final adversarial\/restart promotion gate/);

@@ -237,6 +237,6 @@ Macro patches are execution groupings only. Every N3.x phase retains separate ev
 
 ## Current source status
 
-N3.0 is promoted on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`. N3-M1 (N3.1+N3.2) is ready and should execute in `/workspace/.riftcli/`; later N3 phases remain sequenced by the phase authority.
+N3.0 is promoted on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`. N3-M1 is temporarily blocked only on Builder/install proof of one hidden read-only Project Intelligence bridge: `rift_cli_project_intelligence` → `workspace.projectIntelligenceReadOnly`, limited to canonical `candidateImpact()` or bounded `projectPropagation()`, absent from public MCP `tools()`, forbidden in Batch, and never mapped to `workspace.exec`. After that bridge is installed, N3.1+ executes in `/workspace/.riftcli/`; later N3 phases remain sequenced by phase authority.
 
 The N2 canonical memory runtime remains inactive. N4 Planner remains blocked. No performance/comparative benchmark is authorized.
