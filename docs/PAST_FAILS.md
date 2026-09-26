@@ -542,6 +542,26 @@ The claims oracle's existing regression-literal ownership hardening only recogni
 
 ---
 
+## FAIL-2026-09-26-021 — Persisted RiftCLI job store deadlocked at exactly 32 retained jobs
+
+**Status:** SOURCE REPAIRED / BUILDER + INSTALL + LIVE CAPACITY PROOF PENDING.
+
+**Affected installed source:** `f439e9bb6d61d41997ec92636b6e4e0ec89c5912`, Builder run `36216594210` / run number `391`.
+
+**Stage:** live N3-M1 development using first-class Batch after the run-391 hidden Project Intelligence bridge was promoted.
+
+**Observed failure:** Batch submissions stopped creating jobs once the persistent job store reached exactly 32 retained records. The public Batch tool returned a plan hash plus `RiftCLI persisted job capacity reached (32); terminal jobs must be pruned before new work is accepted`. Existing jobs remained observable and all retained authority leases were terminal/released.
+
+**Root cause:** `RiftCliPersistentJobStore.pruneLocked()` deleted terminal jobs older than 24 hours and only force-trimmed while `readable.size > MAX_JOB_FILES`. New-job admission separately required `retainedCount < MAX_JOB_FILES`. At exactly 32 files, normal pruning removed nothing, the force-trim loop did not run, and admission always failed until the 24-hour retention window expired.
+
+**Classification:** bounded persistence admission defect. No mutation, authorization, recovery, rollback or Observer bypass occurred; the failure was fail-closed but made Batch unavailable.
+
+**Hardening added:** new-job admission now calls `pruneLocked(forceTerminalTrim = !target.exists())`. When a truly new job arrives at capacity, pruning may remove only the oldest record whose status is in the frozen terminal-status set, until one slot is free. Normal list/read paths retain the 24-hour policy. Nonterminal and recovery-required jobs are never eligible for admission trimming. `test-rift-cli-batch-v2.mjs` freezes the exact-cap behavior, terminal-only selector, default non-forced pruning and 24-hour retention constant.
+
+**Resolution target:** Builder/source checks and Kotlin compilation pass; install repaired APK; with the store at or near capacity, submit a new bounded Batch and require it to be accepted, completed, persisted, and listed while no nonterminal/recovery-required job is deleted. Public MCP tool count must remain 24 and all bypass flags remain false.
+
+---
+
 ## FAIL-2026-09-25-020 — Cross-boundary regression retained the pre-exposure 19-tool MCP count
 
 **Status:** RESOLVED — repaired source `6127dccc8e27a0b3f88779d8292c6e71572b609f` passed Builder/install and first-class MCP Batch live proof on Builder run `36207328573` / run number `388`.

@@ -406,20 +406,34 @@ if (n3Contract.zeroTolerance?.guessedOwnerWhenAmbiguous !== 0 ||
 }
 if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
     !String(n3PhaseAuthority.programStatus || '').includes('N3.0 PROMOTED') ||
-    !String(n3PhaseAuthority.programStatus || '').includes('N3-M1 NATIVE EVIDENCE BRIDGE SOURCE IMPLEMENTED') ||
-    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3.0 CONTRACT/BASELINE PROMOTED') ||
-    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3-M1 LOCAL INTELLIGENCE BLOCKED ONLY ON INTERNAL READ-ONLY PI BRIDGE INSTALL') ||
+    !String(n3PhaseAuthority.programStatus || '').includes('hidden PI bridge PROMOTED on run 391') ||
+    !String(n3PhaseAuthority.programStatus || '').includes('N3-M1 (N3.1+N3.2) PROMOTED') ||
+    !String(n3PhaseAuthority.programStatus || '').includes('N3-M2 (N3.3+N3.4) READY') ||
+    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli') ||
+    !String(n3PhaseAuthority.runtimeStatus || '').includes('N3-M2 LOCAL IMPLEMENTATION READY') ||
     !String(n3PhaseAuthority.runtimeStatus || '').includes('N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE') ||
     n3PhaseAuthority.prerequisites?.N3MachineAuthorityPrelude !== 'SATISFIED' ||
     n3PhaseAuthority.phases?.length !== 7 ||
     n3PhaseAuthority.phases?.[0]?.status !== 'promoted' ||
     n3PhaseAuthority.phases?.[0]?.sourceSha !== '001354552af5a0a8034af82a4341187a8abeda52' ||
     String(n3PhaseAuthority.phases?.[0]?.builderRunNumber) !== '390' ||
-    n3PhaseAuthority.phases?.[1]?.status !== 'blocked-pending-native-evidence-bridge-install' ||
-    n3PhaseAuthority.phases?.[2]?.status !== 'blocked-pending-native-evidence-bridge-install' ||
-    n3PhaseAuthority.phases?.slice(3).some(row => row.status !== 'queued') ||
-    n3PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'native-evidence-bridge-source-implemented-pending-builder-install-proof' ||
-    n3PhaseAuthority.macroImplementationPlan?.slice(1).some(row => row.status !== 'queued-after-prior-n3-macro') ||
+    n3PhaseAuthority.phases?.[1]?.status !== 'promoted' ||
+    n3PhaseAuthority.phases?.[2]?.status !== 'promoted' ||
+    n3PhaseAuthority.phases?.[1]?.packageVersion !== '0.2.0' ||
+    n3PhaseAuthority.phases?.[2]?.packageVersion !== '0.2.0' ||
+    n3PhaseAuthority.phases?.[1]?.packageModuleSha256 !== '9ff52a40d9fc1cf7c366ea30f50ed7bdf273bed0276eb41b9958b06ab052a4de' ||
+    n3PhaseAuthority.phases?.[2]?.semanticImpactSha256 !== '770f07853e190fc40b77751aa5dc0229e48a6b7d6404b09bddf8a4cf52429000' ||
+    n3PhaseAuthority.phases?.[2]?.propagationSha256 !== '1ce267e7aeff8680971c6e1e73960234ed2b74c49f96944c9d79064dd6e377c5' ||
+    n3PhaseAuthority.phases?.[3]?.status !== 'ready' ||
+    n3PhaseAuthority.phases?.[4]?.status !== 'ready' ||
+    n3PhaseAuthority.phases?.slice(5).some(row => row.status !== 'queued') ||
+    n3PhaseAuthority.macroImplementationPlan?.[0]?.status !== 'promoted' ||
+    n3PhaseAuthority.macroImplementationPlan?.[1]?.status !== 'ready' ||
+    n3PhaseAuthority.macroImplementationPlan?.[2]?.status !== 'queued-after-n3-m2' ||
+    n3PhaseAuthority.n3M1LocalEvidence?.fileSha256?.['runtime/main.js'] !== '03c8d153716a6da9459b5f031d9506a6d291e5d6dff736e30499add43be73ff4' ||
+    n3PhaseAuthority.n3M1LocalEvidence?.fileSha256?.['observer/n3-m1.js'] !== '9ff52a40d9fc1cf7c366ea30f50ed7bdf273bed0276eb41b9958b06ab052a4de' ||
+    n3PhaseAuthority.n3M1LocalEvidence?.liveImpactSha256 !== '770f07853e190fc40b77751aa5dc0229e48a6b7d6404b09bddf8a4cf52429000' ||
+    n3PhaseAuthority.n3M1LocalEvidence?.livePropagationSha256 !== '1ce267e7aeff8680971c6e1e73960234ed2b74c49f96944c9d79064dd6e377c5' ||
     JSON.stringify(n3PhaseAuthority.macroImplementationPlan?.map(row => row.phases)) !== JSON.stringify([
       ['N3.1', 'N3.2'],
       ['N3.3', 'N3.4'],
@@ -431,8 +445,8 @@ if (n3PhaseAuthority.schema !== 'rift-architecture-n3-phase-authority-v1' ||
 
 const rootRoadmap = fs.readFileSync(path.join(root, 'ROADMAP.md'), 'utf8');
 if (!rootRoadmap.includes('N2 Federated Rift Memory Kernel — N2.0-N2.12 PROMOTED / N2-M1 + N2-M2 + N2-M3 + N2-M4 + N2-M5 + N2-M6 PROMOTED; N2 COMPLETE; CANONICAL MEMORY RUNTIME INACTIVE') ||
-    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED on installed source `001354552af5a0a8034af82a4341187a8abeda52`, Builder run `36210504706` / run number `390`; N3-M1 INTERNAL PI BRIDGE SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING.')) {
-  failures.push('ROADMAP.md no longer carries the promoted N3.0 gate and temporary N3-M1 native evidence bridge gate');
+    !rootRoadmap.includes('N3 Architecture/impact engine — N3.0 PROMOTED; hidden PI bridge PROMOTED on run `391`; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) READY; Batch exact-cap admission repair SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING.')) {
+  failures.push('ROADMAP.md no longer carries promoted N3-M1, ready N3-M2, and the pending Batch exact-cap repair gate');
 }
 
 const docsIndex = fs.readFileSync(path.join(root, 'docs/README.md'), 'utf8');

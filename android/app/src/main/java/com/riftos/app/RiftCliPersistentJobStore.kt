@@ -42,8 +42,8 @@ internal class RiftCliPersistentJobStore(context: Context) {
     fun save(snapshot: JSONObject) = synchronized(lock) {
         val jobId = snapshot.optString("jobId").trim()
         require(jobId.isNotBlank()) { "RiftCLI persisted job requires jobId" }
-        pruneLocked()
         val target = fileFor(jobId)
+        pruneLocked(forceTerminalTrim = !target.exists())
         if (!target.exists()) {
             val retainedCount = root.listFiles()
                 ?.count { it.isFile && it.name.endsWith(".json") }
@@ -198,7 +198,7 @@ internal class RiftCliPersistentJobStore(context: Context) {
         return row
     }
 
-    private fun pruneLocked() {
+    private fun pruneLocked(forceTerminalTrim: Boolean = false) {
         val now = System.currentTimeMillis()
         val readable = root.listFiles()
             ?.filter { it.isFile && it.name.endsWith(".json") }
@@ -220,7 +220,10 @@ internal class RiftCliPersistentJobStore(context: Context) {
             readable.removeAll { it.first == candidate }
         }
 
-        while (readable.size > MAX_JOB_FILES) {
+        while (
+            readable.size > MAX_JOB_FILES ||
+            (forceTerminalTrim && readable.size >= MAX_JOB_FILES)
+        ) {
             val terminalIndex = readable.indexOfFirst { it.second.optString("status") in TERMINAL_STATUSES }
             if (terminalIndex < 0) break
             val candidate = readable.removeAt(terminalIndex).first

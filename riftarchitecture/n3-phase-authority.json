@@ -1,8 +1,8 @@
 {
   "schema": "rift-architecture-n3-phase-authority-v1",
   "program": "RiftCLI N3 Architecture/Impact Engine",
-  "programStatus": "N3.0 PROMOTED on installed source 001354552af5a0a8034af82a4341187a8abeda52 / Builder run 36210504706 / run 390; N3-M1 NATIVE EVIDENCE BRIDGE SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING",
-  "runtimeStatus": "N3.0 CONTRACT/BASELINE PROMOTED; N3-M1 LOCAL INTELLIGENCE BLOCKED ONLY ON INTERNAL READ-ONLY PI BRIDGE INSTALL; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE",
+  "programStatus": "N3.0 PROMOTED; hidden PI bridge PROMOTED on run 391; N3-M1 (N3.1+N3.2) PROMOTED; N3-M2 (N3.3+N3.4) READY; Batch exact-cap admission repair SOURCE IMPLEMENTED / BUILDER + INSTALL PROOF PENDING",
+  "runtimeStatus": "N3-M1 LOCAL INTELLIGENCE PROMOTED IN /workspace/.riftcli; N3-M2 LOCAL IMPLEMENTATION READY; INTERNAL READ-ONLY PI BRIDGE LIVE; N2 CANONICAL MEMORY RUNTIME REMAINS INACTIVE; N4 PLANNER REMAINS BLOCKED",
   "prerequisites": {
     "N1_8": "SATISFIED",
     "N2": "SATISFIED",
@@ -12,6 +12,22 @@
   "benchmarkRule": "NO_PERFORMANCE_OR_COMPARATIVE_BENCHMARKS_UNTIL_FULL_RIFTCLI_COMPLETE_AND_LIVE",
   "contractPath": "riftarchitecture/n3-contract-v1.json",
   "contractLifecycleSemantics": "immutable-N3.0-freeze-snapshot; current lifecycle is authoritative only in this phase-authority file",
+  "n3M1LocalEvidence": {
+    "packageVersion": "0.2.0",
+    "packageRoot": "/workspace/.riftcli",
+    "directAuthority": false,
+    "nativeAuthorityBridge": "driver-only",
+    "fileSha256": {
+      "runtime/main.js": "03c8d153716a6da9459b5f031d9506a6d291e5d6dff736e30499add43be73ff4",
+      "observer/n3-m1.js": "9ff52a40d9fc1cf7c366ea30f50ed7bdf273bed0276eb41b9958b06ab052a4de",
+      "manifest.json": "41de9cc0bf2e23592fd5302bc0bce286651471dbb19557954ac080fca4e55cc9",
+      "config.json": "88e3520c767ac53c11f4d41b21ac9da2916ef62a4c24f3ffceec212e8edbf075",
+      "README.md": "0e38ba87ca441c27709108cbe243a6f16dc13edc8e8629fb13e160354dbdc16f",
+      "SOURCE_OWNERSHIP.md": "22da112e56d04395442db577ac269fd238e0d6705425eb95824c12c9bbb05ec3"
+    },
+    "liveImpactSha256": "770f07853e190fc40b77751aa5dc0229e48a6b7d6404b09bddf8a4cf52429000",
+    "livePropagationSha256": "1ce267e7aeff8680971c6e1e73960234ed2b74c49f96944c9d79064dd6e377c5"
+  },
   "macroImplementationPlan": [
     {
       "patch": "N3-M1",
@@ -20,7 +36,7 @@
         "N3.2"
       ],
       "title": "Ownership and dependency impact",
-      "status": "native-evidence-bridge-source-implemented-pending-builder-install-proof"
+      "status": "promoted"
     },
     {
       "patch": "N3-M2",
@@ -29,7 +45,7 @@
         "N3.4"
       ],
       "title": "Invariant/boundary and required-evidence derivation",
-      "status": "queued-after-prior-n3-macro"
+      "status": "ready"
     },
     {
       "patch": "N3-M3",
@@ -37,7 +53,7 @@
         "N3.5"
       ],
       "title": "Unified architecture report",
-      "status": "queued-after-prior-n3-macro"
+      "status": "queued-after-n3-m2"
     }
   ],
   "macroPlanRule": "Macro patches are execution groupings only. Each logical N3.x phase retains separate evidence/promotion authority. N3.6 remains a separate final adversarial/restart promotion gate.",
@@ -52,19 +68,62 @@
     },
     {
       "phase": "N3.1",
-      "status": "blocked-pending-native-evidence-bridge-install"
+      "status": "promoted",
+      "promotion": "live-local-package-proof",
+      "localPackageVersion": "0.2.0",
+      "localPackageHashes": {
+        "runtimeMainSha256": "03c8d153716a6da9459b5f031d9506a6d291e5d6dff736e30499add43be73ff4",
+        "n3M1ModuleSha256": "9ff52a40d9fc1cf7c366ea30f50ed7bdf273bed0276eb41b9958b06ab052a4de",
+        "manifestSha256": "41de9cc0bf2e23592fd5302bc0bce286651471dbb19557954ac080fca4e55cc9",
+        "configSha256": "88e3520c767ac53c11f4d41b21ac9da2916ef62a4c24f3ffceec212e8edbf075",
+        "sourceOwnershipSha256": "22da112e56d04395442db577ac269fd238e0d6705425eb95824c12c9bbb05ec3",
+        "readmeSha256": "0e38ba87ca441c27709108cbe243a6f16dc13edc8e8629fb13e160354dbdc16f"
+      },
+      "proof": {
+        "selfTest": "pass",
+        "ownerResolution": "pass",
+        "missingOwnerFailsClosed": "pass",
+        "moveReResolution": "pass",
+        "crossProjectSymbolIsolation": "pass",
+        "duplicateOwnerDetection": "pass",
+        "staleEvidenceFailsClosed": "pass",
+        "exactBoundAndPlusOne": "pass"
+      },
+      "packageVersion": "0.2.0",
+      "packageModuleSha256": "9ff52a40d9fc1cf7c366ea30f50ed7bdf273bed0276eb41b9958b06ab052a4de"
     },
     {
       "phase": "N3.2",
-      "status": "blocked-pending-native-evidence-bridge-install"
+      "status": "promoted",
+      "promotion": "live-local-package-proof",
+      "nativeEvidenceBridge": {
+        "status": "promoted",
+        "sourceSha": "f439e9bb6d61d41997ec92636b6e4e0ec89c5912",
+        "builderRunId": "36216594210",
+        "builderRunNumber": 391
+      },
+      "proof": {
+        "semanticImpactSha256": "770f07853e190fc40b77751aa5dc0229e48a6b7d6404b09bddf8a4cf52429000",
+        "candidateStateSha256": "f15b4b35a60ed1905b5d3dd03ae914f4a22f77a182d4b9fb58b026036ddc5cfa",
+        "evidenceManifestSha256": "9f41b236b938d205795d66c14292c86fac52ae36c16be2559c94ae31ecff1061",
+        "propagationSha256": "1ce267e7aeff8680971c6e1e73960234ed2b74c49f96944c9d79064dd6e377c5",
+        "complete": true,
+        "ambiguousReferences": 0,
+        "unresolvedReferences": 0,
+        "crossProjectLeakageFailsClosed": "pass",
+        "apiChangeRequiresPropagation": "pass"
+      },
+      "packageVersion": "0.2.0",
+      "semanticImpactSha256": "770f07853e190fc40b77751aa5dc0229e48a6b7d6404b09bddf8a4cf52429000",
+      "propagationSha256": "1ce267e7aeff8680971c6e1e73960234ed2b74c49f96944c9d79064dd6e377c5"
     },
     {
       "phase": "N3.3",
-      "status": "queued"
+      "status": "ready"
     },
     {
       "phase": "N3.4",
-      "status": "queued"
+      "status": "ready"
     },
     {
       "phase": "N3.5",
