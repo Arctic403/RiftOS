@@ -62,21 +62,22 @@ Passing syntax does not imply a retained module is packaged or live.
 
 The Builder repeats a narrow syntax preflight for the critical source-gate entrypoints before npm run check, so validate-rift-wiring.mjs is not the only mechanism expected to detect its own syntax corruption.
 
-## Android Activity/source reachability
+## Android manifest-component/source reachability
 
 The wiring validator:
-- parses manifest Activity declarations;
-- requires each declared Activity source to exist;
-- identifies Kotlin types reachable by textual source references from manifest Activities;
+- parses manifest Activity, Service, Receiver and Provider declarations;
+- requires each declared manifest component to have a matching Kotlin class/object source;
+- keeps the stricter Activity-subclass check for manifest Activities;
+- identifies Kotlin types reachable by textual source references from all manifest component roots;
 - fails when a Kotlin source is unreachable from the Android application graph.
 
-This is a static reachability guard, not Kotlin compilation/type resolution.
+This is a static reachability guard, not Kotlin compilation/type resolution. Treating all Android manifest components as roots prevents legitimate package entry surfaces such as `CodynexCompilerProvider` from being falsely classified as dead merely because no Activity directly references them.
 
 ## Exact mandatory Kotlin snapshot
 
-Current Android source directory contains 47 Kotlin files.
+Current Android source directory contains 49 Kotlin files.
 
-android/app/build.gradle.kts::verifyRiftOsAndroidSources explicitly lists all 47.
+android/app/build.gradle.kts::verifyRiftOsAndroidSources explicitly lists all 49.
 
 During this audit the old list was found to protect only 32 files.
 
