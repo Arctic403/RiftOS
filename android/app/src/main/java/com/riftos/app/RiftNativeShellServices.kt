@@ -1,9 +1,11 @@
 package com.riftos.app
 
 import android.content.Context
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
 
 /** Argument parsing only. All authority remains in existing Android-native services. */
 class RiftNativeShellServices(context: Context) {
@@ -319,6 +321,7 @@ class RiftNativeShellServices(context: Context) {
             "RiftLLM native Dev API bridge\nriftllm-agent status\nriftllm-agent unpair\n" +
                 "riftllm-agent train-data-status\nriftllm-agent train-data-build\nriftllm-agent train-data-build-status\nriftllm-agent train-data-build-cancel\n" +
                 "riftllm-agent train-data-upload\nriftllm-agent train-data-remote-status\nriftllm-agent train-canary-start\nriftllm-agent train-canary-status\n" +
+                "riftllm-agent text-encoding-prime-b2\n" +
                 "riftllm-agent riftpack-qualification-start\nriftllm-agent riftpack-qualification-status\n" +
                 "Pairing is entered only in native Settings. Legacy corpus-* helpers are unavailable unless explicitly reintroduced behind a bounded native/headless service."
         )
@@ -334,6 +337,10 @@ class RiftNativeShellServices(context: Context) {
             "train-data-remote-status" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","remote-status"))
             "train-canary-start" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","canary-start"))
             "train-canary-status" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","canary-status"))
+            "text-encoding-prime-b2" -> {
+                require(args.isEmpty()) { "usage: riftllm-agent text-encoding-prime-b2" }
+                primeFrozenB2Tokenizer()
+            }
             "riftpack-qualification-start" -> {
                 require(args.isEmpty()) { "usage: riftllm-agent riftpack-qualification-start" }
                 llm.execute(JSONObject().put("op","riftpack_qualification_start"))
@@ -361,6 +368,103 @@ class RiftNativeShellServices(context: Context) {
         }
         val text=when(value){is JSONObject->value.toString(2);is JSONArray->value.toString(2);else->value.toString()}
         return Result(text,value as? JSONObject)
+    }
+
+    private fun primeFrozenB2Tokenizer(): JSONObject {
+        val expectedSha = "314e3a732d4cc4c31c40c9b0add3fffcec38c8a4b40e0d228bdc4eed1addbbd1"
+        val project = File(riftRoot, "workspace/RiftLLM").canonicalFile
+        require(project.isDirectory && project.path.startsWith(riftRoot.path + File.separator)) {
+            "RiftLLM workspace project is missing"
+        }
+        val artifact = File(project, "tokenizer/output/rift-token-b-balanced-v2.riftbpe").canonicalFile
+        require(artifact.path.startsWith(project.path + File.separator) && artifact.isFile) {
+            "Frozen B2 tokenizer workspace artifact is missing"
+        }
+        require(artifact.length() in 1..(4L * 1024L * 1024L)) {
+            "Frozen B2 tokenizer workspace artifact is out of bounds"
+        }
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        artifact.inputStream().buffered().use { input ->
+            val hashBuffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(hashBuffer)
+                if (read <= 0) break
+                digest.update(hashBuffer, 0, read)
+            }
+        }
+        val actualSha = digest.digest().joinToString("") {
+            (it.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
+        require(actualSha == expectedSha) {
+            "Frozen B2 tokenizer workspace artifact SHA-256 mismatch"
+        }
+
+        val totalBytes = artifact.length()
+        val begin = llm.execute(
+            JSONObject()
+                .put("op", "text_encoding_begin")
+                .put(
+                    "request",
+                    JSONObject()
+                        .put("slot", "artifact")
+                        .put("totalBytes", totalBytes)
+                        .put("sha256", expectedSha)
+                )
+        ) as? JSONObject ?: throw IllegalStateException("RiftLLM text encoding begin returned an unexpected payload")
+        val maxChunkBytes = begin.optInt("maxChunkBytes", 0)
+        require(maxChunkBytes == 192 * 1024) {
+            "RiftLLM Text Encoding chunk contract mismatch"
+        }
+
+        var offset = 0L
+        artifact.inputStream().buffered().use { input ->
+            val buffer = ByteArray(maxChunkBytes)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                val chunk = if (read == buffer.size) buffer else buffer.copyOf(read)
+                val appended = llm.execute(
+                    JSONObject()
+                        .put("op", "text_encoding_append")
+                        .put(
+                            "request",
+                            JSONObject()
+                                .put("slot", "artifact")
+                                .put("offset", offset)
+                                .put("dataBase64", Base64.encodeToString(chunk, Base64.NO_WRAP))
+                        )
+                ) as? JSONObject ?: throw IllegalStateException("RiftLLM text encoding append returned an unexpected payload")
+                offset += read.toLong()
+                require(appended.optLong("receivedBytes", -1L) == offset) {
+                    "RiftLLM frozen B2 upload acknowledgement drifted at byte $offset"
+                }
+            }
+        }
+        require(offset == totalBytes) {
+            "RiftLLM frozen B2 upload ended at $offset / $totalBytes bytes"
+        }
+
+        val committed = llm.execute(
+            JSONObject()
+                .put("op", "text_encoding_commit")
+                .put("request", JSONObject().put("slot", "artifact"))
+        ) as? JSONObject ?: throw IllegalStateException("RiftLLM text encoding commit returned an unexpected payload")
+        require(committed.optBoolean("committed", false)) {
+            "RiftLLM frozen B2 tokenizer commit was not acknowledged"
+        }
+        require(committed.optString("sha256").lowercase() == expectedSha) {
+            "RiftLLM frozen B2 tokenizer commit SHA-256 mismatch"
+        }
+
+        return JSONObject()
+            .put("schema", "riftllm-frozen-b2-prime-v1")
+            .put("primed", true)
+            .put("source", "workspace/RiftLLM/tokenizer/output/rift-token-b-balanced-v2.riftbpe")
+            .put("target", "app-private://text-encoding/candidate.riftbpe")
+            .put("bytes", totalBytes)
+            .put("sha256", expectedSha)
+            .put("maxChunkBytes", maxChunkBytes)
     }
 
     private fun localAgent(name:String,args:MutableList<String>,call:(JSONObject)->JSONObject):Result{

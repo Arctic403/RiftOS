@@ -294,6 +294,8 @@ Pairing tokens are intentionally rejected in shell arguments.
 
 Pairing is performed only in native Settings through RiftSecretStore.
 
+`riftllm-agent text-encoding-prime-b2` is a fixed no-argument prerequisite route: it reads only the frozen B2 artifact at `workspace/RiftLLM/tokenizer/output/rift-token-b-balanced-v2.riftbpe`, requires the frozen SHA-256, then uses the existing 192 KiB-bounded Text Encoding Provider upload protocol to commit only the fixed `artifact` slot. It accepts no caller path, slot, hash or payload.
+
 RiftPack qualification is exposed only as `riftllm-agent riftpack-qualification-start` and `riftllm-agent riftpack-qualification-status`; both are fixed no-argument routes to the allowlisted RiftLLM Binder methods and do not expose arbitrary Provider calls or paths.
 
 RiftLLM preview/publish fail closed because the retired workspace patch composite has no current bounded native replacement.

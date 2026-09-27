@@ -149,6 +149,7 @@ Current shell provides:
 - snapshots -> provider `list_snapshots`
 - benchmarks -> provider `list_benchmarks`
 - text-encoding-status -> provider `text_encoding_status`
+- text-encoding-prime-b2 -> fixed local orchestrator over `text_encoding_begin` / `text_encoding_append` / `text_encoding_commit`; source is only `workspace/RiftLLM/tokenizer/output/rift-token-b-balanced-v2.riftbpe`, SHA-256 must equal `314e3a732d4cc4c31c40c9b0add3fffcec38c8a4b40e0d228bdc4eed1addbbd1`, chunks are exactly bounded by the Provider's 192 KiB contract, and the target remains only the Provider's fixed `artifact` slot
 - train-data-status
 - train-data-build
 - train-data-build-status
@@ -317,6 +318,7 @@ The bridge itself does not widen MCP authority.
 - implemented the previously missing native Settings pairing/status/unpair surface;
 - retained shell rejection of pairing-token arguments;
 - exposed existing fixed build cancellation as `train-data-build-cancel`;
+- added fixed `text-encoding-prime-b2` orchestration so RiftOS can satisfy the qualification tokenizer prerequisite from only the reviewed frozen workspace artifact, with exact SHA and 192 KiB Provider chunk checks;
 - exposed RiftLLM's fixed `riftpack_qualification_start` / `riftpack_qualification_status` methods as no-argument native shell commands without widening Binder authority;
 - confirmed frozen canary controller remains fixed-input and was not executed.
 
