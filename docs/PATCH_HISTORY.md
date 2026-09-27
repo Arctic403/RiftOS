@@ -6,6 +6,30 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.29 — Persistent MCP lost-turn reconciliation and no-replay identity
+
+### Problem
+
+A ChatGPT/mobile UI turn can freeze or disconnect after RiftOS has already accepted an MCP operation. Device-side work may still finish, while the next model turn no longer has trustworthy knowledge of the completed downstream state. The old relay pending map and MCP completed-response cache were process/transport memory only, and workspace provenance used a generated ToolHost request id rather than the originating MCP operation identity.
+
+### Architecture
+
+Current source adds one process-owned, device-authoritative `RiftMcpOperationJournal`. It persists a bounded AtomicFile journal of up to 256 operations with a monotonic sequence, stable operation/request identity, canonical request hash, tool/mutation classification, execution status, bounded terminal summary and response-delivery state. Raw MCP arguments and payload bodies are not stored.
+
+`RiftMcpServer -> RiftToolHost -> RiftToolSandbox -> RiftPatchSessions -> RiftWorkspaceRecords` now propagates the same `mcp-...` operation id for journaled workspace mutations. `rift_mcp_reconcile` reads recent or since-sequence journal state and attaches matching retained Workspace Records evidence by operation id.
+
+### Lost response and restart semantics
+
+Execution completion is authoritative independently of transport delivery. The relay client records only `queued_to_relay`, `response_not_delivered`, or `unknown`; it never claims the ChatGPT UI displayed or acknowledged a result.
+
+A retained terminal request identity is never replayed. After Android process restart, any journal entry that had still been `running` becomes `interrupted_on_restart` with explicit may-have-applied semantics. A repeated retained terminal request returns a recovered no-replay summary and directs callers to reconciliation evidence instead of executing the mutation again.
+
+### Validation/status
+
+The exact Android Kotlin source snapshot now includes `RiftMcpOperationJournal.kt`, and the normal `npm run check` source gate includes `test-rift-mcp-operation-journal.mjs`. Riftos-builder source-gate syntax/contract checks were synchronized to require that regression before packaging. The focused regression locks persistence/bounds, stable identity propagation across Code Mode/direct-file/native-shell mutation provenance, restart no-replay, reconciliation evidence and truthful transport-delivery semantics.
+
+Native `riftbuild validate android` reports `sourceReady=true` with all structural Android checks passing. Post-change RiftOS audit plus architecture/runtime scans report no new findings; only the pre-existing medium filename heuristic on `RiftSecretStore.kt` remains, and the Builder audit is clean. Native RiftShell intentionally does not expose raw `node`, so the focused Node regression could not be executed directly in this local session; full Android Gradle compile/install proof remains pending the normal Builder run.
+
 ## Patch 10.28 — Direct Local Agent batching restored; RiftCLI batching retired
 
 ### Architecture

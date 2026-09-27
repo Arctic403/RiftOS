@@ -15,7 +15,8 @@ All transports converge on one native server/tool host. Browser compatibility an
 Core composition:
 - `RiftMcpRuntime.kt` — process-owned singleton graph, passive debug hub and current Activity reference.
 - `RiftDebugHub.kt` — process-wide bounded passive diagnostics and universal adapter plug.
-- `RiftMcpServer.kt` — in-process MCP JSON-RPC framing and relay retry dedupe.
+- `RiftMcpServer.kt` — in-process MCP JSON-RPC framing, relay retry dedupe and persistent operation identity.
+- `RiftMcpOperationJournal.kt` — bounded AtomicFile-backed MCP execution/reconciliation journal with monotonic sequences and restart-safe no-replay state.
 - `RiftToolHost.kt` — canonical tool schemas, read/write grants and tool audit.
 - `RiftToolSandbox.kt` — workspace filesystem + Project Intelligence/Code Mode.
 - `RiftSourceIntelligenceV2.kt` — shared lexical source/dependency analyzer for normal PI-v2 and candidate semantic deltas.
@@ -30,7 +31,7 @@ Related narrow owners:
 
 ## Process ownership
 
-`RiftMcpRuntime` lazily owns singletons for native shell, tool host, MCP server, relay, native Git, Vortex bridge and the Codynex LR0 Binder bridge.
+`RiftMcpRuntime` lazily owns singletons for native shell, tool host, MCP server, persistent MCP operation journal, relay, native Git, Vortex bridge and the Codynex LR0 Binder bridge.
 
 MainActivity registration is a weak UI reference only.
 
@@ -52,7 +53,7 @@ There is no shell WebView executor and no general native dispatcher.
 
 The authoritative catalog is `RiftToolHost.tools()`.
 
-Current expected count: **20**:
+Current expected count: **21**:
 - rift_shell_exec
 - rift_info
 - rift_stat
@@ -70,13 +71,16 @@ Current expected count: **20**:
 - rift_scan
 - rift_project_export
 - rift_workspace_diff
+- rift_mcp_reconcile
 - rift_debug
 - rift_local_agent_batch
 - rift_workspace_exec
 
 `manifest()` hashes the complete tool-definition JSON with SHA-256 and reports names/count/scope.
 
-`rift_debug` is the single passive debugger query surface. It exposes status, events, active spans and components under the existing read grant; it cannot execute, mutate, cancel or widen authority.
+`rift_debug` is the passive debugger query surface. It exposes status, events, active spans and components under the existing read grant; it cannot execute, mutate, cancel or widen authority.
+
+`rift_mcp_reconcile` is the persistent recovery surface for ambiguous or interrupted client turns. It returns recent operations or operations newer than a supplied journal sequence plus matching Workspace Records provenance. Execution state is authoritative independently of response delivery. Delivery is recorded only as `queued_to_relay`, `response_not_delivered`, or `unknown`; no UI acknowledgement is inferred. A retained terminal request identity is never re-executed after process restart.
 
 ## Permission boundary
 
@@ -140,7 +144,7 @@ MCP overview does not own:
 ## Critical invariants
 
 - one process-owned ToolHost/Server graph;
-- exactly 18 canonical tools until an explicit catalog change;
+- exactly 21 canonical tools in current source until another explicit catalog change;
 - browser/relay share the same grants and server;
 - workspace tools remain workspace-scoped;
 - no WebView shell fallback;

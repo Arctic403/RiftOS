@@ -11,6 +11,7 @@
 ## Source ownership
 
 - `RiftMcpServer.kt`
+- `RiftMcpOperationJournal.kt` — persistent bounded execution/reconciliation identity and no-replay state
 - `RiftDebugHub.kt` — passive trace/span owner shared with Tool Host
 - `RiftBoundedAsync.kt` — shared exactly-once deadline/cancellation primitive
 - callers: Browser MCP bridge and outbound Relay client
@@ -57,7 +58,8 @@ Server frames:
 - MCP text content;
 - structuredContent with ok/value or error;
 - `isError`;
-- echoed private call-id metadata when supplied.
+- echoed private call-id metadata when supplied;
+- persistent `riftos/operationId`, journal sequence and execution status for journaled calls.
 
 Project-export pages are summarized in structured content to avoid duplicating large source payloads.
 
@@ -79,6 +81,8 @@ For Relay `tools/call`:
 - distinct request JSON or retry id executes separately.
 
 Canonical JSON sorts object keys recursively; array order remains significant.
+
+The persistent journal extends relay idempotency across process death. It stores bounded metadata only: stable request identity/hash, tool, mutation classification, monotonic state sequences, terminal execution state, delivery state and allowlisted summaries. Raw arguments/payload bodies are not persisted. A request found terminal in the retained journal returns a recovered no-replay result rather than executing again. A request that was running when the Android process died becomes `interrupted_on_restart` and is treated as potentially applied until reconciliation evidence is inspected.
 
 ## Bounded request lifecycle
 
@@ -117,7 +121,8 @@ Added standard `notifications/initialized` handling as a no-response notificatio
 
 ## Critical invariants
 
-- direct calls never enter completed-response retry cache;
+- direct calls never enter the short-lived completed-response retry cache;
+- journaled calls never replay a retained terminal request identity after restart;
 - only relay tools/call uses retry dedupe;
 - retry cache max 128 entries / 8 MiB / TTL 2 minutes;
 - request hash is canonical;

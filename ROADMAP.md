@@ -43,7 +43,7 @@ Immediate order:
 
 ## Local Rift MCP expansion
 
-Current tool family (18 registered tools):
+Current source tool family (21 registered tools):
 
 ```text
 rift_shell_exec
@@ -63,8 +63,13 @@ rift_audit
 rift_scan
 rift_project_export
 rift_workspace_diff
+rift_mcp_reconcile
+rift_debug
+rift_local_agent_batch
 rift_workspace_exec
 ```
+
+Lost-turn recovery is source-implemented through the device-owned `RiftMcpOperationJournal` and read-only `rift_mcp_reconcile`. Journaled calls carry one stable operation identity through ToolHost mutation provenance; terminal identities are not replayed after restart, and response delivery is kept separate from execution completion. After an ambiguous UI freeze/timeout/disconnect, callers should reconcile journal state before issuing another mutation.
 
 The browser compatibility path represents model-facing calls as `[RIFT_CALL]` / `[RIFT_END]` text and returns `[RIFT_RESULT]`; MCP JSON-RPC remains private to trusted transports.
 

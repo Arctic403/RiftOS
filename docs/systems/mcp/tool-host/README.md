@@ -11,13 +11,14 @@
 ## Source ownership
 
 - `RiftToolHost.kt`
+- persistent operation state: `RiftMcpOperationJournal.kt`
 - workspace backend: `RiftToolSandbox.kt`
 - shell backend: process-owned `RiftShellExecutor`
 - preferences: `rift-mcp-tools`
 
 ## Canonical catalog
 
-`tools()` is authoritative. The current published set is exactly 19 tools:
+`tools()` is authoritative. The current published set is exactly 21 tools:
 
 1. rift_shell_exec
 2. rift_info
@@ -36,8 +37,10 @@
 15. rift_scan
 16. rift_project_export
 17. rift_workspace_diff
-18. rift_debug
-19. rift_workspace_exec
+18. rift_mcp_reconcile
+19. rift_debug
+20. rift_local_agent_batch
+21. rift_workspace_exec
 
 `manifest()` hashes the complete definitions JSON with SHA-256 and reports count/names/scope.
 
@@ -56,7 +59,9 @@ Read-gated tools:
 - audit/scan;
 - project export;
 - workspace diff, including bounded checkpoint file-identity evidence;
+- persistent MCP reconciliation journal/evidence queries;
 - passive debugger status/events/active/components;
+- Local Agent batch status/result/list;
 - workspace exec even when read-only.
 
 `rift_workspace_diff` remains one read-only tool; Patch 2 expands its result evidence with bounded `identity.relations` and similarity-budget metadata without adding mutation authority or another tool.
@@ -71,6 +76,8 @@ Write-gated fixed tools:
 - extract.
 
 `rift_workspace_exec` is always read-gated and additionally write-gated when any normalized operation mutates.
+
+`rift_local_agent_batch` submit/cancel requires **both read and write**; status/result/list is read-only.
 
 `rift_shell_exec` requires **both read and write** because it has broader native RiftOS authority than the workspace sandbox.
 
@@ -134,7 +141,7 @@ Every other canonical tool maps to one fixed sandbox method:
 
 Unknown tools fail before sandbox execution.
 
-Patch 5 adds one **internal-only** `candidateImpactAsync` route from ToolHost to the sandbox for the future Local Agent validation pipeline. It is deliberately absent from `tools()`, aliases and `methodFor()`, so that patch left the model-visible catalog at 18 tools and no caller could manufacture its own candidate-impact scope through MCP. The later passive `rift_debug` query raises the current catalog to 19.
+Patch 5 adds one **internal-only** `candidateImpactAsync` route from ToolHost to the sandbox for the future Local Agent validation pipeline. It remains absent from `tools()`, aliases and `methodFor()`, so callers cannot manufacture their own candidate-impact scope through MCP. Later catalog additions are the passive `rift_debug`, bounded `rift_local_agent_batch`, and persistent read-only `rift_mcp_reconcile`, bringing current source to 21 published tools.
 
 ## Audit
 
@@ -191,7 +198,7 @@ ToolHost does not own:
 
 ## Critical invariants
 
-- exactly 18 published definitions;
+- exactly 21 published definitions;
 - aliases never appear as additional catalog tools;
 - manifest derives from live definitions;
 - normalization precedes permission classification;
@@ -204,7 +211,7 @@ ToolHost does not own:
 
 ## Failure signatures
 
-- manifest count differs from 18 without intentional catalog change -> registry drift;
+- manifest count differs from 21 without intentional catalog change -> registry drift;
 - alias write succeeds with write disabled -> classification regression;
 - shorthand write bypasses write grant -> normalization-order regression;
 - shell succeeds with only one grant -> authority regression;

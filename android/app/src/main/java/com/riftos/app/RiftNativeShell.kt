@@ -134,7 +134,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         )
     }
 
-    override fun execute(command: String, cwd: String?, reply: (JSONObject) -> Unit) {
+    override fun execute(command: String, cwd: String?, requestId: String?, reply: (JSONObject) -> Unit) {
         if (closed) {
             reply(errorResult(cwd ?: "/", "Native RiftShell is closed"))
             return
@@ -158,7 +158,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     origin = "native-shell",
                     operation = operation.ifBlank { "shell" },
                     intent = operation.takeIf { it.isNotBlank() },
-                    requestId = null,
+                    requestId = requestId,
                     rawPaths = shellMutationPaths(command, requestedCwd)
                 )
                 try {

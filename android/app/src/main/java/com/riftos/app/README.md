@@ -17,7 +17,7 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftBrowserEngine.kt`, `RiftBrowserAndroidWebViewEngine.kt` | [`browser/engine`](../../../../../../../../docs/systems/browser/engine/README.md) |
 | `RiftBrowserMcpAppBridge.kt` | [`browser/mcp-compat`](../../../../../../../../docs/systems/browser/mcp-compat/README.md) |
 | `RiftMcpRuntime.kt`, `RiftMcpActivity.kt` | [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
-| `RiftMcpServer.kt`, `RiftBoundedAsync.kt` | [`mcp/server`](../../../../../../../../docs/systems/mcp/server/README.md) + [`mcp/sandbox`](../../../../../../../../docs/systems/mcp/sandbox/README.md) |
+| `RiftMcpServer.kt`, `RiftMcpOperationJournal.kt`, `RiftBoundedAsync.kt` | [`mcp/server`](../../../../../../../../docs/systems/mcp/server/README.md) + [`mcp/sandbox`](../../../../../../../../docs/systems/mcp/sandbox/README.md) |
 | `RiftDebugHub.kt` | [`debugger`](../../../../../../../../docs/systems/debugger/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
 | `RiftToolHost.kt` | [`mcp/tool-host`](../../../../../../../../docs/systems/mcp/tool-host/README.md) |
 | `RiftToolSandbox.kt`, `RiftSourceIntelligenceV2.kt` | [`mcp/sandbox`](../../../../../../../../docs/systems/mcp/sandbox/README.md) + [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) |

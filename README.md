@@ -108,7 +108,7 @@ Current source contains the bounded `RiftBuildInstaller` proof installer, restri
 
 ## Rift MCP
 
-`RiftToolHost` is the canonical device-side capability registry. The current catalog is exactly 18 model-visible tools.
+`RiftToolHost` is the canonical device-side capability registry. The current source catalog is exactly 21 model-visible tools, including persistent read-only `rift_mcp_reconcile` for ambiguous/frozen client-turn recovery.
 
 Ordinary filesystem/Code Mode tools execute in `RiftToolSandbox` and are confined to the workspace. `rift_shell_exec` is a separately permissioned route to the process-owned native shell.
 

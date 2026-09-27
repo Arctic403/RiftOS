@@ -119,6 +119,52 @@ class RiftWorkspaceRecords private constructor(context: Context) {
             queryInternal(args)
         }
 
+    internal fun evidenceForRequestIds(
+        requestIds: Collection<String>,
+        limit: Int = 160
+    ): JSONObject = runBounded("workspace request evidence") {
+        ensureInitialized()
+        reconcileAll("mcp-reconcile")
+        val wanted = requestIds
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .take(64)
+            .toSet()
+        val boundedLimit = limit.coerceIn(1, 256)
+        val matches = ArrayList<JSONObject>()
+        if (wanted.isNotEmpty()) {
+            val files = eventRoot.listFiles()
+                ?.filter { it.isFile && it.extension == "json" }
+                ?.sortedByDescending { it.name }
+                .orEmpty()
+            for (file in files) {
+                val row = runCatching { JSONObject(file.readText(Charsets.UTF_8)) }.getOrNull() ?: continue
+                val provenance = row.optJSONObject("provenance") ?: continue
+                val requestId = provenance.optString("requestId")
+                if (requestId !in wanted) continue
+                matches += JSONObject()
+                    .put("requestId", requestId)
+                    .put("recordSequence", row.optLong("sequence"))
+                    .put("patchId", row.optString("patchId"))
+                    .put("path", row.optString("path"))
+                    .put("action", row.optString("action"))
+                    .put("at", row.optLong("at"))
+                    .put("origin", provenance.optString("origin", "unknown"))
+                    .put("operation", provenance.optString("operation", "unknown"))
+                    .put("attributed", provenance.optBoolean("attributed", false))
+                    .put("confidence", provenance.optString("confidence", "none"))
+                if (matches.size >= boundedLimit) break
+            }
+        }
+        matches.reverse()
+        JSONObject()
+            .put("format", FORMAT)
+            .put("latestRecordSequence", sequence.get())
+            .put("prunedThroughSequence", eventPrunedThroughSequence)
+            .put("returned", matches.size)
+            .put("records", JSONArray().apply { matches.forEach { put(it) } })
+    }
+
     fun checkpoint(args: JSONObject = JSONObject()): JSONObject =
         runBounded("workspace records checkpoint") {
             ensureInitialized()

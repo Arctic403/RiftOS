@@ -69,6 +69,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/systems/apps/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/CodynexCompilerProvider.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpActivity.kt` | `docs/systems/mcp/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftMcpOperationJournal.kt` | `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/systems/mcp/relay/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt` | `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` + `docs/systems/debugger/README.md` + `docs/CODYNEX_LR0_BRIDGE.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |

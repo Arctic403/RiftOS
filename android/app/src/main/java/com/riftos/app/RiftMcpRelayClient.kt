@@ -22,7 +22,8 @@ class RiftMcpRelayClient(
     context: Context,
     private val server: RiftMcpServer,
     private val cliEvents: RiftCliEventBus,
-    debugHub: RiftDebugHub? = null
+    debugHub: RiftDebugHub? = null,
+    private val operationJournal: RiftMcpOperationJournal
 ) {
     companion object {
         private const val PROTOCOL = "rift-mcp-relay-v1"
@@ -263,19 +264,44 @@ class RiftMcpRelayClient(
         }, REQUEST_FORWARD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         runCatching {
             server.handleAsync(payload, requestId) { result ->
-                if (!terminal.compareAndSet(false, true)) return@handleAsync
+                val resultMeta = result.optJSONObject("result")?.optJSONObject("_meta")
+                val operationId = resultMeta?.optString("riftos/operationId")
+                    ?.takeIf { it.isNotBlank() }
+                val recoveredReplay = resultMeta?.optBoolean("riftos/recoveredReplay", false) == true
+                if (!terminal.compareAndSet(false, true)) {
+                    if (operationId != null && !recoveredReplay) {
+                        runCatching { operationJournal.markDelivery(operationId, "response_not_delivered") }
+                    }
+                    return@handleAsync
+                }
                 timeout.cancel(false)
-                if (!isCurrent(webSocket)) return@handleAsync
+                if (!isCurrent(webSocket)) {
+                    if (operationId != null && !recoveredReplay) {
+                        runCatching { operationJournal.markDelivery(operationId, "response_not_delivered") }
+                    }
+                    return@handleAsync
+                }
                 val responseText = JSONObject()
                     .put("type", "mcp.response")
                     .put("requestId", requestId)
                     .put("payload", result)
                     .toString()
                 if (responseText.toByteArray(Charsets.UTF_8).size > MAX_MESSAGE_BYTES) {
+                    if (operationId != null && !recoveredReplay) {
+                        runCatching { operationJournal.markDelivery(operationId, "response_not_delivered") }
+                    }
                     sendProtocolError(webSocket, requestId, "Local MCP response exceeds relay message limit")
                     return@handleAsync
                 }
-                webSocket.send(responseText)
+                val queued = webSocket.send(responseText)
+                if (operationId != null && !recoveredReplay) {
+                    runCatching {
+                        operationJournal.markDelivery(
+                            operationId,
+                            if (queued) "queued_to_relay" else "response_not_delivered"
+                        )
+                    }
+                }
             }
         }.onFailure { error ->
             if (terminal.compareAndSet(false, true)) {

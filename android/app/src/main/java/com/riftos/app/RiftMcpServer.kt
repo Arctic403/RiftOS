@@ -3,6 +3,7 @@ package com.riftos.app
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -11,11 +12,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Small in-process MCP JSON-RPC server backed by RiftToolHost. */
 class RiftMcpServer(
     private val toolHost: RiftToolHost,
-    private val debugHub: RiftDebugHub = RiftDebugHub()
+    private val debugHub: RiftDebugHub = RiftDebugHub(),
+    private val operationJournal: RiftMcpOperationJournal
 ) {
     companion object {
         private const val PROTOCOL_VERSION = "2025-06-18"
-        private const val SERVER_VERSION = "0.19.0-debug-hub"
+        private const val SERVER_VERSION = "0.20.0-operation-journal"
         private const val COMPLETED_TTL_MS = 2 * 60 * 1000L
         private const val REQUEST_TIMEOUT_MS = 65_000L
         private const val MAX_IN_FLIGHT_REQUESTS = 64
@@ -41,15 +43,16 @@ class RiftMcpServer(
     fun handleAsync(request: JSONObject, retryKey: String?, reply: (JSONObject) -> Unit) {
         val method = request.optString("method")
         if (method != "tools/call" || retryKey.isNullOrBlank()) {
-            if (!request.has("id") || method.startsWith("notifications/")) dispatch(request, reply)
-            else dispatchBounded(request, reply)
+            if (!request.has("id") || method.startsWith("notifications/")) {
+                dispatch(request, operationContext = null, reply = reply)
+            } else {
+                dispatchBounded(request, reply)
+            }
             return
         }
 
-        // Only the remote relay supplies a stable transport retry key. Distinct local/model
-        // invocations must execute fresh even when tool name/arguments are identical; otherwise
-        // live reads and repeated shell commands can replay stale completed responses for the TTL.
-        val key = "${retryKey.trim()}:${requestKey(request)}"
+        val requestHash = requestKey(request)
+        val key = "${retryKey.trim()}:$requestHash"
         val id = request.opt("id") ?: JSONObject.NULL
         var cachedResponse: String? = null
         var joinedInFlight = false
@@ -84,6 +87,18 @@ class RiftMcpServer(
             return
         }
         if (joinedInFlight) return
+
+        val operation = try {
+            prepareOperation(request, retryKey.trim(), requestHash)
+        } catch (failure: Throwable) {
+            completeRequest(key, error(id, -32603, failure.message ?: "MCP operation journal rejected request"))
+            return
+        }
+        operation?.terminalSnapshot?.let { recovered ->
+            completeRequest(key, recoveredToolResponse(id, recovered))
+            return
+        }
+
         val timeout = watchdog.schedule({
             completeRequest(
                 key,
@@ -96,7 +111,7 @@ class RiftMcpServer(
         }
 
         try {
-            dispatch(request) { response -> completeRequest(key, response) }
+            dispatch(request, operation?.context) { response -> completeRequest(key, response) }
         } catch (failure: Throwable) {
             completeRequest(key, error(id, -32603, failure.message ?: "Local MCP execution failed"))
         }
@@ -104,6 +119,17 @@ class RiftMcpServer(
 
     private fun dispatchBounded(request: JSONObject, reply: (JSONObject) -> Unit) {
         val id = request.opt("id") ?: JSONObject.NULL
+        val operation = try {
+            prepareOperation(request, null, requestKey(request))
+        } catch (failure: Throwable) {
+            reply(error(id, -32603, failure.message ?: "MCP operation journal rejected request"))
+            return
+        }
+        operation?.terminalSnapshot?.let {
+            reply(recoveredToolResponse(id, it))
+            return
+        }
+
         val terminal = AtomicBoolean(false)
         val timeout = watchdog.schedule({
             if (terminal.compareAndSet(false, true)) {
@@ -111,7 +137,7 @@ class RiftMcpServer(
             }
         }, REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         try {
-            dispatch(request) { response ->
+            dispatch(request, operation?.context) { response ->
                 if (terminal.compareAndSet(false, true)) {
                     timeout.cancel(false)
                     reply(response)
@@ -125,7 +151,11 @@ class RiftMcpServer(
         }
     }
 
-    private fun dispatch(request: JSONObject, reply: (JSONObject) -> Unit) {
+    private fun dispatch(
+        request: JSONObject,
+        operationContext: RiftMcpOperationContext?,
+        reply: (JSONObject) -> Unit
+    ) {
         val id = request.opt("id") ?: JSONObject.NULL
         val method = request.optString("method")
         val params = request.optJSONObject("params") ?: JSONObject()
@@ -143,8 +173,87 @@ class RiftMcpServer(
                         .put("riftos/toolCount", manifest.getInt("count"))
                         .put("riftos/toolManifestHash", manifest.getString("sha256")))))
             }
-            "tools/call" -> handleToolCall(id, params, reply)
+            "tools/call" -> handleToolCall(id, params, operationContext, reply)
             else -> reply(error(id, -32601, "Method not found: $method"))
+        }
+    }
+
+    private fun prepareOperation(
+        request: JSONObject,
+        retryKey: String?,
+        requestHash: String
+    ): RiftMcpOperationJournal.BeginResult? {
+        if (request.optString("method") != "tools/call") return null
+        val params = request.optJSONObject("params") ?: JSONObject()
+        val name = params.optString("name").trim()
+        if (name.isBlank() || name == "rift_mcp_reconcile") return null
+        val args = params.optJSONObject("arguments") ?: JSONObject()
+        val modelCallId = params.optJSONObject("_meta")
+            ?.optString("riftos/callId")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val requestId = retryKey?.takeIf { it.isNotBlank() } ?: "local-${UUID.randomUUID()}"
+        return operationJournal.begin(
+            requestId = requestId,
+            requestHash = requestHash,
+            modelCallId = modelCallId,
+            tool = name,
+            mutating = toolHost.isMutatingCall(name, args)
+        )
+    }
+
+    private fun recoveredToolResponse(id: Any, snapshot: JSONObject): JSONObject {
+        val status = snapshot.optString("status")
+        val operationId = snapshot.optString("operationId")
+        val ok = status == "succeeded"
+        val summary = JSONObject()
+            .put("recovered", true)
+            .put("alreadyExecuted", true)
+            .put("operationId", operationId)
+            .put("journalSequence", snapshot.optLong("lastSequence"))
+            .put("tool", snapshot.optString("tool"))
+            .put("mutating", snapshot.optBoolean("mutating"))
+            .put("executionStatus", status)
+            .put("delivery", snapshot.optString("delivery", "unknown"))
+            .put("details", snapshot.opt("details") ?: JSONObject.NULL)
+        val message = if (ok) {
+            "RiftOS recovered a previously completed MCP operation and did not replay it. Use rift_mcp_reconcile for workspace evidence."
+        } else {
+            "RiftOS recovered a previous MCP operation in status '$status' and did not replay it. Effects may have applied; use rift_mcp_reconcile before retrying."
+        }
+        val structured = if (ok) {
+            JSONObject().put("ok", true).put("value", summary)
+        } else {
+            JSONObject().put("ok", false).put("error", message).put("recovery", summary)
+        }
+        val result = JSONObject()
+            .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", message)))
+            .put("structuredContent", structured)
+            .put("_meta", JSONObject()
+                .put("riftos/operationId", operationId)
+                .put("riftos/journalSequence", snapshot.optLong("lastSequence"))
+                .put("riftos/recoveredReplay", true))
+            .put("isError", !ok)
+        return success(id, result)
+    }
+
+    private fun journalDetails(name: String, rawValue: Any?): JSONObject? {
+        if (rawValue !is JSONObject) return null
+        return when (name) {
+            "rift_local_agent_batch" -> JSONObject()
+                .put("jobId", rawValue.optString("jobId"))
+                .put("requestId", rawValue.optString("requestId"))
+                .put("status", rawValue.optString("status"))
+                .put("terminal", rawValue.optBoolean("terminal", false))
+                .put("executedSteps", rawValue.optInt("executedSteps", 0))
+            "rift_workspace_exec" -> {
+                val changes = rawValue.optJSONObject("changes") ?: JSONObject()
+                JSONObject()
+                    .put("committed", rawValue.optBoolean("committed", false))
+                    .put("dryRun", rawValue.optBoolean("dryRun", false))
+                    .put("filesChanged", changes.optInt("filesChanged", 0))
+            }
+            else -> null
         }
     }
 
@@ -207,7 +316,12 @@ class RiftMcpServer(
         else -> JSONObject.quote(value.toString())
     }
 
-    private fun handleToolCall(id: Any, params: JSONObject, reply: (JSONObject) -> Unit) {
+    private fun handleToolCall(
+        id: Any,
+        params: JSONObject,
+        operationContext: RiftMcpOperationContext?,
+        reply: (JSONObject) -> Unit
+    ) {
         val name = params.optString("name").trim()
         if (name.isBlank()) {
             reply(error(id, -32602, "tools/call requires a tool name"))
@@ -224,9 +338,34 @@ class RiftMcpServer(
             traceId = modelCallId,
             attributes = mapOf("tool" to name)
         )
-        toolHost.callAsync(name, args, mcpSpan.context) { call ->
+        toolHost.callAsync(name, args, mcpSpan.context, operationContext) { call ->
             val ok = call.optBoolean("ok", false)
+            val errorText = if (ok) null else call.optString("error", "Rift tool failed")
             val rawValue = if (ok) call.opt("value") else null
+
+            val journalSnapshot = try {
+                operationContext?.let {
+                    operationJournal.complete(
+                        operationId = it.operationId,
+                        ok = ok,
+                        error = errorText,
+                        details = journalDetails(name, rawValue)
+                    )
+                }
+            } catch (failure: Throwable) {
+                val warning = "MCP operation completed but reconciliation journal finalization failed; do not replay blindly: ${failure.message ?: failure.javaClass.simpleName}"
+                mcpSpan.failure(warning, mapOf("tool" to name))
+                val result = JSONObject()
+                    .put("content", JSONArray().put(JSONObject().put("type", "text").put("text", warning)))
+                    .put("structuredContent", JSONObject().put("ok", false).put("error", warning))
+                    .put("_meta", JSONObject()
+                        .put("riftos/traceId", mcpSpan.context.traceId)
+                        .put("riftos/operationId", operationContext?.operationId ?: JSONObject.NULL))
+                    .put("isError", true)
+                reply(success(id, result))
+                return@callAsync
+            }
+
             val image = if (name == "rift_shell_exec" && rawValue is JSONObject) {
                 rawValue.optJSONObject("result")?.optJSONObject("_riftImage")
             } else null
@@ -237,7 +376,7 @@ class RiftMcpServer(
             }
             val structured = JSONObject().put("ok", ok)
             if (ok) structured.put("value", safeValue)
-            else structured.put("error", call.optString("error", "Rift tool failed"))
+            else structured.put("error", errorText ?: "Rift tool failed")
 
             val text = if (ok) {
                 when (safeValue) {
@@ -246,12 +385,19 @@ class RiftMcpServer(
                     else -> safeValue.toString()
                 }
             } else {
-                call.optString("error", "Rift tool failed")
+                errorText ?: "Rift tool failed"
             }
 
             val resultMeta = JSONObject()
                 .put("riftos/traceId", mcpSpan.context.traceId)
             if (modelCallId != null) resultMeta.put("riftos/callId", modelCallId)
+            if (operationContext != null) {
+                resultMeta
+                    .put("riftos/operationId", operationContext.operationId)
+                    .put("riftos/journalSequence", journalSnapshot?.optLong("lastSequence") ?: operationContext.startSequence)
+                    .put("riftos/executionStatus", journalSnapshot?.optString("status") ?: "running")
+            }
+
             val content = JSONArray().put(JSONObject().put("type", "text").put("text", text))
             if (ok && image != null) {
                 val data = image.optString("data")
@@ -271,7 +417,7 @@ class RiftMcpServer(
             if (ok) {
                 mcpSpan.success(mapOf("tool" to name))
             } else {
-                mcpSpan.failure(call.optString("error", "Rift tool failed"), mapOf("tool" to name))
+                mcpSpan.failure(errorText ?: "Rift tool failed", mapOf("tool" to name))
             }
             reply(success(id, result))
         }

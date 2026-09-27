@@ -10,7 +10,8 @@ The Relay client provides an optional outbound-only WSS transport from RiftOS to
 
 ## Source ownership
 
-- `RiftMcpRelayClient.kt` — socket lifecycle, protocol envelopes, reconnect and passive RiftDebugHub transport diagnostics.
+- `RiftMcpRelayClient.kt` — socket lifecycle, protocol envelopes, reconnect, MCP response-delivery state and passive RiftDebugHub transport diagnostics.
+- `RiftMcpOperationJournal.kt` — device-owned persistent execution/reconciliation state used when transport/UI state diverges.
 - `RiftRelaySettings.kt` — persisted enablement/endpoint/device id and secret-token lookup.
 - `RiftSecretStore.kt` — AES-GCM token storage backed by Android Keystore.
 - `RiftMcpActivity.kt` — local configuration/status UI.
@@ -110,6 +111,8 @@ This gives the installed-device promotion test three separate evidence points:
 A separate external subscriber proof is still required to prove Cloudflare -> driver SSE/WebSocket delivery.
 
 Responses are sent only if the WebSocket is still the current socket. Each forwarded request also gets a 70-second Android-side forwarding watchdog; if the local MCP callback never terminates, the client emits one bounded `mcp.error` instead of leaving the relay request open forever.
+
+For journaled operations the client records transport delivery separately from execution. A successful current-socket WebSocket queue becomes `queued_to_relay`; timeout/stale-socket/oversize/send failure becomes `response_not_delivered`. These states do not claim that a client UI rendered or acknowledged the response. Recovered no-replay summaries do not overwrite the original operation's delivery state.
 
 ## Stale-socket protection
 

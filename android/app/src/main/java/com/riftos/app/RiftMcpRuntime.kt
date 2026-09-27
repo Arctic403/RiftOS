@@ -13,6 +13,7 @@ object RiftMcpRuntime {
     @Volatile private var codynexBridge: RiftCodynexBridgeClient? = null
     @Volatile private var nativeGit: RiftNativeGit? = null
     @Volatile private var debugHub: RiftDebugHub? = null
+    @Volatile private var operationJournal: RiftMcpOperationJournal? = null
     @Volatile private var cliEvents: RiftCliEventBus? = null
     @Volatile private var activityRef: WeakReference<MainActivity>? = null
 
@@ -43,6 +44,14 @@ object RiftMcpRuntime {
         }
     }
 
+    /** Persistent device-owned MCP operation/reconciliation journal. */
+    fun operationJournal(context: Context): RiftMcpOperationJournal {
+        operationJournal?.let { return it }
+        return synchronized(this) {
+            operationJournal ?: RiftMcpOperationJournal(context.applicationContext).also { operationJournal = it }
+        }
+    }
+
     /** Native process-owned shell authority. This remains available without any WebView. */
     fun shellExecutor(): RiftShellExecutor? = nativeShell
 
@@ -62,7 +71,8 @@ object RiftMcpRuntime {
             host ?: RiftToolHost(
                 context.applicationContext,
                 nativeShell(context),
-                debugHub()
+                debugHub(),
+                operationJournal(context)
             ).also { host = it }
         }
     }
@@ -70,7 +80,11 @@ object RiftMcpRuntime {
     fun server(context: Context): RiftMcpServer {
         server?.let { return it }
         return synchronized(this) {
-            server ?: RiftMcpServer(toolHost(context), debugHub()).also { server = it }
+            server ?: RiftMcpServer(
+                toolHost(context),
+                debugHub(),
+                operationJournal(context)
+            ).also { server = it }
         }
     }
 
@@ -81,7 +95,8 @@ object RiftMcpRuntime {
                 context.applicationContext,
                 server(context),
                 cliEvents(),
-                debugHub()
+                debugHub(),
+                operationJournal(context)
             ).also { relay = it }
         }
     }

@@ -39,7 +39,8 @@ internal object RiftCliExecutionGate {
 class RiftToolHost(
     context: Context,
     initialShellExecutor: RiftShellExecutor? = null,
-    private val debugHub: RiftDebugHub = RiftDebugHub()
+    private val debugHub: RiftDebugHub = RiftDebugHub(),
+    private val operationJournal: RiftMcpOperationJournal
 ) {
     companion object {
         private const val PREFS = "rift-mcp-tools"
@@ -286,6 +287,17 @@ class RiftToolHost(
             )
         ))
         .put(tool(
+            "rift_mcp_reconcile",
+            "Read the persistent device-owned MCP operation journal after a UI freeze, timeout, reconnect, or ambiguous tool result. Returns recent or since-sequence execution state plus matching workspace mutation evidence. This tool never mutates files or replays work.",
+            objectSchema(
+                JSONObject()
+                    .put("sinceSequence", JSONObject().put("type", "integer").put("minimum", 0).put("description", "Return journal operations whose latest state transition is newer than this sequence. Omit for the most recent operations."))
+                    .put("operationId", stringProperty("Optional exact MCP operation identifier filter."))
+                    .put("requestId", stringProperty("Optional exact relay request identifier filter."))
+                    .put("limit", JSONObject().put("type", "integer").put("minimum", 1).put("maximum", 64))
+            )
+        ))
+        .put(tool(
             "rift_debug",
             "Read the passive process-wide RiftDebugHub. Actions: status, events, active, components. The debugger has no execution, mutation, cancellation, filesystem, network, or model authority.",
             objectSchema(
@@ -356,7 +368,7 @@ class RiftToolHost(
         ))
 
     fun callAsync(rawName: String, args: JSONObject, reply: (JSONObject) -> Unit) {
-        callAsync(rawName, args, debugContext = null, reply = reply)
+        callAsync(rawName, args, debugContext = null, operationContext = null, reply = reply)
     }
 
     fun callAsync(
@@ -365,7 +377,24 @@ class RiftToolHost(
         debugContext: RiftDebugContext?,
         reply: (JSONObject) -> Unit
     ) {
-        callAsyncInternal(rawName, args, bypassAccess = false, debugContext = debugContext, rawReply = reply)
+        callAsync(rawName, args, debugContext, operationContext = null, reply = reply)
+    }
+
+    fun callAsync(
+        rawName: String,
+        args: JSONObject,
+        debugContext: RiftDebugContext?,
+        operationContext: RiftMcpOperationContext?,
+        reply: (JSONObject) -> Unit
+    ) {
+        callAsyncInternal(
+            rawName,
+            args,
+            bypassAccess = false,
+            debugContext = debugContext,
+            operationContext = operationContext,
+            rawReply = reply
+        )
     }
 
     internal fun validateCliBatchTool(rawName: String, args: JSONObject): JSONObject {
@@ -795,6 +824,7 @@ class RiftToolHost(
         args: JSONObject,
         bypassAccess: Boolean,
         debugContext: RiftDebugContext?,
+        operationContext: RiftMcpOperationContext?,
         rawReply: (JSONObject) -> Unit
     ) {
         val name = canonicalName(rawName)
@@ -815,6 +845,36 @@ class RiftToolHost(
                 }
                 rawReply(response)
             }
+        }
+
+        if (name == "rift_mcp_reconcile") {
+            if (!bypassAccess && !allowRead()) {
+                val error = "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+                return
+            }
+            try {
+                val value = operationJournal.query(args)
+                val operations = value.optJSONArray("operations") ?: JSONArray()
+                val operationIds = ArrayList<String>()
+                for (index in 0 until operations.length()) {
+                    operations.optJSONObject(index)?.optString("operationId")
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let(operationIds::add)
+                }
+                value.put(
+                    "workspaceEvidence",
+                    RiftWorkspaceRecords.get(appContext).evidenceForRequestIds(operationIds)
+                )
+                recordAudit(name, args, true, null)
+                reply(JSONObject().put("ok", true).put("name", name).put("value", value))
+            } catch (failure: Throwable) {
+                val error = failure.message ?: "Invalid MCP reconciliation request"
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("name", name).put("error", error))
+            }
+            return
         }
 
         if (name == "rift_debug") {
@@ -886,7 +946,7 @@ class RiftToolHost(
                 return
             }
             val startedAt = SystemClock.elapsedRealtime()
-            shellExecutor?.execute(command, args.optString("cwd", "/")) { result ->
+            shellExecutor?.execute(command, args.optString("cwd", "/"), operationContext?.operationId) { result ->
                 val ok = result.optBoolean("ok", false)
                 val error = if (ok) null else result.optString("error", "RiftShell execution failed")
                 recordAudit(name, args, ok, error, SystemClock.elapsedRealtime() - startedAt)
@@ -948,7 +1008,8 @@ class RiftToolHost(
             return
         }
 
-        val requestId = "tool-${System.currentTimeMillis()}-${System.nanoTime()}"
+        val requestId = operationContext?.operationId
+            ?: "tool-${System.currentTimeMillis()}-${System.nanoTime()}"
         val request = JSONObject()
             .put("id", requestId)
             .put("method", method)
@@ -1124,6 +1185,21 @@ class RiftToolHost(
         return false
     }
 
+    internal fun isMutatingCall(rawName: String, args: JSONObject): Boolean {
+        val name = canonicalName(rawName)
+        if (name == "rift_mcp_reconcile" || name == "rift_debug") return false
+        if (name == "rift_local_agent_batch") {
+            return args.optString("action").trim().lowercase() in setOf("submit", "cancel")
+        }
+        if (name == "rift_shell_exec") return true
+        if (isWriteTool(name)) return true
+        if (name == "rift_workspace_exec") {
+            return runCatching { workspaceBatchMutates(normalizeWorkspaceExecArgs(args)) }
+                .getOrDefault(true)
+        }
+        return false
+    }
+
     private fun requiresWrite(name: String, args: JSONObject): Boolean =
         isWriteTool(name) || name == "rift_shell_exec" || (name == "rift_workspace_exec" && workspaceBatchMutates(args))
 
@@ -1158,6 +1234,7 @@ class RiftToolHost(
         "rift_workspace_exec" -> "workspace operation · ${args.optJSONArray("operations")?.length() ?: 0} op"
         "rift_workspace_diff" -> args.optString("path").ifBlank { "workspace" }.take(300)
         "rift_info" -> "sandbox"
+        "rift_mcp_reconcile" -> "journal reconciliation"
         "rift_debug" -> args.optString("action", "status").trim().lowercase().ifBlank { "status" }
         "rift_local_agent_batch" -> {
             val action = args.optString("action").trim().lowercase().ifBlank { "unknown" }

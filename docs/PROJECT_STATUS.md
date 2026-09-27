@@ -25,12 +25,12 @@ From `android/app/build.gradle.kts`:
 - Terminal and Task Manager are native through `RiftNativeSystemApps`.
 - Files, Editor, Dev Lab, Workspace Records and Settings are native through `RiftNativeWorkspaceApps`.
 - `RiftMcpRuntime` owns process-wide native shell, MCP host/server/relay, native Git, Vortex bridge and the Codynex LR0 Binder bridge.
-- `RiftMcpRuntime` also owns one process-wide passive `RiftDebugHub`; MCP Server and Tool Host publish correlated spans, and the reusable `RiftDebugAdapter` plug is ready for additional subsystems.
-- Current source adds the fixed `codynex` shell family over an explicit Binder binding to `com.codynex.lr0lab/.CodynexBridgeService`, with bounded JSON/source sizes, bounded bind/RPC timeouts and one reconnect after Binder death. `RiftCodynexBridgeClient.kt` is now part of the exact 46-file Gradle Kotlin snapshot; installed-device bridge proof still waits for the next RiftOS build/install.
+- `RiftMcpRuntime` also owns one process-wide passive `RiftDebugHub` and one persistent `RiftMcpOperationJournal`; MCP Server and Tool Host publish correlated spans while journaled calls get restart-safe operation identity, no-replay state, and read-only reconciliation.
+- Current source adds the fixed `codynex` shell family over an explicit Binder binding to `com.codynex.lr0lab/.CodynexBridgeService`, with bounded JSON/source sizes, bounded bind/RPC timeouts and one reconnect after Binder death. `RiftCodynexBridgeClient.kt` is now part of the exact 47-file Gradle Kotlin snapshot; installed-device bridge proof still waits for the next RiftOS build/install.
 - `RiftNativeShell` is the live shell executor and has no renderer fallback.
 - **RiftBrowser bounded editor bridge is source-complete and awaiting Builder/install proof.** The active HTTPS-page inspector now supports explicit `edit` plus Base64-safe `edit-b64` for non-sensitive text inputs, textareas and contenteditable editor surfaces, with a 256 KiB UTF-8 ceiling, reset support and password/secret/token/API-key/authorization guards. It still exposes no arbitrary JavaScript execution, form submission/deploy authority, cookies, storage, headers or control-value readback.
 - `RiftToolSandbox` is hard-scoped to `filesDir/riftfs/workspace`.
-- the current model-visible MCP catalog is exactly 19 tools; `rift_debug` is passive/read-only.
+- the current source model-visible MCP catalog is exactly 21 tools; `rift_debug` is passive/read-only and `rift_mcp_reconcile` is persistent/read-only.
 - `RiftWorkspaceRecords` is native/shared; `RiftWorkspaceWatcher` is Activity-owned and is recreated with `MainActivity`.
 - `RiftDiffEngineV2` provides bounded adaptive exact-LCS/patience multi-hunk text diffs to Workspace Records; it is evidence formatting only and does not approve patches.
 - `RiftFileIdentityV2` adds exact SHA rename/copy content identity plus bounded non-exact rename/rewrite similarity evidence; it does not infer user intent or authorize mutations.
