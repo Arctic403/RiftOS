@@ -51,7 +51,11 @@ assert.match(host, /component = "tool\.host"/);
 assert.match(host, /parent = debugContext/);
 assert.match(host, /debugHub\.query\(args\)/);
 assert.match(host, /Actions: status, events, active, components/);
-assert.doesNotMatch(host, /"rift_debug"[\s\S]{0,800}"cancel"/);
+const debugToolStart = host.indexOf('"rift_debug"');
+const localAgentToolStart = host.indexOf('"rift_local_agent_batch"', debugToolStart);
+assert.ok(debugToolStart >= 0 && localAgentToolStart > debugToolStart, "rift_debug tool block must precede local-agent batch");
+const debugToolBlock = host.slice(debugToolStart, localAgentToolStart);
+assert.doesNotMatch(debugToolBlock, /"cancel"/, "rift_debug must not expose cancellation authority");
 
 assert.match(cliEvents, /debugHub\?\.sink\("riftcli\.event-bus"\)/);
 assert.match(cliEvents, /operation = "event\.created"/);
