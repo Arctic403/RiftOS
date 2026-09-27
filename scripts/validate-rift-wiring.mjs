@@ -49,12 +49,25 @@ for (const required of [
 ]) if (!manifest.includes(required)) fail(`Android RiftBuild install contract is missing ${required}`);
 const kotlinDir = 'android/app/src/main/java/com/riftos/app';
 const kotlinFiles = walk(kotlinDir).filter(file => file.endsWith('.kt'));
-const manifestActivities = new Set([...manifest.matchAll(/<activity\b[^>]*\bandroid:name="\.([^"]+)"/g)].map(match => match[1]));
+const manifestComponents = [...manifest.matchAll(
+  /<(activity|service|receiver|provider)\b[^>]*\bandroid:name="\.([^"]+)"/g
+)].map(match => ({ kind: match[1], name: match[2] }));
+const manifestComponentNames = new Set(manifestComponents.map(component => component.name));
+const manifestActivities = new Set(
+  manifestComponents
+    .filter(component => component.kind === 'activity')
+    .map(component => component.name)
+);
 const kotlinTexts = new Map(kotlinFiles.map(file => [file, read(file)]));
+for (const component of manifestComponents) {
+  const declarationPattern = new RegExp(`\\b(?:class|object)\\s+${component.name}\\b`);
+  const owner = kotlinFiles.find(file => declarationPattern.test(kotlinTexts.get(file) || ''));
+  if (!owner) fail(`AndroidManifest ${component.kind} has no Kotlin class/object source: ${component.name}`);
+}
 for (const activity of manifestActivities) {
   const activityPattern = new RegExp(`\\bclass\\s+${activity}\\s*:\\s*Activity\\s*\\(`);
   const owner = kotlinFiles.find(file => activityPattern.test(kotlinTexts.get(file) || ''));
-  if (!owner) fail(`AndroidManifest activity has no Kotlin class source: ${activity}`);
+  if (!owner) fail(`AndroidManifest activity is not backed by an Activity subclass: ${activity}`);
 }
 for (const file of kotlinFiles) {
   const text = kotlinTexts.get(file) || '';
@@ -64,7 +77,7 @@ for (const file of kotlinFiles) {
 }
 
 const kotlinTypes = new Map(kotlinFiles.map(file => [path.basename(file, '.kt'), { file, text: read(file) }]));
-const reachable = new Set([...manifestActivities]);
+const reachable = new Set([...manifestComponentNames]);
 const queue = [...reachable];
 while (queue.length) {
   const current = queue.shift();
@@ -79,7 +92,7 @@ while (queue.length) {
   }
 }
 for (const [name, node] of kotlinTypes) {
-  if (!reachable.has(name)) fail(`Kotlin source is unreachable from an Android manifest Activity: ${node.file}`);
+  if (!reachable.has(name)) fail(`Kotlin source is unreachable from an Android manifest component: ${node.file}`);
 }
 
 const rootGradle = read('android/build.gradle.kts');
