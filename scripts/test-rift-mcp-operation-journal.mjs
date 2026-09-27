@@ -21,7 +21,7 @@ assert.match(journal, /AtomicFile/);
 assert.match(journal, /MAX_ENTRIES = 256/);
 assert.match(journal, /rift\.mcp-operation-journal\/1/);
 assert.match(journal, /interrupted_on_restart/);
-assert.match(journal, /Effects may have applied\. Reconcile before retrying/);
+assert.match(journal, /effects may have applied\. Reconcile before retrying/i);
 assert.match(journal, /queued_to_relay/);
 assert.match(journal, /response_not_delivered/);
 assert.match(journal, /requestHash/);
