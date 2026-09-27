@@ -35,13 +35,13 @@ assert.doesNotMatch(hub, /Runtime\.getRuntime|ProcessBuilder|java\.io\.File|java
 assert.match(runtime, /@Volatile private var debugHub: RiftDebugHub\? = null/);
 assert.match(runtime, /fun debugHub\(\): RiftDebugHub/);
 assert.match(runtime, /RiftToolHost\([\s\S]*debugHub\(\)/);
-assert.match(runtime, /RiftMcpServer\(toolHost\(context\), debugHub\(\)\)/);
+assert.match(runtime, /RiftMcpServer\([\s\S]*toolHost\(context\),[\s\S]*debugHub\(\),[\s\S]*operationJournal\(context\)/);
 assert.match(runtime, /RiftCliEventBus\(debugHub\(\)\)/);
 assert.match(runtime, /RiftMcpRelayClient\([\s\S]*cliEvents\(\),[\s\S]*debugHub\(\)/);
 
 assert.match(server, /component = "mcp\.server"/);
 assert.match(server, /operation = "tools\.call"/);
-assert.match(server, /toolHost\.callAsync\(name, args, mcpSpan\.context\)/);
+assert.match(server, /toolHost\.callAsync\(name, args, mcpSpan\.context, operationContext\)/);
 assert.match(server, /"riftos\/traceId"/);
 assert.match(server, /mcpSpan\.success/);
 assert.match(server, /mcpSpan\.failure/);
