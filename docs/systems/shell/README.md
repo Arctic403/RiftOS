@@ -294,6 +294,8 @@ Pairing tokens are intentionally rejected in shell arguments.
 
 Pairing is performed only in native Settings through RiftSecretStore.
 
+RiftPack qualification is exposed only as `riftllm-agent riftpack-qualification-start` and `riftllm-agent riftpack-qualification-status`; both are fixed no-argument routes to the allowlisted RiftLLM Binder methods and do not expose arbitrary Provider calls or paths.
+
 RiftLLM preview/publish fail closed because the retired workspace patch composite has no current bounded native replacement.
 
 ## Rift++ execution

@@ -51,6 +51,8 @@ class RiftLlmDevClient(context: Context) {
             "train_data_status" to "train_data_status",
             "train_canary_start" to "train_canary_start",
             "train_canary_status" to "train_canary_status",
+            "riftpack_qualification_start" to "riftpack_qualification_start",
+            "riftpack_qualification_status" to "riftpack_qualification_status",
             "ack_publish" to "ack_publish"
         )
     }

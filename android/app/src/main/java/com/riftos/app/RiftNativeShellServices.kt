@@ -319,6 +319,7 @@ class RiftNativeShellServices(context: Context) {
             "RiftLLM native Dev API bridge\nriftllm-agent status\nriftllm-agent unpair\n" +
                 "riftllm-agent train-data-status\nriftllm-agent train-data-build\nriftllm-agent train-data-build-status\nriftllm-agent train-data-build-cancel\n" +
                 "riftllm-agent train-data-upload\nriftllm-agent train-data-remote-status\nriftllm-agent train-canary-start\nriftllm-agent train-canary-status\n" +
+                "riftllm-agent riftpack-qualification-start\nriftllm-agent riftpack-qualification-status\n" +
                 "Pairing is entered only in native Settings. Legacy corpus-* helpers are unavailable unless explicitly reintroduced behind a bounded native/headless service."
         )
         if(sub=="pair") throw IllegalStateException("RiftLLM pairing token must be entered in native Settings; shell arguments are intentionally rejected.")
@@ -333,6 +334,14 @@ class RiftNativeShellServices(context: Context) {
             "train-data-remote-status" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","remote-status"))
             "train-canary-start" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","canary-start"))
             "train-canary-status" -> RiftTrainDataTaskRunner.execute(appContext,llm,JSONObject().put("op","canary-status"))
+            "riftpack-qualification-start" -> {
+                require(args.isEmpty()) { "usage: riftllm-agent riftpack-qualification-start" }
+                llm.execute(JSONObject().put("op","riftpack_qualification_start"))
+            }
+            "riftpack-qualification-status" -> {
+                require(args.isEmpty()) { "usage: riftllm-agent riftpack-qualification-status" }
+                llm.execute(JSONObject().put("op","riftpack_qualification_status"))
+            }
             else -> {
                 if (sub == "preview" || sub == "publish") throw IllegalStateException(
                     "RiftLLM '$sub' requires the retired workspace patch preview/apply composite and is intentionally unavailable until a bounded native publisher is implemented."

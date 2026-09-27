@@ -128,6 +128,8 @@ Exactly 26 method names are allowed:
 - train_data_status
 - train_canary_start
 - train_canary_status
+- riftpack_qualification_start
+- riftpack_qualification_status
 - ack_publish
 
 Anything else fails before ContentResolver.call.
@@ -155,6 +157,10 @@ Current shell provides:
 - train-data-remote-status
 - train-canary-start
 - train-canary-status
+- riftpack-qualification-start -> provider `riftpack_qualification_start` with `{}` only
+- riftpack-qualification-status -> provider `riftpack_qualification_status` with `{}` only
+
+The RiftPack qualification shell routes accept no caller-selected paths, IDs or payload fields. They only start the fixed app-private qualification job and read its current/terminal evidence.
 
 During this audit stale aliases that called nonexistent Provider methods were corrected.
 
@@ -311,6 +317,7 @@ The bridge itself does not widen MCP authority.
 - implemented the previously missing native Settings pairing/status/unpair surface;
 - retained shell rejection of pairing-token arguments;
 - exposed existing fixed build cancellation as `train-data-build-cancel`;
+- exposed RiftLLM's fixed `riftpack_qualification_start` / `riftpack_qualification_status` methods as no-argument native shell commands without widening Binder authority;
 - confirmed frozen canary controller remains fixed-input and was not executed.
 
 ## Critical invariants
@@ -319,7 +326,7 @@ The bridge itself does not widen MCP authority.
 - exact 64-hex pairing token;
 - pairing verifies provider before secret persistence;
 - token never accepted through shell arguments;
-- exactly 26 provider method names;
+- exactly 28 provider method names, including the two fixed RiftPack qualification methods;
 - Provider request <=512 KiB;
 - Provider response <=512 KiB;
 - at most two in-flight Provider IPC workers and 12-second per-call timeout;
@@ -363,7 +370,7 @@ RiftLLM-side Provider/model behavior -> standalone RiftLLM project, not RiftOS.
 
 Second source audit must verify:
 - package/authority/manifest visibility;
-- exact 26-method catalog;
+- exact 28-method catalog, including fixed RiftPack qualification start/status;
 - 64-hex token and provider-before-save flow;
 - Settings pair/unpair/status;
 - shell pair rejection and corrected aliases;
