@@ -157,6 +157,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-cli-push-channel.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-cli-batch-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-local-agent-batch.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/mcp/README.md` |
+| `scripts/test-rift-mcp-operation-journal.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-debug-hub.mjs` | `docs/systems/debugger/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
 | `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
