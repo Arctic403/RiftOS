@@ -53,6 +53,8 @@ class RiftLlmDevClient(context: Context) {
             "train_canary_status" to "train_canary_status",
             "riftpack_qualification_start" to "riftpack_qualification_start",
             "riftpack_qualification_status" to "riftpack_qualification_status",
+            "rift_micro_process_death_start" to "rift_micro_process_death_start",
+            "rift_micro_process_death_status" to "rift_micro_process_death_status",
             "ack_publish" to "ack_publish"
         )
     }

@@ -160,8 +160,10 @@ Current shell provides:
 - train-canary-status
 - riftpack-qualification-start -> provider `riftpack_qualification_start` with `{}` only
 - riftpack-qualification-status -> provider `riftpack_qualification_status` with `{}` only
+- process-death-start -> provider `rift_micro_process_death_start` with `{}` only
+- process-death-status -> provider `rift_micro_process_death_status` with `{}` only
 
-The RiftPack qualification shell routes accept no caller-selected paths, IDs or payload fields. They only start the fixed app-private qualification job and read its current/terminal evidence.
+The RiftPack qualification and process-death shell routes accept no caller-selected paths, IDs or payload fields. RiftPack routes only start/read the fixed app-private qualification job. Process-death routes only start/read RiftLLM's fixed app-private recovery gate; the start path may intentionally terminate the RiftLLM process only after RiftLLM has durably armed its checkpoint/pending evidence. RiftOS owns only the bounded Binder invocation and does not expose arbitrary Provider method selection.
 
 During this audit stale aliases that called nonexistent Provider methods were corrected.
 
@@ -328,7 +330,7 @@ The bridge itself does not widen MCP authority.
 - exact 64-hex pairing token;
 - pairing verifies provider before secret persistence;
 - token never accepted through shell arguments;
-- exactly 28 provider method names, including the two fixed RiftPack qualification methods;
+- exactly 30 provider method names, including the fixed RiftPack qualification and process-death start/status methods;
 - Provider request <=512 KiB;
 - Provider response <=512 KiB;
 - at most two in-flight Provider IPC workers and 12-second per-call timeout;
@@ -372,7 +374,7 @@ RiftLLM-side Provider/model behavior -> standalone RiftLLM project, not RiftOS.
 
 Second source audit must verify:
 - package/authority/manifest visibility;
-- exact 28-method catalog, including fixed RiftPack qualification start/status;
+- exact 30-method catalog, including fixed RiftPack qualification and process-death start/status;
 - 64-hex token and provider-before-save flow;
 - Settings pair/unpair/status;
 - shell pair rejection and corrected aliases;

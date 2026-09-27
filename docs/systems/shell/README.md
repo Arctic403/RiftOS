@@ -298,6 +298,8 @@ Pairing is performed only in native Settings through RiftSecretStore.
 
 RiftPack qualification is exposed only as `riftllm-agent riftpack-qualification-start` and `riftllm-agent riftpack-qualification-status`; both are fixed no-argument routes to the allowlisted RiftLLM Binder methods and do not expose arbitrary Provider calls or paths.
 
+Real RiftLLM process-death recovery is exposed only as `riftllm-agent process-death-start` and `riftllm-agent process-death-status`. They are fixed no-argument routes to `rift_micro_process_death_start` / `rift_micro_process_death_status`; callers cannot select Provider methods, paths, checkpoint IDs or payloads. Any deliberate RiftLLM process termination is owned by the RiftLLM recovery controller after its own durable checkpoint gate, not by RiftShell.
+
 RiftLLM preview/publish fail closed because the retired workspace patch composite has no current bounded native replacement.
 
 ## Rift++ execution

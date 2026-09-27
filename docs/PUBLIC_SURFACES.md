@@ -18,7 +18,7 @@ This inventory separates live packaged authority from retained reference/compati
 | Native Git | `RiftNativeGit.kt` | Git/GitHub workflow with Android Keystore credential access. |
 | Native RiftBuild | `RiftBuildLocalExecutor.kt`, `RiftApkV2Signer.kt`, `RiftBuildInstaller.kt` | Workspace-bounded Android validation/materialization/package flow plus bounded APK v2 signing/verification and allowlisted PackageInstaller handoff; supports NativeActivity proofs and the code-bearing Codynex C0 `.cx` editor via `classes*.dex`, with no raw process or arbitrary package authority. |
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
-| RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming and no-argument RiftPack qualification start/status. |
+| RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming, no-argument RiftPack qualification start/status, and fixed no-argument real process-death recovery start/status. |
 
 ## Current source pending installed-device promotion
 
