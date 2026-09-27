@@ -2,13 +2,13 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-27.**
 
 ## Purpose
 
 RiftGit is RiftOS's Android-native GitHub repository synchronization layer for projects stored inside app-private RiftFS.
 
-It uses GitHub HTTPS APIs rather than invoking a local git process. Bounded reads, clone, pull, branch inspection and history use the GitHub REST API. Atomic push uses GitHub GraphQL `createCommitOnBranch` so the complete dirty change set is sent as one branch-checked commit mutation instead of one REST blob request per changed file.
+It uses GitHub HTTPS APIs rather than invoking a local git process. Bounded reads, clone, pull, branch inspection and history use the GitHub REST API. Atomic push keeps GitHub GraphQL `createCommitOnBranch` as the fast path for ordinary `100644` files. When a modified tracked blob must preserve the supported executable Git mode (`100755`), RiftGit switches to a bounded Git-data path: create changed blobs, create one tree over the current remote tree, create one commit, recheck the remote head, then fast-forward the branch ref with `force=false`.
 
 The retained src/riftgit.js implementation is historical/reference source and is not the current Android authority.
 
@@ -39,10 +39,10 @@ RiftNativeGit contains no:
 
 Remote operations use fixed HTTPS requests to:
 
-- https://api.github.com for REST reads and repository synchronization support;
-- https://api.github.com/graphql for the single-request atomic push mutation.
+- https://api.github.com for REST reads and repository synchronization support, plus mode-preserving Git-data blob/tree/commit/ref writes when required;
+- https://api.github.com/graphql for the ordinary-file single-request atomic push fast path.
 
-REST methods remain bounded to GET, POST and PATCH where required by non-push operations. Push no longer performs per-file REST blob POSTs. The OkHttp client enforces a 50-second whole-call timeout (15-second connect, 45-second read/write) so a remote request cannot occupy the serialized shell path indefinitely.
+REST methods remain bounded to GET, POST and PATCH. Ordinary `100644` pushes avoid per-file blob writes; the Git-data fallback is entered only when a modified tracked blob requires mode preservation. The OkHttp client enforces a 50-second whole-call timeout (15-second connect, 45-second read/write) so a remote request cannot occupy the serialized shell path indefinitely.
 
 ## Credential boundary
 
@@ -199,6 +199,10 @@ Local status limits:
 
 .riftgit.json and .git are ignored as tracked project content.
 
+For **untracked** files, RiftGit also reads the repository-root `.gitignore` under explicit bounds: <=256 KiB, <=4096 active rules, <=4096 characters/rule. The V1 matcher supports blank/comment lines, ordered `!` negation, root-anchored rules, slash/path rules, directory rules, `*`, `?`, and `**`. Nested per-directory `.gitignore` files are not yet separate authorities; the root file is the bounded repository ignore contract.
+
+Ignore rules never hide an already-tracked path. If a tracked file later matches `.gitignore`, RiftGit still compares it and can modify/delete/push it normally. This prevents an ignore-rule change from falsely reporting tracked content as deleted while keeping private/generated untracked artifacts out of status and push scope.
+
 Tracked files are compared using canonical Git blob SHA-1:
 
 sha1("blob <length>\0" + bytes)
@@ -254,40 +258,34 @@ Change-set limits:
 - <=10000 changes;
 - changed files <=48 MiB each;
 - changed bytes <=256 MiB;
-- encoded GraphQL request <=16 MiB for the current single-request transport.
+- encoded GraphQL request <=16 MiB when the ordinary-file fast path is selected.
 
-The 16 MiB request ceiling is intentionally stricter than the repository-size ceiling. RiftGit fails before network mutation when a dirty set is too large for this transport rather than falling back to the old per-file REST upload loop.
-
-Before the write request:
+Before either transport:
 1. fetch the remote branch head;
 2. require recorded head is blank or equals the current remote head;
-3. read every modified/untracked file exactly once into the push snapshot;
+3. read every modified/untracked file into the push snapshot;
 4. compute each canonical Git blob SHA locally;
-5. base64-encode the exact bytes for GitHub `FileAddition.contents`;
-6. represent deletions as `FileDeletion` paths;
+5. preserve the recorded Git mode for tracked blobs and default new files to `100644`;
+6. accept only supported regular-file blob modes `100644` or `100755`;
 7. verify the entire local modified/deleted/untracked set still matches the initial snapshot;
-8. re-hash every snapshotted local file and require it still matches the prepared Git blob SHA;
-9. repeat that stability verification immediately before sending.
+8. re-hash every snapshotted local file and require it still matches the prepared Git blob SHA.
 
-RiftGit then performs **one GitHub write request** using GraphQL `createCommitOnBranch`.
+If every uploaded blob is `100644`, RiftGit uses the existing **single GitHub GraphQL write** with `createCommitOnBranch`. The mutation carries `repositoryNameWithOwner`, `branchName`, `expectedHeadOid`, commit message, additions and deletions. GitHub creates the commit and moves the ref atomically, and the returned commit/ref SHAs must match before local metadata advances.
 
-The mutation carries:
-- `repositoryNameWithOwner`;
-- `branchName`;
-- `expectedHeadOid`;
-- commit headline/body;
-- all additions;
-- all deletions.
+If any modified tracked blob must preserve `100755`, RiftGit switches the whole commit to the bounded **Git-data mode-preserving transport**:
 
-GitHub creates the commit and updates the branch atomically. `expectedHeadOid` prevents a competing remote advance from being overwritten.
+1. resolve the remote commit's current tree;
+2. create Git blobs for modified/untracked files and require every returned blob SHA equals the locally computed Git blob SHA;
+3. create one tree over the remote base tree with explicit per-path modes and deletion entries;
+4. create one commit whose sole parent is the previously verified remote head;
+5. verify the local workspace snapshot again;
+6. fetch the remote branch head again and require it is still unchanged;
+7. update the branch ref with `force=false`;
+8. require the returned ref target equals the created commit SHA.
 
-The returned commit OID and updated ref target OID must both be valid Git SHAs and must match before local RiftGit metadata is advanced.
+Creating blobs/tree/commit before the ref update can leave unreachable Git objects if the final fast-forward is rejected; it cannot overwrite branch history. A concurrent remote advance causes the second head check or non-force ref update to fail.
 
-The GraphQL file-addition surface does not expose a Git mode field. Therefore the current transport refuses a changed tracked file whose mode is not `100644` rather than risking an executable-mode change. True mode-preserving large/special-file pushes are reserved for a future native Git pack transport.
-
-Tracked sizes and blob SHAs written to metadata come from the exact byte snapshot sent in the mutation, not a later reread of a possibly changed file.
-
-The retired push path performed one `POST /git/blobs` per modified/untracked file, then separate tree, commit and ref writes. That path is forbidden by the focused source contract because large dirty sets could trigger GitHub secondary rate limiting.
+Tracked sizes, blob SHAs and modes written to local metadata come from the exact prepared snapshot. The Git-data path is conditional rather than a general replacement for the GraphQL fast path, keeping ordinary pushes to one write request while allowing executable scripts such as mode `100755` to be edited and pushed without losing their Git mode.
 
 ## Workspace push
 

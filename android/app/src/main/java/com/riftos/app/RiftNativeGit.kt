@@ -25,6 +25,9 @@ class RiftNativeGit(context: Context) {
         private const val MAX_FILES = 10000
         private const val MAX_CLEANUP_ENTRIES = 40_000
         private const val MAX_META_BYTES = 8L * 1024L * 1024L
+        private const val MAX_GITIGNORE_BYTES = 256L * 1024L
+        private const val MAX_GITIGNORE_RULES = 4096
+        private const val MAX_GITIGNORE_PATTERN_CHARS = 4096
         private const val MAX_POINTER_BYTES = 4L * 1024L
         private const val MAX_API_RESPONSE_BYTES = 80L * 1024L * 1024L
         private const val MAX_GRAPHQL_PUSH_REQUEST_BYTES = 16L * 1024L * 1024L
@@ -61,6 +64,11 @@ class RiftNativeGit(context: Context) {
         val deleted: List<String>,
         val untracked: List<String>,
         val localManagedCount: Int
+    )
+
+    private data class GitIgnoreRule(
+        val regex: Regex,
+        val negated: Boolean
     )
 
     private val appContext = context.applicationContext
@@ -222,6 +230,8 @@ class RiftNativeGit(context: Context) {
         val repoRoot = resolveFile(meta.getString("root"), "/")
         require(repoRoot.isDirectory && repoRoot != root) { "Repository root is missing or unsafe: " + meta.getString("root") }
         val local = LinkedHashMap<String, File>()
+        val tracked = meta.optJSONObject("tracked") ?: JSONObject()
+        val ignoreRules = gitIgnoreRules(repoRoot)
         var localBytes = 0L
         repoRoot.walkTopDown().onEnter { directory ->
             val canonical = directory.canonicalFile
@@ -235,7 +245,8 @@ class RiftNativeGit(context: Context) {
             val canonical = file.canonicalFile
             require(canonical.path.startsWith(repoRoot.canonicalPath + File.separator)) { "Repository entry escaped root" }
             val relative = file.relativeTo(repoRoot).invariantSeparatorsPath
-            if (!ignored(relative)) {
+            val isTracked = tracked.has(relative)
+            if (!ignored(relative) && (isTracked || !gitIgnored(relative, ignoreRules))) {
                 require(file.length() <= MAX_FILE) { "$relative exceeds per-file Git limit" }
                 localBytes += file.length()
                 require(localBytes <= MAX_TOTAL) { "Local repository exceeds total Git limit" }
@@ -245,7 +256,6 @@ class RiftNativeGit(context: Context) {
         }
         val modified = ArrayList<String>()
         val deleted = ArrayList<String>()
-        val tracked = meta.optJSONObject("tracked") ?: JSONObject()
         tracked.keys().asSequence().toList().sorted().forEach { path ->
             val file = local.remove(path)
             if (file == null) deleted += path
@@ -309,24 +319,22 @@ class RiftNativeGit(context: Context) {
         val uploadPaths = initial.modified + initial.untracked
         val uploaded = LinkedHashMap<String, String>()
         val uploadedSizes = LinkedHashMap<String, Long>()
-        val additions = JSONArray()
+        val uploadModes = LinkedHashMap<String, String>()
         var total = 0L
 
-        print("Preparing " + changes.size + " change(s) for one atomic GitHub commit request...")
         for (path in uploadPaths) {
             val file = repoFile(meta, path)
             require(file.length() <= MAX_FILE) { path + " exceeds per-file limit" }
             total += file.length()
             require(total <= MAX_TOTAL) { "Change set exceeds total sync limit" }
 
-            val trackedMode =
-                meta.optJSONObject("tracked")?.optJSONObject(path)?.optString("mode", "100644")
-                    ?: "100644"
-            require(trackedMode == "100644") {
-                "Single-request GitHub push cannot safely preserve mode " +
-                    trackedMode + " for " + path + "; native pack transport is required"
-            }
-
+            val mode = checkedBlobMode(
+                meta.optJSONObject("tracked")
+                    ?.optJSONObject(path)
+                    ?.optString("mode", "100644")
+                    ?: "100644",
+                path
+            )
             val bytes = file.readBytes()
             require(bytes.size.toLong() == file.length()) {
                 "File changed while reading: " + path
@@ -334,11 +342,7 @@ class RiftNativeGit(context: Context) {
             val localSha = blobSha(bytes)
             uploaded[path] = localSha
             uploadedSizes[path] = bytes.size.toLong()
-            additions.put(
-                JSONObject()
-                    .put("path", path)
-                    .put("contents", Base64.encodeToString(bytes, Base64.NO_WRAP))
-            )
+            uploadModes[path] = mode
         }
 
         val deletions = JSONArray()
@@ -351,53 +355,99 @@ class RiftNativeGit(context: Context) {
         val message = checkedCommitMessage(rawMessage.ifBlank {
             meta.optString("pendingMessage").ifBlank { "RiftOS workspace update" }
         })
-        val messageInput = commitMessageInput(message)
-        val fileChanges = JSONObject()
-        if (additions.length() > 0) fileChanges.put("additions", additions)
-        if (deletions.length() > 0) fileChanges.put("deletions", deletions)
+        val needsModePreservingTransport = uploadModes.values.any { it != "100644" }
 
-        val input = JSONObject()
-            .put(
-                "branch",
+        val pushResult =
+            if (needsModePreservingTransport) {
+                print(
+                    "Preparing " + changes.size +
+                        " change(s) with mode-preserving Git-data transport..."
+                )
+                atomicPushGitData(
+                    owner = owner,
+                    repo = repo,
+                    branch = branch,
+                    remoteSha = remoteSha,
+                    message = message,
+                    initial = initial,
+                    uploaded = uploaded,
+                    uploadModes = uploadModes
+                )
+            } else {
+                print(
+                    "Preparing " + changes.size +
+                        " change(s) for one atomic GitHub commit request..."
+                )
+                val messageInput = commitMessageInput(message)
+                val additions = JSONArray()
+                uploadPaths.forEach { path ->
+                    val file = repoFile(meta, path)
+                    val bytes = file.readBytes()
+                    require(blobSha(bytes) == uploaded.getValue(path)) {
+                        "Workspace changed while preparing GraphQL payload: " + path
+                    }
+                    additions.put(
+                        JSONObject()
+                            .put("path", path)
+                            .put("contents", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                    )
+                }
+                val fileChanges = JSONObject()
+                if (additions.length() > 0) fileChanges.put("additions", additions)
+                if (deletions.length() > 0) fileChanges.put("deletions", deletions)
+
+                val input = JSONObject()
+                    .put(
+                        "branch",
+                        JSONObject()
+                            .put("repositoryNameWithOwner", owner + "/" + repo)
+                            .put("branchName", branch)
+                    )
+                    .put("expectedHeadOid", remoteSha)
+                    .put("message", messageInput)
+                    .put("fileChanges", fileChanges)
+
+                val variables = JSONObject().put("input", input)
+                verifyWorkspaceStable(initial, uploaded)
+
+                val data = graphqlObject(
+                    CREATE_COMMIT_ON_BRANCH_MUTATION,
+                    variables,
+                    MAX_GRAPHQL_PUSH_REQUEST_BYTES
+                )
+                val created = data.getJSONObject("createCommitOnBranch")
+                val commitSha = checkedGitSha(
+                    created.getJSONObject("commit").getString("oid"),
+                    "created commit"
+                )
+                val refSha = checkedGitSha(
+                    created.getJSONObject("ref").getJSONObject("target").getString("oid"),
+                    "updated branch"
+                )
+                require(commitSha == refSha) {
+                    "GitHub commit/ref mismatch after atomic push"
+                }
                 JSONObject()
-                    .put("repositoryNameWithOwner", owner + "/" + repo)
-                    .put("branchName", branch)
-            )
-            .put("expectedHeadOid", remoteSha)
-            .put("message", messageInput)
-            .put("fileChanges", fileChanges)
+                    .put("commitSha", commitSha)
+                    .put("transport", "graphql-createCommitOnBranch")
+                    .put("writeRequests", 1)
+            }
 
-        val variables = JSONObject().put("input", input)
-        verifyWorkspaceStable(initial, uploaded)
-
-        val data = graphqlObject(
-            CREATE_COMMIT_ON_BRANCH_MUTATION,
-            variables,
-            MAX_GRAPHQL_PUSH_REQUEST_BYTES
-        )
-        val created = data.getJSONObject("createCommitOnBranch")
         val commitSha = checkedGitSha(
-            created.getJSONObject("commit").getString("oid"),
+            pushResult.getString("commitSha"),
             "created commit"
         )
-        val refSha = checkedGitSha(
-            created.getJSONObject("ref").getJSONObject("target").getString("oid"),
-            "updated branch"
-        )
-        require(commitSha == refSha) {
-            "GitHub commit/ref mismatch after atomic push"
-        }
-
-        val tracked = meta.optJSONObject("tracked") ?: JSONObject().also { meta.put("tracked", it) }
+        val tracked =
+            meta.optJSONObject("tracked")
+                ?: JSONObject().also { meta.put("tracked", it) }
         initial.deleted.forEach { tracked.remove(it) }
         uploadPaths.forEach { path ->
-            val oldMode = tracked.optJSONObject(path)?.optString("mode", "100644") ?: "100644"
             tracked.put(
                 path,
                 JSONObject()
                     .put("blobSha", uploaded.getValue(path))
                     .put("size", uploadedSizes.getValue(path))
-                    .put("mode", oldMode)
+                    .put("mode", uploadModes.getValue(path))
             )
         }
 
@@ -415,16 +465,147 @@ class RiftNativeGit(context: Context) {
         patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
         checkpoint(meta.optString("root"), "git:push", commitSha)
 
+        val writeRequests = pushResult.optInt("writeRequests", 1)
+        val transport = pushResult.getString("transport")
         print(
             "Push complete: " + commitSha.take(12) +
-                " · one Git commit · one GitHub write request."
+                " · one Git commit · " + writeRequests +
+                " GitHub write request" + if (writeRequests == 1) "." else "s."
         )
         return JSONObject()
             .put("pushed", true)
             .put("commitSha", commitSha)
             .put("changes", changes.size)
-            .put("transport", "graphql-createCommitOnBranch")
-            .put("writeRequests", 1)
+            .put("transport", transport)
+            .put("writeRequests", writeRequests)
+    }
+
+    private fun atomicPushGitData(
+        owner: String,
+        repo: String,
+        branch: String,
+        remoteSha: String,
+        message: String,
+        initial: RepoStatus,
+        uploaded: Map<String, String>,
+        uploadModes: Map<String, String>
+    ): JSONObject {
+        val remoteCommit = apiObject(
+            "/repos/" + enc(owner) + "/" + enc(repo) +
+                "/git/commits/" + enc(remoteSha)
+        )
+        val baseTreeSha = checkedGitSha(
+            remoteCommit.getJSONObject("tree").getString("sha"),
+            "base tree"
+        )
+        val treeElements = JSONArray()
+        var writeRequests = 0
+
+        for (path in initial.modified + initial.untracked) {
+            val file = repoFile(initial.meta, path)
+            val bytes = file.readBytes()
+            require(blobSha(bytes) == uploaded.getValue(path)) {
+                "Workspace changed during Git blob upload: " + path
+            }
+            val blob = apiObject(
+                "/repos/" + enc(owner) + "/" + enc(repo) + "/git/blobs",
+                "POST",
+                JSONObject()
+                    .put("content", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                    .put("encoding", "base64")
+            )
+            writeRequests++
+            val blobSha = checkedGitSha(blob.getString("sha"), "created blob")
+            require(blobSha == uploaded.getValue(path)) {
+                "GitHub created blob SHA does not match local bytes for " + path
+            }
+            treeElements.put(
+                JSONObject()
+                    .put("path", path)
+                    .put("mode", uploadModes.getValue(path))
+                    .put("type", "blob")
+                    .put("sha", blobSha)
+            )
+        }
+
+        val tracked = initial.meta.optJSONObject("tracked") ?: JSONObject()
+        initial.deleted.forEach { path ->
+            val mode = checkedBlobMode(
+                tracked.optJSONObject(path)?.optString("mode", "100644") ?: "100644",
+                path
+            )
+            treeElements.put(
+                JSONObject()
+                    .put("path", path)
+                    .put("mode", mode)
+                    .put("type", "blob")
+                    .put("sha", JSONObject.NULL)
+            )
+        }
+
+        verifyWorkspaceStable(initial, uploaded)
+
+        val tree = apiObject(
+            "/repos/" + enc(owner) + "/" + enc(repo) + "/git/trees",
+            "POST",
+            JSONObject()
+                .put("base_tree", baseTreeSha)
+                .put("tree", treeElements)
+        )
+        writeRequests++
+        val treeSha = checkedGitSha(tree.getString("sha"), "created tree")
+
+        val commit = apiObject(
+            "/repos/" + enc(owner) + "/" + enc(repo) + "/git/commits",
+            "POST",
+            JSONObject()
+                .put("message", message)
+                .put("tree", treeSha)
+                .put("parents", JSONArray().put(remoteSha))
+        )
+        writeRequests++
+        val commitSha = checkedGitSha(commit.getString("sha"), "created commit")
+
+        verifyWorkspaceStable(initial, uploaded)
+        val currentRemoteSha = checkedGitSha(
+            branchInfo(owner, repo, branch)
+                .getJSONObject("commit")
+                .getString("sha"),
+            "remote branch head before ref update"
+        )
+        require(currentRemoteSha == remoteSha) {
+            "Remote branch changed while preparing push. Nothing was fast-forwarded; run: git pull"
+        }
+
+        val updatedRef = apiObject(
+            "/repos/" + enc(owner) + "/" + enc(repo) +
+                "/git/refs/heads/" + enc(checkedBranch(branch)),
+            "PATCH",
+            JSONObject()
+                .put("sha", commitSha)
+                .put("force", false)
+        )
+        writeRequests++
+        val refSha = checkedGitSha(
+            updatedRef.getJSONObject("object").getString("sha"),
+            "updated branch"
+        )
+        require(refSha == commitSha) {
+            "GitHub commit/ref mismatch after mode-preserving push"
+        }
+
+        return JSONObject()
+            .put("commitSha", commitSha)
+            .put("transport", "git-data-mode-preserving")
+            .put("writeRequests", writeRequests)
+    }
+
+    private fun checkedBlobMode(raw: String, path: String): String {
+        val mode = raw.trim()
+        require(mode == "100644" || mode == "100755") {
+            "Unsupported Git blob mode " + mode + " for " + path
+        }
+        return mode
     }
 
     private fun commitMessageInput(message: String): JSONObject {
@@ -1289,6 +1470,121 @@ class RiftNativeGit(context: Context) {
             "Repository path escaped root"
         }
         return file
+    }
+
+    private fun gitIgnoreRules(repoRoot: File): List<GitIgnoreRule> {
+        val file = File(repoRoot, ".gitignore").canonicalFile
+        if (!file.isFile) return emptyList()
+        require(file.path.startsWith(repoRoot.canonicalPath + File.separator)) {
+            ".gitignore escaped repository root"
+        }
+        val text = readBoundedText(file, MAX_GITIGNORE_BYTES, ".gitignore")
+        val rules = ArrayList<GitIgnoreRule>()
+        text.lineSequence().forEach { rawLine ->
+            var line = rawLine.trimEnd()
+            if (line.isBlank()) return@forEach
+
+            var negated = false
+            if (line.startsWith("\\#") || line.startsWith("\\!")) {
+                line = line.substring(1)
+            } else {
+                if (line.startsWith("#")) return@forEach
+                if (line.startsWith("!")) {
+                    negated = true
+                    line = line.substring(1)
+                }
+            }
+            if (line.isBlank()) return@forEach
+            require(line.length <= MAX_GITIGNORE_PATTERN_CHARS) {
+                ".gitignore pattern exceeds $MAX_GITIGNORE_PATTERN_CHARS characters"
+            }
+            require(rules.size < MAX_GITIGNORE_RULES) {
+                ".gitignore exceeds $MAX_GITIGNORE_RULES rules"
+            }
+
+            val directoryOnly = line.endsWith("/")
+            if (directoryOnly) line = line.dropLast(1)
+            val anchored = line.startsWith("/")
+            if (anchored) line = line.substring(1)
+            if (line.isBlank()) return@forEach
+
+            val hasSlash = line.contains('/')
+            val body = gitIgnoreGlobToRegex(line)
+            val prefix = if (anchored || hasSlash) "^" else "(?:^|.*/)"
+            val suffix = if (directoryOnly) "(?:/.*)?" else ""
+            rules += GitIgnoreRule(
+                regex = Regex(prefix + body + suffix + '$'),
+                negated = negated
+            )
+        }
+        return rules
+    }
+
+    private fun gitIgnored(path: String, rules: List<GitIgnoreRule>): Boolean {
+        if (rules.isEmpty()) return false
+        val normalized = safeRelative(path)
+
+        fun ignoredByRules(candidate: String): Boolean {
+            var ignored = false
+            rules.forEach { rule ->
+                if (rule.regex.matches(candidate)) {
+                    ignored = !rule.negated
+                }
+            }
+            return ignored
+        }
+
+        if (ignoredByRules(normalized)) return true
+        val parts = normalized.split('/')
+        if (parts.size <= 1) return false
+        var parent = ""
+        for (index in 0 until parts.lastIndex) {
+            parent = if (parent.isEmpty()) parts[index] else parent + "/" + parts[index]
+            if (ignoredByRules(parent)) return true
+        }
+        return false
+    }
+
+    private fun gitIgnoreGlobToRegex(pattern: String): String {
+        val out = StringBuilder()
+        var index = 0
+        while (index < pattern.length) {
+            val ch = pattern[index]
+            when (ch) {
+                '\\' -> {
+                    if (index + 1 < pattern.length) {
+                        out.append(Regex.escape(pattern[index + 1].toString()))
+                        index += 2
+                    } else {
+                        out.append(Regex.escape("\\"))
+                        index++
+                    }
+                }
+                '*' -> {
+                    if (index + 1 < pattern.length && pattern[index + 1] == '*') {
+                        index += 2
+                        if (index < pattern.length && pattern[index] == '/') {
+                            out.append("(?:.*/)?")
+                            index++
+                        } else {
+                            out.append(".*")
+                        }
+                    } else {
+                        out.append("[^/]*")
+                        index++
+                    }
+                }
+                '?' -> {
+                    out.append("[^/]")
+                    index++
+                }
+                else -> {
+                    out.append(Regex.escape(ch.toString()))
+                    index++
+                }
+            }
+        }
+        return out.toString()
     }
 
     private fun ignored(path: String): Boolean =
