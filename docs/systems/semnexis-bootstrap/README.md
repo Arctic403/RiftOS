@@ -154,7 +154,9 @@ Slice<u8>
  -> checked count
 ```
 
-The machine regressions scan `a1b23!` and return digit count `3`, construct/return a real `Token { kind,start,end }`, preserve that record across native calls and loop backedges, project fields, execute record-valued branch merges, scan variable-width numeric spans (`123+4` → `[0,3)`, `[3,4)`, `[4,5)`), run a streaming parser-state kernel, accumulate decimal bytes (`1234` → integer `1234`), write/read Arena-backed AST cells, follow child handles, execute stack-passed parser records, prove recursive frame 256 succeeds while frame 257 traps, and machine-execute a recursive-descent parser/evaluator for `1+(2+3)` → `6`. The next pressure target is real parser failure/error propagation and increasingly complete Semnexis grammar, not AST storage plumbing.
+The machine regressions scan `a1b23!` and return digit count `3`, construct/return a real `Token { kind,start,end }`, preserve that record across native calls and loop backedges, project fields, execute record-valued branch merges, scan variable-width numeric spans (`123+4` → `[0,3)`, `[3,4)`, `[4,5)`), run a streaming parser-state kernel, accumulate decimal bytes (`1234` → integer `1234`), write/read Arena-backed AST cells, follow child handles, execute stack-passed parser records, prove recursive frame 256 succeeds while frame 257 traps, and machine-execute a recursive-descent parser/evaluator for `1+(2+3)` → `6`.
+
+The maintained self-hosting frontier now goes further: a 42-function Semnexis frontend parses the complete 56-byte source `fn main() -> i32 { let x = 12 + 3 * (4 + 1); return x; }` into a deterministic 12-node Arena AST, and a 59-function semantic slice lowers that AST into 22 deterministic semantic facts. The native proof includes explicit Function/Local/NameRef/Return facts and a `resolves_to` edge from the return `x` reference to its local symbol. Both fixtures execute through the authoritative ARM32 regression. The installed shell gate remains `/17` until a new APK promotion.
 
 ## CFG and loops
 

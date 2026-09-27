@@ -1,0 +1,1861 @@
+struct Token { kind: i32, start: i32, end: i32 }
+struct Node { kind: i32, a: i32, b: i32, value: i32 }
+struct ParserState { pos: i32, root: i32, slot: i32, ok: i32 }
+struct GraphFact { kind: i32, a: i32, b: i32, value: i32 }
+struct GraphBuild { slot: i32, node: i32, ok: i32, aux: i32 }
+struct ParamParse { pos: i32, start: i32, end: i32, present: i32 }
+struct GrantParse { pos: i32, start: i32, end: i32, present: i32 }
+struct CanonicalBuild { nodes: i32, edges: i32, ok: i32, aux: i32 }
+struct VerifyResult { ok: i32, checked: i32, nodes: i32, edges: i32 }
+struct PlanStep { action: i32, a: i32, b: i32, value: i32 }
+struct PlanBuild { steps: i32, ok: i32, nodes: i32, edges: i32 }
+struct IrFunction { graph: i32, region: i32, effect: i32, flags: i32 }
+struct IrParam { function_graph: i32, graph: i32, index: i32, value: i32 }
+struct IrInst { op: i32, graph: i32, a: i32, b: i32 }
+struct IrExpr { instructions: i32, next_value: i32, value: i32, ok: i32 }
+struct IrBody { instructions: i32, next_value: i32, params: i32, ok: i32 }
+struct IrBuild { functions: i32, params: i32, instructions: i32, ok: i32 }
+
+fn is_digit(c: u8) -> i32 {
+  return if c >= 48 { if c <= 57 { 1 } else { 0 } } else { 0 };
+}
+
+fn is_alpha(c: u8) -> i32 {
+  return if c >= 97 {
+    if c <= 122 { 1 } else { 0 }
+  } else {
+    if c >= 65 { if c <= 90 { 1 } else { 0 } } else { if c == 95 { 1 } else { 0 } }
+  };
+}
+
+fn is_alnum(c: u8) -> i32 {
+  return if is_alpha(c) == 1 { 1 } else { is_digit(c) };
+}
+
+fn is_space(c: u8) -> i32 {
+  return if c == 32 { 1 } else {
+    if c == 10 { 1 } else { if c == 13 { 1 } else { if c == 9 { 1 } else { 0 } } }
+  };
+}
+
+fn skip_space(source: Slice<u8>, start: i32) -> i32 {
+  return loop(i = start, active = 1) while active != 0 {
+    next(
+      if i < slice_len(source) { if is_space(slice_get(source, i)) == 1 { i + 1 } else { i } } else { i },
+      if i < slice_len(source) { if is_space(slice_get(source, i)) == 1 { 1 } else { 0 } } else { 0 }
+    );
+  } yield i;
+}
+
+fn scan_digits(source: Slice<u8>, start: i32) -> i32 {
+  return loop(i = start, active = 1) while active != 0 {
+    next(
+      if i < slice_len(source) { if is_digit(slice_get(source, i)) == 1 { i + 1 } else { i } } else { i },
+      if i < slice_len(source) { if is_digit(slice_get(source, i)) == 1 { 1 } else { 0 } } else { 0 }
+    );
+  } yield i;
+}
+
+fn scan_ident(source: Slice<u8>, start: i32) -> i32 {
+  return loop(i = start, active = 1) while active != 0 {
+    next(
+      if i < slice_len(source) { if is_alnum(slice_get(source, i)) == 1 { i + 1 } else { i } } else { i },
+      if i < slice_len(source) { if is_alnum(slice_get(source, i)) == 1 { 1 } else { 0 } } else { 0 }
+    );
+  } yield i;
+}
+
+fn lex_symbol(source: Slice<u8>, start: i32, c: u8) -> Token {
+  return if c == 43 { Token { kind: 4, start: start, end: start + 1 } } else {
+    if c == 42 { Token { kind: 5, start: start, end: start + 1 } } else {
+      if c == 40 { Token { kind: 6, start: start, end: start + 1 } } else {
+        if c == 41 { Token { kind: 7, start: start, end: start + 1 } } else {
+          if c == 123 { Token { kind: 8, start: start, end: start + 1 } } else {
+            if c == 125 { Token { kind: 9, start: start, end: start + 1 } } else {
+              if c == 59 { Token { kind: 10, start: start, end: start + 1 } } else {
+                if c == 61 { Token { kind: 11, start: start, end: start + 1 } } else {
+                  if c == 58 { Token { kind: 13, start: start, end: start + 1 } } else {
+                    if c == 45 {
+                      if start + 1 < slice_len(source) {
+                        if slice_get(source, start + 1) == 62 {
+                          Token { kind: 12, start: start, end: start + 2 }
+                        } else {
+                          Token { kind: 1, start: start, end: start + 1 }
+                        }
+                      } else {
+                        Token { kind: 1, start: start, end: start + 1 }
+                      }
+                    } else {
+                      Token { kind: 1, start: start, end: start + 1 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+}
+
+fn lex_at(source: Slice<u8>, raw_start: i32) -> Token {
+  let start = skip_space(source, raw_start);
+  return if start < slice_len(source) {
+    if is_digit(slice_get(source, start)) == 1 {
+      Token { kind: 2, start: start, end: scan_digits(source, start) }
+    } else {
+      if is_alpha(slice_get(source, start)) == 1 {
+        Token { kind: 3, start: start, end: scan_ident(source, start) }
+      } else {
+        lex_symbol(source, start, slice_get(source, start))
+      }
+    }
+  } else {
+    Token { kind: 0, start: start, end: start }
+  };
+}
+
+fn token_len(token: Token) -> i32 {
+  return token.end - token.start;
+}
+
+fn token_eq2(source: Slice<u8>, token: Token, a: i32, b: i32) -> i32 {
+  return if token.kind == 3 {
+    if token_len(token) == 2 {
+      if slice_get(source, token.start) == a {
+        if slice_get(source, token.start + 1) == b { 1 } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn token_eq3(source: Slice<u8>, token: Token, a: i32, b: i32, c: i32) -> i32 {
+  return if token.kind == 3 {
+    if token_len(token) == 3 {
+      if slice_get(source, token.start) == a {
+        if slice_get(source, token.start + 1) == b {
+          if slice_get(source, token.start + 2) == c { 1 } else { 0 }
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn token_eq4(source: Slice<u8>, token: Token, a: i32, b: i32, c: i32, d: i32) -> i32 {
+  return if token.kind == 3 {
+    if token_len(token) == 4 {
+      if slice_get(source, token.start) == a {
+        if slice_get(source, token.start + 1) == b {
+          if slice_get(source, token.start + 2) == c {
+            if slice_get(source, token.start + 3) == d { 1 } else { 0 }
+          } else { 0 }
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn token_eq6(source: Slice<u8>, token: Token, a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {
+  return if token.kind == 3 {
+    if token_len(token) == 6 {
+      if slice_get(source, token.start) == a {
+        if slice_get(source, token.start + 1) == b {
+          if slice_get(source, token.start + 2) == c {
+            if slice_get(source, token.start + 3) == d {
+              if slice_get(source, token.start + 4) == e {
+                if slice_get(source, token.start + 5) == f { 1 } else { 0 }
+              } else { 0 }
+            } else { 0 }
+          } else { 0 }
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn token_span_eq5(source: Slice<u8>, start: i32, end: i32, a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 {
+  return if end - start == 5 {
+    if slice_get(source, start) == a {
+      if slice_get(source, start + 1) == b {
+        if slice_get(source, start + 2) == c {
+          if slice_get(source, start + 3) == d {
+            if slice_get(source, start + 4) == e { 1 } else { 0 }
+          } else { 0 }
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn is_clock_span(source: Slice<u8>, start: i32, end: i32) -> i32 {
+  return token_span_eq5(source, start, end, 99, 108, 111, 99, 107);
+}
+
+fn digit_value(c: u8) -> i32 {
+  return c - 48;
+}
+
+fn parse_decimal(source: Slice<u8>, start: i32, end: i32) -> i32 {
+  return loop(i = start, value = 0) while i < end {
+    next(i + 1, value * 10 + digit_value(slice_get(source, i)));
+  } yield value;
+}
+
+fn fail_state(source: Slice<u8>, state: ParserState) -> ParserState {
+  return ParserState { pos: slice_len(source), root: state.root, slot: state.slot, ok: 0 };
+}
+
+fn store_number(source: Slice<u8>, arena: Arena, state: ParserState, token: Token) -> ParserState {
+  let node = Node { kind: 1, a: 0, b: 0, value: parse_decimal(source, token.start, token.end) };
+  let handle = arena_store(arena, state.slot, node);
+  return ParserState { pos: token.end, root: handle, slot: state.slot + 1, ok: state.ok };
+}
+
+fn store_ident(arena: Arena, state: ParserState, token: Token) -> ParserState {
+  let node = Node { kind: 2, a: token.start, b: token.end, value: 0 };
+  let handle = arena_store(arena, state.slot, node);
+  return ParserState { pos: token.end, root: handle, slot: state.slot + 1, ok: state.ok };
+}
+
+fn parse_expr(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  return parse_add(source, arena, state);
+}
+
+fn parse_group(source: Slice<u8>, arena: Arena, state: ParserState, open: Token) -> ParserState {
+  let inner = parse_expr(source, arena, ParserState { pos: open.end, root: state.root, slot: state.slot, ok: state.ok });
+  let close = lex_at(source, inner.pos);
+  return if inner.ok == 1 {
+    if close.kind == 7 {
+      ParserState { pos: close.end, root: inner.root, slot: inner.slot, ok: 1 }
+    } else { fail_state(source, inner) }
+  } else { inner };
+}
+
+fn store_call(arena: Arena, state: ParserState, name: Token, arg: ParserState, close: Token) -> ParserState {
+  let node = Node { kind: 9, a: name.start, b: name.end, value: arg.root };
+  let handle = arena_store(arena, arg.slot, node);
+  return ParserState { pos: close.end, root: handle, slot: arg.slot + 1, ok: 1 };
+}
+
+fn store_zero_call(arena: Arena, state: ParserState, name: Token, close: Token) -> ParserState {
+  let node = Node { kind: 9, a: name.start, b: name.end, value: 0 - 1 };
+  let handle = arena_store(arena, state.slot, node);
+  return ParserState { pos: close.end, root: handle, slot: state.slot + 1, ok: 1 };
+}
+
+fn finish_call_arg(source: Slice<u8>, arena: Arena, state: ParserState, name: Token, open: Token) -> ParserState {
+  let arg = parse_expr(source, arena, ParserState { pos: open.end, root: state.root, slot: state.slot, ok: state.ok });
+  let close = lex_at(source, arg.pos);
+  return if arg.ok == 1 {
+    if close.kind == 7 { store_call(arena, state, name, arg, close) } else { fail_state(source, arg) }
+  } else { arg };
+}
+
+fn finish_call(source: Slice<u8>, arena: Arena, state: ParserState, name: Token, open: Token) -> ParserState {
+  let first = lex_at(source, open.end);
+  return if first.kind == 7 {
+    store_zero_call(arena, state, name, first)
+  } else {
+    finish_call_arg(source, arena, state, name, open)
+  };
+}
+
+fn parse_ident_or_call(source: Slice<u8>, arena: Arena, state: ParserState, name: Token) -> ParserState {
+  let next_token = lex_at(source, name.end);
+  return if next_token.kind == 6 {
+    finish_call(source, arena, state, name, next_token)
+  } else {
+    store_ident(arena, state, name)
+  };
+}
+
+fn parse_primary(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let token = lex_at(source, state.pos);
+  return if token.kind == 2 {
+    store_number(source, arena, state, token)
+  } else {
+    if token.kind == 3 {
+      parse_ident_or_call(source, arena, state, token)
+    } else {
+      if token.kind == 6 { parse_group(source, arena, state, token) } else { fail_state(source, state) }
+    }
+  };
+}
+
+fn make_binary(arena: Arena, left: ParserState, right: ParserState, kind: i32) -> ParserState {
+  let node = Node { kind: kind, a: left.root, b: right.root, value: 0 };
+  let handle = arena_store(arena, right.slot, node);
+  return ParserState { pos: right.pos, root: handle, slot: right.slot + 1, ok: 1 };
+}
+
+fn should_mul(source: Slice<u8>, state: ParserState) -> i32 {
+  let token = lex_at(source, state.pos);
+  return if state.ok == 1 { if token.kind == 5 { 1 } else { 0 } } else { 0 };
+}
+
+fn mul_step(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let op = lex_at(source, state.pos);
+  let right = parse_primary(source, arena, ParserState { pos: op.end, root: state.root, slot: state.slot, ok: state.ok });
+  return if right.ok == 1 { make_binary(arena, state, right, 4) } else { right };
+}
+
+fn parse_term(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let initial = parse_primary(source, arena, state);
+  return loop(current = initial) while should_mul(source, current) == 1 {
+    next(mul_step(source, arena, current));
+  } yield current;
+}
+
+fn should_add(source: Slice<u8>, state: ParserState) -> i32 {
+  let token = lex_at(source, state.pos);
+  return if state.ok == 1 { if token.kind == 4 { 1 } else { 0 } } else { 0 };
+}
+
+fn add_step(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let op = lex_at(source, state.pos);
+  let right = parse_term(source, arena, ParserState { pos: op.end, root: state.root, slot: state.slot, ok: state.ok });
+  return if right.ok == 1 { make_binary(arena, state, right, 3) } else { right };
+}
+
+fn parse_add(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let initial = parse_term(source, arena, state);
+  return loop(current = initial) while should_add(source, current) == 1 {
+    next(add_step(source, arena, current));
+  } yield current;
+}
+
+fn store_let(arena: Arena, name: Token, value: ParserState, semi: Token) -> ParserState {
+  let node = Node { kind: 5, a: name.start, b: name.end, value: value.root };
+  let handle = arena_store(arena, value.slot, node);
+  return ParserState { pos: semi.end, root: handle, slot: value.slot + 1, ok: 1 };
+}
+
+fn finish_let(source: Slice<u8>, arena: Arena, state: ParserState, name: Token, eq: Token) -> ParserState {
+  let value = parse_expr(source, arena, ParserState { pos: eq.end, root: state.root, slot: state.slot, ok: 1 });
+  let semi = lex_at(source, value.pos);
+  return if value.ok == 1 {
+    if semi.kind == 10 { store_let(arena, name, value, semi) } else { fail_state(source, value) }
+  } else { value };
+}
+
+fn parse_let(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let kw = lex_at(source, state.pos);
+  let name = lex_at(source, kw.end);
+  let eq = lex_at(source, name.end);
+  return if token_eq3(source, kw, 108, 101, 116) == 1 {
+    if name.kind == 3 {
+      if eq.kind == 11 { finish_let(source, arena, state, name, eq) } else { fail_state(source, state) }
+    } else { fail_state(source, state) }
+  } else { fail_state(source, state) };
+}
+
+fn store_return(arena: Arena, value: ParserState, semi: Token) -> ParserState {
+  let node = Node { kind: 6, a: value.root, b: 0, value: 0 };
+  let handle = arena_store(arena, value.slot, node);
+  return ParserState { pos: semi.end, root: handle, slot: value.slot + 1, ok: 1 };
+}
+
+fn finish_return(source: Slice<u8>, arena: Arena, state: ParserState, kw: Token) -> ParserState {
+  let value = parse_expr(source, arena, ParserState { pos: kw.end, root: state.root, slot: state.slot, ok: 1 });
+  let semi = lex_at(source, value.pos);
+  return if value.ok == 1 {
+    if semi.kind == 10 { store_return(arena, value, semi) } else { fail_state(source, value) }
+  } else { value };
+}
+
+fn parse_return(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let kw = lex_at(source, state.pos);
+  return if token_eq6(source, kw, 114, 101, 116, 117, 114, 110) == 1 {
+    finish_return(source, arena, state, kw)
+  } else { fail_state(source, state) };
+}
+
+fn append_ast(arena: Arena, sequence: ParserState, item: ParserState, kind: i32) -> ParserState {
+  return if sequence.root < 0 {
+    ParserState { pos: item.pos, root: item.root, slot: item.slot, ok: item.ok }
+  } else {
+    append_ast_pair(arena, sequence, item, kind)
+  };
+}
+
+fn append_ast_pair(arena: Arena, sequence: ParserState, item: ParserState, kind: i32) -> ParserState {
+  let node = Node { kind: kind, a: sequence.root, b: item.root, value: 0 };
+  let handle = arena_store(arena, item.slot, node);
+  return ParserState { pos: item.pos, root: handle, slot: item.slot + 1, ok: item.ok };
+}
+
+fn store_param(arena: Arena, state: ParserState, param: ParamParse) -> ParserState {
+  let node = Node { kind: 10, a: param.start, b: param.end, value: 0 };
+  let handle = arena_store(arena, state.slot, node);
+  return ParserState { pos: state.pos, root: handle, slot: state.slot + 1, ok: 1 };
+}
+
+fn start_block(arena: Arena, state: ParserState, param: ParamParse) -> ParserState {
+  return if param.present == 1 {
+    store_param(arena, ParserState { pos: state.pos, root: 0 - 1, slot: state.slot, ok: 1 }, param)
+  } else {
+    ParserState { pos: state.pos, root: 0 - 1, slot: state.slot, ok: 1 }
+  };
+}
+
+fn next_is_let(source: Slice<u8>, state: ParserState) -> i32 {
+  let token = lex_at(source, state.pos);
+  return token_eq3(source, token, 108, 101, 116);
+}
+
+fn block_let_step(source: Slice<u8>, arena: Arena, sequence: ParserState) -> ParserState {
+  let item = parse_let(source, arena, ParserState { pos: sequence.pos, root: sequence.root, slot: sequence.slot, ok: sequence.ok });
+  return if item.ok == 1 { append_ast(arena, sequence, item, 20) } else { item };
+}
+
+fn parse_lets(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  return loop(current = state) while next_is_let(source, current) == 1 {
+    next(block_let_step(source, arena, current));
+  } yield current;
+}
+
+fn store_block(arena: Arena, sequence: ParserState, close: Token) -> ParserState {
+  let node = Node { kind: 7, a: sequence.root, b: 0, value: 0 };
+  let handle = arena_store(arena, sequence.slot, node);
+  return ParserState { pos: close.end, root: handle, slot: sequence.slot + 1, ok: 1 };
+}
+
+fn finish_block_return(source: Slice<u8>, arena: Arena, sequence: ParserState) -> ParserState {
+  let ret = parse_return(source, arena, ParserState { pos: sequence.pos, root: sequence.root, slot: sequence.slot, ok: sequence.ok });
+  let with_ret = if ret.ok == 1 { append_ast(arena, sequence, ret, 20) } else { ret };
+  let close = lex_at(source, with_ret.pos);
+  return if with_ret.ok == 1 {
+    if close.kind == 9 { store_block(arena, with_ret, close) } else { fail_state(source, with_ret) }
+  } else { with_ret };
+}
+
+fn store_grant(arena: Arena, state: ParserState, grant: GrantParse) -> ParserState {
+  let node = Node { kind: 23, a: grant.start, b: grant.end, value: 0 };
+  let handle = arena_store(arena, state.slot, node);
+  return ParserState { pos: state.pos, root: handle, slot: state.slot + 1, ok: 1 };
+}
+
+fn append_grant(arena: Arena, initial: ParserState, grant: GrantParse) -> ParserState {
+  let item = store_grant(arena, ParserState { pos: initial.pos, root: initial.root, slot: initial.slot, ok: initial.ok }, grant);
+  return append_ast(arena, initial, item, 20);
+}
+
+fn start_block_with_grant(arena: Arena, state: ParserState, param: ParamParse, grant: GrantParse) -> ParserState {
+  let initial = start_block(arena, state, param);
+  return if grant.present == 1 { append_grant(arena, initial, grant) } else { initial };
+}
+
+fn parse_block(source: Slice<u8>, arena: Arena, state: ParserState, param: ParamParse, grant: GrantParse) -> ParserState {
+  let initial = start_block_with_grant(arena, state, param, grant);
+  let lets = parse_lets(source, arena, initial);
+  return if lets.ok == 1 { finish_block_return(source, arena, lets) } else { lets };
+}
+
+fn invalid_param(source: Slice<u8>) -> ParamParse {
+  return ParamParse { pos: slice_len(source), start: 0, end: 0, present: 0 - 1 };
+}
+
+fn finish_named_param(source: Slice<u8>, name: Token) -> ParamParse {
+  let colon = lex_at(source, name.end);
+  let type_token = lex_at(source, colon.end);
+  let close = lex_at(source, type_token.end);
+  return if colon.kind == 13 {
+    if token_eq3(source, type_token, 105, 51, 50) == 1 {
+      if close.kind == 7 {
+        ParamParse { pos: close.end, start: name.start, end: name.end, present: 1 }
+      } else { invalid_param(source) }
+    } else { invalid_param(source) }
+  } else { invalid_param(source) };
+}
+
+fn parse_param(source: Slice<u8>, open: Token) -> ParamParse {
+  let first = lex_at(source, open.end);
+  return if first.kind == 7 {
+    ParamParse { pos: first.end, start: 0, end: 0, present: 0 }
+  } else {
+    if first.kind == 3 { finish_named_param(source, first) } else { invalid_param(source) }
+  };
+}
+
+fn store_function(arena: Arena, name: Token, body: ParserState) -> ParserState {
+  let node = Node { kind: 8, a: name.start, b: name.end, value: body.root };
+  let handle = arena_store(arena, body.slot, node);
+  return ParserState { pos: body.pos, root: handle, slot: body.slot + 1, ok: 1 };
+}
+
+fn invalid_grant(source: Slice<u8>) -> GrantParse {
+  return GrantParse { pos: slice_len(source), start: 0, end: 0, present: 0 - 1 };
+}
+
+fn no_grant(body_open: Token) -> GrantParse {
+  return GrantParse { pos: body_open.end, start: 0, end: 0, present: 0 };
+}
+
+fn parse_time_grant(source: Slice<u8>, with_token: Token) -> GrantParse {
+  let time_token = lex_at(source, with_token.end);
+  let body_open = lex_at(source, time_token.end);
+  return if token_eq4(source, time_token, 116, 105, 109, 101) == 1 {
+    if body_open.kind == 8 {
+      GrantParse { pos: body_open.end, start: time_token.start, end: time_token.end, present: 1 }
+    } else { invalid_grant(source) }
+  } else { invalid_grant(source) };
+}
+
+fn parse_grant_or_body(source: Slice<u8>, start: i32) -> GrantParse {
+  let next_token = lex_at(source, start);
+  return if next_token.kind == 8 {
+    no_grant(next_token)
+  } else {
+    if token_eq4(source, next_token, 119, 105, 116, 104) == 1 {
+      parse_time_grant(source, next_token)
+    } else { invalid_grant(source) }
+  };
+}
+
+fn finish_function_body(source: Slice<u8>, arena: Arena, state: ParserState, name: Token, param: ParamParse, grant: GrantParse) -> ParserState {
+  let body = parse_block(source, arena, ParserState { pos: grant.pos, root: 0 - 1, slot: state.slot, ok: 1 }, param, grant);
+  return if body.ok == 1 { store_function(arena, name, body) } else { body };
+}
+
+fn finish_function_header(source: Slice<u8>, arena: Arena, state: ParserState, name: Token, param: ParamParse) -> ParserState {
+  let arrow = lex_at(source, param.pos);
+  let result_type = lex_at(source, arrow.end);
+  let grant = parse_grant_or_body(source, result_type.end);
+  return if arrow.kind == 12 {
+    if token_eq3(source, result_type, 105, 51, 50) == 1 {
+      if grant.present >= 0 {
+        finish_function_body(source, arena, state, name, param, grant)
+      } else { fail_state(source, state) }
+    } else { fail_state(source, state) }
+  } else { fail_state(source, state) };
+}
+
+fn parse_function(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let fn_kw = lex_at(source, state.pos);
+  let name = lex_at(source, fn_kw.end);
+  let open = lex_at(source, name.end);
+  let param = if open.kind == 6 { parse_param(source, open) } else { invalid_param(source) };
+  return if token_eq2(source, fn_kw, 102, 110) == 1 {
+    if name.kind == 3 {
+      if open.kind == 6 {
+        if param.present >= 0 { finish_function_header(source, arena, state, name, param) } else { fail_state(source, state) }
+      } else { fail_state(source, state) }
+    } else { fail_state(source, state) }
+  } else { fail_state(source, state) };
+}
+
+fn next_is_function(source: Slice<u8>, state: ParserState) -> i32 {
+  let token = lex_at(source, state.pos);
+  return token_eq2(source, token, 102, 110);
+}
+
+fn program_function_step(source: Slice<u8>, arena: Arena, sequence: ParserState) -> ParserState {
+  let item = parse_function(source, arena, ParserState { pos: sequence.pos, root: sequence.root, slot: sequence.slot, ok: sequence.ok });
+  return if item.ok == 1 { append_ast(arena, sequence, item, 21) } else { item };
+}
+
+fn parse_functions(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  return loop(current = state) while next_is_function(source, current) == 1 {
+    next(program_function_step(source, arena, current));
+  } yield current;
+}
+
+fn store_program(arena: Arena, sequence: ParserState) -> ParserState {
+  let node = Node { kind: 22, a: sequence.root, b: 0, value: 0 };
+  let handle = arena_store(arena, sequence.slot, node);
+  return ParserState { pos: sequence.pos, root: handle, slot: sequence.slot + 1, ok: 1 };
+}
+
+fn parse_program(source: Slice<u8>, arena: Arena) -> ParserState {
+  let functions = parse_functions(source, arena, ParserState { pos: 0, root: 0 - 1, slot: 0, ok: 1 });
+  let eof = lex_at(source, functions.pos);
+  return if functions.ok == 1 {
+    if functions.root >= 0 {
+      if eof.kind == 0 { store_program(arena, functions) } else { fail_state(source, functions) }
+    } else { fail_state(source, functions) }
+  } else { functions };
+}
+
+fn same_text(source: Slice<u8>, a_start: i32, a_end: i32, b_start: i32, b_end: i32) -> i32 {
+  let a_len = a_end - a_start;
+  let b_len = b_end - b_start;
+  return if a_len == b_len {
+    loop(i = 0, ok = 1) while i < a_len {
+      next(
+        i + 1,
+        if ok == 1 {
+          if slice_get(source, a_start + i) == slice_get(source, b_start + i) { 1 } else { 0 }
+        } else { 0 }
+      );
+    } yield ok
+  } else { 0 };
+}
+
+fn put_node(nodes: Arena, slot: i32, kind: i32, a: i32, b: i32, value: i32) -> i32 {
+  return arena_store(nodes, slot, GraphFact { kind: kind, a: a, b: b, value: value });
+}
+
+fn put_edge(edges: Arena, slot: i32, relation: i32, from: i32, to: i32) -> i32 {
+  return arena_store(edges, 128 + slot, GraphFact { kind: relation, a: from, b: to, value: 0 });
+}
+
+fn canonical_fail(nodes: i32, edges: i32) -> CanonicalBuild {
+  return CanonicalBuild { nodes: nodes, edges: edges, ok: 0, aux: 0 };
+}
+
+fn init_canonical(nodes: Arena, edges: Arena) -> CanonicalBuild {
+  let n0 = put_node(nodes, 0, 1, 0, 0, 0);
+  let n1 = put_node(nodes, 1, 2, 1, 0, 32);
+  let n2 = put_node(nodes, 2, 3, 0, 0, 0);
+  let n3 = put_node(nodes, 3, 3, 1, 0, 0);
+  let n4 = put_node(nodes, 4, 4, 1, 0, 0);
+  let n5 = put_node(nodes, 5, 5, 0, 0, 0);
+  let e0 = put_edge(edges, 0, 1, 5, 1);
+  let e1 = put_edge(edges, 1, 2, 5, 3);
+  let e2 = put_edge(edges, 2, 3, 5, 4);
+  return CanonicalBuild { nodes: 6, edges: 3, ok: 1, aux: n0 + n1 + n2 + n3 + n4 + n5 + e0 + e1 + e2 };
+}
+
+fn sequence_has_grant_right(ast: Arena, seq: Node) -> i32 {
+  return sequence_has_grant(ast, seq.b);
+}
+
+fn sequence_has_grant_pair(ast: Arena, seq: Node) -> i32 {
+  let left = sequence_has_grant(ast, seq.a);
+  return if left == 1 { 1 } else { sequence_has_grant_right(ast, seq) };
+}
+
+fn sequence_has_grant(ast: Arena, index: i32) -> i32 {
+  let node = arena_load<Node>(ast, index);
+  return if node.kind == 20 {
+    sequence_has_grant_pair(ast, node)
+  } else {
+    if node.kind == 23 { 1 } else { 0 }
+  };
+}
+
+fn function_has_grant(ast: Arena, fn_ast: Node) -> i32 {
+  let block = arena_load<Node>(ast, fn_ast.value);
+  return if block.kind == 7 { sequence_has_grant(ast, block.a) } else { 0 };
+}
+
+fn predeclare_function_plain(nodes: Arena, edges: Arena, fn_ast: Node, node_slot: i32, edge_slot: i32) -> CanonicalBuild {
+  let fn_node = put_node(nodes, node_slot, 6, fn_ast.a, fn_ast.b, 0);
+  let region = put_node(nodes, node_slot + 1, 7, fn_ast.a, fn_ast.b, fn_node);
+  let contains = put_edge(edges, edge_slot, 4, 0, fn_node);
+  let returns_type = put_edge(edges, edge_slot + 1, 1, fn_node, 1);
+  let executes_in = put_edge(edges, edge_slot + 2, 5, fn_node, region);
+  return CanonicalBuild { nodes: node_slot + 2, edges: edge_slot + 3, ok: 1, aux: 1 };
+}
+
+fn predeclare_function_granted(nodes: Arena, edges: Arena, fn_ast: Node, node_slot: i32, edge_slot: i32) -> CanonicalBuild {
+  let fn_node = put_node(nodes, node_slot, 6, fn_ast.a, fn_ast.b, 0);
+  let region = put_node(nodes, node_slot + 1, 7, fn_ast.a, fn_ast.b, fn_node);
+  let contains = put_edge(edges, edge_slot, 4, 0, fn_node);
+  let returns_type = put_edge(edges, edge_slot + 1, 1, fn_node, 1);
+  let grant = put_edge(edges, edge_slot + 2, 15, fn_node, 4);
+  let executes_in = put_edge(edges, edge_slot + 3, 5, fn_node, region);
+  return CanonicalBuild { nodes: node_slot + 2, edges: edge_slot + 4, ok: 1, aux: 1 };
+}
+
+fn predeclare_function_canonical(ast: Arena, nodes: Arena, edges: Arena, fn_ast: Node, node_slot: i32, edge_slot: i32) -> CanonicalBuild {
+  let granted = function_has_grant(ast, fn_ast);
+  return if granted == 1 {
+    predeclare_function_granted(nodes, edges, fn_ast, node_slot, edge_slot)
+  } else {
+    predeclare_function_plain(nodes, edges, fn_ast, node_slot, edge_slot)
+  };
+}
+
+fn finish_predeclare_canonical(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, seq: Node, left: CanonicalBuild) -> CanonicalBuild {
+  let right = predeclare_functions_canonical(source, ast, nodes, edges, seq.b, left.nodes, left.edges);
+  return if right.ok == 1 {
+    CanonicalBuild { nodes: right.nodes, edges: right.edges, ok: 1, aux: left.aux + right.aux }
+  } else { right };
+}
+
+fn predeclare_sequence_canonical(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, seq: Node, node_slot: i32, edge_slot: i32) -> CanonicalBuild {
+  let left = predeclare_functions_canonical(source, ast, nodes, edges, seq.a, node_slot, edge_slot);
+  return if left.ok == 1 { finish_predeclare_canonical(source, ast, nodes, edges, seq, left) } else { left };
+}
+
+fn predeclare_functions_canonical(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, index: i32, node_slot: i32, edge_slot: i32) -> CanonicalBuild {
+  let node = arena_load<Node>(ast, index);
+  return if node.kind == 21 {
+    predeclare_sequence_canonical(source, ast, nodes, edges, node, node_slot, edge_slot)
+  } else {
+    if node.kind == 8 {
+      predeclare_function_canonical(ast, nodes, edges, node, node_slot, edge_slot)
+    } else { canonical_fail(node_slot, edge_slot) }
+  };
+}
+
+fn canonical_function_match(source: Slice<u8>, nodes: Arena, index: i32, start: i32, end: i32) -> i32 {
+  let node = arena_load<GraphFact>(nodes, index);
+  return if node.kind == 6 { same_text(source, node.a, node.b, start, end) } else { 0 };
+}
+
+fn find_canonical_function(source: Slice<u8>, nodes: Arena, start: i32, end: i32, limit: i32) -> i32 {
+  return loop(i = 6, found = 0 - 1) while i < limit {
+    next(
+      i + 1,
+      if found >= 0 { found } else {
+        if canonical_function_match(source, nodes, i, start, end) == 1 { i } else { 0 - 1 }
+      }
+    );
+  } yield found;
+}
+
+fn canonical_value_symbol_match(source: Slice<u8>, nodes: Arena, index: i32, start: i32, end: i32) -> i32 {
+  let node = arena_load<GraphFact>(nodes, index);
+  return if node.kind == 8 {
+    same_text(source, node.a, node.b, start, end)
+  } else {
+    if node.kind == 11 { same_text(source, node.a, node.b, start, end) } else { 0 }
+  };
+}
+
+fn find_canonical_value_symbol(source: Slice<u8>, nodes: Arena, start: i32, end: i32, scope_start: i32, node_slot: i32) -> i32 {
+  return loop(i = scope_start, found = 0 - 1) while i < node_slot {
+    next(
+      i + 1,
+      if canonical_value_symbol_match(source, nodes, i, start, end) == 1 { i } else { found }
+    );
+  } yield found;
+}
+
+fn canonical_literal(nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32) -> CanonicalBuild {
+  let id = put_node(nodes, node_slot, 13, 0, 0, node.value);
+  let type_edge = put_edge(edges, edge_slot, 6, id, 1);
+  let contains_expr = put_edge(edges, edge_slot + 1, 8, fn_node, id);
+  return CanonicalBuild { nodes: node_slot + 1, edges: edge_slot + 2, ok: 1, aux: id };
+}
+
+fn canonical_name_ref(nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32, target: i32) -> CanonicalBuild {
+  let id = put_node(nodes, node_slot, 9, node.a, node.b, 0);
+  let resolves = put_edge(edges, edge_slot, 7, id, target);
+  let type_edge = put_edge(edges, edge_slot + 1, 6, id, 1);
+  let contains_expr = put_edge(edges, edge_slot + 2, 8, fn_node, id);
+  return CanonicalBuild { nodes: node_slot + 1, edges: edge_slot + 3, ok: 1, aux: id };
+}
+
+fn build_canonical_ident(source: Slice<u8>, nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32) -> CanonicalBuild {
+  let target = find_canonical_value_symbol(source, nodes, node.a, node.b, scope_start, node_slot);
+  return if target >= 0 {
+    canonical_name_ref(nodes, edges, node, node_slot, edge_slot, fn_node, target)
+  } else { canonical_fail(node_slot, edge_slot) };
+}
+
+fn finish_canonical_binary(nodes: Arena, edges: Arena, left: CanonicalBuild, right: CanonicalBuild, fn_node: i32, operation: i32) -> CanonicalBuild {
+  let id = put_node(nodes, right.nodes, 10, 0, 0, operation);
+  let lhs = put_edge(edges, right.edges, 9, id, left.aux);
+  let rhs = put_edge(edges, right.edges + 1, 10, id, right.aux);
+  let type_edge = put_edge(edges, right.edges + 2, 6, id, 1);
+  let contains_expr = put_edge(edges, right.edges + 3, 8, fn_node, id);
+  return CanonicalBuild { nodes: right.nodes + 1, edges: right.edges + 4, ok: 1, aux: id };
+}
+
+fn finish_canonical_binary_right(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, node: Node, left: CanonicalBuild, fn_node: i32, scope_start: i32, function_limit: i32, operation: i32) -> CanonicalBuild {
+  let right = build_canonical_expr(source, ast, nodes, edges, node.b, left.nodes, left.edges, fn_node, scope_start, function_limit);
+  return if right.ok == 1 { finish_canonical_binary(nodes, edges, left, right, fn_node, operation) } else { right };
+}
+
+fn build_canonical_binary(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32, operation: i32) -> CanonicalBuild {
+  let left = build_canonical_expr(source, ast, nodes, edges, node.a, node_slot, edge_slot, fn_node, scope_start, function_limit);
+  return if left.ok == 1 {
+    finish_canonical_binary_right(source, ast, nodes, edges, node, left, fn_node, scope_start, function_limit, operation)
+  } else { left };
+}
+
+fn finish_canonical_call_arg(edges: Arena, call_id: i32, arg: CanonicalBuild) -> CanonicalBuild {
+  let arg_edge = put_edge(edges, arg.edges, 14, call_id, arg.aux);
+  return CanonicalBuild { nodes: arg.nodes, edges: arg.edges + 1, ok: 1, aux: call_id };
+}
+
+fn build_canonical_call_after_node(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, node: Node, call_id: i32, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let arg = build_canonical_expr(source, ast, nodes, edges, node.value, node_slot, edge_slot, fn_node, scope_start, function_limit);
+  return if arg.ok == 1 { finish_canonical_call_arg(edges, call_id, arg) } else { arg };
+}
+
+fn finish_canonical_zero_call(call_id: i32, node_slot: i32, edge_slot: i32) -> CanonicalBuild {
+  return CanonicalBuild { nodes: node_slot, edges: edge_slot, ok: 1, aux: call_id };
+}
+
+fn build_canonical_call_target(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32, target: i32) -> CanonicalBuild {
+  let call_id = put_node(nodes, node_slot, 14, node.a, node.b, 0);
+  let calls = put_edge(edges, edge_slot, 13, call_id, target);
+  let type_edge = put_edge(edges, edge_slot + 1, 6, call_id, 1);
+  let contains_expr = put_edge(edges, edge_slot + 2, 8, fn_node, call_id);
+  return if node.value < 0 {
+    finish_canonical_zero_call(call_id, node_slot + 1, edge_slot + 3)
+  } else {
+    build_canonical_call_after_node(source, ast, nodes, edges, node, call_id, node_slot + 1, edge_slot + 3, fn_node, scope_start, function_limit)
+  };
+}
+
+fn resolve_canonical_call_target(source: Slice<u8>, nodes: Arena, node: Node, function_limit: i32) -> i32 {
+  return if is_clock_span(source, node.a, node.b) == 1 {
+    5
+  } else {
+    find_canonical_function(source, nodes, node.a, node.b, function_limit)
+  };
+}
+
+fn build_canonical_call(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let target = resolve_canonical_call_target(source, nodes, node, function_limit);
+  return if target >= 0 {
+    build_canonical_call_target(source, ast, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start, function_limit, target)
+  } else { canonical_fail(node_slot, edge_slot) };
+}
+
+fn build_canonical_expr(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, index: i32, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let node = arena_load<Node>(ast, index);
+  return if node.kind == 1 {
+    canonical_literal(nodes, edges, node, node_slot, edge_slot, fn_node)
+  } else {
+    if node.kind == 2 {
+      build_canonical_ident(source, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start)
+    } else {
+      if node.kind == 3 {
+        build_canonical_binary(source, ast, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start, function_limit, 1)
+      } else {
+        if node.kind == 4 {
+          build_canonical_binary(source, ast, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start, function_limit, 2)
+        } else {
+          if node.kind == 9 {
+            build_canonical_call(source, ast, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start, function_limit)
+          } else { canonical_fail(node_slot, edge_slot) }
+        }
+      }
+    }
+  };
+}
+
+fn canonical_parameter(nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32) -> CanonicalBuild {
+  let id = put_node(nodes, node_slot, 8, node.a, node.b, 0);
+  let contains = put_edge(edges, edge_slot, 4, fn_node, id);
+  let type_edge = put_edge(edges, edge_slot + 1, 6, id, 1);
+  return CanonicalBuild { nodes: node_slot + 1, edges: edge_slot + 2, ok: 1, aux: id };
+}
+
+fn finish_canonical_local(nodes: Arena, edges: Arena, node: Node, init: CanonicalBuild, fn_node: i32) -> CanonicalBuild {
+  let id = put_node(nodes, init.nodes, 11, node.a, node.b, 0);
+  let contains = put_edge(edges, init.edges, 4, fn_node, id);
+  let type_edge = put_edge(edges, init.edges + 1, 6, id, 1);
+  let initialized = put_edge(edges, init.edges + 2, 11, id, init.aux);
+  return CanonicalBuild { nodes: init.nodes + 1, edges: init.edges + 3, ok: 1, aux: id };
+}
+
+fn build_canonical_local_fresh(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let init = build_canonical_expr(source, ast, nodes, edges, node.value, node_slot, edge_slot, fn_node, scope_start, function_limit);
+  return if init.ok == 1 { finish_canonical_local(nodes, edges, node, init, fn_node) } else { init };
+}
+
+fn build_canonical_local(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let duplicate = find_canonical_value_symbol(source, nodes, node.a, node.b, scope_start, node_slot);
+  return if duplicate < 0 {
+    build_canonical_local_fresh(source, ast, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start, function_limit)
+  } else { canonical_fail(node_slot, edge_slot) };
+}
+
+fn finish_canonical_return(nodes: Arena, edges: Arena, value: CanonicalBuild, fn_node: i32) -> CanonicalBuild {
+  let id = put_node(nodes, value.nodes, 12, 0, 0, 0);
+  let contains = put_edge(edges, value.edges, 4, fn_node, id);
+  let returns_value = put_edge(edges, value.edges + 1, 12, id, value.aux);
+  let type_edge = put_edge(edges, value.edges + 2, 6, id, 1);
+  return CanonicalBuild { nodes: value.nodes + 1, edges: value.edges + 3, ok: 1, aux: id };
+}
+
+fn build_canonical_return(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, node: Node, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let value = build_canonical_expr(source, ast, nodes, edges, node.a, node_slot, edge_slot, fn_node, scope_start, function_limit);
+  return if value.ok == 1 { finish_canonical_return(nodes, edges, value, fn_node) } else { value };
+}
+
+fn build_canonical_statement(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, index: i32, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let node = arena_load<Node>(ast, index);
+  return if node.kind == 10 {
+    if find_canonical_value_symbol(source, nodes, node.a, node.b, scope_start, node_slot) < 0 {
+      canonical_parameter(nodes, edges, node, node_slot, edge_slot, fn_node)
+    } else { canonical_fail(node_slot, edge_slot) }
+  } else {
+    if node.kind == 5 {
+      build_canonical_local(source, ast, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start, function_limit)
+    } else {
+      if node.kind == 6 {
+        build_canonical_return(source, ast, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start, function_limit)
+      } else {
+        if node.kind == 23 {
+          CanonicalBuild { nodes: node_slot, edges: edge_slot, ok: 1, aux: 0 }
+        } else { canonical_fail(node_slot, edge_slot) }
+      }
+    }
+  };
+}
+
+fn finish_canonical_statement_pair(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, seq: Node, left: CanonicalBuild, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  return build_canonical_statement_sequence(source, ast, nodes, edges, seq.b, left.nodes, left.edges, fn_node, scope_start, function_limit);
+}
+
+fn build_canonical_statement_sequence_pair(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, seq: Node, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let left = build_canonical_statement_sequence(source, ast, nodes, edges, seq.a, node_slot, edge_slot, fn_node, scope_start, function_limit);
+  return if left.ok == 1 {
+    finish_canonical_statement_pair(source, ast, nodes, edges, seq, left, fn_node, scope_start, function_limit)
+  } else { left };
+}
+
+fn build_canonical_statement_sequence(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, index: i32, node_slot: i32, edge_slot: i32, fn_node: i32, scope_start: i32, function_limit: i32) -> CanonicalBuild {
+  let node = arena_load<Node>(ast, index);
+  return if node.kind == 20 {
+    build_canonical_statement_sequence_pair(source, ast, nodes, edges, node, node_slot, edge_slot, fn_node, scope_start, function_limit)
+  } else {
+    build_canonical_statement(source, ast, nodes, edges, index, node_slot, edge_slot, fn_node, scope_start, function_limit)
+  };
+}
+
+fn build_canonical_function_body(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, fn_ast: Node, node_slot: i32, edge_slot: i32, function_limit: i32) -> CanonicalBuild {
+  let fn_node = find_canonical_function(source, nodes, fn_ast.a, fn_ast.b, function_limit);
+  let block = arena_load<Node>(ast, fn_ast.value);
+  return if fn_node >= 0 {
+    if block.kind == 7 {
+      build_canonical_statement_sequence(source, ast, nodes, edges, block.a, node_slot, edge_slot, fn_node, node_slot, function_limit)
+    } else { canonical_fail(node_slot, edge_slot) }
+  } else { canonical_fail(node_slot, edge_slot) };
+}
+
+fn finish_canonical_function_pair(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, seq: Node, left: CanonicalBuild, function_limit: i32) -> CanonicalBuild {
+  return build_canonical_function_sequence(source, ast, nodes, edges, seq.b, left.nodes, left.edges, function_limit);
+}
+
+fn build_canonical_function_sequence_pair(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, seq: Node, node_slot: i32, edge_slot: i32, function_limit: i32) -> CanonicalBuild {
+  let left = build_canonical_function_sequence(source, ast, nodes, edges, seq.a, node_slot, edge_slot, function_limit);
+  return if left.ok == 1 {
+    finish_canonical_function_pair(source, ast, nodes, edges, seq, left, function_limit)
+  } else { left };
+}
+
+fn build_canonical_function_sequence(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, index: i32, node_slot: i32, edge_slot: i32, function_limit: i32) -> CanonicalBuild {
+  let node = arena_load<Node>(ast, index);
+  return if node.kind == 21 {
+    build_canonical_function_sequence_pair(source, ast, nodes, edges, node, node_slot, edge_slot, function_limit)
+  } else {
+    if node.kind == 8 {
+      build_canonical_function_body(source, ast, nodes, edges, node, node_slot, edge_slot, function_limit)
+    } else { canonical_fail(node_slot, edge_slot) }
+  };
+}
+
+fn effect_state_index(fn_node: i32) -> i32 {
+  return 384 + fn_node;
+}
+
+fn write_effect_state(nodes: Arena, fn_node: i32, state: i32) -> i32 {
+  return arena_store(nodes, effect_state_index(fn_node), GraphFact { kind: 24, a: fn_node, b: 0, value: state });
+}
+
+fn read_effect_state(nodes: Arena, fn_node: i32) -> i32 {
+  let state = arena_load<GraphFact>(nodes, effect_state_index(fn_node));
+  return state.value;
+}
+
+fn initialize_effect_state_at(nodes: Arena, index: i32) -> i32 {
+  let node = arena_load<GraphFact>(nodes, index);
+  return if node.kind == 6 { write_effect_state(nodes, index, 0) + 1 } else { 0 };
+}
+
+fn initialize_effect_states(nodes: Arena, function_limit: i32) -> i32 {
+  return loop(i = 6, count = 0) while i < function_limit {
+    next(i + 1, count + initialize_effect_state_at(nodes, i));
+  } yield count;
+}
+
+fn edge_at_solver(edges: Arena, index: i32) -> GraphFact {
+  return arena_load<GraphFact>(edges, 128 + index);
+}
+
+fn call_target_candidate(edges: Arena, index: i32, call_node: i32) -> i32 {
+  let edge = edge_at_solver(edges, index);
+  return if edge.kind == 13 {
+    if edge.a == call_node { edge.b } else { 0 - 1 }
+  } else { 0 - 1 };
+}
+
+fn calls_target_at(edges: Arena, edge_count: i32, call_node: i32) -> i32 {
+  return loop(i = 0, target = 0 - 1) while i < edge_count {
+    next(
+      i + 1,
+      if target >= 0 { target } else { call_target_candidate(edges, i, call_node) }
+    );
+  } yield target;
+}
+
+fn function_target_has_time(nodes: Arena, target: i32) -> i32 {
+  let node = arena_load<GraphFact>(nodes, target);
+  return if node.kind == 6 { read_effect_state(nodes, target) } else { 0 };
+}
+
+fn target_has_time(nodes: Arena, target: i32) -> i32 {
+  return if target == 5 {
+    1
+  } else {
+    if target >= 6 { function_target_has_time(nodes, target) } else { 0 }
+  };
+}
+
+fn call_expr_time(nodes: Arena, edges: Arena, edge_count: i32, expr_id: i32) -> i32 {
+  let expr = arena_load<GraphFact>(nodes, expr_id);
+  let target = calls_target_at(edges, edge_count, expr_id);
+  return if expr.kind == 14 {
+    if target >= 0 { target_has_time(nodes, target) } else { 0 }
+  } else { 0 };
+}
+
+fn contained_call_time_at(nodes: Arena, edges: Arena, edge_count: i32, fn_node: i32, index: i32) -> i32 {
+  let edge = edge_at_solver(edges, index);
+  return if edge.kind == 8 {
+    if edge.a == fn_node { call_expr_time(nodes, edges, edge_count, edge.b) } else { 0 }
+  } else { 0 };
+}
+
+fn derive_function_time(nodes: Arena, edges: Arena, edge_count: i32, fn_node: i32) -> i32 {
+  return loop(i = 0, time = 0) while i < edge_count {
+    next(
+      i + 1,
+      if time == 1 { 1 } else { contained_call_time_at(nodes, edges, edge_count, fn_node, i) }
+    );
+  } yield time;
+}
+
+fn solve_unsolved_function(nodes: Arena, edges: Arena, edge_count: i32, index: i32) -> i32 {
+  let derived = derive_function_time(nodes, edges, edge_count, index);
+  return if derived == 1 { write_effect_state(nodes, index, 1) + 1 } else { 0 };
+}
+
+fn solve_function_effect_at(nodes: Arena, edges: Arena, edge_count: i32, index: i32) -> i32 {
+  let node = arena_load<GraphFact>(nodes, index);
+  return if node.kind == 6 {
+    if read_effect_state(nodes, index) == 1 { 0 } else { solve_unsolved_function(nodes, edges, edge_count, index) }
+  } else { 0 };
+}
+
+fn solve_effect_pass(nodes: Arena, edges: Arena, edge_count: i32, function_limit: i32) -> i32 {
+  return loop(i = 6, changes = 0) while i < function_limit {
+    next(i + 1, changes + solve_function_effect_at(nodes, edges, edge_count, i));
+  } yield changes;
+}
+
+fn solve_effect_fixed_point(nodes: Arena, edges: Arena, edge_count: i32, function_limit: i32) -> i32 {
+  return loop(pass = 0, changed = 1) while pass < function_limit {
+    next(
+      pass + 1,
+      if changed == 0 { 0 } else { solve_effect_pass(nodes, edges, edge_count, function_limit) }
+    );
+  } yield 1;
+}
+
+fn grant_match_at(edges: Arena, index: i32, fn_node: i32) -> i32 {
+  let edge = edge_at_solver(edges, index);
+  return if edge.kind == 15 {
+    if edge.a == fn_node { if edge.b == 4 { 1 } else { 0 } } else { 0 }
+  } else { 0 };
+}
+
+fn function_has_time_grant(edges: Arena, edge_count: i32, fn_node: i32) -> i32 {
+  return loop(i = 0, found = 0) while i < edge_count {
+    next(i + 1, if found == 1 { 1 } else { grant_match_at(edges, i, fn_node) });
+  } yield found;
+}
+
+fn emit_pure_effect(edges: Arena, node_count: i32, edge_slot: i32, fn_node: i32) -> CanonicalBuild {
+  let edge = put_edge(edges, edge_slot, 2, fn_node, 2);
+  return CanonicalBuild { nodes: node_count, edges: edge_slot + 1, ok: 1, aux: edge };
+}
+
+fn emit_time_effect_granted(edges: Arena, node_count: i32, edge_slot: i32, fn_node: i32) -> CanonicalBuild {
+  let effect = put_edge(edges, edge_slot, 2, fn_node, 3);
+  return CanonicalBuild { nodes: node_count, edges: edge_slot + 1, ok: 1, aux: effect };
+}
+
+fn emit_time_effect_required(edges: Arena, node_count: i32, edge_slot: i32, fn_node: i32) -> CanonicalBuild {
+  let effect = put_edge(edges, edge_slot, 2, fn_node, 3);
+  let requires = put_edge(edges, edge_slot + 1, 3, fn_node, 4);
+  return CanonicalBuild { nodes: node_count, edges: edge_slot + 2, ok: 1, aux: effect + requires };
+}
+
+fn emit_function_effect(nodes: Arena, edges: Arena, base_edge_count: i32, node_count: i32, edge_slot: i32, fn_node: i32) -> CanonicalBuild {
+  return if read_effect_state(nodes, fn_node) == 1 {
+    if function_has_time_grant(edges, base_edge_count, fn_node) == 1 {
+      emit_time_effect_granted(edges, node_count, edge_slot, fn_node)
+    } else {
+      emit_time_effect_required(edges, node_count, edge_slot, fn_node)
+    }
+  } else {
+    emit_pure_effect(edges, node_count, edge_slot, fn_node)
+  };
+}
+
+fn emit_effect_for_function(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, index: i32, node_count: i32, edge_slot: i32, function_limit: i32, base_edge_count: i32) -> CanonicalBuild {
+  let fn_ast = arena_load<Node>(ast, index);
+  let fn_node = find_canonical_function(source, nodes, fn_ast.a, fn_ast.b, function_limit);
+  return if fn_node >= 0 {
+    emit_function_effect(nodes, edges, base_edge_count, node_count, edge_slot, fn_node)
+  } else { canonical_fail(node_count, edge_slot) };
+}
+
+fn finish_emit_effect_pair(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, seq: Node, left: CanonicalBuild, function_limit: i32, base_edge_count: i32) -> CanonicalBuild {
+  return emit_effects(source, ast, nodes, edges, seq.b, left.nodes, left.edges, function_limit, base_edge_count);
+}
+
+fn emit_effect_pair(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, seq: Node, node_count: i32, edge_slot: i32, function_limit: i32, base_edge_count: i32) -> CanonicalBuild {
+  let left = emit_effects(source, ast, nodes, edges, seq.a, node_count, edge_slot, function_limit, base_edge_count);
+  return if left.ok == 1 {
+    finish_emit_effect_pair(source, ast, nodes, edges, seq, left, function_limit, base_edge_count)
+  } else { left };
+}
+
+fn emit_effects(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, index: i32, node_count: i32, edge_slot: i32, function_limit: i32, base_edge_count: i32) -> CanonicalBuild {
+  let node = arena_load<Node>(ast, index);
+  return if node.kind == 21 {
+    emit_effect_pair(source, ast, nodes, edges, node, node_count, edge_slot, function_limit, base_edge_count)
+  } else {
+    if node.kind == 8 {
+      emit_effect_for_function(source, ast, nodes, edges, index, node_count, edge_slot, function_limit, base_edge_count)
+    } else { canonical_fail(node_count, edge_slot) }
+  };
+}
+
+fn solve_and_emit_effects(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, program: Node, bodies: CanonicalBuild, function_limit: i32) -> CanonicalBuild {
+  let initialized = initialize_effect_states(nodes, function_limit);
+  let solved = solve_effect_fixed_point(nodes, edges, bodies.edges, function_limit);
+  return if initialized >= 0 {
+    if solved == 1 {
+      emit_effects(source, ast, nodes, edges, program.a, bodies.nodes, bodies.edges, function_limit, bodies.edges)
+    } else { canonical_fail(bodies.nodes, bodies.edges) }
+  } else { canonical_fail(bodies.nodes, bodies.edges) };
+}
+
+fn build_canonical_after_declare(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, program: Node, declared: CanonicalBuild) -> CanonicalBuild {
+  let bodies = build_canonical_function_sequence(source, ast, nodes, edges, program.a, declared.nodes, declared.edges, declared.nodes);
+  return if bodies.ok == 1 {
+    solve_and_emit_effects(source, ast, nodes, edges, program, bodies, declared.nodes)
+  } else { bodies };
+}
+
+fn build_canonical_after_init(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, program: Node, initial: CanonicalBuild) -> CanonicalBuild {
+  let declared = predeclare_functions_canonical(source, ast, nodes, edges, program.a, initial.nodes, initial.edges);
+  return if declared.ok == 1 {
+    build_canonical_after_declare(source, ast, nodes, edges, program, declared)
+  } else { declared };
+}
+
+fn build_canonical_program_graph(source: Slice<u8>, ast: Arena, nodes: Arena, edges: Arena, root: i32) -> CanonicalBuild {
+  let program = arena_load<Node>(ast, root);
+  let initial = init_canonical(nodes, edges);
+  return if program.kind == 22 {
+    if initial.ok == 1 {
+      build_canonical_after_init(source, ast, nodes, edges, program, initial)
+    } else { initial }
+  } else { canonical_fail(initial.nodes, initial.edges) };
+}
+
+fn write_plan_step(plan: Arena, slot: i32, action: i32, detail: i32) -> i32 {
+  let handle = arena_store(plan, slot, PlanStep { action: action, a: detail, b: 0, value: 0 });
+  return slot + 1;
+}
+
+fn relation_plan_step(graph: Arena, plan: Arena, index: i32, fn_node: i32, slot: i32, relation: i32, action: i32) -> i32 {
+  let edge = edge_at_solver(graph, index);
+  return if edge.kind == relation {
+    if edge.a == fn_node { write_plan_step(plan, slot, action, edge.b) } else { slot }
+  } else { slot };
+}
+
+fn relation_plan_pass(graph: Arena, plan: Arena, edge_count: i32, fn_node: i32, slot: i32, relation: i32, action: i32) -> i32 {
+  return loop(i = 0, next_slot = slot) while i < edge_count {
+    next(i + 1, relation_plan_step(graph, plan, i, fn_node, next_slot, relation, action));
+  } yield next_slot;
+}
+
+fn child_plan_step(graph: Arena, plan: Arena, index: i32, fn_node: i32, slot: i32, child_kind: i32, action: i32) -> i32 {
+  let edge = edge_at_solver(graph, index);
+  let child = load_canonical_node(graph, edge.b);
+  return if edge.kind == 4 {
+    if edge.a == fn_node {
+      if child.kind == child_kind { write_plan_step(plan, slot, action, edge.b) } else { slot }
+    } else { slot }
+  } else { slot };
+}
+
+fn child_plan_pass(graph: Arena, plan: Arena, edge_count: i32, fn_node: i32, slot: i32, child_kind: i32, action: i32) -> i32 {
+  return loop(i = 0, next_slot = slot) while i < edge_count {
+    next(i + 1, child_plan_step(graph, plan, i, fn_node, next_slot, child_kind, action));
+  } yield next_slot;
+}
+
+fn call_plan_action(graph: Arena, target: i32) -> i32 {
+  let node = load_canonical_node(graph, target);
+  return if node.kind == 5 { 8 } else { 7 };
+}
+
+fn call_plan_step(graph: Arena, plan: Arena, edge_count: i32, index: i32, fn_node: i32, slot: i32) -> i32 {
+  let edge = edge_at_solver(graph, index);
+  let child = load_canonical_node(graph, edge.b);
+  let target = calls_target_at(graph, edge_count, edge.b);
+  return if edge.kind == 8 {
+    if edge.a == fn_node {
+      if child.kind == 14 {
+        if target >= 0 { write_plan_step(plan, slot, call_plan_action(graph, target), target) } else { slot }
+      } else { slot }
+    } else { slot }
+  } else { slot };
+}
+
+fn call_plan_pass(graph: Arena, plan: Arena, edge_count: i32, fn_node: i32, slot: i32) -> i32 {
+  return loop(i = 0, next_slot = slot) while i < edge_count {
+    next(i + 1, call_plan_step(graph, plan, edge_count, i, fn_node, next_slot));
+  } yield next_slot;
+}
+
+fn build_function_plan(graph: Arena, plan: Arena, edge_count: i32, fn_node: i32, slot: i32) -> i32 {
+  let entered = write_plan_step(plan, slot, 1, fn_node);
+  let received = relation_plan_pass(graph, plan, edge_count, fn_node, entered, 3, 2);
+  let granted = relation_plan_pass(graph, plan, edge_count, fn_node, received, 15, 3);
+  let region_created = relation_plan_pass(graph, plan, edge_count, fn_node, granted, 5, 4);
+  let params = child_plan_pass(graph, plan, edge_count, fn_node, region_created, 8, 5);
+  let locals = child_plan_pass(graph, plan, edge_count, fn_node, params, 11, 6);
+  let calls = call_plan_pass(graph, plan, edge_count, fn_node, locals);
+  let returned = write_plan_step(plan, calls, 9, fn_node);
+  let region_destroyed = relation_plan_pass(graph, plan, edge_count, fn_node, returned, 5, 10);
+  return write_plan_step(plan, region_destroyed, 11, fn_node);
+}
+
+fn function_plan_step(graph: Arena, plan: Arena, edge_count: i32, index: i32, slot: i32) -> i32 {
+  let node = load_canonical_node(graph, index);
+  return if node.kind == 6 { build_function_plan(graph, plan, edge_count, index, slot) } else { slot };
+}
+
+fn build_execution_plan(graph: Arena, plan: Arena, node_count: i32, edge_count: i32) -> PlanBuild {
+  let steps = loop(i = 6, slot = 0) while i < node_count {
+    next(i + 1, function_plan_step(graph, plan, edge_count, i, slot));
+  } yield slot;
+  return PlanBuild { steps: steps, ok: 1, nodes: node_count, edges: edge_count };
+}
+
+fn load_canonical_node(graph: Arena, index: i32) -> GraphFact {
+  return arena_load<GraphFact>(graph, index);
+}
+
+fn load_canonical_edge(graph: Arena, index: i32) -> GraphFact {
+  return arena_load<GraphFact>(graph, 128 + index);
+}
+
+fn canonical_expr_kind(kind: i32) -> i32 {
+  return if kind == 9 { 1 } else {
+    if kind == 10 { 1 } else {
+      if kind == 13 { 1 } else { if kind == 14 { 1 } else { 0 } }
+    }
+  };
+}
+
+fn canonical_value_symbol_kind(kind: i32) -> i32 {
+  return if kind == 8 { 1 } else { if kind == 11 { 1 } else { 0 } };
+}
+
+fn valid_relation(relation: i32) -> i32 {
+  return if relation >= 1 { if relation <= 15 { 1 } else { 0 } } else { 0 };
+}
+
+fn relation_shape(relation: i32, from_kind: i32, to_kind: i32) -> i32 {
+  return if relation == 1 {
+    if from_kind == 5 { if to_kind == 2 { 1 } else { 0 } } else {
+      if from_kind == 6 { if to_kind == 2 { 1 } else { 0 } } else { 0 }
+    }
+  } else {
+    if relation == 2 {
+      if from_kind == 5 { if to_kind == 3 { 1 } else { 0 } } else {
+        if from_kind == 6 { if to_kind == 3 { 1 } else { 0 } } else { 0 }
+      }
+    } else {
+      if relation == 3 {
+        if from_kind == 5 { if to_kind == 4 { 1 } else { 0 } } else {
+          if from_kind == 6 { if to_kind == 4 { 1 } else { 0 } } else { 0 }
+        }
+      } else {
+        if relation == 4 {
+          if from_kind == 1 {
+            if to_kind == 6 { 1 } else { 0 }
+          } else {
+            if from_kind == 6 {
+              if to_kind == 8 { 1 } else {
+                if to_kind == 11 { 1 } else { if to_kind == 12 { 1 } else { 0 } }
+              }
+            } else { 0 }
+          }
+        } else {
+          if relation == 5 {
+            if from_kind == 6 { if to_kind == 7 { 1 } else { 0 } } else { 0 }
+          } else {
+            if relation == 6 {
+              if to_kind == 2 {
+                if from_kind >= 8 { if from_kind <= 14 { if from_kind != 7 { 1 } else { 0 } } else { 0 } } else { 0 }
+              } else { 0 }
+            } else {
+              if relation == 7 {
+                if from_kind == 9 { canonical_value_symbol_kind(to_kind) } else { 0 }
+              } else {
+                if relation == 8 {
+                  if from_kind == 6 { canonical_expr_kind(to_kind) } else { 0 }
+                } else {
+                  if relation == 9 {
+                    if from_kind == 10 { canonical_expr_kind(to_kind) } else { 0 }
+                  } else {
+                    if relation == 10 {
+                      if from_kind == 10 { canonical_expr_kind(to_kind) } else { 0 }
+                    } else {
+                      if relation == 11 {
+                        if from_kind == 11 { canonical_expr_kind(to_kind) } else { 0 }
+                      } else {
+                        if relation == 12 {
+                          if from_kind == 12 { canonical_expr_kind(to_kind) } else { 0 }
+                        } else {
+                          if relation == 13 {
+                            if from_kind == 14 {
+                              if to_kind == 6 { 1 } else { if to_kind == 5 { 1 } else { 0 } }
+                            } else { 0 }
+                          } else {
+                            if relation == 14 {
+                              if from_kind == 14 { canonical_expr_kind(to_kind) } else { 0 }
+                            } else {
+                              if relation == 15 {
+                                if from_kind == 6 { if to_kind == 4 { 1 } else { 0 } } else { 0 }
+                              } else { 0 }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+}
+
+fn same_edge_at(graph: Arena, left: GraphFact, index: i32) -> i32 {
+  let right = load_canonical_edge(graph, index);
+  return if left.kind == right.kind {
+    if left.a == right.a { if left.b == right.b { 1 } else { 0 } } else { 0 }
+  } else { 0 };
+}
+
+fn count_same_edge(graph: Arena, edge_count: i32, index: i32) -> i32 {
+  let target = load_canonical_edge(graph, index);
+  return loop(i = 0, count = 0) while i < edge_count {
+    next(i + 1, count + same_edge_at(graph, target, i));
+  } yield count;
+}
+
+fn edge_exact_at(graph: Arena, index: i32, relation: i32, from: i32, to: i32) -> i32 {
+  let edge = load_canonical_edge(graph, index);
+  return if edge.kind == relation {
+    if edge.a == from { if edge.b == to { 1 } else { 0 } } else { 0 }
+  } else { 0 };
+}
+
+fn count_edge_exact(graph: Arena, edge_count: i32, relation: i32, from: i32, to: i32) -> i32 {
+  return loop(i = 0, count = 0) while i < edge_count {
+    next(i + 1, count + edge_exact_at(graph, i, relation, from, to));
+  } yield count;
+}
+
+fn relation_from_at(graph: Arena, index: i32, relation: i32, from: i32) -> i32 {
+  let edge = load_canonical_edge(graph, index);
+  return if edge.kind == relation { if edge.a == from { 1 } else { 0 } } else { 0 };
+}
+
+fn count_relation_from(graph: Arena, edge_count: i32, relation: i32, from: i32) -> i32 {
+  return loop(i = 0, count = 0) while i < edge_count {
+    next(i + 1, count + relation_from_at(graph, i, relation, from));
+  } yield count;
+}
+
+fn relation_to_at(graph: Arena, index: i32, relation: i32, to: i32) -> i32 {
+  let edge = load_canonical_edge(graph, index);
+  return if edge.kind == relation { if edge.b == to { 1 } else { 0 } } else { 0 };
+}
+
+fn count_relation_to(graph: Arena, edge_count: i32, relation: i32, to: i32) -> i32 {
+  return loop(i = 0, count = 0) while i < edge_count {
+    next(i + 1, count + relation_to_at(graph, i, relation, to));
+  } yield count;
+}
+
+fn verify_edge_nodes(graph: Arena, edge_count: i32, index: i32, edge: GraphFact) -> i32 {
+  let from_node = load_canonical_node(graph, edge.a);
+  let to_node = load_canonical_node(graph, edge.b);
+  return if relation_shape(edge.kind, from_node.kind, to_node.kind) == 1 {
+    if count_same_edge(graph, edge_count, index) == 1 { 1 } else { 0 }
+  } else { 0 };
+}
+
+fn verify_edge_shape_at(graph: Arena, node_count: i32, edge_count: i32, index: i32) -> i32 {
+  let edge = load_canonical_edge(graph, index);
+  return if valid_relation(edge.kind) == 1 {
+    if edge.a >= 0 {
+      if edge.a < node_count {
+        if edge.b >= 0 {
+          if edge.b < node_count {
+            verify_edge_nodes(graph, edge_count, index, edge)
+          } else { 0 }
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_all_edges(graph: Arena, node_count: i32, edge_count: i32) -> i32 {
+  return loop(i = 0, ok = 1) while i < edge_count {
+    next(i + 1, if ok == 1 { verify_edge_shape_at(graph, node_count, edge_count, i) } else { 0 });
+  } yield ok;
+}
+
+fn verify_baseline_nodes(graph: Arena) -> i32 {
+  let n0 = load_canonical_node(graph, 0);
+  let n1 = load_canonical_node(graph, 1);
+  let n2 = load_canonical_node(graph, 2);
+  let n3 = load_canonical_node(graph, 3);
+  let n4 = load_canonical_node(graph, 4);
+  let n5 = load_canonical_node(graph, 5);
+  return if n0.kind == 1 {
+    if n1.kind == 2 {
+      if n1.a == 1 {
+        if n1.value == 32 {
+          if n2.kind == 3 {
+            if n2.a == 0 {
+              if n3.kind == 3 {
+                if n3.a == 1 {
+                  if n4.kind == 4 {
+                    if n4.a == 1 { if n5.kind == 5 { 1 } else { 0 } } else { 0 }
+                  } else { 0 }
+                } else { 0 }
+              } else { 0 }
+            } else { 0 }
+          } else { 0 }
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_baseline_edges(graph: Arena) -> i32 {
+  return if edge_exact_at(graph, 0, 1, 5, 1) == 1 {
+    if edge_exact_at(graph, 1, 2, 5, 3) == 1 {
+      edge_exact_at(graph, 2, 3, 5, 4)
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_function_authority(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  let pure = count_edge_exact(graph, edge_count, 2, id, 2);
+  let time = count_edge_exact(graph, edge_count, 2, id, 3);
+  let requires = count_edge_exact(graph, edge_count, 3, id, 4);
+  let grants = count_edge_exact(graph, edge_count, 15, id, 4);
+  return if pure == 1 {
+    if time == 0 {
+      if requires == 0 { if grants == 0 { 1 } else { 0 } } else { 0 }
+    } else { 0 }
+  } else {
+    if pure == 0 {
+      if time == 1 {
+        if requires + grants == 1 { 1 } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  };
+}
+
+fn verify_function_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_edge_exact(graph, edge_count, 4, 0, id) == 1 {
+    if count_edge_exact(graph, edge_count, 1, id, 1) == 1 {
+      if count_relation_from(graph, edge_count, 5, id) == 1 {
+        verify_function_authority(graph, edge_count, id)
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_region_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_relation_to(graph, edge_count, 5, id) == 1 { 1 } else { 0 };
+}
+
+fn verify_parameter_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_relation_to(graph, edge_count, 4, id) == 1 {
+    if count_edge_exact(graph, edge_count, 6, id, 1) == 1 { 1 } else { 0 }
+  } else { 0 };
+}
+
+fn verify_name_ref_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_relation_from(graph, edge_count, 7, id) == 1 {
+    if count_edge_exact(graph, edge_count, 6, id, 1) == 1 {
+      if count_relation_to(graph, edge_count, 8, id) == 1 { 1 } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_binary_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_relation_from(graph, edge_count, 9, id) == 1 {
+    if count_relation_from(graph, edge_count, 10, id) == 1 {
+      if count_edge_exact(graph, edge_count, 6, id, 1) == 1 {
+        if count_relation_to(graph, edge_count, 8, id) == 1 { 1 } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_local_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_relation_to(graph, edge_count, 4, id) == 1 {
+    if count_edge_exact(graph, edge_count, 6, id, 1) == 1 {
+      if count_relation_from(graph, edge_count, 11, id) == 1 { 1 } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_return_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_relation_to(graph, edge_count, 4, id) == 1 {
+    if count_relation_from(graph, edge_count, 12, id) == 1 {
+      if count_edge_exact(graph, edge_count, 6, id, 1) == 1 { 1 } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_constant_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_edge_exact(graph, edge_count, 6, id, 1) == 1 {
+    if count_relation_to(graph, edge_count, 8, id) == 1 { 1 } else { 0 }
+  } else { 0 };
+}
+
+fn verify_call_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  return if count_relation_from(graph, edge_count, 13, id) == 1 {
+    if count_edge_exact(graph, edge_count, 6, id, 1) == 1 {
+      if count_relation_to(graph, edge_count, 8, id) == 1 {
+        if count_relation_from(graph, edge_count, 14, id) <= 1 { 1 } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn verify_dynamic_node(graph: Arena, edge_count: i32, id: i32) -> i32 {
+  let node = load_canonical_node(graph, id);
+  return if node.kind == 6 {
+    verify_function_node(graph, edge_count, id)
+  } else {
+    if node.kind == 7 {
+      verify_region_node(graph, edge_count, id)
+    } else {
+      if node.kind == 8 {
+        verify_parameter_node(graph, edge_count, id)
+      } else {
+        if node.kind == 9 {
+          verify_name_ref_node(graph, edge_count, id)
+        } else {
+          if node.kind == 10 {
+            verify_binary_node(graph, edge_count, id)
+          } else {
+            if node.kind == 11 {
+              verify_local_node(graph, edge_count, id)
+            } else {
+              if node.kind == 12 {
+                verify_return_node(graph, edge_count, id)
+              } else {
+                if node.kind == 13 {
+                  verify_constant_node(graph, edge_count, id)
+                } else {
+                  if node.kind == 14 { verify_call_node(graph, edge_count, id) } else { 0 }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+}
+
+fn verify_all_dynamic_nodes(graph: Arena, node_count: i32, edge_count: i32) -> i32 {
+  return loop(i = 6, ok = 1) while i < node_count {
+    next(i + 1, if ok == 1 { verify_dynamic_node(graph, edge_count, i) } else { 0 });
+  } yield ok;
+}
+
+fn verify_canonical_graph(graph: Arena, node_count: i32, edge_count: i32) -> VerifyResult {
+  let bounds = if node_count >= 6 {
+    if node_count <= 128 {
+      if edge_count >= 3 { if edge_count <= 256 { 1 } else { 0 } } else { 0 }
+    } else { 0 }
+  } else { 0 };
+  let baseline = if bounds == 1 {
+    if verify_baseline_nodes(graph) == 1 { verify_baseline_edges(graph) } else { 0 }
+  } else { 0 };
+  let edges_ok = if baseline == 1 { verify_all_edges(graph, node_count, edge_count) } else { 0 };
+  let nodes_ok = if edges_ok == 1 { verify_all_dynamic_nodes(graph, node_count, edge_count) } else { 0 };
+  return VerifyResult {
+    ok: nodes_ok,
+    checked: if nodes_ok == 1 { node_count + edge_count } else { 0 },
+    nodes: node_count,
+    edges: edge_count
+  };
+}
+
+fn run_canonical_program(source: Slice<u8>, ast: Arena, graph: Arena, root: i32) -> CanonicalBuild {
+  return build_canonical_program_graph(source, ast, graph, graph, root);
+}
+
+fn write_ir_function(ir: Arena, index: i32, graph_node: i32, region: i32, effect: i32, flags: i32) -> i32 {
+  let handle = arena_store(ir, index, IrFunction { graph: graph_node, region: region, effect: effect, flags: flags });
+  return index + 1;
+}
+
+fn write_ir_param(ir: Arena, index: i32, function_graph: i32, graph_node: i32) -> i32 {
+  let handle = arena_store(ir, 64 + index, IrParam { function_graph: function_graph, graph: graph_node, index: 0, value: 0 - 1 });
+  let mapped = arena_store(ir, 384 + graph_node, IrInst { op: 0, graph: graph_node, a: 0 - 1, b: 0 });
+  return index + 1;
+}
+
+fn write_ir_inst(ir: Arena, index: i32, op: i32, graph_node: i32, a: i32, b: i32) -> i32 {
+  let handle = arena_store(ir, 128 + index, IrInst { op: op, graph: graph_node, a: a, b: b });
+  return index + 1;
+}
+
+fn write_ir_value(ir: Arena, graph_node: i32, value: i32) -> i32 {
+  return arena_store(ir, 384 + graph_node, IrInst { op: 0, graph: graph_node, a: value, b: 0 });
+}
+
+fn read_ir_value(ir: Arena, graph_node: i32) -> i32 {
+  let mapped = arena_load<IrInst>(ir, 384 + graph_node);
+  return mapped.a;
+}
+
+fn single_edge_target_at(graph: Arena, index: i32, relation: i32, from: i32) -> i32 {
+  let edge = edge_at_solver(graph, index);
+  return if edge.kind == relation {
+    if edge.a == from { edge.b } else { 0 - 1 }
+  } else { 0 - 1 };
+}
+
+fn single_edge_target(graph: Arena, edge_count: i32, relation: i32, from: i32) -> i32 {
+  return loop(i = 0, found = 0 - 1) while i < edge_count {
+    next(
+      i + 1,
+      if found >= 0 { found } else { single_edge_target_at(graph, i, relation, from) }
+    );
+  } yield found;
+}
+
+fn ir_function_region(graph: Arena, edge_count: i32, fn_node: i32) -> i32 {
+  return single_edge_target(graph, edge_count, 5, fn_node);
+}
+
+fn ir_function_effect(graph: Arena, edge_count: i32, fn_node: i32) -> i32 {
+  let target = single_edge_target(graph, edge_count, 2, fn_node);
+  return if target == 3 { 2 } else { if target == 2 { 1 } else { 0 } };
+}
+
+fn ir_function_flags(graph: Arena, edge_count: i32, fn_node: i32) -> i32 {
+  let requires = count_edge_exact(graph, edge_count, 3, fn_node, 4);
+  let grants = count_edge_exact(graph, edge_count, 15, fn_node, 4);
+  return requires + grants * 2;
+}
+
+fn emit_param_edge(graph: Arena, ir: Arena, index: i32, fn_node: i32, param_slot: i32) -> i32 {
+  let edge = edge_at_solver(graph, index);
+  let child = load_canonical_node(graph, edge.b);
+  return if edge.kind == 4 {
+    if edge.a == fn_node {
+      if child.kind == 8 { write_ir_param(ir, param_slot, fn_node, edge.b) } else { param_slot }
+    } else { param_slot }
+  } else { param_slot };
+}
+
+fn emit_params_for_function(graph: Arena, ir: Arena, edge_count: i32, fn_node: i32, param_slot: i32) -> i32 {
+  return loop(i = 0, slot = param_slot) while i < edge_count {
+    next(i + 1, emit_param_edge(graph, ir, i, fn_node, slot));
+  } yield slot;
+}
+
+fn lower_const_ir(graph: Arena, ir: Arena, node: GraphFact, graph_node: i32, instruction: i32, next_value: i32) -> IrExpr {
+  let next_instruction = write_ir_inst(ir, instruction, 7, graph_node, node.value, 0);
+  let mapped = write_ir_value(ir, graph_node, next_value);
+  return IrExpr { instructions: next_instruction, next_value: next_value + 1, value: next_value, ok: 1 };
+}
+
+fn lower_name_ref_ir(graph: Arena, ir: Arena, edge_count: i32, graph_node: i32, instruction: i32, next_value: i32) -> IrExpr {
+  let target = single_edge_target(graph, edge_count, 7, graph_node);
+  let source_value = read_ir_value(ir, target);
+  let next_instruction = write_ir_inst(ir, instruction, 2, graph_node, source_value, 0);
+  let mapped = write_ir_value(ir, graph_node, next_value);
+  return if target >= 0 {
+    IrExpr { instructions: next_instruction, next_value: next_value + 1, value: next_value, ok: 1 }
+  } else {
+    IrExpr { instructions: instruction, next_value: next_value, value: 0, ok: 0 }
+  };
+}
+
+fn binary_ir_op(node: GraphFact) -> i32 {
+  return if node.value == 1 { 3 } else { if node.value == 2 { 10 } else { 0 } };
+}
+
+fn lower_binary_right_ir(graph: Arena, ir: Arena, edge_count: i32, graph_node: i32, node: GraphFact, left: IrExpr) -> IrExpr {
+  let right_node = single_edge_target(graph, edge_count, 10, graph_node);
+  let right = lower_expr_ir(graph, ir, edge_count, right_node, left.instructions, left.next_value);
+  let op = binary_ir_op(node);
+  let next_instruction = write_ir_inst(ir, right.instructions, op, graph_node, left.value, right.value);
+  let mapped = write_ir_value(ir, graph_node, right.next_value);
+  return if right.ok == 1 {
+    if op != 0 {
+      IrExpr { instructions: next_instruction, next_value: right.next_value + 1, value: right.next_value, ok: 1 }
+    } else { IrExpr { instructions: right.instructions, next_value: right.next_value, value: 0, ok: 0 } }
+  } else { right };
+}
+
+fn lower_binary_ir(graph: Arena, ir: Arena, edge_count: i32, graph_node: i32, node: GraphFact, instruction: i32, next_value: i32) -> IrExpr {
+  let left_node = single_edge_target(graph, edge_count, 9, graph_node);
+  let left = lower_expr_ir(graph, ir, edge_count, left_node, instruction, next_value);
+  return if left.ok == 1 {
+    lower_binary_right_ir(graph, ir, edge_count, graph_node, node, left)
+  } else { left };
+}
+
+fn lower_zero_call_ir(ir: Arena, graph_node: i32, instruction: i32, next_value: i32, op: i32, target: i32) -> IrExpr {
+  let next_instruction = write_ir_inst(ir, instruction, op, graph_node, target, 0 - 1000);
+  let mapped = write_ir_value(ir, graph_node, next_value);
+  return IrExpr { instructions: next_instruction, next_value: next_value + 1, value: next_value, ok: 1 };
+}
+
+fn lower_call_arg_ir(graph: Arena, ir: Arena, edge_count: i32, graph_node: i32, instruction: i32, next_value: i32, target: i32, arg_node: i32) -> IrExpr {
+  let arg = lower_expr_ir(graph, ir, edge_count, arg_node, instruction, next_value);
+  let op = if target == 5 { 9 } else { 8 };
+  let next_instruction = write_ir_inst(ir, arg.instructions, op, graph_node, target, arg.value);
+  let mapped = write_ir_value(ir, graph_node, arg.next_value);
+  return if arg.ok == 1 {
+    IrExpr { instructions: next_instruction, next_value: arg.next_value + 1, value: arg.next_value, ok: 1 }
+  } else { arg };
+}
+
+fn lower_call_ir(graph: Arena, ir: Arena, edge_count: i32, graph_node: i32, instruction: i32, next_value: i32) -> IrExpr {
+  let target = single_edge_target(graph, edge_count, 13, graph_node);
+  let arg_node = single_edge_target(graph, edge_count, 14, graph_node);
+  let op = if target == 5 { 9 } else { 8 };
+  return if target >= 0 {
+    if arg_node >= 0 {
+      lower_call_arg_ir(graph, ir, edge_count, graph_node, instruction, next_value, target, arg_node)
+    } else {
+      lower_zero_call_ir(ir, graph_node, instruction, next_value, op, target)
+    }
+  } else { IrExpr { instructions: instruction, next_value: next_value, value: 0, ok: 0 } };
+}
+
+fn lower_expr_ir(graph: Arena, ir: Arena, edge_count: i32, graph_node: i32, instruction: i32, next_value: i32) -> IrExpr {
+  let node = load_canonical_node(graph, graph_node);
+  return if node.kind == 13 {
+    lower_const_ir(graph, ir, node, graph_node, instruction, next_value)
+  } else {
+    if node.kind == 9 {
+      lower_name_ref_ir(graph, ir, edge_count, graph_node, instruction, next_value)
+    } else {
+      if node.kind == 10 {
+        lower_binary_ir(graph, ir, edge_count, graph_node, node, instruction, next_value)
+      } else {
+        if node.kind == 14 {
+          lower_call_ir(graph, ir, edge_count, graph_node, instruction, next_value)
+        } else { IrExpr { instructions: instruction, next_value: next_value, value: 0, ok: 0 } }
+      }
+    }
+  };
+}
+
+fn finish_local_ir(ir: Arena, local_node: i32, expr: IrExpr) -> IrBody {
+  let next_instruction = write_ir_inst(ir, expr.instructions, 4, local_node, expr.value, 0);
+  let mapped = write_ir_value(ir, local_node, expr.value);
+  return IrBody { instructions: next_instruction, next_value: expr.next_value, params: 0, ok: 1 };
+}
+
+fn emit_local_ir(graph: Arena, ir: Arena, edge_count: i32, local_node: i32, state: IrBody) -> IrBody {
+  let init = single_edge_target(graph, edge_count, 11, local_node);
+  let expr = lower_expr_ir(graph, ir, edge_count, init, state.instructions, state.next_value);
+  let finished = finish_local_ir(ir, local_node, expr);
+  return if expr.ok == 1 {
+    IrBody { instructions: finished.instructions, next_value: finished.next_value, params: state.params, ok: 1 }
+  } else { IrBody { instructions: state.instructions, next_value: state.next_value, params: state.params, ok: 0 } };
+}
+
+fn finish_return_ir(graph: Arena, ir: Arena, edge_count: i32, fn_node: i32, return_node: i32, expr: IrExpr, params: i32) -> IrBody {
+  let region = ir_function_region(graph, edge_count, fn_node);
+  let region_end = write_ir_inst(ir, expr.instructions, 5, region, region, 0);
+  let ret = write_ir_inst(ir, region_end, 6, return_node, expr.value, 0);
+  return IrBody { instructions: ret, next_value: expr.next_value, params: params, ok: 1 };
+}
+
+fn emit_return_ir(graph: Arena, ir: Arena, edge_count: i32, fn_node: i32, return_node: i32, state: IrBody) -> IrBody {
+  let value_node = single_edge_target(graph, edge_count, 12, return_node);
+  let expr = lower_expr_ir(graph, ir, edge_count, value_node, state.instructions, state.next_value);
+  return if expr.ok == 1 {
+    finish_return_ir(graph, ir, edge_count, fn_node, return_node, expr, state.params)
+  } else { IrBody { instructions: state.instructions, next_value: state.next_value, params: state.params, ok: 0 } };
+}
+
+fn emit_statement_edge_ir(graph: Arena, ir: Arena, edge_count: i32, index: i32, fn_node: i32, state: IrBody) -> IrBody {
+  let edge = edge_at_solver(graph, index);
+  let child = load_canonical_node(graph, edge.b);
+  return if edge.kind == 4 {
+    if edge.a == fn_node {
+      if child.kind == 11 {
+        emit_local_ir(graph, ir, edge_count, edge.b, state)
+      } else {
+        if child.kind == 12 {
+          emit_return_ir(graph, ir, edge_count, fn_node, edge.b, state)
+        } else { state }
+      }
+    } else { state }
+  } else { state };
+}
+
+fn emit_function_statements_ir(graph: Arena, ir: Arena, edge_count: i32, fn_node: i32, state: IrBody) -> IrBody {
+  return loop(i = 0, current = state) while i < edge_count {
+    next(i + 1, if current.ok == 1 { emit_statement_edge_ir(graph, ir, edge_count, i, fn_node, current) } else { current });
+  } yield current;
+}
+
+fn emit_function_ir(graph: Arena, ir: Arena, edge_count: i32, fn_node: i32, state: IrBuild) -> IrBuild {
+  let region = ir_function_region(graph, edge_count, fn_node);
+  let effect = ir_function_effect(graph, edge_count, fn_node);
+  let flags = ir_function_flags(graph, edge_count, fn_node);
+  let next_function = write_ir_function(ir, state.functions, fn_node, region, effect, flags);
+  let next_params = emit_params_for_function(graph, ir, edge_count, fn_node, state.params);
+  let region_begin = write_ir_inst(ir, state.instructions, 1, region, region, 0);
+  let body = emit_function_statements_ir(
+    graph,
+    ir,
+    edge_count,
+    fn_node,
+    IrBody { instructions: region_begin, next_value: 0, params: next_params, ok: 1 }
+  );
+  return IrBuild { functions: next_function, params: body.params, instructions: body.instructions, ok: body.ok };
+}
+
+fn emit_function_node_ir(graph: Arena, ir: Arena, edge_count: i32, index: i32, state: IrBuild) -> IrBuild {
+  let node = load_canonical_node(graph, index);
+  return if node.kind == 6 { emit_function_ir(graph, ir, edge_count, index, state) } else { state };
+}
+
+fn emit_native_ir(graph: Arena, ir: Arena, node_count: i32, edge_count: i32) -> IrBuild {
+  return loop(i = 6, state = IrBuild { functions: 0, params: 0, instructions: 0, ok: 1 }) while i < node_count {
+    next(i + 1, if state.ok == 1 { emit_function_node_ir(graph, ir, edge_count, i, state) } else { state });
+  } yield state;
+}
+
+fn main() -> i32 { return 0; }
+
+

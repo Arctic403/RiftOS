@@ -31,14 +31,15 @@ RiftBuild must not add arbitrary shell execution, downloaded executable toolchai
 
 ## Semnexis self-hosting bootstrap
 
-Current source is `0.7.0-quickjs-bootstrap`. The source/machine pressure loop now reaches additive `SNIRV7`, Arena-backed AST storage, typed Arena record reads/writes, record stack arguments, bounded 256-frame native recursion, and a recursive-descent Arena parser/evaluator on ARM32. QuickJS remains only the bootstrap host.
+Current source is `0.7.0-quickjs-bootstrap`. The installed gate remains `semnexis-bootstrap-self-test/17`, while the source/machine self-hosting frontier has advanced through a real Semnexis-source frontend and semantic-graph slice. Generated ARM32 now parses `fn main() -> i32 { let x = 12 + 3 * (4 + 1); return x; }` into a 12-node Arena AST, lowers it into 22 deterministic semantic facts, and resolves the return `x` NameRef to the local symbol. QuickJS remains only the bootstrap host.
 
 Immediate order:
-1. **NEXT APK GATE** — build/install current RiftOS and prove installed `semnexis-bootstrap-self-test/17`;
-2. add real parser failure/error propagation and richer grammar only when the self-host parser exposes the need;
-3. keep expanding Semnexis-written compiler pieces and recursive AST traversal through machine-verified pressure probes;
-4. preserve frozen SNIRV0–SNIRV6 compatibility while adding new IR versions only for genuinely new semantics;
-5. move toward a Semnexis-written compiler/self-host boundary once the language/runtime surface is sufficient instead of predesigning unrelated features.
+1. keep installed `/17` claims frozen until the next APK is actually built/installed;
+2. expand the Semnexis-written frontend to multiple locals/statements and multiple functions;
+3. add function-symbol/call resolution and converge the compact pressure graph onto the canonical Program Graph schema;
+4. move graph verification, then baseline type/effect/capability solving, into Semnexis;
+5. move Native IR emission/verification into Semnexis and prove bootstrap-vs-self-hosted equivalence;
+6. preserve frozen SNIRV0–SNIRV7 compatibility and all ARM32 machine regressions throughout.
 
 ## Local Rift MCP expansion
 

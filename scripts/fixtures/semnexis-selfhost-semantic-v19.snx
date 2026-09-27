@@ -1,0 +1,498 @@
+struct Token { kind: i32, start: i32, end: i32 }
+struct Node { kind: i32, a: i32, b: i32, value: i32 }
+struct ParserState { pos: i32, root: i32, slot: i32, ok: i32 }
+struct GraphFact { kind: i32, a: i32, b: i32, value: i32 }
+struct GraphBuild { slot: i32, node: i32, ok: i32, aux: i32 }
+
+fn is_digit(c: u8) -> i32 {
+  return if c >= 48 { if c <= 57 { 1 } else { 0 } } else { 0 };
+}
+
+fn is_alpha(c: u8) -> i32 {
+  return if c >= 97 {
+    if c <= 122 { 1 } else { 0 }
+  } else {
+    if c >= 65 { if c <= 90 { 1 } else { 0 } } else { if c == 95 { 1 } else { 0 } }
+  };
+}
+
+fn is_alnum(c: u8) -> i32 {
+  return if is_alpha(c) == 1 { 1 } else { is_digit(c) };
+}
+
+fn is_space(c: u8) -> i32 {
+  return if c == 32 { 1 } else {
+    if c == 10 { 1 } else { if c == 13 { 1 } else { if c == 9 { 1 } else { 0 } } }
+  };
+}
+
+fn skip_space(source: Slice<u8>, start: i32) -> i32 {
+  return loop(i = start, active = 1) while active != 0 {
+    next(
+      if i < slice_len(source) { if is_space(slice_get(source, i)) == 1 { i + 1 } else { i } } else { i },
+      if i < slice_len(source) { if is_space(slice_get(source, i)) == 1 { 1 } else { 0 } } else { 0 }
+    );
+  } yield i;
+}
+
+fn scan_digits(source: Slice<u8>, start: i32) -> i32 {
+  return loop(i = start, active = 1) while active != 0 {
+    next(
+      if i < slice_len(source) { if is_digit(slice_get(source, i)) == 1 { i + 1 } else { i } } else { i },
+      if i < slice_len(source) { if is_digit(slice_get(source, i)) == 1 { 1 } else { 0 } } else { 0 }
+    );
+  } yield i;
+}
+
+fn scan_ident(source: Slice<u8>, start: i32) -> i32 {
+  return loop(i = start, active = 1) while active != 0 {
+    next(
+      if i < slice_len(source) { if is_alnum(slice_get(source, i)) == 1 { i + 1 } else { i } } else { i },
+      if i < slice_len(source) { if is_alnum(slice_get(source, i)) == 1 { 1 } else { 0 } } else { 0 }
+    );
+  } yield i;
+}
+
+fn lex_symbol(source: Slice<u8>, start: i32, c: u8) -> Token {
+  return if c == 43 { Token { kind: 4, start: start, end: start + 1 } } else {
+    if c == 42 { Token { kind: 5, start: start, end: start + 1 } } else {
+      if c == 40 { Token { kind: 6, start: start, end: start + 1 } } else {
+        if c == 41 { Token { kind: 7, start: start, end: start + 1 } } else {
+          if c == 123 { Token { kind: 8, start: start, end: start + 1 } } else {
+            if c == 125 { Token { kind: 9, start: start, end: start + 1 } } else {
+              if c == 59 { Token { kind: 10, start: start, end: start + 1 } } else {
+                if c == 61 { Token { kind: 11, start: start, end: start + 1 } } else {
+                  if c == 45 {
+                    if start + 1 < slice_len(source) {
+                      if slice_get(source, start + 1) == 62 {
+                        Token { kind: 12, start: start, end: start + 2 }
+                      } else {
+                        Token { kind: 1, start: start, end: start + 1 }
+                      }
+                    } else {
+                      Token { kind: 1, start: start, end: start + 1 }
+                    }
+                  } else {
+                    Token { kind: 1, start: start, end: start + 1 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+}
+
+fn lex_at(source: Slice<u8>, raw_start: i32) -> Token {
+  let start = skip_space(source, raw_start);
+  return if start < slice_len(source) {
+    if is_digit(slice_get(source, start)) == 1 {
+      Token { kind: 2, start: start, end: scan_digits(source, start) }
+    } else {
+      if is_alpha(slice_get(source, start)) == 1 {
+        Token { kind: 3, start: start, end: scan_ident(source, start) }
+      } else {
+        lex_symbol(source, start, slice_get(source, start))
+      }
+    }
+  } else {
+    Token { kind: 0, start: start, end: start }
+  };
+}
+
+fn token_len(token: Token) -> i32 {
+  return token.end - token.start;
+}
+
+fn token_eq2(source: Slice<u8>, token: Token, a: i32, b: i32) -> i32 {
+  return if token.kind == 3 {
+    if token_len(token) == 2 {
+      if slice_get(source, token.start) == a {
+        if slice_get(source, token.start + 1) == b { 1 } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn token_eq3(source: Slice<u8>, token: Token, a: i32, b: i32, c: i32) -> i32 {
+  return if token.kind == 3 {
+    if token_len(token) == 3 {
+      if slice_get(source, token.start) == a {
+        if slice_get(source, token.start + 1) == b {
+          if slice_get(source, token.start + 2) == c { 1 } else { 0 }
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn token_eq6(source: Slice<u8>, token: Token, a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {
+  return if token.kind == 3 {
+    if token_len(token) == 6 {
+      if slice_get(source, token.start) == a {
+        if slice_get(source, token.start + 1) == b {
+          if slice_get(source, token.start + 2) == c {
+            if slice_get(source, token.start + 3) == d {
+              if slice_get(source, token.start + 4) == e {
+                if slice_get(source, token.start + 5) == f { 1 } else { 0 }
+              } else { 0 }
+            } else { 0 }
+          } else { 0 }
+        } else { 0 }
+      } else { 0 }
+    } else { 0 }
+  } else { 0 };
+}
+
+fn digit_value(c: u8) -> i32 {
+  return c - 48;
+}
+
+fn parse_decimal(source: Slice<u8>, start: i32, end: i32) -> i32 {
+  return loop(i = start, value = 0) while i < end {
+    next(i + 1, value * 10 + digit_value(slice_get(source, i)));
+  } yield value;
+}
+
+fn fail_state(source: Slice<u8>, state: ParserState) -> ParserState {
+  return ParserState { pos: slice_len(source), root: state.root, slot: state.slot, ok: 0 };
+}
+
+fn store_number(source: Slice<u8>, arena: Arena, state: ParserState, token: Token) -> ParserState {
+  let node = Node { kind: 1, a: 0, b: 0, value: parse_decimal(source, token.start, token.end) };
+  let handle = arena_store(arena, state.slot, node);
+  return ParserState { pos: token.end, root: handle, slot: state.slot + 1, ok: state.ok };
+}
+
+fn store_ident(arena: Arena, state: ParserState, token: Token) -> ParserState {
+  let node = Node { kind: 2, a: token.start, b: token.end, value: 0 };
+  let handle = arena_store(arena, state.slot, node);
+  return ParserState { pos: token.end, root: handle, slot: state.slot + 1, ok: state.ok };
+}
+
+fn parse_expr(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  return parse_add(source, arena, state);
+}
+
+fn parse_group(source: Slice<u8>, arena: Arena, state: ParserState, open: Token) -> ParserState {
+  let inner = parse_expr(source, arena, ParserState { pos: open.end, root: state.root, slot: state.slot, ok: state.ok });
+  let close = lex_at(source, inner.pos);
+  return if inner.ok == 1 {
+    if close.kind == 7 {
+      ParserState { pos: close.end, root: inner.root, slot: inner.slot, ok: 1 }
+    } else {
+      fail_state(source, inner)
+    }
+  } else {
+    inner
+  };
+}
+
+fn parse_primary(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let token = lex_at(source, state.pos);
+  return if token.kind == 2 {
+    store_number(source, arena, state, token)
+  } else {
+    if token.kind == 3 {
+      store_ident(arena, state, token)
+    } else {
+      if token.kind == 6 {
+        parse_group(source, arena, state, token)
+      } else {
+        fail_state(source, state)
+      }
+    }
+  };
+}
+
+fn make_binary(arena: Arena, left: ParserState, right: ParserState, kind: i32) -> ParserState {
+  let node = Node { kind: kind, a: left.root, b: right.root, value: 0 };
+  let handle = arena_store(arena, right.slot, node);
+  return ParserState { pos: right.pos, root: handle, slot: right.slot + 1, ok: 1 };
+}
+
+fn should_mul(source: Slice<u8>, state: ParserState) -> i32 {
+  let token = lex_at(source, state.pos);
+  return if state.ok == 1 { if token.kind == 5 { 1 } else { 0 } } else { 0 };
+}
+
+fn mul_step(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let op = lex_at(source, state.pos);
+  let right = parse_primary(source, arena, ParserState { pos: op.end, root: state.root, slot: state.slot, ok: state.ok });
+  return if right.ok == 1 { make_binary(arena, state, right, 4) } else { right };
+}
+
+fn parse_term(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let initial = parse_primary(source, arena, state);
+  return loop(current = initial) while should_mul(source, current) == 1 {
+    next(mul_step(source, arena, current));
+  } yield current;
+}
+
+fn should_add(source: Slice<u8>, state: ParserState) -> i32 {
+  let token = lex_at(source, state.pos);
+  return if state.ok == 1 { if token.kind == 4 { 1 } else { 0 } } else { 0 };
+}
+
+fn add_step(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let op = lex_at(source, state.pos);
+  let right = parse_term(source, arena, ParserState { pos: op.end, root: state.root, slot: state.slot, ok: state.ok });
+  return if right.ok == 1 { make_binary(arena, state, right, 3) } else { right };
+}
+
+fn parse_add(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let initial = parse_term(source, arena, state);
+  return loop(current = initial) while should_add(source, current) == 1 {
+    next(add_step(source, arena, current));
+  } yield current;
+}
+
+fn store_let(arena: Arena, name: Token, value: ParserState, semi: Token) -> ParserState {
+  let node = Node { kind: 5, a: name.start, b: name.end, value: value.root };
+  let handle = arena_store(arena, value.slot, node);
+  return ParserState { pos: semi.end, root: handle, slot: value.slot + 1, ok: 1 };
+}
+
+fn finish_let(source: Slice<u8>, arena: Arena, state: ParserState, name: Token, eq: Token) -> ParserState {
+  let value = parse_expr(source, arena, ParserState { pos: eq.end, root: state.root, slot: state.slot, ok: 1 });
+  let semi = lex_at(source, value.pos);
+  return if value.ok == 1 {
+    if semi.kind == 10 { store_let(arena, name, value, semi) } else { fail_state(source, value) }
+  } else { value };
+}
+
+fn parse_let(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let kw = lex_at(source, state.pos);
+  let name = lex_at(source, kw.end);
+  let eq = lex_at(source, name.end);
+  return if token_eq3(source, kw, 108, 101, 116) == 1 {
+    if name.kind == 3 {
+      if eq.kind == 11 { finish_let(source, arena, state, name, eq) } else { fail_state(source, state) }
+    } else { fail_state(source, state) }
+  } else { fail_state(source, state) };
+}
+
+fn store_return(arena: Arena, value: ParserState, semi: Token) -> ParserState {
+  let node = Node { kind: 6, a: value.root, b: 0, value: 0 };
+  let handle = arena_store(arena, value.slot, node);
+  return ParserState { pos: semi.end, root: handle, slot: value.slot + 1, ok: 1 };
+}
+
+fn finish_return(source: Slice<u8>, arena: Arena, state: ParserState, kw: Token) -> ParserState {
+  let value = parse_expr(source, arena, ParserState { pos: kw.end, root: state.root, slot: state.slot, ok: 1 });
+  let semi = lex_at(source, value.pos);
+  return if value.ok == 1 {
+    if semi.kind == 10 { store_return(arena, value, semi) } else { fail_state(source, value) }
+  } else { value };
+}
+
+fn parse_return(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let kw = lex_at(source, state.pos);
+  return if token_eq6(source, kw, 114, 101, 116, 117, 114, 110) == 1 {
+    finish_return(source, arena, state, kw)
+  } else { fail_state(source, state) };
+}
+
+fn store_block(arena: Arena, let_state: ParserState, return_state: ParserState, close: Token) -> ParserState {
+  let block = Node { kind: 7, a: let_state.root, b: return_state.root, value: 0 };
+  let handle = arena_store(arena, return_state.slot, block);
+  return ParserState { pos: close.end, root: handle, slot: return_state.slot + 1, ok: 1 };
+}
+
+fn finish_block(source: Slice<u8>, arena: Arena, let_state: ParserState) -> ParserState {
+  let return_state = parse_return(source, arena, ParserState { pos: let_state.pos, root: let_state.root, slot: let_state.slot, ok: 1 });
+  let close = lex_at(source, return_state.pos);
+  return if return_state.ok == 1 {
+    if close.kind == 9 { store_block(arena, let_state, return_state, close) } else { fail_state(source, return_state) }
+  } else { return_state };
+}
+
+fn parse_block(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let let_state = parse_let(source, arena, state);
+  return if let_state.ok == 1 { finish_block(source, arena, let_state) } else { let_state };
+}
+
+fn store_function(arena: Arena, name: Token, body: ParserState) -> ParserState {
+  let node = Node { kind: 8, a: name.start, b: name.end, value: body.root };
+  let handle = arena_store(arena, body.slot, node);
+  return ParserState { pos: body.pos, root: handle, slot: body.slot + 1, ok: 1 };
+}
+
+fn finish_function(source: Slice<u8>, arena: Arena, state: ParserState, name: Token, body_open: Token) -> ParserState {
+  let body = parse_block(source, arena, ParserState { pos: body_open.end, root: state.root, slot: state.slot, ok: 1 });
+  return if body.ok == 1 { store_function(arena, name, body) } else { body };
+}
+
+fn parse_function(source: Slice<u8>, arena: Arena, state: ParserState) -> ParserState {
+  let fn_kw = lex_at(source, state.pos);
+  let name = lex_at(source, fn_kw.end);
+  let open = lex_at(source, name.end);
+  let close = lex_at(source, open.end);
+  let arrow = lex_at(source, close.end);
+  let result_type = lex_at(source, arrow.end);
+  let body_open = lex_at(source, result_type.end);
+  return if token_eq2(source, fn_kw, 102, 110) == 1 {
+    if name.kind == 3 {
+      if open.kind == 6 {
+        if close.kind == 7 {
+          if arrow.kind == 12 {
+            if token_eq3(source, result_type, 105, 51, 50) == 1 {
+              if body_open.kind == 8 {
+                finish_function(source, arena, state, name, body_open)
+              } else { fail_state(source, state) }
+            } else { fail_state(source, state) }
+          } else { fail_state(source, state) }
+        } else { fail_state(source, state) }
+      } else { fail_state(source, state) }
+    } else { fail_state(source, state) }
+  } else { fail_state(source, state) };
+}
+
+fn parse_program(source: Slice<u8>, arena: Arena) -> ParserState {
+  let parsed = parse_function(source, arena, ParserState { pos: 0, root: 0, slot: 0, ok: 1 });
+  let eof = lex_at(source, parsed.pos);
+  return if parsed.ok == 1 {
+    if eof.kind == 0 { parsed } else { fail_state(source, parsed) }
+  } else { parsed };
+}
+
+fn same_text(source: Slice<u8>, a_start: i32, a_end: i32, b_start: i32, b_end: i32) -> i32 {
+  let a_len = a_end - a_start;
+  let b_len = b_end - b_start;
+  return if a_len == b_len {
+    loop(i = 0, ok = 1) while i < a_len {
+      next(
+        i + 1,
+        if ok == 1 {
+          if slice_get(source, a_start + i) == slice_get(source, b_start + i) { 1 } else { 0 }
+        } else { 0 }
+      );
+    } yield ok
+  } else { 0 };
+}
+
+fn put_fact(graph: Arena, slot: i32, kind: i32, a: i32, b: i32, value: i32) -> i32 {
+  return arena_store(graph, slot, GraphFact { kind: kind, a: a, b: b, value: value });
+}
+
+fn graph_fail(slot: i32) -> GraphBuild {
+  return GraphBuild { slot: slot, node: 0, ok: 0, aux: 0 };
+}
+
+fn store_literal_graph(graph: Arena, node: Node, slot: i32) -> GraphBuild {
+  let handle = put_fact(graph, slot, 3, 0, 0, node.value);
+  return GraphBuild { slot: slot + 1, node: handle, ok: 1, aux: 0 };
+}
+
+fn store_ident_graph(graph: Arena, node: Node, slot: i32, local_node: i32) -> GraphBuild {
+  let handle = put_fact(graph, slot, 6, node.a, node.b, 0);
+  let edge = put_fact(graph, slot + 1, 105, handle, local_node, 0);
+  return GraphBuild { slot: slot + 2, node: handle, ok: 1, aux: edge };
+}
+
+fn build_ident_graph(source: Slice<u8>, graph: Arena, node: Node, slot: i32, local_node: i32, local_start: i32, local_end: i32) -> GraphBuild {
+  let matches = same_text(source, node.a, node.b, local_start, local_end);
+  return if matches == 1 {
+    store_ident_graph(graph, node, slot, local_node)
+  } else {
+    graph_fail(slot)
+  };
+}
+
+fn finish_binary_graph(graph: Arena, left: GraphBuild, right: GraphBuild, kind: i32) -> GraphBuild {
+  let handle = put_fact(graph, right.slot, kind, 0, 0, 0);
+  let left_edge = put_fact(graph, right.slot + 1, 103, handle, left.node, 0);
+  let right_edge = put_fact(graph, right.slot + 2, 104, handle, right.node, 0);
+  return GraphBuild { slot: right.slot + 3, node: handle, ok: 1, aux: left_edge + right_edge };
+}
+
+fn build_expr_graph(source: Slice<u8>, ast: Arena, graph: Arena, index: i32, slot: i32, local_node: i32, local_start: i32, local_end: i32) -> GraphBuild {
+  let node = arena_load<Node>(ast, index);
+  return if node.kind == 1 {
+    store_literal_graph(graph, node, slot)
+  } else {
+    if node.kind == 2 {
+      build_ident_graph(source, graph, node, slot, local_node, local_start, local_end)
+    } else {
+      if node.kind == 3 {
+        build_binary_graph(source, ast, graph, node, slot, local_node, local_start, local_end, 4)
+      } else {
+        if node.kind == 4 {
+          build_binary_graph(source, ast, graph, node, slot, local_node, local_start, local_end, 5)
+        } else {
+          graph_fail(slot)
+        }
+      }
+    }
+  };
+}
+
+fn finish_binary_right(source: Slice<u8>, ast: Arena, graph: Arena, node: Node, left: GraphBuild, local_node: i32, local_start: i32, local_end: i32, kind: i32) -> GraphBuild {
+  let right = build_expr_graph(source, ast, graph, node.b, left.slot, local_node, local_start, local_end);
+  return if right.ok == 1 { finish_binary_graph(graph, left, right, kind) } else { right };
+}
+
+fn build_binary_graph(source: Slice<u8>, ast: Arena, graph: Arena, node: Node, slot: i32, local_node: i32, local_start: i32, local_end: i32, kind: i32) -> GraphBuild {
+  let left = build_expr_graph(source, ast, graph, node.a, slot, local_node, local_start, local_end);
+  return if left.ok == 1 {
+    finish_binary_right(source, ast, graph, node, left, local_node, local_start, local_end, kind)
+  } else { left };
+}
+
+fn finish_return_graph(graph: Arena, fn_node: i32, return_expr: GraphBuild) -> GraphBuild {
+  let return_node = put_fact(graph, return_expr.slot, 7, 0, 0, 0);
+  let value_edge = put_fact(graph, return_expr.slot + 1, 106, return_node, return_expr.node, 0);
+  let contains_edge = put_fact(graph, return_expr.slot + 2, 101, fn_node, return_node, 0);
+  return GraphBuild { slot: return_expr.slot + 3, node: fn_node, ok: 1, aux: value_edge + contains_edge };
+}
+
+fn build_return_graph(source: Slice<u8>, ast: Arena, graph: Arena, ret: Node, slot: i32, fn_node: i32, local_node: i32, local_start: i32, local_end: i32) -> GraphBuild {
+  let return_expr = build_expr_graph(source, ast, graph, ret.a, slot, local_node, local_start, local_end);
+  return if return_expr.ok == 1 { finish_return_graph(graph, fn_node, return_expr) } else { return_expr };
+}
+
+fn finish_initializer_graph(source: Slice<u8>, ast: Arena, graph: Arena, ret: Node, init: GraphBuild, fn_node: i32, local_node: i32, local_start: i32, local_end: i32) -> GraphBuild {
+  let init_edge = put_fact(graph, init.slot, 102, local_node, init.node, 0);
+  let contains_edge = put_fact(graph, init.slot + 1, 101, fn_node, local_node, 0);
+  let returned = build_return_graph(source, ast, graph, ret, init.slot + 2, fn_node, local_node, local_start, local_end);
+  return if returned.ok == 1 {
+    GraphBuild { slot: returned.slot, node: fn_node, ok: 1, aux: init_edge + contains_edge }
+  } else { returned };
+}
+
+fn start_graph_build(source: Slice<u8>, ast: Arena, graph: Arena, fn_node_ast: Node, let_node_ast: Node, ret_node_ast: Node) -> GraphBuild {
+  let fn_node = put_fact(graph, 0, 1, fn_node_ast.a, fn_node_ast.b, 0);
+  let local_node = put_fact(graph, 1, 2, let_node_ast.a, let_node_ast.b, 0);
+  let init = build_expr_graph(source, ast, graph, let_node_ast.value, 2, local_node, let_node_ast.a, let_node_ast.b);
+  return if init.ok == 1 {
+    finish_initializer_graph(source, ast, graph, ret_node_ast, init, fn_node, local_node, let_node_ast.a, let_node_ast.b)
+  } else { init };
+}
+
+fn build_block_graph(source: Slice<u8>, ast: Arena, graph: Arena, fn_node_ast: Node, block: Node) -> GraphBuild {
+  let let_node_ast = arena_load<Node>(ast, block.a);
+  let ret_node_ast = arena_load<Node>(ast, block.b);
+  return if let_node_ast.kind == 5 {
+    if ret_node_ast.kind == 6 {
+      start_graph_build(source, ast, graph, fn_node_ast, let_node_ast, ret_node_ast)
+    } else { graph_fail(0) }
+  } else { graph_fail(0) };
+}
+
+fn build_function_graph(source: Slice<u8>, ast: Arena, graph: Arena, fn_node_ast: Node) -> GraphBuild {
+  let block = arena_load<Node>(ast, fn_node_ast.value);
+  return if block.kind == 7 {
+    build_block_graph(source, ast, graph, fn_node_ast, block)
+  } else { graph_fail(0) };
+}
+
+fn build_program_graph(source: Slice<u8>, ast: Arena, graph: Arena, root: i32) -> GraphBuild {
+  let fn_node_ast = arena_load<Node>(ast, root);
+  return if fn_node_ast.kind == 8 {
+    build_function_graph(source, ast, graph, fn_node_ast)
+  } else { graph_fail(0) };
+}
+
+fn main() -> i32 { return 0; }

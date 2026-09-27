@@ -1,4 +1,5 @@
 import '../src/semnexis-bootstrap.js';
+import { readFileSync } from 'node:fs';
 
 const compiler = globalThis.SemnexisBootstrap;
 if (!compiler) throw new Error('Semnexis compiler global missing');
@@ -1550,5 +1551,389 @@ const evaluatedRecursive = executeFunction(
   []
 );
 equal(evaluatedRecursive.result, 6, 'recursive parser/evaluator must compute 1+(2+3)');
+
+const selfhostFrontendSource = readFileSync('scripts/fixtures/semnexis-selfhost-frontend-v18.snx', 'utf8');
+const selfhostFrontendProgram = compiler.compile(selfhostFrontendSource);
+const selfhostFrontendBinary = compiler.encodeIR(selfhostFrontendProgram.ir);
+const selfhostFrontendDecoded = compiler.decodeIR(selfhostFrontendBinary);
+const selfhostFrontendArtifact = compiler.emitArm32Runtime(selfhostFrontendProgram.ir);
+check(
+  selfhostFrontendDecoded.dump() === selfhostFrontendProgram.irText,
+  'self-host frontend v18 SNIRV round-trip'
+);
+check(
+  compiler.verifyArm32Runtime(selfhostFrontendArtifact, selfhostFrontendProgram.ir),
+  'self-host frontend v18 artifact failed canonical verify'
+);
+for (const name of ['parse_add','parse_expr','parse_group','parse_primary','parse_term']) {
+  check(selfhostFrontendArtifact.recursiveFunctions.includes(name), 'self-host frontend recursive classification for ' + name);
+}
+equal(selfhostFrontendArtifact.maxRecursiveCallDepth, 256, 'self-host frontend recursive depth bound');
+
+const selfhostProgramText = 'fn main() -> i32 { let x = 12 + 3 * (4 + 1); return x; }';
+const selfhostProgramRaw = [];
+for (let i = 0; i < selfhostProgramText.length; i += 1) selfhostProgramRaw.push(selfhostProgramText.charCodeAt(i));
+const selfhostSourceDescriptor = 0x22000000;
+const selfhostSourceData = 0x22000100;
+const selfhostArenaDescriptor = 0x22001000;
+const selfhostArenaData = 0x22002000;
+const selfhostWords = [
+  [selfhostSourceDescriptor, selfhostSourceData],
+  [selfhostSourceDescriptor + 4, selfhostProgramRaw.length],
+  [selfhostArenaDescriptor, selfhostArenaData],
+  [selfhostArenaDescriptor + 4, 64]
+];
+const selfhostBytes = selfhostProgramRaw.map((value,index) => [selfhostSourceData + index,value]);
+const selfhostParsed = executeFunction(
+  selfhostFrontendArtifact,
+  'parse_program',
+  [selfhostSourceDescriptor, selfhostArenaDescriptor],
+  selfhostWords,
+  selfhostBytes
+);
+equal(selfhostParsed.resultRegisters[0], selfhostProgramRaw.length, 'self-host frontend must consume full Semnexis source');
+equal(selfhostParsed.resultRegisters[1], 11, 'self-host frontend root handle');
+equal(selfhostParsed.resultRegisters[2], 12, 'self-host frontend AST node count');
+equal(selfhostParsed.resultRegisters[3], 1, 'self-host frontend parse success');
+equal(selfhostParsed.memory.get(selfhostArenaData + 0 * 16), 1, 'self-host frontend first literal node');
+equal(selfhostParsed.memory.get(selfhostArenaData + 0 * 16 + 12), 12, 'self-host frontend multi-digit literal value');
+equal(selfhostParsed.memory.get(selfhostArenaData + 5 * 16), 4, 'self-host frontend multiplication precedence node');
+equal(selfhostParsed.memory.get(selfhostArenaData + 6 * 16), 3, 'self-host frontend addition node');
+equal(selfhostParsed.memory.get(selfhostArenaData + 7 * 16), 5, 'self-host frontend let node');
+equal(selfhostParsed.memory.get(selfhostArenaData + 8 * 16), 2, 'self-host frontend identifier node');
+equal(selfhostParsed.memory.get(selfhostArenaData + 9 * 16), 6, 'self-host frontend return node');
+equal(selfhostParsed.memory.get(selfhostArenaData + 10 * 16), 7, 'self-host frontend block node');
+equal(selfhostParsed.memory.get(selfhostArenaData + 11 * 16), 8, 'self-host frontend function node');
+
+const selfhostSemanticSource = readFileSync('scripts/fixtures/semnexis-selfhost-semantic-v19.snx', 'utf8');
+const selfhostSemanticProgram = compiler.compile(selfhostSemanticSource);
+const selfhostSemanticBinary = compiler.encodeIR(selfhostSemanticProgram.ir);
+const selfhostSemanticDecoded = compiler.decodeIR(selfhostSemanticBinary);
+const selfhostSemanticArtifact = compiler.emitArm32Runtime(selfhostSemanticProgram.ir);
+check(
+  selfhostSemanticDecoded.dump() === selfhostSemanticProgram.irText,
+  'self-host semantic v19 SNIRV round-trip'
+);
+check(
+  compiler.verifyArm32Runtime(selfhostSemanticArtifact, selfhostSemanticProgram.ir),
+  'self-host semantic v19 artifact failed canonical verify'
+);
+for (const name of ['build_binary_graph','build_expr_graph','parse_add','parse_expr','parse_group','parse_primary','parse_term']) {
+  check(selfhostSemanticArtifact.recursiveFunctions.includes(name), 'self-host semantic recursive classification for ' + name);
+}
+equal(selfhostSemanticArtifact.maxRecursiveCallDepth, 256, 'self-host semantic recursive depth bound');
+
+const selfhostSemanticText = 'fn main() -> i32 { let x = 12 + 3 * (4 + 1); return x; }';
+const selfhostSemanticRaw = [];
+for (let i = 0; i < selfhostSemanticText.length; i += 1) selfhostSemanticRaw.push(selfhostSemanticText.charCodeAt(i));
+const selfhostSemanticSourceDescriptor = 0x23000000;
+const selfhostSemanticSourceData = 0x23000100;
+const selfhostSemanticAstDescriptor = 0x23001000;
+const selfhostSemanticAstData = 0x23002000;
+const selfhostSemanticGraphDescriptor = 0x23003000;
+const selfhostSemanticGraphData = 0x23004000;
+const selfhostSemanticBaseWords = [
+  [selfhostSemanticSourceDescriptor, selfhostSemanticSourceData],
+  [selfhostSemanticSourceDescriptor + 4, selfhostSemanticRaw.length],
+  [selfhostSemanticAstDescriptor, selfhostSemanticAstData],
+  [selfhostSemanticAstDescriptor + 4, 64]
+];
+const selfhostSemanticBytes = selfhostSemanticRaw.map((value,index) => [selfhostSemanticSourceData + index,value]);
+const selfhostSemanticParsed = executeFunction(
+  selfhostSemanticArtifact,
+  'parse_program',
+  [selfhostSemanticSourceDescriptor, selfhostSemanticAstDescriptor],
+  selfhostSemanticBaseWords,
+  selfhostSemanticBytes
+);
+equal(selfhostSemanticParsed.resultRegisters[0], selfhostSemanticRaw.length, 'self-host semantic parser must consume full source');
+equal(selfhostSemanticParsed.resultRegisters[1], 11, 'self-host semantic AST root');
+equal(selfhostSemanticParsed.resultRegisters[2], 12, 'self-host semantic AST node count');
+equal(selfhostSemanticParsed.resultRegisters[3], 1, 'self-host semantic AST parse success');
+
+const selfhostSemanticGraphWords = selfhostSemanticBaseWords.slice();
+for (let cell = 0; cell < selfhostSemanticParsed.resultRegisters[2]; cell += 1) {
+  for (let field = 0; field < 4; field += 1) {
+    const address = selfhostSemanticAstData + cell * 16 + field * 4;
+    selfhostSemanticGraphWords.push([address, selfhostSemanticParsed.memory.get(address)]);
+  }
+}
+selfhostSemanticGraphWords.push(
+  [selfhostSemanticGraphDescriptor, selfhostSemanticGraphData],
+  [selfhostSemanticGraphDescriptor + 4, 64]
+);
+const selfhostSemanticBuilt = executeFunction(
+  selfhostSemanticArtifact,
+  'build_program_graph',
+  [
+    selfhostSemanticSourceDescriptor,
+    selfhostSemanticAstDescriptor,
+    selfhostSemanticGraphDescriptor,
+    selfhostSemanticParsed.resultRegisters[1]
+  ],
+  selfhostSemanticGraphWords,
+  selfhostSemanticBytes
+);
+equal(selfhostSemanticBuilt.resultRegisters[0], 22, 'self-host semantic graph fact count');
+equal(selfhostSemanticBuilt.resultRegisters[1], 0, 'self-host semantic graph function root');
+equal(selfhostSemanticBuilt.resultRegisters[2], 1, 'self-host semantic graph success');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 0 * 16), 1, 'self-host semantic function fact');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 1 * 16), 2, 'self-host semantic local fact');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 2 * 16), 3, 'self-host semantic literal fact');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 2 * 16 + 12), 12, 'self-host semantic literal value');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 6 * 16), 4, 'self-host semantic inner add fact');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 9 * 16), 5, 'self-host semantic multiply fact');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 12 * 16), 4, 'self-host semantic outer add fact');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 15 * 16), 102, 'self-host semantic initializes edge');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 17 * 16), 6, 'self-host semantic name-ref fact');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 18 * 16), 105, 'self-host semantic resolves-to edge');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 18 * 16 + 8), 1, 'self-host semantic resolves local node');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 19 * 16), 7, 'self-host semantic return fact');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 20 * 16), 106, 'self-host semantic return-value edge');
+equal(selfhostSemanticBuilt.memory.get(selfhostSemanticGraphData + 21 * 16), 101, 'self-host semantic function-contains-return edge');
+
+
+const selfhostV25Source = readFileSync('scripts/fixtures/semnexis-selfhost-native-ir-v25.snx', 'utf8');
+const selfhostV25Program = compiler.compile(selfhostV25Source);
+const selfhostV25Binary = compiler.encodeIR(selfhostV25Program.ir);
+const selfhostV25Decoded = compiler.decodeIR(selfhostV25Binary);
+const selfhostV25Artifact = compiler.emitArm32Runtime(selfhostV25Program.ir);
+check(selfhostV25Decoded.dump() === selfhostV25Program.irText, 'self-host v25 SNIRV round-trip');
+check(compiler.verifyArm32Runtime(selfhostV25Artifact, selfhostV25Program.ir), 'self-host v25 canonical ARM verify');
+equal(selfhostV25Artifact.maxRecursiveCallDepth, 256, 'self-host v25 recursive depth bound');
+
+const selfhostV25NodeKind = {
+  Module:1, Type:2, Effect:3, Capability:4, Intrinsic:5, Function:6, Region:7,
+  Parameter:8, NameRef:9, Binary:10, Local:11, Return:12, Constant:13, Call:14
+};
+const selfhostV25Relation = {
+  returns_type:1, has_effect:2, requires_capability:3, contains:4, executes_in:5,
+  has_type:6, resolves_to:7, contains_expr:8, lhs:9, rhs:10, initialized_by:11,
+  returns_value:12, calls:13, arg0:14, grants_capability:15
+};
+const selfhostV25Action = {
+  enter_function:1, receive_capability:2, grant_capability:3, create_region:4,
+  bind_parameter:5, initialize_local:6, invoke:7, invoke_intrinsic:8,
+  return:9, destroy_region:10, leave_function:11
+};
+const selfhostV25Op = {
+  'region.begin':1, 'copy.i32':2, 'i32.add.checked':3, 'local.bind':4,
+  'region.end':5, 'ret.i32':6, 'const.i32':7, 'call':8,
+  'intrinsic.clock':9, 'i32.mul.checked':10
+};
+
+function selfhostV25Execute(name, args, words, stepLimit) {
+  const fn = selfhostV25Artifact.functions.find(candidate => candidate.name === name);
+  check(Boolean(fn), 'self-host v25 function missing: ' + name);
+  const returnAddress = 0xFFF00000;
+  return executeArm32(selfhostV25Artifact, {
+    entry:fn.address,
+    args,
+    words,
+    bytes:[],
+    linkRegister:returnAddress,
+    returnAddress,
+    stepLimit
+  });
+}
+
+function selfhostV25NodeId(graph, kind, name) {
+  const node = graph.nodes.find(candidate => candidate.kind === kind && candidate.name === name);
+  check(Boolean(node), 'self-host v25 reference node missing: ' + kind + ' ' + name);
+  return node.id;
+}
+
+function selfhostV25Value(value) {
+  if (value.startsWith('%v')) return Number(value.slice(2));
+  if (value.startsWith('%arg')) return -(Number(value.slice(4)) + 1);
+  throw new Error('self-host v25 unknown value ' + value);
+}
+
+function selfhostV25ExpectedInst(reference, inst) {
+  const op = selfhostV25Op[inst.op];
+  check(Boolean(op), 'self-host v25 unsupported reference op ' + inst.op);
+  if (inst.op === 'region.begin' || inst.op === 'region.end') {
+    return [op, inst.graphNode, selfhostV25NodeId(reference.graph, 'Region', inst.region), 0];
+  }
+  if (inst.op === 'copy.i32') return [op, inst.graphNode, selfhostV25Value(inst.args[0]), 0];
+  if (inst.op === 'i32.add.checked' || inst.op === 'i32.mul.checked') {
+    return [op, inst.graphNode, selfhostV25Value(inst.args[0]), selfhostV25Value(inst.args[1])];
+  }
+  if (inst.op === 'local.bind' || inst.op === 'ret.i32') {
+    return [op, inst.graphNode, selfhostV25Value(inst.args[0]), 0];
+  }
+  if (inst.op === 'const.i32') return [op, inst.graphNode, inst.value, 0];
+  if (inst.op === 'call') {
+    const target = selfhostV25NodeId(reference.graph, 'Function', inst.target);
+    return [op, inst.graphNode, target, inst.args.length ? selfhostV25Value(inst.args[0]) : -1000];
+  }
+  if (inst.op === 'intrinsic.clock') {
+    return [op, inst.graphNode, selfhostV25NodeId(reference.graph, 'Intrinsic', 'clock'), -1000];
+  }
+  throw new Error('self-host v25 unmapped op ' + inst.op);
+}
+
+function selfhostV25RunCase(text, base) {
+  const raw = [];
+  for (let i = 0; i < text.length; i += 1) raw.push(text.charCodeAt(i));
+  const sourceDescriptor = base;
+  const sourceData = base + 0x100;
+  const astDescriptor = base + 0x1000;
+  const astData = base + 0x2000;
+  const graphDescriptor = base + 0x3000;
+  const graphData = base + 0x4000;
+  const planDescriptor = base + 0x9000;
+  const planData = base + 0xA000;
+  const irDescriptor = base + 0xB000;
+  const irData = base + 0xC000;
+
+  const baseWords = [
+    [sourceDescriptor, sourceData],
+    [sourceDescriptor + 4, raw.length],
+    [astDescriptor, astData],
+    [astDescriptor + 4, 128]
+  ];
+  const bytes = raw.map((value,index) => [sourceData + index,value]);
+  const parsed = executeFunction(
+    selfhostV25Artifact, 'parse_program',
+    [sourceDescriptor, astDescriptor], baseWords, bytes
+  );
+  equal(parsed.resultRegisters[3], 1, 'self-host v25 parse success');
+
+  const graphWords = baseWords.slice();
+  for (let cell = 0; cell < parsed.resultRegisters[2]; cell += 1) {
+    for (let field = 0; field < 4; field += 1) {
+      const address = astData + cell * 16 + field * 4;
+      graphWords.push([address, parsed.memory.get(address)]);
+    }
+  }
+  graphWords.push([graphDescriptor, graphData], [graphDescriptor + 4, 512]);
+  const built = executeFunction(
+    selfhostV25Artifact, 'run_canonical_program',
+    [sourceDescriptor, astDescriptor, graphDescriptor, parsed.resultRegisters[1]],
+    graphWords, bytes
+  );
+  equal(built.resultRegisters[2], 1, 'self-host v25 graph success');
+
+  const reference = compiler.compile(text);
+  equal(built.resultRegisters[0], reference.graph.nodes.length, 'self-host v25 graph node count');
+  equal(built.resultRegisters[1], reference.graph.edges.length, 'self-host v25 graph edge count');
+
+  const actualKinds = [];
+  for (let i = 0; i < built.resultRegisters[0]; i += 1) actualKinds.push(built.memory.get(graphData + i * 16));
+  const expectedKinds = reference.graph.nodes.map(node => selfhostV25NodeKind[node.kind]);
+  check(JSON.stringify(actualKinds) === JSON.stringify(expectedKinds), 'self-host v25 graph node-kind parity');
+
+  const actualEdges = [];
+  for (let i = 0; i < built.resultRegisters[1]; i += 1) {
+    const p = graphData + (128 + i) * 16;
+    actualEdges.push([built.memory.get(p), built.memory.get(p + 4), built.memory.get(p + 8), built.memory.get(p + 12)]);
+  }
+  const expectedEdges = reference.graph.edges.map(edge => [selfhostV25Relation[edge.relation], edge.from, edge.to, 0]);
+  check(JSON.stringify(actualEdges) === JSON.stringify(expectedEdges), 'self-host v25 graph topology parity');
+
+  const graphMemory = Array.from(built.memory.entries());
+  const verified = selfhostV25Execute(
+    'verify_canonical_graph',
+    [graphDescriptor, built.resultRegisters[0], built.resultRegisters[1]],
+    graphMemory,
+    2000000
+  );
+  equal(verified.resultRegisters[0], 1, 'self-host v25 graph verifier acceptance');
+
+  const planWords = graphMemory.slice();
+  planWords.push([planDescriptor, planData], [planDescriptor + 4, 128]);
+  const planned = selfhostV25Execute(
+    'build_execution_plan',
+    [graphDescriptor, planDescriptor, built.resultRegisters[0], built.resultRegisters[1]],
+    planWords,
+    2000000
+  );
+  equal(planned.resultRegisters[1], 1, 'self-host v25 plan success');
+  const actualPlan = [];
+  for (let i = 0; i < planned.resultRegisters[0]; i += 1) {
+    const p = planData + i * 16;
+    actualPlan.push([planned.memory.get(p), planned.memory.get(p + 4), planned.memory.get(p + 8), planned.memory.get(p + 12)]);
+  }
+  const expectedPlan = reference.plan.steps.map(step => {
+    let kind = '';
+    if (step.action === 'enter_function' || step.action === 'return' || step.action === 'leave_function' || step.action === 'invoke') kind = 'Function';
+    else if (step.action === 'receive_capability' || step.action === 'grant_capability') kind = 'Capability';
+    else if (step.action === 'create_region' || step.action === 'destroy_region') kind = 'Region';
+    else if (step.action === 'bind_parameter') kind = 'Parameter';
+    else if (step.action === 'initialize_local') kind = 'Local';
+    else if (step.action === 'invoke_intrinsic') kind = 'Intrinsic';
+    return [selfhostV25Action[step.action], selfhostV25NodeId(reference.graph, kind, step.detail), 0, 0];
+  });
+  check(JSON.stringify(actualPlan) === JSON.stringify(expectedPlan), 'self-host v25 execution-plan parity');
+
+  const irWords = graphMemory.slice();
+  irWords.push([irDescriptor, irData], [irDescriptor + 4, 512]);
+  const emitted = selfhostV25Execute(
+    'emit_native_ir',
+    [graphDescriptor, irDescriptor, built.resultRegisters[0], built.resultRegisters[1]],
+    irWords,
+    4000000
+  );
+  equal(emitted.resultRegisters[3], 1, 'self-host v25 IR emission success');
+
+  const actualFunctions = [];
+  for (let i = 0; i < emitted.resultRegisters[0]; i += 1) {
+    const p = irData + i * 16;
+    actualFunctions.push([s32(emitted.memory.get(p)), s32(emitted.memory.get(p + 4)), s32(emitted.memory.get(p + 8)), s32(emitted.memory.get(p + 12))]);
+  }
+  const expectedFunctions = reference.ir.functions.map(fn => [
+    fn.graphNode,
+    selfhostV25NodeId(reference.graph, 'Region', fn.region),
+    fn.effect === 'time' ? 2 : 1,
+    (fn.requiresCapabilities.includes('time') ? 1 : 0) + (fn.grantsCapabilities.includes('time') ? 2 : 0)
+  ]);
+  check(JSON.stringify(actualFunctions) === JSON.stringify(expectedFunctions), 'self-host v25 IR function parity');
+
+  const actualParams = [];
+  for (let i = 0; i < emitted.resultRegisters[1]; i += 1) {
+    const p = irData + (64 + i) * 16;
+    actualParams.push([s32(emitted.memory.get(p)), s32(emitted.memory.get(p + 4)), s32(emitted.memory.get(p + 8)), s32(emitted.memory.get(p + 12))]);
+  }
+  const expectedParams = reference.ir.functions.flatMap(fn => fn.parameters.map(param => [
+    fn.graphNode, param.graphNode, param.index, selfhostV25Value(param.value)
+  ]));
+  check(JSON.stringify(actualParams) === JSON.stringify(expectedParams), 'self-host v25 IR parameter parity');
+
+  const actualInstructions = [];
+  for (let i = 0; i < emitted.resultRegisters[2]; i += 1) {
+    const p = irData + (128 + i) * 16;
+    actualInstructions.push([s32(emitted.memory.get(p)), s32(emitted.memory.get(p + 4)), s32(emitted.memory.get(p + 8)), s32(emitted.memory.get(p + 12))]);
+  }
+  const expectedInstructions = reference.ir.functions.flatMap(fn => fn.instructions.map(inst => selfhostV25ExpectedInst(reference, inst)));
+  check(JSON.stringify(actualInstructions) === JSON.stringify(expectedInstructions), 'self-host v25 IR instruction parity');
+
+  return {
+    graphNodes:built.resultRegisters[0],
+    graphEdges:built.resultRegisters[1],
+    planSteps:planned.resultRegisters[0],
+    functions:emitted.resultRegisters[0],
+    params:emitted.resultRegisters[1],
+    instructions:emitted.resultRegisters[2]
+  };
+}
+
+const selfhostV25Pure = selfhostV25RunCase(
+  'fn twice(n: i32) -> i32 { let x = n + n; return x; } fn main() -> i32 { let a = 12; let b = 3; return twice(a + b); }',
+  0x2A000000
+);
+equal(selfhostV25Pure.graphNodes, 26, 'self-host v25 pure graph nodes');
+equal(selfhostV25Pure.graphEdges, 59, 'self-host v25 pure graph edges');
+equal(selfhostV25Pure.planSteps, 15, 'self-host v25 pure plan steps');
+equal(selfhostV25Pure.instructions, 19, 'self-host v25 pure IR instructions');
+
+const selfhostV25Effect = selfhostV25RunCase(
+  'fn sample() -> i32 { return clock(); } fn main() -> i32 with time { let x = sample(); return x; }',
+  0x2B000000
+);
+equal(selfhostV25Effect.graphNodes, 16, 'self-host v25 effect graph nodes');
+equal(selfhostV25Effect.graphEdges, 31, 'self-host v25 effect graph edges');
+equal(selfhostV25Effect.planSteps, 15, 'self-host v25 effect plan steps');
+equal(selfhostV25Effect.instructions, 10, 'self-host v25 effect IR instructions');
 
 console.log('ok - Semnexis ARM32 machine execution');
