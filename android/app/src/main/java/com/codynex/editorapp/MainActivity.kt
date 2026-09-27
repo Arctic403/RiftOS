@@ -50,7 +50,7 @@ class MainActivity : Activity() {
             workspacePort = FileWorkspacePort(workspaceRoot)
 
             val starterFile =
-                File(workspaceRoot, "compiler.cx0")
+                File(workspaceRoot, "main.cx")
 
             if (!starterFile.exists()) {
                 workspacePort.createTextFile(
@@ -61,6 +61,7 @@ class MainActivity : Activity() {
 
             val toolchain =
                 Source0SelfHostToolchainPort(
+                    context = this,
                     artifacts = artifacts,
                     candidateDirectory =
                         File(filesDir, "editor-candidates")
@@ -83,7 +84,7 @@ class MainActivity : Activity() {
             setContentView(
                 TextView(this).apply {
                     text =
-                        "Codynex E0 editor failed to start:\n\n" +
+                        "Codynex .cx editor failed to start:\n\n" +
                             error.toString()
                     setTextIsSelectable(true)
                     setPadding(32, 32, 32, 32)
@@ -291,9 +292,9 @@ class MainActivity : Activity() {
                 addView(
                     TextView(this@MainActivity).apply {
                         text =
-                            "Codynex E0 — reusable external editor\n" +
-                                "Active toolchain: frozen MC2-A " +
-                                "compiler A via VM1"
+                            "Codynex — .cx application editor\n" +
+                                "Active toolchain: C0 0.11.0 via " +
+                                "RiftOS QuickJS -> VM1"
                         setPadding(20, 16, 20, 8)
                     }
                 )

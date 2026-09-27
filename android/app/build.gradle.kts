@@ -88,6 +88,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
         "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",
+        "src/main/java/com/riftos/app/CodynexCompilerProvider.kt",
         "src/main/java/com/riftos/app/RiftLlmDevClient.kt",
         "src/main/java/com/riftos/app/RiftLocalAgentBatch.kt",
         "src/main/java/com/riftos/app/RiftMcpActivity.kt",
@@ -189,13 +190,13 @@ val verifyCodynexEditorPayload by tasks.registering {
         "src/main/java/com/codynex/editorapp/FileWorkspacePort.kt" to
             "49f2346ceb2d896203c8aca3305e98724a22d482aa9a0d74e6b9347b0f64bc04",
         "src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
-            "d4cd556b6c351c0e81b7e4b0610fd9152fdc47b0ba0e9b01d1e023ce4dd0d9d9",
+            "b8f62b2ed06763f86215badf340e186dfd4ab923ccc6b07f48654977b466e157",
         "src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-            "10223ca98ad0f5b33a4a5925380f4ca87f5f237315df841790c6ae347771e243",
+            "981255ebf8ab4a047fdd9d6fa9b9094bb61f2af181038ac499a7538a6aabe712",
         "src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
             "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
         "src/main/java/com/codynex/editorapp/MainActivity.kt" to
-            "542e29806d6f5eef5b22763530e705ae11d67d87ef37387e4b6dcc74eb1c3a12",
+            "00b70a537dad3d34c333404de0273ad69b7c858ec3705073278de7615598ce23",
         "src/main/cpp/editor/editor_vm_bridge.cpp" to
             "47039b185cc4c481846735946b1f0667564e729f5994b7badb0ab6ce69b978ba"
     )

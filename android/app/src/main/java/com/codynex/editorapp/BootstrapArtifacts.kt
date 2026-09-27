@@ -5,7 +5,6 @@ import java.security.MessageDigest
 
 data class BootstrapArtifacts(
     val vm1: ByteArray,
-    val compilerA: ByteArray,
     val starterSource: String
 )
 
@@ -14,24 +13,19 @@ object BootstrapArtifactLoader {
     private const val VM1_SHA256 =
         "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"
 
-    private const val COMPILER_BYTES = 292
-    private const val COMPILER_SHA256 =
-        "b00cc99ef0cf122d47cff54123e1e1ec19f83a44dfe949f5358428e45f47fb2e"
+    private val STARTER_SOURCE =
+        """
+        codynex 1;
+        module app.main;
 
-    private const val SOURCE_BYTES = 584
-    private const val SOURCE_SHA256 =
-        "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"
+        fn main() -> u32 {
+            return 0u32;
+        }
+        """.trimIndent() + "\n"
 
     fun load(context: Context): BootstrapArtifacts {
         val vmHex = readAsset(context, "vm1_seed.hex").trim()
-        val compilerHex =
-            readAsset(context, "selfhost_compiler.hex").trim()
-        val starterSource =
-            readAsset(context, "selfhost_compiler.cx0")
-
         val vm = decodeCanonicalHex(vmHex)
-        val compiler = decodeCanonicalHex(compilerHex)
-        val sourceBytes = starterSource.toByteArray(Charsets.UTF_8)
 
         require(vm.size == VM1_BYTES) {
             "VM1 byte count drift: ${vm.size}"
@@ -40,24 +34,9 @@ object BootstrapArtifactLoader {
             "VM1 SHA-256 drift"
         }
 
-        require(compiler.size == COMPILER_BYTES) {
-            "compiler A byte count drift: ${compiler.size}"
-        }
-        require(sha256(compiler) == COMPILER_SHA256) {
-            "compiler A SHA-256 drift"
-        }
-
-        require(sourceBytes.size == SOURCE_BYTES) {
-            "Source0 byte count drift: ${sourceBytes.size}"
-        }
-        require(sha256(sourceBytes) == SOURCE_SHA256) {
-            "Source0 SHA-256 drift"
-        }
-
         return BootstrapArtifacts(
             vm1 = vm,
-            compilerA = compiler,
-            starterSource = starterSource
+            starterSource = STARTER_SOURCE
         )
     }
 

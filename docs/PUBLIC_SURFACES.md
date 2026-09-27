@@ -16,7 +16,7 @@ This inventory separates live packaged authority from retained reference/compati
 | Native desktop | `RiftNativeDesktop.kt` | Android window/taskbar/z-order/geometry authority. |
 | Native built-ins | `RiftNativeSystemApps.kt`, `RiftNativeWorkspaceApps.kt` | Terminal, Task Manager, Files, Editor, Dev Lab, Workspace Records and Settings. |
 | Native Git | `RiftNativeGit.kt` | Git/GitHub workflow with Android Keystore credential access. |
-| Native RiftBuild | `RiftBuildLocalExecutor.kt`, `RiftApkV2Signer.kt`, `RiftBuildInstaller.kt` | Workspace-bounded Android validation/materialization/package flow plus bounded APK v2 signing/verification and allowlisted PackageInstaller handoff; supports NativeActivity proofs and the code-bearing Codynex E0 editor via `classes*.dex`, with no raw process or arbitrary package authority. |
+| Native RiftBuild | `RiftBuildLocalExecutor.kt`, `RiftApkV2Signer.kt`, `RiftBuildInstaller.kt` | Workspace-bounded Android validation/materialization/package flow plus bounded APK v2 signing/verification and allowlisted PackageInstaller handoff; supports NativeActivity proofs and the code-bearing Codynex C0 `.cx` editor via `classes*.dex`, with no raw process or arbitrary package authority. |
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands. |
 
@@ -25,7 +25,8 @@ This inventory separates live packaged authority from retained reference/compati
 | Surface | Owner | Purpose |
 | --- | --- | --- |
 | Codynex LR0 local bridge | `RiftCodynexBridgeClient.kt`, `RiftMcpRuntime.kt`, `RiftNativeShellServices.kt` | Explicit-package Binder bridge exposed only through the fixed `codynex` shell family; bounded request/response/timeout/source limits; next RiftOS Builder/install pass must prove installed-device behavior. |
-| Codynex E0 local editor packaging | `RiftBuildLocalExecutor.kt` + mirrored `com.codynex.editor*` payload + `codynex_editor_vm` | `prepare-codynex-editor` verifies local Codynex source hashes, extracts compiled DEX/native payload from the installed RiftOS APK, materializes canonical VM/compiler/source assets, then uses the local pack/sign/verify/install path; installed-device promotion is pending the next RiftOS rebuild. |
+| Codynex C0 editor compiler bridge | `CodynexCompilerProvider.kt`, `RiftHeadlessJsRuntime.kt` | Exported ContentProvider at `com.riftos.app.codynexcompiler`; accepts only bounded `.cx` compile requests from package `com.codynex.editor` signed by the pinned RiftBuild certificate, runs the fixed active `c0_reference.js` path in bounded headless QuickJS, and returns at most 64 KiB of VM1 bytecode. No shell, process, or network authority is delegated. |
+| Codynex C0 local editor packaging | `RiftBuildLocalExecutor.kt` + mirrored `com.codynex.editor*` payload + `codynex_editor_vm` | `prepare-codynex-editor` verifies exact local Codynex editor hashes, extracts updated DEX/native VM1-preview payload from the installed RiftOS APK, emits explicit RiftOS package visibility, then uses the local pack/sign/verify/install path. Compile runs through the C0 provider; Preview executes the candidate locally on frozen VM1. |
 
 ## Live RiftBrowser page surfaces
 

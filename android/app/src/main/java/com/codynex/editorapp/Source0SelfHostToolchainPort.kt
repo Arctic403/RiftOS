@@ -1,5 +1,8 @@
 package com.codynex.editorapp
 
+import android.content.Context
+import android.net.Uri
+import android.os.Bundle
 import com.codynex.editor.ArtifactRef
 import com.codynex.editor.CompileRequest
 import com.codynex.editor.CompileResult
@@ -13,76 +16,92 @@ import java.io.File
 import java.security.MessageDigest
 
 class Source0SelfHostToolchainPort(
+    private val context: Context,
     private val artifacts: BootstrapArtifacts,
     candidateDirectory: File
 ) : CompilerPort, PreviewPort {
     companion object {
-        private const val MAX_SOURCE_BYTES = 1024 * 1024
+        private const val COMPILER_AUTHORITY =
+            "com.riftos.app.codynexcompiler"
+        private const val COMPILE_METHOD = "compile-c0"
+        private const val MAX_SOURCE_BYTES = 256 * 1024
         private const val MAX_CANDIDATE_BYTES = 64 * 1024
+        private const val PREVIEW_OUTPUT_BYTES = 64 * 1024
     }
 
     private val candidateRoot =
         candidateDirectory.apply { mkdirs() }.canonicalFile
 
     override fun compile(request: CompileRequest): CompileResult {
-        val source = request.sourceText.toByteArray(Charsets.UTF_8)
+        val sourceBytes = request.sourceText.toByteArray(Charsets.UTF_8)
 
-        if (source.size > MAX_SOURCE_BYTES) {
+        if (sourceBytes.size > MAX_SOURCE_BYTES) {
             return failure(
                 request.sourcePath,
                 "source exceeds $MAX_SOURCE_BYTES bytes"
             )
         }
 
-        val output = ByteArray(maxOf(1, (source.size + 1) / 2)) {
-            0xA5.toByte()
-        }
+        val response =
+            try {
+                context.contentResolver.call(
+                    Uri.parse("content://$COMPILER_AUTHORITY"),
+                    COMPILE_METHOD,
+                    null,
+                    Bundle().apply {
+                        putString("source", request.sourceText)
+                    }
+                )
+            } catch (error: Throwable) {
+                return failure(
+                    request.sourcePath,
+                    "RiftOS C0 compiler bridge unavailable: " +
+                        (error.message ?: error.javaClass.simpleName)
+                )
+            }
+                ?: return failure(
+                    request.sourcePath,
+                    "RiftOS C0 compiler bridge returned no result"
+                )
 
-        val run = Vm1Bridge.run(
-            vm = artifacts.vm1,
-            program = artifacts.compilerA,
-            source = source,
-            output = output,
-            stepBudget = stepBudget(source.size)
-        )
-
-        if (run.size < 2) {
+        if (!response.getBoolean("success", false)) {
             return failure(
                 request.sourcePath,
-                "VM bridge returned an invalid result"
+                response.getString("error")
+                    ?: "C0 compiler rejected source"
             )
         }
 
-        val vmStatus = run[0]
-        val compilerResult = run[1]
+        val compiler =
+            response.getString("compiler")
+                ?: return failure(
+                    request.sourcePath,
+                    "compiler bridge omitted compiler identity"
+                )
 
-        if (vmStatus != 0) {
-            return failure(
-                request.sourcePath,
-                "VM1 rejected compiler execution with status $vmStatus"
-            )
-        }
-
-        if (compilerResult <= 0) {
-            return failure(
-                request.sourcePath,
-                "Source0 compiler rejected source with result $compilerResult"
-            )
-        }
+        val candidate =
+            response.getByteArray("vm1")
+                ?: return failure(
+                    request.sourcePath,
+                    "compiler bridge omitted VM1 output"
+                )
 
         if (
-            compilerResult > output.size ||
-            compilerResult > MAX_CANDIDATE_BYTES
+            candidate.isEmpty() ||
+            candidate.size > MAX_CANDIDATE_BYTES
         ) {
             return failure(
                 request.sourcePath,
-                "compiler returned invalid output length $compilerResult"
+                "compiler returned invalid VM1 length ${candidate.size}"
             )
         }
 
-        val candidate = output.copyOf(compilerResult)
         val hash = sha256(candidate)
-        val file = File(candidateRoot, "candidate-$hash.vm1").canonicalFile
+        val file =
+            File(
+                candidateRoot,
+                "candidate-$hash.vm1"
+            ).canonicalFile
 
         requireInsideCandidateRoot(file)
         atomicWrite(file, candidate)
@@ -98,11 +117,13 @@ class Source0SelfHostToolchainPort(
                 EditorDiagnostic(
                     severity = DiagnosticSeverity.INFO,
                     message =
-                        "Compiled $compilerResult VM1 bytes; SHA-256 $hash",
+                        "Compiled with $compiler: " +
+                            "${candidate.size} VM1 bytes; SHA-256 $hash",
                     file = request.sourcePath
                 )
             ),
-            summary = "Compile succeeded: $compilerResult-byte candidate"
+            summary =
+                "Compile succeeded: ${candidate.size}-byte VM1 candidate"
         )
     }
 
@@ -127,63 +148,41 @@ class Source0SelfHostToolchainPort(
         }
 
         val candidate = candidateFile.readBytes()
-        val source = File(request.sourcePath)
-            .takeIf { it.isFile }
-            ?.readText(Charsets.UTF_8)
-            ?.toByteArray(Charsets.UTF_8)
-            ?: return previewFailure(
-                request.sourcePath,
-                "save the document before preview"
-            )
+        val output = ByteArray(PREVIEW_OUTPUT_BYTES)
 
-        if (source.size > MAX_SOURCE_BYTES) {
-            return previewFailure(
-                request.sourcePath,
-                "source exceeds $MAX_SOURCE_BYTES bytes"
-            )
-        }
-
-        val output = ByteArray(maxOf(1, candidate.size)) {
-            0xA5.toByte()
-        }
-
-        val run = Vm1Bridge.run(
-            vm = artifacts.vm1,
-            program = candidate,
-            source = source,
-            output = output,
-            stepBudget = stepBudget(source.size)
-        )
+        val run =
+            try {
+                Vm1Bridge.run(
+                    vm = artifacts.vm1,
+                    program = candidate,
+                    source = ByteArray(0),
+                    output = output,
+                    stepBudget =
+                        (candidate.size * 256 + 20_000)
+                            .coerceIn(20_000, 5_000_000)
+                )
+            } catch (error: Throwable) {
+                return previewFailure(
+                    request.sourcePath,
+                    "VM1 preview bridge failed: " +
+                        (error.message ?: error.javaClass.simpleName)
+                )
+            }
 
         if (run.size < 2) {
             return previewFailure(
                 request.sourcePath,
-                "VM bridge returned an invalid preview result"
+                "VM1 bridge returned an invalid preview result"
             )
         }
 
         val vmStatus = run[0]
-        val compilerResult = run[1]
+        val programResult = run[1]
 
         if (vmStatus != 0) {
             return previewFailure(
                 request.sourcePath,
-                "candidate VM execution failed with status $vmStatus"
-            )
-        }
-
-        if (compilerResult != candidate.size) {
-            return previewFailure(
-                request.sourcePath,
-                "candidate produced $compilerResult bytes; expected ${candidate.size}"
-            )
-        }
-
-        val reproduced = output.copyOf(compilerResult)
-        if (!reproduced.contentEquals(candidate)) {
-            return previewFailure(
-                request.sourcePath,
-                "candidate executed but did not reproduce itself"
+                "VM1 preview failed with status $vmStatus"
             )
         }
 
@@ -193,12 +192,12 @@ class Source0SelfHostToolchainPort(
                 EditorDiagnostic(
                     severity = DiagnosticSeverity.INFO,
                     message =
-                        "Fixed-point preview passed: candidate reproduced " +
-                            "${candidate.size} bytes exactly",
+                        "VM1 preview passed on empty input; " +
+                            "program result $programResult",
                     file = request.sourcePath
                 )
             ),
-            summary = "Preview passed: self-hosted candidate fixed point"
+            summary = "Preview passed: VM1 result $programResult"
         )
     }
 
@@ -260,10 +259,6 @@ class Source0SelfHostToolchainPort(
             "could not publish candidate artifact"
         }
     }
-
-    private fun stepBudget(sourceBytes: Int): Int =
-        (sourceBytes * 64 + 4096)
-            .coerceIn(20_000, 5_000_000)
 
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")

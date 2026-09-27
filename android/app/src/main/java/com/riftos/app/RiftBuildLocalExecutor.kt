@@ -155,19 +155,19 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/editorapp/FileWorkspacePort.kt" to
                 "49f2346ceb2d896203c8aca3305e98724a22d482aa9a0d74e6b9347b0f64bc04",
             "external/editor/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
-                "d4cd556b6c351c0e81b7e4b0610fd9152fdc47b0ba0e9b01d1e023ce4dd0d9d9",
+                "b8f62b2ed06763f86215badf340e186dfd4ab923ccc6b07f48654977b466e157",
             "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-                "10223ca98ad0f5b33a4a5925380f4ca87f5f237315df841790c6ae347771e243",
+                "981255ebf8ab4a047fdd9d6fa9b9094bb61f2af181038ac499a7538a6aabe712",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
             "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
-                "542e29806d6f5eef5b22763530e705ae11d67d87ef37387e4b6dcc74eb1c3a12",
+                "00b70a537dad3d34c333404de0273ad69b7c858ec3705073278de7615598ce23",
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
                 "47039b185cc4c481846735946b1f0667564e729f5994b7badb0ab6ce69b978ba",
             "external/editor/app/build.gradle.kts" to
                 "e529a5182ab3b1ae42aacb621b8eb4d99f4881ef43d1e251f6f9ad559401c0a3",
             "external/editor/app/src/main/AndroidManifest.xml" to
-                "78a9f5bd010e8cce8ff5269a5de3251e9fe65d6f9cd0d65c9c9e77cdf2004952",
+                "5eab82c9663ec4e3b6db0e1c9831422ac73fe7460ede385c36e747d90f3bad9f",
             "external/editor/settings.gradle.kts" to
                 "9a258efd9b28084a1655568c96de7fb3f35a6e58bd90785e5d9f1028b567d6ce",
             "external/editor/build.gradle.kts" to
@@ -245,7 +245,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "android", "http://schemas.android.com/apk/res/android", "manifest", "package", EDITOR_PACKAGE, "1",
             EDITOR_VERSION_NAME, "uses-sdk", "26", "36", "application", "true", "activity",
             EDITOR_ACTIVITY, "intent-filter", "action", "android.intent.action.MAIN",
-            "category", "android.intent.category.LAUNCHER"
+            "category", "android.intent.category.LAUNCHER", "queries", "com.riftos.app"
         )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
@@ -3274,6 +3274,13 @@ private fun buildMc1bBinaryManifest(): ByteArray {
             )
         ))
         body.write(buildEditorManifestEndElement("uses-sdk"))
+        body.write(buildEditorManifestStartElement("queries", emptyList()))
+        body.write(buildEditorManifestStartElement(
+            "package",
+            listOf(editorManifestStringAttr("name", "com.riftos.app"))
+        ))
+        body.write(buildEditorManifestEndElement("package"))
+        body.write(buildEditorManifestEndElement("queries"))
         body.write(buildEditorManifestStartElement(
             "application",
             listOf(editorManifestBoolAttr("hasCode", "true", true))

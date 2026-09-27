@@ -44,6 +44,12 @@
             </intent-filter>
         </receiver>
 
+        <provider
+            android:name=".CodynexCompilerProvider"
+            android:authorities="com.riftos.app.codynexcompiler"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+
         <service
             android:name=".RiftVortexAccessibilityService"
             android:exported="true"
