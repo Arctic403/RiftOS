@@ -75,7 +75,11 @@ The legacy shell `mount`/`umount` and generic `rift` wrappers are retired in the
 
 ## Rift++
 
-Production `riftpp` commands run through bounded non-browser QuickJS:
+The current Rift++ compiler-development authority is the machine-code compiler in the separate `rift++` workspace. RiftOS source now exposes `riftpp-host status|compile` only as bounded execution/proof infrastructure.
+
+`riftpp-host compile` selects the fixed compiler artifact for the running ABI, requires the approved 276-byte SHA-256 identity, and sends the compile request over Binder to a private `:riftppCompiler` process. The worker invokes the compiler through `libriftpp_compiler_host.so` using guard-page-backed mappings and RW→RX executable-memory transition. RiftOS does not parse Rift++ source or emit target instructions.
+
+The older `riftpp` command family remains present as a **legacy compatibility/reference route** through bounded non-browser QuickJS:
 
 ```text
 RiftNativeShell
@@ -84,9 +88,7 @@ RiftNativeShell
  -> src/riftvm.js
 ```
 
-Gradle currently copies exactly three files from `src/` into the generated RiftOS `www` assets: `riftpp-core.js`, `riftvm.js`, and `semnexis-bootstrap.js`. The first two serve production Rift++; the third is the bounded Semnexis QuickJS bootstrap compiler.
-
-The headless runtime provides bounded trusted text I/O, UTF-8 and SHA-256 helpers. It does not provide DOM, WebView, arbitrary Android calls, raw process execution or ambient network sockets.
+That legacy path is not the compiler authority for the new machine-code Rift++ work. Gradle still packages its retained assets for compatibility while the new host awaits Builder compilation and installed-device proof.
 
 ## Semnexis
 

@@ -46,7 +46,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip",
             "browser", "open", "clear", "workspace", "git", "chat", "devlab",
             "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex",
-            "riftbuild", "qjs", "semx", "riftpp", "rift-tool"
+            "riftbuild", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool"
         )
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
     }
@@ -219,6 +219,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
+                    "riftpp-host help|status|compile <riftpp-root> <source-file> [output-capacity]   [APPROVED MACHINE-CODE HOST]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
                     "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
@@ -270,7 +271,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex", "riftbuild", "qjs", "semx", "riftpp", "rift-tool", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex", "riftbuild", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -328,6 +329,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 val value = headlessJs.executeRiftpp(args, cwd)
                 ShellOutcome(value.output, cwd, value.result)
             }
+            "riftpp-host" -> executeRiftppHostCommand(cwd, args)
             "rift-tool" -> {
                 val value = headlessJs.executeDeveloperTool(args)
                 ShellOutcome(value.output, cwd, value.result)
@@ -336,6 +338,85 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "mount", "umount" -> throw IllegalStateException("Legacy shell mount entry point is retired during native Files migration; no renderer fallback exists.")
             "rift" -> throw IllegalStateException("Legacy RiftLocalPlatform shell wrapper is retired; use native Git, Workspace Records, Dev Lab and fixed native build/training services.")
             else -> throw IllegalArgumentException("unsupported native RiftShell command: $command")
+        }
+    }
+
+    private fun executeRiftppHostCommand(cwd: String, args: MutableList<String>): ShellOutcome {
+        val action = args.removeFirstOrNull()?.lowercase() ?: "help"
+        if (action == "help") {
+            require(args.isEmpty()) {
+                "usage: riftpp-host help|status|compile <riftpp-root> <source-file> [output-capacity]"
+            }
+            val text =
+                "Rift++ approved machine-code compiler host\n" +
+                    "riftpp-host status\n" +
+                    "riftpp-host compile <riftpp-root> <source-file> [output-capacity]"
+            return ShellOutcome(text, cwd, nativeResult("riftpp-host").put("action", "help"))
+        }
+        val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
+        val compilerName =
+            if (Process.is64Bit()) "compiler.arm64.hex" else "compiler.arm32.hex"
+
+        if (action == "status") {
+            require(args.isEmpty()) { "usage: riftpp-host status" }
+            val value = nativeResult("riftpp-host")
+                .put("action", "status")
+                .put("hostAbi", hostAbi)
+                .put("compilerRelativePath", "compiler/$compilerName")
+                .put("executionProcess", ":riftppCompiler")
+                .put("compilerAuthority", "rift++-machine-code-artifact")
+                .put("riftOsCompilerSemantics", false)
+            return ShellOutcome(value.toString(2), cwd, value)
+        }
+
+        require(action == "compile") { "unknown riftpp-host command: $action" }
+        require(args.size in 2..3) {
+            "usage: riftpp-host compile <riftpp-root> <source-file> [output-capacity]"
+        }
+
+        val rootPath = resolveDisplay(cwd, args[0])
+        val root = resolveFile(rootPath)
+        require(root.isDirectory) { "Rift++ root is not a directory: $rootPath" }
+
+        val compilerPath = joinDisplay(rootPath, "compiler/$compilerName")
+        val compilerFile = resolveFile(compilerPath)
+        require(compilerFile.isFile) { "Rift++ compiler artifact is missing: $compilerPath" }
+        require(compilerFile.length() <= 1024L) { "Rift++ compiler hex file is unexpectedly large" }
+
+        val sourcePath = resolveDisplay(cwd, args[1])
+        val sourceFile = resolveFile(sourcePath)
+        require(sourceFile.isFile) { "Rift++ source file is missing: $sourcePath" }
+        require(sourceFile.length() <= 4096L) { "Rift++ source exceeds 4096-byte host bound" }
+
+        val outputCapacity = args.getOrNull(2)?.toIntOrNull() ?: 4096
+        require(outputCapacity in 1..4096) { "output-capacity must be between 1 and 4096" }
+
+        val compilerBytes = decodeRiftppCompilerHex(compilerFile.readText(Charsets.UTF_8))
+        val sourceBytes = sourceFile.readBytes()
+        val value = RiftppCompilerClient.execute(
+            appContext,
+            compilerBytes,
+            sourceBytes,
+            outputCapacity
+        )
+            .put("command", "riftpp-host")
+            .put("compilerPath", compilerPath)
+            .put("sourcePath", sourcePath)
+            .put("requestedOutputCapacity", outputCapacity)
+
+        return ShellOutcome(value.toString(2), cwd, value)
+    }
+
+    private fun decodeRiftppCompilerHex(text: String): ByteArray {
+        val body = if (text.endsWith("\n")) text.dropLast(1) else text
+        require(text == body || text == "$body\n") { "compiler hex has non-canonical trailing bytes" }
+        require(body.length == 552) { "compiler hex must encode exactly 276 bytes" }
+        require(body.all { it in '0'..'9' || it in 'a'..'f' }) {
+            "compiler hex must be canonical lowercase hexadecimal"
+        }
+
+        return ByteArray(276) { index ->
+            body.substring(index * 2, index * 2 + 2).toInt(16).toByte()
         }
     }
 

@@ -6,6 +6,30 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.33 — Rift++ machine-code compiler execution host C1
+
+### Contract
+
+RiftOS now has a source-implemented execution/proof host for the separately owned Rift++ machine-code compiler. RiftOS is not compiler authority and contains no Rift++ source parser or ARM emitter for this path.
+
+### Source implementation
+
+- `RiftppCompilerService.kt` runs in private process `:riftppCompiler`;
+- Binder separates the main RiftOS process from native compiler faults;
+- only an exact 276-byte compiler matching the ABI-specific approved SHA-256 may execute;
+- source and output are bounded to 4096 bytes;
+- a 2-second bind timeout and 3-second execution timeout are enforced by the main process;
+- timeout kills the private worker; Binder death is reported as compiler-process crash;
+- `riftpp_compiler_host.cpp` uses guard pages, writes compiler bytes into non-executable memory, transitions the compiler page to read+execute, clears the instruction cache, invokes the documented four-argument compiler ABI, and releases the mappings;
+- `riftpp-host status|compile` is the bounded shell surface and does not accept an arbitrary executable-file path;
+- `test-riftpp-machine-code-host.mjs` is wired into `check:transport` and statically rejects parser/emitter semantics appearing in the host.
+
+### Validation boundary
+
+Local RiftBuild structural validation reports `RiftOS-main/android` source-ready with settings, root Gradle, app Gradle, manifest and activity checks green. Audit/scan retain only the pre-existing `RiftSecretStore.kt` filename heuristic. The local RiftBuild doctor explicitly reports that general repository native compilation is not wired, so this patch is **SOURCE IMPLEMENTED / STRUCTURALLY VALIDATED ONLY**. Builder compilation, APK installation, actual `riftpp-host compile`, machine-code execution and C2 device proof remain pending.
+
+The older QuickJS `riftpp` route and earlier VM1/App0/direct-ELF work remain historical/compatibility paths and do not define the new machine-code compiler authority.
+
 ## Patch 10.32 — Rift++ universal U0 runtime baseline
 
 ### Contract

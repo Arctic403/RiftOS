@@ -28,6 +28,7 @@ From `android/app/build.gradle.kts`:
 - `RiftMcpRuntime` also owns one process-wide passive `RiftDebugHub` and one persistent `RiftMcpOperationJournal`; MCP Server and Tool Host publish correlated spans while journaled calls get restart-safe operation identity, no-replay state, and read-only reconciliation.
 - Current source adds the fixed `codynex` shell family over an explicit Binder binding to `com.codynex.lr0lab/.CodynexBridgeService`, with bounded JSON/source sizes, bounded bind/RPC timeouts and one reconnect after Binder death. `RiftCodynexBridgeClient.kt` is now part of the exact 47-file Gradle Kotlin snapshot; installed-device bridge proof still waits for the next RiftOS build/install.
 - `RiftNativeShell` is the live shell executor and has no renderer fallback.
+- **Rift++ machine-code compiler host C1 is source-implemented and awaiting Builder/install proof.** `riftpp-host` selects only `compiler.arm64.hex` or `compiler.arm32.hex` from a supplied Rift++ root, canonical-decodes exactly 276 bytes, and delegates through Binder to the private `:riftppCompiler` process. `RiftppCompilerService` enforces the approved ABI-specific SHA-256, 4096-byte source/output bounds, bind/execution timeouts and worker-process crash containment. `riftpp_compiler_host.cpp` owns guarded mappings and RW→RX invocation only; it contains no Rift++ parser/emitter semantics. The older QuickJS `riftpp` route remains legacy compatibility/reference, not authority for the new compiler.
 - **RiftBrowser bounded editor bridge is source-complete and awaiting Builder/install proof.** The active HTTPS-page inspector now supports explicit `edit` plus Base64-safe `edit-b64` for non-sensitive text inputs, textareas and contenteditable editor surfaces, with a 256 KiB UTF-8 ceiling, reset support and password/secret/token/API-key/authorization guards. It still exposes no arbitrary JavaScript execution, form submission/deploy authority, cookies, storage, headers or control-value readback.
 - `RiftToolSandbox` is hard-scoped to `filesDir/riftfs/workspace`.
 - the current source model-visible MCP catalog is exactly 21 tools; `rift_debug` is passive/read-only and `rift_mcp_reconcile` is persistent/read-only.
@@ -77,7 +78,7 @@ File chooser ownership, renderer crash containment and the exact-origin MCP comp
 
 ## Rift++ / executable state
 
-The active production language path is native shell → headless QuickJS → Rift++ Core/RiftVM assets.
+The older installed/reference `riftpp` language path is native shell → headless QuickJS → Rift++ Core/RiftVM assets. It is retained as legacy compatibility/reference; the new compiler-development authority is the separately owned Rift++ machine-code compiler executed through `riftpp-host`.
 
 `.rxe` compile/inspect/run/exec behavior is implemented inside the bounded headless runtime. There is no live Kotlin `RiftRT` class.
 

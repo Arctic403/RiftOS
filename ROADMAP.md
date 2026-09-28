@@ -14,6 +14,19 @@ This roadmap describes intended work, not shipped capability. Current implementa
 - Implement the RiftEngine/Servo migration behind a hardware compatibility gate; Android System WebView remains the current compatibility renderer until that gate passes.
 - Add focused on-device diagnostics and exported test results rather than emulator-heavy CI.
 
+## Rift++ machine-code compiler host
+
+Current source implements the C1 bounded execution host for the new machine-code Rift++ compiler:
+
+1. **SOURCE IMPLEMENTED** — private `:riftppCompiler` Android worker process + Binder client;
+2. **SOURCE IMPLEMENTED** — exact 276-byte ABI-specific compiler identity gate;
+3. **SOURCE IMPLEMENTED** — guard-page native JNI host with RW→RX compiler mapping;
+4. **SOURCE IMPLEMENTED** — bounded `riftpp-host status|compile` route with no arbitrary executable-file argument;
+5. **STRUCTURAL VALIDATION PASSED** — Android source inventory and RiftBuild project validation are source-ready;
+6. **PROOF NEXT** — Builder compile the full APK, install it, execute the approved ARM64 compiler against the Rift++ proof vectors, then advance C2 only from observed device evidence.
+
+The retained QuickJS `riftpp` route and older direct-ELF/App0 proofs are legacy compatibility/history; they do not define the new machine-code compiler authority.
+
 ## In-house RiftBuild Android pipeline
 
 RiftBuild is being promoted from retained/non-executing design to a bounded native local build controller.

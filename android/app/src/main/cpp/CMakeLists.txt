@@ -214,6 +214,26 @@ target_link_libraries(
 
 
 add_library(
+    riftpp_compiler_host
+    SHARED
+    riftpp/riftpp_compiler_host.cpp
+)
+
+target_compile_features(riftpp_compiler_host PRIVATE cxx_std_17)
+
+target_compile_options(
+    riftpp_compiler_host
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -fno-exceptions
+    -fno-rtti
+)
+
+
+add_library(
     codynex_editor_vm
     SHARED
     editor/editor_vm_bridge.cpp
