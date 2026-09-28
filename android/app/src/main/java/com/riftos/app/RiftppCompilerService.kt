@@ -33,8 +33,21 @@ class RiftppCompilerService : Service() {
         internal const val TRANSACTION_PID = IBinder.FIRST_CALL_TRANSACTION
         internal const val TRANSACTION_COMPILE = IBinder.FIRST_CALL_TRANSACTION + 1
         internal const val TRANSACTION_COMPILE_PROOF = IBinder.FIRST_CALL_TRANSACTION + 2
+        internal const val TRANSACTION_STAGE1_SELF_HOST = IBinder.FIRST_CALL_TRANSACTION + 3
 
         private const val COMPILER_BYTES = 276
+        private const val STAGE1_ARM64_SOURCE_BYTES = 2342
+        private const val STAGE1_ARM32_SOURCE_BYTES = 2357
+        private const val STAGE1_ARM64_IMAGE_BYTES = 336
+        private const val STAGE1_ARM32_IMAGE_BYTES = 340
+        private const val STAGE1_ARM64_SOURCE_SHA256 =
+            "e3415740508a3db18f53744a2b8c900a1349b898eeb186e6159d21b38c9829f5"
+        private const val STAGE1_ARM32_SOURCE_SHA256 =
+            "ed2fb30fbd7819bd3adc3c427835ed70d7bd3167ae731357fe10697afdd3eb59"
+        private const val STAGE1_ARM64_IMAGE_SHA256 =
+            "1d5a87efb088e68ef1cec2b80c49c2a484d5e83d2c327d8131ef81e18ca9556b"
+        private const val STAGE1_ARM32_IMAGE_SHA256 =
+            "7b11fae1b5ad0314a6fcf1a310c57e2c10b90cb8b5b14b40c010e89aa3c3c431"
         private const val MAX_SOURCE_BYTES = 4096
         private const val MAX_OUTPUT_BYTES = 4096
         private const val ARM64_SHA256 =
@@ -51,6 +64,16 @@ class RiftppCompilerService : Service() {
         source: ByteArray,
         output: ByteArray,
         proveGeneratedPayload: Boolean
+    ): LongArray
+
+    private external fun nativeStage1SelfHost(
+        seedCompiler: ByteArray,
+        arm32Source: ByteArray,
+        arm64Source: ByteArray,
+        bootstrapArm32: ByteArray,
+        bootstrapArm64: ByteArray,
+        selfArm32: ByteArray,
+        selfArm64: ByteArray
     ): LongArray
 
     private val binder = object : Binder() {
@@ -76,6 +99,20 @@ class RiftppCompilerService : Service() {
                         source,
                         capacity,
                         code == TRANSACTION_COMPILE_PROOF
+                    )
+                    reply?.writeNoException()
+                    reply?.writeBundle(result)
+                    true
+                }
+                TRANSACTION_STAGE1_SELF_HOST -> {
+                    data.enforceInterface(DESCRIPTOR)
+                    val compiler = data.createByteArray()
+                    val arm32Source = data.createByteArray()
+                    val arm64Source = data.createByteArray()
+                    val result = executeStage1SelfHost(
+                        compiler,
+                        arm32Source,
+                        arm64Source
                     )
                     reply?.writeNoException()
                     reply?.writeBundle(result)
@@ -189,6 +226,136 @@ class RiftppCompilerService : Service() {
         }
     }
 
+
+    private fun executeStage1SelfHost(
+        seedCompiler: ByteArray?,
+        arm32Source: ByteArray?,
+        arm64Source: ByteArray?
+    ): Bundle {
+        val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
+        val expectedSeedSha = if (Process.is64Bit()) ARM64_SHA256 else ARM32_SHA256
+        val seed = seedCompiler ?: return rejected(hostAbi, "stage1-seed-missing")
+        val source32 = arm32Source ?: return rejected(hostAbi, "stage1-arm32-source-missing")
+        val source64 = arm64Source ?: return rejected(hostAbi, "stage1-arm64-source-missing")
+
+        if (seed.size != COMPILER_BYTES) {
+            return rejected(hostAbi, "stage1-seed-size")
+        }
+        val seedSha = sha256(seed)
+        if (seedSha != expectedSeedSha) {
+            return rejected(hostAbi, "stage1-seed-identity", seedSha)
+        }
+        if (
+            source32.size != STAGE1_ARM32_SOURCE_BYTES ||
+            sha256(source32) != STAGE1_ARM32_SOURCE_SHA256
+        ) {
+            return rejected(hostAbi, "stage1-arm32-source-identity", seedSha)
+        }
+        if (
+            source64.size != STAGE1_ARM64_SOURCE_BYTES ||
+            sha256(source64) != STAGE1_ARM64_SOURCE_SHA256
+        ) {
+            return rejected(hostAbi, "stage1-arm64-source-identity", seedSha)
+        }
+        nativeLoadFailure?.let {
+            return rejected(hostAbi, "native-library", seedSha, it.message)
+        }
+
+        val bootstrap32 = ByteArray(STAGE1_ARM32_IMAGE_BYTES)
+        val bootstrap64 = ByteArray(STAGE1_ARM64_IMAGE_BYTES)
+        val self32 = ByteArray(STAGE1_ARM32_IMAGE_BYTES)
+        val self64 = ByteArray(STAGE1_ARM64_IMAGE_BYTES)
+
+        val nativeResult = try {
+            nativeStage1SelfHost(
+                seed,
+                source32,
+                source64,
+                bootstrap32,
+                bootstrap64,
+                self32,
+                self64
+            )
+        } catch (failure: Throwable) {
+            return rejected(hostAbi, "stage1-native-call", seedSha, failure.message)
+        }
+        if (nativeResult.size != 5) {
+            return rejected(hostAbi, "stage1-native-envelope", seedSha)
+        }
+
+        val hostStatus = nativeResult[0].toInt()
+        val bootstrap32Bytes = nativeResult[1].toInt()
+        val bootstrap64Bytes = nativeResult[2].toInt()
+        val self32Bytes = nativeResult[3].toInt()
+        val self64Bytes = nativeResult[4].toInt()
+        if (hostStatus != 0) {
+            return Bundle().apply {
+                putString("status", "host-reject")
+                putString("reason", "stage1-native-$hostStatus")
+                putString("hostAbi", hostAbi)
+                putInt("pid", Process.myPid())
+                putString("compilerSha256", seedSha)
+                putInt("bootstrapArm32Bytes", bootstrap32Bytes)
+                putInt("bootstrapArm64Bytes", bootstrap64Bytes)
+                putInt("selfArm32Bytes", self32Bytes)
+                putInt("selfArm64Bytes", self64Bytes)
+            }
+        }
+
+        if (
+            bootstrap32Bytes != STAGE1_ARM32_IMAGE_BYTES ||
+            bootstrap64Bytes != STAGE1_ARM64_IMAGE_BYTES ||
+            self32Bytes != STAGE1_ARM32_IMAGE_BYTES ||
+            self64Bytes != STAGE1_ARM64_IMAGE_BYTES
+        ) {
+            return rejected(hostAbi, "stage1-result-length", seedSha)
+        }
+
+        val bootstrap32Sha = sha256(bootstrap32)
+        val bootstrap64Sha = sha256(bootstrap64)
+        val self32Sha = sha256(self32)
+        val self64Sha = sha256(self64)
+        if (bootstrap32Sha != STAGE1_ARM32_IMAGE_SHA256) {
+            return rejected(hostAbi, "stage1-bootstrap-arm32-identity", seedSha)
+        }
+        if (bootstrap64Sha != STAGE1_ARM64_IMAGE_SHA256) {
+            return rejected(hostAbi, "stage1-bootstrap-arm64-identity", seedSha)
+        }
+        if (self32Sha != STAGE1_ARM32_IMAGE_SHA256) {
+            return rejected(hostAbi, "stage1-self-arm32-identity", seedSha)
+        }
+        if (self64Sha != STAGE1_ARM64_IMAGE_SHA256) {
+            return rejected(hostAbi, "stage1-self-arm64-identity", seedSha)
+        }
+        if (!bootstrap32.contentEquals(self32)) {
+            return rejected(hostAbi, "stage1-self-arm32-byte-drift", seedSha)
+        }
+        if (!bootstrap64.contentEquals(self64)) {
+            return rejected(hostAbi, "stage1-self-arm64-byte-drift", seedSha)
+        }
+
+        return Bundle().apply {
+            putString("status", "success")
+            putString("hostAbi", hostAbi)
+            putInt("pid", Process.myPid())
+            putString("compilerSha256", seedSha)
+            putString("stage1Arm32SourceSha256", STAGE1_ARM32_SOURCE_SHA256)
+            putString("stage1Arm64SourceSha256", STAGE1_ARM64_SOURCE_SHA256)
+            putString("bootstrapArm32Sha256", bootstrap32Sha)
+            putString("bootstrapArm64Sha256", bootstrap64Sha)
+            putString("selfArm32Sha256", self32Sha)
+            putString("selfArm64Sha256", self64Sha)
+            putInt("bootstrapArm32Bytes", bootstrap32Bytes)
+            putInt("bootstrapArm64Bytes", bootstrap64Bytes)
+            putInt("selfArm32Bytes", self32Bytes)
+            putInt("selfArm64Bytes", self64Bytes)
+            putBoolean("selfHostedCurrentAbi", true)
+            putBoolean("crossTargetReproduced", true)
+            putBoolean("hostParsesStage1Numbers", false)
+            putBoolean("hostEmitsStage1Instructions", false)
+        }
+    }
+
     private fun rejected(
         hostAbi: String,
         reason: String,
@@ -216,6 +383,7 @@ class RiftppCompilerService : Service() {
 internal object RiftppCompilerClient {
     private const val BIND_TIMEOUT_MS = 2_000L
     private const val EXECUTION_TIMEOUT_MS = 3_000L
+    private const val STAGE1_EXECUTION_TIMEOUT_MS = 15_000L
 
     fun execute(
         context: Context,
@@ -302,6 +470,86 @@ internal object RiftppCompilerClient {
         }
     }
 
+
+    fun executeStage1SelfHost(
+        context: Context,
+        compiler: ByteArray,
+        arm32Source: ByteArray,
+        arm64Source: ByteArray
+    ): JSONObject {
+        val appContext = context.applicationContext
+        val binderReady = CompletableFuture<IBinder>()
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                if (service == null) {
+                    binderReady.completeExceptionally(RemoteException("null compiler binder"))
+                } else {
+                    binderReady.complete(service)
+                }
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                if (!binderReady.isDone) binderReady.completeExceptionally(DeadObjectException())
+            }
+
+            override fun onBindingDied(name: ComponentName?) {
+                if (!binderReady.isDone) binderReady.completeExceptionally(DeadObjectException())
+            }
+
+            override fun onNullBinding(name: ComponentName?) {
+                if (!binderReady.isDone) {
+                    binderReady.completeExceptionally(RemoteException("null compiler binding"))
+                }
+            }
+        }
+
+        val intent = Intent(appContext, RiftppCompilerService::class.java)
+        if (!appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
+            return failure("host-reject", "bind-failed")
+        }
+
+        val executor = Executors.newSingleThreadExecutor()
+        var workerPid = -1
+        try {
+            val binder = binderReady.get(BIND_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            workerPid = queryPid(binder)
+            val future = executor.submit<Bundle> {
+                transactStage1SelfHost(
+                    binder,
+                    compiler,
+                    arm32Source,
+                    arm64Source
+                )
+            }
+
+            val bundle = try {
+                future.get(STAGE1_EXECUTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            } catch (timeout: TimeoutException) {
+                if (workerPid > 0) Process.killProcess(workerPid)
+                return failure("timeout", "stage1-selfhost-timeout", workerPid)
+            } catch (failure: ExecutionException) {
+                val cause = failure.cause
+                return if (cause is DeadObjectException || cause is RemoteException) {
+                    failure("crash", "compiler-process-died", workerPid)
+                } else {
+                    failure("host-reject", "stage1-binder-execution", workerPid, cause?.message)
+                }
+            }
+
+            return stage1BundleToJson(bundle)
+        } catch (timeout: TimeoutException) {
+            if (workerPid > 0) Process.killProcess(workerPid)
+            return failure("timeout", "bind-timeout", workerPid)
+        } catch (failure: DeadObjectException) {
+            return failure("crash", "compiler-process-died", workerPid)
+        } catch (failure: Throwable) {
+            return failure("host-reject", "binder-transport", workerPid, failure.message)
+        } finally {
+            runCatching { appContext.unbindService(connection) }
+            executor.shutdownNow()
+        }
+    }
+
     private fun queryPid(binder: IBinder): Int {
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
@@ -349,6 +597,77 @@ internal object RiftppCompilerClient {
             data.recycle()
         }
     }
+
+
+    private fun transactStage1SelfHost(
+        binder: IBinder,
+        compiler: ByteArray,
+        arm32Source: ByteArray,
+        arm64Source: ByteArray
+    ): Bundle {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(RiftppCompilerService.DESCRIPTOR)
+            data.writeByteArray(compiler)
+            data.writeByteArray(arm32Source)
+            data.writeByteArray(arm64Source)
+            if (!binder.transact(
+                    RiftppCompilerService.TRANSACTION_STAGE1_SELF_HOST,
+                    data,
+                    reply,
+                    0
+                )
+            ) {
+                throw RemoteException("stage1 self-host transaction rejected")
+            }
+            reply.readException()
+            reply.readBundle(RiftppCompilerService::class.java.classLoader)
+                ?: throw RemoteException("stage1 self-host result bundle missing")
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+    private fun stage1BundleToJson(bundle: Bundle): JSONObject =
+        JSONObject()
+            .put("schema", "rift.riftpp-stage1-selfhost/1")
+            .put("status", bundle.getString("status") ?: "host-reject")
+            .put("reason", bundle.getString("reason") ?: JSONObject.NULL)
+            .put("detail", bundle.getString("detail") ?: JSONObject.NULL)
+            .put("hostAbi", bundle.getString("hostAbi") ?: JSONObject.NULL)
+            .put("pid", bundle.getInt("pid", -1))
+            .put("compilerSha256", bundle.getString("compilerSha256") ?: JSONObject.NULL)
+            .put(
+                "stage1Arm32SourceSha256",
+                bundle.getString("stage1Arm32SourceSha256") ?: JSONObject.NULL
+            )
+            .put(
+                "stage1Arm64SourceSha256",
+                bundle.getString("stage1Arm64SourceSha256") ?: JSONObject.NULL
+            )
+            .put(
+                "bootstrapArm32Sha256",
+                bundle.getString("bootstrapArm32Sha256") ?: JSONObject.NULL
+            )
+            .put(
+                "bootstrapArm64Sha256",
+                bundle.getString("bootstrapArm64Sha256") ?: JSONObject.NULL
+            )
+            .put("selfArm32Sha256", bundle.getString("selfArm32Sha256") ?: JSONObject.NULL)
+            .put("selfArm64Sha256", bundle.getString("selfArm64Sha256") ?: JSONObject.NULL)
+            .put("bootstrapArm32Bytes", bundle.getInt("bootstrapArm32Bytes", 0))
+            .put("bootstrapArm64Bytes", bundle.getInt("bootstrapArm64Bytes", 0))
+            .put("selfArm32Bytes", bundle.getInt("selfArm32Bytes", 0))
+            .put("selfArm64Bytes", bundle.getInt("selfArm64Bytes", 0))
+            .put("selfHostedCurrentAbi", bundle.getBoolean("selfHostedCurrentAbi", false))
+            .put("crossTargetReproduced", bundle.getBoolean("crossTargetReproduced", false))
+            .put("hostParsesStage1Numbers", bundle.getBoolean("hostParsesStage1Numbers", false))
+            .put(
+                "hostEmitsStage1Instructions",
+                bundle.getBoolean("hostEmitsStage1Instructions", false)
+            )
 
     private fun bundleToJson(bundle: Bundle): JSONObject {
         val output = bundle.getByteArray("output")

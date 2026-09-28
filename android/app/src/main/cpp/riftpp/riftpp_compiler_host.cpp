@@ -91,6 +91,221 @@ jlongArray resultArray(
     return result;
 }
 
+
+constexpr jsize kStage1Arm64SourceBytes = 2342;
+constexpr jsize kStage1Arm32SourceBytes = 2357;
+constexpr jsize kStage1Arm64ImageBytes = 336;
+constexpr jsize kStage1Arm32ImageBytes = 340;
+constexpr size_t kStage1RecordMaxBytes = 8U;
+
+jlongArray stage1ResultArray(
+    JNIEnv* env,
+    int32_t hostStatus,
+    uint32_t bootstrapArm32Bytes,
+    uint32_t bootstrapArm64Bytes,
+    uint32_t selfArm32Bytes,
+    uint32_t selfArm64Bytes
+) {
+    const jlong values[5] = {
+        static_cast<jlong>(hostStatus),
+        static_cast<jlong>(bootstrapArm32Bytes),
+        static_cast<jlong>(bootstrapArm64Bytes),
+        static_cast<jlong>(selfArm32Bytes),
+        static_cast<jlong>(selfArm64Bytes)
+    };
+    jlongArray result = env->NewLongArray(5);
+    if (result != nullptr) {
+        env->SetLongArrayRegion(result, 0, 5, values);
+    }
+    return result;
+}
+
+int32_t verifyOutputPrefix(
+    const GuardedPage& outputRegion,
+    size_t outputLength
+) {
+    const size_t prefixLength = outputRegion.pageSize - outputLength;
+    for (size_t i = 0; i < prefixLength; ++i) {
+        if (outputRegion.page[i] != kCanary) return -1;
+    }
+    return 0;
+}
+
+int32_t bootstrapStage1Image(
+    CompilerFn seedCompiler,
+    const uint8_t* source,
+    size_t sourceLength,
+    uint8_t* target,
+    size_t targetLength
+) {
+    if (
+        seedCompiler == nullptr ||
+        source == nullptr ||
+        target == nullptr ||
+        sourceLength == 0U ||
+        targetLength == 0U
+    ) {
+        return -201;
+    }
+
+    GuardedPage bundleRegion;
+    GuardedPage payloadRegion;
+    if (
+        !allocateGuarded(&bundleRegion) ||
+        !allocateGuarded(&payloadRegion) ||
+        bundleRegion.pageSize < kSeedBundleBytes ||
+        payloadRegion.pageSize < kSeedPayloadBytes
+    ) {
+        releaseGuarded(&payloadRegion);
+        releaseGuarded(&bundleRegion);
+        return -202;
+    }
+
+    uint8_t* bundle =
+        bundleRegion.page + bundleRegion.pageSize - kSeedBundleBytes;
+    uint8_t* payload =
+        payloadRegion.page + payloadRegion.pageSize - kSeedPayloadBytes;
+
+    size_t cursor = 0U;
+    size_t outputCount = 0U;
+    while (cursor < sourceLength) {
+        size_t end = cursor;
+        while (end < sourceLength && source[end] != static_cast<uint8_t>('\n')) {
+            ++end;
+        }
+        if (end >= sourceLength) {
+            releaseGuarded(&payloadRegion);
+            releaseGuarded(&bundleRegion);
+            return -203;
+        }
+
+        const size_t recordLength = end - cursor + 1U;
+        if (recordLength == 0U || recordLength > kStage1RecordMaxBytes) {
+            releaseGuarded(&payloadRegion);
+            releaseGuarded(&bundleRegion);
+            return -204;
+        }
+        if (outputCount >= targetLength) {
+            releaseGuarded(&payloadRegion);
+            releaseGuarded(&bundleRegion);
+            return -205;
+        }
+
+        memset(bundleRegion.page, kCanary, bundleRegion.pageSize);
+        const uint32_t seedResult = seedCompiler(
+            source + cursor,
+            static_cast<uint32_t>(recordLength),
+            bundle,
+            kSeedBundleBytes
+        );
+        if (
+            seedResult != kSeedBundleBytes ||
+            verifyOutputPrefix(bundleRegion, kSeedBundleBytes) != 0
+        ) {
+            releaseGuarded(&payloadRegion);
+            releaseGuarded(&bundleRegion);
+            return -206;
+        }
+
+        memcpy(
+            payload,
+            bundle + kHostPayloadOffset,
+            kSeedPayloadBytes
+        );
+        if (
+            mprotect(
+                payloadRegion.page,
+                payloadRegion.pageSize,
+                PROT_READ | PROT_EXEC
+            ) != 0
+        ) {
+            releaseGuarded(&payloadRegion);
+            releaseGuarded(&bundleRegion);
+            return -207;
+        }
+        __builtin___clear_cache(
+            reinterpret_cast<char*>(payload),
+            reinterpret_cast<char*>(payload) + kSeedPayloadBytes
+        );
+        auto payloadFn = reinterpret_cast<GeneratedPayloadFn>(payload);
+        const uint32_t value = payloadFn();
+        if (
+            mprotect(
+                payloadRegion.page,
+                payloadRegion.pageSize,
+                PROT_READ | PROT_WRITE
+            ) != 0
+        ) {
+            releaseGuarded(&payloadRegion);
+            releaseGuarded(&bundleRegion);
+            return -208;
+        }
+        if (value > 255U) {
+            releaseGuarded(&payloadRegion);
+            releaseGuarded(&bundleRegion);
+            return -209;
+        }
+
+        target[outputCount++] = static_cast<uint8_t>(value);
+        cursor = end + 1U;
+    }
+
+    releaseGuarded(&payloadRegion);
+    releaseGuarded(&bundleRegion);
+    return outputCount == targetLength ? 0 : -210;
+}
+
+int32_t runStage1Compiler(
+    CompilerFn compiler,
+    const uint8_t* source,
+    size_t sourceLength,
+    uint8_t* target,
+    size_t targetLength,
+    uint32_t* resultLength
+) {
+    if (
+        compiler == nullptr ||
+        source == nullptr ||
+        target == nullptr ||
+        resultLength == nullptr ||
+        targetLength == 0U
+    ) {
+        return -220;
+    }
+
+    GuardedPage outputRegion;
+    if (
+        !allocateGuarded(&outputRegion) ||
+        outputRegion.pageSize < targetLength
+    ) {
+        releaseGuarded(&outputRegion);
+        return -221;
+    }
+
+    memset(outputRegion.page, kCanary, outputRegion.pageSize);
+    uint8_t* output =
+        outputRegion.page + outputRegion.pageSize - targetLength;
+    const uint32_t value = compiler(
+        source,
+        static_cast<uint32_t>(sourceLength),
+        output,
+        static_cast<uint32_t>(targetLength)
+    );
+    if (
+        verifyOutputPrefix(outputRegion, targetLength) != 0 ||
+        value == 0xffffffffU ||
+        value > targetLength
+    ) {
+        releaseGuarded(&outputRegion);
+        return -222;
+    }
+
+    memcpy(target, output, static_cast<size_t>(value));
+    *resultLength = value;
+    releaseGuarded(&outputRegion);
+    return 0;
+}
+
 }  // namespace
 
 extern "C"
@@ -292,3 +507,294 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     );
 #endif
 }
+
+extern "C"
+JNIEXPORT jlongArray JNICALL
+Java_com_riftos_app_RiftppCompilerService_nativeStage1SelfHost(
+    JNIEnv* env,
+    jobject,
+    jbyteArray seedCompilerArray,
+    jbyteArray arm32SourceArray,
+    jbyteArray arm64SourceArray,
+    jbyteArray bootstrapArm32Array,
+    jbyteArray bootstrapArm64Array,
+    jbyteArray selfArm32Array,
+    jbyteArray selfArm64Array
+) {
+#if !defined(__aarch64__) && !defined(__arm__)
+    (void)seedCompilerArray;
+    (void)arm32SourceArray;
+    (void)arm64SourceArray;
+    (void)bootstrapArm32Array;
+    (void)bootstrapArm64Array;
+    (void)selfArm32Array;
+    (void)selfArm64Array;
+    return stage1ResultArray(env, -230, 0U, 0U, 0U, 0U);
+#else
+    if (
+        seedCompilerArray == nullptr ||
+        arm32SourceArray == nullptr ||
+        arm64SourceArray == nullptr ||
+        bootstrapArm32Array == nullptr ||
+        bootstrapArm64Array == nullptr ||
+        selfArm32Array == nullptr ||
+        selfArm64Array == nullptr
+    ) {
+        return stage1ResultArray(env, -231, 0U, 0U, 0U, 0U);
+    }
+
+    if (
+        env->GetArrayLength(seedCompilerArray) != kCompilerBytes ||
+        env->GetArrayLength(arm32SourceArray) != kStage1Arm32SourceBytes ||
+        env->GetArrayLength(arm64SourceArray) != kStage1Arm64SourceBytes ||
+        env->GetArrayLength(bootstrapArm32Array) != kStage1Arm32ImageBytes ||
+        env->GetArrayLength(bootstrapArm64Array) != kStage1Arm64ImageBytes ||
+        env->GetArrayLength(selfArm32Array) != kStage1Arm32ImageBytes ||
+        env->GetArrayLength(selfArm64Array) != kStage1Arm64ImageBytes
+    ) {
+        return stage1ResultArray(env, -232, 0U, 0U, 0U, 0U);
+    }
+
+    uint8_t arm32Source[kStage1Arm32SourceBytes] = {};
+    uint8_t arm64Source[kStage1Arm64SourceBytes] = {};
+    uint8_t bootstrapArm32[kStage1Arm32ImageBytes] = {};
+    uint8_t bootstrapArm64[kStage1Arm64ImageBytes] = {};
+    uint8_t selfArm32[kStage1Arm32ImageBytes] = {};
+    uint8_t selfArm64[kStage1Arm64ImageBytes] = {};
+
+    env->GetByteArrayRegion(
+        arm32SourceArray,
+        0,
+        kStage1Arm32SourceBytes,
+        reinterpret_cast<jbyte*>(arm32Source)
+    );
+    env->GetByteArrayRegion(
+        arm64SourceArray,
+        0,
+        kStage1Arm64SourceBytes,
+        reinterpret_cast<jbyte*>(arm64Source)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return stage1ResultArray(env, -233, 0U, 0U, 0U, 0U);
+    }
+
+    GuardedPage seedRegion;
+    if (
+        !allocateGuarded(&seedRegion) ||
+        seedRegion.pageSize < static_cast<size_t>(kCompilerBytes)
+    ) {
+        releaseGuarded(&seedRegion);
+        return stage1ResultArray(env, -234, 0U, 0U, 0U, 0U);
+    }
+
+    uint8_t* seedCompiler =
+        seedRegion.page +
+        seedRegion.pageSize -
+        static_cast<size_t>(kCompilerBytes);
+    env->GetByteArrayRegion(
+        seedCompilerArray,
+        0,
+        kCompilerBytes,
+        reinterpret_cast<jbyte*>(seedCompiler)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        releaseGuarded(&seedRegion);
+        return stage1ResultArray(env, -235, 0U, 0U, 0U, 0U);
+    }
+    if (
+        mprotect(
+            seedRegion.page,
+            seedRegion.pageSize,
+            PROT_READ | PROT_EXEC
+        ) != 0
+    ) {
+        releaseGuarded(&seedRegion);
+        return stage1ResultArray(env, -236, 0U, 0U, 0U, 0U);
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(seedCompiler),
+        reinterpret_cast<char*>(seedCompiler) + kCompilerBytes
+    );
+    auto seed = reinterpret_cast<CompilerFn>(seedCompiler);
+
+    const int32_t bootstrap32Status = bootstrapStage1Image(
+        seed,
+        arm32Source,
+        static_cast<size_t>(kStage1Arm32SourceBytes),
+        bootstrapArm32,
+        static_cast<size_t>(kStage1Arm32ImageBytes)
+    );
+    if (bootstrap32Status != 0) {
+        releaseGuarded(&seedRegion);
+        return stage1ResultArray(
+            env,
+            bootstrap32Status,
+            0U,
+            0U,
+            0U,
+            0U
+        );
+    }
+
+    const int32_t bootstrap64Status = bootstrapStage1Image(
+        seed,
+        arm64Source,
+        static_cast<size_t>(kStage1Arm64SourceBytes),
+        bootstrapArm64,
+        static_cast<size_t>(kStage1Arm64ImageBytes)
+    );
+    releaseGuarded(&seedRegion);
+    if (bootstrap64Status != 0) {
+        return stage1ResultArray(
+            env,
+            bootstrap64Status,
+            kStage1Arm32ImageBytes,
+            0U,
+            0U,
+            0U
+        );
+    }
+
+#if defined(__aarch64__)
+    const uint8_t* hostStage1 = bootstrapArm64;
+    constexpr size_t hostStage1Bytes =
+        static_cast<size_t>(kStage1Arm64ImageBytes);
+#else
+    const uint8_t* hostStage1 = bootstrapArm32;
+    constexpr size_t hostStage1Bytes =
+        static_cast<size_t>(kStage1Arm32ImageBytes);
+#endif
+
+    GuardedPage stage1Region;
+    if (
+        !allocateGuarded(&stage1Region) ||
+        stage1Region.pageSize < hostStage1Bytes
+    ) {
+        releaseGuarded(&stage1Region);
+        return stage1ResultArray(
+            env,
+            -237,
+            kStage1Arm32ImageBytes,
+            kStage1Arm64ImageBytes,
+            0U,
+            0U
+        );
+    }
+
+    uint8_t* stage1Bytes =
+        stage1Region.page + stage1Region.pageSize - hostStage1Bytes;
+    memcpy(stage1Bytes, hostStage1, hostStage1Bytes);
+    if (
+        mprotect(
+            stage1Region.page,
+            stage1Region.pageSize,
+            PROT_READ | PROT_EXEC
+        ) != 0
+    ) {
+        releaseGuarded(&stage1Region);
+        return stage1ResultArray(
+            env,
+            -238,
+            kStage1Arm32ImageBytes,
+            kStage1Arm64ImageBytes,
+            0U,
+            0U
+        );
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(stage1Bytes),
+        reinterpret_cast<char*>(stage1Bytes) + hostStage1Bytes
+    );
+    auto stage1 = reinterpret_cast<CompilerFn>(stage1Bytes);
+
+    uint32_t self32Length = 0U;
+    const int32_t self32Status = runStage1Compiler(
+        stage1,
+        arm32Source,
+        static_cast<size_t>(kStage1Arm32SourceBytes),
+        selfArm32,
+        static_cast<size_t>(kStage1Arm32ImageBytes),
+        &self32Length
+    );
+    if (self32Status != 0) {
+        releaseGuarded(&stage1Region);
+        return stage1ResultArray(
+            env,
+            self32Status,
+            kStage1Arm32ImageBytes,
+            kStage1Arm64ImageBytes,
+            self32Length,
+            0U
+        );
+    }
+
+    uint32_t self64Length = 0U;
+    const int32_t self64Status = runStage1Compiler(
+        stage1,
+        arm64Source,
+        static_cast<size_t>(kStage1Arm64SourceBytes),
+        selfArm64,
+        static_cast<size_t>(kStage1Arm64ImageBytes),
+        &self64Length
+    );
+    releaseGuarded(&stage1Region);
+    if (self64Status != 0) {
+        return stage1ResultArray(
+            env,
+            self64Status,
+            kStage1Arm32ImageBytes,
+            kStage1Arm64ImageBytes,
+            self32Length,
+            self64Length
+        );
+    }
+
+    env->SetByteArrayRegion(
+        bootstrapArm32Array,
+        0,
+        kStage1Arm32ImageBytes,
+        reinterpret_cast<const jbyte*>(bootstrapArm32)
+    );
+    env->SetByteArrayRegion(
+        bootstrapArm64Array,
+        0,
+        kStage1Arm64ImageBytes,
+        reinterpret_cast<const jbyte*>(bootstrapArm64)
+    );
+    env->SetByteArrayRegion(
+        selfArm32Array,
+        0,
+        kStage1Arm32ImageBytes,
+        reinterpret_cast<const jbyte*>(selfArm32)
+    );
+    env->SetByteArrayRegion(
+        selfArm64Array,
+        0,
+        kStage1Arm64ImageBytes,
+        reinterpret_cast<const jbyte*>(selfArm64)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return stage1ResultArray(
+            env,
+            -239,
+            kStage1Arm32ImageBytes,
+            kStage1Arm64ImageBytes,
+            self32Length,
+            self64Length
+        );
+    }
+
+    return stage1ResultArray(
+        env,
+        0,
+        kStage1Arm32ImageBytes,
+        kStage1Arm64ImageBytes,
+        self32Length,
+        self64Length
+    );
+#endif
+}
+

@@ -345,13 +345,14 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
         if (action == "help") {
             require(args.isEmpty()) {
-                "usage: riftpp-host help|status|compile|prove <riftpp-root> <source-file> [output-capacity]"
+                "usage: riftpp-host help|status|compile|prove|stage1-selfhost <riftpp-root> [source-file] [output-capacity]"
             }
             val text =
                 "Rift++ approved machine-code compiler host\n" +
                     "riftpp-host status\n" +
                     "riftpp-host compile <riftpp-root> <source-file> [output-capacity]\n" +
-                    "riftpp-host prove <riftpp-root> <source-file> [output-capacity]"
+                    "riftpp-host prove <riftpp-root> <source-file> [output-capacity]\n" +
+                    "riftpp-host stage1-selfhost <riftpp-root>"
             return ShellOutcome(text, cwd, nativeResult("riftpp-host").put("action", "help"))
         }
         val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
@@ -367,6 +368,54 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 .put("executionProcess", ":riftppCompiler")
                 .put("compilerAuthority", "rift++-machine-code-artifact")
                 .put("riftOsCompilerSemantics", false)
+            return ShellOutcome(value.toString(2), cwd, value)
+        }
+
+        if (action == "stage1-selfhost") {
+            require(args.size == 1) {
+                "usage: riftpp-host stage1-selfhost <riftpp-root>"
+            }
+            val rootPath = resolveDisplay(cwd, args[0])
+            val root = resolveFile(rootPath)
+            require(root.isDirectory) { "Rift++ root is not a directory: $rootPath" }
+
+            val compilerPath = joinDisplay(rootPath, "compiler/$compilerName")
+            val compilerFile = resolveFile(compilerPath)
+            require(compilerFile.isFile) {
+                "Rift++ compiler artifact is missing: $compilerPath"
+            }
+            require(compilerFile.length() <= 1024L) {
+                "Rift++ compiler hex file is unexpectedly large"
+            }
+
+            val arm32SourcePath = joinDisplay(rootPath, "stage1/stage1.arm32.rpp")
+            val arm64SourcePath = joinDisplay(rootPath, "stage1/stage1.arm64.rpp")
+            val arm32SourceFile = resolveFile(arm32SourcePath)
+            val arm64SourceFile = resolveFile(arm64SourcePath)
+            require(arm32SourceFile.isFile && arm64SourceFile.isFile) {
+                "Rift++ Stage1 canonical source files are missing"
+            }
+            require(
+                arm32SourceFile.length() <= 4096L &&
+                    arm64SourceFile.length() <= 4096L
+            ) {
+                "Rift++ Stage1 source exceeds host bound"
+            }
+
+            val compilerBytes =
+                decodeRiftppCompilerHex(compilerFile.readText(Charsets.UTF_8))
+            val value = RiftppCompilerClient.executeStage1SelfHost(
+                appContext,
+                compilerBytes,
+                arm32SourceFile.readBytes(),
+                arm64SourceFile.readBytes()
+            )
+                .put("command", "riftpp-host")
+                .put("action", action)
+                .put("compilerPath", compilerPath)
+                .put("stage1Arm32SourcePath", arm32SourcePath)
+                .put("stage1Arm64SourcePath", arm64SourcePath)
+
             return ShellOutcome(value.toString(2), cwd, value)
         }
 

@@ -39,7 +39,7 @@ Host-adjacent lifecycle/source boundaries:
 - `RiftNativeWorkspaceApps.kt` — native Files SAF Activity-result recipient.
 
 Manifest-declared components whose internal behavior belongs elsewhere:
-- `RiftppCompilerService.kt` — private `:riftppCompiler` Binder worker that contains native compiler faults; it owns process isolation, exact artifact admission, timeout/crash reporting and JNI transport only, not Rift++ parsing or code generation.
+- `RiftppCompilerService.kt` — private `:riftppCompiler` Binder worker that contains native compiler faults; it owns process isolation, exact Seed0/Stage1 source and artifact admission, timeout/crash reporting and JNI transport only, not Rift++ parsing or code generation. The Stage1 self-host transaction accepts only the frozen Stage1 ARM32/ARM64 source identities, frames newline-terminated Seed0 records without decoding their decimal values, reconstructs Stage1 exclusively through Seed0-generated payload returns, and requires exact bootstrap/self-compiled image hashes.
 - `RiftBuildInstallReceiver` in `RiftBuildInstaller.kt` — private PackageInstaller result + protected first-launch proof receiver for `com.riftpp.nativeproof`;
 - `RiftMcpActivity.kt` — MCP configuration/status UI.
 - `RiftBrowserPreviewActivity.kt` — bounded preview renderer.

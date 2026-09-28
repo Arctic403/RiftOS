@@ -6,6 +6,18 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.39 — Stage1 fixed self-host bootstrap transaction
+
+Current source adds the first post-Seed0 self-host rung without expanding the frozen 276-byte machine-code compiler.
+
+The fixed `riftpp-host stage1-selfhost <riftpp-root>` route reads only `stage1/stage1.arm32.rpp` and `stage1/stage1.arm64.rpp`. `RiftppCompilerService` admits the exact current-ABI Seed0 compiler and exact Stage1 source identities only. The native host frames newline-terminated records but does not decode the decimal value or synthesize Stage1 instructions. Each record is compiled by Seed0, the generated current-ABI Seed0 payload is executed, and only that return value may become the next Stage1 image byte.
+
+Candidate Stage1 identities are locked at 340 ARM32 bytes / SHA-256 `7b11fae1b5ad0314a6fcf1a310c57e2c10b90cb8b5b14b40c010e89aa3c3c431` and 336 ARM64 bytes / SHA-256 `1d5a87efb088e68ef1cec2b80c49c2a484d5e83d2c327d8131ef81e18ca9556b`. After reconstruction, the current-ABI Stage1 image executes in the same private worker and compiles both complete Stage1 sources. Promotion requires both outputs to match the exact frozen image identities and the bootstrap outputs byte-for-byte.
+
+A dedicated 15-second Stage1 proof timeout is separate from the existing 3-second single Seed0 compile timeout. Binder death/timeout still kills or classifies only the private worker. Focused regression coverage locks the exact source/image hashes, transaction, fixed shell source paths, newline-only framing and absence of `strtol`/`strtoul` or general payload APIs.
+
+Builder/NDK compilation and installed ARM32 self-host evidence remain pending.
+
 ## Patch 10.38 — ARM64-only seed0 proof APK lane
 
 Current source adds a bounded standalone AArch64 proof for the new 276-byte Rift++ machine-code compiler without reviving the legacy direct-ELF compiler path.
