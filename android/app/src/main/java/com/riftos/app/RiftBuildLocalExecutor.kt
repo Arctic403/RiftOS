@@ -83,6 +83,17 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val RIFTPP_APP0_MAX_SOURCE_BYTES = 64 * 1024
         private const val RIFTPP_APP0_MAX_PROGRAM_BYTES = 64 * 1024
         private const val RIFTPP_APP0_STEP_BUDGET = 2_000_000
+        private const val RIFTPP_SEED0_ARM64_PROOF_PROJECT = "proofs/riftpp-seed0-arm64"
+        private const val RIFTPP_SEED0_ARM64_LIBRARY_NAME = "riftpp_seed0_arm64_proof"
+        private const val RIFTPP_SEED0_ARM64_LIBRARY_FILE = "libriftpp_seed0_arm64_proof.so"
+        private const val RIFTPP_SEED0_ARM64_HOST_APK_ENTRY = "lib/arm64-v8a/libriftpp_seed0_arm64_proof.so"
+        private const val RIFTPP_SEED0_ARM64_VERSION_NAME = "0.1.0-seed0-arm64-proof"
+        private const val RIFTPP_SEED0_ARM64_COMPILER_HEX = "compiler/compiler.arm64.hex"
+        private const val RIFTPP_SEED0_ARM64_COMPILER_HEX_TEXT_BYTES = 553
+        private const val RIFTPP_SEED0_ARM64_COMPILER_HEX_TEXT_SHA256 = "53e8e1e49f6ed4abe7d596ff13c53bb281b7f1bb8e2a2fb018d0933722868f3c"
+        private const val RIFTPP_SEED0_ARM64_COMPILER_BYTES = 276
+        private const val RIFTPP_SEED0_ARM64_COMPILER_RAW_SHA256 = "b1f33b940d2ac199f5e38c1c621cd8b27ed15dd3a60fcb85daad7b7154b2ee0c"
+        private const val RIFTPP_SEED0_ARM64_MAX_HOST_BYTES = 4L * 1024L * 1024L
         private const val MC0_SEED_HEX = "native/mc0/arm32/mc0_seed.hex"
         private const val MC0_SEED_BYTES = 172
         private const val MC0_SEED_SHA256 = "3276dcbf29704b1ba7d9d331e7891ceff10d85b16bb7688c62273aeaa3ca311e"
@@ -292,7 +303,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -303,6 +314,10 @@ class RiftBuildLocalExecutor(context: Context) {
             "prepare-riftpp-v0" -> prepareRiftppV0(
                 args.firstOrNull() ?: error("usage: riftbuild prepare-riftpp-v0 <riftpp-root> [arm32|arm64|universal]"),
                 args.getOrNull(1) ?: "universal",
+                cwd
+            )
+            "prepare-riftpp-seed0-arm64" -> prepareRiftppSeed0Arm64Proof(
+                args.firstOrNull() ?: error("usage: riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>"),
                 cwd
             )
             "prepare-riftpp-app0" -> prepareRiftppApp0(
@@ -634,6 +649,296 @@ class RiftBuildLocalExecutor(context: Context) {
         atomicWrite(
             File(buildRoot, "riftpp-v0-materialization.json"),
             result.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(result)
+        return result
+    }
+
+    @Synchronized
+    fun prepareRiftppSeed0Arm64Proof(
+        project: String,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val compilerRef = resolveProject(project, cwd)
+        val compilerFile = projectFile(
+            compilerRef,
+            RIFTPP_SEED0_ARM64_COMPILER_HEX
+        )
+        require(compilerFile.isFile) {
+            "Rift++ seed0 ARM64 compiler hex is missing"
+        }
+        require(
+            compilerFile.length() ==
+                RIFTPP_SEED0_ARM64_COMPILER_HEX_TEXT_BYTES.toLong()
+        ) {
+            "Rift++ seed0 ARM64 compiler hex text byte count drift"
+        }
+        require(
+            sha256(compilerFile) ==
+                RIFTPP_SEED0_ARM64_COMPILER_HEX_TEXT_SHA256
+        ) {
+            "Rift++ seed0 ARM64 compiler hex text SHA-256 drift"
+        }
+
+        val compilerText = readTextBounded(compilerFile)
+        require(compilerText.endsWith("\n")) {
+            "Rift++ seed0 ARM64 compiler hex must end with one newline"
+        }
+        val compilerBody = compilerText.dropLast(1)
+        require(
+            compilerBody.length ==
+                RIFTPP_SEED0_ARM64_COMPILER_BYTES * 2 &&
+                compilerBody.all { it in '0'..'9' || it in 'a'..'f' }
+        ) {
+            "Rift++ seed0 ARM64 compiler hex must remain canonical lowercase hex"
+        }
+        val compilerBytes = decodeHex(compilerBody)
+        require(
+            compilerBytes.size ==
+                RIFTPP_SEED0_ARM64_COMPILER_BYTES
+        ) {
+            "Rift++ seed0 ARM64 compiler decoded byte count drift"
+        }
+        require(
+            sha256(compilerBytes) ==
+                RIFTPP_SEED0_ARM64_COMPILER_RAW_SHA256
+        ) {
+            "Rift++ seed0 ARM64 compiler raw SHA-256 drift"
+        }
+
+        val proofHost = readOwnApkEntry(
+            RIFTPP_SEED0_ARM64_HOST_APK_ENTRY,
+            RIFTPP_SEED0_ARM64_MAX_HOST_BYTES
+        )
+        verifyElfImage(proofHost, 2, 183)
+
+        val proofRef = resolveProject(
+            RIFTPP_SEED0_ARM64_PROOF_PROJECT,
+            cwd
+        )
+        val validation = validate(proofRef.display, "/D:/Workspace")
+        require(validation.optBoolean("sourceReady")) {
+            "Rift++ seed0 ARM64 proof project source validation failed"
+        }
+        require(
+            validation.optString("nativeLibraryName") ==
+                RIFTPP_SEED0_ARM64_LIBRARY_NAME
+        ) {
+            "Rift++ seed0 ARM64 proof NativeActivity library declaration drift"
+        }
+
+        val sourceManifest = File(
+            proofRef.file,
+            "app/src/main/AndroidManifest.xml"
+        ).canonicalFile
+        require(
+            confinedTo(proofRef.file, sourceManifest) &&
+                sourceManifest.isFile
+        ) {
+            "Rift++ seed0 ARM64 proof source manifest is missing"
+        }
+        val sourceManifestText = readTextBounded(sourceManifest)
+        require(
+            sourceManifestText.contains(
+                "package=\"" +
+                    RiftBuildInstaller.TARGET_PACKAGE +
+                    "\""
+            )
+        ) {
+            "Rift++ seed0 ARM64 proof package drift"
+        }
+        require(
+            sourceManifestText.contains(
+                "android:value=\"" +
+                    RIFTPP_SEED0_ARM64_LIBRARY_NAME +
+                    "\""
+            )
+        ) {
+            "Rift++ seed0 ARM64 proof library drift"
+        }
+
+        val binaryManifest = buildNativeActivityBinaryManifest(
+            RiftBuildInstaller.TARGET_PACKAGE,
+            1,
+            RIFTPP_SEED0_ARM64_VERSION_NAME,
+            RIFTPP_SEED0_ARM64_LIBRARY_NAME
+        )
+
+        val buildRoot = File(
+            proofRef.file,
+            "build/riftbuild"
+        ).canonicalFile
+        require(confinedTo(proofRef.file, buildRoot)) {
+            "Rift++ seed0 ARM64 proof build root escaped project"
+        }
+        val preparedRoot = File(
+            buildRoot,
+            "prepared"
+        ).canonicalFile
+        require(confinedTo(buildRoot, preparedRoot)) {
+            "Rift++ seed0 ARM64 prepared root escaped build/riftbuild"
+        }
+        if (preparedRoot.exists()) {
+            require(
+                deleteTreeBounded(
+                    preparedRoot,
+                    MAX_PROJECT_FILES
+                )
+            ) {
+                "Could not clear stale Rift++ seed0 ARM64 prepared package"
+            }
+        }
+
+        val arm64LibRoot = File(
+            preparedRoot,
+            "lib/arm64-v8a"
+        ).canonicalFile
+        val assetRoot = File(
+            preparedRoot,
+            "assets"
+        ).canonicalFile
+        require(
+            confinedTo(preparedRoot, arm64LibRoot) &&
+                confinedTo(preparedRoot, assetRoot)
+        ) {
+            "Rift++ seed0 ARM64 prepared path escaped package root"
+        }
+        require(
+            arm64LibRoot.mkdirs() ||
+                arm64LibRoot.isDirectory
+        ) {
+            "Could not create Rift++ seed0 ARM64 library directory"
+        }
+        require(
+            assetRoot.mkdirs() ||
+                assetRoot.isDirectory
+        ) {
+            "Could not create Rift++ seed0 ARM64 asset directory"
+        }
+
+        val manifestOutput = File(
+            preparedRoot,
+            "AndroidManifest.xml"
+        ).canonicalFile
+        val hostOutput = File(
+            arm64LibRoot,
+            RIFTPP_SEED0_ARM64_LIBRARY_FILE
+        ).canonicalFile
+        val compilerOutput = File(
+            assetRoot,
+            "compiler.bin"
+        ).canonicalFile
+
+        atomicWrite(manifestOutput, binaryManifest)
+        atomicWrite(hostOutput, proofHost)
+        atomicWrite(compilerOutput, compilerBytes)
+
+        require(isBinaryAndroidManifest(manifestOutput)) {
+            "Rift++ seed0 ARM64 proof binary manifest failed validation"
+        }
+        require(
+            sha256(hostOutput) ==
+                sha256(proofHost)
+        ) {
+            "Rift++ seed0 ARM64 proof host materialization hash mismatch"
+        }
+        require(
+            sha256(compilerOutput) ==
+                RIFTPP_SEED0_ARM64_COMPILER_RAW_SHA256
+        ) {
+            "Rift++ seed0 ARM64 compiler asset hash mismatch"
+        }
+
+        require(buildRoot.mkdirs() || buildRoot.isDirectory) {
+            "Could not create Rift++ seed0 ARM64 proof evidence root"
+        }
+        val runId = runId()
+        val result = JSONObject()
+            .put(
+                "format",
+                "riftbuild-riftpp-seed0-arm64-materialization-v1"
+            )
+            .put("runId", runId)
+            .put("state", "prepared-native")
+            .put("project", compilerRef.display)
+            .put("proofProject", proofRef.display)
+            .put("target", "arm64")
+            .put(
+                "package",
+                RiftBuildInstaller.TARGET_PACKAGE
+            )
+            .put(
+                "libraryName",
+                RIFTPP_SEED0_ARM64_LIBRARY_NAME
+            )
+            .put(
+                "host",
+                JSONObject()
+                    .put("abi", "arm64-v8a")
+                    .put(
+                        "source",
+                        "self-apk:" +
+                            RIFTPP_SEED0_ARM64_HOST_APK_ENTRY
+                    )
+                    .put("bytes", proofHost.size)
+                    .put("sha256", sha256(proofHost))
+                    .put("elfClass", 2)
+                    .put("machine", 183)
+            )
+            .put(
+                "compiler",
+                JSONObject()
+                    .put(
+                        "sourcePath",
+                        compilerRef.display +
+                            "/" +
+                            RIFTPP_SEED0_ARM64_COMPILER_HEX
+                    )
+                    .put("bytes", compilerBytes.size)
+                    .put(
+                        "rawSha256",
+                        sha256(compilerBytes)
+                    )
+                    .put(
+                        "asset",
+                        "assets/compiler.bin"
+                    )
+            )
+            .put(
+                "proofContract",
+                JSONObject()
+                    .put("positiveVectors", 5)
+                    .put(
+                        "generatedPayloadExecutions",
+                        5
+                    )
+                    .put("rejections", 17)
+                    .put(
+                        "crossHostExpectedBundles",
+                        true
+                    )
+                    .put("hostParsesRiftpp", false)
+                    .put(
+                        "hostEmitsInstructions",
+                        false
+                    )
+            )
+            .put("manifestReady", true)
+            .put("signed", false)
+            .put("installableClaimed", false)
+            .put(
+                "createdAt",
+                System.currentTimeMillis()
+            )
+
+        atomicWrite(
+            File(
+                buildRoot,
+                "riftpp-seed0-arm64-materialization.json"
+            ),
+            result
+                .toString(2)
+                .toByteArray(Charsets.UTF_8)
         )
         writeRun(result)
         return result

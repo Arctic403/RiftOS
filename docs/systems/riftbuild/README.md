@@ -96,6 +96,7 @@ riftbuild doctor [project]
 riftbuild validate <project>
 riftbuild plan <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
+riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>
 riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>
 riftbuild prepare-codynex-mc0 <codynex-root>
 riftbuild prepare-codynex-mc1a <codynex-root>
@@ -152,6 +153,31 @@ For the current Rift++ native proof it can verify:
 - declared dual ABI filters.
 
 The verifier records bounded source SHA-256 identities where useful.
+
+## Rift++ seed0 ARM64 proof APK
+
+`riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>` is the current proof lane for the machine-code seed, separate from the retained legacy direct-ELF bridge.
+
+It:
+- requires the canonical `compiler/compiler.arm64.hex` text identity and decoded 276-byte SHA-256 `b1f33b940d2ac199f5e38c1c621cd8b27ed15dd3a60fcb85daad7b7154b2ee0c`;
+- extracts only `lib/arm64-v8a/libriftpp_seed0_arm64_proof.so` from the installed universal RiftOS APK;
+- packages an arm64-only `com.riftpp.nativeproof` NativeActivity with `assets/compiler.bin`;
+- never packages an ARM32 fallback, so install/launch is itself an AArch64-userspace gate;
+- keeps the proof host syntax-blind: the host does not parse Rift++ or emit replacement ARM instructions;
+- checks the five exact seed bundles against the already-proven cross-host oracle, executes all five generated ARM64 payloads, repeats `ret 42` for determinism, and checks the documented malformed/reduced-capacity rejection set;
+- reports only a bounded NativeActivity PASS/FAIL title suitable for readback through the existing local UI agent.
+
+After preparation, use the normal bounded pipeline:
+
+```text
+riftbuild pack proofs/riftpp-seed0-arm64 arm64
+riftbuild sign <unsigned-apk>
+riftbuild verify <signed-apk>
+riftbuild install-proof <signed-apk>
+riftbuild launch-proof
+```
+
+If Android rejects the arm64-only APK as ABI-incompatible, that is device/userspace evidence rather than a Rift++ compiler failure.
 
 ## Rift++ direct-ELF bridge
 

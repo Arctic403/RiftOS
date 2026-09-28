@@ -23,6 +23,9 @@ const manifest = read('android/app/src/main/AndroidManifest.xml');
 const retained = read('src/riftbuild.js');
 const toolHost = read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
 const surfaces = read('docs/PUBLIC_SURFACES.md');
+const riftppSeed0Arm64Proof = read('android/app/src/main/cpp/riftpp/riftpp_seed0_arm64_proof.cpp');
+const riftppSeed0Arm64Gradle = read('proofs/riftpp-seed0-arm64/app/build.gradle.kts');
+const riftppSeed0Arm64Manifest = read('proofs/riftpp-seed0-arm64/app/src/main/AndroidManifest.xml');
 
 for (const required of [
   'class RiftBuildLocalExecutor',
@@ -34,6 +37,12 @@ for (const required of [
   'riftpp-direct-elf-shared-v0-bytes/1',
   'DIRECT-ELF-SHARED-V0-BYTES.json',
   'prepareRiftppV0',
+  'prepareRiftppSeed0Arm64Proof',
+  'prepare-riftpp-seed0-arm64',
+  'RIFTPP_SEED0_ARM64_COMPILER_BYTES = 276',
+  'b1f33b940d2ac199f5e38c1c621cd8b27ed15dd3a60fcb85daad7b7154b2ee0c',
+  'lib/arm64-v8a/libriftpp_seed0_arm64_proof.so',
+  'crossHostExpectedBundles',
   'prepareCodynexMc0',
   'prepare-codynex-mc0',
   'MC0_SEED_BYTES = 172',
@@ -301,6 +310,23 @@ assert.match(gradle, /abiFilters \+= listOf\("arm64-v8a", "armeabi-v7a"\)/);
 assert.match(installer, /RIFTPP_APP0_TARGET_PACKAGE = \"com\.riftpp\.hello\"/);
 assert.ok(manifest.includes('com.riftpp.hello'), 'RiftOS manifest omitted Rift++ App0 package visibility');
 
+assert.match(cmake, /if\(ANDROID_ABI STREQUAL "arm64-v8a"\)[\s\S]*?riftpp_seed0_arm64_proof/);
+assert.match(cmake, /riftpp_seed0_arm64_proof[\s\S]*?riftpp\/riftpp_seed0_arm64_proof\.cpp/);
+assert.ok(gradle.includes('src/main/cpp/riftpp/riftpp_seed0_arm64_proof.cpp'), 'Gradle exact native source snapshot omitted Rift++ seed0 ARM64 proof harness');
+assert.match(riftppSeed0Arm64Gradle, /abiFilters \+= listOf\("arm64-v8a"\)/);
+assert.ok(!riftppSeed0Arm64Gradle.includes('armeabi-v7a'), 'ARM64 proof APK must remain arm64-only');
+assert.match(riftppSeed0Arm64Manifest, /package="com\.riftpp\.nativeproof"/);
+assert.match(riftppSeed0Arm64Manifest, /android:value="riftpp_seed0_arm64_proof"/);
+assert.match(riftppSeed0Arm64Proof, /#if !defined\(__aarch64__\)/);
+assert.match(riftppSeed0Arm64Proof, /kCompilerBytes = 276U/);
+assert.match(riftppSeed0Arm64Proof, /kPayloadOffset = 16U/);
+assert.match(riftppSeed0Arm64Proof, /using CompilerFn = uint32_t \(\*\)\(/);
+assert.match(riftppSeed0Arm64Proof, /using PayloadFn = uint32_t \(\*\)\(\)/);
+assert.match(riftppSeed0Arm64Proof, /Rift\+\+ ARM64 seed0 PASS compiler=b1f33b94 vectors=5 payloads=5 rejects=17 crossHost=exact/);
+assert.ok(!riftppSeed0Arm64Proof.includes('compiler.arm64.hex'), 'Proof harness must receive compiler bytes as an asset, not locate Rift++ source itself');
+assert.ok(!riftppSeed0Arm64Proof.includes('parser'), 'Proof harness must not implement a Rift++ parser');
+assert.ok(!riftppSeed0Arm64Proof.includes('emitArm'), 'Proof harness must not implement an ARM emitter');
+
 const editorCoreModel = read('android/app/src/main/java/com/codynex/editor/EditorModel.kt');
 const editorCorePorts = read('android/app/src/main/java/com/codynex/editor/EditorPorts.kt');
 const editorCoreController = read('android/app/src/main/java/com/codynex/editor/CodynexEditorController.kt');
@@ -381,7 +407,7 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);

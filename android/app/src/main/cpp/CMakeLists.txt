@@ -233,6 +233,35 @@ target_compile_options(
 )
 
 
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    add_library(
+        riftpp_seed0_arm64_proof
+        SHARED
+        riftpp/riftpp_seed0_arm64_proof.cpp
+    )
+
+    target_compile_features(riftpp_seed0_arm64_proof PRIVATE cxx_std_17)
+
+    target_compile_options(
+        riftpp_seed0_arm64_proof
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Werror
+        -fno-exceptions
+        -fno-rtti
+    )
+
+    target_link_libraries(
+        riftpp_seed0_arm64_proof
+        PRIVATE
+        ${android-lib}
+        ${log-lib}
+    )
+endif()
+
+
 add_library(
     codynex_editor_vm
     SHARED
