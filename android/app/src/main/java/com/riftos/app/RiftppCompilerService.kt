@@ -32,6 +32,7 @@ class RiftppCompilerService : Service() {
         internal const val DESCRIPTOR = "com.riftos.app.RiftppCompilerService"
         internal const val TRANSACTION_PID = IBinder.FIRST_CALL_TRANSACTION
         internal const val TRANSACTION_COMPILE = IBinder.FIRST_CALL_TRANSACTION + 1
+        internal const val TRANSACTION_COMPILE_PROOF = IBinder.FIRST_CALL_TRANSACTION + 2
 
         private const val COMPILER_BYTES = 276
         private const val MAX_SOURCE_BYTES = 4096
@@ -48,7 +49,8 @@ class RiftppCompilerService : Service() {
     private external fun nativeCompile(
         compiler: ByteArray,
         source: ByteArray,
-        output: ByteArray
+        output: ByteArray,
+        proveGeneratedPayload: Boolean
     ): LongArray
 
     private val binder = object : Binder() {
@@ -64,12 +66,17 @@ class RiftppCompilerService : Service() {
                     reply?.writeInt(Process.myPid())
                     true
                 }
-                TRANSACTION_COMPILE -> {
+                TRANSACTION_COMPILE, TRANSACTION_COMPILE_PROOF -> {
                     data.enforceInterface(DESCRIPTOR)
                     val compiler = data.createByteArray()
                     val source = data.createByteArray()
                     val capacity = data.readInt()
-                    val result = executeApproved(compiler, source, capacity)
+                    val result = executeApproved(
+                        compiler,
+                        source,
+                        capacity,
+                        code == TRANSACTION_COMPILE_PROOF
+                    )
                     reply?.writeNoException()
                     reply?.writeBundle(result)
                     true
@@ -84,7 +91,8 @@ class RiftppCompilerService : Service() {
     private fun executeApproved(
         compiler: ByteArray?,
         source: ByteArray?,
-        outputCapacity: Int
+        outputCapacity: Int,
+        proveGeneratedPayload: Boolean
     ): Bundle {
         val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
         val expectedSha = if (Process.is64Bit()) ARM64_SHA256 else ARM32_SHA256
@@ -110,16 +118,18 @@ class RiftppCompilerService : Service() {
 
         val output = ByteArray(outputCapacity)
         val nativeResult = try {
-            nativeCompile(compilerBytes, sourceBytes, output)
+            nativeCompile(compilerBytes, sourceBytes, output, proveGeneratedPayload)
         } catch (failure: Throwable) {
             return rejected(hostAbi, "native-call", compilerSha, failure.message)
         }
-        if (nativeResult.size != 2) {
+        if (nativeResult.size != 4) {
             return rejected(hostAbi, "native-envelope", compilerSha)
         }
 
         val hostStatus = nativeResult[0].toInt()
         val returnValue = nativeResult[1] and 0xffff_ffffL
+        val generatedPayloadProofStatus = nativeResult[2].toInt()
+        val generatedPayloadReturnValue = nativeResult[3] and 0xffff_ffffL
         if (hostStatus != 0) {
             return Bundle().apply {
                 putString("status", "host-reject")
@@ -150,6 +160,13 @@ class RiftppCompilerService : Service() {
         if (returnValue > outputCapacity.toLong()) {
             return rejected(hostAbi, "result-bounds", compilerSha)
         }
+        if (proveGeneratedPayload && generatedPayloadProofStatus != 0) {
+            return rejected(
+                hostAbi,
+                "generated-payload-host-$generatedPayloadProofStatus",
+                compilerSha
+            )
+        }
 
         val exactOutput = output.copyOf(returnValue.toInt())
         return Bundle().apply {
@@ -164,6 +181,11 @@ class RiftppCompilerService : Service() {
             putByteArray("output", exactOutput)
             putString("outputSha256", sha256(exactOutput))
             putInt("outputBytes", exactOutput.size)
+            putBoolean("generatedPayloadProofRequested", proveGeneratedPayload)
+            if (proveGeneratedPayload) {
+                putInt("generatedPayloadProofStatus", generatedPayloadProofStatus)
+                putLong("generatedPayloadReturnValue", generatedPayloadReturnValue)
+            }
         }
     }
 
@@ -199,7 +221,8 @@ internal object RiftppCompilerClient {
         context: Context,
         compiler: ByteArray,
         source: ByteArray,
-        outputCapacity: Int
+        outputCapacity: Int,
+        proveGeneratedPayload: Boolean = false
     ): JSONObject {
         val appContext = context.applicationContext
         val binderReady = CompletableFuture<IBinder>()
@@ -242,7 +265,13 @@ internal object RiftppCompilerClient {
             val binder = binderReady.get(BIND_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             workerPid = queryPid(binder)
             val future = executor.submit<Bundle> {
-                transactCompile(binder, compiler, source, outputCapacity)
+                transactCompile(
+                    binder,
+                    compiler,
+                    source,
+                    outputCapacity,
+                    proveGeneratedPayload
+                )
             }
 
             val bundle = try {
@@ -293,7 +322,8 @@ internal object RiftppCompilerClient {
         binder: IBinder,
         compiler: ByteArray,
         source: ByteArray,
-        outputCapacity: Int
+        outputCapacity: Int,
+        proveGeneratedPayload: Boolean
     ): Bundle {
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
@@ -302,7 +332,13 @@ internal object RiftppCompilerClient {
             data.writeByteArray(compiler)
             data.writeByteArray(source)
             data.writeInt(outputCapacity)
-            if (!binder.transact(RiftppCompilerService.TRANSACTION_COMPILE, data, reply, 0)) {
+            val transactionCode =
+                if (proveGeneratedPayload) {
+                    RiftppCompilerService.TRANSACTION_COMPILE_PROOF
+                } else {
+                    RiftppCompilerService.TRANSACTION_COMPILE
+                }
+            if (!binder.transact(transactionCode, data, reply, 0)) {
                 throw RemoteException("compiler transaction rejected")
             }
             reply.readException()
@@ -331,6 +367,15 @@ internal object RiftppCompilerClient {
             .put("outputSha256", bundle.getString("outputSha256") ?: JSONObject.NULL)
             .put("outputBytes", bundle.getInt("outputBytes", 0))
             .put("outputHex", output?.joinToString("") { "%02x".format(it) } ?: JSONObject.NULL)
+            .put("generatedPayloadProofRequested", bundle.getBoolean("generatedPayloadProofRequested", false))
+            .put(
+                "generatedPayloadProofStatus",
+                if (bundle.containsKey("generatedPayloadProofStatus")) bundle.getInt("generatedPayloadProofStatus") else JSONObject.NULL
+            )
+            .put(
+                "generatedPayloadReturnValue",
+                if (bundle.containsKey("generatedPayloadReturnValue")) bundle.getLong("generatedPayloadReturnValue") else JSONObject.NULL
+            )
     }
 
     private fun failure(

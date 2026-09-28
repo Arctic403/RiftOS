@@ -24,6 +24,8 @@ assert.ok(service.includes('MAX_SOURCE_BYTES = 4096'));
 assert.ok(service.includes('MAX_OUTPUT_BYTES = 4096'));
 assert.ok(service.includes('b1f33b940d2ac199f5e38c1c621cd8b27ed15dd3a60fcb85daad7b7154b2ee0c'));
 assert.ok(service.includes('1725b5341e87a09943737130a945d8ee500492370da8ce648f696b331e118653'));
+assert.ok(service.includes('TRANSACTION_COMPILE_PROOF'));
+assert.ok(service.includes('proveGeneratedPayload'));
 assert.ok(service.includes('Process.killProcess(workerPid)'), 'timeout path must kill the private worker process');
 assert.ok(service.includes('compiler-process-died'), 'binder death must be classified as compiler crash');
 
@@ -33,7 +35,12 @@ assert.ok(native.includes('PROT_READ | PROT_WRITE'));
 assert.ok(native.includes('PROT_READ | PROT_EXEC'));
 assert.ok(native.includes('__builtin___clear_cache'));
 assert.ok(native.includes('using CompilerFn = uint32_t (*)('));
+assert.ok(native.includes('using GeneratedPayloadFn = uint32_t (*)()'));
+assert.ok(native.includes('kHostPayloadOffset = 16U'));
+assert.ok(native.includes('kHostPayloadOffset = 24U'));
+assert.ok(native.includes('proveGeneratedPayload == JNI_TRUE'));
 assert.ok(native.includes('compilerResult != 0xffffffffU'));
+assert.ok(!native.includes('nativeExecutePayload'), 'generic caller-supplied payload execution API appeared');
 assert.ok(native.includes('outputRegion.pageSize - static_cast<size_t>(outputLength)'));
 
 for (const forbidden of ['RPP0', '"ret ', 'QuickJS', 'runVm1', 'MOVI', 'BRNZ']) {
@@ -50,6 +57,9 @@ assert.ok(shell.includes('"riftpp-host" -> executeRiftppHostCommand(cwd, args)')
 assert.ok(shell.includes('compiler.arm64.hex'));
 assert.ok(shell.includes('compiler.arm32.hex'));
 assert.ok(shell.includes('RiftppCompilerClient.execute('));
+assert.ok(shell.includes('riftpp-host prove'));
+assert.ok(shell.includes('val proveGeneratedPayload = action == "prove"'));
+assert.ok(!shell.includes('payload-file'), 'prove route must not accept caller-supplied executable payload files');
 assert.ok(shell.includes('text.endsWith("\\n")'), 'canonical compiler hex newline must be accepted');
 assert.ok(!shell.includes('text.endsWith("\\\\n")'), 'literal backslash-n must not be treated as compiler-file newline');
 

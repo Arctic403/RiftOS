@@ -12,6 +12,13 @@ constexpr jsize kCompilerBytes = 276;
 constexpr jsize kMaxSourceBytes = 4096;
 constexpr jsize kMaxOutputBytes = 4096;
 constexpr uint8_t kCanary = 0xA5;
+constexpr uint32_t kSeedBundleBytes = 32U;
+constexpr size_t kSeedPayloadBytes = 8U;
+#if defined(__aarch64__)
+constexpr size_t kHostPayloadOffset = 16U;
+#elif defined(__arm__)
+constexpr size_t kHostPayloadOffset = 24U;
+#endif
 
 using CompilerFn = uint32_t (*)(
     const uint8_t* source,
@@ -19,6 +26,7 @@ using CompilerFn = uint32_t (*)(
     uint8_t* output,
     uint32_t outputCapacity
 );
+using GeneratedPayloadFn = uint32_t (*)();
 
 struct GuardedPage {
     void* base = MAP_FAILED;
@@ -63,14 +71,22 @@ void releaseGuarded(GuardedPage* region) {
     region->totalSize = 0;
 }
 
-jlongArray resultArray(JNIEnv* env, int32_t hostStatus, uint32_t returnValue) {
-    const jlong values[2] = {
+jlongArray resultArray(
+    JNIEnv* env,
+    int32_t hostStatus,
+    uint32_t returnValue,
+    int32_t generatedPayloadProofStatus = 0,
+    uint32_t generatedPayloadReturnValue = 0U
+) {
+    const jlong values[4] = {
         static_cast<jlong>(hostStatus),
-        static_cast<jlong>(returnValue)
+        static_cast<jlong>(returnValue),
+        static_cast<jlong>(generatedPayloadProofStatus),
+        static_cast<jlong>(generatedPayloadReturnValue)
     };
-    jlongArray result = env->NewLongArray(2);
+    jlongArray result = env->NewLongArray(4);
     if (result != nullptr) {
-        env->SetLongArrayRegion(result, 0, 2, values);
+        env->SetLongArrayRegion(result, 0, 4, values);
     }
     return result;
 }
@@ -84,12 +100,14 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     jobject,
     jbyteArray compilerArray,
     jbyteArray sourceArray,
-    jbyteArray outputArray
+    jbyteArray outputArray,
+    jboolean proveGeneratedPayload
 ) {
 #if !defined(__aarch64__) && !defined(__arm__)
     (void)compilerArray;
     (void)sourceArray;
     (void)outputArray;
+    (void)proveGeneratedPayload;
     return resultArray(env, -90, 0U);
 #else
     if (compilerArray == nullptr || sourceArray == nullptr || outputArray == nullptr) {
@@ -187,6 +205,8 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
         outputBytes,
         static_cast<uint32_t>(outputLength)
     );
+    int32_t generatedPayloadProofStatus = 0;
+    uint32_t generatedPayloadReturnValue = 0U;
 
     const size_t prefixLength =
         outputRegion.pageSize - static_cast<size_t>(outputLength);
@@ -209,6 +229,41 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
         return resultArray(env, -100, compilerResult);
     }
 
+    if (proveGeneratedPayload == JNI_TRUE && compilerResult != 0xffffffffU) {
+        if (compilerResult != kSeedBundleBytes) {
+            generatedPayloadProofStatus = -102;
+        } else {
+            GuardedPage payloadRegion;
+            if (!allocateGuarded(&payloadRegion) || payloadRegion.pageSize < kSeedPayloadBytes) {
+                releaseGuarded(&payloadRegion);
+                generatedPayloadProofStatus = -103;
+            } else {
+                uint8_t* payloadBytes =
+                    payloadRegion.page + payloadRegion.pageSize - kSeedPayloadBytes;
+                memcpy(
+                    payloadBytes,
+                    outputBytes + kHostPayloadOffset,
+                    kSeedPayloadBytes
+                );
+                if (mprotect(
+                        payloadRegion.page,
+                        payloadRegion.pageSize,
+                        PROT_READ | PROT_EXEC
+                    ) != 0) {
+                    generatedPayloadProofStatus = -104;
+                } else {
+                    __builtin___clear_cache(
+                        reinterpret_cast<char*>(payloadBytes),
+                        reinterpret_cast<char*>(payloadBytes) + kSeedPayloadBytes
+                    );
+                    auto generatedPayload = reinterpret_cast<GeneratedPayloadFn>(payloadBytes);
+                    generatedPayloadReturnValue = generatedPayload();
+                }
+                releaseGuarded(&payloadRegion);
+            }
+        }
+    }
+
     if (compilerResult != 0xffffffffU && compilerResult > 0U) {
         env->SetByteArrayRegion(
             outputArray,
@@ -228,6 +283,12 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     releaseGuarded(&outputRegion);
     releaseGuarded(&sourceRegion);
     releaseGuarded(&compilerRegion);
-    return resultArray(env, 0, compilerResult);
+    return resultArray(
+        env,
+        0,
+        compilerResult,
+        generatedPayloadProofStatus,
+        generatedPayloadReturnValue
+    );
 #endif
 }

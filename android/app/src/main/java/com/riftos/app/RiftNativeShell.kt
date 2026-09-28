@@ -219,7 +219,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
-                    "riftpp-host help|status|compile <riftpp-root> <source-file> [output-capacity]   [APPROVED MACHINE-CODE HOST]\n" +
+                    "riftpp-host help|status|compile|prove <riftpp-root> <source-file> [output-capacity]   [APPROVED MACHINE-CODE HOST]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
                     "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
@@ -345,12 +345,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
         if (action == "help") {
             require(args.isEmpty()) {
-                "usage: riftpp-host help|status|compile <riftpp-root> <source-file> [output-capacity]"
+                "usage: riftpp-host help|status|compile|prove <riftpp-root> <source-file> [output-capacity]"
             }
             val text =
                 "Rift++ approved machine-code compiler host\n" +
                     "riftpp-host status\n" +
-                    "riftpp-host compile <riftpp-root> <source-file> [output-capacity]"
+                    "riftpp-host compile <riftpp-root> <source-file> [output-capacity]\n" +
+                    "riftpp-host prove <riftpp-root> <source-file> [output-capacity]"
             return ShellOutcome(text, cwd, nativeResult("riftpp-host").put("action", "help"))
         }
         val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
@@ -369,9 +370,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             return ShellOutcome(value.toString(2), cwd, value)
         }
 
-        require(action == "compile") { "unknown riftpp-host command: $action" }
+        require(action == "compile" || action == "prove") {
+            "unknown riftpp-host command: $action"
+        }
         require(args.size in 2..3) {
-            "usage: riftpp-host compile <riftpp-root> <source-file> [output-capacity]"
+            "usage: riftpp-host $action <riftpp-root> <source-file> [output-capacity]"
         }
 
         val rootPath = resolveDisplay(cwd, args[0])
@@ -388,7 +391,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         require(sourceFile.isFile) { "Rift++ source file is missing: $sourcePath" }
         require(sourceFile.length() <= 4096L) { "Rift++ source exceeds 4096-byte host bound" }
 
-        val outputCapacity = args.getOrNull(2)?.toIntOrNull() ?: 4096
+        val proveGeneratedPayload = action == "prove"
+        val outputCapacity =
+            args.getOrNull(2)?.toIntOrNull() ?: if (proveGeneratedPayload) 32 else 4096
         require(outputCapacity in 1..4096) { "output-capacity must be between 1 and 4096" }
 
         val compilerBytes = decodeRiftppCompilerHex(compilerFile.readText(Charsets.UTF_8))
@@ -397,9 +402,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             appContext,
             compilerBytes,
             sourceBytes,
-            outputCapacity
+            outputCapacity,
+            proveGeneratedPayload
         )
             .put("command", "riftpp-host")
+            .put("action", action)
             .put("compilerPath", compilerPath)
             .put("sourcePath", sourcePath)
             .put("requestedOutputCapacity", outputCapacity)
