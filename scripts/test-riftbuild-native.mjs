@@ -252,6 +252,33 @@ assert.ok(!mc2aHost.includes('std::string'), 'MC2-A host must remain C-style pro
 assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-rtti/);
 
+const riftppApp0Host = read('android/app/src/main/cpp/riftpp/riftpp_app0_host.cpp');
+assert.match(nativeBuild, /prepare-riftpp-app0/);
+assert.match(nativeBuild, /RIFTPP_APP0_VM_BYTES = 812/);
+assert.match(nativeBuild, /RIFTPP_APP0_COMPILER_HEX_BYTES = 9576/);
+assert.match(nativeBuild, /RIFTPP_APP0_COMPILER_BYTES = 4788/);
+assert.match(nativeBuild, /RIFTPP_APP0_TARGET_PACKAGE/);
+assert.match(nativeBuild, /fun prepareRiftppApp0/);
+assert.match(nativeBuild, /runVm1Bounded/);
+assert.match(nativeBuild, /analyzeApp0Vm1/);
+assert.match(nativeBuild, /hostParsesTig0\", false/);
+assert.match(nativeBuild, /plannerParsesTig0\", false/);
+assert.match(nativeBuild, /requirementAuthority\", \"compiled program\.bin\"/);
+assert.match(nativeBuild, /core\.vm1\.arm32/);
+assert.match(nativeBuild, /io\.output\.bytes/);
+assert.match(riftppApp0Host, /kVmBytes = 812/);
+assert.match(riftppApp0Host, /kProgramAsset = \"program\.bin\"/);
+assert.match(riftppApp0Host, /kOutputBytes = 1024/);
+assert.ok(!riftppApp0Host.includes('program.tig0'), 'App0 host must not parse TIG0 source');
+assert.ok(!riftppApp0Host.includes('Hello from Rift++'), 'App0 host must not embed Hello application behavior');
+assert.ok(!riftppApp0Host.includes('#include <string>'), 'App0 host must not depend on std::string');
+assert.match(cmake, /riftpp_app0_host[\s\S]*?riftpp\/riftpp_app0_host\.cpp/);
+assert.match(cmake, /riftpp_app0_host[\s\S]*?-fno-exceptions/);
+assert.match(cmake, /riftpp_app0_host[\s\S]*?-fno-rtti/);
+assert.ok(gradle.includes('src/main/cpp/riftpp/riftpp_app0_host.cpp'), 'Gradle exact native source snapshot omitted Rift++ App0 host');
+assert.match(installer, /RIFTPP_APP0_TARGET_PACKAGE = \"com\.riftpp\.hello\"/);
+assert.ok(manifest.includes('com.riftpp.hello'), 'RiftOS manifest omitted Rift++ App0 package visibility');
+
 const editorCoreModel = read('android/app/src/main/java/com/codynex/editor/EditorModel.kt');
 const editorCorePorts = read('android/app/src/main/java/com/codynex/editor/EditorPorts.kt');
 const editorCoreController = read('android/app/src/main/java/com/codynex/editor/CodynexEditorController.kt');
@@ -332,7 +359,7 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);

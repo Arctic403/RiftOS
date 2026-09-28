@@ -2852,7 +2852,6 @@ function verifyArm32ElfProofV0(artifact) {
 
 
 const SEMNEXIS_ARM32_RUNTIME_ELF_SCHEMA = 'SEMNEXIS_ARM32_RUNTIME_ELF_V0';
-const ARM32_RUNTIME_MAX_FUNCTIONS = 256;
 const ARM32_RUNTIME_MAX_CALL_DEPTH = 256;
 const ARM32_RUNTIME_REGISTER_ARGUMENT_WORDS = 4;
 const ARM32_RUNTIME_MAX_ARGUMENT_WORDS = 32;
@@ -3788,7 +3787,7 @@ function arm32DecodeBranchTarget(word, fromAddress) {
 
 function emitArm32RuntimeElfV0(ir) {
   ir.verify();
-  if (!ir.functions.length || ir.functions.length > ARM32_RUNTIME_MAX_FUNCTIONS) fail('arm32 runtime: invalid function count');
+  if (!ir.functions.length) fail('arm32 runtime: empty function set');
   const recordByName = new Map(ir.recordTypes.map((record) => [record.name, record]));
   const main = ir.functions.find((fn) => fn.name === 'main');
   if (!main) fail("arm32 runtime: entry function 'main' is required");

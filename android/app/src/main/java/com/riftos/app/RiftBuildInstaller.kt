@@ -20,6 +20,7 @@ import java.io.File
 class RiftBuildInstaller(context: Context) {
     companion object {
         const val TARGET_PACKAGE = "com.riftpp.nativeproof"
+        const val RIFTPP_APP0_TARGET_PACKAGE = "com.riftpp.hello"
         const val MC0_TARGET_PACKAGE = "com.codynex.mc0proof"
         const val MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"
         const val MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"
@@ -33,6 +34,7 @@ class RiftBuildInstaller(context: Context) {
 
         private val ALLOWED_PROOF_PACKAGES = setOf(
             TARGET_PACKAGE,
+            RIFTPP_APP0_TARGET_PACKAGE,
             MC0_TARGET_PACKAGE,
             MC1A_TARGET_PACKAGE,
             MC1B_TARGET_PACKAGE,

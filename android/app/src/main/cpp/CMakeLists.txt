@@ -187,6 +187,33 @@ target_link_libraries(
 
 
 add_library(
+    riftpp_app0_host
+    SHARED
+    riftpp/riftpp_app0_host.cpp
+)
+
+target_compile_features(riftpp_app0_host PRIVATE cxx_std_17)
+
+target_compile_options(
+    riftpp_app0_host
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -fno-exceptions
+    -fno-rtti
+)
+
+target_link_libraries(
+    riftpp_app0_host
+    PRIVATE
+    ${android-lib}
+    ${log-lib}
+)
+
+
+add_library(
     codynex_editor_vm
     SHARED
     editor/editor_vm_bridge.cpp

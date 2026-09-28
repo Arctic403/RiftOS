@@ -96,6 +96,7 @@ riftbuild doctor [project]
 riftbuild validate <project>
 riftbuild plan <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
+riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>
 riftbuild prepare-codynex-mc0 <codynex-root>
 riftbuild prepare-codynex-mc1a <codynex-root>
 riftbuild prepare-codynex-mc1b <codynex-root>
@@ -188,6 +189,32 @@ The encoder writes Android binary XML chunks directly: XML header, UTF-8 string 
 The V0 layout is now fully canonicalized: every XML node uses `lineNumber=1`, comments use `NO_INDEX`, raw lexical attribute values remain in the string pool, and all chunks are little-endian/4-byte aligned. The independently reconstructed reference is exactly 1,440 bytes with SHA-256 `ac035bb5bf89f55a3f34bae8eea980108324d2f36333f1e708f8a0b82af8e7c2`. The Kotlin encoder must reproduce that identity exactly or preparation fails closed.
 
 This V0 encoder is not a general XML/resource compiler.
+
+## Rift++ App0 generated-runtime lane
+
+Status: **SOURCE IMPLEMENTED — INSTALLED RIFTOS / REAL APK PROOF PENDING**
+
+App0 is the first Rift++ application lane that treats runtime support as a generated per-program result instead of one universal Rift++ runtime.
+
+Command: `riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>`.
+
+The current fixed proof app is `rift++/examples/hello`.
+
+The lane deliberately separates authorities: application source is `<app-dir>/program.tig0`; compiler authority is `<riftpp-root>/compiler/tig0/compiler_seed.hex`; execution target authority is `<riftpp-root>/native/m2/vm1/arm32/vm1_seed.hex`; runtime requirements authority is emitted `program.bin`; package identity is `<app-dir>/riftapp.json`; and the generic Android host payload is extracted from the installed RiftOS APK.
+
+RiftBuild hosts the self-hosted 4,788-byte TIG0 compiler in a bounded VM1 interpreter. The host interpreter is execution equipment only: it must not parse TIG0 or emit replacement application instructions.
+
+After compilation, RiftBuild validates every emitted VM1 instruction and derives support requirements from the bytecode. Unknown opcodes, malformed operands, invalid branch targets, or unsupported runtime requirements fail closed.
+
+For the current Hello proof, the expected compiled program is 216 bytes / 54 VM1 instructions and the derived runtime slices are exactly `core.vm1.arm32`, `io.output.bytes`, `android.nativeactivity`, and `android.display.text`. Source input, scratch, file, network, database, task, graphics, audio, and general application heap support are absent.
+
+The prepared package contains only binary `AndroidManifest.xml`, `lib/armeabi-v7a/libriftpp_app0_host.so`, `assets/vm1_seed.bin`, and `assets/program.bin`. The runtime-plan receipt remains build evidence outside the APK and records source/compiler/program hashes, VM1 instruction count, detected requirements, and selected slices.
+
+The App0 native host may load the exact VM1 seed, load bounded `program.bin`, map the VM seed RW then RX, execute with fixed step/output bounds, accept the VM result as output byte count, and present bounded printable text through NativeActivity title/toast. It must not parse TIG0, implement Hello-specific behavior, repair program output, or supply undeclared capabilities.
+
+App0 v0 is intentionally restricted to package `com.riftpp.hello`, ARM32, and `presentation=text` while the proof installer remains allowlisted. General application identity/package policy is a later lane.
+
+Promotion requires rebuilt RiftOS containing the App0 host, followed by `prepare-riftpp-app0 -> pack arm32 -> sign -> verify -> install-proof -> launch-proof`; the real installed application must display exactly `Hello from Rift++`.
 
 ## Codynex C0 .cx editor local packaging lane
 

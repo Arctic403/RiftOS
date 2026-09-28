@@ -17,6 +17,7 @@
         <package android:name="com.codynex.mc2aproof" />
         <package android:name="com.codynex.editor" />
         <package android:name="com.riftpp.nativeproof" />
+        <package android:name="com.riftpp.hello" />
         <package android:name="com.samsung.android.honeyboard" />
     </queries>
 

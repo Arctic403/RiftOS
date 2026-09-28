@@ -38,6 +38,18 @@ class RiftBuildLocalExecutor(context: Context) {
         val dataType: Int,
         val data: Int
     )
+    private data class Vm1Run(
+        val status: Int,
+        val result: Int,
+        val output: ByteArray,
+        val steps: Int
+    )
+    private data class App0Requirements(
+        val instructionCount: Int,
+        val requiresSourceBytes: Boolean,
+        val requiresOutputBytes: Boolean,
+        val requiresScratchBytes: Boolean
+    )
 
     companion object {
         private const val MAX_PROJECT_FILES = 20_000
@@ -57,6 +69,22 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val RIFTPP_V0_APP_GRADLE_SHA = "1d1739a07896c4d7f1e521fa154a0285c5c4eefe87eab718830fee37194c0765"
         private const val RIFTPP_V0_BINARY_MANIFEST_BYTES = 1440
         private const val RIFTPP_V0_BINARY_MANIFEST_SHA = "ac035bb5bf89f55a3f34bae8eea980108324d2f36333f1e708f8a0b82af8e7c2"
+        private const val RIFTPP_APP0_VM_HEX = "native/m2/vm1/arm32/vm1_seed.hex"
+        private const val RIFTPP_APP0_VM_BYTES = 812
+        private const val RIFTPP_APP0_VM_SHA256 = "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"
+        private const val RIFTPP_APP0_COMPILER_HEX = "compiler/tig0/compiler_seed.hex"
+        private const val RIFTPP_APP0_COMPILER_HEX_BYTES = 9576
+        private const val RIFTPP_APP0_COMPILER_HEX_SHA256 = "c756b92c1c0a6dc11060095e0bcb7978087d73d8290a312cb0176908ceadab9b"
+        private const val RIFTPP_APP0_COMPILER_BYTES = 4788
+        private const val RIFTPP_APP0_META = "riftapp.json"
+        private const val RIFTPP_APP0_APK_PROJECT = "apk-proof"
+        private const val RIFTPP_APP0_LIBRARY_NAME = "riftpp_app0_host"
+        private const val RIFTPP_APP0_LIBRARY_FILE = "libriftpp_app0_host.so"
+        private const val RIFTPP_APP0_HOST_APK_ENTRY = "lib/armeabi-v7a/libriftpp_app0_host.so"
+        private const val RIFTPP_APP0_MAX_HOST_BYTES = 4L * 1024L * 1024L
+        private const val RIFTPP_APP0_MAX_SOURCE_BYTES = 64 * 1024
+        private const val RIFTPP_APP0_MAX_PROGRAM_BYTES = 64 * 1024
+        private const val RIFTPP_APP0_STEP_BUDGET = 2_000_000
         private const val MC0_SEED_HEX = "native/mc0/arm32/mc0_seed.hex"
         private const val MC0_SEED_BYTES = 172
         private const val MC0_SEED_SHA256 = "3276dcbf29704b1ba7d9d331e7891ceff10d85b16bb7688c62273aeaa3ca311e"
@@ -266,7 +294,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -277,6 +305,11 @@ class RiftBuildLocalExecutor(context: Context) {
             "prepare-riftpp-v0" -> prepareRiftppV0(
                 args.firstOrNull() ?: error("usage: riftbuild prepare-riftpp-v0 <riftpp-root> [arm32|arm64|universal]"),
                 args.getOrNull(1) ?: "universal",
+                cwd
+            )
+            "prepare-riftpp-app0" -> prepareRiftppApp0(
+                args.firstOrNull() ?: error("usage: riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>"),
+                args.getOrNull(1) ?: error("usage: riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>"),
                 cwd
             )
             "prepare-codynex-mc0" -> prepareCodynexMc0(
@@ -495,9 +528,14 @@ class RiftBuildLocalExecutor(context: Context) {
         require(project.isNotBlank()) { "build.prepare requires a project root" }
         return when (kind) {
             "riftpp-v0" -> prepareRiftppV0(project, args.optString("target", "universal"), cwd)
+            "riftpp-app0" -> prepareRiftppApp0(
+                project,
+                args.optString("appDir").ifBlank { error("build.prepare kind riftpp-app0 requires appDir") },
+                cwd
+            )
             "codynex-mc0" -> prepareCodynexMc0(project, cwd)
             "codynex-editor" -> prepareCodynexEditor(project, cwd)
-            else -> error("build.prepare kind must be riftpp-v0, codynex-mc0, or codynex-editor")
+            else -> error("build.prepare kind must be riftpp-v0, riftpp-app0, codynex-mc0, or codynex-editor")
         }
     }
 
@@ -597,6 +635,309 @@ class RiftBuildLocalExecutor(context: Context) {
 
         atomicWrite(
             File(buildRoot, "riftpp-v0-materialization.json"),
+            result.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(result)
+        return result
+    }
+
+    @Synchronized
+    fun prepareRiftppApp0(
+        project: String,
+        appDir: String,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(appDir.isNotBlank() && !appDir.startsWith("/") && !appDir.contains("..")) {
+            "Rift++ App0 appDir must be a confined project-relative path"
+        }
+
+        val appRoot = projectFile(ref, appDir)
+        require(appRoot.isDirectory) { "Rift++ App0 directory is missing" }
+
+        val metaFile = File(appRoot, RIFTPP_APP0_META).canonicalFile
+        require(confinedTo(appRoot, metaFile) && metaFile.isFile) {
+            "Rift++ App0 metadata is missing"
+        }
+        val meta = JSONObject(readTextBounded(metaFile))
+        require(meta.optString("schema") == "riftpp-app/0") {
+            "Unsupported Rift++ App0 metadata schema"
+        }
+
+        val appName = meta.optString("name")
+        val packageName = meta.optString("package")
+        val versionCode = meta.optInt("versionCode", 0)
+        val versionName = meta.optString("versionName")
+        val entry = meta.optString("entry")
+        val presentation = meta.optString("presentation")
+        val target = meta.optString("target")
+
+        require(appName.isNotBlank() && appName.length <= 80) {
+            "Rift++ App0 name must be 1..80 characters"
+        }
+        require(Regex("^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$").matches(packageName)) {
+            "Rift++ App0 package name is invalid"
+        }
+        require(packageName == RiftBuildInstaller.RIFTPP_APP0_TARGET_PACKAGE) {
+            "Rift++ App0 v0 is restricted to the fixed hello proof package"
+        }
+        require(versionCode in 1..1_000_000) { "Rift++ App0 versionCode is invalid" }
+        require(versionName.isNotBlank() && versionName.length <= 80) {
+            "Rift++ App0 versionName is invalid"
+        }
+        require(entry == "program.tig0") {
+            "Rift++ App0 currently requires entry=program.tig0"
+        }
+        require(presentation == "text") {
+            "Rift++ App0 currently supports presentation=text only"
+        }
+        require(target == "arm32") {
+            "Rift++ App0 currently supports target=arm32 only"
+        }
+
+        val sourceFile = File(appRoot, entry).canonicalFile
+        require(confinedTo(appRoot, sourceFile) && sourceFile.isFile) {
+            "Rift++ App0 TIG0 entry source is missing"
+        }
+        require(sourceFile.length() in 1L..RIFTPP_APP0_MAX_SOURCE_BYTES.toLong()) {
+            "Rift++ App0 source exceeds bounded source size"
+        }
+        val sourceText = readTextBounded(sourceFile)
+        val sourceBytes = sourceText.toByteArray(Charsets.UTF_8)
+        require(sourceBytes.size <= RIFTPP_APP0_MAX_SOURCE_BYTES) {
+            "Rift++ App0 UTF-8 source exceeds bounded source size"
+        }
+
+        val compilerFile = projectFile(ref, RIFTPP_APP0_COMPILER_HEX)
+        require(compilerFile.isFile) { "Rift++ App0 TIG0 compiler seed is missing" }
+        require(compilerFile.length() == RIFTPP_APP0_COMPILER_HEX_BYTES.toLong()) {
+            "Rift++ App0 compiler seed text byte count drift"
+        }
+        require(sha256(compilerFile) == RIFTPP_APP0_COMPILER_HEX_SHA256) {
+            "Rift++ App0 compiler seed text SHA-256 drift"
+        }
+        val compilerHex = readTextBounded(compilerFile)
+        require(compilerHex.length == RIFTPP_APP0_COMPILER_HEX_BYTES &&
+            compilerHex.all { it in '0'..'9' || it in 'a'..'f' }) {
+            "Rift++ App0 compiler seed must remain canonical lowercase hex"
+        }
+        val compiler = decodeHex(compilerHex)
+        require(compiler.size == RIFTPP_APP0_COMPILER_BYTES) {
+            "Rift++ App0 compiler byte count drift"
+        }
+
+        val compileRun = runVm1Bounded(
+            compiler,
+            sourceBytes,
+            RIFTPP_APP0_MAX_PROGRAM_BYTES,
+            RIFTPP_APP0_STEP_BUDGET
+        )
+        require(compileRun.status == 0) {
+            "Rift++ App0 TIG0 compiler VM1 status " + compileRun.status
+        }
+        require(compileRun.result in 1..RIFTPP_APP0_MAX_PROGRAM_BYTES) {
+            "Rift++ App0 compiler returned invalid program byte count " + compileRun.result
+        }
+        val program = compileRun.output.copyOf(compileRun.result)
+        require(program.size % 4 == 0) {
+            "Rift++ App0 compiler emitted malformed VM1 byte count"
+        }
+
+        val requirements = analyzeApp0Vm1(program)
+        require(!requirements.requiresSourceBytes) {
+            "Rift++ App0 program requires io.source.bytes, which App0 host v0 does not yet implement"
+        }
+        require(!requirements.requiresScratchBytes) {
+            "Rift++ App0 program requires scratch bytes, which App0 host v0 does not yet implement"
+        }
+        require(requirements.requiresOutputBytes) {
+            "Rift++ App0 text presentation requires compiled output-buffer behavior"
+        }
+
+        val slices = JSONArray()
+            .put(JSONObject()
+                .put("id", "core.vm1.arm32")
+                .put("reason", "selected execution target"))
+            .put(JSONObject()
+                .put("id", "io.output.bytes")
+                .put("reason", "compiled VM1 writes/observes output buffer"))
+            .put(JSONObject()
+                .put("id", "android.nativeactivity")
+                .put("reason", "Android package entry contract"))
+            .put(JSONObject()
+                .put("id", "android.display.text")
+                .put("reason", "presentation=text package contract"))
+
+        val runtimePlan = JSONObject()
+            .put("schema", "riftpp-runtime-plan/0")
+            .put("app", appName)
+            .put("package", packageName)
+            .put("target", "arm32")
+            .put("sourcePath", projectDisplay(ref, sourceFile))
+            .put("sourceBytes", sourceBytes.size)
+            .put("sourceSha256", sha256(sourceBytes))
+            .put("compilerPath", ref.display + "/" + RIFTPP_APP0_COMPILER_HEX)
+            .put("compilerSeedSha256", sha256(compilerFile))
+            .put("compilerBytes", compiler.size)
+            .put("compileSteps", compileRun.steps)
+            .put("programBytes", program.size)
+            .put("programSha256", sha256(program))
+            .put("instructionCount", requirements.instructionCount)
+            .put("requirements", JSONObject()
+                .put("sourceBytes", requirements.requiresSourceBytes)
+                .put("outputBytes", requirements.requiresOutputBytes)
+                .put("scratchBytes", requirements.requiresScratchBytes))
+            .put("slices", slices)
+
+        val vmFile = projectFile(ref, RIFTPP_APP0_VM_HEX)
+        require(vmFile.isFile) { "Rift++ App0 VM1 seed is missing" }
+        val vm = decodeHex(readTextBounded(vmFile).trim())
+        require(vm.size == RIFTPP_APP0_VM_BYTES) {
+            "Rift++ App0 VM1 byte count drift: " + vm.size
+        }
+        require(sha256(vm) == RIFTPP_APP0_VM_SHA256) {
+            "Rift++ App0 VM1 SHA-256 drift"
+        }
+
+        val host = readOwnApkEntry(
+            RIFTPP_APP0_HOST_APK_ENTRY,
+            RIFTPP_APP0_MAX_HOST_BYTES
+        )
+        verifyElfImage(host, 1, 40)
+
+        val apkProject = File(appRoot, RIFTPP_APP0_APK_PROJECT).canonicalFile
+        require(confinedTo(appRoot, apkProject) && apkProject.isDirectory) {
+            "Rift++ App0 apk-proof project is missing"
+        }
+        val apkDisplay = projectDisplay(ref, apkProject)
+        val sourceValidation = validate(apkDisplay, "/D:/Workspace")
+        require(sourceValidation.optBoolean("sourceReady")) {
+            "Rift++ App0 apk-proof source validation failed"
+        }
+        require(sourceValidation.optString("nativeLibraryName") == RIFTPP_APP0_LIBRARY_NAME) {
+            "Rift++ App0 NativeActivity library declaration drift"
+        }
+
+        val sourceManifest = File(
+            apkProject,
+            "app/src/main/AndroidManifest.xml"
+        ).canonicalFile
+        require(confinedTo(apkProject, sourceManifest) && sourceManifest.isFile) {
+            "Rift++ App0 source manifest is missing"
+        }
+        val sourceManifestText = readTextBounded(sourceManifest)
+        require(sourceManifestText.contains("package=\"" + packageName + "\"")) {
+            "Rift++ App0 source manifest package drift"
+        }
+        require(sourceManifestText.contains(
+            "android:value=\"" + RIFTPP_APP0_LIBRARY_NAME + "\""
+        )) {
+            "Rift++ App0 source manifest library drift"
+        }
+
+        val binaryManifest = buildNativeActivityBinaryManifest(
+            packageName,
+            versionCode,
+            versionName,
+            RIFTPP_APP0_LIBRARY_NAME
+        )
+
+        val buildRoot = File(apkProject, "build/riftbuild").canonicalFile
+        require(confinedTo(apkProject, buildRoot)) {
+            "Rift++ App0 build root escaped apk-proof"
+        }
+        val preparedRoot = File(buildRoot, "prepared").canonicalFile
+        require(confinedTo(buildRoot, preparedRoot)) {
+            "Rift++ App0 prepared root escaped build/riftbuild"
+        }
+        if (preparedRoot.exists()) {
+            require(deleteTreeBounded(preparedRoot, MAX_PROJECT_FILES)) {
+                "Could not clear stale Rift++ App0 prepared package"
+            }
+        }
+
+        val libRoot = File(preparedRoot, "lib/armeabi-v7a").canonicalFile
+        val assetRoot = File(preparedRoot, "assets").canonicalFile
+        require(confinedTo(preparedRoot, libRoot) && confinedTo(preparedRoot, assetRoot)) {
+            "Rift++ App0 prepared path escaped package root"
+        }
+        require(libRoot.mkdirs() || libRoot.isDirectory) {
+            "Could not create Rift++ App0 native library directory"
+        }
+        require(assetRoot.mkdirs() || assetRoot.isDirectory) {
+            "Could not create Rift++ App0 asset directory"
+        }
+
+        val manifestOutput = File(preparedRoot, "AndroidManifest.xml").canonicalFile
+        val hostOutput = File(libRoot, RIFTPP_APP0_LIBRARY_FILE).canonicalFile
+        val vmOutput = File(assetRoot, "vm1_seed.bin").canonicalFile
+        val programOutput = File(assetRoot, "program.bin").canonicalFile
+
+        atomicWrite(manifestOutput, binaryManifest)
+        atomicWrite(hostOutput, host)
+        atomicWrite(vmOutput, vm)
+        atomicWrite(programOutput, program)
+
+        require(isBinaryAndroidManifest(manifestOutput)) {
+            "Rift++ App0 binary AndroidManifest.xml failed validation"
+        }
+        require(sha256(hostOutput) == sha256(host)) {
+            "Rift++ App0 host materialization hash mismatch"
+        }
+        require(sha256(vmOutput) == RIFTPP_APP0_VM_SHA256) {
+            "Rift++ App0 VM materialization hash mismatch"
+        }
+        require(sha256(programOutput) == sha256(program)) {
+            "Rift++ App0 program materialization hash mismatch"
+        }
+
+        require(buildRoot.mkdirs() || buildRoot.isDirectory) {
+            "Could not create Rift++ App0 build evidence root"
+        }
+        val runtimePlanFile = File(buildRoot, "riftpp-app0-runtime-plan.json").canonicalFile
+        atomicWrite(runtimePlanFile, runtimePlan.toString(2).toByteArray(Charsets.UTF_8))
+
+        val runId = runId()
+        val result = JSONObject()
+            .put("format", "riftbuild-riftpp-app0-materialization-v1")
+            .put("runId", runId)
+            .put("state", "prepared-native")
+            .put("project", ref.display)
+            .put("appRoot", projectDisplay(ref, appRoot))
+            .put("androidProject", apkDisplay)
+            .put("target", "arm32")
+            .put("package", packageName)
+            .put("libraryName", RIFTPP_APP0_LIBRARY_NAME)
+            .put("hostSource", "self-apk:" + RIFTPP_APP0_HOST_APK_ENTRY)
+            .put("hostBytes", host.size)
+            .put("hostSha256", sha256(host))
+            .put("vmBytes", vm.size)
+            .put("vmSha256", sha256(vm))
+            .put("compilerSeedSha256", sha256(compilerFile))
+            .put("compilerBytes", compiler.size)
+            .put("compileSteps", compileRun.steps)
+            .put("programBytes", program.size)
+            .put("programSha256", sha256(program))
+            .put("runtimePlan", projectDisplay(ref, runtimePlanFile))
+            .put("runtimePlanSha256", sha256(runtimePlanFile))
+            .put("slices", slices)
+            .put("antiContamination", JSONObject()
+                .put("hostParsesTig0", false)
+                .put("plannerParsesTig0", false)
+                .put("compilerAuthority", RIFTPP_APP0_COMPILER_HEX)
+                .put("requirementAuthority", "compiled program.bin")
+                .put("vmAuthority", RIFTPP_APP0_VM_HEX))
+            .put("manifest", JSONObject()
+                .put("path", projectDisplay(ref, manifestOutput))
+                .put("bytes", manifestOutput.length())
+                .put("sha256", sha256(manifestOutput)))
+            .put("manifestReady", true)
+            .put("signed", false)
+            .put("installableClaimed", false)
+            .put("createdAt", System.currentTimeMillis())
+
+        atomicWrite(
+            File(buildRoot, "riftpp-app0-materialization.json"),
             result.toString(2).toByteArray(Charsets.UTF_8)
         )
         writeRun(result)
@@ -1655,6 +1996,370 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         )
         writeRun(result)
         return result
+    }
+
+
+    private fun runVm1Bounded(
+        program: ByteArray,
+        source: ByteArray,
+        outputCapacity: Int,
+        stepBudget: Int
+    ): Vm1Run {
+        if (program.isEmpty() || program.size % 4 != 0) {
+            return Vm1Run(-4, 0, ByteArray(outputCapacity.coerceAtLeast(0)), 0)
+        }
+        require(outputCapacity in 0..RIFTPP_APP0_MAX_PROGRAM_BYTES) {
+            "VM1 output capacity exceeds App0 bound"
+        }
+        require(stepBudget in 1..RIFTPP_APP0_STEP_BUDGET) {
+            "VM1 step budget exceeds App0 bound"
+        }
+
+        val output = ByteArray(outputCapacity)
+        val regs = IntArray(8)
+        val instructionCount = program.size / 4
+        var pc = 0
+        var steps = 0
+
+        fun invalid(): Vm1Run = Vm1Run(-1, 0, output, steps)
+
+        while (true) {
+            if (pc !in 0 until instructionCount) {
+                return Vm1Run(-3, 0, output, steps)
+            }
+            if (steps >= stepBudget) {
+                return Vm1Run(-2, 0, output, steps)
+            }
+            steps += 1
+
+            val base = pc * 4
+            val op = program[base].toInt() and 0xff
+            val a = program[base + 1].toInt() and 0xff
+            val b = program[base + 2].toInt() and 0xff
+            val c = program[base + 3].toInt() and 0xff
+            pc += 1
+
+            when (op) {
+                1 -> {
+                    if (a >= 8 || c != 0) return invalid()
+                    regs[a] = b
+                }
+                2 -> {
+                    if (a >= 8 || b >= 8 || c >= 8) return invalid()
+                    regs[a] = regs[b] + regs[c]
+                }
+                3 -> {
+                    if (a >= 8 || b != 0 || c != 0) return invalid()
+                    return Vm1Run(0, regs[a], output, steps)
+                }
+                4 -> {
+                    if (a >= 8 || b >= 8 || c >= 8) return invalid()
+                    regs[a] = regs[b] - regs[c]
+                }
+                5 -> {
+                    if (a >= 8 || b >= 8 || c >= 8) return invalid()
+                    regs[a] = if (regs[b] == regs[c]) 1 else 0
+                }
+                6 -> {
+                    if (a >= 8 || b >= 8 || c >= 8) return invalid()
+                    regs[a] = if (Integer.compareUnsigned(regs[b], regs[c]) < 0) 1 else 0
+                }
+                7 -> {
+                    if (a >= 8) return invalid()
+                    if (regs[a] != 0) {
+                        val target = b or (c shl 8)
+                        if (target !in 0 until instructionCount) return invalid()
+                        pc = target
+                    }
+                }
+                8 -> {
+                    if (a >= 8 || b >= 3 || c != 0) return invalid()
+                    regs[a] = when (b) {
+                        0 -> source.size
+                        1 -> output.size
+                        else -> 0
+                    }
+                }
+                9 -> {
+                    if (a >= 8 || c >= 8) return invalid()
+                    val index = Integer.toUnsignedLong(regs[c])
+                    when (b) {
+                        0 -> {
+                            if (index >= source.size.toLong()) return invalid()
+                            regs[a] = source[index.toInt()].toInt() and 0xff
+                        }
+                        2 -> return invalid()
+                        else -> return invalid()
+                    }
+                }
+                10 -> {
+                    if (a >= 8 || c >= 8) return invalid()
+                    val index = Integer.toUnsignedLong(regs[c])
+                    when (b) {
+                        1 -> {
+                            if (index >= output.size.toLong()) return invalid()
+                            output[index.toInt()] = (regs[a] and 0xff).toByte()
+                        }
+                        2 -> return invalid()
+                        else -> return invalid()
+                    }
+                }
+                else -> return invalid()
+            }
+        }
+    }
+
+    private fun analyzeApp0Vm1(program: ByteArray): App0Requirements {
+        require(program.isNotEmpty() && program.size % 4 == 0) {
+            "Rift++ App0 emitted VM1 must be non-empty fixed-width instructions"
+        }
+
+        val instructionCount = program.size / 4
+        var sourceBytes = false
+        var outputBytes = false
+        var scratchBytes = false
+
+        for (pc in 0 until instructionCount) {
+            val base = pc * 4
+            val op = program[base].toInt() and 0xff
+            val a = program[base + 1].toInt() and 0xff
+            val b = program[base + 2].toInt() and 0xff
+            val c = program[base + 3].toInt() and 0xff
+
+            when (op) {
+                1 -> require(a < 8 && c == 0) { "Invalid VM1 const at instruction $pc" }
+                2, 4, 5, 6 -> require(a < 8 && b < 8 && c < 8) {
+                    "Invalid VM1 register operation at instruction $pc"
+                }
+                3 -> require(a < 8 && b == 0 && c == 0) {
+                    "Invalid VM1 return at instruction $pc"
+                }
+                7 -> {
+                    require(a < 8) { "Invalid VM1 branch register at instruction $pc" }
+                    val target = b or (c shl 8)
+                    require(target in 0 until instructionCount) {
+                        "Invalid VM1 branch target at instruction $pc"
+                    }
+                }
+                8 -> {
+                    require(a < 8 && b < 3 && c == 0) {
+                        "Invalid VM1 length operation at instruction $pc"
+                    }
+                    when (b) {
+                        0 -> sourceBytes = true
+                        1 -> outputBytes = true
+                        2 -> scratchBytes = true
+                    }
+                }
+                9 -> {
+                    require(a < 8 && c < 8 && (b == 0 || b == 2)) {
+                        "Invalid VM1 read8 operation at instruction $pc"
+                    }
+                    if (b == 0) sourceBytes = true else scratchBytes = true
+                }
+                10 -> {
+                    require(a < 8 && c < 8 && (b == 1 || b == 2)) {
+                        "Invalid VM1 write8 operation at instruction $pc"
+                    }
+                    if (b == 1) outputBytes = true else scratchBytes = true
+                }
+                else -> error("Unknown VM1 opcode $op at instruction $pc")
+            }
+        }
+
+        return App0Requirements(
+            instructionCount = instructionCount,
+            requiresSourceBytes = sourceBytes,
+            requiresOutputBytes = outputBytes,
+            requiresScratchBytes = scratchBytes
+        )
+    }
+
+    private fun buildNativeActivityBinaryManifest(
+        packageName: String,
+        versionCode: Int,
+        versionName: String,
+        libraryName: String
+    ): ByteArray {
+        val strings = listOf(
+            "name", "hasCode", "exported", "value", "minSdkVersion", "versionCode",
+            "versionName", "targetSdkVersion", "android",
+            "http://schemas.android.com/apk/res/android", "manifest", "package",
+            packageName, versionCode.toString(), versionName, "uses-sdk", "26", "36",
+            "application", "false", "activity", "android.app.NativeActivity", "true",
+            "meta-data", "android.app.lib_name", libraryName, "intent-filter", "action",
+            "android.intent.action.MAIN", "category", "android.intent.category.LAUNCHER"
+        )
+
+        fun index(value: String): Int {
+            val found = strings.indexOf(value)
+            require(found >= 0) { "NativeActivity manifest string is not in pool: $value" }
+            return found
+        }
+
+        fun stringAttr(
+            name: String,
+            value: String,
+            namespace: Int = index("http://schemas.android.com/apk/res/android")
+        ): ManifestAttr = ManifestAttr(
+            namespace,
+            index(name),
+            index(value),
+            XML_VALUE_STRING,
+            index(value)
+        )
+
+        fun intAttr(name: String, rawValue: String, value: Int): ManifestAttr = ManifestAttr(
+            index("http://schemas.android.com/apk/res/android"),
+            index(name),
+            index(rawValue),
+            XML_VALUE_INT_DEC,
+            value
+        )
+
+        fun boolAttr(name: String, rawValue: String, value: Boolean): ManifestAttr = ManifestAttr(
+            index("http://schemas.android.com/apk/res/android"),
+            index(name),
+            index(rawValue),
+            XML_VALUE_INT_BOOLEAN,
+            if (value) -1 else 0
+        )
+
+        fun stringPool(): ByteArray {
+            val offsets = ArrayList<Int>(strings.size)
+            val data = ByteArrayOutputStream()
+            for (value in strings) {
+                val bytes = value.toByteArray(Charsets.UTF_8)
+                require(value.length < 0x80 && bytes.size < 0x80) {
+                    "NativeActivity manifest string exceeds one-byte UTF-8 pool length"
+                }
+                offsets.add(data.size())
+                writeManifestLength8(data, value.length)
+                writeManifestLength8(data, bytes.size)
+                data.write(bytes)
+                data.write(0)
+            }
+            while (data.size() % 4 != 0) data.write(0)
+
+            val stringsStart = 28 + (strings.size * 4)
+            val dataBytes = data.toByteArray()
+            val output = ByteArrayOutputStream()
+            writeManifestChunkHeader(
+                output,
+                XML_STRING_POOL_TYPE,
+                28,
+                stringsStart + dataBytes.size
+            )
+            writeManifestU32(output, strings.size)
+            writeManifestU32(output, 0)
+            writeManifestU32(output, XML_UTF8_FLAG)
+            writeManifestU32(output, stringsStart)
+            writeManifestU32(output, 0)
+            for (offset in offsets) writeManifestU32(output, offset)
+            output.write(dataBytes)
+            return output.toByteArray()
+        }
+
+        fun namespace(type: Int): ByteArray {
+            val output = ByteArrayOutputStream()
+            writeManifestNodeHeader(output, type, 24)
+            writeManifestU32(output, index("android"))
+            writeManifestU32(output, index("http://schemas.android.com/apk/res/android"))
+            return output.toByteArray()
+        }
+
+        fun startElement(name: String, attrs: List<ManifestAttr>): ByteArray {
+            val output = ByteArrayOutputStream()
+            writeManifestNodeHeader(output, XML_START_ELEMENT_TYPE, 36 + (attrs.size * 20))
+            writeManifestU32(output, XML_NO_INDEX)
+            writeManifestU32(output, index(name))
+            writeManifestU16(output, 20)
+            writeManifestU16(output, 20)
+            writeManifestU16(output, attrs.size)
+            writeManifestU16(output, 0)
+            writeManifestU16(output, 0)
+            writeManifestU16(output, 0)
+            for (attr in attrs) {
+                writeManifestU32(output, attr.namespace)
+                writeManifestU32(output, attr.name)
+                writeManifestU32(output, attr.rawValue)
+                writeManifestU16(output, 8)
+                output.write(0)
+                output.write(attr.dataType)
+                writeManifestU32(output, attr.data)
+            }
+            return output.toByteArray()
+        }
+
+        fun endElement(name: String): ByteArray {
+            val output = ByteArrayOutputStream()
+            writeManifestNodeHeader(output, XML_END_ELEMENT_TYPE, 24)
+            writeManifestU32(output, XML_NO_INDEX)
+            writeManifestU32(output, index(name))
+            return output.toByteArray()
+        }
+
+        val body = ByteArrayOutputStream()
+        body.write(stringPool())
+        body.write(buildManifestResourceMap())
+        body.write(namespace(XML_START_NAMESPACE_TYPE))
+        body.write(startElement(
+            "manifest",
+            listOf(
+                stringAttr("package", packageName, XML_NO_INDEX),
+                intAttr("versionCode", versionCode.toString(), versionCode),
+                stringAttr("versionName", versionName)
+            )
+        ))
+        body.write(startElement(
+            "uses-sdk",
+            listOf(
+                intAttr("minSdkVersion", "26", 26),
+                intAttr("targetSdkVersion", "36", 36)
+            )
+        ))
+        body.write(endElement("uses-sdk"))
+        body.write(startElement(
+            "application",
+            listOf(boolAttr("hasCode", "false", false))
+        ))
+        body.write(startElement(
+            "activity",
+            listOf(
+                stringAttr("name", "android.app.NativeActivity"),
+                boolAttr("exported", "true", true)
+            )
+        ))
+        body.write(startElement(
+            "meta-data",
+            listOf(
+                stringAttr("name", "android.app.lib_name"),
+                stringAttr("value", libraryName)
+            )
+        ))
+        body.write(endElement("meta-data"))
+        body.write(startElement("intent-filter", emptyList()))
+        body.write(startElement(
+            "action",
+            listOf(stringAttr("name", "android.intent.action.MAIN"))
+        ))
+        body.write(endElement("action"))
+        body.write(startElement(
+            "category",
+            listOf(stringAttr("name", "android.intent.category.LAUNCHER"))
+        ))
+        body.write(endElement("category"))
+        body.write(endElement("intent-filter"))
+        body.write(endElement("activity"))
+        body.write(endElement("application"))
+        body.write(endElement("manifest"))
+        body.write(namespace(XML_END_NAMESPACE_TYPE))
+
+        val bodyBytes = body.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(output, XML_TYPE, 8, 8 + bodyBytes.size)
+        output.write(bodyBytes)
+        return output.toByteArray()
     }
 
     private fun decodeHex(raw: String): ByteArray {
