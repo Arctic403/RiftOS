@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-26.**
+**CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-28.**
 
 This file reports both current local source state and explicitly identified installed-device proof. New signer/installer source in the current working tree is not called installed until a subsequent Builder/install pass proves it.
 
@@ -28,7 +28,7 @@ From `android/app/build.gradle.kts`:
 - `RiftMcpRuntime` also owns one process-wide passive `RiftDebugHub` and one persistent `RiftMcpOperationJournal`; MCP Server and Tool Host publish correlated spans while journaled calls get restart-safe operation identity, no-replay state, and read-only reconciliation.
 - Current source adds the fixed `codynex` shell family over an explicit Binder binding to `com.codynex.lr0lab/.CodynexBridgeService`, with bounded JSON/source sizes, bounded bind/RPC timeouts and one reconnect after Binder death. `RiftCodynexBridgeClient.kt` is now part of the exact 47-file Gradle Kotlin snapshot; installed-device bridge proof still waits for the next RiftOS build/install.
 - `RiftNativeShell` is the live shell executor and has no renderer fallback.
-- **Rift++ machine-code compiler host C1 is source-implemented and awaiting Builder/install proof.** `riftpp-host` selects only `compiler.arm64.hex` or `compiler.arm32.hex` from a supplied Rift++ root, canonical-decodes exactly 276 bytes, and delegates through Binder to the private `:riftppCompiler` process. `RiftppCompilerService` enforces the approved ABI-specific SHA-256, 4096-byte source/output bounds, bind/execution timeouts and worker-process crash containment. `riftpp_compiler_host.cpp` owns guarded mappings and RW→RX invocation only; it contains no Rift++ parser/emitter semantics. The older QuickJS `riftpp` route remains legacy compatibility/reference, not authority for the new compiler.
+- **Rift++ machine-code compiler host C1 is installed and live-proven on source `22827f11b472f825bbd0f59a06d5ff36f39e84ad`.** Live `riftpp-host status` reports `hostAbi=armeabi-v7a`, private process `:riftppCompiler`, and `riftOsCompilerSemantics=false`. The exact 276-byte ARM32 compiler identity `1725b5341e87a09943737130a945d8ee500492370da8ce648f696b331e118653` compiled `ret 0/1/9/42/255` to the exact documented 32-byte dual-ABI bundles; repeated `ret 42` output was byte-identical; every documented malformed-input representative plus output capacity 31 returned compiler rejection `0xffffffff`; and a tampered compiler was rejected with `compiler-identity` before execution. Generated ARM32 payload execution, crash/timeout fault injection, and ARM64-host proof remain pending. The older QuickJS `riftpp` route remains legacy compatibility/reference, not authority for the new compiler.
 - **RiftBrowser bounded editor bridge is source-complete and awaiting Builder/install proof.** The active HTTPS-page inspector now supports explicit `edit` plus Base64-safe `edit-b64` for non-sensitive text inputs, textareas and contenteditable editor surfaces, with a 256 KiB UTF-8 ceiling, reset support and password/secret/token/API-key/authorization guards. It still exposes no arbitrary JavaScript execution, form submission/deploy authority, cookies, storage, headers or control-value readback.
 - `RiftToolSandbox` is hard-scoped to `filesDir/riftfs/workspace`.
 - the current source model-visible MCP catalog is exactly 21 tools; `rift_debug` is passive/read-only and `rift_mcp_reconcile` is persistent/read-only.

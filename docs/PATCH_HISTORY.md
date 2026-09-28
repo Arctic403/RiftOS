@@ -6,6 +6,20 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.35 — Rift++ C1 live ARM32 compiler proof
+
+Installed RiftOS reports exact source SHA `22827f11b472f825bbd0f59a06d5ff36f39e84ad`. The live `riftpp-host` process reports `armeabi-v7a` and executes the approved 276-byte ARM32 compiler identity `1725b5341e87a09943737130a945d8ee500492370da8ce648f696b331e118653` inside `:riftppCompiler`.
+
+Observed device evidence:
+- `ret 0`, `ret 1`, `ret 9`, `ret 42`, and `ret 255` each returned 32 bytes matching the exact documented dual-ABI bundle;
+- two additional `ret 42` executions returned identical output SHA-256 `d2b545b317af8740acfc4babd03328e9ac3465488c689a352db0af3da356a76b`;
+- every documented malformed source representative returned `compiler-reject` / `0xffffffff`;
+- output capacity 31 returned `compiler-reject` / `0xffffffff`;
+- a one-byte-tampered compiler decoded to a different SHA-256 and was rejected with `reason=compiler-identity` before native execution;
+- temporary staged proof files were deleted afterward and the RiftOS workspace returned to zero source changes before this documentation update.
+
+This proves the ARM32 compiler host artifact itself executes deterministically on real hardware and that C1 normal/rejection/identity paths are live. It does **not** yet prove generated ARM32 payload execution, crash/timeout fault containment under induced native failure, ARM64-host execution, or ARM64/ARM32 cross-host byte equality.
+
 ## Patch 10.34 — C1 source-ownership gate repair
 
 Builder run `36433953342` on source `9bf0ca9ea22db58eaf280dccae32d9bee1154fd1` passed native wiring and transport checks, including the new Rift++ machine-code host regression, then stopped in documentation validation before Kotlin/NDK compilation. The only failures were missing ownership-ledger entries for `RiftppCompilerService.kt` and `scripts/test-riftpp-machine-code-host.mjs`.
