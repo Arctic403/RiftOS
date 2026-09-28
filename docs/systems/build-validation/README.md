@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
 
 ## Purpose
 
@@ -21,6 +21,7 @@ RiftOS repository:
 - scripts/validate-rift-transport.mjs — cross-layer security/authority invariants.
 - scripts/validate-rift-docs.mjs — documentation trust/ownership/maintenance gate.
 - scripts/test-*.mjs — focused active or explicitly retained-reference contracts.
+- scripts/test-riftpp-machine-code-host.mjs — C1 machine-code compiler-host regression: private-process declaration, exact compiler identities/bounds, RW→RX native host markers, shell route wiring, canonical hex newline handling and explicit absence of Rift++ parser/emitter semantics from the host.
 - android/app/build.gradle.kts — Android source snapshot, generated headless assets and WebView ownership preBuild gates.
 
 External Builder mirror audited during this pass:

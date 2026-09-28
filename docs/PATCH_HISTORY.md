@@ -6,6 +6,19 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.34 — C1 source-ownership gate repair
+
+Builder run `36433953342` on source `9bf0ca9ea22db58eaf280dccae32d9bee1154fd1` passed native wiring and transport checks, including the new Rift++ machine-code host regression, then stopped in documentation validation before Kotlin/NDK compilation. The only failures were missing ownership-ledger entries for `RiftppCompilerService.kt` and `scripts/test-riftpp-machine-code-host.mjs`.
+
+Repair:
+- add exact `SOURCE_OWNERSHIP.md` rows for both maintained files;
+- assign the compiler service to Android-host/build-validation documentation;
+- assign the focused regression to build-validation/Android-host documentation;
+- update the corresponding subsystem ownership sections and scripts index;
+- preserve the C1 implementation unchanged.
+
+This patch changes documentation ownership only. It does not alter compiler bytes, compiler admission identities, Binder/JNI behavior, executable-memory policy, shell authority, or C1 proof claims. The next Builder run must pass the source gate before Kotlin/NDK compilation can be evaluated.
+
 ## Patch 10.33 — Rift++ machine-code compiler execution host C1
 
 ### Contract

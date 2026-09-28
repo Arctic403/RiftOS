@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
 
 This subsystem was rebuilt from `MainActivity.kt`, `AndroidManifest.xml`, Android resources and direct lifecycle/call-site references. Browser, Desktop, MCP, Files, Preview and Accessibility behavior are mentioned only where they cross the Android-host boundary; their subsystem READMEs remain independently unverified until audited.
 
@@ -39,6 +39,7 @@ Host-adjacent lifecycle/source boundaries:
 - `RiftNativeWorkspaceApps.kt` — native Files SAF Activity-result recipient.
 
 Manifest-declared components whose internal behavior belongs elsewhere:
+- `RiftppCompilerService.kt` — private `:riftppCompiler` Binder worker that contains native compiler faults; it owns process isolation, exact artifact admission, timeout/crash reporting and JNI transport only, not Rift++ parsing or code generation.
 - `RiftBuildInstallReceiver` in `RiftBuildInstaller.kt` — private PackageInstaller result + protected first-launch proof receiver for `com.riftpp.nativeproof`;
 - `RiftMcpActivity.kt` — MCP configuration/status UI.
 - `RiftBrowserPreviewActivity.kt` — bounded preview renderer.

@@ -84,6 +84,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftLocalAgentBatch.kt` | `docs/systems/vortex-agent/README.md` + `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserPreviewActivity.kt` | `docs/systems/preview/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftProjectExporter.kt` | `docs/systems/mcp/project-exporter/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftppCompilerService.kt` | `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRelaySettings.kt` | `docs/systems/mcp/relay/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftSecretStore.kt` | `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/kernel/README.md` |
@@ -174,6 +175,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-shell-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` |
 | `scripts/test-riftllm-corpus.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/test-rift-plus-plus-core-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftpp-core/README.md` |
+| `scripts/test-riftpp-machine-code-host.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-semnexis-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |
 | `scripts/test-semnexis-arm32-exec.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |
 | `scripts/test-semnexis-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/shell/README.md` |
