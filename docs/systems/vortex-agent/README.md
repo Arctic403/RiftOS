@@ -365,6 +365,8 @@ Second source audit must verify:
 - strict shell arity/numeric parsing;
 - riftos-agent routes directly to fixed RiftOsLocalAgent with no RiftCLI interception;
 - standalone RiftOS Local Agent work and direct Local Agent batches share one fail-closed process-local execution lease, including the shell Dev Lab shortcut;
+- engineering steps inside a Local Agent batch delegate to the existing ToolHost/Sandbox workspace authorities; Accessibility code does not gain filesystem, process, shell, or network authority;
+- raw RiftShell batching remains disabled even though Local Agent batch can orchestrate bounded engineering operations;
 - RiftOS-only type-focused;
 - native Dev Lab/browser delegation;
 - absence of process/shell/network authority.

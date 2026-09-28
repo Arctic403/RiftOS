@@ -207,6 +207,24 @@ internal class RiftToolSandbox(context: Context) {
     internal fun executeCliBatchRequest(raw: String): String =
         executeRequest(raw, "rift-cli-batch")
 
+    /**
+     * Synchronous Local Agent engineering-batch step.
+     *
+     * This intentionally reuses the canonical workspace sandbox dispatch so Local Agent batch
+     * gains code-engineering power without gaining a second filesystem implementation.
+     */
+    internal fun executeLocalAgentBatchRequest(raw: String): String {
+        val future = executor.submit<String> {
+            executeRequest(raw, "local-agent-batch")
+        }
+        return try {
+            future.get(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (error: Throwable) {
+            future.cancel(true)
+            throw error
+        }
+    }
+
     internal fun submitCliJob(
         raw: String,
         onStart: () -> Unit,

@@ -6,6 +6,28 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.30 — Engineering-capable Local Agent batch + App0 ARM64 build fix
+
+### Batch architecture
+
+`rift_local_agent_batch` remains the only active batch authority, but its step surface is expanded from UI-only work into a bounded engineering control plane.
+
+Engineering steps reuse `RiftToolHost -> RiftToolSandbox` rather than duplicating filesystem logic. Direct batch operations now include Code Mode project/snapshot/stat/hash/list/search/grep/symbol/reference/read/write/replace/patch/move/copy/archive/extract operations plus audit, scan, project export, workspace diff and passive debug queries. `grep` is an alias of bounded Code Mode text search and does not invoke a shell process.
+
+Each step may carry an `args` object; normalization flattens those arguments before plan hashing, validation and execution while rejecting argument collisions. The existing 16-step plan limit, per-step/plan byte limits, exact requestId-to-plan binding, persistence, paging, cancellation and restart no-replay behavior remain in force.
+
+Read-only engineering plans require read permission only. Workspace-mutating steps and UI/device-mutating steps require both read and write; cancellation also requires both. Mutation classification occurs before submit acceptance.
+
+Raw RiftShell batching remains disabled. No process or network authority is added to Local Agent batch.
+
+### Builder failure repair
+
+Builder run `36376407884` on source `d42f329c1c476237d5caaad6c6432153097a3eaa` failed while compiling `riftpp_app0_host.cpp` for ARM64 because the App0 VM helpers are ARM32-only and `-Werror` treated the resulting ARM64 unused constants/functions as fatal. The repair keeps `kOutputBytes`/reporting ABI-neutral and compiles the VM asset constants, VM context, executable mapping and VM helper functions only under `#if defined(__arm__)`. Warnings remain strict; the fix does not weaken CMake flags.
+
+### Validation/status
+
+`test-rift-local-agent-batch.mjs` now locks the engineering operation family, ToolHost/Sandbox reuse, nested-args normalization, permission classification and continued raw-shell separation. `test-riftbuild-native.mjs` locks the ARM32-only App0 helper boundary. Local Rift audit and architecture scan report no new findings beyond the pre-existing `RiftSecretStore.kt` filename heuristic. Full Node/Gradle/NDK Builder proof remains pending the next Builder run.
+
 ## Patch 10.29 — Persistent MCP lost-turn reconciliation and no-replay identity
 
 ### Problem

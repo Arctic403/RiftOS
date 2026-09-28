@@ -13,11 +13,13 @@
 namespace {
 
 constexpr const char* kTag = "RiftppApp0";
+constexpr size_t kOutputBytes = 1024U;
+
+#if defined(__arm__)
 constexpr const char* kVmAsset = "vm1_seed.bin";
 constexpr const char* kProgramAsset = "program.bin";
 constexpr size_t kVmBytes = 812;
 constexpr size_t kMaxProgramBytes = 64U * 1024U;
-constexpr size_t kOutputBytes = 1024U;
 constexpr uint32_t kStepBudget = 200000U;
 
 struct VmContext {
@@ -30,10 +32,8 @@ struct VmContext {
     uint32_t scratchCapacity;
 };
 
-#if defined(__arm__)
 static_assert(sizeof(void*) == 4, "Rift++ App0 ARM32 runtime requires 32-bit pointers");
 static_assert(sizeof(VmContext) == 28, "Rift++ App0 VM1 context layout drift");
-#endif
 
 using VmFn = int32_t (*)(const uint8_t*, uint32_t, VmContext*, uint32_t);
 
@@ -150,6 +150,7 @@ bool printableAscii(const uint8_t* bytes, size_t size) {
     }
     return true;
 }
+#endif
 
 void reportToActivity(ANativeActivity* activity, const char* message, bool success) {
     if (activity == nullptr || message == nullptr) return;

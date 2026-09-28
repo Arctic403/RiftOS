@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const read = file => fs.readFileSync(file, 'utf8');
 const batch = read('android/app/src/main/java/com/riftos/app/RiftLocalAgentBatch.kt');
 const host = read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
+const sandbox = read('android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt');
 const localAgent = read('android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt');
 const shell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const shellServices = read('android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt');
@@ -55,11 +56,29 @@ for (const forbidden of ['RiftCliHost', 'RiftCliExecutionGate', 'RiftNativeShell
 
 assert.match(host, /tool\(\s*"rift_local_agent_batch"/);
 assert.match(host, /RiftLocalAgentBatch\.execute\(activity \?: appContext, args\)/);
-assert.match(host, /action == "submit" \|\| action == "cancel"/);
+assert.match(host, /RiftLocalAgentBatch\.requiresWrite\(args\)/);
 assert.match(host, /if \(requiresWrite\) allowRead\(\) && allowWrite\(\) else allowRead\(\)/);
+assert.match(host, /executeLocalAgentEngineeringStep/);
+assert.match(host, /sandbox\.executeLocalAgentBatchRequest/);
+assert.match(host, /op == "grep" \|\| op in WORKSPACE_OPS/);
+assert.match(host, /"project-export" -> "workspace\.exportProject"/);
+assert.match(host, /"workspace-diff" -> "workspace\.diff"/);
 assert.match(host, /"rift_local_agent_batch" -> \{/);
 assert.match(host, /"rift_local_agent_batch",\s*"rift_cli_batch"/);
 assert.match(host, /unfinished jobs are never replayed after process restart/i);
+for (const op of ['read', 'read_range', 'write', 'replace', 'patch', 'search', 'grep', 'symbols', 'references', 'audit', 'scan', 'workspace-diff', 'project-export']) {
+  assert.ok(batch.includes(`"${op}"`), 'missing engineering batch op: ' + op);
+}
+assert.match(batch, /step\.optJSONObject\("args"\)/);
+assert.match(batch, /in engineeringOps -> validateEngineeringStep/);
+assert.match(batch, /RiftMcpRuntime\.toolHost\(context\)\.executeLocalAgentEngineeringStep/);
+assert.match(batch, /mutatingEngineeringOps/);
+assert.match(batch, /mutatingUiOps/);
+assert.match(batch, /internal fun requiresWrite/);
+assert.match(sandbox, /executeLocalAgentBatchRequest/);
+assert.match(sandbox, /executor\.submit<String>/);
+assert.match(sandbox, /future\.get\(REQUEST_TIMEOUT_MS, TimeUnit\.MILLISECONDS\)/);
+assert.match(sandbox, /executeRequest\(raw, "local-agent-batch"\)/);
 assert.match(localAgent, /object RiftOsLocalAgent/);
 assert.match(localAgent, /RiftLocalAgentExecutionGate\.withAccess\(batchOwnerId\)/);
 assert.match(localAgent, /private fun executeUnlocked\(context: Context, args: JSONObject\)/);

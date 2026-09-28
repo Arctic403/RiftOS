@@ -113,6 +113,64 @@ class RiftToolHost(
         sandbox.candidateImpactAsync(reply)
     }
 
+    /**
+     * Execute one prevalidated Local Agent engineering-batch step through the same authorities
+     * used by the normal MCP code tools. No filesystem behavior is reimplemented here.
+     */
+    internal fun executeLocalAgentEngineeringStep(step: JSONObject, requestId: String): Any? {
+        val op = step.optString("op").trim().lowercase()
+        require(op.isNotBlank()) { "Local Agent engineering step op is required" }
+
+        if (op == "debug") {
+            val args = JSONObject(step.toString()).apply {
+                remove("id")
+                remove("op")
+            }
+            return debugHub.query(args)
+        }
+
+        val args = JSONObject(step.toString()).apply {
+            remove("id")
+            remove("op")
+        }
+        val method = when {
+            op == "info" -> "sandbox.info"
+            op == "audit" -> "workspace.audit"
+            op == "scan" -> "workspace.scan"
+            op == "project-export" -> "workspace.exportProject"
+            op == "workspace-diff" -> "workspace.diff"
+            op == "grep" || op in WORKSPACE_OPS -> "workspace.exec"
+            else -> throw IllegalArgumentException("Unsupported Local Agent engineering operation: $op")
+        }
+        val methodArgs = if (method == "workspace.exec") {
+            val operation = JSONObject(step.toString()).apply {
+                remove("id")
+                if (op == "grep") put("op", "search")
+                if (has("intent")) remove("intent")
+            }
+            JSONObject()
+                .put("operations", JSONArray().put(operation))
+                .also { target ->
+                    step.optString("intent").takeIf { it.isNotBlank() }?.let { target.put("intent", it) }
+                }
+        } else {
+            args
+        }
+        val response = JSONObject(
+            sandbox.executeLocalAgentBatchRequest(
+                JSONObject()
+                    .put("id", requestId)
+                    .put("method", method)
+                    .put("args", methodArgs)
+                    .toString()
+            )
+        )
+        require(response.optBoolean("ok")) {
+            response.optString("error").ifBlank { "Local Agent engineering operation failed: $op" }
+        }
+        return response.opt("value")
+    }
+
     init {
         migrateLegacyState()
         sandbox = RiftToolSandbox(appContext)
@@ -313,7 +371,7 @@ class RiftToolHost(
         ))
         .put(tool(
             "rift_local_agent_batch",
-            "Submit and control one bounded RiftOS Local Agent batch. Actions: submit, status, result, cancel, list. Submit prevalidates 1..16 fixed-scope Local Agent steps, binds requestId to the exact normalized plan, reserves the Local Agent execution authority, and returns immediately. Execution persists locally without RiftCLI, RiftShell batch, workspace batch, SSE, or a long-lived MCP call. Unfinished jobs are never replayed after process restart.",
+            "Submit and control one bounded RiftOS Local Agent batch. Actions: submit, status, result, cancel, list. Submit prevalidates 1..16 device/UI or engineering steps, binds requestId to the exact normalized plan, reserves the Local Agent execution authority, and returns immediately. Engineering steps reuse the canonical workspace sandbox for read/write/patch/search/symbol/reference/audit/scan/diff/export operations; raw RiftShell batching remains disabled. Execution persists locally without RiftCLI, SSE, or a long-lived MCP call. Unfinished jobs are never replayed after process restart.",
             objectSchema(
                 JSONObject()
                     .put("action", JSONObject()
@@ -327,12 +385,25 @@ class RiftToolHost(
                         .put("type", "array")
                         .put("minItems", 1)
                         .put("maxItems", 16)
-                        .put("description", "Prevalidated fixed-scope RiftOS Local Agent steps. Each step requires a unique id and allowed op.")
+                        .put("description", "Prevalidated RiftOS Local Agent steps. Each step requires a unique id and allowed op. Operation-specific parameters may be supplied inside args; legacy top-level parameters remain accepted.")
                         .put("items", JSONObject()
                             .put("type", "object")
                             .put("properties", JSONObject()
                                 .put("id", stringProperty("Unique step id."))
-                                .put("op", stringProperty("Local Agent operation.")))
+                                .put("op", JSONObject()
+                                    .put("type", "string")
+                                    .put("description", "Device/UI or engineering batch operation.")
+                                    .put("enum", JSONArray(listOf(
+                                        "status", "open", "tree", "click", "tap", "swipe", "type", "back",
+                                        "type-focused", "keyboard", "browser-inspect", "devlab",
+                                        "info", "project", "snapshot", "stat", "hash", "list", "search", "grep",
+                                        "symbols", "references", "read", "read_range", "read_symbol", "write", "replace",
+                                        "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy",
+                                        "archive", "extract", "audit", "scan", "project-export", "workspace-diff", "debug"
+                                    ))))
+                                .put("args", JSONObject()
+                                    .put("type", "object")
+                                    .put("description", "Operation-specific arguments. Examples: path/text for write, path/query for search or grep, path/startLine/endLine for read_range, request for devlab.")))
                             .put("required", JSONArray(listOf("id", "op")))))
                     .put("jobId", stringProperty("Job id returned by submit; required by status, result, and cancel."))
                     .put("offset", JSONObject().put("type", "integer").put("minimum", 0))
@@ -896,12 +967,11 @@ class RiftToolHost(
             return
         }
         if (name == "rift_local_agent_batch") {
-            val action = args.optString("action").trim().lowercase()
-            val requiresWrite = action == "submit" || action == "cancel"
+            val requiresWrite = RiftLocalAgentBatch.requiresWrite(args)
             val allowed = if (requiresWrite) allowRead() && allowWrite() else allowRead()
             if (!bypassAccess && !allowed) {
                 val error = if (requiresWrite) {
-                    "Rift MCP Local Agent batch submit/cancel requires read and write access on this device."
+                    "Rift MCP Local Agent batch contains mutation/cancellation authority and requires read and write access on this device."
                 } else {
                     "Rift MCP read access is disabled on this device."
                 }
@@ -1189,7 +1259,7 @@ class RiftToolHost(
         val name = canonicalName(rawName)
         if (name == "rift_mcp_reconcile" || name == "rift_debug") return false
         if (name == "rift_local_agent_batch") {
-            return args.optString("action").trim().lowercase() in setOf("submit", "cancel")
+            return RiftLocalAgentBatch.requiresWrite(args)
         }
         if (name == "rift_shell_exec") return true
         if (isWriteTool(name)) return true

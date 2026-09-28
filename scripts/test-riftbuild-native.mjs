@@ -269,6 +269,7 @@ assert.match(nativeBuild, /io\.output\.bytes/);
 assert.match(riftppApp0Host, /kVmBytes = 812/);
 assert.match(riftppApp0Host, /kProgramAsset = \"program\.bin\"/);
 assert.match(riftppApp0Host, /kOutputBytes = 1024/);
+assert.match(riftppApp0Host, /#if defined\(__arm__\)[\s\S]*?kVmAsset = "vm1_seed\.bin"[\s\S]*?#endif[\s\S]*?void reportToActivity/);
 assert.ok(!riftppApp0Host.includes('program.tig0'), 'App0 host must not parse TIG0 source');
 assert.ok(!riftppApp0Host.includes('Hello from Rift++'), 'App0 host must not embed Hello application behavior');
 assert.ok(!riftppApp0Host.includes('#include <string>'), 'App0 host must not depend on std::string');

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
 
 ## Purpose
 
@@ -77,11 +77,28 @@ Write-gated fixed tools:
 
 `rift_workspace_exec` is always read-gated and additionally write-gated when any normalized operation mutates.
 
-`rift_local_agent_batch` submit/cancel requires **both read and write**; status/result/list is read-only.
+`rift_local_agent_batch` is permission-classified from its normalized plan. Read-only engineering batches require read access; any UI-mutating step or workspace mutation requires both read and write. Cancel requires both read and write; status/result/list is read-only.
 
 `rift_shell_exec` requires **both read and write** because it has broader native RiftOS authority than the workspace sandbox.
 
 Shell denial messages now identify whether read, write, or both grants are missing.
+
+## Local Agent batch engineering surface
+
+The direct Local Agent batch is a persistent **control plane**, not a second implementation of filesystem/code authority.
+
+A batch may contain up to 16 prevalidated steps and now supports two step families:
+
+- device/UI steps: status, open, tree, click, tap, swipe, type, type-focused, keyboard, back, browser-inspect, devlab;
+- engineering steps backed by the existing Tool Host/Sandbox authorities: info, stat, hash, list, read, read_range, read_symbol, write, replace, patch, patch_range, apply_hunks, mkdir, remove, move, rename, copy, archive, extract, project, snapshot, search, grep, symbols, references, audit, scan, project-export, workspace-diff and debug.
+
+`grep` is a convenience alias for the same bounded workspace text-search implementation used by Code Mode `search`; it does not invoke a shell process.
+
+Engineering steps reuse the normal workspace sandbox for path confinement, mutation guards, atomic writes, patch-session provenance, symbol/reference indexing, archive safety, search budgets and result bounds. They are serialized through the sandbox's existing bounded single-thread execution lane so batch work cannot race ordinary MCP workspace work. The batch executor must not duplicate those implementations.
+
+Raw RiftShell execution is intentionally **not** a batch step. The retired RiftShell batch path remains disabled. Build/git/shell work continues through their dedicated bounded authorities unless a future fixed-scope Local Agent operation is explicitly designed and tested.
+
+A read-only engineering plan may run with read permission alone. Any workspace mutation or device/UI mutation upgrades the whole submitted plan to require both read and write before it is accepted. This classification happens from the normalized plan before execution.
 
 ## Workspace-operation normalization
 

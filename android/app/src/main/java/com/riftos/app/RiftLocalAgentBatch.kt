@@ -75,10 +75,24 @@ object RiftLocalAgentBatch {
     private const val RESULT_PAGE_MAX = 4
     private const val TERMINAL_RETENTION_MS = 24 * 60 * 60 * 1000L
 
-    private val allowedOps = setOf(
+    private val uiOps = setOf(
         "status", "open", "tree", "click", "tap", "swipe", "type", "back",
         "type-focused", "keyboard", "browser-inspect", "devlab"
     )
+    private val engineeringOps = setOf(
+        "info", "project", "snapshot", "stat", "hash", "list", "search", "grep",
+        "symbols", "references", "read", "read_range", "read_symbol", "write", "replace",
+        "patch", "patch_range", "apply_hunks", "mkdir", "remove", "move", "rename", "copy",
+        "archive", "extract", "audit", "scan", "project-export", "workspace-diff", "debug"
+    )
+    private val mutatingEngineeringOps = setOf(
+        "write", "replace", "patch", "patch_range", "apply_hunks", "mkdir", "remove",
+        "move", "rename", "copy", "archive", "extract"
+    )
+    private val mutatingUiOps = setOf(
+        "open", "click", "tap", "swipe", "type", "back", "type-focused", "keyboard", "browser-inspect", "devlab"
+    )
+    private val allowedOps = uiOps + engineeringOps
     private val terminalStates = setOf(
         "completed", "completed_with_failures", "failed", "failed_may_have_applied", "cancelled",
         "cancelled_may_have_applied", "interrupted_on_restart"
@@ -110,6 +124,23 @@ object RiftLocalAgentBatch {
         val results: JSONArray = JSONArray(),
         var future: Future<*>? = null
     )
+
+    /** Conservative permission classifier used before a submit/cancel is accepted by ToolHost. */
+    internal fun requiresWrite(args: JSONObject): Boolean {
+        return when (args.optString("action").trim().lowercase()) {
+            "cancel" -> true
+            "submit" -> {
+                val steps = args.optJSONArray("steps") ?: return true
+                for (index in 0 until steps.length()) {
+                    val step = steps.optJSONObject(index) ?: return true
+                    val op = step.optString("op").trim().lowercase()
+                    if (op in mutatingEngineeringOps || op in mutatingUiOps) return true
+                }
+                false
+            }
+            else -> false
+        }
+    }
 
     fun execute(context: Context, args: JSONObject): JSONObject {
         val appContext = context.applicationContext
@@ -207,6 +238,20 @@ object RiftLocalAgentBatch {
             val raw = rawSteps.optJSONObject(index)
                 ?: throw IllegalArgumentException("Local Agent batch step $index must be an object")
             val step = JSONObject(raw.toString())
+            step.optJSONObject("args")?.let { nested ->
+                val keys = nested.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    require(key !in setOf("id", "op", "args")) {
+                        "Local Agent batch step $index args may not override $key"
+                    }
+                    require(!step.has(key)) {
+                        "Local Agent batch step $index duplicates argument $key"
+                    }
+                    step.put(key, nested.get(key))
+                }
+                step.remove("args")
+            }
             val id = step.optString("id").trim()
             require(id.isNotEmpty()) { "Local Agent batch step $index requires id" }
             require(id.length <= MAX_STEP_ID_CHARS && id.matches(Regex("[A-Za-z0-9._:-]+"))) {
@@ -274,7 +319,34 @@ object RiftLocalAgentBatch {
             "devlab" -> require(step.optJSONObject("request") != null) {
                 "Local Agent batch devlab request object is required"
             }
+            in engineeringOps -> validateEngineeringStep(index, step)
             else -> throw IllegalArgumentException("Unsupported Local Agent batch operation: $op")
+        }
+    }
+
+    private fun validateEngineeringStep(index: Int, step: JSONObject) {
+        val op = step.getString("op")
+        when (op) {
+            "grep" -> requireBoundedText(step, "query", 8192)
+            "project-export" -> if (step.has("maxBytes")) {
+                require(step.optInt("maxBytes") in 1..80 * 1024) {
+                    "Local Agent batch project-export maxBytes must be between 1 and 81920"
+                }
+            }
+            "debug" -> {
+                val action = step.optString("action").trim().lowercase()
+                require(action in setOf("status", "events", "active", "components")) {
+                    "Local Agent batch debug action must be status, events, active, or components"
+                }
+            }
+        }
+        listOf("path", "from", "to", "query", "symbol", "kind", "intent", "mode", "cursor",
+            "expectedSnapshot", "traceId", "component", "find", "expectedHash", "expectedRangeHash")
+            .forEach { key ->
+                if (step.has(key)) requireBoundedText(step, key, 8192, true)
+            }
+        listOf("text", "replace", "expectedText").forEach { key ->
+            if (step.has(key)) requireBoundedText(step, key, 240_000, true)
         }
     }
 
@@ -351,7 +423,14 @@ object RiftLocalAgentBatch {
             val result = try {
                 val activity = RiftMcpRuntime.activeActivity()
                 val executionContext: Context = activity ?: context
-                val value = RiftOsLocalAgent.execute(executionContext, request, job.id)
+                val value = if (request.getString("op") in engineeringOps) {
+                    RiftMcpRuntime.toolHost(context).executeLocalAgentEngineeringStep(
+                        request,
+                        "${job.id}:$stepId"
+                    )
+                } else {
+                    RiftOsLocalAgent.execute(executionContext, request, job.id)
+                }
                 JSONObject()
                     .put("id", stepId)
                     .put("op", request.getString("op"))
@@ -380,7 +459,7 @@ object RiftLocalAgentBatch {
                         context,
                         job,
                         "cancelled_may_have_applied",
-                        "Cancellation was observed after step $stepId; completed UI actions are not reversible"
+                        "Cancellation was observed after step $stepId; completed actions or workspace mutations are not reversible"
                     )
                 }
                 return
@@ -393,7 +472,7 @@ object RiftLocalAgentBatch {
                         "failed_may_have_applied",
                         result.optString(
                             "error",
-                            "Local Agent batch step failed after one or more UI actions may have applied"
+                            "Local Agent batch step failed after one or more actions or workspace mutations may have applied"
                         )
                     )
                 }
