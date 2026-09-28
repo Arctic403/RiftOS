@@ -113,4 +113,26 @@ assert.ok(shell.includes('genAArm64SourceFile.length() <= 32768L'));
 assert.ok(shell.includes('sourceFile.length() <= 4096L'), 'generic compile source bound must remain 4096');
 assert.ok(!shell.includes('payload-file'), 'S2 bootstrap must not expose arbitrary executable payload input');
 
+assert.ok(service.includes('TRANSACTION_S2_VECTORS'));
+assert.ok(service.includes('S2_VECTOR_SOURCE_BYTES = 560'));
+assert.ok(service.includes('S2_VECTOR_OUTPUT_BYTES = 2240'));
+assert.ok(service.includes('cf33c59d52c504e3464e6e23e527ea22dc0e64117b82d3f4b5dcd3a0541ea412'));
+assert.ok(service.includes('3075cb2d91a3bf1411d1a0b63c1c38dd2f3482ae3f3b2ea146d35699156aa287'));
+assert.ok(service.includes('executeS2Vectors'));
+assert.ok(service.includes('nativeS2Vectors'));
+assert.ok(service.includes('outputsExecuted'));
+assert.ok(native.includes('Java_com_riftos_app_RiftppCompilerService_nativeS2Vectors'));
+assert.ok(native.includes('kS2VectorSourceBytes = 560'));
+assert.ok(native.includes('kS2VectorOutputBytes = 2240'));
+assert.ok(native.includes('runStage1Compiler('));
+assert.ok(!native.includes('reinterpret_cast<CompilerFn>(output32)'), 'S2 vector output must never execute');
+assert.ok(!native.includes('reinterpret_cast<CompilerFn>(output64)'), 'S2 vector output must never execute');
+assert.ok(shell.includes('riftpp-host s2-vectors <riftpp-root>'));
+assert.ok(shell.includes('s2/vectors/emitter-corpus.arm32.r2.hex'));
+assert.ok(shell.includes('s2/vectors/emitter-corpus.arm64.r2.hex'));
+assert.ok(shell.includes('s2/bootstrap/$genAName'));
+assert.ok(shell.includes('decodeRiftppExactRawHex'));
+assert.ok(shell.includes('RiftppCompilerClient.executeS2Vectors('));
+assert.ok(shell.includes('sourceFile.length() <= 4096L'), 'generic compile source bound must remain 4096');
+
 console.log('Rift++ machine-code compiler host regression PASS');

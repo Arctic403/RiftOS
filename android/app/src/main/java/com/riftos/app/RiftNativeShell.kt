@@ -345,7 +345,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
         if (action == "help") {
             require(args.isEmpty()) {
-                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap <riftpp-root> [source-file] [output-capacity]"
+                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap|s2-vectors <riftpp-root> [source-file] [output-capacity]"
             }
             val text =
                 "Rift++ approved machine-code compiler host\n" +
@@ -353,7 +353,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftpp-host compile <riftpp-root> <source-file> [output-capacity]\n" +
                     "riftpp-host prove <riftpp-root> <source-file> [output-capacity]\n" +
                     "riftpp-host stage1-selfhost <riftpp-root>\n" +
-                    "riftpp-host s2-bootstrap <riftpp-root>"
+                    "riftpp-host s2-bootstrap <riftpp-root>\n" +
+                    "riftpp-host s2-vectors <riftpp-root>"
             return ShellOutcome(text, cwd, nativeResult("riftpp-host").put("action", "help"))
         }
         val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
@@ -512,6 +513,58 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             return ShellOutcome(value.toString(2), cwd, value)
         }
 
+        if (action == "s2-vectors") {
+            require(args.size == 1) {
+                "usage: riftpp-host s2-vectors <riftpp-root>"
+            }
+            val rootPath = resolveDisplay(cwd, args[0])
+            val root = resolveFile(rootPath)
+            require(root.isDirectory) { "Rift++ root is not a directory: $rootPath" }
+
+            val genAName =
+                if (Process.is64Bit()) "compiler.gena.arm64.hex" else "compiler.gena.arm32.hex"
+            val genAExpectedBytes = if (Process.is64Bit()) 2884 else 3128
+            val genAPath = joinDisplay(rootPath, "s2/bootstrap/$genAName")
+            val arm32SourcePath =
+                joinDisplay(rootPath, "s2/vectors/emitter-corpus.arm32.r2.hex")
+            val arm64SourcePath =
+                joinDisplay(rootPath, "s2/vectors/emitter-corpus.arm64.r2.hex")
+            val genAFile = resolveFile(genAPath)
+            val arm32SourceFile = resolveFile(arm32SourcePath)
+            val arm64SourceFile = resolveFile(arm64SourcePath)
+            require(genAFile.isFile) { "Rift++ Generation-A artifact is missing: $genAPath" }
+            require(arm32SourceFile.isFile && arm64SourceFile.isFile) {
+                "Rift++ S2 vector corpus files are missing"
+            }
+            require(genAFile.length() <= 8192L) {
+                "Rift++ Generation-A hex file exceeds fixed vector bound"
+            }
+            require(arm32SourceFile.length() <= 2048L && arm64SourceFile.length() <= 2048L) {
+                "Rift++ S2 vector corpus exceeds fixed bound"
+            }
+
+            val genACompiler = decodeRiftppExactRawHex(
+                genAFile.readText(Charsets.UTF_8),
+                genAExpectedBytes
+            )
+            val arm32Source =
+                decodeRiftppFixedRecordHex(arm32SourceFile.readText(Charsets.UTF_8))
+            val arm64Source =
+                decodeRiftppFixedRecordHex(arm64SourceFile.readText(Charsets.UTF_8))
+            val value = RiftppCompilerClient.executeS2Vectors(
+                appContext,
+                genACompiler,
+                arm32Source,
+                arm64Source
+            )
+                .put("command", "riftpp-host")
+                .put("action", action)
+                .put("genAPath", genAPath)
+                .put("arm32SourcePath", arm32SourcePath)
+                .put("arm64SourcePath", arm64SourcePath)
+            return ShellOutcome(value.toString(2), cwd, value)
+        }
+
         require(action == "compile" || action == "prove") {
             "unknown riftpp-host command: $action"
         }
@@ -556,6 +609,20 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         return ShellOutcome(value.toString(2), cwd, value)
     }
 
+
+    private fun decodeRiftppExactRawHex(text: String, expectedBytes: Int): ByteArray {
+        require(expectedBytes > 0) { "expected Rift++ raw hex size must be positive" }
+        val normalized = text.trim()
+        require(normalized.length == expectedBytes * 2) {
+            "Rift++ raw hex length does not match fixed identity"
+        }
+        require(normalized.all { it in '0'..'9' || it in 'a'..'f' }) {
+            "Rift++ raw hex must use canonical lowercase hexadecimal"
+        }
+        return ByteArray(expectedBytes) { index ->
+            normalized.substring(index * 2, index * 2 + 2).toInt(16).toByte()
+        }
+    }
 
     private fun decodeRiftppFixedRecordHex(text: String): ByteArray {
         val body = if (text.endsWith("\n")) text.dropLast(1) else text

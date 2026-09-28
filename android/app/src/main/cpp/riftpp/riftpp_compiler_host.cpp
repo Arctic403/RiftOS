@@ -127,6 +127,26 @@ constexpr jsize kS2GenAArm32ImageBytes = 3128;
 constexpr jsize kS2GenAArm64ImageBytes = 2884;
 constexpr jsize kS2ProofSourceBytes = 24;
 constexpr jsize kS2ProofOutputBytes = 96;
+constexpr jsize kS2VectorSourceBytes = 560;
+constexpr jsize kS2VectorOutputBytes = 2240;
+
+jintArray s2VectorResultArray(
+    JNIEnv* env,
+    int32_t hostStatus,
+    uint32_t arm32Bytes,
+    uint32_t arm64Bytes
+) {
+    const jint values[3] = {
+        static_cast<jint>(hostStatus),
+        static_cast<jint>(arm32Bytes),
+        static_cast<jint>(arm64Bytes)
+    };
+    jintArray result = env->NewIntArray(3);
+    if (result != nullptr) {
+        env->SetIntArrayRegion(result, 0, 3, values);
+    }
+    return result;
+}
 
 jlongArray s2ResultArray(
     JNIEnv* env,
@@ -1246,6 +1266,142 @@ Java_com_riftos_app_RiftppCompilerService_nativeS2Bootstrap(
         0,
         proofReturnValue
     );
+#endif
+}
+
+extern "C"
+JNIEXPORT jintArray JNICALL
+Java_com_riftos_app_RiftppCompilerService_nativeS2Vectors(
+    JNIEnv* env,
+    jobject,
+    jbyteArray genACompilerArray,
+    jbyteArray arm32SourceArray,
+    jbyteArray arm64SourceArray,
+    jbyteArray arm32OutputArray,
+    jbyteArray arm64OutputArray
+) {
+#if !defined(__aarch64__) && !defined(__arm__)
+    (void)genACompilerArray;
+    (void)arm32SourceArray;
+    (void)arm64SourceArray;
+    (void)arm32OutputArray;
+    (void)arm64OutputArray;
+    return s2VectorResultArray(env, -270, 0U, 0U);
+#else
+    if (
+        genACompilerArray == nullptr ||
+        arm32SourceArray == nullptr ||
+        arm64SourceArray == nullptr ||
+        arm32OutputArray == nullptr ||
+        arm64OutputArray == nullptr
+    ) {
+        return s2VectorResultArray(env, -271, 0U, 0U);
+    }
+#if defined(__aarch64__)
+    constexpr jsize kHostGenABytes = kS2GenAArm64ImageBytes;
+#else
+    constexpr jsize kHostGenABytes = kS2GenAArm32ImageBytes;
+#endif
+    if (
+        env->GetArrayLength(genACompilerArray) != kHostGenABytes ||
+        env->GetArrayLength(arm32SourceArray) != kS2VectorSourceBytes ||
+        env->GetArrayLength(arm64SourceArray) != kS2VectorSourceBytes ||
+        env->GetArrayLength(arm32OutputArray) != kS2VectorOutputBytes ||
+        env->GetArrayLength(arm64OutputArray) != kS2VectorOutputBytes
+    ) {
+        return s2VectorResultArray(env, -272, 0U, 0U);
+    }
+
+    uint8_t source32[kS2VectorSourceBytes] = {};
+    uint8_t source64[kS2VectorSourceBytes] = {};
+    uint8_t output32[kS2VectorOutputBytes] = {};
+    uint8_t output64[kS2VectorOutputBytes] = {};
+    env->GetByteArrayRegion(
+        arm32SourceArray, 0, kS2VectorSourceBytes, reinterpret_cast<jbyte*>(source32)
+    );
+    env->GetByteArrayRegion(
+        arm64SourceArray, 0, kS2VectorSourceBytes, reinterpret_cast<jbyte*>(source64)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return s2VectorResultArray(env, -273, 0U, 0U);
+    }
+
+    GuardedPage compilerRegion;
+    if (
+        !allocateGuarded(&compilerRegion) ||
+        compilerRegion.pageSize < static_cast<size_t>(kHostGenABytes)
+    ) {
+        releaseGuarded(&compilerRegion);
+        return s2VectorResultArray(env, -274, 0U, 0U);
+    }
+    uint8_t* compilerBytes =
+        compilerRegion.page + compilerRegion.pageSize - static_cast<size_t>(kHostGenABytes);
+    env->GetByteArrayRegion(
+        genACompilerArray, 0, kHostGenABytes, reinterpret_cast<jbyte*>(compilerBytes)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        releaseGuarded(&compilerRegion);
+        return s2VectorResultArray(env, -275, 0U, 0U);
+    }
+    if (mprotect(compilerRegion.page, compilerRegion.pageSize, PROT_READ | PROT_EXEC) != 0) {
+        releaseGuarded(&compilerRegion);
+        return s2VectorResultArray(env, -276, 0U, 0U);
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(compilerBytes),
+        reinterpret_cast<char*>(compilerBytes) + kHostGenABytes
+    );
+    auto compiler = reinterpret_cast<CompilerFn>(compilerBytes);
+
+    uint32_t arm32Length = 0U;
+    const int32_t arm32Status = runStage1Compiler(
+        compiler,
+        source32,
+        static_cast<size_t>(kS2VectorSourceBytes),
+        output32,
+        static_cast<size_t>(kS2VectorOutputBytes),
+        &arm32Length
+    );
+    if (arm32Status != 0 || arm32Length != static_cast<uint32_t>(kS2VectorOutputBytes)) {
+        releaseGuarded(&compilerRegion);
+        return s2VectorResultArray(env, arm32Status != 0 ? arm32Status : -277, arm32Length, 0U);
+    }
+
+    uint32_t arm64Length = 0U;
+    const int32_t arm64Status = runStage1Compiler(
+        compiler,
+        source64,
+        static_cast<size_t>(kS2VectorSourceBytes),
+        output64,
+        static_cast<size_t>(kS2VectorOutputBytes),
+        &arm64Length
+    );
+    releaseGuarded(&compilerRegion);
+    if (arm64Status != 0 || arm64Length != static_cast<uint32_t>(kS2VectorOutputBytes)) {
+        return s2VectorResultArray(
+            env, arm64Status != 0 ? arm64Status : -278, arm32Length, arm64Length
+        );
+    }
+
+    env->SetByteArrayRegion(
+        arm32OutputArray,
+        0,
+        kS2VectorOutputBytes,
+        reinterpret_cast<const jbyte*>(output32)
+    );
+    env->SetByteArrayRegion(
+        arm64OutputArray,
+        0,
+        kS2VectorOutputBytes,
+        reinterpret_cast<const jbyte*>(output64)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return s2VectorResultArray(env, -279, arm32Length, arm64Length);
+    }
+    return s2VectorResultArray(env, 0, arm32Length, arm64Length);
 #endif
 }
 

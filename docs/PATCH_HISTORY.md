@@ -6,6 +6,14 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.42 — Rift++ S2 fixed emitter-corpus diagnostic
+
+After Generation A passed installed ARM32 proof on source `01243f65b81866fd48552be6c33ab2d73752c35a` / Builder run 434, current source adds one bounded derivation-only route: `riftpp-host s2-vectors <riftpp-root>`. It accepts only the exact host-ABI Generation-A image identity and two fixed 70-record S2 corpus sources (560 raw bytes each), then invokes Generation A to produce exactly 2240 bytes for ARM32 and 2240 bytes for ARM64.
+
+The transaction exists only to recover Generation-A's exact deterministic 32-byte slot encodings before authoring the canonical compiler in S2. Kotlin pins the two raw-source hashes and Generation-A identity before JNI execution. Native code maps only the approved Generation-A compiler W→X, compiles both fixed sources through the real compiler, copies the resulting bytes back for hashing/analysis, and explicitly does not execute either corpus output. RiftOS does not parse S2 opcodes or emit S2 instructions, and the generic 4096-byte compile/prove surface remains unchanged.
+
+The corpus covers all 21 S2 v0 opcodes with bounded register/immediate/branch variants. Its raw identities are `cf33c59d…` for ARM32-target source and `3075cb2d…` for ARM64-target source. Structural RiftBuild validation remains green (`sourceReady=true`); audit/scan remain clean except the pre-existing `RiftSecretStore.kt` filename heuristic. Builder compilation and installed execution of this new diagnostic remain pending.
+
 ## Patch 10.41 — Rift++ S2 Generation-A fixed bootstrap host
 
 Current source adds the fixed `riftpp-host s2-bootstrap <riftpp-root>` transaction over the existing private `:riftppCompiler` process. The route admits only exact frozen Seed0 and Stage1 inputs plus exact Generation-A Stage1 sources and exact 24-byte S2 proof sources. It does not change the generic 4096-byte compiler-source ceiling.
@@ -14,7 +22,7 @@ The native transaction reconstructs Stage1 through Seed0, executes the current-h
 
 Kotlin pins exact source/image hashes before native execution. The native worker does not parse S2 opcodes, and the shell's fixed-record decoder only materializes canonical lowercase 8-byte record hex. The existing regression now locks the new transaction, identities, bounds, generated-only execution path, and unchanged generic 4096-byte source limit.
 
-Validation so far: RiftBuild structural validation of `RiftOS-main/android` reports `sourceReady=true` with settings, root Gradle, app Gradle, manifest, and activity checks green. Full audit/scan show only the pre-existing `RiftSecretStore.kt` filename heuristic. General repository native compilation is not available in this installed RiftBuild runtime, so Builder compilation and installed-device proof remain pending.
+Builder run 434 installed source `01243f65b81866fd48552be6c33ab2d73752c35a` and closed the Generation-A device gate. The fixed bootstrap transaction succeeded twice on `armeabi-v7a`, reproduced the exact Generation-A ARM32/ARM64 identities, compiled both 24-byte proof sources to 96-byte target images, and executed the generated ARM32 image with status `0` / return value `42`. ARM64 execution remains deferred to compatible hardware/userspace.
 
 ## Patch 10.40 — Stage1 real-device self-host proof and freeze
 
