@@ -1282,4 +1282,18 @@ assert.throws(
   'native runtime must keep time_state fail-closed at the process-entry or effect boundary'
 );
 
+const largeFunctionSetSource =
+  Array.from({length:300}, (_, index) => 'fn large_' + index + '() -> i32 { return ' + (index % 97) + '; }' + String.fromCharCode(10)).join('') +
+  'fn main() -> i32 { return 7; }' + String.fromCharCode(10);
+const largeFunctionSetProgram = compileSemnexisV0(largeFunctionSetSource);
+assert.equal(largeFunctionSetProgram.ir.functions.length, 301);
+const largeFunctionSetRuntime = emitSemnexisArm32RuntimeElfV0(largeFunctionSetProgram.ir);
+assert.equal(
+  verifySemnexisArm32RuntimeElfV0(largeFunctionSetRuntime, largeFunctionSetProgram.ir),
+  true,
+  'ARM32 runtime must accept more than 256 functions when real artifact bounds are satisfied'
+);
+assert.equal(largeFunctionSetRuntime.functions.length, 301);
+assert.ok(largeFunctionSetRuntime.byteLength < 1024 * 1024);
+
 console.log('ok - Semnexis QuickJS bootstrap compiler');

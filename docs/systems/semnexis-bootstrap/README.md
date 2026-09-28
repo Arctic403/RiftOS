@@ -108,6 +108,8 @@ Compiler/host limits include:
 - bounded native recursive call depth: 256 frames;
 - `semx` captured command output: 256 KiB.
 
+The ARM32 runtime no longer applies the historical 256-function policy cap. That value was a bootstrap-development bound, not an ARM32 ISA or encoding limit, and it must not determine compiler module boundaries. The parser/compiler budget remains 1,024 functions, while emitted ARM32 artifacts remain constrained by the real runtime safety checks above, including artifact size, argument ABI, SSA/frame bounds, recursion depth, relocation validity, and canonical verification. The source regression explicitly emits and verifies a 301-function ARM32 artifact so this policy cap cannot silently return.
+
 The Program Graph maintains an indexed outgoing-edge view for normal operation, but `verify()` rebuilds that index from the authoritative edge array before validation. Recursive-call-cycle discovery is iterative. Only functions proven to participate in recursive call cycles receive the ARM32 `r11` depth guard; non-recursive functions keep the previous machine layout, while recursive depth 257 traps with the canonical runtime trap code.
 
 Graph/plan/IR dumps are lazy and support construction-time output budgets rather than building unbounded strings first.
