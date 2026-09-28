@@ -2,9 +2,29 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-26.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.31 — Hybrid PackageInstaller confirmation handoff
+
+Observed during the first live Rift++ App0 `Hello from Rift++` install proof: self-hosted TIG0 compilation, four-slice runtime materialization, APK packaging, v2 signing and independent verification all passed, but the PackageInstaller session remained at `committed-awaiting-result` and no installer UI appeared. `launch-proof` correctly confirmed `com.riftpp.hello` was not installed.
+
+The live Local Agent also proved that an `open` request can be accepted while Android keeps ChatGPT foregrounded, so a background RiftOS process cannot be assumed to own a visible Activity.
+
+The 2026-09-20 receiver-only installer path had reliable `STATUS_PENDING_USER_ACTION` delivery but could not foreground the nested confirmation intent under Android background-activity restrictions. Its Activity-only successor solved that historical case, but on this device the PackageInstaller status callback was not reaching `RiftBuildInstallActivity`, leaving the session stuck before `pending-user-action` was recorded.
+
+The installer now uses a hybrid boundary:
+
+- PackageInstaller status callbacks target private `RiftBuildInstallReceiver` through `PendingIntent.getBroadcast(...)`;
+- `STATUS_PENDING_USER_ACTION` retains a defensive copy of Android's system confirmation `Intent` in process memory;
+- if a focused registered `MainActivity` exists, confirmation launches immediately from that Activity;
+- otherwise `MainActivity.onResume()` and regained window focus consume the retained confirmation from a foreground Activity;
+- terminal install results clear retained confirmation state;
+- process death does not persist or replay the system-owned nested confirmation intent; the install must be retried;
+- `USER_ACTION_REQUIRED`, verified-v2 input, package allowlisting and explicit Android confirmation remain unchanged.
+
+`test-riftbuild-native.mjs` now rejects regression to Activity-only callback delivery and requires the MainActivity resume bridge. Full proof requires the next rebuilt RiftOS APK followed by the same already-proven App0 artifact chain.
 
 ## Patch 10.30 — Engineering-capable Local Agent batch + App0 ARM64 build fix
 

@@ -14,6 +14,7 @@ for (const file of [nativeBuildPath, signerPath, installerPath]) {
 const nativeBuild = read(nativeBuildPath);
 const signer = read(signerPath);
 const installer = read(installerPath);
+const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
 const shell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');
 const gradle = read('android/app/build.gradle.kts');
@@ -105,10 +106,14 @@ for (const required of [
   'ACTION_MANAGE_UNKNOWN_APP_SOURCES',
   'RiftBuild installer accepts only allowlisted proof packages',
   'class RiftBuildInstallActivity : Activity()',
-  'PendingIntent.getActivity(',
-  'launchForeground(context, confirmIntent)',
+  'PendingIntent.getBroadcast(',
+  'retainPendingConfirmation(confirmIntent)',
+  'resumePendingConfirmation',
+  'confirmationLaunchState',
   'class RiftBuildInstallReceiver : BroadcastReceiver()',
 ]) assert.ok(installer.includes(required), 'RiftBuild installer contract missing: ' + required);
+assert.ok(!installer.includes('PendingIntent.getActivity('), 'PackageInstaller status callback regressed to Activity-only delivery');
+assert.ok(mainActivity.includes('RiftBuildInstaller.resumePendingConfirmation(this)'), 'MainActivity must resume retained PackageInstaller confirmation from a foreground Activity');
 
 const combinedAuthority = nativeBuild + '\n' + signer + '\n' + installer;
 for (const forbidden of [

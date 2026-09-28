@@ -32,6 +32,9 @@ class RiftBuildInstaller(context: Context) {
         const val EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"
         const val ACTION_INSTALL_STATUS = "com.riftos.app.RIFTBUILD_INSTALL_STATUS"
 
+        private val pendingConfirmationLock = Any()
+        @Volatile private var pendingConfirmationIntent: Intent? = null
+
         private val ALLOWED_PROOF_PACKAGES = setOf(
             TARGET_PACKAGE,
             RIFTPP_APP0_TARGET_PACKAGE,
@@ -49,6 +52,32 @@ class RiftBuildInstaller(context: Context) {
                 context.applicationContext.filesDir,
                 "riftfs/system/riftbuild/v1/install-status.json"
             )
+
+        private fun retainPendingConfirmation(intent: Intent?) {
+            synchronized(pendingConfirmationLock) {
+                pendingConfirmationIntent = intent?.let { Intent(it) }
+            }
+        }
+
+        internal fun resumePendingConfirmation(activity: Activity): Boolean {
+            val pending = synchronized(pendingConfirmationLock) {
+                pendingConfirmationIntent?.let { Intent(it) }?.also {
+                    pendingConfirmationIntent = null
+                }
+            } ?: return false
+
+            return runCatching {
+                activity.startActivity(pending)
+                true
+            }.getOrElse {
+                synchronized(pendingConfirmationLock) {
+                    if (pendingConfirmationIntent == null) {
+                        pendingConfirmationIntent = Intent(pending)
+                    }
+                }
+                false
+            }
+        }
 
         private fun readStatus(context: Context): JSONObject {
             val file = statusFile(context)
@@ -152,9 +181,12 @@ class RiftBuildInstaller(context: Context) {
                 .put("reportedPackage", reportedPackage)
                 .put("updatedAt", System.currentTimeMillis())
 
+            if (platformStatus != PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                retainPendingConfirmation(null)
+            }
+
             when (platformStatus) {
                 PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                    updated.put("state", "pending-user-action")
                     val confirmIntent = if (Build.VERSION.SDK_INT >= 33) {
                         intent.getParcelableExtra(
                             Intent.EXTRA_INTENT,
@@ -164,14 +196,29 @@ class RiftBuildInstaller(context: Context) {
                         @Suppress("DEPRECATION")
                         intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
                     }
-                    updated.put(
-                        "confirmationIntentPresent",
-                        confirmIntent != null
-                    )
-                    writeStatus(appContext, updated)
-                    if (confirmIntent != null) {
-                        launchForeground(context, confirmIntent)
+                    retainPendingConfirmation(confirmIntent)
+
+                    val activeActivity = RiftMcpRuntime.activeActivity()
+                        ?.takeIf { it.hasWindowFocus() }
+                    val launchedFromForeground = if (activeActivity != null) {
+                        resumePendingConfirmation(activeActivity)
+                    } else {
+                        false
                     }
+
+                    updated
+                        .put("state", "pending-user-action")
+                        .put("confirmationIntentPresent", confirmIntent != null)
+                        .put("confirmationRetainedInProcess", confirmIntent != null)
+                        .put(
+                            "confirmationLaunchState",
+                            if (launchedFromForeground) {
+                                "foreground-activity"
+                            } else {
+                                "awaiting-riftos-foreground"
+                            }
+                        )
+                    writeStatus(appContext, updated)
                 }
 
                 PackageInstaller.STATUS_SUCCESS -> {
@@ -293,14 +340,14 @@ class RiftBuildInstaller(context: Context) {
 
                 val callbackIntent = Intent(
                     appContext,
-                    RiftBuildInstallActivity::class.java
+                    RiftBuildInstallReceiver::class.java
                 ).setAction(ACTION_INSTALL_STATUS)
 
                 var flags = PendingIntent.FLAG_UPDATE_CURRENT
                 if (Build.VERSION.SDK_INT >= 31) {
                     flags = flags or PendingIntent.FLAG_MUTABLE
                 }
-                val callback = PendingIntent.getActivity(
+                val callback = PendingIntent.getBroadcast(
                     appContext,
                     sessionId,
                     callbackIntent,
