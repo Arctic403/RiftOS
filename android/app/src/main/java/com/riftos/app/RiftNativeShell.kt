@@ -345,7 +345,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
         if (action == "help") {
             require(args.isEmpty()) {
-                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap|s2-vectors <riftpp-root> [source-file] [output-capacity]"
+                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap|s2-selfhost|s2-vectors <riftpp-root> [source-file] [output-capacity]"
             }
             val text =
                 "Rift++ approved machine-code compiler host\n" +
@@ -354,6 +354,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftpp-host prove <riftpp-root> <source-file> [output-capacity]\n" +
                     "riftpp-host stage1-selfhost <riftpp-root>\n" +
                     "riftpp-host s2-bootstrap <riftpp-root>\n" +
+                    "riftpp-host s2-selfhost <riftpp-root>\n" +
                     "riftpp-host s2-vectors <riftpp-root>"
             return ShellOutcome(text, cwd, nativeResult("riftpp-host").put("action", "help"))
         }
@@ -507,6 +508,101 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 .put("stage1Arm64SourcePath", stage1Arm64SourcePath)
                 .put("genAArm32SourcePath", genAArm32SourcePath)
                 .put("genAArm64SourcePath", genAArm64SourcePath)
+                .put("proofArm32SourcePath", proofArm32SourcePath)
+                .put("proofArm64SourcePath", proofArm64SourcePath)
+
+            return ShellOutcome(value.toString(2), cwd, value)
+        }
+
+
+        if (action == "s2-selfhost") {
+            require(args.size == 1) {
+                "usage: riftpp-host s2-selfhost <riftpp-root>"
+            }
+            val rootPath = resolveDisplay(cwd, args[0])
+            val root = resolveFile(rootPath)
+            require(root.isDirectory) { "Rift++ root is not a directory: $rootPath" }
+
+            val genAName =
+                if (Process.is64Bit()) "compiler.gena.arm64.hex" else "compiler.gena.arm32.hex"
+            val genAExpectedBytes = if (Process.is64Bit()) 2884 else 3128
+            val genAPath = joinDisplay(rootPath, "s2/bootstrap/$genAName")
+            val compilerArm32SourcePath =
+                joinDisplay(rootPath, "s2/compiler.arm32.r2.hex")
+            val compilerArm64SourcePath =
+                joinDisplay(rootPath, "s2/compiler.arm64.r2.hex")
+            val proofArm32SourcePath =
+                joinDisplay(rootPath, "s2/ret42.arm32.r2.hex")
+            val proofArm64SourcePath =
+                joinDisplay(rootPath, "s2/ret42.arm64.r2.hex")
+
+            val genAFile = resolveFile(genAPath)
+            val compilerArm32SourceFile = resolveFile(compilerArm32SourcePath)
+            val compilerArm64SourceFile = resolveFile(compilerArm64SourcePath)
+            val proofArm32SourceFile = resolveFile(proofArm32SourcePath)
+            val proofArm64SourceFile = resolveFile(proofArm64SourcePath)
+
+            require(genAFile.isFile) {
+                "Rift++ Generation-A artifact is missing: $genAPath"
+            }
+            require(
+                compilerArm32SourceFile.isFile &&
+                    compilerArm64SourceFile.isFile
+            ) {
+                "Rift++ canonical S2 compiler sources are missing"
+            }
+            require(
+                proofArm32SourceFile.isFile &&
+                    proofArm64SourceFile.isFile
+            ) {
+                "Rift++ S2 proof sources are missing"
+            }
+            require(genAFile.length() <= 8192L) {
+                "Rift++ Generation-A hex file exceeds fixed self-host bound"
+            }
+            require(
+                compilerArm32SourceFile.length() == 23528L &&
+                    compilerArm64SourceFile.length() == 23528L
+            ) {
+                "Rift++ canonical S2 compiler source transport size mismatch"
+            }
+            require(
+                proofArm32SourceFile.length() <= 128L &&
+                    proofArm64SourceFile.length() <= 128L
+            ) {
+                "Rift++ S2 proof source exceeds fixed self-host bound"
+            }
+
+            val genACompiler = decodeRiftppExactRawHex(
+                genAFile.readText(Charsets.UTF_8),
+                genAExpectedBytes
+            )
+            val compilerArm32Source =
+                decodeRiftppFixedRecordHex(
+                    compilerArm32SourceFile.readText(Charsets.UTF_8)
+                )
+            val compilerArm64Source =
+                decodeRiftppFixedRecordHex(
+                    compilerArm64SourceFile.readText(Charsets.UTF_8)
+                )
+            val proofArm32Source =
+                decodeRiftppFixedRecordHex(proofArm32SourceFile.readText(Charsets.UTF_8))
+            val proofArm64Source =
+                decodeRiftppFixedRecordHex(proofArm64SourceFile.readText(Charsets.UTF_8))
+
+            val value = RiftppCompilerClient.executeS2SelfHost(
+                appContext,
+                genACompiler,
+                compilerArm32Source,
+                compilerArm64Source,
+                proofArm32Source,
+                proofArm64Source
+            )
+                .put("command", "riftpp-host")
+                .put("action", action)
+                .put("genAPath", genAPath)
+                .put("compilerArm32SourcePath", compilerArm32SourcePath)
+                .put("compilerArm64SourcePath", compilerArm64SourcePath)
                 .put("proofArm32SourcePath", proofArm32SourcePath)
                 .put("proofArm64SourcePath", proofArm64SourcePath)
 

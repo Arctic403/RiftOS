@@ -135,4 +135,35 @@ assert.ok(shell.includes('decodeRiftppExactRawHex'));
 assert.ok(shell.includes('RiftppCompilerClient.executeS2Vectors('));
 assert.ok(shell.includes('sourceFile.length() <= 4096L'), 'generic compile source bound must remain 4096');
 
+
+assert.ok(service.includes('TRANSACTION_S2_SELF_HOST'));
+assert.ok(service.includes('S2_SELF_HOST_TIMEOUT_MS = 20_000L'));
+assert.ok(service.includes('S2_CANONICAL_COMPILER_SOURCE_BYTES = 11072'));
+assert.ok(service.includes('S2_SELF_HOST_IMAGE_BYTES = 44288'));
+assert.ok(service.includes('9596484935c0610c1c956721e023ab06376c56802b91474905043909dc36c4b7'));
+assert.ok(service.includes('d03e4e230f1bb3795f03a953a1df41fdcb5de47cd106da5398c06ffc19a6949c'));
+assert.ok(service.includes('0d493aab14148426f24397be9b17a29837b2289327fe6e49865cee1e6ce1feaa'));
+assert.ok(service.includes('82bf9588a15dde9807b305d6e9a41ba4b60c2991704d87ea3c6daf8e71bdf320'));
+assert.ok(service.includes('generationBArm32EqualsC'));
+assert.ok(service.includes('generationBArm64EqualsC'));
+assert.ok(service.includes('executeS2SelfHost'));
+assert.ok(service.includes('nativeS2SelfHost'));
+assert.ok(native.includes('Java_com_riftos_app_RiftppCompilerService_nativeS2SelfHost'));
+assert.ok(native.includes('kS2CanonicalCompilerSourceBytes = 11072'));
+assert.ok(native.includes('kS2SelfHostImageBytes = 44288'));
+assert.ok(native.includes('struct GuardedSpan'));
+assert.ok(native.includes('runCompilerLarge('));
+assert.ok(native.includes('memcmp(generationB32, generationC32'));
+assert.ok(native.includes('memcmp(generationB64, generationC64'));
+assert.ok(native.includes('reinterpret_cast<CompilerFn>(generationBBytes)'));
+assert.ok(native.includes('PROT_READ | PROT_EXEC'));
+assert.ok(shell.includes('riftpp-host s2-selfhost <riftpp-root>'));
+assert.ok(shell.includes('s2/compiler.arm32.r2.hex'));
+assert.ok(shell.includes('s2/compiler.arm64.r2.hex'));
+assert.ok(shell.includes('compilerArm32SourceFile.length() == 23528L'));
+assert.ok(shell.includes('compilerArm64SourceFile.length() == 23528L'));
+assert.ok(shell.includes('RiftppCompilerClient.executeS2SelfHost('));
+assert.ok(shell.includes('sourceFile.length() <= 4096L'), 'S2 self-host must not widen generic compile source bound');
+assert.ok(!shell.includes('s2-selfhost <riftpp-root> <'), 'S2 self-host must not accept arbitrary compiler/source paths');
+
 console.log('Rift++ machine-code compiler host regression PASS');

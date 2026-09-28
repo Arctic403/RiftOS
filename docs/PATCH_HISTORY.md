@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.43 — Rift++ S2 canonical self-host fixed point
+
+Generation A is already installed-device proven on source `01243f65b81866fd48552be6c33ab2d73752c35a` / Builder run 434. Current source now adds the next fixed authority transition: `riftpp-host s2-selfhost <riftpp-root>`.
+
+The canonical S2 compiler is authored entirely as S2 v0 records. Each target source contains 1384 records / 11072 raw bytes; only the target header differs. Pinned raw source identities are `95964849…` for ARM32 and `d03e4e23…` for ARM64. Generation A must compile them to exact 44288-byte Generation-B images `0d493aab…` and `82bf9588…`. The current-host Generation-B image is then copied into a separate multi-page guarded mapping, changed W→X, executed natively, and required to compile the same two sources into Generation C with byte-identical B=C for both targets. Generation B must also reproduce the two exact 96-byte `ret42` target images, and the generated current-host proof must execute with return value 42.
+
+The self-host route accepts no caller-selected compiler or source paths. Kotlin pins Generation-A, canonical compiler-source, Generation-B and proof identities; native code performs bounded execution and byte comparison but contains no S2 opcode parser or native instruction selector. The existing generic `compile/prove` 4096-byte source/output surface remains unchanged. The 44288-byte compiler image uses a proof-specific guarded multi-page allocation rather than widening the generic one-page compiler surface.
+
+Validation at source checkpoint: RiftBuild Android structural validation reports `sourceReady=true`; Rift++ audit/scan have zero findings; RiftOS audit/scan report only the pre-existing `RiftSecretStore.kt` filename heuristic. The normal Builder-owned `test-riftpp-machine-code-host.mjs` regression now pins this transaction and all fixed identities. Builder compilation and installed A→B→C fixed-point proof remain pending.
+
 ## Patch 10.42 — Rift++ S2 fixed emitter-corpus diagnostic
 
 After Generation A passed installed ARM32 proof on source `01243f65b81866fd48552be6c33ab2d73752c35a` / Builder run 434, current source adds one bounded derivation-only route: `riftpp-host s2-vectors <riftpp-root>`. It accepts only the exact host-ABI Generation-A image identity and two fixed 70-record S2 corpus sources (560 raw bytes each), then invokes Generation A to produce exactly 2240 bytes for ARM32 and 2240 bytes for ARM64.
