@@ -6,6 +6,18 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.40 — Stage1 real-device self-host proof and freeze
+
+Installed RiftOS source `7b57df89a22ccedd603a012e467359c8e4a718e2` (Builder run 433) exposes the fixed `riftpp-host stage1-selfhost <riftpp-root>` transaction under the live `armeabi-v7a` process.
+
+The proof succeeded twice against the frozen `rift++` sources. The exact ARM32 Seed0 compiler identity `1725b5341e87a09943737130a945d8ee500492370da8ce648f696b331e118653` reconstructed the 340-byte ARM32 Stage1 image with SHA-256 `7b11fae1b5ad0314a6fcf1a310c57e2c10b90cb8b5b14b40c010e89aa3c3c431` and the 336-byte ARM64 Stage1 image with SHA-256 `1d5a87efb088e68ef1cec2b80c49c2a484d5e83d2c327d8131ef81e18ca9556b`.
+
+The reconstructed ARM32 Stage1 compiler then executed natively and compiled its complete ARM32 source back to the exact same 340-byte image. The same self-hosted ARM32 Stage1 compiler compiled the complete ARM64 Stage1 source to the exact frozen 336-byte ARM64 image. Bootstrap and self outputs were byte-identical for both targets in both proof runs.
+
+The live envelope reported `selfHostedCurrentAbi=true`, `crossTargetReproduced=true`, `hostParsesStage1Numbers=false`, and `hostEmitsStage1Instructions=false`. This establishes the first genuine self-host rung on real ARM32 hardware while preserving the rule that RiftOS is execution/proof infrastructure rather than compiler authority.
+
+Stage1 is now frozen. ARM64 execution remains deferred to compatible hardware, but ARM64 Stage1 construction from the self-hosted ARM32 compiler is proven. All subsequent compiler/runtime development moves to the tiny real Rift++ stage; Seed0 and Stage1 no longer receive feature growth.
+
 ## Patch 10.39 — Stage1 fixed self-host bootstrap transaction
 
 Current source adds the first post-Seed0 self-host rung without expanding the frozen 276-byte machine-code compiler.
