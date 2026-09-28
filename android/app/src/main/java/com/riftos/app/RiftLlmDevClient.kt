@@ -55,6 +55,8 @@ class RiftLlmDevClient(context: Context) {
             "riftpack_qualification_status" to "riftpack_qualification_status",
             "rift_micro_process_death_start" to "rift_micro_process_death_start",
             "rift_micro_process_death_status" to "rift_micro_process_death_status",
+            "train_v2_adversarial_start" to "train_v2_adversarial_start",
+            "train_v2_adversarial_status" to "train_v2_adversarial_status",
             "ack_publish" to "ack_publish"
         )
     }

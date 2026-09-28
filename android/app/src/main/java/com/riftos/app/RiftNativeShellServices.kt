@@ -324,6 +324,7 @@ class RiftNativeShellServices(context: Context) {
                 "riftllm-agent text-encoding-prime-b2\n" +
                 "riftllm-agent riftpack-qualification-start\nriftllm-agent riftpack-qualification-status\n" +
                 "riftllm-agent process-death-start\nriftllm-agent process-death-status\n" +
+                "riftllm-agent train-v2-adversarial-start\nriftllm-agent train-v2-adversarial-status\n" +
                 "Pairing is entered only in native Settings. Legacy corpus-* helpers are unavailable unless explicitly reintroduced behind a bounded native/headless service."
         )
         if(sub=="pair") throw IllegalStateException("RiftLLM pairing token must be entered in native Settings; shell arguments are intentionally rejected.")
@@ -357,6 +358,14 @@ class RiftNativeShellServices(context: Context) {
             "process-death-status" -> {
                 require(args.isEmpty()) { "usage: riftllm-agent process-death-status" }
                 llm.execute(JSONObject().put("op","rift_micro_process_death_status"))
+            }
+            "train-v2-adversarial-start" -> {
+                require(args.isEmpty()) { "usage: riftllm-agent train-v2-adversarial-start" }
+                llm.execute(JSONObject().put("op","train_v2_adversarial_start"))
+            }
+            "train-v2-adversarial-status" -> {
+                require(args.isEmpty()) { "usage: riftllm-agent train-v2-adversarial-status" }
+                llm.execute(JSONObject().put("op","train_v2_adversarial_status"))
             }
             else -> {
                 if (sub == "preview" || sub == "publish") throw IllegalStateException(

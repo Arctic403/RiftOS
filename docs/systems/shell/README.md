@@ -300,6 +300,8 @@ RiftPack qualification is exposed only as `riftllm-agent riftpack-qualification-
 
 Real RiftLLM process-death recovery is exposed only as `riftllm-agent process-death-start` and `riftllm-agent process-death-status`. They are fixed no-argument routes to `rift_micro_process_death_start` / `rift_micro_process_death_status`; callers cannot select Provider methods, paths, checkpoint IDs or payloads. Any deliberate RiftLLM process termination is owned by the RiftLLM recovery controller after its own durable checkpoint gate, not by RiftShell.
 
+RiftTrainData V2 adversarial qualification is exposed only as `riftllm-agent train-v2-adversarial-start` and `riftllm-agent train-v2-adversarial-status`. They are fixed no-argument routes to `train_v2_adversarial_start` / `train_v2_adversarial_status`; RiftShell cannot select V2 pack paths, mutation cases, policy contents, hashes, evidence destinations, or arbitrary Provider methods.
+
 RiftLLM preview/publish fail closed because the retired workspace patch composite has no current bounded native replacement.
 
 ## Rift++ execution
