@@ -302,6 +302,8 @@ Real RiftLLM process-death recovery is exposed only as `riftllm-agent process-de
 
 RiftTrainData V2 adversarial qualification is exposed only as `riftllm-agent train-v2-adversarial-start` and `riftllm-agent train-v2-adversarial-status`. They are fixed no-argument routes to `train_v2_adversarial_start` / `train_v2_adversarial_status`; RiftShell cannot select V2 pack paths, mutation cases, policy contents, hashes, evidence destinations, or arbitrary Provider methods.
 
+RiftTrainData V2 bounded deterministic-builder qualification is exposed only as `riftllm-agent train-v2-builder-start` and `riftllm-agent train-v2-builder-status`. They are fixed no-argument routes to `train_v2_builder_start` / `train_v2_builder_status`; RiftShell cannot supply corpus records, policy objects, provenance rows, paths, hashes, generation IDs, output destinations, or arbitrary Provider methods.
+
 RiftLLM preview/publish fail closed because the retired workspace patch composite has no current bounded native replacement.
 
 ## Rift++ execution

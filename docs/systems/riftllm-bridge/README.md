@@ -101,7 +101,7 @@ There is no process execution, filesystem path selection or arbitrary Provider m
 
 ## Fixed Provider method catalog
 
-Exactly 32 method names are allowed:
+Exactly 34 method names are allowed:
 
 - sync_source
 - sync_missing
@@ -134,6 +134,8 @@ Exactly 32 method names are allowed:
 - rift_micro_process_death_status
 - train_v2_adversarial_start
 - train_v2_adversarial_status
+- train_v2_builder_start
+- train_v2_builder_status
 - ack_publish
 
 Anything else fails before ContentResolver.call.
@@ -168,8 +170,10 @@ Current shell provides:
 - process-death-status -> provider `rift_micro_process_death_status` with `{}` only
 - train-v2-adversarial-start -> provider `train_v2_adversarial_start` with `{}` only
 - train-v2-adversarial-status -> provider `train_v2_adversarial_status` with `{}` only
+- train-v2-builder-start -> provider `train_v2_builder_start` with `{}` only
+- train-v2-builder-status -> provider `train_v2_builder_status` with `{}` only
 
-The RiftPack qualification, process-death, and RiftTrainData V2 adversarial shell routes accept no caller-selected paths, IDs or payload fields. RiftPack routes only start/read the fixed app-private qualification job. Process-death routes only start/read RiftLLM's fixed app-private recovery gate; the start path may intentionally terminate the RiftLLM process only after RiftLLM has durably armed its checkpoint/pending evidence. The V2 adversarial routes only start/read RiftLLM's fixed app-private five-case parser qualification job. RiftOS owns only the bounded Binder invocation and does not expose arbitrary Provider method selection.
+The RiftPack qualification, process-death, RiftTrainData V2 adversarial, and V2 bounded-builder qualification shell routes accept no caller-selected paths, IDs or payload fields. RiftPack routes only start/read the fixed app-private qualification job. Process-death routes only start/read RiftLLM's fixed app-private recovery gate; the start path may intentionally terminate the RiftLLM process only after RiftLLM has durably armed its checkpoint/pending evidence. The V2 adversarial routes only start/read RiftLLM's fixed app-private five-case parser qualification job. The V2 builder routes only start/read RiftLLM's fixed app-private bounded deterministic-generation qualification job; they accept no corpus records, policy objects, provenance rows, paths, hashes, generation IDs, or output destinations. RiftOS owns only the bounded Binder invocation and does not expose arbitrary Provider method selection.
 
 During this audit stale aliases that called nonexistent Provider methods were corrected.
 
@@ -337,7 +341,7 @@ The bridge itself does not widen MCP authority.
 - exact 64-hex pairing token;
 - pairing verifies provider before secret persistence;
 - token never accepted through shell arguments;
-- exactly 32 provider method names, including the fixed RiftPack qualification, process-death, and RiftTrainData V2 adversarial start/status methods;
+- exactly 34 provider method names, including the fixed RiftPack qualification, process-death, RiftTrainData V2 adversarial, and V2 bounded-builder start/status methods;
 - Provider request <=512 KiB;
 - Provider response <=512 KiB;
 - at most two in-flight Provider IPC workers and 12-second per-call timeout;
@@ -381,7 +385,7 @@ RiftLLM-side Provider/model behavior -> standalone RiftLLM project, not RiftOS.
 
 Second source audit must verify:
 - package/authority/manifest visibility;
-- exact 32-method catalog, including fixed RiftPack qualification, process-death, and RiftTrainData V2 adversarial start/status;
+- exact 34-method catalog, including fixed RiftPack qualification, process-death, RiftTrainData V2 adversarial, and V2 bounded-builder start/status;
 - 64-hex token and provider-before-save flow;
 - Settings pair/unpair/status;
 - shell pair rejection and corrected aliases;
