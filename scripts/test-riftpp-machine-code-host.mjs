@@ -82,4 +82,35 @@ assert.ok(!shell.includes('payload-file'), 'prove route must not accept caller-s
 assert.ok(shell.includes('text.endsWith("\\n")'), 'canonical compiler hex newline must be accepted');
 assert.ok(!shell.includes('text.endsWith("\\\\n")'), 'literal backslash-n must not be treated as compiler-file newline');
 
+
+assert.ok(service.includes('TRANSACTION_S2_BOOTSTRAP'));
+assert.ok(service.includes('S2_BOOTSTRAP_TIMEOUT_MS = 15_000L'));
+assert.ok(service.includes('S2_GENA_ARM32_SOURCE_BYTES = 22809'));
+assert.ok(service.includes('S2_GENA_ARM64_SOURCE_BYTES = 20230'));
+assert.ok(service.includes('S2_GENA_ARM32_IMAGE_BYTES = 3128'));
+assert.ok(service.includes('S2_GENA_ARM64_IMAGE_BYTES = 2884'));
+assert.ok(service.includes('602ea5053ad483a3a27e6239812e26afc6f641dd1affcabf54d92999f17665b9'));
+assert.ok(service.includes('d96060c42ffa7b1eec2cd01efbc046368d1f738a43e95f36ef5813394f5f805d'));
+assert.ok(service.includes('d8a725107677188fdde1b6926139eb0b2da0719afe4c0f717d2c7a880237f49c'));
+assert.ok(service.includes('f0e3c871b4765bd94d69d71a26ffdfbcc3eabe3e114de492681f9999892cdfa5'));
+assert.ok(service.includes('executeS2Bootstrap'));
+assert.ok(service.includes('nativeS2Bootstrap'));
+assert.ok(native.includes('Java_com_riftos_app_RiftppCompilerService_nativeS2Bootstrap'));
+assert.ok(native.includes('kS2GenAArm32SourceBytes = 22809'));
+assert.ok(native.includes('kS2GenAArm64SourceBytes = 20230'));
+assert.ok(native.includes('kS2GenAArm32ImageBytes = 3128'));
+assert.ok(native.includes('kS2GenAArm64ImageBytes = 2884'));
+assert.ok(native.includes('proof(nullptr, 0U, nullptr, 0U)'));
+assert.ok(shell.includes('riftpp-host s2-bootstrap <riftpp-root>'));
+assert.ok(shell.includes('s2/bootstrap/compiler.gena.arm32.rpp'));
+assert.ok(shell.includes('s2/bootstrap/compiler.gena.arm64.rpp'));
+assert.ok(shell.includes('s2/ret42.arm32.r2.hex'));
+assert.ok(shell.includes('s2/ret42.arm64.r2.hex'));
+assert.ok(shell.includes('RiftppCompilerClient.executeS2Bootstrap('));
+assert.ok(shell.includes('decodeRiftppFixedRecordHex'));
+assert.ok(shell.includes('genAArm32SourceFile.length() <= 32768L'));
+assert.ok(shell.includes('genAArm64SourceFile.length() <= 32768L'));
+assert.ok(shell.includes('sourceFile.length() <= 4096L'), 'generic compile source bound must remain 4096');
+assert.ok(!shell.includes('payload-file'), 'S2 bootstrap must not expose arbitrary executable payload input');
+
 console.log('Rift++ machine-code compiler host regression PASS');

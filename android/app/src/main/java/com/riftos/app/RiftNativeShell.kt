@@ -345,14 +345,15 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
         if (action == "help") {
             require(args.isEmpty()) {
-                "usage: riftpp-host help|status|compile|prove|stage1-selfhost <riftpp-root> [source-file] [output-capacity]"
+                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap <riftpp-root> [source-file] [output-capacity]"
             }
             val text =
                 "Rift++ approved machine-code compiler host\n" +
                     "riftpp-host status\n" +
                     "riftpp-host compile <riftpp-root> <source-file> [output-capacity]\n" +
                     "riftpp-host prove <riftpp-root> <source-file> [output-capacity]\n" +
-                    "riftpp-host stage1-selfhost <riftpp-root>"
+                    "riftpp-host stage1-selfhost <riftpp-root>\n" +
+                    "riftpp-host s2-bootstrap <riftpp-root>"
             return ShellOutcome(text, cwd, nativeResult("riftpp-host").put("action", "help"))
         }
         val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
@@ -419,6 +420,98 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             return ShellOutcome(value.toString(2), cwd, value)
         }
 
+
+        if (action == "s2-bootstrap") {
+            require(args.size == 1) {
+                "usage: riftpp-host s2-bootstrap <riftpp-root>"
+            }
+            val rootPath = resolveDisplay(cwd, args[0])
+            val root = resolveFile(rootPath)
+            require(root.isDirectory) { "Rift++ root is not a directory: $rootPath" }
+
+            val compilerPath = joinDisplay(rootPath, "compiler/$compilerName")
+            val compilerFile = resolveFile(compilerPath)
+            require(compilerFile.isFile) {
+                "Rift++ compiler artifact is missing: $compilerPath"
+            }
+            require(compilerFile.length() <= 1024L) {
+                "Rift++ compiler hex file is unexpectedly large"
+            }
+
+            val stage1Arm32SourcePath = joinDisplay(rootPath, "stage1/stage1.arm32.rpp")
+            val stage1Arm64SourcePath = joinDisplay(rootPath, "stage1/stage1.arm64.rpp")
+            val genAArm32SourcePath =
+                joinDisplay(rootPath, "s2/bootstrap/compiler.gena.arm32.rpp")
+            val genAArm64SourcePath =
+                joinDisplay(rootPath, "s2/bootstrap/compiler.gena.arm64.rpp")
+            val proofArm32SourcePath = joinDisplay(rootPath, "s2/ret42.arm32.r2.hex")
+            val proofArm64SourcePath = joinDisplay(rootPath, "s2/ret42.arm64.r2.hex")
+
+            val stage1Arm32SourceFile = resolveFile(stage1Arm32SourcePath)
+            val stage1Arm64SourceFile = resolveFile(stage1Arm64SourcePath)
+            val genAArm32SourceFile = resolveFile(genAArm32SourcePath)
+            val genAArm64SourceFile = resolveFile(genAArm64SourcePath)
+            val proofArm32SourceFile = resolveFile(proofArm32SourcePath)
+            val proofArm64SourceFile = resolveFile(proofArm64SourcePath)
+
+            require(stage1Arm32SourceFile.isFile && stage1Arm64SourceFile.isFile) {
+                "Rift++ Stage1 canonical source files are missing"
+            }
+            require(genAArm32SourceFile.isFile && genAArm64SourceFile.isFile) {
+                "Rift++ S2 Generation-A Stage1 source files are missing"
+            }
+            require(proofArm32SourceFile.isFile && proofArm64SourceFile.isFile) {
+                "Rift++ S2 proof source files are missing"
+            }
+            require(
+                stage1Arm32SourceFile.length() <= 4096L &&
+                    stage1Arm64SourceFile.length() <= 4096L
+            ) {
+                "Rift++ Stage1 source exceeds fixed bootstrap bound"
+            }
+            require(
+                genAArm32SourceFile.length() <= 32768L &&
+                    genAArm64SourceFile.length() <= 32768L
+            ) {
+                "Rift++ S2 Generation-A source exceeds fixed bootstrap bound"
+            }
+            require(
+                proofArm32SourceFile.length() <= 128L &&
+                    proofArm64SourceFile.length() <= 128L
+            ) {
+                "Rift++ S2 proof source exceeds fixed bootstrap bound"
+            }
+
+            val compilerBytes =
+                decodeRiftppCompilerHex(compilerFile.readText(Charsets.UTF_8))
+            val proofArm32Source =
+                decodeRiftppFixedRecordHex(proofArm32SourceFile.readText(Charsets.UTF_8))
+            val proofArm64Source =
+                decodeRiftppFixedRecordHex(proofArm64SourceFile.readText(Charsets.UTF_8))
+
+            val value = RiftppCompilerClient.executeS2Bootstrap(
+                appContext,
+                compilerBytes,
+                stage1Arm32SourceFile.readBytes(),
+                stage1Arm64SourceFile.readBytes(),
+                genAArm32SourceFile.readBytes(),
+                genAArm64SourceFile.readBytes(),
+                proofArm32Source,
+                proofArm64Source
+            )
+                .put("command", "riftpp-host")
+                .put("action", action)
+                .put("compilerPath", compilerPath)
+                .put("stage1Arm32SourcePath", stage1Arm32SourcePath)
+                .put("stage1Arm64SourcePath", stage1Arm64SourcePath)
+                .put("genAArm32SourcePath", genAArm32SourcePath)
+                .put("genAArm64SourcePath", genAArm64SourcePath)
+                .put("proofArm32SourcePath", proofArm32SourcePath)
+                .put("proofArm64SourcePath", proofArm64SourcePath)
+
+            return ShellOutcome(value.toString(2), cwd, value)
+        }
+
         require(action == "compile" || action == "prove") {
             "unknown riftpp-host command: $action"
         }
@@ -461,6 +554,28 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put("requestedOutputCapacity", outputCapacity)
 
         return ShellOutcome(value.toString(2), cwd, value)
+    }
+
+
+    private fun decodeRiftppFixedRecordHex(text: String): ByteArray {
+        val body = if (text.endsWith("\n")) text.dropLast(1) else text
+        require(text == body || text == "$body\n") {
+            "fixed record hex has non-canonical trailing bytes"
+        }
+        require(body.isNotEmpty()) { "fixed record hex is empty" }
+        val records = body.split('\n')
+        require(records.all { record ->
+            record.length == 16 &&
+                record.all { it in '0'..'9' || it in 'a'..'f' }
+        }) {
+            "fixed record hex must contain canonical 8-byte lowercase records"
+        }
+
+        return ByteArray(records.size * 8) { index ->
+            val record = records[index / 8]
+            val byteIndex = index % 8
+            record.substring(byteIndex * 2, byteIndex * 2 + 2).toInt(16).toByte()
+        }
     }
 
     private fun decodeRiftppCompilerHex(text: String): ByteArray {

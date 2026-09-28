@@ -120,6 +120,40 @@ jlongArray stage1ResultArray(
     return result;
 }
 
+
+constexpr jsize kS2GenAArm32SourceBytes = 22809;
+constexpr jsize kS2GenAArm64SourceBytes = 20230;
+constexpr jsize kS2GenAArm32ImageBytes = 3128;
+constexpr jsize kS2GenAArm64ImageBytes = 2884;
+constexpr jsize kS2ProofSourceBytes = 24;
+constexpr jsize kS2ProofOutputBytes = 96;
+
+jlongArray s2ResultArray(
+    JNIEnv* env,
+    int32_t hostStatus,
+    uint32_t genAArm32Bytes,
+    uint32_t genAArm64Bytes,
+    uint32_t proofArm32Bytes,
+    uint32_t proofArm64Bytes,
+    int32_t proofExecutionStatus,
+    uint32_t proofReturnValue
+) {
+    const jlong values[7] = {
+        static_cast<jlong>(hostStatus),
+        static_cast<jlong>(genAArm32Bytes),
+        static_cast<jlong>(genAArm64Bytes),
+        static_cast<jlong>(proofArm32Bytes),
+        static_cast<jlong>(proofArm64Bytes),
+        static_cast<jlong>(proofExecutionStatus),
+        static_cast<jlong>(proofReturnValue)
+    };
+    jlongArray result = env->NewLongArray(7);
+    if (result != nullptr) {
+        env->SetLongArrayRegion(result, 0, 7, values);
+    }
+    return result;
+}
+
 int32_t verifyOutputPrefix(
     const GuardedPage& outputRegion,
     size_t outputLength
@@ -794,6 +828,423 @@ Java_com_riftos_app_RiftppCompilerService_nativeStage1SelfHost(
         kStage1Arm64ImageBytes,
         self32Length,
         self64Length
+    );
+#endif
+}
+
+
+extern "C"
+JNIEXPORT jlongArray JNICALL
+Java_com_riftos_app_RiftppCompilerService_nativeS2Bootstrap(
+    JNIEnv* env,
+    jobject,
+    jbyteArray seedCompilerArray,
+    jbyteArray stage1Arm32SourceArray,
+    jbyteArray stage1Arm64SourceArray,
+    jbyteArray genAArm32SourceArray,
+    jbyteArray genAArm64SourceArray,
+    jbyteArray proofArm32SourceArray,
+    jbyteArray proofArm64SourceArray,
+    jbyteArray genAArm32Array,
+    jbyteArray genAArm64Array,
+    jbyteArray proofArm32Array,
+    jbyteArray proofArm64Array
+) {
+#if !defined(__aarch64__) && !defined(__arm__)
+    (void)seedCompilerArray;
+    (void)stage1Arm32SourceArray;
+    (void)stage1Arm64SourceArray;
+    (void)genAArm32SourceArray;
+    (void)genAArm64SourceArray;
+    (void)proofArm32SourceArray;
+    (void)proofArm64SourceArray;
+    (void)genAArm32Array;
+    (void)genAArm64Array;
+    (void)proofArm32Array;
+    (void)proofArm64Array;
+    return s2ResultArray(env, -250, 0U, 0U, 0U, 0U, -1, 0U);
+#else
+    if (
+        seedCompilerArray == nullptr ||
+        stage1Arm32SourceArray == nullptr ||
+        stage1Arm64SourceArray == nullptr ||
+        genAArm32SourceArray == nullptr ||
+        genAArm64SourceArray == nullptr ||
+        proofArm32SourceArray == nullptr ||
+        proofArm64SourceArray == nullptr ||
+        genAArm32Array == nullptr ||
+        genAArm64Array == nullptr ||
+        proofArm32Array == nullptr ||
+        proofArm64Array == nullptr
+    ) {
+        return s2ResultArray(env, -251, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+
+    if (
+        env->GetArrayLength(seedCompilerArray) != kCompilerBytes ||
+        env->GetArrayLength(stage1Arm32SourceArray) != kStage1Arm32SourceBytes ||
+        env->GetArrayLength(stage1Arm64SourceArray) != kStage1Arm64SourceBytes ||
+        env->GetArrayLength(genAArm32SourceArray) != kS2GenAArm32SourceBytes ||
+        env->GetArrayLength(genAArm64SourceArray) != kS2GenAArm64SourceBytes ||
+        env->GetArrayLength(proofArm32SourceArray) != kS2ProofSourceBytes ||
+        env->GetArrayLength(proofArm64SourceArray) != kS2ProofSourceBytes ||
+        env->GetArrayLength(genAArm32Array) != kS2GenAArm32ImageBytes ||
+        env->GetArrayLength(genAArm64Array) != kS2GenAArm64ImageBytes ||
+        env->GetArrayLength(proofArm32Array) != kS2ProofOutputBytes ||
+        env->GetArrayLength(proofArm64Array) != kS2ProofOutputBytes
+    ) {
+        return s2ResultArray(env, -252, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+
+    uint8_t stage1Arm32Source[kStage1Arm32SourceBytes] = {};
+    uint8_t stage1Arm64Source[kStage1Arm64SourceBytes] = {};
+    uint8_t genAArm32Source[kS2GenAArm32SourceBytes] = {};
+    uint8_t genAArm64Source[kS2GenAArm64SourceBytes] = {};
+    uint8_t proofArm32Source[kS2ProofSourceBytes] = {};
+    uint8_t proofArm64Source[kS2ProofSourceBytes] = {};
+    uint8_t stage1Arm32[kStage1Arm32ImageBytes] = {};
+    uint8_t stage1Arm64[kStage1Arm64ImageBytes] = {};
+    uint8_t genAArm32[kS2GenAArm32ImageBytes] = {};
+    uint8_t genAArm64[kS2GenAArm64ImageBytes] = {};
+    uint8_t proofArm32[kS2ProofOutputBytes] = {};
+    uint8_t proofArm64[kS2ProofOutputBytes] = {};
+
+    env->GetByteArrayRegion(
+        stage1Arm32SourceArray,
+        0,
+        kStage1Arm32SourceBytes,
+        reinterpret_cast<jbyte*>(stage1Arm32Source)
+    );
+    env->GetByteArrayRegion(
+        stage1Arm64SourceArray,
+        0,
+        kStage1Arm64SourceBytes,
+        reinterpret_cast<jbyte*>(stage1Arm64Source)
+    );
+    env->GetByteArrayRegion(
+        genAArm32SourceArray,
+        0,
+        kS2GenAArm32SourceBytes,
+        reinterpret_cast<jbyte*>(genAArm32Source)
+    );
+    env->GetByteArrayRegion(
+        genAArm64SourceArray,
+        0,
+        kS2GenAArm64SourceBytes,
+        reinterpret_cast<jbyte*>(genAArm64Source)
+    );
+    env->GetByteArrayRegion(
+        proofArm32SourceArray,
+        0,
+        kS2ProofSourceBytes,
+        reinterpret_cast<jbyte*>(proofArm32Source)
+    );
+    env->GetByteArrayRegion(
+        proofArm64SourceArray,
+        0,
+        kS2ProofSourceBytes,
+        reinterpret_cast<jbyte*>(proofArm64Source)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return s2ResultArray(env, -253, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+
+    GuardedPage seedRegion;
+    if (
+        !allocateGuarded(&seedRegion) ||
+        seedRegion.pageSize < static_cast<size_t>(kCompilerBytes)
+    ) {
+        releaseGuarded(&seedRegion);
+        return s2ResultArray(env, -254, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+    uint8_t* seedCompiler =
+        seedRegion.page +
+        seedRegion.pageSize -
+        static_cast<size_t>(kCompilerBytes);
+    env->GetByteArrayRegion(
+        seedCompilerArray,
+        0,
+        kCompilerBytes,
+        reinterpret_cast<jbyte*>(seedCompiler)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        releaseGuarded(&seedRegion);
+        return s2ResultArray(env, -255, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+    if (mprotect(seedRegion.page, seedRegion.pageSize, PROT_READ | PROT_EXEC) != 0) {
+        releaseGuarded(&seedRegion);
+        return s2ResultArray(env, -256, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(seedCompiler),
+        reinterpret_cast<char*>(seedCompiler) + kCompilerBytes
+    );
+    auto seed = reinterpret_cast<CompilerFn>(seedCompiler);
+
+    const int32_t stage1Arm32Status = bootstrapStage1Image(
+        seed,
+        stage1Arm32Source,
+        static_cast<size_t>(kStage1Arm32SourceBytes),
+        stage1Arm32,
+        static_cast<size_t>(kStage1Arm32ImageBytes)
+    );
+    if (stage1Arm32Status != 0) {
+        releaseGuarded(&seedRegion);
+        return s2ResultArray(env, stage1Arm32Status, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+    const int32_t stage1Arm64Status = bootstrapStage1Image(
+        seed,
+        stage1Arm64Source,
+        static_cast<size_t>(kStage1Arm64SourceBytes),
+        stage1Arm64,
+        static_cast<size_t>(kStage1Arm64ImageBytes)
+    );
+    releaseGuarded(&seedRegion);
+    if (stage1Arm64Status != 0) {
+        return s2ResultArray(env, stage1Arm64Status, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+
+#if defined(__aarch64__)
+    const uint8_t* hostStage1 = stage1Arm64;
+    constexpr size_t hostStage1Bytes = static_cast<size_t>(kStage1Arm64ImageBytes);
+#else
+    const uint8_t* hostStage1 = stage1Arm32;
+    constexpr size_t hostStage1Bytes = static_cast<size_t>(kStage1Arm32ImageBytes);
+#endif
+
+    GuardedPage stage1Region;
+    if (
+        !allocateGuarded(&stage1Region) ||
+        stage1Region.pageSize < hostStage1Bytes
+    ) {
+        releaseGuarded(&stage1Region);
+        return s2ResultArray(env, -257, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+    uint8_t* stage1Bytes =
+        stage1Region.page + stage1Region.pageSize - hostStage1Bytes;
+    memcpy(stage1Bytes, hostStage1, hostStage1Bytes);
+    if (mprotect(stage1Region.page, stage1Region.pageSize, PROT_READ | PROT_EXEC) != 0) {
+        releaseGuarded(&stage1Region);
+        return s2ResultArray(env, -258, 0U, 0U, 0U, 0U, -1, 0U);
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(stage1Bytes),
+        reinterpret_cast<char*>(stage1Bytes) + hostStage1Bytes
+    );
+    auto stage1 = reinterpret_cast<CompilerFn>(stage1Bytes);
+
+    uint32_t genAArm32Length = 0U;
+    const int32_t genAArm32Status = runStage1Compiler(
+        stage1,
+        genAArm32Source,
+        static_cast<size_t>(kS2GenAArm32SourceBytes),
+        genAArm32,
+        static_cast<size_t>(kS2GenAArm32ImageBytes),
+        &genAArm32Length
+    );
+    if (genAArm32Status != 0) {
+        releaseGuarded(&stage1Region);
+        return s2ResultArray(
+            env, genAArm32Status, genAArm32Length, 0U, 0U, 0U, -1, 0U
+        );
+    }
+
+    uint32_t genAArm64Length = 0U;
+    const int32_t genAArm64Status = runStage1Compiler(
+        stage1,
+        genAArm64Source,
+        static_cast<size_t>(kS2GenAArm64SourceBytes),
+        genAArm64,
+        static_cast<size_t>(kS2GenAArm64ImageBytes),
+        &genAArm64Length
+    );
+    releaseGuarded(&stage1Region);
+    if (genAArm64Status != 0) {
+        return s2ResultArray(
+            env,
+            genAArm64Status,
+            genAArm32Length,
+            genAArm64Length,
+            0U,
+            0U,
+            -1,
+            0U
+        );
+    }
+
+#if defined(__aarch64__)
+    const uint8_t* hostGenA = genAArm64;
+    constexpr size_t hostGenABytes = static_cast<size_t>(kS2GenAArm64ImageBytes);
+#else
+    const uint8_t* hostGenA = genAArm32;
+    constexpr size_t hostGenABytes = static_cast<size_t>(kS2GenAArm32ImageBytes);
+#endif
+
+    GuardedPage genARegion;
+    if (!allocateGuarded(&genARegion) || genARegion.pageSize < hostGenABytes) {
+        releaseGuarded(&genARegion);
+        return s2ResultArray(
+            env, -259, genAArm32Length, genAArm64Length, 0U, 0U, -1, 0U
+        );
+    }
+    uint8_t* genABytes = genARegion.page + genARegion.pageSize - hostGenABytes;
+    memcpy(genABytes, hostGenA, hostGenABytes);
+    if (mprotect(genARegion.page, genARegion.pageSize, PROT_READ | PROT_EXEC) != 0) {
+        releaseGuarded(&genARegion);
+        return s2ResultArray(
+            env, -260, genAArm32Length, genAArm64Length, 0U, 0U, -1, 0U
+        );
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(genABytes),
+        reinterpret_cast<char*>(genABytes) + hostGenABytes
+    );
+    auto genA = reinterpret_cast<CompilerFn>(genABytes);
+
+    uint32_t proofArm32Length = 0U;
+    const int32_t proofArm32Status = runStage1Compiler(
+        genA,
+        proofArm32Source,
+        static_cast<size_t>(kS2ProofSourceBytes),
+        proofArm32,
+        static_cast<size_t>(kS2ProofOutputBytes),
+        &proofArm32Length
+    );
+    if (proofArm32Status != 0) {
+        releaseGuarded(&genARegion);
+        return s2ResultArray(
+            env,
+            proofArm32Status,
+            genAArm32Length,
+            genAArm64Length,
+            proofArm32Length,
+            0U,
+            -1,
+            0U
+        );
+    }
+
+    uint32_t proofArm64Length = 0U;
+    const int32_t proofArm64Status = runStage1Compiler(
+        genA,
+        proofArm64Source,
+        static_cast<size_t>(kS2ProofSourceBytes),
+        proofArm64,
+        static_cast<size_t>(kS2ProofOutputBytes),
+        &proofArm64Length
+    );
+    releaseGuarded(&genARegion);
+    if (proofArm64Status != 0) {
+        return s2ResultArray(
+            env,
+            proofArm64Status,
+            genAArm32Length,
+            genAArm64Length,
+            proofArm32Length,
+            proofArm64Length,
+            -1,
+            0U
+        );
+    }
+
+#if defined(__aarch64__)
+    const uint8_t* hostProof = proofArm64;
+#else
+    const uint8_t* hostProof = proofArm32;
+#endif
+
+    GuardedPage proofRegion;
+    if (
+        !allocateGuarded(&proofRegion) ||
+        proofRegion.pageSize < static_cast<size_t>(kS2ProofOutputBytes)
+    ) {
+        releaseGuarded(&proofRegion);
+        return s2ResultArray(
+            env,
+            -261,
+            genAArm32Length,
+            genAArm64Length,
+            proofArm32Length,
+            proofArm64Length,
+            -1,
+            0U
+        );
+    }
+    uint8_t* proofBytes =
+        proofRegion.page +
+        proofRegion.pageSize -
+        static_cast<size_t>(kS2ProofOutputBytes);
+    memcpy(proofBytes, hostProof, static_cast<size_t>(kS2ProofOutputBytes));
+    if (mprotect(proofRegion.page, proofRegion.pageSize, PROT_READ | PROT_EXEC) != 0) {
+        releaseGuarded(&proofRegion);
+        return s2ResultArray(
+            env,
+            -262,
+            genAArm32Length,
+            genAArm64Length,
+            proofArm32Length,
+            proofArm64Length,
+            -1,
+            0U
+        );
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(proofBytes),
+        reinterpret_cast<char*>(proofBytes) + kS2ProofOutputBytes
+    );
+    auto proof = reinterpret_cast<CompilerFn>(proofBytes);
+    const uint32_t proofReturnValue = proof(nullptr, 0U, nullptr, 0U);
+    releaseGuarded(&proofRegion);
+
+    env->SetByteArrayRegion(
+        genAArm32Array,
+        0,
+        kS2GenAArm32ImageBytes,
+        reinterpret_cast<const jbyte*>(genAArm32)
+    );
+    env->SetByteArrayRegion(
+        genAArm64Array,
+        0,
+        kS2GenAArm64ImageBytes,
+        reinterpret_cast<const jbyte*>(genAArm64)
+    );
+    env->SetByteArrayRegion(
+        proofArm32Array,
+        0,
+        kS2ProofOutputBytes,
+        reinterpret_cast<const jbyte*>(proofArm32)
+    );
+    env->SetByteArrayRegion(
+        proofArm64Array,
+        0,
+        kS2ProofOutputBytes,
+        reinterpret_cast<const jbyte*>(proofArm64)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return s2ResultArray(
+            env,
+            -263,
+            genAArm32Length,
+            genAArm64Length,
+            proofArm32Length,
+            proofArm64Length,
+            -1,
+            proofReturnValue
+        );
+    }
+
+    return s2ResultArray(
+        env,
+        0,
+        genAArm32Length,
+        genAArm64Length,
+        proofArm32Length,
+        proofArm64Length,
+        0,
+        proofReturnValue
     );
 #endif
 }

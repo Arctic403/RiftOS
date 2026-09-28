@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.41 — Rift++ S2 Generation-A fixed bootstrap host
+
+Current source adds the fixed `riftpp-host s2-bootstrap <riftpp-root>` transaction over the existing private `:riftppCompiler` process. The route admits only exact frozen Seed0 and Stage1 inputs plus exact Generation-A Stage1 sources and exact 24-byte S2 proof sources. It does not change the generic 4096-byte compiler-source ceiling.
+
+The native transaction reconstructs Stage1 through Seed0, executes the current-host Stage1 compiler, manufactures exact candidate Generation-A images for ARM32 (3128 bytes, `d8a72510…`) and ARM64 (2884 bytes, `f0e3c871…`), then executes only the current-host Generation-A compiler. Generation A compiles both fixed S2 `ret42` sources to 96-byte native images, and the generated current-host image is the only proof payload executed; success requires return value 42.
+
+Kotlin pins exact source/image hashes before native execution. The native worker does not parse S2 opcodes, and the shell's fixed-record decoder only materializes canonical lowercase 8-byte record hex. The existing regression now locks the new transaction, identities, bounds, generated-only execution path, and unchanged generic 4096-byte source limit.
+
+Validation so far: RiftBuild structural validation of `RiftOS-main/android` reports `sourceReady=true` with settings, root Gradle, app Gradle, manifest, and activity checks green. Full audit/scan show only the pre-existing `RiftSecretStore.kt` filename heuristic. General repository native compilation is not available in this installed RiftBuild runtime, so Builder compilation and installed-device proof remain pending.
+
 ## Patch 10.40 — Stage1 real-device self-host proof and freeze
 
 Installed RiftOS source `7b57df89a22ccedd603a012e467359c8e4a718e2` (Builder run 433) exposes the fixed `riftpp-host stage1-selfhost <riftpp-root>` transaction under the live `armeabi-v7a` process.
