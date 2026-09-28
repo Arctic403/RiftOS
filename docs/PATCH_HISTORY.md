@@ -6,6 +6,26 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.32 — Rift++ universal U0 runtime baseline
+
+### Contract
+
+Rift++ App0 is no longer an ARM32-only application package. U0 is locked as one universal ARM APK containing both `arm64-v8a` and `armeabi-v7a` implementations of the same VM1 runtime contract. ARM64 is canonical/default; ARM32 is compatibility. Both hosts come from one source and execute one compiled program identity.
+
+Bootstrap0's 812-byte ARM32 machine-code VM remains historical trust/bootstrap evidence. It is not U0 application runtime data.
+
+### Packaging
+
+The U0 prepared package contains one binary manifest, both ABI copies of `libriftpp_app0_host.so`, and one shared `assets/program.bin`. The old `assets/vm1_seed.bin` application dependency is retired from U0. RiftBuild validates the exact ELF class/machine for each extracted host and `pack universal` requires both ABI libraries.
+
+### Proof boundary
+
+The existing ARM32 Hello device proof remains historical evidence. U0 promotion requires a rebuilt RiftOS APK, local universal prepare/package/sign/verify/install/launch, both ABI payloads in the signed artifact, exact Hello program identity, and observed `Hello from Rift++` through the ARM64-selected backend. ARM32 build conformance is mandatory; ARM32 hardware proof is added when a target is available.
+
+### Source validation
+
+The U0 semantic oracle passes with the unchanged 216-byte / 54-instruction Hello program and exact `Hello from Rift++` output while selecting `core.vm1.arm64`, `core.vm1.arm32`, and only the justified shared slices. Rift++ audit and architecture scan are clean. RiftOS audit/architecture retain only the pre-existing `RiftSecretStore.kt` filename heuristic. Native RiftBuild structural validation reports both RiftOS Android source and the Hello NativeActivity source ready. The stale ARM32-only prepared App0 tree was purged. Full NDK/Gradle compilation, signed universal-APK inspection, install and ARM64-selected device output remain the promotion boundary.
+
 ## Patch 10.31 — Hybrid PackageInstaller confirmation handoff
 
 Observed during the first live Rift++ App0 `Hello from Rift++` install proof: self-hosted TIG0 compilation, four-slice runtime materialization, APK packaging, v2 signing and independent verification all passed, but the PackageInstaller session remained at `committed-awaiting-result` and no installer UI appeared. `launch-proof` correctly confirmed `com.riftpp.hello` was not installed.
@@ -46,7 +66,7 @@ Builder run `36376407884` on source `d42f329c1c476237d5caaad6c6432153097a3eaa` f
 
 ### Validation/status
 
-`test-rift-local-agent-batch.mjs` now locks the engineering operation family, ToolHost/Sandbox reuse, nested-args normalization, permission classification and continued raw-shell separation. `test-riftbuild-native.mjs` locks the ARM32-only App0 helper boundary. Local Rift audit and architecture scan report no new findings beyond the pre-existing `RiftSecretStore.kt` filename heuristic. Full Node/Gradle/NDK Builder proof remains pending the next Builder run.
+`test-rift-local-agent-batch.mjs` now locks the engineering operation family, ToolHost/Sandbox reuse, nested-args normalization, permission classification and continued raw-shell separation. `test-riftbuild-native.mjs` historically locked the then-ARM32-only App0 helper boundary; Patch 10.32 supersedes that application-runtime restriction with universal U0. Local Rift audit and architecture scan report no new findings beyond the pre-existing `RiftSecretStore.kt` filename heuristic. Full Node/Gradle/NDK Builder proof remains pending the next Builder run.
 
 ## Patch 10.29 — Persistent MCP lost-turn reconciliation and no-replay identity
 

@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
 
 The core RiftBuild validation/planning, Rift++ V0 ELF materialization, fixed 1,440-byte binary manifest and deterministic universal unsigned APK package path is installed-device proven on RiftOS source `1c1ae33b81cfe643eb804cac0841ced636e982e3` / Builder run 214. Current source additionally contains bounded APK v2 signing/verification plus exact proof-package PackageInstaller/launch ownership; that newer sign → verify → install → launch chain still requires the next Builder/install device proof.
 
@@ -196,31 +196,31 @@ The V0 layout is now fully canonicalized: every XML node uses `lineNumber=1`, co
 
 This V0 encoder is not a general XML/resource compiler.
 
-## Rift++ App0 generated-runtime lane
+## Rift++ App0 / U0 generated-runtime lane
 
-Status: **SOURCE IMPLEMENTED — INSTALLED RIFTOS / REAL APK PROOF PENDING**
+Status: **UNIVERSAL U0 CONTRACT LOCKED / SOURCE IMPLEMENTED — BUILDER + REAL-DEVICE FREEZE PROOF PENDING**
 
-App0 is the first Rift++ application lane that treats runtime support as a generated per-program result instead of one universal Rift++ runtime.
+App0 is the first Rift++ application lane that treats runtime support as a generated per-program result instead of one monolithic Rift++ runtime. U0 is the reusable universal-ABI baseline produced by that lane.
 
 Command: `riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>`.
 
-The current fixed proof app is `rift++/examples/hello`.
+The fixed proof app is `rift++/examples/hello`.
 
-The lane deliberately separates authorities: application source is `<app-dir>/program.tig0`; compiler authority is `<riftpp-root>/compiler/tig0/compiler_seed.hex`; execution target authority is `<riftpp-root>/native/m2/vm1/arm32/vm1_seed.hex`; runtime requirements authority is emitted `program.bin`; package identity is `<app-dir>/riftapp.json`; and the generic Android host payload is extracted from the installed RiftOS APK.
+Authorities remain separated: application source is `<app-dir>/program.tig0`; compiler authority is `<riftpp-root>/compiler/tig0/compiler_seed.hex`; runtime requirements authority is emitted `program.bin`; package identity is `<app-dir>/riftapp.json`; and both ABI host payloads are extracted from the installed RiftOS APK.
 
-RiftBuild hosts the self-hosted 4,788-byte TIG0 compiler in a bounded VM1 interpreter. The host interpreter is execution equipment only: it must not parse TIG0 or emit replacement application instructions.
+RiftBuild hosts the self-hosted 4,788-byte TIG0 compiler in its bounded VM1 interpreter. That compiler host is execution equipment only: it must not parse TIG0 into replacement instructions.
 
 After compilation, RiftBuild validates every emitted VM1 instruction and derives support requirements from the bytecode. Unknown opcodes, malformed operands, invalid branch targets, or unsupported runtime requirements fail closed.
 
-For the current Hello proof, the expected compiled program is 216 bytes / 54 VM1 instructions and the derived runtime slices are exactly `core.vm1.arm32`, `io.output.bytes`, `android.nativeactivity`, and `android.display.text`. Source input, scratch, file, network, database, task, graphics, audio, and general application heap support are absent.
+For U0 Hello, one 216-byte / 54-instruction VM1 program is shared by both ABIs. The runtime plan selects `core.vm1.arm64` as canonical/default, `core.vm1.arm32` as compatibility, plus `io.output.bytes`, `android.nativeactivity`, and `android.display.text`. Source input, scratch, file, network, database, task, graphics, audio, and general application heap support remain absent.
 
-The prepared package contains only binary `AndroidManifest.xml`, `lib/armeabi-v7a/libriftpp_app0_host.so`, `assets/vm1_seed.bin`, and `assets/program.bin`. The runtime-plan receipt remains build evidence outside the APK and records source/compiler/program hashes, VM1 instruction count, detected requirements, and selected slices.
+The prepared universal package contains binary `AndroidManifest.xml`, `lib/arm64-v8a/libriftpp_app0_host.so`, `lib/armeabi-v7a/libriftpp_app0_host.so`, and one shared `assets/program.bin`. It does not package the old ARM32 machine-code VM seed. That seed remains Bootstrap0/historical evidence, not U0 application runtime data.
 
-The App0 native host may load the exact VM1 seed, load bounded `program.bin`, map the VM seed RW then RX, execute with fixed step/output bounds, accept the VM result as output byte count, and present bounded printable text through NativeActivity title/toast. It must not parse TIG0, implement Hello-specific behavior, repair program output, or supply undeclared capabilities.
+Both native libraries are compiled from the same `riftpp_app0_host.cpp` runtime source and implement the same bounded VM1 instruction semantics. ARM64 is primary, ARM32 is compatibility, and Android selects the matching ABI automatically. ABI differences may change machine implementation only, never valid Rift++ program behavior.
 
-App0 v0 is intentionally restricted to package `com.riftpp.hello`, ARM32, and `presentation=text` while the proof installer remains allowlisted. General application identity/package policy is a later lane.
+App0 remains restricted to package `com.riftpp.hello`, `target=universal`, and `presentation=text` while the proof installer remains allowlisted.
 
-Promotion requires rebuilt RiftOS containing the App0 host, followed by `prepare-riftpp-app0 -> pack arm32 -> sign -> verify -> install-proof -> launch-proof`; the real installed application must display exactly `Hello from Rift++`.
+Promotion requires rebuilt RiftOS containing both hosts, followed by `prepare-riftpp-app0 -> pack universal -> sign -> verify -> install-proof -> launch-proof`. The universal APK must contain both ABI libraries and the ARM64 device must display exactly `Hello from Rift++`. ARM32 source/build conformance remains mandatory, with hardware proof added when an ARM32 target is available.
 
 ## Codynex C0 .cx editor local packaging lane
 

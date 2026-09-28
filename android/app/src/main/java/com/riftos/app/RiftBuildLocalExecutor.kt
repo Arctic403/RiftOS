@@ -69,9 +69,6 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val RIFTPP_V0_APP_GRADLE_SHA = "1d1739a07896c4d7f1e521fa154a0285c5c4eefe87eab718830fee37194c0765"
         private const val RIFTPP_V0_BINARY_MANIFEST_BYTES = 1440
         private const val RIFTPP_V0_BINARY_MANIFEST_SHA = "ac035bb5bf89f55a3f34bae8eea980108324d2f36333f1e708f8a0b82af8e7c2"
-        private const val RIFTPP_APP0_VM_HEX = "native/m2/vm1/arm32/vm1_seed.hex"
-        private const val RIFTPP_APP0_VM_BYTES = 812
-        private const val RIFTPP_APP0_VM_SHA256 = "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"
         private const val RIFTPP_APP0_COMPILER_HEX = "compiler/tig0/compiler_seed.hex"
         private const val RIFTPP_APP0_COMPILER_HEX_BYTES = 9576
         private const val RIFTPP_APP0_COMPILER_HEX_SHA256 = "c756b92c1c0a6dc11060095e0bcb7978087d73d8290a312cb0176908ceadab9b"
@@ -80,7 +77,8 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val RIFTPP_APP0_APK_PROJECT = "apk-proof"
         private const val RIFTPP_APP0_LIBRARY_NAME = "riftpp_app0_host"
         private const val RIFTPP_APP0_LIBRARY_FILE = "libriftpp_app0_host.so"
-        private const val RIFTPP_APP0_HOST_APK_ENTRY = "lib/armeabi-v7a/libriftpp_app0_host.so"
+        private const val RIFTPP_APP0_ARM64_HOST_APK_ENTRY = "lib/arm64-v8a/libriftpp_app0_host.so"
+        private const val RIFTPP_APP0_ARM32_HOST_APK_ENTRY = "lib/armeabi-v7a/libriftpp_app0_host.so"
         private const val RIFTPP_APP0_MAX_HOST_BYTES = 4L * 1024L * 1024L
         private const val RIFTPP_APP0_MAX_SOURCE_BYTES = 64 * 1024
         private const val RIFTPP_APP0_MAX_PROGRAM_BYTES = 64 * 1024
@@ -691,8 +689,8 @@ class RiftBuildLocalExecutor(context: Context) {
         require(presentation == "text") {
             "Rift++ App0 currently supports presentation=text only"
         }
-        require(target == "arm32") {
-            "Rift++ App0 currently supports target=arm32 only"
+        require(target == "universal") {
+            "Rift++ App0 U0 requires target=universal"
         }
 
         val sourceFile = File(appRoot, entry).canonicalFile
@@ -756,8 +754,11 @@ class RiftBuildLocalExecutor(context: Context) {
 
         val slices = JSONArray()
             .put(JSONObject()
+                .put("id", "core.vm1.arm64")
+                .put("reason", "canonical/default universal APK backend"))
+            .put(JSONObject()
                 .put("id", "core.vm1.arm32")
-                .put("reason", "selected execution target"))
+                .put("reason", "universal APK compatibility backend"))
             .put(JSONObject()
                 .put("id", "io.output.bytes")
                 .put("reason", "compiled VM1 writes/observes output buffer"))
@@ -772,7 +773,7 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("schema", "riftpp-runtime-plan/0")
             .put("app", appName)
             .put("package", packageName)
-            .put("target", "arm32")
+            .put("target", "universal")
             .put("sourcePath", projectDisplay(ref, sourceFile))
             .put("sourceBytes", sourceBytes.size)
             .put("sourceSha256", sha256(sourceBytes))
@@ -789,21 +790,16 @@ class RiftBuildLocalExecutor(context: Context) {
                 .put("scratchBytes", requirements.requiresScratchBytes))
             .put("slices", slices)
 
-        val vmFile = projectFile(ref, RIFTPP_APP0_VM_HEX)
-        require(vmFile.isFile) { "Rift++ App0 VM1 seed is missing" }
-        val vm = decodeHex(readTextBounded(vmFile).trim())
-        require(vm.size == RIFTPP_APP0_VM_BYTES) {
-            "Rift++ App0 VM1 byte count drift: " + vm.size
-        }
-        require(sha256(vm) == RIFTPP_APP0_VM_SHA256) {
-            "Rift++ App0 VM1 SHA-256 drift"
-        }
-
-        val host = readOwnApkEntry(
-            RIFTPP_APP0_HOST_APK_ENTRY,
+        val arm64Host = readOwnApkEntry(
+            RIFTPP_APP0_ARM64_HOST_APK_ENTRY,
             RIFTPP_APP0_MAX_HOST_BYTES
         )
-        verifyElfImage(host, 1, 40)
+        val arm32Host = readOwnApkEntry(
+            RIFTPP_APP0_ARM32_HOST_APK_ENTRY,
+            RIFTPP_APP0_MAX_HOST_BYTES
+        )
+        verifyElfImage(arm64Host, 2, 183)
+        verifyElfImage(arm32Host, 1, 40)
 
         val apkProject = File(appRoot, RIFTPP_APP0_APK_PROJECT).canonicalFile
         require(confinedTo(appRoot, apkProject) && apkProject.isDirectory) {
@@ -856,36 +852,44 @@ class RiftBuildLocalExecutor(context: Context) {
             }
         }
 
-        val libRoot = File(preparedRoot, "lib/armeabi-v7a").canonicalFile
+        val arm64LibRoot = File(preparedRoot, "lib/arm64-v8a").canonicalFile
+        val arm32LibRoot = File(preparedRoot, "lib/armeabi-v7a").canonicalFile
         val assetRoot = File(preparedRoot, "assets").canonicalFile
-        require(confinedTo(preparedRoot, libRoot) && confinedTo(preparedRoot, assetRoot)) {
-            "Rift++ App0 prepared path escaped package root"
+        require(
+            confinedTo(preparedRoot, arm64LibRoot) &&
+                confinedTo(preparedRoot, arm32LibRoot) &&
+                confinedTo(preparedRoot, assetRoot)
+        ) {
+            "Rift++ App0 U0 prepared path escaped package root"
         }
-        require(libRoot.mkdirs() || libRoot.isDirectory) {
-            "Could not create Rift++ App0 native library directory"
+        require(arm64LibRoot.mkdirs() || arm64LibRoot.isDirectory) {
+            "Could not create Rift++ App0 ARM64 library directory"
+        }
+        require(arm32LibRoot.mkdirs() || arm32LibRoot.isDirectory) {
+            "Could not create Rift++ App0 ARM32 library directory"
         }
         require(assetRoot.mkdirs() || assetRoot.isDirectory) {
             "Could not create Rift++ App0 asset directory"
         }
 
         val manifestOutput = File(preparedRoot, "AndroidManifest.xml").canonicalFile
-        val hostOutput = File(libRoot, RIFTPP_APP0_LIBRARY_FILE).canonicalFile
-        val vmOutput = File(assetRoot, "vm1_seed.bin").canonicalFile
+        val arm64HostOutput = File(arm64LibRoot, RIFTPP_APP0_LIBRARY_FILE).canonicalFile
+        val arm32HostOutput = File(arm32LibRoot, RIFTPP_APP0_LIBRARY_FILE).canonicalFile
         val programOutput = File(assetRoot, "program.bin").canonicalFile
 
         atomicWrite(manifestOutput, binaryManifest)
-        atomicWrite(hostOutput, host)
-        atomicWrite(vmOutput, vm)
+        atomicWrite(arm64HostOutput, arm64Host)
+        atomicWrite(arm32HostOutput, arm32Host)
         atomicWrite(programOutput, program)
 
         require(isBinaryAndroidManifest(manifestOutput)) {
             "Rift++ App0 binary AndroidManifest.xml failed validation"
         }
-        require(sha256(hostOutput) == sha256(host)) {
-            "Rift++ App0 host materialization hash mismatch"
+        require(sha256(arm64HostOutput) == sha256(arm64Host)) {
+            "Rift++ App0 ARM64 host materialization hash mismatch"
         }
-        require(sha256(vmOutput) == RIFTPP_APP0_VM_SHA256) {
-            "Rift++ App0 VM materialization hash mismatch"
+        require(sha256(arm32HostOutput) == sha256(arm32Host)) {
+            "Rift++ App0 ARM32 host materialization hash mismatch"
         }
         require(sha256(programOutput) == sha256(program)) {
             "Rift++ App0 program materialization hash mismatch"
@@ -905,14 +909,22 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("project", ref.display)
             .put("appRoot", projectDisplay(ref, appRoot))
             .put("androidProject", apkDisplay)
-            .put("target", "arm32")
+            .put("target", "universal")
             .put("package", packageName)
             .put("libraryName", RIFTPP_APP0_LIBRARY_NAME)
-            .put("hostSource", "self-apk:" + RIFTPP_APP0_HOST_APK_ENTRY)
-            .put("hostBytes", host.size)
-            .put("hostSha256", sha256(host))
-            .put("vmBytes", vm.size)
-            .put("vmSha256", sha256(vm))
+            .put("hosts", JSONArray()
+                .put(JSONObject()
+                    .put("abi", "arm64-v8a")
+                    .put("role", "canonical-default")
+                    .put("source", "self-apk:" + RIFTPP_APP0_ARM64_HOST_APK_ENTRY)
+                    .put("bytes", arm64Host.size)
+                    .put("sha256", sha256(arm64Host)))
+                .put(JSONObject()
+                    .put("abi", "armeabi-v7a")
+                    .put("role", "compatibility")
+                    .put("source", "self-apk:" + RIFTPP_APP0_ARM32_HOST_APK_ENTRY)
+                    .put("bytes", arm32Host.size)
+                    .put("sha256", sha256(arm32Host))))
             .put("compilerSeedSha256", sha256(compilerFile))
             .put("compilerBytes", compiler.size)
             .put("compileSteps", compileRun.steps)
@@ -926,7 +938,8 @@ class RiftBuildLocalExecutor(context: Context) {
                 .put("plannerParsesTig0", false)
                 .put("compilerAuthority", RIFTPP_APP0_COMPILER_HEX)
                 .put("requirementAuthority", "compiled program.bin")
-                .put("vmAuthority", RIFTPP_APP0_VM_HEX))
+                .put("runtimeAuthority", "one riftpp_app0_host.cpp source compiled for arm64-v8a + armeabi-v7a")
+                .put("applicationVmSeedAsset", false))
             .put("manifest", JSONObject()
                 .put("path", projectDisplay(ref, manifestOutput))
                 .put("bytes", manifestOutput.length())
