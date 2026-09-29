@@ -2,6 +2,7 @@ package com.riftos.app
 
 import android.content.Context
 import android.util.Base64
+import com.codynex.editorapp.Vm1Bridge
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -11,9 +12,413 @@ import java.security.MessageDigest
 class RiftNativeShellServices(context: Context) {
     data class Result(val output: String, val value: JSONObject? = null)
 
+    private data class CodynexC0Source(
+        val file: File,
+        val module: String,
+        val source: String,
+        val imports: List<String>
+    )
+
+    private data class CodynexC0Project(
+        val projectDisplay: String,
+        val rootDisplay: String,
+        val rootSource: String,
+        val modules: Map<String, String>,
+        val sourceFiles: Int,
+        val totalSourceBytes: Int,
+        val projectRoot: File,
+        val rootFile: File
+    )
+
+    private fun executeCodynexC0(
+        sub: String,
+        args: MutableList<String>,
+        cwd: String
+    ): Result {
+        if (sub == "c0-status" || sub == "c0_status") {
+            require(args.isEmpty()) { "usage: codynex c0-status" }
+            val compiler = resolveFile(
+                "/D:/Workspace/Codynex/external/language/l0/compiler/c0_reference.js"
+            )
+            val vm1 = resolveFile(
+                "/D:/Workspace/Codynex/native/m2/vm1/arm32/vm1_seed.hex"
+            )
+            val value = JSONObject()
+                .put("schema", "codynex-c0-host-status/1")
+                .put("compiler", "codynex-c0-ref/0.11.0")
+                .put("compilerAvailable", compiler.isFile)
+                .put("vm1Available", vm1.isFile)
+                .put("projectCompile", true)
+                .put("nativeVm1", true)
+                .put("nativeVm1Abi", "armeabi-v7a")
+                .put("maxModules", 64)
+                .put("maxSourceBytes", 256 * 1024)
+                .put("maxProjectBytes", 1024 * 1024)
+            return Result(value.toString(2), value)
+        }
+
+        require(sub in setOf("c0-compile", "c0_compile", "c0-run", "c0_run")) {
+            "unknown Codynex C0 command: $sub"
+        }
+        require(args.size in 1..2) {
+            "usage: codynex " + sub.replace('_', '-') +
+                " <project> [root-relative]"
+        }
+
+        val project = loadCodynexC0Project(
+            projectRaw = args[0],
+            rootRelative = args.getOrNull(1) ?: "src/main.cx",
+            cwd = cwd
+        )
+        val compiled = codynexC0Runtime.compileCodynexC0Project(
+            project.rootSource,
+            project.modules
+        )
+
+        val buildRoot = File(
+            project.projectRoot,
+            "build/codynex-c0"
+        ).canonicalFile
+        require(
+            buildRoot.path.startsWith(
+                project.projectRoot.path + File.separator
+            )
+        ) {
+            "Codynex C0 build root escaped project"
+        }
+        require(buildRoot.mkdirs() || buildRoot.isDirectory) {
+            "Could not create Codynex C0 build directory"
+        }
+        val artifact = File(
+            buildRoot,
+            project.rootFile.nameWithoutExtension + ".vm1"
+        ).canonicalFile
+        require(artifact.parentFile == buildRoot) {
+            "Codynex C0 artifact escaped build directory"
+        }
+        atomicWriteCodynexC0(artifact, compiled.vm1)
+
+        val value = JSONObject()
+            .put(
+                "schema",
+                if (sub == "c0-run" || sub == "c0_run") {
+                    "codynex-c0-project-run/1"
+                } else {
+                    "codynex-c0-project-compile/1"
+                }
+            )
+            .put("project", project.projectDisplay)
+            .put("root", project.rootDisplay)
+            .put("compiler", compiled.compiler)
+            .put("sourceFiles", project.sourceFiles)
+            .put("modules", compiled.moduleCount)
+            .put("totalSourceBytes", project.totalSourceBytes)
+            .put("vm1Bytes", compiled.vm1.size)
+            .put("vm1Sha256", codynexC0Sha256(compiled.vm1))
+            .put(
+                "artifact",
+                project.projectDisplay.trimEnd('/') +
+                    "/build/codynex-c0/" + artifact.name
+            )
+
+        if (sub == "c0-run" || sub == "c0_run") {
+            val vm1 = loadCodynexC0Vm1()
+            val output = ByteArray(64 * 1024)
+            val stepBudget = (
+                compiled.vm1.size * 256 + 20_000
+            ).coerceIn(20_000, 5_000_000)
+            val run = Vm1Bridge.run(
+                vm = vm1,
+                program = compiled.vm1,
+                source = ByteArray(0),
+                output = output,
+                stepBudget = stepBudget
+            )
+            require(run.size >= 2) {
+                "Codynex native VM1 bridge returned malformed result"
+            }
+            value
+                .put("vmBackend", "codynex_editor_vm")
+                .put("vm1Bytes", vm1.size)
+                .put("vm1AuthoritySha256", codynexC0Sha256(vm1))
+                .put("stepBudget", stepBudget)
+                .put("status", run[0])
+                .put("programResult", Integer.toUnsignedLong(run[1]))
+                .put("ok", run[0] == 0)
+        } else {
+            value.put("ok", true)
+        }
+
+        return Result(value.toString(2), value)
+    }
+
+    private fun loadCodynexC0Project(
+        projectRaw: String,
+        rootRelative: String,
+        cwd: String
+    ): CodynexC0Project {
+        val projectDisplay = resolveDisplay(cwd, projectRaw)
+        val projectRoot = resolveFile(projectDisplay)
+        require(projectRoot.isDirectory) {
+            "Codynex C0 project directory not found: $projectDisplay"
+        }
+
+        val sourceRoot = File(projectRoot, "src").canonicalFile
+        require(
+            sourceRoot.isDirectory &&
+                sourceRoot.path.startsWith(projectRoot.path + File.separator)
+        ) {
+            "Codynex C0 project must contain a confined src directory"
+        }
+
+        val cleanRoot = rootRelative.trim().replace('\\', '/')
+        require(
+            cleanRoot.isNotBlank() &&
+                !cleanRoot.startsWith("/") &&
+                !Regex("^[A-Za-z]:").containsMatchIn(cleanRoot) &&
+                cleanRoot.split('/').none { it == ".." }
+        ) {
+            "Codynex C0 root path must be project-relative"
+        }
+        val rootFile = File(projectRoot, cleanRoot).canonicalFile
+        require(
+            rootFile.isFile &&
+                rootFile.extension.equals("cx", ignoreCase = true) &&
+                rootFile.path.startsWith(sourceRoot.path + File.separator)
+        ) {
+            "Codynex C0 root must be a .cx file inside project/src"
+        }
+
+        val sourceFiles = mutableListOf<File>()
+        val directories = mutableListOf(sourceRoot)
+        var directoryIndex = 0
+        var entries = 0
+        while (directoryIndex < directories.size) {
+            require(directories.size <= 128) {
+                "Codynex C0 source tree exceeds directory bound"
+            }
+            val directory = directories[directoryIndex++]
+            val children = directory.listFiles()?.sortedBy { it.name }
+                ?: throw IllegalStateException(
+                    "Could not enumerate Codynex C0 source directory"
+                )
+            for (child in children) {
+                entries += 1
+                require(entries <= 2048) {
+                    "Codynex C0 source tree exceeds entry bound"
+                }
+                val canonical = child.canonicalFile
+                require(
+                    canonical == sourceRoot ||
+                        canonical.path.startsWith(
+                            sourceRoot.path + File.separator
+                        )
+                ) {
+                    "Codynex C0 source tree escaped project/src"
+                }
+                if (canonical.isDirectory) {
+                    directories += canonical
+                } else if (
+                    canonical.isFile &&
+                    canonical.extension.equals("cx", ignoreCase = true)
+                ) {
+                    sourceFiles += canonical
+                    require(sourceFiles.size <= 64) {
+                        "Codynex C0 project exceeds 64 .cx files"
+                    }
+                }
+            }
+        }
+        require(rootFile in sourceFiles) {
+            "Codynex C0 root was not discovered in project/src"
+        }
+
+        val modulePattern = Regex(
+            "(?m)^\\s*module\\s+" +
+                "([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)" +
+                "\\s*;"
+        )
+        val usePattern = Regex(
+            "(?m)^\\s*use\\s+" +
+                "([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)" +
+                "(?:\\s+as\\s+[A-Za-z_][A-Za-z0-9_]*)?\\s*;"
+        )
+        val byModule = linkedMapOf<String, CodynexC0Source>()
+        var totalBytes = 0
+
+        for (file in sourceFiles.sortedBy { it.path }) {
+            require(file.length() <= 256L * 1024L) {
+                "Codynex C0 source exceeds 256 KiB: " + file.name
+            }
+            val source = file.readText(Charsets.UTF_8)
+            val bytes = source.toByteArray(Charsets.UTF_8).size
+            require(bytes in 1..(256 * 1024)) {
+                "Codynex C0 source UTF-8 size is out of bounds: " + file.name
+            }
+            totalBytes += bytes
+            require(totalBytes <= 1024 * 1024) {
+                "Codynex C0 source tree exceeds 1 MiB"
+            }
+            val module = modulePattern.find(source)?.groupValues?.get(1)
+                ?: throw IllegalArgumentException(
+                    "Codynex C0 source is missing module declaration: " +
+                        file.name
+                )
+            require(!byModule.containsKey(module)) {
+                "Duplicate Codynex C0 module identity: $module"
+            }
+            byModule[module] = CodynexC0Source(
+                file = file,
+                module = module,
+                source = source,
+                imports = usePattern.findAll(source)
+                    .map { it.groupValues[1] }
+                    .toList()
+            )
+        }
+
+        val root = byModule.values.firstOrNull {
+            it.file == rootFile
+        } ?: throw IllegalStateException(
+            "Codynex C0 root module was not indexed"
+        )
+
+        val selected = linkedMapOf<String, String>()
+        val queue = root.imports.toMutableList()
+        var queueIndex = 0
+        val visited = mutableSetOf<String>()
+        while (queueIndex < queue.size) {
+            val name = queue[queueIndex++]
+            if (!visited.add(name)) continue
+            if (name == root.module) continue
+            val dependency = byModule[name]
+                ?: throw IllegalArgumentException(
+                    "Codynex C0 import has no project source: $name"
+                )
+            selected[name] = dependency.source
+            require(selected.size <= 63) {
+                "Codynex C0 dependency graph exceeds 64 total modules"
+            }
+            queue.addAll(dependency.imports)
+            require(queue.size <= 4096) {
+                "Codynex C0 import traversal exceeded bound"
+            }
+        }
+
+        val rootDisplay =
+            projectDisplay.trimEnd('/') + "/" + cleanRoot
+        return CodynexC0Project(
+            projectDisplay = projectDisplay,
+            rootDisplay = rootDisplay,
+            rootSource = root.source,
+            modules = selected,
+            sourceFiles = sourceFiles.size,
+            totalSourceBytes = totalBytes,
+            projectRoot = projectRoot,
+            rootFile = rootFile
+        )
+    }
+
+    private fun loadCodynexC0Vm1(): ByteArray {
+        val file = resolveFile(
+            "/D:/Workspace/Codynex/native/m2/vm1/arm32/vm1_seed.hex"
+        )
+        require(file.isFile) {
+            "Canonical Codynex ARM32 VM1 authority is missing"
+        }
+        val raw = file.readBytes()
+        require(raw.size == 1624) {
+            "Canonical Codynex VM1 hex byte count drift"
+        }
+        require(
+            codynexC0Sha256(raw) ==
+                "1f013e2592741895f511d1724ecd69ee156e24f771c289d848e1bab265d3655e"
+        ) {
+            "Canonical Codynex VM1 hex SHA-256 drift"
+        }
+        val hex = raw.toString(Charsets.UTF_8)
+        require(hex.length == 1624 && hex.length % 2 == 0) {
+            "Canonical Codynex VM1 hex encoding drift"
+        }
+        val vm1 = ByteArray(hex.length / 2)
+        var source = 0
+        var target = 0
+        while (source < hex.length) {
+            val high = hex[source].digitToIntOrNull(16)
+                ?: throw IllegalStateException(
+                    "Canonical Codynex VM1 contains non-hex byte"
+                )
+            val low = hex[source + 1].digitToIntOrNull(16)
+                ?: throw IllegalStateException(
+                    "Canonical Codynex VM1 contains non-hex byte"
+                )
+            vm1[target] = ((high shl 4) or low).toByte()
+            source += 2
+            target += 1
+        }
+        require(vm1.size == 812) {
+            "Canonical Codynex VM1 decoded byte count drift"
+        }
+        require(
+            codynexC0Sha256(vm1) ==
+                "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"
+        ) {
+            "Canonical Codynex VM1 decoded SHA-256 drift"
+        }
+        return vm1
+    }
+
+    private fun codynexC0Sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") {
+                (it.toInt() and 0xff).toString(16).padStart(2, '0')
+            }
+
+    private fun atomicWriteCodynexC0(target: File, bytes: ByteArray) {
+        target.parentFile?.let {
+            require(it.mkdirs() || it.isDirectory) {
+                "Could not create Codynex C0 artifact directory"
+            }
+        }
+        val parent = target.parentFile
+            ?: throw IllegalStateException("Codynex C0 artifact has no parent")
+        val temp = File(
+            parent,
+            "." + target.name + ".c0-" + System.nanoTime()
+        )
+        val backup = File(
+            parent,
+            "." + target.name + ".backup-" + System.nanoTime()
+        )
+        temp.writeBytes(bytes)
+        var backedUp = false
+        try {
+            if (target.exists()) {
+                require(target.isFile) {
+                    "Codynex C0 artifact target is not a file"
+                }
+                require(target.renameTo(backup)) {
+                    "Could not stage previous Codynex C0 artifact"
+                }
+                backedUp = true
+            }
+            require(temp.renameTo(target)) {
+                "Could not publish Codynex C0 artifact atomically"
+            }
+            if (backedUp) backup.delete()
+        } catch (error: Throwable) {
+            temp.delete()
+            if (backedUp && !target.exists()) backup.renameTo(target)
+            throw error
+        }
+    }
+
+
     private val appContext = context.applicationContext
     private val riftRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
     private val llm = RiftLlmDevClient(appContext)
+    private val codynexC0Runtime = RiftHeadlessJsRuntime(appContext)
 
     fun chat(args: MutableList<String>, cwd: String): Result {
         val sub = args.removeFirstOrNull()?.lowercase() ?: "help"
@@ -167,7 +572,11 @@ class RiftNativeShellServices(context: Context) {
         if (sub == "help") {
             require(args.isEmpty()) { "usage: codynex help" }
             return Result(
-                "Codynex LR0 local Binder bridge\n" +
+                "Codynex host\n" +
+                    "codynex c0-status\n" +
+                    "codynex c0-compile <project> [root-relative]\n" +
+                    "codynex c0-run <project> [root-relative]\n" +
+                    "Legacy LR0 bridge:\n" +
                     "codynex status\n" +
                     "codynex read-state <id>\n" +
                     "codynex call <function-id>\n" +
@@ -178,6 +587,10 @@ class RiftNativeShellServices(context: Context) {
                     "codynex clear\n" +
                     "codynex cold-restart"
             )
+        }
+
+        if (sub.startsWith("c0-" ) || sub.startsWith("c0_")) {
+            return executeCodynexC0(sub, args, cwd)
         }
 
         val request = JSONObject()
