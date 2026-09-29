@@ -115,6 +115,8 @@ for (const required of [
   'include("src/riftvm.js")',
   'include("src/semnexis-bootstrap.js")',
   'validateRiftBrowserWebViewOwnership',
+  'validateCodynexCompilerTransition',
+  'Codynex compiler transition contract drifted',
   'RiftOS Android source snapshot is not exact',
   'Actual WebKit dependencies/WebView XML are allowed only in',
   'RiftBrowser WebKit owner set drifted',
@@ -129,7 +131,7 @@ for (const required of [
 for (const retired of ['include("index.html")', 'include("styles.css")', 'include("src/**")', 'include("workspace-live/**")']) {
   if (gradle.includes(retired)) fail(`retired trusted-shell asset packaging returned: ${retired}`);
 }
-for (const dependency of ['verifyRiftOsAndroidSources', 'validateRiftBrowserWebViewOwnership', 'syncRiftOsWebAssets']) {
+for (const dependency of ['verifyRiftOsAndroidSources', 'validateCodynexCompilerTransition', 'validateRiftBrowserWebViewOwnership', 'syncRiftOsWebAssets']) {
   if (!preBuildBlock.includes(`dependsOn(${dependency})`)) fail(`Gradle preBuild is missing dependency ${dependency}`);
 }
 

@@ -92,6 +92,8 @@ This prevents the final Builder's DEX verification contract from silently laggin
 
 preBuild depends on:
 - verifyRiftOsAndroidSources;
+- validateCodynexCompilerTransition;
+- verifyCodynexEditorPayload;
 - validateRiftBrowserWebViewOwnership;
 - syncRiftOsWebAssets.
 
@@ -204,7 +206,7 @@ Local unpushed workspace changes are never built by that worker.
 riftos-build.sh:
 - requires signing identity variables;
 - runs npm run check;
-- runs `verifyRiftOsAndroidSources` and `validateRiftBrowserWebViewOwnership` as a dedicated Gradle validation phase captured in `gradle-validation.log`;
+- runs `verifyRiftOsAndroidSources`, `validateCodynexCompilerTransition`, and `validateRiftBrowserWebViewOwnership` as a dedicated Gradle validation phase captured in `gradle-validation.log`;
 - runs Gradle release assemble with Java 17/Android 36 only after that validation phase passes;
 - requires unsigned APK output;
 - zipaligns;

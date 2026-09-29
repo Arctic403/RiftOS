@@ -190,6 +190,71 @@ val verifyRiftOsAndroidSources by tasks.registering {
     }
 }
 
+val validateCodynexCompilerTransition by tasks.registering {
+    val previousCompiler = "codynex-c0-ref/0.11.0"
+    val currentCompiler = "codynex-c0-ref/0.12.0"
+    val requiredMarkers = linkedMapOf(
+        "src/main/java/com/riftos/app/CodynexCompilerProvider.kt" to listOf(
+            "COMPILER_VERSION_PREVIOUS",
+            "COMPILER_VERSION_CURRENT",
+            "SUPPORTED_COMPILER_VERSIONS",
+            previousCompiler,
+            currentCompiler
+        ),
+        "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt" to listOf(
+            "CODYNEX_C0_COMPILER_VERSION_PREVIOUS",
+            "CODYNEX_C0_COMPILER_VERSION_CURRENT",
+            "CODYNEX_C0_COMPILER_VERSIONS",
+            previousCompiler,
+            currentCompiler
+        ),
+        "src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt" to listOf(
+            previousCompiler,
+            currentCompiler,
+            "Codynex standalone app compiler identity drift"
+        ),
+        "src/main/java/com/riftos/app/RiftNativeShellServices.kt" to listOf(
+            "codynex-c0-ref/0.11.0|0.12.0 transition"
+        )
+    )
+    val forbiddenMarkers = linkedMapOf(
+        "src/main/java/com/riftos/app/CodynexCompilerProvider.kt" to
+            listOf("private const val COMPILER_VERSION ="),
+        "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt" to
+            listOf("private const val CODYNEX_C0_COMPILER_VERSION =")
+    )
+
+    doLast {
+        requiredMarkers.forEach { (path, markers) ->
+            val source = file(path)
+            if (!source.isFile) {
+                throw GradleException(
+                    "Codynex compiler transition source is missing: $path"
+                )
+            }
+            val text = source.readText()
+            markers.forEach { marker ->
+                if (!text.contains(marker)) {
+                    throw GradleException(
+                        "Codynex compiler transition contract drifted in $path: missing $marker"
+                    )
+                }
+            }
+        }
+
+        forbiddenMarkers.forEach { (path, markers) ->
+            val text = file(path).readText()
+            markers.forEach { marker ->
+                if (text.contains(marker)) {
+                    throw GradleException(
+                        "Codynex compiler transition regressed to a single-version pin in $path: $marker"
+                    )
+                }
+            }
+        }
+    }
+}
+
 val verifyCodynexEditorPayload by tasks.registering {
     val expected = linkedMapOf(
         "src/main/java/com/codynex/editor/EditorModel.kt" to
@@ -320,6 +385,7 @@ val validateRiftBrowserWebViewOwnership by tasks.registering {
 
 tasks.named("preBuild").configure {
     dependsOn(verifyRiftOsAndroidSources)
+    dependsOn(validateCodynexCompilerTransition)
     dependsOn(verifyCodynexEditorPayload)
     dependsOn(validateRiftBrowserWebViewOwnership)
     dependsOn(syncRiftOsWebAssets)
