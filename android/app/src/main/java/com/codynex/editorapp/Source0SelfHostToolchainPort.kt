@@ -12,9 +12,11 @@ import com.codynex.editor.EditorDiagnostic
 import com.codynex.editor.PreviewPort
 import com.codynex.editor.PreviewRequest
 import com.codynex.editor.PreviewResult
+import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
+/** TEMPORARY LIVE-PROOF toolchain transport; MUST be replaced by native Codynex/.cx. */
 class Source0SelfHostToolchainPort(
     private val context: Context,
     private val artifacts: BootstrapArtifacts,
@@ -24,7 +26,10 @@ class Source0SelfHostToolchainPort(
         private const val COMPILER_AUTHORITY =
             "com.riftos.app.codynexcompiler"
         private const val COMPILE_METHOD = "compile-c0"
+        private const val COMPILE_PROJECT_METHOD = "compile-c0-project"
         private const val MAX_SOURCE_BYTES = 256 * 1024
+        private const val MAX_PROJECT_BYTES = 1024 * 1024
+        private const val MAX_PROJECT_MODULES = 64
         private const val MAX_CANDIDATE_BYTES = 64 * 1024
         private const val PREVIEW_OUTPUT_BYTES = 64 * 1024
     }
@@ -35,21 +40,58 @@ class Source0SelfHostToolchainPort(
     override fun compile(request: CompileRequest): CompileResult {
         val sourceBytes = request.sourceText.toByteArray(Charsets.UTF_8)
 
-        if (sourceBytes.size > MAX_SOURCE_BYTES) {
+        if (sourceBytes.isEmpty() || sourceBytes.size > MAX_SOURCE_BYTES) {
             return failure(
                 request.sourcePath,
-                "source exceeds $MAX_SOURCE_BYTES bytes"
+                "source must be 1..$MAX_SOURCE_BYTES bytes"
             )
         }
+
+        if (request.moduleSources.size > MAX_PROJECT_MODULES - 1) {
+            return failure(
+                request.sourcePath,
+                "project exceeds $MAX_PROJECT_MODULES modules"
+            )
+        }
+
+        var totalBytes = sourceBytes.size
+        val modulesJson = JSONObject()
+        request.moduleSources.toSortedMap().forEach { (name, source) ->
+            val bytes = source.toByteArray(Charsets.UTF_8)
+            if (bytes.isEmpty() || bytes.size > MAX_SOURCE_BYTES) {
+                return failure(
+                    request.sourcePath,
+                    "module $name exceeds per-source bounds"
+                )
+            }
+            totalBytes += bytes.size
+            if (totalBytes > MAX_PROJECT_BYTES) {
+                return failure(
+                    request.sourcePath,
+                    "project exceeds $MAX_PROJECT_BYTES bytes"
+                )
+            }
+            modulesJson.put(name, source)
+        }
+
+        val method =
+            if (request.moduleSources.isEmpty()) {
+                COMPILE_METHOD
+            } else {
+                COMPILE_PROJECT_METHOD
+            }
 
         val response =
             try {
                 context.contentResolver.call(
                     Uri.parse("content://$COMPILER_AUTHORITY"),
-                    COMPILE_METHOD,
+                    method,
                     null,
                     Bundle().apply {
                         putString("source", request.sourceText)
+                        if (request.moduleSources.isNotEmpty()) {
+                            putString("modulesJson", modulesJson.toString())
+                        }
                     }
                 )
             } catch (error: Throwable) {
