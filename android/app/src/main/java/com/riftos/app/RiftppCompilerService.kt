@@ -85,9 +85,9 @@ class RiftppCompilerService : Service() {
             "404cfa2316ace6ab27e4c6606e7de39b52463ab03ffca38e2c422b8ba242ffa9"
         private const val S2_DIAGNOSTIC_ARM64_SOURCE_SHA256 =
             "3b12909dd4fa31e8bc61eccee335070402c3866df1a18267ebe2618e57cb6adc"
-        private const val S2_GENERATION_B_ARM32_SHA256 =
+        private const val S2_GENERATION_C_ARM32_SHA256 =
             "13c691dcb1214d7a66ac8d931907a25d96ac12a42b9f52ba2a9b8dfa0d344aa2"
-        private const val S2_GENERATION_B_ARM64_SHA256 =
+        private const val S2_GENERATION_C_ARM64_SHA256 =
             "cf9de173f31cb745a2d7afd32959d798b2ee76e78b0f0cd2775fa0bc6a137600"
         private const val S2_PROOF_ARM32_OUTPUT_SHA256 =
             "1f9ffbb7a94afcc37821d0686d6cc1c23c76258ae54eec0cbd97f85ccd09631f"
@@ -560,8 +560,8 @@ class RiftppCompilerService : Service() {
             return rejected(hostAbi, "native-library", genASha, it.message)
         }
 
-        val generationB32 = ByteArray(S2_SELF_HOST_IMAGE_BYTES)
-        val generationB64 = ByteArray(S2_SELF_HOST_IMAGE_BYTES)
+        val generationC32 = ByteArray(S2_SELF_HOST_IMAGE_BYTES)
+        val generationC64 = ByteArray(S2_SELF_HOST_IMAGE_BYTES)
         val proof32 = ByteArray(S2_PROOF_OUTPUT_BYTES)
         val proof64 = ByteArray(S2_PROOF_OUTPUT_BYTES)
 
@@ -573,8 +573,8 @@ class RiftppCompilerService : Service() {
                 diagnostic,
                 proof32Source,
                 proof64Source,
-                generationB32,
-                generationB64,
+                generationC32,
+                generationC64,
                 proof32,
                 proof64
             )
@@ -590,8 +590,8 @@ class RiftppCompilerService : Service() {
         val b64Bytes = nativeResult[2].toInt()
         val c32Bytes = nativeResult[3].toInt()
         val c64Bytes = nativeResult[4].toInt()
-        val arm32FixedPoint = nativeResult[5] == 1L
-        val arm64FixedPoint = nativeResult[6] == 1L
+        val arm32CdFixedPoint = nativeResult[5] == 1L
+        val arm64CdFixedPoint = nativeResult[6] == 1L
         val proof32Bytes = nativeResult[7].toInt()
         val proof64Bytes = nativeResult[8].toInt()
         val proofExecutionStatus = nativeResult[9].toInt()
@@ -610,8 +610,8 @@ class RiftppCompilerService : Service() {
                 putInt("generationBArm64Bytes", b64Bytes)
                 putInt("generationCArm32Bytes", c32Bytes)
                 putInt("generationCArm64Bytes", c64Bytes)
-                putBoolean("generationBArm32EqualsC", arm32FixedPoint)
-                putBoolean("generationBArm64EqualsC", arm64FixedPoint)
+                putBoolean("generationCArm32EqualsD", arm32CdFixedPoint)
+                putBoolean("generationCArm64EqualsD", arm64CdFixedPoint)
                 putInt("proofArm32Bytes", proof32Bytes)
                 putInt("proofArm64Bytes", proof64Bytes)
                 putInt("proofExecutionStatus", proofExecutionStatus)
@@ -625,8 +625,8 @@ class RiftppCompilerService : Service() {
             b64Bytes != S2_SELF_HOST_IMAGE_BYTES ||
             c32Bytes != S2_SELF_HOST_IMAGE_BYTES ||
             c64Bytes != S2_SELF_HOST_IMAGE_BYTES ||
-            !arm32FixedPoint ||
-            !arm64FixedPoint ||
+            !arm32CdFixedPoint ||
+            !arm64CdFixedPoint ||
             proof32Bytes != S2_PROOF_OUTPUT_BYTES ||
             proof64Bytes != S2_PROOF_OUTPUT_BYTES ||
             proofExecutionStatus != 0 ||
@@ -635,13 +635,13 @@ class RiftppCompilerService : Service() {
             return rejected(hostAbi, "s2-selfhost-result", genASha)
         }
 
-        val b32Sha = sha256(generationB32)
-        val b64Sha = sha256(generationB64)
-        if (b32Sha != S2_GENERATION_B_ARM32_SHA256) {
-            return rejected(hostAbi, "s2-selfhost-generation-b-arm32-identity", genASha)
+        val c32Sha = sha256(generationC32)
+        val c64Sha = sha256(generationC64)
+        if (c32Sha != S2_GENERATION_C_ARM32_SHA256) {
+            return rejected(hostAbi, "s2-selfhost-generation-c-arm32-identity", genASha)
         }
-        if (b64Sha != S2_GENERATION_B_ARM64_SHA256) {
-            return rejected(hostAbi, "s2-selfhost-generation-b-arm64-identity", genASha)
+        if (c64Sha != S2_GENERATION_C_ARM64_SHA256) {
+            return rejected(hostAbi, "s2-selfhost-generation-c-arm64-identity", genASha)
         }
 
         val proof32Sha = sha256(proof32)
@@ -661,8 +661,8 @@ class RiftppCompilerService : Service() {
             putString("canonicalArm32SourceSha256", S2_CANONICAL_ARM32_SOURCE_SHA256)
             putString("canonicalArm64SourceSha256", S2_CANONICAL_ARM64_SOURCE_SHA256)
             putString("diagnosticSourceSha256", expectedDiagnosticSha)
-            putString("generationBArm32Sha256", b32Sha)
-            putString("generationBArm64Sha256", b64Sha)
+            putString("generationCArm32Sha256", c32Sha)
+            putString("generationCArm64Sha256", c64Sha)
             putString("proofArm32OutputSha256", proof32Sha)
             putString("proofArm64OutputSha256", proof64Sha)
             putInt("generationBArm32Bytes", b32Bytes)
@@ -676,9 +676,11 @@ class RiftppCompilerService : Service() {
             putLong("diagnosticReturnValue", diagnosticReturnValue)
             putBoolean("generationACompiledCanonicalCompiler", true)
             putBoolean("generationBCurrentAbiExecuted", true)
-            putBoolean("generationBArm32EqualsC", true)
-            putBoolean("generationBArm64EqualsC", true)
             putBoolean("generationBCompiledBothTargets", true)
+            putBoolean("generationCCurrentAbiExecuted", true)
+            putBoolean("generationCArm32EqualsD", true)
+            putBoolean("generationCArm64EqualsD", true)
+            putBoolean("generationCCompiledBothTargets", true)
             putBoolean("hostParsesS2Opcodes", false)
             putBoolean("hostEmitsS2Instructions", false)
         }
@@ -958,7 +960,7 @@ internal object RiftppCompilerClient {
     private const val EXECUTION_TIMEOUT_MS = 3_000L
     private const val STAGE1_EXECUTION_TIMEOUT_MS = 15_000L
     private const val S2_BOOTSTRAP_TIMEOUT_MS = 15_000L
-    private const val S2_SELF_HOST_TIMEOUT_MS = 20_000L
+    private const val S2_SELF_HOST_TIMEOUT_MS = 30_000L
 
     fun execute(
         context: Context,
@@ -1592,12 +1594,12 @@ internal object RiftppCompilerClient {
                 bundle.getString("diagnosticSourceSha256") ?: JSONObject.NULL
             )
             .put(
-                "generationBArm32Sha256",
-                bundle.getString("generationBArm32Sha256") ?: JSONObject.NULL
+                "generationCArm32Sha256",
+                bundle.getString("generationCArm32Sha256") ?: JSONObject.NULL
             )
             .put(
-                "generationBArm64Sha256",
-                bundle.getString("generationBArm64Sha256") ?: JSONObject.NULL
+                "generationCArm64Sha256",
+                bundle.getString("generationCArm64Sha256") ?: JSONObject.NULL
             )
             .put(
                 "proofArm32OutputSha256",
@@ -1639,16 +1641,24 @@ internal object RiftppCompilerClient {
                 bundle.getBoolean("generationBCurrentAbiExecuted", false)
             )
             .put(
-                "generationBArm32EqualsC",
-                bundle.getBoolean("generationBArm32EqualsC", false)
-            )
-            .put(
-                "generationBArm64EqualsC",
-                bundle.getBoolean("generationBArm64EqualsC", false)
-            )
-            .put(
                 "generationBCompiledBothTargets",
                 bundle.getBoolean("generationBCompiledBothTargets", false)
+            )
+            .put(
+                "generationCCurrentAbiExecuted",
+                bundle.getBoolean("generationCCurrentAbiExecuted", false)
+            )
+            .put(
+                "generationCArm32EqualsD",
+                bundle.getBoolean("generationCArm32EqualsD", false)
+            )
+            .put(
+                "generationCArm64EqualsD",
+                bundle.getBoolean("generationCArm64EqualsD", false)
+            )
+            .put(
+                "generationCCompiledBothTargets",
+                bundle.getBoolean("generationCCompiledBothTargets", false)
             )
             .put("hostParsesS2Opcodes", bundle.getBoolean("hostParsesS2Opcodes", false))
             .put("hostEmitsS2Instructions", bundle.getBoolean("hostEmitsS2Instructions", false))

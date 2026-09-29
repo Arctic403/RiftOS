@@ -1506,6 +1506,12 @@ Java_com_riftos_app_RiftppCompilerService_nativeS2SelfHost(
     uint8_t* generationC64 = static_cast<uint8_t*>(
         calloc(static_cast<size_t>(kS2SelfHostImageBytes), 1U)
     );
+    uint8_t* generationD32 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS2SelfHostImageBytes), 1U)
+    );
+    uint8_t* generationD64 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS2SelfHostImageBytes), 1U)
+    );
     uint8_t* diagnosticImage = static_cast<uint8_t*>(
         calloc(static_cast<size_t>(kS2SelfHostImageBytes), 1U)
     );
@@ -1524,6 +1530,8 @@ Java_com_riftos_app_RiftppCompilerService_nativeS2SelfHost(
         free(proof32);
         free(diagnosticScratch);
         free(diagnosticImage);
+        free(generationD64);
+        free(generationD32);
         free(generationC64);
         free(generationC32);
         free(generationB64);
@@ -1540,6 +1548,7 @@ Java_com_riftos_app_RiftppCompilerService_nativeS2SelfHost(
         proofSource32 == nullptr || proofSource64 == nullptr ||
         generationB32 == nullptr || generationB64 == nullptr ||
         generationC32 == nullptr || generationC64 == nullptr ||
+        generationD32 == nullptr || generationD64 == nullptr ||
         diagnosticImage == nullptr || diagnosticScratch == nullptr ||
         proof32 == nullptr || proof64 == nullptr
     ) {
@@ -1816,22 +1825,104 @@ Java_com_riftos_app_RiftppCompilerService_nativeS2SelfHost(
         );
     }
 
-    const bool arm32FixedPoint =
-        memcmp(generationB32, generationC32, static_cast<size_t>(kS2SelfHostImageBytes)) == 0;
-    const bool arm64FixedPoint =
-        memcmp(generationB64, generationC64, static_cast<size_t>(kS2SelfHostImageBytes)) == 0;
-    if (!arm32FixedPoint || !arm64FixedPoint) {
+#if defined(__aarch64__)
+    const uint8_t* hostGenerationC = generationC64;
+#else
+    const uint8_t* hostGenerationC = generationC32;
+#endif
+
+    GuardedSpan generationCRegion;
+    if (!allocateGuardedSpan(static_cast<size_t>(kS2SelfHostImageBytes), &generationCRegion)) {
         releaseGuardedSpan(&generationBRegion);
         cleanup();
         return s2SelfHostResultArray(
-            env, -294, b32Length, b64Length, c32Length, c64Length,
+            env, -304, b32Length, b64Length, c32Length, c64Length,
+            false, false, 0U, 0U, -1, 0U, diagnosticReturnValue
+        );
+    }
+    uint8_t* generationCBytes =
+        generationCRegion.data +
+        generationCRegion.mappedSize -
+        static_cast<size_t>(kS2SelfHostImageBytes);
+    memcpy(
+        generationCBytes,
+        hostGenerationC,
+        static_cast<size_t>(kS2SelfHostImageBytes)
+    );
+    if (
+        mprotect(
+            generationCRegion.data,
+            generationCRegion.mappedSize,
+            PROT_READ | PROT_EXEC
+        ) != 0
+    ) {
+        releaseGuardedSpan(&generationCRegion);
+        releaseGuardedSpan(&generationBRegion);
+        cleanup();
+        return s2SelfHostResultArray(
+            env, -305, b32Length, b64Length, c32Length, c64Length,
+            false, false, 0U, 0U, -1, 0U, diagnosticReturnValue
+        );
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(generationCBytes),
+        reinterpret_cast<char*>(generationCBytes) + kS2SelfHostImageBytes
+    );
+    auto generationC = reinterpret_cast<CompilerFn>(generationCBytes);
+    releaseGuardedSpan(&generationBRegion);
+
+    uint32_t d32Length = 0U;
+    status = runCompilerLarge(
+        generationC,
+        source32,
+        static_cast<size_t>(kS2CanonicalCompilerSourceBytes),
+        generationD32,
+        static_cast<size_t>(kS2SelfHostImageBytes),
+        &d32Length
+    );
+    if (status != 0 || d32Length != static_cast<uint32_t>(kS2SelfHostImageBytes)) {
+        releaseGuardedSpan(&generationCRegion);
+        cleanup();
+        return s2SelfHostResultArray(
+            env, status != 0 ? status : -306, b32Length, b64Length, c32Length, c64Length,
+            false, false, 0U, 0U, -1, 0U, diagnosticReturnValue
+        );
+    }
+
+    uint32_t d64Length = 0U;
+    status = runCompilerLarge(
+        generationC,
+        source64,
+        static_cast<size_t>(kS2CanonicalCompilerSourceBytes),
+        generationD64,
+        static_cast<size_t>(kS2SelfHostImageBytes),
+        &d64Length
+    );
+    if (status != 0 || d64Length != static_cast<uint32_t>(kS2SelfHostImageBytes)) {
+        releaseGuardedSpan(&generationCRegion);
+        cleanup();
+        return s2SelfHostResultArray(
+            env, status != 0 ? status : -307, b32Length, b64Length, c32Length, c64Length,
+            false, false, 0U, 0U, -1, 0U, diagnosticReturnValue
+        );
+    }
+
+    const bool arm32FixedPoint =
+        memcmp(generationC32, generationD32, static_cast<size_t>(kS2SelfHostImageBytes)) == 0;
+    const bool arm64FixedPoint =
+        memcmp(generationC64, generationD64, static_cast<size_t>(kS2SelfHostImageBytes)) == 0;
+    if (!arm32FixedPoint || !arm64FixedPoint) {
+        releaseGuardedSpan(&generationCRegion);
+        cleanup();
+        return s2SelfHostResultArray(
+            env, -308, b32Length, b64Length, c32Length, c64Length,
             arm32FixedPoint, arm64FixedPoint, 0U, 0U, -1, 0U, diagnosticReturnValue
         );
     }
 
     uint32_t proof32Length = 0U;
     status = runCompilerLarge(
-        generationB,
+        generationC,
         proofSource32,
         static_cast<size_t>(kS2ProofSourceBytes),
         proof32,
@@ -1839,28 +1930,28 @@ Java_com_riftos_app_RiftppCompilerService_nativeS2SelfHost(
         &proof32Length
     );
     if (status != 0 || proof32Length != static_cast<uint32_t>(kS2ProofOutputBytes)) {
-        releaseGuardedSpan(&generationBRegion);
+        releaseGuardedSpan(&generationCRegion);
         cleanup();
         return s2SelfHostResultArray(
-            env, status != 0 ? status : -295, b32Length, b64Length, c32Length, c64Length,
+            env, status != 0 ? status : -309, b32Length, b64Length, c32Length, c64Length,
             true, true, proof32Length, 0U, -1, 0U, diagnosticReturnValue
         );
     }
 
     uint32_t proof64Length = 0U;
     status = runCompilerLarge(
-        generationB,
+        generationC,
         proofSource64,
         static_cast<size_t>(kS2ProofSourceBytes),
         proof64,
         static_cast<size_t>(kS2ProofOutputBytes),
         &proof64Length
     );
-    releaseGuardedSpan(&generationBRegion);
+    releaseGuardedSpan(&generationCRegion);
     if (status != 0 || proof64Length != static_cast<uint32_t>(kS2ProofOutputBytes)) {
         cleanup();
         return s2SelfHostResultArray(
-            env, status != 0 ? status : -296, b32Length, b64Length, c32Length, c64Length,
+            env, status != 0 ? status : -310, b32Length, b64Length, c32Length, c64Length,
             true, true, proof32Length, proof64Length, -1, 0U, diagnosticReturnValue
         );
     }
@@ -1908,13 +1999,13 @@ Java_com_riftos_app_RiftppCompilerService_nativeS2SelfHost(
         generationBArm32Array,
         0,
         kS2SelfHostImageBytes,
-        reinterpret_cast<const jbyte*>(generationB32)
+        reinterpret_cast<const jbyte*>(generationC32)
     );
     env->SetByteArrayRegion(
         generationBArm64Array,
         0,
         kS2SelfHostImageBytes,
-        reinterpret_cast<const jbyte*>(generationB64)
+        reinterpret_cast<const jbyte*>(generationC64)
     );
     env->SetByteArrayRegion(
         proofArm32Array,
