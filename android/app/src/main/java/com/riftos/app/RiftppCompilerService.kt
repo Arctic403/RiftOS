@@ -78,17 +78,17 @@ class RiftppCompilerService : Service() {
         private const val S2_CANONICAL_COMPILER_SOURCE_BYTES = 11072
         private const val S2_SELF_HOST_IMAGE_BYTES = 44288
         private const val S2_CANONICAL_ARM32_SOURCE_SHA256 =
-            "9596484935c0610c1c956721e023ab06376c56802b91474905043909dc36c4b7"
+            "476266f86506ffcf3d036c5f9ae381067a898998051ed2d7d60798f544bfd2f8"
         private const val S2_CANONICAL_ARM64_SOURCE_SHA256 =
-            "d03e4e230f1bb3795f03a953a1df41fdcb5de47cd106da5398c06ffc19a6949c"
+            "d2644b4cb4597bf32871749c9ea140c9d986592fc32477beff13ea03c00e3ca8"
         private const val S2_DIAGNOSTIC_ARM32_SOURCE_SHA256 =
-            "e592d3599ff47410584d3e1d78f85ad2bb664d2d79771da7f078d25357f7995a"
+            "404cfa2316ace6ab27e4c6606e7de39b52463ab03ffca38e2c422b8ba242ffa9"
         private const val S2_DIAGNOSTIC_ARM64_SOURCE_SHA256 =
-            "165c4919eaf73c36a946c5faf574fede2473503daaa94a99847b9d1ff83330ef"
+            "3b12909dd4fa31e8bc61eccee335070402c3866df1a18267ebe2618e57cb6adc"
         private const val S2_GENERATION_B_ARM32_SHA256 =
-            "0d493aab14148426f24397be9b17a29837b2289327fe6e49865cee1e6ce1feaa"
+            "13c691dcb1214d7a66ac8d931907a25d96ac12a42b9f52ba2a9b8dfa0d344aa2"
         private const val S2_GENERATION_B_ARM64_SHA256 =
-            "82bf9588a15dde9807b305d6e9a41ba4b60c2991704d87ea3c6daf8e71bdf320"
+            "cf9de173f31cb745a2d7afd32959d798b2ee76e78b0f0cd2775fa0bc6a137600"
         private const val S2_PROOF_ARM32_OUTPUT_SHA256 =
             "1f9ffbb7a94afcc37821d0686d6cc1c23c76258ae54eec0cbd97f85ccd09631f"
         private const val S2_PROOF_ARM64_OUTPUT_SHA256 =

@@ -98,6 +98,7 @@ riftbuild doctor [project]
 riftbuild validate <project>
 riftbuild plan <project> [arm32|arm64|universal]
 riftbuild toolchain-status
+riftbuild toolchain-install-bundled
 riftbuild compile-native <project> [arm32|arm64|universal]
 riftbuild prepare-native-app <project>
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
@@ -124,6 +125,14 @@ riftbuild runs [limit]
 riftbuild artifacts [project]
 ```
 
+### Bundled Android-host toolchain provisioning
+
+RiftOS builds may carry a generated `assets/riftbuild/android-clang-v1.zip` plus ABI-matched host compiler/linker executables under generated JNI libs. `riftbuild toolchain-install-bundled` extracts only the data archive into `/C:/Toolchains/android-clang-v1` with path, file-count, per-entry and total-byte bounds, validates `toolchain.json`, atomically replaces any prior installation, and then reports normal `toolchain-status`.
+
+The compiler itself remains in Android's extracted native-library directory (`native:libclang_exec.so`) so modern Android executable-storage rules are respected. Generated host dependencies are co-located there; RiftBuild sets `LD_LIBRARY_PATH` to that directory for the compiler process. Toolchain argv additionally supports `%COMPILER_DIR%` alongside `%TOOLCHAIN%` and `%SYSROOT%`, allowing the manifest to select the bundled LLD executable without shell command text.
+
+RiftOS Gradle consumes Builder-generated `build/generated/riftosJniLibs` and forces legacy/extracted JNI packaging; the Android manifest explicitly sets `android:extractNativeLibs="true"`. Source checkouts remain free of generated binary toolchain payloads.
+
 ### Native Compile V1 manifests
 
 Toolchain provisioning is described by `/C:/Toolchains/android-clang-v1/toolchain.json`:
@@ -139,7 +148,7 @@ Toolchain provisioning is described by `/C:/Toolchains/android-clang-v1/toolchai
 }
 ```
 
-`compiler` and `sysroot` may be relative to that toolchain root; `absolute:/...` is also accepted, and a bundled executable may use `native:<filename>`. Bounded `args` are toolchain-owned argv entries for resource/libc++/linker setup and are never interpreted by a shell; `%TOOLCHAIN%` and `%SYSROOT%` expand to the resolved toolchain/sysroot directories before process launch. Readiness requires a real executable compiler and sysroot. Android-host compatibility is proven only when `compile-native` actually succeeds.
+`compiler` and `sysroot` may be relative to that toolchain root; `absolute:/...` is also accepted, and a bundled executable may use `native:<filename>`. Bounded `args` are toolchain-owned argv entries for resource/libc++/linker setup and are never interpreted by a shell; `%TOOLCHAIN%`, `%SYSROOT%`, and `%COMPILER_DIR%` expand to the resolved toolchain, sysroot, and executable-native-library directories before process launch. Readiness requires a real executable compiler and sysroot. Android-host compatibility is proven only when `compile-native` actually succeeds.
 
 Each native project opts in with `<project>/rift-native.json`:
 

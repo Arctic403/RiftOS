@@ -24,6 +24,7 @@
     <application
         android:allowBackup="true"
         android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
         android:label="RiftOS"
         android:resizeableActivity="true"
         android:supportsRtl="true"

@@ -64,6 +64,10 @@ android {
     }
 
     sourceSets["main"].assets.directories.add("build/generated/riftosAssets")
+    sourceSets["main"].jniLibs.directories.add("build/generated/riftosJniLibs")
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
 }
 
 val verifyRiftOsAndroidSources by tasks.registering {

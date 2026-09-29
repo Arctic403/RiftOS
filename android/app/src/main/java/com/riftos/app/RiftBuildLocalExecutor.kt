@@ -305,7 +305,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | compile-native <project> [arm32|arm64|universal] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | compile-native <project> [arm32|arm64|universal] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -314,6 +314,7 @@ class RiftBuildLocalExecutor(context: Context) {
                 cwd
             )
             "toolchain-status" -> nativeToolchain.status()
+            "toolchain-install-bundled" -> nativeToolchain.installBundled()
             "compile-native" -> compileNative(
                 args.firstOrNull() ?: error("usage: riftbuild compile-native <project> [arm32|arm64|universal]"),
                 args.getOrNull(1) ?: "universal",

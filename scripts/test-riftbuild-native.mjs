@@ -38,6 +38,7 @@ for (const required of [
   'workspaceRoot',
   'RiftBuildNativeToolchain',
   'toolchain-status',
+  'toolchain-install-bundled',
   'compile-native',
   'RiftBuildNativeApp',
   'prepare-native-app',
@@ -145,6 +146,12 @@ for (const required of [
   '--target=',
   '--sysroot=',
   'MAX_TOOLCHAIN_ARGS = 128',
+  'BUNDLED_TOOLCHAIN_ASSET = "riftbuild/android-clang-v1.zip"',
+  'riftbuild-native-toolchain-install-v1',
+  'ZipInputStream',
+  'bundledToolchainAvailable',
+  'LD_LIBRARY_PATH',
+  '.replace("%COMPILER_DIR%", compiler.parentFile?.absolutePath.orEmpty())',
   'toolchainArgCount',
   '.replace("%TOOLCHAIN%", toolchainRoot.absolutePath)',
   '.replace("%SYSROOT%", sysroot.absolutePath)',
@@ -459,7 +466,7 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|compile-native\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|compile-native\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
@@ -469,6 +476,10 @@ assert.match(appHost, /private val riftBuild = RiftBuildLocalExecutor\(activity\
 for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftBuildNativeToolchain.kt', 'RiftBuildNativeApp.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt']) {
   assert.ok(gradle.includes('src/main/java/com/riftos/app/' + source), 'Gradle exact source snapshot omitted ' + source);
 }
+assert.ok(gradle.includes('sourceSets["main"].assets.directories.add("build/generated/riftosAssets")'), 'Gradle must package generated RiftOS assets');
+assert.ok(gradle.includes('sourceSets["main"].jniLibs.directories.add("build/generated/riftosJniLibs")'), 'Gradle must package generated RiftBuild host compiler JNI payloads');
+assert.ok(gradle.includes('jniLibs.useLegacyPackaging = true'), 'Gradle must request extracted/legacy JNI packaging for host compiler execution');
+assert.ok(manifest.includes('android:extractNativeLibs="true"'), 'RiftOS manifest must extract host compiler native libraries');
 assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'), 'RiftOS manifest omitted REQUEST_INSTALL_PACKAGES');
 assert.ok(manifest.includes('.RiftBuildInstallActivity'), 'RiftOS manifest omitted foreground RiftBuild install callback activity');
 assert.ok(manifest.includes('.RiftBuildInstallReceiver'), 'RiftOS manifest omitted private RiftBuild install receiver');

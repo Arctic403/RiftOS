@@ -50,9 +50,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         )
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
         private const val S2_DIAGNOSTIC_ARM32_TRANSPORT_SHA256 =
-            "ec32b059535da2409e864b293f3bd5f25ed5ead7d82f33bb35b23cc06f553a5d"
+            "f22eb8c092afa5351ea2cc7659c1db7130f837f8f3d596b1e20080bdeea4aa99"
         private const val S2_DIAGNOSTIC_ARM64_TRANSPORT_SHA256 =
-            "9ee9abcdd2971633257dc2f7f2e0e7f7401555ef2e50d668955ad691702e9dfe"
+            "ee7cf4f44a41d94abb0fde99146029734bcc8a845adda2e7f5ed41f2f0afef3a"
     }
 
     private val appContext = context.applicationContext
@@ -219,7 +219,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
-                    "riftbuild doctor|validate|plan|toolchain-status|compile-native|prepare-native-app|prepare-riftpp-v0|prepare-riftpp-seed0-arm64|prepare-riftpp-app0|prepare-codynex-mc0|prepare-codynex-mc1a|prepare-codynex-mc1b|prepare-codynex-m2-vm0|prepare-codynex-m2b|prepare-codynex-mc2a|prepare-codynex-editor|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
+                    "riftbuild doctor|validate|plan|toolchain-status|toolchain-install-bundled|compile-native|prepare-native-app|prepare-riftpp-v0|prepare-riftpp-seed0-arm64|prepare-riftpp-app0|prepare-codynex-mc0|prepare-codynex-mc1a|prepare-codynex-mc1b|prepare-codynex-m2-vm0|prepare-codynex-m2b|prepare-codynex-mc2a|prepare-codynex-editor|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +

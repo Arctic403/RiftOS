@@ -3,10 +3,13 @@ package com.riftos.app
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipInputStream
 
 /**
  * Structured native C/C++ toolchain runner for RiftBuild.
@@ -51,6 +54,10 @@ class RiftBuildNativeToolchain(
         private const val TOOLCHAIN_RELATIVE = "system/toolchains/android-clang-v1"
         private const val TOOLCHAIN_MANIFEST = "toolchain.json"
         private const val PROJECT_MANIFEST = "rift-native.json"
+        private const val BUNDLED_TOOLCHAIN_ASSET = "riftbuild/android-clang-v1.zip"
+        private const val MAX_BUNDLED_TOOLCHAIN_FILES = 20_000
+        private const val MAX_BUNDLED_TOOLCHAIN_BYTES = 512L * 1024L * 1024L
+        private const val MAX_BUNDLED_TOOLCHAIN_ENTRY_BYTES = 128L * 1024L * 1024L
         private const val MAX_MANIFEST_BYTES = 256L * 1024L
         private const val MAX_SOURCES = 256
         private const val MAX_INCLUDE_DIRS = 64
@@ -78,6 +85,8 @@ class RiftBuildNativeToolchain(
             .put("contract", TOOLCHAIN_SCHEMA)
             .put("manifest", "/C:/Toolchains/android-clang-v1/$TOOLCHAIN_MANIFEST")
             .put("downloadedToolchainsAllowed", true)
+            .put("bundledToolchainAsset", BUNDLED_TOOLCHAIN_ASSET)
+            .put("bundledToolchainAvailable", bundledAssetAvailable())
             .put("processMode", "structured-argv")
             .put("shell", false)
 
@@ -108,6 +117,75 @@ class RiftBuildNativeToolchain(
                 .put("error", error.message ?: error.javaClass.simpleName)
                 .put("blockers", JSONArray().put("native toolchain manifest invalid"))
         }
+    }
+
+    fun installBundled(): JSONObject {
+        require(bundledAssetAvailable()) { "Bundled native toolchain asset is not present in this RiftOS build" }
+        val staging = File(toolchainRoot.parentFile, toolchainRoot.name + ".installing").canonicalFile
+        require(confinedTo(toolchainRoot.parentFile.canonicalFile, staging)) { "Bundled toolchain staging escaped toolchain parent" }
+        if (staging.exists()) deleteTreeBounded(staging, MAX_BUNDLED_TOOLCHAIN_FILES + 512)
+        require(staging.mkdirs() || staging.isDirectory) { "Could not create bundled toolchain staging directory" }
+
+        var fileCount = 0
+        var totalBytes = 0L
+        appContext.assets.open(BUNDLED_TOOLCHAIN_ASSET).use { raw ->
+            ZipInputStream(BufferedInputStream(raw)).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    val name = entry.name.replace('\\\\', '/')
+                    require(name.isNotBlank() && !name.startsWith("/") && name.split('/').none { it == ".." }) {
+                        "Bundled toolchain archive contains unsafe path"
+                    }
+                    val output = File(staging, name).canonicalFile
+                    require(confinedTo(staging, output)) { "Bundled toolchain entry escaped staging root" }
+                    if (entry.isDirectory) {
+                        require(output.mkdirs() || output.isDirectory) { "Could not create bundled toolchain directory" }
+                    } else {
+                        fileCount += 1
+                        require(fileCount <= MAX_BUNDLED_TOOLCHAIN_FILES) { "Bundled toolchain file-count limit exceeded" }
+                        output.parentFile?.let { require(it.mkdirs() || it.isDirectory) { "Could not create bundled toolchain parent directory" } }
+                        var entryBytes = 0L
+                        FileOutputStream(output).use { sink ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                if (count == 0) continue
+                                entryBytes += count
+                                totalBytes += count
+                                require(entryBytes <= MAX_BUNDLED_TOOLCHAIN_ENTRY_BYTES) { "Bundled toolchain entry exceeds byte limit" }
+                                require(totalBytes <= MAX_BUNDLED_TOOLCHAIN_BYTES) { "Bundled toolchain exceeds total byte limit" }
+                                sink.write(buffer, 0, count)
+                            }
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+        }
+
+        val stagedManifest = File(staging, TOOLCHAIN_MANIFEST).canonicalFile
+        require(confinedTo(staging, stagedManifest) && stagedManifest.isFile) { "Bundled toolchain manifest is missing" }
+        val stagedJson = readJson(stagedManifest)
+        require(stagedJson.optString("schema") == TOOLCHAIN_SCHEMA) { "Bundled toolchain manifest schema is invalid" }
+
+        val backup = File(toolchainRoot.parentFile, toolchainRoot.name + ".backup").canonicalFile
+        if (backup.exists()) deleteTreeBounded(backup, MAX_BUNDLED_TOOLCHAIN_FILES + 512)
+        if (toolchainRoot.exists()) require(toolchainRoot.renameTo(backup)) { "Could not stage previous native toolchain for replacement" }
+        var committed = false
+        try {
+            require(staging.renameTo(toolchainRoot)) { "Could not commit bundled native toolchain" }
+            committed = true
+        } finally {
+            if (!committed && backup.exists() && !toolchainRoot.exists()) backup.renameTo(toolchainRoot)
+        }
+        if (backup.exists()) deleteTreeBounded(backup, MAX_BUNDLED_TOOLCHAIN_FILES + 512)
+
+        return status()
+            .put("schema", "riftbuild-native-toolchain-install-v1")
+            .put("installedFrom", "bundled-asset")
+            .put("files", fileCount)
+            .put("bytes", totalBytes)
     }
 
     fun compile(projectRoot: File, target: String): JSONObject {
@@ -192,7 +270,10 @@ class RiftBuildNativeToolchain(
             ProcessBuilder(argv)
                 .directory(projectRoot)
                 .redirectErrorStream(true)
-                .apply { environment()["TMPDIR"] = tempDir.absolutePath }
+                .apply {
+                    environment()["TMPDIR"] = tempDir.absolutePath
+                    environment()["LD_LIBRARY_PATH"] = toolchain.compiler.parentFile?.absolutePath.orEmpty()
+                }
                 .start()
         } catch (error: Exception) {
             error("Native compiler launch failed for ${abi.abi}: ${error.message ?: error.javaClass.simpleName}")
@@ -266,6 +347,7 @@ class RiftBuildNativeToolchain(
             val value = argsArray.getString(i)
                 .replace("%TOOLCHAIN%", toolchainRoot.absolutePath)
                 .replace("%SYSROOT%", sysroot.absolutePath)
+                .replace("%COMPILER_DIR%", compiler.parentFile?.absolutePath.orEmpty())
             require(value.length <= MAX_ARG_CHARS && !value.contains('\u0000')) { "Native toolchain arg is invalid" }
             toolArgs += value
         }
@@ -387,6 +469,19 @@ class RiftBuildNativeToolchain(
         require(type == 3) { "Native compiler output must be ET_DYN shared object" }
         val machine = (header[18].toInt() and 0xff) or ((header[19].toInt() and 0xff) shl 8)
         require(machine == abi.machine) { "Native compiler ELF machine mismatch for ${abi.abi}" }
+    }
+
+    private fun bundledAssetAvailable(): Boolean = runCatching {
+        appContext.assets.open(BUNDLED_TOOLCHAIN_ASSET).use { input -> input.read() >= 0 }
+    }.getOrDefault(false)
+
+    private fun deleteTreeBounded(root: File, maxEntries: Int) {
+        var count = 0
+        root.walkBottomUp().forEach { entry ->
+            count += 1
+            require(count <= maxEntries) { "Native toolchain tree exceeds deletion bound" }
+            require(entry.delete()) { "Could not delete native toolchain path: " + entry.name }
+        }
     }
 
     private fun sha256(file: File): String {
