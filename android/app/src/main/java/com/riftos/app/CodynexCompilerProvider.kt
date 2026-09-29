@@ -26,8 +26,15 @@ class CodynexCompilerProvider : ContentProvider() {
             "9874e844c24fe92c65908ce9b3cfb192f87774984a9e4fc600d883badcbe19b5"
         private const val COMPILER_PATH =
             "/workspace/Codynex/external/language/l0/compiler/c0_reference.js"
-        private const val COMPILER_VERSION =
+        private const val COMPILER_VERSION_PREVIOUS =
             "codynex-c0-ref/0.11.0"
+        private const val COMPILER_VERSION_CURRENT =
+            "codynex-c0-ref/0.12.0"
+        private val SUPPORTED_COMPILER_VERSIONS =
+            setOf(
+                COMPILER_VERSION_PREVIOUS,
+                COMPILER_VERSION_CURRENT
+            )
         private const val MAX_SOURCE_BYTES = 256 * 1024
         private const val MAX_PROJECT_BYTES = 1024 * 1024
         private const val MAX_PROJECT_MODULES = 64
@@ -139,7 +146,9 @@ class CodynexCompilerProvider : ContentProvider() {
                     moduleSources = modules
                 )
 
-            require(compiled.compiler == COMPILER_VERSION) {
+            require(
+                compiled.compiler in SUPPORTED_COMPILER_VERSIONS
+            ) {
                 "compiler identity drift"
             }
             require(compiled.vm1.isNotEmpty()) {
@@ -194,7 +203,9 @@ class CodynexCompilerProvider : ContentProvider() {
                     append(JSONObject.quote(COMPILER_PATH))
                     append("));\n")
                     append("  if (CodynexC0.VERSION !== ")
-                    append(JSONObject.quote(COMPILER_VERSION))
+                    append(JSONObject.quote(COMPILER_VERSION_PREVIOUS))
+                    append(" && CodynexC0.VERSION !== ")
+                    append(JSONObject.quote(COMPILER_VERSION_CURRENT))
                     append(") throw new Error('unexpected compiler '+CodynexC0.VERSION);\n")
                     append("  const source=rift.readText(")
                     append(JSONObject.quote(sourceDisplay))
@@ -240,7 +251,9 @@ class CodynexCompilerProvider : ContentProvider() {
             }
 
             val compiler = payload.optString("compiler")
-            require(compiler == COMPILER_VERSION) {
+            require(
+                compiler in SUPPORTED_COMPILER_VERSIONS
+            ) {
                 "compiler identity drift"
             }
 

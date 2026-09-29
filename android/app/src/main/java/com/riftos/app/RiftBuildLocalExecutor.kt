@@ -2216,7 +2216,10 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
                 rootSource = sourceText,
                 moduleSources = emptyMap()
             )
-        require(compiled.compiler == "codynex-c0-ref/0.11.0") {
+        require(
+            compiled.compiler == "codynex-c0-ref/0.11.0" ||
+                compiled.compiler == "codynex-c0-ref/0.12.0"
+        ) {
             "Codynex standalone app compiler identity drift"
         }
         require(compiled.moduleCount == 1) {

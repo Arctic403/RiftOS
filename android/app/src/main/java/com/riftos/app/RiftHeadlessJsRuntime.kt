@@ -24,7 +24,13 @@ class RiftHeadlessJsRuntime(context: Context) {
         private const val MAX_TEXT_BYTES = 8L * 1024L * 1024L
         private const val MAX_SEMNEXIS_SOURCE_BYTES = 512L * 1024L
         private const val CODYNEX_C0_COMPILER_PATH = "/workspace/Codynex/external/language/l0/compiler/c0_reference.js"
-        private const val CODYNEX_C0_COMPILER_VERSION = "codynex-c0-ref/0.11.0"
+        private const val CODYNEX_C0_COMPILER_VERSION_PREVIOUS = "codynex-c0-ref/0.11.0"
+        private const val CODYNEX_C0_COMPILER_VERSION_CURRENT = "codynex-c0-ref/0.12.0"
+        private val CODYNEX_C0_COMPILER_VERSIONS =
+            setOf(
+                CODYNEX_C0_COMPILER_VERSION_PREVIOUS,
+                CODYNEX_C0_COMPILER_VERSION_CURRENT
+            )
         private const val MAX_CODYNEX_C0_SOURCE_BYTES = 256 * 1024
         private const val MAX_CODYNEX_C0_PROJECT_BYTES = 1024 * 1024
         private const val MAX_CODYNEX_C0_MODULES = 64
@@ -341,7 +347,9 @@ class RiftHeadlessJsRuntime(context: Context) {
                 "Codynex C0 compilation failed"
             }
         }
-        require(payload.optString("compiler") == CODYNEX_C0_COMPILER_VERSION) {
+        require(
+            payload.optString("compiler") in CODYNEX_C0_COMPILER_VERSIONS
+        ) {
             "Codynex C0 compiler identity drift"
         }
 
@@ -916,7 +924,10 @@ class RiftHeadlessJsRuntime(context: Context) {
               try {
                 const compiler = globalThis.CodynexC0;
                 if (!compiler) throw new Error('Codynex C0 compiler global is unavailable');
-                if (compiler.VERSION !== 'codynex-c0-ref/0.11.0') {
+                if (
+                  compiler.VERSION !== 'codynex-c0-ref/0.11.0' &&
+                  compiler.VERSION !== 'codynex-c0-ref/0.12.0'
+                ) {
                   throw new Error('Codynex C0 compiler identity drift: ' + compiler.VERSION);
                 }
                 const modules = request.modules || {};

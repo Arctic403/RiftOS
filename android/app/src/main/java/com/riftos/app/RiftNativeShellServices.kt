@@ -46,7 +46,10 @@ class RiftNativeShellServices(context: Context) {
             )
             val value = JSONObject()
                 .put("schema", "codynex-c0-host-status/1")
-                .put("compiler", "codynex-c0-ref/0.11.0")
+                .put(
+                    "compiler",
+                    "codynex-c0-ref/0.11.0|0.12.0 transition"
+                )
                 .put("compilerAvailable", compiler.isFile)
                 .put("vm1Available", vm1.isFile)
                 .put("projectCompile", true)
