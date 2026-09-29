@@ -444,6 +444,17 @@ class MainActivity : Activity() {
                     },
                     weightedButtonParams()
                 )
+            }
+
+        val actionRowC =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(
+                    actionButton("Pack APK") {
+                        packStandaloneApk()
+                    },
+                    weightedButtonParams()
+                )
                 addView(
                     actionButton("Full") {
                         toggleFullScreenEditor()
@@ -478,6 +489,7 @@ class MainActivity : Activity() {
                 addView(tabsScroll)
                 addView(actionRowA)
                 addView(actionRowB)
+                addView(actionRowC)
                 addView(
                     editorView,
                     LinearLayout.LayoutParams(
@@ -937,6 +949,77 @@ class MainActivity : Activity() {
         input[2] = textBytes.size.toByte()
         textBytes.copyInto(input, destinationOffset = 3)
         return input
+    }
+
+    private fun packStandaloneApk() {
+        statusView.text = "Running Codynex APK pack..."
+
+        Thread {
+            var state = controller.snapshot()
+
+            val message =
+                try {
+                    if (state.dirtyDocumentCount > 0) {
+                        state = controller.saveAll()
+                    }
+
+                    if (state.candidate == null) {
+                        state = controller.compile()
+                    }
+
+                    val candidate =
+                        state.candidate
+                            ?: error(
+                                "compile did not produce a VM1 candidate"
+                            )
+
+                    val sourcePath =
+                        state.projectEntryPath
+                            ?: state.activeDocumentPath
+                            ?: error(
+                                "no .cx project entry is selected"
+                            )
+
+                    val receipt =
+                        CodynexApkBuilder(this)
+                            .build(
+                                candidateFile = File(candidate.id),
+                                sourcePath = sourcePath
+                            )
+
+                    buildString {
+                        append("Codynex APK ready")
+                        append("\nPackage: ")
+                        append(receipt.packageName)
+                        append("\nActivity: ")
+                        append(receipt.activityName)
+                        append("\nSigned + verified: ")
+                        append(receipt.signedApk.absolutePath)
+                        append("\nDownloads: ")
+                        append(
+                            receipt.publishedUri
+                                ?: "private-only fallback"
+                        )
+                        append("\nAPK SHA-256: ")
+                        append(receipt.apkSha256)
+                        append("\nProgram SHA-256: ")
+                        append(receipt.programSha256)
+                        append("\nEntries: ")
+                        append(receipt.entryCount)
+                    }
+                } catch (error: Throwable) {
+                    "Pack APK failed: " +
+                        (
+                            error.message
+                                ?: error.javaClass.simpleName
+                        )
+                }
+
+            runOnUiThread {
+                render(state)
+                statusView.text = message
+            }
+        }.start()
     }
 
     private fun ensureSavedThen(

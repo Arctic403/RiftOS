@@ -197,8 +197,14 @@ class RiftBuildLocalExecutor(context: Context) {
                 "2f2ff877393bb0cbb9e5a5c9d13cf28d082eaa36d560a45ff5f6587c605ea6af",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
+            "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
+                "8e231086c097ecc0bb8dbc60534509eaafa0c7cc6556def65f4fa12f7dc01f1c",
+            "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkV2Signer.kt" to
+                "3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76",
+            "external/editor/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
+                "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28",
             "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
-                "74d879a8c372144c3aded8cbaa741464778d7e111fae4572586ea8052f6d522b",
+                "0537523cd021aa7ba615adfd7bf70721f847a93139f9698d8591c740aa95eed5",
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
                 "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620",
             "external/editor/app/build.gradle.kts" to

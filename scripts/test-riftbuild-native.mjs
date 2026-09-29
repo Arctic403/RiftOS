@@ -394,6 +394,8 @@ const editorCoreModel = read('android/app/src/main/java/com/codynex/editor/Edito
 const editorCorePorts = read('android/app/src/main/java/com/codynex/editor/EditorPorts.kt');
 const editorCoreController = read('android/app/src/main/java/com/codynex/editor/CodynexEditorController.kt');
 const editorActivity = read('android/app/src/main/java/com/codynex/editorapp/MainActivity.kt');
+const editorApkBuilder = read('android/app/src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt');
+const editorApkSigner = read('android/app/src/main/java/com/codynex/editorapp/CodynexApkV2Signer.kt');
 const codynexAppActivity = read('android/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt');
 const editorWorkspace = read('android/app/src/main/java/com/codynex/editorapp/FileWorkspacePort.kt');
 const editorBootstrap = read('android/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt');
@@ -430,6 +432,10 @@ assert.match(gradle, /verifyCodynexEditorPayload/);
 assert.match(gradle, /d545e3802b300af446bbce56948b10a0ac7b5c00c04c118caa84a93f38e11b45/);
 assert.match(gradle, /b89c30344a2b7a0aa48c5956030cdfeaae363bf02d3bd705051e9e88bb34f592/);
 assert.match(gradle, /ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28/);
+assert.match(gradle, /8e231086c097ecc0bb8dbc60534509eaafa0c7cc6556def65f4fa12f7dc01f1c/);
+assert.match(gradle, /3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76/);
+assert.match(nativeBuild, /8e231086c097ecc0bb8dbc60534509eaafa0c7cc6556def65f4fa12f7dc01f1c/);
+assert.match(nativeBuild, /3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76/);
 assert.match(installer, /EDITOR_TARGET_PACKAGE = "com\.codynex\.editor"/);
 assert.match(installer, /EDITOR_TARGET_ACTIVITY = "com\.codynex\.editorapp\.MainActivity"/);
 assert.match(manifest, /com\.codynex\.editor/);
@@ -469,6 +475,32 @@ for (const core of [editorCoreModel, editorCorePorts, editorCoreController]) {
 assert.match(editorActivity, /CodynexEditorController/);
 assert.match(editorActivity, /controller\.compile\(\)/);
 assert.match(editorActivity, /controller\.preview\(\)/);
+assert.match(editorActivity, /actionButton\("Pack APK"\)/);
+assert.match(editorActivity, /CodynexApkBuilder/);
+assert.match(editorApkBuilder, /class CodynexApkBuilder/);
+assert.match(editorApkBuilder, /context\.applicationInfo\.sourceDir/);
+assert.match(editorApkBuilder, /CodynexApkV2Signer/);
+assert.match(editorApkBuilder, /packAuthority", "Codynex"/);
+assert.match(editorApkBuilder, /signAuthority", "Codynex"/);
+assert.match(editorApkBuilder, /runtimeDependency", "none"/);
+assert.match(editorApkBuilder, /MediaStore\.Downloads\.EXTERNAL_CONTENT_URI/);
+assert.match(editorApkBuilder, /Environment\.DIRECTORY_DOWNLOADS \+ "\/Codynex"/);
+assert.match(editorApkBuilder, /publishedUri/);
+assert.ok(
+  !/com\.riftos\.app|RiftBuildLocalExecutor|prepare-codynex-app/.test(editorApkBuilder),
+  'Codynex-owned APK builder gained an executable RiftOS/RiftBuild packaging dependency'
+);
+assert.ok(
+  !/Codynex Notepad|write_clear|LETS GOOOOO/i.test(editorApkBuilder),
+  'Codynex-owned APK builder gained Notepad-specific semantics'
+);
+assert.match(editorApkSigner, /class CodynexApkV2Signer/);
+assert.match(editorApkSigner, /KEY_ALIAS = "codynex-apk-v2-rsa-v1"/);
+assert.match(editorApkSigner, /CN=Codynex Local APK V2/);
+assert.ok(
+  !/RiftBuild|com\.riftos\.app/.test(editorApkSigner),
+  'Codynex-owned APK signer gained a RiftOS identity/dependency'
+);
 assert.match(editorWorkspace, /StandardCopyOption\.ATOMIC_MOVE/);
 assert.match(editorWorkspace, /path escapes editor workspace/);
 assert.match(editorBootstrap, /VM1_SHA256/);
