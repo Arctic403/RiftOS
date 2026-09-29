@@ -56,13 +56,28 @@ class RiftNativeShellServices(context: Context) {
                 .put("hostSnapshotSchema", "riftosplus-host-snapshot/1")
                 .put("hostSnapshotBytes", 24)
                 .put("hostSnapshotCapabilities", 7)
+                .put("hostCallTurns", true)
+                .put("hostCallSchema", "riftosplus-host-call/1")
+                .put("hostCallMaxTurns", 2)
+                .put("workspaceProbe", true)
                 .put("maxModules", 64)
                 .put("maxSourceBytes", 256 * 1024)
                 .put("maxProjectBytes", 1024 * 1024)
             return Result(value.toString(2), value)
         }
 
-        require(sub in setOf("c0-compile", "c0_compile", "c0-run", "c0_run", "c0-run-host", "c0_run_host")) {
+        require(
+            sub in setOf(
+                "c0-compile",
+                "c0_compile",
+                "c0-run",
+                "c0_run",
+                "c0-run-host",
+                "c0_run_host",
+                "c0-run-host-call",
+                "c0_run_host_call"
+            )
+        ) {
             "unknown Codynex C0 command: $sub"
         }
         require(args.size in 1..2) {
@@ -70,7 +85,10 @@ class RiftNativeShellServices(context: Context) {
                 " <project> [root-relative]"
         }
 
-        val hostRun = sub == "c0-run-host" || sub == "c0_run_host"
+        val hostCallRun =
+            sub == "c0-run-host-call" || sub == "c0_run_host_call"
+        val hostRun =
+            hostCallRun || sub == "c0-run-host" || sub == "c0_run_host"
         val nativeRun =
             hostRun || sub == "c0-run" || sub == "c0_run"
 
@@ -110,7 +128,9 @@ class RiftNativeShellServices(context: Context) {
         val value = JSONObject()
             .put(
                 "schema",
-                if (hostRun) {
+                if (hostCallRun) {
+                    "codynex-c0-project-host-call-run/1"
+                } else if (hostRun) {
                     "codynex-c0-project-host-run/1"
                 } else if (nativeRun) {
                     "codynex-c0-project-run/1"
@@ -134,50 +154,158 @@ class RiftNativeShellServices(context: Context) {
 
         if (nativeRun) {
             val vm1 = loadCodynexC0Vm1()
-            val source = if (hostRun) {
+            val initialSource = if (hostRun) {
                 buildCodynexC0HostSnapshot()
             } else {
                 ByteArray(0)
             }
-            val output = ByteArray(64 * 1024)
             val stepBudget = (
                 compiled.vm1.size * 256 + 20_000
             ).coerceIn(20_000, 5_000_000)
-            val run = Vm1Bridge.run(
+            val firstOutput = ByteArray(64 * 1024)
+            val firstRun = Vm1Bridge.run(
                 vm = vm1,
                 program = compiled.vm1,
-                source = source,
-                output = output,
+                source = initialSource,
+                output = firstOutput,
                 stepBudget = stepBudget
             )
-            require(run.size >= 2) {
+            require(firstRun.size >= 2) {
                 "Codynex native VM1 bridge returned malformed result"
             }
+
+            var finalRun = firstRun
+            var finalSource = initialSource
+            var workspaceProbeOk: Boolean? = null
+
+            if (hostCallRun) {
+                require(firstRun[0] == 0) {
+                    "Codynex R1.1 host-call request turn failed"
+                }
+                val requestBytes = Integer.toUnsignedLong(firstRun[1])
+                require(requestBytes == 8L) {
+                    "Codynex R1.1 host-call request must be exactly 8 bytes"
+                }
+                requireCodynexC0WorkspaceProbeRequest(firstOutput)
+
+                val probeOk = resolveFile("/D:/Workspace").isDirectory
+                workspaceProbeOk = probeOk
+                finalSource =
+                    initialSource +
+                        buildCodynexC0WorkspaceProbeResponse(probeOk)
+                val secondOutput = ByteArray(64 * 1024)
+                finalRun = Vm1Bridge.run(
+                    vm = vm1,
+                    program = compiled.vm1,
+                    source = finalSource,
+                    output = secondOutput,
+                    stepBudget = stepBudget
+                )
+                require(finalRun.size >= 2) {
+                    "Codynex R1.1 host-call response turn malformed"
+                }
+
+                value
+                    .put("hostCallSchema", "riftosplus-host-call/1")
+                    .put("hostCallTurns", 2)
+                    .put("hostRequestSchema", "riftosplus-host-request/1")
+                    .put("hostRequestBytes", 8)
+                    .put("hostOperation", "workspace-probe")
+                    .put("hostOperationOk", workspaceProbeOk)
+                    .put("hostResponseSchema", "riftosplus-host-response/1")
+                    .put("hostResponseBytes", 12)
+                    .put("requestTurnStatus", firstRun[0])
+                    .put(
+                        "requestTurnResult",
+                        Integer.toUnsignedLong(firstRun[1])
+                    )
+            }
+
             value
                 .put("vmBackend", "codynex_editor_vm")
                 .put("vm1AuthorityBytes", vm1.size)
                 .put("vm1AuthoritySha256", codynexC0Sha256(vm1))
                 .put("stepBudget", stepBudget)
-                .put("status", run[0])
-                .put("programResult", Integer.toUnsignedLong(run[1]))
-                .put("ok", run[0] == 0)
+                .put("status", finalRun[0])
+                .put("programResult", Integer.toUnsignedLong(finalRun[1]))
+                .put(
+                    "ok",
+                    finalRun[0] == 0 &&
+                        (!hostCallRun || finalRun[1] == 0)
+                )
 
             if (hostRun) {
                 value
                     .put("hostSnapshotSchema", "riftosplus-host-snapshot/1")
-                    .put("hostSnapshotBytes", source.size)
-                    .put("hostSnapshotSha256", codynexC0Sha256(source))
+                    .put("hostSnapshotBytes", initialSource.size)
+                    .put(
+                        "hostSnapshotSha256",
+                        codynexC0Sha256(initialSource)
+                    )
                     .put("hostLifecycle", 1)
                     .put("hostAbi", "armeabi-v7a")
                     .put("hostCapabilities", 7)
-                    .put("hostMonotonicLow", source[16].toInt() and 0xff)
-                    .put("hostUnixSecondLow", source[20].toInt() and 0xff)
+                    .put(
+                        "hostMonotonicLow",
+                        initialSource[16].toInt() and 0xff
+                    )
+                    .put(
+                        "hostUnixSecondLow",
+                        initialSource[20].toInt() and 0xff
+                    )
+            }
+
+            if (hostCallRun) {
+                value.put(
+                    "hostExchangeSha256",
+                    codynexC0Sha256(finalSource)
+                )
             }
         } else {
             value.put("ok", true)
         }
 
         return Result(value.toString(2), value)
+    }
+
+    private fun requireCodynexC0WorkspaceProbeRequest(
+        output: ByteArray
+    ) {
+        val expected = byteArrayOf(
+            82.toByte(),
+            43.toByte(),
+            81.toByte(),
+            49.toByte(),
+            1.toByte(),
+            1.toByte(),
+            0.toByte(),
+            0.toByte()
+        )
+        for (index in expected.indices) {
+            require(output[index] == expected[index]) {
+                "Codynex R1.1 host-call request packet mismatch"
+            }
+        }
+    }
+
+    private fun buildCodynexC0WorkspaceProbeResponse(
+        available: Boolean
+    ): ByteArray {
+        val response = ByteArray(12)
+        response[0] = 82.toByte()
+        response[1] = 43.toByte()
+        response[2] = 65.toByte()
+        response[3] = 49.toByte()
+        response[4] = 1.toByte()
+        response[5] = 1.toByte()
+        response[6] = 0.toByte()
+        response[7] = 0.toByte()
+        putCodynexC0U32Le(
+            response,
+            8,
+            if (available) 1 else 0
+        )
+        return response
     }
 
     private fun buildCodynexC0HostSnapshot(): ByteArray {
@@ -644,6 +772,7 @@ class RiftNativeShellServices(context: Context) {
                     "codynex c0-compile <project> [root-relative]\n" +
                     "codynex c0-run <project> [root-relative]\n" +
                     "codynex c0-run-host <project> [root-relative]\n" +
+                    "codynex c0-run-host-call <project> [root-relative]\n" +
                     "Legacy LR0 bridge:\n" +
                     "codynex status\n" +
                     "codynex read-state <id>\n" +
