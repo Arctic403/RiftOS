@@ -27,11 +27,11 @@ Rift++ source
 
 Gradle/NDK compatibility is an adapter above that core, not the authority boundary.
 
-## Why RiftBuild cannot simply unpack desktop NDK tools
+## Native toolchain execution policy
 
-RiftOS targets modern Android. Executing downloaded binaries from writable app storage is not a safe or supported foundation, and the official Android NDK host packages are desktop-host toolchains rather than an Android-host build runtime.
+RiftBuild may use local or downloaded native compiler toolchains when they are explicitly provisioned for Android-host execution. The official desktop NDK host packages are not assumed to run on Android unchanged, so toolchain provisioning remains a separate compatibility responsibility.
 
-Therefore RiftBuild v0.1 deliberately keeps execution in Android/Kotlin/Rift++ owned code and fails closed when a stage has no in-process implementation.
+Native Compile V1 executes the configured compiler directly with a structured argument vector. Project/source text is never passed to a shell command, `/system/bin/sh -c` is not part of the build path, outputs remain confined to the selected project's `build/riftbuild/` subtree, and produced ELF shared objects are independently checked before packaging.
 
 ## Native owner
 
@@ -51,7 +51,9 @@ The retained `src/riftbuild.js` remains reference-only and is not repackaged or 
 ## Source ownership
 
 Maintained live owners:
-- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — native build controller, direct-ELF bridge materializer, fixed binary-manifest V0 encoder, prepared APK packager and bounded sign/verify/install command routing;
+- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — native build controller, direct-ELF bridge materializer, binary-manifest/package orchestration and bounded sign/verify/install command routing;
+- `android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt` — Native Compile V1 toolchain discovery, structured compiler argv execution, project-manifest validation and ARM32/ARM64 ELF output verification;
+- `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` — generic NativeActivity binary-manifest generation plus bounded project-asset materialization for normal native applications;
 - `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` — Android-Keystore RSA key owner plus narrow APK Signature Scheme v2 encoder/verifier;
 - `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` — exact-package PackageInstaller session/result/first-launch proof owner;
 - `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed native `riftbuild` command routing;
@@ -76,9 +78,9 @@ It may write only:
 RiftBuild may not mutate project source, compiler source, evidence source or arbitrary workspace paths.
 
 It does not:
-- execute caller-provided commands;
-- execute arbitrary host binaries;
-- download toolchains;
+- interpret project/source text as shell commands;
+- invoke a shell command string for native compilation;
+- execute a compiler outside the explicitly configured native-toolchain contract;
 - change MCP tool count;
 - bypass `build.local` grants;
 - push Git;
@@ -95,6 +97,9 @@ Native shell:
 riftbuild doctor [project]
 riftbuild validate <project>
 riftbuild plan <project> [arm32|arm64|universal]
+riftbuild toolchain-status
+riftbuild compile-native <project> [arm32|arm64|universal]
+riftbuild prepare-native-app <project>
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>
 riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>
@@ -118,6 +123,57 @@ riftbuild launch-proof
 riftbuild runs [limit]
 riftbuild artifacts [project]
 ```
+
+### Native Compile V1 manifests
+
+Toolchain provisioning is described by `/C:/Toolchains/android-clang-v1/toolchain.json`:
+
+```json
+{
+  "schema": "riftbuild-android-clang-toolchain/1",
+  "version": "clang-compatible",
+  "source": "local-or-downloaded",
+  "compiler": "bin/clang++",
+  "sysroot": "sysroot",
+  "args": ["--resource-dir=%TOOLCHAIN%/lib/clang/<version>"]
+}
+```
+
+`compiler` and `sysroot` may be relative to that toolchain root; `absolute:/...` is also accepted, and a bundled executable may use `native:<filename>`. Bounded `args` are toolchain-owned argv entries for resource/libc++/linker setup and are never interpreted by a shell; `%TOOLCHAIN%` and `%SYSROOT%` expand to the resolved toolchain/sysroot directories before process launch. Readiness requires a real executable compiler and sysroot. Android-host compatibility is proven only when `compile-native` actually succeeds.
+
+Each native project opts in with `<project>/rift-native.json`:
+
+```json
+{
+  "schema": "riftbuild-native-project/1",
+  "library": "proto_llm",
+  "sources": ["native/proto.cpp"],
+  "includeDirs": ["native/include"],
+  "libraries": ["android", "log"],
+  "cxxStandard": "c++20",
+  "api": 26,
+  "optimization": "O2"
+}
+```
+
+Sources and include directories are project-relative and confined to the project. `libraries` is a bounded list of linker library names lowered to `-l<name>` (for example Android NativeActivity code can request `android` and `log`). Native Compile V1 owns `-o`, target/sysroot selection, PIC/shared-library mode and linker identity flags; project text is not parsed as command text. Universal compilation emits and ELF-verifies both `lib/arm64-v8a/lib<library>.so` and `lib/armeabi-v7a/lib<library>.so` under `build/riftbuild/prepared/`.
+
+Generic NativeActivity packaging opts in with `<project>/rift-app.json`:
+
+```json
+{
+  "schema": "riftbuild-native-app/1",
+  "package": "com.proto.llm",
+  "library": "proto_llm",
+  "versionCode": 1,
+  "versionName": "0.1.0",
+  "minSdk": 26,
+  "targetSdk": 36,
+  "assetsDir": "assets"
+}
+```
+
+`riftbuild prepare-native-app <project>` emits a bounded Android binary manifest for an exported `android.app.NativeActivity`, cross-checks its library name against `rift-native.json` when present, and copies the bounded project asset tree into `build/riftbuild/prepared/assets/` without touching already-compiled ABI libraries. This is the intended lane for custom script source/bytecode such as Proto-LLM runtime assets.
 
 Installed Rift app API keeps the existing capability boundary:
 
@@ -432,6 +488,8 @@ The subsystem is invalid if:
 ## Fix map
 
 - local build controller/package stage -> `RiftBuildLocalExecutor.kt`;
+- native C/C++ compiler execution -> `RiftBuildNativeToolchain.kt`;
+- generic NativeActivity manifest/assets preparation -> `RiftBuildNativeApp.kt`;
 - shell command routing -> `RiftNativeShell.kt`;
 - installed-app capability surface -> `RiftBrowserAppHost.kt`;
 - Android source snapshot -> `android/app/build.gradle.kts`;
@@ -442,7 +500,7 @@ The subsystem is invalid if:
 ## Validation
 
 Promotion requires:
-- focused source test proves workspace/output confinement and absence of raw process execution;
+- focused source test proves workspace/output confinement and confines process execution to `RiftBuildNativeToolchain` structured compiler argv (no shell command string);
 - existing `build.local` remains capability-gated;
 - `src/riftbuild.js` remains unpackaged reference code;
 - exact Kotlin snapshot includes the native owner;

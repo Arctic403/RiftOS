@@ -6,6 +6,20 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.47 — RiftBuild generic NativeActivity app preparation
+
+Added `RiftBuildNativeApp.kt` and `riftbuild prepare-native-app <project>` so ordinary native applications no longer need a proof-specific frozen Android manifest. A bounded `rift-app.json` now defines package/library/version/SDK metadata and an optional project asset directory. The preparer emits Android binary XML for a `NativeActivity`, cross-checks the native library identity against `rift-native.json` when present, clears/re-materializes only the prepared asset subtree, and preserves ABI `.so` outputs already emitted by Native Compile V1. Asset count/bytes and all paths are bounded and project-confined.
+
+This closes the source-side C++ + custom-script packaging path: `compile-native -> prepare-native-app -> pack -> sign -> verify`. Historical proof manifest encoders and their byte identities remain unchanged. Lifecycle: **SOURCE IMPLEMENTED**; Builder compilation, generic-manifest artifact validation, compatible Android-host compiler provisioning and installed-device proof are still pending.
+
+## Patch 10.46 — RiftBuild Native Compile V1
+
+Added a general C/C++ native compilation lane to RiftBuild. `RiftBuildNativeToolchain.kt` owns explicit Android-host toolchain configuration from `C:/Toolchains/android-clang-v1/toolchain.json`, reads bounded per-project `rift-native.json`, and emits verified `lib/<abi>/lib<name>.so` artifacts directly into the existing prepared APK tree for ARM32, ARM64 or universal builds. The compiler is launched directly with a structured argv vector; project/source text is not interpreted as a shell command. Local/downloaded toolchains are permitted when explicitly configured and executable on the Android host.
+
+`riftbuild toolchain-status` reports provisioning readiness and `riftbuild compile-native <project> [arm32|arm64|universal]` performs compilation. The runner confines project sources/includes/outputs, bounds source counts/sizes/compiler output/time, pins supported C++ standards and optimization values, supports bounded toolchain-owned argv for resource/libc++ setup plus bounded project `libraries` lowered to `-l<name>`, and independently verifies ELF class/type/machine plus SHA-256 before returning success. `RiftBuildLocalExecutor.doctor` now reports real `compileReady` state from this toolchain owner instead of the previous hardcoded native-compile blocker. Existing pack/sign/verify/install ownership is unchanged.
+
+Lifecycle: **SOURCE IMPLEMENTED**. Focused source/validator and Builder compilation are required next; installed-device compiler execution is not claimed until a compatible Android-host toolchain is provisioned and both ABI outputs are proven on-device.
+
 ## Patch 10.45 — Rift++ S2 fixed reject-offset diagnostic correction
 
 Installed RiftOS source `ff852299c4dabbfaf82f5b32c62a7b20cd67bf53` / Builder run 436 executed Patch 10.44's fixed diagnostic on `armeabi-v7a`. Generation A again produced the exact 44288-byte ARM32 and ARM64 Generation-B identities, while canonical Generation B still failed its first self-recompile with host status `-273`. The diagnostic image returned `diagnosticReturnValue=44288` instead of a record index. A source audit then proved `v5` is written only for compiler loop-index initialization/increment, so the live value 44288 demonstrates that generated Generation-B native execution is corrupting mapped v5/r5 state; the original assumption that `v5` remained a trustworthy reject-site index was invalid.

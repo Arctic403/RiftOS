@@ -40,7 +40,7 @@ Immediate order:
 6. **THEN RETURN TO RIFTLLM+** as the first real repository compiled through the native Rift++/RiftBuild path;
 7. broader Gradle/NDK compatibility adapters stay deferred unless RiftLLM+ proves they are actually needed.
 
-RiftBuild must not add arbitrary shell execution, downloaded executable toolchains, automatic Git push, CLI enablement or new MCP authority.
+RiftBuild Native Compile V1 may execute explicitly configured local/downloaded compiler toolchains through structured argument-vector process launches. Project/source text is never interpreted as a shell command, and `/system/bin/sh -c` remains outside the build path. Automatic Git push, CLI enablement and new MCP authority remain out of scope.
 
 ## Semnexis self-hosting bootstrap
 

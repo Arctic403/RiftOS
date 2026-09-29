@@ -5,13 +5,17 @@ const read = file => fs.readFileSync(file, 'utf8');
 const exists = file => fs.existsSync(file);
 
 const nativeBuildPath = 'android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt';
+const nativeToolchainPath = 'android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt';
+const nativeAppPath = 'android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt';
 const signerPath = 'android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt';
 const installerPath = 'android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt';
-for (const file of [nativeBuildPath, signerPath, installerPath]) {
+for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath]) {
   assert.ok(exists(file), 'RiftBuild source owner is missing: ' + file);
 }
 
 const nativeBuild = read(nativeBuildPath);
+const nativeToolchain = read(nativeToolchainPath);
+const nativeApp = read(nativeAppPath);
 const signer = read(signerPath);
 const installer = read(installerPath);
 const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
@@ -32,6 +36,13 @@ for (const required of [
   'system/riftbuild/v1/runs',
   'documents/builds',
   'workspaceRoot',
+  'RiftBuildNativeToolchain',
+  'toolchain-status',
+  'compile-native',
+  'RiftBuildNativeApp',
+  'prepare-native-app',
+  'structuredCompilerProcessExecution',
+  'downloadedToolchainsAllowed',
   'preparedArtifactPackagerReady',
   'prepared-native-proof',
   'riftpp-direct-elf-shared-v0-bytes/1',
@@ -123,6 +134,47 @@ for (const required of [
 ]) assert.ok(installer.includes(required), 'RiftBuild installer contract missing: ' + required);
 assert.ok(!installer.includes('PendingIntent.getActivity('), 'PackageInstaller status callback regressed to Activity-only delivery');
 assert.ok(mainActivity.includes('RiftBuildInstaller.resumePendingConfirmation(this)'), 'MainActivity must resume retained PackageInstaller confirmation from a foreground Activity');
+
+for (const required of [
+  'class RiftBuildNativeToolchain',
+  'riftbuild-android-clang-toolchain/1',
+  'riftbuild-native-project/1',
+  'rift-native.json',
+  'ProcessBuilder(argv)',
+  'structured-argv',
+  '--target=',
+  '--sysroot=',
+  'MAX_TOOLCHAIN_ARGS = 128',
+  'toolchainArgCount',
+  '.replace("%TOOLCHAIN%", toolchainRoot.absolutePath)',
+  '.replace("%SYSROOT%", sysroot.absolutePath)',
+  'libraries',
+  'MAX_LIBRARIES = 64',
+  'Native link-library name is invalid',
+  'build/riftbuild/prepared',
+  'armeabi-v7a',
+  'arm64-v8a',
+  'verifyElf',
+  'downloadedToolchainsAllowed',
+]) assert.ok(nativeToolchain.includes(required), 'native toolchain contract missing: ' + required);
+assert.ok(!nativeToolchain.includes('/system/bin/sh'), 'native toolchain must not route compilation through a shell');
+assert.ok(!nativeToolchain.includes('Runtime.getRuntime().exec'), 'native toolchain must use structured ProcessBuilder argv only');
+
+for (const required of [
+  'class RiftBuildNativeApp',
+  'riftbuild-native-app/1',
+  'rift-app.json',
+  'android.app.NativeActivity',
+  'android.app.lib_name',
+  'build/riftbuild/prepared/AndroidManifest.xml',
+  'assetFiles',
+  'MAX_ASSET_FILES = 5_000',
+  'MAX_ASSET_BYTES = 128L * 1024L * 1024L',
+  'rift-app.json library must match rift-native.json library',
+  'Native app assetsDir must not point inside build/riftbuild',
+]) assert.ok(nativeApp.includes(required), 'native app preparer contract missing: ' + required);
+assert.ok(!nativeApp.includes('ProcessBuilder'), 'native app preparer must not gain process authority');
+assert.ok(!nativeApp.includes('Runtime.getRuntime().exec'), 'native app preparer must not gain raw exec authority');
 
 const combinedAuthority = nativeBuild + '\n' + signer + '\n' + installer;
 for (const forbidden of [
@@ -407,14 +459,14 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|compile-native\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
 assert.match(appHost, /"build\.submit" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.submit\(args\) \}/);
 assert.match(appHost, /private val riftBuild = RiftBuildLocalExecutor\(activity\.applicationContext\)/);
 
-for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt']) {
+for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftBuildNativeToolchain.kt', 'RiftBuildNativeApp.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt']) {
   assert.ok(gradle.includes('src/main/java/com/riftos/app/' + source), 'Gradle exact source snapshot omitted ' + source);
 }
 assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'), 'RiftOS manifest omitted REQUEST_INSTALL_PACKAGES');

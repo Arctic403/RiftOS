@@ -13,9 +13,9 @@ import java.util.zip.ZipOutputStream
 /**
  * Workspace-bounded native RiftBuild controller.
  *
- * No raw process execution lives here. v0.1 validates Android projects, records bounded plans/runs,
- * materializes the fixed Rift++ proof, packages prepared Android artifacts, and routes only bounded
- * D:/Builds APK v2 sign/verify/install-proof operations to dedicated native owners.
+ * Native Compile V1 delegates structured compiler argv execution to RiftBuildNativeToolchain.
+ * Project/source text is never interpreted as a shell command. This controller validates Android
+ * projects, records bounded plans/runs, packages prepared artifacts, and routes bounded APK operations.
  */
 class RiftBuildLocalExecutor(context: Context) {
     data class CommandResult(val output: String, val value: JSONObject)
@@ -295,6 +295,8 @@ class RiftBuildLocalExecutor(context: Context) {
     private val workspaceRoot = File(riftRoot, "workspace").apply { mkdirs() }.canonicalFile
     private val runRoot = File(riftRoot, "system/riftbuild/v1/runs").apply { mkdirs() }.canonicalFile
     private val artifactRoot = File(riftRoot, "documents/builds").apply { mkdirs() }.canonicalFile
+    private val nativeToolchain = RiftBuildNativeToolchain(appContext, riftRoot, workspaceRoot)
+    private val nativeApp = RiftBuildNativeApp(workspaceRoot)
     private val apkSigner = RiftApkV2Signer(appContext)
     private val installer = RiftBuildInstaller(appContext)
 
@@ -303,12 +305,22 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | compile-native <project> [arm32|arm64|universal] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
                 args.firstOrNull() ?: error("usage: riftbuild plan <project> [arm32|arm64|universal]"),
                 args.getOrNull(1) ?: "universal",
+                cwd
+            )
+            "toolchain-status" -> nativeToolchain.status()
+            "compile-native" -> compileNative(
+                args.firstOrNull() ?: error("usage: riftbuild compile-native <project> [arm32|arm64|universal]"),
+                args.getOrNull(1) ?: "universal",
+                cwd
+            )
+            "prepare-native-app" -> prepareNativeApp(
+                args.firstOrNull() ?: error("usage: riftbuild prepare-native-app <project>"),
                 cwd
             )
             "prepare-riftpp-v0" -> prepareRiftppV0(
@@ -378,27 +390,47 @@ class RiftBuildLocalExecutor(context: Context) {
         }
         val packReady = projectValue?.optBoolean("sourceReady", false) == true &&
             projectValue.optBoolean("preparedPackageReady", false)
+        val toolchain = nativeToolchain.status()
+        val compileReady = toolchain.optBoolean("ready", false)
+        val blockers = JSONArray()
+        toolchain.optJSONArray("blockers")?.let { values ->
+            for (i in 0 until values.length()) blockers.put("native-compile: " + values.getString(i))
+        }
+        blockers.put("package-install: Android may still require Allow from this source + user confirmation")
         return JSONObject()
             .put("schema", "riftbuild-native-doctor-v1")
             .put("available", true)
             .put("nativeExecutor", true)
-            .put("rawProcessExecution", false)
-            .put("arbitraryShell", false)
+            .put("structuredCompilerProcessExecution", true)
+            .put("rawShellExecution", false)
+            .put("downloadedToolchainsAllowed", true)
             .put("workspaceOnly", true)
             .put("sourceValidationReady", true)
             .put("preparedArtifactPackagerReady", true)
             .put("packReady", packReady)
-            .put("compileReady", false)
+            .put("compileReady", compileReady)
+            .put("toolchain", toolchain)
             .put("signingReady", true)
             .put("verificationReady", true)
             .put("installOwnerReady", true)
             .put("installReady", appContext.packageManager.canRequestPackageInstalls())
-            .put("ready", false)
+            .put("ready", compileReady && (projectValue == null || packReady))
             .put("project", projectValue ?: JSONObject.NULL)
             .put("artifactRoot", "/D:/Builds")
-            .put("blockers", JSONArray()
-                .put("native-compile: general repository native compilation is not wired yet")
-                .put("package-install: Android may still require Allow from this source + user confirmation"))
+            .put("blockers", blockers)
+    }
+
+    fun compileNative(project: String, target: String = "universal", cwd: String = "/D:/Workspace"): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(ref.file.isDirectory) { "Build project is not a directory: " + ref.display }
+        return nativeToolchain.compile(ref.file, normalizeTarget(target))
+            .put("project", ref.display)
+    }
+
+    fun prepareNativeApp(project: String, cwd: String = "/D:/Workspace"): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(ref.file.isDirectory) { "Build project is not a directory: " + ref.display }
+        return nativeApp.prepare(ref.file).put("project", ref.display)
     }
 
     fun validate(project: String, cwd: String = "/D:/Workspace"): JSONObject {
