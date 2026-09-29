@@ -184,21 +184,21 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val EDITOR_SOURCE0_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"
         private val EDITOR_SOURCE_SHA256 = linkedMapOf(
             "external/editor/core/src/main/kotlin/com/codynex/editor/EditorModel.kt" to
-                "d9dbb536e623800f53766f86ded4c31735d2b877fe515fabcf5b9d250e70eb8b",
+                "c1d1ac41bbceb3a046c7bfc1fe70a63ecc56ec5186bbe5440a31eb00d1f71d32",
             "external/editor/core/src/main/kotlin/com/codynex/editor/EditorPorts.kt" to
-                "427008739cfaf470c78d99ab740263c969335be349d1909926380c31e124c85b",
+                "430810cfdbeca2f945548603790661720aab391e9e04b3367f374b16c1b0a5c6",
             "external/editor/core/src/main/kotlin/com/codynex/editor/CodynexEditorController.kt" to
-                "b68dfe842893871190d9f0585bf96294d62525d4f74cebee88a272204cafe15d",
+                "d545e3802b300af446bbce56948b10a0ac7b5c00c04c118caa84a93f38e11b45",
             "external/editor/app/src/main/java/com/codynex/editorapp/FileWorkspacePort.kt" to
-                "49f2346ceb2d896203c8aca3305e98724a22d482aa9a0d74e6b9347b0f64bc04",
+                "b89c30344a2b7a0aa48c5956030cdfeaae363bf02d3bd705051e9e88bb34f592",
             "external/editor/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
                 "b8f62b2ed06763f86215badf340e186dfd4ab923ccc6b07f48654977b466e157",
             "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-                "981255ebf8ab4a047fdd9d6fa9b9094bb61f2af181038ac499a7538a6aabe712",
+                "6f09176fdbf57e35f557f2de9f595f8c7226623a96b432631467086cfb7ed637",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
             "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
-                "00b70a537dad3d34c333404de0273ad69b7c858ec3705073278de7615598ce23",
+                "fa0224b273999ee0626dcec932ed435abc80e13c2fe880562695bb407cf8231b",
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
                 "47039b185cc4c481846735946b1f0667564e729f5994b7badb0ab6ce69b978ba",
             "external/editor/app/build.gradle.kts" to

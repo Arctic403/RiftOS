@@ -13,9 +13,14 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * TEMPORARY Codynex editor live-proof transport only.
+ * This is not compiler authority and MUST disappear when native Codynex/.cx owns the editor/toolchain path.
+ */
 class CodynexCompilerProvider : ContentProvider() {
     companion object {
         private const val METHOD_COMPILE = "compile-c0"
+        private const val METHOD_COMPILE_PROJECT = "compile-c0-project"
         private const val EDITOR_PACKAGE = "com.codynex.editor"
         private const val EDITOR_CERT_SHA256 =
             "9874e844c24fe92c65908ce9b3cfb192f87774984a9e4fc600d883badcbe19b5"
@@ -24,6 +29,8 @@ class CodynexCompilerProvider : ContentProvider() {
         private const val COMPILER_VERSION =
             "codynex-c0-ref/0.11.0"
         private const val MAX_SOURCE_BYTES = 256 * 1024
+        private const val MAX_PROJECT_BYTES = 1024 * 1024
+        private const val MAX_PROJECT_MODULES = 64
         private const val MAX_VM1_BYTES = 64 * 1024
     }
 
@@ -50,7 +57,10 @@ class CodynexCompilerProvider : ContentProvider() {
     ): Bundle {
         verifyCaller()
 
-        if (method != METHOD_COMPILE) {
+        if (
+            method != METHOD_COMPILE &&
+            method != METHOD_COMPILE_PROJECT
+        ) {
             return Bundle().apply {
                 putBoolean("success", false)
                 putString("error", "unsupported Codynex compiler method")
@@ -65,18 +75,94 @@ class CodynexCompilerProvider : ContentProvider() {
                 }
 
         val sourceBytes = source.toByteArray(Charsets.UTF_8)
-        if (sourceBytes.size > MAX_SOURCE_BYTES) {
+        if (sourceBytes.isEmpty() || sourceBytes.size > MAX_SOURCE_BYTES) {
             return Bundle().apply {
                 putBoolean("success", false)
                 putString(
                     "error",
-                    "source exceeds " + MAX_SOURCE_BYTES + " bytes"
+                    "source must be 1.." + MAX_SOURCE_BYTES + " bytes"
                 )
             }
         }
 
         return synchronized(lock) {
-            compileSource(source)
+            if (method == METHOD_COMPILE_PROJECT) {
+                compileProject(
+                    rootSource = source,
+                    modulesJson = extras?.getString("modulesJson") ?: "{}"
+                )
+            } else {
+                compileSource(source)
+            }
+        }
+    }
+
+    private fun compileProject(
+        rootSource: String,
+        modulesJson: String
+    ): Bundle {
+        return try {
+            val payload = JSONObject(modulesJson)
+            require(payload.length() <= MAX_PROJECT_MODULES - 1) {
+                "project exceeds $MAX_PROJECT_MODULES modules"
+            }
+
+            val moduleId = Regex(
+                "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+            )
+            val modules = linkedMapOf<String, String>()
+            var totalBytes = rootSource.toByteArray(Charsets.UTF_8).size
+
+            val names = mutableListOf<String>()
+            val keys = payload.keys()
+            while (keys.hasNext()) names += keys.next()
+
+            for (name in names.sorted()) {
+                require(moduleId.matches(name)) {
+                    "invalid Codynex module identity: $name"
+                }
+                val source = payload.getString(name)
+                val bytes = source.toByteArray(Charsets.UTF_8)
+                require(bytes.isNotEmpty() && bytes.size <= MAX_SOURCE_BYTES) {
+                    "module exceeds per-source bounds: $name"
+                }
+                totalBytes += bytes.size
+                require(totalBytes <= MAX_PROJECT_BYTES) {
+                    "project exceeds $MAX_PROJECT_BYTES bytes"
+                }
+                modules[name] = source
+            }
+
+            val compiled =
+                runtime.compileCodynexC0Project(
+                    rootSource = rootSource,
+                    moduleSources = modules
+                )
+
+            require(compiled.compiler == COMPILER_VERSION) {
+                "compiler identity drift"
+            }
+            require(compiled.vm1.isNotEmpty()) {
+                "compiler returned empty VM1"
+            }
+            require(compiled.vm1.size <= MAX_VM1_BYTES) {
+                "compiler VM1 output exceeds $MAX_VM1_BYTES bytes"
+            }
+
+            Bundle().apply {
+                putBoolean("success", true)
+                putString("compiler", compiled.compiler)
+                putByteArray("vm1", compiled.vm1)
+                putInt("moduleCount", compiled.moduleCount)
+            }
+        } catch (error: Throwable) {
+            Bundle().apply {
+                putBoolean("success", false)
+                putString(
+                    "error",
+                    error.message ?: error.javaClass.simpleName
+                )
+            }
         }
     }
 
