@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.44 — Rift++ S2 fixed reject-index diagnostic
+
+Installed RiftOS source `9a90ea6b188100864bac51236b51798bdf049ebc` / Builder run 435 reached current-host Generation B but failed when B recompiled the canonical compiler source with native host status `-273`. The bounded native helper defines `-273` only when the compiler returns `0xffffffff` or returns a length above the supplied capacity. The self-host call already supplies the exact 11072-byte canonical source and exact 44288-byte output capacity, so this patch adds diagnostic evidence instead of widening bounds or moving compiler semantics into RiftOS.
+
+Two fixed diagnostic S2 sources now live under `s2/diagnostics/`. Each is an exact copy of its canonical target source except the final reject tail returns `v5`, the current validation record index, rather than `0xffffffff`. ARM32 transport/raw identities are `0981e85a…` / `cac67ffa…`; ARM64 transport/raw identities are `6b457d9c…` / `ba4ea986…`. `RiftNativeShell` chooses only the current-host ABI file, enforces the exact 23528-byte transport size and transport SHA before canonical fixed-record decoding, and `RiftppCompilerService` independently pins the decoded 11072-byte raw identity.
+
+Inside the existing private self-host transaction, the already-proven Generation-A compiler compiles the exact diagnostic source to a temporary 44288-byte host-native image. Native code places only that generated image in a separate guarded W→X mapping and invokes it only against the exact current-host canonical compiler source. Its returned value is carried back as `diagnosticReturnValue`, including through the existing B→C failure paths. The diagnostic image cannot replace the canonical compiler, repair output, accept arbitrary source/compiler paths, or satisfy the self-host promotion gate; RiftOS still contains no S2 opcode parser or native instruction selector.
+
+Regression coverage now locks both transport and raw diagnostic identities, fixed paths, the 12-field result envelope, the generated-only diagnostic executable path and the unchanged generic 4096-byte compile-source ceiling. RiftBuild structural validation remains green with `sourceReady=true`. Builder compilation and installed reject-index evidence remain pending, and S2 remains unpromoted until the canonical compiler completes deterministic B=C for ARM32 and ARM64.
+
 ## Patch 10.43 — Rift++ S2 canonical self-host fixed point
 
 Generation A is already installed-device proven on source `01243f65b81866fd48552be6c33ab2d73752c35a` / Builder run 434. Current source now adds the next fixed authority transition: `riftpp-host s2-selfhost <riftpp-root>`.

@@ -81,6 +81,10 @@ class RiftppCompilerService : Service() {
             "9596484935c0610c1c956721e023ab06376c56802b91474905043909dc36c4b7"
         private const val S2_CANONICAL_ARM64_SOURCE_SHA256 =
             "d03e4e230f1bb3795f03a953a1df41fdcb5de47cd106da5398c06ffc19a6949c"
+        private const val S2_DIAGNOSTIC_ARM32_SOURCE_SHA256 =
+            "cac67ffa26d66e03dfdf0693d34ef4a16d56db0bb2d03d31e9a2ecfff895b660"
+        private const val S2_DIAGNOSTIC_ARM64_SOURCE_SHA256 =
+            "ba4ea9868648279655d38dac59dd90cd9f13a9d37fe652e240e07cf9d6b1ec52"
         private const val S2_GENERATION_B_ARM32_SHA256 =
             "0d493aab14148426f24397be9b17a29837b2289327fe6e49865cee1e6ce1feaa"
         private const val S2_GENERATION_B_ARM64_SHA256 =
@@ -135,6 +139,7 @@ class RiftppCompilerService : Service() {
         genACompiler: ByteArray,
         compilerArm32Source: ByteArray,
         compilerArm64Source: ByteArray,
+        diagnosticSource: ByteArray,
         proofArm32Source: ByteArray,
         proofArm64Source: ByteArray,
         generationBArm32: ByteArray,
@@ -230,12 +235,14 @@ class RiftppCompilerService : Service() {
                     val genACompiler = data.createByteArray()
                     val compilerArm32Source = data.createByteArray()
                     val compilerArm64Source = data.createByteArray()
+                    val diagnosticSource = data.createByteArray()
                     val proofArm32Source = data.createByteArray()
                     val proofArm64Source = data.createByteArray()
                     val result = executeS2SelfHost(
                         genACompiler,
                         compilerArm32Source,
                         compilerArm64Source,
+                        diagnosticSource,
                         proofArm32Source,
                         proofArm64Source
                     )
@@ -487,6 +494,7 @@ class RiftppCompilerService : Service() {
         genACompiler: ByteArray?,
         compilerArm32Source: ByteArray?,
         compilerArm64Source: ByteArray?,
+        diagnosticSource: ByteArray?,
         proofArm32Source: ByteArray?,
         proofArm64Source: ByteArray?
     ): Bundle {
@@ -501,6 +509,8 @@ class RiftppCompilerService : Service() {
             compilerArm32Source ?: return rejected(hostAbi, "s2-selfhost-arm32-source-missing")
         val source64 =
             compilerArm64Source ?: return rejected(hostAbi, "s2-selfhost-arm64-source-missing")
+        val diagnostic =
+            diagnosticSource ?: return rejected(hostAbi, "s2-selfhost-diagnostic-source-missing")
         val proof32Source =
             proofArm32Source ?: return rejected(hostAbi, "s2-selfhost-proof-arm32-missing")
         val proof64Source =
@@ -524,6 +534,15 @@ class RiftppCompilerService : Service() {
             sha256(source64) != S2_CANONICAL_ARM64_SOURCE_SHA256
         ) {
             return rejected(hostAbi, "s2-selfhost-arm64-source-identity", genASha)
+        }
+        val expectedDiagnosticSha =
+            if (Process.is64Bit()) S2_DIAGNOSTIC_ARM64_SOURCE_SHA256
+            else S2_DIAGNOSTIC_ARM32_SOURCE_SHA256
+        if (
+            diagnostic.size != S2_CANONICAL_COMPILER_SOURCE_BYTES ||
+            sha256(diagnostic) != expectedDiagnosticSha
+        ) {
+            return rejected(hostAbi, "s2-selfhost-diagnostic-source-identity", genASha)
         }
         if (
             proof32Source.size != S2_PROOF_SOURCE_BYTES ||
@@ -551,6 +570,7 @@ class RiftppCompilerService : Service() {
                 genA,
                 source32,
                 source64,
+                diagnostic,
                 proof32Source,
                 proof64Source,
                 generationB32,
@@ -561,7 +581,7 @@ class RiftppCompilerService : Service() {
         } catch (failure: Throwable) {
             return rejected(hostAbi, "s2-selfhost-native-call", genASha, failure.message)
         }
-        if (nativeResult.size != 11) {
+        if (nativeResult.size != 12) {
             return rejected(hostAbi, "s2-selfhost-native-envelope", genASha)
         }
 
@@ -576,6 +596,7 @@ class RiftppCompilerService : Service() {
         val proof64Bytes = nativeResult[8].toInt()
         val proofExecutionStatus = nativeResult[9].toInt()
         val proofReturnValue = nativeResult[10] and 0xffff_ffffL
+        val diagnosticReturnValue = nativeResult[11] and 0xffff_ffffL
 
         if (hostStatus != 0) {
             return Bundle().apply {
@@ -584,6 +605,7 @@ class RiftppCompilerService : Service() {
                 putString("hostAbi", hostAbi)
                 putInt("pid", Process.myPid())
                 putString("genASha256", genASha)
+                putString("diagnosticSourceSha256", expectedDiagnosticSha)
                 putInt("generationBArm32Bytes", b32Bytes)
                 putInt("generationBArm64Bytes", b64Bytes)
                 putInt("generationCArm32Bytes", c32Bytes)
@@ -594,6 +616,7 @@ class RiftppCompilerService : Service() {
                 putInt("proofArm64Bytes", proof64Bytes)
                 putInt("proofExecutionStatus", proofExecutionStatus)
                 putLong("proofReturnValue", proofReturnValue)
+                putLong("diagnosticReturnValue", diagnosticReturnValue)
             }
         }
 
@@ -637,6 +660,7 @@ class RiftppCompilerService : Service() {
             putString("genASha256", genASha)
             putString("canonicalArm32SourceSha256", S2_CANONICAL_ARM32_SOURCE_SHA256)
             putString("canonicalArm64SourceSha256", S2_CANONICAL_ARM64_SOURCE_SHA256)
+            putString("diagnosticSourceSha256", expectedDiagnosticSha)
             putString("generationBArm32Sha256", b32Sha)
             putString("generationBArm64Sha256", b64Sha)
             putString("proofArm32OutputSha256", proof32Sha)
@@ -649,6 +673,7 @@ class RiftppCompilerService : Service() {
             putInt("proofArm64Bytes", proof64Bytes)
             putInt("proofExecutionStatus", proofExecutionStatus)
             putLong("proofReturnValue", proofReturnValue)
+            putLong("diagnosticReturnValue", diagnosticReturnValue)
             putBoolean("generationACompiledCanonicalCompiler", true)
             putBoolean("generationBCurrentAbiExecuted", true)
             putBoolean("generationBArm32EqualsC", true)
@@ -1107,6 +1132,7 @@ internal object RiftppCompilerClient {
         genACompiler: ByteArray,
         compilerArm32Source: ByteArray,
         compilerArm64Source: ByteArray,
+        diagnosticSource: ByteArray,
         proofArm32Source: ByteArray,
         proofArm64Source: ByteArray
     ): JSONObject {
@@ -1152,6 +1178,7 @@ internal object RiftppCompilerClient {
                     genACompiler,
                     compilerArm32Source,
                     compilerArm64Source,
+                    diagnosticSource,
                     proofArm32Source,
                     proofArm64Source
                 )
@@ -1471,6 +1498,7 @@ internal object RiftppCompilerClient {
         genACompiler: ByteArray,
         compilerArm32Source: ByteArray,
         compilerArm64Source: ByteArray,
+        diagnosticSource: ByteArray,
         proofArm32Source: ByteArray,
         proofArm64Source: ByteArray
     ): Bundle {
@@ -1481,6 +1509,7 @@ internal object RiftppCompilerClient {
             data.writeByteArray(genACompiler)
             data.writeByteArray(compilerArm32Source)
             data.writeByteArray(compilerArm64Source)
+            data.writeByteArray(diagnosticSource)
             data.writeByteArray(proofArm32Source)
             data.writeByteArray(proofArm64Source)
             if (!binder.transact(
@@ -1559,6 +1588,10 @@ internal object RiftppCompilerClient {
                 bundle.getString("canonicalArm64SourceSha256") ?: JSONObject.NULL
             )
             .put(
+                "diagnosticSourceSha256",
+                bundle.getString("diagnosticSourceSha256") ?: JSONObject.NULL
+            )
+            .put(
                 "generationBArm32Sha256",
                 bundle.getString("generationBArm32Sha256") ?: JSONObject.NULL
             )
@@ -1585,6 +1618,14 @@ internal object RiftppCompilerClient {
                 "proofReturnValue",
                 if (bundle.containsKey("proofReturnValue")) {
                     bundle.getLong("proofReturnValue")
+                } else {
+                    JSONObject.NULL
+                }
+            )
+            .put(
+                "diagnosticReturnValue",
+                if (bundle.containsKey("diagnosticReturnValue")) {
+                    bundle.getLong("diagnosticReturnValue")
                 } else {
                     JSONObject.NULL
                 }

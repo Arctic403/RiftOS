@@ -49,6 +49,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftbuild", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool"
         )
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
+        private const val S2_DIAGNOSTIC_ARM32_TRANSPORT_SHA256 =
+            "0981e85ac7c7c384ece9ac2b7f333f280eb0d844bec8514afc0732608b924d0e"
+        private const val S2_DIAGNOSTIC_ARM64_TRANSPORT_SHA256 =
+            "6b457d9c9c6bb9795e7133762d3a83b132cc104b3204c346c928bd28b248671b"
     }
 
     private val appContext = context.applicationContext
@@ -531,6 +535,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 joinDisplay(rootPath, "s2/compiler.arm32.r2.hex")
             val compilerArm64SourcePath =
                 joinDisplay(rootPath, "s2/compiler.arm64.r2.hex")
+            val diagnosticSourcePath =
+                if (Process.is64Bit()) {
+                    joinDisplay(rootPath, "s2/diagnostics/compiler.reject-index.arm64.r2.hex")
+                } else {
+                    joinDisplay(rootPath, "s2/diagnostics/compiler.reject-index.arm32.r2.hex")
+                }
             val proofArm32SourcePath =
                 joinDisplay(rootPath, "s2/ret42.arm32.r2.hex")
             val proofArm64SourcePath =
@@ -539,6 +549,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             val genAFile = resolveFile(genAPath)
             val compilerArm32SourceFile = resolveFile(compilerArm32SourcePath)
             val compilerArm64SourceFile = resolveFile(compilerArm64SourcePath)
+            val diagnosticSourceFile = resolveFile(diagnosticSourcePath)
             val proofArm32SourceFile = resolveFile(proofArm32SourcePath)
             val proofArm64SourceFile = resolveFile(proofArm64SourcePath)
 
@@ -550,6 +561,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     compilerArm64SourceFile.isFile
             ) {
                 "Rift++ canonical S2 compiler sources are missing"
+            }
+            require(diagnosticSourceFile.isFile) {
+                "Rift++ fixed S2 reject-index diagnostic source is missing"
             }
             require(
                 proofArm32SourceFile.isFile &&
@@ -565,6 +579,22 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     compilerArm64SourceFile.length() == 23528L
             ) {
                 "Rift++ canonical S2 compiler source transport size mismatch"
+            }
+            require(diagnosticSourceFile.length() == 23528L) {
+                "Rift++ fixed S2 reject-index diagnostic transport size mismatch"
+            }
+            val diagnosticText = diagnosticSourceFile.readText(Charsets.UTF_8)
+            val expectedDiagnosticTransportSha =
+                if (Process.is64Bit()) {
+                    S2_DIAGNOSTIC_ARM64_TRANSPORT_SHA256
+                } else {
+                    S2_DIAGNOSTIC_ARM32_TRANSPORT_SHA256
+                }
+            require(
+                sha256Hex(diagnosticText.toByteArray(Charsets.UTF_8)) ==
+                    expectedDiagnosticTransportSha
+            ) {
+                "Rift++ fixed S2 reject-index diagnostic transport identity mismatch"
             }
             require(
                 proofArm32SourceFile.length() <= 128L &&
@@ -585,6 +615,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 decodeRiftppFixedRecordHex(
                     compilerArm64SourceFile.readText(Charsets.UTF_8)
                 )
+            val diagnosticSource = decodeRiftppFixedRecordHex(diagnosticText)
             val proofArm32Source =
                 decodeRiftppFixedRecordHex(proofArm32SourceFile.readText(Charsets.UTF_8))
             val proofArm64Source =
@@ -595,6 +626,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 genACompiler,
                 compilerArm32Source,
                 compilerArm64Source,
+                diagnosticSource,
                 proofArm32Source,
                 proofArm64Source
             )
@@ -603,6 +635,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 .put("genAPath", genAPath)
                 .put("compilerArm32SourcePath", compilerArm32SourcePath)
                 .put("compilerArm64SourcePath", compilerArm64SourcePath)
+                .put("diagnosticSourcePath", diagnosticSourcePath)
                 .put("proofArm32SourcePath", proofArm32SourcePath)
                 .put("proofArm64SourcePath", proofArm64SourcePath)
 
@@ -705,6 +738,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         return ShellOutcome(value.toString(2), cwd, value)
     }
 
+
+    private fun sha256Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
     private fun decodeRiftppExactRawHex(text: String, expectedBytes: Int): ByteArray {
         require(expectedBytes > 0) { "expected Rift++ raw hex size must be positive" }
