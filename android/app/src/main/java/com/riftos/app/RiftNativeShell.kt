@@ -50,9 +50,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         )
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
         private const val S2_DIAGNOSTIC_ARM32_TRANSPORT_SHA256 =
-            "0981e85ac7c7c384ece9ac2b7f333f280eb0d844bec8514afc0732608b924d0e"
+            "ec32b059535da2409e864b293f3bd5f25ed5ead7d82f33bb35b23cc06f553a5d"
         private const val S2_DIAGNOSTIC_ARM64_TRANSPORT_SHA256 =
-            "6b457d9c9c6bb9795e7133762d3a83b132cc104b3204c346c928bd28b248671b"
+            "9ee9abcdd2971633257dc2f7f2e0e7f7401555ef2e50d668955ad691702e9dfe"
     }
 
     private val appContext = context.applicationContext
@@ -537,9 +537,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 joinDisplay(rootPath, "s2/compiler.arm64.r2.hex")
             val diagnosticSourcePath =
                 if (Process.is64Bit()) {
-                    joinDisplay(rootPath, "s2/diagnostics/compiler.reject-index.arm64.r2.hex")
+                    joinDisplay(rootPath, "s2/diagnostics/compiler.reject-offset.arm64.r2.hex")
                 } else {
-                    joinDisplay(rootPath, "s2/diagnostics/compiler.reject-index.arm32.r2.hex")
+                    joinDisplay(rootPath, "s2/diagnostics/compiler.reject-offset.arm32.r2.hex")
                 }
             val proofArm32SourcePath =
                 joinDisplay(rootPath, "s2/ret42.arm32.r2.hex")
@@ -563,7 +563,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 "Rift++ canonical S2 compiler sources are missing"
             }
             require(diagnosticSourceFile.isFile) {
-                "Rift++ fixed S2 reject-index diagnostic source is missing"
+                "Rift++ fixed S2 reject-offset diagnostic source is missing"
             }
             require(
                 proofArm32SourceFile.isFile &&
@@ -581,7 +581,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 "Rift++ canonical S2 compiler source transport size mismatch"
             }
             require(diagnosticSourceFile.length() == 23528L) {
-                "Rift++ fixed S2 reject-index diagnostic transport size mismatch"
+                "Rift++ fixed S2 reject-offset diagnostic transport size mismatch"
             }
             val diagnosticText = diagnosticSourceFile.readText(Charsets.UTF_8)
             val expectedDiagnosticTransportSha =
@@ -594,7 +594,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 sha256Hex(diagnosticText.toByteArray(Charsets.UTF_8)) ==
                     expectedDiagnosticTransportSha
             ) {
-                "Rift++ fixed S2 reject-index diagnostic transport identity mismatch"
+                "Rift++ fixed S2 reject-offset diagnostic transport identity mismatch"
             }
             require(
                 proofArm32SourceFile.length() <= 128L &&

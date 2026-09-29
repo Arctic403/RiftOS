@@ -6,6 +6,14 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.45 — Rift++ S2 fixed reject-offset diagnostic correction
+
+Installed RiftOS source `ff852299c4dabbfaf82f5b32c62a7b20cd67bf53` / Builder run 436 executed Patch 10.44's fixed diagnostic on `armeabi-v7a`. Generation A again produced the exact 44288-byte ARM32 and ARM64 Generation-B identities, while canonical Generation B still failed its first self-recompile with host status `-273`. The diagnostic image returned `diagnosticReturnValue=44288` instead of a record index. A source audit then proved `v5` is written only for compiler loop-index initialization/increment, so the live value 44288 demonstrates that generated Generation-B native execution is corrupting mapped v5/r5 state; the original assumption that `v5` remained a trustworthy reject-site index was invalid.
+
+This patch replaces the diagnostic artifact only. The two new fixed sources remain identical to canonical compiler sources except the first reject-tail instruction is `SUB v6, v1, v0`; the following `RET v6` is unchanged. In both validation and emission loops `v0` remains the canonical source base and `v1` points to the current source record, so the returned value is the exact source byte offset active at rejection and does not depend on corrupted `v5`. ARM32 transport/raw identities are `ec32b059…` / `e592d359…`; ARM64 transport/raw identities are `9ee9abcd…` / `165c4919…`.
+
+`RiftNativeShell`, `RiftppCompilerService`, and the Rift++ host regression are repinned to the new fixed paths and identities. The native diagnostic execution lane, 44288-byte proof-specific guarded W→X mapping, exact canonical source admission, 12-field evidence envelope, and generic 4096-byte compile/prove ceiling are unchanged. This diagnostic remains non-authoritative debugging evidence and cannot satisfy self-host promotion. Builder compilation and installed reject-offset evidence are the next gate.
+
 ## Patch 10.44 — Rift++ S2 fixed reject-index diagnostic
 
 Installed RiftOS source `9a90ea6b188100864bac51236b51798bdf049ebc` / Builder run 435 reached current-host Generation B but failed when B recompiled the canonical compiler source with native host status `-273`. The bounded native helper defines `-273` only when the compiler returns `0xffffffff` or returns a length above the supplied capacity. The self-host call already supplies the exact 11072-byte canonical source and exact 44288-byte output capacity, so this patch adds diagnostic evidence instead of widening bounds or moving compiler semantics into RiftOS.
