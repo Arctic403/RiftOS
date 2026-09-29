@@ -49,6 +49,7 @@ assert.match(headless, /const val CODYNEX_C0_PROJECT_ENTRY = """/);
 assert.match(services, /"c0-compile", "c0_compile", "c0-run", "c0_run"/);
 assert.match(services, /codynexC0Runtime\.compileCodynexC0Project\(/);
 assert.match(services, /Vm1Bridge\.run\(/);
+assert.match(services, /\.put\("vm1AuthorityBytes", vm1\.size\)/);
 assert.match(services, /native\/m2\/vm1\/arm32\/vm1_seed\.hex/);
 assert.match(services, /1f013e2592741895f511d1724ecd69ee156e24f771c289d848e1bab265d3655e/);
 assert.match(services, /7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5/);

@@ -139,7 +139,7 @@ class RiftNativeShellServices(context: Context) {
             }
             value
                 .put("vmBackend", "codynex_editor_vm")
-                .put("vm1Bytes", vm1.size)
+                .put("vm1AuthorityBytes", vm1.size)
                 .put("vm1AuthoritySha256", codynexC0Sha256(vm1))
                 .put("stepBudget", stepBudget)
                 .put("status", run[0])
