@@ -53,6 +53,14 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "f22eb8c092afa5351ea2cc7659c1db7130f837f8f3d596b1e20080bdeea4aa99"
         private const val S2_DIAGNOSTIC_ARM64_TRANSPORT_SHA256 =
             "ee7cf4f44a41d94abb0fde99146029734bcc8a845adda2e7f5ed41f2f0afef3a"
+        private const val S2_PROMOTED_C_ARM32_TRANSPORT_SHA256 =
+            "eac55e1428e8921c807777ffdc91033427f3fc18e12b0abf9cfdc9884f03cd4c"
+        private const val S2_PROMOTED_C_ARM64_TRANSPORT_SHA256 =
+            "9c39416943e0f9736fd064c46b2ac8e71c679b189a20e97c75776bd7bbbc5d0c"
+        private const val S3_CANDIDATE_B_ARM32_TRANSPORT_SHA256 =
+            "1f0351db5c3fd0a913dfb04572192435f3ca1d116012bea4f99e8176b9a4c5ef"
+        private const val S3_CANDIDATE_B_ARM64_TRANSPORT_SHA256 =
+            "03eb5937570ce71e398384be1c9e803df59ae04ae90c9e42a641af1151705cf8"
     }
 
     private val appContext = context.applicationContext
@@ -349,7 +357,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
         if (action == "help") {
             require(args.isEmpty()) {
-                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap|s2-selfhost|s2-vectors <riftpp-root> [source-file] [output-capacity]"
+                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap|s2-selfhost|s2-vectors|s3-selfhost <riftpp-root> [source-file] [output-capacity]"
             }
             val text =
                 "Rift++ approved machine-code compiler host\n" +
@@ -359,7 +367,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftpp-host stage1-selfhost <riftpp-root>\n" +
                     "riftpp-host s2-bootstrap <riftpp-root>\n" +
                     "riftpp-host s2-selfhost <riftpp-root>\n" +
-                    "riftpp-host s2-vectors <riftpp-root>"
+                    "riftpp-host s2-vectors <riftpp-root>\n" +
+                    "riftpp-host s3-selfhost <riftpp-root>"
             return ShellOutcome(text, cwd, nativeResult("riftpp-host").put("action", "help"))
         }
         val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
@@ -638,6 +647,89 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 .put("diagnosticSourcePath", diagnosticSourcePath)
                 .put("proofArm32SourcePath", proofArm32SourcePath)
                 .put("proofArm64SourcePath", proofArm64SourcePath)
+
+            return ShellOutcome(value.toString(2), cwd, value)
+        }
+
+        if (action == "s3-selfhost") {
+            require(args.size == 1) {
+                "usage: riftpp-host s3-selfhost <riftpp-root>"
+            }
+            val rootPath = resolveDisplay(cwd, args[0])
+            val root = resolveFile(rootPath)
+            require(root.isDirectory) { "Rift++ root is not a directory: $rootPath" }
+
+            val promotedName =
+                if (Process.is64Bit()) "compiler.genc.arm64.hex" else "compiler.genc.arm32.hex"
+            val promotedPath = joinDisplay(rootPath, "s2/promoted/$promotedName")
+            val source32Path = joinDisplay(rootPath, "s3/candidate-b/compiler.arm32.r3.hex")
+            val source64Path = joinDisplay(rootPath, "s3/candidate-b/compiler.arm64.r3.hex")
+            val proof32Path = joinDisplay(rootPath, "s2/ret42.arm32.r2.hex")
+            val proof64Path = joinDisplay(rootPath, "s2/ret42.arm64.r2.hex")
+
+            val promotedFile = resolveFile(promotedPath)
+            val source32File = resolveFile(source32Path)
+            val source64File = resolveFile(source64Path)
+            val proof32File = resolveFile(proof32Path)
+            val proof64File = resolveFile(proof64Path)
+            require(promotedFile.isFile) { "Rift++ promoted S2 Generation-C artifact is missing" }
+            require(source32File.isFile && source64File.isFile) {
+                "Rift++ S3 Candidate-B compiler sources are missing"
+            }
+            require(proof32File.isFile && proof64File.isFile) {
+                "Rift++ S3 fixed proof sources are missing"
+            }
+            require(promotedFile.length() == 88577L) {
+                "Rift++ promoted S2 Generation-C transport size mismatch"
+            }
+            require(source32File.length() == 17544L && source64File.length() == 17544L) {
+                "Rift++ S3 Candidate-B transport size mismatch"
+            }
+            require(proof32File.length() <= 128L && proof64File.length() <= 128L) {
+                "Rift++ S3 proof source exceeds fixed bound"
+            }
+
+            val promotedText = promotedFile.readText(Charsets.UTF_8)
+            val expectedPromotedTransportSha =
+                if (Process.is64Bit()) S2_PROMOTED_C_ARM64_TRANSPORT_SHA256
+                else S2_PROMOTED_C_ARM32_TRANSPORT_SHA256
+            require(
+                sha256Hex(promotedText.toByteArray(Charsets.UTF_8)) == expectedPromotedTransportSha
+            ) {
+                "Rift++ promoted S2 Generation-C transport identity mismatch"
+            }
+            val source32Text = source32File.readText(Charsets.UTF_8)
+            val source64Text = source64File.readText(Charsets.UTF_8)
+            require(
+                sha256Hex(source32Text.toByteArray(Charsets.UTF_8)) ==
+                    S3_CANDIDATE_B_ARM32_TRANSPORT_SHA256 &&
+                    sha256Hex(source64Text.toByteArray(Charsets.UTF_8)) ==
+                    S3_CANDIDATE_B_ARM64_TRANSPORT_SHA256
+            ) {
+                "Rift++ S3 Candidate-B transport identity mismatch"
+            }
+
+            val promotedCompiler = decodeRiftppExactRawHex(promotedText, 44288)
+            val source32 = decodeRiftppFixedRecordHex(source32Text)
+            val source64 = decodeRiftppFixedRecordHex(source64Text)
+            val proof32 = decodeRiftppFixedRecordHex(proof32File.readText(Charsets.UTF_8))
+            val proof64 = decodeRiftppFixedRecordHex(proof64File.readText(Charsets.UTF_8))
+
+            val value = RiftppCompilerClient.executeS3SelfHost(
+                appContext,
+                promotedCompiler,
+                source32,
+                source64,
+                proof32,
+                proof64
+            )
+                .put("command", "riftpp-host")
+                .put("action", action)
+                .put("promotedS2CompilerPath", promotedPath)
+                .put("compilerArm32SourcePath", source32Path)
+                .put("compilerArm64SourcePath", source64Path)
+                .put("proofArm32SourcePath", proof32Path)
+                .put("proofArm64SourcePath", proof64Path)
 
             return ShellOutcome(value.toString(2), cwd, value)
         }

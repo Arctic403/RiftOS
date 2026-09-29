@@ -2037,6 +2037,608 @@ Java_com_riftos_app_RiftppCompilerService_nativeS2SelfHost(
 }
 
 extern "C"
+JNIEXPORT jlongArray JNICALL
+Java_com_riftos_app_RiftppCompilerService_nativeS3SelfHost(
+    JNIEnv* env,
+    jobject,
+    jbyteArray s2CompilerArray,
+    jbyteArray compilerArm32SourceArray,
+    jbyteArray compilerArm64SourceArray,
+    jbyteArray proofArm32SourceArray,
+    jbyteArray proofArm64SourceArray,
+    jbyteArray generationAArm32Array,
+    jbyteArray generationAArm64Array,
+    jbyteArray generationCArm32Array,
+    jbyteArray generationCArm64Array,
+    jbyteArray proofArm32Array,
+    jbyteArray proofArm64Array
+) {
+    constexpr jsize kS3CandidateSourceBytes = 8256;
+    constexpr jsize kS3BootstrapImageBytes = 33024;
+    constexpr jsize kS3SelfHostImageBytes = 16528;
+    constexpr jsize kS3ProofOutputBytes = 64;
+
+    auto result = [&](int32_t hostStatus,
+                      uint32_t generationAArm32Bytes,
+                      uint32_t generationAArm64Bytes,
+                      uint32_t generationBArm32Bytes,
+                      uint32_t generationBArm64Bytes,
+                      uint32_t generationCArm32Bytes,
+                      uint32_t generationCArm64Bytes,
+                      bool arm32FixedPoint,
+                      bool arm64FixedPoint,
+                      uint32_t proofArm32Bytes,
+                      uint32_t proofArm64Bytes,
+                      int32_t proofExecutionStatus,
+                      uint32_t proofReturnValue) -> jlongArray {
+        const jlong values[13] = {
+            static_cast<jlong>(hostStatus),
+            static_cast<jlong>(generationAArm32Bytes),
+            static_cast<jlong>(generationAArm64Bytes),
+            static_cast<jlong>(generationBArm32Bytes),
+            static_cast<jlong>(generationBArm64Bytes),
+            static_cast<jlong>(generationCArm32Bytes),
+            static_cast<jlong>(generationCArm64Bytes),
+            static_cast<jlong>(arm32FixedPoint ? 1 : 0),
+            static_cast<jlong>(arm64FixedPoint ? 1 : 0),
+            static_cast<jlong>(proofArm32Bytes),
+            static_cast<jlong>(proofArm64Bytes),
+            static_cast<jlong>(proofExecutionStatus),
+            static_cast<jlong>(proofReturnValue)
+        };
+        jlongArray out = env->NewLongArray(13);
+        if (out != nullptr) {
+            env->SetLongArrayRegion(out, 0, 13, values);
+        }
+        return out;
+    };
+
+#if !defined(__aarch64__) && !defined(__arm__)
+    (void)s2CompilerArray;
+    (void)compilerArm32SourceArray;
+    (void)compilerArm64SourceArray;
+    (void)proofArm32SourceArray;
+    (void)proofArm64SourceArray;
+    (void)generationAArm32Array;
+    (void)generationAArm64Array;
+    (void)generationCArm32Array;
+    (void)generationCArm64Array;
+    (void)proofArm32Array;
+    (void)proofArm64Array;
+    return result(-320, 0U, 0U, 0U, 0U, 0U, 0U, false, false, 0U, 0U, -1, 0U);
+#else
+    if (
+        s2CompilerArray == nullptr ||
+        compilerArm32SourceArray == nullptr ||
+        compilerArm64SourceArray == nullptr ||
+        proofArm32SourceArray == nullptr ||
+        proofArm64SourceArray == nullptr ||
+        generationAArm32Array == nullptr ||
+        generationAArm64Array == nullptr ||
+        generationCArm32Array == nullptr ||
+        generationCArm64Array == nullptr ||
+        proofArm32Array == nullptr ||
+        proofArm64Array == nullptr
+    ) {
+        return result(-321, 0U, 0U, 0U, 0U, 0U, 0U, false, false, 0U, 0U, -1, 0U);
+    }
+
+    if (
+        env->GetArrayLength(s2CompilerArray) != kS2SelfHostImageBytes ||
+        env->GetArrayLength(compilerArm32SourceArray) != kS3CandidateSourceBytes ||
+        env->GetArrayLength(compilerArm64SourceArray) != kS3CandidateSourceBytes ||
+        env->GetArrayLength(proofArm32SourceArray) != kS2ProofSourceBytes ||
+        env->GetArrayLength(proofArm64SourceArray) != kS2ProofSourceBytes ||
+        env->GetArrayLength(generationAArm32Array) != kS3BootstrapImageBytes ||
+        env->GetArrayLength(generationAArm64Array) != kS3BootstrapImageBytes ||
+        env->GetArrayLength(generationCArm32Array) != kS3SelfHostImageBytes ||
+        env->GetArrayLength(generationCArm64Array) != kS3SelfHostImageBytes ||
+        env->GetArrayLength(proofArm32Array) != kS3ProofOutputBytes ||
+        env->GetArrayLength(proofArm64Array) != kS3ProofOutputBytes
+    ) {
+        return result(-322, 0U, 0U, 0U, 0U, 0U, 0U, false, false, 0U, 0U, -1, 0U);
+    }
+
+    uint8_t* source32 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3CandidateSourceBytes), 1U)
+    );
+    uint8_t* source64 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3CandidateSourceBytes), 1U)
+    );
+    uint8_t* proofSource32 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS2ProofSourceBytes), 1U)
+    );
+    uint8_t* proofSource64 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS2ProofSourceBytes), 1U)
+    );
+    uint8_t* generationA32 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3BootstrapImageBytes), 1U)
+    );
+    uint8_t* generationA64 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3BootstrapImageBytes), 1U)
+    );
+    uint8_t* generationB32 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3SelfHostImageBytes), 1U)
+    );
+    uint8_t* generationB64 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3SelfHostImageBytes), 1U)
+    );
+    uint8_t* generationC32 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3SelfHostImageBytes), 1U)
+    );
+    uint8_t* generationC64 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3SelfHostImageBytes), 1U)
+    );
+    uint8_t* proof32 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3ProofOutputBytes), 1U)
+    );
+    uint8_t* proof64 = static_cast<uint8_t*>(
+        calloc(static_cast<size_t>(kS3ProofOutputBytes), 1U)
+    );
+
+    auto cleanup = [&]() {
+        free(proof64);
+        free(proof32);
+        free(generationC64);
+        free(generationC32);
+        free(generationB64);
+        free(generationB32);
+        free(generationA64);
+        free(generationA32);
+        free(proofSource64);
+        free(proofSource32);
+        free(source64);
+        free(source32);
+    };
+
+    if (
+        source32 == nullptr || source64 == nullptr ||
+        proofSource32 == nullptr || proofSource64 == nullptr ||
+        generationA32 == nullptr || generationA64 == nullptr ||
+        generationB32 == nullptr || generationB64 == nullptr ||
+        generationC32 == nullptr || generationC64 == nullptr ||
+        proof32 == nullptr || proof64 == nullptr
+    ) {
+        cleanup();
+        return result(-323, 0U, 0U, 0U, 0U, 0U, 0U, false, false, 0U, 0U, -1, 0U);
+    }
+
+    env->GetByteArrayRegion(
+        compilerArm32SourceArray,
+        0,
+        kS3CandidateSourceBytes,
+        reinterpret_cast<jbyte*>(source32)
+    );
+    env->GetByteArrayRegion(
+        compilerArm64SourceArray,
+        0,
+        kS3CandidateSourceBytes,
+        reinterpret_cast<jbyte*>(source64)
+    );
+    env->GetByteArrayRegion(
+        proofArm32SourceArray,
+        0,
+        kS2ProofSourceBytes,
+        reinterpret_cast<jbyte*>(proofSource32)
+    );
+    env->GetByteArrayRegion(
+        proofArm64SourceArray,
+        0,
+        kS2ProofSourceBytes,
+        reinterpret_cast<jbyte*>(proofSource64)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        cleanup();
+        return result(-324, 0U, 0U, 0U, 0U, 0U, 0U, false, false, 0U, 0U, -1, 0U);
+    }
+
+    GuardedSpan s2Region;
+    if (!allocateGuardedSpan(static_cast<size_t>(kS2SelfHostImageBytes), &s2Region)) {
+        cleanup();
+        return result(-325, 0U, 0U, 0U, 0U, 0U, 0U, false, false, 0U, 0U, -1, 0U);
+    }
+    uint8_t* s2Bytes =
+        s2Region.data + s2Region.mappedSize - static_cast<size_t>(kS2SelfHostImageBytes);
+    env->GetByteArrayRegion(
+        s2CompilerArray,
+        0,
+        kS2SelfHostImageBytes,
+        reinterpret_cast<jbyte*>(s2Bytes)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        releaseGuardedSpan(&s2Region);
+        cleanup();
+        return result(-326, 0U, 0U, 0U, 0U, 0U, 0U, false, false, 0U, 0U, -1, 0U);
+    }
+    if (mprotect(s2Region.data, s2Region.mappedSize, PROT_READ | PROT_EXEC) != 0) {
+        releaseGuardedSpan(&s2Region);
+        cleanup();
+        return result(-327, 0U, 0U, 0U, 0U, 0U, 0U, false, false, 0U, 0U, -1, 0U);
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(s2Bytes),
+        reinterpret_cast<char*>(s2Bytes) + kS2SelfHostImageBytes
+    );
+    auto s2Compiler = reinterpret_cast<CompilerFn>(s2Bytes);
+
+    uint32_t generationA32Length = 0U;
+    int32_t status = runCompilerLarge(
+        s2Compiler,
+        source32,
+        static_cast<size_t>(kS3CandidateSourceBytes),
+        generationA32,
+        static_cast<size_t>(kS3BootstrapImageBytes),
+        &generationA32Length
+    );
+    if (status != 0 || generationA32Length != static_cast<uint32_t>(kS3BootstrapImageBytes)) {
+        releaseGuardedSpan(&s2Region);
+        cleanup();
+        return result(
+            status != 0 ? status : -328,
+            generationA32Length, 0U, 0U, 0U, 0U, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+
+    uint32_t generationA64Length = 0U;
+    status = runCompilerLarge(
+        s2Compiler,
+        source64,
+        static_cast<size_t>(kS3CandidateSourceBytes),
+        generationA64,
+        static_cast<size_t>(kS3BootstrapImageBytes),
+        &generationA64Length
+    );
+    releaseGuardedSpan(&s2Region);
+    if (status != 0 || generationA64Length != static_cast<uint32_t>(kS3BootstrapImageBytes)) {
+        cleanup();
+        return result(
+            status != 0 ? status : -329,
+            generationA32Length, generationA64Length, 0U, 0U, 0U, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+
+#if defined(__aarch64__)
+    const uint8_t* hostGenerationA = generationA64;
+#else
+    const uint8_t* hostGenerationA = generationA32;
+#endif
+
+    GuardedSpan generationARegion;
+    if (!allocateGuardedSpan(static_cast<size_t>(kS3BootstrapImageBytes), &generationARegion)) {
+        cleanup();
+        return result(
+            -330, generationA32Length, generationA64Length, 0U, 0U, 0U, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+    uint8_t* generationABytes =
+        generationARegion.data +
+        generationARegion.mappedSize -
+        static_cast<size_t>(kS3BootstrapImageBytes);
+    memcpy(
+        generationABytes,
+        hostGenerationA,
+        static_cast<size_t>(kS3BootstrapImageBytes)
+    );
+    if (
+        mprotect(
+            generationARegion.data,
+            generationARegion.mappedSize,
+            PROT_READ | PROT_EXEC
+        ) != 0
+    ) {
+        releaseGuardedSpan(&generationARegion);
+        cleanup();
+        return result(
+            -331, generationA32Length, generationA64Length, 0U, 0U, 0U, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(generationABytes),
+        reinterpret_cast<char*>(generationABytes) + kS3BootstrapImageBytes
+    );
+    auto generationA = reinterpret_cast<CompilerFn>(generationABytes);
+
+    uint32_t generationB32Length = 0U;
+    status = runCompilerLarge(
+        generationA,
+        source32,
+        static_cast<size_t>(kS3CandidateSourceBytes),
+        generationB32,
+        static_cast<size_t>(kS3SelfHostImageBytes),
+        &generationB32Length
+    );
+    if (status != 0 || generationB32Length != static_cast<uint32_t>(kS3SelfHostImageBytes)) {
+        releaseGuardedSpan(&generationARegion);
+        cleanup();
+        return result(
+            status != 0 ? status : -332,
+            generationA32Length, generationA64Length,
+            generationB32Length, 0U, 0U, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+
+    uint32_t generationB64Length = 0U;
+    status = runCompilerLarge(
+        generationA,
+        source64,
+        static_cast<size_t>(kS3CandidateSourceBytes),
+        generationB64,
+        static_cast<size_t>(kS3SelfHostImageBytes),
+        &generationB64Length
+    );
+    releaseGuardedSpan(&generationARegion);
+    if (status != 0 || generationB64Length != static_cast<uint32_t>(kS3SelfHostImageBytes)) {
+        cleanup();
+        return result(
+            status != 0 ? status : -333,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length, 0U, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+
+#if defined(__aarch64__)
+    const uint8_t* hostGenerationB = generationB64;
+#else
+    const uint8_t* hostGenerationB = generationB32;
+#endif
+
+    GuardedSpan generationBRegion;
+    if (!allocateGuardedSpan(static_cast<size_t>(kS3SelfHostImageBytes), &generationBRegion)) {
+        cleanup();
+        return result(
+            -334,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length, 0U, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+    uint8_t* generationBBytes =
+        generationBRegion.data +
+        generationBRegion.mappedSize -
+        static_cast<size_t>(kS3SelfHostImageBytes);
+    memcpy(
+        generationBBytes,
+        hostGenerationB,
+        static_cast<size_t>(kS3SelfHostImageBytes)
+    );
+    if (
+        mprotect(
+            generationBRegion.data,
+            generationBRegion.mappedSize,
+            PROT_READ | PROT_EXEC
+        ) != 0
+    ) {
+        releaseGuardedSpan(&generationBRegion);
+        cleanup();
+        return result(
+            -335,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length, 0U, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(generationBBytes),
+        reinterpret_cast<char*>(generationBBytes) + kS3SelfHostImageBytes
+    );
+    auto generationB = reinterpret_cast<CompilerFn>(generationBBytes);
+
+    uint32_t generationC32Length = 0U;
+    status = runCompilerLarge(
+        generationB,
+        source32,
+        static_cast<size_t>(kS3CandidateSourceBytes),
+        generationC32,
+        static_cast<size_t>(kS3SelfHostImageBytes),
+        &generationC32Length
+    );
+    if (status != 0 || generationC32Length != static_cast<uint32_t>(kS3SelfHostImageBytes)) {
+        releaseGuardedSpan(&generationBRegion);
+        cleanup();
+        return result(
+            status != 0 ? status : -336,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length,
+            generationC32Length, 0U,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+
+    uint32_t generationC64Length = 0U;
+    status = runCompilerLarge(
+        generationB,
+        source64,
+        static_cast<size_t>(kS3CandidateSourceBytes),
+        generationC64,
+        static_cast<size_t>(kS3SelfHostImageBytes),
+        &generationC64Length
+    );
+    if (status != 0 || generationC64Length != static_cast<uint32_t>(kS3SelfHostImageBytes)) {
+        releaseGuardedSpan(&generationBRegion);
+        cleanup();
+        return result(
+            status != 0 ? status : -337,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length,
+            generationC32Length, generationC64Length,
+            false, false, 0U, 0U, -1, 0U
+        );
+    }
+
+    const bool arm32FixedPoint =
+        memcmp(generationB32, generationC32, static_cast<size_t>(kS3SelfHostImageBytes)) == 0;
+    const bool arm64FixedPoint =
+        memcmp(generationB64, generationC64, static_cast<size_t>(kS3SelfHostImageBytes)) == 0;
+    if (!arm32FixedPoint || !arm64FixedPoint) {
+        releaseGuardedSpan(&generationBRegion);
+        cleanup();
+        return result(
+            -338,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length,
+            generationC32Length, generationC64Length,
+            arm32FixedPoint, arm64FixedPoint,
+            0U, 0U, -1, 0U
+        );
+    }
+
+    uint32_t proof32Length = 0U;
+    status = runCompilerLarge(
+        generationB,
+        proofSource32,
+        static_cast<size_t>(kS2ProofSourceBytes),
+        proof32,
+        static_cast<size_t>(kS3ProofOutputBytes),
+        &proof32Length
+    );
+    if (status != 0 || proof32Length != static_cast<uint32_t>(kS3ProofOutputBytes)) {
+        releaseGuardedSpan(&generationBRegion);
+        cleanup();
+        return result(
+            status != 0 ? status : -339,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length,
+            generationC32Length, generationC64Length,
+            true, true, proof32Length, 0U, -1, 0U
+        );
+    }
+
+    uint32_t proof64Length = 0U;
+    status = runCompilerLarge(
+        generationB,
+        proofSource64,
+        static_cast<size_t>(kS2ProofSourceBytes),
+        proof64,
+        static_cast<size_t>(kS3ProofOutputBytes),
+        &proof64Length
+    );
+    releaseGuardedSpan(&generationBRegion);
+    if (status != 0 || proof64Length != static_cast<uint32_t>(kS3ProofOutputBytes)) {
+        cleanup();
+        return result(
+            status != 0 ? status : -340,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length,
+            generationC32Length, generationC64Length,
+            true, true, proof32Length, proof64Length, -1, 0U
+        );
+    }
+
+#if defined(__aarch64__)
+    const uint8_t* hostProof = proof64;
+#else
+    const uint8_t* hostProof = proof32;
+#endif
+
+    GuardedPage proofRegion;
+    if (
+        !allocateGuarded(&proofRegion) ||
+        proofRegion.pageSize < static_cast<size_t>(kS3ProofOutputBytes)
+    ) {
+        releaseGuarded(&proofRegion);
+        cleanup();
+        return result(
+            -341,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length,
+            generationC32Length, generationC64Length,
+            true, true, proof32Length, proof64Length, -1, 0U
+        );
+    }
+    uint8_t* proofBytes =
+        proofRegion.page +
+        proofRegion.pageSize -
+        static_cast<size_t>(kS3ProofOutputBytes);
+    memcpy(proofBytes, hostProof, static_cast<size_t>(kS3ProofOutputBytes));
+    if (mprotect(proofRegion.page, proofRegion.pageSize, PROT_READ | PROT_EXEC) != 0) {
+        releaseGuarded(&proofRegion);
+        cleanup();
+        return result(
+            -342,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length,
+            generationC32Length, generationC64Length,
+            true, true, proof32Length, proof64Length, -1, 0U
+        );
+    }
+    __builtin___clear_cache(
+        reinterpret_cast<char*>(proofBytes),
+        reinterpret_cast<char*>(proofBytes) + kS3ProofOutputBytes
+    );
+    auto proof = reinterpret_cast<GeneratedPayloadFn>(proofBytes);
+    const uint32_t proofReturnValue = proof();
+    releaseGuarded(&proofRegion);
+
+    env->SetByteArrayRegion(
+        generationAArm32Array,
+        0,
+        kS3BootstrapImageBytes,
+        reinterpret_cast<const jbyte*>(generationA32)
+    );
+    env->SetByteArrayRegion(
+        generationAArm64Array,
+        0,
+        kS3BootstrapImageBytes,
+        reinterpret_cast<const jbyte*>(generationA64)
+    );
+    env->SetByteArrayRegion(
+        generationCArm32Array,
+        0,
+        kS3SelfHostImageBytes,
+        reinterpret_cast<const jbyte*>(generationC32)
+    );
+    env->SetByteArrayRegion(
+        generationCArm64Array,
+        0,
+        kS3SelfHostImageBytes,
+        reinterpret_cast<const jbyte*>(generationC64)
+    );
+    env->SetByteArrayRegion(
+        proofArm32Array,
+        0,
+        kS3ProofOutputBytes,
+        reinterpret_cast<const jbyte*>(proof32)
+    );
+    env->SetByteArrayRegion(
+        proofArm64Array,
+        0,
+        kS3ProofOutputBytes,
+        reinterpret_cast<const jbyte*>(proof64)
+    );
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        cleanup();
+        return result(
+            -343,
+            generationA32Length, generationA64Length,
+            generationB32Length, generationB64Length,
+            generationC32Length, generationC64Length,
+            true, true, proof32Length, proof64Length, -1, proofReturnValue
+        );
+    }
+
+    cleanup();
+    return result(
+        0,
+        generationA32Length, generationA64Length,
+        generationB32Length, generationB64Length,
+        generationC32Length, generationC64Length,
+        true, true,
+        proof32Length, proof64Length,
+        0, proofReturnValue
+    );
+#endif
+}
+
+extern "C"
 JNIEXPORT jintArray JNICALL
 Java_com_riftos_app_RiftppCompilerService_nativeS2Vectors(
     JNIEnv* env,

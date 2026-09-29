@@ -37,6 +37,7 @@ class RiftppCompilerService : Service() {
         internal const val TRANSACTION_S2_BOOTSTRAP = IBinder.FIRST_CALL_TRANSACTION + 4
         internal const val TRANSACTION_S2_VECTORS = IBinder.FIRST_CALL_TRANSACTION + 5
         internal const val TRANSACTION_S2_SELF_HOST = IBinder.FIRST_CALL_TRANSACTION + 6
+        internal const val TRANSACTION_S3_SELF_HOST = IBinder.FIRST_CALL_TRANSACTION + 7
 
         private const val COMPILER_BYTES = 276
         private const val STAGE1_ARM64_SOURCE_BYTES = 2342
@@ -93,6 +94,26 @@ class RiftppCompilerService : Service() {
             "1f9ffbb7a94afcc37821d0686d6cc1c23c76258ae54eec0cbd97f85ccd09631f"
         private const val S2_PROOF_ARM64_OUTPUT_SHA256 =
             "6b99c0501765629c7752f361617bfe56350fb974e7fa790b7d7c5992e139b5c4"
+        private const val S3_CANDIDATE_SOURCE_BYTES = 8256
+        private const val S3_BOOTSTRAP_IMAGE_BYTES = 33024
+        private const val S3_SELF_HOST_IMAGE_BYTES = 16528
+        private const val S3_PROOF_OUTPUT_BYTES = 64
+        private const val S3_CANDIDATE_ARM32_SOURCE_SHA256 =
+            "3d869139d47b3d406f60554637252f7e7f87fabf144eed8051129c23d61e98bf"
+        private const val S3_CANDIDATE_ARM64_SOURCE_SHA256 =
+            "baf1c342ee3cf7d070aebea299390ad25db16f2a6a3c74a9909645593678ef46"
+        private const val S3_GENERATION_A_ARM32_SHA256 =
+            "3b5dc52a20f2f419f9f5f7d46aa68c5d985aac8695e8cc0291ab38bfde47640a"
+        private const val S3_GENERATION_A_ARM64_SHA256 =
+            "827dca521292971e043cd1aa7d62e09c217a78236c55b58c272234680871e024"
+        private const val S3_GENERATION_C_ARM32_SHA256 =
+            "4a9599bb01e1525d99230aa490ff3b48c28434381f1aa7af361e9a530baa54ac"
+        private const val S3_GENERATION_C_ARM64_SHA256 =
+            "5991695723b494805312bdb7c1f258d27f5eedefadae393afc45420ae46dc43d"
+        private const val S3_PROOF_ARM32_OUTPUT_SHA256 =
+            "b10f7caead3598873c03be2336578d170d07fda0197aa88606cd06ffa2601c15"
+        private const val S3_PROOF_ARM64_OUTPUT_SHA256 =
+            "859865bc0057100027cbfbe71561b3c6648d010a118f5737005cd1858bd90073"
         private const val MAX_SOURCE_BYTES = 4096
         private const val MAX_OUTPUT_BYTES = 4096
         private const val ARM64_SHA256 =
@@ -144,6 +165,20 @@ class RiftppCompilerService : Service() {
         proofArm64Source: ByteArray,
         generationBArm32: ByteArray,
         generationBArm64: ByteArray,
+        proofArm32: ByteArray,
+        proofArm64: ByteArray
+    ): LongArray
+
+    private external fun nativeS3SelfHost(
+        s2Compiler: ByteArray,
+        compilerArm32Source: ByteArray,
+        compilerArm64Source: ByteArray,
+        proofArm32Source: ByteArray,
+        proofArm64Source: ByteArray,
+        generationAArm32: ByteArray,
+        generationAArm64: ByteArray,
+        generationCArm32: ByteArray,
+        generationCArm64: ByteArray,
         proofArm32: ByteArray,
         proofArm64: ByteArray
     ): LongArray
@@ -243,6 +278,24 @@ class RiftppCompilerService : Service() {
                         compilerArm32Source,
                         compilerArm64Source,
                         diagnosticSource,
+                        proofArm32Source,
+                        proofArm64Source
+                    )
+                    reply?.writeNoException()
+                    reply?.writeBundle(result)
+                    true
+                }
+                TRANSACTION_S3_SELF_HOST -> {
+                    data.enforceInterface(DESCRIPTOR)
+                    val s2Compiler = data.createByteArray()
+                    val compilerArm32Source = data.createByteArray()
+                    val compilerArm64Source = data.createByteArray()
+                    val proofArm32Source = data.createByteArray()
+                    val proofArm64Source = data.createByteArray()
+                    val result = executeS3SelfHost(
+                        s2Compiler,
+                        compilerArm32Source,
+                        compilerArm64Source,
                         proofArm32Source,
                         proofArm64Source
                     )
@@ -857,6 +910,207 @@ class RiftppCompilerService : Service() {
         }
     }
 
+
+    private fun executeS3SelfHost(
+        s2Compiler: ByteArray?,
+        compilerArm32Source: ByteArray?,
+        compilerArm64Source: ByteArray?,
+        proofArm32Source: ByteArray?,
+        proofArm64Source: ByteArray?
+    ): Bundle {
+        val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
+        val expectedS2Sha =
+            if (Process.is64Bit()) S2_GENERATION_C_ARM64_SHA256 else S2_GENERATION_C_ARM32_SHA256
+
+        val promotedS2 =
+            s2Compiler ?: return rejected(hostAbi, "s3-selfhost-s2-compiler-missing")
+        val source32 =
+            compilerArm32Source ?: return rejected(hostAbi, "s3-selfhost-arm32-source-missing")
+        val source64 =
+            compilerArm64Source ?: return rejected(hostAbi, "s3-selfhost-arm64-source-missing")
+        val proof32Source =
+            proofArm32Source ?: return rejected(hostAbi, "s3-selfhost-proof-arm32-missing")
+        val proof64Source =
+            proofArm64Source ?: return rejected(hostAbi, "s3-selfhost-proof-arm64-missing")
+
+        if (promotedS2.size != S2_SELF_HOST_IMAGE_BYTES) {
+            return rejected(hostAbi, "s3-selfhost-s2-compiler-size")
+        }
+        val s2Sha = sha256(promotedS2)
+        if (s2Sha != expectedS2Sha) {
+            return rejected(hostAbi, "s3-selfhost-s2-compiler-identity", s2Sha)
+        }
+        if (
+            source32.size != S3_CANDIDATE_SOURCE_BYTES ||
+            sha256(source32) != S3_CANDIDATE_ARM32_SOURCE_SHA256
+        ) {
+            return rejected(hostAbi, "s3-selfhost-arm32-source-identity", s2Sha)
+        }
+        if (
+            source64.size != S3_CANDIDATE_SOURCE_BYTES ||
+            sha256(source64) != S3_CANDIDATE_ARM64_SOURCE_SHA256
+        ) {
+            return rejected(hostAbi, "s3-selfhost-arm64-source-identity", s2Sha)
+        }
+        if (
+            proof32Source.size != S2_PROOF_SOURCE_BYTES ||
+            sha256(proof32Source) != S2_PROOF_ARM32_SOURCE_SHA256
+        ) {
+            return rejected(hostAbi, "s3-selfhost-proof-arm32-source-identity", s2Sha)
+        }
+        if (
+            proof64Source.size != S2_PROOF_SOURCE_BYTES ||
+            sha256(proof64Source) != S2_PROOF_ARM64_SOURCE_SHA256
+        ) {
+            return rejected(hostAbi, "s3-selfhost-proof-arm64-source-identity", s2Sha)
+        }
+        nativeLoadFailure?.let {
+            return rejected(hostAbi, "native-library", s2Sha, it.message)
+        }
+
+        val generationA32 = ByteArray(S3_BOOTSTRAP_IMAGE_BYTES)
+        val generationA64 = ByteArray(S3_BOOTSTRAP_IMAGE_BYTES)
+        val generationC32 = ByteArray(S3_SELF_HOST_IMAGE_BYTES)
+        val generationC64 = ByteArray(S3_SELF_HOST_IMAGE_BYTES)
+        val proof32 = ByteArray(S3_PROOF_OUTPUT_BYTES)
+        val proof64 = ByteArray(S3_PROOF_OUTPUT_BYTES)
+
+        val nativeResult = try {
+            nativeS3SelfHost(
+                promotedS2,
+                source32,
+                source64,
+                proof32Source,
+                proof64Source,
+                generationA32,
+                generationA64,
+                generationC32,
+                generationC64,
+                proof32,
+                proof64
+            )
+        } catch (failure: Throwable) {
+            return rejected(hostAbi, "s3-selfhost-native-call", s2Sha, failure.message)
+        }
+        if (nativeResult.size < 13) {
+            return rejected(hostAbi, "s3-selfhost-native-result", s2Sha)
+        }
+
+        val hostStatus = nativeResult[0].toInt()
+        val generationA32Bytes = nativeResult[1].toInt()
+        val generationA64Bytes = nativeResult[2].toInt()
+        val generationB32Bytes = nativeResult[3].toInt()
+        val generationB64Bytes = nativeResult[4].toInt()
+        val generationC32Bytes = nativeResult[5].toInt()
+        val generationC64Bytes = nativeResult[6].toInt()
+        val arm32FixedPoint = nativeResult[7] == 1L
+        val arm64FixedPoint = nativeResult[8] == 1L
+        val proof32Bytes = nativeResult[9].toInt()
+        val proof64Bytes = nativeResult[10].toInt()
+        val proofExecutionStatus = nativeResult[11].toInt()
+        val proofReturnValue = nativeResult[12].toInt()
+
+        if (hostStatus != 0) {
+            return Bundle().apply {
+                putString("status", "host-reject")
+                putString("reason", "s3-selfhost-native-$hostStatus")
+                putString("hostAbi", hostAbi)
+                putInt("pid", Process.myPid())
+                putString("promotedS2CompilerSha256", s2Sha)
+                putInt("generationAArm32Bytes", generationA32Bytes)
+                putInt("generationAArm64Bytes", generationA64Bytes)
+                putInt("generationBArm32Bytes", generationB32Bytes)
+                putInt("generationBArm64Bytes", generationB64Bytes)
+                putInt("generationCArm32Bytes", generationC32Bytes)
+                putInt("generationCArm64Bytes", generationC64Bytes)
+                putBoolean("generationBArm32EqualsC", arm32FixedPoint)
+                putBoolean("generationBArm64EqualsC", arm64FixedPoint)
+                putInt("proofArm32Bytes", proof32Bytes)
+                putInt("proofArm64Bytes", proof64Bytes)
+                putInt("proofExecutionStatus", proofExecutionStatus)
+                putInt("proofReturnValue", proofReturnValue)
+            }
+        }
+
+        if (
+            generationA32Bytes != S3_BOOTSTRAP_IMAGE_BYTES ||
+            generationA64Bytes != S3_BOOTSTRAP_IMAGE_BYTES ||
+            generationB32Bytes != S3_SELF_HOST_IMAGE_BYTES ||
+            generationB64Bytes != S3_SELF_HOST_IMAGE_BYTES ||
+            generationC32Bytes != S3_SELF_HOST_IMAGE_BYTES ||
+            generationC64Bytes != S3_SELF_HOST_IMAGE_BYTES ||
+            proof32Bytes != S3_PROOF_OUTPUT_BYTES ||
+            proof64Bytes != S3_PROOF_OUTPUT_BYTES
+        ) {
+            return rejected(hostAbi, "s3-selfhost-result-length", s2Sha)
+        }
+        if (!arm32FixedPoint || !arm64FixedPoint) {
+            return rejected(hostAbi, "s3-selfhost-fixed-point", s2Sha)
+        }
+
+        val generationA32Sha = sha256(generationA32)
+        val generationA64Sha = sha256(generationA64)
+        val generationC32Sha = sha256(generationC32)
+        val generationC64Sha = sha256(generationC64)
+        val proof32Sha = sha256(proof32)
+        val proof64Sha = sha256(proof64)
+
+        if (
+            generationA32Sha != S3_GENERATION_A_ARM32_SHA256 ||
+            generationA64Sha != S3_GENERATION_A_ARM64_SHA256
+        ) {
+            return rejected(hostAbi, "s3-selfhost-generation-a-identity", s2Sha)
+        }
+        if (
+            generationC32Sha != S3_GENERATION_C_ARM32_SHA256 ||
+            generationC64Sha != S3_GENERATION_C_ARM64_SHA256
+        ) {
+            return rejected(hostAbi, "s3-selfhost-generation-c-identity", s2Sha)
+        }
+        if (
+            proof32Sha != S3_PROOF_ARM32_OUTPUT_SHA256 ||
+            proof64Sha != S3_PROOF_ARM64_OUTPUT_SHA256
+        ) {
+            return rejected(hostAbi, "s3-selfhost-proof-identity", s2Sha)
+        }
+        if (proofExecutionStatus != 0 || proofReturnValue != 42) {
+            return rejected(hostAbi, "s3-selfhost-proof-execution", s2Sha)
+        }
+
+        return Bundle().apply {
+            putString("status", "success")
+            putString("hostAbi", hostAbi)
+            putInt("pid", Process.myPid())
+            putString("promotedS2CompilerSha256", s2Sha)
+            putString("candidateArm32SourceSha256", S3_CANDIDATE_ARM32_SOURCE_SHA256)
+            putString("candidateArm64SourceSha256", S3_CANDIDATE_ARM64_SOURCE_SHA256)
+            putString("generationAArm32Sha256", generationA32Sha)
+            putString("generationAArm64Sha256", generationA64Sha)
+            putString("generationCArm32Sha256", generationC32Sha)
+            putString("generationCArm64Sha256", generationC64Sha)
+            putString("proofArm32OutputSha256", proof32Sha)
+            putString("proofArm64OutputSha256", proof64Sha)
+            putInt("generationAArm32Bytes", generationA32Bytes)
+            putInt("generationAArm64Bytes", generationA64Bytes)
+            putInt("generationBArm32Bytes", generationB32Bytes)
+            putInt("generationBArm64Bytes", generationB64Bytes)
+            putInt("generationCArm32Bytes", generationC32Bytes)
+            putInt("generationCArm64Bytes", generationC64Bytes)
+            putBoolean("generationBArm32EqualsC", true)
+            putBoolean("generationBArm64EqualsC", true)
+            putInt("proofArm32Bytes", proof32Bytes)
+            putInt("proofArm64Bytes", proof64Bytes)
+            putInt("proofExecutionStatus", proofExecutionStatus)
+            putInt("proofReturnValue", proofReturnValue)
+            putBoolean("generationACurrentAbiExecuted", true)
+            putBoolean("generationACompiledBothTargets", true)
+            putBoolean("generationBCurrentAbiExecuted", true)
+            putBoolean("generationBCompiledBothTargets", true)
+            putBoolean("hostParsesS3Opcodes", false)
+            putBoolean("hostEmitsS3Instructions", false)
+        }
+    }
+
     private fun executeS2Vectors(
         genACompiler: ByteArray?,
         arm32Source: ByteArray?,
@@ -1212,6 +1466,88 @@ internal object RiftppCompilerClient {
         }
     }
 
+
+    fun executeS3SelfHost(
+        context: Context,
+        s2Compiler: ByteArray,
+        compilerArm32Source: ByteArray,
+        compilerArm64Source: ByteArray,
+        proofArm32Source: ByteArray,
+        proofArm64Source: ByteArray
+    ): JSONObject {
+        val appContext = context.applicationContext
+        val binderReady = CompletableFuture<IBinder>()
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                if (service == null) {
+                    binderReady.completeExceptionally(RemoteException("null compiler binder"))
+                } else {
+                    binderReady.complete(service)
+                }
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                if (!binderReady.isDone) binderReady.completeExceptionally(DeadObjectException())
+            }
+
+            override fun onBindingDied(name: ComponentName?) {
+                if (!binderReady.isDone) binderReady.completeExceptionally(DeadObjectException())
+            }
+
+            override fun onNullBinding(name: ComponentName?) {
+                if (!binderReady.isDone) {
+                    binderReady.completeExceptionally(RemoteException("null compiler binding"))
+                }
+            }
+        }
+
+        val intent = Intent(appContext, RiftppCompilerService::class.java)
+        if (!appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
+            return failure("host-reject", "bind-failed")
+        }
+
+        val executor = Executors.newSingleThreadExecutor()
+        var workerPid = -1
+        try {
+            val binder = binderReady.get(BIND_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            workerPid = queryPid(binder)
+            val future = executor.submit<Bundle> {
+                transactS3SelfHost(
+                    binder,
+                    s2Compiler,
+                    compilerArm32Source,
+                    compilerArm64Source,
+                    proofArm32Source,
+                    proofArm64Source
+                )
+            }
+            val bundle = try {
+                future.get(S2_SELF_HOST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            } catch (timeout: TimeoutException) {
+                if (workerPid > 0) Process.killProcess(workerPid)
+                return failure("timeout", "s3-selfhost-timeout", workerPid)
+            } catch (failure: ExecutionException) {
+                val cause = failure.cause
+                return if (cause is DeadObjectException || cause is RemoteException) {
+                    failure("crash", "compiler-process-died", workerPid)
+                } else {
+                    failure("host-reject", "s3-selfhost-binder-execution", workerPid, cause?.message)
+                }
+            }
+            return s3SelfHostBundleToJson(bundle)
+        } catch (timeout: TimeoutException) {
+            if (workerPid > 0) Process.killProcess(workerPid)
+            return failure("timeout", "bind-timeout", workerPid)
+        } catch (failure: DeadObjectException) {
+            return failure("crash", "compiler-process-died", workerPid)
+        } catch (failure: Throwable) {
+            return failure("host-reject", "binder-transport", workerPid, failure.message)
+        } finally {
+            runCatching { appContext.unbindService(connection) }
+            executor.shutdownNow()
+        }
+    }
+
     fun executeS2Bootstrap(
         context: Context,
         compiler: ByteArray,
@@ -1495,6 +1831,42 @@ internal object RiftppCompilerClient {
 
 
 
+
+    private fun transactS3SelfHost(
+        binder: IBinder,
+        s2Compiler: ByteArray,
+        compilerArm32Source: ByteArray,
+        compilerArm64Source: ByteArray,
+        proofArm32Source: ByteArray,
+        proofArm64Source: ByteArray
+    ): Bundle {
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(RiftppCompilerService.DESCRIPTOR)
+            data.writeByteArray(s2Compiler)
+            data.writeByteArray(compilerArm32Source)
+            data.writeByteArray(compilerArm64Source)
+            data.writeByteArray(proofArm32Source)
+            data.writeByteArray(proofArm64Source)
+            if (!binder.transact(
+                    RiftppCompilerService.TRANSACTION_S3_SELF_HOST,
+                    data,
+                    reply,
+                    0
+                )
+            ) {
+                throw RemoteException("S3 self-host transaction rejected")
+            }
+            reply.readException()
+            reply.readBundle(RiftppCompilerService::class.java.classLoader)
+                ?: throw RemoteException("S3 self-host result bundle missing")
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
     private fun transactS2SelfHost(
         binder: IBinder,
         genACompiler: ByteArray,
@@ -1571,6 +1943,43 @@ internal object RiftppCompilerClient {
         }
     }
 
+
+
+    private fun s3SelfHostBundleToJson(bundle: Bundle): JSONObject =
+        JSONObject()
+            .put("schema", "rift.riftpp-s3-selfhost/1")
+            .put("status", bundle.getString("status") ?: "host-reject")
+            .put("reason", bundle.getString("reason") ?: JSONObject.NULL)
+            .put("detail", bundle.getString("detail") ?: JSONObject.NULL)
+            .put("hostAbi", bundle.getString("hostAbi") ?: JSONObject.NULL)
+            .put("pid", bundle.getInt("pid", -1))
+            .put("promotedS2CompilerSha256", bundle.getString("promotedS2CompilerSha256") ?: JSONObject.NULL)
+            .put("candidateArm32SourceSha256", bundle.getString("candidateArm32SourceSha256") ?: JSONObject.NULL)
+            .put("candidateArm64SourceSha256", bundle.getString("candidateArm64SourceSha256") ?: JSONObject.NULL)
+            .put("generationAArm32Sha256", bundle.getString("generationAArm32Sha256") ?: JSONObject.NULL)
+            .put("generationAArm64Sha256", bundle.getString("generationAArm64Sha256") ?: JSONObject.NULL)
+            .put("generationCArm32Sha256", bundle.getString("generationCArm32Sha256") ?: JSONObject.NULL)
+            .put("generationCArm64Sha256", bundle.getString("generationCArm64Sha256") ?: JSONObject.NULL)
+            .put("proofArm32OutputSha256", bundle.getString("proofArm32OutputSha256") ?: JSONObject.NULL)
+            .put("proofArm64OutputSha256", bundle.getString("proofArm64OutputSha256") ?: JSONObject.NULL)
+            .put("generationAArm32Bytes", bundle.getInt("generationAArm32Bytes", 0))
+            .put("generationAArm64Bytes", bundle.getInt("generationAArm64Bytes", 0))
+            .put("generationBArm32Bytes", bundle.getInt("generationBArm32Bytes", 0))
+            .put("generationBArm64Bytes", bundle.getInt("generationBArm64Bytes", 0))
+            .put("generationCArm32Bytes", bundle.getInt("generationCArm32Bytes", 0))
+            .put("generationCArm64Bytes", bundle.getInt("generationCArm64Bytes", 0))
+            .put("generationBArm32EqualsC", bundle.getBoolean("generationBArm32EqualsC", false))
+            .put("generationBArm64EqualsC", bundle.getBoolean("generationBArm64EqualsC", false))
+            .put("proofArm32Bytes", bundle.getInt("proofArm32Bytes", 0))
+            .put("proofArm64Bytes", bundle.getInt("proofArm64Bytes", 0))
+            .put("proofExecutionStatus", bundle.getInt("proofExecutionStatus", -1))
+            .put("proofReturnValue", bundle.getInt("proofReturnValue", 0))
+            .put("generationACurrentAbiExecuted", bundle.getBoolean("generationACurrentAbiExecuted", false))
+            .put("generationACompiledBothTargets", bundle.getBoolean("generationACompiledBothTargets", false))
+            .put("generationBCurrentAbiExecuted", bundle.getBoolean("generationBCurrentAbiExecuted", false))
+            .put("generationBCompiledBothTargets", bundle.getBoolean("generationBCompiledBothTargets", false))
+            .put("hostParsesS3Opcodes", bundle.getBoolean("hostParsesS3Opcodes", false))
+            .put("hostEmitsS3Instructions", bundle.getBoolean("hostEmitsS3Instructions", false))
 
     private fun s2SelfHostBundleToJson(bundle: Bundle): JSONObject =
         JSONObject()
