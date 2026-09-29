@@ -209,7 +209,7 @@ val verifyCodynexEditorPayload by tasks.registering {
         "src/main/java/com/codynex/editorapp/MainActivity.kt" to
             "fa0224b273999ee0626dcec932ed435abc80e13c2fe880562695bb407cf8231b",
         "src/main/cpp/editor/editor_vm_bridge.cpp" to
-            "47039b185cc4c481846735946b1f0667564e729f5994b7badb0ab6ce69b978ba"
+            "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620"
     )
 
     doLast {

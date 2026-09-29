@@ -398,6 +398,9 @@ const editorToolchain = read('android/app/src/main/java/com/codynex/editorapp/So
 const codynexProvider = read('android/app/src/main/java/com/riftos/app/CodynexCompilerProvider.kt');
 const editorVmBridgeKt = read('android/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt');
 const editorVmBridgeCpp = read('android/app/src/main/cpp/editor/editor_vm_bridge.cpp');
+assert.match(editorVmBridgeCpp, /uint8_t\* scratch;/);
+assert.match(editorVmBridgeCpp, /uint32_t scratchCapacity;/);
+assert.match(editorVmBridgeCpp, /sizeof\(VmContext\) == 28/);
 
 assert.match(nativeBuild, /prepare-codynex-editor/);
 assert.match(nativeBuild, /fun prepareCodynexEditor/);

@@ -14,11 +14,13 @@ struct VmContext {
     uint8_t* output;
     uint32_t outputCapacity;
     uint32_t result;
+    uint8_t* scratch;
+    uint32_t scratchCapacity;
 };
 
 #if defined(__arm__)
 static_assert(sizeof(void*) == 4, "E0 VM bridge requires ARM32");
-static_assert(sizeof(VmContext) == 20, "VM1 context layout drift");
+static_assert(sizeof(VmContext) == 28, "VM1 context layout drift");
 #endif
 
 using VmFn = int32_t (*)(const uint8_t*, uint32_t, VmContext*, uint32_t);
@@ -198,6 +200,8 @@ Java_com_codynex_editorapp_Vm1Bridge_run(
             static_cast<uint32_t>(sourceLength),
             reinterpret_cast<uint8_t*>(outputBytes),
             static_cast<uint32_t>(outputLength),
+            0U,
+            nullptr,
             0U
         };
 
