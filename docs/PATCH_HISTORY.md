@@ -2,9 +2,17 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-29.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.52 — Rift++ S2 self-host promotion and freeze
+
+Installed RiftOS source `5206c80c5e7b1279bda63e566af19569d462d43b` / Builder run 445 completed the canonical S2 A→B→C→D convergence transaction twice on the real `armeabi-v7a` device. Both runs returned `status=success` with 44288-byte B and C images for ARM32 and ARM64, current-host B and C native execution enabled, cross-target compilation for both targets, and exact fixed-point flags `generationCArm32EqualsD=true` plus `generationCArm64EqualsD=true`.
+
+The promoted Generation-C identities are ARM32 `13c691dcb1214d7a66ac8d931907a25d96ac12a42b9f52ba2a9b8dfa0d344aa2` and ARM64 `cf9de173f31cb745a2d7afd32959d798b2ee76e78b0f0cd2775fa0bc6a137600`. After fixed-point convergence, current-host C compiled the fixed ret42 sources to exact 96-byte outputs with ARM32 SHA-256 `1f9ffbb7a94afcc37821d0686d6cc1c23c76258ae54eec0cbd97f85ccd09631f` and ARM64 SHA-256 `6b99c0501765629c7752f361617bfe56350fb974e7fa790b7d7c5992e139b5c4`; only the generated ARM32 proof executed, with proof status `0` and return value `42`. The second run reproduced the same compiler/proof identities and booleans exactly.
+
+This closes S2 self-host promotion. The S2 contract, canonical compiler sources and promoted Generation-C identities are frozen as the proven self-host foundation. Frozen Seed0, Stage1 and Generation A remain bootstrap history and are not expanded. Native ARM64 execution remains deferred to compatible AArch64 hardware/userspace, while ARM64 cross-target C=D byte identity is mandatory and proven in the promoted transaction. RiftOS remains a bounded executor/evidence host only: it does not parse S2 opcodes or emit S2 instructions. The next active phase is S3 minimization and freeze of the permanent per-application Rift++ base; that final base is not yet frozen.
 
 ## Patch 10.51 — Rift++ S2 C→D convergence fixed-point gate
 
