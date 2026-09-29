@@ -1,6 +1,7 @@
 package com.riftos.app
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Base64
 import com.codynex.editorapp.Vm1Bridge
 import org.json.JSONArray
@@ -51,19 +52,27 @@ class RiftNativeShellServices(context: Context) {
                 .put("projectCompile", true)
                 .put("nativeVm1", true)
                 .put("nativeVm1Abi", "armeabi-v7a")
+                .put("hostSnapshot", true)
+                .put("hostSnapshotSchema", "riftosplus-host-snapshot/1")
+                .put("hostSnapshotBytes", 24)
+                .put("hostSnapshotCapabilities", 7)
                 .put("maxModules", 64)
                 .put("maxSourceBytes", 256 * 1024)
                 .put("maxProjectBytes", 1024 * 1024)
             return Result(value.toString(2), value)
         }
 
-        require(sub in setOf("c0-compile", "c0_compile", "c0-run", "c0_run")) {
+        require(sub in setOf("c0-compile", "c0_compile", "c0-run", "c0_run", "c0-run-host", "c0_run_host")) {
             "unknown Codynex C0 command: $sub"
         }
         require(args.size in 1..2) {
             "usage: codynex " + sub.replace('_', '-') +
                 " <project> [root-relative]"
         }
+
+        val hostRun = sub == "c0-run-host" || sub == "c0_run_host"
+        val nativeRun =
+            hostRun || sub == "c0-run" || sub == "c0_run"
 
         val project = loadCodynexC0Project(
             projectRaw = args[0],
@@ -101,7 +110,9 @@ class RiftNativeShellServices(context: Context) {
         val value = JSONObject()
             .put(
                 "schema",
-                if (sub == "c0-run" || sub == "c0_run") {
+                if (hostRun) {
+                    "codynex-c0-project-host-run/1"
+                } else if (nativeRun) {
                     "codynex-c0-project-run/1"
                 } else {
                     "codynex-c0-project-compile/1"
@@ -121,8 +132,13 @@ class RiftNativeShellServices(context: Context) {
                     "/build/codynex-c0/" + artifact.name
             )
 
-        if (sub == "c0-run" || sub == "c0_run") {
+        if (nativeRun) {
             val vm1 = loadCodynexC0Vm1()
+            val source = if (hostRun) {
+                buildCodynexC0HostSnapshot()
+            } else {
+                ByteArray(0)
+            }
             val output = ByteArray(64 * 1024)
             val stepBudget = (
                 compiled.vm1.size * 256 + 20_000
@@ -130,7 +146,7 @@ class RiftNativeShellServices(context: Context) {
             val run = Vm1Bridge.run(
                 vm = vm1,
                 program = compiled.vm1,
-                source = ByteArray(0),
+                source = source,
                 output = output,
                 stepBudget = stepBudget
             )
@@ -145,11 +161,62 @@ class RiftNativeShellServices(context: Context) {
                 .put("status", run[0])
                 .put("programResult", Integer.toUnsignedLong(run[1]))
                 .put("ok", run[0] == 0)
+
+            if (hostRun) {
+                value
+                    .put("hostSnapshotSchema", "riftosplus-host-snapshot/1")
+                    .put("hostSnapshotBytes", source.size)
+                    .put("hostSnapshotSha256", codynexC0Sha256(source))
+                    .put("hostLifecycle", 1)
+                    .put("hostAbi", "armeabi-v7a")
+                    .put("hostCapabilities", 7)
+                    .put("hostMonotonicLow", source[16].toInt() and 0xff)
+                    .put("hostUnixSecondLow", source[20].toInt() and 0xff)
+            }
         } else {
             value.put("ok", true)
         }
 
         return Result(value.toString(2), value)
+    }
+
+    private fun buildCodynexC0HostSnapshot(): ByteArray {
+        val snapshot = ByteArray(24)
+        snapshot[0] = 82.toByte()
+        snapshot[1] = 43.toByte()
+        snapshot[2] = 72.toByte()
+        snapshot[3] = 49.toByte()
+        snapshot[4] = 1.toByte()
+        snapshot[5] = 1.toByte()
+        snapshot[6] = 1.toByte()
+        snapshot[7] = 0.toByte()
+        putCodynexC0U32Le(snapshot, 8, 24)
+        putCodynexC0U32Le(snapshot, 12, 7)
+        putCodynexC0U32Le(
+            snapshot,
+            16,
+            (SystemClock.elapsedRealtime() and 0xffff_ffffL).toInt()
+        )
+        putCodynexC0U32Le(
+            snapshot,
+            20,
+            ((System.currentTimeMillis() / 1000L) and 0xffff_ffffL).toInt()
+        )
+        return snapshot
+    }
+
+    private fun putCodynexC0U32Le(
+        target: ByteArray,
+        offset: Int,
+        value: Int
+    ) {
+        require(offset >= 0 && offset + 4 <= target.size) {
+            "Codynex C0 host snapshot write escaped packet"
+        }
+        target[offset] = (value and 0xff).toByte()
+        target[offset + 1] = ((value ushr 8) and 0xff).toByte()
+        target[offset + 2] = ((value ushr 16) and 0xff).toByte()
+        target[offset + 3] = ((value ushr 24) and 0xff).toByte()
     }
 
     private fun loadCodynexC0Project(
@@ -576,6 +643,7 @@ class RiftNativeShellServices(context: Context) {
                     "codynex c0-status\n" +
                     "codynex c0-compile <project> [root-relative]\n" +
                     "codynex c0-run <project> [root-relative]\n" +
+                    "codynex c0-run-host <project> [root-relative]\n" +
                     "Legacy LR0 bridge:\n" +
                     "codynex status\n" +
                     "codynex read-state <id>\n" +
