@@ -18,6 +18,8 @@ const nativeToolchain = read(nativeToolchainPath);
 const nativeApp = read(nativeAppPath);
 const signer = read(signerPath);
 const installer = read(installerPath);
+assert.ok(nativeToolchain.includes("entry.name.replace('\\\\', '/')"), 'bundled toolchain ZIP paths must normalize a single escaped backslash char');
+assert.ok(!nativeToolchain.includes("entry.name.replace('\\\\\\\\', '/')"), 'bundled toolchain ZIP path normalization must not use the invalid four-backslash Kotlin char literal');
 const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
 const shell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');

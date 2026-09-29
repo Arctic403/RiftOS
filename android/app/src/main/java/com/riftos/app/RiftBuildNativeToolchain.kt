@@ -132,7 +132,7 @@ class RiftBuildNativeToolchain(
             ZipInputStream(BufferedInputStream(raw)).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
-                    val name = entry.name.replace('\\\\', '/')
+                    val name = entry.name.replace('\\', '/')
                     require(name.isNotBlank() && !name.startsWith("/") && name.split('/').none { it == ".." }) {
                         "Bundled toolchain archive contains unsafe path"
                     }

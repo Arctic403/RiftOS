@@ -6,6 +6,14 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.50 — RiftBuild bundled-toolchain Kotlin path-normalization compile fix
+
+The second Builder attempt for RiftOS source `fb83e5319a9e1f87034e578cd7d1e718d651c454`, after Builder commit `e71f6f2075a7188aa80a4aad5d8922dc9ad7d500`, cleared the previous Termux-prefix failure completely. The private worker log shows both `armeabi-v7a` and `arm64-v8a` packaging Clang/LLD 21.1.8-3 plus eight private runtime libraries per ABI, followed by successful creation of the 177,781,923-byte `android-clang-v1.zip` (`c902283171949b2cb31cbe60e77bb535dd02472e8933e476efe32643673d4874`). Source checks and dedicated Gradle validation also passed.
+
+The Android build then failed at Kotlin compilation with one exact error: `RiftBuildNativeToolchain.kt:135:51 Unsupported escape sequence`. The checked-in `installBundled()` ZIP-path normalization `Char` literal contained four backslash characters where Kotlin source requires the standard two-character escaped backslash. Current source corrects only that literal while preserving the existing bounded archive/path-confinement logic. `scripts/test-riftbuild-native.mjs` now requires the valid form and explicitly rejects the malformed form so this syntax error is caught by `npm run check` before toolchain generation/Gradle.
+
+This patch does not alter Rift++ S2 compiler semantics, canonical source identities, Builder toolchain package versions, archive bounds, native compiler authority, or installed-device promotion claims. The next gate is a Builder compile of this corrected source, then installed-device `s2-selfhost` proof.
+
 ## Patch 10.49 — Rift++ S2 bootstrap-safe self-host correction
 
 Installed RiftOS source `cbe5924cfac296aed57a0606c7c581f6e54e8270` / Builder run 437 preserved the Patch 10.45 reject-offset lane and reproduced the self-host failure on `armeabi-v7a`. Independent interpretation of the exact 1384-record canonical S2 compiler returned 44288 without entering reject and emitted the exact previously pinned Generation-B bytes, proving the S2 algorithm/source logic itself was sound. The fixed emitter corpus then exposed the native ARM32 defect: Generation A encodes `EQ`/`LTU` as `MOV dst,#0; CMP lhs,rhs; conditional MOV dst,#1`, which is wrong whenever `dst` aliases `lhs` or `rhs`. Canonical source audit found 65 aliased `EQ` records and 48 aliased `LTU` records.
