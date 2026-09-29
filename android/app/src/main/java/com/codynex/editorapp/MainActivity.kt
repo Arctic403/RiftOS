@@ -17,6 +17,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import com.codynex.editor.ArtifactRef
 import com.codynex.editor.CodynexEditorController
 import com.codynex.editor.EditorDiagnostic
 import com.codynex.editor.EditorState
@@ -32,6 +33,7 @@ import java.io.File
 class MainActivity : Activity() {
     private lateinit var controller: CodynexEditorController
     private lateinit var workspacePort: FileWorkspacePort
+    private lateinit var toolchain: Source0SelfHostToolchainPort
 
     private lateinit var statusView: TextView
     private lateinit var candidateView: TextView
@@ -76,7 +78,15 @@ class MainActivity : Activity() {
                 )
             }
 
-            val toolchain =
+            val notepadFile = File(workspaceRoot, "notepad.cx")
+            if (!notepadFile.exists()) {
+                workspacePort.createTextFile(
+                    notepadFile.canonicalPath,
+                    artifacts.notepadSource
+                )
+            }
+
+            toolchain =
                 Source0SelfHostToolchainPort(
                     context = this,
                     artifacts = artifacts,
@@ -94,9 +104,9 @@ class MainActivity : Activity() {
             buildUi()
 
             controller.openWorkspace(workspacePort.rootPath())
-            var initial = controller.openFile(starterFile.canonicalPath)
-            if (starterFile.name.endsWith(".cx", ignoreCase = true)) {
-                initial = controller.setProjectEntry(starterFile.canonicalPath)
+            var initial = controller.openFile(notepadFile.canonicalPath)
+            if (notepadFile.name.endsWith(".cx", ignoreCase = true)) {
+                initial = controller.setProjectEntry(notepadFile.canonicalPath)
             }
             render(initial)
         } catch (error: Throwable) {
@@ -391,7 +401,12 @@ class MainActivity : Activity() {
                 )
                 addView(
                     actionButton("Preview") {
-                        ensureSavedThen("preview") {
+                        ensureSavedThen(
+                            "preview",
+                            after = { state ->
+                                showLivePreviewIfAvailable(state)
+                            }
+                        ) {
                             val state = controller.snapshot()
                             if (state.candidate == null) {
                                 controller.compile()
@@ -704,11 +719,204 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /**
+     * TEMP LIVE-PROOF primitive renderer only.
+     * CXUI app structure and behavior are emitted by compiled .cx code.
+     */
+    private data class CxUiNode(
+        val kind: Int,
+        val id: Int,
+        val text: String
+    )
+
+    private data class CxUiFrame(
+        val nodes: List<CxUiNode>
+    )
+
+    private fun showLivePreviewIfAvailable(state: EditorState) {
+        val artifact = state.candidate ?: return
+        val run = toolchain.latestLivePreview() ?: return
+        if (!run.success) return
+
+        val frame = parseCxUiFrame(run.output) ?: return
+        showCxUiDialog(artifact, frame)
+    }
+
+    private fun parseCxUiFrame(output: ByteArray): CxUiFrame? {
+        if (output.size < 5) return null
+        if ((output[0].toInt() and 0xff) != 67) return null
+        if ((output[1].toInt() and 0xff) != 88) return null
+        if ((output[2].toInt() and 0xff) != 85) return null
+        if ((output[3].toInt() and 0xff) != 49) return null
+
+        val count = output[4].toInt() and 0xff
+        if (count !in 1..16) return null
+
+        val nodes = ArrayList<CxUiNode>(count)
+        val ids = HashSet<Int>()
+        var cursor = 5
+
+        repeat(count) {
+            if (cursor + 3 > output.size) return null
+
+            val kind = output[cursor].toInt() and 0xff
+            val id = output[cursor + 1].toInt() and 0xff
+            val length = output[cursor + 2].toInt() and 0xff
+            cursor += 3
+
+            if (kind !in 1..3 || id == 0 || !ids.add(id)) return null
+            if (cursor + length > output.size) return null
+
+            val text =
+                output.copyOfRange(cursor, cursor + length)
+                    .toString(Charsets.UTF_8)
+            cursor += length
+
+            nodes.add(CxUiNode(kind = kind, id = id, text = text))
+        }
+
+        if (cursor != output.size) return null
+        if (nodes.count { it.kind == 2 } > 1) return null
+
+        return CxUiFrame(nodes)
+    }
+
+    private fun showCxUiDialog(
+        artifact: ArtifactRef,
+        frame: CxUiFrame
+    ) {
+        val content =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(12), dp(20), dp(12))
+            }
+
+        var textArea: EditText? = null
+        val actionButtons = mutableListOf<Pair<Button, CxUiNode>>()
+
+        frame.nodes.forEach { node ->
+            when (node.kind) {
+                1 -> {
+                    content.addView(
+                        TextView(this).apply {
+                            text = node.text
+                            textSize = 22f
+                            setPadding(0, 0, 0, dp(12))
+                        }
+                    )
+                }
+
+                2 -> {
+                    val field =
+                        EditText(this).apply {
+                            setText(node.text)
+                            gravity = Gravity.TOP or Gravity.START
+                            inputType =
+                                InputType.TYPE_CLASS_TEXT or
+                                    InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                                    InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                            minLines = 10
+                            maxLines = 18
+                            setPadding(dp(12), dp(12), dp(12), dp(12))
+                        }
+                    textArea = field
+                    content.addView(
+                        field,
+                        LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            dp(320)
+                        )
+                    )
+                }
+
+                3 -> {
+                    val button =
+                        Button(this).apply {
+                            text = node.text
+                        }
+                    actionButtons.add(button to node)
+                    content.addView(button)
+                }
+            }
+        }
+
+        val dialog =
+            AlertDialog.Builder(this)
+                .setTitle("Live .cx preview")
+                .setView(content)
+                .setNegativeButton("Close", null)
+                .create()
+
+        actionButtons.forEach { (button, node) ->
+            button.setOnClickListener {
+                val input =
+                    encodeCxUiAction(
+                        node.id,
+                        textArea?.text?.toString().orEmpty()
+                    )
+
+                button.isEnabled = false
+                statusView.text = "Running live .cx action..."
+
+                Thread {
+                    val replay =
+                        toolchain.replayLivePreview(
+                            artifact = artifact,
+                            input = input
+                        )
+                    val next =
+                        if (replay.success) {
+                            parseCxUiFrame(replay.output)
+                        } else {
+                            null
+                        }
+
+                    runOnUiThread {
+                        button.isEnabled = true
+                        if (next == null) {
+                            statusView.text =
+                                replay.error
+                                    ?: "Live .cx preview returned an invalid frame"
+                        } else {
+                            dialog.dismiss()
+                            statusView.text =
+                                "Live .cx action ${node.id} passed"
+                            showCxUiDialog(artifact, next)
+                        }
+                    }
+                }.start()
+            }
+        }
+
+        dialog.show()
+    }
+
+    private fun encodeCxUiAction(
+        controlId: Int,
+        currentText: String
+    ): ByteArray {
+        var boundedText = currentText
+        var textBytes = boundedText.toByteArray(Charsets.UTF_8)
+
+        while (textBytes.size > 240 && boundedText.isNotEmpty()) {
+            boundedText = boundedText.dropLast(1)
+            textBytes = boundedText.toByteArray(Charsets.UTF_8)
+        }
+
+        val input = ByteArray(textBytes.size + 3)
+        input[0] = 1
+        input[1] = (controlId and 0xff).toByte()
+        input[2] = textBytes.size.toByte()
+        textBytes.copyInto(input, destinationOffset = 3)
+        return input
+    }
+
     private fun ensureSavedThen(
         label: String,
+        after: (EditorState) -> Unit = {},
         action: () -> EditorState
     ) {
-        runAction(label) {
+        runAction(label, after) {
             if (controller.snapshot().dirtyDocumentCount > 0) {
                 controller.saveAll()
             }
@@ -810,6 +1018,7 @@ class MainActivity : Activity() {
 
     private fun runAction(
         label: String,
+        after: (EditorState) -> Unit = {},
         action: () -> EditorState
     ) {
         statusView.text = "Running $label..."
@@ -831,6 +1040,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 render(state)
+                after(state)
             }
         }.start()
     }

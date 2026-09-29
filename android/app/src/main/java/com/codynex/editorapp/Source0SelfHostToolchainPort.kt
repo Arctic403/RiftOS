@@ -16,6 +16,13 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
+data class LivePreviewRun(
+    val success: Boolean,
+    val result: Int,
+    val output: ByteArray,
+    val error: String? = null
+)
+
 /** TEMPORARY LIVE-PROOF toolchain transport; MUST be replaced by native Codynex/.cx. */
 class Source0SelfHostToolchainPort(
     private val context: Context,
@@ -32,10 +39,14 @@ class Source0SelfHostToolchainPort(
         private const val MAX_PROJECT_MODULES = 64
         private const val MAX_CANDIDATE_BYTES = 64 * 1024
         private const val PREVIEW_OUTPUT_BYTES = 64 * 1024
+        private const val MAX_LIVE_INPUT_BYTES = 1024
     }
 
     private val candidateRoot =
         candidateDirectory.apply { mkdirs() }.canonicalFile
+
+    @Volatile
+    private var latestPreviewRun: LivePreviewRun? = null
 
     override fun compile(request: CompileRequest): CompileResult {
         val sourceBytes = request.sourceText.toByteArray(Charsets.UTF_8)
@@ -170,61 +181,13 @@ class Source0SelfHostToolchainPort(
     }
 
     override fun preview(request: PreviewRequest): PreviewResult {
-        val candidateFile =
-            File(request.artifact.id).canonicalFile
+        val run = executePreview(request.artifact, ByteArray(0))
+        latestPreviewRun = run
 
-        requireInsideCandidateRoot(candidateFile)
-
-        if (!candidateFile.isFile) {
+        if (!run.success) {
             return previewFailure(
                 request.sourcePath,
-                "candidate artifact is missing"
-            )
-        }
-
-        if (candidateFile.length() > MAX_CANDIDATE_BYTES) {
-            return previewFailure(
-                request.sourcePath,
-                "candidate exceeds $MAX_CANDIDATE_BYTES bytes"
-            )
-        }
-
-        val candidate = candidateFile.readBytes()
-        val output = ByteArray(PREVIEW_OUTPUT_BYTES)
-
-        val run =
-            try {
-                Vm1Bridge.run(
-                    vm = artifacts.vm1,
-                    program = candidate,
-                    source = ByteArray(0),
-                    output = output,
-                    stepBudget =
-                        (candidate.size * 256 + 20_000)
-                            .coerceIn(20_000, 5_000_000)
-                )
-            } catch (error: Throwable) {
-                return previewFailure(
-                    request.sourcePath,
-                    "VM1 preview bridge failed: " +
-                        (error.message ?: error.javaClass.simpleName)
-                )
-            }
-
-        if (run.size < 2) {
-            return previewFailure(
-                request.sourcePath,
-                "VM1 bridge returned an invalid preview result"
-            )
-        }
-
-        val vmStatus = run[0]
-        val programResult = run[1]
-
-        if (vmStatus != 0) {
-            return previewFailure(
-                request.sourcePath,
-                "VM1 preview failed with status $vmStatus"
+                run.error ?: "VM1 preview failed"
             )
         }
 
@@ -235,11 +198,118 @@ class Source0SelfHostToolchainPort(
                     severity = DiagnosticSeverity.INFO,
                     message =
                         "VM1 preview passed on empty input; " +
-                            "program result $programResult",
+                            "program result ${run.result}",
                     file = request.sourcePath
                 )
             ),
-            summary = "Preview passed: VM1 result $programResult"
+            summary = "Preview passed: VM1 result ${run.result}"
+        )
+    }
+
+    fun latestLivePreview(): LivePreviewRun? =
+        latestPreviewRun?.let { run ->
+            run.copy(output = run.output.copyOf())
+        }
+
+    fun replayLivePreview(
+        artifact: ArtifactRef,
+        input: ByteArray
+    ): LivePreviewRun {
+        if (input.size > MAX_LIVE_INPUT_BYTES) {
+            return LivePreviewRun(
+                success = false,
+                result = 0,
+                output = ByteArray(0),
+                error = "live preview input exceeds $MAX_LIVE_INPUT_BYTES bytes"
+            )
+        }
+
+        val run = executePreview(artifact, input)
+        latestPreviewRun = run
+        return run.copy(output = run.output.copyOf())
+    }
+
+    private fun executePreview(
+        artifact: ArtifactRef,
+        input: ByteArray
+    ): LivePreviewRun {
+        val candidateFile = File(artifact.id).canonicalFile
+        requireInsideCandidateRoot(candidateFile)
+
+        if (!candidateFile.isFile) {
+            return LivePreviewRun(
+                success = false,
+                result = 0,
+                output = ByteArray(0),
+                error = "candidate artifact is missing"
+            )
+        }
+
+        if (candidateFile.length() > MAX_CANDIDATE_BYTES) {
+            return LivePreviewRun(
+                success = false,
+                result = 0,
+                output = ByteArray(0),
+                error = "candidate exceeds $MAX_CANDIDATE_BYTES bytes"
+            )
+        }
+
+        val candidate = candidateFile.readBytes()
+        val output = ByteArray(PREVIEW_OUTPUT_BYTES)
+        val raw =
+            try {
+                Vm1Bridge.run(
+                    vm = artifacts.vm1,
+                    program = candidate,
+                    source = input,
+                    output = output,
+                    stepBudget =
+                        (candidate.size * 256 + 20_000)
+                            .coerceIn(20_000, 5_000_000)
+                )
+            } catch (error: Throwable) {
+                return LivePreviewRun(
+                    success = false,
+                    result = 0,
+                    output = ByteArray(0),
+                    error =
+                        "VM1 preview bridge failed: " +
+                            (error.message ?: error.javaClass.simpleName)
+                )
+            }
+
+        if (raw.size < 2) {
+            return LivePreviewRun(
+                success = false,
+                result = 0,
+                output = ByteArray(0),
+                error = "VM1 bridge returned an invalid preview result"
+            )
+        }
+
+        val vmStatus = raw[0]
+        val programResult = raw[1]
+
+        if (vmStatus != 0) {
+            return LivePreviewRun(
+                success = false,
+                result = programResult,
+                output = ByteArray(0),
+                error = "VM1 preview failed with status $vmStatus"
+            )
+        }
+
+        val emitted =
+            if (programResult in 0..output.size) {
+                output.copyOf(programResult)
+            } else {
+                ByteArray(0)
+            }
+
+        return LivePreviewRun(
+            success = true,
+            result = programResult,
+            output = emitted
         )
     }
 
