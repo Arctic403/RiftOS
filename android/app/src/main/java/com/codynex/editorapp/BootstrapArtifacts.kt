@@ -59,6 +59,66 @@ object BootstrapArtifactLoader {
             return out;
         }
 
+        fn smaller(requested: u32, available: u32) -> u32 {
+            if available < requested {
+                return available;
+            } else {
+                return requested;
+            }
+        }
+
+        fn clamp_text_length(value: u32) -> u32 {
+            if 240u32 < value {
+                return 240u32;
+            } else {
+                return value;
+            }
+        }
+
+        fn current_text_length() -> u32 {
+            if source_len() < 3u32 {
+                return 0u32;
+            } else {
+                let event: u8 = source_read(0u32);
+                let control: u8 = source_read(1u32);
+                let requested: u32 = source_read(2u32) as u32;
+                let available: u32 = source_len() - 3u32;
+
+                if event == 1u8 {
+                    if control == 3u8 {
+                        return 0u32;
+                    } else {
+                        return clamp_text_length(
+                            smaller(requested, available)
+                        );
+                    }
+                } else {
+                    return clamp_text_length(
+                        smaller(requested, available)
+                    );
+                }
+            }
+        }
+
+        fn current_text_start() -> u32 {
+            if source_len() < 3u32 {
+                return 0u32;
+            } else {
+                let event: u8 = source_read(0u32);
+                let control: u8 = source_read(1u32);
+
+                if event == 1u8 {
+                    if control == 3u8 {
+                        return 0u32;
+                    } else {
+                        return 3u32;
+                    }
+                } else {
+                    return 3u32;
+                }
+            }
+        }
+
         fn main() -> u32 {
             var out: u32 = 0u32;
 
@@ -75,45 +135,8 @@ object BootstrapArtifactLoader {
             out = sink_write(out, 15u8);
             out = write_title(out);
 
-            var text_length: u32 = 0u32;
-            var text_start: u32 = 0u32;
-
-            if source_len() < 3u32 {
-                text_length = 0u32;
-                text_start = 0u32;
-            } else {
-                let event: u8 = source_read(0u32);
-                let control: u8 = source_read(1u32);
-                let requested: u32 = source_read(2u32) as u32;
-                let available: u32 = source_len() - 3u32;
-
-                if event == 1u8 {
-                    if control == 3u8 {
-                        text_length = 0u32;
-                        text_start = 0u32;
-                    } else {
-                        if available < requested {
-                            text_length = available;
-                        } else {
-                            text_length = requested;
-                        }
-                        text_start = 3u32;
-                    }
-                } else {
-                    if available < requested {
-                        text_length = available;
-                    } else {
-                        text_length = requested;
-                    }
-                    text_start = 3u32;
-                }
-            }
-
-            if 240u32 < text_length {
-                text_length = 240u32;
-            } else {
-                text_length = text_length;
-            }
+            let text_length: u32 = current_text_length();
+            let text_start: u32 = current_text_start();
 
             // Editable text-area node.
             out = sink_write(out, 2u8);
