@@ -62,14 +62,14 @@ object BootstrapArtifactLoader {
         fn main() -> u32 {
             var out: u32 = 0u32;
 
-            # CXUI v1 header + three generic controls.
+            // CXUI v1 header + three generic controls.
             out = sink_write(out, 67u8);
             out = sink_write(out, 88u8);
             out = sink_write(out, 85u8);
             out = sink_write(out, 49u8);
             out = sink_write(out, 3u8);
 
-            # Label: "Codynex Notepad".
+            // Label: "Codynex Notepad".
             out = sink_write(out, 1u8);
             out = sink_write(out, 1u8);
             out = sink_write(out, 15u8);
@@ -115,7 +115,7 @@ object BootstrapArtifactLoader {
                 text_length = text_length;
             }
 
-            # Editable text-area node.
+            // Editable text-area node.
             out = sink_write(out, 2u8);
             out = sink_write(out, 2u8);
             out = sink_write(out, text_length as u8);
@@ -126,7 +126,7 @@ object BootstrapArtifactLoader {
                 index = index + 1u32;
             }
 
-            # Clear action node.
+            // Clear action node.
             out = sink_write(out, 3u8);
             out = sink_write(out, 3u8);
             out = sink_write(out, 5u8);

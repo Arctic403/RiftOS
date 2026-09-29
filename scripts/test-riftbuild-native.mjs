@@ -447,6 +447,8 @@ assert.match(editorBootstrap, /starterSource/);
 assert.match(editorBootstrap, /notepadSource/);
 assert.match(editorBootstrap, /module app\.notepad/);
 assert.match(editorBootstrap, /sink_write/);
+assert.match(editorBootstrap, /\/\/ CXUI v1 header \+ three generic controls\./);
+assert.ok(!editorBootstrap.includes('# CXUI v1 header + three generic controls.'), 'Bundled Notepad uses unsupported # comment syntax');
 assert.ok(!/compilerA|selfhost_compiler|SOURCE_SHA256/.test(editorBootstrap), 'Editor bootstrap still depends on obsolete MC2-A compiler/source assets');
 assert.match(editorActivity, /main\.cx/);
 assert.match(editorActivity, /notepad\.cx/);

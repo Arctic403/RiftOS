@@ -84,6 +84,34 @@ class MainActivity : Activity() {
                     notepadFile.canonicalPath,
                     artifacts.notepadSource
                 )
+            } else {
+                val existingNotepad =
+                    workspacePort.readText(notepadFile.canonicalPath)
+                val migratedNotepad =
+                    existingNotepad
+                        .replace(
+                            "# CXUI v1 header + three generic controls.",
+                            "// CXUI v1 header + three generic controls."
+                        )
+                        .replace(
+                            "# Label: \"Codynex Notepad\".",
+                            "// Label: \"Codynex Notepad\"."
+                        )
+                        .replace(
+                            "# Editable text-area node.",
+                            "// Editable text-area node."
+                        )
+                        .replace(
+                            "# Clear action node.",
+                            "// Clear action node."
+                        )
+
+                if (migratedNotepad != existingNotepad) {
+                    workspacePort.writeText(
+                        notepadFile.canonicalPath,
+                        migratedNotepad
+                    )
+                }
             }
 
             toolchain =
