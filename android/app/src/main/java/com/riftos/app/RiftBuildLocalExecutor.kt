@@ -212,6 +212,28 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/core/build.gradle.kts" to
                 "ac7cfb56bb6a67678000e7cd78fbff58524cc867351bafdaf3277b23521d0d30"
         )
+        private const val CODYNEX_APPHOST_PROJECT = "external/apphost"
+        private const val CODYNEX_APP_PACKAGE = "com.codynex.notepad"
+        private const val CODYNEX_APP_ACTIVITY =
+            "com.codynex.apphost.CodynexAppActivity"
+        private const val CODYNEX_APP_VERSION_NAME = "0.1.0-live-proof"
+        private const val CODYNEX_APP_LIBRARY_FILE =
+            "libcodynex_editor_vm.so"
+        private const val CODYNEX_APP_PROGRAM_ASSET = "program.vm1"
+        private const val CODYNEX_APP_MAX_SOURCE_BYTES = 256 * 1024
+        private const val CODYNEX_APP_MAX_PROGRAM_BYTES = 64 * 1024
+        private val CODYNEX_APPHOST_SOURCE_SHA256 = linkedMapOf(
+            "external/apphost/settings.gradle.kts" to
+                "4e6be639ed8868ad14ad06457de70420df60d9ca484cb454a74d17bc11278a31",
+            "external/apphost/build.gradle.kts" to
+                "f635b381665f7dd6c45df396cae81ad4812cc403d904f10f2909fd174575fec3",
+            "external/apphost/app/build.gradle.kts" to
+                "9c7fe53cce40f0ac93fd17164f5b1d6b1c91b0c649d4187e732cc5590a775de4",
+            "external/apphost/app/src/main/AndroidManifest.xml" to
+                "e092bd010b9f52dcfe1fffca2ca08098689816d7a88d5a1362d97646cc9350ea",
+            "external/apphost/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
+                "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28"
+        )
         private const val XML_NO_INDEX = -1
         private const val XML_STRING_POOL_TYPE = 0x0001
         private const val XML_TYPE = 0x0003
@@ -282,7 +304,8 @@ class RiftBuildLocalExecutor(context: Context) {
             "android", "http://schemas.android.com/apk/res/android", "manifest", "package", EDITOR_PACKAGE, "1",
             EDITOR_VERSION_NAME, "uses-sdk", "26", "36", "application", "true", "activity",
             EDITOR_ACTIVITY, "intent-filter", "action", "android.intent.action.MAIN",
-            "category", "android.intent.category.LAUNCHER", "queries", "com.riftos.app"
+            "category", "android.intent.category.LAUNCHER", "queries", "com.riftos.app",
+            CODYNEX_APP_PACKAGE, CODYNEX_APP_VERSION_NAME, CODYNEX_APP_ACTIVITY
         )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
@@ -299,13 +322,14 @@ class RiftBuildLocalExecutor(context: Context) {
     private val nativeApp = RiftBuildNativeApp(workspaceRoot)
     private val apkSigner = RiftApkV2Signer(appContext)
     private val installer = RiftBuildInstaller(appContext)
+    private val codynexRuntime = RiftHeadlessJsRuntime(appContext)
 
     fun executeShell(args: MutableList<String>, cwd: String): CommandResult {
         val sub = args.removeFirstOrNull()?.lowercase() ?: "doctor"
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | compile-native <project> [arm32|arm64|universal] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | compile-native <project> [arm32|arm64|universal] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | prepare-codynex-app <codynex-root> <source-path> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -364,6 +388,15 @@ class RiftBuildLocalExecutor(context: Context) {
             )
             "prepare-codynex-editor" -> prepareCodynexEditor(
                 args.firstOrNull() ?: error("usage: riftbuild prepare-codynex-editor <codynex-root>"),
+                cwd
+            )
+            "prepare-codynex-app" -> prepareCodynexApp(
+                args.firstOrNull() ?: error(
+                    "usage: riftbuild prepare-codynex-app <codynex-root> <source-path>"
+                ),
+                args.getOrNull(1) ?: error(
+                    "usage: riftbuild prepare-codynex-app <codynex-root> <source-path>"
+                ),
                 cwd
             )
             "pack" -> pack(
@@ -535,6 +568,8 @@ class RiftBuildLocalExecutor(context: Context) {
         val packReady = sourceReady && prepared.optBoolean("ready")
         val nativeLibraryName = validation.optString("nativeLibraryName")
         val prepareHint = when {
+            ref.display.endsWith("/" + CODYNEX_APPHOST_PROJECT) ->
+                "run prepare-codynex-app from the Codynex project root"
             ref.display.endsWith("/" + EDITOR_PROJECT) ->
                 "run prepare-codynex-editor from the Codynex project root"
             nativeLibraryName == MC0_LIBRARY_NAME ->
@@ -581,7 +616,16 @@ class RiftBuildLocalExecutor(context: Context) {
             )
             "codynex-mc0" -> prepareCodynexMc0(project, cwd)
             "codynex-editor" -> prepareCodynexEditor(project, cwd)
-            else -> error("build.prepare kind must be riftpp-v0, riftpp-app0, codynex-mc0, or codynex-editor")
+            "codynex-app" -> prepareCodynexApp(
+                project,
+                args.optString("source").ifBlank {
+                    error("build.prepare kind codynex-app requires source")
+                },
+                cwd
+            )
+            else -> error(
+                "build.prepare kind must be riftpp-v0, riftpp-app0, codynex-mc0, codynex-editor, or codynex-app"
+            )
         }
     }
 
@@ -2111,6 +2155,232 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
 
         atomicWrite(
             File(buildRoot, "codynex-mc2a-materialization.json"),
+            result.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(result)
+        return result
+    }
+
+    @Synchronized
+    fun prepareCodynexApp(
+        project: String,
+        sourcePath: String,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+
+        CODYNEX_APPHOST_SOURCE_SHA256.forEach { (path, expectedSha) ->
+            verifyProjectSource(ref, path, expectedSha)
+        }
+
+        val appProject = projectFile(ref, CODYNEX_APPHOST_PROJECT)
+        require(appProject.isDirectory) {
+            "Codynex standalone app-host project is missing"
+        }
+        val appDisplay = projectDisplay(ref, appProject)
+        val sourceValidation = validate(appDisplay, "/D:/Workspace")
+        require(sourceValidation.optBoolean("sourceReady")) {
+            "Codynex standalone app-host source validation failed"
+        }
+        require(sourceValidation.optBoolean("requiresDex")) {
+            "Codynex standalone app host must remain code-bearing"
+        }
+        require(
+            sourceValidation.optString("activityName") == CODYNEX_APP_ACTIVITY
+        ) {
+            "Codynex standalone app launch activity drift"
+        }
+
+        val sourceFile = projectFile(ref, sourcePath)
+        require(sourceFile.isFile && sourceFile.extension == "cx") {
+            "Codynex standalone app source must be an existing .cx file"
+        }
+        val sourceText = readTextBounded(sourceFile)
+        val sourceBytes = sourceText.toByteArray(Charsets.UTF_8)
+        require(
+            sourceBytes.isNotEmpty() &&
+                sourceBytes.size <= CODYNEX_APP_MAX_SOURCE_BYTES
+        ) {
+            "Codynex standalone app source must be 1.." +
+                CODYNEX_APP_MAX_SOURCE_BYTES + " UTF-8 bytes"
+        }
+
+        val compiled =
+            codynexRuntime.compileCodynexC0Project(
+                rootSource = sourceText,
+                moduleSources = emptyMap()
+            )
+        require(compiled.compiler == "codynex-c0-ref/0.11.0") {
+            "Codynex standalone app compiler identity drift"
+        }
+        require(compiled.moduleCount == 1) {
+            "Codynex standalone app proof currently requires one module"
+        }
+        require(
+            compiled.vm1.isNotEmpty() &&
+                compiled.vm1.size <= CODYNEX_APP_MAX_PROGRAM_BYTES
+        ) {
+            "Codynex standalone app VM1 program exceeds bounds"
+        }
+
+        val vmFile = projectFile(ref, EDITOR_VM_HEX)
+        require(vmFile.isFile) {
+            "Codynex standalone app VM1 runtime authority is missing"
+        }
+        val vmText = readTextBounded(vmFile).toByteArray(Charsets.UTF_8)
+        require(vmText.size == EDITOR_VM_HEX_BYTES) {
+            "Codynex standalone app VM1 hex byte count drift: " +
+                vmText.size
+        }
+        require(sha256(vmText) == EDITOR_VM_HEX_SHA256) {
+            "Codynex standalone app VM1 runtime SHA-256 drift"
+        }
+
+        val host =
+            readOwnApkEntry(
+                EDITOR_HOST_APK_ENTRY,
+                EDITOR_MAX_HOST_BYTES
+            )
+        verifyElfImage(host, 1, 40)
+
+        val dexEntries = readOwnDexEntries()
+        require(dexEntries.isNotEmpty()) {
+            "Installed RiftOS APK contains no Codynex app-host DEX payload"
+        }
+        dexEntries.forEach { (name, bytes) ->
+            require(bytes.size >= 8) {
+                "RiftOS DEX payload is too small: " + name
+            }
+            require(
+                bytes[0] == 'd'.code.toByte() &&
+                    bytes[1] == 'e'.code.toByte() &&
+                    bytes[2] == 'x'.code.toByte() &&
+                    bytes[3] == '\n'.code.toByte() &&
+                    bytes[7] == 0.toByte()
+            ) {
+                "RiftOS DEX payload has invalid magic: " + name
+            }
+        }
+
+        val buildRoot =
+            File(appProject, "build/riftbuild").canonicalFile
+        require(confinedTo(appProject, buildRoot)) {
+            "Codynex standalone app build root escaped app-host project"
+        }
+        val preparedRoot = File(buildRoot, "prepared").canonicalFile
+        require(confinedTo(buildRoot, preparedRoot)) {
+            "Codynex standalone app prepared root escaped build/riftbuild"
+        }
+        if (preparedRoot.exists()) {
+            require(deleteTreeBounded(preparedRoot, MAX_PROJECT_FILES)) {
+                "Could not clear stale Codynex standalone app package"
+            }
+        }
+
+        val libRoot =
+            File(preparedRoot, "lib/armeabi-v7a").canonicalFile
+        val assetRoot = File(preparedRoot, "assets").canonicalFile
+        require(confinedTo(preparedRoot, libRoot)) {
+            "Codynex standalone app library root escaped package"
+        }
+        require(confinedTo(preparedRoot, assetRoot)) {
+            "Codynex standalone app asset root escaped package"
+        }
+        require(libRoot.mkdirs() || libRoot.isDirectory) {
+            "Could not create Codynex standalone app library directory"
+        }
+        require(assetRoot.mkdirs() || assetRoot.isDirectory) {
+            "Could not create Codynex standalone app asset directory"
+        }
+
+        val manifestOutput =
+            File(preparedRoot, "AndroidManifest.xml").canonicalFile
+        val hostOutput =
+            File(libRoot, CODYNEX_APP_LIBRARY_FILE).canonicalFile
+        val vmOutput = File(assetRoot, "vm1_seed.hex").canonicalFile
+        val programOutput =
+            File(assetRoot, CODYNEX_APP_PROGRAM_ASSET).canonicalFile
+
+        atomicWrite(manifestOutput, buildCodynexAppBinaryManifest())
+        atomicWrite(hostOutput, host)
+        atomicWrite(vmOutput, vmText)
+        atomicWrite(programOutput, compiled.vm1)
+
+        val dexReceipt = JSONArray()
+        for ((name, bytes) in dexEntries) {
+            require(DEX_ENTRY.matches(name)) {
+                "Unsafe Codynex standalone DEX output name: " + name
+            }
+            val output = File(preparedRoot, name).canonicalFile
+            require(confinedTo(preparedRoot, output)) {
+                "Codynex standalone DEX output escaped prepared package"
+            }
+            atomicWrite(output, bytes)
+            require(sha256(output) == sha256(bytes)) {
+                "Codynex standalone DEX materialization hash mismatch: " +
+                    name
+            }
+            dexReceipt.put(
+                JSONObject()
+                    .put("name", name)
+                    .put("bytes", bytes.size)
+                    .put("sha256", sha256(bytes))
+            )
+        }
+
+        require(isBinaryAndroidManifest(manifestOutput)) {
+            "Codynex standalone binary AndroidManifest.xml failed validation"
+        }
+        require(sha256(hostOutput) == sha256(host)) {
+            "Codynex standalone VM bridge materialization hash mismatch"
+        }
+        require(sha256(vmOutput) == EDITOR_VM_HEX_SHA256) {
+            "Codynex standalone VM1 runtime materialization hash mismatch"
+        }
+        require(sha256(programOutput) == sha256(compiled.vm1)) {
+            "Codynex standalone program materialization hash mismatch"
+        }
+
+        val runId = runId()
+        val result =
+            JSONObject()
+                .put(
+                    "format",
+                    "riftbuild-codynex-standalone-app-materialization-v1"
+                )
+                .put("runId", runId)
+                .put("state", "prepared-code")
+                .put("project", ref.display)
+                .put("androidProject", appDisplay)
+                .put("target", "arm32")
+                .put("package", CODYNEX_APP_PACKAGE)
+                .put("activity", CODYNEX_APP_ACTIVITY)
+                .put("source", projectDisplay(ref, sourceFile))
+                .put("sourceSha256", sha256(sourceBytes))
+                .put("compiler", compiled.compiler)
+                .put("moduleCount", compiled.moduleCount)
+                .put("programBytes", compiled.vm1.size)
+                .put("programSha256", sha256(compiled.vm1))
+                .put("vmSha256", EDITOR_VM_HEX_SHA256)
+                .put("hostSha256", sha256(host))
+                .put("dex", dexReceipt)
+                .put("manifestSha256", sha256(manifestOutput))
+                .put(
+                    "antiContamination",
+                    JSONObject()
+                        .put("hostParsesSource", false)
+                        .put("hostContainsAppSemantics", false)
+                        .put("appSemantics", "assets/program.vm1")
+                        .put("uiProtocol", "CXUI v1")
+                )
+                .put("manifestReady", true)
+                .put("dexReady", true)
+                .put("signed", false)
+                .put("installableClaimed", false)
+                .put("createdAt", System.currentTimeMillis())
+
+        atomicWrite(
+            File(buildRoot, "codynex-standalone-app-materialization.json"),
             result.toString(2).toByteArray(Charsets.UTF_8)
         )
         writeRun(result)
@@ -4368,6 +4638,100 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         val bodyBytes = body.toByteArray()
         val output = ByteArrayOutputStream()
         writeManifestChunkHeader(output, XML_TYPE, 8, 8 + bodyBytes.size)
+        output.write(bodyBytes)
+        return output.toByteArray()
+    }
+
+    private fun buildCodynexAppBinaryManifest(): ByteArray {
+        val body = ByteArrayOutputStream()
+        body.write(buildEditorManifestStringPool())
+        body.write(buildManifestResourceMap())
+        body.write(buildEditorManifestNamespace(XML_START_NAMESPACE_TYPE))
+
+        body.write(
+            buildEditorManifestStartElement(
+                "manifest",
+                listOf(
+                    editorManifestStringAttr(
+                        "package",
+                        CODYNEX_APP_PACKAGE,
+                        XML_NO_INDEX
+                    ),
+                    editorManifestIntAttr("versionCode", "1", 1),
+                    editorManifestStringAttr(
+                        "versionName",
+                        CODYNEX_APP_VERSION_NAME
+                    )
+                )
+            )
+        )
+        body.write(
+            buildEditorManifestStartElement(
+                "uses-sdk",
+                listOf(
+                    editorManifestIntAttr("minSdkVersion", "26", 26),
+                    editorManifestIntAttr("targetSdkVersion", "36", 36)
+                )
+            )
+        )
+        body.write(buildEditorManifestEndElement("uses-sdk"))
+        body.write(
+            buildEditorManifestStartElement(
+                "application",
+                listOf(editorManifestBoolAttr("hasCode", "true", true))
+            )
+        )
+        body.write(
+            buildEditorManifestStartElement(
+                "activity",
+                listOf(
+                    editorManifestStringAttr(
+                        "name",
+                        CODYNEX_APP_ACTIVITY
+                    ),
+                    editorManifestBoolAttr("exported", "true", true)
+                )
+            )
+        )
+        body.write(buildEditorManifestStartElement("intent-filter", emptyList()))
+        body.write(
+            buildEditorManifestStartElement(
+                "action",
+                listOf(
+                    editorManifestStringAttr(
+                        "name",
+                        "android.intent.action.MAIN"
+                    )
+                )
+            )
+        )
+        body.write(buildEditorManifestEndElement("action"))
+        body.write(
+            buildEditorManifestStartElement(
+                "category",
+                listOf(
+                    editorManifestStringAttr(
+                        "name",
+                        "android.intent.category.LAUNCHER"
+                    )
+                )
+            )
+        )
+        body.write(buildEditorManifestEndElement("category"))
+        body.write(buildEditorManifestEndElement("intent-filter"))
+        body.write(buildEditorManifestEndElement("activity"))
+        body.write(buildEditorManifestEndElement("application"))
+        body.write(buildEditorManifestEndElement("manifest"))
+        body.write(buildEditorManifestNamespace(XML_END_NAMESPACE_TYPE))
+
+        val bodyBytes = body.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(
+            output,
+            XML_TYPE,
+            8,
+            8 + bodyBytes.size
+        )
         output.write(bodyBytes)
         return output.toByteArray()
     }

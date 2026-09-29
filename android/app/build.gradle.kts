@@ -208,6 +208,8 @@ val verifyCodynexEditorPayload by tasks.registering {
             "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
         "src/main/java/com/codynex/editorapp/MainActivity.kt" to
             "74d879a8c372144c3aded8cbaa741464778d7e111fae4572586ea8052f6d522b",
+        "src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
+            "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28",
         "src/main/cpp/editor/editor_vm_bridge.cpp" to
             "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620"
     )

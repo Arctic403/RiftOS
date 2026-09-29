@@ -119,6 +119,8 @@ for (const required of [
   'MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"',
   'EDITOR_TARGET_PACKAGE = "com.codynex.editor"',
   'EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"',
+  'CODYNEX_APP_TARGET_PACKAGE = "com.codynex.notepad"',
+  'com.codynex.apphost.CodynexAppActivity',
   'ALLOWED_PROOF_PACKAGES',
   'PackageInstaller',
   'USER_ACTION_REQUIRED',
@@ -392,6 +394,7 @@ const editorCoreModel = read('android/app/src/main/java/com/codynex/editor/Edito
 const editorCorePorts = read('android/app/src/main/java/com/codynex/editor/EditorPorts.kt');
 const editorCoreController = read('android/app/src/main/java/com/codynex/editor/CodynexEditorController.kt');
 const editorActivity = read('android/app/src/main/java/com/codynex/editorapp/MainActivity.kt');
+const codynexAppActivity = read('android/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt');
 const editorWorkspace = read('android/app/src/main/java/com/codynex/editorapp/FileWorkspacePort.kt');
 const editorBootstrap = read('android/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt');
 const editorToolchain = read('android/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt');
@@ -426,10 +429,36 @@ assert.ok(gradle.includes('src/main/cpp/editor/editor_vm_bridge.cpp'), 'Gradle e
 assert.match(gradle, /verifyCodynexEditorPayload/);
 assert.match(gradle, /d545e3802b300af446bbce56948b10a0ac7b5c00c04c118caa84a93f38e11b45/);
 assert.match(gradle, /b89c30344a2b7a0aa48c5956030cdfeaae363bf02d3bd705051e9e88bb34f592/);
+assert.match(gradle, /ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28/);
 assert.match(installer, /EDITOR_TARGET_PACKAGE = "com\.codynex\.editor"/);
 assert.match(installer, /EDITOR_TARGET_ACTIVITY = "com\.codynex\.editorapp\.MainActivity"/);
 assert.match(manifest, /com\.codynex\.editor/);
 assert.match(shell, /prepare-codynex-editor/);
+assert.match(shell, /prepare-codynex-app/);
+
+assert.match(nativeBuild, /fun prepareCodynexApp/);
+assert.match(nativeBuild, /CODYNEX_APPHOST_PROJECT = "external\/apphost"/);
+assert.match(nativeBuild, /CODYNEX_APP_PACKAGE = "com\.codynex\.notepad"/);
+assert.match(nativeBuild, /CODYNEX_APP_ACTIVITY/);
+assert.match(nativeBuild, /com\.codynex\.apphost\.CodynexAppActivity/);
+assert.match(nativeBuild, /CODYNEX_APP_PROGRAM_ASSET = "program\.vm1"/);
+assert.match(nativeBuild, /compileCodynexC0Project/);
+assert.match(nativeBuild, /buildCodynexAppBinaryManifest/);
+assert.match(nativeBuild, /hostContainsAppSemantics", false/);
+assert.match(nativeBuild, /appSemantics", "assets\/program\.vm1"/);
+assert.match(installer, /CODYNEX_APP_TARGET_PACKAGE = "com\.codynex\.notepad"/);
+assert.match(installer, /com\.codynex\.apphost\.CodynexAppActivity/);
+assert.match(codynexAppActivity, /TEMP LIVE-PROOF generic Codynex app host/);
+assert.match(codynexAppActivity, /MUST be replaced by native Codynex\/\.cx/);
+assert.match(codynexAppActivity, /Vm1Bridge\.run/);
+assert.match(codynexAppActivity, /PROGRAM_ASSET = "program\.vm1"/);
+assert.match(codynexAppActivity, /VM_ASSET = "vm1_seed\.hex"/);
+assert.match(codynexAppActivity, /parseFrame/);
+assert.match(codynexAppActivity, /encodeAction/);
+assert.ok(
+  !/Codynex Notepad|write_clear|LETS GOOOOO/i.test(codynexAppActivity),
+  'Generic Codynex app host gained Notepad-specific semantics'
+);
 
 for (const core of [editorCoreModel, editorCorePorts, editorCoreController]) {
   assert.ok(!/android\./.test(core), 'Reusable editor core gained Android coupling');
@@ -503,7 +532,7 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|compile-native\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|compile-native\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|prepare-codynex-app\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
