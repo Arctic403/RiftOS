@@ -49,6 +49,7 @@ for (const required of [
   'ByteArray(228)',
   'ByteArray(3424)',
   'ByteArray(972)',
+  'emitterBytes.size != 1704',
   'hostParsesS3Opcodes',
   'hostEmitsS3Instructions',
   'hostParsesElf',

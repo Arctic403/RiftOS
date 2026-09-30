@@ -208,7 +208,7 @@ This hybrid path intentionally combines reliable receiver delivery with foregrou
 
 ## Rift++ Android Native R1 diagnostic/loader gate
 
-Current source checkpoint `ca71050ac0043719ac16eb2c15f9c4cd377ab600` pins the active ARM32 R1 source identities used by `riftpp-host s3-android-r1 <riftpp-root>`:
+Bionic-valid ELF checkpoint `ca71050ac0043719ac16eb2c15f9c4cd377ab600` pins the active ARM32 R1 source identities used by `riftpp-host s3-android-r1 <riftpp-root>`. Current source additionally fixes the decoded emitter-source admission size to 1,704 bytes (1 S3 header record + 212 body records); the emitter identities and output semantics are unchanged:
 
 - entry transport: 2,074 bytes, SHA-256 `85d92e2f49aa0f058b183d954144ab4f6d2659272bd93f32e3327eaf2607ef51`;
 - ELF-emitter transport: 3,621 bytes, SHA-256 `43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a`;
@@ -220,7 +220,7 @@ The active ELF keeps the original code at offset `0x1a0` and adds Bionic-require
 
 RiftOS is transport/execution/evidence authority only for this lane. `RiftppCompilerService` executes exact pinned compiler/emitter images in the private compiler process; `RiftNativeShell` publishes the resulting ELF bytes; `RiftBuildNativeApp` prepares the manifest; `RiftBuildInstaller` installs/launches the allowlisted package; and `RiftAppDiagnosticBridge` receives advisory breadcrumbs. None of those owners parse S3 opcodes, emit ARM target instructions, parse/construct ELF semantics or implement the target editor runtime.
 
-The prior 644-byte no-section object installed and received a launch request but produced zero RDBG events. That artifact is retained only as failure evidence. The next promotion gate is a Builder/install of `ca71050…`, regeneration of the 972-byte object, package/sign/verify/install of `com.riftpp.editor.nativev1`, then device observation of the 3-second probe plus `riftcrash latest`.
+The prior 644-byte no-section object installed and received a launch request but produced zero RDBG events. That artifact is retained only as failure evidence. Run 482 then exposed only the stale 1,696-byte host admission gate before native execution; current source corrects it to 1,704 and regression-pins the distinction. The next promotion gate is a Builder/install of current source, regeneration of the 972-byte object, package/sign/verify/install of `com.riftpp.editor.nativev1`, then device observation of the 3-second probe plus `riftcrash latest`.
 
 ## v0.1 project inspection
 

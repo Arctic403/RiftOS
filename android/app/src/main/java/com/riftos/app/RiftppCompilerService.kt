@@ -1271,7 +1271,7 @@ class RiftppCompilerService : Service() {
         }
 
         if (
-            emitterBytes.size != 1696
+            emitterBytes.size != 1704
         ) {
             return rejected(
                 hostAbi,

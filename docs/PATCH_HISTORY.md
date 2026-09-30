@@ -6,6 +6,14 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.54 — Rift++ Android R1 decoded emitter-source admission correction
+
+The first installed repro on RiftOS run 482 / source `ecb9f512c5e5c5bf2329773f4eac42bc2f24ed87` reached the fixed `riftpp-host s3-android-r1` route but failed before native execution with `status=host-reject` / `reason=s3-emit-emitter-source-size`. The active ELF-emitter transport is 3,621 bytes of canonical fixed-record text containing 213 records total: one required S3 header plus 212 body records. Decoding therefore yields 1,704 source bytes. The earlier 1,696 figure is correct only for the 212 body records and was incorrectly reused as the decoded-source admission size.
+
+Current source changes only that host admission constant from 1,696 to 1,704 bytes and adds a focused regression requirement for the exact `emitterBytes.size != 1704` gate. The active emitter transport identity `43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a`, 212-body-record semantics, predicted 3,424-byte compiled emitter output, 972-byte Bionic-valid ELF output and frozen S3 semantics are unchanged. The Rift++ R1 README now distinguishes body-only raw bytes (1,696) from decoded source bytes including the S3 header (1,704).
+
+Lifecycle is **SOURCE FIXED / BUILDER + INSTALLED DEVICE REPRO PENDING**. The next device run should regenerate the exact 972-byte object and proceed to package/sign/verify/install/launch diagnostics; no ELF or entry semantics changed in this correction.
+
 ## Patch 10.53 — Rift++ Android R1 diagnostic bridge and Bionic-valid ELF gate
 
 Installed RiftOS source `e391f12c55525297e652f4f6a60755c865aee797` / Builder run 480 brought the cooperative Rift++ app diagnostic lane live. `RiftAppDiagnosticBridge.kt` binds a bounded UDP receiver to `127.0.0.1:39771`, accepts fixed 32-byte `RDBG` packets only for the fixed Rift++ proof/editor package allowlist, retains at most 64 events and persists bounded advisory evidence under `D:/Diagnostics/riftpp/<package>/latest.json`. `riftcrash help|status|start|capture|latest|reset [package]` exposes the receiver through RiftShell. `RiftBuildInstaller` starts a diagnostic session only for supported packages before exact launch; generic NativeActivity manifests may request an optional bounded permission list whose current allowlist is exactly `android.permission.INTERNET`.
