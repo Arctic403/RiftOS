@@ -14,7 +14,7 @@ Current source raises the generic source and generated-output ceilings to 64 KiB
 
 This does not modify frozen S3, VM1, any opcode, compiler ABI, target code semantics or proof-specific exact-size gates. Stage1/S2 bootstrap transactions keep their narrower canonical source checks where those are part of the proof contract. The change only removes the obsolete generic 4 KiB host ceiling so later Rift++ emitters/rendering stages can grow under the same bounded private-process execution model.
 
-Lifecycle is **SOURCE STAGED / BUILDER VERIFICATION PENDING**.
+Lifecycle is **BUILDER VERIFIED / LIVE ON RUN 490**. The multi-page guarded-span host path was exercised by the corrected 4,192-byte R3 linker compile and cleared the prior native `-96` page-size rejection.
 
 ## Patch 10.57 — Rift++ Android R2 promotion and R3 first-frame linker
 
@@ -24,7 +24,7 @@ R3 does not enlarge or rewrite the promoted R1/R2 transaction. Instead it adds a
 
 The R3 ELF keeps executable code in RX memory and adds a separate RW mapping rather than a W+E segment. It extends dynamic metadata with `DT_NEEDED libandroid.so`, imports exactly `ANativeWindow_setBuffersGeometry`, `ANativeWindow_lock`, and `ANativeWindow_unlockAndPost`, and binds them through three ARM `R_ARM_GLOB_DAT` relocations into a writable GOT. The callback renderer is 152 ARM32 bytes: it requests RGBA8888, locks the real `ANativeWindow`, fills the complete stride × height buffer with a fixed orange pixel value, then unlocks/posts the frame. No Java/Kotlin/C/C++ target code, Clang target build step, or RiftOS UI semantics are introduced.
 
-RiftOS adds a separate `TRANSACTION_S3_FRAME_LINK` and `riftpp-host s3-android-r3 <riftpp-root>` path. The host only verifies fixed identities/sizes, executes the frozen S3 compiler and generated linker, transports bytes, and publishes `libriftpp_editor_native_r3.so`; all S3/ARM/ELF/UI semantics remain Rift++ owned. The version-5 wrapper is `0.5.0-riftpp-r3-frame`. Lifecycle is **R2 WINDOW CALLBACK PROMOTED / FIRST R3 DEVICE ATTEMPT FAILED WITH POISONED LOADER METADATA / CORRECTED R3 SOURCE STAGED FOR BUILDER + INSTALLED VISUAL FRAME RETEST**.
+RiftOS adds a separate `TRANSACTION_S3_FRAME_LINK` and `riftpp-host s3-android-r3 <riftpp-root>` path. The host only verifies fixed identities/sizes, executes the frozen S3 compiler and generated linker, transports bytes, and publishes `libriftpp_editor_native_r3.so`; all S3/ARM/ELF/UI semantics remain Rift++ owned. The version-5 wrapper is `0.5.0-riftpp-r3-frame`. Builder run 490 / source `18e1b5bfd6c91efee110d6152fbdafda8843e866` compiled the corrected source under frozen S3 to 4,192-byte linker SHA-256 `98087752725238853d58d124930dcb25a0d96120899d5b2e07f69527137b9a8d` and generated 1,196-byte ELF SHA-256 `44f8b266aef910acaaedfe3a5f6cf7b9f1e029acd6e1c2e310410a22568be28e`. All fourteen formerly poisoned mandatory loader fields inspected as zero; imports, relocations and RX/RW mappings remained exact. Signed APK SHA-256 `cbd5bb384f97aee456bef6fdae286c9c2c939266d74943405d4106fbddd1d6be` passed independent APK-v2 verification; Android session `1663217197` reported `INSTALL_SUCCEEDED` and `launch-proven`; direct user screenshot evidence showed the full orange frame. Lifecycle is **R1 LOAD PROVEN / R2 WINDOW CALLBACK PROMOTED / R3 FIRST FRAME PROMOTED / R4 EDITOR UI GATE OPEN**.
 
 ## Patch 10.55 — Rift++ Android R1 device promotion and R2 NativeActivity window-callback gate
 
