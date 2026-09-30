@@ -316,13 +316,21 @@ val verifyCodynexEditorPayload by tasks.registering {
 val verifyRiftppEditorPayload by tasks.registering {
     val expected = linkedMapOf(
         "src/main/java/com/riftpp/editor/MainActivity.kt" to
-            "1cb5a4648a1b29a1dd51db561814ef78a774b10b521b377737b5571a76a13061",
+            "0b05b875dc1dc98b103539ac5ffb03672afb3b180f5a4dc575669ca896312a45",
         "src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
-            "d324b73a2bc582b732182d2107e50e608159cc322ea923454f66179c321f5de4",
+            "8f3a828ee59784225754da50774057dc90b92543de28a4d7dc914bac5d2abe00",
         "src/main/java/com/riftpp/editor/RiftppNativeBridge.kt" to
             "d4150a6c675ba7df474a3bd52f696d55d851024816c27e98bc2a8788b3bea31d",
         "src/main/java/com/riftpp/editor/HexAssets.kt" to
             "bbef1a081be1f40eb3a1ae74d39e0719aa72d17ab77e95f96846c6b020f42fcc",
+        "src/main/java/com/riftpp/editor/RiftppUi.kt" to
+            "da115257bac2cc32fccf82f506fb8fbf47a4bc40dcfa1066266c66d6b2c9e003",
+        "src/main/java/com/riftpp/editor/RiftppApkBuilder.kt" to
+            "e4e91df162d7d5e78054d6771f052ca54f27998d956e520b286e6d11d948b343",
+        "src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt" to
+            "147fece68c500b2387f8eef3f5883a4b15196ae4dc0e7e67943bda273f70df60",
+        "src/main/java/com/riftpp/apphost/RiftppAppActivity.kt" to
+            "48fe3ec0405eb90176dc11473315ac00e48a875b1df278679bfc3b32c4a7f556",
         "src/main/cpp/editor/riftpp_editor_bridge.cpp" to
             "ff1bd4279c56422cfe5fe355c4ada18ba0eae6babb8afa79fd7abc753b51e778"
     )
@@ -345,13 +353,13 @@ val verifyRiftppEditorPayload by tasks.registering {
             val source = file(path)
             if (!source.isFile) {
                 throw GradleException(
-                    "Rift++ editor bootstrap payload source is missing: $path"
+                    "Rift++ App v2 editor payload source is missing: $path"
                 )
             }
             val actualSha = sha256(source)
             if (actualSha != expectedSha) {
                 throw GradleException(
-                    "Rift++ editor bootstrap payload drift: " +
+                    "Rift++ App v2 editor payload drift: " +
                         "$path expected $expectedSha got $actualSha"
                 )
             }

@@ -337,7 +337,17 @@ assert.match(nativeBuild, /fun prepareRiftppEditor/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_PACKAGE = "com\.riftpp\.editor"/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_LIBRARY_NAME = "riftpp_editor_bridge"/);
 assert.match(nativeBuild, /temporaryPlatformShell", "Kotlin\/Android Activity"/);
-assert.match(nativeBuild, /replacementTarget", "native Rift\+\+ editor shell"/);
+assert.match(nativeBuild, /uiProtocol", "RUI2"/);
+assert.match(nativeBuild, /kotlinEmitsRpa2", false/);
+assert.match(nativeBuild, /kotlinInterpretsRpa2", false/);
+assert.match(nativeBuild, /temporaryApkPackSign", true/);
+assert.match(nativeBuild, /replacementTarget", "native Rift\+\+ editor\/runtime\/packer\/signer"/);
+assert.match(nativeBuild, /frontend\.app2\.arm32\.r4\.hex/);
+assert.match(nativeBuild, /runtime\.app2\.arm32\.r4\.hex/);
+assert.match(nativeBuild, /standalone\/app\/examples\/notepad\/main\.riftpp/);
+assert.match(nativeBuild, /RiftppApkBuilder\.kt/);
+assert.match(nativeBuild, /RiftppApkV2Signer\.kt/);
+assert.match(nativeBuild, /RiftppAppActivity\.kt/);
 assert.match(cmake, /riftpp_editor_bridge[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /riftpp_editor_bridge[\s\S]*?-fno-rtti/);
 assert.match(gradle, /verifyRiftppEditorPayload/);
@@ -348,6 +358,22 @@ assert.ok(
 assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/MainActivity.kt'),
     'Rift++ editor payload hash gate omitted MainActivity'
+);
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/editor/RiftppUi.kt'),
+    'Rift++ editor payload hash gate omitted RUI2 codec'
+);
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/editor/RiftppApkBuilder.kt'),
+    'Rift++ editor payload hash gate omitted APK builder'
+);
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt'),
+    'Rift++ editor payload hash gate omitted APK v2 signer'
+);
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/apphost/RiftppAppActivity.kt'),
+    'Rift++ editor payload hash gate omitted standalone app host'
 );
 assert.match(nativeBuild, /RIFTPP_APP0_COMPILER_HEX_BYTES = 9576/);
 assert.match(nativeBuild, /RIFTPP_APP0_COMPILER_BYTES = 4788/);
