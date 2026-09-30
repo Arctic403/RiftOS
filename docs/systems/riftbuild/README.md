@@ -206,21 +206,25 @@ RiftBuild installation remains explicitly user-confirmed. The PackageInstaller s
 
 This hybrid path intentionally combines reliable receiver delivery with foreground Activity presentation. It does not add silent-install authority: `USER_ACTION_REQUIRED`, APK v2 verification, package allowlisting and Android user confirmation remain mandatory. Rift++ packages `com.riftpp.hello`, `com.riftpp.editor` and `com.riftpp.editor.nativev1` are fixed allowlisted identities in addition to the bootstrap proof package; this does not bypass signature verification or user confirmation. For bridge-supported Rift++ packages, the installer starts a bounded diagnostic session before exact launch. If the RiftOS process dies while confirmation is pending, the retained nested intent is lost and `install-proof` must be retried rather than attempting to persist/replay a system-owned confirmation intent.
 
-## Rift++ Android Native R1 diagnostic/loader gate
+## Rift++ Android Native R1/R2 loader + callback gate
 
-Bionic-valid ELF checkpoint `ca71050ac0043719ac16eb2c15f9c4cd377ab600` pins the active ARM32 R1 source identities used by `riftpp-host s3-android-r1 <riftpp-root>`. Current source additionally fixes the decoded emitter-source admission size to 1,704 bytes (1 S3 header record + 212 body records); the emitter identities and output semantics are unchanged:
+RiftOS run 483 / source `cc990d77fa20c42c8c2a0b2218209f5798e81cfd` installed-device proved the Bionic-valid R1 lane. `riftpp-host s3-android-r1 <riftpp-root>` executed the exact frozen S3 compiler and emitted:
 
-- entry transport: 2,074 bytes, SHA-256 `85d92e2f49aa0f058b183d954144ab4f6d2659272bd93f32e3327eaf2607ef51`;
-- ELF-emitter transport: 3,621 bytes, SHA-256 `43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a`;
-- frozen S3 compiler raw image: 16,528 bytes.
+- 1,968-byte entry emitter;
+- 228-byte ARM32 entry;
+- 3,424-byte ELF emitter;
+- 972-byte ELF32 ARM ET_DYN object;
+- final ELF SHA-256 `72d26ffad51b5f48643460aab0447139b458a599daad291aef1965a5dcc5178f`.
 
-Frozen S3 compiles the entry source to a 1,968-byte emitter that produces a fixed 228-byte ARM32 `ANativeActivity_onCreate` probe. The probe performs a 3-second raw `nanosleep` before networking, then attempts a fixed localhost `RDBG` packet. Frozen S3 compiles the active ELF source to a compact 3,424-byte emitter that wraps the exact 228-byte entry into a 972-byte ELF32 ARM ET_DYN object.
+The packaged/signed proof installed successfully as `com.riftpp.editor.nativev1`, and the localhost diagnostic bridge received valid stage 1 `entry-begin` from the launched target process. Therefore Android/Bionic load, `ANativeActivity_onCreate` resolution and exact Rift++ entry execution are promoted for R1.
 
-The active ELF keeps the original code at offset `0x1a0` and adds Bionic-required section metadata: a 48-byte `.shstrtab`, seven 40-byte ELF32 section headers at `0x2b4`, `e_shnum=7`, `e_shstrndx=6`, and sections for null, `.dynstr`, `.dynsym`, `.hash`, `.dynamic`, `.text` and `.shstrtab`. The `.dynamic` section offset/size exactly matches `PT_DYNAMIC`, and the exported symbol section index points to `.text`.
+The active R2 entry keeps the same fixed source/output envelopes: 2,074-byte transport text, 976 decoded S3 bytes, 121 body records, 1,968-byte compiled entry emitter and 228-byte ARM32 target body. Its transport SHA-256 is now `5ce665811c7753f1b55d8d0cfe0cac3a1cafcd8d9f8b43e35acbb0b03d6643c6`. The loader-proven R1 entry is preserved separately as `entry.r1-bionic-load-proven.arm32.r3.hex`.
 
-RiftOS is transport/execution/evidence authority only for this lane. `RiftppCompilerService` executes exact pinned compiler/emitter images in the private compiler process; `RiftNativeShell` publishes the resulting ELF bytes; `RiftBuildNativeApp` prepares the manifest; `RiftBuildInstaller` installs/launches the allowlisted package; and `RiftAppDiagnosticBridge` receives advisory breadcrumbs. None of those owners parse S3 opcodes, emit ARM target instructions, parse/construct ELF semantics or implement the target editor runtime.
+R2 installs a function pointer into the framework-owned `ANativeActivityCallbacks.onNativeWindowCreated` slot. On the current ARM32 ABI the callbacks pointer is `ANativeActivity` field 0 and `onNativeWindowCreated` is callback slot 7, so the write offset is 28 bytes. The callback is part of the same 228-byte Rift++-emitted `.text` body and emits fixed diagnostic stage 6 `window-callback` with the activity/window pointers. No `libandroid` drawing imports are added yet; rendering remains a later gate.
 
-The prior 644-byte no-section object installed and received a launch request but produced zero RDBG events. That artifact is retained only as failure evidence. Run 482 then exposed only the stale 1,696-byte host admission gate before native execution; current source corrects it to 1,704 and regression-pins the distinction. The next promotion gate is a Builder/install of current source, regeneration of the 972-byte object, package/sign/verify/install of `com.riftpp.editor.nativev1`, then device observation of the 3-second probe plus `riftcrash latest`.
+The Bionic-valid ELF emitter is unchanged: transport 3,621 bytes, 1,704 decoded source bytes including its S3 header, 212 body records, 3,424-byte compiled emitter and 972-byte output. The ELF still contains the 7-entry section table for null, `.dynstr`, `.dynsym`, `.hash`, `.dynamic`, `.text` and `.shstrtab`, with `.dynamic` matching `PT_DYNAMIC`.
+
+RiftOS remains transport/execution/evidence authority only. It does not parse S3 opcodes, emit target ARM instructions, parse/construct ELF semantics or implement target UI/runtime behavior. The next promotion gate is a Builder/install of current source, version-4 proof packaging, a fresh diagnostic session, and receipt of valid stage 6 `window-callback`. Only then may R3 add the first Rift++-owned frame.
 
 ## v0.1 project inspection
 

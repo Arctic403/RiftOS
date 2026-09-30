@@ -77,7 +77,7 @@ for (const required of [
   'standalone/android-native-r1/entry.arm32.r3.hex',
   'standalone/android-native-r1/elf32-emitter.arm32.r3.hex',
   '950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a',
-  '85d92e2f49aa0f058b183d954144ab4f6d2659272bd93f32e3327eaf2607ef51',
+  '5ce665811c7753f1b55d8d0cfe0cac3a1cafcd8d9f8b43e35acbb0b03d6643c6',
   '43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a',
   '3621L',
   '972L',
