@@ -2,7 +2,7 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-30.**
 
 This subsystem was rebuilt from `MainActivity.kt`, `AndroidManifest.xml`, Android resources and direct lifecycle/call-site references. Browser, Desktop, MCP, Files, Preview and Accessibility behavior are mentioned only where they cross the Android-host boundary; their subsystem READMEs remain independently unverified until audited.
 
@@ -37,10 +37,11 @@ Host-adjacent lifecycle/source boundaries:
 - `RiftWorkspaceWatcher.kt` — Activity-created/stopped workspace observation.
 - `RiftBrowserWindow.kt` — browser Activity-result/lifecycle recipient.
 - `RiftNativeWorkspaceApps.kt` — native Files SAF Activity-result recipient.
+- `RiftAppDiagnosticBridge.kt` — process-local allowlisted localhost diagnostic receiver used only around supported Rift++ launches; it owns transport/evidence, not target runtime semantics.
 
 Manifest-declared components whose internal behavior belongs elsewhere:
 - `RiftppCompilerService.kt` — private `:riftppCompiler` Binder worker that contains native compiler faults; it owns process isolation, exact Seed0/Stage1 source and artifact admission, timeout/crash reporting and JNI transport only, not Rift++ parsing or code generation. The Stage1 self-host transaction accepts only the frozen Stage1 ARM32/ARM64 source identities, frames newline-terminated Seed0 records without decoding their decimal values, reconstructs Stage1 exclusively through Seed0-generated payload returns, and requires exact bootstrap/self-compiled image hashes.
-- `RiftBuildInstallReceiver` in `RiftBuildInstaller.kt` — private PackageInstaller result + protected first-launch proof receiver for `com.riftpp.nativeproof`;
+- `RiftBuildInstallReceiver` in `RiftBuildInstaller.kt` — private PackageInstaller result + protected first-launch proof receiver for the fixed RiftBuild install allowlist;
 - `RiftMcpActivity.kt` — MCP configuration/status UI.
 - `RiftBrowserPreviewActivity.kt` — bounded preview renderer.
 - `RiftVortexAccessibilityService` in `RiftVortexLocalAgent.kt` — user-enabled Accessibility service.
@@ -58,10 +59,21 @@ The source audit found no direct `Vibrator`/vibration call and no runtime `reque
 Package visibility queries are declared for:
 - `com.vortex3d.app`;
 - `com.riftllm.app`;
-- `com.riftpp.nativeproof` — fixed RiftBuild bootstrap install/launch target;
+- `com.codynex.lr0lab`;
+- `com.codynex.mc0proof`;
+- `com.codynex.mc1aproof`;
+- `com.codynex.mc1bproof`;
+- `com.codynex.m2vm0proof`;
+- `com.codynex.m2bproof`;
+- `com.codynex.mc2aproof`;
+- `com.codynex.editor`;
+- `com.riftpp.nativeproof`;
+- `com.riftpp.hello`;
+- `com.riftpp.editor`;
+- `com.riftpp.editor.nativev1`;
 - `com.samsung.android.honeyboard`.
 
-Those correspond to fixed Vortex, RiftLLM and Samsung-keyboard integration code paths.
+These are package-visibility declarations for the fixed Vortex/RiftLLM/Codynex/Rift++/keyboard integration and proof lanes. Visibility does not itself grant launch, Binder, install or diagnostic authority.
 
 Application flags:
 - `android:allowBackup="true"`;

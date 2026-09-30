@@ -2,19 +2,18 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-30.**
 
 ## Current diagnostic model
 
 RiftOS no longer has the old exported System Dump feature.
 
-The live diagnostics component is:
+The live diagnostics components are:
 
-RiftBrowserRendererCrashGuard.kt
+- `RiftBrowserRendererCrashGuard.kt` — browser-renderer crash containment plus a small privacy-limited local event ring;
+- `RiftAppDiagnosticBridge.kt` — an allowlisted localhost-UDP receiver used for bounded Rift++ proof/editor launch diagnostics.
 
-Its current active purpose is browser-renderer crash containment plus a small privacy-limited local event ring.
-
-There is no current user-facing diagnostic export UI.
+There is no current user-facing diagnostic export UI. The Rift++ bridge is controlled through the fixed `riftcrash` shell family and writes bounded local evidence only.
 
 ## Source ownership
 
@@ -23,6 +22,9 @@ Live:
 - RiftBrowserAndroidWebViewEngine.kt callers
 - RiftBrowserAppHost.kt caller
 - RiftBrowserPreviewActivity.kt caller
+- RiftAppDiagnosticBridge.kt
+- RiftBuildInstaller.kt supported-package launch hook
+- RiftNativeShell.kt fixed `riftcrash` control surface
 
 Retired:
 - RiftSystemDump.kt
@@ -32,6 +34,33 @@ Retired:
 Related evidence owned elsewhere:
 - Build/source identity -> native shell/MCP/build metadata
 - Workspace change history -> RiftWorkspaceRecords
+
+## Rift++ app diagnostic bridge
+
+`RiftAppDiagnosticBridge` is a cooperative external diagnostic receiver, not a privileged crash/tombstone reader.
+
+Current transport contract:
+- host `127.0.0.1`;
+- UDP port `39771`;
+- fixed packet size 32 bytes;
+- maximum accepted datagram size 256 bytes;
+- maximum retained events per session 64;
+- persisted root `D:/Diagnostics/riftpp`;
+- latest dump `D:/Diagnostics/riftpp/<package>/latest.json`.
+
+Supported package identities are exactly:
+- `com.riftpp.nativeproof`;
+- `com.riftpp.hello`;
+- `com.riftpp.editor`;
+- `com.riftpp.editor.nativev1`.
+
+`RiftBuildInstaller` calls `supports(packageName)` before beginning a diagnostic session, so unrelated RiftBuild/Codynex launches do not fail if they are outside the bridge allowlist.
+
+The fixed shell surface is `riftcrash help|status|start|capture|latest|reset [package]`.
+
+Packets use magic `RDBG`, version 1 and a bounded stage/value envelope. Evidence is advisory: another local app with network permission could spoof localhost UDP packets, so a received breadcrumb is transport evidence rather than cryptographic proof of process identity.
+
+The bridge intentionally does not request privileged `DUMP` access and does not query another package's `ApplicationExitInfo`/tombstone state. It also contains no `ANativeActivity_onCreate`, ELF parser, S3 decoder or ARM emitter logic.
 
 ## Live crash recording callers
 

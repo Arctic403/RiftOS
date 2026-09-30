@@ -2,9 +2,9 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-30.**
 
-The core RiftBuild validation/planning, Rift++ V0 ELF materialization, fixed 1,440-byte binary manifest and deterministic universal unsigned APK package path is installed-device proven on RiftOS source `1c1ae33b81cfe643eb804cac0841ced636e982e3` / Builder run 214. Current source additionally contains bounded APK v2 signing/verification plus exact proof-package PackageInstaller/launch ownership; that newer sign → verify → install → launch chain still requires the next Builder/install device proof.
+The core RiftBuild validation/planning and historical Rift++ V0 packaging path are installed-device proven. Current installed-device evidence also covers bounded APK v2 signing/verification, user-confirmed PackageInstaller success and exact launch requests for allowlisted proof/editor packages. A recorded launch request is not treated as proof that the launched target survived its own loader/runtime initialization. Current source additionally stages the Rift++ Android Native R1 Bionic-valid ELF repro described below.
 
 ## Purpose
 
@@ -56,7 +56,8 @@ Maintained live owners:
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` — generic NativeActivity binary-manifest generation plus bounded project-asset materialization for normal native applications;
 - `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` — Android-Keystore RSA key owner plus narrow APK Signature Scheme v2 encoder/verifier;
 - `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` — exact-package PackageInstaller session/result/first-launch proof owner;
-- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed native `riftbuild` command routing;
+- `android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt` — allowlisted localhost-UDP diagnostic session/evidence owner for Rift++ proof/editor launches;
+- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed native `riftbuild`, `riftpp-host` and `riftcrash` command routing;
 - `android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt` — capability-gated `build.local` app surface;
 - `scripts/test-riftbuild-native.mjs` — focused authority/confinement/source contract;
 - `scripts/test-rift-local-platform.mjs` — retained local-first boundary regression covering historical RiftBuild reference source.
@@ -179,11 +180,12 @@ Generic NativeActivity packaging opts in with `<project>/rift-app.json`:
   "versionName": "0.1.0",
   "minSdk": 26,
   "targetSdk": 36,
-  "assetsDir": "assets"
+  "assetsDir": "assets",
+  "permissions": []
 }
 ```
 
-`riftbuild prepare-native-app <project>` emits a bounded Android binary manifest for an exported `android.app.NativeActivity`, cross-checks its library name against `rift-native.json` when present, and copies the bounded project asset tree into `build/riftbuild/prepared/assets/` without touching already-compiled ABI libraries. This is the intended lane for custom script source/bytecode such as Proto-LLM runtime assets.
+`riftbuild prepare-native-app <project>` emits a bounded Android binary manifest for an exported `android.app.NativeActivity`, cross-checks its library name against `rift-native.json` when present, and copies the bounded project asset tree into `build/riftbuild/prepared/assets/` without touching already-compiled ABI libraries. `permissions` is optional, bounded and deduplicated; the current allowlist contains exactly `android.permission.INTERNET`. This is the intended lane for custom script source/bytecode such as Proto-LLM runtime assets and for the current Rift++ R1 localhost diagnostic proof.
 
 Installed Rift app API keeps the existing capability boundary:
 
@@ -202,7 +204,23 @@ No new MCP tool is required.
 
 RiftBuild installation remains explicitly user-confirmed. The PackageInstaller session status `IntentSender` targets the private `RiftBuildInstallReceiver` through `PendingIntent.getBroadcast(...)`, because status delivery proved more reliable than an Activity-only callback on the live device. When Android reports `STATUS_PENDING_USER_ACTION`, the receiver retains the system confirmation `Intent` in-process and records `pending-user-action`. If RiftOS already owns a focused `MainActivity`, the confirmation is launched immediately from that Activity; otherwise `MainActivity.onResume()` / regained window focus consumes the retained intent and launches the system installer from a real foreground Activity. Terminal success/failure statuses clear retained confirmation state.
 
-This hybrid path intentionally combines reliable receiver delivery with foreground Activity presentation. It does not add silent-install authority: `USER_ACTION_REQUIRED`, APK v2 verification, package allowlisting and Android user confirmation remain mandatory. The standalone Rift++ editor bootstrap package `com.riftpp.editor` is explicitly allowlisted and launches through the generic `android.app.NativeActivity` path; this authorizes only that package identity and does not bypass signature verification or user confirmation. If the RiftOS process dies while confirmation is pending, the retained nested intent is lost and `install-proof` must be retried rather than attempting to persist/replay a system-owned confirmation intent.
+This hybrid path intentionally combines reliable receiver delivery with foreground Activity presentation. It does not add silent-install authority: `USER_ACTION_REQUIRED`, APK v2 verification, package allowlisting and Android user confirmation remain mandatory. Rift++ packages `com.riftpp.hello`, `com.riftpp.editor` and `com.riftpp.editor.nativev1` are fixed allowlisted identities in addition to the bootstrap proof package; this does not bypass signature verification or user confirmation. For bridge-supported Rift++ packages, the installer starts a bounded diagnostic session before exact launch. If the RiftOS process dies while confirmation is pending, the retained nested intent is lost and `install-proof` must be retried rather than attempting to persist/replay a system-owned confirmation intent.
+
+## Rift++ Android Native R1 diagnostic/loader gate
+
+Current source checkpoint `ca71050ac0043719ac16eb2c15f9c4cd377ab600` pins the active ARM32 R1 source identities used by `riftpp-host s3-android-r1 <riftpp-root>`:
+
+- entry transport: 2,074 bytes, SHA-256 `85d92e2f49aa0f058b183d954144ab4f6d2659272bd93f32e3327eaf2607ef51`;
+- ELF-emitter transport: 3,621 bytes, SHA-256 `43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a`;
+- frozen S3 compiler raw image: 16,528 bytes.
+
+Frozen S3 compiles the entry source to a 1,968-byte emitter that produces a fixed 228-byte ARM32 `ANativeActivity_onCreate` probe. The probe performs a 3-second raw `nanosleep` before networking, then attempts a fixed localhost `RDBG` packet. Frozen S3 compiles the active ELF source to a compact 3,424-byte emitter that wraps the exact 228-byte entry into a 972-byte ELF32 ARM ET_DYN object.
+
+The active ELF keeps the original code at offset `0x1a0` and adds Bionic-required section metadata: a 48-byte `.shstrtab`, seven 40-byte ELF32 section headers at `0x2b4`, `e_shnum=7`, `e_shstrndx=6`, and sections for null, `.dynstr`, `.dynsym`, `.hash`, `.dynamic`, `.text` and `.shstrtab`. The `.dynamic` section offset/size exactly matches `PT_DYNAMIC`, and the exported symbol section index points to `.text`.
+
+RiftOS is transport/execution/evidence authority only for this lane. `RiftppCompilerService` executes exact pinned compiler/emitter images in the private compiler process; `RiftNativeShell` publishes the resulting ELF bytes; `RiftBuildNativeApp` prepares the manifest; `RiftBuildInstaller` installs/launches the allowlisted package; and `RiftAppDiagnosticBridge` receives advisory breadcrumbs. None of those owners parse S3 opcodes, emit ARM target instructions, parse/construct ELF semantics or implement the target editor runtime.
+
+The prior 644-byte no-section object installed and received a launch request but produced zero RDBG events. That artifact is retained only as failure evidence. The next promotion gate is a Builder/install of `ca71050…`, regeneration of the 972-byte object, package/sign/verify/install of `com.riftpp.editor.nativev1`, then device observation of the 3-second probe plus `riftcrash latest`.
 
 ## v0.1 project inspection
 
@@ -214,7 +232,7 @@ For the current Rift++ native proof it can verify:
 - `app/src/main/AndroidManifest.xml`;
 - NativeActivity declaration;
 - `android.app.lib_name`;
-- no `uses-permission` request in the proof manifest;
+- bounded `uses-permission` generation from `rift-app.json.permissions`; the active permission allowlist is exactly `android.permission.INTERNET`, and the current R1 diagnostic wrapper requests only that permission for localhost UDP;
 - ARMv7 and AArch64 generated sources;
 - declared dual ABI filters.
 
@@ -534,7 +552,7 @@ The subsystem is invalid if:
 - Android source snapshot -> `android/app/build.gradle.kts`;
 - source ownership -> `docs/SOURCE_OWNERSHIP.md`;
 - source/build validation -> `scripts/test-riftbuild-native.mjs` + build-validation docs;
-- Rift++ direct ELF emission -> `workspace/rift++/compiler/native_backend` (separate project authority).
+- Rift++ direct ELF emission -> `workspace/rift++/standalone/android-native-r1` (separate project authority); RiftOS admits and executes exact pinned emitter/source identities but does not parse or emit ELF.
 
 ## Validation
 

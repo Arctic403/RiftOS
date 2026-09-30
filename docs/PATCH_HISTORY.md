@@ -2,9 +2,19 @@
 
 ## Verification status
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-29.**
+**VERIFIED AGAINST CURRENT SOURCE — 2026-09-30.**
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+
+## Patch 10.53 — Rift++ Android R1 diagnostic bridge and Bionic-valid ELF gate
+
+Installed RiftOS source `e391f12c55525297e652f4f6a60755c865aee797` / Builder run 480 brought the cooperative Rift++ app diagnostic lane live. `RiftAppDiagnosticBridge.kt` binds a bounded UDP receiver to `127.0.0.1:39771`, accepts fixed 32-byte `RDBG` packets only for the fixed Rift++ proof/editor package allowlist, retains at most 64 events and persists bounded advisory evidence under `D:/Diagnostics/riftpp/<package>/latest.json`. `riftcrash help|status|start|capture|latest|reset [package]` exposes the receiver through RiftShell. `RiftBuildInstaller` starts a diagnostic session only for supported packages before exact launch; generic NativeActivity manifests may request an optional bounded permission list whose current allowlist is exactly `android.permission.INTERNET`.
+
+The first installed RDBG proof package `com.riftpp.editor.nativev1` version 3 installed successfully and received an exact launch request while the listener was active, but the dump remained `eventCount=0`. That evidence does not prove the entry symbol was never reached because the first packet itself depended on raw socket setup. A 3-second raw `nanosleep` entry probe was therefore staged before any network syscall so the next device run can independently distinguish entry execution from UDP failure.
+
+A deeper Android/Bionic loader audit then found a concrete pre-entry defect in the earlier 644-byte Rift++ ELF: it had `e_shnum=0`, `e_shstrndx=0` and no section-header table. Current source checkpoint `ca71050ac0043719ac16eb2c15f9c4cd377ab600` pins entry transport SHA-256 `85d92e2f49aa0f058b183d954144ab4f6d2659272bd93f32e3327eaf2607ef51` plus compact ELF-emitter transport SHA-256 `43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a`. Frozen S3 compiles the active ELF source to a 3,424-byte emitter, which emits a 972-byte ELF32 ARM ET_DYN object. The original loaded region/code offset remains intact while the file adds a 48-byte `.shstrtab` and seven 40-byte section headers for null, `.dynstr`, `.dynsym`, `.hash`, `.dynamic`, `.text` and `.shstrtab`; `.dynamic` exactly mirrors `PT_DYNAMIC`, and the exported `ANativeActivity_onCreate` symbol points at `.text`.
+
+Frozen S3/VM semantics remain unchanged. RiftOS still does not parse S3 opcodes, emit ARM instructions, parse ELF or own target runtime semantics; it only executes exact pinned Rift++ emitters and transports/persists bounded evidence. Lifecycle is **SOURCE STAGED / BUILDER + INSTALLED DEVICE REPRO PENDING** for `ca71050…`. The next gate is to install a RiftOS build from that checkpoint, regenerate the 972-byte object, package/sign/verify/install `com.riftpp.editor.nativev1`, launch it with the diagnostic receiver active, observe whether the visible NativeActivity survives the 3-second probe, and inspect `riftcrash latest`.
 
 ## Patch 10.52 — Rift++ S2 self-host promotion and freeze
 
