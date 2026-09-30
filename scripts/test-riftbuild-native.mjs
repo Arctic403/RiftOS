@@ -341,7 +341,7 @@ assert.match(nativeBuild, /uiProtocol", "RUI2"/);
 assert.match(nativeBuild, /kotlinEmitsRpa2", false/);
 assert.match(nativeBuild, /kotlinInterpretsRpa2", false/);
 assert.match(nativeBuild, /temporaryApkPackSign", true/);
-assert.match(nativeBuild, /replacementTarget", "native Rift\+\+ editor\/filesystem\/compiler\/runtime\/packer\/signer"/);
+assert.match(nativeBuild, /replacementTarget"[\\s\\S]{0,160}?"native Rift\\+\\+ editor\\/filesystem\\/compiler\\/runtime\\/packer\\/signer"/);
 assert.match(nativeBuild, /frontend\.app2\.arm32\.r4\.hex/);
 assert.match(nativeBuild, /frontend\.project1\.arm32\.r4\.hex/);
 assert.match(nativeBuild, /runtime\.app2\.arm32\.r4\.hex/);
