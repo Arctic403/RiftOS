@@ -341,10 +341,12 @@ assert.match(nativeBuild, /uiProtocol", "RUI2"/);
 assert.match(nativeBuild, /kotlinEmitsRpa2", false/);
 assert.match(nativeBuild, /kotlinInterpretsRpa2", false/);
 assert.match(nativeBuild, /temporaryApkPackSign", true/);
-assert.match(nativeBuild, /replacementTarget", "native Rift\+\+ editor\/runtime\/packer\/signer"/);
+assert.match(nativeBuild, /replacementTarget", "native Rift\+\+ editor\/filesystem\/compiler\/runtime\/packer\/signer"/);
 assert.match(nativeBuild, /frontend\.app2\.arm32\.r4\.hex/);
+assert.match(nativeBuild, /frontend\.project1\.arm32\.r4\.hex/);
 assert.match(nativeBuild, /runtime\.app2\.arm32\.r4\.hex/);
-assert.match(nativeBuild, /standalone\/app\/examples\/notepad\/main\.riftpp/);
+assert.match(nativeBuild, /standalone\/app\/examples\/notepad\/src\/main\.riftpp/);
+assert.match(nativeBuild, /standalone\/app\/examples\/notepad\/src\/ui\.riftpp/);
 assert.match(nativeBuild, /RiftppApkBuilder\.kt/);
 assert.match(nativeBuild, /RiftppApkV2Signer\.kt/);
 assert.match(nativeBuild, /RiftppAppActivity\.kt/);
@@ -358,6 +360,14 @@ assert.ok(
 assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/MainActivity.kt'),
     'Rift++ editor payload hash gate omitted MainActivity'
+);
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/editor/RiftppWorkspace.kt'),
+    'Rift++ editor payload hash gate omitted workspace layer'
+);
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/editor/RiftppProject.kt'),
+    'Rift++ editor payload hash gate omitted project model'
 );
 assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/RiftppUi.kt'),

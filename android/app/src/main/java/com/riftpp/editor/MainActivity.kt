@@ -22,33 +22,33 @@ import java.io.File
 /**
  * TEMPORARY ANDROID/KOTLIN BOOTSTRAP ONLY.
  *
- * This shell is the Rift++ project editor proof environment. Kotlin owns only
- * Android widgets, project-file transport, generic RUI2 rendering and APK
- * bootstrap packaging/signing. It must not parse .riftpp, emit RPA2, or
- * implement application behavior.
+ * Kotlin owns Android widgets, bounded project-file transport, generic RUI2
+ * rendering and temporary APK packaging/signing. It does not parse Rift++
+ * source or implement application semantics.
  *
  * Native Rift++ replaces this shell before S4 promotion.
  */
 class MainActivity : Activity() {
-    private data class ProjectManifest(
-        val name: String,
-        val packageName: String,
-        val entry: File
-    )
-
     private lateinit var pipeline: RiftppPipeline
     private lateinit var projectRoot: File
-    private lateinit var activeFile: File
+    private lateinit var workspace: RiftppWorkspace
+
+    private lateinit var activePath: String
+    private var selectedPath: String? = null
+    private var projectEntries: List<RiftppWorkspaceEntry> =
+        emptyList()
+    private val openTabs =
+        mutableListOf<String>()
 
     private lateinit var headerContainer: LinearLayout
     private lateinit var projectContainer: LinearLayout
+    private lateinit var tabsContainer: LinearLayout
     private lateinit var statusView: TextView
     private lateinit var editorView: EditText
     private lateinit var projectList: ListView
     private lateinit var projectAdapter: ArrayAdapter<String>
     private lateinit var fullButton: Button
 
-    private var projectFiles: List<File> = emptyList()
     private var cachedArtifact: ByteArray? = null
     private var dirty = false
     private var rendering = false
@@ -76,63 +76,156 @@ class MainActivity : Activity() {
         pipeline = RiftppPipeline(this)
 
         projectRoot =
-            File(filesDir, "projects/default")
+            File(
+                filesDir,
+                "projects/default"
+            )
                 .apply { mkdirs() }
                 .canonicalFile
 
-        require(projectRoot.isDirectory) {
-            "Could not create Rift++ project root"
-        }
+        workspace =
+            RiftppWorkspace(
+                projectRoot
+            )
 
         installSampleProjectIfMissing()
         buildUi()
-        refreshProjectFiles()
+        refreshProjectTree()
 
-        val manifest = readManifest()
-        openFile(manifest.entry)
+        val manifest =
+            RiftppProjectModel.read(
+                workspace
+            )
+
+        openDocument(
+            manifest.entry
+        )
     }
 
     private fun installSampleProjectIfMissing() {
-        val manifest = File(projectRoot, "app.rift.json")
-        val source = File(projectRoot, "main.riftpp")
-
-        if (!manifest.exists()) {
-            copyAssetText(
-                "riftpp/examples/notepad/app.rift.json",
-                manifest
+        val manifestFile =
+            File(
+                projectRoot,
+                "app.rift.json"
             )
+
+        if (!manifestFile.exists()) {
+            installProject3Sample()
+            return
         }
 
-        if (!source.exists()) {
-            copyAssetText(
-                "riftpp/examples/notepad/main.riftpp",
-                source
+        val manifestText =
+            manifestFile.readText(
+                Charsets.UTF_8
             )
-        } else {
-            val legacyProofSource =
-                "title Rift++ Notepad\n" +
-                    "textarea Type something here...\n" +
-                    "button clear Clear\n"
 
-            if (
-                source.readText(Charsets.UTF_8) ==
-                    legacyProofSource
-            ) {
-                copyAssetText(
-                    "riftpp/examples/notepad/main.riftpp",
-                    source
+        val json =
+            runCatching {
+                JSONObject(
+                    manifestText
                 )
-            }
+            }.getOrNull()
+                ?: return
+
+        if (
+            json.optString(
+                "format"
+            ) != "rift.app/2"
+        ) {
+            return
         }
+
+        val legacySource =
+            File(
+                projectRoot,
+                "main.riftpp"
+            )
+
+        if (!legacySource.isFile) {
+            return
+        }
+
+        val knownStructuredV2 =
+            "app Notepad {\n" +
+                "    title(\"Rift++ Notepad\");\n" +
+                "    let note = textarea(\"Type something here...\");\n" +
+                "    button(\"Clear\") {\n" +
+                "        note.clear();\n" +
+                "    }\n" +
+                "}\n"
+
+        if (
+            legacySource.readText(
+                Charsets.UTF_8
+            ) != knownStructuredV2
+        ) {
+            return
+        }
+
+        installProject3Sample()
+
+        require(
+            legacySource.delete()
+        ) {
+            "could not remove migrated legacy source"
+        }
+    }
+
+    private fun installProject3Sample() {
+        val src =
+            File(
+                projectRoot,
+                "src"
+            )
+
+        require(
+            src.mkdirs() ||
+                src.isDirectory
+        ) {
+            "could not create sample src directory"
+        }
+
+        copyAssetText(
+            "riftpp/examples/notepad/app.rift.json",
+            File(
+                projectRoot,
+                "app.rift.json"
+            )
+        )
+        copyAssetText(
+            "riftpp/examples/notepad/src/main.riftpp",
+            File(
+                src,
+                "main.riftpp"
+            )
+        )
+        copyAssetText(
+            "riftpp/examples/notepad/src/ui.riftpp",
+            File(
+                src,
+                "ui.riftpp"
+            )
+        )
     }
 
     private fun copyAssetText(
         assetPath: String,
         output: File
     ) {
+        output.parentFile?.let { parent ->
+            require(
+                parent.mkdirs() ||
+                    parent.isDirectory
+            ) {
+                "could not create asset destination"
+            }
+        }
+
         output.writeText(
             assets.open(assetPath)
-                .bufferedReader(Charsets.UTF_8)
+                .bufferedReader(
+                    Charsets.UTF_8
+                )
                 .use { it.readText() },
             Charsets.UTF_8
         )
@@ -141,23 +234,38 @@ class MainActivity : Activity() {
     private fun buildUi() {
         headerContainer =
             LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
+                orientation =
+                    LinearLayout.VERTICAL
 
                 addView(
-                    TextView(this@MainActivity).apply {
-                        text = "Rift++ Editor • App v2"
+                    TextView(
+                        this@MainActivity
+                    ).apply {
+                        text =
+                            "Rift++ Editor • Project v1"
                         textSize = 23f
-                        setPadding(16, 10, 16, 2)
+                        setPadding(
+                            16,
+                            10,
+                            16,
+                            2
+                        )
                     }
                 )
 
                 addView(
-                    TextView(this@MainActivity).apply {
+                    TextView(
+                        this@MainActivity
+                    ).apply {
                         text =
-                            "TEMP Kotlin platform shell • " +
-                                "Rift++ owns compile/runtime semantics"
+                            "TEMP Kotlin shell • Rift++ owns language/runtime semantics"
                         textSize = 12f
-                        setPadding(16, 0, 16, 6)
+                        setPadding(
+                            16,
+                            0,
+                            16,
+                            6
+                        )
                     }
                 )
             }
@@ -165,92 +273,222 @@ class MainActivity : Activity() {
         statusView =
             TextView(this).apply {
                 text = "Starting..."
-                setPadding(16, 6, 16, 8)
+                setPadding(
+                    16,
+                    6,
+                    16,
+                    8
+                )
                 setTextIsSelectable(true)
             }
 
         projectAdapter =
             ArrayAdapter(
                 this,
-                android.R.layout.simple_list_item_activated_1,
+                android.R.layout
+                    .simple_list_item_activated_1,
                 mutableListOf()
             )
 
         projectList =
             ListView(this).apply {
-                adapter = projectAdapter
-                choiceMode = ListView.CHOICE_MODE_SINGLE
+                adapter =
+                    projectAdapter
+                choiceMode =
+                    ListView.CHOICE_MODE_SINGLE
 
                 onItemClickListener =
-                    android.widget.AdapterView.OnItemClickListener {
-                            _,
-                            _,
-                            position,
-                            _ ->
-                        val file =
-                            projectFiles.getOrNull(position)
-                                ?: return@OnItemClickListener
+                    android.widget.AdapterView
+                        .OnItemClickListener {
+                                _,
+                                _,
+                                position,
+                                _ ->
+                            val entry =
+                                projectEntries
+                                    .getOrNull(
+                                        position
+                                    )
+                                    ?: return@OnItemClickListener
 
+                            selectedPath =
+                                entry.relativePath
+
+                            if (
+                                !entry.directory
+                            ) {
+                                runCatching {
+                                    saveIfDirty()
+                                    openDocument(
+                                        entry.relativePath
+                                    )
+                                }.onFailure {
+                                    renderStatus(
+                                        "Open failed: " +
+                                            errorText(
+                                                it
+                                            )
+                                    )
+                                }
+                            } else {
+                                renderStatus(
+                                    "Selected folder: " +
+                                        entry.relativePath
+                                )
+                            }
+                        }
+            }
+
+        val projectActions1 =
+            LinearLayout(this).apply {
+                orientation =
+                    LinearLayout.HORIZONTAL
+
+                addView(
+                    actionButton(
+                        "New File"
+                    ) {
+                        promptNewFile()
+                    },
+                    weightedButtonParams()
+                )
+
+                addView(
+                    actionButton(
+                        "New Folder"
+                    ) {
+                        promptNewFolder()
+                    },
+                    weightedButtonParams()
+                )
+
+                addView(
+                    actionButton(
+                        "Rename"
+                    ) {
+                        promptRename()
+                    },
+                    weightedButtonParams()
+                )
+
+                addView(
+                    actionButton(
+                        "Delete"
+                    ) {
+                        confirmDelete()
+                    },
+                    weightedButtonParams()
+                )
+            }
+
+        val projectActions2 =
+            LinearLayout(this).apply {
+                orientation =
+                    LinearLayout.HORIZONTAL
+
+                addView(
+                    actionButton(
+                        "Set Entry"
+                    ) {
+                        setSelectedAsEntry()
+                    },
+                    weightedButtonParams()
+                )
+
+                addView(
+                    actionButton(
+                        "Add Source"
+                    ) {
+                        addSelectedSource()
+                    },
+                    weightedButtonParams()
+                )
+
+                addView(
+                    actionButton(
+                        "Refresh"
+                    ) {
                         runCatching {
                             saveIfDirty()
-                            openFile(file)
+                            refreshProjectTree()
+                            renderStatus(
+                                "Project refreshed"
+                            )
                         }.onFailure {
-                            statusView.text =
-                                "Open failed: " +
-                                    (
-                                        it.message
-                                            ?: it.javaClass.simpleName
+                            renderStatus(
+                                "Refresh failed: " +
+                                    errorText(
+                                        it
                                     )
+                            )
                         }
-                    }
+                    },
+                    weightedButtonParams()
+                )
             }
 
         projectContainer =
             LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
+                orientation =
+                    LinearLayout.VERTICAL
 
                 addView(
-                    TextView(this@MainActivity).apply {
-                        text = "Project"
-                        setPadding(16, 4, 16, 2)
+                    TextView(
+                        this@MainActivity
+                    ).apply {
+                        text =
+                            "Project Filesystem"
+                        setPadding(
+                            16,
+                            4,
+                            16,
+                            2
+                        )
                     }
                 )
 
                 addView(
                     projectList,
                     LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(120)
+                        ViewGroup.LayoutParams
+                            .MATCH_PARENT,
+                        dp(220)
                     )
                 )
 
                 addView(
-                    LinearLayout(this@MainActivity).apply {
-                        orientation = LinearLayout.HORIZONTAL
-
+                    HorizontalScrollView(
+                        this@MainActivity
+                    ).apply {
                         addView(
-                            actionButton("New File") {
-                                promptNewFile()
-                            },
-                            weightedButtonParams()
-                        )
-
-                        addView(
-                            actionButton("Refresh") {
-                                runCatching {
-                                    saveIfDirty()
-                                    refreshProjectFiles()
-                                    statusView.text =
-                                        "Project refreshed"
-                                }.onFailure {
-                                    statusView.text =
-                                        "Refresh failed: " +
-                                            it.message
-                                }
-                            },
-                            weightedButtonParams()
+                            projectActions1
                         )
                     }
+                )
+
+                addView(
+                    HorizontalScrollView(
+                        this@MainActivity
+                    ).apply {
+                        addView(
+                            projectActions2
+                        )
+                    }
+                )
+            }
+
+        tabsContainer =
+            LinearLayout(this).apply {
+                orientation =
+                    LinearLayout.HORIZONTAL
+            }
+
+        val tabScroll =
+            HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled =
+                    true
+                addView(
+                    tabsContainer
                 )
             }
 
@@ -261,11 +499,18 @@ class MainActivity : Activity() {
                         Gravity.START
                 inputType =
                     InputType.TYPE_CLASS_TEXT or
-                        InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                        InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                        InputType
+                            .TYPE_TEXT_FLAG_MULTI_LINE or
+                        InputType
+                            .TYPE_TEXT_FLAG_NO_SUGGESTIONS
                 setHorizontallyScrolling(true)
                 minLines = 12
-                setPadding(16, 12, 16, 12)
+                setPadding(
+                    16,
+                    12,
+                    16,
+                    12
+                )
 
                 addTextChangedListener(
                     object : TextWatcher {
@@ -285,6 +530,7 @@ class MainActivity : Activity() {
                             if (!rendering) {
                                 dirty = true
                                 cachedArtifact = null
+                                renderTabs()
                                 renderStatus()
                             }
                         }
@@ -298,58 +544,105 @@ class MainActivity : Activity() {
 
         val actionRow =
             LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
+                orientation =
+                    LinearLayout.HORIZONTAL
 
                 addView(
-                    actionButton("Save") {
+                    actionButton(
+                        "Save"
+                    ) {
                         saveActiveFile()
                     }
                 )
                 addView(
-                    actionButton("Reload") {
-                        openFile(activeFile)
+                    actionButton(
+                        "Reload"
+                    ) {
+                        if (
+                            ::activePath
+                                .isInitialized
+                        ) {
+                            openDocument(
+                                activePath
+                            )
+                        }
                     }
                 )
                 addView(
-                    actionButton("Compile") {
+                    actionButton(
+                        "Close Tab"
+                    ) {
+                        closeActiveTab()
+                    }
+                )
+                addView(
+                    actionButton(
+                        "Compile"
+                    ) {
                         compileProject()
                     }
                 )
                 addView(
-                    actionButton("Preview") {
+                    actionButton(
+                        "Preview"
+                    ) {
                         previewProject()
                     }
                 )
                 addView(
-                    actionButton("Pack APK") {
+                    actionButton(
+                        "Pack APK"
+                    ) {
                         packStandaloneApk()
                     }
                 )
 
                 fullButton =
-                    actionButton("Full") {
+                    actionButton(
+                        "Full"
+                    ) {
                         toggleFullScreen()
                     }
-                addView(fullButton)
+
+                addView(
+                    fullButton
+                )
             }
 
         val actionScroll =
             HorizontalScrollView(this).apply {
-                isHorizontalScrollBarEnabled = true
-                addView(actionRow)
+                isHorizontalScrollBarEnabled =
+                    true
+                addView(
+                    actionRow
+                )
             }
 
         val root =
             LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(headerContainer)
-                addView(statusView)
-                addView(projectContainer)
-                addView(actionScroll)
+                orientation =
+                    LinearLayout.VERTICAL
+
+                addView(
+                    headerContainer
+                )
+                addView(
+                    statusView
+                )
+                addView(
+                    projectContainer
+                )
+                addView(
+                    tabScroll
+                )
+                addView(
+                    actionScroll
+                )
                 addView(
                     editorView,
                     LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams
+                            .MATCH_PARENT,
                         0,
                         1f
                     )
@@ -365,80 +658,99 @@ class MainActivity : Activity() {
     ): Button =
         Button(this).apply {
             text = label
-            setOnClickListener { action() }
+            setOnClickListener {
+                action()
+            }
         }
 
     private fun weightedButtonParams():
         LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(
-            0,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            1f
+            dp(150),
+            ViewGroup.LayoutParams
+                .WRAP_CONTENT
         )
 
-    private fun refreshProjectFiles() {
-        projectFiles =
-            projectRoot
-                .walkTopDown()
-                .filter { file ->
-                    file.isFile &&
-                        file.canonicalFile
-                            .toPath()
-                            .startsWith(
-                                projectRoot.toPath()
-                            )
-                }
-                .sortedBy { file ->
-                    relativePath(file)
-                }
-                .toList()
+    private fun refreshProjectTree() {
+        projectEntries =
+            workspace.listRecursive()
 
         projectAdapter.clear()
         projectAdapter.addAll(
-            projectFiles.map(::relativePath)
-        )
-        projectAdapter.notifyDataSetChanged()
+            projectEntries.map { entry ->
+                buildString {
+                    repeat(
+                        entry.depth
+                    ) {
+                        append("    ")
+                    }
 
-        if (::activeFile.isInitialized) {
-            val index =
-                projectFiles.indexOfFirst {
-                    it.canonicalFile ==
-                        activeFile.canonicalFile
+                    append(
+                        if (
+                            entry.directory
+                        ) {
+                            "[DIR] "
+                        } else {
+                            "[FILE] "
+                        }
+                    )
+
+                    append(
+                        entry.name
+                    )
                 }
+            }
+        )
+        projectAdapter
+            .notifyDataSetChanged()
+
+        selectedPath?.let { selected ->
+            val index =
+                projectEntries
+                    .indexOfFirst {
+                        it.relativePath ==
+                            selected
+                    }
 
             if (index >= 0) {
-                projectList.setItemChecked(
-                    index,
-                    true
-                )
+                projectList
+                    .setItemChecked(
+                        index,
+                        true
+                    )
             }
         }
+
+        renderTabs()
     }
 
-    private fun openFile(file: File) {
-        val canonical = file.canonicalFile
+    private fun openDocument(path: String) {
+        val file =
+            workspace.file(path)
 
-        require(
-            canonical.toPath()
-                .startsWith(projectRoot.toPath())
+        require(file.isFile) {
+            "project file is missing"
+        }
+
+        val text =
+            workspace.readText(
+                path
+            )
+
+        activePath = path
+        selectedPath = path
+
+        if (
+            path !in openTabs
         ) {
-            "Project file escaped project root"
-        }
-        require(canonical.isFile) {
-            "Project file is missing"
-        }
-        require(canonical.length() <= 256 * 1024) {
-            "Project file is too large for editor"
+            openTabs += path
         }
 
-        activeFile = canonical
         rendering = true
 
         try {
             editorView.setText(
-                canonical.readText(
-                    Charsets.UTF_8
-                )
+                text
             )
             editorView.setSelection(
                 editorView.text.length
@@ -449,12 +761,133 @@ class MainActivity : Activity() {
 
         dirty = false
         cachedArtifact = null
-        refreshProjectFiles()
+
+        refreshProjectTree()
 
         renderStatus(
             "Loaded " +
-                relativePath(canonical)
+                path
         )
+    }
+
+    private fun switchTab(path: String) {
+        if (
+            ::activePath
+                .isInitialized &&
+            activePath == path
+        ) {
+            return
+        }
+
+        runCatching {
+            saveIfDirty()
+            openDocument(path)
+        }.onFailure {
+            renderStatus(
+                "Tab switch failed: " +
+                    errorText(
+                        it
+                    )
+            )
+        }
+    }
+
+    private fun closeActiveTab() {
+        if (
+            !::activePath
+                .isInitialized
+        ) {
+            return
+        }
+
+        if (openTabs.size <= 1) {
+            renderStatus(
+                "Keep at least one document tab open"
+            )
+            return
+        }
+
+        runCatching {
+            saveIfDirty()
+
+            val closing =
+                activePath
+
+            openTabs.remove(
+                closing
+            )
+
+            openDocument(
+                openTabs.last()
+            )
+        }.onFailure {
+            renderStatus(
+                "Close tab failed: " +
+                    errorText(
+                        it
+                    )
+            )
+        }
+    }
+
+    private fun renderTabs() {
+        if (
+            !::tabsContainer
+                .isInitialized
+        ) {
+            return
+        }
+
+        tabsContainer
+            .removeAllViews()
+
+        openTabs.forEach { path ->
+            tabsContainer.addView(
+                Button(this).apply {
+                    text =
+                        buildString {
+                            if (
+                                ::activePath
+                                    .isInitialized &&
+                                activePath ==
+                                    path
+                            ) {
+                                append("[")
+                            }
+
+                            append(
+                                File(path)
+                                    .name
+                            )
+
+                            if (
+                                ::activePath
+                                    .isInitialized &&
+                                activePath ==
+                                    path &&
+                                dirty
+                            ) {
+                                append("*")
+                            }
+
+                            if (
+                                ::activePath
+                                    .isInitialized &&
+                                activePath ==
+                                    path
+                            ) {
+                                append("]")
+                            }
+                        }
+
+                    isAllCaps = false
+
+                    setOnClickListener {
+                        switchTab(path)
+                    }
+                }
+            )
+        }
     }
 
     private fun saveIfDirty() {
@@ -462,6 +895,7 @@ class MainActivity : Activity() {
             saveActiveFile(
                 updateStatus = false
             )
+
             require(!dirty) {
                 "active file could not be saved"
             }
@@ -472,61 +906,56 @@ class MainActivity : Activity() {
         updateStatus: Boolean = true
     ) {
         runCatching {
-            require(::activeFile.isInitialized) {
+            require(
+                ::activePath
+                    .isInitialized
+            ) {
                 "No project file is open"
             }
 
-            val canonical =
-                activeFile.canonicalFile
-
-            require(
-                canonical.toPath()
-                    .startsWith(
-                        projectRoot.toPath()
-                    )
-            ) {
-                "Save path escaped project root"
-            }
-
-            canonical.writeText(
-                editorView.text.toString(),
-                Charsets.UTF_8
+            workspace.writeText(
+                activePath,
+                editorView.text
+                    .toString()
             )
 
             dirty = false
             cachedArtifact = null
+            renderTabs()
 
             if (updateStatus) {
                 renderStatus(
                     "Saved " +
-                        relativePath(canonical)
+                        activePath
                 )
             }
         }.onFailure {
             renderStatus(
                 "Save failed: " +
-                    (
-                        it.message
-                            ?: it.javaClass.simpleName
+                    errorText(
+                        it
                     )
             )
         }
     }
 
-    private fun compileProject(): ByteArray? {
-        var artifact: ByteArray? = null
+    private fun compileProject():
+        ByteArray? {
+        var artifact:
+            ByteArray? = null
 
         runCatching {
             saveIfDirty()
 
-            val manifest = readManifest()
-            val source =
-                manifest.entry.readText(
-                    Charsets.UTF_8
+            val manifest =
+                RiftppProjectModel.read(
+                    workspace
                 )
 
             artifact =
-                pipeline.compile(source)
+                compileManifest(
+                    manifest
+                )
 
             cachedArtifact =
                 artifact?.copyOf()
@@ -535,7 +964,13 @@ class MainActivity : Activity() {
                 "Compile OK • " +
                     manifest.name +
                     " • " +
-                    (artifact?.size ?: 0) +
+                    manifest.sources.size +
+                    " source file(s) • " +
+                    (
+                        artifact
+                            ?.size
+                            ?: 0
+                        ) +
                     " byte RPA2"
             )
         }.onFailure {
@@ -543,15 +978,37 @@ class MainActivity : Activity() {
 
             renderStatus(
                 "Compile rejected: " +
-                    (
-                        it.message
-                            ?: it.javaClass.simpleName
+                    errorText(
+                        it
                     )
             )
         }
 
         return artifact
     }
+
+    private fun compileManifest(
+        manifest:
+            RiftppProjectManifest
+    ): ByteArray =
+        if (
+            manifest.format ==
+                "rift.app/3"
+        ) {
+            pipeline.compileProject(
+                RiftppProjectModel
+                    .buildCompileInput(
+                        workspace,
+                        manifest
+                    )
+            )
+        } else {
+            pipeline.compile(
+                workspace.readText(
+                    manifest.entry
+                )
+            )
+        }
 
     private fun previewProject() {
         val artifact =
@@ -562,7 +1019,8 @@ class MainActivity : Activity() {
             val frame =
                 RiftppUiCodec.parse(
                     pipeline.render(
-                        artifact = artifact,
+                        artifact =
+                            artifact,
                         eventKind = 0,
                         controlId = 0
                     )
@@ -583,9 +1041,8 @@ class MainActivity : Activity() {
         }.onFailure {
             renderStatus(
                 "Preview failed: " +
-                    (
-                        it.message
-                            ?: it.javaClass.simpleName
+                    errorText(
+                        it
                     )
             )
         }
@@ -597,7 +1054,8 @@ class MainActivity : Activity() {
     ) {
         val content =
             LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
+                orientation =
+                    LinearLayout.VERTICAL
                 setPadding(
                     dp(20),
                     dp(12),
@@ -606,10 +1064,12 @@ class MainActivity : Activity() {
                 )
             }
 
-        var textArea: EditText? = null
         val buttons =
             mutableListOf<
-                Pair<Button, RiftppUiNode>
+                Pair<
+                    Button,
+                    RiftppUiNode
+                >
             >()
 
         frame.nodes.forEach { node ->
@@ -630,16 +1090,21 @@ class MainActivity : Activity() {
                 }
 
                 2 -> {
-                    val field =
+                    content.addView(
                         EditText(this).apply {
-                            setText(node.text)
+                            setText(
+                                node.text
+                            )
                             gravity =
                                 Gravity.TOP or
                                     Gravity.START
                             inputType =
-                                InputType.TYPE_CLASS_TEXT or
-                                    InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                                    InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                                InputType
+                                    .TYPE_CLASS_TEXT or
+                                    InputType
+                                        .TYPE_TEXT_FLAG_MULTI_LINE or
+                                    InputType
+                                        .TYPE_TEXT_FLAG_CAP_SENTENCES
                             minLines = 10
                             maxLines = 18
                             setPadding(
@@ -648,14 +1113,10 @@ class MainActivity : Activity() {
                                 dp(12),
                                 dp(12)
                             )
-                        }
-
-                    textArea = field
-
-                    content.addView(
-                        field,
+                        },
                         LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams
+                                .MATCH_PARENT,
                             dp(320)
                         )
                     )
@@ -664,13 +1125,16 @@ class MainActivity : Activity() {
                 3 -> {
                     val button =
                         Button(this).apply {
-                            text = node.text
+                            text =
+                                node.text
                         }
 
                     buttons +=
                         button to node
 
-                    content.addView(button)
+                    content.addView(
+                        button
+                    )
                 }
             }
         }
@@ -680,7 +1144,9 @@ class MainActivity : Activity() {
                 .setTitle(
                     "Live Rift++ preview"
                 )
-                .setView(content)
+                .setView(
+                    content
+                )
                 .setNegativeButton(
                     "Close",
                     null
@@ -688,17 +1154,14 @@ class MainActivity : Activity() {
                 .create()
 
         buttons.forEach { pair ->
-            val button = pair.first
-            val node = pair.second
+            val button =
+                pair.first
+            val node =
+                pair.second
 
             button.setOnClickListener {
-                button.isEnabled = false
-
-                renderStatus(
-                    "Running Rift++ action " +
-                        node.id +
-                        "..."
-                )
+                button.isEnabled =
+                    false
 
                 Thread {
                     val result =
@@ -715,17 +1178,11 @@ class MainActivity : Activity() {
                         }
 
                     runOnUiThread {
-                        button.isEnabled = true
+                        button.isEnabled =
+                            true
 
                         result.onSuccess {
                             dialog.dismiss()
-
-                            renderStatus(
-                                "Rift++ action " +
-                                    node.id +
-                                    " passed"
-                            )
-
                             showPreviewDialog(
                                 artifact,
                                 it
@@ -733,9 +1190,8 @@ class MainActivity : Activity() {
                         }.onFailure {
                             renderStatus(
                                 "Action failed: " +
-                                    (
-                                        it.message
-                                            ?: it.javaClass.simpleName
+                                    errorText(
+                                        it
                                     )
                             )
                         }
@@ -750,18 +1206,20 @@ class MainActivity : Activity() {
     private fun packStandaloneApk() {
         runCatching {
             saveIfDirty()
-            readManifest()
+            RiftppProjectModel
+                .read(
+                    workspace
+                )
         }.onFailure {
             renderStatus(
                 "Pack APK failed: " +
-                    (
-                        it.message
-                            ?: it.javaClass.simpleName
+                    errorText(
+                        it
                     )
             )
         }.onSuccess { manifest ->
             renderStatus(
-                "Compiling and packaging standalone APK..."
+                "Compiling project and packaging standalone APK..."
             )
 
             Thread {
@@ -771,207 +1229,482 @@ class MainActivity : Activity() {
                             !android.os.Process
                                 .is64Bit()
                         ) {
-                            "App v2 APK proof is ARM32-only for now"
+                            "Project APK proof is ARM32-only for now"
                         }
 
-                        val source =
-                            manifest.entry
-                                .readText(
-                                    Charsets.UTF_8
-                                )
                         val artifact =
-                            pipeline.compile(
-                                source
+                            compileManifest(
+                                manifest
                             )
                         val runtime =
                             pipeline
                                 .runtimeProgramForPackaging()
 
                         val receipt =
-                            RiftppApkBuilder(this)
-                                .build(
-                                    artifact =
-                                        artifact,
-                                    runtime =
-                                        runtime,
-                                    packageName =
-                                        manifest.packageName,
-                                    sourcePath =
-                                        relativePath(
-                                            manifest.entry
-                                        )
-                                )
+                            RiftppApkBuilder(
+                                this
+                            ).build(
+                                artifact =
+                                    artifact,
+                                runtime =
+                                    runtime,
+                                packageName =
+                                    manifest
+                                        .packageName,
+                                sourcePath =
+                                    manifest.entry
+                            )
 
-                        buildString {
-                            append(
-                                "Standalone APK ready"
-                            )
-                            append(
-                                "\nPackage: "
-                            )
-                            append(
-                                receipt.packageName
-                            )
-                            append(
-                                "\nActivity: "
-                            )
-                            append(
-                                receipt.activityName
-                            )
-                            append(
-                                "\nSigned + verified: "
-                            )
-                            append(
-                                receipt.signedApk
-                                    .absolutePath
-                            )
-                            append(
-                                "\nDownloads: "
-                            )
-                            append(
-                                receipt.publishedUri
+                        "Standalone APK ready" +
+                            "\nPackage: " +
+                            receipt.packageName +
+                            "\nSources: " +
+                            manifest.sources.size +
+                            "\nSigned + verified: " +
+                            receipt.signedApk
+                                .absolutePath +
+                            "\nDownloads: " +
+                            (
+                                receipt
+                                    .publishedUri
                                     ?: "private-only fallback"
-                            )
-                            append(
-                                "\nAPK SHA-256: "
-                            )
-                            append(
-                                receipt.apkSha256
-                            )
-                            append(
-                                "\nRPA2 SHA-256: "
-                            )
-                            append(
-                                receipt.artifactSha256
-                            )
-                            append(
-                                "\nRuntime SHA-256: "
-                            )
-                            append(
-                                receipt.runtimeSha256
-                            )
-                        }
+                                ) +
+                            "\nAPK SHA-256: " +
+                            receipt.apkSha256 +
+                            "\nRPA2 SHA-256: " +
+                            receipt.artifactSha256
                     }.fold(
-                        onSuccess = { it },
+                        onSuccess = {
+                            it
+                        },
                         onFailure = {
                             "Pack APK failed: " +
-                                (
-                                    it.message
-                                        ?: it.javaClass.simpleName
+                                errorText(
+                                    it
                                 )
                         }
                     )
 
                 runOnUiThread {
-                    renderStatus(message)
+                    renderStatus(
+                        message
+                    )
                 }
             }.start()
         }
     }
 
-    private fun readManifest(): ProjectManifest {
-        val manifestFile =
-            File(
-                projectRoot,
-                "app.rift.json"
-            ).canonicalFile
+    private fun promptNewFile() {
+        promptPath(
+            title =
+                "New project file",
+            hint =
+                "src/example.riftpp"
+        ) { path ->
+            runCatching {
+                saveIfDirty()
 
-        require(
-            manifestFile.isFile &&
-                manifestFile.toPath()
-                    .startsWith(
-                        projectRoot.toPath()
+                workspace
+                    .createTextFile(
+                        path,
+                        ""
                     )
-        ) {
-            "app.rift.json is missing"
-        }
 
-        val json =
-            JSONObject(
-                manifestFile.readText(
-                    Charsets.UTF_8
+                refreshProjectTree()
+                openDocument(path)
+            }.onFailure {
+                renderStatus(
+                    "New file failed: " +
+                        errorText(
+                            it
+                        )
                 )
-            )
-
-        require(
-            json.getString("format") ==
-                "rift.app/2"
-        ) {
-            "unsupported Rift++ project format"
+            }
         }
-
-        val name =
-            json.getString("name")
-                .trim()
-
-        require(name.isNotEmpty()) {
-            "project name is empty"
-        }
-
-        val packageName =
-            json.getString("package")
-                .trim()
-
-        require(
-            Regex(
-                "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
-            ).matches(packageName)
-        ) {
-            "project package is invalid"
-        }
-
-        require(
-            json.optString(
-                "presentation"
-            ) == "rui2"
-        ) {
-            "App v2 requires RUI2 presentation"
-        }
-
-        val entryName =
-            json.getString("entry")
-
-        require(
-            entryName.isNotBlank() &&
-                !entryName.contains("..")
-        ) {
-            "project entry is invalid"
-        }
-
-        val entry =
-            File(
-                projectRoot,
-                entryName
-            ).canonicalFile
-
-        require(
-            entry.toPath()
-                .startsWith(
-                    projectRoot.toPath()
-                ) &&
-                entry.isFile
-        ) {
-            "project entry is missing or escaped root"
-        }
-
-        return ProjectManifest(
-            name = name,
-            packageName =
-                packageName,
-            entry = entry
-        )
     }
 
-    private fun promptNewFile() {
+    private fun promptNewFolder() {
+        promptPath(
+            title =
+                "New project folder",
+            hint =
+                "src/components"
+        ) { path ->
+            runCatching {
+                workspace
+                    .createDirectory(
+                        path
+                    )
+                refreshProjectTree()
+                renderStatus(
+                    "Created folder " +
+                        path
+                )
+            }.onFailure {
+                renderStatus(
+                    "New folder failed: " +
+                        errorText(
+                            it
+                        )
+                )
+            }
+        }
+    }
+
+    private fun promptRename() {
+        val entry =
+            selectedEntry()
+                ?: run {
+                    renderStatus(
+                        "Select a file or folder first"
+                    )
+                    return
+                }
+
         val input =
             EditText(this).apply {
-                hint = "example.riftpp"
-                isSingleLine = true
+                setText(
+                    entry.relativePath
+                )
+                isSingleLine =
+                    true
             }
 
         AlertDialog.Builder(this)
-            .setTitle("New project file")
-            .setView(input)
+            .setTitle(
+                "Rename / move"
+            )
+            .setView(
+                input
+            )
+            .setNegativeButton(
+                "Cancel",
+                null
+            )
+            .setPositiveButton(
+                "Move"
+            ) { _, _ ->
+                val target =
+                    input.text
+                        .toString()
+                        .trim()
+
+                runCatching {
+                    saveIfDirty()
+
+                    require(
+                        entry.relativePath !=
+                            "app.rift.json"
+                    ) {
+                        "manifest cannot be renamed"
+                    }
+
+                    workspace.move(
+                        entry.relativePath,
+                        target
+                    )
+
+                    RiftppProjectModel
+                        .renamePathReferences(
+                            workspace =
+                                workspace,
+                            fromPath =
+                                entry.relativePath,
+                            toPath =
+                                target,
+                            directory =
+                                entry.directory
+                        )
+
+                    for (
+                        index in
+                            openTabs.indices
+                    ) {
+                        val tab =
+                            openTabs[index]
+
+                        if (
+                            tab ==
+                                entry.relativePath ||
+                            (
+                                entry.directory &&
+                                    tab.startsWith(
+                                        entry.relativePath +
+                                            "/"
+                                    )
+                                )
+                        ) {
+                            openTabs[index] =
+                                target +
+                                    tab.removePrefix(
+                                        entry.relativePath
+                                    )
+                        }
+                    }
+
+                    if (
+                        ::activePath
+                            .isInitialized
+                    ) {
+                        if (
+                            activePath ==
+                                entry.relativePath ||
+                            (
+                                entry.directory &&
+                                    activePath
+                                        .startsWith(
+                                            entry.relativePath +
+                                                "/"
+                                        )
+                                )
+                        ) {
+                            activePath =
+                                target +
+                                    activePath
+                                        .removePrefix(
+                                            entry.relativePath
+                                        )
+                        }
+                    }
+
+                    selectedPath =
+                        target
+
+                    refreshProjectTree()
+                    renderStatus(
+                        "Moved to " +
+                            target
+                    )
+                }.onFailure {
+                    renderStatus(
+                        "Rename failed: " +
+                            errorText(
+                                it
+                            )
+                    )
+                }
+            }
+            .show()
+    }
+
+    private fun confirmDelete() {
+        val entry =
+            selectedEntry()
+                ?: run {
+                    renderStatus(
+                        "Select a file or folder first"
+                    )
+                    return
+                }
+
+        AlertDialog.Builder(this)
+            .setTitle(
+                "Delete " +
+                    entry.name +
+                    "?"
+            )
+            .setMessage(
+                "This permanently removes the selected project path."
+            )
+            .setNegativeButton(
+                "Cancel",
+                null
+            )
+            .setPositiveButton(
+                "Delete"
+            ) { _, _ ->
+                runCatching {
+                    saveIfDirty()
+
+                    require(
+                        entry.relativePath !=
+                            "app.rift.json"
+                    ) {
+                        "project manifest cannot be deleted"
+                    }
+
+                    RiftppProjectModel
+                        .removePathReferences(
+                            workspace =
+                                workspace,
+                            path =
+                                entry.relativePath,
+                            directory =
+                                entry.directory
+                        )
+
+                    workspace.delete(
+                        entry.relativePath
+                    )
+
+                    openTabs.removeAll { tab ->
+                        tab ==
+                            entry.relativePath ||
+                            (
+                                entry.directory &&
+                                    tab.startsWith(
+                                        entry.relativePath +
+                                            "/"
+                                    )
+                                )
+                    }
+
+                    selectedPath = null
+
+                    if (
+                        ::activePath
+                            .isInitialized &&
+                        activePath !in
+                            openTabs
+                    ) {
+                        val manifest =
+                            RiftppProjectModel
+                                .read(
+                                    workspace
+                                )
+
+                        openDocument(
+                            manifest.entry
+                        )
+                    } else {
+                        refreshProjectTree()
+                    }
+
+                    renderStatus(
+                        "Deleted " +
+                            entry.relativePath
+                    )
+                }.onFailure {
+                    renderStatus(
+                        "Delete failed: " +
+                            errorText(
+                                it
+                            )
+                    )
+                }
+            }
+            .show()
+    }
+
+    private fun setSelectedAsEntry() {
+        val entry =
+            selectedEntry()
+                ?: run {
+                    renderStatus(
+                        "Select a .riftpp file first"
+                    )
+                    return
+                }
+
+        runCatching {
+            require(
+                !entry.directory &&
+                    entry.relativePath
+                        .endsWith(
+                            ".riftpp"
+                        )
+            ) {
+                "entry must be a .riftpp file"
+            }
+
+            saveIfDirty()
+
+            RiftppProjectModel
+                .setEntry(
+                    workspace,
+                    entry.relativePath
+                )
+
+            renderStatus(
+                "Entry set to " +
+                    entry.relativePath
+            )
+        }.onFailure {
+            renderStatus(
+                "Set Entry failed: " +
+                    errorText(
+                        it
+                    )
+            )
+        }
+    }
+
+    private fun addSelectedSource() {
+        val entry =
+            selectedEntry()
+                ?: run {
+                    renderStatus(
+                        "Select a .riftpp file first"
+                    )
+                    return
+                }
+
+        runCatching {
+            require(
+                !entry.directory &&
+                    entry.relativePath
+                        .endsWith(
+                            ".riftpp"
+                        )
+            ) {
+                "source must be a .riftpp file"
+            }
+
+            saveIfDirty()
+
+            RiftppProjectModel
+                .addSource(
+                    workspace,
+                    entry.relativePath
+                )
+
+            renderStatus(
+                "Added project source " +
+                    entry.relativePath
+            )
+        }.onFailure {
+            renderStatus(
+                "Add Source failed: " +
+                    errorText(
+                        it
+                    )
+            )
+        }
+    }
+
+    private fun selectedEntry():
+        RiftppWorkspaceEntry? {
+        val path =
+            selectedPath
+                ?: return null
+
+        return projectEntries
+            .firstOrNull {
+                it.relativePath ==
+                    path
+            }
+    }
+
+    private fun promptPath(
+        title: String,
+        hint: String,
+        action: (String) -> Unit
+    ) {
+        val input =
+            EditText(this).apply {
+                this.hint =
+                    hint
+                isSingleLine =
+                    true
+            }
+
+        AlertDialog.Builder(this)
+            .setTitle(
+                title
+            )
+            .setView(
+                input
+            )
             .setNegativeButton(
                 "Cancel",
                 null
@@ -979,61 +1712,42 @@ class MainActivity : Activity() {
             .setPositiveButton(
                 "Create"
             ) { _, _ ->
-                runCatching {
-                    saveIfDirty()
+                val path =
+                    input.text
+                        .toString()
+                        .trim()
 
-                    val name =
-                        input.text
-                            .toString()
-                            .trim()
+                runCatching {
+                    require(
+                        path.isNotEmpty()
+                    ) {
+                        "path is empty"
+                    }
 
                     require(
                         Regex(
-                            "^[A-Za-z0-9._-]{1,80}$"
-                        ).matches(name)
+                            "^[A-Za-z0-9._/-]{1,180}$"
+                        ).matches(
+                            path
+                        )
                     ) {
-                        "invalid file name"
+                        "path contains unsupported characters"
                     }
 
                     require(
-                        name != "." &&
-                            name != ".."
+                        !path.contains(
+                            ".."
+                        )
                     ) {
-                        "invalid file name"
+                        "path traversal is not allowed"
                     }
 
-                    val file =
-                        File(
-                            projectRoot,
-                            name
-                        ).canonicalFile
-
-                    require(
-                        file.parentFile ==
-                            projectRoot
-                    ) {
-                        "new file escaped project root"
-                    }
-
-                    require(
-                        !file.exists()
-                    ) {
-                        "file already exists"
-                    }
-
-                    file.writeText(
-                        "",
-                        Charsets.UTF_8
-                    )
-
-                    refreshProjectFiles()
-                    openFile(file)
+                    action(path)
                 }.onFailure {
                     renderStatus(
-                        "New file failed: " +
-                            (
-                                it.message
-                                    ?: it.javaClass.simpleName
+                        "Path rejected: " +
+                            errorText(
+                                it
                             )
                     )
                 }
@@ -1042,7 +1756,8 @@ class MainActivity : Activity() {
     }
 
     private fun toggleFullScreen() {
-        fullScreen = !fullScreen
+        fullScreen =
+            !fullScreen
 
         val visibility =
             if (fullScreen) {
@@ -1057,6 +1772,7 @@ class MainActivity : Activity() {
             visibility
         projectContainer.visibility =
             visibility
+
         fullButton.text =
             if (fullScreen) {
                 "Exit Full"
@@ -1068,59 +1784,77 @@ class MainActivity : Activity() {
     private fun renderStatus(
         message: String? = null
     ) {
-        if (!::statusView.isInitialized) {
+        if (
+            !::statusView
+                .isInitialized
+        ) {
             return
         }
 
-        val file =
-            if (::activeFile.isInitialized) {
-                relativePath(activeFile)
-            } else {
-                "none"
-            }
-
         statusView.text =
             buildString {
-                if (message != null) {
-                    append(message)
-                    append("\n")
+                if (
+                    message != null
+                ) {
+                    append(
+                        message
+                    )
+                    append(
+                        "\n"
+                    )
                 }
 
-                append("File: ")
-                append(file)
+                append(
+                    "Project: default"
+                )
+
+                if (
+                    ::activePath
+                        .isInitialized
+                ) {
+                    append(
+                        " • File: "
+                    )
+                    append(
+                        activePath
+                    )
+                }
 
                 if (dirty) {
-                    append(" • modified")
+                    append(
+                        " • modified"
+                    )
                 }
 
-                if (cachedArtifact != null) {
-                    append(" • compiled ")
+                if (
+                    cachedArtifact != null
+                ) {
                     append(
-                        cachedArtifact?.size
+                        " • compiled "
                     )
-                    append(" bytes")
+                    append(
+                        cachedArtifact
+                            ?.size
+                    )
+                    append(
+                        " bytes"
+                    )
                 }
             }
     }
 
-    private fun relativePath(
-        file: File
+    private fun errorText(
+        error: Throwable
     ): String =
-        projectRoot
-            .toPath()
-            .relativize(
-                file.canonicalFile
-                    .toPath()
-            )
-            .toString()
-            .replace(
-                File.separatorChar,
-                '/'
-            )
+        error.message
+            ?: error.javaClass
+                .simpleName
 
     private fun dp(value: Int): Int =
         (
             value *
-                resources.displayMetrics.density
+                resources
+                    .displayMetrics
+                    .density
         ).toInt()
 }

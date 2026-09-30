@@ -10,6 +10,7 @@ class RiftppPipeline(private val context: Context) {
         private const val MAX_APP_ARTIFACT_BYTES = 1024 * 1024
         private const val MAX_PREVIEW_BYTES = 1024 * 1024
         private const val MAX_SOURCE_BYTES = 512
+        private const val MAX_PROJECT_SOURCE_BYTES = 4096
     }
 
     private val bridge = RiftppNativeBridge()
@@ -31,6 +32,16 @@ class RiftppPipeline(private val context: Context) {
                 "riftpp/frontend/frontend.app2.arm64.r4.hex"
             } else {
                 "riftpp/frontend/frontend.app2.arm32.r4.hex"
+            }
+        )
+    }
+
+    private val projectFrontendProgram: ByteArray by lazy {
+        compileRecordProgram(
+            if (android.os.Process.is64Bit()) {
+                "riftpp/frontend/frontend.project1.arm64.r4.hex"
+            } else {
+                "riftpp/frontend/frontend.project1.arm32.r4.hex"
             }
         )
     }
@@ -66,6 +77,37 @@ class RiftppPipeline(private val context: Context) {
             sourceBytes,
             MAX_APP_ARTIFACT_BYTES
         ) ?: error("Rift++ App v2 frontend rejected source")
+    }
+
+    fun compileProject(
+        sourceUnits: ByteArray
+    ): ByteArray {
+        require(
+            sourceUnits.isNotEmpty()
+        ) {
+            "Rift++ project source is empty"
+        }
+        require(
+            sourceUnits.size <=
+                MAX_PROJECT_SOURCE_BYTES
+        ) {
+            "Rift++ project source exceeds $MAX_PROJECT_SOURCE_BYTES bytes"
+        }
+        require(
+            sourceUnits.all {
+                it.toInt() in 0..0x7f
+            }
+        ) {
+            "Rift++ project source must be canonical ASCII"
+        }
+
+        return bridge.run(
+            projectFrontendProgram,
+            sourceUnits,
+            MAX_APP_ARTIFACT_BYTES
+        ) ?: error(
+            "Rift++ project frontend rejected source units"
+        )
     }
 
     fun render(
