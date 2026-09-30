@@ -1,5 +1,7 @@
 package com.riftos.app
 
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
 import org.json.JSONArray
@@ -117,8 +119,10 @@ object RiftAppDiagnosticBridge {
         require(packageName in allowedPackages) {
             "Diagnostic bridge package is not allowlisted: $packageName"
         }
-        return readDump(context.applicationContext, packageName)
+        val app = context.applicationContext
+        return readDump(app, packageName)
             .put("listenerRunning", running.get())
+            .put("processExitHistory", historicalProcessExits(app, packageName))
     }
 
     fun status(context: Context): JSONObject {
@@ -329,6 +333,78 @@ object RiftAppDiagnosticBridge {
                 .put("eventCount", 0)
         }
     }
+
+    private fun historicalProcessExits(
+        context: Context,
+        packageName: String
+    ): JSONObject {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return JSONObject()
+                .put("supported", false)
+                .put("reason", "android-version")
+        }
+
+        val manager =
+            context.getSystemService(
+                Context.ACTIVITY_SERVICE
+            ) as ActivityManager
+
+        return runCatching {
+            val rows =
+                manager.getHistoricalProcessExitReasons(
+                    packageName,
+                    0,
+                    8
+                )
+            JSONObject()
+                .put("supported", true)
+                .put("available", true)
+                .put(
+                    "rows",
+                    JSONArray().apply {
+                        for (row in rows) {
+                            put(
+                                JSONObject()
+                                    .put("timestamp", row.timestamp)
+                                    .put("reason", row.reason)
+                                    .put("reasonName", exitReasonName(row.reason))
+                                    .put("status", row.status)
+                                    .put("importance", row.importance)
+                                    .put("pssKb", row.pss)
+                                    .put("rssKb", row.rss)
+                            )
+                        }
+                    }
+                )
+        }.getOrElse { failure ->
+            JSONObject()
+                .put("supported", true)
+                .put("available", false)
+                .put("error", failure.javaClass.simpleName)
+                .put("detail", failure.message ?: JSONObject.NULL)
+        }
+    }
+
+    private fun exitReasonName(reason: Int): String =
+        when (reason) {
+            ApplicationExitInfo.REASON_UNKNOWN -> "unknown"
+            ApplicationExitInfo.REASON_EXIT_SELF -> "exit-self"
+            ApplicationExitInfo.REASON_SIGNALED -> "signaled"
+            ApplicationExitInfo.REASON_LOW_MEMORY -> "low-memory"
+            ApplicationExitInfo.REASON_CRASH -> "java-crash"
+            ApplicationExitInfo.REASON_CRASH_NATIVE -> "native-crash"
+            ApplicationExitInfo.REASON_ANR -> "anr"
+            ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "initialization-failure"
+            ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "permission-change"
+            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "excessive-resource-usage"
+            ApplicationExitInfo.REASON_USER_REQUESTED -> "user-requested"
+            ApplicationExitInfo.REASON_USER_STOPPED -> "user-stopped"
+            ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "dependency-died"
+            ApplicationExitInfo.REASON_OTHER -> "other"
+            ApplicationExitInfo.REASON_FREEZER -> "freezer"
+            else -> "reason-$reason"
+        }
+
 
     private fun writeDump(context: Context, packageName: String, value: JSONObject) {
         val target = latestFile(context, packageName)
