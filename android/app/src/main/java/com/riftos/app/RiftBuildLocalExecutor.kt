@@ -218,6 +218,47 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/core/build.gradle.kts" to
                 "ac7cfb56bb6a67678000e7cd78fbff58524cc867351bafdaf3277b23521d0d30"
         )
+        private const val RIFTPP_EDITOR_PROJECT = "standalone/editor/android"
+        private const val RIFTPP_EDITOR_PACKAGE = "com.riftpp.editor"
+        private const val RIFTPP_EDITOR_ACTIVITY = "com.riftpp.editor.MainActivity"
+        private const val RIFTPP_EDITOR_LIBRARY_NAME = "riftpp_editor_bridge"
+        private const val RIFTPP_EDITOR_LIBRARY_FILE = "libriftpp_editor_bridge.so"
+        private const val RIFTPP_EDITOR_HOST_APK_ENTRY =
+            "lib/armeabi-v7a/libriftpp_editor_bridge.so"
+        private const val RIFTPP_EDITOR_VERSION_NAME = "0.1.0-kotlin-bootstrap"
+        private const val RIFTPP_EDITOR_MAX_HOST_BYTES = 4L * 1024L * 1024L
+        private const val RIFTPP_EDITOR_COMPILER =
+            "s3/frozen/compiler.arm32.native.hex"
+        private const val RIFTPP_EDITOR_COMPILER_BYTES = 33057
+        private const val RIFTPP_EDITOR_COMPILER_SHA256 =
+            "950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a"
+        private const val RIFTPP_EDITOR_FRONTEND =
+            "standalone/frontend/frontend.arm32.r4.hex"
+        private const val RIFTPP_EDITOR_FRONTEND_BYTES = 1989
+        private const val RIFTPP_EDITOR_FRONTEND_SHA256 =
+            "7dff647afff8e2999a12264f3f18039d5a99fdf1163a26aed26d32bd9befb60c"
+        private const val RIFTPP_EDITOR_PREVIEW =
+            "standalone/runtime/preview.arm32.r4.hex"
+        private const val RIFTPP_EDITOR_PREVIEW_BYTES = 578
+        private const val RIFTPP_EDITOR_PREVIEW_SHA256 =
+            "8b17cd1b499aa4db4be18e67e6483c81922c304fc72f39423c0def27679e8a59"
+        private val RIFTPP_EDITOR_SOURCE_SHA256 = linkedMapOf(
+            "standalone/editor/android/app/src/main/java/com/riftpp/editor/MainActivity.kt" to
+                "1cb5a4648a1b29a1dd51db561814ef78a774b10b521b377737b5571a76a13061",
+            "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
+                "d324b73a2bc582b732182d2107e50e608159cc322ea923454f66179c321f5de4",
+            "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppNativeBridge.kt" to
+                "d4150a6c675ba7df474a3bd52f696d55d851024816c27e98bc2a8788b3bea31d",
+            "standalone/editor/android/app/src/main/java/com/riftpp/editor/HexAssets.kt" to
+                "bbef1a081be1f40eb3a1ae74d39e0719aa72d17ab77e95f96846c6b020f42fcc",
+            "standalone/editor/android/app/src/main/cpp/riftpp_editor_bridge.cpp" to
+                "ff1bd4279c56422cfe5fe355c4ada18ba0eae6babb8afa79fd7abc753b51e778",
+            "standalone/editor/android/app/src/main/AndroidManifest.xml" to
+                "c1e7e9da3f38311611b37c20a86911c391bb0bf23ad843270b96a7c38869d903",
+            "standalone/editor/android/app/build.gradle.kts" to
+                "5714233c4869613d361ef11a0a4e35cef073c93262f996dc829a089b21918990"
+        )
+
         private const val CODYNEX_APPHOST_PROJECT = "external/apphost"
         private const val CODYNEX_APP_PACKAGE = "com.codynex.notepad"
         private const val CODYNEX_APP_ACTIVITY =
@@ -311,7 +352,8 @@ class RiftBuildLocalExecutor(context: Context) {
             EDITOR_VERSION_NAME, "uses-sdk", "26", "36", "application", "true", "activity",
             EDITOR_ACTIVITY, "intent-filter", "action", "android.intent.action.MAIN",
             "category", "android.intent.category.LAUNCHER", "queries", "com.riftos.app",
-            CODYNEX_APP_PACKAGE, CODYNEX_APP_VERSION_NAME, CODYNEX_APP_ACTIVITY
+            CODYNEX_APP_PACKAGE, CODYNEX_APP_VERSION_NAME, CODYNEX_APP_ACTIVITY,
+            RIFTPP_EDITOR_PACKAGE, RIFTPP_EDITOR_VERSION_NAME, RIFTPP_EDITOR_ACTIVITY
         )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
@@ -335,7 +377,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | compile-native <project> [arm32|arm64|universal] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | prepare-codynex-app <codynex-root> <source-path> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | compile-native <project> [arm32|arm64|universal] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-riftpp-editor <riftpp-root> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | prepare-codynex-app <codynex-root> <source-path> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -366,6 +408,12 @@ class RiftBuildLocalExecutor(context: Context) {
             "prepare-riftpp-app0" -> prepareRiftppApp0(
                 args.firstOrNull() ?: error("usage: riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>"),
                 args.getOrNull(1) ?: error("usage: riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>"),
+                cwd
+            )
+            "prepare-riftpp-editor" -> prepareRiftppEditor(
+                args.firstOrNull() ?: error(
+                    "usage: riftbuild prepare-riftpp-editor <riftpp-root>"
+                ),
                 cwd
             )
             "prepare-codynex-mc0" -> prepareCodynexMc0(
@@ -2395,6 +2443,239 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         writeRun(result)
         return result
     }
+
+    @Synchronized
+    fun prepareRiftppEditor(
+        project: String,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+
+        RIFTPP_EDITOR_SOURCE_SHA256.forEach { (sourcePath, expectedSha) ->
+            verifyProjectSource(ref, sourcePath, expectedSha)
+        }
+
+        val editorProject = projectFile(ref, RIFTPP_EDITOR_PROJECT)
+        require(editorProject.isDirectory) {
+            "Rift++ Kotlin bootstrap editor project is missing"
+        }
+        val editorDisplay = projectDisplay(ref, editorProject)
+        val sourceValidation = validate(editorDisplay, "/D:/Workspace")
+        require(sourceValidation.optBoolean("sourceReady")) {
+            "Rift++ Kotlin bootstrap source validation failed"
+        }
+        require(sourceValidation.optBoolean("requiresDex")) {
+            "Rift++ Kotlin bootstrap must remain a code-bearing Activity package"
+        }
+        val sourceActivity = sourceValidation.optString("activityName")
+        require(
+            sourceActivity == RIFTPP_EDITOR_ACTIVITY ||
+                sourceActivity == ".MainActivity"
+        ) {
+            "Rift++ Kotlin bootstrap launch activity drift: " + sourceActivity
+        }
+
+        fun readPinnedAsset(
+            sourcePath: String,
+            expectedBytes: Int,
+            expectedSha: String,
+            label: String
+        ): ByteArray {
+            val file = projectFile(ref, sourcePath)
+            require(file.isFile) { "$label is missing" }
+            val bytes = readTextBounded(file).toByteArray(Charsets.UTF_8)
+            require(bytes.size == expectedBytes) {
+                "$label byte count drift: " + bytes.size
+            }
+            require(sha256(bytes) == expectedSha) {
+                "$label SHA-256 drift"
+            }
+            return bytes
+        }
+
+        val compiler = readPinnedAsset(
+            RIFTPP_EDITOR_COMPILER,
+            RIFTPP_EDITOR_COMPILER_BYTES,
+            RIFTPP_EDITOR_COMPILER_SHA256,
+            "Rift++ frozen S3 ARM32 compiler"
+        )
+        val frontend = readPinnedAsset(
+            RIFTPP_EDITOR_FRONTEND,
+            RIFTPP_EDITOR_FRONTEND_BYTES,
+            RIFTPP_EDITOR_FRONTEND_SHA256,
+            "Rift++ ARM32 frontend"
+        )
+        val preview = readPinnedAsset(
+            RIFTPP_EDITOR_PREVIEW,
+            RIFTPP_EDITOR_PREVIEW_BYTES,
+            RIFTPP_EDITOR_PREVIEW_SHA256,
+            "Rift++ ARM32 preview runtime"
+        )
+
+        val host = readOwnApkEntry(
+            RIFTPP_EDITOR_HOST_APK_ENTRY,
+            RIFTPP_EDITOR_MAX_HOST_BYTES
+        )
+        verifyElfImage(host, 1, 40)
+
+        val dexEntries = readOwnDexEntries()
+        require(dexEntries.isNotEmpty()) {
+            "Installed RiftOS APK contains no Rift++ editor DEX payload"
+        }
+        dexEntries.forEach { (name, bytes) ->
+            require(bytes.size >= 8) {
+                "RiftOS DEX payload is too small: " + name
+            }
+            require(
+                bytes[0] == 'd'.code.toByte() &&
+                    bytes[1] == 'e'.code.toByte() &&
+                    bytes[2] == 'x'.code.toByte() &&
+                    bytes[3] == '\n'.code.toByte() &&
+                    bytes[7] == 0.toByte()
+            ) {
+                "RiftOS DEX payload has invalid magic: " + name
+            }
+        }
+
+        val buildRoot = File(editorProject, "build/riftbuild").canonicalFile
+        require(confinedTo(editorProject, buildRoot)) {
+            "Rift++ editor build root escaped editor project"
+        }
+        val preparedRoot = File(buildRoot, "prepared").canonicalFile
+        require(confinedTo(buildRoot, preparedRoot)) {
+            "Rift++ editor prepared root escaped build/riftbuild"
+        }
+        if (preparedRoot.exists()) {
+            require(deleteTreeBounded(preparedRoot, MAX_PROJECT_FILES)) {
+                "Could not clear stale Rift++ editor prepared package"
+            }
+        }
+
+        val libRoot = File(preparedRoot, "lib/armeabi-v7a").canonicalFile
+        val s3Root = File(preparedRoot, "assets/riftpp/s3").canonicalFile
+        val frontendRoot =
+            File(preparedRoot, "assets/riftpp/frontend").canonicalFile
+        val runtimeRoot =
+            File(preparedRoot, "assets/riftpp/runtime").canonicalFile
+        for (dir in listOf(libRoot, s3Root, frontendRoot, runtimeRoot)) {
+            require(confinedTo(preparedRoot, dir)) {
+                "Rift++ editor output escaped prepared package"
+            }
+            require(dir.mkdirs() || dir.isDirectory) {
+                "Could not create Rift++ editor output directory"
+            }
+        }
+
+        val manifestOutput =
+            File(preparedRoot, "AndroidManifest.xml").canonicalFile
+        val hostOutput =
+            File(libRoot, RIFTPP_EDITOR_LIBRARY_FILE).canonicalFile
+        val compilerOutput =
+            File(s3Root, "compiler.arm32.native.hex").canonicalFile
+        val frontendOutput =
+            File(frontendRoot, "frontend.arm32.r4.hex").canonicalFile
+        val previewOutput =
+            File(runtimeRoot, "preview.arm32.r4.hex").canonicalFile
+
+        atomicWrite(manifestOutput, buildRiftppEditorBinaryManifest())
+        atomicWrite(hostOutput, host)
+        atomicWrite(compilerOutput, compiler)
+        atomicWrite(frontendOutput, frontend)
+        atomicWrite(previewOutput, preview)
+
+        val dexReceipt = JSONArray()
+        for ((name, bytes) in dexEntries) {
+            require(DEX_ENTRY.matches(name)) {
+                "Unsafe Rift++ editor DEX output name: " + name
+            }
+            val output = File(preparedRoot, name).canonicalFile
+            require(confinedTo(preparedRoot, output)) {
+                "Rift++ editor DEX output escaped prepared package"
+            }
+            atomicWrite(output, bytes)
+            require(sha256(output) == sha256(bytes)) {
+                "Rift++ editor DEX materialization hash mismatch: " + name
+            }
+            dexReceipt.put(
+                JSONObject()
+                    .put("name", name)
+                    .put("bytes", bytes.size)
+                    .put("sha256", sha256(bytes))
+            )
+        }
+
+        require(isBinaryAndroidManifest(manifestOutput)) {
+            "Rift++ editor binary AndroidManifest.xml failed validation"
+        }
+        require(sha256(hostOutput) == sha256(host)) {
+            "Rift++ editor JNI bridge materialization hash mismatch"
+        }
+        require(sha256(compilerOutput) == RIFTPP_EDITOR_COMPILER_SHA256) {
+            "Rift++ editor S3 asset materialization hash mismatch"
+        }
+        require(sha256(frontendOutput) == RIFTPP_EDITOR_FRONTEND_SHA256) {
+            "Rift++ editor frontend asset materialization hash mismatch"
+        }
+        require(sha256(previewOutput) == RIFTPP_EDITOR_PREVIEW_SHA256) {
+            "Rift++ editor preview asset materialization hash mismatch"
+        }
+
+        val sourceReceipt = JSONObject()
+        RIFTPP_EDITOR_SOURCE_SHA256.forEach { (sourcePath, expectedSha) ->
+            sourceReceipt.put(sourcePath, expectedSha)
+        }
+
+        val runId = runId()
+        val result = JSONObject()
+            .put("format", "riftbuild-riftpp-editor-materialization-v1")
+            .put("runId", runId)
+            .put("state", "prepared-code")
+            .put("project", ref.display)
+            .put("androidProject", editorDisplay)
+            .put("target", "arm32")
+            .put("package", RIFTPP_EDITOR_PACKAGE)
+            .put("activity", RIFTPP_EDITOR_ACTIVITY)
+            .put("libraryName", RIFTPP_EDITOR_LIBRARY_NAME)
+            .put("libraryFile", RIFTPP_EDITOR_LIBRARY_FILE)
+            .put("hostSource", "self-apk:" + RIFTPP_EDITOR_HOST_APK_ENTRY)
+            .put("hostBytes", host.size)
+            .put("hostSha256", sha256(host))
+            .put("dexSource", "self-apk:classes*.dex")
+            .put("dex", dexReceipt)
+            .put("localSourceAuthority", sourceReceipt)
+            .put("compilerSource", RIFTPP_EDITOR_COMPILER)
+            .put("compilerSha256", sha256(compiler))
+            .put("frontendSource", RIFTPP_EDITOR_FRONTEND)
+            .put("frontendSha256", sha256(frontend))
+            .put("previewSource", RIFTPP_EDITOR_PREVIEW)
+            .put("previewSha256", sha256(preview))
+            .put(
+                "antiContamination",
+                JSONObject()
+                    .put("temporaryPlatformShell", "Kotlin/Android Activity")
+                    .put("compilerAuthority", "frozen Rift++ S3 ARM32")
+                    .put("frontendAuthority", "Rift++ frontend record source")
+                    .put("previewAuthority", "Rift++ preview runtime record source")
+                    .put("kotlinParsesRiftpp", false)
+                    .put("kotlinEmitsRpa1", false)
+                    .put("kotlinInterpretsRpa1", false)
+                    .put("replacementTarget", "native Rift++ editor shell")
+                    .put("remoteBuildRequired", false)
+            )
+            .put("manifestReady", true)
+            .put("dexReady", true)
+            .put("signed", false)
+            .put("installableClaimed", false)
+            .put("createdAt", System.currentTimeMillis())
+
+        atomicWrite(
+            File(buildRoot, "riftpp-editor-materialization.json"),
+            result.toString(2).toByteArray(Charsets.UTF_8)
+        )
+        writeRun(result)
+        return result
+    }
+
 
     @Synchronized
     fun prepareCodynexEditor(
@@ -4873,6 +5154,81 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         }
         return index
     }
+
+    private fun buildRiftppEditorBinaryManifest(): ByteArray {
+        val body = ByteArrayOutputStream()
+        body.write(buildEditorManifestStringPool())
+        body.write(buildManifestResourceMap())
+        body.write(buildEditorManifestNamespace(XML_START_NAMESPACE_TYPE))
+
+        body.write(buildEditorManifestStartElement(
+            "manifest",
+            listOf(
+                editorManifestStringAttr(
+                    "package",
+                    RIFTPP_EDITOR_PACKAGE,
+                    XML_NO_INDEX
+                ),
+                editorManifestIntAttr("versionCode", "1", 1),
+                editorManifestStringAttr(
+                    "versionName",
+                    RIFTPP_EDITOR_VERSION_NAME
+                )
+            )
+        ))
+        body.write(buildEditorManifestStartElement(
+            "uses-sdk",
+            listOf(
+                editorManifestIntAttr("minSdkVersion", "26", 26),
+                editorManifestIntAttr("targetSdkVersion", "36", 36)
+            )
+        ))
+        body.write(buildEditorManifestEndElement("uses-sdk"))
+        body.write(buildEditorManifestStartElement(
+            "application",
+            listOf(editorManifestBoolAttr("hasCode", "true", true))
+        ))
+        body.write(buildEditorManifestStartElement(
+            "activity",
+            listOf(
+                editorManifestStringAttr("name", RIFTPP_EDITOR_ACTIVITY),
+                editorManifestBoolAttr("exported", "true", true)
+            )
+        ))
+        body.write(buildEditorManifestStartElement("intent-filter", emptyList()))
+        body.write(buildEditorManifestStartElement(
+            "action",
+            listOf(
+                editorManifestStringAttr(
+                    "name",
+                    "android.intent.action.MAIN"
+                )
+            )
+        ))
+        body.write(buildEditorManifestEndElement("action"))
+        body.write(buildEditorManifestStartElement(
+            "category",
+            listOf(
+                editorManifestStringAttr(
+                    "name",
+                    "android.intent.category.LAUNCHER"
+                )
+            )
+        ))
+        body.write(buildEditorManifestEndElement("category"))
+        body.write(buildEditorManifestEndElement("intent-filter"))
+        body.write(buildEditorManifestEndElement("activity"))
+        body.write(buildEditorManifestEndElement("application"))
+        body.write(buildEditorManifestEndElement("manifest"))
+        body.write(buildEditorManifestNamespace(XML_END_NAMESPACE_TYPE))
+
+        val bodyBytes = body.toByteArray()
+        val output = ByteArrayOutputStream()
+        writeManifestChunkHeader(output, XML_TYPE, 8, 8 + bodyBytes.size)
+        output.write(bodyBytes)
+        return output.toByteArray()
+    }
+
 
     private fun buildRiftppV0BinaryManifest(): ByteArray {
         val body = ByteArrayOutputStream()

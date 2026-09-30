@@ -104,6 +104,7 @@ riftbuild prepare-native-app <project>
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>
 riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>
+riftbuild prepare-riftpp-editor <riftpp-root>
 riftbuild prepare-codynex-mc0 <codynex-root>
 riftbuild prepare-codynex-mc1a <codynex-root>
 riftbuild prepare-codynex-mc1b <codynex-root>
@@ -312,6 +313,35 @@ Both native libraries are compiled from the same `riftpp_app0_host.cpp` runtime 
 App0 remains restricted to package `com.riftpp.hello`, `target=universal`, and `presentation=text` while the proof installer remains allowlisted.
 
 Promotion requires rebuilt RiftOS containing both hosts, followed by `prepare-riftpp-app0 -> pack universal -> sign -> verify -> install-proof -> launch-proof`. The universal APK must contain both ABI libraries and the ARM64 device must display exactly `Hello from Rift++`. ARM32 source/build conformance remains mandatory, with hardware proof added when an ARM32 target is available.
+
+## Rift++ temporary Kotlin editor bootstrap packaging lane
+
+Status: **SOURCE IMPLEMENTED — REBUILT-RIFTOS DEVICE PROOF PENDING**
+
+Command: `riftbuild prepare-riftpp-editor <riftpp-root>`.
+
+This is a deliberately temporary Android/Kotlin packaging lane used only to prove the
+standalone Rift++ editor loop without repeating NativeActivity lifecycle/framebuffer
+work. The canonical source remains under
+`rift++/standalone/editor/android/`; RiftOS carries SHA-bound mirrored Kotlin/JNI
+payload only so those classes and the tiny execution bridge exist in its compiled DEX/APK
+for local extraction.
+
+Preparation must:
+
+- verify exact hashes for the local Rift++ Kotlin shell, JNI bridge and Android project metadata;
+- verify the frozen S3 ARM32 compiler plus the Rift++ frontend and preview record sources;
+- require package `com.riftpp.editor` and launch activity `com.riftpp.editor.MainActivity`;
+- extract `classes*.dex` and `libriftpp_editor_bridge.so` from the rebuilt installed RiftOS APK;
+- materialize only the ARM32 proof assets under `assets/riftpp/`;
+- emit a code-bearing binary Android manifest;
+- re-hash every materialized authority artifact;
+- feed the normal local `pack -> sign -> verify -> install-proof` chain;
+- never let Kotlin parse `.riftpp`, emit RPA1, interpret RPA1, or become compiler/runtime authority.
+
+After boot + edit/save/load + compile + preview are proven, this Kotlin shell is replaced
+by a native Rift++ app-specific editor/runtime slice. The Kotlin bootstrap is not
+promotable S4 architecture.
 
 ## Codynex C0 .cx editor local packaging lane
 

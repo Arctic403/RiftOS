@@ -332,6 +332,23 @@ assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-rtti/);
 
 const riftppApp0Host = read('android/app/src/main/cpp/riftpp/riftpp_app0_host.cpp');
 assert.match(nativeBuild, /prepare-riftpp-app0/);
+assert.match(nativeBuild, /prepare-riftpp-editor/);
+assert.match(nativeBuild, /fun prepareRiftppEditor/);
+assert.match(nativeBuild, /RIFTPP_EDITOR_PACKAGE = "com\.riftpp\.editor"/);
+assert.match(nativeBuild, /RIFTPP_EDITOR_LIBRARY_NAME = "riftpp_editor_bridge"/);
+assert.match(nativeBuild, /temporaryPlatformShell", "Kotlin\/Android Activity"/);
+assert.match(nativeBuild, /replacementTarget", "native Rift\+\+ editor shell"/);
+assert.match(cmake, /riftpp_editor_bridge[\s\S]*?-fno-exceptions/);
+assert.match(cmake, /riftpp_editor_bridge[\s\S]*?-fno-rtti/);
+assert.match(gradle, /verifyRiftppEditorPayload/);
+assert.ok(
+    gradle.includes('src/main/cpp/editor/riftpp_editor_bridge.cpp'),
+    'RiftOS exact native source snapshot omitted Rift++ editor bridge'
+);
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/editor/MainActivity.kt'),
+    'Rift++ editor payload hash gate omitted MainActivity'
+);
 assert.match(nativeBuild, /RIFTPP_APP0_COMPILER_HEX_BYTES = 9576/);
 assert.match(nativeBuild, /RIFTPP_APP0_COMPILER_BYTES = 4788/);
 assert.match(nativeBuild, /RIFTPP_APP0_TARGET_PACKAGE/);
@@ -582,7 +599,7 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|compile-native\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|prepare-codynex-app\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|compile-native\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-riftpp-editor\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|prepare-codynex-app\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);

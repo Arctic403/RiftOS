@@ -139,6 +139,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/cpp/riftpp/riftpp_compiler_host.cpp",
         "src/main/cpp/riftpp/riftpp_seed0_arm64_proof.cpp",
         "src/main/cpp/editor/editor_vm_bridge.cpp",
+        "src/main/cpp/editor/riftpp_editor_bridge.cpp",
         "src/main/cpp/riftcli/rift_cli_core.cpp",
         "src/main/cpp/riftcli/rift_cli_core.h",
         "src/main/cpp/riftcli/rift_cli_jni.cpp"
@@ -312,6 +313,52 @@ val verifyCodynexEditorPayload by tasks.registering {
     }
 }
 
+val verifyRiftppEditorPayload by tasks.registering {
+    val expected = linkedMapOf(
+        "src/main/java/com/riftpp/editor/MainActivity.kt" to
+            "1cb5a4648a1b29a1dd51db561814ef78a774b10b521b377737b5571a76a13061",
+        "src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
+            "d324b73a2bc582b732182d2107e50e608159cc322ea923454f66179c321f5de4",
+        "src/main/java/com/riftpp/editor/RiftppNativeBridge.kt" to
+            "d4150a6c675ba7df474a3bd52f696d55d851024816c27e98bc2a8788b3bea31d",
+        "src/main/java/com/riftpp/editor/HexAssets.kt" to
+            "bbef1a081be1f40eb3a1ae74d39e0719aa72d17ab77e95f96846c6b020f42fcc",
+        "src/main/cpp/editor/riftpp_editor_bridge.cpp" to
+            "ff1bd4279c56422cfe5fe355c4ada18ba0eae6babb8afa79fd7abc753b51e778"
+    )
+
+    doLast {
+        fun sha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (read > 0) digest.update(buffer, 0, read)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        expected.forEach { (path, expectedSha) ->
+            val source = file(path)
+            if (!source.isFile) {
+                throw GradleException(
+                    "Rift++ editor bootstrap payload source is missing: $path"
+                )
+            }
+            val actualSha = sha256(source)
+            if (actualSha != expectedSha) {
+                throw GradleException(
+                    "Rift++ editor bootstrap payload drift: " +
+                        "$path expected $expectedSha got $actualSha"
+                )
+            }
+        }
+    }
+}
+
 val syncRiftOsWebAssets by tasks.registering(Sync::class) {
     from(rootProject.projectDir.parentFile) {
         include("src/riftpp-core.js")
@@ -387,6 +434,7 @@ tasks.named("preBuild").configure {
     dependsOn(verifyRiftOsAndroidSources)
     dependsOn(validateCodynexCompilerTransition)
     dependsOn(verifyCodynexEditorPayload)
+    dependsOn(verifyRiftppEditorPayload)
     dependsOn(validateRiftBrowserWebViewOwnership)
     dependsOn(syncRiftOsWebAssets)
 }

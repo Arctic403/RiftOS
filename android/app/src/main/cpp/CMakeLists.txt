@@ -280,3 +280,22 @@ target_compile_options(
     -fno-exceptions
     -fno-rtti
 )
+
+add_library(
+    riftpp_editor_bridge
+    SHARED
+    editor/riftpp_editor_bridge.cpp
+)
+
+target_compile_features(riftpp_editor_bridge PRIVATE cxx_std_17)
+
+target_compile_options(
+    riftpp_editor_bridge
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -fno-exceptions
+    -fno-rtti
+)
