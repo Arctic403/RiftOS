@@ -39,6 +39,7 @@ class RiftppCompilerService : Service() {
         internal const val TRANSACTION_S2_SELF_HOST = IBinder.FIRST_CALL_TRANSACTION + 6
         internal const val TRANSACTION_S3_SELF_HOST = IBinder.FIRST_CALL_TRANSACTION + 7
         internal const val TRANSACTION_S3_EMIT = IBinder.FIRST_CALL_TRANSACTION + 8
+        internal const val TRANSACTION_S3_FRAME_LINK = IBinder.FIRST_CALL_TRANSACTION + 9
 
         private const val COMPILER_BYTES = 276
         private const val STAGE1_ARM64_SOURCE_BYTES = 2342
@@ -313,6 +314,20 @@ class RiftppCompilerService : Service() {
                         s3Compiler,
                         entrySource,
                         emitterSource
+                    )
+                    reply?.writeNoException()
+                    reply?.writeBundle(result)
+                    true
+                }
+                TRANSACTION_S3_FRAME_LINK -> {
+                    data.enforceInterface(DESCRIPTOR)
+                    val s3Compiler = data.createByteArray()
+                    val linkerSource = data.createByteArray()
+                    val baseElf = data.createByteArray()
+                    val result = executeS3FrameLink(
+                        s3Compiler,
+                        linkerSource,
+                        baseElf
                     )
                     reply?.writeNoException()
                     reply?.writeBundle(result)
@@ -1496,6 +1511,260 @@ class RiftppCompilerService : Service() {
     }
 
 
+    private fun executeS3FrameLink(
+        s3Compiler: ByteArray?,
+        linkerSource: ByteArray?,
+        baseElf: ByteArray?
+    ): Bundle {
+        val hostAbi =
+            if (Process.is64Bit()) {
+                "arm64-v8a"
+            } else {
+                "armeabi-v7a"
+            }
+
+        if (Process.is64Bit()) {
+            return rejected(
+                hostAbi,
+                "s3-frame-r3-arm32-host-required"
+            )
+        }
+
+        val compilerBytes =
+            s3Compiler
+                ?: return rejected(
+                    hostAbi,
+                    "s3-frame-compiler-missing"
+                )
+        val linkerBytes =
+            linkerSource
+                ?: return rejected(
+                    hostAbi,
+                    "s3-frame-linker-source-missing"
+                )
+        val baseBytes =
+            baseElf
+                ?: return rejected(
+                    hostAbi,
+                    "s3-frame-base-elf-missing"
+                )
+
+        if (compilerBytes.size != S3_SELF_HOST_IMAGE_BYTES) {
+            return rejected(
+                hostAbi,
+                "s3-frame-compiler-size"
+            )
+        }
+
+        val compilerSha =
+            sha256(compilerBytes)
+
+        if (compilerSha != S3_GENERATION_C_ARM32_SHA256) {
+            return rejected(
+                hostAbi,
+                "s3-frame-compiler-identity",
+                compilerSha
+            )
+        }
+
+        if (linkerBytes.size != 1968) {
+            return rejected(
+                hostAbi,
+                "s3-frame-linker-source-size",
+                compilerSha
+            )
+        }
+
+        val baseSha =
+            sha256(baseBytes)
+
+        if (
+            baseBytes.size != 972 ||
+            baseSha !=
+                "d9669d97c6f0f0225b8624818dc9f2f0dad4611ded757ac48dfea1b9cba06d46"
+        ) {
+            return rejected(
+                hostAbi,
+                "s3-frame-base-elf-identity",
+                compilerSha,
+                baseSha
+            )
+        }
+
+        nativeLoadFailure?.let {
+            return rejected(
+                hostAbi,
+                "s3-frame-native-library",
+                compilerSha,
+                it.message
+            )
+        }
+
+        fun run(
+            compiler: ByteArray,
+            source: ByteArray,
+            output: ByteArray,
+            expectedBytes: Int,
+            stage: String
+        ): String? {
+            val nativeResult =
+                try {
+                    nativeCompile(
+                        compiler,
+                        source,
+                        output,
+                        false
+                    )
+                } catch (
+                    failure: Throwable
+                ) {
+                    return "$stage-native-call:" +
+                        (
+                            failure.message
+                                ?: failure.javaClass
+                                    .simpleName
+                            )
+                }
+
+            if (nativeResult.size != 4) {
+                return "$stage-native-envelope"
+            }
+
+            val hostStatus =
+                nativeResult[0].toInt()
+            val returnValue =
+                nativeResult[1] and
+                    0xffff_ffffL
+
+            if (hostStatus != 0) {
+                return "$stage-native-$hostStatus"
+            }
+
+            if (
+                returnValue !=
+                    expectedBytes.toLong()
+            ) {
+                return "$stage-result-$returnValue"
+            }
+
+            return null
+        }
+
+        val linkerOutput =
+            ByteArray(3952)
+
+        run(
+            compilerBytes,
+            linkerBytes,
+            linkerOutput,
+            3952,
+            "frame-linker"
+        )?.let {
+            return rejected(
+                hostAbi,
+                "s3-frame-$it",
+                compilerSha
+            )
+        }
+
+        val elfOutput =
+            ByteArray(1196)
+
+        run(
+            linkerOutput,
+            baseBytes,
+            elfOutput,
+            1196,
+            "frame-elf"
+        )?.let {
+            return rejected(
+                hostAbi,
+                "s3-frame-$it",
+                compilerSha
+            )
+        }
+
+        return Bundle().apply {
+            putString(
+                "status",
+                "success"
+            )
+            putString(
+                "schema",
+                "rift.riftpp-s3-android-r3/1"
+            )
+            putString(
+                "hostAbi",
+                hostAbi
+            )
+            putInt(
+                "pid",
+                Process.myPid()
+            )
+            putString(
+                "compilerSha256",
+                compilerSha
+            )
+            putInt(
+                "compilerBytes",
+                compilerBytes.size
+            )
+            putString(
+                "linkerSourceSha256",
+                sha256(linkerBytes)
+            )
+            putInt(
+                "linkerSourceBytes",
+                linkerBytes.size
+            )
+            putString(
+                "baseElfSha256",
+                baseSha
+            )
+            putInt(
+                "baseElfBytes",
+                baseBytes.size
+            )
+            putString(
+                "linkerOutputSha256",
+                sha256(linkerOutput)
+            )
+            putInt(
+                "linkerOutputBytes",
+                linkerOutput.size
+            )
+            putString(
+                "elfSha256",
+                sha256(elfOutput)
+            )
+            putInt(
+                "elfBytes",
+                elfOutput.size
+            )
+            putByteArray(
+                "elf",
+                elfOutput
+            )
+            putBoolean(
+                "hostParsesS3Opcodes",
+                false
+            )
+            putBoolean(
+                "hostEmitsS3Instructions",
+                false
+            )
+            putBoolean(
+                "hostParsesElf",
+                false
+            )
+            putBoolean(
+                "hostEmitsElf",
+                false
+            )
+        }
+    }
+
+
     private fun rejected(
         hostAbi: String,
         reason: String,
@@ -1980,6 +2249,201 @@ internal object RiftppCompilerClient {
     }
 
 
+    fun executeS3FrameLink(
+        context: Context,
+        s3Compiler: ByteArray,
+        linkerSource: ByteArray,
+        baseElf: ByteArray
+    ): JSONObject {
+        val appContext =
+            context.applicationContext
+        val binderReady =
+            CompletableFuture<IBinder>()
+
+        val connection =
+            object : ServiceConnection {
+                override fun onServiceConnected(
+                    name: ComponentName?,
+                    service: IBinder?
+                ) {
+                    if (service == null) {
+                        binderReady.completeExceptionally(
+                            RemoteException(
+                                "null compiler binder"
+                            )
+                        )
+                    } else {
+                        binderReady.complete(service)
+                    }
+                }
+
+                override fun onServiceDisconnected(
+                    name: ComponentName?
+                ) {
+                    if (!binderReady.isDone) {
+                        binderReady.completeExceptionally(
+                            DeadObjectException()
+                        )
+                    }
+                }
+
+                override fun onBindingDied(
+                    name: ComponentName?
+                ) {
+                    if (!binderReady.isDone) {
+                        binderReady.completeExceptionally(
+                            DeadObjectException()
+                        )
+                    }
+                }
+
+                override fun onNullBinding(
+                    name: ComponentName?
+                ) {
+                    if (!binderReady.isDone) {
+                        binderReady.completeExceptionally(
+                            RemoteException(
+                                "null compiler binding"
+                            )
+                        )
+                    }
+                }
+            }
+
+        val intent =
+            Intent(
+                appContext,
+                RiftppCompilerService::class.java
+            )
+
+        if (
+            !appContext.bindService(
+                intent,
+                connection,
+                Context.BIND_AUTO_CREATE
+            )
+        ) {
+            return failure(
+                "host-reject",
+                "s3-frame-bind-failed"
+            )
+        }
+
+        val executor =
+            Executors.newSingleThreadExecutor()
+        var workerPid = -1
+
+        try {
+            val binder =
+                binderReady.get(
+                    BIND_TIMEOUT_MS,
+                    TimeUnit.MILLISECONDS
+                )
+            workerPid =
+                queryPid(binder)
+
+            val future =
+                executor.submit<Bundle> {
+                    transactS3FrameLink(
+                        binder,
+                        s3Compiler,
+                        linkerSource,
+                        baseElf
+                    )
+                }
+
+            val bundle =
+                try {
+                    future.get(
+                        STAGE1_EXECUTION_TIMEOUT_MS,
+                        TimeUnit.MILLISECONDS
+                    )
+                } catch (
+                    timeout: TimeoutException
+                ) {
+                    if (workerPid > 0) {
+                        Process.killProcess(
+                            workerPid
+                        )
+                    }
+                    return failure(
+                        "timeout",
+                        "s3-frame-timeout",
+                        workerPid
+                    )
+                } catch (
+                    failure: ExecutionException
+                ) {
+                    val cause =
+                        failure.cause
+
+                    return if (
+                        cause is DeadObjectException ||
+                        cause is RemoteException
+                    ) {
+                        failure(
+                            "crash",
+                            "s3-frame-process-died",
+                            workerPid
+                        )
+                    } else {
+                        failure(
+                            "host-reject",
+                            "s3-frame-binder-execution",
+                            workerPid,
+                            cause?.message
+                        )
+                    }
+                }
+
+            return s3EmitBundleToJson(
+                bundle
+            )
+                .put(
+                    "schema",
+                    "rift.riftpp-s3-android-r3/1"
+                )
+        } catch (
+            timeout: TimeoutException
+        ) {
+            if (workerPid > 0) {
+                Process.killProcess(
+                    workerPid
+                )
+            }
+            return failure(
+                "timeout",
+                "s3-frame-bind-timeout",
+                workerPid
+            )
+        } catch (
+            failure: DeadObjectException
+        ) {
+            return failure(
+                "crash",
+                "s3-frame-process-died",
+                workerPid
+            )
+        } catch (
+            failure: Throwable
+        ) {
+            return failure(
+                "host-reject",
+                "s3-frame-binder-transport",
+                workerPid,
+                failure.message
+            )
+        } finally {
+            runCatching {
+                appContext.unbindService(
+                    connection
+                )
+            }
+            executor.shutdownNow()
+        }
+    }
+
+
     fun executeS3SelfHost(
         context: Context,
         s2Compiler: ByteArray,
@@ -2313,6 +2777,61 @@ internal object RiftppCompilerClient {
             )
                 ?: throw RemoteException(
                     "S3 emit result bundle missing"
+                )
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+
+    private fun transactS3FrameLink(
+        binder: IBinder,
+        s3Compiler: ByteArray,
+        linkerSource: ByteArray,
+        baseElf: ByteArray
+    ): Bundle {
+        val data =
+            Parcel.obtain()
+        val reply =
+            Parcel.obtain()
+
+        return try {
+            data.writeInterfaceToken(
+                RiftppCompilerService.DESCRIPTOR
+            )
+            data.writeByteArray(
+                s3Compiler
+            )
+            data.writeByteArray(
+                linkerSource
+            )
+            data.writeByteArray(
+                baseElf
+            )
+
+            if (
+                !binder.transact(
+                    RiftppCompilerService
+                        .TRANSACTION_S3_FRAME_LINK,
+                    data,
+                    reply,
+                    0
+                )
+            ) {
+                throw RemoteException(
+                    "S3 frame-link transaction rejected"
+                )
+            }
+
+            reply.readException()
+
+            reply.readBundle(
+                RiftppCompilerService::class
+                    .java.classLoader
+            )
+                ?: throw RemoteException(
+                    "S3 frame-link result bundle missing"
                 )
         } finally {
             reply.recycle()
@@ -2845,6 +3364,48 @@ internal object RiftppCompilerClient {
                     "emitterOutputSha256"
                 )
                     ?: JSONObject.NULL
+            )
+            .put(
+                "linkerSourceSha256",
+                bundle.getString(
+                    "linkerSourceSha256"
+                )
+                    ?: JSONObject.NULL
+            )
+            .put(
+                "linkerSourceBytes",
+                bundle.getInt(
+                    "linkerSourceBytes",
+                    0
+                )
+            )
+            .put(
+                "baseElfSha256",
+                bundle.getString(
+                    "baseElfSha256"
+                )
+                    ?: JSONObject.NULL
+            )
+            .put(
+                "baseElfBytes",
+                bundle.getInt(
+                    "baseElfBytes",
+                    0
+                )
+            )
+            .put(
+                "linkerOutputSha256",
+                bundle.getString(
+                    "linkerOutputSha256"
+                )
+                    ?: JSONObject.NULL
+            )
+            .put(
+                "linkerOutputBytes",
+                bundle.getInt(
+                    "linkerOutputBytes",
+                    0
+                )
             )
             .put(
                 "elfSha256",

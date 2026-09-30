@@ -56,6 +56,11 @@ for (const required of [
   'hostEmitsS3Instructions',
   'hostParsesElf',
   'hostEmitsElf',
+  'TRANSACTION_S3_FRAME_LINK',
+  'fun executeS3FrameLink(',
+  's3-frame-base-elf-identity',
+  'ByteArray(3952)',
+  'ByteArray(1196)',
 ]) {
   assert.ok(
     riftppCompilerService.includes(required),
@@ -86,6 +91,13 @@ for (const required of [
   '3621L',
   '972L',
   'libriftpp_editor_native_r1.so',
+  'riftpp-host s3-android-r3 <riftpp-root>',
+  'standalone/android-native-r1/elf32-r3-frame-linker.arm32.r3.hex',
+  'fea11e16ab4a3bbcb5c4bf611c627973d843451c435e7b84ccac33f532cc96ef',
+  'd9669d97c6f0f0225b8624818dc9f2f0dad4611ded757ac48dfea1b9cba06d46',
+  '4182L',
+  '1196L',
+  'libriftpp_editor_native_r3.so',
 ]) {
   assert.ok(
     shell.includes(required),

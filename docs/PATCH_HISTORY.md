@@ -16,6 +16,16 @@ This does not modify frozen S3, VM1, any opcode, compiler ABI, target code seman
 
 Lifecycle is **SOURCE STAGED / BUILDER VERIFICATION PENDING**.
 
+## Patch 10.57 — Rift++ Android R2 promotion and R3 first-frame linker
+
+RiftOS run 484 / source `7e6f83738d4d8b343cb6378edbb5c7d32a0cf6ef` installed version `0.4.0-riftpp-r2-window` and promoted the NativeActivity window-callback gate. Android reported `INSTALL_SUCCEEDED`, launched `com.riftpp.editor.nativev1`, and the cooperative diagnostic bridge received two valid stage-6 `window-callback` packets from target PID 27663. Both packets carried non-zero `ANativeActivity*` and `ANativeWindow*` values, proving that the Rift++-written callback-table entry was invoked by Android and that a real native window reached Rift++ code. The exact R2 source is retained as `entry.r2-window-callback-proven.arm32.r3.hex`.
+
+R3 does not enlarge or rewrite the promoted R1/R2 transaction. Instead it adds a second Rift++-owned stage over the exact 972-byte R2 ELF SHA-256 `d9669d97c6f0f0225b8624818dc9f2f0dad4611ded757ac48dfea1b9cba06d46`. New source `elf32-r3-frame-linker.arm32.r3.hex` has 245 body records / 1,968 decoded source bytes and transport SHA-256 `fea11e16ab4a3bbcb5c4bf611c627973d843451c435e7b84ccac33f532cc96ef`. Frozen S3 is expected to compile it to 3,952 bytes, well within the generic 64 KiB source/output host bounds. Its semantic oracle deterministically returns a 1,196-byte ELF.
+
+The R3 ELF keeps executable code in RX memory and adds a separate RW mapping rather than a W+E segment. It extends dynamic metadata with `DT_NEEDED libandroid.so`, imports exactly `ANativeWindow_setBuffersGeometry`, `ANativeWindow_lock`, and `ANativeWindow_unlockAndPost`, and binds them through three ARM `R_ARM_GLOB_DAT` relocations into a writable GOT. The callback renderer is 152 ARM32 bytes: it requests RGBA8888, locks the real `ANativeWindow`, fills the complete stride × height buffer with a fixed orange pixel value, then unlocks/posts the frame. No Java/Kotlin/C/C++ target code, Clang target build step, or RiftOS UI semantics are introduced.
+
+RiftOS adds a separate `TRANSACTION_S3_FRAME_LINK` and `riftpp-host s3-android-r3 <riftpp-root>` path. The host only verifies fixed identities/sizes, executes the frozen S3 compiler and generated linker, transports bytes, and publishes `libriftpp_editor_native_r3.so`; all S3/ARM/ELF/UI semantics remain Rift++ owned. The version-5 wrapper is `0.5.0-riftpp-r3-frame`. Lifecycle is **R2 WINDOW CALLBACK PROMOTED / R3 SOURCE STAGED / BUILDER + INSTALLED VISUAL FRAME PROOF PENDING**.
+
 ## Patch 10.55 — Rift++ Android R1 device promotion and R2 NativeActivity window-callback gate
 
 RiftOS run 483 / source `cc990d77fa20c42c8c2a0b2218209f5798e81cfd` cleared the corrected 1,704-byte decoded emitter-source admission gate and completed the full frozen-S3 Android R1 transaction on the real `armeabi-v7a` device. The exact chain produced a 1,968-byte entry emitter, a 228-byte ARM32 entry body, a 3,424-byte ELF emitter and a 972-byte Bionic-valid ELF32 ARM ET_DYN object with SHA-256 `72d26ffad51b5f48643460aab0447139b458a599daad291aef1965a5dcc5178f`. All host-ownership booleans remained false: RiftOS did not parse S3 opcodes, emit S3/ARM instructions, parse ELF or emit ELF.
