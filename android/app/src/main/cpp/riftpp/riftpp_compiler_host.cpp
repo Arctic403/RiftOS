@@ -534,28 +534,30 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     }
 
     GuardedSpan compilerRegion;
-    GuardedPage sourceRegion;
-    GuardedPage outputRegion;
+    GuardedSpan sourceRegion;
+    GuardedSpan outputRegion;
+    const size_t sourceRequiredBytes =
+        sourceLength > 0 ? static_cast<size_t>(sourceLength) : 1U;
     if (!allocateGuardedSpan(static_cast<size_t>(compilerLength), &compilerRegion)) {
         return resultArray(env, -93, 0U);
     }
-    if (!allocateGuarded(&sourceRegion)) {
+    if (!allocateGuardedSpan(sourceRequiredBytes, &sourceRegion)) {
         releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -94, 0U);
     }
-    if (!allocateGuarded(&outputRegion)) {
-        releaseGuarded(&sourceRegion);
+    if (!allocateGuardedSpan(static_cast<size_t>(outputLength), &outputRegion)) {
+        releaseGuardedSpan(&sourceRegion);
         releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -95, 0U);
     }
 
     if (
         compilerRegion.mappedSize < static_cast<size_t>(compilerLength) ||
-        sourceRegion.pageSize < static_cast<size_t>(sourceLength) ||
-        outputRegion.pageSize < static_cast<size_t>(outputLength)
+        sourceRegion.mappedSize < sourceRequiredBytes ||
+        outputRegion.mappedSize < static_cast<size_t>(outputLength)
     ) {
-        releaseGuarded(&outputRegion);
-        releaseGuarded(&sourceRegion);
+        releaseGuardedSpan(&outputRegion);
+        releaseGuardedSpan(&sourceRegion);
         releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -96, 0U);
     }
@@ -563,9 +565,10 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     uint8_t* compilerBytes =
         compilerRegion.data + compilerRegion.mappedSize - static_cast<size_t>(compilerLength);
     uint8_t* sourceBytes =
-        sourceRegion.page + sourceRegion.pageSize - static_cast<size_t>(sourceLength);
+        sourceRegion.data + sourceRegion.mappedSize -
+            (sourceLength > 0 ? static_cast<size_t>(sourceLength) : 1U);
     uint8_t* outputBytes =
-        outputRegion.page + outputRegion.pageSize - static_cast<size_t>(outputLength);
+        outputRegion.data + outputRegion.mappedSize - static_cast<size_t>(outputLength);
 
     env->GetByteArrayRegion(
         compilerArray,
@@ -583,13 +586,13 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     }
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
-        releaseGuarded(&outputRegion);
-        releaseGuarded(&sourceRegion);
+        releaseGuardedSpan(&outputRegion);
+        releaseGuardedSpan(&sourceRegion);
         releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -97, 0U);
     }
 
-    memset(outputRegion.page, kCanary, outputRegion.pageSize);
+    memset(outputRegion.data, kCanary, outputRegion.mappedSize);
 
     if (
         mprotect(
@@ -597,10 +600,10 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
             compilerRegion.mappedSize,
             PROT_READ | PROT_EXEC
         ) != 0 ||
-        mprotect(sourceRegion.page, sourceRegion.pageSize, PROT_READ) != 0
+        mprotect(sourceRegion.data, sourceRegion.mappedSize, PROT_READ) != 0
     ) {
-        releaseGuarded(&outputRegion);
-        releaseGuarded(&sourceRegion);
+        releaseGuardedSpan(&outputRegion);
+        releaseGuardedSpan(&sourceRegion);
         releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -98, 0U);
     }
@@ -621,11 +624,11 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     uint32_t generatedPayloadReturnValue = 0U;
 
     const size_t prefixLength =
-        outputRegion.pageSize - static_cast<size_t>(outputLength);
+        outputRegion.mappedSize - static_cast<size_t>(outputLength);
     for (size_t i = 0; i < prefixLength; ++i) {
-        if (outputRegion.page[i] != kCanary) {
-            releaseGuarded(&outputRegion);
-            releaseGuarded(&sourceRegion);
+        if (outputRegion.data[i] != kCanary) {
+            releaseGuardedSpan(&outputRegion);
+            releaseGuardedSpan(&sourceRegion);
             releaseGuardedSpan(&compilerRegion);
             return resultArray(env, -99, compilerResult);
         }
@@ -635,8 +638,8 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
         compilerResult != 0xffffffffU &&
         compilerResult > static_cast<uint32_t>(outputLength)
     ) {
-        releaseGuarded(&outputRegion);
-        releaseGuarded(&sourceRegion);
+        releaseGuardedSpan(&outputRegion);
+        releaseGuardedSpan(&sourceRegion);
         releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -100, compilerResult);
     }
@@ -685,15 +688,15 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
         );
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
-            releaseGuarded(&outputRegion);
-            releaseGuarded(&sourceRegion);
+            releaseGuardedSpan(&outputRegion);
+            releaseGuardedSpan(&sourceRegion);
             releaseGuardedSpan(&compilerRegion);
             return resultArray(env, -101, compilerResult);
         }
     }
 
-    releaseGuarded(&outputRegion);
-    releaseGuarded(&sourceRegion);
+    releaseGuardedSpan(&outputRegion);
+    releaseGuardedSpan(&sourceRegion);
     releaseGuardedSpan(&compilerRegion);
     return resultArray(
         env,

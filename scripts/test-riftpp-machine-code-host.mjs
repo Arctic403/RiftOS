@@ -159,6 +159,12 @@ assert.ok(native.includes('Java_com_riftos_app_RiftppCompilerService_nativeS2Sel
 assert.ok(native.includes('kS2CanonicalCompilerSourceBytes = 11072'));
 assert.ok(native.includes('kS2SelfHostImageBytes = 44288'));
 assert.ok(native.includes('struct GuardedSpan'));
+assert.ok(native.includes('GuardedSpan sourceRegion;'));
+assert.ok(native.includes('GuardedSpan outputRegion;'));
+assert.ok(native.includes('sourceRequiredBytes'));
+assert.ok(native.includes('allocateGuardedSpan(sourceRequiredBytes, &sourceRegion)'));
+assert.ok(native.includes('allocateGuardedSpan(static_cast<size_t>(outputLength), &outputRegion)'));
+assert.ok(native.includes('outputRegion.mappedSize - static_cast<size_t>(outputLength)'));
 assert.ok(native.includes('runCompilerLarge('));
 assert.ok(native.includes('memcmp(generationC32, generationD32'));
 assert.ok(native.includes('memcmp(generationC64, generationD64'));
