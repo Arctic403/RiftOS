@@ -873,7 +873,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             require(
                 emitterFile.isFile &&
                     emitterFile.length() ==
-                        2431L
+                        3621L
             ) {
                 "Rift++ Android R1 ELF emitter source is missing or drifted"
             }
@@ -905,7 +905,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 sha256Hex(
                     emitterTransport
                 ) ==
-                    "8048bd51414f07520c6f38410e9f65434c4b45a486a0248d8fee10dbd290360c"
+                    "43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a"
             ) {
                 "Rift++ Android R1 ELF emitter transport identity mismatch"
             }
@@ -976,7 +976,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 val elfBytes =
                     decodeRiftppExactRawHex(
                         elfHex,
-                        644
+                        972
                     )
 
                 require(
@@ -998,7 +998,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 require(
                     outputFile.isFile &&
                         outputFile.length() ==
-                            644L &&
+                            972L &&
                         sha256Hex(
                             outputFile.readBytes()
                         ) ==

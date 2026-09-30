@@ -47,8 +47,8 @@ for (const required of [
   'elfBytes',
   'ByteArray(1968)',
   'ByteArray(228)',
-  'ByteArray(2304)',
-  'ByteArray(644)',
+  'ByteArray(3424)',
+  'ByteArray(972)',
   'hostParsesS3Opcodes',
   'hostEmitsS3Instructions',
   'hostParsesElf',
@@ -77,7 +77,9 @@ for (const required of [
   'standalone/android-native-r1/elf32-emitter.arm32.r3.hex',
   '950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a',
   '85d92e2f49aa0f058b183d954144ab4f6d2659272bd93f32e3327eaf2607ef51',
-  '8048bd51414f07520c6f38410e9f65434c4b45a486a0248d8fee10dbd290360c',
+  '43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a',
+  '3621L',
+  '972L',
   'libriftpp_editor_native_r1.so',
 ]) {
   assert.ok(
@@ -115,6 +117,12 @@ for (const forbidden of [
     'Rift++ diagnostic bridge must remain transport-only: ' + forbidden
   );
 }
+assert.ok(
+  !riftppCompilerService.includes('ByteArray(2304)') &&
+  !riftppCompilerService.includes('ByteArray(644)'),
+  'Rift++ Android R1 must not regress to the loader-invalid 644-byte ELF contract'
+);
+
 for (const required of [
   'RiftAppDiagnosticBridge.supports(packageName)',
   'RiftAppDiagnosticBridge.beginLaunch',

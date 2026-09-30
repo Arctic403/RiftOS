@@ -1271,7 +1271,7 @@ class RiftppCompilerService : Service() {
         }
 
         if (
-            emitterBytes.size != 1144
+            emitterBytes.size != 1696
         ) {
             return rejected(
                 hostAbi,
@@ -1374,13 +1374,13 @@ class RiftppCompilerService : Service() {
         }
 
         val emitterOutput =
-            ByteArray(2304)
+            ByteArray(3424)
 
         run(
             compilerBytes,
             emitterBytes,
             emitterOutput,
-            2304,
+            3424,
             "elf-emitter"
         )?.let {
             return rejected(
@@ -1391,13 +1391,13 @@ class RiftppCompilerService : Service() {
         }
 
         val elfOutput =
-            ByteArray(644)
+            ByteArray(972)
 
         run(
             emitterOutput,
             entryOutput,
             elfOutput,
-            644,
+            972,
             "elf"
         )?.let {
             return rejected(
