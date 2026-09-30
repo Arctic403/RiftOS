@@ -78,6 +78,14 @@ for (const required of [
   '90dc170d574f9d3b0947cccb013b82f5a2bf0b3c3b65013e0fc5050f4da76f9a',
   'ByteArray(10080)',
   'ByteArray(1880)',
+  'TRANSACTION_S3_GLYPH_RENDER',
+  'fun executeS3GlyphRender(',
+  's3-glyph-base-elf-identity',
+  'patcherBytes.size != 2208',
+  '3510e1dccfe1025f2cfbab7c9723b90b5cf8274c12d0bd6975928d8bd85c5f34',
+  'abf2b0789f72fbc885a5c73eeb10cf6199fb9c5d6b29e4f8024b50b3a9fec610',
+  'ByteArray(4432)',
+  'ByteArray(2368)',
 ]) {
   assert.ok(
     riftppCompilerService.includes(required),
@@ -134,6 +142,16 @@ for (const required of [
   'patcherSource.size == 5032',
   '1880L',
   'libriftpp_editor_native_r41.so',
+  'riftpp-host s3-android-r5 <riftpp-root>',
+  'standalone/android-native-r1/elf32-r5-glyph-patcher.arm32.r3.hex',
+  'standalone/android-native-r1/libriftpp_editor_native_r41.stability-proven.so',
+  'ba8f4978c05c0421591fde9ec406cfff1c03373b67341c35838a32a06af29818',
+  '3510e1dccfe1025f2cfbab7c9723b90b5cf8274c12d0bd6975928d8bd85c5f34',
+  'abf2b0789f72fbc885a5c73eeb10cf6199fb9c5d6b29e4f8024b50b3a9fec610',
+  '4692L',
+  'patcherSource.size == 2208',
+  '2368L',
+  'libriftpp_editor_native_r5.so',
 ]) {
   assert.ok(
     shell.includes(required),

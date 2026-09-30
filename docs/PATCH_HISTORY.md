@@ -6,6 +6,18 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.60 — Rift++ Android R5 fixed-glyph rendering lane
+
+R5 forks from the exact promoted R4.1 interaction-stability ELF rather than modifying the hardened base. The authoritative Rift++ source is `standalone/android-native-r1/elf32-r5-glyph-patcher.arm32.r3.hex`: 275 body records / 2,208 decoded bytes, 4,692-byte fixed-record transport SHA-256 `ba8f4978c05c0421591fde9ec406cfff1c03373b67341c35838a32a06af29818`, decoded-source SHA-256 `3510e1dccfe1025f2cfbab7c9723b90b5cf8274c12d0bd6975928d8bd85c5f34`. An earlier draft transport accidentally omitted the C byte from ordinary S3 records and was rejected by the independent 8-byte-record audit before any RiftOS host wiring; it was overwritten and is not evidence. The corrected source is the only pinned R5 identity.
+
+Frozen S3 is expected to compile the corrected source to a 4,432-byte native patcher. The patcher accepts only the exact 1,880-byte R4.1 stability-proven ELF SHA-256 `abf2b0789f72fbc885a5c73eeb10cf6199fb9c5d6b29e4f8024b50b3a9fec610`, preserves the existing renderer prefix through `0x257` and the entire hardened NativeActivity input/lifecycle code at `0x26c..0x367`, and redirects only the renderer unlock tail at `0x258..0x268` into a 488-byte appended glyph routine. The planned output is 2,368 bytes. It requires no new Android imports, dynsym entries or relocations.
+
+The first proof target is fixed white `RIFT++` text rendered as six 5x7 bitmap glyphs scaled to 6x6 pixel cells inside the already-proven dark editor bar. Width/height guards run before drawing, the orange body and R4.1 input hardening remain intact, and control returns through the existing proven unlock/post path.
+
+RiftOS current source adds a separate `TRANSACTION_S3_GLYPH_RENDER` / `riftpp-host s3-android-r5 <riftpp-root>` lane. Worker and shell hard-pin the frozen S3 compiler, corrected R5 transport/decoded identities, exact R4.1 stability base, 4,432-byte compiled patcher and 2,368-byte target ELF. Existing R3/R4/R4.1 lanes remain unchanged and all host semantic-ownership flags remain false.
+
+Lifecycle is **SOURCE/HOST STAGED / BUILDER GENERATION PENDING / DEVICE VISUAL PROOF PENDING**. R5 is not promoted until frozen S3 generates the exact target, ELF invariants are inspected, a distinct v8 proof APK is installed, and direct on-device evidence shows readable `RIFT++` inside the dark bar.
+
 ## Patch 10.59 — Rift++ Android R4.1 input-queue / ANR hardening lane
 
 An intermittent Android "not responding" closure was observed once during the R3/R4 period and again after R4 first-surface proof. Because the symptom predates the R4 top-bar patch and R4 preserved the inherited NativeActivity lifecycle path, the likely cause was treated as inherited input-queue/lifecycle handling rather than an R4-only renderer regression. The successful R4.1 stress session strongly supports that diagnosis, but the historical exits were never captured directly, so the old root cause remains strongly supported rather than formally proven.
