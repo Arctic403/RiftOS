@@ -1567,7 +1567,7 @@ class RiftppCompilerService : Service() {
             )
         }
 
-        if (linkerBytes.size != 1968) {
+        if (linkerBytes.size != 2088) {
             return rejected(
                 hostAbi,
                 "s3-frame-linker-source-size",
@@ -1651,13 +1651,13 @@ class RiftppCompilerService : Service() {
         }
 
         val linkerOutput =
-            ByteArray(3952)
+            ByteArray(4192)
 
         run(
             compilerBytes,
             linkerBytes,
             linkerOutput,
-            3952,
+            4192,
             "frame-linker"
         )?.let {
             return rejected(

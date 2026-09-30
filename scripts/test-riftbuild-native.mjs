@@ -59,7 +59,8 @@ for (const required of [
   'TRANSACTION_S3_FRAME_LINK',
   'fun executeS3FrameLink(',
   's3-frame-base-elf-identity',
-  'ByteArray(3952)',
+  'linkerBytes.size != 2088',
+  'ByteArray(4192)',
   'ByteArray(1196)',
 ]) {
   assert.ok(
@@ -93,9 +94,9 @@ for (const required of [
   'libriftpp_editor_native_r1.so',
   'riftpp-host s3-android-r3 <riftpp-root>',
   'standalone/android-native-r1/elf32-r3-frame-linker.arm32.r3.hex',
-  'fea11e16ab4a3bbcb5c4bf611c627973d843451c435e7b84ccac33f532cc96ef',
+  '18782a0cb8719b04fcac338667ca99f22e58d0e3c52b5a09d18ea4773c0173b6',
   'd9669d97c6f0f0225b8624818dc9f2f0dad4611ded757ac48dfea1b9cba06d46',
-  '4182L',
+  '4437L',
   '1196L',
   'libriftpp_editor_native_r3.so',
 ]) {

@@ -1123,7 +1123,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             require(
                 linkerFile.isFile &&
                     linkerFile.length() ==
-                        4182L
+                        4437L
             ) {
                 "Rift++ Android R3 frame-linker source is missing or drifted"
             }
@@ -1165,7 +1165,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 sha256Hex(
                     linkerTransport
                 ) ==
-                    "fea11e16ab4a3bbcb5c4bf611c627973d843451c435e7b84ccac33f532cc96ef"
+                    "18782a0cb8719b04fcac338667ca99f22e58d0e3c52b5a09d18ea4773c0173b6"
             ) {
                 "Rift++ Android R3 frame-linker transport identity mismatch"
             }
