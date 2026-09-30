@@ -284,7 +284,7 @@ class RiftppApkV2Signer(context: Context) {
                 .setKeySize(KEY_SIZE)
                 .setDigests(KeyProperties.DIGEST_SHA256)
                 .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-                .setCertificateSubject(X500Principal("CN=Rift++ Local APK V2"))
+                .setCertificateSubject(X500Principal("CN=RiftPP Local APK V2"))
                 .setCertificateSerialNumber(BigInteger.ONE)
                 .setCertificateNotBefore(Date(now - 24L * 60L * 60L * 1000L))
                 .setCertificateNotAfter(Date(now + 25L * 365L * 24L * 60L * 60L * 1000L))

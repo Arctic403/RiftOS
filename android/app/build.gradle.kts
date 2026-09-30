@@ -328,7 +328,7 @@ val verifyRiftppEditorPayload by tasks.registering {
         "src/main/java/com/riftpp/editor/RiftppApkBuilder.kt" to
             "e4e91df162d7d5e78054d6771f052ca54f27998d956e520b286e6d11d948b343",
         "src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt" to
-            "147fece68c500b2387f8eef3f5883a4b15196ae4dc0e7e67943bda273f70df60",
+            "ad403db6f4635816e32fbf02370ddea4e52facd9b3be0782f56e71ae8646ea9a",
         "src/main/java/com/riftpp/apphost/RiftppAppActivity.kt" to
             "48fe3ec0405eb90176dc11473315ac00e48a875b1df278679bfc3b32c4a7f556",
         "src/main/cpp/editor/riftpp_editor_bridge.cpp" to

@@ -234,9 +234,9 @@ class RiftBuildLocalExecutor(context: Context) {
             "950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a"
         private const val RIFTPP_EDITOR_FRONTEND =
             "standalone/frontend/frontend.app2.arm32.r4.hex"
-        private const val RIFTPP_EDITOR_FRONTEND_BYTES = 5304
+        private const val RIFTPP_EDITOR_FRONTEND_BYTES = 13277
         private const val RIFTPP_EDITOR_FRONTEND_SHA256 =
-            "c55cb503924c1f3c5abbbfa32bf4026e0760fc614162ae2322f122bf9f0264c9"
+            "d6b50a4cd6b17c9316e4347392994597e0d931dc1f9abaca5073b6910bd9a45c"
         private const val RIFTPP_EDITOR_RUNTIME =
             "standalone/runtime/runtime.app2.arm32.r4.hex"
         private const val RIFTPP_EDITOR_RUNTIME_BYTES = 4131
@@ -244,9 +244,9 @@ class RiftBuildLocalExecutor(context: Context) {
             "11ee093a1082a90fed184a454056e08958e10a422a3f81ce1fc0ca89b3c680c0"
         private const val RIFTPP_EDITOR_SAMPLE_SOURCE =
             "standalone/app/examples/notepad/main.riftpp"
-        private const val RIFTPP_EDITOR_SAMPLE_SOURCE_BYTES = 72
+        private const val RIFTPP_EDITOR_SAMPLE_SOURCE_BYTES = 146
         private const val RIFTPP_EDITOR_SAMPLE_SOURCE_SHA256 =
-            "16779aed5c166de01822d151cb96d50005564faa4fe7ec37f351e97803d5525a"
+            "95acc761d1d0891e633541ef38c4b1e09d7ff18cb05bd0e4f1579c950da7b96f"
         private const val RIFTPP_EDITOR_SAMPLE_MANIFEST =
             "standalone/app/examples/notepad/app.rift.json"
         private const val RIFTPP_EDITOR_SAMPLE_MANIFEST_BYTES = 165
@@ -266,7 +266,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppApkBuilder.kt" to
                 "e4e91df162d7d5e78054d6771f052ca54f27998d956e520b286e6d11d948b343",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt" to
-                "147fece68c500b2387f8eef3f5883a4b15196ae4dc0e7e67943bda273f70df60",
+                "ad403db6f4635816e32fbf02370ddea4e52facd9b3be0782f56e71ae8646ea9a",
             "standalone/editor/android/app/src/main/java/com/riftpp/apphost/RiftppAppActivity.kt" to
                 "48fe3ec0405eb90176dc11473315ac00e48a875b1df278679bfc3b32c4a7f556",
             "standalone/editor/android/app/src/main/cpp/riftpp_editor_bridge.cpp" to
