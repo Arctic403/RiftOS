@@ -40,6 +40,7 @@ class RiftppCompilerService : Service() {
         internal const val TRANSACTION_S3_SELF_HOST = IBinder.FIRST_CALL_TRANSACTION + 7
         internal const val TRANSACTION_S3_EMIT = IBinder.FIRST_CALL_TRANSACTION + 8
         internal const val TRANSACTION_S3_FRAME_LINK = IBinder.FIRST_CALL_TRANSACTION + 9
+        internal const val TRANSACTION_S3_UI_PATCH = IBinder.FIRST_CALL_TRANSACTION + 10
 
         private const val COMPILER_BYTES = 276
         private const val STAGE1_ARM64_SOURCE_BYTES = 2342
@@ -327,6 +328,20 @@ class RiftppCompilerService : Service() {
                     val result = executeS3FrameLink(
                         s3Compiler,
                         linkerSource,
+                        baseElf
+                    )
+                    reply?.writeNoException()
+                    reply?.writeBundle(result)
+                    true
+                }
+                TRANSACTION_S3_UI_PATCH -> {
+                    data.enforceInterface(DESCRIPTOR)
+                    val s3Compiler = data.createByteArray()
+                    val patcherSource = data.createByteArray()
+                    val baseElf = data.createByteArray()
+                    val result = executeS3UiPatch(
+                        s3Compiler,
+                        patcherSource,
                         baseElf
                     )
                     reply?.writeNoException()
@@ -1765,6 +1780,275 @@ class RiftppCompilerService : Service() {
     }
 
 
+    private fun executeS3UiPatch(
+        s3Compiler: ByteArray?,
+        patcherSource: ByteArray?,
+        baseElf: ByteArray?
+    ): Bundle {
+        val hostAbi =
+            if (Process.is64Bit()) {
+                "arm64-v8a"
+            } else {
+                "armeabi-v7a"
+            }
+
+        if (Process.is64Bit()) {
+            return rejected(
+                hostAbi,
+                "s3-ui-r4-arm32-host-required"
+            )
+        }
+
+        val compilerBytes =
+            s3Compiler
+                ?: return rejected(
+                    hostAbi,
+                    "s3-ui-compiler-missing"
+                )
+        val patcherBytes =
+            patcherSource
+                ?: return rejected(
+                    hostAbi,
+                    "s3-ui-patcher-source-missing"
+                )
+        val baseBytes =
+            baseElf
+                ?: return rejected(
+                    hostAbi,
+                    "s3-ui-base-elf-missing"
+                )
+
+        if (compilerBytes.size != S3_SELF_HOST_IMAGE_BYTES) {
+            return rejected(
+                hostAbi,
+                "s3-ui-compiler-size"
+            )
+        }
+
+        val compilerSha =
+            sha256(compilerBytes)
+
+        if (compilerSha != S3_GENERATION_C_ARM32_SHA256) {
+            return rejected(
+                hostAbi,
+                "s3-ui-compiler-identity",
+                compilerSha
+            )
+        }
+
+        if (patcherBytes.size != 528) {
+            return rejected(
+                hostAbi,
+                "s3-ui-patcher-source-size",
+                compilerSha
+            )
+        }
+
+        val patcherSha =
+            sha256(patcherBytes)
+
+        if (
+            patcherSha !=
+                "9cf4f6c7670d50f2b6caaeca2f24d20949811291fbe0dfdcbad3a104c78332af"
+        ) {
+            return rejected(
+                hostAbi,
+                "s3-ui-patcher-source-identity",
+                compilerSha,
+                patcherSha
+            )
+        }
+
+        val baseSha =
+            sha256(baseBytes)
+
+        if (
+            baseBytes.size != 1196 ||
+            baseSha !=
+                "44f8b266aef910acaaedfe3a5f6cf7b9f1e029acd6e1c2e310410a22568be28e"
+        ) {
+            return rejected(
+                hostAbi,
+                "s3-ui-base-elf-identity",
+                compilerSha,
+                baseSha
+            )
+        }
+
+        nativeLoadFailure?.let {
+            return rejected(
+                hostAbi,
+                "s3-ui-native-library",
+                compilerSha,
+                it.message
+            )
+        }
+
+        fun run(
+            compiler: ByteArray,
+            source: ByteArray,
+            output: ByteArray,
+            expectedBytes: Int,
+            stage: String
+        ): String? {
+            val nativeResult =
+                try {
+                    nativeCompile(
+                        compiler,
+                        source,
+                        output,
+                        false
+                    )
+                } catch (
+                    failure: Throwable
+                ) {
+                    return "$stage-native-call:" +
+                        (
+                            failure.message
+                                ?: failure.javaClass
+                                    .simpleName
+                            )
+                }
+
+            if (nativeResult.size != 4) {
+                return "$stage-native-envelope"
+            }
+
+            val hostStatus =
+                nativeResult[0].toInt()
+            val returnValue =
+                nativeResult[1] and
+                    0xffff_ffffL
+
+            if (hostStatus != 0) {
+                return "$stage-native-$hostStatus"
+            }
+
+            if (
+                returnValue !=
+                    expectedBytes.toLong()
+            ) {
+                return "$stage-result-$returnValue"
+            }
+
+            return null
+        }
+
+        val patcherOutput =
+            ByteArray(1072)
+
+        run(
+            compilerBytes,
+            patcherBytes,
+            patcherOutput,
+            1072,
+            "ui-patcher"
+        )?.let {
+            return rejected(
+                hostAbi,
+                "s3-ui-$it",
+                compilerSha
+            )
+        }
+
+        val elfOutput =
+            ByteArray(1196)
+
+        run(
+            patcherOutput,
+            baseBytes,
+            elfOutput,
+            1196,
+            "ui-elf"
+        )?.let {
+            return rejected(
+                hostAbi,
+                "s3-ui-$it",
+                compilerSha
+            )
+        }
+
+        return Bundle().apply {
+            putString(
+                "status",
+                "success"
+            )
+            putString(
+                "schema",
+                "rift.riftpp-s3-android-r4/1"
+            )
+            putString(
+                "hostAbi",
+                hostAbi
+            )
+            putInt(
+                "pid",
+                Process.myPid()
+            )
+            putString(
+                "compilerSha256",
+                compilerSha
+            )
+            putInt(
+                "compilerBytes",
+                compilerBytes.size
+            )
+            putString(
+                "patcherSourceSha256",
+                patcherSha
+            )
+            putInt(
+                "patcherSourceBytes",
+                patcherBytes.size
+            )
+            putString(
+                "baseElfSha256",
+                baseSha
+            )
+            putInt(
+                "baseElfBytes",
+                baseBytes.size
+            )
+            putString(
+                "patcherOutputSha256",
+                sha256(patcherOutput)
+            )
+            putInt(
+                "patcherOutputBytes",
+                patcherOutput.size
+            )
+            putString(
+                "elfSha256",
+                sha256(elfOutput)
+            )
+            putInt(
+                "elfBytes",
+                elfOutput.size
+            )
+            putByteArray(
+                "elf",
+                elfOutput
+            )
+            putBoolean(
+                "hostParsesS3Opcodes",
+                false
+            )
+            putBoolean(
+                "hostEmitsS3Instructions",
+                false
+            )
+            putBoolean(
+                "hostParsesElf",
+                false
+            )
+            putBoolean(
+                "hostEmitsElf",
+                false
+            )
+        }
+    }
+
+
     private fun rejected(
         hostAbi: String,
         reason: String,
@@ -2444,6 +2728,201 @@ internal object RiftppCompilerClient {
     }
 
 
+    fun executeS3UiPatch(
+        context: Context,
+        s3Compiler: ByteArray,
+        patcherSource: ByteArray,
+        baseElf: ByteArray
+    ): JSONObject {
+        val appContext =
+            context.applicationContext
+        val binderReady =
+            CompletableFuture<IBinder>()
+
+        val connection =
+            object : ServiceConnection {
+                override fun onServiceConnected(
+                    name: ComponentName?,
+                    service: IBinder?
+                ) {
+                    if (service == null) {
+                        binderReady.completeExceptionally(
+                            RemoteException(
+                                "null compiler binder"
+                            )
+                        )
+                    } else {
+                        binderReady.complete(service)
+                    }
+                }
+
+                override fun onServiceDisconnected(
+                    name: ComponentName?
+                ) {
+                    if (!binderReady.isDone) {
+                        binderReady.completeExceptionally(
+                            DeadObjectException()
+                        )
+                    }
+                }
+
+                override fun onBindingDied(
+                    name: ComponentName?
+                ) {
+                    if (!binderReady.isDone) {
+                        binderReady.completeExceptionally(
+                            DeadObjectException()
+                        )
+                    }
+                }
+
+                override fun onNullBinding(
+                    name: ComponentName?
+                ) {
+                    if (!binderReady.isDone) {
+                        binderReady.completeExceptionally(
+                            RemoteException(
+                                "null compiler binding"
+                            )
+                        )
+                    }
+                }
+            }
+
+        val intent =
+            Intent(
+                appContext,
+                RiftppCompilerService::class.java
+            )
+
+        if (
+            !appContext.bindService(
+                intent,
+                connection,
+                Context.BIND_AUTO_CREATE
+            )
+        ) {
+            return failure(
+                "host-reject",
+                "s3-ui-bind-failed"
+            )
+        }
+
+        val executor =
+            Executors.newSingleThreadExecutor()
+        var workerPid = -1
+
+        try {
+            val binder =
+                binderReady.get(
+                    BIND_TIMEOUT_MS,
+                    TimeUnit.MILLISECONDS
+                )
+            workerPid =
+                queryPid(binder)
+
+            val future =
+                executor.submit<Bundle> {
+                    transactS3UiPatch(
+                        binder,
+                        s3Compiler,
+                        patcherSource,
+                        baseElf
+                    )
+                }
+
+            val bundle =
+                try {
+                    future.get(
+                        STAGE1_EXECUTION_TIMEOUT_MS,
+                        TimeUnit.MILLISECONDS
+                    )
+                } catch (
+                    timeout: TimeoutException
+                ) {
+                    if (workerPid > 0) {
+                        Process.killProcess(
+                            workerPid
+                        )
+                    }
+                    return failure(
+                        "timeout",
+                        "s3-ui-timeout",
+                        workerPid
+                    )
+                } catch (
+                    failure: ExecutionException
+                ) {
+                    val cause =
+                        failure.cause
+
+                    return if (
+                        cause is DeadObjectException ||
+                        cause is RemoteException
+                    ) {
+                        failure(
+                            "crash",
+                            "s3-ui-process-died",
+                            workerPid
+                        )
+                    } else {
+                        failure(
+                            "host-reject",
+                            "s3-ui-binder-execution",
+                            workerPid,
+                            cause?.message
+                        )
+                    }
+                }
+
+            return s3EmitBundleToJson(
+                bundle
+            )
+                .put(
+                    "schema",
+                    "rift.riftpp-s3-android-r4/1"
+                )
+        } catch (
+            timeout: TimeoutException
+        ) {
+            if (workerPid > 0) {
+                Process.killProcess(
+                    workerPid
+                )
+            }
+            return failure(
+                "timeout",
+                "s3-ui-bind-timeout",
+                workerPid
+            )
+        } catch (
+            failure: DeadObjectException
+        ) {
+            return failure(
+                "crash",
+                "s3-ui-process-died",
+                workerPid
+            )
+        } catch (
+            failure: Throwable
+        ) {
+            return failure(
+                "host-reject",
+                "s3-ui-binder-transport",
+                workerPid,
+                failure.message
+            )
+        } finally {
+            runCatching {
+                appContext.unbindService(
+                    connection
+                )
+            }
+            executor.shutdownNow()
+        }
+    }
+
+
     fun executeS3SelfHost(
         context: Context,
         s2Compiler: ByteArray,
@@ -2832,6 +3311,61 @@ internal object RiftppCompilerClient {
             )
                 ?: throw RemoteException(
                     "S3 frame-link result bundle missing"
+                )
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+
+    private fun transactS3UiPatch(
+        binder: IBinder,
+        s3Compiler: ByteArray,
+        patcherSource: ByteArray,
+        baseElf: ByteArray
+    ): Bundle {
+        val data =
+            Parcel.obtain()
+        val reply =
+            Parcel.obtain()
+
+        return try {
+            data.writeInterfaceToken(
+                RiftppCompilerService.DESCRIPTOR
+            )
+            data.writeByteArray(
+                s3Compiler
+            )
+            data.writeByteArray(
+                patcherSource
+            )
+            data.writeByteArray(
+                baseElf
+            )
+
+            if (
+                !binder.transact(
+                    RiftppCompilerService
+                        .TRANSACTION_S3_UI_PATCH,
+                    data,
+                    reply,
+                    0
+                )
+            ) {
+                throw RemoteException(
+                    "S3 UI patch transaction rejected"
+                )
+            }
+
+            reply.readException()
+
+            reply.readBundle(
+                RiftppCompilerService::class
+                    .java.classLoader
+            )
+                ?: throw RemoteException(
+                    "S3 UI patch result bundle missing"
                 )
         } finally {
             reply.recycle()
@@ -3380,6 +3914,20 @@ internal object RiftppCompilerClient {
                 )
             )
             .put(
+                "patcherSourceSha256",
+                bundle.getString(
+                    "patcherSourceSha256"
+                )
+                    ?: JSONObject.NULL
+            )
+            .put(
+                "patcherSourceBytes",
+                bundle.getInt(
+                    "patcherSourceBytes",
+                    0
+                )
+            )
+            .put(
                 "baseElfSha256",
                 bundle.getString(
                     "baseElfSha256"
@@ -3404,6 +3952,20 @@ internal object RiftppCompilerClient {
                 "linkerOutputBytes",
                 bundle.getInt(
                     "linkerOutputBytes",
+                    0
+                )
+            )
+            .put(
+                "patcherOutputSha256",
+                bundle.getString(
+                    "patcherOutputSha256"
+                )
+                    ?: JSONObject.NULL
+            )
+            .put(
+                "patcherOutputBytes",
+                bundle.getInt(
+                    "patcherOutputBytes",
                     0
                 )
             )
