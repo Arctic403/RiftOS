@@ -22,6 +22,7 @@ class RiftBuildInstaller(context: Context) {
         const val TARGET_PACKAGE = "com.riftpp.nativeproof"
         const val RIFTPP_APP0_TARGET_PACKAGE = "com.riftpp.hello"
         const val RIFTPP_EDITOR_TARGET_PACKAGE = "com.riftpp.editor"
+        const val RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com.riftpp.editor.nativev1"
         const val MC0_TARGET_PACKAGE = "com.codynex.mc0proof"
         const val MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"
         const val MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"
@@ -43,6 +44,7 @@ class RiftBuildInstaller(context: Context) {
             TARGET_PACKAGE,
             RIFTPP_APP0_TARGET_PACKAGE,
             RIFTPP_EDITOR_TARGET_PACKAGE,
+            RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE,
             MC0_TARGET_PACKAGE,
             MC1A_TARGET_PACKAGE,
             MC1B_TARGET_PACKAGE,

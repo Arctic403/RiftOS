@@ -115,6 +115,7 @@ for (const required of [
   'class RiftBuildInstaller',
   'TARGET_PACKAGE = "com.riftpp.nativeproof"',
   'RIFTPP_EDITOR_TARGET_PACKAGE = "com.riftpp.editor"',
+  'RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com.riftpp.editor.nativev1"',
   'MC0_TARGET_PACKAGE = "com.codynex.mc0proof"',
   'MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"',
   'MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"',
@@ -514,6 +515,7 @@ assert.match(gradle, /3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3de
 assert.match(nativeBuild, /8e231086c097ecc0bb8dbc60534509eaafa0c7cc6556def65f4fa12f7dc01f1c/);
 assert.match(nativeBuild, /3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76/);
 assert.match(installer, /RIFTPP_EDITOR_TARGET_PACKAGE = "com\.riftpp\.editor"/);
+assert.match(installer, /RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com\.riftpp\.editor\.nativev1"/);
 assert.match(installer, /EDITOR_TARGET_PACKAGE = "com\.codynex\.editor"/);
 assert.match(installer, /EDITOR_TARGET_ACTIVITY = "com\.codynex\.editorapp\.MainActivity"/);
 assert.match(manifest, /com\.codynex\.editor/);
