@@ -1261,7 +1261,7 @@ class RiftppCompilerService : Service() {
         }
 
         if (
-            entryBytes.size != 24
+            entryBytes.size != 976
         ) {
             return rejected(
                 hostAbi,
@@ -1271,7 +1271,7 @@ class RiftppCompilerService : Service() {
         }
 
         if (
-            emitterBytes.size != 1984
+            emitterBytes.size != 1144
         ) {
             return rejected(
                 hostAbi,
@@ -1339,14 +1339,31 @@ class RiftppCompilerService : Service() {
             return null
         }
 
-        val entryOutput =
-            ByteArray(64)
+        val entryEmitterOutput =
+            ByteArray(1968)
 
         run(
             compilerBytes,
             entryBytes,
+            entryEmitterOutput,
+            1968,
+            "entry-emitter"
+        )?.let {
+            return rejected(
+                hostAbi,
+                "s3-emit-$it",
+                compilerSha
+            )
+        }
+
+        val entryOutput =
+            ByteArray(228)
+
+        run(
+            entryEmitterOutput,
+            ByteArray(0),
             entryOutput,
-            64,
+            228,
             "entry"
         )?.let {
             return rejected(
@@ -1357,14 +1374,14 @@ class RiftppCompilerService : Service() {
         }
 
         val emitterOutput =
-            ByteArray(3984)
+            ByteArray(2304)
 
         run(
             compilerBytes,
             emitterBytes,
             emitterOutput,
-            3984,
-            "emitter"
+            2304,
+            "elf-emitter"
         )?.let {
             return rejected(
                 hostAbi,
@@ -1374,13 +1391,13 @@ class RiftppCompilerService : Service() {
         }
 
         val elfOutput =
-            ByteArray(480)
+            ByteArray(644)
 
         run(
             emitterOutput,
             entryOutput,
             elfOutput,
-            480,
+            644,
             "elf"
         )?.let {
             return rejected(
@@ -1424,6 +1441,10 @@ class RiftppCompilerService : Service() {
                 sha256(emitterBytes)
             )
             putString(
+                "entryEmitterOutputSha256",
+                sha256(entryEmitterOutput)
+            )
+            putString(
                 "entryOutputSha256",
                 sha256(entryOutput)
             )
@@ -1434,6 +1455,10 @@ class RiftppCompilerService : Service() {
             putString(
                 "elfSha256",
                 sha256(elfOutput)
+            )
+            putInt(
+                "entryEmitterOutputBytes",
+                entryEmitterOutput.size
             )
             putInt(
                 "entryOutputBytes",
@@ -2801,6 +2826,13 @@ internal object RiftppCompilerClient {
                     ?: JSONObject.NULL
             )
             .put(
+                "entryEmitterOutputSha256",
+                bundle.getString(
+                    "entryEmitterOutputSha256"
+                )
+                    ?: JSONObject.NULL
+            )
+            .put(
                 "entryOutputSha256",
                 bundle.getString(
                     "entryOutputSha256"
@@ -2820,6 +2852,13 @@ internal object RiftppCompilerClient {
                     "elfSha256"
                 )
                     ?: JSONObject.NULL
+            )
+            .put(
+                "entryEmitterOutputBytes",
+                bundle.getInt(
+                    "entryEmitterOutputBytes",
+                    0
+                )
             )
             .put(
                 "entryOutputBytes",

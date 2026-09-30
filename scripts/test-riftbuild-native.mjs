@@ -24,6 +24,7 @@ const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity
 const shell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
 const riftppCompilerService = read('android/app/src/main/java/com/riftos/app/RiftppCompilerService.kt');
 const riftppCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_compiler_host.cpp');
+const riftAppDiagnosticBridge = read('android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt');
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');
 const gradle = read('android/app/build.gradle.kts');
 const cmake = read('android/app/src/main/cpp/CMakeLists.txt');
@@ -40,9 +41,14 @@ for (const required of [
   'fun executeS3Emit(',
   's3-emit-compiler-identity',
   'S3_GENERATION_C_ARM32_SHA256',
+  'entryEmitterOutputBytes',
   'entryOutputBytes',
   'emitterOutputBytes',
   'elfBytes',
+  'ByteArray(1968)',
+  'ByteArray(228)',
+  'ByteArray(2304)',
+  'ByteArray(644)',
   'hostParsesS3Opcodes',
   'hostEmitsS3Instructions',
   'hostParsesElf',
@@ -70,8 +76,8 @@ for (const required of [
   'standalone/android-native-r1/entry.arm32.r3.hex',
   'standalone/android-native-r1/elf32-emitter.arm32.r3.hex',
   '950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a',
-  '43613e6083a4ac9d462300828a96b2c26f21135758633e0d5ffb21d4403743f6',
-  'f41b1a47ea42e048510094afb3a3c1d17b93d180fc8e0bf42d26c7fb647a1384',
+  'b3df92ff05452bfda9d8452096310e85e7e1385de7b5ac41310fe274d0f81cdf',
+  '8048bd51414f07520c6f38410e9f65434c4b45a486a0248d8fee10dbd290360c',
   'libriftpp_editor_native_r1.so',
 ]) {
   assert.ok(
@@ -79,6 +85,66 @@ for (const required of [
     'Rift++ S3 Android R1 shell contract missing: ' + required
   );
 }
+for (const required of [
+  'const val PORT = 39771',
+  'const val PACKET_BYTES = 32',
+  'DatagramSocket(PORT, InetAddress.getByName("127.0.0.1"))',
+  'MAX_EVENTS = 64',
+  'ROOT_RELATIVE = "system/volumes/D/Diagnostics/riftpp"',
+  'RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE',
+  'packetSha256',
+  'entry-begin',
+  'before-return',
+  'fatal-signal',
+]) {
+  assert.ok(
+    riftAppDiagnosticBridge.includes(required),
+    'Rift++ diagnostic bridge contract missing: ' + required
+  );
+}
+for (const forbidden of [
+  'ANativeActivity_onCreate',
+  'ET_DYN',
+  'DT_HASH',
+  'DT_SYMTAB',
+  'decodeRiftpp',
+  'emitArm',
+]) {
+  assert.ok(
+    !riftAppDiagnosticBridge.includes(forbidden),
+    'Rift++ diagnostic bridge must remain transport-only: ' + forbidden
+  );
+}
+for (const required of [
+  'RiftAppDiagnosticBridge.supports(packageName)',
+  'RiftAppDiagnosticBridge.beginLaunch',
+  'artifactSha256',
+]) {
+  assert.ok(
+    installer.includes(required),
+    'RiftBuild installer diagnostic launch hook missing: ' + required
+  );
+}
+for (const required of [
+  'ALLOWED_PERMISSIONS',
+  '"android.permission.INTERNET"',
+  'Native app permission is not allowed',
+  'uses-permission',
+]) {
+  assert.ok(
+    nativeApp.includes(required),
+    'Native app bounded permission contract missing: ' + required
+  );
+}
+assert.match(
+  manifest,
+  /<package android:name="com\.riftpp\.editor\.nativev1" \/>/
+);
+assert.ok(
+  shell.includes('riftcrash help|status|start|capture|latest|reset [package]'),
+  'RiftShell diagnostic bridge control surface is missing'
+);
+
 for (const forbidden of [
   'ANativeActivity_onCreate',
   'ET_DYN',

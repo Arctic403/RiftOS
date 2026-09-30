@@ -20,7 +20,8 @@ class RiftBuildNativeApp(
         val versionName: String,
         val minSdk: Int,
         val targetSdk: Int,
-        val assetsDir: String
+        val assetsDir: String,
+        val permissions: List<String>
     )
 
     private data class Attr(
@@ -44,6 +45,9 @@ class RiftBuildNativeApp(
         private const val MAX_MANIFEST_BYTES = 64 * 1024
         private val SAFE_LIBRARY = Regex("^[A-Za-z_][A-Za-z0-9_]{0,63}$")
         private val SAFE_PACKAGE = Regex("^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$")
+        private val ALLOWED_PERMISSIONS = setOf(
+            "android.permission.INTERNET"
+        )
 
         private const val XML_NO_INDEX = -1
         private const val XML_STRING_POOL_TYPE = 0x0001
@@ -117,6 +121,7 @@ class RiftBuildNativeApp(
             .put("assetsDir", spec.assetsDir)
             .put("assetFiles", stats.files)
             .put("assetBytes", stats.bytes)
+            .put("permissions", org.json.JSONArray(spec.permissions))
             .put("state", "prepared-native-app")
     }
 
@@ -142,7 +147,34 @@ class RiftBuildNativeApp(
         val assetsDir = json.optString("assetsDir", "assets").trim()
         if (assetsDir.isNotBlank()) validateRelativePath(assetsDir)
 
-        return AppSpec(packageName, library, versionCode, versionName, minSdk, targetSdk, assetsDir)
+        val permissionArray = json.optJSONArray("permissions")
+        val permissions = ArrayList<String>()
+        if (permissionArray != null) {
+            require(permissionArray.length() <= 8) {
+                "Native app permission count exceeds 8"
+            }
+            for (index in 0 until permissionArray.length()) {
+                val permission = permissionArray.optString(index).trim()
+                require(permission in ALLOWED_PERMISSIONS) {
+                    "Native app permission is not allowed: $permission"
+                }
+                require(permission !in permissions) {
+                    "Duplicate native app permission: $permission"
+                }
+                permissions += permission
+            }
+        }
+
+        return AppSpec(
+            packageName,
+            library,
+            versionCode,
+            versionName,
+            minSdk,
+            targetSdk,
+            assetsDir,
+            permissions
+        )
     }
 
     private fun crossCheckNativeLibrary(project: File, library: String) {
@@ -173,6 +205,12 @@ class RiftBuildNativeApp(
             intAttr(strings, "targetSdkVersion", spec.targetSdk.toString(), spec.targetSdk)
         )))
         body.write(endElement(strings, "uses-sdk"))
+        for (permission in spec.permissions) {
+            body.write(startElement(strings, "uses-permission", listOf(
+                stringAttr(strings, "name", permission)
+            )))
+            body.write(endElement(strings, "uses-permission"))
+        }
         body.write(startElement(strings, "application", listOf(
             boolAttr(strings, "hasCode", "false", false)
         )))
@@ -221,6 +259,8 @@ class RiftBuildNativeApp(
             "uses-sdk",
             spec.minSdk.toString(),
             spec.targetSdk.toString(),
+            "uses-permission",
+            *spec.permissions.toTypedArray(),
             "application",
             "false",
             "activity",

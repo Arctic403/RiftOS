@@ -124,6 +124,19 @@ class RiftBuildInstaller(context: Context) {
             require(packageName in ALLOWED_PROOF_PACKAGES) {
                 "RiftBuild proof package is not allowlisted: " + packageName
             }
+
+            val artifactSha256 = readStatus(context.applicationContext)
+                .optString("artifactSha256")
+                .takeIf { it.matches(Regex("^[0-9a-f]{64}$")) }
+
+            if (RiftAppDiagnosticBridge.supports(packageName)) {
+                RiftAppDiagnosticBridge.beginLaunch(
+                    context.applicationContext,
+                    packageName,
+                    artifactSha256
+                )
+            }
+
             val activity =
                 when (packageName) {
                     EDITOR_TARGET_PACKAGE -> EDITOR_TARGET_ACTIVITY

@@ -46,7 +46,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip",
             "browser", "open", "clear", "workspace", "git", "chat", "devlab",
             "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex",
-            "riftbuild", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool"
+            "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool"
         )
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
         private const val S2_DIAGNOSTIC_ARM32_TRANSPORT_SHA256 =
@@ -228,6 +228,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "riftbuild doctor|validate|plan|toolchain-status|toolchain-install-bundled|compile-native|prepare-native-app|prepare-riftpp-v0|prepare-riftpp-seed0-arm64|prepare-riftpp-app0|prepare-riftpp-editor|prepare-codynex-mc0|prepare-codynex-mc1a|prepare-codynex-mc1b|prepare-codynex-m2-vm0|prepare-codynex-m2b|prepare-codynex-mc2a|prepare-codynex-editor|prepare-codynex-app|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
+                    "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
@@ -283,7 +284,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex", "riftbuild", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex", "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -329,6 +330,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 val value = riftBuild.executeShell(args, cwd)
                 ShellOutcome(value.output, cwd, value.value)
             }
+            "riftcrash" -> executeRiftCrashCommand(cwd, args)
             "qjs" -> {
                 val value = headlessJs.executeQuickJs(args, cwd)
                 ShellOutcome(value.output, cwd, value.result)
@@ -352,6 +354,64 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             else -> throw IllegalArgumentException("unsupported native RiftShell command: $command")
         }
     }
+
+    private fun executeRiftCrashCommand(
+        cwd: String,
+        args: MutableList<String>
+    ): ShellOutcome {
+        val action = args.removeFirstOrNull()?.lowercase() ?: "help"
+        val packageName = args.removeFirstOrNull()
+            ?: RiftBuildInstaller.RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE
+
+        require(args.isEmpty()) {
+            "usage: riftcrash help|status|start|capture|latest|reset [package]"
+        }
+
+        val value = when (action) {
+            "help" -> JSONObject()
+                .put("schema", "rift.app-diagnostic-help/1")
+                .put("usage", "riftcrash help|status|start|capture|latest|reset [package]")
+                .put("defaultPackage", RiftBuildInstaller.RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE)
+                .put("dumpRoot", "/D:/Diagnostics/riftpp")
+                .put("transport", "localhost-udp")
+                .put("port", RiftAppDiagnosticBridge.PORT)
+                .put("packetBytes", RiftAppDiagnosticBridge.PACKET_BYTES)
+
+            "status" -> RiftAppDiagnosticBridge.status(appContext)
+
+            "start" -> RiftAppDiagnosticBridge.beginLaunch(
+                appContext,
+                packageName,
+                null
+            )
+
+            "capture" -> RiftAppDiagnosticBridge.capture(
+                appContext,
+                packageName
+            )
+
+            "latest" -> RiftAppDiagnosticBridge.latest(
+                appContext,
+                packageName
+            )
+
+            "reset" -> RiftAppDiagnosticBridge.reset(
+                appContext,
+                packageName
+            )
+
+            else -> throw IllegalArgumentException(
+                "usage: riftcrash help|status|start|capture|latest|reset [package]"
+            )
+        }
+
+        return ShellOutcome(
+            value.toString(2),
+            cwd,
+            value
+        )
+    }
+
 
     private fun executeRiftppHostCommand(cwd: String, args: MutableList<String>): ShellOutcome {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
@@ -806,14 +866,14 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             require(
                 entryFile.isFile &&
                     entryFile.length() ==
-                        51L
+                        2074L
             ) {
                 "Rift++ Android R1 entry source is missing or drifted"
             }
             require(
                 emitterFile.isFile &&
                     emitterFile.length() ==
-                        4216L
+                        2431L
             ) {
                 "Rift++ Android R1 ELF emitter source is missing or drifted"
             }
@@ -837,7 +897,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 sha256Hex(
                     entryTransport
                 ) ==
-                    "43613e6083a4ac9d462300828a96b2c26f21135758633e0d5ffb21d4403743f6"
+                    "b3df92ff05452bfda9d8452096310e85e7e1385de7b5ac41310fe274d0f81cdf"
             ) {
                 "Rift++ Android R1 entry transport identity mismatch"
             }
@@ -845,7 +905,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 sha256Hex(
                     emitterTransport
                 ) ==
-                    "f41b1a47ea42e048510094afb3a3c1d17b93d180fc8e0bf42d26c7fb647a1384"
+                    "8048bd51414f07520c6f38410e9f65434c4b45a486a0248d8fee10dbd290360c"
             ) {
                 "Rift++ Android R1 ELF emitter transport identity mismatch"
             }
@@ -916,7 +976,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 val elfBytes =
                     decodeRiftppExactRawHex(
                         elfHex,
-                        480
+                        644
                     )
 
                 require(
@@ -938,7 +998,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 require(
                     outputFile.isFile &&
                         outputFile.length() ==
-                            480L &&
+                            644L &&
                         sha256Hex(
                             outputFile.readBytes()
                         ) ==
