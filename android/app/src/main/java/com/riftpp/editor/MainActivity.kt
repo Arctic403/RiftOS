@@ -108,6 +108,21 @@ class MainActivity : Activity() {
                 "riftpp/examples/notepad/main.riftpp",
                 source
             )
+        } else {
+            val legacyProofSource =
+                "title Rift++ Notepad\n" +
+                    "textarea Type something here...\n" +
+                    "button clear Clear\n"
+
+            if (
+                source.readText(Charsets.UTF_8) ==
+                    legacyProofSource
+            ) {
+                copyAssetText(
+                    "riftpp/examples/notepad/main.riftpp",
+                    source
+                )
+            }
         }
     }
 

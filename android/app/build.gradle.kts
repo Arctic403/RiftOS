@@ -316,7 +316,7 @@ val verifyCodynexEditorPayload by tasks.registering {
 val verifyRiftppEditorPayload by tasks.registering {
     val expected = linkedMapOf(
         "src/main/java/com/riftpp/editor/MainActivity.kt" to
-            "0b05b875dc1dc98b103539ac5ffb03672afb3b180f5a4dc575669ca896312a45",
+            "7970cfbc3ab1ab6be8d704bcd02b7abe6d0c22a4fba36e2ea81031b539702ed3",
         "src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
             "8f3a828ee59784225754da50774057dc90b92543de28a4d7dc914bac5d2abe00",
         "src/main/java/com/riftpp/editor/RiftppNativeBridge.kt" to
