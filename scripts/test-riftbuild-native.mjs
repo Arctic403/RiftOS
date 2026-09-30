@@ -22,6 +22,8 @@ assert.ok(nativeToolchain.includes("entry.name.replace('\\\\', '/')"), 'bundled 
 assert.ok(!nativeToolchain.includes("entry.name.replace('\\\\\\\\', '/')"), 'bundled toolchain ZIP path normalization must not use the invalid four-backslash Kotlin char literal');
 const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
 const shell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
+const riftppCompilerService = read('android/app/src/main/java/com/riftos/app/RiftppCompilerService.kt');
+const riftppCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_compiler_host.cpp');
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');
 const gradle = read('android/app/build.gradle.kts');
 const cmake = read('android/app/src/main/cpp/CMakeLists.txt');
@@ -32,6 +34,70 @@ const surfaces = read('docs/PUBLIC_SURFACES.md');
 const riftppSeed0Arm64Proof = read('android/app/src/main/cpp/riftpp/riftpp_seed0_arm64_proof.cpp');
 const riftppSeed0Arm64Gradle = read('proofs/riftpp-seed0-arm64/app/build.gradle.kts');
 const riftppSeed0Arm64Manifest = read('proofs/riftpp-seed0-arm64/app/src/main/AndroidManifest.xml');
+
+for (const required of [
+  'TRANSACTION_S3_EMIT',
+  'fun executeS3Emit(',
+  's3-emit-compiler-identity',
+  'S3_GENERATION_C_ARM32_SHA256',
+  'entryOutputBytes',
+  'emitterOutputBytes',
+  'elfBytes',
+  'hostParsesS3Opcodes',
+  'hostEmitsS3Instructions',
+  'hostParsesElf',
+  'hostEmitsElf',
+]) {
+  assert.ok(
+    riftppCompilerService.includes(required),
+    'Rift++ S3 Android R1 service contract missing: ' + required
+  );
+}
+for (const required of [
+  'kMaxCompilerBytes = 64 * 1024',
+  'GuardedSpan',
+  'allocateGuardedSpan',
+  'compilerLength <= 0 || compilerLength > kMaxCompilerBytes',
+]) {
+  assert.ok(
+    riftppCompilerHost.includes(required),
+    'Rift++ guarded compiler host contract missing: ' + required
+  );
+}
+for (const required of [
+  'riftpp-host s3-android-r1 <riftpp-root>',
+  's3/frozen/compiler.arm32.native.hex',
+  'standalone/android-native-r1/entry.arm32.r3.hex',
+  'standalone/android-native-r1/elf32-emitter.arm32.r3.hex',
+  '950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a',
+  '43613e6083a4ac9d462300828a96b2c26f21135758633e0d5ffb21d4403743f6',
+  'f41b1a47ea42e048510094afb3a3c1d17b93d180fc8e0bf42d26c7fb647a1384',
+  'libriftpp_editor_native_r1.so',
+]) {
+  assert.ok(
+    shell.includes(required),
+    'Rift++ S3 Android R1 shell contract missing: ' + required
+  );
+}
+for (const forbidden of [
+  'ANativeActivity_onCreate',
+  'ET_DYN',
+  'DT_HASH',
+  'DT_SYMTAB',
+]) {
+  assert.ok(
+    !riftppCompilerService.includes(forbidden),
+    'Rift++ compiler service must not own ELF/Android symbol semantics: ' + forbidden
+  );
+  assert.ok(
+    !riftppCompilerHost.includes(forbidden),
+    'Rift++ native host must not own ELF/Android symbol semantics: ' + forbidden
+  );
+  assert.ok(
+    !shell.includes(forbidden),
+    'Rift++ shell must not own ELF/Android symbol semantics: ' + forbidden
+  );
+}
 
 for (const required of [
   'class RiftBuildLocalExecutor',

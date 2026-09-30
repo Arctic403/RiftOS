@@ -10,6 +10,7 @@
 namespace {
 
 constexpr jsize kCompilerBytes = 276;
+constexpr jsize kMaxCompilerBytes = 64 * 1024;
 constexpr jsize kMaxSourceBytes = 4096;
 constexpr jsize kMaxOutputBytes = 4096;
 constexpr uint8_t kCanary = 0xA5;
@@ -525,42 +526,42 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     const jsize sourceLength = env->GetArrayLength(sourceArray);
     const jsize outputLength = env->GetArrayLength(outputArray);
     if (
-        compilerLength != kCompilerBytes ||
+        compilerLength <= 0 || compilerLength > kMaxCompilerBytes ||
         sourceLength < 0 || sourceLength > kMaxSourceBytes ||
         outputLength <= 0 || outputLength > kMaxOutputBytes
     ) {
         return resultArray(env, -92, 0U);
     }
 
-    GuardedPage compilerRegion;
+    GuardedSpan compilerRegion;
     GuardedPage sourceRegion;
     GuardedPage outputRegion;
-    if (!allocateGuarded(&compilerRegion)) {
+    if (!allocateGuardedSpan(static_cast<size_t>(compilerLength), &compilerRegion)) {
         return resultArray(env, -93, 0U);
     }
     if (!allocateGuarded(&sourceRegion)) {
-        releaseGuarded(&compilerRegion);
+        releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -94, 0U);
     }
     if (!allocateGuarded(&outputRegion)) {
         releaseGuarded(&sourceRegion);
-        releaseGuarded(&compilerRegion);
+        releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -95, 0U);
     }
 
     if (
-        compilerRegion.pageSize < static_cast<size_t>(compilerLength) ||
+        compilerRegion.mappedSize < static_cast<size_t>(compilerLength) ||
         sourceRegion.pageSize < static_cast<size_t>(sourceLength) ||
         outputRegion.pageSize < static_cast<size_t>(outputLength)
     ) {
         releaseGuarded(&outputRegion);
         releaseGuarded(&sourceRegion);
-        releaseGuarded(&compilerRegion);
+        releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -96, 0U);
     }
 
     uint8_t* compilerBytes =
-        compilerRegion.page + compilerRegion.pageSize - static_cast<size_t>(compilerLength);
+        compilerRegion.data + compilerRegion.mappedSize - static_cast<size_t>(compilerLength);
     uint8_t* sourceBytes =
         sourceRegion.page + sourceRegion.pageSize - static_cast<size_t>(sourceLength);
     uint8_t* outputBytes =
@@ -584,19 +585,23 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
         env->ExceptionClear();
         releaseGuarded(&outputRegion);
         releaseGuarded(&sourceRegion);
-        releaseGuarded(&compilerRegion);
+        releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -97, 0U);
     }
 
     memset(outputRegion.page, kCanary, outputRegion.pageSize);
 
     if (
-        mprotect(compilerRegion.page, compilerRegion.pageSize, PROT_READ | PROT_EXEC) != 0 ||
+        mprotect(
+            compilerRegion.data,
+            compilerRegion.mappedSize,
+            PROT_READ | PROT_EXEC
+        ) != 0 ||
         mprotect(sourceRegion.page, sourceRegion.pageSize, PROT_READ) != 0
     ) {
         releaseGuarded(&outputRegion);
         releaseGuarded(&sourceRegion);
-        releaseGuarded(&compilerRegion);
+        releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -98, 0U);
     }
 
@@ -621,7 +626,7 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
         if (outputRegion.page[i] != kCanary) {
             releaseGuarded(&outputRegion);
             releaseGuarded(&sourceRegion);
-            releaseGuarded(&compilerRegion);
+            releaseGuardedSpan(&compilerRegion);
             return resultArray(env, -99, compilerResult);
         }
     }
@@ -632,7 +637,7 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
     ) {
         releaseGuarded(&outputRegion);
         releaseGuarded(&sourceRegion);
-        releaseGuarded(&compilerRegion);
+        releaseGuardedSpan(&compilerRegion);
         return resultArray(env, -100, compilerResult);
     }
 
@@ -682,14 +687,14 @@ Java_com_riftos_app_RiftppCompilerService_nativeCompile(
             env->ExceptionClear();
             releaseGuarded(&outputRegion);
             releaseGuarded(&sourceRegion);
-            releaseGuarded(&compilerRegion);
+            releaseGuardedSpan(&compilerRegion);
             return resultArray(env, -101, compilerResult);
         }
     }
 
     releaseGuarded(&outputRegion);
     releaseGuarded(&sourceRegion);
-    releaseGuarded(&compilerRegion);
+    releaseGuardedSpan(&compilerRegion);
     return resultArray(
         env,
         0,
