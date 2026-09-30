@@ -127,9 +127,9 @@ riftbuild artifacts [project]
 
 ### Bundled Android-host toolchain provisioning
 
-RiftOS builds may carry a generated `assets/riftbuild/android-clang-v1.zip` plus ABI-matched host compiler/linker executables under generated JNI libs. `riftbuild toolchain-install-bundled` extracts only the data archive into `/C:/Toolchains/android-clang-v1` with path, file-count, per-entry and total-byte bounds, validates `toolchain.json`, atomically replaces any prior installation, and then reports normal `toolchain-status`.
+RiftOS builds may carry a generated `assets/riftbuild/android-clang-v1.zip` plus ABI-matched host compiler/linker executables and a linker argv0 shim under generated JNI libs. `riftbuild toolchain-install-bundled` extracts only the data archive into `/C:/Toolchains/android-clang-v1` with path, file-count, per-entry and a 1 GiB total-byte bound, validates `toolchain.json`, atomically replaces any prior installation, and then reports normal `toolchain-status`.
 
-The compiler itself remains in Android's extracted native-library directory (`native:libclang_exec.so`) so modern Android executable-storage rules are respected. Generated host dependencies are co-located there; RiftBuild sets `LD_LIBRARY_PATH` to that directory for the compiler process. Toolchain argv additionally supports `%COMPILER_DIR%` alongside `%TOOLCHAIN%` and `%SYSROOT%`, allowing the manifest to select the bundled LLD executable without shell command text. Builder evidence for source `fb83e531…` now proves both ABI host payloads and the bounded data archive can be generated; current source also fixes ZIP-entry path normalization to use Kotlin's valid escaped-backslash `Char` literal, with a focused source regression preventing the prior malformed four-backslash form from reaching Gradle again.
+The compiler itself remains in Android's extracted native-library directory (`native:libclang_exec.so`) so modern Android executable-storage rules are respected. Generated host dependencies are co-located there; RiftBuild sets `LD_LIBRARY_PATH` to that directory for the compiler process. Because Android packages the real `ld.lld` under the JNI-safe name `libld_lld_exec.so`, Builder also emits `libld_lld_shim.so`; the shim re-execs the sibling linker with `argv[0] = "ld.lld"` so LLD selects its GNU/ELF driver correctly. Toolchain argv supports `%COMPILER_DIR%` alongside `%TOOLCHAIN%` and `%SYSROOT%`, allowing the manifest to select that shim without shell command text. Builder evidence for source `fb83e531…` now proves both ABI host payloads and the bounded data archive can be generated; current source also fixes ZIP-entry path normalization to use Kotlin's valid escaped-backslash `Char` literal, with a focused source regression preventing the prior malformed four-backslash form from reaching Gradle again.
 
 RiftOS Gradle consumes Builder-generated `build/generated/riftosJniLibs` and forces legacy/extracted JNI packaging; the Android manifest explicitly sets `android:extractNativeLibs="true"`. Source checkouts remain free of generated binary toolchain payloads.
 
@@ -144,7 +144,7 @@ Toolchain provisioning is described by `/C:/Toolchains/android-clang-v1/toolchai
   "source": "local-or-downloaded",
   "compiler": "bin/clang++",
   "sysroot": "sysroot",
-  "args": ["--resource-dir=%TOOLCHAIN%/lib/clang/<version>"]
+  "args": ["-resource-dir=%TOOLCHAIN%/resource", "--ld-path=%COMPILER_DIR%/libld_lld_shim.so"]
 }
 ```
 

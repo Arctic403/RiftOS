@@ -56,7 +56,7 @@ class RiftBuildNativeToolchain(
         private const val PROJECT_MANIFEST = "rift-native.json"
         private const val BUNDLED_TOOLCHAIN_ASSET = "riftbuild/android-clang-v1.zip"
         private const val MAX_BUNDLED_TOOLCHAIN_FILES = 20_000
-        private const val MAX_BUNDLED_TOOLCHAIN_BYTES = 512L * 1024L * 1024L
+        private const val MAX_BUNDLED_TOOLCHAIN_BYTES = 1024L * 1024L * 1024L
         private const val MAX_BUNDLED_TOOLCHAIN_ENTRY_BYTES = 128L * 1024L * 1024L
         private const val MAX_MANIFEST_BYTES = 256L * 1024L
         private const val MAX_SOURCES = 256
