@@ -897,7 +897,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 sha256Hex(
                     entryTransport
                 ) ==
-                    "b3df92ff05452bfda9d8452096310e85e7e1385de7b5ac41310fe274d0f81cdf"
+                    "85d92e2f49aa0f058b183d954144ab4f6d2659272bd93f32e3327eaf2607ef51"
             ) {
                 "Rift++ Android R1 entry transport identity mismatch"
             }

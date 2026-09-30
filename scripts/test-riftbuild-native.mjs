@@ -76,7 +76,7 @@ for (const required of [
   'standalone/android-native-r1/entry.arm32.r3.hex',
   'standalone/android-native-r1/elf32-emitter.arm32.r3.hex',
   '950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a',
-  'b3df92ff05452bfda9d8452096310e85e7e1385de7b5ac41310fe274d0f81cdf',
+  '85d92e2f49aa0f058b183d954144ab4f6d2659272bd93f32e3327eaf2607ef51',
   '8048bd51414f07520c6f38410e9f65434c4b45a486a0248d8fee10dbd290360c',
   'libriftpp_editor_native_r1.so',
 ]) {
