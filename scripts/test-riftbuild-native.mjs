@@ -86,6 +86,14 @@ for (const required of [
   'abf2b0789f72fbc885a5c73eeb10cf6199fb9c5d6b29e4f8024b50b3a9fec610',
   'ByteArray(4432)',
   'ByteArray(2368)',
+  'TRANSACTION_S3_FOCUS_SEMANTIC',
+  'fun executeS3FocusSemantic(',
+  's3-focus-base-elf-identity',
+  'patcherBytes.size != 1920',
+  '10ffd04fb115c6229c1114ccef4f1d71ab5b36a58f11a993159a0e9fe2c200b4',
+  '1702e86b8672697f1139eb105b6c69e9ce455222f90a31d77123bac860b7c2bc',
+  'ByteArray(3856)',
+  'ByteArray(2768)',
 ]) {
   assert.ok(
     riftppCompilerService.includes(required),
@@ -152,6 +160,16 @@ for (const required of [
   'patcherSource.size == 2208',
   '2368L',
   'libriftpp_editor_native_r5.so',
+  'riftpp-host s3-android-r6 <riftpp-root>',
+  'standalone/android-native-r1/elf32-r6-focus-patcher.arm32.r3.hex',
+  'standalone/android-native-r1/libriftpp_editor_native_r5.glyph-proven.so',
+  '340d192199408411775baeb3be8a2d20b18c42bdfcb19253a2941da1ddd3f40f',
+  '10ffd04fb115c6229c1114ccef4f1d71ab5b36a58f11a993159a0e9fe2c200b4',
+  '1702e86b8672697f1139eb105b6c69e9ce455222f90a31d77123bac860b7c2bc',
+  '4080L',
+  'patcherSource.size == 1920',
+  '2768L',
+  'libriftpp_editor_native_r6.so',
 ]) {
   assert.ok(
     shell.includes(required),
