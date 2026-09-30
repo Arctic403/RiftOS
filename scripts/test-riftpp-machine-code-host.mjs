@@ -56,7 +56,7 @@ assert.ok(native.includes("source[end] != static_cast<uint8_t>('\\n')"));
 assert.ok(!native.includes('strtol('), 'Stage1 bootstrap host must not parse decimal values');
 assert.ok(!native.includes('strtoul('), 'Stage1 bootstrap host must not parse decimal values');
 assert.ok(!native.includes('nativeExecutePayload'), 'generic caller-supplied payload execution API appeared');
-assert.ok(native.includes('outputRegion.pageSize - static_cast<size_t>(outputLength)'));
+assert.ok(native.includes('outputRegion.mappedSize - static_cast<size_t>(outputLength)'));
 
 for (const forbidden of ['RPP0', '"ret ', 'QuickJS', 'runVm1', 'MOVI', 'BRNZ']) {
   assert.ok(!service.includes(forbidden), `Kotlin compiler host gained compiler semantics: ${forbidden}`);
