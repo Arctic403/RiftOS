@@ -224,7 +224,7 @@ R2 installs a function pointer into the framework-owned `ANativeActivityCallback
 
 The Bionic-valid ELF emitter is unchanged: transport 3,621 bytes, 1,704 decoded source bytes including its S3 header, 212 body records, 3,424-byte compiled emitter and 972-byte output. The ELF still contains the 7-entry section table for null, `.dynstr`, `.dynsym`, `.hash`, `.dynamic`, `.text` and `.shstrtab`, with `.dynamic` matching `PT_DYNAMIC`.
 
-RiftOS remains transport/execution/evidence authority only. It does not parse S3 opcodes, emit target ARM instructions, parse/construct ELF semantics or implement target UI/runtime behavior. The next promotion gate is a Builder/install of current source, version-4 proof packaging, a fresh diagnostic session, and receipt of valid stage 6 `window-callback`. Only then may R3 add the first Rift++-owned frame.
+RiftOS remains transport/execution/evidence authority only. It does not parse S3 opcodes, emit target ARM instructions, parse/construct ELF semantics or implement target UI/runtime behavior. The next promotion gate is a Builder/install of current source, version-4 proof packaging, a fresh diagnostic session, and receipt of valid stage 6 `window-callback`. Only then may R3 add the first Rift++-owned frame. The generic machine-code host now uses matching 64 KiB compiler/source/output ceilings across shell, Kotlin service and guarded native execution; fixed proof transactions may retain tighter exact-size admissions.
 
 ## v0.1 project inspection
 

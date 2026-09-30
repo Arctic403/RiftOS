@@ -1099,12 +1099,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val sourcePath = resolveDisplay(cwd, args[1])
         val sourceFile = resolveFile(sourcePath)
         require(sourceFile.isFile) { "Rift++ source file is missing: $sourcePath" }
-        require(sourceFile.length() <= 4096L) { "Rift++ source exceeds 4096-byte host bound" }
+        require(sourceFile.length() <= 64L * 1024L) { "Rift++ source exceeds 64 KiB host bound" }
 
         val proveGeneratedPayload = action == "prove"
         val outputCapacity =
-            args.getOrNull(2)?.toIntOrNull() ?: if (proveGeneratedPayload) 32 else 4096
-        require(outputCapacity in 1..4096) { "output-capacity must be between 1 and 4096" }
+            args.getOrNull(2)?.toIntOrNull() ?: if (proveGeneratedPayload) 32 else 64 * 1024
+        require(outputCapacity in 1..(64 * 1024)) { "output-capacity must be between 1 and 65536" }
 
         val compilerBytes = decodeRiftppCompilerHex(compilerFile.readText(Charsets.UTF_8))
         val sourceBytes = sourceFile.readBytes()

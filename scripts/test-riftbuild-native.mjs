@@ -50,6 +50,8 @@ for (const required of [
   'ByteArray(3424)',
   'ByteArray(972)',
   'emitterBytes.size != 1704',
+  'MAX_SOURCE_BYTES = 64 * 1024',
+  'MAX_OUTPUT_BYTES = 64 * 1024',
   'hostParsesS3Opcodes',
   'hostEmitsS3Instructions',
   'hostParsesElf',
@@ -62,6 +64,8 @@ for (const required of [
 }
 for (const required of [
   'kMaxCompilerBytes = 64 * 1024',
+  'kMaxSourceBytes = 64 * 1024',
+  'kMaxOutputBytes = 64 * 1024',
   'GuardedSpan',
   'allocateGuardedSpan',
   'compilerLength <= 0 || compilerLength > kMaxCompilerBytes',

@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.56 — Rift++ generic machine-code host bounds raised to 64 KiB
+
+The generic Rift++ machine-code host previously mixed a 64 KiB compiler-image ceiling with 4 KiB source/output ceilings in the JNI/native host, Kotlin service and `riftpp-host compile/prove` shell boundary. That limit was an execution-host containment policy, not a frozen S3/VM1 architectural requirement, and it became artificially tight as the Android-native Rift++ emitter approached the 4 KiB generated-image boundary.
+
+Current source raises the generic source and generated-output ceilings to 64 KiB end-to-end. `RiftppCompilerService` now admits at most 64 KiB source and output buffers; the native guarded host mirrors those exact limits; and generic `riftpp-host compile` defaults to a 64 KiB output capacity while accepting caller-selected capacities only in 1..65536. `riftpp-host prove` intentionally keeps its 32-byte default proof output. Compiler images remain bounded to 64 KiB. Regression coverage pins the service, native host and generic shell limits.
+
+This does not modify frozen S3, VM1, any opcode, compiler ABI, target code semantics or proof-specific exact-size gates. Stage1/S2 bootstrap transactions keep their narrower canonical source checks where those are part of the proof contract. The change only removes the obsolete generic 4 KiB host ceiling so later Rift++ emitters/rendering stages can grow under the same bounded private-process execution model.
+
+Lifecycle is **SOURCE STAGED / BUILDER VERIFICATION PENDING**.
+
 ## Patch 10.55 — Rift++ Android R1 device promotion and R2 NativeActivity window-callback gate
 
 RiftOS run 483 / source `cc990d77fa20c42c8c2a0b2218209f5798e81cfd` cleared the corrected 1,704-byte decoded emitter-source admission gate and completed the full frozen-S3 Android R1 transaction on the real `armeabi-v7a` device. The exact chain produced a 1,968-byte entry emitter, a 228-byte ARM32 entry body, a 3,424-byte ELF emitter and a 972-byte Bionic-valid ELF32 ARM ET_DYN object with SHA-256 `72d26ffad51b5f48643460aab0447139b458a599daad291aef1965a5dcc5178f`. All host-ownership booleans remained false: RiftOS did not parse S3 opcodes, emit S3/ARM instructions, parse ELF or emit ELF.

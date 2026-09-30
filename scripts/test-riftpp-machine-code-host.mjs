@@ -20,8 +20,8 @@ for (const required of [
 
 assert.ok(service.includes('System.loadLibrary("riftpp_compiler_host")'));
 assert.ok(service.includes('COMPILER_BYTES = 276'));
-assert.ok(service.includes('MAX_SOURCE_BYTES = 4096'));
-assert.ok(service.includes('MAX_OUTPUT_BYTES = 4096'));
+assert.ok(service.includes('MAX_SOURCE_BYTES = 64 * 1024'));
+assert.ok(service.includes('MAX_OUTPUT_BYTES = 64 * 1024'));
 assert.ok(service.includes('b1f33b940d2ac199f5e38c1c621cd8b27ed15dd3a60fcb85daad7b7154b2ee0c'));
 assert.ok(service.includes('1725b5341e87a09943737130a945d8ee500492370da8ce648f696b331e118653'));
 assert.ok(service.includes('TRANSACTION_COMPILE_PROOF'));
@@ -78,6 +78,9 @@ assert.ok(shell.includes('stage1/stage1.arm32.rpp'));
 assert.ok(shell.includes('stage1/stage1.arm64.rpp'));
 assert.ok(shell.includes('RiftppCompilerClient.executeStage1SelfHost('));
 assert.ok(shell.includes('val proveGeneratedPayload = action == "prove"'));
+assert.ok(shell.includes('if (proveGeneratedPayload) 32 else 64 * 1024'), 'generic compile default output capacity must be 64 KiB');
+assert.ok(shell.includes('outputCapacity in 1..(64 * 1024)'), 'generic compile output ceiling must be 64 KiB');
+assert.ok(shell.includes('output-capacity must be between 1 and 65536'));
 assert.ok(!shell.includes('payload-file'), 'prove route must not accept caller-supplied executable payload files');
 assert.ok(shell.includes('text.endsWith("\\n")'), 'canonical compiler hex newline must be accepted');
 assert.ok(!shell.includes('text.endsWith("\\\\n")'), 'literal backslash-n must not be treated as compiler-file newline');
@@ -110,7 +113,7 @@ assert.ok(shell.includes('RiftppCompilerClient.executeS2Bootstrap('));
 assert.ok(shell.includes('decodeRiftppFixedRecordHex'));
 assert.ok(shell.includes('genAArm32SourceFile.length() <= 32768L'));
 assert.ok(shell.includes('genAArm64SourceFile.length() <= 32768L'));
-assert.ok(shell.includes('sourceFile.length() <= 4096L'), 'generic compile source bound must remain 4096');
+assert.ok(shell.includes('sourceFile.length() <= 64L * 1024L'), 'generic compile source bound must remain 64 KiB');
 assert.ok(!shell.includes('payload-file'), 'S2 bootstrap must not expose arbitrary executable payload input');
 
 assert.ok(service.includes('TRANSACTION_S2_VECTORS'));
@@ -133,7 +136,7 @@ assert.ok(shell.includes('s2/vectors/emitter-corpus.arm64.r2.hex'));
 assert.ok(shell.includes('s2/bootstrap/$genAName'));
 assert.ok(shell.includes('decodeRiftppExactRawHex'));
 assert.ok(shell.includes('RiftppCompilerClient.executeS2Vectors('));
-assert.ok(shell.includes('sourceFile.length() <= 4096L'), 'generic compile source bound must remain 4096');
+assert.ok(shell.includes('sourceFile.length() <= 64L * 1024L'), 'generic compile source bound must remain 64 KiB');
 
 
 assert.ok(service.includes('TRANSACTION_S2_SELF_HOST'));
@@ -184,7 +187,7 @@ assert.ok(shell.includes('sha256Hex(diagnosticText.toByteArray(Charsets.UTF_8))'
 assert.ok(shell.includes('compilerArm32SourceFile.length() == 23528L'));
 assert.ok(shell.includes('compilerArm64SourceFile.length() == 23528L'));
 assert.ok(shell.includes('RiftppCompilerClient.executeS2SelfHost('));
-assert.ok(shell.includes('sourceFile.length() <= 4096L'), 'S2 self-host must not widen generic compile source bound');
+assert.ok(shell.includes('sourceFile.length() <= 64L * 1024L'), 'generic compile source bound must remain 64 KiB');
 assert.ok(!shell.includes('s2-selfhost <riftpp-root> <'), 'S2 self-host must not accept arbitrary compiler/source paths');
 
 console.log('Rift++ machine-code compiler host regression PASS');

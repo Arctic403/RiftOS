@@ -11,8 +11,8 @@ namespace {
 
 constexpr jsize kCompilerBytes = 276;
 constexpr jsize kMaxCompilerBytes = 64 * 1024;
-constexpr jsize kMaxSourceBytes = 4096;
-constexpr jsize kMaxOutputBytes = 4096;
+constexpr jsize kMaxSourceBytes = 64 * 1024;
+constexpr jsize kMaxOutputBytes = 64 * 1024;
 constexpr uint8_t kCanary = 0xA5;
 constexpr uint32_t kSeedBundleBytes = 32U;
 constexpr size_t kSeedPayloadBytes = 8U;

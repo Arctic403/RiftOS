@@ -115,8 +115,8 @@ class RiftppCompilerService : Service() {
             "b10f7caead3598873c03be2336578d170d07fda0197aa88606cd06ffa2601c15"
         private const val S3_PROOF_ARM64_OUTPUT_SHA256 =
             "859865bc0057100027cbfbe71561b3c6648d010a118f5737005cd1858bd90073"
-        private const val MAX_SOURCE_BYTES = 4096
-        private const val MAX_OUTPUT_BYTES = 4096
+        private const val MAX_SOURCE_BYTES = 64 * 1024
+        private const val MAX_OUTPUT_BYTES = 64 * 1024
         private const val ARM64_SHA256 =
             "b1f33b940d2ac199f5e38c1c621cd8b27ed15dd3a60fcb85daad7b7154b2ee0c"
         private const val ARM32_SHA256 =
