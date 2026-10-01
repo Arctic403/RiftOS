@@ -105,7 +105,7 @@ for (const required of [
   'TRANSACTION_S3_KEY_SEMANTICS',
   'fun executeS3KeySemantics(',
   's3-keysemantics-base-elf-identity',
-  'patcherBytes.size != 7120',
+  'patcherBytes.size != 6944',
   '864d55cad221b9a7fae536cb5d0f01878b90327e3a78695d663e10ee6e5ddfcf',
   'c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a',
   'ByteArray(13904)',
