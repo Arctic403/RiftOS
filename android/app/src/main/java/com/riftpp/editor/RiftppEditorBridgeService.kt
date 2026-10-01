@@ -769,6 +769,64 @@ class RiftppEditorBridgeService : Service() {
                 elfPath,
                 16 * 1024 * 1024
             )
+        val elfType =
+            (elf[16].toInt() and 0xff) or
+                ((elf[17].toInt() and 0xff) shl 8)
+
+        if (elfType == 1) {
+            val receipt =
+                RiftppRelocatableElfPreflight
+                    .inspect(
+                        elf
+                    )
+
+            return JSONObject()
+                .put(
+                    "schema",
+                    "riftpp-editor-native-preflight/1"
+                )
+                .put(
+                    "state",
+                    "passed"
+                )
+                .put(
+                    "elfType",
+                    "ET_REL"
+                )
+                .put(
+                    "elfPath",
+                    elfPath
+                )
+                .put(
+                    "bytes",
+                    receipt.bytes
+                )
+                .put(
+                    "sha256",
+                    sha256(elf)
+                )
+                .put(
+                    "sectionHeaders",
+                    receipt.sectionHeaders
+                )
+                .put(
+                    "sectionTableOffset",
+                    receipt.sectionTableOffset
+                )
+                .put(
+                    "executableSections",
+                    receipt.executableSections
+                )
+                .put(
+                    "symbolCount",
+                    receipt.symbolCount
+                )
+                .put(
+                    "requiredSymbol",
+                    receipt.requiredSymbol
+                )
+        }
+
         val receipt =
             RiftppNativeElfPreflight
                 .inspect(

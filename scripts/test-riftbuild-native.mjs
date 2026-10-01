@@ -27,6 +27,7 @@ const riftppEditorBridgeService = read('android/app/src/main/java/com/riftpp/edi
 const riftppEditorMain = read('android/app/src/main/java/com/riftpp/editor/MainActivity.kt');
 const riftppEditorApkBuilder = read('android/app/src/main/java/com/riftpp/editor/RiftppApkBuilder.kt');
 const riftppEditorNativeElfPreflight = read('android/app/src/main/java/com/riftpp/editor/RiftppNativeElfPreflight.kt');
+const riftppEditorRelocatableElfPreflight = read('android/app/src/main/java/com/riftpp/editor/RiftppRelocatableElfPreflight.kt');
 const riftppCompilerService = read('android/app/src/main/java/com/riftos/app/RiftppCompilerService.kt');
 const riftppCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_compiler_host.cpp');
 const riftAppDiagnosticBridge = read('android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt');
@@ -665,6 +666,13 @@ assert.match(riftppEditorApkBuilder, /android\.app\.lib_name/);
 assert.match(riftppEditorNativeElfPreflight, /EM_ARM = 40/);
 assert.match(riftppEditorNativeElfPreflight, /PT_LOAD/);
 assert.match(riftppEditorNativeElfPreflight, /writable and executable/);
+assert.match(riftppEditorBridgeService, /elfType == 1/);
+assert.match(riftppEditorBridgeService, /RiftppRelocatableElfPreflight/);
+assert.match(riftppEditorBridgeService, /"ET_REL"/);
+assert.match(riftppEditorRelocatableElfPreflight, /ET_REL = 1/);
+assert.match(riftppEditorRelocatableElfPreflight, /EM_ARM = 40/);
+assert.match(riftppEditorRelocatableElfPreflight, /android_main/);
+assert.match(riftppEditorRelocatableElfPreflight, /must not contain program headers/);
 assert.match(nativeBuild, /temporaryPlatformShell", "Kotlin\/Android Activity"/);
 assert.match(nativeBuild, /uiProtocol", "RUI2"/);
 assert.match(nativeBuild, /kotlinEmitsRpa2", false/);
@@ -712,6 +720,11 @@ assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt'),
     'Rift++ editor payload hash gate omitted editor bridge service'
 );
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/editor/RiftppRelocatableElfPreflight.kt'),
+    'Rift++ editor payload hash gate omitted relocatable ELF preflight'
+);
+assert.match(nativeBuild, /RiftppRelocatableElfPreflight\.kt/);
 assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/RiftppWorkspace.kt'),
     'Rift++ editor payload hash gate omitted workspace layer'

@@ -320,7 +320,7 @@ val verifyRiftppEditorPayload by tasks.registering {
         "src/main/java/com/riftpp/editor/MainActivity.kt" to
             "4ff321b5906b74f9977eca9ffb3c0a340df94633ab6278fb301897aba6b9a39e",
         "src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt" to
-            "fa00e2c4e48aecdf8878773c957c686c6eead46276807310a3d4b5ac309de98f",
+            "44870ed116e6d294d892ae42226f2de782c9354e6b7874ad1ba85373454e756d",
         "src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
             "621b2c215ec4da4fe3494c6e8c6ad18a060d1b219d4293050b4c9358b01c28d4",
         "src/main/java/com/riftpp/editor/RiftppWorkspace.kt" to
@@ -337,6 +337,8 @@ val verifyRiftppEditorPayload by tasks.registering {
             "c9c6d0571ae845648d64cb3fe903661347c1a8dbfc1a22ee5f3eaee786dc189b",
         "src/main/java/com/riftpp/editor/RiftppNativeElfPreflight.kt" to
             "76024430742904f29ecf328552bd307717cfcd717596cfc3e08287d982753060",
+        "src/main/java/com/riftpp/editor/RiftppRelocatableElfPreflight.kt" to
+            "42ffde20630cfc1e0c60c0bacab07548622a719c5293eeeabc37aeea1a84f899",
         "src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt" to
             "ad403db6f4635816e32fbf02370ddea4e52facd9b3be0782f56e71ae8646ea9a",
         "src/main/java/com/riftpp/apphost/RiftppAppActivity.kt" to
