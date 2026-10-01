@@ -287,7 +287,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppApkBuilder.kt" to
                 "c9c6d0571ae845648d64cb3fe903661347c1a8dbfc1a22ee5f3eaee786dc189b",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppNativeElfPreflight.kt" to
-                "34c72be5d28ea32a95dd7174107c93317552c86cf19ea6c7f71859a8cae9dab8",
+                "76024430742904f29ecf328552bd307717cfcd717596cfc3e08287d982753060",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt" to
                 "ad403db6f4635816e32fbf02370ddea4e52facd9b3be0782f56e71ae8646ea9a",
             "standalone/editor/android/app/src/main/java/com/riftpp/apphost/RiftppAppActivity.kt" to

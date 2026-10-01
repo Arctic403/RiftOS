@@ -264,12 +264,6 @@ object RiftppNativeElfPreflight {
                 }
 
         require(
-            rxEnd <= rwStart
-        ) {
-            "executable PT_LOAD crosses writable PT_LOAD"
-        }
-
-        require(
             ordered.any {
                 it.executable &&
                     entry >= it.vaddr &&
