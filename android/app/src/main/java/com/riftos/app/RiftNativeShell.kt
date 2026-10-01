@@ -2632,7 +2632,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             require(
                 patcherFile.isFile &&
                     patcherFile.length() ==
-                        15130L
+                        14756L
             ) {
                 "Rift++ Android R8 key-semantics patcher source is missing or drifted"
             }
@@ -2663,7 +2663,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 sha256Hex(
                     patcherTransport
                 ) ==
-                    "177dc141e22a01c5bbae2ea6b226d0e94f698586a2caccfd3cdb8be4a6ce4246"
+                    "14631893970d680953dd8bc527198f36c7a5ab775a3803dbe29da543bda9b168"
             ) {
                 "Rift++ Android R8 key-semantics patcher transport identity mismatch"
             }
@@ -2693,11 +2693,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 )
 
             require(
-                patcherSource.size == 7120 &&
+                patcherSource.size == 6944 &&
                     sha256Hex(
                         patcherSource
                     ) ==
-                        "a53568b059ba59433ffec22e9d0ed5143e3eab111f9afbc764b1a6657e65eced"
+                        "864d55cad221b9a7fae536cb5d0f01878b90327e3a78695d663e10ee6e5ddfcf"
             ) {
                 "Rift++ Android R8 decoded key-semantics patcher identity mismatch"
             }
@@ -2748,7 +2748,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         value.optString(
                             "elfHex"
                         ),
-                        4968
+                        4060
                     )
 
                 require(
@@ -2770,7 +2770,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 require(
                     outputFile.isFile &&
                         outputFile.length() ==
-                            4968L &&
+                            4060L &&
                         sha256Hex(
                             outputFile.readBytes()
                         ) ==
