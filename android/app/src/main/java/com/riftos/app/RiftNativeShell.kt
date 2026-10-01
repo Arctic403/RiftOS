@@ -2977,7 +2977,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             require(
                 patcherFile.isFile &&
                     patcherFile.length() ==
-                        14756L
+                        17680L
             ) {
                 "Rift++ Android R8 key-semantics patcher source is missing or drifted"
             }
@@ -3008,7 +3008,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 sha256Hex(
                     patcherTransport
                 ) ==
-                    "14631893970d680953dd8bc527198f36c7a5ab775a3803dbe29da543bda9b168"
+                    "c5dc2e8959a9aa2e4b380e292db9c744be07e2b91a10d038acb25e9ea0de1ef4"
             ) {
                 "Rift++ Android R8 key-semantics patcher transport identity mismatch"
             }
@@ -3038,11 +3038,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 )
 
             require(
-                patcherSource.size == 6944 &&
+                patcherSource.size == 8320 &&
                     sha256Hex(
                         patcherSource
                     ) ==
-                        "864d55cad221b9a7fae536cb5d0f01878b90327e3a78695d663e10ee6e5ddfcf"
+                        "2617091d17d2425dac4dc47ae4d928792da79fda239ea75e30c8ad0a1ff31431"
             ) {
                 "Rift++ Android R8 decoded key-semantics patcher identity mismatch"
             }
@@ -3093,7 +3093,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         value.optString(
                             "elfHex"
                         ),
-                        4060
+                        4388
                     )
 
                 require(

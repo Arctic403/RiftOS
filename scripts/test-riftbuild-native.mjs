@@ -109,11 +109,11 @@ for (const required of [
   'TRANSACTION_S3_KEY_SEMANTICS',
   'fun executeS3KeySemantics(',
   's3-keysemantics-base-elf-identity',
-  'patcherBytes.size != 6944',
-  '864d55cad221b9a7fae536cb5d0f01878b90327e3a78695d663e10ee6e5ddfcf',
+  'patcherBytes.size != 8320',
+  '2617091d17d2425dac4dc47ae4d928792da79fda239ea75e30c8ad0a1ff31431',
   'c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a',
-  'ByteArray(13904)',
-  'ByteArray(4060)',
+  'ByteArray(16656)',
+  'ByteArray(4388)',
 ]) {
   assert.ok(
     riftppCompilerService.includes(required),
@@ -203,12 +203,12 @@ for (const required of [
   'riftpp-host s3-android-r8 <riftpp-root>',
   'standalone/android-native-r1/elf32-r8-keysemantics-patcher.arm32.r3.hex',
   'standalone/android-native-r1/libriftpp_editor_native_r7.buffer-proven.so',
-  '14631893970d680953dd8bc527198f36c7a5ab775a3803dbe29da543bda9b168',
-  '864d55cad221b9a7fae536cb5d0f01878b90327e3a78695d663e10ee6e5ddfcf',
+  'c5dc2e8959a9aa2e4b380e292db9c744be07e2b91a10d038acb25e9ea0de1ef4',
+  '2617091d17d2425dac4dc47ae4d928792da79fda239ea75e30c8ad0a1ff31431',
   'c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a',
-  '14756L',
-  'patcherSource.size == 6944',
-  '4060L',
+  '17680L',
+  'patcherSource.size == 8320',
+  '4388L',
   'libriftpp_editor_native_r8.so',
 ]) {
   assert.ok(

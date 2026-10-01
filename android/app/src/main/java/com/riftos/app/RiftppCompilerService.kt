@@ -3256,7 +3256,7 @@ class RiftppCompilerService : Service() {
             )
         }
 
-        if (patcherBytes.size != 6944) {
+        if (patcherBytes.size != 8320) {
             return rejected(
                 hostAbi,
                 "s3-keysemantics-patcher-source-size",
@@ -3269,7 +3269,7 @@ class RiftppCompilerService : Service() {
 
         if (
             patcherSha !=
-                "864d55cad221b9a7fae536cb5d0f01878b90327e3a78695d663e10ee6e5ddfcf"
+                "2617091d17d2425dac4dc47ae4d928792da79fda239ea75e30c8ad0a1ff31431"
         ) {
             return rejected(
                 hostAbi,
@@ -3355,7 +3355,7 @@ class RiftppCompilerService : Service() {
         }
 
         val patcherOutput =
-            ByteArray(13904)
+            ByteArray(16656)
 
         run(
             compilerBytes,
@@ -3372,7 +3372,7 @@ class RiftppCompilerService : Service() {
         }
 
         val elfOutput =
-            ByteArray(4060)
+            ByteArray(4388)
 
         run(
             patcherOutput,
