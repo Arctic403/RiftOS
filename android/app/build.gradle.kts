@@ -320,9 +320,9 @@ val verifyRiftppEditorPayload by tasks.registering {
         "src/main/java/com/riftpp/editor/MainActivity.kt" to
             "4ff321b5906b74f9977eca9ffb3c0a340df94633ab6278fb301897aba6b9a39e",
         "src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt" to
-            "8a3993e1944f73c20eebd925edca6cd8880611bff0b739b5a79d672f69bdded2",
+            "be8a367954bc8c99ed204e74aa4ba2c006344e37a4b37811a7bd50f28c2d8739",
         "src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
-            "92b465fd9be921e127663f073b43ba6af1129ba96749eda29b162c38542be698",
+            "621b2c215ec4da4fe3494c6e8c6ad18a060d1b219d4293050b4c9358b01c28d4",
         "src/main/java/com/riftpp/editor/RiftppWorkspace.kt" to
             "a733b06894bcd045e5192f45c0a42072dec27e99f7cf743cfe4cedc4c57e3d19",
         "src/main/java/com/riftpp/editor/RiftppProject.kt" to
@@ -330,11 +330,13 @@ val verifyRiftppEditorPayload by tasks.registering {
         "src/main/java/com/riftpp/editor/RiftppNativeBridge.kt" to
             "d4150a6c675ba7df474a3bd52f696d55d851024816c27e98bc2a8788b3bea31d",
         "src/main/java/com/riftpp/editor/HexAssets.kt" to
-            "bbef1a081be1f40eb3a1ae74d39e0719aa72d17ab77e95f96846c6b020f42fcc",
+            "1e71c62ef330ca81b39598c3d6c652b0b7f56b99c9bd97ff133f834d7d229c90",
         "src/main/java/com/riftpp/editor/RiftppUi.kt" to
             "da115257bac2cc32fccf82f506fb8fbf47a4bc40dcfa1066266c66d6b2c9e003",
         "src/main/java/com/riftpp/editor/RiftppApkBuilder.kt" to
-            "1b13175bbb44df5a9d87128b0afe4e71eda105afc1cf89175dfcb6e8c7cf4ad0",
+            "c9c6d0571ae845648d64cb3fe903661347c1a8dbfc1a22ee5f3eaee786dc189b",
+        "src/main/java/com/riftpp/editor/RiftppNativeElfPreflight.kt" to
+            "34c72be5d28ea32a95dd7174107c93317552c86cf19ea6c7f71859a8cae9dab8",
         "src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt" to
             "ad403db6f4635816e32fbf02370ddea4e52facd9b3be0782f56e71ae8646ea9a",
         "src/main/java/com/riftpp/apphost/RiftppAppActivity.kt" to

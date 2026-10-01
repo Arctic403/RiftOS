@@ -233,7 +233,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "riftpp-host help|status|compile|prove <riftpp-root> <source-file> [output-capacity]   [APPROVED MACHINE-CODE HOST]\n" +
-                    "riftpp-editor help|status|ls|stat|cat|write|push|pull|mkdir|mv|rm|compile|preflight|build-debug|build-production   [LEGACY EDITOR BINDER BRIDGE]\n" +
+                    "riftpp-editor help|status|ls|stat|cat|write|push|pull|mkdir|mv|rm|compile|preflight|build-debug|build-production|native-compile|native-run|native-preflight|native-build-debug   [LEGACY EDITOR BINDER BRIDGE]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
                     "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
@@ -383,7 +383,11 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftpp-editor compile\n" +
                     "riftpp-editor preflight\n" +
                     "riftpp-editor build-debug\n" +
-                    "riftpp-editor build-production"
+                    "riftpp-editor build-production\n" +
+                    "riftpp-editor native-compile <source-path> [output-path] [compiler-path]\n" +
+                    "riftpp-editor native-run <program-path> <input-path> [output-path] [output-capacity]\n" +
+                    "riftpp-editor native-preflight <elf-path>\n" +
+                    "riftpp-editor native-build-debug <elf-path> [package] [library]"
 
             return ShellOutcome(
                 output,
@@ -674,6 +678,149 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 "op",
                                 "build-production"
                             )
+                    )
+                }
+
+                "native-compile" -> {
+                    require(
+                        args.size in 1..3
+                    ) {
+                        "usage: riftpp-editor native-compile <source-path> [output-path] [compiler-path]"
+                    }
+
+                    val request =
+                        JSONObject()
+                            .put(
+                                "op",
+                                "native-compile"
+                            )
+                            .put(
+                                "sourcePath",
+                                args[0]
+                            )
+
+                    if (args.size >= 2) {
+                        request.put(
+                            "outputPath",
+                            args[1]
+                        )
+                    }
+                    if (args.size >= 3) {
+                        request.put(
+                            "compilerPath",
+                            args[2]
+                        )
+                    }
+
+                    bridge.execute(
+                        request
+                    )
+                }
+
+                "native-run" -> {
+                    require(
+                        args.size in 2..4
+                    ) {
+                        "usage: riftpp-editor native-run <program-path> <input-path> [output-path] [output-capacity]"
+                    }
+
+                    val request =
+                        JSONObject()
+                            .put(
+                                "op",
+                                "native-run"
+                            )
+                            .put(
+                                "programPath",
+                                args[0]
+                            )
+                            .put(
+                                "inputPath",
+                                args[1]
+                            )
+
+                    if (args.size >= 3) {
+                        request.put(
+                            "outputPath",
+                            args[2]
+                        )
+                    }
+                    if (args.size >= 4) {
+                        val capacity =
+                            args[3]
+                                .toIntOrNull()
+                                ?: throw IllegalArgumentException(
+                                    "output-capacity must be an integer"
+                                )
+                        require(
+                            capacity > 0
+                        ) {
+                            "output-capacity must be positive"
+                        }
+                        request.put(
+                            "outputCapacity",
+                            capacity
+                        )
+                    }
+
+                    bridge.execute(
+                        request
+                    )
+                }
+
+                "native-preflight" -> {
+                    require(
+                        args.size == 1
+                    ) {
+                        "usage: riftpp-editor native-preflight <elf-path>"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "native-preflight"
+                            )
+                            .put(
+                                "elfPath",
+                                args[0]
+                            )
+                    )
+                }
+
+                "native-build-debug" -> {
+                    require(
+                        args.size in 1..3
+                    ) {
+                        "usage: riftpp-editor native-build-debug <elf-path> [package] [library]"
+                    }
+
+                    val request =
+                        JSONObject()
+                            .put(
+                                "op",
+                                "native-build-debug"
+                            )
+                            .put(
+                                "elfPath",
+                                args[0]
+                            )
+
+                    if (args.size >= 2) {
+                        request.put(
+                            "package",
+                            args[1]
+                        )
+                    }
+                    if (args.size >= 3) {
+                        request.put(
+                            "library",
+                            args[2]
+                        )
+                    }
+
+                    bridge.execute(
+                        request
                     )
                 }
 

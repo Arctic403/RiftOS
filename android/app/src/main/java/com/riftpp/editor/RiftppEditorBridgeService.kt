@@ -555,11 +555,423 @@ class RiftppEditorBridgeService : Service() {
                     debug = false
                 )
 
+            "native-compile" ->
+                nativeCompile(
+                    request
+                )
+
+            "native-run" ->
+                nativeRun(
+                    request
+                )
+
+            "native-preflight" ->
+                nativePreflight(
+                    request
+                )
+
+            "native-build-debug" ->
+                nativeBuildDebug(
+                    request
+                )
+
             else ->
                 error(
                     "unsupported editor bridge op: $op"
                 )
         }
+    }
+
+    private fun nativeCompile(
+        request: JSONObject
+    ): JSONObject {
+        val sourcePath =
+            request.getString("sourcePath")
+        val outputPath =
+            request.optString(
+                "outputPath",
+                ".riftpp/native/compiled.bin"
+            )
+        val compilerPath =
+            request.optString(
+                "compilerPath",
+                ""
+            ).trim()
+                .takeIf {
+                    it.isNotEmpty()
+                }
+
+        val compiler =
+            compilerPath?.let {
+                readBinaryBounded(
+                    it,
+                    1024 * 1024
+                )
+            }
+
+        val compiled =
+            pipeline.compileRecordHex(
+                workspace.readText(
+                    sourcePath
+                ),
+                compiler
+            )
+
+        writeBinaryAtomic(
+            workspace.file(
+                outputPath
+            ),
+            compiled
+        )
+
+        return JSONObject()
+            .put(
+                "schema",
+                "riftpp-editor-native-compile/1"
+            )
+            .put(
+                "state",
+                "compiled"
+            )
+            .put(
+                "sourcePath",
+                sourcePath
+            )
+            .put(
+                "compilerPath",
+                compilerPath
+                    ?: "bootstrap"
+            )
+            .put(
+                "outputPath",
+                outputPath
+            )
+            .put(
+                "bytes",
+                compiled.size
+            )
+            .put(
+                "sha256",
+                sha256(compiled)
+            )
+    }
+
+    private fun nativeRun(
+        request: JSONObject
+    ): JSONObject {
+        val programPath =
+            request.getString(
+                "programPath"
+            )
+        val inputPath =
+            request.getString(
+                "inputPath"
+            )
+        val outputPath =
+            request.optString(
+                "outputPath",
+                ".riftpp/native/output.bin"
+            )
+        val outputCapacity =
+            request.optInt(
+                "outputCapacity",
+                4 * 1024 * 1024
+            )
+
+        val output =
+            pipeline.runNativeProgram(
+                readBinaryBounded(
+                    programPath,
+                    1024 * 1024
+                ),
+                readBinaryBounded(
+                    inputPath,
+                    4 * 1024 * 1024
+                ),
+                outputCapacity
+            )
+
+        writeBinaryAtomic(
+            workspace.file(
+                outputPath
+            ),
+            output
+        )
+
+        return JSONObject()
+            .put(
+                "schema",
+                "riftpp-editor-native-run/1"
+            )
+            .put(
+                "state",
+                "executed"
+            )
+            .put(
+                "programPath",
+                programPath
+            )
+            .put(
+                "inputPath",
+                inputPath
+            )
+            .put(
+                "outputPath",
+                outputPath
+            )
+            .put(
+                "bytes",
+                output.size
+            )
+            .put(
+                "sha256",
+                sha256(output)
+            )
+    }
+
+    private fun nativePreflight(
+        request: JSONObject
+    ): JSONObject {
+        val elfPath =
+            request.getString(
+                "elfPath"
+            )
+        val elf =
+            readBinaryBounded(
+                elfPath,
+                16 * 1024 * 1024
+            )
+        val receipt =
+            RiftppNativeElfPreflight
+                .inspect(
+                    elf
+                )
+
+        return JSONObject()
+            .put(
+                "schema",
+                "riftpp-editor-native-preflight/1"
+            )
+            .put(
+                "state",
+                "passed"
+            )
+            .put(
+                "elfPath",
+                elfPath
+            )
+            .put(
+                "bytes",
+                receipt.bytes
+            )
+            .put(
+                "sha256",
+                sha256(elf)
+            )
+            .put(
+                "entry",
+                receipt.entry
+            )
+            .put(
+                "programHeaders",
+                receipt.programHeaders
+            )
+            .put(
+                "sectionHeaders",
+                receipt.sectionHeaders
+            )
+            .put(
+                "sectionTableOffset",
+                receipt.sectionTableOffset
+            )
+            .put(
+                "loadSegments",
+                receipt.loadSegments
+            )
+            .put(
+                "executableLoads",
+                receipt.executableLoads
+            )
+            .put(
+                "writableLoads",
+                receipt.writableLoads
+            )
+            .put(
+                "rxEnd",
+                receipt.rxEnd
+            )
+            .put(
+                "rwStart",
+                receipt.rwStart
+            )
+    }
+
+    private fun readBinaryBounded(
+        path: String,
+        maxBytes: Int
+    ): ByteArray {
+        val file =
+            workspace.file(
+                path
+            )
+
+        require(
+            file.isFile
+        ) {
+            "binary file does not exist: $path"
+        }
+        require(
+            file.length() in
+                0L..maxBytes.toLong()
+        ) {
+            "binary file exceeds $maxBytes bytes: $path"
+        }
+
+        return file.readBytes()
+    }
+
+    private fun nativeBuildDebug(
+        request: JSONObject
+    ): JSONObject {
+        val elfPath =
+            request.getString(
+                "elfPath"
+            )
+        val packageName =
+            request.optString(
+                "package",
+                "com.riftpp.editor.nativev1.debug"
+            )
+        val libraryName =
+            request.optString(
+                "library",
+                "riftpp_editor_native_r1"
+            )
+
+        require(
+            packageName.endsWith(
+                ".debug"
+            )
+        ) {
+            "native debug package must end with .debug"
+        }
+
+        val elf =
+            readBinaryBounded(
+                elfPath,
+                16 * 1024 * 1024
+            )
+
+        RiftppNativeElfPreflight
+            .inspect(
+                elf
+            )
+
+        val receipt =
+            RiftppApkBuilder(
+                this
+            )
+                .buildNativeDebug(
+                    elf = elf,
+                    packageName =
+                        packageName,
+                    libraryName =
+                        libraryName,
+                    sourcePath =
+                        elfPath
+                )
+
+        val apkPath =
+            ".riftpp/native/debug-latest.apk"
+        val receiptPath =
+            ".riftpp/native/debug-latest.json"
+
+        copyBinaryAtomic(
+            receipt.signedApk,
+            workspace.file(
+                apkPath
+            )
+        )
+
+        require(
+            sha256(
+                workspace.file(
+                    apkPath
+                )
+            ) ==
+                receipt.apkSha256
+        ) {
+            "exported native APK hash drift"
+        }
+
+        val result =
+            JSONObject()
+                .put(
+                    "schema",
+                    "riftpp-editor-native-build/1"
+                )
+                .put(
+                    "state",
+                    "signed-verified"
+                )
+                .put(
+                    "mode",
+                    "debug"
+                )
+                .put(
+                    "package",
+                    receipt.packageName
+                )
+                .put(
+                    "activity",
+                    receipt.activityName
+                )
+                .put(
+                    "library",
+                    receipt.libraryName
+                )
+                .put(
+                    "elfPath",
+                    elfPath
+                )
+                .put(
+                    "elfSha256",
+                    receipt.elfSha256
+                )
+                .put(
+                    "apkSha256",
+                    receipt.apkSha256
+                )
+                .put(
+                    "certificateSha256",
+                    receipt.certificateSha256
+                )
+                .put(
+                    "contentDigestSha256",
+                    receipt.contentDigestSha256
+                )
+                .put(
+                    "entryCount",
+                    receipt.entryCount
+                )
+                .put(
+                    "apkWorkspacePath",
+                    apkPath
+                )
+                .put(
+                    "publishedUri",
+                    receipt.publishedUri
+                )
+
+        workspace.writeText(
+            receiptPath,
+            result.toString(2)
+        )
+
+        return result.put(
+            "receiptWorkspacePath",
+            receiptPath
+        )
     }
 
     private fun buildCurrent(

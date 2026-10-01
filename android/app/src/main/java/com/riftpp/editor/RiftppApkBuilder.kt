@@ -28,6 +28,19 @@ data class RiftppApkReceipt(
     val publishedUri: String?
 )
 
+data class RiftppNativeApkReceipt(
+    val packageName: String,
+    val activityName: String,
+    val libraryName: String,
+    val signedApk: File,
+    val apkSha256: String,
+    val elfSha256: String,
+    val certificateSha256: String,
+    val contentDigestSha256: String,
+    val entryCount: Int,
+    val publishedUri: String?
+)
+
 /**
  * TEMP LIVE-PROOF Rift++-owned Android APK materializer/packer.
  *
@@ -455,6 +468,289 @@ class RiftppApkBuilder(private val context: Context) {
         )
     }
 
+    fun buildNativeDebug(
+        elf: ByteArray,
+        packageName: String,
+        libraryName: String,
+        sourcePath: String
+    ): RiftppNativeApkReceipt {
+        RiftppNativeElfPreflight.inspect(
+            elf
+        )
+
+        require(
+            packageName.length <= 180
+        ) {
+            "Android package name is too long"
+        }
+        require(
+            Regex(
+                "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            ).matches(
+                packageName
+            )
+        ) {
+            "Android package name is invalid"
+        }
+        require(
+            Regex(
+                "^[A-Za-z0-9_]+$"
+            ).matches(
+                libraryName
+            )
+        ) {
+            "Native library name is invalid"
+        }
+        require(
+            elf.size in
+                1..MAX_NATIVE_BYTES
+        ) {
+            "Native ELF is out of bounds"
+        }
+
+        val elfSha =
+            sha256(
+                elf
+            )
+        val packageSegment =
+            packageName
+                .substringAfterLast('.')
+        val outputRoot =
+            File(
+                context.filesDir,
+                "riftpp-native-apk-builds"
+            )
+                .apply {
+                    mkdirs()
+                }
+                .canonicalFile
+        val buildId =
+            packageSegment +
+                "-" +
+                elfSha.take(16) +
+                "-" +
+                System.currentTimeMillis()
+                    .toString()
+        val buildDir =
+            File(
+                outputRoot,
+                buildId
+            )
+                .canonicalFile
+
+        require(
+            buildDir.parentFile ==
+                outputRoot
+        ) {
+            "Rift++ native APK build path escaped output root"
+        }
+        require(
+            buildDir.mkdirs()
+        ) {
+            "Could not create Rift++ native APK build directory"
+        }
+
+        val unsignedApk =
+            File(
+                buildDir,
+                "$packageSegment-arm32-native-unsigned.apk"
+            )
+                .canonicalFile
+        val signedApk =
+            File(
+                buildDir,
+                "$packageSegment-arm32-native-signed.apk"
+            )
+                .canonicalFile
+
+        var entryCount = 0
+
+        unsignedApk
+            .outputStream()
+            .buffered()
+            .use { fileOutput ->
+                ZipOutputStream(
+                    fileOutput
+                ).use { output ->
+                    fun putBytes(
+                        name: String,
+                        bytes: ByteArray
+                    ) {
+                        val entry =
+                            ZipEntry(
+                                name
+                            ).apply {
+                                time = 0L
+                            }
+
+                        output.putNextEntry(
+                            entry
+                        )
+                        output.write(
+                            bytes
+                        )
+                        output.closeEntry()
+                        entryCount += 1
+                    }
+
+                    putBytes(
+                        "AndroidManifest.xml",
+                        buildBinaryManifest(
+                            packageName =
+                                packageName,
+                            versionName =
+                                "0.1.0-native-editor-debug",
+                            activityName =
+                                "android.app.NativeActivity",
+                            hasCode =
+                                false,
+                            nativeLibraryName =
+                                libraryName
+                        )
+                    )
+                    putBytes(
+                        "lib/armeabi-v7a/lib$libraryName.so",
+                        elf
+                    )
+                }
+            }
+
+        require(
+            unsignedApk.isFile &&
+                unsignedApk.length() > 0L
+        ) {
+            "Rift++ native unsigned APK was not produced"
+        }
+
+        val signer =
+            RiftppApkV2Signer(
+                context
+            )
+        val signed =
+            signer.sign(
+                unsignedApk,
+                signedApk
+            )
+        val verified =
+            signer.verify(
+                signedApk
+            )
+
+        require(
+            signed.apkSha256 ==
+                verified.apkSha256
+        ) {
+            "native APK hash verification drift"
+        }
+        require(
+            signed.certificateSha256 ==
+                verified.certificateSha256
+        ) {
+            "native APK certificate verification drift"
+        }
+        require(
+            signed.contentDigestSha256 ==
+                verified.contentDigestSha256
+        ) {
+            "native APK content digest verification drift"
+        }
+
+        val publishedUri =
+            publishToDownloads(
+                signedApk,
+                "$packageSegment-arm32-native-signed.apk"
+            )
+
+        val receipt =
+            JSONObject()
+                .put(
+                    "format",
+                    "riftpp-editor-native-apk-v1"
+                )
+                .put(
+                    "state",
+                    "signed-verified"
+                )
+                .put(
+                    "package",
+                    packageName
+                )
+                .put(
+                    "activity",
+                    "android.app.NativeActivity"
+                )
+                .put(
+                    "library",
+                    libraryName
+                )
+                .put(
+                    "sourcePath",
+                    sourcePath
+                )
+                .put(
+                    "elfBytes",
+                    elf.size
+                )
+                .put(
+                    "elfSha256",
+                    elfSha
+                )
+                .put(
+                    "apkSha256",
+                    verified.apkSha256
+                )
+                .put(
+                    "certificateSha256",
+                    verified.certificateSha256
+                )
+                .put(
+                    "contentDigestSha256",
+                    verified.contentDigestSha256
+                )
+                .put(
+                    "entryCount",
+                    entryCount
+                )
+                .put(
+                    "publishedUri",
+                    publishedUri
+                        ?.toString()
+                )
+
+        File(
+            buildDir,
+            "receipt.json"
+        )
+            .writeText(
+                receipt.toString(2),
+                Charsets.UTF_8
+            )
+
+        return RiftppNativeApkReceipt(
+            packageName =
+                packageName,
+            activityName =
+                "android.app.NativeActivity",
+            libraryName =
+                libraryName,
+            signedApk =
+                signedApk,
+            apkSha256 =
+                verified.apkSha256,
+            elfSha256 =
+                elfSha,
+            certificateSha256 =
+                verified.certificateSha256,
+            contentDigestSha256 =
+                verified.contentDigestSha256,
+            entryCount =
+                entryCount,
+            publishedUri =
+                publishedUri
+                    ?.toString()
+        )
+    }
+
     private fun publishToDownloads(
         signedApk: File,
         displayName: String
@@ -613,10 +909,13 @@ class RiftppApkBuilder(private val context: Context) {
 
     private fun buildBinaryManifest(
         packageName: String,
-        versionName: String
+        versionName: String,
+        activityName: String = APP_ACTIVITY,
+        hasCode: Boolean = true,
+        nativeLibraryName: String? = null
     ): ByteArray {
         val strings =
-            listOf(
+            mutableListOf(
                 "name",
                 "hasCode",
                 "exported",
@@ -637,14 +936,24 @@ class RiftppApkBuilder(private val context: Context) {
                 "36",
                 "application",
                 "true",
+                "false",
                 "activity",
-                APP_ACTIVITY,
+                activityName,
                 "intent-filter",
                 "action",
                 "android.intent.action.MAIN",
                 "category",
                 "android.intent.category.LAUNCHER"
             )
+
+        if (nativeLibraryName != null) {
+            strings +=
+                listOf(
+                    "meta-data",
+                    "android.app.lib_name",
+                    nativeLibraryName
+                )
+        }
 
         fun index(value: String): Int {
             val found = strings.indexOf(value)
@@ -933,8 +1242,8 @@ class RiftppApkBuilder(private val context: Context) {
                 listOf(
                     boolAttr(
                         "hasCode",
-                        "true",
-                        true
+                        if (hasCode) "true" else "false",
+                        hasCode
                     )
                 )
             )
@@ -946,7 +1255,7 @@ class RiftppApkBuilder(private val context: Context) {
                 listOf(
                     stringAttr(
                         "name",
-                        APP_ACTIVITY
+                        activityName
                     ),
                     boolAttr(
                         "exported",
@@ -956,6 +1265,29 @@ class RiftppApkBuilder(private val context: Context) {
                 )
             )
         )
+
+        if (nativeLibraryName != null) {
+            body.write(
+                startElement(
+                    "meta-data",
+                    listOf(
+                        stringAttr(
+                            "name",
+                            "android.app.lib_name"
+                        ),
+                        stringAttr(
+                            "value",
+                            nativeLibraryName
+                        )
+                    )
+                )
+            )
+            body.write(
+                endElement(
+                    "meta-data"
+                )
+            )
+        }
 
         body.write(
             startElement(
