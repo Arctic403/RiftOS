@@ -6,6 +6,20 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.62 — Rift++ Android R7 mutable text-buffer/caret lane
+
+R7 forks only from the exact preserved 2,768-byte R6 semantic-input proof ELF SHA-256 `32f7824d6dd4b2f31c4ec30d93cb46995c242fe62263bcf009eb384a7cd8f5e9`. The authoritative staged Rift++ source is `standalone/android-native-r1/elf32-r7-textbuffer-patcher.arm32.r3.hex`: 271 body records / 2,176 decoded bytes, 4,624-byte fixed-record transport SHA-256 `b4cd99191c66136d03a2232d941db327e733ebc24cb253ee85efa23dfbb108ac`, decoded-source SHA-256 `8b8f5df2cef4364ebfd0ea51450e89728a29f3b8a56a191dc24a7200fa23a6d7`. Frozen S3 is expected to compile it to a 4,368-byte native patcher and produce a 3,248-byte R7 ELF.
+
+The target adds no Android imports, dynsym entries or relocations. It extends inherited RW/BSS state from `0x22c` to `0x23c`: length at `0x122c`, caret at `0x1230`, and an 8-byte mutable text buffer at `0x1234..0x123b`, above the proven R6 window/focus words. The exact R5 glyph engine at `0x758..0x93f` is not rewritten, and the R6 full-frame renderer remains byte-for-byte unchanged except for one pre-title overlay call.
+
+For this bounded state-model proof, each handled non-pre-dispatched input event appends the next actual byte of deterministic `EDIT` content while length is below four, advances length and caret, and requests a fresh redraw through the proven R6 path. The overlay reads those stored bytes back, maps them to 5x7 rows, calls the exact generic `drawGlyph` routine at `0x874`, and draws a vertical caret at the stored end position before the inherited R5 title renderer unlocks/posts. This gate proves mutable text-buffer/caret state; it does not claim soft-keyboard/IME character decoding.
+
+An earlier caret draft advanced each row by `stride-24` from an unadvanced base and was rejected before host wiring. The corrected source advances by the full stride and is the only pinned R7 identity. Independent fixed-record validation confirmed all 272 records are exact 8-byte records, all five S3 branch targets are in range, and the highest fixed write is `0xcac` inside planned `0xcb0` output.
+
+RiftOS current source adds separate `TRANSACTION_S3_TEXT_BUFFER` / `riftpp-host s3-android-r7 <riftpp-root>` worker, client, shell and regression coverage. The lane hard-pins the frozen S3 compiler, corrected R7 source identities, exact preserved R6 proof base, 4,368-byte compiled patcher and 3,248-byte target ELF. Existing R3/R4/R4.1/R5/R6 lanes remain unchanged and all host semantic-ownership flags remain false.
+
+Lifecycle is **SOURCE/HOST STAGED / BUILDER GENERATION PENDING / DEVICE BUFFER-VISUAL PROOF PENDING**. R7 is not promoted until frozen S3 generates the exact target, ELF invariants are inspected, a distinct proof APK is installed, and direct on-device evidence shows the stored text buffer/caret visibly mutate from input.
+
 ## Patch 10.61 — Rift++ Android R6 semantic input/focus lane
 
 R6 forks only from the exact promoted 2,368-byte R5 glyph-proven ELF SHA-256 `1702e86b8672697f1139eb105b6c69e9ce455222f90a31d77123bac860b7c2bc`. The authoritative proven Rift++ source is `standalone/android-native-r1/elf32-r6-focus-patcher.arm32.r3.hex`: 239 body records / 1,920 decoded bytes, 4,080-byte fixed-record transport SHA-256 `340d192199408411775baeb3be8a2d20b18c42bdfcb19253a2941da1ddd3f40f`, decoded-source SHA-256 `10ffd04fb115c6229c1114ccef4f1d71ab5b36a58f11a993159a0e9fe2c200b4`. Builder run 495 / source `a83ed529971311289187b49a3c86d5516c910fff` compiled it under frozen S3 to the exact 3,856-byte native patcher SHA-256 `d09e12c6ba9e462411fc2a326b58866336dc83404a5c729b8ac7ab4a77a59fe1` and produced the exact 2,768-byte R6 ELF SHA-256 `32f7824d6dd4b2f31c4ec30d93cb46995c242fe62263bcf009eb384a7cd8f5e9`.

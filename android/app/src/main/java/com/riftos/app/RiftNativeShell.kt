@@ -417,7 +417,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
         if (action == "help") {
             require(args.isEmpty()) {
-                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap|s2-selfhost|s2-vectors|s3-selfhost|s3-android-r1|s3-android-r3|s3-android-r4|s3-android-r41|s3-android-r5|s3-android-r6 <riftpp-root> [source-file] [output-capacity]"
+                "usage: riftpp-host help|status|compile|prove|stage1-selfhost|s2-bootstrap|s2-selfhost|s2-vectors|s3-selfhost|s3-android-r1|s3-android-r3|s3-android-r4|s3-android-r41|s3-android-r5|s3-android-r6|s3-android-r7 <riftpp-root> [source-file] [output-capacity]"
             }
             val text =
                 "Rift++ approved machine-code compiler host\n" +
@@ -434,7 +434,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftpp-host s3-android-r4 <riftpp-root>\n" +
                     "riftpp-host s3-android-r41 <riftpp-root>\n" +
                     "riftpp-host s3-android-r5 <riftpp-root>\n" +
-                    "riftpp-host s3-android-r6 <riftpp-root>"
+                    "riftpp-host s3-android-r6 <riftpp-root>\n" +
+                    "riftpp-host s3-android-r7 <riftpp-root>"
             return ShellOutcome(text, cwd, nativeResult("riftpp-host").put("action", "help"))
         }
         val hostAbi = if (Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
@@ -2299,6 +2300,245 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             )
                 ) {
                     "Rift++ Android R6 output publish verification failed"
+                }
+
+                value
+                    .put(
+                        "outputPath",
+                        outputPath
+                    )
+                    .put(
+                        "outputPublished",
+                        true
+                    )
+            }
+
+            return ShellOutcome(
+                value.toString(2),
+                cwd,
+                value
+            )
+        }
+
+
+        if (action == "s3-android-r7") {
+            require(args.size == 1) {
+                "usage: riftpp-host s3-android-r7 <riftpp-root>"
+            }
+
+            require(!Process.is64Bit()) {
+                "Rift++ Android Native R7 currently requires the ARM32 host lane"
+            }
+
+            val rootPath =
+                resolveDisplay(
+                    cwd,
+                    args[0]
+                )
+            val root =
+                resolveFile(
+                    rootPath
+                )
+
+            require(root.isDirectory) {
+                "Rift++ root is not a directory: $rootPath"
+            }
+
+            val compilerPath =
+                joinDisplay(
+                    rootPath,
+                    "s3/frozen/compiler.arm32.native.hex"
+                )
+            val patcherPath =
+                joinDisplay(
+                    rootPath,
+                    "standalone/android-native-r1/elf32-r7-textbuffer-patcher.arm32.r3.hex"
+                )
+            val basePath =
+                joinDisplay(
+                    rootPath,
+                    "standalone/android-native-r1/libriftpp_editor_native_r6.semantic-input-proven.so"
+                )
+            val outputPath =
+                joinDisplay(
+                    rootPath,
+                    "standalone/android-native-r1/libriftpp_editor_native_r7.so"
+                )
+
+            val compilerFile =
+                resolveFile(
+                    compilerPath
+                )
+            val patcherFile =
+                resolveFile(
+                    patcherPath
+                )
+            val baseFile =
+                resolveFile(
+                    basePath
+                )
+            val outputFile =
+                resolveFile(
+                    outputPath
+                )
+
+            require(
+                compilerFile.isFile &&
+                    compilerFile.length() ==
+                        33057L
+            ) {
+                "Rift++ frozen S3 ARM32 compiler transport is missing or drifted"
+            }
+            require(
+                patcherFile.isFile &&
+                    patcherFile.length() ==
+                        4624L
+            ) {
+                "Rift++ Android R7 text-buffer patcher source is missing or drifted"
+            }
+            require(
+                baseFile.isFile &&
+                    baseFile.length() ==
+                        2768L
+            ) {
+                "Rift++ promoted R6 semantic-input base ELF is missing or drifted"
+            }
+
+            val compilerTransport =
+                compilerFile.readBytes()
+            val patcherTransport =
+                patcherFile.readBytes()
+            val baseElf =
+                baseFile.readBytes()
+
+            require(
+                sha256Hex(
+                    compilerTransport
+                ) ==
+                    "950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a"
+            ) {
+                "Rift++ frozen S3 ARM32 compiler transport identity mismatch"
+            }
+            require(
+                sha256Hex(
+                    patcherTransport
+                ) ==
+                    "b4cd99191c66136d03a2232d941db327e733ebc24cb253ee85efa23dfbb108ac"
+            ) {
+                "Rift++ Android R7 text-buffer patcher transport identity mismatch"
+            }
+            require(
+                sha256Hex(
+                    baseElf
+                ) ==
+                    "32f7824d6dd4b2f31c4ec30d93cb46995c242fe62263bcf009eb384a7cd8f5e9"
+            ) {
+                "Rift++ promoted R6 semantic-input base ELF identity mismatch"
+            }
+
+            val compilerBytes =
+                decodeRiftppExactRawHex(
+                    compilerTransport
+                        .toString(
+                            Charsets.UTF_8
+                        ),
+                    16528
+                )
+            val patcherSource =
+                decodeRiftppFixedRecordHex(
+                    patcherTransport
+                        .toString(
+                            Charsets.UTF_8
+                        )
+                )
+
+            require(
+                patcherSource.size == 2176 &&
+                    sha256Hex(
+                        patcherSource
+                    ) ==
+                        "8b8f5df2cef4364ebfd0ea51450e89728a29f3b8a56a191dc24a7200fa23a6d7"
+            ) {
+                "Rift++ Android R7 decoded text-buffer patcher identity mismatch"
+            }
+
+            val value =
+                RiftppCompilerClient
+                    .executeS3TextBuffer(
+                        appContext,
+                        compilerBytes,
+                        patcherSource,
+                        baseElf
+                    )
+                    .put(
+                        "command",
+                        "riftpp-host"
+                    )
+                    .put(
+                        "action",
+                        action
+                    )
+                    .put(
+                        "compilerPath",
+                        compilerPath
+                    )
+                    .put(
+                        "patcherSourcePath",
+                        patcherPath
+                    )
+                    .put(
+                        "r6BaseElfPath",
+                        basePath
+                    )
+                    .put(
+                        "r6BaseElfSha256",
+                        sha256Hex(
+                            baseElf
+                        )
+                    )
+
+            if (
+                value.optString(
+                    "status"
+                ) ==
+                    "success"
+            ) {
+                val elfBytes =
+                    decodeRiftppExactRawHex(
+                        value.optString(
+                            "elfHex"
+                        ),
+                        3248
+                    )
+
+                require(
+                    sha256Hex(
+                        elfBytes
+                    ) ==
+                        value.optString(
+                            "elfSha256"
+                        )
+                ) {
+                    "Rift++ Android R7 emitted output transport hash mismatch"
+                }
+
+                atomicWrite(
+                    outputFile,
+                    elfBytes
+                )
+
+                require(
+                    outputFile.isFile &&
+                        outputFile.length() ==
+                            3248L &&
+                        sha256Hex(
+                            outputFile.readBytes()
+                        ) ==
+                            value.optString(
+                                "elfSha256"
+                            )
+                ) {
+                    "Rift++ Android R7 output publish verification failed"
                 }
 
                 value
