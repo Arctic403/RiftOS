@@ -43,7 +43,10 @@ class Source0SelfHostToolchainPort(
         private const val NATIVE_PROOF_ASSET = "native_proof.hex"
         private const val NATIVE_PROOF_EXPECTED_ASSET =
             "native_proof_expected.hex"
+        private const val NATIVE_PROOF_INPUT_ASSET =
+            "native_proof_input.hex"
         private const val MAX_NATIVE_PROOF_BYTES = 4 * 1024
+        private const val MAX_NATIVE_PROOF_INPUT_BYTES = 1024
     }
 
     private val candidateRoot =
@@ -296,12 +299,42 @@ class Source0SelfHostToolchainPort(
                 )
             }
 
+        val input =
+            try {
+                val raw =
+                    context.assets.open(NATIVE_PROOF_INPUT_ASSET)
+                        .bufferedReader(Charsets.UTF_8)
+                        .use { it.readText().trim() }
+
+                require(
+                    raw.isNotEmpty() &&
+                        raw.length % 2 == 0 &&
+                        raw.length <= MAX_NATIVE_PROOF_INPUT_BYTES * 2 &&
+                        raw.all { value ->
+                            value in '0'..'9' || value in 'a'..'f'
+                        }
+                ) {
+                    "native proof input must be bounded canonical lowercase hex"
+                }
+
+                decodeCanonicalHex(raw)
+            } catch (error: Throwable) {
+                return LivePreviewRun(
+                    success = false,
+                    result = 0,
+                    output = ByteArray(0),
+                    error =
+                        "native proof input load failed: " +
+                            (error.message ?: error.javaClass.simpleName)
+                )
+            }
+
         val raw =
             try {
                 Vm1Bridge.run(
                     vm = kernel,
                     program = byteArrayOf(0, 0, 0, 0),
-                    source = ByteArray(0),
+                    source = input,
                     output = ByteArray(1),
                     stepBudget = 1
                 )

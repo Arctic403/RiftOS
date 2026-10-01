@@ -186,7 +186,10 @@ class RiftBuildLocalExecutor(context: Context) {
             "native/miner/arm32/native_proof.hex"
         private const val EDITOR_NATIVE_PROOF_EXPECTED_HEX =
             "native/miner/arm32/native_proof_expected.hex"
+        private const val EDITOR_NATIVE_PROOF_INPUT_HEX =
+            "native/miner/arm32/native_proof_input.hex"
         private const val EDITOR_NATIVE_PROOF_MAX_BYTES = 4 * 1024
+        private const val EDITOR_NATIVE_PROOF_INPUT_MAX_BYTES = 1024
         private val EDITOR_SOURCE_SHA256 = linkedMapOf(
             "external/editor/core/src/main/kotlin/com/codynex/editor/EditorModel.kt" to
                 "c1d1ac41bbceb3a046c7bfc1fe70a63ecc56ec5186bbe5440a31eb00d1f71d32",
@@ -199,7 +202,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
                 "149013f3f83534199d22fd377ab02e84875b76c15bffe54aca9aa452dc3d6051",
             "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-                "ee623877926b47b4f8852767dfbdb545ccff4939bd71b40b55b3ccf0b7711370",
+                "0aeb9d907153db096868d11bad1d2aa1dffb2172d6d7759f2f50a333018fd347",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
@@ -213,7 +216,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
                 "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620",
             "external/editor/app/build.gradle.kts" to
-                "aa41b0bc496bcf518b8746e5f22983895fe03bbbe20073bdcde159c8255cd70e",
+                "09b81ff08f19a0411741831c2bd3ebdea2a800ce63671d4b4f70a7af82e9d174",
             "external/editor/app/src/main/AndroidManifest.xml" to
                 "5eab82c9663ec4e3b6db0e1c9831422ac73fe7460ede385c36e747d90f3bad9f",
             "external/editor/settings.gradle.kts" to
@@ -2934,6 +2937,27 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         val nativeProofExpectedText =
             (nativeProofExpectedRaw + "\n").toByteArray(Charsets.UTF_8)
 
+        val nativeProofInputFile =
+            projectFile(ref, EDITOR_NATIVE_PROOF_INPUT_HEX)
+        require(nativeProofInputFile.isFile) {
+            "Codynex native proof input authority is missing"
+        }
+        val nativeProofInputRaw =
+            readTextBounded(nativeProofInputFile).trim()
+        require(
+            nativeProofInputRaw.isNotEmpty() &&
+                nativeProofInputRaw.length % 2 == 0 &&
+                nativeProofInputRaw.length <=
+                    EDITOR_NATIVE_PROOF_INPUT_MAX_BYTES * 2 &&
+                nativeProofInputRaw.all { value ->
+                    value in '0'..'9' || value in 'a'..'f'
+                }
+        ) {
+            "Codynex native proof input must be bounded canonical lowercase hex"
+        }
+        val nativeProofInputText =
+            (nativeProofInputRaw + "\n").toByteArray(Charsets.UTF_8)
+
         val host =
             readOwnApkEntry(EDITOR_HOST_APK_ENTRY, EDITOR_MAX_HOST_BYTES)
         verifyElfImage(host, 1, 40)
@@ -3000,6 +3024,8 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             File(assetRoot, "native_proof.hex").canonicalFile
         val nativeProofExpectedOutput =
             File(assetRoot, "native_proof_expected.hex").canonicalFile
+        val nativeProofInputOutput =
+            File(assetRoot, "native_proof_input.hex").canonicalFile
 
         atomicWrite(manifestOutput, manifestBytes)
         atomicWrite(hostOutput, host)
@@ -3008,6 +3034,7 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         atomicWrite(sourceOutput, sourceText)
         atomicWrite(nativeProofOutput, nativeProofText)
         atomicWrite(nativeProofExpectedOutput, nativeProofExpectedText)
+        atomicWrite(nativeProofInputOutput, nativeProofInputText)
 
         val dexReceipt = JSONArray()
         for ((name, bytes) in dexEntries) {
@@ -3054,6 +3081,12 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         ) {
             "Codynex native proof expected-result materialization hash mismatch"
         }
+        require(
+            sha256(nativeProofInputOutput) ==
+                sha256(nativeProofInputText)
+        ) {
+            "Codynex native proof input materialization hash mismatch"
+        }
 
         val sourceReceipt = JSONObject()
         EDITOR_SOURCE_SHA256.forEach { (path, expectedSha) ->
@@ -3099,6 +3132,12 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
                 "nativeProofExpectedSha256",
                 sha256(nativeProofExpectedText)
             )
+            .put(
+                "nativeProofInputSource",
+                projectDisplay(ref, nativeProofInputFile)
+            )
+            .put("nativeProofInputBytes", nativeProofInputText.size)
+            .put("nativeProofInputSha256", sha256(nativeProofInputText))
             .put(
                 "manifest",
                 JSONObject()

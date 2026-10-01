@@ -271,7 +271,7 @@ val verifyCodynexEditorPayload by tasks.registering {
         "src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
             "149013f3f83534199d22fd377ab02e84875b76c15bffe54aca9aa452dc3d6051",
         "src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-            "ee623877926b47b4f8852767dfbdb545ccff4939bd71b40b55b3ccf0b7711370",
+            "0aeb9d907153db096868d11bad1d2aa1dffb2172d6d7759f2f50a333018fd347",
         "src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
             "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
         "src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
