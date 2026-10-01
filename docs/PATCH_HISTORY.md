@@ -6,6 +6,24 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.63 — Rift++ Android R8 native key-semantics lane
+
+R8 forks only from the exact preserved 3,248-byte R7 mutable-buffer proof ELF SHA-256 `c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a`. The authoritative staged Rift++ source is `standalone/android-native-r1/elf32-r8-keysemantics-patcher.arm32.r3.hex`: 889 body records / 7,120 decoded bytes, 15,130-byte fixed-record transport SHA-256 `177dc141e22a01c5bbae2ea6b226d0e94f698586a2caccfd3cdb8be4a6ce4246`, decoded-source SHA-256 `a53568b059ba59433ffec22e9d0ed5143e3eab111f9afbc764b1a6657e65eced`. Frozen S3 is expected to compile it to a 14,256-byte native patcher and produce a 4,968-byte R8 ELF.
+
+R8 leaves the proven R7 window/focus/length/caret/buffer state addresses unchanged and extends state only above them. It adds exactly four libandroid imports — `AInputEvent_getType`, `AKeyEvent_getAction`, `AKeyEvent_getKeyCode`, and `ANativeActivity_showSoftInput` — with new GLOB_DAT slots at `0x123c..0x1248` and stores the current `ANativeActivity*` at `0x124c`; RW memsz grows to `0x250`. Dynstr/dynsym/SysV-hash/REL metadata are rebuilt in appended target space by the Rift++ patcher rather than by host ELF logic.
+
+The proven queue drain still supplies the actual `AInputEvent*`. Motion input sets focus, requests the soft keyboard with `ANativeActivity_showSoftInput(..., SHOW_IMPLICIT)`, and redraws without editing. Real key-down events are classified and decoded in target code: Android keycodes A-Z map to uppercase ASCII A-Z, 0-9 map to ASCII digits, SPACE inserts a space, and DEL performs bounded backspace. All edits go through the already-proven eight-byte R7 mutable buffer/caret state.
+
+A 288-byte Rift++-owned A-Z/0-9 bitmap table is appended for arbitrary supported buffer rendering. R8 reads actual stored bytes, maps them to that table, invokes the exact inherited R5 generic `drawGlyph` routine, draws the caret, and returns to the inherited title renderer.
+
+This is intentionally a native key-event semantics gate, not a full soft-keyboard IME text claim. Android keycodes describe key events rather than Unicode text, and modern IMEs can commit composed text through an InputConnection without emitting letter key events. If the target device keyboard follows that path, a narrow commit-text bridge remains a separate follow-up rather than being attributed to R8.
+
+Independent fixed-record validation confirmed all 890 records are exact 8-byte records, all five S3 branch targets are in range, and the highest fixed write is `0x1364` inside the planned `0x1368`-byte output.
+
+RiftOS current source adds separate `TRANSACTION_S3_KEY_SEMANTICS` / `riftpp-host s3-android-r8 <riftpp-root>` worker, client, shell and regression coverage. The lane hard-pins the frozen S3 compiler, R8 source identities, exact preserved R7 proof base, 14,256-byte compiled patcher and 4,968-byte target ELF. Earlier R3-R7 lanes remain unchanged and all host semantic-ownership flags remain false.
+
+Lifecycle is **SOURCE/HOST STAGED / BUILDER GENERATION PENDING / DEVICE KEY-SEMANTICS PROOF PENDING**. R8 is not promoted until frozen S3 generates the exact target, ELF/import invariants are inspected, a distinct proof APK is installed, and direct device evidence shows supported real key events mutating the proven buffer.
+
 ## Patch 10.62 — Rift++ Android R7 mutable text-buffer/caret lane
 
 R7 forks only from the exact preserved 2,768-byte R6 semantic-input proof ELF SHA-256 `32f7824d6dd4b2f31c4ec30d93cb46995c242fe62263bcf009eb384a7cd8f5e9`. The authoritative proven Rift++ source is `standalone/android-native-r1/elf32-r7-textbuffer-patcher.arm32.r3.hex`: 271 body records / 2,176 decoded bytes, 4,624-byte fixed-record transport SHA-256 `b4cd99191c66136d03a2232d941db327e733ebc24cb253ee85efa23dfbb108ac`, decoded-source SHA-256 `8b8f5df2cef4364ebfd0ea51450e89728a29f3b8a56a191dc24a7200fa23a6d7`. Builder run 496 / source `fb407a5e5827c72cbea27013a866f418e567e45b` compiled it under frozen S3 to the exact 4,368-byte native patcher SHA-256 `8a7ced9da44cfd1d37dff355f1e295bf0093077307a30d68b6e90419a6d11ae7` and produced the exact 3,248-byte R7 ELF SHA-256 `c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a`.
