@@ -601,12 +601,36 @@ class RiftppEditorBridgeService : Service() {
                     it.isNotEmpty()
                 }
 
+        val compilerEncoding =
+            when {
+                compilerPath == null ->
+                    "bootstrap"
+                compilerPath.endsWith(
+                    ".hex",
+                    ignoreCase = true
+                ) ->
+                    "continuous-hex"
+                else ->
+                    "binary"
+            }
+
         val compiler =
-            compilerPath?.let {
-                readBinaryBounded(
-                    it,
-                    1024 * 1024
-                )
+            compilerPath?.let { path ->
+                if (
+                    compilerEncoding ==
+                        "continuous-hex"
+                ) {
+                    HexAssets.decodeContinuousHex(
+                        workspace.readText(
+                            path
+                        )
+                    )
+                } else {
+                    readBinaryBounded(
+                        path,
+                        1024 * 1024
+                    )
+                }
             }
 
         val compiled =
@@ -641,6 +665,10 @@ class RiftppEditorBridgeService : Service() {
                 "compilerPath",
                 compilerPath
                     ?: "bootstrap"
+            )
+            .put(
+                "compilerEncoding",
+                compilerEncoding
             )
             .put(
                 "outputPath",

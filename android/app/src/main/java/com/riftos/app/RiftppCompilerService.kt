@@ -3361,7 +3361,7 @@ class RiftppCompilerService : Service() {
             compilerBytes,
             patcherBytes,
             patcherOutput,
-            13904,
+            16656,
             "keysemantics-patcher"
         )?.let {
             return rejected(
@@ -3378,7 +3378,7 @@ class RiftppCompilerService : Service() {
             patcherOutput,
             baseBytes,
             elfOutput,
-            4060,
+            4388,
             "keysemantics-elf"
         )?.let {
             return rejected(

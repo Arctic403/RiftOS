@@ -3262,7 +3262,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 require(
                     outputFile.isFile &&
                         outputFile.length() ==
-                            4060L &&
+                            4388L &&
                         sha256Hex(
                             outputFile.readBytes()
                         ) ==

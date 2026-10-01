@@ -121,6 +121,32 @@ for (const required of [
     'Rift++ S3 Android R1 service contract missing: ' + required
   );
 }
+assert.match(
+  riftppCompilerService,
+  /16656,[\s\S]*?"keysemantics-patcher"/,
+  'Rift++ R8 compiled patcher return contract must be 16656 bytes'
+);
+assert.match(
+  riftppCompilerService,
+  /4388,[\s\S]*?"keysemantics-elf"/,
+  'Rift++ R8 ELF return contract must be 4388 bytes'
+);
+assert.match(
+  shell,
+  /Rift\+\+ Android R8 emitted output transport hash mismatch[\s\S]*?outputFile\.length\(\) ==[\s\S]*?4388L/,
+  'Rift++ R8 shell must write and verify the same 4388-byte ELF identity'
+);
+assert.doesNotMatch(
+  riftppCompilerService,
+  /13904,[\s\S]*?"keysemantics-patcher"/,
+  'Rift++ R8 service retained stale 13904-byte patcher return contract'
+);
+assert.doesNotMatch(
+  riftppCompilerService,
+  /4060,[\s\S]*?"keysemantics-elf"/,
+  'Rift++ R8 service retained stale 4060-byte ELF return contract'
+);
+
 for (const required of [
   'kMaxCompilerBytes = 64 * 1024',
   'kMaxSourceBytes = 64 * 1024',
@@ -626,6 +652,9 @@ assert.match(riftppEditorBridgeService, /"native-compile" ->/);
 assert.match(riftppEditorBridgeService, /"native-run" ->/);
 assert.match(riftppEditorBridgeService, /"native-preflight" ->/);
 assert.match(riftppEditorBridgeService, /"native-build-debug" ->/);
+assert.match(riftppEditorBridgeService, /compilerEncoding/);
+assert.match(riftppEditorBridgeService, /continuous-hex/);
+assert.match(riftppEditorBridgeService, /HexAssets\.decodeContinuousHex/);
 assert.match(riftppEditorBridgeService, /debugPackage\(/);
 assert.match(riftppEditorMain, /"Debug APK"/);
 assert.match(riftppEditorApkBuilder, /debug: Boolean = false/);
@@ -641,6 +670,10 @@ assert.match(nativeBuild, /uiProtocol", "RUI2"/);
 assert.match(nativeBuild, /kotlinEmitsRpa2", false/);
 assert.match(nativeBuild, /kotlinInterpretsRpa2", false/);
 assert.match(nativeBuild, /temporaryApkPackSign", true/);
+assert.match(nativeBuild, /bootstrapCompilerAuthority", "frozen Rift\+\+ S3 ARM32 recovery root"/);
+assert.match(nativeBuild, /s3NextBootstrapAuthority", "workspace-supplied promoted S2 Generation-C native compiler"/);
+assert.match(nativeBuild, /s3NextOpcodeSurface", "full 21-op 00\.\.14"/);
+assert.match(nativeBuild, /developmentCompilerAuthority", "workspace-supplied Rift\+\+ S3 Next"/);
 const riftppReplacementTargetKey = nativeBuild.indexOf('"replacementTarget"');
 assert.ok(
     riftppReplacementTargetKey >= 0,

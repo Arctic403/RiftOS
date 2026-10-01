@@ -268,7 +268,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/MainActivity.kt" to
                 "4ff321b5906b74f9977eca9ffb3c0a340df94633ab6278fb301897aba6b9a39e",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt" to
-                "be8a367954bc8c99ed204e74aa4ba2c006344e37a4b37811a7bd50f28c2d8739",
+                "fa00e2c4e48aecdf8878773c957c686c6eead46276807310a3d4b5ac309de98f",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
                 "621b2c215ec4da4fe3494c6e8c6ad18a060d1b219d4293050b4c9358b01c28d4",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppWorkspace.kt" to
@@ -2794,6 +2794,8 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
                     .put("projectMetadataAuthority", "app.rift.json transport metadata")
                     .put("compilerAuthority", "Rift++ editor native lane")
                     .put("bootstrapCompilerAuthority", "frozen Rift++ S3 ARM32 recovery root")
+                    .put("s3NextBootstrapAuthority", "workspace-supplied promoted S2 Generation-C native compiler")
+                    .put("s3NextOpcodeSurface", "full 21-op 00..14")
                     .put("developmentCompilerAuthority", "workspace-supplied Rift++ S3 Next")
                     .put("legacyFrontendAuthority", "Rift++ App v2 record source")
                     .put("projectFrontendAuthority", "Rift++ Project v1 record source")
