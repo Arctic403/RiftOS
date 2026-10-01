@@ -182,9 +182,11 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val EDITOR_SOURCE0 = "native/mc2/source0/selfhost_compiler.cx0"
         private const val EDITOR_SOURCE0_BYTES = 584
         private const val EDITOR_SOURCE0_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"
-        private const val EDITOR_NATIVE_ROTR_HEX = "native/miner/arm32/rotr1_proof.hex"
-        private const val EDITOR_NATIVE_ROTR_HEX_BYTES = 41
-        private const val EDITOR_NATIVE_ROTR_HEX_SHA256 = "d803526df012f8a71bc5ad24a57ddd3bdc2e4f872ba49de6e1e326d70c1a7032"
+        private const val EDITOR_NATIVE_PROOF_HEX =
+            "native/miner/arm32/native_proof.hex"
+        private const val EDITOR_NATIVE_PROOF_EXPECTED_HEX =
+            "native/miner/arm32/native_proof_expected.hex"
+        private const val EDITOR_NATIVE_PROOF_MAX_BYTES = 4 * 1024
         private val EDITOR_SOURCE_SHA256 = linkedMapOf(
             "external/editor/core/src/main/kotlin/com/codynex/editor/EditorModel.kt" to
                 "c1d1ac41bbceb3a046c7bfc1fe70a63ecc56ec5186bbe5440a31eb00d1f71d32",
@@ -197,7 +199,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
                 "149013f3f83534199d22fd377ab02e84875b76c15bffe54aca9aa452dc3d6051",
             "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-                "988d0d658e9449a288e6010f0a25efe1c56885b6efe9b3e428ad06ae905682cc",
+                "ee623877926b47b4f8852767dfbdb545ccff4939bd71b40b55b3ccf0b7711370",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
@@ -207,11 +209,11 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
                 "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28",
             "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
-                "8f0a49ea769f9d3fab40dd68c40dac6fba3bf0ca711766782503ed06b477ea8c",
+                "48151a04d6c904535423646534d8084101f6994e7f6003f2531af5e4e1a98656",
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
                 "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620",
             "external/editor/app/build.gradle.kts" to
-                "2e600b6366721b21579fed33246981d15d6b092b6ba130127cdce2bedbc82038",
+                "aa41b0bc496bcf518b8746e5f22983895fe03bbbe20073bdcde159c8255cd70e",
             "external/editor/app/src/main/AndroidManifest.xml" to
                 "5eab82c9663ec4e3b6db0e1c9831422ac73fe7460ede385c36e747d90f3bad9f",
             "external/editor/settings.gradle.kts" to
@@ -2895,19 +2897,42 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             "Codynex E0 Source0 SHA-256 drift"
         }
 
-        val nativeRotrFile = projectFile(ref, EDITOR_NATIVE_ROTR_HEX)
-        require(nativeRotrFile.isFile) {
-            "Codynex native ROTR proof hex authority is missing"
+        val nativeProofFile =
+            projectFile(ref, EDITOR_NATIVE_PROOF_HEX)
+        require(nativeProofFile.isFile) {
+            "Codynex native proof hex authority is missing"
         }
-        val nativeRotrText =
-            readTextBounded(nativeRotrFile).toByteArray(Charsets.UTF_8)
-        require(nativeRotrText.size == EDITOR_NATIVE_ROTR_HEX_BYTES) {
-            "Codynex native ROTR proof hex byte count drift: " +
-                nativeRotrText.size
+        val nativeProofRaw = readTextBounded(nativeProofFile).trim()
+        require(
+            nativeProofRaw.isNotEmpty() &&
+                nativeProofRaw.length <= EDITOR_NATIVE_PROOF_MAX_BYTES * 2 &&
+                nativeProofRaw.length % 8 == 0 &&
+                nativeProofRaw.all { value ->
+                    value in '0'..'9' || value in 'a'..'f'
+                }
+        ) {
+            "Codynex native proof hex must be canonical lowercase ARM32 words"
         }
-        require(sha256(nativeRotrText) == EDITOR_NATIVE_ROTR_HEX_SHA256) {
-            "Codynex native ROTR proof hex SHA-256 drift"
+        val nativeProofText =
+            (nativeProofRaw + "\n").toByteArray(Charsets.UTF_8)
+
+        val nativeProofExpectedFile =
+            projectFile(ref, EDITOR_NATIVE_PROOF_EXPECTED_HEX)
+        require(nativeProofExpectedFile.isFile) {
+            "Codynex native proof expected-result authority is missing"
         }
+        val nativeProofExpectedRaw =
+            readTextBounded(nativeProofExpectedFile).trim()
+        require(
+            nativeProofExpectedRaw.length == 8 &&
+                nativeProofExpectedRaw.all { value ->
+                    value in '0'..'9' || value in 'a'..'f'
+                }
+        ) {
+            "Codynex native proof expected result must be 8 lowercase hex digits"
+        }
+        val nativeProofExpectedText =
+            (nativeProofExpectedRaw + "\n").toByteArray(Charsets.UTF_8)
 
         val host =
             readOwnApkEntry(EDITOR_HOST_APK_ENTRY, EDITOR_MAX_HOST_BYTES)
@@ -2971,15 +2996,18 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             File(assetRoot, "selfhost_compiler.hex").canonicalFile
         val sourceOutput =
             File(assetRoot, "selfhost_compiler.cx0").canonicalFile
-        val nativeRotrOutput =
-            File(assetRoot, "rotr1_proof.hex").canonicalFile
+        val nativeProofOutput =
+            File(assetRoot, "native_proof.hex").canonicalFile
+        val nativeProofExpectedOutput =
+            File(assetRoot, "native_proof_expected.hex").canonicalFile
 
         atomicWrite(manifestOutput, manifestBytes)
         atomicWrite(hostOutput, host)
         atomicWrite(vmOutput, vmText)
         atomicWrite(compilerOutput, compilerText)
         atomicWrite(sourceOutput, sourceText)
-        atomicWrite(nativeRotrOutput, nativeRotrText)
+        atomicWrite(nativeProofOutput, nativeProofText)
+        atomicWrite(nativeProofExpectedOutput, nativeProofExpectedText)
 
         val dexReceipt = JSONArray()
         for ((name, bytes) in dexEntries) {
@@ -3017,8 +3045,14 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         require(sha256(sourceOutput) == EDITOR_SOURCE0_SHA256) {
             "Codynex E0 Source0 asset materialization hash mismatch"
         }
-        require(sha256(nativeRotrOutput) == EDITOR_NATIVE_ROTR_HEX_SHA256) {
-            "Codynex native ROTR proof asset materialization hash mismatch"
+        require(sha256(nativeProofOutput) == sha256(nativeProofText)) {
+            "Codynex native proof asset materialization hash mismatch"
+        }
+        require(
+            sha256(nativeProofExpectedOutput) ==
+                sha256(nativeProofExpectedText)
+        ) {
+            "Codynex native proof expected-result materialization hash mismatch"
         }
 
         val sourceReceipt = JSONObject()
@@ -3053,9 +3087,18 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             .put("externalSource", projectDisplay(ref, sourceFile))
             .put("externalSourceBytes", sourceText.size)
             .put("externalSourceSha256", sha256(sourceText))
-            .put("nativeRotrProofSource", projectDisplay(ref, nativeRotrFile))
-            .put("nativeRotrProofBytes", nativeRotrText.size)
-            .put("nativeRotrProofSha256", sha256(nativeRotrText))
+            .put("nativeProofSource", projectDisplay(ref, nativeProofFile))
+            .put("nativeProofBytes", nativeProofText.size)
+            .put("nativeProofSha256", sha256(nativeProofText))
+            .put(
+                "nativeProofExpectedSource",
+                projectDisplay(ref, nativeProofExpectedFile)
+            )
+            .put("nativeProofExpected", nativeProofExpectedRaw)
+            .put(
+                "nativeProofExpectedSha256",
+                sha256(nativeProofExpectedText)
+            )
             .put(
                 "manifest",
                 JSONObject()

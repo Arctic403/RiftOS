@@ -271,7 +271,7 @@ val verifyCodynexEditorPayload by tasks.registering {
         "src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
             "149013f3f83534199d22fd377ab02e84875b76c15bffe54aca9aa452dc3d6051",
         "src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-            "988d0d658e9449a288e6010f0a25efe1c56885b6efe9b3e428ad06ae905682cc",
+            "ee623877926b47b4f8852767dfbdb545ccff4939bd71b40b55b3ccf0b7711370",
         "src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
             "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
         "src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
@@ -279,7 +279,7 @@ val verifyCodynexEditorPayload by tasks.registering {
         "src/main/java/com/codynex/editorapp/CodynexApkV2Signer.kt" to
             "3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76",
         "src/main/java/com/codynex/editorapp/MainActivity.kt" to
-            "8f0a49ea769f9d3fab40dd68c40dac6fba3bf0ca711766782503ed06b477ea8c",
+            "48151a04d6c904535423646534d8084101f6994e7f6003f2531af5e4e1a98656",
         "src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
             "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28",
         "src/main/cpp/editor/editor_vm_bridge.cpp" to

@@ -40,10 +40,10 @@ class Source0SelfHostToolchainPort(
         private const val MAX_CANDIDATE_BYTES = 64 * 1024
         private const val PREVIEW_OUTPUT_BYTES = 64 * 1024
         private const val MAX_LIVE_INPUT_BYTES = 1024
-        private const val NATIVE_ROTR_ASSET = "rotr1_proof.hex"
-        private const val NATIVE_ROTR_BYTES = 20
-        private const val NATIVE_ROTR_SHA256 =
-            "36a59cfd3dbc361daa702172d5f7658700459fb094e608f3745740ccd04dbbe5"
+        private const val NATIVE_PROOF_ASSET = "native_proof.hex"
+        private const val NATIVE_PROOF_EXPECTED_ASSET =
+            "native_proof_expected.hex"
+        private const val MAX_NATIVE_PROOF_BYTES = 4 * 1024
     }
 
     private val candidateRoot =
@@ -233,11 +233,11 @@ class Source0SelfHostToolchainPort(
         return run.copy(output = run.output.copyOf())
     }
 
-    fun runNativeRotrProof(): LivePreviewRun {
+    fun runNativeProof(): LivePreviewRun {
         val kernel =
             try {
                 val raw =
-                    context.assets.open(NATIVE_ROTR_ASSET)
+                    context.assets.open(NATIVE_PROOF_ASSET)
                         .bufferedReader(Charsets.UTF_8)
                         .use { it.readText().trim() }
                 decodeCanonicalHex(raw)
@@ -247,22 +247,54 @@ class Source0SelfHostToolchainPort(
                     result = 0,
                     output = ByteArray(0),
                     error =
-                        "native ROTR asset load failed: " +
+                        "native proof asset load failed: " +
                             (error.message ?: error.javaClass.simpleName)
                 )
             }
 
         if (
-            kernel.size != NATIVE_ROTR_BYTES ||
-            sha256(kernel) != NATIVE_ROTR_SHA256
+            kernel.isEmpty() ||
+            kernel.size > MAX_NATIVE_PROOF_BYTES ||
+            kernel.size % 4 != 0
         ) {
             return LivePreviewRun(
                 success = false,
                 result = 0,
                 output = ByteArray(0),
-                error = "native ROTR kernel authority drift"
+                error =
+                    "native proof kernel must be aligned and 4.." +
+                        MAX_NATIVE_PROOF_BYTES +
+                        " bytes"
             )
         }
+
+        val expected =
+            try {
+                val raw =
+                    context.assets.open(NATIVE_PROOF_EXPECTED_ASSET)
+                        .bufferedReader(Charsets.UTF_8)
+                        .use { it.readText().trim() }
+
+                require(
+                    raw.length == 8 &&
+                        raw.all { value ->
+                            value in '0'..'9' || value in 'a'..'f'
+                        }
+                ) {
+                    "expected result must be exactly 8 lowercase hex digits"
+                }
+
+                raw.toLong(16).toInt()
+            } catch (error: Throwable) {
+                return LivePreviewRun(
+                    success = false,
+                    result = 0,
+                    output = ByteArray(0),
+                    error =
+                        "native proof expected-result load failed: " +
+                            (error.message ?: error.javaClass.simpleName)
+                )
+            }
 
         val raw =
             try {
@@ -279,7 +311,7 @@ class Source0SelfHostToolchainPort(
                     result = 0,
                     output = ByteArray(0),
                     error =
-                        "native ROTR bridge failed: " +
+                        "native proof bridge failed: " +
                             (error.message ?: error.javaClass.simpleName)
                 )
             }
@@ -289,7 +321,7 @@ class Source0SelfHostToolchainPort(
                 success = false,
                 result = 0,
                 output = ByteArray(0),
-                error = "native ROTR bridge returned an invalid result"
+                error = "native proof bridge returned an invalid result"
             )
         }
 
@@ -299,18 +331,20 @@ class Source0SelfHostToolchainPort(
                 result = raw[1],
                 output = ByteArray(0),
                 error =
-                    "native ROTR kernel failed with status " +
+                    "native proof kernel failed with status " +
                         raw[0].toString()
             )
         }
 
-        if (raw[1] != Int.MIN_VALUE) {
+        if (raw[1] != expected) {
             return LivePreviewRun(
                 success = false,
                 result = raw[1],
                 output = ByteArray(0),
                 error =
-                    "native ROTR expected 0x80000000 but got 0x" +
+                    "native proof expected 0x" +
+                        expected.toUInt().toString(16).padStart(8, '0') +
+                        " but got 0x" +
                         raw[1].toUInt().toString(16).padStart(8, '0')
             )
         }

@@ -445,8 +445,8 @@ class MainActivity : Activity() {
                     weightedButtonParams()
                 )
                 addView(
-                    actionButton("Native ROTR") {
-                        runNativeRotrProof()
+                    actionButton("Native Proof") {
+                        runNativeProof()
                     },
                     weightedButtonParams()
                 )
@@ -706,25 +706,27 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun runNativeRotrProof() {
-        val run = toolchain.runNativeRotrProof()
+    private fun runNativeProof() {
+        val run = toolchain.runNativeProof()
 
         if (!run.success) {
             statusView.text =
-                "Native ROTR failed: " +
+                "Native proof failed: " +
                     (run.error ?: "unknown native-kernel failure")
             return
         }
 
+        val resultHex =
+            run.result.toUInt().toString(16).padStart(8, '0')
+
         statusView.text =
-            "Native ROTR passed: 0x80000000 from 20-byte ARM32 kernel"
+            "Native proof passed: 0x$resultHex"
 
         AlertDialog.Builder(this)
             .setTitle("Native ARM32 proof")
             .setMessage(
-                "ROTR(1, 1): OK\n" +
-                    "Result: 0x80000000\n" +
-                    "Kernel: 20 bytes\n" +
+                "Native kernel: OK\n" +
+                    "Result: 0x$resultHex\n" +
                     "Frozen VM1: unchanged"
             )
             .setPositiveButton("OK", null)
