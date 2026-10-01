@@ -200,7 +200,7 @@ for (const required of [
   'standalone/android-native-r1/elf32-r8-keysemantics-patcher.arm32.r3.hex',
   'standalone/android-native-r1/libriftpp_editor_native_r7.buffer-proven.so',
   '14631893970d680953dd8bc527198f36c7a5ab775a3803dbe29da543bda9b168',
-  'a53568b059ba59433ffec22e9d0ed5143e3eab111f9afbc764b1a6657e65eced',
+  '864d55cad221b9a7fae536cb5d0f01878b90327e3a78695d663e10ee6e5ddfcf',
   'c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a',
   '14756L',
   'patcherSource.size == 6944',
