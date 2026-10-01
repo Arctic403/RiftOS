@@ -444,6 +444,12 @@ class MainActivity : Activity() {
                     },
                     weightedButtonParams()
                 )
+                addView(
+                    actionButton("Native ROTR") {
+                        runNativeRotrProof()
+                    },
+                    weightedButtonParams()
+                )
             }
 
         val actionRowC =
@@ -698,6 +704,31 @@ class MainActivity : Activity() {
                 controller.renamePath(selected, target)
             }
         }
+    }
+
+    private fun runNativeRotrProof() {
+        val run = toolchain.runNativeRotrProof()
+
+        if (!run.success) {
+            statusView.text =
+                "Native ROTR failed: " +
+                    (run.error ?: "unknown native-kernel failure")
+            return
+        }
+
+        statusView.text =
+            "Native ROTR passed: 0x80000000 from 20-byte ARM32 kernel"
+
+        AlertDialog.Builder(this)
+            .setTitle("Native ARM32 proof")
+            .setMessage(
+                "ROTR(1, 1): OK\n" +
+                    "Result: 0x80000000\n" +
+                    "Kernel: 20 bytes\n" +
+                    "Frozen VM1: unchanged"
+            )
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun confirmDelete() {

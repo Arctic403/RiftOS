@@ -40,6 +40,10 @@ class Source0SelfHostToolchainPort(
         private const val MAX_CANDIDATE_BYTES = 64 * 1024
         private const val PREVIEW_OUTPUT_BYTES = 64 * 1024
         private const val MAX_LIVE_INPUT_BYTES = 1024
+        private const val NATIVE_ROTR_ASSET = "rotr1_proof.hex"
+        private const val NATIVE_ROTR_BYTES = 20
+        private const val NATIVE_ROTR_SHA256 =
+            "36a59cfd3dbc361daa702172d5f7658700459fb094e608f3745740ccd04dbbe5"
     }
 
     private val candidateRoot =
@@ -229,6 +233,95 @@ class Source0SelfHostToolchainPort(
         return run.copy(output = run.output.copyOf())
     }
 
+    fun runNativeRotrProof(): LivePreviewRun {
+        val kernel =
+            try {
+                val raw =
+                    context.assets.open(NATIVE_ROTR_ASSET)
+                        .bufferedReader(Charsets.UTF_8)
+                        .use { it.readText().trim() }
+                decodeCanonicalHex(raw)
+            } catch (error: Throwable) {
+                return LivePreviewRun(
+                    success = false,
+                    result = 0,
+                    output = ByteArray(0),
+                    error =
+                        "native ROTR asset load failed: " +
+                            (error.message ?: error.javaClass.simpleName)
+                )
+            }
+
+        if (
+            kernel.size != NATIVE_ROTR_BYTES ||
+            sha256(kernel) != NATIVE_ROTR_SHA256
+        ) {
+            return LivePreviewRun(
+                success = false,
+                result = 0,
+                output = ByteArray(0),
+                error = "native ROTR kernel authority drift"
+            )
+        }
+
+        val raw =
+            try {
+                Vm1Bridge.run(
+                    vm = kernel,
+                    program = byteArrayOf(0, 0, 0, 0),
+                    source = ByteArray(0),
+                    output = ByteArray(1),
+                    stepBudget = 1
+                )
+            } catch (error: Throwable) {
+                return LivePreviewRun(
+                    success = false,
+                    result = 0,
+                    output = ByteArray(0),
+                    error =
+                        "native ROTR bridge failed: " +
+                            (error.message ?: error.javaClass.simpleName)
+                )
+            }
+
+        if (raw.size < 2) {
+            return LivePreviewRun(
+                success = false,
+                result = 0,
+                output = ByteArray(0),
+                error = "native ROTR bridge returned an invalid result"
+            )
+        }
+
+        if (raw[0] != 0) {
+            return LivePreviewRun(
+                success = false,
+                result = raw[1],
+                output = ByteArray(0),
+                error =
+                    "native ROTR kernel failed with status " +
+                        raw[0].toString()
+            )
+        }
+
+        if (raw[1] != Int.MIN_VALUE) {
+            return LivePreviewRun(
+                success = false,
+                result = raw[1],
+                output = ByteArray(0),
+                error =
+                    "native ROTR expected 0x80000000 but got 0x" +
+                        raw[1].toUInt().toString(16).padStart(8, '0')
+            )
+        }
+
+        return LivePreviewRun(
+            success = true,
+            result = raw[1],
+            output = ByteArray(0)
+        )
+    }
+
     private fun executePreview(
         artifact: ArtifactRef,
         input: ByteArray
@@ -371,6 +464,31 @@ class Source0SelfHostToolchainPort(
             "could not publish candidate artifact"
         }
     }
+
+    private fun decodeCanonicalHex(raw: String): ByteArray {
+        require(raw.length % 2 == 0) { "hex artifact has odd length" }
+
+        val output = ByteArray(raw.length / 2)
+        var source = 0
+        var target = 0
+
+        while (source < raw.length) {
+            val high = nibble(raw[source])
+            val low = nibble(raw[source + 1])
+            output[target] = ((high shl 4) or low).toByte()
+            source += 2
+            target += 1
+        }
+
+        return output
+    }
+
+    private fun nibble(value: Char): Int =
+        when (value) {
+            in '0'..'9' -> value.code - '0'.code
+            in 'a'..'f' -> value.code - 'a'.code + 10
+            else -> error("non-canonical hex character")
+        }
 
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")

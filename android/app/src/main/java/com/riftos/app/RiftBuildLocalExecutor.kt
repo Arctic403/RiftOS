@@ -182,6 +182,9 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val EDITOR_SOURCE0 = "native/mc2/source0/selfhost_compiler.cx0"
         private const val EDITOR_SOURCE0_BYTES = 584
         private const val EDITOR_SOURCE0_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"
+        private const val EDITOR_NATIVE_ROTR_HEX = "native/miner/arm32/rotr1_proof.hex"
+        private const val EDITOR_NATIVE_ROTR_HEX_BYTES = 41
+        private const val EDITOR_NATIVE_ROTR_HEX_SHA256 = "d803526df012f8a71bc5ad24a57ddd3bdc2e4f872ba49de6e1e326d70c1a7032"
         private val EDITOR_SOURCE_SHA256 = linkedMapOf(
             "external/editor/core/src/main/kotlin/com/codynex/editor/EditorModel.kt" to
                 "c1d1ac41bbceb3a046c7bfc1fe70a63ecc56ec5186bbe5440a31eb00d1f71d32",
@@ -194,7 +197,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
                 "149013f3f83534199d22fd377ab02e84875b76c15bffe54aca9aa452dc3d6051",
             "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-                "2f2ff877393bb0cbb9e5a5c9d13cf28d082eaa36d560a45ff5f6587c605ea6af",
+                "988d0d658e9449a288e6010f0a25efe1c56885b6efe9b3e428ad06ae905682cc",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
@@ -204,11 +207,11 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
                 "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28",
             "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
-                "0537523cd021aa7ba615adfd7bf70721f847a93139f9698d8591c740aa95eed5",
+                "8f0a49ea769f9d3fab40dd68c40dac6fba3bf0ca711766782503ed06b477ea8c",
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
                 "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620",
             "external/editor/app/build.gradle.kts" to
-                "e529a5182ab3b1ae42aacb621b8eb4d99f4881ef43d1e251f6f9ad559401c0a3",
+                "2e600b6366721b21579fed33246981d15d6b092b6ba130127cdce2bedbc82038",
             "external/editor/app/src/main/AndroidManifest.xml" to
                 "5eab82c9663ec4e3b6db0e1c9831422ac73fe7460ede385c36e747d90f3bad9f",
             "external/editor/settings.gradle.kts" to
@@ -2892,6 +2895,20 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             "Codynex E0 Source0 SHA-256 drift"
         }
 
+        val nativeRotrFile = projectFile(ref, EDITOR_NATIVE_ROTR_HEX)
+        require(nativeRotrFile.isFile) {
+            "Codynex native ROTR proof hex authority is missing"
+        }
+        val nativeRotrText =
+            readTextBounded(nativeRotrFile).toByteArray(Charsets.UTF_8)
+        require(nativeRotrText.size == EDITOR_NATIVE_ROTR_HEX_BYTES) {
+            "Codynex native ROTR proof hex byte count drift: " +
+                nativeRotrText.size
+        }
+        require(sha256(nativeRotrText) == EDITOR_NATIVE_ROTR_HEX_SHA256) {
+            "Codynex native ROTR proof hex SHA-256 drift"
+        }
+
         val host =
             readOwnApkEntry(EDITOR_HOST_APK_ENTRY, EDITOR_MAX_HOST_BYTES)
         verifyElfImage(host, 1, 40)
@@ -2954,12 +2971,15 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             File(assetRoot, "selfhost_compiler.hex").canonicalFile
         val sourceOutput =
             File(assetRoot, "selfhost_compiler.cx0").canonicalFile
+        val nativeRotrOutput =
+            File(assetRoot, "rotr1_proof.hex").canonicalFile
 
         atomicWrite(manifestOutput, manifestBytes)
         atomicWrite(hostOutput, host)
         atomicWrite(vmOutput, vmText)
         atomicWrite(compilerOutput, compilerText)
         atomicWrite(sourceOutput, sourceText)
+        atomicWrite(nativeRotrOutput, nativeRotrText)
 
         val dexReceipt = JSONArray()
         for ((name, bytes) in dexEntries) {
@@ -2997,6 +3017,9 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         require(sha256(sourceOutput) == EDITOR_SOURCE0_SHA256) {
             "Codynex E0 Source0 asset materialization hash mismatch"
         }
+        require(sha256(nativeRotrOutput) == EDITOR_NATIVE_ROTR_HEX_SHA256) {
+            "Codynex native ROTR proof asset materialization hash mismatch"
+        }
 
         val sourceReceipt = JSONObject()
         EDITOR_SOURCE_SHA256.forEach { (path, expectedSha) ->
@@ -3030,6 +3053,9 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             .put("externalSource", projectDisplay(ref, sourceFile))
             .put("externalSourceBytes", sourceText.size)
             .put("externalSourceSha256", sha256(sourceText))
+            .put("nativeRotrProofSource", projectDisplay(ref, nativeRotrFile))
+            .put("nativeRotrProofBytes", nativeRotrText.size)
+            .put("nativeRotrProofSha256", sha256(nativeRotrText))
             .put(
                 "manifest",
                 JSONObject()
