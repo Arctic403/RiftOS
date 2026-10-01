@@ -46,7 +46,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip",
             "browser", "open", "clear", "workspace", "git", "chat", "devlab",
             "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex",
-            "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool"
+            "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-host", "riftpp-editor", "rift-tool"
         )
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
         private const val S2_DIAGNOSTIC_ARM32_TRANSPORT_SHA256 =
@@ -233,6 +233,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "riftpp-host help|status|compile|prove <riftpp-root> <source-file> [output-capacity]   [APPROVED MACHINE-CODE HOST]\n" +
+                    "riftpp-editor help|status|ls|stat|cat|write|push|pull|mkdir|mv|rm|compile|preflight|build-debug|build-production   [LEGACY EDITOR BINDER BRIDGE]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
                     "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
@@ -284,7 +285,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex", "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-host", "rift-tool", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex", "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-host", "riftpp-editor", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -344,6 +345,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 ShellOutcome(value.output, cwd, value.result)
             }
             "riftpp-host" -> executeRiftppHostCommand(cwd, args)
+            "riftpp-editor" -> executeRiftppEditorCommand(cwd, args)
             "rift-tool" -> {
                 val value = headlessJs.executeDeveloperTool(args)
                 ShellOutcome(value.output, cwd, value.result)
@@ -353,6 +355,349 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "rift" -> throw IllegalStateException("Legacy RiftLocalPlatform shell wrapper is retired; use native Git, Workspace Records, Dev Lab and fixed native build/training services.")
             else -> throw IllegalArgumentException("unsupported native RiftShell command: $command")
         }
+    }
+
+
+    private fun executeRiftppEditorCommand(
+        cwd: String,
+        args: MutableList<String>
+    ): ShellOutcome {
+        val action =
+            args.removeFirstOrNull()
+                ?.lowercase()
+                ?: "help"
+
+        if (action == "help") {
+            val output =
+                "Rift++ legacy editor development bridge\n" +
+                    "riftpp-editor status\n" +
+                    "riftpp-editor ls\n" +
+                    "riftpp-editor stat <editor-path>\n" +
+                    "riftpp-editor cat <editor-path>\n" +
+                    "riftpp-editor write <editor-path> <text>\n" +
+                    "riftpp-editor push <riftfs-source> <editor-path>\n" +
+                    "riftpp-editor pull <editor-path> <riftfs-destination>\n" +
+                    "riftpp-editor mkdir <editor-path>\n" +
+                    "riftpp-editor mv <from> <to>\n" +
+                    "riftpp-editor rm <editor-path>\n" +
+                    "riftpp-editor compile\n" +
+                    "riftpp-editor preflight\n" +
+                    "riftpp-editor build-debug\n" +
+                    "riftpp-editor build-production"
+
+            return ShellOutcome(
+                output,
+                cwd,
+                nativeResult(
+                    "riftpp-editor"
+                ).put(
+                    "action",
+                    "help"
+                )
+            )
+        }
+
+        val bridge =
+            RiftppEditorBridgeClient(
+                appContext
+            )
+
+        if (action == "cat") {
+            require(args.size == 1) {
+                "usage: riftpp-editor cat <editor-path>"
+            }
+
+            val text =
+                bridge.readText(
+                    args[0]
+                )
+
+            return ShellOutcome(
+                text,
+                cwd,
+                nativeResult(
+                    "riftpp-editor"
+                )
+                    .put(
+                        "action",
+                        "cat"
+                    )
+                    .put(
+                        "path",
+                        args[0]
+                    )
+                    .put(
+                        "bytes",
+                        text.toByteArray(
+                            Charsets.UTF_8
+                        ).size
+                    )
+            )
+        }
+
+        val value =
+            when (action) {
+                "status" -> {
+                    require(args.isEmpty()) {
+                        "usage: riftpp-editor status"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "status"
+                            )
+                    )
+                }
+
+                "ls", "tree" -> {
+                    require(args.isEmpty()) {
+                        "usage: riftpp-editor ls"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "list"
+                            )
+                    )
+                }
+
+                "stat" -> {
+                    require(args.size == 1) {
+                        "usage: riftpp-editor stat <editor-path>"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "stat"
+                            )
+                            .put(
+                                "path",
+                                args[0]
+                            )
+                    )
+                }
+
+                "write" -> {
+                    require(args.size >= 2) {
+                        "usage: riftpp-editor write <editor-path> <text>"
+                    }
+
+                    val path =
+                        args.removeFirst()
+                    val text =
+                        args.joinToString(
+                            " "
+                        )
+
+                    bridge.writeText(
+                        path,
+                        text
+                    )
+                }
+
+                "push" -> {
+                    require(args.size == 2) {
+                        "usage: riftpp-editor push <riftfs-source> <editor-path>"
+                    }
+
+                    val localDisplay =
+                        resolveDisplay(
+                            cwd,
+                            args[0]
+                        )
+                    val localFile =
+                        resolveFile(
+                            localDisplay
+                        )
+
+                    require(localFile.isFile) {
+                        "local push source is not a file: $localDisplay"
+                    }
+
+                    bridge.push(
+                        localFile,
+                        args[1]
+                    )
+                        .put(
+                            "localPath",
+                            localDisplay
+                        )
+                }
+
+                "pull" -> {
+                    require(args.size == 2) {
+                        "usage: riftpp-editor pull <editor-path> <riftfs-destination>"
+                    }
+
+                    val localDisplay =
+                        resolveDisplay(
+                            cwd,
+                            args[1]
+                        )
+                    val localFile =
+                        resolveFile(
+                            localDisplay
+                        )
+
+                    require(
+                        localFile != riftRoot &&
+                            !localFile.isDirectory
+                    ) {
+                        "local pull destination must be a file path"
+                    }
+
+                    bridge.pull(
+                        args[0],
+                        localFile
+                    )
+                        .put(
+                            "localPath",
+                            localDisplay
+                        )
+                }
+
+                "mkdir" -> {
+                    require(args.size == 1) {
+                        "usage: riftpp-editor mkdir <editor-path>"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "mkdir"
+                            )
+                            .put(
+                                "path",
+                                args[0]
+                            )
+                    )
+                }
+
+                "mv" -> {
+                    require(args.size == 2) {
+                        "usage: riftpp-editor mv <from> <to>"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "move"
+                            )
+                            .put(
+                                "from",
+                                args[0]
+                            )
+                            .put(
+                                "to",
+                                args[1]
+                            )
+                    )
+                }
+
+                "rm" -> {
+                    require(args.size == 1) {
+                        "usage: riftpp-editor rm <editor-path>"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "delete"
+                            )
+                            .put(
+                                "path",
+                                args[0]
+                            )
+                    )
+                }
+
+                "compile" -> {
+                    require(args.isEmpty()) {
+                        "usage: riftpp-editor compile"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "compile"
+                            )
+                    )
+                }
+
+                "preflight" -> {
+                    require(args.isEmpty()) {
+                        "usage: riftpp-editor preflight"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "preflight"
+                            )
+                    )
+                }
+
+                "build-debug" -> {
+                    require(args.isEmpty()) {
+                        "usage: riftpp-editor build-debug"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "build-debug"
+                            )
+                    )
+                }
+
+                "build-production",
+                "build-prod" -> {
+                    require(args.isEmpty()) {
+                        "usage: riftpp-editor build-production"
+                    }
+
+                    bridge.execute(
+                        JSONObject()
+                            .put(
+                                "op",
+                                "build-production"
+                            )
+                    )
+                }
+
+                else ->
+                    throw IllegalArgumentException(
+                        "unsupported riftpp-editor action: $action"
+                    )
+            }
+
+        value
+            .put(
+                "command",
+                "riftpp-editor"
+            )
+            .put(
+                "action",
+                action
+            )
+
+        return ShellOutcome(
+            value.toString(2),
+            cwd,
+            value
+        )
     }
 
     private fun executeRiftCrashCommand(

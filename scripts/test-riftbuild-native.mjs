@@ -22,6 +22,10 @@ assert.ok(nativeToolchain.includes("entry.name.replace('\\\\', '/')"), 'bundled 
 assert.ok(!nativeToolchain.includes("entry.name.replace('\\\\\\\\', '/')"), 'bundled toolchain ZIP path normalization must not use the invalid four-backslash Kotlin char literal');
 const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
 const shell = read('android/app/src/main/java/com/riftos/app/RiftNativeShell.kt');
+const riftppEditorBridgeClient = read('android/app/src/main/java/com/riftos/app/RiftppEditorBridgeClient.kt');
+const riftppEditorBridgeService = read('android/app/src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt');
+const riftppEditorMain = read('android/app/src/main/java/com/riftpp/editor/MainActivity.kt');
+const riftppEditorApkBuilder = read('android/app/src/main/java/com/riftpp/editor/RiftppApkBuilder.kt');
 const riftppCompilerService = read('android/app/src/main/java/com/riftos/app/RiftppCompilerService.kt');
 const riftppCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_compiler_host.cpp');
 const riftAppDiagnosticBridge = read('android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt');
@@ -605,6 +609,18 @@ assert.match(nativeBuild, /prepare-riftpp-editor/);
 assert.match(nativeBuild, /fun prepareRiftppEditor/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_PACKAGE = "com\.riftpp\.editor"/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_LIBRARY_NAME = "riftpp_editor_bridge"/);
+assert.match(nativeBuild, /RIFTPP_EDITOR_BRIDGE_SERVICE/);
+assert.match(nativeBuild, /buildRiftppEditorBinaryManifest[\s\S]*?"service"/);
+assert.match(shell, /"riftpp-editor" -> executeRiftppEditorCommand/);
+assert.match(shell, /riftpp-editor build-debug/);
+assert.match(riftppEditorBridgeClient, /RiftppEditorBridgeService/);
+assert.match(riftppEditorBridgeService, /RIFTOS_PACKAGE[\s\S]*?"com\.riftos\.app"/);
+assert.match(riftppEditorBridgeService, /filesDir[\s\S]*?"projects\/default"/);
+assert.match(riftppEditorBridgeService, /"build-debug" ->/);
+assert.match(riftppEditorBridgeService, /debugPackage\(/);
+assert.match(riftppEditorMain, /"Debug APK"/);
+assert.match(riftppEditorApkBuilder, /debug: Boolean = false/);
+assert.match(riftppEditorApkBuilder, /packageName \+ "\.debug"/);
 assert.match(nativeBuild, /temporaryPlatformShell", "Kotlin\/Android Activity"/);
 assert.match(nativeBuild, /uiProtocol", "RUI2"/);
 assert.match(nativeBuild, /kotlinEmitsRpa2", false/);
@@ -643,6 +659,10 @@ assert.ok(
 assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/MainActivity.kt'),
     'Rift++ editor payload hash gate omitted MainActivity'
+);
+assert.ok(
+    gradle.includes('src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt'),
+    'Rift++ editor payload hash gate omitted editor bridge service'
 );
 assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/RiftppWorkspace.kt'),

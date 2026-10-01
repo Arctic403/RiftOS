@@ -96,7 +96,8 @@ class RiftppApkBuilder(private val context: Context) {
         artifact: ByteArray,
         runtime: ByteArray,
         packageName: String,
-        sourcePath: String
+        sourcePath: String,
+        debug: Boolean = false
     ): RiftppApkReceipt {
         require(artifact.size in 1..MAX_PROGRAM_BYTES) {
             "RPA2 artifact is out of bounds"
@@ -104,20 +105,33 @@ class RiftppApkBuilder(private val context: Context) {
         require(runtime.size in 1..MAX_PROGRAM_BYTES) {
             "Rift++ App v2 runtime is out of bounds"
         }
-        require(packageName.length <= 180) {
+        val outputPackageName =
+            if (debug) {
+                packageName + ".debug"
+            } else {
+                packageName
+            }
+        val versionName =
+            if (debug) {
+                VERSION_NAME + "-debug"
+            } else {
+                VERSION_NAME
+            }
+
+        require(outputPackageName.length <= 180) {
             "Android package name is too long"
         }
         require(
             Regex(
                 "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
-            ).matches(packageName)
+            ).matches(outputPackageName)
         ) {
             "Android package name is invalid"
         }
 
         val artifactSha = sha256(artifact)
         val runtimeSha = sha256(runtime)
-        val packageSegment = packageName.substringAfterLast('.')
+        val packageSegment = outputPackageName.substringAfterLast('.')
 
         val ownApk =
             File(context.applicationInfo.sourceDir)
@@ -226,7 +240,8 @@ class RiftppApkBuilder(private val context: Context) {
                         putBytes(
                             "AndroidManifest.xml",
                             buildBinaryManifest(
-                                packageName
+                                outputPackageName,
+                                versionName
                             )
                         )
 
@@ -315,7 +330,11 @@ class RiftppApkBuilder(private val context: Context) {
                 )
                 .put(
                     "package",
-                    packageName
+                    outputPackageName
+                )
+                .put(
+                    "buildMode",
+                    if (debug) "debug" else "production"
                 )
                 .put(
                     "activity",
@@ -420,7 +439,7 @@ class RiftppApkBuilder(private val context: Context) {
             )
 
         return RiftppApkReceipt(
-            packageName = packageName,
+            packageName = outputPackageName,
             activityName = APP_ACTIVITY,
             signedApk = signedApk,
             apkSha256 = verified.apkSha256,
@@ -593,7 +612,8 @@ class RiftppApkBuilder(private val context: Context) {
     }
 
     private fun buildBinaryManifest(
-        packageName: String
+        packageName: String,
+        versionName: String
     ): ByteArray {
         val strings =
             listOf(
@@ -611,7 +631,7 @@ class RiftppApkBuilder(private val context: Context) {
                 "package",
                 packageName,
                 "1",
-                VERSION_NAME,
+                versionName,
                 "uses-sdk",
                 "26",
                 "36",
@@ -880,7 +900,7 @@ class RiftppApkBuilder(private val context: Context) {
                     ),
                     stringAttr(
                         "versionName",
-                        VERSION_NAME
+                        versionName
                     )
                 )
             )

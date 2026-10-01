@@ -317,7 +317,9 @@ val verifyCodynexEditorPayload by tasks.registering {
 val verifyRiftppEditorPayload by tasks.registering {
     val expected = linkedMapOf(
         "src/main/java/com/riftpp/editor/MainActivity.kt" to
-            "3f829cfc68a61da2345794372280315711330a5371daafb10c5c1289138a9fbd",
+            "4ff321b5906b74f9977eca9ffb3c0a340df94633ab6278fb301897aba6b9a39e",
+        "src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt" to
+            "8a3993e1944f73c20eebd925edca6cd8880611bff0b739b5a79d672f69bdded2",
         "src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
             "92b465fd9be921e127663f073b43ba6af1129ba96749eda29b162c38542be698",
         "src/main/java/com/riftpp/editor/RiftppWorkspace.kt" to
@@ -331,7 +333,7 @@ val verifyRiftppEditorPayload by tasks.registering {
         "src/main/java/com/riftpp/editor/RiftppUi.kt" to
             "da115257bac2cc32fccf82f506fb8fbf47a4bc40dcfa1066266c66d6b2c9e003",
         "src/main/java/com/riftpp/editor/RiftppApkBuilder.kt" to
-            "e4e91df162d7d5e78054d6771f052ca54f27998d956e520b286e6d11d948b343",
+            "1b13175bbb44df5a9d87128b0afe4e71eda105afc1cf89175dfcb6e8c7cf4ad0",
         "src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt" to
             "ad403db6f4635816e32fbf02370ddea4e52facd9b3be0782f56e71ae8646ea9a",
         "src/main/java/com/riftpp/apphost/RiftppAppActivity.kt" to

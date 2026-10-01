@@ -591,6 +591,15 @@ class MainActivity : Activity() {
                 )
                 addView(
                     actionButton(
+                        "Debug APK"
+                    ) {
+                        packStandaloneApk(
+                            debug = true
+                        )
+                    }
+                )
+                addView(
+                    actionButton(
                         "Pack APK"
                     ) {
                         packStandaloneApk()
@@ -1203,7 +1212,9 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
-    private fun packStandaloneApk() {
+    private fun packStandaloneApk(
+        debug: Boolean = false
+    ) {
         runCatching {
             saveIfDirty()
             RiftppProjectModel
@@ -1219,7 +1230,11 @@ class MainActivity : Activity() {
             )
         }.onSuccess { manifest ->
             renderStatus(
-                "Compiling project and packaging standalone APK..."
+                if (debug) {
+                    "Compiling project and packaging side-by-side debug APK..."
+                } else {
+                    "Compiling project and packaging standalone APK..."
+                }
             )
 
             Thread {
@@ -1240,6 +1255,14 @@ class MainActivity : Activity() {
                             pipeline
                                 .runtimeProgramForPackaging()
 
+                        val packageName =
+                            if (debug) {
+                                manifest.packageName +
+                                    ".debug"
+                            } else {
+                                manifest.packageName
+                            }
+
                         val receipt =
                             RiftppApkBuilder(
                                 this
@@ -1249,13 +1272,18 @@ class MainActivity : Activity() {
                                 runtime =
                                     runtime,
                                 packageName =
-                                    manifest
-                                        .packageName,
+                                    packageName,
                                 sourcePath =
                                     manifest.entry
                             )
 
-                        "Standalone APK ready" +
+                        (
+                            if (debug) {
+                                "Debug APK ready"
+                            } else {
+                                "Standalone APK ready"
+                            }
+                        ) +
                             "\nPackage: " +
                             receipt.packageName +
                             "\nSources: " +

@@ -221,11 +221,13 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val RIFTPP_EDITOR_PROJECT = "standalone/editor/android"
         private const val RIFTPP_EDITOR_PACKAGE = "com.riftpp.editor"
         private const val RIFTPP_EDITOR_ACTIVITY = "com.riftpp.editor.MainActivity"
+        private const val RIFTPP_EDITOR_BRIDGE_SERVICE =
+            "com.riftpp.editor.RiftppEditorBridgeService"
         private const val RIFTPP_EDITOR_LIBRARY_NAME = "riftpp_editor_bridge"
         private const val RIFTPP_EDITOR_LIBRARY_FILE = "libriftpp_editor_bridge.so"
         private const val RIFTPP_EDITOR_HOST_APK_ENTRY =
             "lib/armeabi-v7a/libriftpp_editor_bridge.so"
-        private const val RIFTPP_EDITOR_VERSION_NAME = "0.3.0-project1-bootstrap"
+        private const val RIFTPP_EDITOR_VERSION_NAME = "0.4.0-devbridge"
         private const val RIFTPP_EDITOR_MAX_HOST_BYTES = 4L * 1024L * 1024L
         private const val RIFTPP_EDITOR_COMPILER =
             "s3/frozen/compiler.arm32.native.hex"
@@ -264,7 +266,9 @@ class RiftBuildLocalExecutor(context: Context) {
             "3a52b8c48b8691cf3d9707ccb312b2733083f97040bf6b19d95e87dae229d8cf"
         private val RIFTPP_EDITOR_SOURCE_SHA256 = linkedMapOf(
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/MainActivity.kt" to
-                "3f829cfc68a61da2345794372280315711330a5371daafb10c5c1289138a9fbd",
+                "4ff321b5906b74f9977eca9ffb3c0a340df94633ab6278fb301897aba6b9a39e",
+            "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt" to
+                "8a3993e1944f73c20eebd925edca6cd8880611bff0b739b5a79d672f69bdded2",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
                 "92b465fd9be921e127663f073b43ba6af1129ba96749eda29b162c38542be698",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppWorkspace.kt" to
@@ -278,7 +282,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppUi.kt" to
                 "da115257bac2cc32fccf82f506fb8fbf47a4bc40dcfa1066266c66d6b2c9e003",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppApkBuilder.kt" to
-                "e4e91df162d7d5e78054d6771f052ca54f27998d956e520b286e6d11d948b343",
+                "1b13175bbb44df5a9d87128b0afe4e71eda105afc1cf89175dfcb6e8c7cf4ad0",
             "standalone/editor/android/app/src/main/java/com/riftpp/editor/RiftppApkV2Signer.kt" to
                 "ad403db6f4635816e32fbf02370ddea4e52facd9b3be0782f56e71ae8646ea9a",
             "standalone/editor/android/app/src/main/java/com/riftpp/apphost/RiftppAppActivity.kt" to
@@ -286,9 +290,9 @@ class RiftBuildLocalExecutor(context: Context) {
             "standalone/editor/android/app/src/main/cpp/riftpp_editor_bridge.cpp" to
                 "ff1bd4279c56422cfe5fe355c4ada18ba0eae6babb8afa79fd7abc753b51e778",
             "standalone/editor/android/app/src/main/AndroidManifest.xml" to
-                "c1e7e9da3f38311611b37c20a86911c391bb0bf23ad843270b96a7c38869d903",
+                "5148a5bd658b2aa716456999c6143c7c34041db2f8da46c6c512b6673af87a72",
             "standalone/editor/android/app/build.gradle.kts" to
-                "5714233c4869613d361ef11a0a4e35cef073c93262f996dc829a089b21918990"
+                "d71353c7fbe60c3e4f77bdb1166c251d2bfd8afdac4db9ce365506eba5b4ce78"
         )
 
         private const val CODYNEX_APPHOST_PROJECT = "external/apphost"
@@ -385,7 +389,8 @@ class RiftBuildLocalExecutor(context: Context) {
             EDITOR_ACTIVITY, "intent-filter", "action", "android.intent.action.MAIN",
             "category", "android.intent.category.LAUNCHER", "queries", "com.riftos.app",
             CODYNEX_APP_PACKAGE, CODYNEX_APP_VERSION_NAME, CODYNEX_APP_ACTIVITY,
-            RIFTPP_EDITOR_PACKAGE, RIFTPP_EDITOR_VERSION_NAME, RIFTPP_EDITOR_ACTIVITY
+            RIFTPP_EDITOR_PACKAGE, RIFTPP_EDITOR_VERSION_NAME, RIFTPP_EDITOR_ACTIVITY,
+            "2", "service", RIFTPP_EDITOR_BRIDGE_SERVICE
         )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
@@ -5310,7 +5315,7 @@ private fun buildMc1bBinaryManifest(): ByteArray {
                     RIFTPP_EDITOR_PACKAGE,
                     XML_NO_INDEX
                 ),
-                editorManifestIntAttr("versionCode", "1", 1),
+                editorManifestIntAttr("versionCode", "2", 2),
                 editorManifestStringAttr(
                     "versionName",
                     RIFTPP_EDITOR_VERSION_NAME
@@ -5359,6 +5364,21 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         body.write(buildEditorManifestEndElement("category"))
         body.write(buildEditorManifestEndElement("intent-filter"))
         body.write(buildEditorManifestEndElement("activity"))
+        body.write(buildEditorManifestStartElement(
+            "service",
+            listOf(
+                editorManifestStringAttr(
+                    "name",
+                    RIFTPP_EDITOR_BRIDGE_SERVICE
+                ),
+                editorManifestBoolAttr(
+                    "exported",
+                    "true",
+                    true
+                )
+            )
+        ))
+        body.write(buildEditorManifestEndElement("service"))
         body.write(buildEditorManifestEndElement("application"))
         body.write(buildEditorManifestEndElement("manifest"))
         body.write(buildEditorManifestNamespace(XML_END_NAMESPACE_TYPE))
