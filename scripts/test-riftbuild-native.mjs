@@ -446,7 +446,16 @@ for (const required of [
   'class RiftBuildNativeToolchain',
   'riftbuild-android-clang-toolchain/1',
   'riftbuild-native-project/1',
+  'riftbuild-native-project/2',
   'rift-native.json',
+  'objects',
+  'archives',
+  'bundledArchives',
+  'GAME_ACTIVITY_STATIC_ID',
+  'verifyRelocatableObject',
+  'verifyStaticArchive',
+  '-Wl,--whole-archive',
+  '-Wl,--no-whole-archive',
   'ProcessBuilder(argv)',
   'structured-argv',
   '--target=',
@@ -472,6 +481,17 @@ for (const required of [
 ]) assert.ok(nativeToolchain.includes(required), 'native toolchain contract missing: ' + required);
 assert.ok(!nativeToolchain.includes('/system/bin/sh'), 'native toolchain must not route compilation through a shell');
 assert.ok(!nativeToolchain.includes('Runtime.getRuntime().exec'), 'native toolchain must use structured ProcessBuilder argv only');
+assert.ok(!nativeToolchain.includes('linkerArgs'), 'native project must not gain arbitrary linker-argument authority');
+assert.ok(nativeToolchain.includes('SUPPORTED_INPUT_ABIS'), 'native v2 link inputs must remain ABI-scoped');
+assert.ok(nativeToolchain.includes('ALLOWED_BUNDLED_ARCHIVES'), 'bundled native archives must remain allowlisted');
+
+for (const required of [
+  'riftBuildGameActivity',
+  'androidx.games:games-activity:4.4.1@aar',
+  'syncRiftBuildGameActivityNativeDeps',
+  'libgame-activity_static.a',
+  'generated/riftosAssets/riftbuild/native-deps/game-activity-4.4.1',
+]) assert.ok(gradle.includes(required), 'RiftBuild GameActivity bundled dependency contract missing: ' + required);
 
 for (const required of [
   'class RiftBuildNativeApp',
@@ -483,6 +503,7 @@ for (const required of [
   'assetFiles',
   'MAX_ASSET_FILES = 5_000',
   'MAX_ASSET_BYTES = 128L * 1024L * 1024L',
+  'riftbuild-native-project/2',
   'rift-app.json library must match rift-native.json library',
   'Native app assetsDir must not point inside build/riftbuild',
 ]) assert.ok(nativeApp.includes(required), 'native app preparer contract missing: ' + required);

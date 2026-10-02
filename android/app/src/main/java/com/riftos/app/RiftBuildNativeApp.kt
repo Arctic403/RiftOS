@@ -36,7 +36,8 @@ class RiftBuildNativeApp(
 
     companion object {
         private const val APP_SCHEMA = "riftbuild-native-app/1"
-        private const val NATIVE_PROJECT_SCHEMA = "riftbuild-native-project/1"
+        private const val NATIVE_PROJECT_SCHEMA_V1 = "riftbuild-native-project/1"
+        private const val NATIVE_PROJECT_SCHEMA_V2 = "riftbuild-native-project/2"
         private const val APP_MANIFEST = "rift-app.json"
         private const val NATIVE_MANIFEST = "rift-native.json"
         private const val MAX_JSON_BYTES = 256L * 1024L
@@ -182,7 +183,10 @@ class RiftBuildNativeApp(
         if (!nativeFile.isFile) return
         require(confinedTo(project, nativeFile)) { "Native project manifest escaped project" }
         val native = readJson(nativeFile)
-        require(native.optString("schema") == NATIVE_PROJECT_SCHEMA) { "Unsupported native project schema" }
+        val schema = native.optString("schema")
+        require(schema == NATIVE_PROJECT_SCHEMA_V1 || schema == NATIVE_PROJECT_SCHEMA_V2) {
+            "Unsupported native project schema"
+        }
         require(native.optString("library").trim() == library) {
             "rift-app.json library must match rift-native.json library"
         }

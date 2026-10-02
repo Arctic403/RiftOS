@@ -4,6 +4,12 @@ plugins {
     id("com.android.application")
 }
 
+val riftBuildGameActivity = configurations.create("riftBuildGameActivity") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
+
 android {
     namespace = "com.riftos.app"
     compileSdk = 36
@@ -388,6 +394,94 @@ val syncRiftOsWebAssets by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/riftosAssets/www"))
 }
 
+val syncRiftBuildGameActivityNativeDeps by tasks.registering {
+    val outputRoot = layout.buildDirectory.dir(
+        "generated/riftosAssets/riftbuild/native-deps/game-activity-4.4.1"
+    )
+    inputs.files(riftBuildGameActivity)
+    outputs.dir(outputRoot)
+
+    doLast {
+        val artifacts = riftBuildGameActivity.resolve().toList()
+        if (artifacts.size != 1) {
+            throw GradleException(
+                "Expected exactly one pinned GameActivity AAR, found ${artifacts.size}"
+            )
+        }
+        val aar = artifacts.single()
+        val candidates = zipTree(aar)
+            .matching {
+                include("prefab/modules/**/libs/**/libgame-activity_static.a")
+            }
+            .files
+            .toList()
+        if (candidates.isEmpty()) {
+            throw GradleException(
+                "Pinned GameActivity AAR does not contain game-activity_static Prefab archives"
+            )
+        }
+
+        val root = outputRoot.get().asFile
+        root.deleteRecursively()
+        root.mkdirs()
+
+        fun sha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count > 0) digest.update(buffer, 0, count)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        val manifestLines = mutableListOf(
+            "schema=riftbuild-bundled-native-deps/1",
+            "coordinate=androidx.games:games-activity:4.4.1",
+            "module=game-activity_static"
+        )
+        for (abi in listOf("armeabi-v7a", "arm64-v8a")) {
+            val matching = candidates.filter { candidate ->
+                val normalized = candidate.path.replace('\\', '/')
+                normalized.contains("android.$abi/") ||
+                    normalized.contains("/$abi/")
+            }
+            if (matching.size != 1) {
+                throw GradleException(
+                    "Expected one GameActivity static archive for $abi, found ${matching.size}"
+                )
+            }
+            val source = matching.single()
+            val header = ByteArray(8)
+            source.inputStream().use { input ->
+                var read = 0
+                while (read < header.size) {
+                    val count = input.read(header, read, header.size - read)
+                    if (count < 0) break
+                    if (count > 0) read += count
+                }
+                if (read != header.size ||
+                    !header.contentEquals("!<arch>\n".toByteArray(Charsets.US_ASCII))
+                ) {
+                    throw GradleException(
+                        "GameActivity static archive magic is invalid for $abi"
+                    )
+                }
+            }
+            val abiDir = File(root, abi)
+            abiDir.mkdirs()
+            val output = File(abiDir, "libgame-activity_static.a")
+            source.copyTo(output, overwrite = true)
+            manifestLines +=
+                "$abi=${output.length()}:${sha256(output)}"
+        }
+        File(root, "manifest.txt").writeText(manifestLines.joinToString("\n") + "\n")
+    }
+}
+
 val validateRiftBrowserWebViewOwnership by tasks.registering {
     val sourceRoot = file("src/main")
     val allowedOwners = setOf(
@@ -457,9 +551,11 @@ tasks.named("preBuild").configure {
     dependsOn(verifyRiftppEditorPayload)
     dependsOn(validateRiftBrowserWebViewOwnership)
     dependsOn(syncRiftOsWebAssets)
+    dependsOn(syncRiftBuildGameActivityNativeDeps)
 }
 
 dependencies {
+    add(riftBuildGameActivity.name, "androidx.games:games-activity:4.4.1@aar")
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.webkit:webkit:1.16.0")
     implementation("androidx.documentfile:documentfile:1.1.0")

@@ -169,6 +169,35 @@ Each native project opts in with `<project>/rift-native.json`:
 
 Sources and include directories are project-relative and confined to the project. `libraries` is a bounded list of linker library names lowered to `-l<name>` (for example Android NativeActivity code can request `android` and `log`). Native Compile V1 owns `-o`, target/sysroot selection, PIC/shared-library mode and linker identity flags; project text is not parsed as command text. Universal compilation emits and ELF-verifies both `lib/arm64-v8a/lib<library>.so` and `lib/armeabi-v7a/lib<library>.so` under `build/riftbuild/prepared/`.
 
+Native Compile V2 extends that contract without adding raw linker-argument authority. A `riftbuild-native-project/2` manifest may use ABI-bound prebuilt `objects`, project-local static `archives`, and fixed allowlisted `bundledArchives`. ET_REL objects are checked for ELF class, machine, endianness and `ET_REL` type before launch; project archives and bundled archives are bounded and checked for Unix `ar` magic. Archive entries may request an explicit `wholeArchive` boundary, which RiftBuild lowers only to paired `-Wl,--whole-archive` / `-Wl,--no-whole-archive` arguments.
+
+The first bundled native dependency is the pinned AndroidX GameActivity static library:
+
+```json
+{
+  "schema": "riftbuild-native-project/2",
+  "library": "riftpp_editor_native_r1",
+  "sources": [],
+  "objects": [
+    {
+      "path": "app/src/main/cpp/riftpp_gameactivity_entry.o",
+      "abi": "armeabi-v7a"
+    }
+  ],
+  "bundledArchives": [
+    {
+      "id": "androidx.games:games-activity:4.4.1:game-activity_static",
+      "abi": "armeabi-v7a",
+      "wholeArchive": true
+    }
+  ],
+  "libraries": ["android", "log"],
+  "api": 26
+}
+```
+
+The RiftOS Android build resolves exactly `androidx.games:games-activity:4.4.1@aar`, extracts the official Prefab `libgame-activity_static.a` artifacts for `armeabi-v7a` and `arm64-v8a`, validates archive magic, hashes them, and packages them under signed RiftOS generated assets. Runtime native builds may reference only the fixed bundled dependency IDs compiled into RiftBuild; project JSON cannot supply arbitrary asset paths or linker flags.
+
 Generic NativeActivity packaging opts in with `<project>/rift-app.json`:
 
 ```json
