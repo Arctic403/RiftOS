@@ -20,6 +20,7 @@
         <package android:name="com.riftpp.hello" />
         <package android:name="com.riftpp.editor" />
         <package android:name="com.riftpp.editor.nativev1" />
+        <package android:name="com.riftpp.editor.adapterr1" />
         <package android:name="com.samsung.android.honeyboard" />
     </queries>
 

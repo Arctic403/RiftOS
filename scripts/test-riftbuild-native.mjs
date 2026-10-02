@@ -316,6 +316,10 @@ assert.match(
   manifest,
   /<package android:name="com\.riftpp\.editor\.nativev1" \/>/
 );
+assert.match(
+  manifest,
+  /<package android:name="com\.riftpp\.editor\.adapterr1" \/>/
+);
 assert.ok(
   shell.includes('riftcrash help|status|start|capture|latest|reset [package]'),
   'RiftShell diagnostic bridge control surface is missing'
