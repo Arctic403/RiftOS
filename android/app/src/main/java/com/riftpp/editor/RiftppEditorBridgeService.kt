@@ -764,22 +764,6 @@ class RiftppEditorBridgeService : Service() {
             request.getString(
                 "elfPath"
             )
-        val requiredSymbol =
-            request
-                .optString(
-                    "requiredSymbol",
-                    "android_main"
-                )
-                .trim()
-        require(
-            Regex(
-                "^[A-Za-z_][A-Za-z0-9_]{0,255}$"
-            ).matches(
-                requiredSymbol
-            )
-        ) {
-            "native-preflight required symbol is invalid"
-        }
         val elf =
             readBinaryBounded(
                 elfPath,
@@ -793,8 +777,7 @@ class RiftppEditorBridgeService : Service() {
             val receipt =
                 RiftppRelocatableElfPreflight
                     .inspect(
-                        elf,
-                        requiredSymbol
+                        elf
                     )
 
             return JSONObject()
