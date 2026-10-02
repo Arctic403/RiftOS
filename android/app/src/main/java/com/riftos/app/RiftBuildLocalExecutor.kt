@@ -166,6 +166,8 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val EDITOR_PROJECT = "external/editor"
         private const val EDITOR_PACKAGE = "com.codynex.editor"
         private const val EDITOR_ACTIVITY = "com.codynex.editorapp.MainActivity"
+        private const val EDITOR_BRIDGE_SERVICE =
+            "com.codynex.editorapp.CodynexEditorBridgeService"
         private const val EDITOR_LIBRARY_NAME = "codynex_editor_vm"
         private const val EDITOR_LIBRARY_FILE = "libcodynex_editor_vm.so"
         private const val EDITOR_HOST_APK_ENTRY = "lib/armeabi-v7a/libcodynex_editor_vm.so"
@@ -203,6 +205,8 @@ class RiftBuildLocalExecutor(context: Context) {
                 "149013f3f83534199d22fd377ab02e84875b76c15bffe54aca9aa452dc3d6051",
             "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
                 "0aeb9d907153db096868d11bad1d2aa1dffb2172d6d7759f2f50a333018fd347",
+            "external/editor/app/src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt" to
+                "756e853ddc94fd2e32251c21e6f991ce8546f2f46d4dcff46fcb55543b2e7635",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
@@ -218,7 +222,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/build.gradle.kts" to
                 "09b81ff08f19a0411741831c2bd3ebdea2a800ce63671d4b4f70a7af82e9d174",
             "external/editor/app/src/main/AndroidManifest.xml" to
-                "5eab82c9663ec4e3b6db0e1c9831422ac73fe7460ede385c36e747d90f3bad9f",
+                "335a3a731f0682a91cefadb962e662d4af714494a1e4ec3bbb96a09b54a1bb90",
             "external/editor/settings.gradle.kts" to
                 "9a258efd9b28084a1655568c96de7fb3f35a6e58bd90785e5d9f1028b567d6ce",
             "external/editor/build.gradle.kts" to
@@ -402,7 +406,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "category", "android.intent.category.LAUNCHER", "queries", "com.riftos.app",
             CODYNEX_APP_PACKAGE, CODYNEX_APP_VERSION_NAME, CODYNEX_APP_ACTIVITY,
             RIFTPP_EDITOR_PACKAGE, RIFTPP_EDITOR_VERSION_NAME, RIFTPP_EDITOR_ACTIVITY,
-            "2", "service", RIFTPP_EDITOR_BRIDGE_SERVICE
+            "2", "service", EDITOR_BRIDGE_SERVICE, RIFTPP_EDITOR_BRIDGE_SERVICE
         )
         private val TARGETS = setOf("arm32", "arm64", "universal")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
@@ -5183,6 +5187,14 @@ private fun buildMc1bBinaryManifest(): ByteArray {
         body.write(buildEditorManifestEndElement("category"))
         body.write(buildEditorManifestEndElement("intent-filter"))
         body.write(buildEditorManifestEndElement("activity"))
+        body.write(buildEditorManifestStartElement(
+            "service",
+            listOf(
+                editorManifestStringAttr("name", EDITOR_BRIDGE_SERVICE),
+                editorManifestBoolAttr("exported", "true", true)
+            )
+        ))
+        body.write(buildEditorManifestEndElement("service"))
         body.write(buildEditorManifestEndElement("application"))
         body.write(buildEditorManifestEndElement("manifest"))
         body.write(buildEditorManifestNamespace(XML_END_NAMESPACE_TYPE))

@@ -234,6 +234,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "riftpp-host help|status|compile|prove <riftpp-root> <source-file> [output-capacity]   [APPROVED MACHINE-CODE HOST]\n" +
                     "riftpp-editor help|status|ls|stat|cat|write|push|pull|mkdir|mv|rm|compile|preflight|build-debug|build-production|native-compile|native-run|native-preflight|native-build-debug   [LEGACY EDITOR BINDER BRIDGE]\n" +
+                    "codynex-editor help|status|ls|stat|cat|write|push|pull|push-dir|pull-dir|mkdir|mv|rm|compile|preview|native-proof|build-apk   [CODYNEX EDITOR BINDER BRIDGE]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
                     "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
@@ -346,6 +347,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             }
             "riftpp-host" -> executeRiftppHostCommand(cwd, args)
             "riftpp-editor" -> executeRiftppEditorCommand(cwd, args)
+            "codynex-editor" -> executeCodynexEditorCommand(cwd, args)
             "rift-tool" -> {
                 val value = headlessJs.executeDeveloperTool(args)
                 ShellOutcome(value.output, cwd, value.result)
@@ -834,6 +836,327 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             .put(
                 "command",
                 "riftpp-editor"
+            )
+            .put(
+                "action",
+                action
+            )
+
+        return ShellOutcome(
+            value.toString(2),
+            cwd,
+            value
+        )
+    }
+
+
+    private fun executeCodynexEditorCommand(
+        cwd: String,
+        args: MutableList<String>
+    ): ShellOutcome {
+        val action =
+            args.removeFirstOrNull()
+                ?.lowercase()
+                ?: "help"
+
+        if (action == "help") {
+            val output =
+                "Codynex Editor development bridge\n" +
+                    "codynex-editor status\n" +
+                    "codynex-editor ls\n" +
+                    "codynex-editor stat <editor-path>\n" +
+                    "codynex-editor cat <editor-path>\n" +
+                    "codynex-editor write <editor-path> <text>\n" +
+                    "codynex-editor push <riftfs-source> <editor-path>\n" +
+                    "codynex-editor pull <editor-path> <riftfs-destination>\n" +
+                    "codynex-editor push-dir <riftfs-folder> <editor-folder>\n" +
+                    "codynex-editor pull-dir <editor-folder> <riftfs-folder>\n" +
+                    "codynex-editor mkdir <editor-path>\n" +
+                    "codynex-editor mv <from> <to>\n" +
+                    "codynex-editor rm <editor-path>\n" +
+                    "codynex-editor compile <entry.cx>\n" +
+                    "codynex-editor preview <entry.cx>\n" +
+                    "codynex-editor native-proof\n" +
+                    "codynex-editor build-apk <entry.cx>"
+
+            return ShellOutcome(
+                output,
+                cwd,
+                nativeResult("codynex-editor")
+                    .put("action", "help")
+            )
+        }
+
+        val bridge =
+            RiftCodynexEditorBridgeClient(
+                appContext
+            )
+
+        if (action == "cat") {
+            require(args.size == 1) {
+                "usage: codynex-editor cat <editor-path>"
+            }
+            val text =
+                bridge.readText(
+                    args[0]
+                )
+            return ShellOutcome(
+                text,
+                cwd,
+                nativeResult("codynex-editor")
+                    .put("action", "cat")
+                    .put("path", args[0])
+                    .put(
+                        "bytes",
+                        text.toByteArray(
+                            Charsets.UTF_8
+                        ).size
+                    )
+            )
+        }
+
+        val value =
+            when (action) {
+                "status" -> {
+                    require(args.isEmpty()) {
+                        "usage: codynex-editor status"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "status")
+                    )
+                }
+
+                "ls", "tree" -> {
+                    require(args.isEmpty()) {
+                        "usage: codynex-editor ls"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "list")
+                    )
+                }
+
+                "stat" -> {
+                    require(args.size == 1) {
+                        "usage: codynex-editor stat <editor-path>"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "stat")
+                            .put("path", args[0])
+                    )
+                }
+
+                "write" -> {
+                    require(args.size >= 2) {
+                        "usage: codynex-editor write <editor-path> <text>"
+                    }
+                    val path =
+                        args.removeFirst()
+                    bridge.writeText(
+                        path,
+                        args.joinToString(" ")
+                    )
+                }
+
+                "push" -> {
+                    require(args.size == 2) {
+                        "usage: codynex-editor push <riftfs-source> <editor-path>"
+                    }
+                    val localDisplay =
+                        resolveDisplay(
+                            cwd,
+                            args[0]
+                        )
+                    val localFile =
+                        resolveFile(
+                            localDisplay
+                        )
+                    require(localFile.isFile) {
+                        "local push source is not a file: $localDisplay"
+                    }
+                    bridge.push(
+                        localFile,
+                        args[1]
+                    )
+                        .put(
+                            "localPath",
+                            localDisplay
+                        )
+                }
+
+                "pull" -> {
+                    require(args.size == 2) {
+                        "usage: codynex-editor pull <editor-path> <riftfs-destination>"
+                    }
+                    val localDisplay =
+                        resolveDisplay(
+                            cwd,
+                            args[1]
+                        )
+                    val localFile =
+                        resolveFile(
+                            localDisplay
+                        )
+                    require(
+                        localFile != riftRoot &&
+                            !localFile.isDirectory
+                    ) {
+                        "local pull destination must be a file path"
+                    }
+                    bridge.pull(
+                        args[0],
+                        localFile
+                    )
+                        .put(
+                            "localPath",
+                            localDisplay
+                        )
+                }
+
+                "push-dir" -> {
+                    require(args.size == 2) {
+                        "usage: codynex-editor push-dir <riftfs-folder> <editor-folder>"
+                    }
+                    val localDisplay =
+                        resolveDisplay(
+                            cwd,
+                            args[0]
+                        )
+                    val localFolder =
+                        resolveFile(
+                            localDisplay
+                        )
+                    require(localFolder.isDirectory) {
+                        "local push source is not a directory: $localDisplay"
+                    }
+                    bridge.pushDirectory(
+                        localFolder,
+                        args[1]
+                    )
+                        .put(
+                            "localPath",
+                            localDisplay
+                        )
+                }
+
+                "pull-dir" -> {
+                    require(args.size == 2) {
+                        "usage: codynex-editor pull-dir <editor-folder> <riftfs-folder>"
+                    }
+                    val localDisplay =
+                        resolveDisplay(
+                            cwd,
+                            args[1]
+                        )
+                    val localFolder =
+                        resolveFile(
+                            localDisplay
+                        )
+                    require(
+                        localFolder != riftRoot &&
+                            (!localFolder.exists() || localFolder.isDirectory)
+                    ) {
+                        "local pull destination must be a directory path"
+                    }
+                    bridge.pullDirectory(
+                        args[0],
+                        localFolder
+                    )
+                        .put(
+                            "localPath",
+                            localDisplay
+                        )
+                }
+
+                "mkdir" -> {
+                    require(args.size == 1) {
+                        "usage: codynex-editor mkdir <editor-path>"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "mkdir")
+                            .put("path", args[0])
+                    )
+                }
+
+                "mv" -> {
+                    require(args.size == 2) {
+                        "usage: codynex-editor mv <from> <to>"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "move")
+                            .put("from", args[0])
+                            .put("to", args[1])
+                    )
+                }
+
+                "rm" -> {
+                    require(args.size == 1) {
+                        "usage: codynex-editor rm <editor-path>"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "delete")
+                            .put("path", args[0])
+                    )
+                }
+
+                "compile" -> {
+                    require(args.size == 1) {
+                        "usage: codynex-editor compile <entry.cx>"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "compile")
+                            .put("entry", args[0])
+                    )
+                }
+
+                "preview" -> {
+                    require(args.size == 1) {
+                        "usage: codynex-editor preview <entry.cx>"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "preview")
+                            .put("entry", args[0])
+                    )
+                }
+
+                "native-proof" -> {
+                    require(args.isEmpty()) {
+                        "usage: codynex-editor native-proof"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "native-proof")
+                    )
+                }
+
+                "build-apk" -> {
+                    require(args.size == 1) {
+                        "usage: codynex-editor build-apk <entry.cx>"
+                    }
+                    bridge.execute(
+                        JSONObject()
+                            .put("op", "build-apk")
+                            .put("entry", args[0])
+                    )
+                }
+
+                else ->
+                    throw IllegalArgumentException(
+                        "unsupported codynex-editor action: $action"
+                    )
+            }
+
+        value
+            .put(
+                "command",
+                "codynex-editor"
             )
             .put(
                 "action",

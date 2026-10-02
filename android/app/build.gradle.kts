@@ -99,6 +99,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftCliHost.kt",
         "src/main/java/com/riftos/app/RiftCliEventBus.kt",
         "src/main/java/com/riftos/app/RiftCodynexBridgeClient.kt",
+        "src/main/java/com/riftos/app/RiftCodynexEditorBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftppEditorBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
@@ -279,6 +280,8 @@ val verifyCodynexEditorPayload by tasks.registering {
             "149013f3f83534199d22fd377ab02e84875b76c15bffe54aca9aa452dc3d6051",
         "src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
             "0aeb9d907153db096868d11bad1d2aa1dffb2172d6d7759f2f50a333018fd347",
+        "src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt" to
+            "756e853ddc94fd2e32251c21e6f991ce8546f2f46d4dcff46fcb55543b2e7635",
         "src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
             "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
         "src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
