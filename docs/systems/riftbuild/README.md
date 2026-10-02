@@ -102,6 +102,7 @@ riftbuild toolchain-status
 riftbuild toolchain-install-bundled
 riftbuild compile-native <project> [arm32|arm64|universal]
 riftbuild compile-object <project> <source.S> [arm32|arm64]
+riftbuild extract-object-text <project> <object.o> [arm32|arm64]
 riftbuild prepare-native-app <project>
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>
@@ -173,6 +174,8 @@ Sources and include directories are project-relative and confined to the project
 Native Compile V2 extends that contract without adding raw linker-argument authority. A `riftbuild-native-project/2` manifest may use ABI-bound prebuilt `objects` and project-local static `archives`. ET_REL objects are checked for ELF class, machine, endianness and `ET_REL` type before launch; project archives are bounded and checked for Unix `ar` magic. Archive entries may request an explicit `wholeArchive` boundary, which RiftBuild lowers only to paired `-Wl,--whole-archive` / `-Wl,--no-whole-archive` arguments.
 
 `riftbuild compile-object <project> <source.S> [arm32|arm64]` is a separate bounded assembly-object authority. It does not require or synthesize `rift-native.json`, accepts only a confined project-relative `.S`/`.s` source, launches the configured compiler with structured argv and fixed `-c` object mode, writes a content-addressed object under `build/riftbuild/objects/<abi>/`, and immediately applies the same ELF class, machine, little-endian, and ET_REL verification used for manifest-linked objects. It does not expose arbitrary compiler or linker flags and does not alter `compile-native` shared-library semantics.
+
+`riftbuild extract-object-text <project> <object.o> [arm32|arm64]` is a separate bounded ET_REL extraction authority for exact machine-code proofs. It re-verifies the object ABI, parses the ELF section table directly, rejects any non-empty SHT_REL/SHT_RELA section, requires exactly one executable `.text` SHT_PROGBITS section, caps both object and extracted text sizes, and emits canonical raw `.bin` plus lowercase continuous `.hex` artifacts under `build/riftbuild/blobs/<abi>/`. This path performs no linking or relocation and is intended for relocation-free seeds such as Codynex VM2.
 
 A project containing both `rift-native.json` and `rift-app.json` is a first-class manifest-native RiftBuild project. Validation reuses the same bounded native/app manifest parsers used by compile and prepare; it does not require placeholder Gradle files or a source AndroidManifest. Target-specific plans then inspect only the requested ABI in `build/riftbuild/prepared`, so an explicit `arm32` package does not require an unrelated arm64 library.
 

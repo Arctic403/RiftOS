@@ -430,7 +430,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | compile-native <project> [arm32|arm64|universal] | compile-object <project> <source.S> [arm32|arm64] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-riftpp-editor <riftpp-root> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | prepare-codynex-app <codynex-root> <source-path> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | compile-native <project> [arm32|arm64|universal] | compile-object <project> <source.S> [arm32|arm64] | extract-object-text <project> <object.o> [arm32|arm64] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-riftpp-editor <riftpp-root> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | prepare-codynex-app <codynex-root> <source-path> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -448,6 +448,12 @@ class RiftBuildLocalExecutor(context: Context) {
             "compile-object" -> compileObject(
                 args.firstOrNull() ?: error("usage: riftbuild compile-object <project> <source.S> [arm32|arm64]"),
                 args.getOrNull(1) ?: error("usage: riftbuild compile-object <project> <source.S> [arm32|arm64]"),
+                args.getOrNull(2) ?: "arm32",
+                cwd
+            )
+            "extract-object-text" -> extractObjectText(
+                args.firstOrNull() ?: error("usage: riftbuild extract-object-text <project> <object.o> [arm32|arm64]"),
+                args.getOrNull(1) ?: error("usage: riftbuild extract-object-text <project> <object.o> [arm32|arm64]"),
                 args.getOrNull(2) ?: "arm32",
                 cwd
             )
@@ -585,6 +591,21 @@ class RiftBuildLocalExecutor(context: Context) {
         return nativeToolchain.compileAssemblyObject(
             ref.file,
             sourcePath,
+            target.lowercase()
+        ).put("project", ref.display)
+    }
+
+    fun extractObjectText(
+        project: String,
+        objectPath: String,
+        target: String = "arm32",
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(ref.file.isDirectory) { "Build project is not a directory: " + ref.display }
+        return nativeToolchain.extractRelocationFreeText(
+            ref.file,
+            objectPath,
             target.lowercase()
         ).put("project", ref.display)
     }

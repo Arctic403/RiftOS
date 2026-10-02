@@ -83,6 +83,11 @@ class RiftBuildNativeToolchain(
         private const val MAX_ARG_CHARS = 4096
         private const val MAX_SOURCE_BYTES = 32L * 1024L * 1024L
         private const val MAX_LINK_INPUT_BYTES = 128L * 1024L * 1024L
+        private const val MAX_OBJECT_EXTRACT_INPUT_BYTES = 8L * 1024L * 1024L
+        private const val MAX_EXTRACTED_TEXT_BYTES = 1L * 1024L * 1024L
+        private const val MAX_ELF_SECTIONS = 4096
+        private const val MAX_ELF_STRING_TABLE_BYTES = 2L * 1024L * 1024L
+        private const val MAX_ELF_SECTION_NAME_BYTES = 255
         private const val MAX_OUTPUT_BYTES = 128L * 1024L * 1024L
         private const val MAX_COMPILER_OUTPUT_BYTES = 1024 * 1024
         private const val PROCESS_TIMEOUT_SECONDS = 180L
@@ -406,6 +411,212 @@ class RiftBuildNativeToolchain(
             .put("processMode", "structured-argv")
             .put("shell", false)
             .put("state", "compiled-native-object")
+    }
+
+
+    fun extractRelocationFreeText(projectRoot: File, objectPath: String, target: String): JSONObject {
+        val canonicalProject = projectRoot.canonicalFile
+        require(confinedTo(workspaceRoot, canonicalProject)) {
+            "Native object extraction project escaped D:/Workspace"
+        }
+        require(canonicalProject.isDirectory) { "Native object extraction project is not a directory" }
+        require(target == "arm32" || target == "arm64") {
+            "Native object extraction target must be arm32 or arm64"
+        }
+
+        val abi = if (target == "arm32") abiArm32() else abiArm64()
+        val file = resolveProjectPath(canonicalProject, objectPath)
+        require(file.isFile) { "Native object is missing: $objectPath" }
+        require(file.extension == "o") { "Native object extraction input must end in .o" }
+        require(file.length() in 1L..MAX_OBJECT_EXTRACT_INPUT_BYTES) {
+            "Native object extraction input size is invalid"
+        }
+        verifyRelocatableObject(file, abi.abi)
+
+        val data = file.readBytes()
+        fun u16(offset: Int): Int {
+            require(offset >= 0 && offset + 2 <= data.size) { "Native object ELF16 read is out of bounds" }
+            return (data[offset].toInt() and 0xff) or
+                ((data[offset + 1].toInt() and 0xff) shl 8)
+        }
+        fun u32(offset: Int): Long {
+            require(offset >= 0 && offset + 4 <= data.size) { "Native object ELF32 read is out of bounds" }
+            return (data[offset].toLong() and 0xffL) or
+                ((data[offset + 1].toLong() and 0xffL) shl 8) or
+                ((data[offset + 2].toLong() and 0xffL) shl 16) or
+                ((data[offset + 3].toLong() and 0xffL) shl 24)
+        }
+        fun boundedU64(offset: Int): Long {
+            val lo = u32(offset)
+            val hi = u32(offset + 4)
+            require(hi == 0L) { "Native object ELF64 offset exceeds bounded extractor range" }
+            return lo
+        }
+
+        val elfClass = data[4].toInt() and 0xff
+        require(elfClass == abi.elfClass) { "Native object ELF class changed after verification" }
+        val expectedSectionHeaderBytes = if (elfClass == 1) 40 else 64
+        val sectionTableOffset =
+            if (elfClass == 1) u32(32) else boundedU64(40)
+        val sectionHeaderBytes =
+            if (elfClass == 1) u16(46) else u16(58)
+        val sectionCount =
+            if (elfClass == 1) u16(48) else u16(60)
+        val sectionStringIndex =
+            if (elfClass == 1) u16(50) else u16(62)
+
+        require(sectionHeaderBytes == expectedSectionHeaderBytes) {
+            "Native object section-header size is invalid"
+        }
+        require(sectionCount in 1..MAX_ELF_SECTIONS) {
+            "Native object section count is invalid"
+        }
+        require(sectionStringIndex in 0 until sectionCount) {
+            "Native object section-name table index is invalid"
+        }
+        require(sectionTableOffset > 0L) { "Native object section-header table is missing" }
+        val tableEnd = sectionTableOffset + sectionHeaderBytes.toLong() * sectionCount.toLong()
+        require(tableEnd <= data.size.toLong()) {
+            "Native object section-header table is truncated"
+        }
+
+        fun sectionBase(index: Int): Int {
+            require(index in 0 until sectionCount) { "Native object section index is invalid" }
+            val base = sectionTableOffset + index.toLong() * sectionHeaderBytes.toLong()
+            require(base <= Int.MAX_VALUE.toLong()) { "Native object section offset exceeds bounded extractor range" }
+            return base.toInt()
+        }
+        fun sectionNameOffset(index: Int): Int {
+            val raw = u32(sectionBase(index))
+            require(raw <= Int.MAX_VALUE.toLong()) { "Native object section-name offset is invalid" }
+            return raw.toInt()
+        }
+        fun sectionType(index: Int): Int = u32(sectionBase(index) + 4).toInt()
+        fun sectionFlags(index: Int): Long = u32(sectionBase(index) + 8)
+        fun sectionOffset(index: Int): Long {
+            val base = sectionBase(index)
+            return if (elfClass == 1) u32(base + 16) else boundedU64(base + 24)
+        }
+        fun sectionSize(index: Int): Long {
+            val base = sectionBase(index)
+            return if (elfClass == 1) u32(base + 20) else boundedU64(base + 32)
+        }
+
+        require(sectionType(sectionStringIndex) == 3) {
+            "Native object section-name table must be SHT_STRTAB"
+        }
+        val namesOffset = sectionOffset(sectionStringIndex)
+        val namesSize = sectionSize(sectionStringIndex)
+        require(namesSize in 1L..MAX_ELF_STRING_TABLE_BYTES) {
+            "Native object section-name table size is invalid"
+        }
+        require(namesOffset >= 0L && namesOffset + namesSize <= data.size.toLong()) {
+            "Native object section-name table is truncated"
+        }
+
+        fun sectionName(index: Int): String {
+            val relative = sectionNameOffset(index)
+            require(relative >= 0 && relative.toLong() < namesSize) {
+                "Native object section-name offset is out of range"
+            }
+            val start = namesOffset.toInt() + relative
+            val limit = (namesOffset + namesSize).toInt()
+            var end = start
+            while (end < limit && data[end].toInt() != 0) {
+                require(end - start < MAX_ELF_SECTION_NAME_BYTES) {
+                    "Native object section name exceeds limit"
+                }
+                end += 1
+            }
+            require(end < limit) { "Native object section name is unterminated" }
+            return String(data, start, end - start, Charsets.US_ASCII)
+        }
+
+        var relocationSections = 0
+        var textIndex = -1
+        var textMatches = 0
+        for (index in 0 until sectionCount) {
+            val type = sectionType(index)
+            val size = sectionSize(index)
+            if ((type == 4 || type == 9) && size > 0L) relocationSections += 1
+
+            if (sectionName(index) == ".text") {
+                textMatches += 1
+                textIndex = index
+            }
+        }
+
+        require(relocationSections == 0) {
+            "Native object contains relocation sections; raw text extraction is forbidden"
+        }
+        require(textMatches == 1 && textIndex >= 0) {
+            "Native object must contain exactly one .text section"
+        }
+        require(sectionType(textIndex) == 1) {
+            "Native object .text must be SHT_PROGBITS"
+        }
+        require(sectionFlags(textIndex) and 0x4L != 0L) {
+            "Native object .text must be executable"
+        }
+
+        val textOffset = sectionOffset(textIndex)
+        val textSize = sectionSize(textIndex)
+        require(textSize in 1L..MAX_EXTRACTED_TEXT_BYTES) {
+            "Native object .text size is invalid"
+        }
+        require(textOffset >= 0L && textOffset + textSize <= data.size.toLong()) {
+            "Native object .text section is truncated"
+        }
+
+        val start = textOffset.toInt()
+        val end = (textOffset + textSize).toInt()
+        val textBytes = data.copyOfRange(start, end)
+        val objectSha = sha256(file)
+
+        val outputDir = File(canonicalProject, "build/riftbuild/blobs/${abi.abi}").canonicalFile
+        require(confinedTo(canonicalProject, outputDir)) { "Native object blob output escaped project root" }
+        require(outputDir.mkdirs() || outputDir.isDirectory) {
+            "Could not create native object blob output directory"
+        }
+
+        val safeStem = file.nameWithoutExtension
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .take(80)
+            .ifBlank { "object" }
+        val baseName = "$safeStem-${objectSha.take(16)}.text"
+        val bin = File(outputDir, "$baseName.bin").canonicalFile
+        val hex = File(outputDir, "$baseName.hex").canonicalFile
+        require(confinedTo(outputDir, bin) && confinedTo(outputDir, hex)) {
+            "Native object blob output escaped blob directory"
+        }
+
+        bin.writeBytes(textBytes)
+        val digits = "0123456789abcdef"
+        val chars = CharArray(textBytes.size * 2)
+        var cursor = 0
+        for (byte in textBytes) {
+            val value = byte.toInt() and 0xff
+            chars[cursor++] = digits[value ushr 4]
+            chars[cursor++] = digits[value and 0x0f]
+        }
+        hex.writeText(String(chars), Charsets.US_ASCII)
+
+        return JSONObject()
+            .put("schema", "riftbuild-native-object-text-v1")
+            .put("target", target)
+            .put("abi", abi.abi)
+            .put("object", file.relativeTo(canonicalProject).invariantSeparatorsPath)
+            .put("objectBytes", file.length())
+            .put("objectSha256", objectSha)
+            .put("section", ".text")
+            .put("textBytes", textBytes.size)
+            .put("textSha256", sha256(bin))
+            .put("relocationSections", relocationSections)
+            .put("binPath", bin.relativeTo(canonicalProject).invariantSeparatorsPath)
+            .put("hexPath", hex.relativeTo(canonicalProject).invariantSeparatorsPath)
+            .put("elfClass", if (elfClass == 1) 32 else 64)
+            .put("machine", abi.machine)
+            .put("state", "extracted-native-object-text")
     }
 
     private fun compileAbi(
