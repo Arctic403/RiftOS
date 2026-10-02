@@ -101,6 +101,7 @@ riftbuild plan <project> [arm32|arm64|universal]
 riftbuild toolchain-status
 riftbuild toolchain-install-bundled
 riftbuild compile-native <project> [arm32|arm64|universal]
+riftbuild compile-object <project> <source.S> [arm32|arm64]
 riftbuild prepare-native-app <project>
 riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
 riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>
@@ -170,6 +171,8 @@ Each native project opts in with `<project>/rift-native.json`:
 Sources and include directories are project-relative and confined to the project. `libraries` is a bounded list of linker library names lowered to `-l<name>` (for example Android NativeActivity code can request `android` and `log`). Native Compile V1 owns `-o`, target/sysroot selection, PIC/shared-library mode and linker identity flags; project text is not parsed as command text. Universal compilation emits and ELF-verifies both `lib/arm64-v8a/lib<library>.so` and `lib/armeabi-v7a/lib<library>.so` under `build/riftbuild/prepared/`.
 
 Native Compile V2 extends that contract without adding raw linker-argument authority. A `riftbuild-native-project/2` manifest may use ABI-bound prebuilt `objects` and project-local static `archives`. ET_REL objects are checked for ELF class, machine, endianness and `ET_REL` type before launch; project archives are bounded and checked for Unix `ar` magic. Archive entries may request an explicit `wholeArchive` boundary, which RiftBuild lowers only to paired `-Wl,--whole-archive` / `-Wl,--no-whole-archive` arguments.
+
+`riftbuild compile-object <project> <source.S> [arm32|arm64]` is a separate bounded assembly-object authority. It does not require or synthesize `rift-native.json`, accepts only a confined project-relative `.S`/`.s` source, launches the configured compiler with structured argv and fixed `-c` object mode, writes a content-addressed object under `build/riftbuild/objects/<abi>/`, and immediately applies the same ELF class, machine, little-endian, and ET_REL verification used for manifest-linked objects. It does not expose arbitrary compiler or linker flags and does not alter `compile-native` shared-library semantics.
 
 A project containing both `rift-native.json` and `rift-app.json` is a first-class manifest-native RiftBuild project. Validation reuses the same bounded native/app manifest parsers used by compile and prepare; it does not require placeholder Gradle files or a source AndroidManifest. Target-specific plans then inspect only the requested ABI in `build/riftbuild/prepared`, so an explicit `arm32` package does not require an unrelated arm64 library.
 

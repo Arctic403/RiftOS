@@ -345,6 +345,8 @@ for (const required of [
   'toolchain-status',
   'toolchain-install-bundled',
   'compile-native',
+  'compile-object',
+  'nativeToolchain.compileAssemblyObject(',
   'RiftBuildNativeApp',
   'prepare-native-app',
   'manifestNativeProject',
@@ -459,6 +461,12 @@ for (const required of [
   'objects',
   'archives',
   'verifyRelocatableObject',
+  'compileAssemblyObject',
+  'riftbuild-native-object-compile-v1',
+  'Assembly object source must end in .S or .s',
+  'build/riftbuild/objects/',
+  'argv += "-c"',
+  'verifyRelocatableObject(output, abi.abi)',
   'verifyStaticArchive',
   '-Wl,--whole-archive',
   '-Wl,--no-whole-archive',
@@ -1052,7 +1060,7 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|compile-native\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-riftpp-editor\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|prepare-codynex-app\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|compile-native\|compile-object\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-riftpp-editor\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|prepare-codynex-app\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);

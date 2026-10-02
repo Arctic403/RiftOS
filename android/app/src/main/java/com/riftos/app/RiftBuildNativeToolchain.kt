@@ -272,6 +272,142 @@ class RiftBuildNativeToolchain(
             .put("state", "compiled-native")
     }
 
+
+    fun compileAssemblyObject(projectRoot: File, sourcePath: String, target: String): JSONObject {
+        val canonicalProject = projectRoot.canonicalFile
+        require(confinedTo(workspaceRoot, canonicalProject)) {
+            "Native object project escaped D:/Workspace"
+        }
+        require(canonicalProject.isDirectory) { "Native object project is not a directory" }
+        require(target == "arm32" || target == "arm64") {
+            "Native object target must be arm32 or arm64"
+        }
+
+        val source = resolveProjectPath(canonicalProject, sourcePath)
+        require(source.isFile) { "Assembly source is missing: $sourcePath" }
+        require(source.extension == "S" || source.extension == "s") {
+            "Assembly object source must end in .S or .s"
+        }
+        require(source.length() in 1L..MAX_SOURCE_BYTES) {
+            "Assembly source size is invalid"
+        }
+
+        val toolchain = readToolchain()
+        require(toolchain.compiler.isFile) { "Configured native compiler is missing" }
+        require(toolchain.compiler.canExecute()) { "Configured native compiler is not executable" }
+        require(toolchain.sysroot.isDirectory) { "Configured native sysroot is missing" }
+
+        val abi = if (target == "arm32") abiArm32() else abiArm64()
+        val api = 21
+        val sourceSha = sha256(source)
+        val safeStem = source.nameWithoutExtension
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .take(80)
+            .ifBlank { "assembly" }
+
+        val outputDir = File(canonicalProject, "build/riftbuild/objects/${abi.abi}").canonicalFile
+        require(confinedTo(canonicalProject, outputDir)) { "Native object output escaped project root" }
+        require(outputDir.mkdirs() || outputDir.isDirectory) {
+            "Could not create native object output directory"
+        }
+        val output = File(outputDir, "$safeStem-${sourceSha.take(16)}.o").canonicalFile
+        require(confinedTo(outputDir, output)) { "Native object output escaped object directory" }
+        if (output.exists()) require(output.delete()) { "Could not replace stale native object output" }
+
+        val tempDir = File(canonicalProject, "build/riftbuild/tmp/object-${abi.abi}").canonicalFile
+        require(confinedTo(canonicalProject, tempDir)) { "Native object temp directory escaped project root" }
+        require(tempDir.mkdirs() || tempDir.isDirectory) {
+            "Could not create native object temp directory"
+        }
+
+        val argv = ArrayList<String>()
+        argv += toolchain.compiler.absolutePath
+        argv += toolchain.args
+        argv += "--target=${abi.triple}$api"
+        argv += "--sysroot=${toolchain.sysroot.absolutePath}"
+        argv += "-c"
+        argv += source.absolutePath
+        argv += "-o"
+        argv += output.absolutePath
+
+        val process = try {
+            ProcessBuilder(argv)
+                .directory(canonicalProject)
+                .redirectErrorStream(true)
+                .apply {
+                    environment()["TMPDIR"] = tempDir.absolutePath
+                    environment()["LD_LIBRARY_PATH"] =
+                        toolchain.compiler.parentFile?.absolutePath.orEmpty()
+                }
+                .start()
+        } catch (error: Exception) {
+            error(
+                "Native assembly compiler launch failed for ${abi.abi}: " +
+                    (error.message ?: error.javaClass.simpleName)
+            )
+        }
+
+        val captured = ByteArrayOutputStream()
+        var truncated = false
+        val drain = Thread({
+            val buffer = ByteArray(8192)
+            process.inputStream.use { input ->
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    val remaining = MAX_COMPILER_OUTPUT_BYTES - captured.size()
+                    if (remaining > 0) captured.write(buffer, 0, minOf(count, remaining))
+                    if (count > remaining) truncated = true
+                }
+            }
+        }, "riftbuild-native-object-output-${abi.abi}")
+        drain.isDaemon = true
+        drain.start()
+
+        val finished = process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+            drain.join(1000)
+            error("Native assembly compiler timed out for ${abi.abi}")
+        }
+        drain.join(1000)
+
+        val exitCode = process.exitValue()
+        val compilerOutput = captured.toString(Charsets.UTF_8.name())
+        require(exitCode == 0) {
+            "Native assembly compiler failed for ${abi.abi} with exit $exitCode" +
+                if (compilerOutput.isBlank()) "" else ": " + compilerOutput.take(4096)
+        }
+
+        require(output.isFile) { "Native assembly compiler did not produce ${output.name}" }
+        require(output.length() in 1L..MAX_LINK_INPUT_BYTES) {
+            "Native assembly object size is invalid"
+        }
+        verifyRelocatableObject(output, abi.abi)
+
+        return JSONObject()
+            .put("schema", "riftbuild-native-object-compile-v1")
+            .put("toolchainSchema", TOOLCHAIN_SCHEMA)
+            .put("target", target)
+            .put("abi", abi.abi)
+            .put("targetTriple", abi.triple + api)
+            .put("source", source.relativeTo(canonicalProject).invariantSeparatorsPath)
+            .put("sourceBytes", source.length())
+            .put("sourceSha256", sourceSha)
+            .put("path", output.relativeTo(canonicalProject).invariantSeparatorsPath)
+            .put("bytes", output.length())
+            .put("sha256", sha256(output))
+            .put("elfType", "ET_REL")
+            .put("elfClass", if (abi.elfClass == 2) 64 else 32)
+            .put("machine", abi.machine)
+            .put("exitCode", exitCode)
+            .put("compilerOutput", compilerOutput)
+            .put("compilerOutputTruncated", truncated)
+            .put("processMode", "structured-argv")
+            .put("shell", false)
+            .put("state", "compiled-native-object")
+    }
+
     private fun compileAbi(
         projectRoot: File,
         toolchain: Toolchain,
