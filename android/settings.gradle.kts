@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "RiftOS-Android"
 include(":app")
+include(":gameactivity-runtime-bundle")

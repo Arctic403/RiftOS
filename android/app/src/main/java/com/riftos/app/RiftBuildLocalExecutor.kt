@@ -416,7 +416,7 @@ class RiftBuildLocalExecutor(context: Context) {
     private val runRoot = File(riftRoot, "system/riftbuild/v1/runs").apply { mkdirs() }.canonicalFile
     private val artifactRoot = File(riftRoot, "documents/builds").apply { mkdirs() }.canonicalFile
     private val nativeToolchain = RiftBuildNativeToolchain(appContext, riftRoot, workspaceRoot)
-    private val nativeApp = RiftBuildNativeApp(workspaceRoot)
+    private val nativeApp = RiftBuildNativeApp(appContext, workspaceRoot)
     private val apkSigner = RiftApkV2Signer(appContext)
     private val installer = RiftBuildInstaller(appContext)
     private val codynexRuntime = RiftHeadlessJsRuntime(appContext)

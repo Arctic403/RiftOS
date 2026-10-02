@@ -23,6 +23,7 @@ class RiftBuildInstaller(context: Context) {
         const val RIFTPP_APP0_TARGET_PACKAGE = "com.riftpp.hello"
         const val RIFTPP_EDITOR_TARGET_PACKAGE = "com.riftpp.editor"
         const val RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com.riftpp.editor.nativev1"
+        const val RIFTPP_GAMEACTIVITY_R1_TARGET_PACKAGE = "com.riftpp.editor.gameactivityr1"
         const val MC0_TARGET_PACKAGE = "com.codynex.mc0proof"
         const val MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"
         const val MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"
@@ -45,6 +46,7 @@ class RiftBuildInstaller(context: Context) {
             RIFTPP_APP0_TARGET_PACKAGE,
             RIFTPP_EDITOR_TARGET_PACKAGE,
             RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE,
+            RIFTPP_GAMEACTIVITY_R1_TARGET_PACKAGE,
             MC0_TARGET_PACKAGE,
             MC1A_TARGET_PACKAGE,
             MC1B_TARGET_PACKAGE,
@@ -137,17 +139,10 @@ class RiftBuildInstaller(context: Context) {
                 )
             }
 
-            val activity =
-                when (packageName) {
-                    EDITOR_TARGET_PACKAGE -> EDITOR_TARGET_ACTIVITY
-                    CODYNEX_APP_TARGET_PACKAGE ->
-                        CODYNEX_APP_TARGET_ACTIVITY
-                    else -> TARGET_ACTIVITY
-                }
-            launchForeground(
-                context,
-                Intent().setClassName(packageName, activity)
-            )
+            val launchIntent = context.applicationContext.packageManager
+                .getLaunchIntentForPackage(packageName)
+                ?: error("Installed RiftBuild proof has no MAIN/LAUNCHER Activity: $packageName")
+            launchForeground(context, launchIntent)
         }
 
         fun handleStatus(context: Context, intent: Intent) {

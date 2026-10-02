@@ -33,6 +33,8 @@ const riftppCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_compiler
 const riftAppDiagnosticBridge = read('android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt');
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');
 const gradle = read('android/app/build.gradle.kts');
+const androidSettings = read('android/settings.gradle.kts');
+const gameActivityRuntimeBundleGradle = read('android/gameactivity-runtime-bundle/build.gradle.kts');
 const cmake = read('android/app/src/main/cpp/CMakeLists.txt');
 const manifest = read('android/app/src/main/AndroidManifest.xml');
 const retained = read('src/riftbuild.js');
@@ -416,6 +418,8 @@ for (const required of [
   'TARGET_PACKAGE = "com.riftpp.nativeproof"',
   'RIFTPP_EDITOR_TARGET_PACKAGE = "com.riftpp.editor"',
   'RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com.riftpp.editor.nativev1"',
+  'RIFTPP_GAMEACTIVITY_R1_TARGET_PACKAGE = "com.riftpp.editor.gameactivityr1"',
+  'getLaunchIntentForPackage',
   'MC0_TARGET_PACKAGE = "com.codynex.mc0proof"',
   'MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"',
   'MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"',
@@ -491,11 +495,28 @@ for (const required of [
   'syncRiftBuildGameActivityNativeDeps',
   'libgame-activity_static.a',
   'generated/riftosAssets/riftbuild/native-deps/game-activity-4.4.1',
+  'syncRiftBuildGameActivityManagedRuntime',
+  'gameactivity-runtime-bundle:assembleDebug',
+  'generated/riftosAssets/riftbuild/managed-runtimes/game-activity-4.4.1',
+  'classes.dex',
 ]) assert.ok(gradle.includes(required), 'RiftBuild GameActivity bundled dependency contract missing: ' + required);
+
+assert.ok(androidSettings.includes('include(":gameactivity-runtime-bundle")'), 'GameActivity managed-runtime bundle module must stay included');
+assert.ok(gameActivityRuntimeBundleGradle.includes('androidx.games:games-activity:4.4.1'), 'GameActivity managed-runtime bundle must stay pinned');
+assert.ok(!exists('android/gameactivity-runtime-bundle/src/main/java'), 'GameActivity runtime bundle must not gain app-owned Java source');
+assert.ok(!exists('android/gameactivity-runtime-bundle/src/main/kotlin'), 'GameActivity runtime bundle must not gain app-owned Kotlin source');
 
 for (const required of [
   'class RiftBuildNativeApp',
   'riftbuild-native-app/1',
+  'riftbuild-native-app/2',
+  'GAME_ACTIVITY_PROFILE',
+  'GAME_ACTIVITY_RUNTIME',
+  'com.google.androidgamesdk.GameActivity',
+  'materializeManagedRuntime',
+  'clearPreparedDex',
+  'MAX_MANAGED_DEX_FILES = 32',
+  'MAX_MANAGED_DEX_BYTES = 64L * 1024L * 1024L',
   'rift-app.json',
   'android.app.NativeActivity',
   'android.app.lib_name',
@@ -509,6 +530,10 @@ for (const required of [
 ]) assert.ok(nativeApp.includes(required), 'native app preparer contract missing: ' + required);
 assert.ok(!nativeApp.includes('ProcessBuilder'), 'native app preparer must not gain process authority');
 assert.ok(!nativeApp.includes('Runtime.getRuntime().exec'), 'native app preparer must not gain raw exec authority');
+assert.match(nativeApp, /require\(spec\.managedRuntime == GAME_ACTIVITY_RUNTIME\)/);
+assert.match(nativeApp, /activityProfile == GAME_ACTIVITY_PROFILE/);
+assert.match(nativeApp, /bytes\[0\] == 'd'\.code\.toByte\(\)/);
+assert.match(nativeApp, /DEX_ENTRY\.matches/);
 
 const combinedAuthority = nativeBuild + '\n' + signer + '\n' + installer;
 for (const forbidden of [

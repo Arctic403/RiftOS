@@ -1,4 +1,5 @@
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 plugins {
     id("com.android.application")
@@ -482,6 +483,114 @@ val syncRiftBuildGameActivityNativeDeps by tasks.registering {
     }
 }
 
+val syncRiftBuildGameActivityManagedRuntime by tasks.registering {
+    dependsOn(":gameactivity-runtime-bundle:assembleDebug")
+
+    val bundleApk = rootProject.file(
+        "gameactivity-runtime-bundle/build/outputs/apk/debug/gameactivity-runtime-bundle-debug.apk"
+    )
+    val outputRoot = layout.buildDirectory.dir(
+        "generated/riftosAssets/riftbuild/managed-runtimes/game-activity-4.4.1"
+    )
+    inputs.file(bundleApk)
+    outputs.dir(outputRoot)
+
+    doLast {
+        if (!bundleApk.isFile) {
+            throw GradleException("GameActivity managed-runtime bundle APK is missing")
+        }
+
+        val dexPattern = Regex("^classes(?:[2-9]|[1-9][0-9]+)?\\.dex$")
+        val root = outputRoot.get().asFile
+        root.deleteRecursively()
+        root.mkdirs()
+
+        fun sha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count > 0) digest.update(buffer, 0, count)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        var totalBytes = 0L
+        val manifestLines = mutableListOf(
+            "schema=riftbuild-managed-runtime/1",
+            "coordinate=androidx.games:games-activity:4.4.1",
+            "activity=com.google.androidgamesdk.GameActivity"
+        )
+
+        ZipFile(bundleApk).use { zip ->
+            val entries = zip.entries().asSequence().toList()
+                .filter { !it.isDirectory && dexPattern.matches(it.name) }
+                .sortedBy { entry ->
+                    if (entry.name == "classes.dex") 1
+                    else entry.name.removePrefix("classes").removeSuffix(".dex").toIntOrNull()
+                        ?: Int.MAX_VALUE
+                }
+
+            if (entries.none { it.name == "classes.dex" }) {
+                throw GradleException("GameActivity managed-runtime bundle has no classes.dex")
+            }
+            if (entries.size > 32) {
+                throw GradleException("GameActivity managed-runtime dex count exceeds limit")
+            }
+
+            entries.forEach { entry ->
+                val output = File(root, entry.name)
+                zip.getInputStream(entry).use { input ->
+                    output.outputStream().buffered().use { sink ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (count == 0) continue
+                            totalBytes += count
+                            if (totalBytes > 64L * 1024L * 1024L) {
+                                throw GradleException(
+                                    "GameActivity managed-runtime dex bytes exceed limit"
+                                )
+                            }
+                            sink.write(buffer, 0, count)
+                        }
+                    }
+                }
+
+                val header = ByteArray(8)
+                output.inputStream().use { input ->
+                    var read = 0
+                    while (read < header.size) {
+                        val count = input.read(header, read, header.size - read)
+                        if (count < 0) break
+                        if (count > 0) read += count
+                    }
+                    if (read != header.size ||
+                        header[0] != 'd'.code.toByte() ||
+                        header[1] != 'e'.code.toByte() ||
+                        header[2] != 'x'.code.toByte() ||
+                        header[3] != '\n'.code.toByte() ||
+                        header[7] != 0.toByte()
+                    ) {
+                        throw GradleException(
+                            "GameActivity managed-runtime DEX magic is invalid: ${entry.name}"
+                        )
+                    }
+                }
+
+                manifestLines +=
+                    "${entry.name}=${output.length()}:${sha256(output)}"
+            }
+        }
+
+        File(root, "manifest.txt").writeText(manifestLines.joinToString("\n") + "\n")
+    }
+}
+
 val validateRiftBrowserWebViewOwnership by tasks.registering {
     val sourceRoot = file("src/main")
     val allowedOwners = setOf(
@@ -552,6 +661,7 @@ tasks.named("preBuild").configure {
     dependsOn(validateRiftBrowserWebViewOwnership)
     dependsOn(syncRiftOsWebAssets)
     dependsOn(syncRiftBuildGameActivityNativeDeps)
+    dependsOn(syncRiftBuildGameActivityManagedRuntime)
 }
 
 dependencies {
