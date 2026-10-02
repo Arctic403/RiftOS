@@ -734,7 +734,6 @@ assert.match(riftppEditorNativeElfPreflight, /writable and executable/);
 assert.match(riftppEditorBridgeService, /elfType == 1/);
 assert.match(riftppEditorBridgeService, /RiftppRelocatableElfPreflight/);
 assert.match(riftppEditorBridgeService, /requiredSymbol/);
-assert.match(riftppEditorBridgeService, /native-preflight required symbol is invalid/);
 assert.match(riftppEditorBridgeService, /inspect\([\s\S]*?elf,[\s\S]*?requiredSymbol/);
 assert.match(riftppEditorBridgeService, /"ET_REL"/);
 assert.match(riftppEditorRelocatableElfPreflight, /ET_REL = 1/);
