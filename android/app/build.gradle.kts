@@ -324,7 +324,7 @@ val verifyRiftppEditorPayload by tasks.registering {
         "src/main/java/com/riftpp/editor/MainActivity.kt" to
             "4ff321b5906b74f9977eca9ffb3c0a340df94633ab6278fb301897aba6b9a39e",
         "src/main/java/com/riftpp/editor/RiftppEditorBridgeService.kt" to
-            "44870ed116e6d294d892ae42226f2de782c9354e6b7874ad1ba85373454e756d",
+            "7da05481e03b6b88ff2060afd69c555ee8f37b3082649bafd52516e65b799bf6",
         "src/main/java/com/riftpp/editor/RiftppPipeline.kt" to
             "621b2c215ec4da4fe3494c6e8c6ad18a060d1b219d4293050b4c9358b01c28d4",
         "src/main/java/com/riftpp/editor/RiftppWorkspace.kt" to
