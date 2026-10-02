@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "com.riftos.gameactivityruntimebundle"
+    namespace = "com.riftpp.android"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.riftos.gameactivityruntimebundle"
+        applicationId = "com.riftpp.android.adapterbundle"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -17,8 +17,4 @@ android {
     buildFeatures {
         buildConfig = false
     }
-}
-
-dependencies {
-    implementation("androidx.games:games-activity:4.4.1")
 }

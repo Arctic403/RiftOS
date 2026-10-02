@@ -41,19 +41,12 @@ class RiftBuildNativeToolchain(
         val wholeArchive: Boolean
     )
 
-    private data class BundledArchiveInput(
-        val id: String,
-        val abi: String,
-        val wholeArchive: Boolean
-    )
-
     private data class ProjectSpec(
         val schema: String,
         val library: String,
         val sources: List<File>,
         val objects: List<AbiObjectInput>,
         val archives: List<StaticArchiveInput>,
-        val bundledArchives: List<BundledArchiveInput>,
         val includeDirs: List<File>,
         val libraries: List<String>,
         val cxxStandard: String,
@@ -84,7 +77,6 @@ class RiftBuildNativeToolchain(
         private const val MAX_SOURCES = 256
         private const val MAX_OBJECTS = 256
         private const val MAX_ARCHIVES = 64
-        private const val MAX_BUNDLED_ARCHIVES = 32
         private const val MAX_INCLUDE_DIRS = 64
         private const val MAX_LIBRARIES = 64
         private const val MAX_TOOLCHAIN_ARGS = 128
@@ -94,13 +86,10 @@ class RiftBuildNativeToolchain(
         private const val MAX_OUTPUT_BYTES = 128L * 1024L * 1024L
         private const val MAX_COMPILER_OUTPUT_BYTES = 1024 * 1024
         private const val PROCESS_TIMEOUT_SECONDS = 180L
-        private const val GAME_ACTIVITY_STATIC_ID =
-            "androidx.games:games-activity:4.4.1:game-activity_static"
         private val SAFE_LIBRARY = Regex("^[A-Za-z_][A-Za-z0-9_]{0,63}$")
         private val SAFE_LINK_LIBRARY = Regex("^[A-Za-z0-9_+.-]{1,80}$")
         private val SOURCE_EXTENSIONS = setOf("c", "cc", "cpp", "cxx")
         private val SUPPORTED_INPUT_ABIS = setOf("armeabi-v7a", "arm64-v8a")
-        private val ALLOWED_BUNDLED_ARCHIVES = setOf(GAME_ACTIVITY_STATIC_ID)
         private val CXX_STANDARDS = setOf("c++17", "c++20", "c++23")
         private val OPTIMIZATIONS = setOf("O0", "O1", "O2", "O3", "Os", "Oz")
     }
@@ -249,7 +238,6 @@ class RiftBuildNativeToolchain(
             .put("sourceCount", spec.sources.size)
             .put("objectCount", spec.objects.size)
             .put("archiveCount", spec.archives.size)
-            .put("bundledArchiveCount", spec.bundledArchives.size)
             .put("includeDirCount", spec.includeDirs.size)
             .put("libraries", JSONArray(spec.libraries))
             .put("cxxStandard", spec.cxxStandard)
@@ -279,18 +267,13 @@ class RiftBuildNativeToolchain(
 
         val objects = spec.objects.filter { it.abi == abi.abi }
         val archives = spec.archives.filter { it.abi == abi.abi }
-        val bundledArchives = spec.bundledArchives.filter { it.abi == abi.abi }
-        require(spec.sources.isNotEmpty() || objects.isNotEmpty() || archives.isNotEmpty() || bundledArchives.isNotEmpty()) {
+        require(spec.sources.isNotEmpty() || objects.isNotEmpty() || archives.isNotEmpty()) {
             "Native project has no link inputs for ${abi.abi}"
         }
 
         val tempDir = File(projectRoot, "build/riftbuild/tmp/${abi.abi}").canonicalFile
         require(confinedTo(projectRoot, tempDir)) { "Native compiler temp directory escaped project root" }
         require(tempDir.mkdirs() || tempDir.isDirectory) { "Could not create native compiler temp directory" }
-
-        val bundledMaterialized = bundledArchives.map { input ->
-            input to materializeBundledArchive(input, tempDir)
-        }
 
         val argv = ArrayList<String>()
         argv += toolchain.compiler.absolutePath
@@ -312,7 +295,6 @@ class RiftBuildNativeToolchain(
         for (source in spec.sources) argv += source.absolutePath
         for (input in objects) argv += input.file.absolutePath
         for (input in archives) appendArchiveArgv(argv, input.file, input.wholeArchive)
-        for ((input, file) in bundledMaterialized) appendArchiveArgv(argv, file, input.wholeArchive)
         for (library in spec.libraries) argv += "-l" + library
 
         val process = try {
@@ -490,19 +472,7 @@ class RiftBuildNativeToolchain(
             archives += StaticArchiveInput(file, abi, item.optBoolean("wholeArchive", false))
         }
 
-        val bundledArchives = ArrayList<BundledArchiveInput>()
-        val bundledArray = manifest.optJSONArray("bundledArchives") ?: JSONArray()
-        require(bundledArray.length() <= MAX_BUNDLED_ARCHIVES) { "Bundled archive count exceeds limit" }
-        for (i in 0 until bundledArray.length()) {
-            require(schema == PROJECT_SCHEMA_V2) { "Bundled archives require riftbuild-native-project/2" }
-            val item = bundledArray.getJSONObject(i)
-            val id = item.getString("id").trim()
-            require(id in ALLOWED_BUNDLED_ARCHIVES) { "Bundled native archive is not allowlisted: $id" }
-            val abi = requireInputAbi(item.getString("abi"))
-            bundledArchives += BundledArchiveInput(id, abi, item.optBoolean("wholeArchive", false))
-        }
-
-        require(sources.isNotEmpty() || objects.isNotEmpty() || archives.isNotEmpty() || bundledArchives.isNotEmpty()) {
+        require(sources.isNotEmpty() || objects.isNotEmpty() || archives.isNotEmpty()) {
             "Native project requires at least one source or link input"
         }
 
@@ -537,7 +507,6 @@ class RiftBuildNativeToolchain(
             sources,
             objects,
             archives,
-            bundledArchives,
             includeDirs,
             libraries,
             standard,
@@ -596,37 +565,6 @@ class RiftBuildNativeToolchain(
         if (wholeArchive) argv += "-Wl,--whole-archive"
         argv += file.absolutePath
         if (wholeArchive) argv += "-Wl,--no-whole-archive"
-    }
-
-    private fun materializeBundledArchive(input: BundledArchiveInput, tempDir: File): File {
-        val assetPath = when (input.id) {
-            GAME_ACTIVITY_STATIC_ID ->
-                "riftbuild/native-deps/game-activity-4.4.1/${input.abi}/libgame-activity_static.a"
-            else -> error("Bundled native archive is not allowlisted: ${input.id}")
-        }
-        val outDir = File(tempDir, "bundled-archives").canonicalFile
-        require(confinedTo(tempDir, outDir)) { "Bundled native archive directory escaped temp root" }
-        require(outDir.mkdirs() || outDir.isDirectory) { "Could not create bundled native archive directory" }
-        val output = File(outDir, input.id.substringAfterLast(':') + "-" + input.abi + ".a").canonicalFile
-        require(confinedTo(outDir, output)) { "Bundled native archive output escaped temp root" }
-
-        var total = 0L
-        appContext.assets.open(assetPath).use { source ->
-            FileOutputStream(output).use { sink ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val count = source.read(buffer)
-                    if (count < 0) break
-                    if (count == 0) continue
-                    total += count
-                    require(total <= MAX_LINK_INPUT_BYTES) { "Bundled native archive exceeds byte limit" }
-                    sink.write(buffer, 0, count)
-                }
-            }
-        }
-        require(total > 0L) { "Bundled native archive is empty: ${input.id}" }
-        verifyStaticArchive(output)
-        return output
     }
 
     private fun resolveProjectPath(projectRoot: File, raw: String): File {

@@ -52,12 +52,12 @@ class RiftBuildNativeApp(
         private const val MAX_ASSET_FILES = 5_000
         private const val MAX_ASSET_BYTES = 128L * 1024L * 1024L
         private const val MAX_MANIFEST_BYTES = 64 * 1024
-        private const val MAX_MANAGED_DEX_FILES = 32
-        private const val MAX_MANAGED_DEX_BYTES = 64L * 1024L * 1024L
-        private const val GAME_ACTIVITY_PROFILE = "game-activity"
+        private const val MAX_MANAGED_DEX_FILES = 8
+        private const val MAX_MANAGED_DEX_BYTES = 16L * 1024L * 1024L
         private const val NATIVE_ACTIVITY_PROFILE = "native-activity"
-        private const val GAME_ACTIVITY_CLASS = "com.google.androidgamesdk.GameActivity"
-        private const val GAME_ACTIVITY_RUNTIME = "androidx.games:games-activity:4.4.1"
+        private const val RIFTPP_ADAPTER_PROFILE = "riftpp-adapter"
+        private const val RIFTPP_ADAPTER_CLASS = "com.riftpp.android.RiftppActivity"
+        private const val RIFTPP_ADAPTER_RUNTIME = "riftpp-android-adapter/1"
         private val SAFE_LIBRARY = Regex("^[A-Za-z_][A-Za-z0-9_]{0,63}$")
         private val DEX_ENTRY = Regex("^classes(?:[2-9]|[1-9][0-9]+)?\\.dex$")
         private val SAFE_PACKAGE = Regex("^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$")
@@ -195,13 +195,17 @@ class RiftBuildNativeApp(
         } else {
             json.optString("activity", NATIVE_ACTIVITY_PROFILE).trim()
         }
-        require(activityProfile == NATIVE_ACTIVITY_PROFILE || activityProfile == GAME_ACTIVITY_PROFILE) {
-            "Native app activity must be native-activity or game-activity"
+        require(
+            activityProfile == NATIVE_ACTIVITY_PROFILE ||
+                activityProfile == RIFTPP_ADAPTER_PROFILE
+        ) {
+            "Native app activity must be native-activity or riftpp-adapter"
         }
-        val managedRuntime = if (schema == APP_SCHEMA_V1) "" else json.optString("managedRuntime").trim()
-        if (activityProfile == GAME_ACTIVITY_PROFILE) {
-            require(managedRuntime == GAME_ACTIVITY_RUNTIME) {
-                "GameActivity app requires the pinned managed runtime: $GAME_ACTIVITY_RUNTIME"
+        val managedRuntime =
+            if (schema == APP_SCHEMA_V1) "" else json.optString("managedRuntime").trim()
+        if (activityProfile == RIFTPP_ADAPTER_PROFILE) {
+            require(managedRuntime == RIFTPP_ADAPTER_RUNTIME) {
+                "Rift++ adapter app requires managedRuntime: $RIFTPP_ADAPTER_RUNTIME"
             }
         } else {
             require(managedRuntime.isBlank()) {
@@ -261,7 +265,7 @@ class RiftBuildNativeApp(
             )))
             body.write(endElement(strings, "uses-permission"))
         }
-        val hasCode = spec.activityProfile == GAME_ACTIVITY_PROFILE
+        val hasCode = spec.activityProfile == RIFTPP_ADAPTER_PROFILE
         body.write(startElement(strings, "application", listOf(
             boolAttr(strings, "hasCode", hasCode.toString(), hasCode)
         )))
@@ -313,7 +317,7 @@ class RiftBuildNativeApp(
             "uses-permission",
             *spec.permissions.toTypedArray(),
             "application",
-            (spec.activityProfile == GAME_ACTIVITY_PROFILE).toString(),
+            (spec.activityProfile == RIFTPP_ADAPTER_PROFILE).toString(),
             "activity",
             activityClass(spec),
             "true",
@@ -330,8 +334,11 @@ class RiftBuildNativeApp(
     }
 
     private fun activityClass(spec: AppSpec): String =
-        if (spec.activityProfile == GAME_ACTIVITY_PROFILE) GAME_ACTIVITY_CLASS
-        else "android.app.NativeActivity"
+        if (spec.activityProfile == RIFTPP_ADAPTER_PROFILE) {
+            RIFTPP_ADAPTER_CLASS
+        } else {
+            "android.app.NativeActivity"
+        }
 
     private fun clearPreparedDex(prepared: File) {
         prepared.listFiles()
@@ -344,11 +351,15 @@ class RiftBuildNativeApp(
     private fun materializeManagedRuntime(spec: AppSpec, prepared: File): JSONArray {
         val out = JSONArray()
         if (spec.managedRuntime.isBlank()) return out
-        require(spec.managedRuntime == GAME_ACTIVITY_RUNTIME) {
+
+        require(
+            spec.activityProfile == RIFTPP_ADAPTER_PROFILE &&
+                spec.managedRuntime == RIFTPP_ADAPTER_RUNTIME
+        ) {
             "Managed runtime is not allowlisted: ${spec.managedRuntime}"
         }
 
-        val assetRoot = "riftbuild/managed-runtimes/game-activity-4.4.1"
+        val assetRoot = "riftbuild/managed-runtimes/riftpp-adapter-v1"
         val names = appContext.assets.list(assetRoot)
             ?.filter { DEX_ENTRY.matches(it) }
             ?.sortedWith(compareBy<String> {
@@ -359,7 +370,7 @@ class RiftBuildNativeApp(
             .orEmpty()
 
         require(names.isNotEmpty() && names.first() == "classes.dex") {
-            "Pinned GameActivity managed runtime classes.dex is missing"
+            "Pinned Rift++ Android adapter classes.dex is missing"
         }
         require(names.size <= MAX_MANAGED_DEX_FILES) {
             "Managed runtime DEX file count exceeds limit"
@@ -367,8 +378,7 @@ class RiftBuildNativeApp(
 
         var total = 0L
         for (name in names) {
-            val assetPath = "$assetRoot/$name"
-            val bytes = appContext.assets.open(assetPath).use { input ->
+            val bytes = appContext.assets.open("$assetRoot/$name").use { input ->
                 val buffer = ByteArrayOutputStream()
                 val chunk = ByteArray(64 * 1024)
                 while (true) {
@@ -384,14 +394,18 @@ class RiftBuildNativeApp(
                 buffer.toByteArray()
             }
 
-            require(bytes.size >= 8) { "Managed runtime DEX is truncated: $name" }
+            require(bytes.size >= 8) {
+                "Managed runtime DEX is truncated: $name"
+            }
             require(
                 bytes[0] == 'd'.code.toByte() &&
                     bytes[1] == 'e'.code.toByte() &&
                     bytes[2] == 'x'.code.toByte() &&
                     bytes[3] == '\n'.code.toByte() &&
                     bytes[7] == 0.toByte()
-            ) { "Managed runtime DEX magic is invalid: $name" }
+            ) {
+                "Managed runtime DEX magic is invalid: $name"
+            }
 
             val output = File(prepared, name).canonicalFile
             require(confinedTo(prepared, output)) {

@@ -169,34 +169,7 @@ Each native project opts in with `<project>/rift-native.json`:
 
 Sources and include directories are project-relative and confined to the project. `libraries` is a bounded list of linker library names lowered to `-l<name>` (for example Android NativeActivity code can request `android` and `log`). Native Compile V1 owns `-o`, target/sysroot selection, PIC/shared-library mode and linker identity flags; project text is not parsed as command text. Universal compilation emits and ELF-verifies both `lib/arm64-v8a/lib<library>.so` and `lib/armeabi-v7a/lib<library>.so` under `build/riftbuild/prepared/`.
 
-Native Compile V2 extends that contract without adding raw linker-argument authority. A `riftbuild-native-project/2` manifest may use ABI-bound prebuilt `objects`, project-local static `archives`, and fixed allowlisted `bundledArchives`. ET_REL objects are checked for ELF class, machine, endianness and `ET_REL` type before launch; project archives and bundled archives are bounded and checked for Unix `ar` magic. Archive entries may request an explicit `wholeArchive` boundary, which RiftBuild lowers only to paired `-Wl,--whole-archive` / `-Wl,--no-whole-archive` arguments.
-
-The first bundled native dependency is the pinned AndroidX GameActivity static library:
-
-```json
-{
-  "schema": "riftbuild-native-project/2",
-  "library": "riftpp_editor_native_r1",
-  "sources": [],
-  "objects": [
-    {
-      "path": "app/src/main/cpp/riftpp_gameactivity_entry.o",
-      "abi": "armeabi-v7a"
-    }
-  ],
-  "bundledArchives": [
-    {
-      "id": "androidx.games:games-activity:4.4.1:game-activity_static",
-      "abi": "armeabi-v7a",
-      "wholeArchive": true
-    }
-  ],
-  "libraries": ["android", "log"],
-  "api": 26
-}
-```
-
-The RiftOS Android build resolves exactly `androidx.games:games-activity:4.4.1@aar`, extracts the official Prefab `libgame-activity_static.a` artifacts for `armeabi-v7a` and `arm64-v8a`, validates archive magic, hashes them, and packages them under signed RiftOS generated assets. Runtime native builds may reference only the fixed bundled dependency IDs compiled into RiftBuild; project JSON cannot supply arbitrary asset paths or linker flags.
+Native Compile V2 extends that contract without adding raw linker-argument authority. A `riftbuild-native-project/2` manifest may use ABI-bound prebuilt `objects` and project-local static `archives`. ET_REL objects are checked for ELF class, machine, endianness and `ET_REL` type before launch; project archives are bounded and checked for Unix `ar` magic. Archive entries may request an explicit `wholeArchive` boundary, which RiftBuild lowers only to paired `-Wl,--whole-archive` / `-Wl,--no-whole-archive` arguments.
 
 Generic NativeActivity packaging opts in with `<project>/rift-app.json`:
 
@@ -216,7 +189,7 @@ Generic NativeActivity packaging opts in with `<project>/rift-app.json`:
 
 `riftbuild prepare-native-app <project>` preserves that v1 NativeActivity behavior exactly: it emits a bounded Android binary manifest for an exported `android.app.NativeActivity`, cross-checks its library name against `rift-native.json` when present, and copies the bounded project asset tree into `build/riftbuild/prepared/assets/` without touching already-compiled ABI libraries. `permissions` is optional, bounded and deduplicated; the current allowlist contains exactly `android.permission.INTERNET`. This remains the intended lane for custom script source/bytecode such as Proto-LLM runtime assets and historical Rift++ NativeActivity proofs.
 
-`riftbuild-native-app/2` adds one bounded managed activity profile without granting projects Java/Kotlin source authority. The currently allowlisted profile is `activity: "game-activity"` with `managedRuntime: "androidx.games:games-activity:4.4.1"`. RiftOS builds a dependency-only `gameactivity-runtime-bundle` module with no app-owned Java/Kotlin source, extracts its `classes*.dex` files into signed generated assets, validates DEX magic/count/bytes, and `prepare-native-app` copies only that fixed runtime into the prepared APK root. The generated manifest sets `android:hasCode="true"`, launches `com.google.androidgamesdk.GameActivity`, and keeps `android.app.lib_name` pointed at the project native library. NativeActivity v1 manifests continue to set `hasCode=false` and include no managed runtime.
+`riftbuild-native-app/2` is the bounded app-schema extension point for the frozen Rift++ Android adapter. It accepts either the legacy `activity: "native-activity"` path with a blank `managedRuntime`, or `activity: "riftpp-adapter"` with the fixed `managedRuntime: "riftpp-android-adapter/1"`. The adapter is built from the dedicated `:riftpp-adapter-runtime-bundle` module and contains only Android lifecycle/surface ownership plus native-library loading/JNI forwarding. `RiftppActivity` does not own renderer state, editor state, application semantics or compiler/build authority. RiftOS extracts and validates the adapter `classes*.dex` files into signed generated assets, and `prepare-native-app` copies only that fixed runtime into the prepared APK root, sets `android:hasCode="true"`, and launches `com.riftpp.android.RiftppActivity` while `android.app.lib_name` continues to name the Rift++ runtime library.
 
 Installed Rift app API keeps the existing capability boundary:
 
@@ -235,7 +208,7 @@ No new MCP tool is required.
 
 RiftBuild installation remains explicitly user-confirmed. The PackageInstaller session status `IntentSender` targets the private `RiftBuildInstallReceiver` through `PendingIntent.getBroadcast(...)`, because status delivery proved more reliable than an Activity-only callback on the live device. When Android reports `STATUS_PENDING_USER_ACTION`, the receiver retains the system confirmation `Intent` in-process and records `pending-user-action`. If RiftOS already owns a focused `MainActivity`, the confirmation is launched immediately from that Activity; otherwise `MainActivity.onResume()` / regained window focus consumes the retained intent and launches the system installer from a real foreground Activity. Terminal success/failure statuses clear retained confirmation state.
 
-This hybrid path intentionally combines reliable receiver delivery with foreground Activity presentation. It does not add silent-install authority: `USER_ACTION_REQUIRED`, APK v2 verification, package allowlisting and Android user confirmation remain mandatory. Rift++ packages `com.riftpp.hello`, `com.riftpp.editor`, `com.riftpp.editor.nativev1` and `com.riftpp.editor.gameactivityr1` are fixed allowlisted identities in addition to the bootstrap proof package; this does not bypass signature verification or user confirmation. For bridge-supported Rift++ packages, the installer starts a bounded diagnostic session before exact launch. If the RiftOS process dies while confirmation is pending, the retained nested intent is lost and `install-proof` must be retried rather than attempting to persist/replay a system-owned confirmation intent.
+This hybrid path intentionally combines reliable receiver delivery with foreground Activity presentation. It does not add silent-install authority: `USER_ACTION_REQUIRED`, APK v2 verification, package allowlisting and Android user confirmation remain mandatory. Rift++ packages `com.riftpp.hello`, `com.riftpp.editor`, `com.riftpp.editor.nativev1` and `com.riftpp.editor.adapterr1` are fixed allowlisted identities in addition to the bootstrap proof package; this does not bypass signature verification or user confirmation. For bridge-supported Rift++ packages, the installer starts a bounded diagnostic session before exact launch. If the RiftOS process dies while confirmation is pending, the retained nested intent is lost and `install-proof` must be retried rather than attempting to persist/replay a system-owned confirmation intent.
 
 ## Rift++ Android Native R1/R2/R3 load, callback and first-frame gates
 
