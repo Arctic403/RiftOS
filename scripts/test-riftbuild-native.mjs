@@ -486,6 +486,8 @@ assert.ok(!nativeToolchain.includes('/system/bin/sh'), 'native toolchain must no
 assert.ok(!nativeToolchain.includes('Runtime.getRuntime().exec'), 'native toolchain must use structured ProcessBuilder argv only');
 assert.ok(!nativeToolchain.includes('linkerArgs'), 'native project must not gain arbitrary linker-argument authority');
 assert.ok(nativeToolchain.includes('SUPPORTED_INPUT_ABIS'), 'native v2 link inputs must remain ABI-scoped');
+assert.ok(!nativeToolchain.includes('bundledMaterialized'), 'retired bundled-archive materialization must stay removed');
+assert.ok(!nativeToolchain.includes('bundled-archive'), 'retired bundled-archive receipt entries must stay removed');
 
 for (const required of [
   'class RiftBuildNativeApp',

@@ -370,13 +370,6 @@ class RiftBuildNativeToolchain(
                         .put("wholeArchive", input.wholeArchive)
                         .put("sha256", sha256(input.file)))
                 }
-                for ((input, file) in bundledMaterialized) {
-                    put(JSONObject()
-                        .put("kind", "bundled-archive")
-                        .put("id", input.id)
-                        .put("wholeArchive", input.wholeArchive)
-                        .put("sha256", sha256(file)))
-                }
             })
     }
 
