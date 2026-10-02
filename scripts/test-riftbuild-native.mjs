@@ -347,6 +347,9 @@ for (const required of [
   'compile-native',
   'RiftBuildNativeApp',
   'prepare-native-app',
+  'manifestNativeProject',
+  'nativeToolchain.validateProject(ref.file)',
+  'nativeApp.validateProject(ref.file)',
   'structuredCompilerProcessExecution',
   'downloadedToolchainsAllowed',
   'preparedArtifactPackagerReady',
@@ -486,6 +489,9 @@ assert.ok(!nativeToolchain.includes('/system/bin/sh'), 'native toolchain must no
 assert.ok(!nativeToolchain.includes('Runtime.getRuntime().exec'), 'native toolchain must use structured ProcessBuilder argv only');
 assert.ok(!nativeToolchain.includes('linkerArgs'), 'native project must not gain arbitrary linker-argument authority');
 assert.ok(nativeToolchain.includes('SUPPORTED_INPUT_ABIS'), 'native v2 link inputs must remain ABI-scoped');
+assert.match(nativeToolchain, /fun validateProject\(projectRoot: File\)/);
+assert.match(nativeApp, /fun validateProject\(projectRoot: File\)/);
+assert.match(nativeApp, /riftbuild-native-app-validation-v1/);
 assert.ok(!nativeToolchain.includes('bundledMaterialized'), 'retired bundled-archive materialization must stay removed');
 assert.ok(!nativeToolchain.includes('bundled-archive'), 'retired bundled-archive receipt entries must stay removed');
 
@@ -684,6 +690,9 @@ assert.match(shell, /riftpp-editor build-debug/);
 assert.match(shell, /riftpp-editor native-compile/);
 assert.match(shell, /riftpp-editor native-run/);
 assert.match(shell, /riftpp-editor native-preflight/);
+assert.match(shell, /native-preflight <elf-path> \[required-symbol\]/);
+assert.match(shell, /args\.size in 1\.\.2/);
+assert.match(shell, /requiredSymbol/);
 assert.match(shell, /riftpp-editor native-build-debug/);
 assert.match(riftppEditorBridgeClient, /RiftppEditorBridgeService/);
 assert.match(riftppEditorBridgeService, /RIFTOS_PACKAGE[\s\S]*?"com\.riftos\.app"/);
@@ -708,6 +717,9 @@ assert.match(riftppEditorNativeElfPreflight, /PT_LOAD/);
 assert.match(riftppEditorNativeElfPreflight, /writable and executable/);
 assert.match(riftppEditorBridgeService, /elfType == 1/);
 assert.match(riftppEditorBridgeService, /RiftppRelocatableElfPreflight/);
+assert.match(riftppEditorBridgeService, /requiredSymbol/);
+assert.match(riftppEditorBridgeService, /native-preflight required symbol is invalid/);
+assert.match(riftppEditorBridgeService, /inspect\([\s\S]*?elf,[\s\S]*?requiredSymbol/);
 assert.match(riftppEditorBridgeService, /"ET_REL"/);
 assert.match(riftppEditorRelocatableElfPreflight, /ET_REL = 1/);
 assert.match(riftppEditorRelocatableElfPreflight, /EM_ARM = 40/);

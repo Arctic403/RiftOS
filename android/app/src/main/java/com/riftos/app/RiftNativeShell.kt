@@ -388,7 +388,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftpp-editor build-production\n" +
                     "riftpp-editor native-compile <source-path> [output-path] [compiler-path]\n" +
                     "riftpp-editor native-run <program-path> <input-path> [output-path] [output-capacity]\n" +
-                    "riftpp-editor native-preflight <elf-path>\n" +
+                    "riftpp-editor native-preflight <elf-path> [required-symbol]\n" +
                     "riftpp-editor native-build-debug <elf-path> [package] [library]"
 
             return ShellOutcome(
@@ -772,12 +772,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
                 "native-preflight" -> {
                     require(
-                        args.size == 1
+                        args.size in 1..2
                     ) {
-                        "usage: riftpp-editor native-preflight <elf-path>"
+                        "usage: riftpp-editor native-preflight <elf-path> [required-symbol]"
                     }
 
-                    bridge.execute(
+                    val request =
                         JSONObject()
                             .put(
                                 "op",
@@ -787,6 +787,14 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                                 "elfPath",
                                 args[0]
                             )
+                    if (args.size == 2) {
+                        request.put(
+                            "requiredSymbol",
+                            args[1]
+                        )
+                    }
+                    bridge.execute(
+                        request
                     )
                 }
 

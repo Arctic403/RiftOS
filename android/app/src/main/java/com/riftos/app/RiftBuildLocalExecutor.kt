@@ -599,37 +599,93 @@ class RiftBuildLocalExecutor(context: Context) {
         val rootGradle = firstExisting(ref.file, "build.gradle.kts", "build.gradle")
         val appGradle = firstExisting(ref.file, "app/build.gradle.kts", "app/build.gradle")
         val manifest = File(ref.file, "app/src/main/AndroidManifest.xml")
-
-        check("settings", settings != null, settings?.name ?: "missing settings.gradle(.kts)")
-        check("root-gradle", rootGradle != null, rootGradle?.name ?: "missing build.gradle(.kts)")
-        check("app-gradle", appGradle != null, appGradle?.relativeTo(ref.file)?.invariantSeparatorsPath ?: "missing app/build.gradle(.kts)")
-        check("manifest", manifest.isFile, if (manifest.isFile) "app/src/main/AndroidManifest.xml" else "missing AndroidManifest.xml")
+        val nativeProjectManifest = File(ref.file, "rift-native.json")
+        val nativeAppManifest = File(ref.file, "rift-app.json")
+        val manifestNativeProject =
+            nativeProjectManifest.isFile && nativeAppManifest.isFile
 
         var nativeActivity = false
         var nativeLibraryName = ""
         var activityName = ""
         var requiresDex = false
-        if (manifest.isFile) {
-            val text = readTextBounded(manifest)
-            activityName = Regex("""<activity\b[^>]*android:name\s*=\s*["']([^"']+)["']""")
-                .find(text)?.groupValues?.getOrNull(1).orEmpty()
-            nativeActivity =
-                activityName == "android.app.NativeActivity" ||
-                    text.contains("android.app.NativeActivity")
-            requiresDex = activityName.isNotBlank() && !nativeActivity
-            nativeLibraryName = Regex("""android\.app\.lib_name[\s\S]*?android:value\s*=\s*["']([^"']+)["']""")
-                .find(text)?.groupValues?.getOrNull(1).orEmpty()
+
+        if (manifestNativeProject) {
+            val projectReceipt = runCatching {
+                nativeToolchain.validateProject(ref.file)
+            }
             check(
-                "activity",
-                activityName.isNotBlank(),
-                if (activityName.isBlank()) "launch activity missing" else activityName
+                "rift-native-manifest",
+                projectReceipt.isSuccess,
+                projectReceipt.getOrNull()?.optString("projectSchema")
+                    ?: projectReceipt.exceptionOrNull()?.message
+                    ?: "invalid rift-native.json"
             )
-            if (nativeActivity) {
+
+            val appReceipt = runCatching {
+                nativeApp.validateProject(ref.file)
+            }
+            check(
+                "rift-app-manifest",
+                appReceipt.isSuccess,
+                appReceipt.getOrNull()?.optString("appSchema")
+                    ?: appReceipt.exceptionOrNull()?.message
+                    ?: "invalid rift-app.json"
+            )
+
+            appReceipt.getOrNull()?.let { receipt ->
+                nativeLibraryName = receipt.optString("library")
+                activityName = receipt.optString("activityClass")
+                nativeActivity =
+                    receipt.optString("activityProfile") == "native-activity"
+                requiresDex = receipt.optBoolean("requiresDex")
+            }
+        } else {
+            check("settings", settings != null, settings?.name ?: "missing settings.gradle(.kts)")
+            check("root-gradle", rootGradle != null, rootGradle?.name ?: "missing build.gradle(.kts)")
+            check(
+                "app-gradle",
+                appGradle != null,
+                appGradle?.relativeTo(ref.file)?.invariantSeparatorsPath
+                    ?: "missing app/build.gradle(.kts)"
+            )
+            check(
+                "manifest",
+                manifest.isFile,
+                if (manifest.isFile) {
+                    "app/src/main/AndroidManifest.xml"
+                } else {
+                    "missing AndroidManifest.xml"
+                }
+            )
+
+            if (manifest.isFile) {
+                val text = readTextBounded(manifest)
+                activityName =
+                    Regex("""<activity\b[^>]*android:name\s*=\s*["']([^"']+)["']""")
+                        .find(text)?.groupValues?.getOrNull(1).orEmpty()
+                nativeActivity =
+                    activityName == "android.app.NativeActivity" ||
+                        text.contains("android.app.NativeActivity")
+                requiresDex = activityName.isNotBlank() && !nativeActivity
+                nativeLibraryName =
+                    Regex("""android\.app\.lib_name[\s\S]*?android:value\s*=\s*["']([^"']+)["']""")
+                        .find(text)?.groupValues?.getOrNull(1).orEmpty()
                 check(
-                    "native-library-name",
-                    nativeLibraryName.isNotBlank(),
-                    if (nativeLibraryName.isBlank()) "android.app.lib_name missing" else nativeLibraryName
+                    "activity",
+                    activityName.isNotBlank(),
+                    if (activityName.isBlank()) "launch activity missing" else activityName
                 )
+                if (nativeActivity) {
+                    check(
+                        "native-library-name",
+                        nativeLibraryName.isNotBlank(),
+                        if (nativeLibraryName.isBlank()) {
+                            "android.app.lib_name missing"
+                        } else {
+                            nativeLibraryName
+                        }
+                    )
+                }
             }
         }
 
@@ -655,6 +711,7 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("bytes", bytes)
             .put("sourceReady", sourceReady)
             .put("androidGradleProject", settings != null && rootGradle != null && appGradle != null && manifest.isFile)
+            .put("manifestNativeProject", manifestNativeProject)
             .put("nativeActivity", nativeActivity)
             .put("nativeLibraryName", nativeLibraryName)
             .put("activityName", activityName)

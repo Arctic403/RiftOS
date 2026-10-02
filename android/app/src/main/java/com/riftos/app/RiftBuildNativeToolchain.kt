@@ -207,6 +207,29 @@ class RiftBuildNativeToolchain(
             .put("bytes", totalBytes)
     }
 
+    fun validateProject(projectRoot: File): JSONObject {
+        val canonicalProject = projectRoot.canonicalFile
+        require(confinedTo(workspaceRoot, canonicalProject)) {
+            "Native validation project escaped D:/Workspace"
+        }
+        require(canonicalProject.isDirectory) {
+            "Native validation project is not a directory"
+        }
+
+        val spec = readProjectSpec(canonicalProject)
+        return JSONObject()
+            .put("schema", "riftbuild-native-project-validation-v1")
+            .put("projectSchema", spec.schema)
+            .put("library", spec.library)
+            .put("sourceCount", spec.sources.size)
+            .put("objectCount", spec.objects.size)
+            .put("archiveCount", spec.archives.size)
+            .put("includeDirCount", spec.includeDirs.size)
+            .put("libraries", JSONArray(spec.libraries))
+            .put("api", spec.api)
+            .put("state", "valid-native-project")
+    }
+
     fun compile(projectRoot: File, target: String): JSONObject {
         val canonicalProject = projectRoot.canonicalFile
         require(confinedTo(workspaceRoot, canonicalProject)) { "Native compile project escaped D:/Workspace" }

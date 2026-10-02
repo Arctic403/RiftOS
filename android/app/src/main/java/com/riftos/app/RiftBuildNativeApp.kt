@@ -88,6 +88,29 @@ class RiftBuildNativeApp(
         )
     }
 
+    fun validateProject(projectRoot: File): JSONObject {
+        val project = projectRoot.canonicalFile
+        require(confinedTo(workspaceRoot, project)) {
+            "Native app validation project escaped D:/Workspace"
+        }
+        require(project.isDirectory) {
+            "Native app validation project is not a directory"
+        }
+
+        val spec = readAppSpec(project)
+        crossCheckNativeLibrary(project, spec.library)
+        return JSONObject()
+            .put("schema", "riftbuild-native-app-validation-v1")
+            .put("appSchema", spec.schema)
+            .put("package", spec.packageName)
+            .put("library", spec.library)
+            .put("activityProfile", spec.activityProfile)
+            .put("activityClass", activityClass(spec))
+            .put("managedRuntime", spec.managedRuntime)
+            .put("requiresDex", spec.activityProfile != NATIVE_ACTIVITY_PROFILE)
+            .put("state", "valid-native-app")
+    }
+
     fun prepare(projectRoot: File): JSONObject {
         val project = projectRoot.canonicalFile
         require(confinedTo(workspaceRoot, project)) { "Native app project escaped D:/Workspace" }

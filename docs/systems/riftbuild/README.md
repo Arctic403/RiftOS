@@ -171,6 +171,8 @@ Sources and include directories are project-relative and confined to the project
 
 Native Compile V2 extends that contract without adding raw linker-argument authority. A `riftbuild-native-project/2` manifest may use ABI-bound prebuilt `objects` and project-local static `archives`. ET_REL objects are checked for ELF class, machine, endianness and `ET_REL` type before launch; project archives are bounded and checked for Unix `ar` magic. Archive entries may request an explicit `wholeArchive` boundary, which RiftBuild lowers only to paired `-Wl,--whole-archive` / `-Wl,--no-whole-archive` arguments.
 
+A project containing both `rift-native.json` and `rift-app.json` is a first-class manifest-native RiftBuild project. Validation reuses the same bounded native/app manifest parsers used by compile and prepare; it does not require placeholder Gradle files or a source AndroidManifest. Target-specific plans then inspect only the requested ABI in `build/riftbuild/prepared`, so an explicit `arm32` package does not require an unrelated arm64 library.
+
 Generic NativeActivity packaging opts in with `<project>/rift-app.json`:
 
 ```json
@@ -203,6 +205,8 @@ build.artifacts
 ```
 
 No new MCP tool is required.
+
+The legacy-editor ET_REL preflight command is `riftpp-editor native-preflight <elf-path> [required-symbol]`. The optional symbol defaults to `android_main` for compatibility, while JNI-backed runtimes can require their actual exported JNI entry point instead of adding a fake NativeActivity symbol.
 
 ### PackageInstaller confirmation handoff
 
