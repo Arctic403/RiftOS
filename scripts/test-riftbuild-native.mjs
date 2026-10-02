@@ -286,6 +286,11 @@ assert.ok(
   'Rift++ Android R1 must not regress to the loader-invalid 644-byte ELF contract'
 );
 
+assert.ok(
+  riftAppDiagnosticBridge.includes('RIFTPP_ADAPTER_R1_TARGET_PACKAGE'),
+  'Rift++ adapter R1 proof package must remain diagnostic-bridge allowlisted'
+);
+
 for (const required of [
   'RiftAppDiagnosticBridge.supports(packageName)',
   'RiftAppDiagnosticBridge.beginLaunch',

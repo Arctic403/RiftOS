@@ -36,7 +36,8 @@ object RiftAppDiagnosticBridge {
         RiftBuildInstaller.TARGET_PACKAGE,
         RiftBuildInstaller.RIFTPP_APP0_TARGET_PACKAGE,
         RiftBuildInstaller.RIFTPP_EDITOR_TARGET_PACKAGE,
-        RiftBuildInstaller.RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE
+        RiftBuildInstaller.RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE,
+        RiftBuildInstaller.RIFTPP_ADAPTER_R1_TARGET_PACKAGE
     )
 
     fun supports(packageName: String): Boolean =
