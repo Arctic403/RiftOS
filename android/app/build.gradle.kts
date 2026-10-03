@@ -68,6 +68,9 @@ android {
     sourceSets["main"].jniLibs.directories.add("build/generated/riftosJniLibs")
     packaging {
         jniLibs.useLegacyPackaging = true
+        resources {
+            pickFirsts += "kotlin/internal/internal.kotlin_builtins"
+        }
     }
 }
 
