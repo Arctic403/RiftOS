@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var controller: CodynexEditorController
     private lateinit var workspacePort: FileWorkspacePort
     private lateinit var toolchain: Source0SelfHostToolchainPort
+    private lateinit var compatibilityToolchain: Source0SelfHostToolchainPort
 
     private lateinit var statusView: TextView
     private lateinit var candidateView: TextView
@@ -120,6 +121,14 @@ class MainActivity : Activity() {
                     artifacts = artifacts,
                     candidateDirectory =
                         File(filesDir, "editor-candidates")
+                )
+            compatibilityToolchain =
+                Source0SelfHostToolchainPort(
+                    context = this,
+                    artifacts = artifacts,
+                    candidateDirectory =
+                        File(filesDir, "editor-candidates-vm1-pack"),
+                    target = EditorVmTarget.VM1
                 )
 
             controller =
@@ -996,22 +1005,31 @@ class MainActivity : Activity() {
                         state = controller.saveAll()
                     }
 
-                    if (state.candidate == null) {
-                        state = controller.compile()
-                    }
-
-                    val candidate =
-                        state.candidate
-                            ?: error(
-                                "compile did not produce a VM1 candidate"
-                            )
-
                     val sourcePath =
                         state.projectEntryPath
                             ?: state.activeDocumentPath
                             ?: error(
                                 "no .cx project entry is selected"
                             )
+
+                    val packController =
+                        CodynexEditorController(
+                            workspace = workspacePort,
+                            compiler = compatibilityToolchain,
+                            preview = compatibilityToolchain
+                        )
+                    packController.openWorkspace(workspacePort.rootPath())
+                    packController.openFile(sourcePath)
+                    packController.setProjectEntry(sourcePath)
+                    val packState = packController.compile()
+                    val candidate =
+                        packState.candidate
+                            ?: error(
+                                "compatibility compile did not produce a VM1 candidate"
+                            )
+                    require(candidate.kind == "vm1-program") {
+                        "Pack APK requires a VM1 compatibility candidate"
+                    }
 
                     val receipt =
                         CodynexApkBuilder(this)

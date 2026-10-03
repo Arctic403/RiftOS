@@ -5,6 +5,7 @@ import java.security.MessageDigest
 
 data class BootstrapArtifacts(
     val vm1: ByteArray,
+    val vm2: ByteArray,
     val starterSource: String,
     val notepadSource: String
 )
@@ -13,6 +14,9 @@ object BootstrapArtifactLoader {
     private const val VM1_BYTES = 812
     private const val VM1_SHA256 =
         "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"
+    private const val VM2_BYTES = 2228
+    private const val VM2_SHA256 =
+        "17a9f0995fb4404d41ce98d7ab6a4a2ba2f0d5ae8b4780b6797c0cfe9e9663ce"
 
     private val STARTER_SOURCE =
         """
@@ -160,18 +164,27 @@ object BootstrapArtifactLoader {
         """.trimIndent() + "\n"
 
     fun load(context: Context): BootstrapArtifacts {
-        val vmHex = readAsset(context, "vm1_seed.hex").trim()
-        val vm = decodeCanonicalHex(vmHex)
+        val vm1Hex = readAsset(context, "vm1_seed.hex").trim()
+        val vm1 = decodeCanonicalHex(vm1Hex)
+        val vm2Hex = readAsset(context, "vm2_seed.hex").trim()
+        val vm2 = decodeCanonicalHex(vm2Hex)
 
-        require(vm.size == VM1_BYTES) {
-            "VM1 byte count drift: ${vm.size}"
+        require(vm1.size == VM1_BYTES) {
+            "VM1 byte count drift: ${vm1.size}"
         }
-        require(sha256(vm) == VM1_SHA256) {
+        require(sha256(vm1) == VM1_SHA256) {
             "VM1 SHA-256 drift"
+        }
+        require(vm2.size == VM2_BYTES) {
+            "VM2 byte count drift: ${vm2.size}"
+        }
+        require(sha256(vm2) == VM2_SHA256) {
+            "VM2 SHA-256 drift"
         }
 
         return BootstrapArtifacts(
-            vm1 = vm,
+            vm1 = vm1,
+            vm2 = vm2,
             starterSource = STARTER_SOURCE,
             notepadSource = NOTEPAD_SOURCE
         )

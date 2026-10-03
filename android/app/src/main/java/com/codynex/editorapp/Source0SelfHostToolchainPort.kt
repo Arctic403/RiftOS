@@ -23,17 +23,25 @@ data class LivePreviewRun(
     val error: String? = null
 )
 
+enum class EditorVmTarget {
+    VM1,
+    VM2
+}
+
 /** TEMPORARY LIVE-PROOF toolchain transport; MUST be replaced by native Codynex/.cx. */
 class Source0SelfHostToolchainPort(
     private val context: Context,
     private val artifacts: BootstrapArtifacts,
-    candidateDirectory: File
+    candidateDirectory: File,
+    private val target: EditorVmTarget = EditorVmTarget.VM2
 ) : CompilerPort, PreviewPort {
     companion object {
         private const val COMPILER_AUTHORITY =
             "com.riftos.app.codynexcompiler"
-        private const val COMPILE_METHOD = "compile-c0"
-        private const val COMPILE_PROJECT_METHOD = "compile-c0-project"
+        private const val COMPILE_METHOD_VM1 = "compile-c0"
+        private const val COMPILE_PROJECT_METHOD_VM1 = "compile-c0-project"
+        private const val COMPILE_METHOD_VM2 = "compile-c0-vm2"
+        private const val COMPILE_PROJECT_METHOD_VM2 = "compile-c0-project-vm2"
         private const val MAX_SOURCE_BYTES = 256 * 1024
         private const val MAX_PROJECT_BYTES = 1024 * 1024
         private const val MAX_PROJECT_MODULES = 64
@@ -93,11 +101,22 @@ class Source0SelfHostToolchainPort(
         }
 
         val method =
-            if (request.moduleSources.isEmpty()) {
-                COMPILE_METHOD
+            if (target == EditorVmTarget.VM2) {
+                if (request.moduleSources.isEmpty()) {
+                    COMPILE_METHOD_VM2
+                } else {
+                    COMPILE_PROJECT_METHOD_VM2
+                }
             } else {
-                COMPILE_PROJECT_METHOD
+                if (request.moduleSources.isEmpty()) {
+                    COMPILE_METHOD_VM1
+                } else {
+                    COMPILE_PROJECT_METHOD_VM1
+                }
             }
+        val targetKey =
+            if (target == EditorVmTarget.VM2) "vm2" else "vm1"
+        val targetLabel = target.name
 
         val response =
             try {
@@ -140,10 +159,10 @@ class Source0SelfHostToolchainPort(
                 )
 
         val candidate =
-            response.getByteArray("vm1")
+            response.getByteArray(targetKey)
                 ?: return failure(
                     request.sourcePath,
-                    "compiler bridge omitted VM1 output"
+                    "compiler bridge omitted $targetLabel output"
                 )
 
         if (
@@ -152,7 +171,7 @@ class Source0SelfHostToolchainPort(
         ) {
             return failure(
                 request.sourcePath,
-                "compiler returned invalid VM1 length ${candidate.size}"
+                "compiler returned invalid $targetLabel length ${candidate.size}"
             )
         }
 
@@ -160,7 +179,7 @@ class Source0SelfHostToolchainPort(
         val file =
             File(
                 candidateRoot,
-                "candidate-$hash.vm1"
+                "candidate-$hash.$targetKey"
             ).canonicalFile
 
         requireInsideCandidateRoot(file)
@@ -170,7 +189,7 @@ class Source0SelfHostToolchainPort(
             success = true,
             artifact = ArtifactRef(
                 id = file.absolutePath,
-                kind = "vm1-program",
+                kind = "$targetKey-program",
                 displayName = file.name
             ),
             diagnostics = listOf(
@@ -178,23 +197,24 @@ class Source0SelfHostToolchainPort(
                     severity = DiagnosticSeverity.INFO,
                     message =
                         "Compiled with $compiler: " +
-                            "${candidate.size} VM1 bytes; SHA-256 $hash",
+                            "${candidate.size} $targetLabel bytes; SHA-256 $hash",
                     file = request.sourcePath
                 )
             ),
             summary =
-                "Compile succeeded: ${candidate.size}-byte VM1 candidate"
+                "Compile succeeded: ${candidate.size}-byte $targetLabel candidate"
         )
     }
 
     override fun preview(request: PreviewRequest): PreviewResult {
+        val targetLabel = target.name
         val run = executePreview(request.artifact, ByteArray(0))
         latestPreviewRun = run
 
         if (!run.success) {
             return previewFailure(
                 request.sourcePath,
-                run.error ?: "VM1 preview failed"
+                run.error ?: "$targetLabel preview failed"
             )
         }
 
@@ -204,12 +224,12 @@ class Source0SelfHostToolchainPort(
                 EditorDiagnostic(
                     severity = DiagnosticSeverity.INFO,
                     message =
-                        "VM1 preview passed on empty input; " +
+                        "$targetLabel preview passed on empty input; " +
                             "program result ${run.result}",
                     file = request.sourcePath
                 )
             ),
-            summary = "Preview passed: VM1 result ${run.result}"
+            summary = "Preview passed: $targetLabel result ${run.result}"
         )
     }
 
@@ -416,10 +436,17 @@ class Source0SelfHostToolchainPort(
 
         val candidate = candidateFile.readBytes()
         val output = ByteArray(PREVIEW_OUTPUT_BYTES)
+        val runtime =
+            if (target == EditorVmTarget.VM2) {
+                artifacts.vm2
+            } else {
+                artifacts.vm1
+            }
+        val targetLabel = target.name
         val raw =
             try {
                 Vm1Bridge.run(
-                    vm = artifacts.vm1,
+                    vm = runtime,
                     program = candidate,
                     source = input,
                     output = output,
@@ -433,7 +460,7 @@ class Source0SelfHostToolchainPort(
                     result = 0,
                     output = ByteArray(0),
                     error =
-                        "VM1 preview bridge failed: " +
+                        "$targetLabel preview bridge failed: " +
                             (error.message ?: error.javaClass.simpleName)
                 )
             }
@@ -443,7 +470,7 @@ class Source0SelfHostToolchainPort(
                 success = false,
                 result = 0,
                 output = ByteArray(0),
-                error = "VM1 bridge returned an invalid preview result"
+                error = "$targetLabel bridge returned an invalid preview result"
             )
         }
 
@@ -455,7 +482,7 @@ class Source0SelfHostToolchainPort(
                 success = false,
                 result = programResult,
                 output = ByteArray(0),
-                error = "VM1 preview failed with status $vmStatus"
+                error = "$targetLabel preview failed with status $vmStatus"
             )
         }
 

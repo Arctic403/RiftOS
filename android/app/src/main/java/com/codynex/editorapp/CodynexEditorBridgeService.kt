@@ -54,6 +54,15 @@ class CodynexEditorBridgeService : Service() {
         )
     }
 
+    private val compatibilityToolchain: Source0SelfHostToolchainPort by lazy {
+        Source0SelfHostToolchainPort(
+            context = this,
+            artifacts = BootstrapArtifactLoader.load(this),
+            candidateDirectory = File(filesDir, "editor-candidates-vm1-pack"),
+            target = EditorVmTarget.VM1
+        )
+    }
+
     private val bridgeBinder = object : Binder() {
         override fun onTransact(
             code: Int,
@@ -320,7 +329,11 @@ class CodynexEditorBridgeService : Service() {
 
             "build-apk" -> {
                 val entry = request.getString("entry")
-                val compiled = compileFresh(entry)
+                val compiled =
+                    compileFresh(
+                        entry,
+                        compatibilityToolchain
+                    )
                 val receipt = CodynexApkBuilder(this).build(
                     candidateFile = compiled.candidate,
                     sourcePath = editorFile(entry).absolutePath
@@ -356,7 +369,10 @@ class CodynexEditorBridgeService : Service() {
         val controller: CodynexEditorController
     )
 
-    private fun compileFresh(entry: String): CompileFreshResult {
+    private fun compileFresh(
+        entry: String,
+        activeToolchain: Source0SelfHostToolchainPort = toolchain
+    ): CompileFreshResult {
         val entryFile = editorFile(entry)
         require(entryFile.isFile) {
             "project entry does not exist: $entry"
@@ -367,8 +383,8 @@ class CodynexEditorBridgeService : Service() {
 
         val controller = CodynexEditorController(
             workspace = workspace,
-            compiler = toolchain,
-            preview = toolchain
+            compiler = activeToolchain,
+            preview = activeToolchain
         )
         controller.openWorkspace(workspace.rootPath())
         controller.openFile(entryFile.absolutePath)
@@ -376,7 +392,7 @@ class CodynexEditorBridgeService : Service() {
 
         val state = controller.compile()
         val candidate = state.candidate?.id?.let(::File)
-            ?: error("Codynex compile did not produce a VM1 candidate")
+            ?: error("Codynex compile did not produce a candidate")
         require(
             state.candidateState == CandidateState.COMPILED &&
                 candidate.isFile

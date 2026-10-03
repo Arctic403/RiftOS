@@ -178,6 +178,9 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val EDITOR_VM_HEX = "native/m2/vm1/arm32/vm1_seed.hex"
         private const val EDITOR_VM_HEX_BYTES = 1624
         private const val EDITOR_VM_HEX_SHA256 = "1f013e2592741895f511d1724ecd69ee156e24f771c289d848e1bab265d3655e"
+        private const val EDITOR_VM2_HEX = "native/m2/vm2/arm32/vm2_seed.hex"
+        private const val EDITOR_VM2_HEX_BYTES = 4456
+        private const val EDITOR_VM2_HEX_SHA256 = "3f746727e18a55933a20dc63fc7f84544566f982aa5cab0803573c456926c916"
         private const val EDITOR_COMPILER_HEX = "native/mc2/source0/selfhost_compiler.hex"
         private const val EDITOR_COMPILER_HEX_BYTES = 584
         private const val EDITOR_COMPILER_HEX_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"
@@ -202,11 +205,11 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/editorapp/FileWorkspacePort.kt" to
                 "b89c30344a2b7a0aa48c5956030cdfeaae363bf02d3bd705051e9e88bb34f592",
             "external/editor/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
-                "149013f3f83534199d22fd377ab02e84875b76c15bffe54aca9aa452dc3d6051",
+                "78fc1b99806b7b2c4d28b583bbb0bfa96cb50d859877948ce6d0acd12e137a6a",
             "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-                "0aeb9d907153db096868d11bad1d2aa1dffb2172d6d7759f2f50a333018fd347",
+                "1285bd2a49db68abad5d31efa03c478cc36979e2dabd613e5e60b3107b90315a",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt" to
-                "756e853ddc94fd2e32251c21e6f991ce8546f2f46d4dcff46fcb55543b2e7635",
+                "b88ac8d5164d75bd2a2be8b7fef0721abfbdc5c8c6591e10a0ca12c3d18755e9",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
@@ -216,11 +219,11 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
                 "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28",
             "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
-                "48151a04d6c904535423646534d8084101f6994e7f6003f2531af5e4e1a98656",
+                "17b278bfa3a065fb99e3506c7fa7dbc42b7b2ace25e7f44f81b694935ebbc416",
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
                 "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620",
             "external/editor/app/build.gradle.kts" to
-                "09b81ff08f19a0411741831c2bd3ebdea2a800ce63671d4b4f70a7af82e9d174",
+                "ac3548652ea1e7e29823d196c39ad30ee92d77559802d6dee720f9d6694c45d7",
             "external/editor/app/src/main/AndroidManifest.xml" to
                 "335a3a731f0682a91cefadb962e662d4af714494a1e4ec3bbb96a09b54a1bb90",
             "external/editor/settings.gradle.kts" to
@@ -2979,6 +2982,16 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             "Codynex E0 VM1 hex SHA-256 drift"
         }
 
+        val vm2File = projectFile(ref, EDITOR_VM2_HEX)
+        require(vm2File.isFile) { "Codynex E0 VM2 hex authority is missing" }
+        val vm2Text = readTextBounded(vm2File).toByteArray(Charsets.UTF_8)
+        require(vm2Text.size == EDITOR_VM2_HEX_BYTES) {
+            "Codynex E0 VM2 hex byte count drift: " + vm2Text.size
+        }
+        require(sha256(vm2Text) == EDITOR_VM2_HEX_SHA256) {
+            "Codynex E0 VM2 hex SHA-256 drift"
+        }
+
         val compilerFile = projectFile(ref, EDITOR_COMPILER_HEX)
         require(compilerFile.isFile) {
             "Codynex E0 compiler hex authority is missing"
@@ -3121,6 +3134,7 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         val hostOutput =
             File(libRoot, EDITOR_LIBRARY_FILE).canonicalFile
         val vmOutput = File(assetRoot, "vm1_seed.hex").canonicalFile
+        val vm2Output = File(assetRoot, "vm2_seed.hex").canonicalFile
         val compilerOutput =
             File(assetRoot, "selfhost_compiler.hex").canonicalFile
         val sourceOutput =
@@ -3135,6 +3149,7 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         atomicWrite(manifestOutput, manifestBytes)
         atomicWrite(hostOutput, host)
         atomicWrite(vmOutput, vmText)
+        atomicWrite(vm2Output, vm2Text)
         atomicWrite(compilerOutput, compilerText)
         atomicWrite(sourceOutput, sourceText)
         atomicWrite(nativeProofOutput, nativeProofText)
@@ -3170,6 +3185,9 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         }
         require(sha256(vmOutput) == EDITOR_VM_HEX_SHA256) {
             "Codynex E0 VM1 asset materialization hash mismatch"
+        }
+        require(sha256(vm2Output) == EDITOR_VM2_HEX_SHA256) {
+            "Codynex E0 VM2 asset materialization hash mismatch"
         }
         require(sha256(compilerOutput) == EDITOR_COMPILER_HEX_SHA256) {
             "Codynex E0 compiler asset materialization hash mismatch"
@@ -3219,6 +3237,9 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             .put("vmSource", projectDisplay(ref, vmFile))
             .put("vmBytes", vmText.size)
             .put("vmSha256", sha256(vmText))
+            .put("vm2Source", projectDisplay(ref, vm2File))
+            .put("vm2Bytes", vm2Text.size)
+            .put("vm2Sha256", sha256(vm2Text))
             .put("compilerSource", projectDisplay(ref, compilerFile))
             .put("compilerBytes", compilerText.size)
             .put("compilerSha256", sha256(compilerText))
@@ -3255,7 +3276,8 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
                 JSONObject()
                     .put("editorCoreLanguageAgnostic", true)
                     .put("editorSourceAuthority", "local Codynex external/editor")
-                    .put("runtimeAuthority", "assets/vm1_seed.hex")
+                    .put("runtimeAuthority", "assets/vm2_seed.hex")
+                    .put("compatibilityRuntimeAuthority", "assets/vm1_seed.hex")
                     .put("compilerAuthority", "assets/selfhost_compiler.hex")
                     .put("sourceAuthority", "assets/selfhost_compiler.cx0")
                     .put("remoteBuildRequired", false)
