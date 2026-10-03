@@ -332,9 +332,15 @@ class CodynexApkBuilder(private val context: Context) {
                     "assets/$PROGRAM_ASSET"
                 )
                 .put("uiProtocol", "CXUI v1")
+                .put("androidBootstrap", "thin-platform-shim")
+                .put("bootstrapPartOfRuntime", false)
                 .put(
-                    "bootstrapNote",
-                    "TEMP LIVE-PROOF: full C0 compilation remains externally bridged; APK materialize/pack/sign/verify is Codynex-owned."
+                    "bootstrapOwns",
+                    "android-lifecycle,ui-rendering,touch-ime,platform-handoff"
+                )
+                .put(
+                    "bootstrapForbiddenAuthority",
+                    "language,compiler,optimizer,vm-semantics,app-semantics"
                 )
                 .put(
                     "createdAt",

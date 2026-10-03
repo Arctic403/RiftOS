@@ -27,8 +27,8 @@ import java.io.File
 
 /**
  * TEMPORARY LIVE-PROOF SCAFFOLDING ONLY.
- * This Android/Kotlin editor UI MUST be replaced by native Codynex/.cx.
- * Missing native editor capabilities must be added/proved in Codynex, not retained here.
+ * Native Android development-host UI for Codynex.
+ * This editor host is outside the Codynex runtime and must not own compiler, VM, or app semantics.
  */
 class MainActivity : Activity() {
     private lateinit var controller: CodynexEditorController

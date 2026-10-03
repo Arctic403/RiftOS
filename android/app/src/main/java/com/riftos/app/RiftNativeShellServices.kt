@@ -3,7 +3,7 @@ package com.riftos.app
 import android.content.Context
 import android.os.SystemClock
 import android.util.Base64
-import com.codynex.editorapp.Vm1Bridge
+import com.codynex.editorapp.CodynexRuntimeBridge
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -166,7 +166,7 @@ class RiftNativeShellServices(context: Context) {
                 compiled.vm1.size * 256 + 20_000
             ).coerceIn(20_000, 5_000_000)
             val firstOutput = ByteArray(64 * 1024)
-            val firstRun = Vm1Bridge.run(
+            val firstRun = CodynexRuntimeBridge.run(
                 vm = vm1,
                 program = compiled.vm1,
                 source = initialSource,
@@ -197,7 +197,7 @@ class RiftNativeShellServices(context: Context) {
                     initialSource +
                         buildCodynexC0WorkspaceProbeResponse(probeOk)
                 val secondOutput = ByteArray(64 * 1024)
-                finalRun = Vm1Bridge.run(
+                finalRun = CodynexRuntimeBridge.run(
                     vm = vm1,
                     program = compiled.vm1,
                     source = finalSource,

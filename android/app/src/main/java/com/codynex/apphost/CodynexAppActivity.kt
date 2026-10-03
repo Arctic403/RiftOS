@@ -9,12 +9,14 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.codynex.editorapp.Vm1Bridge
+import com.codynex.editorapp.CodynexRuntimeBridge
 
 /**
- * TEMP LIVE-PROOF generic Codynex app host.
- * MUST be replaced by native Codynex/.cx application hosting.
- * This host renders only bounded CXUI primitives and contains no app-specific semantics.
+ * Thin Android bootstrap for Codynex applications.
+ *
+ * This class is platform glue, not part of the Codynex runtime. It may own Android
+ * lifecycle, widget/IME/touch plumbing and bounded CXUI transport only. Application,
+ * compiler and VM semantics remain in program.vm2 / vm2_seed.hex and Codynex-owned code.
  */
 class CodynexAppActivity : Activity() {
     companion object {
@@ -63,7 +65,7 @@ class CodynexAppActivity : Activity() {
     private fun runCandidate(input: ByteArray): Frame {
         val output = ByteArray(OUTPUT_BYTES)
         val raw =
-            Vm1Bridge.run(
+            CodynexRuntimeBridge.run(
                 vm = vm,
                 program = program,
                 source = input,

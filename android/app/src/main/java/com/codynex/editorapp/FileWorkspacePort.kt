@@ -7,7 +7,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
-/** TEMPORARY LIVE-PROOF workspace adapter; MUST be replaced by native Codynex/.cx. */
+/** Native Android editor workspace adapter; host tooling only, outside the Codynex runtime. */
 class FileWorkspacePort(
     rootDirectory: File
 ) : WorkspacePort {

@@ -1,6 +1,6 @@
 package com.codynex.editorapp
 
-object Vm1Bridge {
+object CodynexRuntimeBridge {
     init {
         System.loadLibrary("codynex_editor_vm")
     }

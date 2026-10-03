@@ -28,7 +28,7 @@ enum class EditorVmTarget {
     VM2
 }
 
-/** TEMPORARY LIVE-PROOF toolchain transport; MUST be replaced by native Codynex/.cx. */
+/** Native Android editor toolchain transport; transport only, never compiler/runtime authority. */
 class Source0SelfHostToolchainPort(
     private val context: Context,
     private val artifacts: BootstrapArtifacts,
@@ -351,7 +351,7 @@ class Source0SelfHostToolchainPort(
 
         val raw =
             try {
-                Vm1Bridge.run(
+                CodynexRuntimeBridge.run(
                     vm = kernel,
                     program = byteArrayOf(0, 0, 0, 0),
                     source = input,
@@ -445,7 +445,7 @@ class Source0SelfHostToolchainPort(
         val targetLabel = target.name
         val raw =
             try {
-                Vm1Bridge.run(
+                CodynexRuntimeBridge.run(
                     vm = runtime,
                     program = candidate,
                     source = input,

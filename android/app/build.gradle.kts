@@ -273,25 +273,25 @@ val verifyCodynexEditorPayload by tasks.registering {
         "src/main/java/com/codynex/editor/CodynexEditorController.kt" to
             "d545e3802b300af446bbce56948b10a0ac7b5c00c04c118caa84a93f38e11b45",
         "src/main/java/com/codynex/editorapp/FileWorkspacePort.kt" to
-            "b89c30344a2b7a0aa48c5956030cdfeaae363bf02d3bd705051e9e88bb34f592",
+            "d2d4fc035f8e024549f2c3232520cdd40f277966328df75f5c942134017395cc",
         "src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
             "78fc1b99806b7b2c4d28b583bbb0bfa96cb50d859877948ce6d0acd12e137a6a",
         "src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-            "1285bd2a49db68abad5d31efa03c478cc36979e2dabd613e5e60b3107b90315a",
+            "7a1b550743731795ec5b4504a6820dc1515b7be999f7ed7a08ac3fdedde396a9",
         "src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt" to
             "90f173bfd359ef34108b68b6cd79fbf950ae4a8cb6d92ea4350f28eaeece01d2",
-        "src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
-            "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
+        "src/main/java/com/codynex/editorapp/CodynexRuntimeBridge.kt" to
+            "549217561d9cff3ffdb38f20685b15ee426373b3493a4991e3c2b53469a9ae4f",
         "src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
-            "7fca804b0bb239d6eca7d7516ad11aa7ad16b8520fdc5f36521cc900f3fbce2d",
+            "bb16b80adec43339f08aac19054f684d16b72700d07813043760feac78c45f26",
         "src/main/java/com/codynex/editorapp/CodynexApkV2Signer.kt" to
             "3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76",
         "src/main/java/com/codynex/editorapp/MainActivity.kt" to
-            "65ff5c242536cb17da121d0e6c60bcdd5a0be8bfd20fac795e7ea1d408471a0a",
+            "bfe518864d8f30e93028878d4ff18ffe46d828a44ba14dcbc2f95e3f262910f9",
         "src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
-            "f0b03274a4b918d4ca16adfa1303a6759df6e424a53a2bb414588410a89ff6e6",
+            "481d8b0306bbf02bc173a28c14b359f9867153611b7272435404a4730d786bea",
         "src/main/cpp/editor/editor_vm_bridge.cpp" to
-            "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620"
+            "f7c442d0cdf609feaeeb96f18608b70d43f6a389a2eafa5fe194a22a2e805701"
     )
 
     doLast {

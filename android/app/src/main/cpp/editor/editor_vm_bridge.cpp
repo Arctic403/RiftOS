@@ -97,7 +97,7 @@ jintArray resultArray(
 
 extern "C"
 JNIEXPORT jintArray JNICALL
-Java_com_codynex_editorapp_Vm1Bridge_run(
+Java_com_codynex_editorapp_CodynexRuntimeBridge_run(
     JNIEnv* env,
     jobject,
     jbyteArray vmArray,
