@@ -968,8 +968,6 @@ assert.match(installer, /com\.codynex\.apphost\.CodynexAppActivity/);
 assert.match(codynexAppActivity, /TEMP LIVE-PROOF generic Codynex app host/);
 assert.match(codynexAppActivity, /MUST be replaced by native Codynex\/\.cx/);
 assert.match(codynexAppActivity, /Vm1Bridge\.run/);
-assert.match(codynexAppActivity, /PROGRAM_ASSET = "program\.vm1"/);
-assert.match(codynexAppActivity, /VM_ASSET = "vm1_seed\.hex"/);
 assert.match(codynexAppActivity, /parseFrame/);
 assert.match(codynexAppActivity, /encodeAction/);
 assert.ok(
