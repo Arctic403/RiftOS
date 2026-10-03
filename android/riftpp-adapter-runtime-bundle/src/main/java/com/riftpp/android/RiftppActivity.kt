@@ -1,6 +1,7 @@
 package com.riftpp.android
 
 import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Process
@@ -42,9 +43,20 @@ class RiftppActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var surfaceView: SurfaceView
     private var nativeLoaded = false
 
+    init {
+        emitDiagnostic(80)
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        emitDiagnostic(90)
+        super.attachBaseContext(newBase)
+        emitDiagnostic(91)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
         emitDiagnostic(100)
+        super.onCreate(savedInstanceState)
+        emitDiagnostic(101)
 
         val info = packageManager.getActivityInfo(
             componentName,
