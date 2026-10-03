@@ -233,6 +233,26 @@ target_compile_options(
 )
 
 
+add_library(
+    riftpp_dynamic_compiler_host
+    SHARED
+    riftpp/riftpp_dynamic_compiler_host.cpp
+)
+
+target_compile_features(riftpp_dynamic_compiler_host PRIVATE cxx_std_17)
+
+target_compile_options(
+    riftpp_dynamic_compiler_host
+    PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Werror
+    -fno-exceptions
+    -fno-rtti
+)
+
+
 if(ANDROID_ABI STREQUAL "arm64-v8a")
     add_library(
         riftpp_seed0_arm64_proof

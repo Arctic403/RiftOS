@@ -71,6 +71,13 @@ android {
     }
 }
 
+val riftBuildKotlinCompileClasspath by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+
+val riftBuildAndroidSdkDirectory = androidComponents.sdkComponents.sdkDirectory
+
 val verifyRiftOsAndroidSources by tasks.registering {
     val required = listOf(
         "src/main/java/com/riftos/app/MainActivity.kt",
@@ -86,7 +93,9 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftApkV2Signer.kt",
         "src/main/java/com/riftos/app/RiftBuildInstaller.kt",
         "src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt",
+        "src/main/java/com/riftos/app/RiftBuildKotlinCompiler.kt",
         "src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt",
+        "src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt",
         "src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt",
         "src/main/java/com/riftos/app/RiftBuildNativeApp.kt",
         "src/main/java/com/riftos/app/RiftChatHandoff.kt",
@@ -117,6 +126,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftPatchSessions.kt",
         "src/main/java/com/riftos/app/RiftProjectExporter.kt",
         "src/main/java/com/riftos/app/RiftppCompilerService.kt",
+        "src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt",
         "src/main/java/com/riftos/app/RiftRelaySettings.kt",
         "src/main/java/com/riftos/app/RiftSecretStore.kt",
         "src/main/java/com/riftos/app/RiftShellExecutor.kt",
@@ -141,6 +151,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/cpp/m2/codynex_mc2a_host.cpp",
         "src/main/cpp/riftpp/riftpp_app0_host.cpp",
         "src/main/cpp/riftpp/riftpp_compiler_host.cpp",
+        "src/main/cpp/riftpp/riftpp_dynamic_compiler_host.cpp",
         "src/main/cpp/riftpp/riftpp_seed0_arm64_proof.cpp",
         "src/main/cpp/editor/editor_vm_bridge.cpp",
         "src/main/cpp/editor/riftpp_editor_bridge.cpp",
@@ -505,6 +516,45 @@ val syncRiftBuildRiftppAdapterRuntime by tasks.registering {
     }
 }
 
+val syncRiftBuildKotlinToolchain by tasks.registering {
+    val outputRoot = layout.buildDirectory.dir(
+        "generated/riftosAssets/riftbuild/kotlin-toolchain"
+    )
+    inputs.files(riftBuildKotlinCompileClasspath)
+    inputs.file(
+        riftBuildAndroidSdkDirectory.map { sdk ->
+            sdk.file("platforms/android-36/android.jar")
+        }
+    )
+    outputs.dir(outputRoot)
+
+    doLast {
+        val root = outputRoot.get().asFile
+        root.deleteRecursively()
+        if (!root.mkdirs() && !root.isDirectory) {
+            throw GradleException("Could not create RiftBuild Kotlin toolchain asset root")
+        }
+
+        val sdkDir = riftBuildAndroidSdkDirectory.get().asFile
+        val androidJar = File(sdkDir, "platforms/android-36/android.jar")
+        if (!androidJar.isFile) {
+            throw GradleException("Android 36 android.jar is missing for RiftBuild Kotlin toolchain")
+        }
+        androidJar.copyTo(File(root, "android.jar"), overwrite = true)
+
+        val stdlib = riftBuildKotlinCompileClasspath.resolve()
+            .filter { file ->
+                file.isFile &&
+                    file.name.startsWith("kotlin-stdlib-") &&
+                    file.name.endsWith(".jar") &&
+                    !file.name.contains("sources")
+            }
+            .singleOrNull()
+            ?: throw GradleException("Pinned Kotlin stdlib jar could not be resolved uniquely")
+        stdlib.copyTo(File(root, "kotlin-stdlib.jar"), overwrite = true)
+    }
+}
+
 val validateRiftBrowserWebViewOwnership by tasks.registering {
     val sourceRoot = file("src/main")
     val allowedOwners = setOf(
@@ -574,10 +624,17 @@ tasks.named("preBuild").configure {
     dependsOn(verifyRiftppEditorPayload)
     dependsOn(validateRiftBrowserWebViewOwnership)
     dependsOn(syncRiftOsWebAssets)
-    dependsOn(syncRiftBuildRiftppAdapterRuntime)
+    dependsOn(syncRiftBuildKotlinToolchain)
 }
 
 dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.4.10")
+    implementation("com.android.tools:r8:8.13.23")
+    add(
+        riftBuildKotlinCompileClasspath.name,
+        "org.jetbrains.kotlin:kotlin-stdlib:2.4.10"
+    )
+
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.webkit:webkit:1.16.0")
     implementation("androidx.documentfile:documentfile:1.1.0")

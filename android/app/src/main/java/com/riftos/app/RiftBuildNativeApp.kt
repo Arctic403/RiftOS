@@ -145,7 +145,7 @@ class RiftBuildNativeApp(
             require(sourceAssets.isDirectory) { "Native app assetsDir is not a directory" }
             copyAssets(sourceAssets, preparedAssets)
         }
-        val managedDex = materializeManagedRuntime(spec, prepared)
+        val managedDex = materializeManagedRuntime(project, spec, prepared)
 
         return JSONObject()
             .put("schema", "riftbuild-native-app-prepare-v2")
@@ -371,7 +371,11 @@ class RiftBuildNativeApp(
             }
     }
 
-    private fun materializeManagedRuntime(spec: AppSpec, prepared: File): JSONArray {
+    private fun materializeManagedRuntime(
+        project: File,
+        spec: AppSpec,
+        prepared: File
+    ): JSONArray {
         val out = JSONArray()
         if (spec.managedRuntime.isBlank()) return out
 
@@ -382,44 +386,39 @@ class RiftBuildNativeApp(
             "Managed runtime is not allowlisted: ${spec.managedRuntime}"
         }
 
-        val assetRoot = "riftbuild/managed-runtimes/riftpp-adapter-v1"
-        val names = appContext.assets.list(assetRoot)
-            ?.filter { DEX_ENTRY.matches(it) }
-            ?.sortedWith(compareBy<String> {
-                if (it == "classes.dex") 1
-                else it.removePrefix("classes").removeSuffix(".dex").toIntOrNull()
+        val hotRoot = File(project, "build/riftbuild/hot-dex").canonicalFile
+        require(confinedTo(project, hotRoot) && hotRoot.isDirectory) {
+            "Rift++ adapter hot DEX is missing; run riftbuild kotlin-compile first"
+        }
+
+        val dexFiles = hotRoot.listFiles()
+            ?.filter { it.isFile && DEX_ENTRY.matches(it.name) }
+            ?.sortedBy { file ->
+                if (file.name == "classes.dex") 1
+                else file.name.removePrefix("classes").removeSuffix(".dex").toIntOrNull()
                     ?: Int.MAX_VALUE
-            })
+            }
             .orEmpty()
 
-        require(names.isNotEmpty() && names.first() == "classes.dex") {
-            "Pinned Rift++ Android adapter classes.dex is missing"
+        require(dexFiles.isNotEmpty() && dexFiles.first().name == "classes.dex") {
+            "Rift++ adapter hot classes.dex is missing"
         }
-        require(names.size <= MAX_MANAGED_DEX_FILES) {
-            "Managed runtime DEX file count exceeds limit"
+        require(dexFiles.size <= MAX_MANAGED_DEX_FILES) {
+            "Rift++ adapter hot DEX file count exceeds limit"
         }
 
         var total = 0L
-        for (name in names) {
-            val bytes = appContext.assets.open("$assetRoot/$name").use { input ->
-                val buffer = ByteArrayOutputStream()
-                val chunk = ByteArray(64 * 1024)
-                while (true) {
-                    val count = input.read(chunk)
-                    if (count < 0) break
-                    if (count == 0) continue
-                    total += count
-                    require(total <= MAX_MANAGED_DEX_BYTES) {
-                        "Managed runtime DEX bytes exceed limit"
-                    }
-                    buffer.write(chunk, 0, count)
-                }
-                buffer.toByteArray()
+        for (input in dexFiles) {
+            val length = input.length()
+            require(length in 8..MAX_MANAGED_DEX_BYTES) {
+                "Rift++ adapter hot DEX size is invalid: ${input.name}"
+            }
+            total += length
+            require(total <= MAX_MANAGED_DEX_BYTES) {
+                "Rift++ adapter hot DEX bytes exceed limit"
             }
 
-            require(bytes.size >= 8) {
-                "Managed runtime DEX is truncated: $name"
-            }
+            val bytes = input.readBytes()
             require(
                 bytes[0] == 'd'.code.toByte() &&
                     bytes[1] == 'e'.code.toByte() &&
@@ -427,17 +426,18 @@ class RiftBuildNativeApp(
                     bytes[3] == '\n'.code.toByte() &&
                     bytes[7] == 0.toByte()
             ) {
-                "Managed runtime DEX magic is invalid: $name"
+                "Rift++ adapter hot DEX magic is invalid: ${input.name}"
             }
 
-            val output = File(prepared, name).canonicalFile
+            val output = File(prepared, input.name).canonicalFile
             require(confinedTo(prepared, output)) {
-                "Managed runtime DEX escaped prepared root"
+                "Rift++ adapter hot DEX escaped prepared root"
             }
             writeAtomic(output, bytes)
             out.put(
                 JSONObject()
-                    .put("name", name)
+                    .put("name", input.name)
+                    .put("origin", "project-hot")
                     .put("bytes", bytes.size)
                     .put("sha256", sha256(bytes))
             )

@@ -62,6 +62,12 @@
             android:stopWithTask="false" />
 
         <service
+            android:name=".RiftppDynamicCompilerService"
+            android:exported="false"
+            android:process=":riftppCompilerHot"
+            android:stopWithTask="false" />
+
+        <service
             android:name=".RiftVortexAccessibilityService"
             android:exported="true"
             android:label="RiftOS Local UI Agent"
