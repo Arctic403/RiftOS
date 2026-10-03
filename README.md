@@ -75,9 +75,9 @@ The legacy shell `mount`/`umount` and generic `rift` wrappers are retired in the
 
 ## Rift++
 
-The current Rift++ compiler-development authority is the machine-code compiler in the separate `rift++` workspace. RiftOS source now exposes `riftpp-host status|compile` only as bounded execution/proof infrastructure.
+Rift++ compiler authority is project-owned and hot-swappable through RiftBuild's managed compiler registry. Native compiler payloads execute through the bounded `native-buffer-v1` engine in the isolated `:riftppCompilerHot` process; JVM/DEX compiler payloads use the generic `dex-json-v1` engine. `compiler-status`, `compiler-run`, and `riftpp-compile-hot` are the supported compiler surfaces.
 
-`riftpp-host compile` selects the fixed compiler artifact for the running ABI, requires the approved 276-byte SHA-256 identity, and sends the compile request over Binder to a private `:riftppCompiler` process. The worker invokes the compiler through `libriftpp_compiler_host.so` using guard-page-backed mappings and RW→RX executable-memory transition. RiftOS does not parse Rift++ source or emit target instructions.
+The former `riftpp-host` / `:riftppCompiler` / `RiftppCompilerService` path and the special `prepare-riftpp-*` proof/package routes are retired. RiftOS does not pin Rift++ compiler generations or own Rift++ parsing/code-generation semantics; compiler identity comes from exact-hash managed payload manifests.
 
 The older `riftpp` command family remains present as a **legacy compatibility/reference route** through bounded non-browser QuickJS:
 

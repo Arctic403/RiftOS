@@ -186,52 +186,6 @@ target_link_libraries(
 )
 
 
-add_library(
-    riftpp_app0_host
-    SHARED
-    riftpp/riftpp_app0_host.cpp
-)
-
-target_compile_features(riftpp_app0_host PRIVATE cxx_std_17)
-
-target_compile_options(
-    riftpp_app0_host
-    PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
-    -Werror
-    -fno-exceptions
-    -fno-rtti
-)
-
-target_link_libraries(
-    riftpp_app0_host
-    PRIVATE
-    ${android-lib}
-    ${log-lib}
-)
-
-
-add_library(
-    riftpp_compiler_host
-    SHARED
-    riftpp/riftpp_compiler_host.cpp
-)
-
-target_compile_features(riftpp_compiler_host PRIVATE cxx_std_17)
-
-target_compile_options(
-    riftpp_compiler_host
-    PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
-    -Werror
-    -fno-exceptions
-    -fno-rtti
-)
-
 
 add_library(
     riftpp_dynamic_compiler_host
@@ -251,35 +205,6 @@ target_compile_options(
     -fno-exceptions
     -fno-rtti
 )
-
-
-if(ANDROID_ABI STREQUAL "arm64-v8a")
-    add_library(
-        riftpp_seed0_arm64_proof
-        SHARED
-        riftpp/riftpp_seed0_arm64_proof.cpp
-    )
-
-    target_compile_features(riftpp_seed0_arm64_proof PRIVATE cxx_std_17)
-
-    target_compile_options(
-        riftpp_seed0_arm64_proof
-        PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-        -Werror
-        -fno-exceptions
-        -fno-rtti
-    )
-
-    target_link_libraries(
-        riftpp_seed0_arm64_proof
-        PRIVATE
-        ${android-lib}
-        ${log-lib}
-    )
-endif()
 
 
 add_library(

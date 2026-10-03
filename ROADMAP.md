@@ -16,16 +16,16 @@ This roadmap describes intended work, not shipped capability. Current implementa
 
 ## Rift++ machine-code compiler host
 
-Current source implements the C1 bounded execution host for the new machine-code Rift++ compiler:
+Current Rift++ compiler authority is the hot managed-compiler path:
 
-1. **SOURCE IMPLEMENTED** — private `:riftppCompiler` Android worker process + Binder client;
-2. **SOURCE IMPLEMENTED** — exact 276-byte ABI-specific compiler identity gate;
-3. **SOURCE IMPLEMENTED** — guard-page native JNI host with RW→RX compiler mapping;
-4. **SOURCE IMPLEMENTED** — bounded `riftpp-host status|compile` route with no arbitrary executable-file argument;
-5. **STRUCTURAL VALIDATION PASSED** — Android source inventory and RiftBuild project validation are source-ready;
-6. **PROOF NEXT** — Builder compile the full APK, install it, execute the approved ARM64 compiler against the Rift++ proof vectors, then advance C2 only from observed device evidence.
+1. **SOURCE IMPLEMENTED** — project-owned exact-hash compiler registry via `riftbuild-hot.json`;
+2. **SOURCE IMPLEMENTED** — isolated `native-buffer-v1` execution in `:riftppCompilerHot`;
+3. **SOURCE IMPLEMENTED** — generic isolated `dex-json-v1` JVM/DEX tool execution in `:riftJvmToolHot`;
+4. **SOURCE IMPLEMENTED** — `compiler-status`, `compiler-run`, `kotlin-compile`, and `riftpp-compile-hot` as the only Rift++ compiler surfaces;
+5. **SOURCE IMPLEMENTED** — generic `prepare-native-app -> pack -> sign -> verify -> install-proof` packaging flow;
+6. **RETIREMENT LOCKED** — the former `riftpp-host`, `:riftppCompiler`, `RiftppCompilerService`, direct V0/App0/Seed0 prepare routes, and their proof hosts are absent and regression-forbidden.
 
-The retained QuickJS `riftpp` route and older direct-ELF/App0 proofs are legacy compatibility/history; they do not define the new machine-code compiler authority.
+The retained QuickJS `riftpp` language route and older direct-ELF/App0/Seed0 proofs are compatibility/history only; they do not define current compiler authority.
 
 ## In-house RiftBuild Android pipeline
 

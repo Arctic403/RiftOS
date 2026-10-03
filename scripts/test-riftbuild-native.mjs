@@ -28,8 +28,6 @@ const riftppEditorMain = read('android/app/src/main/java/com/riftpp/editor/MainA
 const riftppEditorApkBuilder = read('android/app/src/main/java/com/riftpp/editor/RiftppApkBuilder.kt');
 const riftppEditorNativeElfPreflight = read('android/app/src/main/java/com/riftpp/editor/RiftppNativeElfPreflight.kt');
 const riftppEditorRelocatableElfPreflight = read('android/app/src/main/java/com/riftpp/editor/RiftppRelocatableElfPreflight.kt');
-const riftppCompilerService = read('android/app/src/main/java/com/riftos/app/RiftppCompilerService.kt');
-const riftppCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_compiler_host.cpp');
 const riftppDynamicCompilerService = read('android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt');
 const riftppDynamicCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_dynamic_compiler_host.cpp');
 const managedJvmToolService = read('android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt');
@@ -48,212 +46,6 @@ const manifest = read('android/app/src/main/AndroidManifest.xml');
 const retained = read('src/riftbuild.js');
 const toolHost = read('android/app/src/main/java/com/riftos/app/RiftToolHost.kt');
 const surfaces = read('docs/PUBLIC_SURFACES.md');
-const riftppSeed0Arm64Proof = read('android/app/src/main/cpp/riftpp/riftpp_seed0_arm64_proof.cpp');
-const riftppSeed0Arm64Gradle = read('proofs/riftpp-seed0-arm64/app/build.gradle.kts');
-const riftppSeed0Arm64Manifest = read('proofs/riftpp-seed0-arm64/app/src/main/AndroidManifest.xml');
-
-for (const required of [
-  'TRANSACTION_S3_EMIT',
-  'fun executeS3Emit(',
-  's3-emit-compiler-identity',
-  'S3_GENERATION_C_ARM32_SHA256',
-  'entryEmitterOutputBytes',
-  'entryOutputBytes',
-  'emitterOutputBytes',
-  'elfBytes',
-  'ByteArray(1968)',
-  'ByteArray(228)',
-  'ByteArray(3424)',
-  'ByteArray(972)',
-  'emitterBytes.size != 1704',
-  'MAX_SOURCE_BYTES = 64 * 1024',
-  'MAX_OUTPUT_BYTES = 64 * 1024',
-  'hostParsesS3Opcodes',
-  'hostEmitsS3Instructions',
-  'hostParsesElf',
-  'hostEmitsElf',
-  'TRANSACTION_S3_FRAME_LINK',
-  'fun executeS3FrameLink(',
-  's3-frame-base-elf-identity',
-  'linkerBytes.size != 2088',
-  'ByteArray(4192)',
-  'ByteArray(1196)',
-  'TRANSACTION_S3_UI_PATCH',
-  'fun executeS3UiPatch(',
-  's3-ui-base-elf-identity',
-  'patcherBytes.size != 528',
-  '9cf4f6c7670d50f2b6caaeca2f24d20949811291fbe0dfdcbad3a104c78332af',
-  'ByteArray(1072)',
-  'patcherSourceSha256',
-  'patcherOutputSha256',
-  'TRANSACTION_S3_INPUT_HARDEN',
-  'fun executeS3InputHarden(',
-  's3-input-base-elf-identity',
-  'patcherBytes.size != 5032',
-  '59a3ae7494697f83acf34d6310686b7e1b8d6ec54c8d25643f4bc917e58ee6a5',
-  '90dc170d574f9d3b0947cccb013b82f5a2bf0b3c3b65013e0fc5050f4da76f9a',
-  'ByteArray(10080)',
-  'ByteArray(1880)',
-  'TRANSACTION_S3_GLYPH_RENDER',
-  'fun executeS3GlyphRender(',
-  's3-glyph-base-elf-identity',
-  'patcherBytes.size != 2208',
-  '3510e1dccfe1025f2cfbab7c9723b90b5cf8274c12d0bd6975928d8bd85c5f34',
-  'abf2b0789f72fbc885a5c73eeb10cf6199fb9c5d6b29e4f8024b50b3a9fec610',
-  'ByteArray(4432)',
-  'ByteArray(2368)',
-  'TRANSACTION_S3_FOCUS_SEMANTIC',
-  'fun executeS3FocusSemantic(',
-  's3-focus-base-elf-identity',
-  'patcherBytes.size != 1920',
-  '10ffd04fb115c6229c1114ccef4f1d71ab5b36a58f11a993159a0e9fe2c200b4',
-  '1702e86b8672697f1139eb105b6c69e9ce455222f90a31d77123bac860b7c2bc',
-  'ByteArray(3856)',
-  'ByteArray(2768)',
-  'TRANSACTION_S3_TEXT_BUFFER',
-  'fun executeS3TextBuffer(',
-  's3-textbuffer-base-elf-identity',
-  'patcherBytes.size != 2176',
-  '8b8f5df2cef4364ebfd0ea51450e89728a29f3b8a56a191dc24a7200fa23a6d7',
-  '32f7824d6dd4b2f31c4ec30d93cb46995c242fe62263bcf009eb384a7cd8f5e9',
-  'ByteArray(4368)',
-  'ByteArray(3248)',
-  'TRANSACTION_S3_KEY_SEMANTICS',
-  'fun executeS3KeySemantics(',
-  's3-keysemantics-base-elf-identity',
-  'patcherBytes.size != 8320',
-  '2617091d17d2425dac4dc47ae4d928792da79fda239ea75e30c8ad0a1ff31431',
-  'c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a',
-  'ByteArray(16656)',
-  'ByteArray(4388)',
-]) {
-  assert.ok(
-    riftppCompilerService.includes(required),
-    'Rift++ S3 Android R1 service contract missing: ' + required
-  );
-}
-assert.match(
-  riftppCompilerService,
-  /16656,[\s\S]*?"keysemantics-patcher"/,
-  'Rift++ R8 compiled patcher return contract must be 16656 bytes'
-);
-assert.match(
-  riftppCompilerService,
-  /4388,[\s\S]*?"keysemantics-elf"/,
-  'Rift++ R8 ELF return contract must be 4388 bytes'
-);
-assert.match(
-  shell,
-  /Rift\+\+ Android R8 emitted output transport hash mismatch[\s\S]*?outputFile\.length\(\) ==[\s\S]*?4388L/,
-  'Rift++ R8 shell must write and verify the same 4388-byte ELF identity'
-);
-assert.doesNotMatch(
-  riftppCompilerService,
-  /13904,[\s\S]*?"keysemantics-patcher"/,
-  'Rift++ R8 service retained stale 13904-byte patcher return contract'
-);
-assert.doesNotMatch(
-  riftppCompilerService,
-  /4060,[\s\S]*?"keysemantics-elf"/,
-  'Rift++ R8 service retained stale 4060-byte ELF return contract'
-);
-
-for (const required of [
-  'kMaxCompilerBytes = 64 * 1024',
-  'kMaxSourceBytes = 64 * 1024',
-  'kMaxOutputBytes = 64 * 1024',
-  'GuardedSpan',
-  'allocateGuardedSpan',
-  'compilerLength <= 0 || compilerLength > kMaxCompilerBytes',
-]) {
-  assert.ok(
-    riftppCompilerHost.includes(required),
-    'Rift++ guarded compiler host contract missing: ' + required
-  );
-}
-for (const required of [
-  'riftpp-host s3-android-r1 <riftpp-root>',
-  's3/frozen/compiler.arm32.native.hex',
-  'standalone/android-native-r1/entry.arm32.r3.hex',
-  'standalone/android-native-r1/elf32-emitter.arm32.r3.hex',
-  '950e4ad52cb57b73c1348282903529488619373921c1bd37b73f6ddfa93b103a',
-  '5ce665811c7753f1b55d8d0cfe0cac3a1cafcd8d9f8b43e35acbb0b03d6643c6',
-  '43641344176878c30c116d0e1c4c67f9631a8773a35171beaa57857a8306267a',
-  '3621L',
-  '972L',
-  'libriftpp_editor_native_r1.so',
-  'riftpp-host s3-android-r3 <riftpp-root>',
-  'standalone/android-native-r1/elf32-r3-frame-linker.arm32.r3.hex',
-  '18782a0cb8719b04fcac338667ca99f22e58d0e3c52b5a09d18ea4773c0173b6',
-  'd9669d97c6f0f0225b8624818dc9f2f0dad4611ded757ac48dfea1b9cba06d46',
-  '4437L',
-  '1196L',
-  'libriftpp_editor_native_r3.so',
-  'riftpp-host s3-android-r4 <riftpp-root>',
-  'standalone/android-native-r1/elf32-r4-topbar-patcher.arm32.r3.hex',
-  'standalone/android-native-r1/libriftpp_editor_native_r3.first-frame-proven.so',
-  '09afaeda7cbf30281718ec6e354838e75be3d6228297f0b4b70f815253610706',
-  '9cf4f6c7670d50f2b6caaeca2f24d20949811291fbe0dfdcbad3a104c78332af',
-  '44f8b266aef910acaaedfe3a5f6cf7b9f1e029acd6e1c2e310410a22568be28e',
-  '1122L',
-  'patcherSource.size == 528',
-  'libriftpp_editor_native_r4.so',
-  'riftpp-host s3-android-r41 <riftpp-root>',
-  'standalone/android-native-r1/elf32-r41-inputqueue-patcher.arm32.r3.hex',
-  'standalone/android-native-r1/libriftpp_editor_native_r4.first-surface-proven.so',
-  '66c8949f80ac23b729bf92e5188e1f3b4e5058dce81cca94f979602e25e18551',
-  '59a3ae7494697f83acf34d6310686b7e1b8d6ec54c8d25643f4bc917e58ee6a5',
-  '90dc170d574f9d3b0947cccb013b82f5a2bf0b3c3b65013e0fc5050f4da76f9a',
-  '10693L',
-  'patcherSource.size == 5032',
-  '1880L',
-  'libriftpp_editor_native_r41.so',
-  'riftpp-host s3-android-r5 <riftpp-root>',
-  'standalone/android-native-r1/elf32-r5-glyph-patcher.arm32.r3.hex',
-  'standalone/android-native-r1/libriftpp_editor_native_r41.stability-proven.so',
-  'ba8f4978c05c0421591fde9ec406cfff1c03373b67341c35838a32a06af29818',
-  '3510e1dccfe1025f2cfbab7c9723b90b5cf8274c12d0bd6975928d8bd85c5f34',
-  'abf2b0789f72fbc885a5c73eeb10cf6199fb9c5d6b29e4f8024b50b3a9fec610',
-  '4692L',
-  'patcherSource.size == 2208',
-  '2368L',
-  'libriftpp_editor_native_r5.so',
-  'riftpp-host s3-android-r6 <riftpp-root>',
-  'standalone/android-native-r1/elf32-r6-focus-patcher.arm32.r3.hex',
-  'standalone/android-native-r1/libriftpp_editor_native_r5.glyph-proven.so',
-  '340d192199408411775baeb3be8a2d20b18c42bdfcb19253a2941da1ddd3f40f',
-  '10ffd04fb115c6229c1114ccef4f1d71ab5b36a58f11a993159a0e9fe2c200b4',
-  '1702e86b8672697f1139eb105b6c69e9ce455222f90a31d77123bac860b7c2bc',
-  '4080L',
-  'patcherSource.size == 1920',
-  '2768L',
-  'libriftpp_editor_native_r6.so',
-  'riftpp-host s3-android-r7 <riftpp-root>',
-  'standalone/android-native-r1/elf32-r7-textbuffer-patcher.arm32.r3.hex',
-  'standalone/android-native-r1/libriftpp_editor_native_r6.semantic-input-proven.so',
-  'b4cd99191c66136d03a2232d941db327e733ebc24cb253ee85efa23dfbb108ac',
-  '8b8f5df2cef4364ebfd0ea51450e89728a29f3b8a56a191dc24a7200fa23a6d7',
-  '32f7824d6dd4b2f31c4ec30d93cb46995c242fe62263bcf009eb384a7cd8f5e9',
-  '4624L',
-  'patcherSource.size == 2176',
-  '3248L',
-  'libriftpp_editor_native_r7.so',
-  'riftpp-host s3-android-r8 <riftpp-root>',
-  'standalone/android-native-r1/elf32-r8-keysemantics-patcher.arm32.r3.hex',
-  'standalone/android-native-r1/libriftpp_editor_native_r7.buffer-proven.so',
-  'c5dc2e8959a9aa2e4b380e292db9c744be07e2b91a10d038acb25e9ea0de1ef4',
-  '2617091d17d2425dac4dc47ae4d928792da79fda239ea75e30c8ad0a1ff31431',
-  'c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a',
-  '17680L',
-  'patcherSource.size == 8320',
-  '4388L',
-  'libriftpp_editor_native_r8.so',
-]) {
-  assert.ok(
-    shell.includes(required),
-    'Rift++ S3 Android R1 shell contract missing: ' + required
-  );
-}
 for (const required of [
   'const val PORT = 39771',
   'const val PACKET_BYTES = 32',
@@ -287,12 +79,6 @@ for (const forbidden of [
     'Rift++ diagnostic bridge must remain transport-only: ' + forbidden
   );
 }
-assert.ok(
-  !riftppCompilerService.includes('ByteArray(2304)') &&
-  !riftppCompilerService.includes('ByteArray(644)'),
-  'Rift++ Android R1 must not regress to the loader-invalid 644-byte ELF contract'
-);
-
 assert.ok(
   riftAppDiagnosticBridge.includes('RIFTPP_ADAPTER_R1_TARGET_PACKAGE'),
   'Rift++ adapter R1 proof package must remain diagnostic-bridge allowlisted'
@@ -339,14 +125,6 @@ for (const forbidden of [
   'DT_SYMTAB',
 ]) {
   assert.ok(
-    !riftppCompilerService.includes(forbidden),
-    'Rift++ compiler service must not own ELF/Android symbol semantics: ' + forbidden
-  );
-  assert.ok(
-    !riftppCompilerHost.includes(forbidden),
-    'Rift++ native host must not own ELF/Android symbol semantics: ' + forbidden
-  );
-  assert.ok(
     !shell.includes(forbidden),
     'Rift++ shell must not own ELF/Android symbol semantics: ' + forbidden
   );
@@ -374,14 +152,6 @@ for (const required of [
   'downloadedToolchainsAllowed',
   'preparedArtifactPackagerReady',
   'prepared-native-proof',
-  'riftpp-direct-elf-shared-v0-bytes/1',
-  'DIRECT-ELF-SHARED-V0-BYTES.json',
-  'prepareRiftppV0',
-  'prepareRiftppSeed0Arm64Proof',
-  'prepare-riftpp-seed0-arm64',
-  'RIFTPP_SEED0_ARM64_COMPILER_BYTES = 276',
-  'b1f33b940d2ac199f5e38c1c621cd8b27ed15dd3a60fcb85daad7b7154b2ee0c',
-  'lib/arm64-v8a/libriftpp_seed0_arm64_proof.so',
   'crossHostExpectedBundles',
   'prepareCodynexMc0',
   'prepare-codynex-mc0',
@@ -393,17 +163,7 @@ for (const required of [
   'Codynex MC0 seed SHA-256 drift',
   'Codynex MC0 host materialization hash mismatch',
   'compilerAuthority", "assets/mc0_seed.bin',
-  'Rift++ V0 raw SHA-256 mismatch',
-  'Rift++ V0 ELF machine mismatch',
-  'libriftpp_nativeproof.so',
   'ByteArrayOutputStream',
-  'RIFTPP_V0_BINARY_MANIFEST_BYTES = 1440',
-  'ac035bb5bf89f55a3f34bae8eea980108324d2f36333f1e708f8a0b82af8e7c2',
-  'eb0e8b7f3020499b50b135d1ef93c60af89f997c7c1984ec3d17d32c1595a6c1',
-  '1d1739a07896c4d7f1e521fa154a0285c5c4eefe87eab718830fee37194c0765',
-  'buildRiftppV0BinaryManifest',
-  'RiftBuild V0 binary manifest SHA-256 oracle failed',
-  'Materialized binary manifest SHA-256 drift',
   'ZipOutputStream',
   'AndroidManifest.xml must be compiled Android binary XML',
   'arm64-v8a',
@@ -622,9 +382,18 @@ for (const required of [
   'kCanary = 0xA5',
 ]) assert.ok(riftppDynamicCompilerHost.includes(required), 'dynamic Rift++ compiler host contract missing: ' + required);
 
-assert.ok(riftppCompilerService.includes('class RiftppCompilerService'), 'legacy Rift++ compiler service must remain present');
-assert.ok(riftppCompilerHost.includes('Java_com_riftos_app_RiftppCompilerService_nativeCompile'), 'legacy Rift++ compiler host must remain present');
-assert.ok(!riftppCompilerService.includes('RiftppDynamicCompilerService'), 'legacy compiler service must not absorb hot compiler authority');
+assert.ok(!exists('android/app/src/main/java/com/riftos/app/RiftppCompilerService.kt'), 'retired legacy Rift++ compiler service must stay absent');
+assert.ok(!exists('android/app/src/main/cpp/riftpp/riftpp_compiler_host.cpp'), 'retired legacy Rift++ compiler host must stay absent');
+assert.ok(!manifest.includes('.RiftppCompilerService'), 'retired legacy Rift++ compiler service must stay out of the manifest');
+assert.ok(!manifest.includes('android:process=":riftppCompiler"'), 'retired legacy Rift++ compiler process must stay absent');
+assert.ok(!cmake.includes('riftpp_compiler_host'), 'retired legacy Rift++ compiler target must stay absent');
+assert.ok(!shell.includes('riftpp-host'), 'retired legacy riftpp-host shell surface must stay absent');
+for (const retired of ['prepare-riftpp-v0', 'prepare-riftpp-seed0-arm64', 'prepare-riftpp-app0', 'prepare-riftpp-editor']) {
+  assert.ok(!nativeBuild.includes(retired), 'retired Rift++ special-case RiftBuild route resurfaced: ' + retired);
+}
+assert.ok(nativeBuild.includes('args.optString("kind", "native-app")'), 'build.prepare must default to generic native-app');
+assert.ok(nativeBuild.includes('"native-app" -> prepareNativeApp(project, cwd)'), 'build.prepare native-app must use generic prepareNativeApp');
+assert.ok(!nativeBuild.includes('"riftpp-v0"') && !nativeBuild.includes('"riftpp-app0"'), 'retired Rift++ programmatic prepare kinds must stay absent');
 assert.ok(cmake.includes('riftpp_dynamic_compiler_host'), 'dynamic Rift++ compiler host target must stay separate');
 assert.ok(manifest.includes('.RiftppDynamicCompilerService'), 'dynamic Rift++ compiler service must stay crash-contained in the manifest');
 assert.ok(manifest.includes('.RiftManagedJvmToolService'), 'generic managed JVM tool service must stay declared');
@@ -796,10 +565,6 @@ assert.ok(!mc2aHost.includes('std::string'), 'MC2-A host must remain C-style pro
 assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-rtti/);
 
-const riftppApp0Host = read('android/app/src/main/cpp/riftpp/riftpp_app0_host.cpp');
-assert.match(nativeBuild, /prepare-riftpp-app0/);
-assert.match(nativeBuild, /prepare-riftpp-editor/);
-assert.match(nativeBuild, /fun prepareRiftppEditor/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_PACKAGE = "com\.riftpp\.editor"/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_LIBRARY_NAME = "riftpp_editor_bridge"/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_BRIDGE_SERVICE/);
@@ -919,65 +684,6 @@ assert.ok(
     gradle.includes('src/main/java/com/riftpp/apphost/RiftppAppActivity.kt'),
     'Rift++ editor payload hash gate omitted standalone app host'
 );
-assert.match(nativeBuild, /RIFTPP_APP0_COMPILER_HEX_BYTES = 9576/);
-assert.match(nativeBuild, /RIFTPP_APP0_COMPILER_BYTES = 4788/);
-assert.match(nativeBuild, /RIFTPP_APP0_TARGET_PACKAGE/);
-assert.match(nativeBuild, /RIFTPP_APP0_ARM64_HOST_APK_ENTRY = "lib\/arm64-v8a\/libriftpp_app0_host\.so"/);
-assert.match(nativeBuild, /RIFTPP_APP0_ARM32_HOST_APK_ENTRY = "lib\/armeabi-v7a\/libriftpp_app0_host\.so"/);
-assert.match(nativeBuild, /fun prepareRiftppApp0/);
-assert.match(nativeBuild, /runVm1Bounded/);
-assert.match(nativeBuild, /analyzeApp0Vm1/);
-assert.match(nativeBuild, /target == "universal"/);
-assert.match(nativeBuild, /hostParsesTig0\", false/);
-assert.match(nativeBuild, /plannerParsesTig0\", false/);
-assert.match(nativeBuild, /requirementAuthority\", \"compiled program\.bin\"/);
-assert.match(nativeBuild, /applicationVmSeedAsset\", false/);
-assert.match(nativeBuild, /core\.vm1\.arm64/);
-assert.match(nativeBuild, /core\.vm1\.arm32/);
-assert.match(nativeBuild, /verifyElfImage\(arm64Host, 2, 183\)/);
-assert.match(nativeBuild, /verifyElfImage\(arm32Host, 1, 40\)/);
-assert.match(nativeBuild, /lib\/arm64-v8a/);
-assert.match(nativeBuild, /lib\/armeabi-v7a/);
-assert.match(nativeBuild, /io\.output\.bytes/);
-assert.ok(!nativeBuild.includes('RIFTPP_APP0_VM_HEX'), 'U0 must not package the historical ARM32 VM seed');
-assert.ok(!nativeBuild.includes('RIFTPP_APP0_VM_BYTES'), 'U0 must not retain App0 VM-seed byte authority');
-assert.ok(!nativeBuild.includes('RIFTPP_APP0_VM_SHA256'), 'U0 must not retain App0 VM-seed hash authority');
-assert.match(riftppApp0Host, /kProgramAsset = "program\.bin"/);
-assert.match(riftppApp0Host, /kMaxProgramBytes = 64U \* 1024U/);
-assert.match(riftppApp0Host, /kOutputBytes = 1024U/);
-assert.match(riftppApp0Host, /int32_t runVm1\(/);
-assert.match(riftppApp0Host, /case 0x01:[\s\S]*?case 0x0a:/);
-assert.ok(!riftppApp0Host.includes('vm1_seed.bin'), 'U0 native host must not load the ARM32 VM seed asset');
-assert.ok(!riftppApp0Host.includes('mmap('), 'U0 native host must not map architecture-specific executable VM bytes');
-assert.ok(!riftppApp0Host.includes('__arm__'), 'U0 runtime source must be shared by ARM64 and ARM32');
-assert.ok(!riftppApp0Host.includes('program.tig0'), 'App0 host must not parse TIG0 source');
-assert.ok(!riftppApp0Host.includes('Hello from Rift++'), 'App0 host must not embed Hello application behavior');
-assert.ok(!riftppApp0Host.includes('#include <string>'), 'App0 host must not depend on std::string');
-assert.match(cmake, /riftpp_app0_host[\s\S]*?riftpp\/riftpp_app0_host\.cpp/);
-assert.match(cmake, /riftpp_app0_host[\s\S]*?-fno-exceptions/);
-assert.match(cmake, /riftpp_app0_host[\s\S]*?-fno-rtti/);
-assert.ok(gradle.includes('src/main/cpp/riftpp/riftpp_app0_host.cpp'), 'Gradle exact native source snapshot omitted Rift++ App0 host');
-assert.match(gradle, /abiFilters \+= listOf\("arm64-v8a", "armeabi-v7a"\)/);
-assert.match(installer, /RIFTPP_APP0_TARGET_PACKAGE = \"com\.riftpp\.hello\"/);
-assert.ok(manifest.includes('com.riftpp.hello'), 'RiftOS manifest omitted Rift++ App0 package visibility');
-
-assert.match(cmake, /if\(ANDROID_ABI STREQUAL "arm64-v8a"\)[\s\S]*?riftpp_seed0_arm64_proof/);
-assert.match(cmake, /riftpp_seed0_arm64_proof[\s\S]*?riftpp\/riftpp_seed0_arm64_proof\.cpp/);
-assert.ok(gradle.includes('src/main/cpp/riftpp/riftpp_seed0_arm64_proof.cpp'), 'Gradle exact native source snapshot omitted Rift++ seed0 ARM64 proof harness');
-assert.match(riftppSeed0Arm64Gradle, /abiFilters \+= listOf\("arm64-v8a"\)/);
-assert.ok(!riftppSeed0Arm64Gradle.includes('armeabi-v7a'), 'ARM64 proof APK must remain arm64-only');
-assert.match(riftppSeed0Arm64Manifest, /package="com\.riftpp\.nativeproof"/);
-assert.match(riftppSeed0Arm64Manifest, /android:value="riftpp_seed0_arm64_proof"/);
-assert.match(riftppSeed0Arm64Proof, /#if !defined\(__aarch64__\)/);
-assert.match(riftppSeed0Arm64Proof, /kCompilerBytes = 276U/);
-assert.match(riftppSeed0Arm64Proof, /kPayloadOffset = 16U/);
-assert.match(riftppSeed0Arm64Proof, /using CompilerFn = uint32_t \(\*\)\(/);
-assert.match(riftppSeed0Arm64Proof, /using PayloadFn = uint32_t \(\*\)\(\)/);
-assert.match(riftppSeed0Arm64Proof, /Rift\+\+ ARM64 seed0 PASS compiler=b1f33b94 vectors=5 payloads=5 rejects=17 crossHost=exact/);
-assert.ok(!riftppSeed0Arm64Proof.includes('compiler.arm64.hex'), 'Proof harness must receive compiler bytes as an asset, not locate Rift++ source itself');
-assert.ok(!riftppSeed0Arm64Proof.includes('parser'), 'Proof harness must not implement a Rift++ parser');
-assert.ok(!riftppSeed0Arm64Proof.includes('emitArm'), 'Proof harness must not implement an ARM emitter');
-
 const editorCoreModel = read('android/app/src/main/java/com/codynex/editor/EditorModel.kt');
 const editorCorePorts = read('android/app/src/main/java/com/codynex/editor/EditorPorts.kt');
 const editorCoreController = read('android/app/src/main/java/com/codynex/editor/CodynexEditorController.kt');
@@ -1202,7 +908,7 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|compile-native\|compile-object\|extract-object-text\|prepare-native-app\|prepare-riftpp-v0\|prepare-riftpp-seed0-arm64\|prepare-riftpp-app0\|prepare-riftpp-editor\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|prepare-codynex-app\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|managed-status\|managed-payload\|managed-copy\|compiler-status\|compiler-run\|kotlin-status\|kotlin-compile\|riftpp-compile-hot\|compile-native\|compile-object\|extract-object-text\|prepare-native-app\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|prepare-codynex-app\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);

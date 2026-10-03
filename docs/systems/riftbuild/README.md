@@ -51,18 +51,18 @@ The retained `src/riftbuild.js` remains reference-only and is not repackaged or 
 ## Source ownership
 
 Maintained live owners:
-- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — native build controller, direct-ELF bridge materializer, binary-manifest/package orchestration and bounded sign/verify/install command routing;
+- `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — native build controller, managed compiler command routing, generic package orchestration and bounded sign/verify/install command routing;
 - `android/app/src/main/java/com/riftos/app/RiftBuildKotlinCompiler.kt` — bounded Kotlin project adapter: validates project sources/options, delegates compiler implementation to the managed compiler registry, then runs D8 over returned JVM classes into project-owned hot DEX; it does not embed Kotlin compiler authority;
 - `android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt` — generic project-owned payload/compiler registry resolver; validates confined paths, byte bounds and exact SHA-256 identities for compiler/runtime/VM payloads, and binds compiler ids to bounded engines (`native-buffer-v1` or `dex-json-v1`) through `riftbuild-hot.json`;
 - `android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt` — isolated `:riftJvmToolHot` Binder process that exact-hash loads external APK/DEX tool payloads with a framework-only `DexClassLoader` parent and invokes the standard `public static String run(String requestJson)` ABI;
-- `android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt` — isolated `:riftppCompilerHot` Binder process for bounded native-buffer compiler payloads; the frozen legacy compiler service remains separate and unchanged;
+- `android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt` — sole Rift++ native compiler worker, isolated in `:riftppCompilerHot`, for bounded exact-hash `native-buffer-v1` compiler payloads;
 - `android/rift-managed-kotlin-tool/` — default seed compiler payload APK using the Android-patched Kotlin compiler; it is staged as data under `assets/riftbuild/compiler-seeds/` and can later be replaced by a project-managed compiler payload without changing RiftOS;
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt` — Native Compile V1 toolchain discovery, structured compiler argv execution, project-manifest validation and ARM32/ARM64 ELF output verification;
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` — generic NativeActivity binary-manifest generation plus bounded project-asset materialization for normal native applications;
 - `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` — Android-Keystore RSA key owner plus narrow APK Signature Scheme v2 encoder/verifier;
 - `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` — exact-package PackageInstaller session/result/first-launch proof owner;
 - `android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt` — allowlisted localhost-UDP diagnostic session/evidence owner for Rift++ proof/editor launches;
-- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed native `riftbuild`, `riftpp-host` and `riftcrash` command routing;
+- `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` — fixed native `riftbuild`, `riftpp-editor` and `riftcrash` command routing; the legacy `riftpp-host` compiler surface is retired;
 - `android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt` — capability-gated `build.local` app surface;
 - `scripts/test-riftbuild-native.mjs` — focused authority/confinement/source contract;
 - `scripts/test-rift-local-platform.mjs` — retained local-first boundary regression covering historical RiftBuild reference source.
@@ -105,14 +105,18 @@ riftbuild validate <project>
 riftbuild plan <project> [arm32|arm64|universal]
 riftbuild toolchain-status
 riftbuild toolchain-install-bundled
+riftbuild managed-status <project>
+riftbuild managed-payload <project> <id>
+riftbuild managed-copy <project> <id> <output>
+riftbuild compiler-status <project>
+riftbuild compiler-run <project> <compiler-id> <request.json>
+riftbuild kotlin-status
+riftbuild kotlin-compile <project>
+riftbuild riftpp-compile-hot <project> <payload-id> <source> <output> [capacity]
 riftbuild compile-native <project> [arm32|arm64|universal]
 riftbuild compile-object <project> <source.S> [arm32|arm64]
 riftbuild extract-object-text <project> <object.o> [arm32|arm64]
 riftbuild prepare-native-app <project>
-riftbuild prepare-riftpp-v0 <project> [arm32|arm64|universal]
-riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>
-riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>
-riftbuild prepare-riftpp-editor <riftpp-root>
 riftbuild prepare-codynex-mc0 <codynex-root>
 riftbuild prepare-codynex-mc1a <codynex-root>
 riftbuild prepare-codynex-mc1b <codynex-root>
@@ -225,172 +229,20 @@ RiftBuild installation remains explicitly user-confirmed. The PackageInstaller s
 
 This hybrid path intentionally combines reliable receiver delivery with foreground Activity presentation. It does not add silent-install authority: `USER_ACTION_REQUIRED`, APK v2 verification, package allowlisting and Android user confirmation remain mandatory. Rift++ packages `com.riftpp.hello`, `com.riftpp.editor`, `com.riftpp.editor.nativev1` and `com.riftpp.editor.adapterr1` are fixed allowlisted identities in addition to the bootstrap proof package; this does not bypass signature verification or user confirmation. For bridge-supported Rift++ packages, the installer starts a bounded diagnostic session before exact launch. If the RiftOS process dies while confirmation is pending, the retained nested intent is lost and `install-proof` must be retried rather than attempting to persist/replay a system-owned confirmation intent.
 
-## Rift++ Android Native R1/R2/R3 load, callback and first-frame gates
+## Rift++ managed compiler hot path
 
-R1 load/entry and R2 NativeActivity callback ownership are installed-device proven. Run 484 / source `7e6f83738d4d8b343cb6378edbb5c7d32a0cf6ef` installed `0.4.0-riftpp-r2-window`; Android invoked the Rift++-installed `onNativeWindowCreated` callback twice and the diagnostic bridge received two valid stage-6 `window-callback` packets from target PID 27663 with non-zero activity/window pointers.
+Rift++ compiler authority is project-owned and hot-swappable. RiftBuild does not keep generation-specific Rift++ compiler transactions or proof packagers.
 
-The promoted R2 base remains the 972-byte Bionic-valid ARM32 ET_DYN object SHA-256 `d9669d97c6f0f0225b8624818dc9f2f0dad4611ded757ac48dfea1b9cba06d46`. R3 is deliberately a second Rift++ stage rather than a mutation of the proven R1/R2 emitter:
+Supported compiler surfaces:
+- `riftbuild managed-status <project>`, `managed-payload`, and `managed-copy` for exact-hash project payloads;
+- `riftbuild compiler-status <project>` and `compiler-run <project> <compiler-id> <request.json>` for the generic compiler registry;
+- `riftbuild riftpp-compile-hot <project> <payload-id> <source> <output> [capacity]` for bounded native-buffer compiler payloads in the isolated `:riftppCompilerHot` process;
+- `riftbuild kotlin-compile <project>` for Kotlin projects using an external managed compiler payload through the isolated `:riftJvmToolHot` process;
+- `riftbuild prepare-native-app <project> -> pack -> sign -> verify -> install-proof` for generic application packaging.
 
-```text
-riftpp-host s3-android-r3 <riftpp-root>
-  -> regenerate exact promoted R2 ELF
-  -> frozen S3 compiles elf32-r3-frame-linker.arm32.r3.hex
-  -> 4,192-byte Rift++ frame linker
-  -> linker consumes exact 972-byte R2 ELF
-  -> 1,196-byte R3 rendering ELF
-  -> standalone/android-native-r1/libriftpp_editor_native_r3.so
-```
+The legacy `riftpp-host` / `:riftppCompiler` / `RiftppCompilerService` lane is retired. The V0 direct-ELF bridge, Seed0 proof APK, App0 host, and `prepare-riftpp-v0`, `prepare-riftpp-seed0-arm64`, `prepare-riftpp-app0`, and `prepare-riftpp-editor` special-case routes are removed from current source. Regression coverage explicitly fails if those surfaces reappear.
 
-The active R3 linker source transport is 4,437 bytes of fixed-record text, SHA-256 `18782a0cb8719b04fcac338667ca99f22e58d0e3c52b5a09d18ea4773c0173b6`; decoded S3 source is 2,088 bytes (260 body records plus the S3 header). The generated linker is fixed at 4,192 bytes, still well within the generic 64 KiB compiler-host source/output bounds. The earlier 4,182-byte / 245-body-record linker is retained as `elf32-r3-frame-linker.loader-failed.arm32.r3.hex` for failure evidence.
-
-The 1,196-byte R3 ELF uses four program headers: the existing RX load, `PT_DYNAMIC`, non-executable GNU stack, and a distinct RW load used for the GOT. It intentionally contains no W+E `PT_LOAD`. Dynamic metadata adds `DT_NEEDED libandroid.so`, imports only `ANativeWindow_setBuffersGeometry`, `ANativeWindow_lock`, and `ANativeWindow_unlockAndPost`, and resolves them with three `R_ARM_GLOB_DAT` relocations at virtual GOT addresses `0x1200`, `0x1204`, and `0x1208`.
-
-The R3 callback body is 152 ARM32 bytes. It keeps the proven `ANativeActivity_onCreate` callback-table ownership, requests RGBA8888, locks the real `ANativeWindow`, fills the full stride × height buffer with the fixed orange frame color, and calls `ANativeWindow_unlockAndPost`. This is only a first-pixel/frame proof: no editor widgets, text system or input path are promoted yet.
-
-RiftOS remains transport/execution/evidence authority only. `RiftppCompilerService` verifies fixed sizes/identities and executes exact pinned compiler/linker images in the private compiler process; `RiftNativeShell` publishes the returned bytes; RiftBuild packages/signs/verifies/installs the static NativeActivity wrapper. RiftOS does not parse S3 opcodes, emit target ARM instructions, parse/construct target ELF semantics or implement target renderer behavior.
-
-The first version-5 `0.5.0-riftpp-r3-frame` APK installed successfully but crashed on launch. Postmortem inspection of the exact 1,196-byte ELF SHA-256 `d825e50988a3265e05b8b8c56b46fa915a260ecb212488085f72f954f3f5c9e0` found `0xA5` guard poison left in mandatory zero-valued loader metadata: dynsym entry 0, undefined-import values/sizes, SysV hash-chain terminators, and the final `DT_NULL`. The corrected Rift++ linker explicitly zeroes those fields while preserving the guard elsewhere. Build 488 then exposed a separate generic-host issue before that corrected linker could execute: the 4,192-byte linker output crossed the device's one-page backing span and `nativeCompile` rejected with `-96`. The host was corrected to use multi-page `GuardedSpan` source/output buffers while preserving outer guard pages and prefix-canary checks.
-
-Builder run 490 / source `18e1b5bfd6c91efee110d6152fbdafda8843e866` cleared both gates. Frozen S3 compiled the corrected 2,088-byte source to the exact 4,192-byte linker SHA-256 `98087752725238853d58d124930dcb25a0d96120899d5b2e07f69527137b9a8d`, which produced the exact 1,196-byte R3 ELF SHA-256 `44f8b266aef910acaaedfe3a5f6cf7b9f1e029acd6e1c2e310410a22568be28e`. Numeric verification confirmed all fourteen formerly poisoned mandatory fields were zero, the dynamic table ended in `DT_NULL`, dynsym null/import fields were valid, SysV hash terminators were zero, relocations remained exact, and the RX/RW program headers remained separate with no W+E load. RiftBuild packaged, APK-v2 signed and independently verified signed artifact SHA-256 `cbd5bb384f97aee456bef6fdae286c9c2c939266d74943405d4106fbddd1d6be`. Android install session `1663217197` reported `INSTALL_SUCCEEDED` and `launch-proven`, and direct on-device screenshot evidence showed the full orange frame. R3 first-frame rendering is promoted. The R4 editor-surface gate is now promoted through the separate `TRANSACTION_S3_UI_PATCH` / `riftpp-host s3-android-r4 <riftpp-root>` lane. Builder run 492 / source `2b94042e6fd229ee7aba4813ab99857542dee262` compiled the exact 528-byte decoded patcher SHA-256 `9cf4f6c7670d50f2b6caaeca2f24d20949811291fbe0dfdcbad3a104c78332af` from 1,122-byte transport SHA-256 `09afaeda7cbf30281718ec6e354838e75be3d6228297f0b4b70f815253610706` under frozen S3 to a 1,072-byte native patcher SHA-256 `82e6aa4e82426c7d1cc2392c3a52d5f46f5604873f2fd774a0ef6377b6d5d57d`. Applied only to the exact promoted R3 ELF SHA-256 `44f8b266aef910acaaedfe3a5f6cf7b9f1e029acd6e1c2e310410a22568be28e`, it produced the 1,196-byte R4 ELF SHA-256 `90dc170d574f9d3b0947cccb013b82f5a2bf0b3c3b65013e0fc5050f4da76f9a`. Exact byte comparison showed only 68 changed bytes in the renderer-tail/size-field allowance; program headers, dynamic table, SysV hash and relocations stayed byte-for-byte identical. VersionCode 6 / `0.6.0-riftpp-r4-topbar` was APK-v2 signed and independently verified as SHA-256 `b11fc25040c64fbca054e050cffedffd1612d06935780c9a4b7da109592538c5`; Android session `418510229` reported `INSTALL_SUCCEEDED`, and direct on-device screenshot evidence showed the dark charcoal editor bar over the preserved orange frame. R4 is promoted. R4.1 input-hardening is now promoted through the isolated `TRANSACTION_S3_INPUT_HARDEN` / `riftpp-host s3-android-r41 <riftpp-root>` lane. Builder run 493 / source `92ca3fe0f7bb4ebb948047c7cc6e8736a8411834` compiled the exact 5,032-byte decoded patcher SHA-256 `59a3ae7494697f83acf34d6310686b7e1b8d6ec54c8d25643f4bc917e58ee6a5` from 10,693-byte transport SHA-256 `66c8949f80ac23b729bf92e5188e1f3b4e5058dce81cca94f979602e25e18551` under frozen S3 to a 10,080-byte native patcher SHA-256 `9d443ba3d9e188885d8b029678b2305e36651670280f34447407e92af859f914`. Applied only to the exact promoted R4 base SHA-256 `90dc170d574f9d3b0947cccb013b82f5a2bf0b3c3b65013e0fc5050f4da76f9a`, it produced the 1,880-byte R4.1 ELF SHA-256 `abf2b0789f72fbc885a5c73eeb10cf6199fb9c5d6b29e4f8024b50b3a9fec610`. ELF inspection confirmed separate RX/RW mappings with no W+E, valid null dynsym / SysV hash terminator / final `DT_NULL`, all nine expected GLOB_DAT imports, and the NativeActivity input-queue callback/looper drain path while retaining the proven R4 renderer. VersionCode 7 / `0.7.0-riftpp-r41-input` was APK-v2 signed and independently verified as SHA-256 `467ac3749f8ab844eda2e18f796641a52da16e6efe268901ad09a6b712eb9d93`; Android session `1067604178` reported `INSTALL_SUCCEEDED`, and direct user stress testing with repeated touch/back input—including rapid Back presses—did not reproduce the prior not-responding closure. Best-effort `ApplicationExitInfo` correctly reported cross-package history unavailable because `android.permission.DUMP` is not granted, so historical ANR root cause remains strongly supported rather than directly proven. R5 fixed-glyph rendering is now promoted through the isolated `TRANSACTION_S3_GLYPH_RENDER` / `riftpp-host s3-android-r5 <riftpp-root>` lane. Builder run 494 / source `c808372725db39b7200b2cbac6a2930047e830e6` compiled the exact 2,208-byte decoded patcher SHA-256 `3510e1dccfe1025f2cfbab7c9723b90b5cf8274c12d0bd6975928d8bd85c5f34` from 4,692-byte transport SHA-256 `ba8f4978c05c0421591fde9ec406cfff1c03373b67341c35838a32a06af29818` under frozen S3 to a 4,432-byte native patcher SHA-256 `159d089a562d2784047ed0de9e12146d694a72b0a16a81b3365787f73885b1e6`. Applied only to the exact promoted R4.1 base SHA-256 `abf2b0789f72fbc885a5c73eeb10cf6199fb9c5d6b29e4f8024b50b3a9fec610`, it produced the 2,368-byte R5 ELF SHA-256 `1702e86b8672697f1139eb105b6c69e9ce455222f90a31d77123bac860b7c2bc`. Inspection found only 12 changed bytes inside the inherited base plus a 488-byte appended glyph routine; the R4.1 input/lifecycle path and all dynamic/symbol/relocation metadata remained byte-for-byte unchanged, with no new imports and no W+E load. VersionCode 8 / `0.8.0-riftpp-r5-glyph` was APK-v2 signed and independently verified as SHA-256 `411d644b207a53a666ec1a626696fd897f0cc873a4d11baf1a1a57678ca1d4b1`; Android session `2023843614` reported `INSTALL_SUCCEEDED`, and direct user screenshot evidence showed readable white `RIFT++` inside the dark bar above the preserved orange body. R5 is promoted. R6 semantic input/focus is now promoted through the isolated `TRANSACTION_S3_FOCUS_SEMANTIC` / `riftpp-host s3-android-r6 <riftpp-root>` lane. Builder run 495 / source `a83ed529971311289187b49a3c86d5516c910fff` compiled the exact 1,920-byte decoded Rift++ source SHA-256 `10ffd04fb115c6229c1114ccef4f1d71ab5b36a58f11a993159a0e9fe2c200b4` from 4,080-byte transport SHA-256 `340d192199408411775baeb3be8a2d20b18c42bdfcb19253a2941da1ddd3f40f` under frozen S3 to a 3,856-byte native patcher SHA-256 `d09e12c6ba9e462411fc2a326b58866336dc83404a5c729b8ac7ab4a77a59fe1`. Applied only to the exact promoted R5 base SHA-256 `1702e86b8672697f1139eb105b6c69e9ce455222f90a31d77123bac860b7c2bc`, it produced the 2,768-byte R6 ELF SHA-256 `32f7824d6dd4b2f31c4ec30d93cb46995c242fe62263bcf009eb384a7cd8f5e9`. Inspection confirmed RX grows only to `0xad0`, RW file size remains `0x224` while BSS grows to `0x22c`, no W+E mapping exists, all dynamic/GOT/section/symbol/hash/relocation data remain unchanged, and the exact R5 glyph code remains byte-for-byte intact. R6 adds no imports, uses only current-window/focus BSS state, clears it on window destruction, and preserves the original input finish path. VersionCode 9 / `0.9.0-riftpp-r6-focus` was APK-v2 signed and independently verified as SHA-256 `4c293a6303bd2229d07f2639539f7229fa93db31806663227c1551ec1d1b1540`; Android session `822132264` reported `INSTALL_SUCCEEDED`, and direct user screenshot evidence showed the white 210x6 focus underline appear beneath `RIFT++` after a tap. That is direct on-device proof of input -> Rift++ state -> fresh native redraw. R6 is promoted. R7 mutable text-buffer/caret state is now promoted through the isolated `TRANSACTION_S3_TEXT_BUFFER` / `riftpp-host s3-android-r7 <riftpp-root>` lane. Builder run 496 / source `fb407a5e5827c72cbea27013a866f418e567e45b` compiled the exact 2,176-byte decoded source SHA-256 `8b8f5df2cef4364ebfd0ea51450e89728a29f3b8a56a191dc24a7200fa23a6d7` from 4,624-byte transport SHA-256 `b4cd99191c66136d03a2232d941db327e733ebc24cb253ee85efa23dfbb108ac` under frozen S3 to the exact 4,368-byte native patcher SHA-256 `8a7ced9da44cfd1d37dff355f1e295bf0093077307a30d68b6e90419a6d11ae7`. Applied only to the exact preserved R6 proof SHA-256 `32f7824d6dd4b2f31c4ec30d93cb46995c242fe62263bcf009eb384a7cd8f5e9`, it produced the exact 3,248-byte R7 ELF SHA-256 `c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a`. Inspection confirmed RX grows only to `0xcb0`, RW file size remains `0x224` while BSS grows to `0x23c`, no W+E mapping exists, only nine inherited bytes change at expected size/hook fields, and the exact R5 glyph engine plus dynamic/GOT/symbol/hash/relocation metadata remain unchanged. VersionCode 10 / `0.10.0-riftpp-r7-buffer` was APK-v2 signed and independently verified as SHA-256 `0cca2e041ac3268ed2e5286c9d38393c23de86b4b257c806b854eafff78a7d54`; Android session `1132312570` reported `INSTALL_SUCCEEDED`, and direct user screenshot evidence showed stored `EDIT` plus caret rendered below `RIFT++`. That is on-device proof of mutable buffer/caret state driven by the inherited input queue. R7 is promoted. The first staged R8 native-key artifact from Builder run 497 / source `1ef78d11788b981dd3476f6986d62cfa0ace7b91` is rejected: its 4,968-byte (`0x1368`) RX PT_LOAD crossed the existing RW PT_LOAD base at virtual `0x1000`, and signed v11 APK SHA-256 `dff0ade39f2e6d4c81f67abcb6c3469fc644376953c17a23ad98af600f4678e4` installed but closed immediately on launch. The repaired isolated `TRANSACTION_S3_KEY_SEMANTICS` / `riftpp-host s3-android-r8 <riftpp-root>` lane now pins a 17,680-byte transport SHA-256 `c5dc2e8959a9aa2e4b380e292db9c744be07e2b91a10d038acb25e9ea0de1ef4`, 6,944-byte decoded source SHA-256 `2617091d17d2425dac4dc47ae4d928792da79fda239ea75e30c8ad0a1ff31431`, expected 16,656-byte frozen-S3 patcher and 4,388-byte (`0xfdc`) ELF with 36 bytes of headroom before `0x1000`. Dynamic metadata is repacked into reclaimed pre-code loader space, the activity pointer is stored from the reached `0x280` tail, and the first repaired proof is intentionally bounded to real A-Z/SPACE/DEL key-down semantics plus soft-keyboard request. Full IME `commitText` remains outside this gate. New Builder generation, ELF/import/load inspection and device proof are pending.
-
-## v0.1 project inspection
-
-The controller recognizes ordinary Android/Gradle markers but does not claim Gradle has executed.
-
-For the current Rift++ native proof it can verify:
-- `settings.gradle.kts`;
-- root/app Gradle files;
-- `app/src/main/AndroidManifest.xml`;
-- NativeActivity declaration;
-- `android.app.lib_name`;
-- bounded `uses-permission` generation from `rift-app.json.permissions`; the active permission allowlist is exactly `android.permission.INTERNET`, and the current R1 diagnostic wrapper requests only that permission for localhost UDP;
-- ARMv7 and AArch64 generated sources;
-- declared dual ABI filters.
-
-The verifier records bounded source SHA-256 identities where useful.
-
-## Rift++ seed0 ARM64 proof APK
-
-`riftbuild prepare-riftpp-seed0-arm64 <riftpp-root>` is the current proof lane for the machine-code seed, separate from the retained legacy direct-ELF bridge.
-
-It:
-- requires the canonical `compiler/compiler.arm64.hex` text identity and decoded 276-byte SHA-256 `b1f33b940d2ac199f5e38c1c621cd8b27ed15dd3a60fcb85daad7b7154b2ee0c`;
-- extracts only `lib/arm64-v8a/libriftpp_seed0_arm64_proof.so` from the installed universal RiftOS APK;
-- packages an arm64-only `com.riftpp.nativeproof` NativeActivity with `assets/compiler.bin`;
-- never packages an ARM32 fallback, so install/launch is itself an AArch64-userspace gate;
-- keeps the proof host syntax-blind: the host does not parse Rift++ or emit replacement ARM instructions;
-- checks the five exact seed bundles against the already-proven cross-host oracle, executes all five generated ARM64 payloads, repeats `ret 42` for determinism, and checks the documented malformed/reduced-capacity rejection set;
-- reports only a bounded NativeActivity PASS/FAIL title suitable for readback through the existing local UI agent.
-
-After preparation, use the normal bounded pipeline:
-
-```text
-riftbuild pack proofs/riftpp-seed0-arm64 arm64
-riftbuild sign <unsigned-apk>
-riftbuild verify <signed-apk>
-riftbuild install-proof <signed-apk>
-riftbuild launch-proof
-```
-
-If Android rejects the arm64-only APK as ABI-incompatible, that is device/userspace evidence rather than a Rift++ compiler failure.
-
-## Rift++ direct-ELF bridge
-
-For the first self-contained native proof, RiftBuild may consume only the SHA-bound Rift++ bridge artifact:
-
-`compiler/native_backend/evidence/DIRECT-ELF-SHARED-V0-BYTES.json`
-
-`riftbuild prepare-riftpp-v0` must:
-- resolve the artifact inside the selected workspace project;
-- reject unknown schema/version;
-- reject byte values outside 0..255;
-- enforce the declared byte count;
-- verify raw SHA-256 before writing;
-- verify ELF magic, class and target machine;
-- for V0, treat the selected project as the Rift++ root and write only `apk-proof/build/riftbuild/prepared/lib/<abi>/libriftpp_nativeproof.so`;
-- write atomically and re-hash the materialized file;
-- never synthesize or substitute ELF bytes from Kotlin source.
-
-This is a bootstrap bridge from proven Rift++ runtime output to the package layer. It is replaced later by direct compiler/backend artifact emission, but the byte-validation contract remains.
-
-### Fixed binary AndroidManifest V0
-
-The same prepare step owns a deliberately narrow AAPT-free binary XML encoder for the first `apk-proof` only.
-
-It is valid only while these audited source identities remain unchanged:
-- `apk-proof/app/src/main/AndroidManifest.xml` SHA-256 `eb0e8b7f3020499b50b135d1ef93c60af89f997c7c1984ec3d17d32c1595a6c1`;
-- `apk-proof/app/build.gradle.kts` SHA-256 `1d1739a07896c4d7f1e521fa154a0285c5c4eefe87eab718830fee37194c0765`.
-
-V0 emits only the current proof contract:
-- package `com.riftpp.nativeproof`;
-- versionCode `1` / versionName `0.1.0-native-proof`;
-- minSdk `26` / targetSdk `36`;
-- `application android:hasCode=false`;
-- exported `android.app.NativeActivity`;
-- `android.app.lib_name = riftpp_nativeproof`;
-- MAIN/LAUNCHER intent filter;
-- no permissions and no resource table dependency.
-
-The encoder writes Android binary XML chunks directly: XML header, UTF-8 string pool, framework attribute resource map, namespace nodes, typed start/end element nodes. Any source-hash drift blocks preparation instead of silently producing a stale manifest.
-
-The V0 layout is now fully canonicalized: every XML node uses `lineNumber=1`, comments use `NO_INDEX`, raw lexical attribute values remain in the string pool, and all chunks are little-endian/4-byte aligned. The independently reconstructed reference is exactly 1,440 bytes with SHA-256 `ac035bb5bf89f55a3f34bae8eea980108324d2f36333f1e708f8a0b82af8e7c2`. The Kotlin encoder must reproduce that identity exactly or preparation fails closed.
-
-This V0 encoder is not a general XML/resource compiler.
-
-## Rift++ App0 / U0 generated-runtime lane
-
-Status: **UNIVERSAL U0 CONTRACT LOCKED / SOURCE IMPLEMENTED — BUILDER + REAL-DEVICE FREEZE PROOF PENDING**
-
-App0 is the first Rift++ application lane that treats runtime support as a generated per-program result instead of one monolithic Rift++ runtime. U0 is the reusable universal-ABI baseline produced by that lane.
-
-Command: `riftbuild prepare-riftpp-app0 <riftpp-root> <app-dir>`.
-
-The fixed proof app is `rift++/examples/hello`.
-
-Authorities remain separated: application source is `<app-dir>/program.tig0`; compiler authority is `<riftpp-root>/compiler/tig0/compiler_seed.hex`; runtime requirements authority is emitted `program.bin`; package identity is `<app-dir>/riftapp.json`; and both ABI host payloads are extracted from the installed RiftOS APK.
-
-RiftBuild hosts the self-hosted 4,788-byte TIG0 compiler in its bounded VM1 interpreter. That compiler host is execution equipment only: it must not parse TIG0 into replacement instructions.
-
-After compilation, RiftBuild validates every emitted VM1 instruction and derives support requirements from the bytecode. Unknown opcodes, malformed operands, invalid branch targets, or unsupported runtime requirements fail closed.
-
-For U0 Hello, one 216-byte / 54-instruction VM1 program is shared by both ABIs. The runtime plan selects `core.vm1.arm64` as canonical/default, `core.vm1.arm32` as compatibility, plus `io.output.bytes`, `android.nativeactivity`, and `android.display.text`. Source input, scratch, file, network, database, task, graphics, audio, and general application heap support remain absent.
-
-The prepared universal package contains binary `AndroidManifest.xml`, `lib/arm64-v8a/libriftpp_app0_host.so`, `lib/armeabi-v7a/libriftpp_app0_host.so`, and one shared `assets/program.bin`. It does not package the old ARM32 machine-code VM seed. That seed remains Bootstrap0/historical evidence, not U0 application runtime data.
-
-Both native libraries are compiled from the same `riftpp_app0_host.cpp` runtime source and implement the same bounded VM1 instruction semantics. ARM64 is primary, ARM32 is compatibility, and Android selects the matching ABI automatically. ABI differences may change machine implementation only, never valid Rift++ program behavior.
-
-App0 remains restricted to package `com.riftpp.hello`, `target=universal`, and `presentation=text` while the proof installer remains allowlisted.
-
-Promotion requires rebuilt RiftOS containing both hosts, followed by `prepare-riftpp-app0 -> pack universal -> sign -> verify -> install-proof -> launch-proof`. The universal APK must contain both ABI libraries and the ARM64 device must display exactly `Hello from Rift++`. ARM32 source/build conformance remains mandatory, with hardware proof added when an ARM32 target is available.
-
-## Rift++ temporary Kotlin editor bootstrap packaging lane
-
-Status: **SOURCE IMPLEMENTED — REBUILT-RIFTOS DEVICE PROOF PENDING**
-
-Command: `riftbuild prepare-riftpp-editor <riftpp-root>`.
-
-This is a deliberately temporary Android/Kotlin packaging lane used only to prove the
-standalone Rift++ editor loop without repeating NativeActivity lifecycle/framebuffer
-work. The canonical source remains under
-`rift++/standalone/editor/android/`; RiftOS carries SHA-bound mirrored Kotlin/JNI
-payload only so those classes and the tiny execution bridge exist in its compiled DEX/APK
-for local extraction.
-
-Preparation must:
-
-- verify exact hashes for the local Rift++ Kotlin shell, JNI bridge and Android project metadata;
-- verify the frozen S3 ARM32 compiler plus the Rift++ frontend and preview record sources;
-- require package `com.riftpp.editor` and launch activity `com.riftpp.editor.MainActivity`;
-- extract `classes*.dex` and `libriftpp_editor_bridge.so` from the rebuilt installed RiftOS APK;
-- materialize only the ARM32 proof assets under `assets/riftpp/`;
-- emit a code-bearing binary Android manifest;
-- re-hash every materialized authority artifact;
-- feed the normal local `pack -> sign -> verify -> install-proof` chain;
-- never let Kotlin parse `.riftpp`, emit RPA1, interpret RPA1, or become compiler/runtime authority.
-
-After boot + edit/save/load + compile + preview are proven, this Kotlin shell is replaced
-by a native Rift++ app-specific editor/runtime slice. The Kotlin bootstrap is not
-promotable S4 architecture.
+Historical R1–R8, Seed0, Stage1, S2/S3, direct-ELF, App0, and temporary editor-bootstrap proof details remain evidence in `docs/PATCH_HISTORY.md`; they are not current RiftBuild APIs.
 
 ## Codynex C0 .cx editor local packaging lane
 

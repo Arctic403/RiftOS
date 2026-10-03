@@ -18,7 +18,7 @@ import java.util.concurrent.TimeoutException
 /**
  * Crash-contained execution lane for project-owned Rift++ compiler payloads.
  *
- * Unlike RiftppCompilerService, this service has no hardcoded compiler identity. Authority comes
+ * This is the sole Rift++ native compiler execution service. It has no hardcoded compiler identity; authority comes
  * from RiftBuildManagedToolchains manifest + exact SHA-256 validation before bytes reach this
  * process. The frozen legacy compiler service remains unchanged.
  */

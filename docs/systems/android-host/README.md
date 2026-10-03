@@ -40,7 +40,8 @@ Host-adjacent lifecycle/source boundaries:
 - `RiftAppDiagnosticBridge.kt` — process-local allowlisted localhost diagnostic receiver used only around supported Rift++ launches; it owns transport/evidence, not target runtime semantics.
 
 Manifest-declared components whose internal behavior belongs elsewhere:
-- `RiftppCompilerService.kt` — private `:riftppCompiler` Binder worker that contains native compiler faults; it owns process isolation, exact Seed0/Stage1 source and artifact admission, timeout/crash reporting and JNI transport only, not Rift++ parsing or code generation. The Stage1 self-host transaction accepts only the frozen Stage1 ARM32/ARM64 source identities, frames newline-terminated Seed0 records without decoding their decimal values, reconstructs Stage1 exclusively through Seed0-generated payload returns, and requires exact bootstrap/self-compiled image hashes.
+- `RiftppDynamicCompilerService.kt` — sole Rift++ native compiler worker, isolated in `:riftppCompilerHot`; it executes bounded exact-hash managed compiler payloads and owns containment/transport only, not Rift++ parsing or code generation.
+- `RiftManagedJvmToolService.kt` — generic isolated `:riftJvmToolHot` loader for exact-hash JVM/DEX compiler/tool payloads using the bounded JSON tool ABI.
 - `RiftBuildInstallReceiver` in `RiftBuildInstaller.kt` — private PackageInstaller result + protected first-launch proof receiver for the fixed RiftBuild install allowlist;
 - `RiftMcpActivity.kt` — MCP configuration/status UI.
 - `RiftBrowserPreviewActivity.kt` — bounded preview renderer.

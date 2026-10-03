@@ -56,12 +56,6 @@
             android:grantUriPermissions="false" />
 
         <service
-            android:name=".RiftppCompilerService"
-            android:exported="false"
-            android:process=":riftppCompiler"
-            android:stopWithTask="false" />
-
-        <service
             android:name=".RiftppDynamicCompilerService"
             android:exported="false"
             android:process=":riftppCompilerHot"
