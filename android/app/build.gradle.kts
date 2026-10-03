@@ -72,6 +72,7 @@ android {
             pickFirsts += setOf(
                 "kotlin/annotation/annotation.kotlin_builtins",
                 "kotlin/collections/collections.kotlin_builtins",
+                "kotlin/concurrent/atomics/atomics.kotlin_builtins",
                 "kotlin/coroutines/coroutines.kotlin_builtins",
                 "kotlin/internal/internal.kotlin_builtins",
                 "kotlin/kotlin.kotlin_builtins",
