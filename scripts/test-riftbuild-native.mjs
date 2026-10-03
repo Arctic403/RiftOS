@@ -604,6 +604,7 @@ for (const required of [
   'K2JVMCompiler',
 ]) assert.ok(managedKotlinTool.includes(required), 'managed Kotlin compiler payload contract missing: ' + required);
 assert.ok(managedKotlinToolGradle.includes('com.github.PranavPurwar:kotlinc-android:2.4.0'), 'managed Kotlin payload must pin Android compiler port');
+assert.ok(managedKotlinToolGradle.includes('org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'), 'managed Kotlin payload must package its coroutines runtime');
 
 for (const required of [
   'class RiftppDynamicCompilerService',
