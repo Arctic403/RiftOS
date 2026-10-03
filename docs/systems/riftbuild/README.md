@@ -52,6 +52,9 @@ The retained `src/riftbuild.js` remains reference-only and is not repackaged or 
 
 Maintained live owners:
 - `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` — native build controller, direct-ELF bridge materializer, binary-manifest/package orchestration and bounded sign/verify/install command routing;
+- `android/app/src/main/java/com/riftos/app/RiftBuildKotlinCompiler.kt` — bounded on-device Kotlin→JVM class→DEX compiler using the pinned Kotlin compiler/D8 engine and signed local `android.jar`/stdlib toolchain assets; outputs remain under the selected project's `build/riftbuild/` tree;
+- `android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt` — generic project-owned payload manifest resolver; validates confined paths, byte bounds and exact SHA-256 identities for compiler/runtime/VM payloads without interpreting their semantics;
+- `android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt` — isolated `:riftppCompilerHot` Binder process for bounded execution of manifest-authorized Rift++ compiler payloads; the frozen legacy compiler service remains separate and unchanged;
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt` — Native Compile V1 toolchain discovery, structured compiler argv execution, project-manifest validation and ARM32/ARM64 ELF output verification;
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` — generic NativeActivity binary-manifest generation plus bounded project-asset materialization for normal native applications;
 - `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` — Android-Keystore RSA key owner plus narrow APK Signature Scheme v2 encoder/verifier;
