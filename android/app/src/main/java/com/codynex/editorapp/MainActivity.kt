@@ -1015,8 +1015,8 @@ class MainActivity : Activity() {
                     val packController =
                         CodynexEditorController(
                             workspace = workspacePort,
-                            compiler = compatibilityToolchain,
-                            preview = compatibilityToolchain
+                            compiler = toolchain,
+                            preview = toolchain
                         )
                     packController.openWorkspace(workspacePort.rootPath())
                     packController.openFile(sourcePath)
@@ -1025,10 +1025,10 @@ class MainActivity : Activity() {
                     val candidate =
                         packState.candidate
                             ?: error(
-                                "compatibility compile did not produce a VM1 candidate"
+                                "VM2 compile did not produce a standalone candidate"
                             )
-                    require(candidate.kind == "vm1-program") {
-                        "Pack APK requires a VM1 compatibility candidate"
+                    require(candidate.kind == "vm2-program") {
+                        "Pack APK requires a VM2 candidate"
                     }
 
                     val receipt =

@@ -329,11 +329,7 @@ class CodynexEditorBridgeService : Service() {
 
             "build-apk" -> {
                 val entry = request.getString("entry")
-                val compiled =
-                    compileFresh(
-                        entry,
-                        compatibilityToolchain
-                    )
+                val compiled = compileFresh(entry)
                 val receipt = CodynexApkBuilder(this).build(
                     candidateFile = compiled.candidate,
                     sourcePath = editorFile(entry).absolutePath

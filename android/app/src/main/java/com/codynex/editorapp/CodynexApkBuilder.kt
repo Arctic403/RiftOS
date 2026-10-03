@@ -31,7 +31,7 @@ data class CodynexApkReceipt(
  * TEMP LIVE-PROOF Codynex-owned Android APK materializer/packer.
  *
  * Authority boundary:
- * - input is an already-compiled VM1 candidate owned by the Codynex editor;
+ * - input is an already-compiled VM2 candidate owned by the Codynex editor;
  * - Android host/runtime bytes are harvested from this installed Codynex editor APK;
  * - no RiftOS file, RiftBuild artifact, provider, or path is read during packaging;
  * - APK v2 signing and verification are owned by CodynexApkV2Signer.
@@ -45,8 +45,8 @@ class CodynexApkBuilder(private val context: Context) {
             "com.codynex.apphost.CodynexAppActivity"
         private const val LIB_ENTRY =
             "lib/armeabi-v7a/libcodynex_editor_vm.so"
-        private const val VM_ASSET = "vm1_seed.hex"
-        private const val PROGRAM_ASSET = "program.vm1"
+        private const val VM_ASSET = "vm2_seed.hex"
+        private const val PROGRAM_ASSET = "program.vm2"
         private const val VERSION_NAME = "0.1.0-live-proof"
 
         private const val MAX_PROGRAM_BYTES = 64 * 1024
@@ -57,7 +57,7 @@ class CodynexApkBuilder(private val context: Context) {
         private const val MAX_PACKAGE_INPUT_BYTES = 128L * 1024L * 1024L
 
         private const val VM_HEX_SHA256 =
-            "1f013e2592741895f511d1724ecd69ee156e24f771c289d848e1bab265d3655e"
+            "3f746727e18a55933a20dc63fc7f84544566f982aa5cab0803573c456926c916"
 
         private val DEX_ENTRY =
             Regex("^classes(?:[2-9]|[1-9][0-9]+)?\\.dex$")
@@ -101,10 +101,10 @@ class CodynexApkBuilder(private val context: Context) {
     ): CodynexApkReceipt {
         val candidate = candidateFile.canonicalFile
         require(candidate.isFile) {
-            "VM1 candidate is missing"
+            "VM2 candidate is missing"
         }
         require(candidate.length() in 1..MAX_PROGRAM_BYTES.toLong()) {
-            "VM1 candidate exceeds $MAX_PROGRAM_BYTES bytes"
+            "VM2 candidate exceeds $MAX_PROGRAM_BYTES bytes"
         }
 
         val program = candidate.readBytes()
@@ -120,10 +120,10 @@ class CodynexApkBuilder(private val context: Context) {
             vmAsset.isNotEmpty() &&
                 vmAsset.size <= MAX_VM_ASSET_BYTES
         ) {
-            "Codynex VM1 asset is out of bounds"
+            "Codynex VM2 asset is out of bounds"
         }
         require(sha256(vmAsset) == VM_HEX_SHA256) {
-            "Codynex VM1 asset SHA-256 drift"
+            "Codynex VM2 asset SHA-256 drift"
         }
 
         val ownApk = File(context.applicationInfo.sourceDir).canonicalFile

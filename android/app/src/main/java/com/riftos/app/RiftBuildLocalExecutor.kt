@@ -209,17 +209,17 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/editor/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
                 "1285bd2a49db68abad5d31efa03c478cc36979e2dabd613e5e60b3107b90315a",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt" to
-                "b88ac8d5164d75bd2a2be8b7fef0721abfbdc5c8c6591e10a0ca12c3d18755e9",
+                "90f173bfd359ef34108b68b6cd79fbf950ae4a8cb6d92ea4350f28eaeece01d2",
             "external/editor/app/src/main/java/com/codynex/editorapp/Vm1Bridge.kt" to
                 "b844c767e81366f3464988eab060f28ccc5c098cf98a877e71704cc3b2c446bb",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
-                "8e231086c097ecc0bb8dbc60534509eaafa0c7cc6556def65f4fa12f7dc01f1c",
+                "7fca804b0bb239d6eca7d7516ad11aa7ad16b8520fdc5f36521cc900f3fbce2d",
             "external/editor/app/src/main/java/com/codynex/editorapp/CodynexApkV2Signer.kt" to
                 "3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76",
             "external/editor/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
-                "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28",
+                "f0b03274a4b918d4ca16adfa1303a6759df6e424a53a2bb414588410a89ff6e6",
             "external/editor/app/src/main/java/com/codynex/editorapp/MainActivity.kt" to
-                "17b278bfa3a065fb99e3506c7fa7dbc42b7b2ace25e7f44f81b694935ebbc416",
+                "65ff5c242536cb17da121d0e6c60bcdd5a0be8bfd20fac795e7ea1d408471a0a",
             "external/editor/app/src/main/cpp/editor_vm_bridge.cpp" to
                 "b609b300e6f27d90c9d9b4217d7cc92f4d97ca17a2b52815c5c358f0dbb9e620",
             "external/editor/app/build.gradle.kts" to
@@ -321,7 +321,7 @@ class RiftBuildLocalExecutor(context: Context) {
         private const val CODYNEX_APP_VERSION_NAME = "0.1.0-live-proof"
         private const val CODYNEX_APP_LIBRARY_FILE =
             "libcodynex_editor_vm.so"
-        private const val CODYNEX_APP_PROGRAM_ASSET = "program.vm1"
+        private const val CODYNEX_APP_PROGRAM_ASSET = "program.vm2"
         private const val CODYNEX_APP_MAX_SOURCE_BYTES = 256 * 1024
         private const val CODYNEX_APP_MAX_PROGRAM_BYTES = 64 * 1024
         private val CODYNEX_APPHOST_SOURCE_SHA256 = linkedMapOf(
@@ -334,7 +334,7 @@ class RiftBuildLocalExecutor(context: Context) {
             "external/apphost/app/src/main/AndroidManifest.xml" to
                 "e092bd010b9f52dcfe1fffca2ca08098689816d7a88d5a1362d97646cc9350ea",
             "external/apphost/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
-                "ab27d72241098fa6b09d2c26c48a7e1b129d95a500c386a13b96836b54209f28"
+                "f0b03274a4b918d4ca16adfa1303a6759df6e424a53a2bb414588410a89ff6e6"
         )
         private const val XML_NO_INDEX = -1
         private const val XML_STRING_POOL_TYPE = 0x0001
@@ -2415,7 +2415,7 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         }
 
         val compiled =
-            codynexRuntime.compileCodynexC0Project(
+            codynexRuntime.compileCodynexC0ProjectVM2(
                 rootSource = sourceText,
                 moduleSources = emptyMap()
             )
@@ -2429,23 +2429,23 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             "Codynex standalone app proof currently requires one module"
         }
         require(
-            compiled.vm1.isNotEmpty() &&
-                compiled.vm1.size <= CODYNEX_APP_MAX_PROGRAM_BYTES
+            compiled.vm2.isNotEmpty() &&
+                compiled.vm2.size <= CODYNEX_APP_MAX_PROGRAM_BYTES
         ) {
-            "Codynex standalone app VM1 program exceeds bounds"
+            "Codynex standalone app VM2 program exceeds bounds"
         }
 
-        val vmFile = projectFile(ref, EDITOR_VM_HEX)
+        val vmFile = projectFile(ref, EDITOR_VM2_HEX)
         require(vmFile.isFile) {
-            "Codynex standalone app VM1 runtime authority is missing"
+            "Codynex standalone app VM2 runtime authority is missing"
         }
         val vmText = readTextBounded(vmFile).toByteArray(Charsets.UTF_8)
-        require(vmText.size == EDITOR_VM_HEX_BYTES) {
-            "Codynex standalone app VM1 hex byte count drift: " +
+        require(vmText.size == EDITOR_VM2_HEX_BYTES) {
+            "Codynex standalone app VM2 hex byte count drift: " +
                 vmText.size
         }
-        require(sha256(vmText) == EDITOR_VM_HEX_SHA256) {
-            "Codynex standalone app VM1 runtime SHA-256 drift"
+        require(sha256(vmText) == EDITOR_VM2_HEX_SHA256) {
+            "Codynex standalone app VM2 runtime SHA-256 drift"
         }
 
         val host =
@@ -2509,14 +2509,14 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
             File(preparedRoot, "AndroidManifest.xml").canonicalFile
         val hostOutput =
             File(libRoot, CODYNEX_APP_LIBRARY_FILE).canonicalFile
-        val vmOutput = File(assetRoot, "vm1_seed.hex").canonicalFile
+        val vmOutput = File(assetRoot, "vm2_seed.hex").canonicalFile
         val programOutput =
             File(assetRoot, CODYNEX_APP_PROGRAM_ASSET).canonicalFile
 
         atomicWrite(manifestOutput, buildCodynexAppBinaryManifest())
         atomicWrite(hostOutput, host)
         atomicWrite(vmOutput, vmText)
-        atomicWrite(programOutput, compiled.vm1)
+        atomicWrite(programOutput, compiled.vm2)
 
         val dexReceipt = JSONArray()
         for ((name, bytes) in dexEntries) {
@@ -2546,10 +2546,10 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
         require(sha256(hostOutput) == sha256(host)) {
             "Codynex standalone VM bridge materialization hash mismatch"
         }
-        require(sha256(vmOutput) == EDITOR_VM_HEX_SHA256) {
-            "Codynex standalone VM1 runtime materialization hash mismatch"
+        require(sha256(vmOutput) == EDITOR_VM2_HEX_SHA256) {
+            "Codynex standalone VM2 runtime materialization hash mismatch"
         }
-        require(sha256(programOutput) == sha256(compiled.vm1)) {
+        require(sha256(programOutput) == sha256(compiled.vm2)) {
             "Codynex standalone program materialization hash mismatch"
         }
 
@@ -2571,9 +2571,9 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
                 .put("sourceSha256", sha256(sourceBytes))
                 .put("compiler", compiled.compiler)
                 .put("moduleCount", compiled.moduleCount)
-                .put("programBytes", compiled.vm1.size)
-                .put("programSha256", sha256(compiled.vm1))
-                .put("vmSha256", EDITOR_VM_HEX_SHA256)
+                .put("programBytes", compiled.vm2.size)
+                .put("programSha256", sha256(compiled.vm2))
+                .put("vmSha256", EDITOR_VM2_HEX_SHA256)
                 .put("hostSha256", sha256(host))
                 .put("dex", dexReceipt)
                 .put("manifestSha256", sha256(manifestOutput))
@@ -2582,7 +2582,7 @@ fun prepareCodynexMc1b(project: String, cwd: String = "/D:/Workspace"): JSONObje
                     JSONObject()
                         .put("hostParsesSource", false)
                         .put("hostContainsAppSemantics", false)
-                        .put("appSemantics", "assets/program.vm1")
+                        .put("appSemantics", "assets/program.vm2")
                         .put("uiProtocol", "CXUI v1")
                 )
                 .put("manifestReady", true)

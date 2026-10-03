@@ -23,8 +23,8 @@ class CodynexAppActivity : Activity() {
         private const val OUTPUT_BYTES = 64 * 1024
         private const val MAX_EVENT_TEXT_BYTES = 240
         private const val MAX_NODES = 16
-        private const val VM_ASSET = "vm1_seed.hex"
-        private const val PROGRAM_ASSET = "program.vm1"
+        private const val VM_ASSET = "vm2_seed.hex"
+        private const val PROGRAM_ASSET = "program.vm2"
     }
 
     private data class Node(
