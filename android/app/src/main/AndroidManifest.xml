@@ -68,6 +68,12 @@
             android:stopWithTask="false" />
 
         <service
+            android:name=".RiftManagedJvmToolService"
+            android:exported="false"
+            android:process=":riftJvmToolHot"
+            android:stopWithTask="false" />
+
+        <service
             android:name=".RiftVortexAccessibilityService"
             android:exported="true"
             android:label="RiftOS Local UI Agent"

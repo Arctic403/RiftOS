@@ -68,18 +68,6 @@ android {
     sourceSets["main"].jniLibs.directories.add("build/generated/riftosJniLibs")
     packaging {
         jniLibs.useLegacyPackaging = true
-        resources {
-            pickFirsts += setOf(
-                "kotlin/annotation/annotation.kotlin_builtins",
-                "kotlin/collections/collections.kotlin_builtins",
-                "kotlin/concurrent/atomics/atomics.kotlin_builtins",
-                "kotlin/coroutines/coroutines.kotlin_builtins",
-                "kotlin/internal/internal.kotlin_builtins",
-                "kotlin/kotlin.kotlin_builtins",
-                "kotlin/ranges/ranges.kotlin_builtins",
-                "kotlin/reflect/reflect.kotlin_builtins"
-            )
-        }
     }
 }
 
@@ -140,6 +128,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftProjectExporter.kt",
         "src/main/java/com/riftos/app/RiftppCompilerService.kt",
         "src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt",
+        "src/main/java/com/riftos/app/RiftManagedJvmToolService.kt",
         "src/main/java/com/riftos/app/RiftRelaySettings.kt",
         "src/main/java/com/riftos/app/RiftSecretStore.kt",
         "src/main/java/com/riftos/app/RiftShellExecutor.kt",
@@ -568,6 +557,53 @@ val syncRiftBuildKotlinToolchain by tasks.registering {
     }
 }
 
+val syncRiftBuildCompilerSeeds by tasks.registering {
+    dependsOn(":rift-managed-kotlin-tool:assembleRelease")
+
+    val outputRoot = layout.buildDirectory.dir(
+        "generated/riftosAssets/riftbuild/compiler-seeds"
+    )
+    outputs.dir(outputRoot)
+
+    doLast {
+        val releaseDir = project(":rift-managed-kotlin-tool")
+            .layout.buildDirectory.dir("outputs/apk/release")
+            .get().asFile
+        val candidates = releaseDir.listFiles()
+            ?.filter { it.isFile && it.extension.equals("apk", ignoreCase = true) }
+            ?.sortedBy { it.name }
+            .orEmpty()
+        val input = candidates.singleOrNull()
+            ?: throw GradleException(
+                "Expected exactly one managed Kotlin compiler payload APK, found " +
+                    candidates.joinToString { it.name }
+            )
+
+        val root = outputRoot.get().asFile
+        root.deleteRecursively()
+        if (!root.mkdirs() && !root.isDirectory) {
+            throw GradleException("Could not create RiftBuild compiler seed asset root")
+        }
+
+        val output = File(root, "kotlin-android-2.4.0.apk")
+        input.copyTo(output, overwrite = true)
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        output.inputStream().buffered().use { stream ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                if (count > 0) digest.update(buffer, 0, count)
+            }
+        }
+        val sha = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        File(root, "manifest.txt").writeText(
+            "kotlin-android-2.4.0.apk=" + output.length() + ":" + sha + "\n"
+        )
+    }
+}
+
 val validateRiftBrowserWebViewOwnership by tasks.registering {
     val sourceRoot = file("src/main")
     val allowedOwners = setOf(
@@ -638,10 +674,10 @@ tasks.named("preBuild").configure {
     dependsOn(validateRiftBrowserWebViewOwnership)
     dependsOn(syncRiftOsWebAssets)
     dependsOn(syncRiftBuildKotlinToolchain)
+    dependsOn(syncRiftBuildCompilerSeeds)
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.4.10")
     implementation("com.android.tools:r8:8.13.23")
     add(
         riftBuildKotlinCompileClasspath.name,

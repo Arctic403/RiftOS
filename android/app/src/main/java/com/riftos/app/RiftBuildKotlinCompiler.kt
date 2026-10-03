@@ -4,22 +4,16 @@ import android.content.Context
 import com.android.tools.r8.D8
 import com.android.tools.r8.D8Command
 import com.android.tools.r8.OutputMode
-import org.jetbrains.kotlin.cli.common.ExitCode
-import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
-import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
-import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSourceLocation
-import org.jetbrains.kotlin.cli.common.messages.MessageCollector
-import org.jetbrains.kotlin.cli.jvm.K2JVMCompiler
-import org.jetbrains.kotlin.config.Services
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
 /**
- * Bounded on-device Kotlin -> JVM class -> DEX compiler for RiftBuild.
+ * Bounded on-device Kotlin -> external managed compiler -> JVM class -> DEX pipeline.
  *
- * This is Android/bootstrap tooling only. It does not implement Rift++ semantics.
+ * RiftOS owns only project validation, toolchain assets, compiler request normalization and D8.
+ * The Kotlin compiler implementation itself is project/bundle owned and hot-swappable.
  */
 class RiftBuildKotlinCompiler(
     context: Context,
@@ -31,10 +25,10 @@ class RiftBuildKotlinCompiler(
         private const val MANIFEST = "rift-kotlin.json"
         private const val ASSET_ROOT = "riftbuild/kotlin-toolchain"
         private const val TOOLCHAIN_RELATIVE = "system/toolchains/rift-kotlin-v1"
+        private const val DEFAULT_COMPILER = "kotlin-android"
         private const val MAX_SOURCES = 64
         private const val MAX_SOURCE_BYTES = 2L * 1024L * 1024L
         private const val MAX_TOTAL_SOURCE_BYTES = 8L * 1024L * 1024L
-        private const val MAX_MESSAGES = 32 * 1024
         private val DEX_ENTRY = Regex("^classes(?:[2-9]|[1-9][0-9]+)?\\.dex$")
     }
 
@@ -45,16 +39,19 @@ class RiftBuildKotlinCompiler(
         val androidJar = materializeAsset("android.jar")
         val stdlibJar = materializeAsset("kotlin-stdlib.jar")
         return JSONObject()
-            .put("schema", "riftbuild-kotlin-toolchain-status/1")
+            .put("schema", "riftbuild-kotlin-toolchain-status/2")
             .put("ready", androidJar.isFile && stdlibJar.isFile)
-            .put("compiler", "kotlin-compiler-embeddable")
-            .put("compilerVersion", "2.4.10")
+            .put("compilerAuthority", "managed-external")
+            .put("defaultCompilerId", DEFAULT_COMPILER)
             .put("dexer", "D8")
             .put("androidJar", fileInfo(androidJar))
             .put("kotlinStdlib", fileInfo(stdlibJar))
     }
 
-    fun compile(projectRoot: File): JSONObject {
+    fun compile(
+        projectRoot: File,
+        compilerInvoker: (String, JSONObject) -> JSONObject
+    ): JSONObject {
         val project = checkedProject(projectRoot)
         val manifestFile = File(project, MANIFEST).canonicalFile
         require(confinedTo(project, manifestFile) && manifestFile.isFile) {
@@ -67,6 +64,11 @@ class RiftBuildKotlinCompiler(
         val manifest = JSONObject(manifestFile.readText(Charsets.UTF_8))
         require(manifest.optString("schema") == SCHEMA) {
             "Unsupported Kotlin build manifest schema"
+        }
+
+        val compilerId = manifest.optString("compiler", DEFAULT_COMPILER).trim()
+        require(compilerId.matches(Regex("^[A-Za-z0-9._+-]{1,80}$"))) {
+            "Kotlin compiler id is invalid"
         }
 
         val module = manifest.optString("module", "rift-kotlin").trim().ifBlank { "rift-kotlin" }
@@ -83,7 +85,7 @@ class RiftBuildKotlinCompiler(
         val sourceArray = manifest.optJSONArray("sources") ?: error("Kotlin sources array is required")
         require(sourceArray.length() in 1..MAX_SOURCES) { "Kotlin source count is out of bounds" }
 
-        val sources = ArrayList<File>(sourceArray.length())
+        val relativeSources = JSONArray()
         var totalSourceBytes = 0L
         for (index in 0 until sourceArray.length()) {
             val relative = sourceArray.getString(index).trim()
@@ -97,7 +99,7 @@ class RiftBuildKotlinCompiler(
             require(file.length() in 1..MAX_SOURCE_BYTES) { "Kotlin source is oversized: $relative" }
             totalSourceBytes += file.length()
             require(totalSourceBytes <= MAX_TOTAL_SOURCE_BYTES) { "Kotlin total source bytes exceed limit" }
-            sources += file
+            relativeSources.put(relative)
         }
 
         val outputRelative = manifest.optString("outputDir", "build/riftbuild/hot-dex").trim()
@@ -107,35 +109,54 @@ class RiftBuildKotlinCompiler(
         val outputDir = File(project, outputRelative).canonicalFile
         require(confinedTo(project, outputDir)) { "Kotlin outputDir escaped project" }
 
-        val classesDir = File(project, "build/riftbuild/kotlin-classes").canonicalFile
+        val classesRelative = "build/riftbuild/kotlin-classes"
+        val classesDir = File(project, classesRelative).canonicalFile
         require(confinedTo(project, classesDir)) { "Kotlin classes directory escaped project" }
         resetDirectory(classesDir)
         resetDirectory(outputDir)
 
         val androidJar = materializeAsset("android.jar")
         val stdlibJar = materializeAsset("kotlin-stdlib.jar")
-        val messages = BoundedMessageCollector()
 
-        val arguments = K2JVMCompilerArguments().apply {
-            freeArgs = sources.map { it.absolutePath }
-            destination = classesDir.absolutePath
-            classpath = listOf(androidJar, stdlibJar).joinToString(File.pathSeparator) { it.absolutePath }
-            noJdk = true
-            noStdlib = true
-            noReflect = true
-            this.jvmTarget = jvmTarget
-            moduleName = module
+        val request = JSONObject()
+            .put("schema", RiftBuildManagedToolchains.COMPILER_PROTOCOL)
+            .put("language", "kotlin")
+            .put("sources", relativeSources)
+            .put("outputDir", classesRelative)
+            .put(
+                "classpath",
+                JSONArray()
+                    .put(androidJar.absolutePath)
+                    .put(stdlibJar.absolutePath)
+            )
+            .put(
+                "options",
+                JSONObject()
+                    .put("moduleName", module)
+                    .put("jvmTarget", jvmTarget)
+                    .put("minSdk", minSdk)
+                    .put("noJdk", true)
+                    .put("noStdlib", true)
+                    .put("noReflect", true)
+            )
+
+        val compilerReceipt = compilerInvoker(compilerId, request)
+        require(compilerReceipt.optString("state") == "success") {
+            "Managed Kotlin compiler failed: " +
+                compilerReceipt.optString("detail", compilerReceipt.toString())
         }
 
-        val exit = K2JVMCompiler().exec(messages, Services.EMPTY, arguments)
-        require(exit == ExitCode.OK && !messages.hasErrors()) {
-            "Kotlin compilation failed: ${messages.text().take(MAX_MESSAGES)}"
+        val response = compilerReceipt.optJSONObject("response")
+            ?: error("Managed Kotlin compiler returned no compiler response")
+        require(response.optString("state") == "success") {
+            "Managed Kotlin compiler rejected source: " +
+                response.optString("messages", response.toString())
         }
 
         val classFiles = classesDir.walkTopDown()
             .filter { it.isFile && it.extension == "class" }
             .toList()
-        require(classFiles.isNotEmpty()) { "Kotlin compiler produced no class files" }
+        require(classFiles.isNotEmpty()) { "Managed Kotlin compiler produced no class files" }
 
         val d8 = D8Command.builder()
             .setMinApiLevel(minSdk)
@@ -168,18 +189,20 @@ class RiftBuildKotlinCompiler(
         }
 
         return JSONObject()
-            .put("schema", "riftbuild-kotlin-compile/1")
+            .put("schema", "riftbuild-kotlin-compile/2")
             .put("state", "compiled-dex")
             .put("project", project.absolutePath)
+            .put("compilerId", compilerId)
+            .put("compilerReceipt", compilerReceipt)
             .put("module", module)
-            .put("sourceCount", sources.size)
+            .put("sourceCount", relativeSources.length())
             .put("sourceBytes", totalSourceBytes)
             .put("classFiles", classFiles.size)
             .put("minSdk", minSdk)
             .put("jvmTarget", jvmTarget)
             .put("outputDir", outputRelative)
             .put("dexFiles", dex)
-            .put("messages", messages.text())
+            .put("messages", response.optString("messages", ""))
     }
 
     private fun materializeAsset(name: String): File {
@@ -250,31 +273,4 @@ class RiftBuildKotlinCompiler(
     private fun dexIndex(name: String): Int =
         if (name == "classes.dex") 1
         else name.removePrefix("classes").removeSuffix(".dex").toIntOrNull() ?: Int.MAX_VALUE
-
-    private class BoundedMessageCollector : MessageCollector {
-        private val text = StringBuilder()
-        private var errors = false
-
-        override fun clear() {
-            text.clear()
-            errors = false
-        }
-
-        override fun hasErrors(): Boolean = errors
-
-        override fun report(
-            severity: CompilerMessageSeverity,
-            message: String,
-            location: CompilerMessageSourceLocation?
-        ) {
-            if (severity.isError) errors = true
-            if (text.length >= MAX_MESSAGES) return
-            val prefix = location?.let { "${it.path}:${it.line}:${it.column}: " }.orEmpty()
-            val line = "${severity.name}: $prefix$message\n"
-            val remaining = MAX_MESSAGES - text.length
-            text.append(line.take(remaining))
-        }
-
-        fun text(): String = text.toString()
-    }
 }

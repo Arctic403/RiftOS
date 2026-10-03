@@ -11,9 +11,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://jitpack.io")
     }
 }
 
 rootProject.name = "RiftOS-Android"
 include(":app")
 include(":riftpp-adapter-runtime-bundle")
+include(":rift-managed-kotlin-tool")

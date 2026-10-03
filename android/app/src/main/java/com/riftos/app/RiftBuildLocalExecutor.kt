@@ -435,7 +435,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | managed-status <project> | managed-payload <project> <id> | managed-copy <project> <id> <output> | kotlin-status | kotlin-compile <project> | riftpp-compile-hot <project> <payload-id> <source> <output> [capacity] | compile-native <project> [arm32|arm64|universal] | compile-object <project> <source.S> [arm32|arm64] | extract-object-text <project> <object.o> [arm32|arm64] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-riftpp-editor <riftpp-root> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | prepare-codynex-app <codynex-root> <source-path> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | managed-status <project> | managed-payload <project> <id> | managed-copy <project> <id> <output> | compiler-status <project> | compiler-run <project> <compiler-id> <request.json> | kotlin-status | kotlin-compile <project> | riftpp-compile-hot <project> <payload-id> <source> <output> [capacity] | compile-native <project> [arm32|arm64|universal] | compile-object <project> <source.S> [arm32|arm64] | extract-object-text <project> <object.o> [arm32|arm64] | prepare-native-app <project> | prepare-riftpp-v0 <riftpp-root> [target] | prepare-riftpp-seed0-arm64 <riftpp-root> | prepare-riftpp-app0 <riftpp-root> <app-dir> | prepare-riftpp-editor <riftpp-root> | prepare-codynex-mc0 <codynex-root> | prepare-codynex-mc1a <codynex-root> | prepare-codynex-mc1b <codynex-root> | prepare-codynex-m2-vm0 <codynex-root> | prepare-codynex-m2b <codynex-root> | prepare-codynex-mc2a <codynex-root> | prepare-codynex-editor <codynex-root> | prepare-codynex-app <codynex-root> <source-path> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -458,6 +458,16 @@ class RiftBuildLocalExecutor(context: Context) {
                 args.firstOrNull() ?: error("usage: riftbuild managed-copy <project> <id> <output>"),
                 args.getOrNull(1) ?: error("usage: riftbuild managed-copy <project> <id> <output>"),
                 args.getOrNull(2) ?: error("usage: riftbuild managed-copy <project> <id> <output>"),
+                cwd
+            )
+            "compiler-status" -> compilerStatus(
+                args.firstOrNull() ?: error("usage: riftbuild compiler-status <project>"),
+                cwd
+            )
+            "compiler-run" -> compilerRun(
+                args.firstOrNull() ?: error("usage: riftbuild compiler-run <project> <compiler-id> <request.json>"),
+                args.getOrNull(1) ?: error("usage: riftbuild compiler-run <project> <compiler-id> <request.json>"),
+                args.getOrNull(2) ?: error("usage: riftbuild compiler-run <project> <compiler-id> <request.json>"),
                 cwd
             )
             "kotlin-status" -> kotlinCompiler.status()
@@ -693,14 +703,275 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("outputSha256", sha256(output))
     }
 
+    fun compilerStatus(
+        project: String,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(ref.file.isDirectory) { "Build project is not a directory: " + ref.display }
+        return managedToolchains.compilerStatus(ref.file)
+            .put("project", ref.display)
+    }
+
+    fun compilerRun(
+        project: String,
+        compilerId: String,
+        requestPath: String,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(ref.file.isDirectory) { "Build project is not a directory: " + ref.display }
+
+        val requestFile = projectFile(ref, requestPath)
+        require(requestFile.isFile && requestFile.length() in 1..(512L * 1024L)) {
+            "Managed compiler request is missing or exceeds 512 KiB"
+        }
+        val request = JSONObject(requestFile.readText(Charsets.UTF_8))
+        return runManagedCompiler(ref, compilerId, request)
+            .put("request", projectDisplay(ref, requestFile))
+    }
+
+    private fun runManagedCompiler(
+        ref: ProjectRef,
+        compilerId: String,
+        request: JSONObject
+    ): JSONObject {
+        require(request.optString("schema") == RiftBuildManagedToolchains.COMPILER_PROTOCOL) {
+            "Managed compiler request schema is unsupported"
+        }
+
+        val compiler = managedToolchains.resolveCompiler(ref.file, compilerId)
+        val payload = resolveManagedCompilerPayload(ref, compiler)
+        val receipt = JSONObject()
+            .put("schema", "riftbuild-managed-compiler-run/1")
+            .put("project", ref.display)
+            .put("compilerId", compiler.id)
+            .put("engine", compiler.engine)
+            .put("payloadSha256", payload.second)
+            .put("protocol", compiler.protocol)
+
+        return when (compiler.engine) {
+            RiftBuildManagedToolchains.ENGINE_DEX_JSON -> {
+                val entryClass = compiler.entryClass
+                    ?: error("DEX managed compiler entry class is missing")
+                val normalized = normalizeManagedCompilerRequest(ref, request)
+                val result = RiftManagedJvmToolService.run(
+                    appContext,
+                    payload.first,
+                    payload.second,
+                    entryClass,
+                    compiler.entryMethod,
+                    normalized.toString()
+                )
+                val state = result.getString("status").orEmpty()
+                receipt.put("state", state)
+                if (state != "success") {
+                    receipt
+                        .put("errorClass", result.getString("errorClass") ?: JSONObject.NULL)
+                        .put("detail", result.getString("detail") ?: JSONObject.NULL)
+                } else {
+                    val responseText = result.getString("responseJson")
+                        ?: error("Managed JVM compiler returned no response JSON")
+                    require(responseText.toByteArray(Charsets.UTF_8).size <= 512 * 1024) {
+                        "Managed JVM compiler response exceeds 512 KiB"
+                    }
+                    val response = JSONObject(responseText)
+                    require(
+                        response.optString("schema") == "riftbuild-compiler-response/1"
+                    ) {
+                        "Managed JVM compiler response schema is unsupported"
+                    }
+                    receipt
+                        .put("state", response.optString("state", "success"))
+                        .put("response", response)
+                }
+            }
+
+            RiftBuildManagedToolchains.ENGINE_NATIVE_BUFFER -> {
+                val sourceRelative = request.optString("source").trim()
+                val outputRelative = request.optString("output").trim()
+                val capacity = request.optInt("outputCapacity", 512 * 1024)
+                require(sourceRelative.isNotBlank()) {
+                    "Native managed compiler request requires source"
+                }
+                require(
+                    outputRelative.startsWith("build/riftbuild/") &&
+                        !outputRelative.contains("\\")
+                ) {
+                    "Native managed compiler output must stay under build/riftbuild"
+                }
+                require(capacity in 1..(512 * 1024)) {
+                    "Native managed compiler output capacity is out of bounds"
+                }
+
+                val source = projectFile(ref, sourceRelative)
+                require(source.isFile && source.length() in 0..(512L * 1024L)) {
+                    "Native managed compiler source is missing or oversized"
+                }
+                val output = projectFile(ref, outputRelative)
+
+                val hostAbi = if (android.os.Process.is64Bit()) "arm64" else "arm32"
+                require(compiler.abi == "any" || compiler.abi == hostAbi) {
+                    "Managed compiler ABI mismatch: compiler=" + compiler.abi + " host=" + hostAbi
+                }
+
+                val result = RiftppDynamicCompilerService.compile(
+                    appContext,
+                    payload.first.readBytes(),
+                    source.readBytes(),
+                    capacity
+                )
+                val state = result.getString("status").orEmpty()
+                receipt
+                    .put("state", state)
+                    .put("hostStatus", result.getInt("hostStatus", -1))
+                    .put("returnValue", result.getLong("returnValue", 0xffffffffL))
+
+                if (state == "success") {
+                    val outputBytes = result.getByteArray("output")
+                        ?: error("Native managed compiler reported success without output")
+                    require(outputBytes.size == result.getLong("returnValue").toInt()) {
+                        "Native managed compiler output length drift"
+                    }
+                    val parent = output.parentFile
+                        ?: error("Native managed compiler output has no parent")
+                    require(parent.mkdirs() || parent.isDirectory) {
+                        "Could not create native managed compiler output directory"
+                    }
+                    val temp = File(parent, "." + output.name + ".tmp").canonicalFile
+                    require(confinedTo(ref.file, temp)) {
+                        "Native managed compiler temp output escaped project"
+                    }
+                    temp.outputStream().use { it.write(outputBytes) }
+                    if (output.exists()) require(output.delete()) {
+                        "Could not replace native managed compiler output"
+                    }
+                    require(temp.renameTo(output)) {
+                        "Could not commit native managed compiler output"
+                    }
+                    receipt
+                        .put("output", projectDisplay(ref, output))
+                        .put("outputBytes", outputBytes.size)
+                        .put("outputSha256", sha256(outputBytes))
+                }
+                receipt
+            }
+
+            else -> error("Unsupported managed compiler engine: " + compiler.engine)
+        }
+    }
+
+    private fun normalizeManagedCompilerRequest(
+        ref: ProjectRef,
+        request: JSONObject
+    ): JSONObject {
+        val normalized = JSONObject(request.toString())
+        normalized.put("projectRoot", ref.file.absolutePath)
+
+        request.optJSONArray("sources")?.let { sources ->
+            require(sources.length() in 1..64) {
+                "Managed compiler source count is out of bounds"
+            }
+            var total = 0L
+            for (index in 0 until sources.length()) {
+                val relative = sources.getString(index).trim()
+                require(relative.isNotBlank() && !relative.startsWith("/") && !relative.contains("\\")) {
+                    "Managed compiler source path is invalid"
+                }
+                val file = projectFile(ref, relative)
+                require(file.isFile) { "Managed compiler source is missing: " + relative }
+                total += file.length()
+                require(total <= 8L * 1024L * 1024L) {
+                    "Managed compiler total source bytes exceed 8 MiB"
+                }
+            }
+        }
+
+        val outputDir = request.optString("outputDir").trim()
+        if (outputDir.isNotBlank()) {
+            require(outputDir.startsWith("build/riftbuild/") && !outputDir.contains("\\")) {
+                "Managed compiler outputDir must stay under build/riftbuild"
+            }
+            val output = projectFile(ref, outputDir)
+            require(output.mkdirs() || output.isDirectory) {
+                "Could not create managed compiler outputDir"
+            }
+        }
+        return normalized
+    }
+
+    private fun resolveManagedCompilerPayload(
+        ref: ProjectRef,
+        compiler: RiftBuildManagedToolchains.Compiler
+    ): Pair<File, String> {
+        compiler.payloadId?.let { payloadId ->
+            val payload = managedToolchains.resolve(ref.file, payloadId)
+            return payload.file to payload.sha256
+        }
+
+        val asset = compiler.bundledAsset
+            ?: error("Managed compiler payload source is missing")
+        val root = File(riftRoot, "system/toolchains/rift-managed-compilers")
+            .apply { mkdirs() }
+            .canonicalFile
+        require(root.isDirectory) { "Managed compiler cache root is unavailable" }
+
+        val target = File(root, asset.substringAfterLast('/')).canonicalFile
+        require(target.toPath().startsWith(root.toPath())) {
+            "Managed compiler bundled target escaped cache root"
+        }
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        val temp = File(root, "." + target.name + ".tmp").canonicalFile
+        var total = 0L
+        appContext.assets.open(asset).buffered().use { input ->
+            temp.outputStream().buffered().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count == 0) continue
+                    total += count
+                    require(total <= 128L * 1024L * 1024L) {
+                        "Managed compiler bundled payload exceeds 128 MiB"
+                    }
+                    digest.update(buffer, 0, count)
+                    output.write(buffer, 0, count)
+                }
+            }
+        }
+        require(total > 0) { "Managed compiler bundled payload is empty" }
+        val expected = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        if (
+            !target.isFile ||
+            target.length() != temp.length() ||
+            sha256(target) != expected
+        ) {
+            if (target.exists()) require(target.delete()) {
+                "Could not replace managed compiler cached payload"
+            }
+            require(temp.renameTo(target)) {
+                "Could not commit managed compiler cached payload"
+            }
+        } else {
+            require(temp.delete()) { "Could not remove redundant managed compiler temp payload" }
+        }
+        require(sha256(target) == expected) {
+            "Managed compiler cached payload identity mismatch"
+        }
+        return target to expected
+    }
+
     fun kotlinCompile(
         project: String,
         cwd: String = "/D:/Workspace"
     ): JSONObject {
         val ref = resolveProject(project, cwd)
         require(ref.file.isDirectory) { "Build project is not a directory: " + ref.display }
-        return kotlinCompiler.compile(ref.file)
-            .put("project", ref.display)
+        return kotlinCompiler.compile(ref.file) { compilerId, request ->
+            runManagedCompiler(ref, compilerId, request)
+        }.put("project", ref.display)
     }
 
     fun riftppCompileHot(

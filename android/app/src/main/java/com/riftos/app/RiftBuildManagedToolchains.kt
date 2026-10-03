@@ -6,10 +6,10 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * Project-owned hot-swappable payload resolver.
+ * Project-owned hot-swappable payload and compiler resolver.
  *
- * RiftOS validates paths, bounds, and exact hashes only. It never interprets compiler/runtime
- * semantics. Adding a new VM/compiler/runtime later requires only a project manifest edit.
+ * RiftOS validates paths, bounds, identities and a small execution-engine contract only. Compiler
+ * semantics remain owned by the project payload/adapter.
  */
 class RiftBuildManagedToolchains(private val workspaceRoot: File) {
     data class Payload(
@@ -21,14 +21,33 @@ class RiftBuildManagedToolchains(private val workspaceRoot: File) {
         val bytes: Long
     )
 
+    data class Compiler(
+        val id: String,
+        val engine: String,
+        val payloadId: String?,
+        val bundledAsset: String?,
+        val abi: String,
+        val entryClass: String?,
+        val entryMethod: String,
+        val protocol: String
+    )
+
     companion object {
         const val MANIFEST = "riftbuild-hot.json"
         const val SCHEMA = "riftbuild-managed-payloads/1"
+        const val COMPILER_PROTOCOL = "riftbuild-compiler-json/1"
+        const val ENGINE_NATIVE_BUFFER = "native-buffer-v1"
+        const val ENGINE_DEX_JSON = "dex-json-v1"
+
         private const val MAX_PAYLOADS = 64
-        private const val MAX_PAYLOAD_BYTES = 16L * 1024L * 1024L
+        private const val MAX_COMPILERS = 32
+        private const val MAX_PAYLOAD_BYTES = 128L * 1024L * 1024L
         private val SAFE_ID = Regex("^[A-Za-z0-9._+-]{1,80}$")
         private val SAFE_KIND = Regex("^[A-Za-z0-9._+-]{1,80}$")
         private val SAFE_ABI = Regex("^[A-Za-z0-9._+-]{1,40}$")
+        private val SAFE_CLASS = Regex("^[A-Za-z_$][A-Za-z0-9_$.]{0,199}$")
+        private val SAFE_METHOD = Regex("^[A-Za-z_$][A-Za-z0-9_$]{0,79}$")
+        private val SAFE_ASSET = Regex("^riftbuild/compiler-seeds/[A-Za-z0-9._+-]{1,120}\\.apk$")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
     }
 
@@ -62,6 +81,9 @@ class RiftBuildManagedToolchains(private val workspaceRoot: File) {
             rows.put(row)
         }
 
+        val compilers = compilerStatus(project, manifest)
+        if (!compilers.optBoolean("ready", true)) ready = false
+
         return JSONObject()
             .put("schema", "riftbuild-managed-payload-status/1")
             .put("manifestSchema", SCHEMA)
@@ -69,7 +91,15 @@ class RiftBuildManagedToolchains(private val workspaceRoot: File) {
             .put("manifest", MANIFEST)
             .put("payloadCount", rows.length())
             .put("payloads", rows)
+            .put("compilerCount", compilers.getInt("compilerCount"))
+            .put("compilers", compilers.getJSONArray("compilers"))
             .put("ready", ready)
+    }
+
+    fun compilerStatus(projectRoot: File): JSONObject {
+        val project = checkedProject(projectRoot)
+        return compilerStatus(project, readManifest(project))
+            .put("project", project.absolutePath)
     }
 
     fun describe(projectRoot: File, id: String): JSONObject {
@@ -120,6 +150,100 @@ class RiftBuildManagedToolchains(private val workspaceRoot: File) {
         }
 
         return Payload(id, kind, abi, file, actualSha, file.length())
+    }
+
+    fun resolveCompiler(projectRoot: File, id: String): Compiler {
+        require(id.matches(SAFE_ID)) { "Managed compiler id is invalid" }
+        val project = checkedProject(projectRoot)
+        val manifest = readManifest(project)
+        val compilers = manifest.optJSONObject("compilers")
+            ?: error("Managed compiler registry is missing")
+        require(compilers.length() <= MAX_COMPILERS) { "Managed compiler count exceeds limit" }
+        require(compilers.has(id)) { "Managed compiler is not declared: $id" }
+
+        val spec = compilers.getJSONObject(id)
+        val engine = spec.optString("engine").trim()
+        val payloadId = spec.optString("payload").trim().ifBlank { null }
+        val bundledAsset = spec.optString("bundledAsset").trim().ifBlank { null }
+        val abi = spec.optString("abi", "any").trim()
+        val entryClass = spec.optString("entryClass").trim().ifBlank { null }
+        val entryMethod = spec.optString("entryMethod", "run").trim()
+        val protocol = spec.optString("protocol", COMPILER_PROTOCOL).trim()
+
+        require(engine in setOf(ENGINE_NATIVE_BUFFER, ENGINE_DEX_JSON)) {
+            "Managed compiler engine is unsupported: $engine"
+        }
+        require((payloadId == null) != (bundledAsset == null)) {
+            "Managed compiler requires exactly one of payload or bundledAsset: $id"
+        }
+        payloadId?.let {
+            require(it.matches(SAFE_ID)) { "Managed compiler payload id is invalid: $id" }
+        }
+        bundledAsset?.let {
+            require(it.matches(SAFE_ASSET)) { "Managed compiler bundled asset is invalid: $id" }
+        }
+        require(abi.matches(SAFE_ABI)) { "Managed compiler ABI is invalid: $id" }
+        require(protocol == COMPILER_PROTOCOL) { "Managed compiler protocol is unsupported: $id" }
+        require(entryMethod.matches(SAFE_METHOD)) { "Managed compiler entry method is invalid: $id" }
+
+        if (engine == ENGINE_DEX_JSON) {
+            require(entryClass != null && entryClass.matches(SAFE_CLASS)) {
+                "DEX managed compiler requires a valid entryClass: $id"
+            }
+        } else {
+            require(entryClass == null) {
+                "Native managed compiler must not declare entryClass: $id"
+            }
+            require(payloadId != null) {
+                "Native managed compiler requires a project payload: $id"
+            }
+        }
+
+        return Compiler(
+            id = id,
+            engine = engine,
+            payloadId = payloadId,
+            bundledAsset = bundledAsset,
+            abi = abi,
+            entryClass = entryClass,
+            entryMethod = entryMethod,
+            protocol = protocol
+        )
+    }
+
+    private fun compilerStatus(project: File, manifest: JSONObject): JSONObject {
+        val compilers = manifest.optJSONObject("compilers") ?: JSONObject()
+        require(compilers.length() <= MAX_COMPILERS) { "Managed compiler count exceeds limit" }
+        val rows = JSONArray()
+        var ready = true
+        for (id in compilers.keys().asSequence().toList().sorted()) {
+            val row = runCatching {
+                val compiler = resolveCompiler(project, id)
+                if (compiler.payloadId != null) resolve(project, compiler.payloadId)
+                JSONObject()
+                    .put("id", compiler.id)
+                    .put("engine", compiler.engine)
+                    .put("payload", compiler.payloadId ?: JSONObject.NULL)
+                    .put("bundledAsset", compiler.bundledAsset ?: JSONObject.NULL)
+                    .put("abi", compiler.abi)
+                    .put("entryClass", compiler.entryClass ?: JSONObject.NULL)
+                    .put("entryMethod", compiler.entryMethod)
+                    .put("protocol", compiler.protocol)
+                    .put("ready", true)
+            }.getOrElse { error ->
+                ready = false
+                JSONObject()
+                    .put("id", id)
+                    .put("ready", false)
+                    .put("error", error.message ?: error.javaClass.simpleName)
+            }
+            rows.put(row)
+        }
+        return JSONObject()
+            .put("schema", "riftbuild-managed-compiler-status/1")
+            .put("compilerCount", rows.length())
+            .put("compilers", rows)
+            .put("ready", ready)
     }
 
     private fun checkedProject(projectRoot: File): File {

@@ -32,8 +32,11 @@ const riftppCompilerService = read('android/app/src/main/java/com/riftos/app/Rif
 const riftppCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_compiler_host.cpp');
 const riftppDynamicCompilerService = read('android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt');
 const riftppDynamicCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_dynamic_compiler_host.cpp');
+const managedJvmToolService = read('android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt');
 const managedToolchains = read('android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt');
 const kotlinCompiler = read('android/app/src/main/java/com/riftos/app/RiftBuildKotlinCompiler.kt');
+const managedKotlinTool = read('android/rift-managed-kotlin-tool/src/main/java/com/riftbuild/tools/kotlinc/KotlinCompilerTool.kt');
+const managedKotlinToolGradle = read('android/rift-managed-kotlin-tool/build.gradle.kts');
 const riftAppDiagnosticBridge = read('android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt');
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');
 const gradle = read('android/app/build.gradle.kts');
@@ -559,19 +562,48 @@ for (const required of [
   'riftbuild-managed-payloads/1',
   'Managed payload SHA-256 mismatch',
   'MAX_PAYLOADS = 64',
-]) assert.ok(managedToolchains.includes(required), 'managed payload contract missing: ' + required);
-assert.ok(nativeBuild.includes('"managed-copy" -> managedCopy('), 'generic managed payload materialization command must stay exposed');
+  'COMPILER_PROTOCOL = "riftbuild-compiler-json/1"',
+  'ENGINE_NATIVE_BUFFER = "native-buffer-v1"',
+  'ENGINE_DEX_JSON = "dex-json-v1"',
+  'resolveCompiler',
+]) assert.ok(managedToolchains.includes(required), 'managed payload/compiler contract missing: ' + required);
+for (const required of [
+  '"managed-copy" -> managedCopy(',
+  '"compiler-status" -> compilerStatus(',
+  '"compiler-run" -> compilerRun(',
+]) assert.ok(nativeBuild.includes(required), 'generic managed compiler command missing: ' + required);
 
 for (const required of [
   'class RiftBuildKotlinCompiler',
   'riftbuild-kotlin-project/1',
-  'K2JVMCompiler',
+  'compilerAuthority',
+  'managed-external',
+  'compilerInvoker',
   'D8Command',
   'OutputMode.DexIndexed',
   'build/riftbuild/hot-dex',
   'kotlin-stdlib.jar',
   'android.jar',
 ]) assert.ok(kotlinCompiler.includes(required), 'Kotlin hot compiler contract missing: ' + required);
+assert.ok(!kotlinCompiler.includes('K2JVMCompiler'), 'RiftOS Kotlin wrapper must not embed compiler implementation authority');
+
+for (const required of [
+  'class RiftManagedJvmToolService',
+  'DexClassLoader',
+  'rift-managed-jvm',
+  'public static String run(String requestJson)',
+  'applicationContext.classLoader.parent',
+  'Process.killProcess(remotePid)',
+]) assert.ok(managedJvmToolService.includes(required), 'managed JVM tool host contract missing: ' + required);
+
+for (const required of [
+  'object KotlinCompilerTool',
+  '@JvmStatic',
+  'riftbuild-compiler-json/1',
+  'riftbuild-compiler-response/1',
+  'K2JVMCompiler',
+]) assert.ok(managedKotlinTool.includes(required), 'managed Kotlin compiler payload contract missing: ' + required);
+assert.ok(managedKotlinToolGradle.includes('com.github.PranavPurwar:kotlinc-android:2.4.0'), 'managed Kotlin payload must pin Android compiler port');
 
 for (const required of [
   'class RiftppDynamicCompilerService',
@@ -594,15 +626,22 @@ assert.ok(riftppCompilerHost.includes('Java_com_riftos_app_RiftppCompilerService
 assert.ok(!riftppCompilerService.includes('RiftppDynamicCompilerService'), 'legacy compiler service must not absorb hot compiler authority');
 assert.ok(cmake.includes('riftpp_dynamic_compiler_host'), 'dynamic Rift++ compiler host target must stay separate');
 assert.ok(manifest.includes('.RiftppDynamicCompilerService'), 'dynamic Rift++ compiler service must stay crash-contained in the manifest');
-assert.ok(androidSettings.includes('include(\":riftpp-adapter-runtime-bundle\")'), 'Rift++ adapter bundle module must stay included');
+assert.ok(manifest.includes('.RiftManagedJvmToolService'), 'generic managed JVM tool service must stay declared');
+assert.ok(manifest.includes(':riftJvmToolHot'), 'generic managed JVM tool service must stay process-isolated');
+assert.ok(androidSettings.includes('include(":riftpp-adapter-runtime-bundle")'), 'Rift++ adapter bundle module must stay included');
+assert.ok(androidSettings.includes('include(":rift-managed-kotlin-tool")'), 'managed Kotlin compiler payload module must stay included');
+assert.ok(androidSettings.includes('https://jitpack.io'), 'managed compiler payload repository must stay available');
 assert.ok(gradle.includes('syncRiftBuildRiftppAdapterRuntime'), 'legacy Rift++ adapter DEX sync task must remain available as fallback');
 assert.ok(!gradle.includes('dependsOn(syncRiftBuildRiftppAdapterRuntime)'), 'legacy Rift++ adapter DEX sync must not remain active preBuild authority');
 assert.ok(gradle.includes('generated/riftosAssets/riftbuild/managed-runtimes/riftpp-adapter-v1'), 'legacy Rift++ adapter generated runtime path must stay pinned');
 assert.ok(gradle.includes('syncRiftBuildKotlinToolchain'), 'RiftBuild Kotlin toolchain asset sync must be wired');
 assert.ok(gradle.includes('dependsOn(syncRiftBuildKotlinToolchain)'), 'RiftBuild Kotlin toolchain must be active preBuild infrastructure');
-assert.ok(gradle.includes('kotlin-compiler-embeddable:2.4.10'), 'RiftBuild Kotlin compiler version must stay pinned');
+assert.ok(gradle.includes('syncRiftBuildCompilerSeeds'), 'managed compiler seed sync must stay wired');
+assert.ok(gradle.includes('dependsOn(syncRiftBuildCompilerSeeds)'), 'managed compiler seeds must be active preBuild infrastructure');
+assert.ok(gradle.includes('kotlin-android-2.4.0.apk'), 'managed Kotlin compiler seed asset name must stay pinned');
+assert.ok(!gradle.includes('kotlin-compiler-embeddable:2.4.10'), 'RiftOS app must not embed the desktop Kotlin compiler implementation');
 assert.ok(gradle.includes('com.android.tools:r8:8.13.23'), 'RiftBuild D8/R8 engine version must stay pinned');
-assert.ok(riftppAdapterBundleGradle.includes('namespace = \"com.riftpp.android\"'), 'Rift++ adapter namespace must stay fixed');
+assert.ok(riftppAdapterBundleGradle.includes('namespace = "com.riftpp.android"'), 'Rift++ adapter namespace must stay fixed');
 for (const required of [
   'class RiftppActivity : Activity(), SurfaceHolder.Callback',
   'System.loadLibrary(library)',
