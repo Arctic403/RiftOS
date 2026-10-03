@@ -74,6 +74,7 @@ android {
 val riftBuildKotlinCompileClasspath by configurations.creating {
     isCanBeConsumed = false
     isCanBeResolved = true
+    isTransitive = false
 }
 
 val riftBuildAndroidSdkDirectory = androidComponents.sdkComponents.sdkDirectory
