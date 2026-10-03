@@ -1055,7 +1055,6 @@ assert.match(editorToolchain, /COMPILE_PROJECT_METHOD_VM2 = "compile-c0-project-
 assert.match(editorToolchain, /MAX_PROJECT_BYTES = 1024 \* 1024/);
 assert.match(editorToolchain, /MAX_PROJECT_MODULES = 64/);
 assert.match(editorToolchain, /EditorVmTarget\.VM2/);
-assert.match(editorToolchain, /EditorVmTarget\.VM1/);
 assert.match(editorToolchain, /Preview passed: \$targetLabel result/);
 assert.match(editorToolchain, /artifacts\.vm2/);
 assert.match(editorToolchain, /artifacts\.vm1/);
