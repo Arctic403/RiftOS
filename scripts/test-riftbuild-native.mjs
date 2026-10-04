@@ -463,10 +463,10 @@ for (const retiredTarget of [
 ]) {
   assert.ok(!cmake.includes(retiredTarget), 'retired Codynex CMake target resurfaced: ' + retiredTarget);
 }
-assert.match(nativeBuild, /RIFTPP_EDITOR_PACKAGE = "com\.riftpp\.editor"/);
-assert.match(nativeBuild, /RIFTPP_EDITOR_LIBRARY_NAME = "riftpp_editor_bridge"/);
-assert.match(nativeBuild, /RIFTPP_EDITOR_BRIDGE_SERVICE/);
-assert.match(nativeBuild, /buildRiftppEditorBinaryManifest[\s\S]*?"service"/);
+assert.match(riftAppDiagnosticBridge, /RIFTPP_EDITOR_PACKAGE = "com\.riftpp\.editor"/);
+assert.match(riftppEditorApkBuilder, /libriftpp_editor_bridge\.so/);
+assert.match(riftppEditorBridgeService, /class RiftppEditorBridgeService : Service\(\)/);
+assert.match(riftppEditorApkBuilder, /private fun buildBinaryManifest\(/);
 assert.match(shell, /"riftpp-editor" -> executeRiftppEditorCommand/);
 assert.match(shell, /riftpp-editor build-debug/);
 assert.match(shell, /riftpp-editor native-compile/);
