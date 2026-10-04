@@ -17,7 +17,7 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 /**
- * Bounded development bridge for the legacy Rift++ editor.
+ * Bounded development bridge for the Rift++ editor.
  *
  * Authority boundary:
  * - every project path is resolved by RiftppWorkspace under filesDir/projects/default;
@@ -943,12 +943,12 @@ class RiftppEditorBridgeService : Service() {
         val packageName =
             request.optString(
                 "package",
-                "com.riftpp.editor.nativev1.debug"
+                "com.riftpp.app.debug"
             )
         val libraryName =
             request.optString(
                 "library",
-                "riftpp_editor_native_r1"
+                "riftpp_app"
             )
 
         require(

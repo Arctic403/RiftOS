@@ -116,9 +116,12 @@ Bounds:
 - aggregate run scripts <=8 MiB;
 - <=64 scripts per run;
 - captured output <=256 KiB;
-- QuickJS evaluation timeout 30 seconds (the outer native shell deadline remains 60 seconds).
+- QuickJS evaluation timeout 30 seconds;
+- direct/synchronous native shell commands have a 10-minute hard ceiling;
+- MCP `rift_shell_exec` auto-submits known long RiftBuild operations to the persistent native shell-job lane instead of holding the request open;
+- the shell-job lane is bounded to 16 retained/running jobs, 10-minute terminal-result retention, and 2 MiB retained result data per job.
 
-There is no live generic batch command.
+Job control stays on the same MCP tool through `submit`, `status`, `result`, `cancel`, and `list`. Cancellation interrupts the native shell job and managed JVM compiler process. There is no live generic batch command.
 
 ## RiftFS boundary
 

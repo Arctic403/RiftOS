@@ -2,6 +2,9 @@ package com.riftpp.editor
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
@@ -20,13 +23,11 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * TEMPORARY ANDROID/KOTLIN BOOTSTRAP ONLY.
+ * Android/Kotlin host for the Rift++ editor.
  *
- * Kotlin owns Android widgets, bounded project-file transport, generic RUI2
- * rendering and temporary APK packaging/signing. It does not parse Rift++
- * source or implement application semantics.
- *
- * Native Rift++ replaces this shell before S4 promotion.
+ * Kotlin owns Android lifecycle, widgets, IME/platform transport and packaging
+ * glue. Rift++ owns language/runtime semantics, rendering and product-facing UI
+ * behavior across the narrow host boundary.
  */
 class MainActivity : Activity() {
     private lateinit var pipeline: RiftppPipeline
@@ -53,6 +54,16 @@ class MainActivity : Activity() {
     private var dirty = false
     private var rendering = false
     private var fullScreen = false
+    private var projectPanelVisible = false
+
+    private val uiBackground = Color.rgb(18, 18, 20)
+    private val uiSurface = Color.rgb(27, 28, 31)
+    private val uiSurfaceRaised = Color.rgb(36, 38, 42)
+    private val uiBorder = Color.rgb(58, 61, 67)
+    private val uiText = Color.rgb(232, 234, 238)
+    private val uiMuted = Color.rgb(151, 156, 166)
+    private val uiAccent = Color.rgb(241, 137, 46)
+    private val uiAccentSoft = Color.rgb(74, 48, 28)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -232,54 +243,123 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
+        window.statusBarColor = uiBackground
+        window.navigationBarColor = uiBackground
+
         headerContainer =
             LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.VERTICAL
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(
+                    dp(12),
+                    dp(8),
+                    dp(8),
+                    dp(8)
+                )
+                background =
+                    roundedBackground(
+                        uiSurface,
+                        uiBorder,
+                        0
+                    )
 
                 addView(
-                    TextView(
+                    LinearLayout(
                         this@MainActivity
                     ).apply {
-                        text =
-                            "Rift++ Editor • Project v1"
-                        textSize = 23f
-                        setPadding(
-                            16,
-                            10,
-                            16,
-                            2
+                        orientation = LinearLayout.VERTICAL
+
+                        addView(
+                            TextView(
+                                this@MainActivity
+                            ).apply {
+                                text = "RIFT++"
+                                textSize = 18f
+                                typeface =
+                                    Typeface.create(
+                                        Typeface.DEFAULT,
+                                        Typeface.BOLD
+                                    )
+                                setTextColor(uiText)
+                            }
+                        )
+
+                        addView(
+                            TextView(
+                                this@MainActivity
+                            ).apply {
+                                text = "default"
+                                textSize = 11f
+                                setTextColor(uiMuted)
+                            }
+                        )
+                    },
+                    LinearLayout.LayoutParams(
+                        0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        1f
+                    )
+                )
+
+                addView(
+                    actionButton(
+                        "Files"
+                    ) {
+                        projectPanelVisible =
+                            !projectPanelVisible
+                        projectContainer.visibility =
+                            if (
+                                projectPanelVisible &&
+                                !fullScreen
+                            ) {
+                                View.VISIBLE
+                            } else {
+                                View.GONE
+                            }
+                    },
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        dp(40)
+                    ).apply {
+                        setMargins(
+                            0,
+                            0,
+                            dp(6),
+                            0
                         )
                     }
                 )
 
-                addView(
-                    TextView(
-                        this@MainActivity
-                    ).apply {
-                        text =
-                            "TEMP Kotlin shell • Rift++ owns language/runtime semantics"
-                        textSize = 12f
-                        setPadding(
-                            16,
-                            0,
-                            16,
-                            6
-                        )
+                fullButton =
+                    actionButton(
+                        "Focus"
+                    ) {
+                        toggleFullScreen()
                     }
+
+                addView(
+                    fullButton,
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        dp(40)
+                    )
                 )
             }
 
         statusView =
             TextView(this).apply {
-                text = "Starting..."
+                text = "Ready"
+                textSize = 11f
+                setTextColor(uiMuted)
                 setPadding(
-                    16,
-                    6,
-                    16,
-                    8
+                    dp(12),
+                    dp(6),
+                    dp(12),
+                    dp(6)
                 )
+                maxLines = 2
                 setTextIsSelectable(true)
+                setBackgroundColor(uiSurface)
             }
 
         projectAdapter =
@@ -292,10 +372,11 @@ class MainActivity : Activity() {
 
         projectList =
             ListView(this).apply {
-                adapter =
-                    projectAdapter
+                adapter = projectAdapter
                 choiceMode =
                     ListView.CHOICE_MODE_SINGLE
+                dividerHeight = 0
+                setBackgroundColor(uiSurface)
 
                 onItemClickListener =
                     android.widget.AdapterView
@@ -314,9 +395,7 @@ class MainActivity : Activity() {
                             selectedPath =
                                 entry.relativePath
 
-                            if (
-                                !entry.directory
-                            ) {
+                            if (!entry.directory) {
                                 runCatching {
                                     saveIfDirty()
                                     openDocument(
@@ -325,9 +404,7 @@ class MainActivity : Activity() {
                                 }.onFailure {
                                     renderStatus(
                                         "Open failed: " +
-                                            errorText(
-                                                it
-                                            )
+                                            errorText(it)
                                     )
                                 }
                             } else {
@@ -339,29 +416,26 @@ class MainActivity : Activity() {
                         }
             }
 
-        val projectActions1 =
+        val projectActions =
             LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.HORIZONTAL
+                orientation = LinearLayout.HORIZONTAL
 
                 addView(
                     actionButton(
-                        "New File"
+                        "+ File"
                     ) {
                         promptNewFile()
                     },
                     weightedButtonParams()
                 )
-
                 addView(
                     actionButton(
-                        "New Folder"
+                        "+ Folder"
                     ) {
                         promptNewFolder()
                     },
                     weightedButtonParams()
                 )
-
                 addView(
                     actionButton(
                         "Rename"
@@ -370,7 +444,6 @@ class MainActivity : Activity() {
                     },
                     weightedButtonParams()
                 )
-
                 addView(
                     actionButton(
                         "Delete"
@@ -379,13 +452,6 @@ class MainActivity : Activity() {
                     },
                     weightedButtonParams()
                 )
-            }
-
-        val projectActions2 =
-            LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.HORIZONTAL
-
                 addView(
                     actionButton(
                         "Set Entry"
@@ -394,7 +460,6 @@ class MainActivity : Activity() {
                     },
                     weightedButtonParams()
                 )
-
                 addView(
                     actionButton(
                         "Add Source"
@@ -403,7 +468,6 @@ class MainActivity : Activity() {
                     },
                     weightedButtonParams()
                 )
-
                 addView(
                     actionButton(
                         "Refresh"
@@ -417,9 +481,7 @@ class MainActivity : Activity() {
                         }.onFailure {
                             renderStatus(
                                 "Refresh failed: " +
-                                    errorText(
-                                        it
-                                    )
+                                    errorText(it)
                             )
                         }
                     },
@@ -429,20 +491,59 @@ class MainActivity : Activity() {
 
         projectContainer =
             LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.VERTICAL
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+                setPadding(
+                    dp(8),
+                    dp(8),
+                    dp(8),
+                    dp(8)
+                )
+                background =
+                    roundedBackground(
+                        uiSurface,
+                        uiBorder,
+                        0
+                    )
 
                 addView(
-                    TextView(
+                    LinearLayout(
                         this@MainActivity
                     ).apply {
-                        text =
-                            "Project Filesystem"
-                        setPadding(
-                            16,
-                            4,
-                            16,
-                            2
+                        orientation =
+                            LinearLayout.HORIZONTAL
+                        gravity =
+                            Gravity.CENTER_VERTICAL
+
+                        addView(
+                            TextView(
+                                this@MainActivity
+                            ).apply {
+                                text = "EXPLORER"
+                                textSize = 12f
+                                typeface =
+                                    Typeface.create(
+                                        Typeface.DEFAULT,
+                                        Typeface.BOLD
+                                    )
+                                setTextColor(uiText)
+                            },
+                            LinearLayout.LayoutParams(
+                                0,
+                                ViewGroup.LayoutParams
+                                    .WRAP_CONTENT,
+                                1f
+                            )
+                        )
+
+                        addView(
+                            TextView(
+                                this@MainActivity
+                            ).apply {
+                                text = "projects/default"
+                                textSize = 10f
+                                setTextColor(uiMuted)
+                            }
                         )
                     }
                 )
@@ -452,16 +553,13 @@ class MainActivity : Activity() {
                     LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams
                             .MATCH_PARENT,
-                        dp(220)
-                    )
-                )
-
-                addView(
-                    HorizontalScrollView(
-                        this@MainActivity
+                        dp(190)
                     ).apply {
-                        addView(
-                            projectActions1
+                        setMargins(
+                            0,
+                            dp(6),
+                            0,
+                            dp(6)
                         )
                     }
                 )
@@ -470,26 +568,29 @@ class MainActivity : Activity() {
                     HorizontalScrollView(
                         this@MainActivity
                     ).apply {
-                        addView(
-                            projectActions2
-                        )
+                        isHorizontalScrollBarEnabled =
+                            false
+                        addView(projectActions)
                     }
                 )
             }
 
         tabsContainer =
             LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.HORIZONTAL
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(
+                    dp(6),
+                    dp(4),
+                    dp(6),
+                    dp(4)
+                )
             }
 
         val tabScroll =
             HorizontalScrollView(this).apply {
-                isHorizontalScrollBarEnabled =
-                    true
-                addView(
-                    tabsContainer
-                )
+                isHorizontalScrollBarEnabled = false
+                setBackgroundColor(uiSurface)
+                addView(tabsContainer)
             }
 
         editorView =
@@ -505,11 +606,20 @@ class MainActivity : Activity() {
                             .TYPE_TEXT_FLAG_NO_SUGGESTIONS
                 setHorizontallyScrolling(true)
                 minLines = 12
+                textSize = 14f
+                typeface =
+                    Typeface.create(
+                        Typeface.MONOSPACE,
+                        Typeface.NORMAL
+                    )
+                setTextColor(uiText)
+                setHintTextColor(uiMuted)
+                setBackgroundColor(uiBackground)
                 setPadding(
-                    16,
-                    12,
-                    16,
-                    12
+                    dp(14),
+                    dp(12),
+                    dp(14),
+                    dp(12)
                 )
 
                 addTextChangedListener(
@@ -544,8 +654,13 @@ class MainActivity : Activity() {
 
         val actionRow =
             LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.HORIZONTAL
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(
+                    dp(6),
+                    dp(5),
+                    dp(6),
+                    dp(5)
+                )
 
                 addView(
                     actionButton(
@@ -570,14 +685,15 @@ class MainActivity : Activity() {
                 )
                 addView(
                     actionButton(
-                        "Close Tab"
+                        "Close"
                     ) {
                         closeActiveTab()
                     }
                 )
                 addView(
                     actionButton(
-                        "Compile"
+                        "Compile",
+                        primary = true
                     ) {
                         compileProject()
                     }
@@ -605,48 +721,22 @@ class MainActivity : Activity() {
                         packStandaloneApk()
                     }
                 )
-
-                fullButton =
-                    actionButton(
-                        "Full"
-                    ) {
-                        toggleFullScreen()
-                    }
-
-                addView(
-                    fullButton
-                )
             }
 
         val actionScroll =
             HorizontalScrollView(this).apply {
-                isHorizontalScrollBarEnabled =
-                    true
-                addView(
-                    actionRow
-                )
+                isHorizontalScrollBarEnabled = false
+                setBackgroundColor(uiSurface)
+                addView(actionRow)
             }
 
-        val root =
+        val editorShell =
             LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.VERTICAL
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(uiBackground)
 
-                addView(
-                    headerContainer
-                )
-                addView(
-                    statusView
-                )
-                addView(
-                    projectContainer
-                )
-                addView(
-                    tabScroll
-                )
-                addView(
-                    actionScroll
-                )
+                addView(tabScroll)
+                addView(actionScroll)
                 addView(
                     editorView,
                     LinearLayout.LayoutParams(
@@ -658,27 +748,99 @@ class MainActivity : Activity() {
                 )
             }
 
+        val root =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(uiBackground)
+
+                addView(headerContainer)
+                addView(projectContainer)
+                addView(
+                    editorShell,
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams
+                            .MATCH_PARENT,
+                        0,
+                        1f
+                    )
+                )
+                addView(statusView)
+            }
+
         setContentView(root)
     }
 
     private fun actionButton(
         label: String,
+        primary: Boolean = false,
         action: () -> Unit
     ): Button =
         Button(this).apply {
             text = label
+            isAllCaps = false
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setTextColor(
+                if (primary) Color.BLACK else uiText
+            )
+            minHeight = 0
+            minimumHeight = 0
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(
+                dp(12),
+                dp(7),
+                dp(12),
+                dp(7)
+            )
+            background =
+                roundedBackground(
+                    if (primary) uiAccent else uiSurfaceRaised,
+                    if (primary) uiAccent else uiBorder,
+                    7
+                )
+            layoutParams =
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    dp(40)
+                ).apply {
+                    setMargins(
+                        0,
+                        0,
+                        dp(6),
+                        0
+                    )
+                }
             setOnClickListener {
                 action()
             }
         }
 
+    private fun roundedBackground(
+        fillColor: Int,
+        strokeColor: Int = fillColor,
+        radiusDp: Int = 8
+    ): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(fillColor)
+            setStroke(dp(1), strokeColor)
+            cornerRadius = dp(radiusDp).toFloat()
+        }
+
     private fun weightedButtonParams():
         LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(
-            dp(150),
-            ViewGroup.LayoutParams
-                .WRAP_CONTENT
-        )
+            dp(118),
+            dp(42)
+        ).apply {
+            setMargins(
+                0,
+                0,
+                dp(6),
+                0
+            )
+        }
 
     private fun refreshProjectTree() {
         projectEntries =
@@ -851,49 +1013,74 @@ class MainActivity : Activity() {
             .removeAllViews()
 
         openTabs.forEach { path ->
+            val active =
+                ::activePath.isInitialized &&
+                    activePath == path
+
             tabsContainer.addView(
-                Button(this).apply {
+                TextView(this).apply {
                     text =
                         buildString {
-                            if (
-                                ::activePath
-                                    .isInitialized &&
-                                activePath ==
-                                    path
-                            ) {
-                                append("[")
-                            }
-
                             append(
                                 File(path)
                                     .name
                             )
 
-                            if (
-                                ::activePath
-                                    .isInitialized &&
-                                activePath ==
-                                    path &&
-                                dirty
-                            ) {
-                                append("*")
-                            }
-
-                            if (
-                                ::activePath
-                                    .isInitialized &&
-                                activePath ==
-                                    path
-                            ) {
-                                append("]")
+                            if (active && dirty) {
+                                append("  •")
                             }
                         }
-
-                    isAllCaps = false
-
+                    textSize = 12f
+                    typeface =
+                        Typeface.create(
+                            Typeface.DEFAULT,
+                            if (active) {
+                                Typeface.BOLD
+                            } else {
+                                Typeface.NORMAL
+                            }
+                        )
+                    setTextColor(
+                        if (active) {
+                            uiText
+                        } else {
+                            uiMuted
+                        }
+                    )
+                    setPadding(
+                        dp(14),
+                        dp(8),
+                        dp(14),
+                        dp(8)
+                    )
+                    background =
+                        roundedBackground(
+                            if (active) {
+                                uiAccentSoft
+                            } else {
+                                uiSurface
+                            },
+                            if (active) {
+                                uiAccent
+                            } else {
+                                uiSurface
+                            },
+                            6
+                        )
                     setOnClickListener {
                         switchTab(path)
                     }
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(
+                        0,
+                        0,
+                        dp(5),
+                        0
+                    )
                 }
             )
         }
@@ -1787,25 +1974,31 @@ class MainActivity : Activity() {
         fullScreen =
             !fullScreen
 
-        val visibility =
+        headerContainer.visibility =
+            View.VISIBLE
+
+        statusView.visibility =
             if (fullScreen) {
                 View.GONE
             } else {
                 View.VISIBLE
             }
 
-        headerContainer.visibility =
-            visibility
-        statusView.visibility =
-            visibility
         projectContainer.visibility =
-            visibility
+            if (
+                !fullScreen &&
+                projectPanelVisible
+            ) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
 
         fullButton.text =
             if (fullScreen) {
-                "Exit Full"
+                "Exit Focus"
             } else {
-                "Full"
+                "Focus"
             }
     }
 

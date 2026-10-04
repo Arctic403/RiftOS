@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Explicit Binder client for the bounded legacy Rift++ editor development bridge.
+ * Explicit Binder client for the bounded Rift++ editor development bridge.
  *
  * This client only transports requests/bytes. Rift++ compilation, preview, packaging
  * and signing remain inside the installed Rift++ editor process.
@@ -401,7 +401,7 @@ class RiftppEditorBridgeClient(context: Context) {
             )
 
         require(bound) {
-            "Rift++ editor bridge is unavailable. Install the bridge-enabled legacy editor."
+            "Rift++ editor bridge is unavailable. Install the current Rift++ editor."
         }
 
         try {

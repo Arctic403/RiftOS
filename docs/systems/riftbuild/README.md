@@ -209,7 +209,7 @@ build.artifacts
 
 No new MCP tool is required.
 
-The legacy-editor ET_REL preflight command is `riftpp-editor native-preflight <elf-path> [required-symbol]`. The optional symbol defaults to `android_main` for compatibility, while JNI-backed runtimes can require their actual exported JNI entry point instead of adding a fake NativeActivity symbol.
+The single Rift++ editor exposes the generic ET_REL preflight capability as `riftpp-editor native-preflight <elf-path> [required-symbol]`. The optional symbol defaults to `android_main` for compatibility, while JNI-backed runtimes can require their actual exported JNI entry point instead of adding a fake NativeActivity symbol. This native-output capability belongs to the permanent Kotlin-hosted editor and does not imply a separate native editor.
 
 ### PackageInstaller confirmation handoff
 

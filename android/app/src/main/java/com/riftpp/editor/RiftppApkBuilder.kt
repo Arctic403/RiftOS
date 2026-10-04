@@ -599,7 +599,7 @@ class RiftppApkBuilder(private val context: Context) {
                             packageName =
                                 packageName,
                             versionName =
-                                "0.1.0-native-editor-debug",
+                                "0.1.0-riftpp-app-debug",
                             activityName =
                                 "android.app.NativeActivity",
                             hasCode =
