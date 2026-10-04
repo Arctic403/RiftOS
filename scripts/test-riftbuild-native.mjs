@@ -146,7 +146,6 @@ for (const required of [
   'downloadedToolchainsAllowed',
   'preparedArtifactPackagerReady',
   'prepared-native-proof',
-  'crossHostExpectedBundles',
   'ByteArrayOutputStream',
   'ZipOutputStream',
   'AndroidManifest.xml must be compiled Android binary XML',
