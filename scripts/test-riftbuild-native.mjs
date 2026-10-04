@@ -413,6 +413,8 @@ assert.ok(gradle.includes('dependsOn(syncRiftBuildCompilerSeeds)'), 'managed com
 assert.ok(gradle.includes('kotlin-android-2.4.0.apk'), 'managed Kotlin compiler seed asset name must stay pinned');
 assert.ok(!gradle.includes('kotlin-compiler-embeddable:2.4.10'), 'RiftOS app must not embed the desktop Kotlin compiler implementation');
 assert.ok(gradle.includes('com.android.tools:r8:8.13.23'), 'RiftBuild D8/R8 engine version must stay pinned');
+const combinedAuthority = nativeBuild + '\n' + signer + '\n' + installer;
+for (const forbidden of [
   'ProcessBuilder',
   'Runtime.getRuntime().exec',
   'rift-cli enable',
