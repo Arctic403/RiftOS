@@ -80,7 +80,7 @@ Native core includes:
 - vortex-agent
 - riftos-agent
 - riftllm-agent
-- codynex status/read-state/call/compile-activate/activate/corrupt/recover/clear/cold-restart
+- codynex-editor status/push-dir/pull-dir/compile/preview/native-proof/build-apk
 - qjs help/version/eval/run
 - semx help/version/self-test/check/dump-graph/dump-plan/dump-ir/emit-arm32-proof/emit-arm32-runtime
 - riftpp

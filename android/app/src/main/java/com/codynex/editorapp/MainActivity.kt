@@ -33,8 +33,8 @@ import java.io.File
 class MainActivity : Activity() {
     private lateinit var controller: CodynexEditorController
     private lateinit var workspacePort: FileWorkspacePort
-    private lateinit var toolchain: Source0SelfHostToolchainPort
-    private lateinit var compatibilityToolchain: Source0SelfHostToolchainPort
+    private lateinit var toolchain: CodynexEditorToolchainPort
+    private lateinit var compatibilityToolchain: CodynexEditorToolchainPort
 
     private lateinit var statusView: TextView
     private lateinit var candidateView: TextView
@@ -116,14 +116,14 @@ class MainActivity : Activity() {
             }
 
             toolchain =
-                Source0SelfHostToolchainPort(
+                CodynexEditorToolchainPort(
                     context = this,
                     artifacts = artifacts,
                     candidateDirectory =
                         File(filesDir, "editor-candidates")
                 )
             compatibilityToolchain =
-                Source0SelfHostToolchainPort(
+                CodynexEditorToolchainPort(
                     context = this,
                     artifacts = artifacts,
                     candidateDirectory =

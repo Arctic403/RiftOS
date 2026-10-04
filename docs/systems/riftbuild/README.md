@@ -55,7 +55,7 @@ Maintained live owners:
 - `android/app/src/main/java/com/riftos/app/RiftBuildKotlinCompiler.kt` — bounded Kotlin project adapter: validates project sources/options, delegates compiler implementation to the managed compiler registry, then runs D8 over returned JVM classes into project-owned hot DEX; it does not embed Kotlin compiler authority;
 - `android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt` — generic project-owned payload/compiler registry resolver; validates confined paths, byte bounds and exact SHA-256 identities for compiler/runtime/VM payloads, and binds compiler ids to bounded engines (`native-buffer-v1` or `dex-json-v1`) through `riftbuild-hot.json`;
 - `android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt` — isolated `:riftJvmToolHot` Binder process that exact-hash loads external APK/DEX tool payloads with a framework-only `DexClassLoader` parent and invokes the standard `public static String run(String requestJson)` ABI;
-- `android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt` — sole Rift++ native compiler worker, isolated in `:riftppCompilerHot`, for bounded exact-hash `native-buffer-v1` compiler payloads;
+- `android/app/src/main/java/com/riftos/app/RiftNativeBufferCompilerService.kt` — generic native-buffer compiler worker, isolated in `:riftNativeBufferCompiler`, for bounded exact-hash `native-buffer-v1` compiler payloads;
 - `android/rift-managed-kotlin-tool/` — default seed compiler payload APK using the Android-patched Kotlin compiler; it is staged as data under `assets/riftbuild/compiler-seeds/` and can later be replaced by a project-managed compiler payload without changing RiftOS;
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt` — Native Compile V1 toolchain discovery, structured compiler argv execution, project-manifest validation and ARM32/ARM64 ELF output verification;
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` — generic NativeActivity binary-manifest generation plus bounded project-asset materialization for normal native applications;
@@ -112,22 +112,10 @@ riftbuild compiler-status <project>
 riftbuild compiler-run <project> <compiler-id> <request.json>
 riftbuild kotlin-status
 riftbuild kotlin-compile <project>
-riftbuild riftpp-compile-hot <project> <payload-id> <source> <output> [capacity]
 riftbuild compile-native <project> [arm32|arm64|universal]
 riftbuild compile-object <project> <source.S> [arm32|arm64]
 riftbuild extract-object-text <project> <object.o> [arm32|arm64]
 riftbuild prepare-native-app <project>
-riftbuild prepare-codynex-mc0 <codynex-root>
-riftbuild prepare-codynex-mc1a <codynex-root>
-riftbuild prepare-codynex-mc1b <codynex-root>
-riftbuild prepare-codynex-m2-vm0 <codynex-root>
-riftbuild prepare-codynex-m2b <codynex-root>
-riftbuild prepare-codynex-mc2a <codynex-root>
-riftbuild prepare-codynex-editor <codynex-root>
-# then package the corresponding prepared ARM32 proof/editor subproject:
-riftbuild pack <codynex-root>/native/mc0/apk-proof arm32
-riftbuild pack <codynex-root>/native/mc1/apk-proof arm32
-riftbuild pack <codynex-root>/native/mc1/apk-proof-b arm32
 riftbuild pack <project> [arm32|arm64|universal]
 riftbuild sign <unsigned-apk>
 riftbuild verify <signed-apk>
@@ -206,7 +194,7 @@ Generic NativeActivity packaging opts in with `<project>/rift-app.json`:
 
 `riftbuild prepare-native-app <project>` preserves that v1 NativeActivity behavior exactly: it emits a bounded Android binary manifest for an exported `android.app.NativeActivity`, cross-checks its library name against `rift-native.json` when present, and copies the bounded project asset tree into `build/riftbuild/prepared/assets/` without touching already-compiled ABI libraries. `permissions` is optional, bounded and deduplicated; the current allowlist contains exactly `android.permission.INTERNET`. This remains the intended lane for custom script source/bytecode such as Proto-LLM runtime assets and historical Rift++ NativeActivity proofs.
 
-`riftbuild-native-app/2` is the bounded app-schema extension point for the frozen Rift++ Android adapter. It accepts either the legacy `activity: "native-activity"` path with a blank `managedRuntime`, or `activity: "riftpp-adapter"` with the fixed `managedRuntime: "riftpp-android-adapter/1"`. The adapter is built from the dedicated `:riftpp-adapter-runtime-bundle` module and contains only Android lifecycle/surface ownership plus native-library loading/JNI forwarding. `RiftppActivity` does not own renderer state, editor state, application semantics or compiler/build authority. RiftOS extracts and validates the adapter `classes*.dex` files into signed generated assets, and `prepare-native-app` copies only that fixed runtime into the prepared APK root, sets `android:hasCode="true"`, and launches `com.riftpp.android.RiftppActivity` while `android.app.lib_name` continues to name the Rift++ runtime library.
+`riftbuild-native-app/3` adds the generic project-owned runtime/profile boundary. A project may set `runtimeProfile` to a bounded `riftbuild-runtime-profile/1` JSON file declaring only a profile id, Android `activityClass`, `hasCode`, and an optional project-relative `dexDir`. RiftOS validates those generic fields, materializes `classes*.dex` from the declared project-owned directory into `build/riftbuild/prepared/`, sets `android:hasCode` from the profile, and emits the declared activity class while `android.app.lib_name` continues to name the project native library. RiftOS does not contain a Rift++/Codynex/CodyOS profile allowlist or runtime bundle. `riftbuild-native-app/1` and `/2` remain compatibility schemas for plain NativeActivity only; legacy `managedRuntime` and project-specific activity selectors are rejected.
 
 Installed Rift app API keeps the existing capability boundary:
 
@@ -227,7 +215,7 @@ The legacy-editor ET_REL preflight command is `riftpp-editor native-preflight <e
 
 RiftBuild installation remains explicitly user-confirmed. The PackageInstaller session status `IntentSender` targets the private `RiftBuildInstallReceiver` through `PendingIntent.getBroadcast(...)`, because status delivery proved more reliable than an Activity-only callback on the live device. When Android reports `STATUS_PENDING_USER_ACTION`, the receiver retains the system confirmation `Intent` in-process and records `pending-user-action`. If RiftOS already owns a focused `MainActivity`, the confirmation is launched immediately from that Activity; otherwise `MainActivity.onResume()` / regained window focus consumes the retained intent and launches the system installer from a real foreground Activity. Terminal success/failure statuses clear retained confirmation state.
 
-This hybrid path intentionally combines reliable receiver delivery with foreground Activity presentation. It does not add silent-install authority: `USER_ACTION_REQUIRED`, APK v2 verification, package allowlisting and Android user confirmation remain mandatory. Rift++ packages `com.riftpp.hello`, `com.riftpp.editor`, `com.riftpp.editor.nativev1` and `com.riftpp.editor.adapterr1` are fixed allowlisted identities in addition to the bootstrap proof package; this does not bypass signature verification or user confirmation. For bridge-supported Rift++ packages, the installer starts a bounded diagnostic session before exact launch. If the RiftOS process dies while confirmation is pending, the retained nested intent is lost and `install-proof` must be retried rather than attempting to persist/replay a system-owned confirmation intent.
+This hybrid path intentionally combines reliable receiver delivery with foreground Activity presentation. It does not add silent-install authority: `USER_ACTION_REQUIRED`, APK v2 verification, package allowlisting and Android user confirmation remain mandatory. Rift++ packages `com.riftpp.editor`, `com.riftpp.editor.nativev1` and `com.riftpp.editor.adapterr1` are fixed allowlisted identities in addition to the bootstrap proof package; this does not bypass signature verification or user confirmation. For bridge-supported Rift++ packages, the installer starts a bounded diagnostic session before exact launch. If the RiftOS process dies while confirmation is pending, the retained nested intent is lost and `install-proof` must be retried rather than attempting to persist/replay a system-owned confirmation intent.
 
 ## Rift++ managed compiler hot path
 
@@ -236,7 +224,6 @@ Rift++ compiler authority is project-owned and hot-swappable. RiftBuild does not
 Supported compiler surfaces:
 - `riftbuild managed-status <project>`, `managed-payload`, and `managed-copy` for exact-hash project payloads;
 - `riftbuild compiler-status <project>` and `compiler-run <project> <compiler-id> <request.json>` for the generic compiler registry;
-- `riftbuild riftpp-compile-hot <project> <payload-id> <source> <output> [capacity]` for bounded native-buffer compiler payloads in the isolated `:riftppCompilerHot` process;
 - `riftbuild kotlin-compile <project>` for Kotlin projects using an external managed compiler payload through the isolated `:riftJvmToolHot` process;
 - `riftbuild prepare-native-app <project> -> pack -> sign -> verify -> install-proof` for generic application packaging.
 
@@ -244,68 +231,19 @@ The legacy `riftpp-host` / `:riftppCompiler` / `RiftppCompilerService` lane is r
 
 Historical R1–R8, Seed0, Stage1, S2/S3, direct-ELF, App0, and temporary editor-bootstrap proof details remain evidence in `docs/PATCH_HISTORY.md`; they are not current RiftBuild APIs.
 
-## Codynex C0 .cx editor local packaging lane
+## Codynex Editor boundary
 
-The current editor remains canonical under local Codynex source:
+Codynex compiler and application-build authority is owned by the standalone Codynex Editor, not RiftBuild. RiftOS exposes only the fixed `codynex-editor` Binder transport into package `com.codynex.editor`.
 
-`external/editor/`
+The editor owns:
+- bounded `.cx` compilation through `CodynexEditorToolchainPort` and the editor-local `CodynexCompilerRuntime`;
+- compiler payload selection, using `.codynex/toolchains/compiler.js` as the workspace hot override and bundled `codynex_compiler.js` as the fallback;
+- preview/native proof through `CodynexRuntimeBridge` / `libcodynex_editor_vm.so`;
+- fresh compile before APK pack/sign.
 
-The editor is a normal Android development shell for `.cx` files. Compilation is not performed by the old MC2-A Source0 compiler. Instead, the editor calls the bounded RiftOS ContentProvider authority `com.riftos.app.codynexcompiler`; RiftOS verifies the caller package/signing certificate and runs the fixed active C0 compiler through its existing headless QuickJS host. The returned artifact is bounded VM1 bytecode. Preview remains local to the editor through `libcodynex_editor_vm.so` and the frozen VM1 seed.
+RiftBuild has no `prepare-codynex-*` route and does not own Codynex compiler generations, proof hosts, compiler provider authorities, or Codynex-specific APK preparation. Historical MC0/MC1/M2/C0 proof lanes remain recorded only in `docs/PATCH_HISTORY.md`.
 
-RiftOS carries a SHA-bound compiled packaging payload only so the phone can package the editor without a remote editor build or arbitrary on-device Gradle execution.
-
-`riftbuild prepare-codynex-editor <codynex-root>` must:
-
-- verify the exact local Codynex editor source/project hashes before packaging;
-- require a normal code-bearing Activity project with launch activity `.MainActivity`;
-- extract `classes*.dex` from the installed RiftOS APK under bounded per-entry/total limits;
-- extract the ARM32 `libcodynex_editor_vm.so` preview bridge from the installed RiftOS APK;
-- materialize a bounded binary manifest for package `com.codynex.editor` and activity `com.codynex.editorapp.MainActivity`;
-- include explicit package visibility for `com.riftos.app`;
-- copy the canonical local VM1 hex used by Preview;
-- require `classes.dex` for code-bearing packages;
-- re-hash every materialized authority artifact;
-- feed the existing local `pack -> sign -> verify -> install-proof` chain;
-- never mutate Codynex source and never grant the editor shell, process, or network authority.
-
-The mirrored editor source inside RiftOS is packaging payload, not Codynex source authority. RiftOS build validation pins that payload to the canonical local Codynex hashes so drift fails closed. The current packaging implementation may still carry inert historical MC2-A assets for compatibility, but the editor runtime no longer reads them.
-
-## Codynex MC0 local proof lane
-
-MC0 reuses the existing prepared-artifact pipeline instead of using Tmpbuilder or GitHub as a build transport.
-
-`riftbuild prepare-codynex-mc0 <codynex-root>` is ARM32-only and must:
-
-- read `native/mc0/arm32/mc0_seed.hex` from the Codynex project;
-- decode exactly 172 bytes;
-- require SHA-256 `3276dcbf29704b1ba7d9d331e7891ceff10d85b16bb7688c62273aeaa3ca311e`;
-- validate the source-oracle project at `native/mc0/apk-proof`;
-- extract `lib/armeabi-v7a/libcodynex_mc0_host.so` from the installed RiftOS APK;
-- require the extracted host to be an ARMv7 little-endian ET_DYN ELF;
-- materialize a bounded binary AndroidManifest for package `com.codynex.mc0proof`;
-- write the host only as `lib/armeabi-v7a/libcodynex_mc0_host.so`;
-- write the exact compiler only as `assets/mc0_seed.bin`;
-- re-hash both materialized files;
-- record that compiler authority remains the seed asset.
-
-The MC0 host is test equipment. Its allowed responsibilities are limited to:
-
-- reading the exact seed asset;
-- RW mapping and copying the seed;
-- changing the mapping to RX before execution;
-- providing bounded source/output buffers;
-- calling the raw compiler ABI;
-- checking frozen proof vectors;
-- changing emitted-code memory from RW to RX before execution;
-- executing generated code;
-- reporting PASS/FAIL.
-
-The host must not parse Codynex source, emit target instructions, repair compiler output, or substitute another compiler implementation.
-
-The host library is built as part of RiftOS for both configured RiftOS ABIs, but the MC0 proof preparer extracts and packages only the `armeabi-v7a` image. This forces the proof APK into a 32-bit process where the A32 seed is executable.
-
-No general native compiler is implied by this lane. MC0 is already machine code; RiftBuild only packages the bounded test host and exact machine-code asset.
-
+Current RiftOS validation requires the editor bridge/runtime payload to remain present and explicitly fails if the retired provider, LR0 bridge, Codynex proof hosts, or special prepare routes reappear.
 ## Deterministic prepared-artifact package stage
 
 v0.1 owns a real APK ZIP packaging stage for **prepared Android artifacts**.
@@ -353,7 +291,7 @@ Verification:
 - a signed artifact is not installable-claimed until this verifier passes.
 
 Install/launch proof:
-- installation is restricted to RiftBuild's fixed proof-package allowlist: `com.riftpp.nativeproof`, `com.codynex.mc0proof`, `com.codynex.mc1aproof`, and `com.codynex.mc1bproof`;
+- installation is restricted to RiftBuild's fixed package allowlist: `com.riftpp.nativeproof`, `com.riftpp.editor`, `com.riftpp.editor.nativev1`, `com.riftpp.editor.adapterr1`, and `com.codynex.editor`;
 - RiftOS declares `REQUEST_INSTALL_PACKAGES` and uses Android `PackageInstaller`, never raw package-manager shell commands;
 - normal Android unknown-source trust/user confirmation remains mandatory;
 - PackageInstaller commit/result callbacks are delivered to the private `RiftBuildInstallActivity`, not a background broadcast callback, so `STATUS_PENDING_USER_ACTION` can surface Android's confirmation UI from a foreground Activity;
@@ -421,7 +359,7 @@ The subsystem is invalid if:
 - `build.submit` reports success without all required stages;
 - plain text `AndroidManifest.xml` is mislabeled as an installable packaged manifest;
 - only one ABI is packaged for `universal`;
-- signing/install success is claimed without the independent v2 verifier, the bounded proof-package allowlist (`com.riftpp.nativeproof`, `com.codynex.mc0proof`, `com.codynex.mc1aproof`, and `com.codynex.mc1bproof`), or Android-managed user confirmation;
+- signing/install success is claimed without the independent v2 verifier, the fixed package allowlist, or Android-managed user confirmation;
 - RiftBuild silently enables the experimental CLI;
 - MCP catalog expands just to expose build internals.
 
@@ -450,53 +388,3 @@ Promotion requires:
 - the newer signer/verifier/installer/launch source must pass Builder compilation plus real on-device sign → verify → install → launch proof before that chain is called installed/live.
 
 
-## Codynex MC1-A raw machine proof lane
-
-MC1-A is a separate additive proof lane. MC0 remains frozen as the previous-stage oracle.
-
-Command:
-
-`riftbuild prepare-codynex-mc1a /workspace/Codynex`
-
-The preparer:
-
-- decodes only `native/mc1/arm32/mc1a_seed.hex`;
-- requires exactly **236 bytes**;
-- requires SHA-256 `2ef7054e533bfafaefb0fcc14b9cd41cd05aceeec58eeeb335fc6aef4e88ba1a`;
-- validates `native/mc1/apk-proof`;
-- extracts only `lib/armeabi-v7a/libcodynex_mc1a_host.so` from the installed RiftOS APK;
-- verifies the extracted host is ARM32 ELF;
-- generates a bounded binary manifest for `com.codynex.mc1aproof`;
-- packages the exact raw compiler only as `assets/mc1a_seed.bin`;
-- records host/seed hashes and anti-contamination ownership.
-
-The MC1-A host is test equipment only. It may map/invoke the exact compiler, provide bounded buffers, execute emitted code, compare frozen vectors and report PASS/FAIL. It must not parse decimal source, emit target instructions, repair compiler output or substitute another compiler.
-
-The proof remains ARM32-only. General native compilation is still not implied by this lane.
-
-
-## Codynex MC1-B / MC1.2 raw machine proof lane
-
-MC1-B is a separate additive proof lane. MC1-A remains frozen as the previous-stage oracle.
-
-Command:
-
-`riftbuild prepare-codynex-mc1b /workspace/Codynex`
-
-The preparer:
-
-- decodes only `native/mc1/arm32/mc1b_seed.hex`;
-- requires exactly **552 bytes**;
-- requires SHA-256 `4f4a7305900547d949831fc4cfc6c6c0f747edd7ab525adfb8a1488a6ca304be`;
-- validates `native/mc1/apk-proof-b`;
-- extracts only `lib/armeabi-v7a/libcodynex_mc1b_host.so` from the installed RiftOS APK;
-- verifies the extracted host is ARM32 ELF;
-- generates a bounded binary manifest for `com.codynex.mc1bproof`;
-- packages the exact raw compiler only as `assets/mc1b_seed.bin`;
-- records host/seed hashes and anti-contamination ownership.
-
-The MC1-B host is test equipment only. It maps/invokes the exact compiler, checks the frozen **96-case assertion surface**, executes the emitted native function and requires exact 12-byte `MOV + ADD + BX` output. It must not parse source, emit target instructions, constant-fold the expression, repair compiler output or substitute another compiler.
-
-The generated runtime result may reach 510 even though each source literal remains u8. The exact emitted `ADD r0,r0,#right` is part of the proof contract.
-
-This lane remains ARM32-only and is not promoted until the exact 552-byte seed passes on real hardware.

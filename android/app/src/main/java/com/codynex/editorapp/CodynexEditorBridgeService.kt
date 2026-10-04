@@ -46,16 +46,16 @@ class CodynexEditorBridgeService : Service() {
         FileWorkspacePort(workspaceRoot)
     }
 
-    private val toolchain: Source0SelfHostToolchainPort by lazy {
-        Source0SelfHostToolchainPort(
+    private val toolchain: CodynexEditorToolchainPort by lazy {
+        CodynexEditorToolchainPort(
             context = this,
             artifacts = BootstrapArtifactLoader.load(this),
             candidateDirectory = File(filesDir, "editor-candidates")
         )
     }
 
-    private val compatibilityToolchain: Source0SelfHostToolchainPort by lazy {
-        Source0SelfHostToolchainPort(
+    private val compatibilityToolchain: CodynexEditorToolchainPort by lazy {
+        CodynexEditorToolchainPort(
             context = this,
             artifacts = BootstrapArtifactLoader.load(this),
             candidateDirectory = File(filesDir, "editor-candidates-vm1-pack"),
@@ -188,7 +188,7 @@ class CodynexEditorBridgeService : Service() {
                     .put("state", "ready")
                     .put("workspace", "codynex-workspace")
                     .put("entries", entries.size)
-                    .put("compilerAuthority", "Codynex Editor Source0SelfHostToolchainPort")
+                    .put("compilerAuthority", "Codynex Editor CodynexEditorToolchainPort")
                     .put("apkAuthority", "CodynexApkBuilder + CodynexApkV2Signer")
                     .put("folderTransport", true)
             }
@@ -367,7 +367,7 @@ class CodynexEditorBridgeService : Service() {
 
     private fun compileFresh(
         entry: String,
-        activeToolchain: Source0SelfHostToolchainPort = toolchain
+        activeToolchain: CodynexEditorToolchainPort = toolchain
     ): CompileFreshResult {
         val entryFile = editorFile(entry)
         require(entryFile.isFile) {

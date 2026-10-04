@@ -10,7 +10,6 @@ object RiftMcpRuntime {
     @Volatile private var relay: RiftMcpRelayClient? = null
     @Volatile private var nativeShell: RiftNativeShell? = null
     @Volatile private var vortexBridge: RiftVortexBridgeClient? = null
-    @Volatile private var codynexBridge: RiftCodynexBridgeClient? = null
     @Volatile private var nativeGit: RiftNativeGit? = null
     @Volatile private var debugHub: RiftDebugHub? = null
     @Volatile private var operationJournal: RiftMcpOperationJournal? = null
@@ -116,11 +115,4 @@ object RiftMcpRuntime {
         }
     }
 
-    /** Process-wide Codynex LR0 Binder client used by the native RiftShell bridge. */
-    fun codynexBridge(context: Context): RiftCodynexBridgeClient {
-        codynexBridge?.let { return it }
-        return synchronized(this) {
-            codynexBridge ?: RiftCodynexBridgeClient(context.applicationContext).also { codynexBridge = it }
-        }
-    }
 }

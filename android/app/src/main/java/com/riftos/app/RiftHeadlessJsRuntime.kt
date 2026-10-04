@@ -23,19 +23,6 @@ class RiftHeadlessJsRuntime(context: Context) {
     companion object {
         private const val MAX_TEXT_BYTES = 8L * 1024L * 1024L
         private const val MAX_SEMNEXIS_SOURCE_BYTES = 512L * 1024L
-        private const val CODYNEX_C0_COMPILER_PATH = "/workspace/Codynex/external/language/l0/compiler/c0_reference.js"
-        private const val CODYNEX_C0_COMPILER_VERSION_PREVIOUS = "codynex-c0-ref/0.11.0"
-        private const val CODYNEX_C0_COMPILER_VERSION_CURRENT = "codynex-c0-ref/0.12.0"
-        private val CODYNEX_C0_COMPILER_VERSIONS =
-            setOf(
-                CODYNEX_C0_COMPILER_VERSION_PREVIOUS,
-                CODYNEX_C0_COMPILER_VERSION_CURRENT
-            )
-        private const val MAX_CODYNEX_C0_SOURCE_BYTES = 256 * 1024
-        private const val MAX_CODYNEX_C0_PROJECT_BYTES = 1024 * 1024
-        private const val MAX_CODYNEX_C0_MODULES = 64
-        private const val MAX_CODYNEX_C0_VM1_BYTES = 64 * 1024
-        private const val MAX_CODYNEX_C0_VM2_BYTES = 64 * 1024
         private const val MAX_STATE_BYTES = 64 * 1024
         private const val MAX_STATE_KEY_BYTES = 4 * 1024
         private const val MAX_STATE_FILES = 256
@@ -48,26 +35,11 @@ class RiftHeadlessJsRuntime(context: Context) {
     }
 
     data class CommandResult(val output: String, val result: JSONObject?)
-    data class CodynexC0CompileResult(
-        val compiler: String,
-        val vm1: ByteArray,
-        val moduleCount: Int
-    )
-
-    data class CodynexC0Vm2CompileResult(
-        val compiler: String,
-        val vm2: ByteArray,
-        val moduleCount: Int
-    )
-
-    private val appContext = context.applicationContext
-    private val riftRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
     private val stateRoot = File(riftRoot, "system/riftpp-state").apply { mkdirs() }.canonicalFile
 
     @Volatile private var vmSourceCache: String? = null
     @Volatile private var coreSourceCache: String? = null
     @Volatile private var semnexisSourceCache: String? = null
-    @Volatile private var codynexC0SourceCache: String? = null
 
 
     private fun canonicalUtf8Bytes(value: String): ByteArray {
@@ -265,251 +237,7 @@ class RiftHeadlessJsRuntime(context: Context) {
         )
     }
 
-    fun compileCodynexC0Project(
-        rootSource: String,
-        moduleSources: Map<String, String>
-    ): CodynexC0CompileResult {
-        val rootBytes = canonicalUtf8Bytes(rootSource)
-        require(rootBytes.isNotEmpty() && rootBytes.size <= MAX_CODYNEX_C0_SOURCE_BYTES) {
-            "Codynex C0 root source must be 1..$MAX_CODYNEX_C0_SOURCE_BYTES UTF-8 bytes"
-        }
-        require(moduleSources.size <= MAX_CODYNEX_C0_MODULES - 1) {
-            "Codynex C0 project exceeds $MAX_CODYNEX_C0_MODULES modules"
-        }
 
-        val moduleId = Regex(
-            "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$"
-        )
-        var totalBytes = rootBytes.size
-        val modules = JSONObject()
-        moduleSources.toSortedMap().forEach { (name, source) ->
-            require(moduleId.matches(name)) {
-                "Invalid Codynex C0 module identity: $name"
-            }
-            val bytes = canonicalUtf8Bytes(source)
-            require(bytes.isNotEmpty() && bytes.size <= MAX_CODYNEX_C0_SOURCE_BYTES) {
-                "Codynex C0 module exceeds per-source bound: $name"
-            }
-            totalBytes += bytes.size
-            require(totalBytes <= MAX_CODYNEX_C0_PROJECT_BYTES) {
-                "Codynex C0 project exceeds $MAX_CODYNEX_C0_PROJECT_BYTES UTF-8 bytes"
-            }
-            modules.put(name, source)
-        }
-
-        val request = JSONObject()
-            .put("root", rootSource)
-            .put("modules", modules)
-        var resultJson: String? = null
-
-        runBlocking {
-            quickJs {
-                evaluationTimeoutMillis = EVALUATION_TIMEOUT_MS
-
-                function("__rift_codynex_c0_request") { request.toString() }
-                function("__rift_codynex_c0_result") { values ->
-                    resultJson = values.firstOrNull()?.toString()
-                    Unit
-                }
-                function("__rift_utf8") { values ->
-                    values.firstOrNull()?.toString().orEmpty().let {
-                        canonicalUtf8Bytes(it)
-                    }
-                }
-                function("__rift_sha256") { values ->
-                    val value = values.firstOrNull()
-                    val bytes = when (value) {
-                        is ByteArray -> value
-                        is List<*> -> ByteArray(value.size) { index ->
-                            (value[index] as Number).toByte()
-                        }
-                        else -> throw IllegalArgumentException(
-                            "SHA-256 input must be a byte array"
-                        )
-                    }
-                    MessageDigest.getInstance("SHA-256").digest(bytes)
-                }
-
-                evaluate<Any?>(Scripts.POLYFILLS, filename = "codynex-c0-polyfills.js")
-                evaluate<Any?>(
-                    "globalThis.CODYNEX_AUTORUN=false;",
-                    filename = "codynex-c0-config.js"
-                )
-                evaluate<Any?>(
-                    preparedCodynexC0Source(),
-                    filename = "codynex-c0-reference.js"
-                )
-                evaluate<Any?>(
-                    Scripts.CODYNEX_C0_PROJECT_ENTRY,
-                    filename = "codynex-c0-project.js"
-                )
-            }
-        }
-
-        val payload = resultJson?.let(::JSONObject)
-            ?: throw IllegalStateException("Codynex C0 compiler returned no result")
-        require(payload.optBoolean("ok")) {
-            val code = payload.optString("code").ifBlank { "C0" }
-            code + ": " + payload.optString("error").ifBlank {
-                "Codynex C0 compilation failed"
-            }
-        }
-        require(
-            payload.optString("compiler") in CODYNEX_C0_COMPILER_VERSIONS
-        ) {
-            "Codynex C0 compiler identity drift"
-        }
-
-        val hex = payload.optString("vm1Hex")
-        require(hex.isNotEmpty() && hex.length % 2 == 0) {
-            "Codynex C0 compiler returned malformed VM1 hex"
-        }
-        require(hex.length / 2 <= MAX_CODYNEX_C0_VM1_BYTES) {
-            "Codynex C0 compiler returned oversized VM1"
-        }
-        val vm1 = ByteArray(hex.length / 2)
-        var source = 0
-        var target = 0
-        while (source < hex.length) {
-            val high = hex[source].digitToIntOrNull(16)
-                ?: throw IllegalStateException("Codynex C0 VM1 hex is non-canonical")
-            val low = hex[source + 1].digitToIntOrNull(16)
-                ?: throw IllegalStateException("Codynex C0 VM1 hex is non-canonical")
-            vm1[target] = ((high shl 4) or low).toByte()
-            source += 2
-            target += 1
-        }
-        require(vm1.isNotEmpty()) { "Codynex C0 compiler returned empty VM1" }
-
-        return CodynexC0CompileResult(
-            compiler = payload.getString("compiler"),
-            vm1 = vm1,
-            moduleCount = payload.getInt("moduleCount")
-        )
-    }
-
-    fun compileCodynexC0ProjectVM2(
-        rootSource: String,
-        moduleSources: Map<String, String>
-    ): CodynexC0Vm2CompileResult {
-        val rootBytes = canonicalUtf8Bytes(rootSource)
-        require(rootBytes.isNotEmpty() && rootBytes.size <= MAX_CODYNEX_C0_SOURCE_BYTES) {
-            "Codynex C0 VM2 root source must be 1..$MAX_CODYNEX_C0_SOURCE_BYTES UTF-8 bytes"
-        }
-        require(moduleSources.size <= MAX_CODYNEX_C0_MODULES - 1) {
-            "Codynex C0 VM2 project exceeds $MAX_CODYNEX_C0_MODULES modules"
-        }
-
-        val moduleId = Regex(
-            "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$"
-        )
-        var totalBytes = rootBytes.size
-        val modules = JSONObject()
-        moduleSources.toSortedMap().forEach { (name, source) ->
-            require(moduleId.matches(name)) {
-                "Invalid Codynex C0 VM2 module identity: $name"
-            }
-            val bytes = canonicalUtf8Bytes(source)
-            require(bytes.isNotEmpty() && bytes.size <= MAX_CODYNEX_C0_SOURCE_BYTES) {
-                "Codynex C0 VM2 module exceeds per-source bound: $name"
-            }
-            totalBytes += bytes.size
-            require(totalBytes <= MAX_CODYNEX_C0_PROJECT_BYTES) {
-                "Codynex C0 VM2 project exceeds $MAX_CODYNEX_C0_PROJECT_BYTES UTF-8 bytes"
-            }
-            modules.put(name, source)
-        }
-
-        val request = JSONObject()
-            .put("root", rootSource)
-            .put("modules", modules)
-        var resultJson: String? = null
-
-        runBlocking {
-            quickJs {
-                evaluationTimeoutMillis = EVALUATION_TIMEOUT_MS
-
-                function("__rift_codynex_c0_request") { request.toString() }
-                function("__rift_codynex_c0_result") { values ->
-                    resultJson = values.firstOrNull()?.toString()
-                    Unit
-                }
-                function("__rift_utf8") { values ->
-                    values.firstOrNull()?.toString().orEmpty().let {
-                        canonicalUtf8Bytes(it)
-                    }
-                }
-                function("__rift_sha256") { values ->
-                    val value = values.firstOrNull()
-                    val bytes = when (value) {
-                        is ByteArray -> value
-                        is List<*> -> ByteArray(value.size) { index ->
-                            (value[index] as Number).toByte()
-                        }
-                        else -> throw IllegalArgumentException(
-                            "SHA-256 input must be a byte array"
-                        )
-                    }
-                    MessageDigest.getInstance("SHA-256").digest(bytes)
-                }
-
-                evaluate<Any?>(Scripts.POLYFILLS, filename = "codynex-c0-vm2-polyfills.js")
-                evaluate<Any?>(
-                    "globalThis.CODYNEX_AUTORUN=false;",
-                    filename = "codynex-c0-vm2-config.js"
-                )
-                evaluate<Any?>(
-                    preparedCodynexC0Source(),
-                    filename = "codynex-c0-reference.js"
-                )
-                evaluate<Any?>(
-                    Scripts.CODYNEX_C0_PROJECT_VM2_ENTRY,
-                    filename = "codynex-c0-project-vm2.js"
-                )
-            }
-        }
-
-        val payload = resultJson?.let(::JSONObject)
-            ?: throw IllegalStateException("Codynex C0 VM2 compiler returned no result")
-        require(payload.optBoolean("ok")) {
-            val code = payload.optString("code").ifBlank { "C0" }
-            code + ": " + payload.optString("error").ifBlank {
-                "Codynex C0 VM2 compilation failed"
-            }
-        }
-        require(
-            payload.optString("compiler") in CODYNEX_C0_COMPILER_VERSIONS
-        ) {
-            "Codynex C0 VM2 compiler identity drift"
-        }
-
-        val hex = payload.optString("vm2Hex")
-        require(hex.isNotEmpty() && hex.length % 2 == 0) {
-            "Codynex C0 compiler returned malformed VM2 hex"
-        }
-        require(hex.length / 2 <= MAX_CODYNEX_C0_VM2_BYTES) {
-            "Codynex C0 compiler returned oversized VM2"
-        }
-        val vm2 = ByteArray(hex.length / 2)
-        var source = 0
-        var target = 0
-        while (source < hex.length) {
-            val high = hex[source].digitToIntOrNull(16)
-                ?: throw IllegalStateException("Codynex C0 VM2 hex is non-canonical")
-            val low = hex[source + 1].digitToIntOrNull(16)
-                ?: throw IllegalStateException("Codynex C0 VM2 hex is non-canonical")
-            vm2[target] = ((high shl 4) or low).toByte()
-            source += 2
-            target += 1
-        }
-        require(vm2.isNotEmpty()) { "Codynex C0 compiler returned empty VM2" }
-
-        return CodynexC0Vm2CompileResult(
-            compiler = payload.getString("compiler"),
-            vm2 = vm2,
-            moduleCount = payload.getInt("moduleCount")
-        )
-    }
 
     fun executeQuickJs(args: List<String>, cwd: String): CommandResult {
         val subcommand = args.firstOrNull()?.trim()?.lowercase().orEmpty().ifBlank { "help" }
@@ -914,19 +642,6 @@ class RiftHeadlessJsRuntime(context: Context) {
     }
 
 
-    private fun preparedCodynexC0Source(): String {
-        codynexC0SourceCache?.let { return it }
-        val file = resolveFile(CODYNEX_C0_COMPILER_PATH, "/")
-        require(file.isFile) {
-            "Codynex C0 compiler source is unavailable: $CODYNEX_C0_COMPILER_PATH"
-        }
-        require(file.length() in 1..MAX_TEXT_BYTES) {
-            "Codynex C0 compiler source exceeds headless runtime text limit"
-        }
-        return file.readText(Charsets.UTF_8).also {
-            codynexC0SourceCache = it
-        }
-    }
 
     private fun preparedSemnexisSource(): String {
         semnexisSourceCache?.let { return it }
@@ -1047,74 +762,6 @@ class RiftHeadlessJsRuntime(context: Context) {
             });
         """
 
-
-        const val CODYNEX_C0_PROJECT_ENTRY = """
-            (function() {
-              const request = JSON.parse(__rift_codynex_c0_request());
-              try {
-                const compiler = globalThis.CodynexC0;
-                if (!compiler) throw new Error('Codynex C0 compiler global is unavailable');
-                if (
-                  compiler.VERSION !== 'codynex-c0-ref/0.11.0' &&
-                  compiler.VERSION !== 'codynex-c0-ref/0.12.0'
-                ) {
-                  throw new Error('Codynex C0 compiler identity drift: ' + compiler.VERSION);
-                }
-                const modules = request.modules || {};
-                const compiled = compiler.compileProject(String(request.root || ''), modules);
-                const raw = Array.from(compiled.vm1.bytes || [], value => value & 255);
-                let hex = '';
-                for (const value of raw) hex += value.toString(16).padStart(2, '0');
-                __rift_codynex_c0_result(JSON.stringify({
-                  ok: true,
-                  compiler: compiler.VERSION,
-                  moduleCount: 1 + Object.keys(modules).length,
-                  vm1Bytes: raw.length,
-                  vm1Hex: hex
-                }));
-              } catch (error) {
-                __rift_codynex_c0_result(JSON.stringify({
-                  ok: false,
-                  code: error && error.code ? String(error.code) : '',
-                  error: String(error && error.message || error)
-                }));
-              }
-            })();
-        """
-
-        const val CODYNEX_C0_PROJECT_VM2_ENTRY = """
-            (function() {
-              const request = JSON.parse(__rift_codynex_c0_request());
-              try {
-                const compiler = globalThis.CodynexC0;
-                if (!compiler) throw new Error('Codynex C0 compiler global is unavailable');
-                if (
-                  compiler.VERSION !== 'codynex-c0-ref/0.11.0' &&
-                  compiler.VERSION !== 'codynex-c0-ref/0.12.0'
-                ) {
-                  throw new Error('Codynex C0 compiler identity drift: ' + compiler.VERSION);
-                }
-                const modules = request.modules || {};
-                const compiled = compiler.compileProjectVM2(String(request.root || ''), modules);
-                const raw = Array.from(compiled.vm2.bytes || [], value => value & 255);
-                let hex = '';
-                for (const value of raw) hex += value.toString(16).padStart(2, '0');
-                __rift_codynex_c0_result(JSON.stringify({
-                  ok: true,
-                  compiler: compiler.VERSION,
-                  moduleCount: 1 + Object.keys(modules).length,
-                  vm2Bytes: raw.length,
-                  vm2Hex: hex
-                }));
-              } catch (error) {
-                __rift_codynex_c0_result(JSON.stringify({
-                  ok: false,
-                  code: error && error.code ? String(error.code) : '',
-                  error: String(error && error.message || error)
-                }));
-              }
-            })();
-        """
 
         const val TEXT_MODEL_BENCHMARK_ENTRY = """
             (function() {

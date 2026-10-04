@@ -71,15 +71,13 @@ The wiring validator:
 - identifies Kotlin types reachable by textual source references from all manifest component roots;
 - fails when a Kotlin source is unreachable from the Android application graph.
 
-This is a static reachability guard, not Kotlin compilation/type resolution. Treating all Android manifest components as roots prevents legitimate package entry surfaces such as `CodynexCompilerProvider` from being falsely classified as dead merely because no Activity directly references them.
+This is a static reachability guard, not Kotlin compilation/type resolution. Treating all Android manifest components as roots prevents legitimate Activity/Service/Receiver/Provider entry surfaces from being falsely classified as dead merely because no Activity directly references them.
 
 ## Exact mandatory Kotlin snapshot
 
-Current Android source directory contains 49 Kotlin files.
+The current Android Kotlin source set is enforced as an exact snapshot by `android/app/build.gradle.kts::verifyRiftOsAndroidSources`; validation derives the current set instead of documenting a hard-coded file count.
 
-android/app/build.gradle.kts::verifyRiftOsAndroidSources explicitly lists all 49.
-
-During this audit the old list was found to protect only 32 files.
+During the original audit the older list covered only a subset of live sources, which is why stale and missing entries now fail closed.
 
 Gradle itself now compares the declared list exactly with the actual top-level Kotlin directory and rejects duplicate, missing or stale entries. The source validator independently performs the same exact-set comparison:
 - a live Kotlin file omitted from Gradle -> failure;
@@ -91,7 +89,6 @@ This prevents the final Builder's DEX verification contract from silently laggin
 
 preBuild depends on:
 - verifyRiftOsAndroidSources;
-- validateCodynexCompilerTransition;
 - verifyCodynexEditorPayload;
 - validateRiftBrowserWebViewOwnership;
 - syncRiftOsWebAssets.
@@ -205,7 +202,7 @@ Local unpushed workspace changes are never built by that worker.
 riftos-build.sh:
 - requires signing identity variables;
 - runs npm run check;
-- runs `verifyRiftOsAndroidSources`, `validateCodynexCompilerTransition`, and `validateRiftBrowserWebViewOwnership` as a dedicated Gradle validation phase captured in `gradle-validation.log`;
+- runs `verifyRiftOsAndroidSources` and `validateRiftBrowserWebViewOwnership` as a dedicated Gradle validation phase captured in `gradle-validation.log`; `verifyCodynexEditorPayload` remains a normal preBuild dependency;
 - runs Gradle release assemble with Java 17/Android 36 only after that validation phase passes;
 - requires unsigned APK output;
 - zipaligns;
@@ -228,7 +225,7 @@ For RiftCLI N1.5, the final signed DEX must also retain the passive push-diagnos
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
-Because the current Gradle list is exact 47/47 Kotlin sources, including the bounded RiftBuild signer/installer owners and `RiftCodynexBridgeClient.kt`, the Builder consumes that same mandatory native snapshot dynamically rather than maintaining a second stale Kotlin list.
+Because the Gradle list is an exact current source snapshot, including the bounded RiftBuild owners plus `RiftCodynexEditorBridgeClient.kt` and the mirrored Codynex editor runtime/toolchain payload, Builder consumes that mandatory snapshot dynamically instead of maintaining a second stale Kotlin list.
 
 ## Final APK asset verification
 

@@ -16,15 +16,15 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 /**
- * Crash-contained execution lane for project-owned Rift++ compiler payloads.
+ * Crash-contained execution lane for project-owned native-buffer compiler payloads.
  *
- * This is the sole Rift++ native compiler execution service. It has no hardcoded compiler identity; authority comes
+ * This is the sole native-buffer native compiler execution service. It has no hardcoded compiler identity; authority comes
  * from RiftBuildManagedToolchains manifest + exact SHA-256 validation before bytes reach this
  * process. The frozen legacy compiler service remains unchanged.
  */
-class RiftppDynamicCompilerService : Service() {
+class RiftNativeBufferCompilerService : Service() {
     companion object {
-        internal const val DESCRIPTOR = "com.riftos.app.RiftppDynamicCompilerService"
+        internal const val DESCRIPTOR = "com.riftos.app.RiftNativeBufferCompilerService"
         internal const val TRANSACTION_PID = IBinder.FIRST_CALL_TRANSACTION
         internal const val TRANSACTION_COMPILE = IBinder.FIRST_CALL_TRANSACTION + 1
 
@@ -41,13 +41,13 @@ class RiftppDynamicCompilerService : Service() {
             outputCapacity: Int
         ): Bundle {
             require(compiler.isNotEmpty() && compiler.size <= MAX_COMPILER_BYTES) {
-                "Dynamic Rift++ compiler bytes are out of bounds"
+                "Dynamic native-buffer compiler bytes are out of bounds"
             }
             require(source.size <= MAX_SOURCE_BYTES) {
-                "Dynamic Rift++ source bytes are out of bounds"
+                "Dynamic native-buffer source bytes are out of bounds"
             }
             require(outputCapacity in 1..MAX_OUTPUT_BYTES) {
-                "Dynamic Rift++ output capacity is out of bounds"
+                "Dynamic native-buffer output capacity is out of bounds"
             }
 
             val app = context.applicationContext
@@ -77,9 +77,9 @@ class RiftppDynamicCompilerService : Service() {
                 }
             }
 
-            val intent = Intent(app, RiftppDynamicCompilerService::class.java)
+            val intent = Intent(app, RiftNativeBufferCompilerService::class.java)
             require(app.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
-                "Could not bind dynamic Rift++ compiler service"
+                "Could not bind dynamic native-buffer compiler service"
             }
 
             var remotePid = -1
@@ -140,7 +140,7 @@ class RiftppDynamicCompilerService : Service() {
                     "Dynamic compiler transaction failed"
                 }
                 reply.readException()
-                reply.readBundle(RiftppDynamicCompilerService::class.java.classLoader)
+                reply.readBundle(RiftNativeBufferCompilerService::class.java.classLoader)
                     ?: Bundle().apply {
                         putString("status", "host-reject")
                         putInt("hostStatus", -201)
@@ -153,7 +153,7 @@ class RiftppDynamicCompilerService : Service() {
     }
 
     private val nativeLoadFailure: Throwable? =
-        runCatching { System.loadLibrary("riftpp_dynamic_compiler_host") }.exceptionOrNull()
+        runCatching { System.loadLibrary("rift_native_buffer_compiler_host") }.exceptionOrNull()
 
     private external fun nativeCompileDynamic(
         compiler: ByteArray,

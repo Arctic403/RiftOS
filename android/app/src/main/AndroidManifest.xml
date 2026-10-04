@@ -8,16 +8,8 @@
     <queries>
         <package android:name="com.vortex3d.app" />
         <package android:name="com.riftllm.app" />
-        <package android:name="com.codynex.lr0lab" />
-        <package android:name="com.codynex.mc0proof" />
-        <package android:name="com.codynex.mc1aproof" />
-        <package android:name="com.codynex.mc1bproof" />
-        <package android:name="com.codynex.m2vm0proof" />
-        <package android:name="com.codynex.m2bproof" />
-        <package android:name="com.codynex.mc2aproof" />
         <package android:name="com.codynex.editor" />
         <package android:name="com.riftpp.nativeproof" />
-        <package android:name="com.riftpp.hello" />
         <package android:name="com.riftpp.editor" />
         <package android:name="com.riftpp.editor.nativev1" />
         <package android:name="com.riftpp.editor.adapterr1" />
@@ -49,16 +41,10 @@
             </intent-filter>
         </receiver>
 
-        <provider
-            android:name=".CodynexCompilerProvider"
-            android:authorities="com.riftos.app.codynexcompiler"
-            android:exported="true"
-            android:grantUriPermissions="false" />
-
         <service
-            android:name=".RiftppDynamicCompilerService"
+            android:name=".RiftNativeBufferCompilerService"
             android:exported="false"
-            android:process=":riftppCompilerHot"
+            android:process=":riftNativeBufferCompiler"
             android:stopWithTask="false" />
 
         <service

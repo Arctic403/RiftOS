@@ -17,5 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "RiftOS-Android"
 include(":app")
-include(":riftpp-adapter-runtime-bundle")
 include(":rift-managed-kotlin-tool")

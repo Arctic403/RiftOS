@@ -70,15 +70,14 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/systems/apps/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildKotlinCompiler.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeBufferCompilerService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/CodynexCompilerProvider.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpActivity.kt` | `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpOperationJournal.kt` | `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/systems/mcp/relay/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt` | `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` + `docs/systems/debugger/README.md` + `docs/CODYNEX_LR0_BRIDGE.md` |
+| `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` + `docs/systems/debugger/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBoundedAsync.kt` | `docs/systems/mcp/server/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftDebugHub.kt` | `docs/systems/debugger/README.md` + `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/systems/mcp/tool-host/README.md` |
@@ -96,17 +95,18 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/kernel/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellExecutor.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt` | `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` + `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt` | `docs/systems/shell/README.md` + `docs/systems/riftllm-bridge/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/engine/README.md` + `docs/CODYNEX_LR0_BRIDGE.md` |
+| `android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt` | `docs/systems/shell/README.md` + `docs/systems/riftllm-bridge/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeGit.kt` | `docs/systems/git/README.md` + `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCliHost.kt` | `docs/systems/riftcli/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCliEventBus.kt` | `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/relay-service/README.md` + `docs/systems/debugger/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCodynexBridgeClient.kt` | `docs/CODYNEX_LR0_BRIDGE.md` + `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCodynexEditorBridgeClient.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/codynex/editorapp/CodynexEditorToolchainPort.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/codynex/editorapp/CodynexCompilerRuntime.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftppEditorBridgeClient.kt` | `docs/systems/riftpp-core/README.md` + `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftcli/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/cpp/mc0/codynex_mc0_host.cpp` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/cpp/riftcli/rift_cli_core.h` | `docs/systems/riftcli/README.md` |
 | `android/app/src/main/cpp/riftcli/rift_cli_core.cpp` | `docs/systems/riftcli/README.md` |
 | `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp` | `docs/systems/riftcli/README.md` + `docs/systems/android-host/README.md` |

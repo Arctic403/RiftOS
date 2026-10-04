@@ -1,5 +1,4 @@
 import java.security.MessageDigest
-import java.util.zip.ZipFile
 
 plugins {
     id("com.android.application")
@@ -102,13 +101,11 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftChatHandoff.kt",
         "src/main/java/com/riftos/app/RiftCliHost.kt",
         "src/main/java/com/riftos/app/RiftCliEventBus.kt",
-        "src/main/java/com/riftos/app/RiftCodynexBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftCodynexEditorBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftppEditorBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
         "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",
-        "src/main/java/com/riftos/app/CodynexCompilerProvider.kt",
         "src/main/java/com/riftos/app/RiftLlmDevClient.kt",
         "src/main/java/com/riftos/app/RiftLocalAgentBatch.kt",
         "src/main/java/com/riftos/app/RiftMcpActivity.kt",
@@ -126,7 +123,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftPatchManifestV1.kt",
         "src/main/java/com/riftos/app/RiftPatchSessions.kt",
         "src/main/java/com/riftos/app/RiftProjectExporter.kt",
-        "src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt",
+        "src/main/java/com/riftos/app/RiftNativeBufferCompilerService.kt",
         "src/main/java/com/riftos/app/RiftManagedJvmToolService.kt",
         "src/main/java/com/riftos/app/RiftRelaySettings.kt",
         "src/main/java/com/riftos/app/RiftSecretStore.kt",
@@ -144,13 +141,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
 
     val requiredNative = listOf(
         "src/main/cpp/CMakeLists.txt",
-        "src/main/cpp/mc0/codynex_mc0_host.cpp",
-        "src/main/cpp/mc1/codynex_mc1a_host.cpp",
-        "src/main/cpp/mc1/codynex_mc1b_host.cpp",
-        "src/main/cpp/m2/codynex_m2_vm0_host.cpp",
-        "src/main/cpp/m2/codynex_m2b_host.cpp",
-        "src/main/cpp/m2/codynex_mc2a_host.cpp",
-        "src/main/cpp/riftpp/riftpp_dynamic_compiler_host.cpp",
+        "src/main/cpp/compiler/rift_native_buffer_compiler_host.cpp",
         "src/main/cpp/editor/editor_vm_bridge.cpp",
         "src/main/cpp/editor/riftpp_editor_bridge.cpp",
         "src/main/cpp/riftcli/rift_cli_core.cpp",
@@ -203,76 +194,6 @@ val verifyRiftOsAndroidSources by tasks.registering {
         }
     }
 }
-
-val validateCodynexCompilerTransition by tasks.registering {
-    val previousCompiler = "codynex-c0-ref/0.11.0"
-    val currentCompiler = "codynex-c0-ref/0.12.0"
-    val requiredMarkers = linkedMapOf(
-        "src/main/java/com/riftos/app/CodynexCompilerProvider.kt" to listOf(
-            "COMPILER_VERSION_PREVIOUS",
-            "COMPILER_VERSION_CURRENT",
-            "SUPPORTED_COMPILER_VERSIONS",
-            "METHOD_COMPILE_VM2",
-            "METHOD_COMPILE_PROJECT_VM2",
-            previousCompiler,
-            currentCompiler
-        ),
-        "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt" to listOf(
-            "CODYNEX_C0_COMPILER_VERSION_PREVIOUS",
-            "CODYNEX_C0_COMPILER_VERSION_CURRENT",
-            "CODYNEX_C0_COMPILER_VERSIONS",
-            "compileCodynexC0ProjectVM2",
-            "CODYNEX_C0_PROJECT_VM2_ENTRY",
-            previousCompiler,
-            currentCompiler
-        ),
-        "src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt" to listOf(
-            previousCompiler,
-            currentCompiler,
-            "Codynex standalone app compiler identity drift"
-        ),
-        "src/main/java/com/riftos/app/RiftNativeShellServices.kt" to listOf(
-            "codynex-c0-ref/0.11.0|0.12.0 transition"
-        )
-    )
-    val forbiddenMarkers = linkedMapOf(
-        "src/main/java/com/riftos/app/CodynexCompilerProvider.kt" to
-            listOf("private const val COMPILER_VERSION ="),
-        "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt" to
-            listOf("private const val CODYNEX_C0_COMPILER_VERSION =")
-    )
-
-    doLast {
-        requiredMarkers.forEach { (path, markers) ->
-            val source = file(path)
-            if (!source.isFile) {
-                throw GradleException(
-                    "Codynex compiler transition source is missing: $path"
-                )
-            }
-            val text = source.readText()
-            markers.forEach { marker ->
-                if (!text.contains(marker)) {
-                    throw GradleException(
-                        "Codynex compiler transition contract drifted in $path: missing $marker"
-                    )
-                }
-            }
-        }
-
-        forbiddenMarkers.forEach { (path, markers) ->
-            val text = file(path).readText()
-            markers.forEach { marker ->
-                if (text.contains(marker)) {
-                    throw GradleException(
-                        "Codynex compiler transition regressed to a single-version pin in $path: $marker"
-                    )
-                }
-            }
-        }
-    }
-}
-
 val verifyCodynexEditorPayload by tasks.registering {
     val expected = linkedMapOf(
         "src/main/java/com/codynex/editor/EditorModel.kt" to
@@ -285,10 +206,12 @@ val verifyCodynexEditorPayload by tasks.registering {
             "d2d4fc035f8e024549f2c3232520cdd40f277966328df75f5c942134017395cc",
         "src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt" to
             "78fc1b99806b7b2c4d28b583bbb0bfa96cb50d859877948ce6d0acd12e137a6a",
-        "src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt" to
-            "7a1b550743731795ec5b4504a6820dc1515b7be999f7ed7a08ac3fdedde396a9",
+        "src/main/java/com/codynex/editorapp/CodynexCompilerRuntime.kt" to
+            "2d84f69e9b7ccb9f2e7c49f9c05c213c9df5b3d48ff6c2668ca2fb333943d39a",
+        "src/main/java/com/codynex/editorapp/CodynexEditorToolchainPort.kt" to
+            "cf11e5981b3970e1b62d4aa2fedae7589f78b8bb9d846a8cb5db2e540c214c0a",
         "src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt" to
-            "90f173bfd359ef34108b68b6cd79fbf950ae4a8cb6d92ea4350f28eaeece01d2",
+            "c8f5988bbc49699465944f891856560fc2dbeab6be1659d3e51751cda1589fd5",
         "src/main/java/com/codynex/editorapp/CodynexRuntimeBridge.kt" to
             "549217561d9cff3ffdb38f20685b15ee426373b3493a4991e3c2b53469a9ae4f",
         "src/main/java/com/codynex/editorapp/CodynexApkBuilder.kt" to
@@ -296,7 +219,7 @@ val verifyCodynexEditorPayload by tasks.registering {
         "src/main/java/com/codynex/editorapp/CodynexApkV2Signer.kt" to
             "3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76",
         "src/main/java/com/codynex/editorapp/MainActivity.kt" to
-            "bfe518864d8f30e93028878d4ff18ffe46d828a44ba14dcbc2f95e3f262910f9",
+            "d476094fa091746a7cb068da093b765ab1954a191f35b86cf1dd1fa4da383845",
         "src/main/java/com/codynex/apphost/CodynexAppActivity.kt" to
             "481d8b0306bbf02bc173a28c14b359f9867153611b7272435404a4730d786bea",
         "src/main/cpp/editor/editor_vm_bridge.cpp" to
@@ -403,115 +326,6 @@ val syncRiftOsWebAssets by tasks.registering(Sync::class) {
         include("src/semnexis-bootstrap.js")
     }
     into(layout.buildDirectory.dir("generated/riftosAssets/www"))
-}
-
-val syncRiftBuildRiftppAdapterRuntime by tasks.registering {
-    dependsOn(":riftpp-adapter-runtime-bundle:assembleDebug")
-
-    val bundleApk = rootProject.file(
-        "riftpp-adapter-runtime-bundle/build/outputs/apk/debug/riftpp-adapter-runtime-bundle-debug.apk"
-    )
-    val outputRoot = layout.buildDirectory.dir(
-        "generated/riftosAssets/riftbuild/managed-runtimes/riftpp-adapter-v1"
-    )
-    inputs.file(bundleApk)
-    outputs.dir(outputRoot)
-
-    doLast {
-        if (!bundleApk.isFile) {
-            throw GradleException("Rift++ Android adapter bundle APK is missing")
-        }
-
-        val dexPattern = Regex("^classes(?:[2-9]|[1-9][0-9]+)?\\.dex$")
-        val root = outputRoot.get().asFile
-        root.deleteRecursively()
-        root.mkdirs()
-
-        fun sha256(file: File): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            file.inputStream().buffered().use { input ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    if (count > 0) digest.update(buffer, 0, count)
-                }
-            }
-            return digest.digest().joinToString("") { "%02x".format(it) }
-        }
-
-        var totalBytes = 0L
-        val manifestLines = mutableListOf(
-            "schema=riftbuild-managed-runtime/1",
-            "runtime=riftpp-android-adapter/1",
-            "activity=com.riftpp.android.RiftppActivity"
-        )
-
-        ZipFile(bundleApk).use { zip ->
-            val entries = zip.entries().asSequence()
-                .filter { !it.isDirectory && dexPattern.matches(it.name) }
-                .toList()
-                .sortedBy { entry ->
-                    if (entry.name == "classes.dex") 1
-                    else entry.name.removePrefix("classes").removeSuffix(".dex").toIntOrNull()
-                        ?: Int.MAX_VALUE
-                }
-
-            if (entries.none { it.name == "classes.dex" }) {
-                throw GradleException("Rift++ Android adapter bundle has no classes.dex")
-            }
-            if (entries.size > 8) {
-                throw GradleException("Rift++ Android adapter dex count exceeds limit")
-            }
-
-            entries.forEach { entry ->
-                val output = File(root, entry.name)
-                zip.getInputStream(entry).use { input ->
-                    output.outputStream().buffered().use { sink ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            if (count == 0) continue
-                            totalBytes += count
-                            if (totalBytes > 16L * 1024L * 1024L) {
-                                throw GradleException(
-                                    "Rift++ Android adapter DEX bytes exceed limit"
-                                )
-                            }
-                            sink.write(buffer, 0, count)
-                        }
-                    }
-                }
-
-                val header = ByteArray(8)
-                output.inputStream().use { input ->
-                    var read = 0
-                    while (read < header.size) {
-                        val count = input.read(header, read, header.size - read)
-                        if (count < 0) break
-                        if (count > 0) read += count
-                    }
-                    if (read != header.size ||
-                        header[0] != 'd'.code.toByte() ||
-                        header[1] != 'e'.code.toByte() ||
-                        header[2] != 'x'.code.toByte() ||
-                        header[3] != '\n'.code.toByte() ||
-                        header[7] != 0.toByte()
-                    ) {
-                        throw GradleException(
-                            "Rift++ Android adapter DEX magic is invalid: ${entry.name}"
-                        )
-                    }
-                }
-
-                manifestLines +=
-                    "${entry.name}=${output.length()}:${sha256(output)}"
-            }
-        }
-
-        File(root, "manifest.txt").writeText(manifestLines.joinToString("\n") + "\n")
-    }
 }
 
 val syncRiftBuildKotlinToolchain by tasks.registering {
@@ -664,7 +478,6 @@ val validateRiftBrowserWebViewOwnership by tasks.registering {
 
 tasks.named("preBuild").configure {
     dependsOn(verifyRiftOsAndroidSources)
-    dependsOn(validateCodynexCompilerTransition)
     dependsOn(verifyCodynexEditorPayload)
     dependsOn(verifyRiftppEditorPayload)
     dependsOn(validateRiftBrowserWebViewOwnership)

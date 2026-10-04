@@ -50,9 +50,9 @@ Current transport contract:
 
 Supported package identities are exactly:
 - `com.riftpp.nativeproof`;
-- `com.riftpp.hello`;
 - `com.riftpp.editor`;
-- `com.riftpp.editor.nativev1`.
+- `com.riftpp.editor.nativev1`;
+- `com.riftpp.editor.adapterr1`.
 
 `RiftBuildInstaller` calls `supports(packageName)` before beginning a diagnostic session, so unrelated RiftBuild/Codynex launches do not fail if they are outside the bridge allowlist.
 

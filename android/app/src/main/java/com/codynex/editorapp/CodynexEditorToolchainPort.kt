@@ -1,8 +1,6 @@
 package com.codynex.editorapp
 
 import android.content.Context
-import android.net.Uri
-import android.os.Bundle
 import com.codynex.editor.ArtifactRef
 import com.codynex.editor.CompileRequest
 import com.codynex.editor.CompileResult
@@ -12,7 +10,6 @@ import com.codynex.editor.EditorDiagnostic
 import com.codynex.editor.PreviewPort
 import com.codynex.editor.PreviewRequest
 import com.codynex.editor.PreviewResult
-import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
@@ -28,20 +25,17 @@ enum class EditorVmTarget {
     VM2
 }
 
-/** Native Android editor toolchain transport; transport only, never compiler/runtime authority. */
-class Source0SelfHostToolchainPort(
+/** Android editor toolchain adapter. Compiler semantics come from editor-owned payloads. */
+class CodynexEditorToolchainPort(
     private val context: Context,
     private val artifacts: BootstrapArtifacts,
     candidateDirectory: File,
     private val target: EditorVmTarget = EditorVmTarget.VM2
 ) : CompilerPort, PreviewPort {
     companion object {
-        private const val COMPILER_AUTHORITY =
-            "com.riftos.app.codynexcompiler"
-        private const val COMPILE_METHOD_VM1 = "compile-c0"
-        private const val COMPILE_PROJECT_METHOD_VM1 = "compile-c0-project"
-        private const val COMPILE_METHOD_VM2 = "compile-c0-vm2"
-        private const val COMPILE_PROJECT_METHOD_VM2 = "compile-c0-project-vm2"
+        private val MODULE_ID = Regex(
+            "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+        )
         private const val MAX_SOURCE_BYTES = 256 * 1024
         private const val MAX_PROJECT_BYTES = 1024 * 1024
         private const val MAX_PROJECT_MODULES = 64
@@ -81,8 +75,13 @@ class Source0SelfHostToolchainPort(
         }
 
         var totalBytes = sourceBytes.size
-        val modulesJson = JSONObject()
         request.moduleSources.toSortedMap().forEach { (name, source) ->
+            if (!MODULE_ID.matches(name)) {
+                return failure(
+                    request.sourcePath,
+                    "invalid Codynex module identity: $name"
+                )
+            }
             val bytes = source.toByteArray(Charsets.UTF_8)
             if (bytes.isEmpty() || bytes.size > MAX_SOURCE_BYTES) {
                 return failure(
@@ -97,73 +96,29 @@ class Source0SelfHostToolchainPort(
                     "project exceeds $MAX_PROJECT_BYTES bytes"
                 )
             }
-            modulesJson.put(name, source)
         }
 
-        val method =
-            if (target == EditorVmTarget.VM2) {
-                if (request.moduleSources.isEmpty()) {
-                    COMPILE_METHOD_VM2
-                } else {
-                    COMPILE_PROJECT_METHOD_VM2
-                }
-            } else {
-                if (request.moduleSources.isEmpty()) {
-                    COMPILE_METHOD_VM1
-                } else {
-                    COMPILE_PROJECT_METHOD_VM1
-                }
-            }
         val targetKey =
             if (target == EditorVmTarget.VM2) "vm2" else "vm1"
         val targetLabel = target.name
 
-        val response =
+        val compiled =
             try {
-                context.contentResolver.call(
-                    Uri.parse("content://$COMPILER_AUTHORITY"),
-                    method,
-                    null,
-                    Bundle().apply {
-                        putString("source", request.sourceText)
-                        if (request.moduleSources.isNotEmpty()) {
-                            putString("modulesJson", modulesJson.toString())
-                        }
-                    }
+                CodynexCompilerRuntime(context.applicationContext).compile(
+                    rootSource = request.sourceText,
+                    moduleSources = request.moduleSources.toSortedMap(),
+                    target = target
                 )
             } catch (error: Throwable) {
                 return failure(
                     request.sourcePath,
-                    "RiftOS C0 compiler bridge unavailable: " +
+                    "Codynex editor compiler failed: " +
                         (error.message ?: error.javaClass.simpleName)
                 )
             }
-                ?: return failure(
-                    request.sourcePath,
-                    "RiftOS C0 compiler bridge returned no result"
-                )
 
-        if (!response.getBoolean("success", false)) {
-            return failure(
-                request.sourcePath,
-                response.getString("error")
-                    ?: "C0 compiler rejected source"
-            )
-        }
-
-        val compiler =
-            response.getString("compiler")
-                ?: return failure(
-                    request.sourcePath,
-                    "compiler bridge omitted compiler identity"
-                )
-
-        val candidate =
-            response.getByteArray(targetKey)
-                ?: return failure(
-                    request.sourcePath,
-                    "compiler bridge omitted $targetLabel output"
-                )
+        val compiler = compiled.compiler
+        val candidate = compiled.bytes
 
         if (
             candidate.isEmpty() ||
@@ -196,7 +151,7 @@ class Source0SelfHostToolchainPort(
                 EditorDiagnostic(
                     severity = DiagnosticSeverity.INFO,
                     message =
-                        "Compiled with $compiler: " +
+                        "Compiled with $compiler (${compiled.source}): " +
                             "${candidate.size} $targetLabel bytes; SHA-256 $hash",
                     file = request.sourcePath
                 )

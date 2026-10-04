@@ -1,6 +1,5 @@
 package com.riftos.app
 
-import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -10,13 +9,20 @@ import java.security.MessageDigest
 /**
  * Generic native Android package preparer for RiftBuild applications.
  *
- * Kept separate from frozen proof-manifest encoders so historical proof byte identities remain stable.
+ * Projects own runtime/profile identity. RiftOS only validates and materializes the declared
+ * bounded profile into a prepared Android tree.
  */
 class RiftBuildNativeApp(
-    context: Context,
     private val workspaceRoot: File
 ) {
-    private val appContext = context.applicationContext
+    private data class RuntimeProfile(
+        val schema: String,
+        val id: String,
+        val activityClass: String,
+        val hasCode: Boolean,
+        val dexDir: String
+    )
+
     private data class AppSpec(
         val schema: String,
         val packageName: String,
@@ -27,8 +33,8 @@ class RiftBuildNativeApp(
         val targetSdk: Int,
         val assetsDir: String,
         val permissions: List<String>,
-        val activityProfile: String,
-        val managedRuntime: String
+        val runtimeProfilePath: String,
+        val runtimeProfile: RuntimeProfile?
     )
 
     private data class Attr(
@@ -44,6 +50,8 @@ class RiftBuildNativeApp(
     companion object {
         private const val APP_SCHEMA_V1 = "riftbuild-native-app/1"
         private const val APP_SCHEMA_V2 = "riftbuild-native-app/2"
+        private const val APP_SCHEMA_V3 = "riftbuild-native-app/3"
+        private const val RUNTIME_PROFILE_SCHEMA = "riftbuild-runtime-profile/1"
         private const val NATIVE_PROJECT_SCHEMA_V1 = "riftbuild-native-project/1"
         private const val NATIVE_PROJECT_SCHEMA_V2 = "riftbuild-native-project/2"
         private const val APP_MANIFEST = "rift-app.json"
@@ -52,13 +60,14 @@ class RiftBuildNativeApp(
         private const val MAX_ASSET_FILES = 5_000
         private const val MAX_ASSET_BYTES = 128L * 1024L * 1024L
         private const val MAX_MANIFEST_BYTES = 64 * 1024
-        private const val MAX_MANAGED_DEX_FILES = 8
-        private const val MAX_MANAGED_DEX_BYTES = 16L * 1024L * 1024L
-        private const val NATIVE_ACTIVITY_PROFILE = "native-activity"
-        private const val RIFTPP_ADAPTER_PROFILE = "riftpp-adapter"
-        private const val RIFTPP_ADAPTER_CLASS = "com.riftpp.android.RiftppActivity"
-        private const val RIFTPP_ADAPTER_RUNTIME = "riftpp-android-adapter/1"
+        private const val MAX_RUNTIME_DEX_FILES = 8
+        private const val MAX_RUNTIME_DEX_BYTES = 16L * 1024L * 1024L
+        private const val NATIVE_ACTIVITY_CLASS = "android.app.NativeActivity"
+        private const val LEGACY_NATIVE_ACTIVITY_PROFILE = "native-activity"
         private val SAFE_LIBRARY = Regex("^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+        private val SAFE_PROFILE_ID = Regex("^[A-Za-z0-9._+-]{1,80}$")
+        private val SAFE_ACTIVITY_CLASS =
+            Regex("^[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)+$")
         private val DEX_ENTRY = Regex("^classes(?:[2-9]|[1-9][0-9]+)?\\.dex$")
         private val SAFE_PACKAGE = Regex("^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$")
         private val ALLOWED_PERMISSIONS = setOf(
@@ -100,14 +109,14 @@ class RiftBuildNativeApp(
         val spec = readAppSpec(project)
         crossCheckNativeLibrary(project, spec.library)
         return JSONObject()
-            .put("schema", "riftbuild-native-app-validation-v1")
+            .put("schema", "riftbuild-native-app-validation-v2")
             .put("appSchema", spec.schema)
             .put("package", spec.packageName)
             .put("library", spec.library)
-            .put("activityProfile", spec.activityProfile)
+            .put("runtimeProfile", if (spec.runtimeProfilePath.isBlank()) JSONObject.NULL else spec.runtimeProfilePath)
+            .put("runtimeProfileId", spec.runtimeProfile?.id ?: JSONObject.NULL)
             .put("activityClass", activityClass(spec))
-            .put("managedRuntime", spec.managedRuntime)
-            .put("requiresDex", spec.activityProfile != NATIVE_ACTIVITY_PROFILE)
+            .put("requiresDex", spec.runtimeProfile?.hasCode == true)
             .put("state", "valid-native-app")
     }
 
@@ -145,10 +154,10 @@ class RiftBuildNativeApp(
             require(sourceAssets.isDirectory) { "Native app assetsDir is not a directory" }
             copyAssets(sourceAssets, preparedAssets)
         }
-        val managedDex = materializeManagedRuntime(project, spec, prepared)
+        val runtimeDex = materializeRuntimeProfile(project, spec, prepared)
 
         return JSONObject()
-            .put("schema", "riftbuild-native-app-prepare-v2")
+            .put("schema", "riftbuild-native-app-prepare-v3")
             .put("appSchema", spec.schema)
             .put("package", spec.packageName)
             .put("library", spec.library)
@@ -163,10 +172,10 @@ class RiftBuildNativeApp(
             .put("assetFiles", stats.files)
             .put("assetBytes", stats.bytes)
             .put("permissions", JSONArray(spec.permissions))
-            .put("activityProfile", spec.activityProfile)
+            .put("runtimeProfile", if (spec.runtimeProfilePath.isBlank()) JSONObject.NULL else spec.runtimeProfilePath)
+            .put("runtimeProfileId", spec.runtimeProfile?.id ?: JSONObject.NULL)
             .put("activityClass", activityClass(spec))
-            .put("managedRuntime", spec.managedRuntime)
-            .put("dexFiles", managedDex)
+            .put("dexFiles", runtimeDex)
             .put("state", "prepared-native-app")
     }
 
@@ -175,7 +184,7 @@ class RiftBuildNativeApp(
         require(confinedTo(project, file) && file.isFile) { "Native app manifest missing: " + APP_MANIFEST }
         val json = readJson(file)
         val schema = json.optString("schema")
-        require(schema == APP_SCHEMA_V1 || schema == APP_SCHEMA_V2) {
+        require(schema == APP_SCHEMA_V1 || schema == APP_SCHEMA_V2 || schema == APP_SCHEMA_V3) {
             "Unsupported native app schema"
         }
 
@@ -213,28 +222,32 @@ class RiftBuildNativeApp(
             }
         }
 
-        val activityProfile = if (schema == APP_SCHEMA_V1) {
-            NATIVE_ACTIVITY_PROFILE
-        } else {
-            json.optString("activity", NATIVE_ACTIVITY_PROFILE).trim()
-        }
-        require(
-            activityProfile == NATIVE_ACTIVITY_PROFILE ||
-                activityProfile == RIFTPP_ADAPTER_PROFILE
-        ) {
-            "Native app activity must be native-activity or riftpp-adapter"
-        }
-        val managedRuntime =
-            if (schema == APP_SCHEMA_V1) "" else json.optString("managedRuntime").trim()
-        if (activityProfile == RIFTPP_ADAPTER_PROFILE) {
-            require(managedRuntime == RIFTPP_ADAPTER_RUNTIME) {
-                "Rift++ adapter app requires managedRuntime: $RIFTPP_ADAPTER_RUNTIME"
+        val runtimeProfilePath =
+            if (schema == APP_SCHEMA_V3) {
+                json.optString("runtimeProfile").trim()
+            } else {
+                val legacyActivity = json.optString("activity").trim()
+                val legacyManagedRuntime = json.optString("managedRuntime").trim()
+                require(
+                    legacyActivity.isBlank() ||
+                        legacyActivity == LEGACY_NATIVE_ACTIVITY_PROFILE
+                ) {
+                    "Legacy app schemas support NativeActivity only; use runtimeProfile"
+                }
+                require(legacyManagedRuntime.isBlank()) {
+                    "Legacy managedRuntime is retired; use runtimeProfile"
+                }
+                ""
             }
-        } else {
-            require(managedRuntime.isBlank()) {
-                "NativeActivity app must not declare a managed runtime"
-            }
+        if (runtimeProfilePath.isNotBlank()) {
+            validateRelativePath(runtimeProfilePath)
         }
+        val runtimeProfile =
+            if (runtimeProfilePath.isBlank()) {
+                null
+            } else {
+                readRuntimeProfile(project, runtimeProfilePath)
+            }
 
         return AppSpec(
             schema,
@@ -246,9 +259,49 @@ class RiftBuildNativeApp(
             targetSdk,
             assetsDir,
             permissions,
-            activityProfile,
-            managedRuntime
+            runtimeProfilePath,
+            runtimeProfile
         )
+    }
+
+    private fun readRuntimeProfile(project: File, relativePath: String): RuntimeProfile {
+        val file = resolveProjectPath(project, relativePath)
+        require(file.isFile) {
+            "Runtime profile manifest is missing: $relativePath"
+        }
+        val buildRoot = File(project, "build/riftbuild").canonicalFile
+        require(!confinedTo(buildRoot, file)) {
+            "Runtime profile manifest must be project-owned source, not build output"
+        }
+        val json = readJson(file)
+        val schema = json.optString("schema").trim()
+        require(schema == RUNTIME_PROFILE_SCHEMA) {
+            "Unsupported runtime profile schema"
+        }
+        val id = json.optString("id").trim()
+        require(SAFE_PROFILE_ID.matches(id)) {
+            "Runtime profile id is invalid"
+        }
+        val activityClass = json.optString("activityClass").trim()
+        require(SAFE_ACTIVITY_CLASS.matches(activityClass)) {
+            "Runtime profile activityClass is invalid"
+        }
+        require(json.has("hasCode") && json.opt("hasCode") is Boolean) {
+            "Runtime profile requires boolean hasCode"
+        }
+        val hasCode = json.getBoolean("hasCode")
+        val dexDir = json.optString("dexDir").trim()
+        if (hasCode) {
+            require(dexDir.isNotBlank()) {
+                "Code-bearing runtime profile requires dexDir"
+            }
+            validateRelativePath(dexDir)
+        } else {
+            require(dexDir.isBlank()) {
+                "Code-free runtime profile must not declare dexDir"
+            }
+        }
+        return RuntimeProfile(schema, id, activityClass, hasCode, dexDir)
     }
 
     private fun crossCheckNativeLibrary(project: File, library: String) {
@@ -288,7 +341,7 @@ class RiftBuildNativeApp(
             )))
             body.write(endElement(strings, "uses-permission"))
         }
-        val hasCode = spec.activityProfile == RIFTPP_ADAPTER_PROFILE
+        val hasCode = spec.runtimeProfile?.hasCode == true
         body.write(startElement(strings, "application", listOf(
             boolAttr(strings, "hasCode", hasCode.toString(), hasCode)
         )))
@@ -340,7 +393,7 @@ class RiftBuildNativeApp(
             "uses-permission",
             *spec.permissions.toTypedArray(),
             "application",
-            (spec.activityProfile == RIFTPP_ADAPTER_PROFILE).toString(),
+            (spec.runtimeProfile?.hasCode == true).toString(),
             "activity",
             activityClass(spec),
             "true",
@@ -357,11 +410,7 @@ class RiftBuildNativeApp(
     }
 
     private fun activityClass(spec: AppSpec): String =
-        if (spec.activityProfile == RIFTPP_ADAPTER_PROFILE) {
-            RIFTPP_ADAPTER_CLASS
-        } else {
-            "android.app.NativeActivity"
-        }
+        spec.runtimeProfile?.activityClass ?: NATIVE_ACTIVITY_CLASS
 
     private fun clearPreparedDex(prepared: File) {
         prepared.listFiles()
@@ -371,27 +420,21 @@ class RiftBuildNativeApp(
             }
     }
 
-    private fun materializeManagedRuntime(
+    private fun materializeRuntimeProfile(
         project: File,
         spec: AppSpec,
         prepared: File
     ): JSONArray {
         val out = JSONArray()
-        if (spec.managedRuntime.isBlank()) return out
+        val profile = spec.runtimeProfile ?: return out
+        if (!profile.hasCode) return out
 
-        require(
-            spec.activityProfile == RIFTPP_ADAPTER_PROFILE &&
-                spec.managedRuntime == RIFTPP_ADAPTER_RUNTIME
-        ) {
-            "Managed runtime is not allowlisted: ${spec.managedRuntime}"
+        val dexRoot = resolveProjectPath(project, profile.dexDir)
+        require(dexRoot.isDirectory) {
+            "Runtime profile DEX directory is missing: ${profile.dexDir}"
         }
 
-        val hotRoot = File(project, "build/riftbuild/hot-dex").canonicalFile
-        require(confinedTo(project, hotRoot) && hotRoot.isDirectory) {
-            "Rift++ adapter hot DEX is missing; run riftbuild kotlin-compile first"
-        }
-
-        val dexFiles = hotRoot.listFiles()
+        val dexFiles = dexRoot.listFiles()
             ?.filter { it.isFile && DEX_ENTRY.matches(it.name) }
             ?.sortedBy { file ->
                 if (file.name == "classes.dex") 1
@@ -401,21 +444,21 @@ class RiftBuildNativeApp(
             .orEmpty()
 
         require(dexFiles.isNotEmpty() && dexFiles.first().name == "classes.dex") {
-            "Rift++ adapter hot classes.dex is missing"
+            "Runtime profile classes.dex is missing"
         }
-        require(dexFiles.size <= MAX_MANAGED_DEX_FILES) {
-            "Rift++ adapter hot DEX file count exceeds limit"
+        require(dexFiles.size <= MAX_RUNTIME_DEX_FILES) {
+            "Runtime profile DEX file count exceeds limit"
         }
 
         var total = 0L
         for (input in dexFiles) {
             val length = input.length()
-            require(length in 8..MAX_MANAGED_DEX_BYTES) {
-                "Rift++ adapter hot DEX size is invalid: ${input.name}"
+            require(length in 8..MAX_RUNTIME_DEX_BYTES) {
+                "Runtime profile DEX size is invalid: ${input.name}"
             }
             total += length
-            require(total <= MAX_MANAGED_DEX_BYTES) {
-                "Rift++ adapter hot DEX bytes exceed limit"
+            require(total <= MAX_RUNTIME_DEX_BYTES) {
+                "Runtime profile DEX bytes exceed limit"
             }
 
             val bytes = input.readBytes()
@@ -426,18 +469,18 @@ class RiftBuildNativeApp(
                     bytes[3] == '\n'.code.toByte() &&
                     bytes[7] == 0.toByte()
             ) {
-                "Rift++ adapter hot DEX magic is invalid: ${input.name}"
+                "Runtime profile DEX magic is invalid: ${input.name}"
             }
 
             val output = File(prepared, input.name).canonicalFile
             require(confinedTo(prepared, output)) {
-                "Rift++ adapter hot DEX escaped prepared root"
+                "Runtime profile DEX escaped prepared root"
             }
             writeAtomic(output, bytes)
             out.put(
                 JSONObject()
                     .put("name", input.name)
-                    .put("origin", "project-hot")
+                    .put("origin", "runtime-profile:${profile.id}")
                     .put("bytes", bytes.size)
                     .put("sha256", sha256(bytes))
             )

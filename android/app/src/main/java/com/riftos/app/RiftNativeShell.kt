@@ -45,7 +45,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "ls", "tree", "stat", "cat", "head", "tail",
             "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip",
             "browser", "open", "clear", "workspace", "git", "chat", "devlab",
-            "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex",
+            "vortex", "vortex-agent", "riftos-agent", "riftllm-agent",
             "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-editor", "rift-tool"
         )
         private const val WORKSPACE_ROOT = "/workspace/RiftOS-main"
@@ -227,7 +227,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
-                    "riftbuild doctor|validate|plan|toolchain-status|toolchain-install-bundled|managed-status|managed-payload|managed-copy|compiler-status|compiler-run|kotlin-status|kotlin-compile|riftpp-compile-hot|compile-native|compile-object|extract-object-text|prepare-native-app|prepare-codynex-mc0|prepare-codynex-mc1a|prepare-codynex-mc1b|prepare-codynex-m2-vm0|prepare-codynex-m2b|prepare-codynex-mc2a|prepare-codynex-editor|prepare-codynex-app|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
+                    "riftbuild doctor|validate|plan|toolchain-status|toolchain-install-bundled|managed-status|managed-payload|managed-copy|compiler-status|compiler-run|kotlin-status|kotlin-compile|compile-native|compile-object|extract-object-text|prepare-native-app|pack|sign|verify|install-proof|install-status|launch-proof|runs|artifacts   [NATIVE / BOUNDED]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
@@ -238,7 +238,6 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
                     "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
                     "rift-cli help|status|architecture|enable|disable|driver   [NATIVE N1 / OFF BY DEFAULT]\n" +
-                    "codynex status|read-state|call|compile-activate|activate|corrupt|recover|clear|cold-restart   [LOCAL BINDER BRIDGE]\n" +
                     "Legacy shell-only services fail explicitly; no renderer compatibility fallback exists.",
                 cwd,
                 nativeResult(command)
@@ -285,7 +284,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "codynex", "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-editor", "rift-tool", "rift-cli"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "riftpp-editor", "rift-tool", "rift-cli"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -326,7 +325,6 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "vortex-agent" -> services.vortexAgent(args).let { ShellOutcome(it.output, cwd, it.value) }
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
-            "codynex" -> services.codynex(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftbuild" -> {
                 val value = riftBuild.executeShell(args, cwd)
                 ShellOutcome(value.output, cwd, value.value)

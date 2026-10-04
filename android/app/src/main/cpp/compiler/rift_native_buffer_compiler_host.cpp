@@ -86,7 +86,7 @@ jlongArray resultArray(JNIEnv* env, int32_t hostStatus, uint32_t returnValue) {
 
 extern "C"
 JNIEXPORT jlongArray JNICALL
-Java_com_riftos_app_RiftppDynamicCompilerService_nativeCompileDynamic(
+Java_com_riftos_app_RiftNativeBufferCompilerService_nativeCompileDynamic(
     JNIEnv* env,
     jobject,
     jbyteArray compilerArray,

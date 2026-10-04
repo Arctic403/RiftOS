@@ -31,7 +31,7 @@ Related narrow owners:
 
 ## Process ownership
 
-`RiftMcpRuntime` lazily owns singletons for native shell, tool host, MCP server, persistent MCP operation journal, relay, native Git, Vortex bridge and the Codynex LR0 Binder bridge.
+`RiftMcpRuntime` lazily owns singletons for native shell, tool host, MCP server, persistent MCP operation journal, relay, native Git and Vortex bridge. Codynex editor control is routed through the shell-owned bounded `RiftCodynexEditorBridgeClient`, not an MCP-runtime compiler/bridge singleton.
 
 MainActivity registration is a weak UI reference only.
 

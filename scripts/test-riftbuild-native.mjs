@@ -28,8 +28,8 @@ const riftppEditorMain = read('android/app/src/main/java/com/riftpp/editor/MainA
 const riftppEditorApkBuilder = read('android/app/src/main/java/com/riftpp/editor/RiftppApkBuilder.kt');
 const riftppEditorNativeElfPreflight = read('android/app/src/main/java/com/riftpp/editor/RiftppNativeElfPreflight.kt');
 const riftppEditorRelocatableElfPreflight = read('android/app/src/main/java/com/riftpp/editor/RiftppRelocatableElfPreflight.kt');
-const riftppDynamicCompilerService = read('android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt');
-const riftppDynamicCompilerHost = read('android/app/src/main/cpp/riftpp/riftpp_dynamic_compiler_host.cpp');
+const nativeBufferCompilerService = read('android/app/src/main/java/com/riftos/app/RiftNativeBufferCompilerService.kt');
+const nativeBufferCompilerHost = read('android/app/src/main/cpp/compiler/rift_native_buffer_compiler_host.cpp');
 const managedJvmToolService = read('android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt');
 const managedToolchains = read('android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt');
 const kotlinCompiler = read('android/app/src/main/java/com/riftos/app/RiftBuildKotlinCompiler.kt');
@@ -39,8 +39,6 @@ const riftAppDiagnosticBridge = read('android/app/src/main/java/com/riftos/app/R
 const appHost = read('android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt');
 const gradle = read('android/app/build.gradle.kts');
 const androidSettings = read('android/settings.gradle.kts');
-const riftppAdapterBundleGradle = read('android/riftpp-adapter-runtime-bundle/build.gradle.kts');
-const riftppAdapterActivity = read('android/riftpp-adapter-runtime-bundle/src/main/java/com/riftpp/android/RiftppActivity.kt');
 const cmake = read('android/app/src/main/cpp/CMakeLists.txt');
 const manifest = read('android/app/src/main/AndroidManifest.xml');
 const retained = read('src/riftbuild.js');
@@ -153,16 +151,6 @@ for (const required of [
   'preparedArtifactPackagerReady',
   'prepared-native-proof',
   'crossHostExpectedBundles',
-  'prepareCodynexMc0',
-  'prepare-codynex-mc0',
-  'MC0_SEED_BYTES = 172',
-  '3276dcbf29704b1ba7d9d331e7891ceff10d85b16bb7688c62273aeaa3ca311e',
-  'libcodynex_mc0_host.so',
-  'lib/armeabi-v7a/libcodynex_mc0_host.so',
-  'readOwnApkEntry',
-  'Codynex MC0 seed SHA-256 drift',
-  'Codynex MC0 host materialization hash mismatch',
-  'compilerAuthority", "assets/mc0_seed.bin',
   'ByteArrayOutputStream',
   'ZipOutputStream',
   'AndroidManifest.xml must be compiled Android binary XML',
@@ -204,13 +192,8 @@ for (const required of [
   'RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com.riftpp.editor.nativev1"',
   'RIFTPP_ADAPTER_R1_TARGET_PACKAGE = "com.riftpp.editor.adapterr1"',
   'getLaunchIntentForPackage',
-  'MC0_TARGET_PACKAGE = "com.codynex.mc0proof"',
-  'MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"',
-  'MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"',
   'EDITOR_TARGET_PACKAGE = "com.codynex.editor"',
   'EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"',
-  'CODYNEX_APP_TARGET_PACKAGE = "com.codynex.notepad"',
-  'com.codynex.apphost.CodynexAppActivity',
   'ALLOWED_PROOF_PACKAGES',
   'PackageInstaller',
   'USER_ACTION_REQUIRED',
@@ -283,7 +266,9 @@ assert.ok(!nativeToolchain.includes('linkerArgs'), 'native project must not gain
 assert.ok(nativeToolchain.includes('SUPPORTED_INPUT_ABIS'), 'native v2 link inputs must remain ABI-scoped');
 assert.match(nativeToolchain, /fun validateProject\(projectRoot: File\)/);
 assert.match(nativeApp, /fun validateProject\(projectRoot: File\)/);
-assert.match(nativeApp, /riftbuild-native-app-validation-v1/);
+assert.match(nativeApp, /riftbuild-native-app-validation-v2/);
+assert.match(nativeApp, /fun validateProject\(projectRoot: File\)/);
+assert.match(nativeApp, /riftbuild-native-app-validation-v2/);
 assert.ok(!nativeToolchain.includes('bundledMaterialized'), 'retired bundled-archive materialization must stay removed');
 assert.ok(!nativeToolchain.includes('bundled-archive'), 'retired bundled-archive receipt entries must stay removed');
 
@@ -291,12 +276,17 @@ for (const required of [
   'class RiftBuildNativeApp',
   'riftbuild-native-app/1',
   'riftbuild-native-app/2',
-  'RIFTPP_ADAPTER_PROFILE',
-  'RIFTPP_ADAPTER_CLASS',
-  'RIFTPP_ADAPTER_RUNTIME',
-  'materializeManagedRuntime',
-  'MAX_MANAGED_DEX_FILES = 8',
-  'MAX_MANAGED_DEX_BYTES = 16L * 1024L * 1024L',
+  'riftbuild-native-app/3',
+  'riftbuild-runtime-profile/1',
+  'riftbuild-native-app-prepare-v3',
+  'readRuntimeProfile',
+  'materializeRuntimeProfile',
+  'MAX_RUNTIME_DEX_FILES = 8',
+  'MAX_RUNTIME_DEX_BYTES = 16L * 1024L * 1024L',
+  'runtimeProfile',
+  'activityClass',
+  'hasCode',
+  'dexDir',
   'clearPreparedDex',
   'rift-app.json',
   'android.app.NativeActivity',
@@ -309,12 +299,19 @@ for (const required of [
   'rift-app.json library must match rift-native.json library',
   'Native app assetsDir must not point inside build/riftbuild',
 ]) assert.ok(nativeApp.includes(required), 'native app preparer contract missing: ' + required);
+for (const forbidden of [
+  'RIFTPP_ADAPTER_PROFILE',
+  'RIFTPP_ADAPTER_CLASS',
+  'RIFTPP_ADAPTER_RUNTIME',
+  'riftpp-adapter',
+  'riftpp-android-adapter/1',
+  'com.riftpp.android.RiftppActivity',
+  'materializeManagedRuntime',
+  'riftbuild/managed-runtimes/riftpp-adapter-v1',
+]) assert.ok(!nativeApp.includes(forbidden), 'generic native app materializer regained project identity: ' + forbidden);
 assert.ok(!nativeApp.includes('ProcessBuilder'), 'native app preparer must not gain process authority');
 assert.ok(!nativeApp.includes('Runtime.getRuntime().exec'), 'native app preparer must not gain raw exec authority');
 assert.match(nativeApp, /DEX_ENTRY\.matches/);
-assert.ok(nativeApp.includes('build/riftbuild/hot-dex'), 'Rift++ adapter packaging must consume project-owned hot DEX output');
-assert.ok(nativeApp.includes('run riftbuild kotlin-compile first'), 'Rift++ adapter packaging must require Kotlin hot compilation first');
-assert.ok(!nativeApp.includes('riftbuild/managed-runtimes/riftpp-adapter-v1'), 'Rift++ adapter packaging must not depend on baked RiftOS adapter DEX assets');
 
 for (const required of [
   'class RiftBuildManagedToolchains',
@@ -367,26 +364,31 @@ assert.ok(managedKotlinToolGradle.includes('com.github.PranavPurwar:kotlinc-andr
 assert.ok(managedKotlinToolGradle.includes('org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'), 'managed Kotlin payload must package its coroutines runtime');
 
 for (const required of [
-  'class RiftppDynamicCompilerService',
-  'riftpp_dynamic_compiler_host',
+  'class RiftNativeBufferCompilerService',
+  'rift_native_buffer_compiler_host',
   'MAX_COMPILER_BYTES = 256 * 1024',
   'MAX_SOURCE_BYTES = 512 * 1024',
   'MAX_OUTPUT_BYTES = 512 * 1024',
   'Process.killProcess(remotePid)',
-]) assert.ok(riftppDynamicCompilerService.includes(required), 'dynamic Rift++ compiler service contract missing: ' + required);
+]) assert.ok(nativeBufferCompilerService.includes(required), 'generic native-buffer compiler service contract missing: ' + required);
 
 for (const required of [
-  'Java_com_riftos_app_RiftppDynamicCompilerService_nativeCompileDynamic',
+  'Java_com_riftos_app_RiftNativeBufferCompilerService_nativeCompileDynamic',
   'PROT_READ | PROT_EXEC',
   'kMaxCompilerBytes = 256 * 1024',
   'kCanary = 0xA5',
-]) assert.ok(riftppDynamicCompilerHost.includes(required), 'dynamic Rift++ compiler host contract missing: ' + required);
+]) assert.ok(nativeBufferCompilerHost.includes(required), 'generic native-buffer compiler host contract missing: ' + required);
 
 assert.ok(!exists('android/app/src/main/java/com/riftos/app/RiftppCompilerService.kt'), 'retired legacy Rift++ compiler service must stay absent');
 assert.ok(!exists('android/app/src/main/cpp/riftpp/riftpp_compiler_host.cpp'), 'retired legacy Rift++ compiler host must stay absent');
+assert.ok(!exists('android/app/src/main/java/com/riftos/app/RiftppDynamicCompilerService.kt'), 'Rift++-named native-buffer service must stay retired');
+assert.ok(!exists('android/app/src/main/cpp/riftpp/riftpp_dynamic_compiler_host.cpp'), 'Rift++-named native-buffer host must stay retired');
+assert.ok(!exists('android/riftpp-adapter-runtime-bundle'), 'Rift++ adapter bundle must be project-owned, not RiftOS-owned');
 assert.ok(!manifest.includes('.RiftppCompilerService'), 'retired legacy Rift++ compiler service must stay out of the manifest');
-assert.ok(!manifest.includes('android:process=":riftppCompiler"'), 'retired legacy Rift++ compiler process must stay absent');
+assert.ok(!manifest.includes('.RiftppDynamicCompilerService'), 'Rift++-named compiler service must stay out of the manifest');
+assert.ok(!manifest.includes(':riftppCompiler') && !manifest.includes(':riftppCompilerHot'), 'Rift++-named compiler processes must stay absent');
 assert.ok(!cmake.includes('riftpp_compiler_host'), 'retired legacy Rift++ compiler target must stay absent');
+assert.ok(!cmake.includes('riftpp_dynamic_compiler_host'), 'Rift++-named native-buffer target must stay absent');
 assert.ok(!shell.includes('riftpp-host'), 'retired legacy riftpp-host shell surface must stay absent');
 for (const retired of ['prepare-riftpp-v0', 'prepare-riftpp-seed0-arm64', 'prepare-riftpp-app0', 'prepare-riftpp-editor']) {
   assert.ok(!nativeBuild.includes(retired), 'retired Rift++ special-case RiftBuild route resurfaced: ' + retired);
@@ -394,16 +396,16 @@ for (const retired of ['prepare-riftpp-v0', 'prepare-riftpp-seed0-arm64', 'prepa
 assert.ok(nativeBuild.includes('args.optString("kind", "native-app")'), 'build.prepare must default to generic native-app');
 assert.ok(nativeBuild.includes('"native-app" -> prepareNativeApp(project, cwd)'), 'build.prepare native-app must use generic prepareNativeApp');
 assert.ok(!nativeBuild.includes('"riftpp-v0"') && !nativeBuild.includes('"riftpp-app0"'), 'retired Rift++ programmatic prepare kinds must stay absent');
-assert.ok(cmake.includes('riftpp_dynamic_compiler_host'), 'dynamic Rift++ compiler host target must stay separate');
-assert.ok(manifest.includes('.RiftppDynamicCompilerService'), 'dynamic Rift++ compiler service must stay crash-contained in the manifest');
+assert.ok(cmake.includes('rift_native_buffer_compiler_host'), 'generic native-buffer compiler host target must stay present');
+assert.ok(manifest.includes('.RiftNativeBufferCompilerService'), 'generic native-buffer compiler service must stay crash-contained');
+assert.ok(manifest.includes(':riftNativeBufferCompiler'), 'generic native-buffer compiler service must stay process-isolated');
 assert.ok(manifest.includes('.RiftManagedJvmToolService'), 'generic managed JVM tool service must stay declared');
 assert.ok(manifest.includes(':riftJvmToolHot'), 'generic managed JVM tool service must stay process-isolated');
-assert.ok(androidSettings.includes('include(":riftpp-adapter-runtime-bundle")'), 'Rift++ adapter bundle module must stay included');
+assert.ok(!androidSettings.includes('riftpp-adapter-runtime-bundle'), 'RiftOS settings must not include a project-specific runtime bundle');
 assert.ok(androidSettings.includes('include(":rift-managed-kotlin-tool")'), 'managed Kotlin compiler payload module must stay included');
 assert.ok(androidSettings.includes('https://jitpack.io'), 'managed compiler payload repository must stay available');
-assert.ok(gradle.includes('syncRiftBuildRiftppAdapterRuntime'), 'legacy Rift++ adapter DEX sync task must remain available as fallback');
-assert.ok(!gradle.includes('dependsOn(syncRiftBuildRiftppAdapterRuntime)'), 'legacy Rift++ adapter DEX sync must not remain active preBuild authority');
-assert.ok(gradle.includes('generated/riftosAssets/riftbuild/managed-runtimes/riftpp-adapter-v1'), 'legacy Rift++ adapter generated runtime path must stay pinned');
+assert.ok(!gradle.includes('syncRiftBuildRiftppAdapterRuntime'), 'RiftOS Gradle must not own project-specific runtime sync');
+assert.ok(!gradle.includes('managed-runtimes/riftpp-adapter-v1'), 'RiftOS Gradle must not own project-specific runtime assets');
 assert.ok(gradle.includes('syncRiftBuildKotlinToolchain'), 'RiftBuild Kotlin toolchain asset sync must be wired');
 assert.ok(gradle.includes('dependsOn(syncRiftBuildKotlinToolchain)'), 'RiftBuild Kotlin toolchain must be active preBuild infrastructure');
 assert.ok(gradle.includes('syncRiftBuildCompilerSeeds'), 'managed compiler seed sync must stay wired');
@@ -411,20 +413,6 @@ assert.ok(gradle.includes('dependsOn(syncRiftBuildCompilerSeeds)'), 'managed com
 assert.ok(gradle.includes('kotlin-android-2.4.0.apk'), 'managed Kotlin compiler seed asset name must stay pinned');
 assert.ok(!gradle.includes('kotlin-compiler-embeddable:2.4.10'), 'RiftOS app must not embed the desktop Kotlin compiler implementation');
 assert.ok(gradle.includes('com.android.tools:r8:8.13.23'), 'RiftBuild D8/R8 engine version must stay pinned');
-assert.ok(riftppAdapterBundleGradle.includes('namespace = "com.riftpp.android"'), 'Rift++ adapter namespace must stay fixed');
-for (const required of [
-  'class RiftppActivity : Activity(), SurfaceHolder.Callback',
-  'System.loadLibrary(library)',
-  'nativeLifecycle',
-  'nativeSurface',
-  'SurfaceView(this)',
-]) assert.ok(riftppAdapterActivity.includes(required), 'Rift++ adapter boundary missing: ' + required);
-for (const forbidden of ['ProcessBuilder', 'Runtime.getRuntime().exec', 'RiftppCompilerService', 'RiftppEditorBridgeService']) {
-  assert.ok(!riftppAdapterActivity.includes(forbidden), 'Rift++ adapter gained forbidden app/runtime authority: ' + forbidden);
-}
-
-const combinedAuthority = nativeBuild + '\n' + signer + '\n' + installer;
-for (const forbidden of [
   'ProcessBuilder',
   'Runtime.getRuntime().exec',
   'rift-cli enable',
@@ -439,132 +427,38 @@ assert.match(nativeBuild, /confinedTo\(artifactRoot, file\)/);
 assert.match(nativeBuild, /type == XML_TYPE && headerSize == 8 && declaredSize == file\.length\(\)\.toInt\(\)/);
 assert.match(nativeBuild, /writeManifestU32\(output, 1\)/);
 assert.match(nativeBuild, /writeManifestU32\(output, XML_NO_INDEX\)/);
-assert.match(nativeBuild, /buildMc0BinaryManifest/);
-assert.match(nativeBuild, /verifyElfImage\(host, 1, 40\)/);
-assert.match(nativeBuild, /target", "arm32"/);
-assert.match(nativeBuild, /hostParsesSource", false/);
-assert.match(nativeBuild, /hostEmitsInstructions", false/);
-const mc0Host = read('android/app/src/main/cpp/mc0/codynex_mc0_host.cpp');
-assert.match(mc0Host, /while \(total < kSeedBytes\)/);
-assert.match(mc0Host, /AAsset_read\(/);
-assert.match(mc0Host, /mprotect\(memory, rounded, PROT_READ \| PROT_EXEC\)/);
-assert.match(mc0Host, /mprotect\(generated, pageSize, PROT_READ \| PROT_EXEC\)/);
-assert.match(mc0Host, /const int validDigits\[\] = \{0, 1, 7, 9\}/);
-assert.match(mc0Host, /reject-capacity-0/);
-assert.match(mc0Host, /reject-capacity-7/);
-assert.match(mc0Host, /kCanary = 0xA5/);
-assert.match(mc0Host, /reject-output-unchanged/);
-assert.ok(!mc0Host.includes('#include <string>'), 'MC0 host must not depend on std::string');
-assert.ok(!mc0Host.includes('std::string'), 'MC0 host must remain C-style test glue');
-assert.match(cmake, /codynex_mc0_host[\s\S]*?-fno-exceptions/);
-assert.match(cmake, /codynex_mc0_host[\s\S]*?-fno-rtti/);
-const mc1aHost = read('android/app/src/main/cpp/mc1/codynex_mc1a_host.cpp');
-assert.match(nativeBuild, /prepare-codynex-mc1a/);
-assert.match(nativeBuild, /MC1A_SEED_BYTES = 236/);
-assert.match(nativeBuild, /MC1A_SEED_SHA256 = "2ef7054e533bfafaefb0fcc14b9cd41cd05aceeec58eeeb335fc6aef4e88ba1a"/);
-assert.match(nativeBuild, /MC1A_PACKAGE = "com\.codynex\.mc1aproof"/);
-assert.match(nativeBuild, /buildMc1aBinaryManifest/);
-assert.match(nativeBuild, /compilerAuthority", "assets\/mc1a_seed\.bin"/);
-assert.match(mc1aHost, /kSeedBytes = 236/);
-assert.match(mc1aHost, /kSeedAsset = "mc1a_seed\.bin"/);
-assert.match(mc1aHost, /while \(total < kSeedBytes\)/);
-assert.match(mc1aHost, /const ValidCase validCases\[\]/);
-assert.match(mc1aHost, /"ret 255", 7, 255/);
-assert.match(mc1aHost, /reject-overflow-256/);
-assert.match(mc1aHost, /reject-leading-zero-2/);
-assert.match(mc1aHost, /reject-capacity-7/);
-assert.match(mc1aHost, /kCanary = 0xA5/);
-assert.match(mc1aHost, /reject-output-unchanged/);
-assert.ok(!mc1aHost.includes('#include <string>'), 'MC1-A host must not depend on std::string');
-assert.ok(!mc1aHost.includes('std::string'), 'MC1-A host must remain C-style test glue');
-assert.match(cmake, /codynex_mc1a_host[\s\S]*?-fno-exceptions/);
-assert.match(cmake, /codynex_mc1a_host[\s\S]*?-fno-rtti/);
-const mc1bHost = read('android/app/src/main/cpp/mc1/codynex_mc1b_host.cpp');
-assert.match(nativeBuild, /prepare-codynex-mc1b/);
-assert.match(nativeBuild, /MC1B_SEED_BYTES = 552/);
-assert.match(nativeBuild, /MC1B_SEED_SHA256 = "4f4a7305900547d949831fc4cfc6c6c0f747edd7ab525adfb8a1488a6ca304be"/);
-assert.match(nativeBuild, /MC1B_PACKAGE = "com\.codynex\.mc1bproof"/);
-assert.match(nativeBuild, /buildMc1bBinaryManifest/);
-assert.match(nativeBuild, /compilerAuthority", "assets\/mc1b_seed\.bin"/);
-assert.match(mc1bHost, /kSeedBytes = 552/);
-assert.match(mc1bHost, /kSeedAsset = "mc1b_seed\.bin"/);
-assert.match(mc1bHost, /kGeneratedBytes = 12/);
-assert.match(mc1bHost, /"ret 255\+255", 11, 255, 255, 510/);
-assert.match(mc1bHost, /runtime-add-emission/);
-assert.match(mc1bHost, /generated-runtime-add-result/);
-assert.match(mc1bHost, /reject-left-leading-zero/);
-assert.match(mc1bHost, /reject-right-leading-zero/);
-assert.match(mc1bHost, /reject-capacity-11/);
-assert.match(mc1bHost, /kCanary = 0xA5/);
-assert.match(mc1bHost, /reject-output-unchanged/);
-assert.ok(!mc1bHost.includes('#include <string>'), 'MC1-B host must not depend on std::string');
-assert.ok(!mc1bHost.includes('std::string'), 'MC1-B host must remain C-style test glue');
-assert.match(cmake, /codynex_mc1b_host[\s\S]*?-fno-exceptions/);
-assert.match(cmake, /codynex_mc1b_host[\s\S]*?-fno-rtti/);
-const m2Vm0Host = read('android/app/src/main/cpp/m2/codynex_m2_vm0_host.cpp');
-assert.match(nativeBuild, /prepare-codynex-m2-vm0/);
-assert.match(nativeBuild, /M2_VM0_SEED_BYTES = 332/);
-assert.match(nativeBuild, /M2_VM0_SEED_SHA256 = "0577161c8cad09541a998ba44cacd823ce0b0c3a6a5b607960b855483af1dba6"/);
-assert.match(nativeBuild, /M2_VM0_PACKAGE = "com\.codynex\.m2vm0proof"/);
-assert.match(nativeBuild, /buildM2Vm0BinaryManifest/);
-assert.match(nativeBuild, /fun prepareCodynexM2Vm0[\s\S]*?val manifestBytes = buildM2Vm0BinaryManifest\(\)/);
-assert.match(nativeBuild, /vmAuthority", "assets\/vm0_seed\.bin"/);
-assert.match(m2Vm0Host, /kSeedBytes = 332/);
-assert.match(m2Vm0Host, /kSeedAsset = "vm0_seed\.bin"/);
-assert.match(m2Vm0Host, /M2-A VM0 PASS/);
-assert.match(m2Vm0Host, /reject-step-limit/);
-assert.match(m2Vm0Host, /failure-result-unchanged/);
-assert.ok(!m2Vm0Host.includes('#include <string>'), 'M2 VM0 host must not depend on std::string');
-assert.ok(!m2Vm0Host.includes('std::string'), 'M2 VM0 host must remain C-style test glue');
-assert.match(cmake, /codynex_m2_vm0_host[\s\S]*?-fno-exceptions/);
-assert.match(cmake, /codynex_m2_vm0_host[\s\S]*?-fno-rtti/);
-const m2bHost = read('android/app/src/main/cpp/m2/codynex_m2b_host.cpp');
-assert.match(nativeBuild, /prepare-codynex-m2b/);
-assert.match(nativeBuild, /M2_B_VM_BYTES = 812/);
-assert.match(nativeBuild, /M2_B_VM_SHA256 = "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"/);
-assert.match(nativeBuild, /M2_B_COMPILER_BYTES = 704/);
-assert.match(nativeBuild, /M2_B_COMPILER_SHA256 = "4a3bd4867de5cf76604e5810f2ae92a2af029f694891017bf0e073833510f575"/);
-assert.match(nativeBuild, /M2_B_PACKAGE = "com\.codynex\.m2bproof"/);
-assert.match(nativeBuild, /buildM2BBinaryManifest/);
-assert.match(nativeBuild, /fun prepareCodynexM2B[\s\S]*?val manifestBytes = buildM2BBinaryManifest\(\)/);
-assert.match(nativeBuild, /vmAuthority", "assets\/vm1_seed\.bin"/);
-assert.match(nativeBuild, /compilerAuthority", "assets\/mc1b_compiler\.bin"/);
-assert.match(m2bHost, /kVmBytes = 812/);
-assert.match(m2bHost, /kCompilerBytes = 704/);
-assert.match(m2bHost, /M2-B PASS/);
-assert.match(m2bHost, /vm-compile-valid/);
-assert.match(m2bHost, /generated-runtime-add-result/);
-assert.match(m2bHost, /reject-capacity-11/);
-assert.ok(!m2bHost.includes('#include <string>'), 'M2-B host must not depend on std::string');
-assert.ok(!m2bHost.includes('std::string'), 'M2-B host must remain C-style test glue');
-assert.match(cmake, /codynex_m2b_host[\s\S]*?-fno-exceptions/);
-assert.match(cmake, /codynex_m2b_host[\s\S]*?-fno-rtti/);
-const mc2aHost = read('android/app/src/main/cpp/m2/codynex_mc2a_host.cpp');
-assert.match(nativeBuild, /prepare-codynex-mc2a/);
-assert.match(nativeBuild, /MC2_A_VM_BYTES = 812/);
-assert.match(nativeBuild, /MC2_A_VM_SHA256 = "7d7b33d2796ab2ddbca1519e00f254c2e6c8417af3ee9317ab45929a593b7df5"/);
-assert.match(nativeBuild, /MC2_A_COMPILER_BYTES = 292/);
-assert.match(nativeBuild, /MC2_A_COMPILER_SHA256 = "b00cc99ef0cf122d47cff54123e1e1ec19f83a44dfe949f5358428e45f47fb2e"/);
-assert.match(nativeBuild, /MC2_A_SOURCE_BYTES = 584/);
-assert.match(nativeBuild, /MC2_A_SOURCE_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"/);
-assert.match(nativeBuild, /MC2_A_PACKAGE = "com\.codynex\.mc2aproof"/);
-assert.match(nativeBuild, /buildMc2ABinaryManifest/);
-assert.match(nativeBuild, /fun prepareCodynexMc2A[\s\S]*?val manifestBytes = buildMc2ABinaryManifest\(\)/);
-assert.match(nativeBuild, /vmAuthority", "assets\/vm1_seed\.bin"/);
-assert.match(nativeBuild, /compilerAuthority", "assets\/selfhost_compiler\.bin"/);
-assert.match(nativeBuild, /sourceAuthority", "assets\/selfhost_compiler\.cx0"/);
-assert.match(mc2aHost, /kVmBytes = 812/);
-assert.match(mc2aHost, /kCompilerBytes = 292/);
-assert.match(mc2aHost, /kSourceBytes = 584/);
-assert.match(mc2aHost, /MC2-A PASS/);
-assert.match(mc2aHost, /B-equals-A/);
-assert.match(mc2aHost, /C-equals-B/);
-assert.match(mc2aHost, /C-equals-A/);
-assert.ok(!mc2aHost.includes('#include <string>'), 'MC2-A host must not depend on std::string');
-assert.ok(!mc2aHost.includes('std::string'), 'MC2-A host must remain C-style proof glue');
-assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-exceptions/);
-assert.match(cmake, /codynex_mc2a_host[\s\S]*?-fno-rtti/);
-
+for (const retiredRoute of [
+  'prepare-codynex-mc0',
+  'prepare-codynex-mc1a',
+  'prepare-codynex-mc1b',
+  'prepare-codynex-m2-vm0',
+  'prepare-codynex-m2b',
+  'prepare-codynex-mc2a',
+  'prepare-codynex-editor',
+  'prepare-codynex-app',
+]) {
+  assert.ok(!nativeBuild.includes(retiredRoute), 'retired Codynex special-case RiftBuild route resurfaced: ' + retiredRoute);
+}
+for (const retiredHost of [
+  'android/app/src/main/cpp/mc0/codynex_mc0_host.cpp',
+  'android/app/src/main/cpp/mc1/codynex_mc1a_host.cpp',
+  'android/app/src/main/cpp/mc1/codynex_mc1b_host.cpp',
+  'android/app/src/main/cpp/m2/codynex_m2_vm0_host.cpp',
+  'android/app/src/main/cpp/m2/codynex_m2b_host.cpp',
+  'android/app/src/main/cpp/m2/codynex_mc2a_host.cpp',
+]) {
+  assert.equal(exists(retiredHost), false, 'retired Codynex proof host resurfaced: ' + retiredHost);
+}
+for (const retiredTarget of [
+  'codynex_mc0_host',
+  'codynex_mc1a_host',
+  'codynex_mc1b_host',
+  'codynex_m2_vm0_host',
+  'codynex_m2b_host',
+  'codynex_mc2a_host',
+]) {
+  assert.ok(!cmake.includes(retiredTarget), 'retired Codynex CMake target resurfaced: ' + retiredTarget);
+}
 assert.match(nativeBuild, /RIFTPP_EDITOR_PACKAGE = "com\.riftpp\.editor"/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_LIBRARY_NAME = "riftpp_editor_bridge"/);
 assert.match(nativeBuild, /RIFTPP_EDITOR_BRIDGE_SERVICE/);
@@ -694,10 +588,8 @@ const editorApkSigner = read('android/app/src/main/java/com/codynex/editorapp/Co
 const codynexAppActivity = read('android/app/src/main/java/com/codynex/apphost/CodynexAppActivity.kt');
 const editorWorkspace = read('android/app/src/main/java/com/codynex/editorapp/FileWorkspacePort.kt');
 const editorBootstrap = read('android/app/src/main/java/com/codynex/editorapp/BootstrapArtifacts.kt');
-const editorToolchain = read('android/app/src/main/java/com/codynex/editorapp/Source0SelfHostToolchainPort.kt');
-const codynexProvider = read('android/app/src/main/java/com/riftos/app/CodynexCompilerProvider.kt');
-const codynexHeadlessRuntime = read('android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt');
-const nativeShellServices = read('android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt');
+const editorToolchain = read('android/app/src/main/java/com/codynex/editorapp/CodynexEditorToolchainPort.kt');
+const editorCompilerRuntime = read('android/app/src/main/java/com/codynex/editorapp/CodynexCompilerRuntime.kt');
 const editorVmBridgeKt = read('android/app/src/main/java/com/codynex/editorapp/CodynexRuntimeBridge.kt');
 const editorVmBridgeCpp = read('android/app/src/main/cpp/editor/editor_vm_bridge.cpp');
 assert.match(editorVmBridgeCpp, /uint8_t\* scratch;/);
@@ -705,67 +597,32 @@ assert.match(editorVmBridgeCpp, /uint32_t scratchCapacity;/);
 assert.match(editorVmBridgeCpp, /sizeof\(VmContext\) == 28/);
 assert.match(editorVmBridgeCpp, /CodynexRuntimeBridge_run/);
 
-assert.match(nativeBuild, /prepare-codynex-editor/);
-assert.match(nativeBuild, /fun prepareCodynexEditor/);
-assert.match(nativeBuild, /EDITOR_PACKAGE = "com\.codynex\.editor"/);
-assert.match(nativeBuild, /EDITOR_ACTIVITY = "com\.codynex\.editorapp\.MainActivity"/);
-assert.match(nativeBuild, /EDITOR_LIBRARY_NAME = "codynex_editor_vm"/);
-assert.match(nativeBuild, /EDITOR_VM_HEX_SHA256 = "1f013e2592741895f511d1724ecd69ee156e24f771c289d848e1bab265d3655e"/);
-assert.match(nativeBuild, /EDITOR_VM2_HEX_SHA256 = "3f746727e18a55933a20dc63fc7f84544566f982aa5cab0803573c456926c916"/);
-assert.match(nativeBuild, /EDITOR_COMPILER_HEX_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"/);
-assert.match(nativeBuild, /EDITOR_SOURCE0_SHA256 = "a30e68e38600e25fc394c184b03c3e24f2775ffc2572c19a22426b3a0714581c"/);
-assert.match(nativeBuild, /buildEditorBinaryManifest/);
-assert.match(nativeBuild, /readOwnDexEntries/);
-assert.match(nativeBuild, /classes\.dex missing for code-bearing Activity package/);
-assert.match(nativeBuild, /DEX_ENTRY/);
-assert.match(nativeBuild, /editorCoreLanguageAgnostic", true/);
-assert.match(nativeBuild, /remoteBuildRequired", false/);
-assert.match(nativeBuild, /runtimeAuthority", "assets\/vm2_seed\.hex"/);
-assert.match(nativeBuild, /compatibilityRuntimeAuthority", "assets\/vm1_seed\.hex"/);
-assert.match(nativeBuild, /compilerAuthority", "assets\/selfhost_compiler\.hex"/);
-assert.match(nativeBuild, /sourceAuthority", "assets\/selfhost_compiler\.cx0"/);
+for (const retired of [
+  'prepare-codynex-editor',
+  'prepare-codynex-app',
+  'fun prepareCodynexEditor',
+  'fun prepareCodynexApp',
+  'compileCodynexC0ProjectVM2',
+  'assets/selfhost_compiler.hex',
+  'assets/selfhost_compiler.cx0',
+]) {
+  assert.ok(!nativeBuild.includes(retired), 'retired RiftBuild Codynex authority resurfaced: ' + retired);
+  assert.ok(!shell.includes(retired), 'retired RiftShell Codynex build route resurfaced: ' + retired);
+}
 assert.match(cmake, /codynex_editor_vm[\s\S]*?editor\/editor_vm_bridge\.cpp/);
 assert.match(cmake, /codynex_editor_vm[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /codynex_editor_vm[\s\S]*?-fno-rtti/);
 assert.ok(gradle.includes('src/main/cpp/editor/editor_vm_bridge.cpp'), 'Gradle exact native source snapshot omitted editor VM bridge');
 assert.match(gradle, /verifyCodynexEditorPayload/);
-assert.match(gradle, /val validateCodynexCompilerTransition by tasks\.registering/);
-assert.match(gradle, /COMPILER_VERSION_PREVIOUS/);
-assert.match(gradle, /COMPILER_VERSION_CURRENT/);
-assert.match(gradle, /SUPPORTED_COMPILER_VERSIONS/);
-assert.match(gradle, /codynex-c0-ref\/0\.11\.0/);
-assert.match(gradle, /codynex-c0-ref\/0\.12\.0/);
-assert.match(gradle, /dependsOn\(validateCodynexCompilerTransition\)/);
-assert.match(gradle, /d545e3802b300af446bbce56948b10a0ac7b5c00c04c118caa84a93f38e11b45/);
-assert.match(gradle, /d2d4fc035f8e024549f2c3232520cdd40f277966328df75f5c942134017395cc/);
-assert.match(gradle, /481d8b0306bbf02bc173a28c14b359f9867153611b7272435404a4730d786bea/);
-assert.match(gradle, /bb16b80adec43339f08aac19054f684d16b72700d07813043760feac78c45f26/);
-assert.match(gradle, /3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76/);
-assert.match(nativeBuild, /bb16b80adec43339f08aac19054f684d16b72700d07813043760feac78c45f26/);
-assert.match(nativeBuild, /3b564713851ad4e393519aee07301760993866875742a5bb5a273bf3dedd5f76/);
+assert.ok(gradle.includes('src/main/java/com/codynex/editorapp/CodynexCompilerRuntime.kt'), 'Codynex editor payload gate omitted generic compiler host');
+assert.ok(gradle.includes('src/main/java/com/codynex/editorapp/CodynexEditorToolchainPort.kt'), 'Codynex editor payload gate omitted editor toolchain adapter');
+assert.ok(!gradle.includes('validateCodynexCompilerTransition'), 'retired RiftOS Codynex compiler transition gate resurfaced');
+assert.ok(!gradle.includes('CodynexCompilerProvider.kt'), 'retired RiftOS Codynex compiler provider resurfaced in Gradle sources');
 assert.match(installer, /RIFTPP_EDITOR_TARGET_PACKAGE = "com\.riftpp\.editor"/);
 assert.match(installer, /RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com\.riftpp\.editor\.nativev1"/);
 assert.match(installer, /EDITOR_TARGET_PACKAGE = "com\.codynex\.editor"/);
 assert.match(installer, /EDITOR_TARGET_ACTIVITY = "com\.codynex\.editorapp\.MainActivity"/);
 assert.match(manifest, /com\.codynex\.editor/);
-assert.match(shell, /prepare-codynex-editor/);
-assert.match(shell, /prepare-codynex-app/);
-
-assert.match(nativeBuild, /fun prepareCodynexApp/);
-assert.match(nativeBuild, /CODYNEX_APPHOST_PROJECT = "external\/apphost"/);
-assert.match(nativeBuild, /CODYNEX_APP_PACKAGE = "com\.codynex\.notepad"/);
-assert.match(nativeBuild, /CODYNEX_APP_ACTIVITY/);
-assert.match(nativeBuild, /com\.codynex\.apphost\.CodynexAppActivity/);
-assert.match(nativeBuild, /CODYNEX_APP_PROGRAM_ASSET = "program\.vm2"/);
-assert.match(nativeBuild, /compileCodynexC0ProjectVM2/);
-assert.match(nativeBuild, /EDITOR_VM2_HEX/);
-assert.match(nativeBuild, /vm2_seed\.hex/);
-assert.match(nativeBuild, /compiled\.vm2/);
-assert.match(nativeBuild, /buildCodynexAppBinaryManifest/);
-assert.match(nativeBuild, /hostContainsAppSemantics", false/);
-assert.match(nativeBuild, /appSemantics", "assets\/program\.vm2"/);
-assert.match(installer, /CODYNEX_APP_TARGET_PACKAGE = "com\.codynex\.notepad"/);
-assert.match(installer, /com\.codynex\.apphost\.CodynexAppActivity/);
 assert.match(codynexAppActivity, /Thin Android bootstrap for Codynex applications/);
 assert.match(codynexAppActivity, /platform glue, not part of the Codynex runtime/);
 assert.match(codynexAppActivity, /CodynexRuntimeBridge\.run/);
@@ -855,16 +712,11 @@ assert.match(editorCoreController, /fun search\(/);
 assert.match(editorCoreController, /fun setProjectEntry\(/);
 assert.match(editorCoreController, /buildProject\(/);
 assert.match(editorWorkspace, /fun listRecursive\(/);
-assert.match(editorToolchain, /class Source0SelfHostToolchainPort/);
-assert.match(editorToolchain, /COMPILER_AUTHORITY/);
-assert.match(editorToolchain, /com\.riftos\.app\.codynexcompiler/);
-assert.match(editorToolchain, /contentResolver\.call/);
-assert.match(editorToolchain, /COMPILE_METHOD_VM1 = "compile-c0"/);
-assert.match(editorToolchain, /COMPILE_PROJECT_METHOD_VM1 = "compile-c0-project"/);
-assert.match(editorToolchain, /COMPILE_METHOD_VM2 = "compile-c0-vm2"/);
-assert.match(editorToolchain, /COMPILE_PROJECT_METHOD_VM2 = "compile-c0-project-vm2"/);
+assert.match(editorToolchain, /class CodynexEditorToolchainPort/);
+assert.match(editorToolchain, /CodynexCompilerRuntime\(context\.applicationContext\)\.compile/);
 assert.match(editorToolchain, /MAX_PROJECT_BYTES = 1024 \* 1024/);
 assert.match(editorToolchain, /MAX_PROJECT_MODULES = 64/);
+assert.match(editorToolchain, /MAX_CANDIDATE_BYTES = 64 \* 1024/);
 assert.match(editorToolchain, /EditorVmTarget\.VM2/);
 assert.match(editorToolchain, /Preview passed: \$targetLabel result/);
 assert.match(editorToolchain, /artifacts\.vm2/);
@@ -873,32 +725,22 @@ assert.match(editorToolchain, /data class LivePreviewRun/);
 assert.match(editorToolchain, /MAX_LIVE_INPUT_BYTES = 1024/);
 assert.match(editorToolchain, /replayLivePreview/);
 assert.match(editorToolchain, /executePreview/);
-assert.match(codynexProvider, /class CodynexCompilerProvider/);
-assert.match(codynexProvider, /codynex-c0-ref\/0\.11\.0/);
-assert.match(codynexProvider, /codynex-c0-ref\/0\.12\.0/);
-assert.match(codynexProvider, /SUPPORTED_COMPILER_VERSIONS/);
-assert.match(codynexHeadlessRuntime, /codynex-c0-ref\/0\.11\.0/);
-assert.match(codynexHeadlessRuntime, /codynex-c0-ref\/0\.12\.0/);
-assert.match(codynexHeadlessRuntime, /CODYNEX_C0_COMPILER_VERSIONS/);
-assert.match(codynexHeadlessRuntime, /compileCodynexC0ProjectVM2/);
-assert.match(codynexHeadlessRuntime, /CODYNEX_C0_PROJECT_VM2_ENTRY/);
-assert.match(nativeBuild, /codynex-c0-ref\/0\.12\.0/);
-assert.match(nativeShellServices, /codynex-c0-ref\/0\.11\.0\|0\.12\.0 transition/);
-assert.match(codynexProvider, /9874e844c24fe92c65908ce9b3cfb192f87774984a9e4fc600d883badcbe19b5/);
-assert.match(codynexProvider, /MAX_SOURCE_BYTES = 256 \* 1024/);
-assert.match(codynexProvider, /METHOD_COMPILE_PROJECT = "compile-c0-project"/);
-assert.match(codynexProvider, /METHOD_COMPILE_VM2 = "compile-c0-vm2"/);
-assert.match(codynexProvider, /METHOD_COMPILE_PROJECT_VM2 = "compile-c0-project-vm2"/);
-assert.match(codynexProvider, /MAX_PROJECT_BYTES = 1024 \* 1024/);
-assert.match(codynexProvider, /MAX_PROJECT_MODULES = 64/);
-assert.match(codynexProvider, /compileCodynexC0Project/);
-assert.match(codynexProvider, /compileCodynexC0ProjectVM2/);
-assert.match(codynexProvider, /MAX_VM1_BYTES = 64 \* 1024/);
-assert.match(codynexProvider, /MAX_VM2_BYTES = 64 \* 1024/);
-assert.match(codynexProvider, /runtime\.executeQuickJs/);
-assert.match(manifest, /CodynexCompilerProvider/);
-assert.match(manifest, /com\.riftos\.app\.codynexcompiler/);
-assert.ok(gradle.includes('src/main/java/com/riftos/app/CodynexCompilerProvider.kt'), 'Gradle exact source snapshot omitted Codynex compiler provider');
+assert.doesNotMatch(editorToolchain, /contentResolver\.call|com\.riftos\.app\.codynexcompiler|COMPILE_METHOD_VM/);
+
+assert.match(editorCompilerRuntime, /class CodynexCompilerRuntime/);
+assert.match(editorCompilerRuntime, /HOT_COMPILER_WORKSPACE_PATH/);
+assert.match(editorCompilerRuntime, /\.codynex\/toolchains\/compiler\.js/);
+assert.match(editorCompilerRuntime, /BUNDLED_COMPILER_ASSET/);
+assert.match(editorCompilerRuntime, /codynex_compiler\.js/);
+assert.match(editorCompilerRuntime, /quickJs \{/);
+assert.match(editorCompilerRuntime, /globalThis\.CodynexC0/);
+assert.match(editorCompilerRuntime, /compiler\.compileProjectVM2/);
+assert.match(editorCompilerRuntime, /compiler\.compileProject/);
+assert.doesNotMatch(editorCompilerRuntime, /codynex-c0-ref\/0\.11\.0|codynex-c0-ref\/0\.12\.0/);
+
+assert.doesNotMatch(nativeBuild, /CodynexCompilerProvider|com\.riftos\.app\.codynexcompiler|compileCodynexC0Project/);
+assert.doesNotMatch(manifest, /CodynexCompilerProvider|com\.riftos\.app\.codynexcompiler/);
+assert.ok(!gradle.includes('src/main/java/com/riftos/app/CodynexCompilerProvider.kt'), 'retired Codynex compiler provider resurfaced in Gradle exact source snapshot');
 assert.match(editorVmBridgeKt, /System\.loadLibrary\("codynex_editor_vm"\)/);
 assert.ok(!/Source0|selfhost_compiler|hex character/i.test(editorVmBridgeCpp), 'Generic editor VM bridge gained Source0/compiler parsing semantics');
 assert.match(editorVmBridgeCpp, /VmContext/);
@@ -908,7 +750,11 @@ assert.match(nativeBuild, /\.put\("installableClaimed", false\)/);
 
 assert.match(shell, /private val riftBuild = RiftBuildLocalExecutor\(appContext\)/);
 assert.match(shell, /"riftbuild" ->/);
-assert.match(shell, /riftbuild doctor\|validate\|plan\|toolchain-status\|toolchain-install-bundled\|managed-status\|managed-payload\|managed-copy\|compiler-status\|compiler-run\|kotlin-status\|kotlin-compile\|riftpp-compile-hot\|compile-native\|compile-object\|extract-object-text\|prepare-native-app\|prepare-codynex-mc0\|prepare-codynex-mc1a\|prepare-codynex-mc1b\|prepare-codynex-m2-vm0\|prepare-codynex-m2b\|prepare-codynex-mc2a\|prepare-codynex-editor\|prepare-codynex-app\|pack\|sign\|verify\|install-proof\|install-status\|launch-proof\|runs\|artifacts/);
+assert.match(shell, /prepare-native-app/);
+assert.doesNotMatch(shell, /riftpp-compile-hot/);
+assert.doesNotMatch(nativeBuild, /riftpp-compile-hot|riftppCompileHot|riftbuild-riftpp-hot-compile/);
+assert.match(shell, /compiler-run/);
+assert.doesNotMatch(shell, /prepare-codynex-/);
 
 assert.match(appHost, /"build\.doctor" -> withCapability\(instance, id, "build\.local"\)/);
 assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.prepare\(args\) \}/);
@@ -927,19 +773,27 @@ assert.ok(manifest.includes('.RiftBuildInstallActivity'), 'RiftOS manifest omitt
 assert.ok(manifest.includes('.RiftBuildInstallReceiver'), 'RiftOS manifest omitted private RiftBuild install receiver');
 assert.ok(manifest.includes('android.intent.action.PACKAGE_FIRST_LAUNCH'), 'RiftOS manifest omitted first-launch proof action');
 assert.ok(manifest.includes('com.riftpp.nativeproof'), 'RiftOS manifest omitted Rift++ proof-package visibility');
-assert.ok(manifest.includes('com.codynex.mc0proof'), 'RiftOS manifest omitted Codynex MC0 proof-package visibility');
-assert.ok(manifest.includes('com.codynex.mc1aproof'), 'RiftOS manifest omitted Codynex MC1-A proof-package visibility');
-assert.ok(manifest.includes('com.codynex.mc1bproof'), 'RiftOS manifest omitted Codynex MC1-B proof-package visibility');
-assert.ok(manifest.includes('com.codynex.m2vm0proof'), 'RiftOS manifest omitted Codynex M2 VM0 proof-package visibility');
-assert.ok(manifest.includes('com.codynex.m2bproof'), 'RiftOS manifest omitted Codynex M2-B proof-package visibility');
-assert.ok(manifest.includes('com.codynex.mc2aproof'), 'RiftOS manifest omitted Codynex MC2-A proof-package visibility');
+for (const retiredPackage of [
+  'com.codynex.mc0proof',
+  'com.codynex.mc1aproof',
+  'com.codynex.mc1bproof',
+  'com.codynex.m2vm0proof',
+  'com.codynex.m2bproof',
+  'com.codynex.mc2aproof',
+]) {
+  assert.ok(!manifest.includes(retiredPackage), 'retired Codynex proof package visibility resurfaced: ' + retiredPackage);
+}
 assert.ok(manifest.includes('com.codynex.editor'), 'RiftOS manifest omitted Codynex editor package visibility');
-assert.ok(gradle.includes('src/main/cpp/mc0/codynex_mc0_host.cpp'), 'Gradle exact native source snapshot omitted MC0 host');
-assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1a_host.cpp'), 'Gradle exact native source snapshot omitted MC1-A host');
-assert.ok(gradle.includes('src/main/cpp/mc1/codynex_mc1b_host.cpp'), 'Gradle exact native source snapshot omitted MC1-B host');
-assert.ok(gradle.includes('src/main/cpp/m2/codynex_m2_vm0_host.cpp'), 'Gradle exact native source snapshot omitted M2 VM0 host');
-assert.ok(gradle.includes('src/main/cpp/m2/codynex_m2b_host.cpp'), 'Gradle exact native source snapshot omitted M2-B host');
-assert.ok(gradle.includes('src/main/cpp/m2/codynex_mc2a_host.cpp'), 'Gradle exact native source snapshot omitted MC2-A host');
+for (const retiredSource of [
+  'src/main/cpp/mc0/codynex_mc0_host.cpp',
+  'src/main/cpp/mc1/codynex_mc1a_host.cpp',
+  'src/main/cpp/mc1/codynex_mc1b_host.cpp',
+  'src/main/cpp/m2/codynex_m2_vm0_host.cpp',
+  'src/main/cpp/m2/codynex_m2b_host.cpp',
+  'src/main/cpp/m2/codynex_mc2a_host.cpp',
+]) {
+  assert.ok(!gradle.includes(retiredSource), 'retired Codynex proof source resurfaced in Gradle snapshot: ' + retiredSource);
+}
 assert.match(manifest, /android:name="\.RiftBuildInstallReceiver"[\s\S]*?android:exported="false"/);
 
 assert.match(retained, /RiftBuild doctor blocked local execution/);

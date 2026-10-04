@@ -20,22 +20,12 @@ import java.io.File
 class RiftBuildInstaller(context: Context) {
     companion object {
         const val TARGET_PACKAGE = "com.riftpp.nativeproof"
-        const val RIFTPP_APP0_TARGET_PACKAGE = "com.riftpp.hello"
         const val RIFTPP_EDITOR_TARGET_PACKAGE = "com.riftpp.editor"
         const val RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com.riftpp.editor.nativev1"
         const val RIFTPP_ADAPTER_R1_TARGET_PACKAGE = "com.riftpp.editor.adapterr1"
-        const val MC0_TARGET_PACKAGE = "com.codynex.mc0proof"
-        const val MC1A_TARGET_PACKAGE = "com.codynex.mc1aproof"
-        const val MC1B_TARGET_PACKAGE = "com.codynex.mc1bproof"
-        const val M2_VM0_TARGET_PACKAGE = "com.codynex.m2vm0proof"
-        const val M2_B_TARGET_PACKAGE = "com.codynex.m2bproof"
-        const val MC2_A_TARGET_PACKAGE = "com.codynex.mc2aproof"
         const val EDITOR_TARGET_PACKAGE = "com.codynex.editor"
-        const val CODYNEX_APP_TARGET_PACKAGE = "com.codynex.notepad"
         const val TARGET_ACTIVITY = "android.app.NativeActivity"
         const val EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"
-        const val CODYNEX_APP_TARGET_ACTIVITY =
-            "com.codynex.apphost.CodynexAppActivity"
         const val ACTION_INSTALL_STATUS = "com.riftos.app.RIFTBUILD_INSTALL_STATUS"
 
         private val pendingConfirmationLock = Any()
@@ -43,18 +33,10 @@ class RiftBuildInstaller(context: Context) {
 
         private val ALLOWED_PROOF_PACKAGES = setOf(
             TARGET_PACKAGE,
-            RIFTPP_APP0_TARGET_PACKAGE,
             RIFTPP_EDITOR_TARGET_PACKAGE,
             RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE,
             RIFTPP_ADAPTER_R1_TARGET_PACKAGE,
-            MC0_TARGET_PACKAGE,
-            MC1A_TARGET_PACKAGE,
-            MC1B_TARGET_PACKAGE,
-            M2_VM0_TARGET_PACKAGE,
-            M2_B_TARGET_PACKAGE,
-            MC2_A_TARGET_PACKAGE,
-            EDITOR_TARGET_PACKAGE,
-            CODYNEX_APP_TARGET_PACKAGE
+            EDITOR_TARGET_PACKAGE
         )
 
         private fun statusFile(context: Context): File =

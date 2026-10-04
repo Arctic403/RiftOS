@@ -40,7 +40,7 @@ Host-adjacent lifecycle/source boundaries:
 - `RiftAppDiagnosticBridge.kt` — process-local allowlisted localhost diagnostic receiver used only around supported Rift++ launches; it owns transport/evidence, not target runtime semantics.
 
 Manifest-declared components whose internal behavior belongs elsewhere:
-- `RiftppDynamicCompilerService.kt` — sole Rift++ native compiler worker, isolated in `:riftppCompilerHot`; it executes bounded exact-hash managed compiler payloads and owns containment/transport only, not Rift++ parsing or code generation.
+- `RiftNativeBufferCompilerService.kt` — generic `native-buffer-v1` compiler worker, isolated in `:riftNativeBufferCompiler`; it executes bounded exact-hash native compiler payloads and owns containment/transport only, not any project language semantics.
 - `RiftManagedJvmToolService.kt` — generic isolated `:riftJvmToolHot` loader for exact-hash JVM/DEX compiler/tool payloads using the bounded JSON tool ABI.
 - `RiftBuildInstallReceiver` in `RiftBuildInstaller.kt` — private PackageInstaller result + protected first-launch proof receiver for the fixed RiftBuild install allowlist;
 - `RiftMcpActivity.kt` — MCP configuration/status UI.
@@ -60,18 +60,11 @@ The source audit found no direct `Vibrator`/vibration call and no runtime `reque
 Package visibility queries are declared for:
 - `com.vortex3d.app`;
 - `com.riftllm.app`;
-- `com.codynex.lr0lab`;
-- `com.codynex.mc0proof`;
-- `com.codynex.mc1aproof`;
-- `com.codynex.mc1bproof`;
-- `com.codynex.m2vm0proof`;
-- `com.codynex.m2bproof`;
-- `com.codynex.mc2aproof`;
 - `com.codynex.editor`;
 - `com.riftpp.nativeproof`;
-- `com.riftpp.hello`;
 - `com.riftpp.editor`;
 - `com.riftpp.editor.nativev1`;
+- `com.riftpp.editor.adapterr1`;
 - `com.samsung.android.honeyboard`.
 
 These are package-visibility declarations for the fixed Vortex/RiftLLM/Codynex/Rift++/keyboard integration and proof lanes. Visibility does not itself grant launch, Binder, install or diagnostic authority.
