@@ -53,7 +53,7 @@ for (const required of [
   'processExitHistory',
   'getHistoricalProcessExitReasons',
   'ApplicationExitInfo.REASON_ANR',
-  'RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE',
+  'RIFTPP_NATIVE_EDITOR_V1_PACKAGE',
   'packetSha256',
   'entry-begin',
   'before-return',
