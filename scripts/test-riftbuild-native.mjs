@@ -104,9 +104,19 @@ for (const required of [
   );
 }
 assert.ok(
-  !manifest.includes('com.riftpp.'),
-  'RiftOS manifest must stay free of Rift++ package visibility'
+  manifest.includes('<package android:name="com.riftpp.editor" />'),
+  'RiftOS manifest must expose Rift++ editor bridge package visibility'
 );
+for (const forbiddenRiftppVisibility of [
+  '<package android:name="com.riftpp.editor.nativev1" />',
+  '<package android:name="com.riftpp.editor.adapterr1" />',
+  '<package android:name="com.riftpp.nativeproof" />',
+]) {
+  assert.ok(
+    !manifest.includes(forbiddenRiftppVisibility),
+    'RiftOS manifest must not pin Rift++ proof package visibility: ' + forbiddenRiftppVisibility
+  );
+}
 assert.ok(
   shell.includes('riftcrash help|status|start|capture|latest|reset [package]'),
   'RiftShell diagnostic bridge control surface is missing'
@@ -745,7 +755,14 @@ assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'), 'Rif
 assert.ok(manifest.includes('.RiftBuildInstallActivity'), 'RiftOS manifest omitted foreground RiftBuild install callback activity');
 assert.ok(manifest.includes('.RiftBuildInstallReceiver'), 'RiftOS manifest omitted private RiftBuild install receiver');
 assert.ok(manifest.includes('android.intent.action.PACKAGE_FIRST_LAUNCH'), 'RiftOS manifest omitted first-launch proof action');
-assert.ok(!manifest.includes('com.riftpp.'), 'RiftOS manifest must not pin Rift++ package visibility for generic install/launch');
+assert.ok(manifest.includes('<package android:name="com.riftpp.editor" />'), 'RiftOS manifest must retain Rift++ editor bridge visibility');
+for (const retiredRiftppVisibility of [
+  'com.riftpp.editor.nativev1',
+  'com.riftpp.editor.adapterr1',
+  'com.riftpp.nativeproof',
+]) {
+  assert.ok(!manifest.includes(retiredRiftppVisibility), 'RiftOS manifest must not pin Rift++ proof package visibility: ' + retiredRiftppVisibility);
+}
 for (const retiredPackage of [
   'com.codynex.mc0proof',
   'com.codynex.mc1aproof',

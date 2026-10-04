@@ -46,8 +46,15 @@ for (const required of [
   'android:exported="false"',
   'android.intent.action.PACKAGE_FIRST_LAUNCH',
 ]) if (!manifest.includes(required)) fail(`Android RiftBuild install contract is missing ${required}`);
-if (manifest.includes('com.riftpp.')) {
-  fail('Android RiftBuild install contract must not pin Rift++ package visibility');
+if (!manifest.includes('<package android:name="com.riftpp.editor" />')) {
+  fail('Rift++ editor bridge package visibility is missing');
+}
+for (const forbidden of [
+  '<package android:name="com.riftpp.editor.nativev1" />',
+  '<package android:name="com.riftpp.editor.adapterr1" />',
+  '<package android:name="com.riftpp.nativeproof" />',
+]) if (manifest.includes(forbidden)) {
+  fail('Android RiftBuild install contract must not pin Rift++ proof package visibility: ' + forbidden);
 }
 const kotlinDir = 'android/app/src/main/java/com/riftos/app';
 const kotlinFiles = walk(kotlinDir).filter(file => file.endsWith('.kt'));
