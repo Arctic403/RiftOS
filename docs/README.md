@@ -143,7 +143,7 @@ Do not copy historical claims forward merely because they appear in another READ
 
 Cross-cutting files such as [`TRUE_OS_ARCHITECTURE.md`](TRUE_OS_ARCHITECTURE.md), [`ANDROID_NATIVE_ARCHITECTURE.md`](ANDROID_NATIVE_ARCHITECTURE.md), `RIFTBROWSER_ARCHITECTURE.md`, `RIFT_MCP_APP_ARCHITECTURE.md`, `RIFTWORKSPACE_WEB_ARCHITECTURE.md`, `RIFTRT-v1.md`, [`PUBLIC_SURFACES.md`](PUBLIC_SURFACES.md) and [`PROJECT_STATUS.md`](PROJECT_STATUS.md) must also be audited against source before being trusted for a subsystem.
 
-Operational references: [`../LOCAL_MCP_MODE.md`](../LOCAL_MCP_MODE.md), [`../ROADMAP.md`](../ROADMAP.md), [`RIFT_RAW_CHAT_PROTOCOL.md`](RIFT_RAW_CHAT_PROTOCOL.md), and [`CODYNEX_LR0_BRIDGE.md`](CODYNEX_LR0_BRIDGE.md).
+Operational references: [`../LOCAL_MCP_MODE.md`](../LOCAL_MCP_MODE.md), [`../ROADMAP.md`](../ROADMAP.md), [`RIFT_RAW_CHAT_PROTOCOL.md`](RIFT_RAW_CHAT_PROTOCOL.md), and the current [`Codynex Editor boundary`](systems/riftbuild/README.md#codynex-editor-boundary).
 
 ## Debugging rule
 
