@@ -52,7 +52,8 @@ assert.match(host, /"rift_mcp_reconcile"/);
 assert.match(host, /operationJournal\.query\(args\)/);
 assert.match(host, /evidenceForRequestIds\(operationIds\)/);
 assert.match(host, /operationContext\?\.operationId/);
-assert.match(host, /shellExecutor\?\.execute\(command, args\.optString\("cwd", "\/"\), operationContext\?\.operationId\)/);
+assert.match(host, /shell\.submit\(\s*command,\s*cwd,\s*operationContext\?\.operationId\s*\)/);
+assert.match(host, /shell\.execute\(command, cwd, operationContext\?\.operationId\)\s*\{/);
 assert.match(host, /internal fun isMutatingCall/);
 
 assert.match(shellExecutor, /requestId: String\? = null/);
