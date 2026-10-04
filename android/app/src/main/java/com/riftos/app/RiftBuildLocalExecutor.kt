@@ -20,18 +20,6 @@ import java.util.zip.ZipOutputStream
 class RiftBuildLocalExecutor(context: Context) {
     data class CommandResult(val output: String, val value: JSONObject)
     private data class ProjectRef(val display: String, val file: File)
-    private data class RiftppV0Image(
-        val key: String,
-        val abi: String,
-        val elfClass: Int,
-        val machine: Int,
-        val sourcePath: String,
-        val sourceSha256: String,
-        val rawSha256: String,
-        val canonicalValueSha256: String,
-        val bytes: ByteArray
-    )
-    private data class ManifestAttr(
         val namespace: Int,
         val name: Int,
         val rawValue: Int,
