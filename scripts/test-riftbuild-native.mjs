@@ -83,7 +83,7 @@ assert.ok(
 );
 
 for (const required of [
-  'RiftAppDiagnosticBridge.supports(packageName)',
+  'RiftAppDiagnosticBridge.supports(safePackageName)',
   'RiftAppDiagnosticBridge.beginLaunch',
   'artifactSha256',
 ]) {
