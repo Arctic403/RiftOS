@@ -542,6 +542,21 @@ class RiftBuildLocalExecutor(context: Context) {
         return nativeToolchain.compile(ref.file, normalizeTarget(target))
     }
 
+    fun compileObject(
+        project: String,
+        sourcePath: String,
+        target: String = "arm32",
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(ref.file.isDirectory) { "Build project is not a directory: " + ref.display }
+        return nativeToolchain.compileAssemblyObject(
+            ref.file,
+            sourcePath,
+            target.lowercase()
+        ).put("project", ref.display)
+    }
+
     fun extractObjectText(
         project: String,
         objectPath: String,
