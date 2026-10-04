@@ -429,8 +429,8 @@ assert.match(nativeBuild, /confinedTo\(workspaceRoot, file\)/);
 assert.match(nativeBuild, /confinedTo\(artifactRoot, outDir\)/);
 assert.match(nativeBuild, /confinedTo\(artifactRoot, file\)/);
 assert.match(nativeBuild, /type == XML_TYPE && headerSize == 8 && declaredSize == file\.length\(\)\.toInt\(\)/);
-assert.match(nativeBuild, /writeManifestU32\(output, 1\)/);
-assert.match(nativeBuild, /writeManifestU32\(output, XML_NO_INDEX\)/);
+assert.match(nativeApp, /u32\(out, 1\)/);
+assert.match(nativeApp, /u32\(out, XML_NO_INDEX\)/);
 for (const retiredRoute of [
   'prepare-codynex-mc0',
   'prepare-codynex-mc1a',
