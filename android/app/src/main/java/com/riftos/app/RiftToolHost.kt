@@ -217,7 +217,7 @@ class RiftToolHost(
     fun tools(): JSONArray = JSONArray()
         .put(tool(
             "rift_shell_exec",
-            "Execute or manage RiftShell commands through the process-owned native core. Long RiftBuild commands auto-submit as persistent local shell jobs so MCP calls do not die at the synchronous timeout. Actions: auto, exec, submit, status, result, cancel, list. RiftShell batch and batch --dry-run remain DISABLED.",
+            "Execute or manage RiftShell commands through the process-owned native core. Long RiftBuild commands auto-submit as persistent local shell jobs so MCP calls do not die at the synchronous timeout. Actions: auto, exec, submit, status, result, cancel, list. RiftShell batch and batch --dry-run remain DISABLED; never call batch or batch --dry-run.",
             objectSchema(
                 JSONObject()
                     .put(
