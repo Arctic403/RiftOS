@@ -511,38 +511,10 @@ assert.match(riftppEditorRelocatableElfPreflight, /ET_REL = 1/);
 assert.match(riftppEditorRelocatableElfPreflight, /EM_ARM = 40/);
 assert.match(riftppEditorRelocatableElfPreflight, /android_main/);
 assert.match(riftppEditorRelocatableElfPreflight, /must not contain program headers/);
-assert.match(nativeBuild, /temporaryPlatformShell", "Kotlin\/Android Activity"/);
-assert.match(nativeBuild, /uiProtocol", "RUI2"/);
-assert.match(nativeBuild, /kotlinEmitsRpa2", false/);
-assert.match(nativeBuild, /kotlinInterpretsRpa2", false/);
-assert.match(nativeBuild, /temporaryApkPackSign", true/);
-assert.match(nativeBuild, /bootstrapCompilerAuthority", "frozen Rift\+\+ S3 ARM32 recovery root"/);
-assert.match(nativeBuild, /s3NextBootstrapAuthority", "workspace-supplied promoted S2 Generation-C native compiler"/);
-assert.match(nativeBuild, /s3NextOpcodeSurface", "full 21-op 00\.\.14"/);
-assert.match(nativeBuild, /developmentCompilerAuthority", "workspace-supplied Rift\+\+ S3 Next"/);
-const riftppReplacementTargetKey = nativeBuild.indexOf('"replacementTarget"');
 assert.ok(
-    riftppReplacementTargetKey >= 0,
-    'Rift++ editor materializer omitted replacementTarget'
+    !/Rift\+\+|Riftpp|riftpp/.test(nativeBuild),
+    'generic RiftBuildLocalExecutor regained Rift++ project identity'
 );
-const riftppReplacementTargetWindow = nativeBuild.slice(
-    riftppReplacementTargetKey,
-    riftppReplacementTargetKey + 220
-);
-assert.ok(
-    riftppReplacementTargetWindow.includes(
-        '"native Rift++ editor/filesystem/compiler/runtime/packer/signer"'
-    ),
-    'Rift++ editor replacementTarget drift'
-);
-assert.match(nativeBuild, /frontend\.app2\.arm32\.r4\.hex/);
-assert.match(nativeBuild, /frontend\.project1\.arm32\.r4\.hex/);
-assert.match(nativeBuild, /runtime\.app2\.arm32\.r4\.hex/);
-assert.match(nativeBuild, /standalone\/app\/examples\/notepad\/src\/main\.riftpp/);
-assert.match(nativeBuild, /standalone\/app\/examples\/notepad\/src\/ui\.riftpp/);
-assert.match(nativeBuild, /RiftppApkBuilder\.kt/);
-assert.match(nativeBuild, /RiftppApkV2Signer\.kt/);
-assert.match(nativeBuild, /RiftppAppActivity\.kt/);
 assert.match(cmake, /riftpp_editor_bridge[\s\S]*?-fno-exceptions/);
 assert.match(cmake, /riftpp_editor_bridge[\s\S]*?-fno-rtti/);
 assert.match(gradle, /verifyRiftppEditorPayload/);
@@ -562,7 +534,6 @@ assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/RiftppRelocatableElfPreflight.kt'),
     'Rift++ editor payload hash gate omitted relocatable ELF preflight'
 );
-assert.match(nativeBuild, /RiftppRelocatableElfPreflight\.kt/);
 assert.ok(
     gradle.includes('src/main/java/com/riftpp/editor/RiftppWorkspace.kt'),
     'Rift++ editor payload hash gate omitted workspace layer'
