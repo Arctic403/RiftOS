@@ -78,8 +78,8 @@ for (const forbidden of [
   );
 }
 assert.ok(
-  riftAppDiagnosticBridge.includes('RIFTPP_ADAPTER_R1_TARGET_PACKAGE'),
-  'Rift++ adapter R1 proof package must remain diagnostic-bridge allowlisted'
+  riftAppDiagnosticBridge.includes('RIFTPP_ADAPTER_R1_PACKAGE = "com.riftpp.editor.adapterr1"'),
+  'Rift++ adapter R1 identity must remain local to the diagnostic bridge'
 );
 
 for (const required of [
@@ -187,14 +187,12 @@ for (const required of [
 
 for (const required of [
   'class RiftBuildInstaller',
-  'TARGET_PACKAGE = "com.riftpp.nativeproof"',
-  'RIFTPP_EDITOR_TARGET_PACKAGE = "com.riftpp.editor"',
-  'RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com.riftpp.editor.nativev1"',
-  'RIFTPP_ADAPTER_R1_TARGET_PACKAGE = "com.riftpp.editor.adapterr1"',
-  'getLaunchIntentForPackage',
-  'EDITOR_TARGET_PACKAGE = "com.codynex.editor"',
-  'EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"',
-  'ALLOWED_PROOF_PACKAGES',
+  'SAFE_PACKAGE_NAME',
+  'requireSafePackageName',
+  'Intent(Intent.ACTION_MAIN)',
+  'Intent.CATEGORY_LAUNCHER',
+  '.setPackage(safePackageName)',
+  'launch package is not bound to the latest verified install',
   'PackageInstaller',
   'USER_ACTION_REQUIRED',
   'PendingIntent.FLAG_MUTABLE',
@@ -202,7 +200,7 @@ for (const required of [
   'launch-proven',
   'canRequestPackageInstalls',
   'ACTION_MANAGE_UNKNOWN_APP_SOURCES',
-  'RiftBuild installer accepts only allowlisted proof packages',
+  'PackageInstaller reported an unexpected package identity',
   'class RiftBuildInstallActivity : Activity()',
   'PendingIntent.getBroadcast(',
   'retainPendingConfirmation(confirmIntent)',
@@ -210,6 +208,15 @@ for (const required of [
   'confirmationLaunchState',
   'class RiftBuildInstallReceiver : BroadcastReceiver()',
 ]) assert.ok(installer.includes(required), 'RiftBuild installer contract missing: ' + required);
+for (const forbidden of [
+  'ALLOWED_PROOF_PACKAGES',
+  'RIFTPP_EDITOR_TARGET_PACKAGE',
+  'RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE',
+  'RIFTPP_ADAPTER_R1_TARGET_PACKAGE',
+  'TARGET_PACKAGE = "com.riftpp.nativeproof"',
+  'EDITOR_TARGET_PACKAGE = "com.codynex.editor"',
+  'getLaunchIntentForPackage',
+]) assert.ok(!installer.includes(forbidden), 'generic RiftBuild installer regained project identity: ' + forbidden);
 assert.ok(!installer.includes('PendingIntent.getActivity('), 'PackageInstaller status callback regressed to Activity-only delivery');
 assert.ok(mainActivity.includes('RiftBuildInstaller.resumePendingConfirmation(this)'), 'MainActivity must resume retained PackageInstaller confirmation from a foreground Activity');
 
@@ -620,10 +627,8 @@ assert.ok(gradle.includes('src/main/java/com/codynex/editorapp/CodynexCompilerRu
 assert.ok(gradle.includes('src/main/java/com/codynex/editorapp/CodynexEditorToolchainPort.kt'), 'Codynex editor payload gate omitted editor toolchain adapter');
 assert.ok(!gradle.includes('validateCodynexCompilerTransition'), 'retired RiftOS Codynex compiler transition gate resurfaced');
 assert.ok(!gradle.includes('CodynexCompilerProvider.kt'), 'retired RiftOS Codynex compiler provider resurfaced in Gradle sources');
-assert.match(installer, /RIFTPP_EDITOR_TARGET_PACKAGE = "com\.riftpp\.editor"/);
-assert.match(installer, /RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com\.riftpp\.editor\.nativev1"/);
-assert.match(installer, /EDITOR_TARGET_PACKAGE = "com\.codynex\.editor"/);
-assert.match(installer, /EDITOR_TARGET_ACTIVITY = "com\.codynex\.editorapp\.MainActivity"/);
+assert.ok(!installer.includes('com.riftpp.'), 'generic RiftBuild installer must not own Rift++ package identity');
+assert.ok(!installer.includes('com.codynex.editor'), 'generic RiftBuild installer must not own Codynex editor package identity');
 assert.match(manifest, /com\.codynex\.editor/);
 assert.match(codynexAppActivity, /Thin Android bootstrap for Codynex applications/);
 assert.match(codynexAppActivity, /platform glue, not part of the Codynex runtime/);
@@ -774,7 +779,7 @@ assert.ok(manifest.includes('android.permission.REQUEST_INSTALL_PACKAGES'), 'Rif
 assert.ok(manifest.includes('.RiftBuildInstallActivity'), 'RiftOS manifest omitted foreground RiftBuild install callback activity');
 assert.ok(manifest.includes('.RiftBuildInstallReceiver'), 'RiftOS manifest omitted private RiftBuild install receiver');
 assert.ok(manifest.includes('android.intent.action.PACKAGE_FIRST_LAUNCH'), 'RiftOS manifest omitted first-launch proof action');
-assert.ok(manifest.includes('com.riftpp.nativeproof'), 'RiftOS manifest omitted Rift++ proof-package visibility');
+assert.ok(!manifest.includes('com.riftpp.'), 'RiftOS manifest must not pin Rift++ package visibility for generic install/launch');
 for (const retiredPackage of [
   'com.codynex.mc0proof',
   'com.codynex.mc1aproof',

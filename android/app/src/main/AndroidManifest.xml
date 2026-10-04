@@ -9,10 +9,6 @@
         <package android:name="com.vortex3d.app" />
         <package android:name="com.riftllm.app" />
         <package android:name="com.codynex.editor" />
-        <package android:name="com.riftpp.nativeproof" />
-        <package android:name="com.riftpp.editor" />
-        <package android:name="com.riftpp.editor.nativev1" />
-        <package android:name="com.riftpp.editor.adapterr1" />
         <package android:name="com.samsung.android.honeyboard" />
     </queries>
 

@@ -19,25 +19,20 @@ import java.io.File
  */
 class RiftBuildInstaller(context: Context) {
     companion object {
-        const val TARGET_PACKAGE = "com.riftpp.nativeproof"
-        const val RIFTPP_EDITOR_TARGET_PACKAGE = "com.riftpp.editor"
-        const val RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE = "com.riftpp.editor.nativev1"
-        const val RIFTPP_ADAPTER_R1_TARGET_PACKAGE = "com.riftpp.editor.adapterr1"
-        const val EDITOR_TARGET_PACKAGE = "com.codynex.editor"
-        const val TARGET_ACTIVITY = "android.app.NativeActivity"
-        const val EDITOR_TARGET_ACTIVITY = "com.codynex.editorapp.MainActivity"
         const val ACTION_INSTALL_STATUS = "com.riftos.app.RIFTBUILD_INSTALL_STATUS"
 
+        private val SAFE_PACKAGE_NAME =
+            Regex("^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$")
         private val pendingConfirmationLock = Any()
         @Volatile private var pendingConfirmationIntent: Intent? = null
 
-        private val ALLOWED_PROOF_PACKAGES = setOf(
-            TARGET_PACKAGE,
-            RIFTPP_EDITOR_TARGET_PACKAGE,
-            RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE,
-            RIFTPP_ADAPTER_R1_TARGET_PACKAGE,
-            EDITOR_TARGET_PACKAGE
-        )
+        private fun requireSafePackageName(packageName: String): String {
+            val normalized = packageName.trim()
+            require(normalized.length in 3..255 && SAFE_PACKAGE_NAME.matches(normalized)) {
+                "RiftBuild package name is invalid: $packageName"
+            }
+            return normalized
+        }
 
         private fun statusFile(context: Context): File =
             File(
@@ -105,25 +100,27 @@ class RiftBuildInstaller(context: Context) {
         }
 
         private fun launchExact(context: Context, packageName: String) {
-            require(packageName in ALLOWED_PROOF_PACKAGES) {
-                "RiftBuild proof package is not allowlisted: " + packageName
+            val safePackageName = requireSafePackageName(packageName)
+            val current = readStatus(context.applicationContext)
+            require(current.optString("package") == safePackageName) {
+                "RiftBuild launch package is not bound to the latest verified install"
             }
 
-            val artifactSha256 = readStatus(context.applicationContext)
+            val artifactSha256 = current
                 .optString("artifactSha256")
                 .takeIf { it.matches(Regex("^[0-9a-f]{64}$")) }
 
-            if (RiftAppDiagnosticBridge.supports(packageName)) {
+            if (RiftAppDiagnosticBridge.supports(safePackageName)) {
                 RiftAppDiagnosticBridge.beginLaunch(
                     context.applicationContext,
-                    packageName,
+                    safePackageName,
                     artifactSha256
                 )
             }
 
-            val launchIntent = context.applicationContext.packageManager
-                .getLaunchIntentForPackage(packageName)
-                ?: error("Installed RiftBuild proof has no MAIN/LAUNCHER Activity: $packageName")
+            val launchIntent = Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .setPackage(safePackageName)
             launchForeground(context, launchIntent)
         }
 
@@ -131,19 +128,18 @@ class RiftBuildInstaller(context: Context) {
             val appContext = context.applicationContext
 
             if (intent.action == Intent.ACTION_PACKAGE_FIRST_LAUNCH) {
-                val packageName = intent.data?.schemeSpecificPart.orEmpty()
-                if (packageName in ALLOWED_PROOF_PACKAGES) {
-                    val current = readStatus(appContext)
-                    val recorded = current.optString("package")
-                    if (recorded.isNotBlank() && recorded != packageName) return
-                    current
-                        .put("schema", "riftbuild-install-status-v1")
-                        .put("package", packageName)
-                        .put("state", "launch-proven")
-                        .put("launchProven", true)
-                        .put("launchProvenAt", System.currentTimeMillis())
-                    writeStatus(appContext, current)
-                }
+                val packageName = runCatching {
+                    requireSafePackageName(intent.data?.schemeSpecificPart.orEmpty())
+                }.getOrNull() ?: return
+                val current = readStatus(appContext)
+                if (current.optString("package") != packageName) return
+                current
+                    .put("schema", "riftbuild-install-status-v1")
+                    .put("package", packageName)
+                    .put("state", "launch-proven")
+                    .put("launchProven", true)
+                    .put("launchProvenAt", System.currentTimeMillis())
+                writeStatus(appContext, current)
                 return
             }
 
@@ -165,10 +161,20 @@ class RiftBuildInstaller(context: Context) {
                 .orEmpty()
 
             val current = readStatus(appContext)
-            val expectedPackage = current.optString("package")
+            val expectedPackage = runCatching {
+                requireSafePackageName(current.optString("package"))
+            }.getOrNull().orEmpty()
+            val reportedSafe = if (reportedPackage.isBlank()) {
+                ""
+            } else {
+                runCatching { requireSafePackageName(reportedPackage) }
+                    .getOrNull()
+                    .orEmpty()
+            }
             val packageName = when {
-                reportedPackage in ALLOWED_PROOF_PACKAGES -> reportedPackage
-                expectedPackage in ALLOWED_PROOF_PACKAGES -> expectedPackage
+                expectedPackage.isBlank() -> ""
+                reportedSafe.isBlank() -> expectedPackage
+                reportedSafe == expectedPackage -> expectedPackage
                 else -> ""
             }
 
@@ -222,8 +228,8 @@ class RiftBuildInstaller(context: Context) {
                 }
 
                 PackageInstaller.STATUS_SUCCESS -> {
-                    require(packageName in ALLOWED_PROOF_PACKAGES) {
-                        "PackageInstaller reported an unexpected proof package"
+                    require(packageName.isNotBlank() && packageName == expectedPackage) {
+                        "PackageInstaller reported an unexpected package identity"
                     }
                     updated
                         .put("state", "installed-launch-requested")
@@ -294,11 +300,7 @@ class RiftBuildInstaller(context: Context) {
             "signed proof APK must pass RiftBuild v2 verification first"
         }
 
-        val packageName = archivePackageName(apk)
-        require(packageName in ALLOWED_PROOF_PACKAGES) {
-            "RiftBuild installer accepts only allowlisted proof packages, got " +
-                packageName
-        }
+        val packageName = requireSafePackageName(archivePackageName(apk))
 
         if (!appContext.packageManager.canRequestPackageInstalls()) {
             return requestInstallPermissionIfNeeded()
@@ -381,36 +383,13 @@ class RiftBuildInstaller(context: Context) {
             JSONObject()
                 .put("schema", "riftbuild-install-status-v1")
                 .put("state", "none")
-                .put("package", TARGET_PACKAGE)
+                .put("package", "")
         } else current
     }
 
     fun launchProof(): JSONObject {
         val current = status()
-        val packageName = current
-            .optString("package")
-            .ifBlank { TARGET_PACKAGE }
-
-        require(packageName in ALLOWED_PROOF_PACKAGES) {
-            "Latest RiftBuild proof package is not allowlisted"
-        }
-
-        val packageInfo = runCatching {
-            if (Build.VERSION.SDK_INT >= 33) {
-                appContext.packageManager.getPackageInfo(
-                    packageName,
-                    PackageManager.PackageInfoFlags.of(0L)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                appContext.packageManager.getPackageInfo(packageName, 0)
-            }
-        }.getOrNull()
-
-        require(packageInfo != null) {
-            "RiftBuild proof package is not installed: " + packageName
-        }
-
+        val packageName = requireSafePackageName(current.optString("package"))
         launchExact(appContext, packageName)
         val updated = current
             .put("schema", "riftbuild-install-status-v1")

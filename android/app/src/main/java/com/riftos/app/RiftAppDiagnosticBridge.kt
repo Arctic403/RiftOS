@@ -32,11 +32,16 @@ object RiftAppDiagnosticBridge {
     private const val MAX_PACKET_BYTES = 256
     private const val ROOT_RELATIVE = "system/volumes/D/Diagnostics/riftpp"
 
+    private const val RIFTPP_NATIVE_PROOF_PACKAGE = "com.riftpp.nativeproof"
+    private const val RIFTPP_EDITOR_PACKAGE = "com.riftpp.editor"
+    private const val RIFTPP_NATIVE_EDITOR_V1_PACKAGE = "com.riftpp.editor.nativev1"
+    private const val RIFTPP_ADAPTER_R1_PACKAGE = "com.riftpp.editor.adapterr1"
+
     private val allowedPackages = setOf(
-        RiftBuildInstaller.TARGET_PACKAGE,
-        RiftBuildInstaller.RIFTPP_EDITOR_TARGET_PACKAGE,
-        RiftBuildInstaller.RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE,
-        RiftBuildInstaller.RIFTPP_ADAPTER_R1_TARGET_PACKAGE
+        RIFTPP_NATIVE_PROOF_PACKAGE,
+        RIFTPP_EDITOR_PACKAGE,
+        RIFTPP_NATIVE_EDITOR_V1_PACKAGE,
+        RIFTPP_ADAPTER_R1_PACKAGE
     )
 
     fun supports(packageName: String): Boolean =

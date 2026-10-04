@@ -19,9 +19,9 @@ This roadmap describes intended work, not shipped capability. Current implementa
 Current Rift++ compiler authority is the hot managed-compiler path:
 
 1. **SOURCE IMPLEMENTED** — project-owned exact-hash compiler registry via `riftbuild-hot.json`;
-2. **SOURCE IMPLEMENTED** — isolated `native-buffer-v1` execution in `:riftppCompilerHot`;
+2. **SOURCE IMPLEMENTED** — generic isolated `native-buffer-v1` execution in `:riftNativeBufferCompiler`;
 3. **SOURCE IMPLEMENTED** — generic isolated `dex-json-v1` JVM/DEX tool execution in `:riftJvmToolHot`;
-4. **SOURCE IMPLEMENTED** — `compiler-status`, `compiler-run`, `kotlin-compile`, and `riftpp-compile-hot` as the only Rift++ compiler surfaces;
+4. **SOURCE IMPLEMENTED** — project-neutral `compiler-status` / `compiler-run` plus the managed `kotlin-compile` convenience path; the dedicated `riftpp-compile-hot` route is retired;
 5. **SOURCE IMPLEMENTED** — generic `prepare-native-app -> pack -> sign -> verify -> install-proof` packaging flow;
 6. **RETIREMENT LOCKED** — the former `riftpp-host`, `:riftppCompiler`, `RiftppCompilerService`, direct V0/App0/Seed0 prepare routes, and their proof hosts are absent and regression-forbidden.
 
