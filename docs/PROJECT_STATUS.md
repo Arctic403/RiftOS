@@ -54,7 +54,7 @@ From `android/app/build.gradle.kts`:
 - `RiftSecretStore` is the Android Keystore-backed secret owner.
 - Installed RiftBuild on source `1c1ae33b81cfe643eb804cac0841ced636e982e3` / Builder run 214 has device-proven Rift++ V0 ELF materialization, the fixed 1,440-byte binary Android manifest, project validation/planning and deterministic universal unsigned APK packaging under `D:/Builds`.
 - `RiftApkV2Signer` is the live bounded Android-Keystore RSA-2048 APK Signature Scheme v2 signer/verifier. The sign/verify path is installed-device proven and remains independent from target launch/runtime survival.
-- `RiftBuildInstaller` is the live user-confirmed PackageInstaller/launch owner for its fixed allowlist: `com.riftpp.nativeproof`, `com.riftpp.editor`, `com.riftpp.editor.nativev1`, `com.riftpp.editor.adapterr1`, and `com.codynex.editor`. Installed-device evidence proves APK install success and exact launch requests; target survival is a separate gate and is not inferred from `launchProven` alone.
+- `RiftBuildInstaller` is the live user-confirmed PackageInstaller/launch owner for generic RiftBuild artifacts. Package identity is derived from the verified APK, bound to the persisted install-status record, and must match PackageInstaller callbacks before launch. Android user confirmation remains mandatory; project-specific package allowlists do not live in the generic installer. Installed-device evidence proves APK install success and launch requests; target survival is a separate gate and is not inferred from `launchProven` alone.
 - Native Files owns persisted Android SAF document-tree mounts.
 - `RiftBrowser*` classes are the only allowed WebKit/Chromium owners.
 - installed HTML/JS programs already present under `C:/Programs` can be launched by `RiftBrowserAppHost`.
@@ -93,7 +93,7 @@ Historical `src/riftrt.js` and its Worker/WASM/application-runtime architecture 
 
 The current source can discover and host packages already present in `C:/Programs/<id>/package.json`.
 
-The current working tree now contains a native `RiftBuildInstaller` bootstrap installer, but it is source-only until the next Builder/install pass. It is deliberately restricted to the signed `com.riftpp.nativeproof` artifact and does not replace the older general JavaScript app-package design (`src/riftapps.js`), which remains unpackaged.
+The current working tree contains the native generic `RiftBuildInstaller` path. It accepts only an APK that has passed RiftBuild v2 verification, derives and validates that artifact's package identity, binds installation callbacks and launch to the recorded package, and still requires Android's normal unknown-source trust/user confirmation. It does not replace the older general JavaScript app-package design (`src/riftapps.js`), which remains unpackaged.
 
 ## Retired/non-live engine paths
 

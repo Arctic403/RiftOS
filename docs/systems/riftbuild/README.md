@@ -291,14 +291,14 @@ Verification:
 - a signed artifact is not installable-claimed until this verifier passes.
 
 Install/launch proof:
-- installation is restricted to RiftBuild's fixed package allowlist: `com.riftpp.nativeproof`, `com.riftpp.editor`, `com.riftpp.editor.nativev1`, `com.riftpp.editor.adapterr1`, and `com.codynex.editor`;
+- installation accepts only an APK that has passed RiftBuild v2 verification; package identity is derived from that verified artifact rather than a project package allowlist;
+- package names are bounded and validated, persisted in RiftBuild install status, and PackageInstaller callbacks must match the recorded identity;
 - RiftOS declares `REQUEST_INSTALL_PACKAGES` and uses Android `PackageInstaller`, never raw package-manager shell commands;
 - normal Android unknown-source trust/user confirmation remains mandatory;
-- PackageInstaller commit/result callbacks are delivered to the private `RiftBuildInstallActivity`, not a background broadcast callback, so `STATUS_PENDING_USER_ACTION` can surface Android's confirmation UI from a foreground Activity;
-- `RiftBuildInstallReceiver` remains only for bounded first-launch evidence;
-- install status is persisted under RiftBuild system state;
-- after successful installation, the proof launcher targets only exported `android.app.NativeActivity` for the allowlisted package recorded by the install session;
-- no arbitrary package name, arbitrary APK path or silent/background install authority is exposed.
+- PackageInstaller commit/result callbacks are delivered to the private `RiftBuildInstallReceiver`; when `STATUS_PENDING_USER_ACTION` is reported, the retained system confirmation intent is surfaced from a foreground RiftOS Activity;
+- first-launch evidence is accepted only when its package matches the recorded install identity;
+- after successful installation, launch uses a package-scoped MAIN/LAUNCHER intent bound to the recorded package, so generic RiftBuild does not require project-specific manifest `<queries>`;
+- arbitrary package substitution, arbitrary unverified APK installation and silent/background install authority are not exposed.
 
 The v2 implementation is intentionally a small bootstrap subset. General multi-signer/v3/v4/key-import support is out of scope for the RiftLLM+ return milestone.
 
@@ -359,7 +359,7 @@ The subsystem is invalid if:
 - `build.submit` reports success without all required stages;
 - plain text `AndroidManifest.xml` is mislabeled as an installable packaged manifest;
 - only one ABI is packaged for `universal`;
-- signing/install success is claimed without the independent v2 verifier, the fixed package allowlist, or Android-managed user confirmation;
+- signing/install success is claimed without the independent v2 verifier, verified-artifact package identity binding, or Android-managed user confirmation;
 - RiftBuild silently enables the experimental CLI;
 - MCP catalog expands just to expose build internals.
 

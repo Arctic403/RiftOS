@@ -45,8 +45,10 @@ for (const required of [
   'android:name=".RiftBuildInstallReceiver"',
   'android:exported="false"',
   'android.intent.action.PACKAGE_FIRST_LAUNCH',
-  'com.riftpp.nativeproof',
 ]) if (!manifest.includes(required)) fail(`Android RiftBuild install contract is missing ${required}`);
+if (manifest.includes('com.riftpp.')) {
+  fail('Android RiftBuild install contract must not pin Rift++ package visibility');
+}
 const kotlinDir = 'android/app/src/main/java/com/riftos/app';
 const kotlinFiles = walk(kotlinDir).filter(file => file.endsWith('.kt'));
 const manifestComponents = [...manifest.matchAll(

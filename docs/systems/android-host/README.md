@@ -61,13 +61,9 @@ Package visibility queries are declared for:
 - `com.vortex3d.app`;
 - `com.riftllm.app`;
 - `com.codynex.editor`;
-- `com.riftpp.nativeproof`;
-- `com.riftpp.editor`;
-- `com.riftpp.editor.nativev1`;
-- `com.riftpp.editor.adapterr1`;
 - `com.samsung.android.honeyboard`.
 
-These are package-visibility declarations for the fixed Vortex/RiftLLM/Codynex/Rift++/keyboard integration and proof lanes. Visibility does not itself grant launch, Binder, install or diagnostic authority.
+These are package-visibility declarations for the fixed Vortex/RiftLLM/Codynex/keyboard integration lanes. Generic RiftBuild install/launch deliberately does not pin Rift++ package visibility; it derives package identity from the verified APK and binds launch to install status. Visibility does not itself grant launch, Binder, install or diagnostic authority.
 
 Application flags:
 - `android:allowBackup="true"`;
