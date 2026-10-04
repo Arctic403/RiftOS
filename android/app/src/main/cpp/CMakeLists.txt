@@ -27,7 +27,6 @@ target_include_directories(
 )
 
 
-add_library(
 find_library(android-lib android)
 find_library(log-lib log)
 
