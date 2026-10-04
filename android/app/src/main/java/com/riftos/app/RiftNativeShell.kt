@@ -31,7 +31,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         private const val MAX_COMMAND_BYTES = 2 * 1024 * 1024
         private const val MAX_ARGUMENTS = 16_384
         private const val MAX_TREE_ROWS = 5_000
-        private const val SHELL_TIMEOUT_MS = 60_000L
+        private const val SYNC_SHELL_TIMEOUT_MS = 10 * 60 * 1000L
+        private const val MAX_SHELL_JOBS = 16
+        private const val SHELL_JOB_RETENTION_MS = 10 * 60 * 1000L
+        private const val MAX_SHELL_JOB_RETAINED_RESULT_BYTES = 2 * 1024 * 1024
         private const val MAX_CLI_SHELL_JOBS = 16
         private const val CLI_SHELL_JOB_RETENTION_MS = 5 * 60 * 1000L
         private const val MAX_CLI_SHELL_RETAINED_RESULT_BYTES = 2 * 1024 * 1024
@@ -72,6 +75,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         TimeUnit.MILLISECONDS,
         ArrayBlockingQueue<Runnable>(8)
     )
+    private val shellJobWorker = ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(8)
+    )
     private val cliWorker = ThreadPoolExecutor(
         1,
         1,
@@ -87,6 +97,21 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     @Volatile private var closed = false
 
     private data class ShellOutcome(val output: String, val cwd: String, val result: Any? = null)
+    private data class ShellJob(
+        val id: String,
+        val requestId: String?,
+        val command: String,
+        val operation: String,
+        val cwd: String,
+        val createdAt: Long,
+        @Volatile var updatedAt: Long,
+        @Volatile var status: String,
+        @Volatile var cancelRequested: Boolean = false,
+        @Volatile var output: String = "",
+        @Volatile var result: Any? = null,
+        @Volatile var error: String? = null,
+        @Volatile var future: Future<*>? = null
+    )
     private data class CliShellJob(
         val id: String,
         val requestId: String,
@@ -117,6 +142,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val steps: List<CliBatchStep>
     )
 
+    private val shellJobs = ConcurrentHashMap<String, ShellJob>()
     private val cliShellJobs = ConcurrentHashMap<String, CliShellJob>()
 
     private fun emitCliShellJob(
@@ -155,9 +181,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         RiftBoundedAsync.submit(
             executor = worker,
             watchdog = watchdog,
-            timeoutMs = SHELL_TIMEOUT_MS,
+            timeoutMs = SYNC_SHELL_TIMEOUT_MS,
             timeoutValue = {
-                errorResult(requestedCwd, "Native RiftShell timed out after ${SHELL_TIMEOUT_MS}ms")
+                errorResult(requestedCwd, "Native RiftShell synchronous call timed out after ${SYNC_SHELL_TIMEOUT_MS}ms; resubmit as a shell job")
             },
             failureValue = { error ->
                 errorResult(requestedCwd, error.message ?: error.javaClass.simpleName)
@@ -191,10 +217,256 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         )
     }
 
+    override fun submit(
+        command: String,
+        cwd: String?,
+        requestId: String?
+    ): JSONObject {
+        check(!closed) { "Native RiftShell is closed" }
+        require(command.toByteArray(Charsets.UTF_8).size <= MAX_COMMAND_BYTES) {
+            "native shell command exceeds $MAX_COMMAND_BYTES UTF-8 bytes"
+        }
+
+        val requestedCwd = normalizeDisplay(cwd ?: "/")
+        val operation = tokenize(command).firstOrNull()?.lowercase().orEmpty()
+        require(operation.isNotBlank()) { "RiftShell job command is blank" }
+        require(operation != "batch") {
+            "DISABLED: RiftShell batch commands remain disabled; submit one shell command per job"
+        }
+
+        pruneShellJobs()
+        requestId?.takeIf { it.isNotBlank() }?.let { id ->
+            shellJobs.values.firstOrNull { it.requestId == id }?.let { existing ->
+                require(existing.command == command && existing.cwd == requestedCwd) {
+                    "RiftShell requestId is already bound to a different job"
+                }
+                return shellJobSnapshot(existing)
+                    .put("deduplicated", true)
+            }
+        }
+
+        if (shellJobs.size >= MAX_SHELL_JOBS) {
+            pruneShellJobs(forceTerminalTrim = true)
+        }
+        require(shellJobs.size < MAX_SHELL_JOBS) {
+            "RiftShell job capacity reached ($MAX_SHELL_JOBS); inspect or cancel retained jobs first"
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        val job = ShellJob(
+            id = "shell-job-" + UUID.randomUUID(),
+            requestId = requestId?.takeIf { it.isNotBlank() },
+            command = command,
+            operation = operation,
+            cwd = requestedCwd,
+            createdAt = now,
+            updatedAt = now,
+            status = "queued"
+        )
+        shellJobs[job.id] = job
+
+        val future = try {
+            shellJobWorker.submit {
+                RiftDeadline.clearInterrupt()
+                synchronized(job) {
+                    if (job.cancelRequested) {
+                        job.status = "cancelled"
+                        job.updatedAt = SystemClock.elapsedRealtime()
+                        return@submit
+                    }
+                    job.status = "running"
+                    job.updatedAt = SystemClock.elapsedRealtime()
+                }
+
+                val patchSession = RiftPatchSessions.begin(
+                    appContext,
+                    origin = "native-shell-job",
+                    operation = operation,
+                    intent = operation,
+                    requestId = job.requestId,
+                    rawPaths = shellMutationPaths(command, requestedCwd)
+                )
+
+                try {
+                    val outcome = executeNative(command, requestedCwd)
+                    RiftDeadline.check("native shell job")
+                    patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
+
+                    val resultText = when (val value = outcome.result) {
+                        null -> ""
+                        is JSONObject -> value.toString()
+                        is JSONArray -> value.toString()
+                        else -> value.toString()
+                    }
+                    val retainedBytes =
+                        outcome.output.toByteArray(Charsets.UTF_8).size +
+                            resultText.toByteArray(Charsets.UTF_8).size
+                    val oversized = retainedBytes > MAX_SHELL_JOB_RETAINED_RESULT_BYTES
+
+                    synchronized(job) {
+                        if (oversized) {
+                            job.output = ""
+                            job.result = JSONObject()
+                                .put("resultRetained", false)
+                                .put("resultBytes", retainedBytes)
+                                .put("retentionLimitBytes", MAX_SHELL_JOB_RETAINED_RESULT_BYTES)
+                        } else {
+                            job.output = outcome.output
+                            job.result = outcome.result
+                        }
+                        job.status = when {
+                            job.cancelRequested -> "completed_after_cancel_request"
+                            oversized -> "completed_result_too_large"
+                            else -> "completed"
+                        }
+                        job.updatedAt = SystemClock.elapsedRealtime()
+                    }
+                } catch (error: Throwable) {
+                    patchSession?.let(RiftPatchSessions::abort)
+                    synchronized(job) {
+                        val cancelled =
+                            job.cancelRequested ||
+                                Thread.currentThread().isInterrupted ||
+                                error is InterruptedException
+                        job.error = error.message ?: error.javaClass.simpleName
+                        job.status =
+                            if (cancelled) "cancelled_may_have_applied" else "failed"
+                        job.updatedAt = SystemClock.elapsedRealtime()
+                    }
+                } finally {
+                    RiftDeadline.clearInterrupt()
+                }
+            }
+        } catch (error: Throwable) {
+            shellJobs.remove(job.id)
+            throw error
+        }
+
+        job.future = future
+        return shellJobSnapshot(job)
+            .put("deduplicated", false)
+    }
+
+    override fun jobStatus(jobId: String): JSONObject {
+        pruneShellJobs()
+        val job = shellJobs[jobId]
+            ?: throw IllegalArgumentException("Unknown RiftShell job: $jobId")
+        return shellJobSnapshot(job)
+    }
+
+    override fun jobResult(jobId: String): JSONObject {
+        pruneShellJobs()
+        val job = shellJobs[jobId]
+            ?: throw IllegalArgumentException("Unknown RiftShell job: $jobId")
+        val snapshot = shellJobSnapshot(job)
+        val terminal = snapshot.optBoolean("terminal", false)
+        return snapshot
+            .put("resultAvailable", terminal)
+            .put("output", if (terminal) job.output else "")
+            .put("result", if (terminal) job.result ?: JSONObject.NULL else JSONObject.NULL)
+            .put("error", if (terminal) job.error ?: JSONObject.NULL else JSONObject.NULL)
+    }
+
+    override fun jobCancel(jobId: String): JSONObject {
+        val job = shellJobs[jobId]
+            ?: throw IllegalArgumentException("Unknown RiftShell job: $jobId")
+
+        synchronized(job) {
+            if (shellJobTerminal(job.status)) {
+                return shellJobSnapshot(job)
+                    .put("cancelAccepted", false)
+            }
+
+            job.cancelRequested = true
+            val wasQueued = job.status == "queued"
+            val cancelled = job.future?.cancel(true) ?: false
+            job.status =
+                if (wasQueued && cancelled) "cancelled" else "cancel_requested"
+            job.updatedAt = SystemClock.elapsedRealtime()
+            return shellJobSnapshot(job)
+                .put("cancelAccepted", cancelled)
+        }
+    }
+
+    override fun jobList(limit: Int): JSONObject {
+        pruneShellJobs()
+        val rows = shellJobs.values
+            .sortedByDescending { it.createdAt }
+            .take(limit.coerceIn(1, MAX_SHELL_JOBS))
+        return JSONObject()
+            .put("schema", "rift.shell-jobs/1")
+            .put("jobs", JSONArray().apply {
+                rows.forEach { put(shellJobSnapshot(it)) }
+            })
+    }
+
+    private fun shellJobSnapshot(job: ShellJob): JSONObject = synchronized(job) {
+        JSONObject()
+            .put("schema", "rift.shell-job/1")
+            .put("jobId", job.id)
+            .put("requestId", job.requestId ?: JSONObject.NULL)
+            .put("operation", job.operation)
+            .put("cwd", job.cwd)
+            .put("status", job.status)
+            .put("terminal", shellJobTerminal(job.status))
+            .put("cancelRequested", job.cancelRequested)
+            .put("createdAtElapsedMs", job.createdAt)
+            .put("updatedAtElapsedMs", job.updatedAt)
+            .put("error", job.error ?: JSONObject.NULL)
+    }
+
+    private fun shellJobTerminal(status: String): Boolean =
+        status in setOf(
+            "completed",
+            "completed_result_too_large",
+            "failed",
+            "cancelled",
+            "cancelled_may_have_applied",
+            "completed_after_cancel_request"
+        )
+
+    private fun pruneShellJobs(forceTerminalTrim: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        shellJobs.entries.removeIf { (_, job) ->
+            synchronized(job) {
+                shellJobTerminal(job.status) &&
+                    now - job.updatedAt >= SHELL_JOB_RETENTION_MS
+            }
+        }
+
+        if (forceTerminalTrim) {
+            while (shellJobs.size >= MAX_SHELL_JOBS) {
+                val oldest = shellJobs.values
+                    .filter { shellJobTerminal(it.status) }
+                    .minByOrNull { it.updatedAt }
+                    ?: break
+                shellJobs.remove(oldest.id)
+            }
+        }
+    }
+
+    private fun cancelAllShellJobs(reason: String) {
+        shellJobs.values.forEach { job ->
+            synchronized(job) {
+                if (!shellJobTerminal(job.status)) {
+                    job.cancelRequested = true
+                    job.error = reason
+                    val wasQueued = job.status == "queued"
+                    val cancelled = job.future?.cancel(true) ?: false
+                    job.status =
+                        if (wasQueued && cancelled) "cancelled" else "cancel_requested"
+                    job.updatedAt = SystemClock.elapsedRealtime()
+                }
+            }
+        }
+    }
+
     override fun close() {
         closed = true
+        cancelAllShellJobs("Native RiftShell closed")
         cancelAllCliShellJobs("Native RiftShell closed")
         worker.shutdownNow()
+        shellJobWorker.shutdownNow()
         cliWorker.shutdownNow()
         watchdog.shutdownNow()
     }

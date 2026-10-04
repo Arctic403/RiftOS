@@ -158,6 +158,7 @@ class RiftBuildKotlinCompiler(
             .toList()
         require(classFiles.isNotEmpty()) { "Managed Kotlin compiler produced no class files" }
 
+        RiftDeadline.check("RiftBuild D8 preparation")
         val d8 = D8Command.builder()
             .setMinApiLevel(minSdk)
             .setOutput(outputDir.toPath(), OutputMode.DexIndexed)
@@ -165,6 +166,7 @@ class RiftBuildKotlinCompiler(
         d8.addProgramFiles(stdlibJar.toPath())
         d8.addLibraryFiles(androidJar.toPath())
         D8.run(d8.build())
+        RiftDeadline.check("RiftBuild D8 completion")
 
         val dexFiles = outputDir.listFiles()
             ?.filter { it.isFile && DEX_ENTRY.matches(it.name) }

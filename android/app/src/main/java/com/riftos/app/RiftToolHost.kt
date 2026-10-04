@@ -185,9 +185,9 @@ class RiftToolHost(
         .put("localOnly", true)
         .put("codeMode", "rift-code-mode-v1")
         .put("projectIntelligence", "v2")
-        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug", "rift_local_agent_batch")))
+        .put("readTools", JSONArray(listOf("rift_info", "rift_stat", "rift_hash", "rift_list", "rift_read_text", "rift_audit", "rift_scan", "rift_project_export", "rift_workspace_diff", "rift_workspace_exec", "rift_debug", "rift_local_agent_batch", "rift_shell_exec")))
         .put("writeTools", JSONArray(listOf("rift_write_text", "rift_mkdir", "rift_remove", "rift_move", "rift_copy", "rift_archive", "rift_extract")))
-        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec", "rift_local_agent_batch")))
+        .put("conditionalWriteTools", JSONArray(listOf("rift_workspace_exec", "rift_local_agent_batch", "rift_shell_exec")))
 
     fun setAccess(read: Boolean, write: Boolean): JSONObject {
         prefs.edit()
@@ -217,10 +217,28 @@ class RiftToolHost(
     fun tools(): JSONArray = JSONArray()
         .put(tool(
             "rift_shell_exec",
-            "Execute a RiftShell command through the process-owned native core. Does not expose raw Android shell access or a renderer compatibility fallback. IMPORTANT: RiftShell batch and batch --dry-run are DISABLED due to unresolved hangs; never call batch. Use individual commands or MCP file operations instead.",
-            objectSchema(JSONObject()
-                .put("command", stringProperty("RiftShell command to execute. The batch command is DISABLED and must not be used."))
-                .put("cwd", stringProperty("Optional RiftShell working directory.")), listOf("command"))
+            "Execute or manage RiftShell commands through the process-owned native core. Long RiftBuild commands auto-submit as persistent local shell jobs so MCP calls do not die at the synchronous timeout. Actions: auto, exec, submit, status, result, cancel, list. RiftShell batch and batch --dry-run remain DISABLED.",
+            objectSchema(
+                JSONObject()
+                    .put(
+                        "action",
+                        JSONObject()
+                            .put("type", "string")
+                            .put("enum", JSONArray(listOf("auto", "exec", "submit", "status", "result", "cancel", "list")))
+                            .put("description", "Optional action. Defaults to auto. auto executes short commands synchronously and submits known long RiftBuild commands as jobs.")
+                    )
+                    .put("command", stringProperty("RiftShell command for auto, exec, or submit. The batch command remains DISABLED."))
+                    .put("cwd", stringProperty("Optional RiftShell working directory."))
+                    .put("jobId", stringProperty("RiftShell job id for status, result, or cancel."))
+                    .put(
+                        "limit",
+                        JSONObject()
+                            .put("type", "integer")
+                            .put("minimum", 1)
+                            .put("maximum", 16)
+                            .put("description", "Maximum retained jobs returned by list.")
+                    )
+            )
         ))
         .put(tool("rift_info", "Inspect the local Rift MCP workspace sandbox and storage limits.", objectSchema()))
         .put(tool(
@@ -992,6 +1010,72 @@ class RiftToolHost(
             return
         }
         if (name == "rift_shell_exec") {
+            val action =
+                args.optString("action", "auto")
+                    .trim()
+                    .lowercase()
+                    .ifBlank { "auto" }
+            if (action !in setOf("auto", "exec", "submit", "status", "result", "cancel", "list")) {
+                val error = "RiftShell action must be auto, exec, submit, status, result, cancel, or list"
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("error", error))
+                return
+            }
+
+            if (!bypassAccess && !isAllowed(name, args)) {
+                val error = when {
+                    !allowRead() && !allowWrite() ->
+                        "Rift MCP shell access is disabled on this device. Enable read and write access in Rift MCP settings."
+                    !allowRead() ->
+                        "Rift MCP shell access is disabled on this device. Enable read access in Rift MCP settings."
+                    requiresWrite(name, args) ->
+                        "Rift MCP shell mutation/cancellation access is disabled on this device. Enable write access in Rift MCP settings."
+                    else ->
+                        "Rift MCP shell access is disabled on this device."
+                }
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("error", error))
+                return
+            }
+
+            val shell = shellExecutor
+            if (shell == null) {
+                val error = "RiftShell executor unavailable"
+                recordAudit(name, args, false, error)
+                reply(JSONObject().put("ok", false).put("error", error))
+                return
+            }
+
+            if (action in setOf("status", "result", "cancel", "list")) {
+                try {
+                    val value = when (action) {
+                        "status" -> {
+                            val jobId = args.optString("jobId").trim()
+                            require(jobId.isNotBlank()) { "RiftShell status requires jobId" }
+                            shell.jobStatus(jobId)
+                        }
+                        "result" -> {
+                            val jobId = args.optString("jobId").trim()
+                            require(jobId.isNotBlank()) { "RiftShell result requires jobId" }
+                            shell.jobResult(jobId)
+                        }
+                        "cancel" -> {
+                            val jobId = args.optString("jobId").trim()
+                            require(jobId.isNotBlank()) { "RiftShell cancel requires jobId" }
+                            shell.jobCancel(jobId)
+                        }
+                        else -> shell.jobList(args.optInt("limit", 16))
+                    }
+                    recordAudit(name, args, true, null, 0L)
+                    reply(JSONObject().put("ok", true).put("value", value))
+                } catch (failure: Throwable) {
+                    val error = failure.message ?: "RiftShell job control failed"
+                    recordAudit(name, args, false, error, 0L)
+                    reply(JSONObject().put("ok", false).put("error", error))
+                }
+                return
+            }
+
             val command = args.optString("command").trim()
             if (command.isBlank()) {
                 recordAudit(name, args, false, "command required")
@@ -1000,40 +1084,54 @@ class RiftToolHost(
             }
             val shellCommandName = command.takeWhile { !it.isWhitespace() }.lowercase()
             if (shellCommandName == "batch") {
-                val error = "DISABLED: RiftShell batch commands are disabled because they can hang the agent/runtime. Do not use batch or batch --dry-run; use individual commands or MCP file operations instead."
+                val error = "DISABLED: RiftShell batch commands remain disabled. Submit one command at a time or use MCP workspace/Local Agent operations."
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("error", error))
                 return
             }
-            if (!bypassAccess && !isAllowed(name, args)) {
-                val error = when {
-                    !allowRead() && !allowWrite() -> "Rift MCP shell access is disabled on this device. Enable read and write access in Rift MCP settings."
-                    !allowRead() -> "Rift MCP shell access is disabled on this device. Enable read access in Rift MCP settings."
-                    else -> "Rift MCP shell access is disabled on this device. Enable write access in Rift MCP settings."
+
+            val cwd = args.optString("cwd", "/")
+            val runAsJob =
+                action == "submit" ||
+                    (action == "auto" && shouldSubmitShellJob(command))
+
+            if (runAsJob) {
+                try {
+                    val value = shell.submit(
+                        command,
+                        cwd,
+                        operationContext?.operationId
+                    )
+                    recordAudit(name, args, true, null, 0L)
+                    reply(JSONObject().put("ok", true).put("value", value))
+                } catch (failure: Throwable) {
+                    val error = failure.message ?: "RiftShell job submission failed"
+                    recordAudit(name, args, false, error, 0L)
+                    reply(JSONObject().put("ok", false).put("error", error))
                 }
-                recordAudit(name, args, false, error)
-                reply(JSONObject().put("ok", false).put("error", error))
                 return
             }
+
             val startedAt = SystemClock.elapsedRealtime()
-            shellExecutor?.execute(command, args.optString("cwd", "/"), operationContext?.operationId) { result ->
+            shell.execute(command, cwd, operationContext?.operationId) { result ->
                 val ok = result.optBoolean("ok", false)
                 val error = if (ok) null else result.optString("error", "RiftShell execution failed")
                 recordAudit(name, args, ok, error, SystemClock.elapsedRealtime() - startedAt)
                 if (ok) {
-                    reply(JSONObject()
-                        .put("ok", true)
-                        .put("value", JSONObject()
-                            .put("output", result.optString("output"))
-                            .put("cwd", result.optString("cwd", "/"))
-                            .put("result", result.opt("result") ?: JSONObject.NULL)))
+                    reply(
+                        JSONObject()
+                            .put("ok", true)
+                            .put(
+                                "value",
+                                JSONObject()
+                                    .put("output", result.optString("output"))
+                                    .put("cwd", result.optString("cwd", "/"))
+                                    .put("result", result.opt("result") ?: JSONObject.NULL)
+                            )
+                    )
                 } else {
                     reply(JSONObject().put("ok", false).put("error", error ?: "RiftShell execution failed"))
                 }
-            } ?: run {
-                val error = "RiftShell executor unavailable"
-                recordAudit(name, args, false, error)
-                reply(JSONObject().put("ok", false).put("error", error))
             }
             return
         }
@@ -1197,6 +1295,25 @@ class RiftToolHost(
         return out
     }
 
+    private fun shouldSubmitShellJob(command: String): Boolean {
+        val parts = command.trim().split(Regex("\\s+"), limit = 3)
+        if (parts.firstOrNull()?.lowercase() != "riftbuild") return false
+        return parts.getOrNull(1)?.lowercase() in setOf(
+            "toolchain-install-bundled",
+            "managed-copy",
+            "compiler-run",
+            "kotlin-compile",
+            "compile-native",
+            "compile-object",
+            "extract-object-text",
+            "prepare-native-app",
+            "pack",
+            "sign",
+            "verify",
+            "install-proof"
+        )
+    }
+
     private fun canonicalName(raw: String): String = when (raw.trim()) {
         "shell", "rift_shell_exec" -> "rift_shell_exec"
         "info", "rift_info" -> "rift_info"
@@ -1261,7 +1378,7 @@ class RiftToolHost(
         if (name == "rift_local_agent_batch") {
             return RiftLocalAgentBatch.requiresWrite(args)
         }
-        if (name == "rift_shell_exec") return true
+        if (name == "rift_shell_exec") return shellActionRequiresWrite(args)
         if (isWriteTool(name)) return true
         if (name == "rift_workspace_exec") {
             return runCatching { workspaceBatchMutates(normalizeWorkspaceExecArgs(args)) }
@@ -1270,12 +1387,25 @@ class RiftToolHost(
         return false
     }
 
+    private fun shellActionRequiresWrite(args: JSONObject): Boolean =
+        when (
+            args.optString("action", "auto")
+                .trim()
+                .lowercase()
+                .ifBlank { "auto" }
+        ) {
+            "status", "result", "list" -> false
+            else -> true
+        }
+
     private fun requiresWrite(name: String, args: JSONObject): Boolean =
-        isWriteTool(name) || name == "rift_shell_exec" || (name == "rift_workspace_exec" && workspaceBatchMutates(args))
+        isWriteTool(name) ||
+            (name == "rift_shell_exec" && shellActionRequiresWrite(args)) ||
+            (name == "rift_workspace_exec" && workspaceBatchMutates(args))
 
     private fun isAllowed(name: String, args: JSONObject): Boolean = when {
         name == "rift_workspace_exec" -> allowRead() && (!requiresWrite(name, args) || allowWrite())
-        name == "rift_shell_exec" -> allowRead() && allowWrite()
+        name == "rift_shell_exec" -> allowRead() && (!requiresWrite(name, args) || allowWrite())
         isWriteTool(name) -> allowWrite()
         methodFor(name) != null -> allowRead()
         else -> false

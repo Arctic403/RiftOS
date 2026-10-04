@@ -39,7 +39,7 @@ class RiftManagedJvmToolService : Service() {
         private const val MAX_RESPONSE_BYTES = 512 * 1024
         private const val MAX_PAYLOAD_BYTES = 128L * 1024L * 1024L
         private const val BIND_TIMEOUT_SECONDS = 3L
-        private const val RUN_TIMEOUT_SECONDS = 60L
+        private const val RUN_TIMEOUT_SECONDS = 10 * 60L
 
         fun run(
             context: Context,
@@ -126,6 +126,14 @@ class RiftManagedJvmToolService : Service() {
                 }
                 return try {
                     future.get(RUN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                } catch (interrupted: InterruptedException) {
+                    future.cancel(true)
+                    if (remotePid > 0) runCatching { Process.killProcess(remotePid) }
+                    Thread.currentThread().interrupt()
+                    Bundle().apply {
+                        putString("status", "cancelled")
+                        putString("detail", "Managed JVM tool was cancelled")
+                    }
                 } catch (timeout: TimeoutException) {
                     future.cancel(true)
                     if (remotePid > 0) runCatching { Process.killProcess(remotePid) }
