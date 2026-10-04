@@ -35,6 +35,8 @@ class RiftHeadlessJsRuntime(context: Context) {
     }
 
     data class CommandResult(val output: String, val result: JSONObject?)
+    private val appContext = context.applicationContext
+    private val riftRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
     private val stateRoot = File(riftRoot, "system/riftpp-state").apply { mkdirs() }.canonicalFile
 
     @Volatile private var vmSourceCache: String? = null

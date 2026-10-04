@@ -1180,7 +1180,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     ): ShellOutcome {
         val action = args.removeFirstOrNull()?.lowercase() ?: "help"
         val packageName = args.removeFirstOrNull()
-            ?: RiftBuildInstaller.RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE
+            ?: RiftAppDiagnosticBridge.DEFAULT_PACKAGE
 
         require(args.isEmpty()) {
             "usage: riftcrash help|status|start|capture|latest|reset [package]"
@@ -1190,7 +1190,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "help" -> JSONObject()
                 .put("schema", "rift.app-diagnostic-help/1")
                 .put("usage", "riftcrash help|status|start|capture|latest|reset [package]")
-                .put("defaultPackage", RiftBuildInstaller.RIFTPP_NATIVE_EDITOR_V1_TARGET_PACKAGE)
+                .put("defaultPackage", RiftAppDiagnosticBridge.DEFAULT_PACKAGE)
                 .put("dumpRoot", "/D:/Diagnostics/riftpp")
                 .put("transport", "localhost-udp")
                 .put("port", RiftAppDiagnosticBridge.PORT)

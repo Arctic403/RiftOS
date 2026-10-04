@@ -20,6 +20,7 @@ import java.util.zip.ZipOutputStream
 class RiftBuildLocalExecutor(context: Context) {
     data class CommandResult(val output: String, val value: JSONObject)
     private data class ProjectRef(val display: String, val file: File)
+    private data class ManifestAttr(
         val namespace: Int,
         val name: Int,
         val rawValue: Int,
@@ -758,30 +759,6 @@ class RiftBuildLocalExecutor(context: Context) {
     }
 
     @Synchronized
-
-    @Synchronized
-
-    @Synchronized
-
-    @Synchronized
-
-
-
-
-
-
-    @Synchronized
-
-    @Synchronized
-
-
-    @Synchronized
-
-
-
-
-
-
     fun submit(args: JSONObject, cwd: String = "/D:/Workspace"): JSONObject {
         require(!args.has("command") && !args.has("shell") && !args.has("exec")) { "RiftBuild does not accept raw commands" }
         val project = args.optString("project").ifBlank { args.optString("projectPath") }

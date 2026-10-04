@@ -36,7 +36,8 @@ object RiftAppDiagnosticBridge {
     private const val RIFTPP_EDITOR_PACKAGE = "com.riftpp.editor"
     private const val RIFTPP_NATIVE_EDITOR_V1_PACKAGE = "com.riftpp.editor.nativev1"
     private const val RIFTPP_ADAPTER_R1_PACKAGE = "com.riftpp.editor.adapterr1"
-
+    private const val RIFTPP_NATIVE_EDITOR_V1_PACKAGE = "com.riftpp.editor.nativev1"
+    const val DEFAULT_PACKAGE = RIFTPP_NATIVE_EDITOR_V1_PACKAGE
     private val allowedPackages = setOf(
         RIFTPP_NATIVE_PROOF_PACKAGE,
         RIFTPP_EDITOR_PACKAGE,
