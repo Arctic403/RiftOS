@@ -103,13 +103,9 @@ for (const required of [
     'Native app bounded permission contract missing: ' + required
   );
 }
-assert.match(
-  manifest,
-  /<package android:name="com\.riftpp\.editor\.nativev1" \/>/
-);
-assert.match(
-  manifest,
-  /<package android:name="com\.riftpp\.editor\.adapterr1" \/>/
+assert.ok(
+  !manifest.includes('com.riftpp.'),
+  'RiftOS manifest must stay free of Rift++ package visibility'
 );
 assert.ok(
   shell.includes('riftcrash help|status|start|capture|latest|reset [package]'),
