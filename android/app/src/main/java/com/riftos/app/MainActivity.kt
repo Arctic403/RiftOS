@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var browserAppHost: RiftBrowserAppHost
     private lateinit var nativeSystemApps: RiftNativeSystemApps
     private lateinit var nativeWorkspaceApps: RiftNativeWorkspaceApps
+    private lateinit var rappHost: RiftRappHost
     private lateinit var browserWindow: RiftBrowserWindow
     private lateinit var workspaceRecords: RiftWorkspaceRecords
     private lateinit var workspaceWatcher: RiftWorkspaceWatcher
@@ -86,6 +87,7 @@ class MainActivity : Activity() {
         browserAppHost = RiftBrowserAppHost(this, nativeDesktop)
         nativeSystemApps = RiftNativeSystemApps(this, nativeDesktop, RiftMcpRuntime.nativeShell(this))
         nativeWorkspaceApps = RiftNativeWorkspaceApps(this, nativeDesktop)
+        rappHost = RiftRappHost(this, nativeDesktop, ::populateNativeLauncher)
 
         populateNativeLauncher()
         nativeDesktop.handle("desktop.window.bootstrap", JSONObject())
@@ -240,6 +242,7 @@ class MainActivity : Activity() {
                 openBrowserWindow("")
                 return@runOnUiThread
             }
+            if (::rappHost.isInitialized && rappHost.openFromLauncher(id)) return@runOnUiThread
 
             // Anything else in the launcher is an installed Rift program rendered by RiftBrowser.
             runCatching {
@@ -280,6 +283,7 @@ class MainActivity : Activity() {
     private fun closeNativeDesktopApp(id: String) {
         if (::nativeSystemApps.isInitialized && nativeSystemApps.onDesktopClosed(id)) return
         if (::nativeWorkspaceApps.isInitialized && nativeWorkspaceApps.onDesktopClosed(id)) return
+        if (::rappHost.isInitialized && rappHost.onDesktopClosed(id)) return
         if (id == "browser") {
             if (::browserWindow.isInitialized) browserWindow.close()
             return
@@ -369,6 +373,7 @@ class MainActivity : Activity() {
         if (::browserWindow.isInitialized) browserWindow.destroy()
         if (::nativeSystemApps.isInitialized) nativeSystemApps.destroy()
         if (::nativeWorkspaceApps.isInitialized) nativeWorkspaceApps.destroy()
+        if (::rappHost.isInitialized) rappHost.destroy()
         if (::browserAppHost.isInitialized) browserAppHost.destroy()
         if (::nativeDesktop.isInitialized) nativeDesktop.destroy()
         super.onDestroy()

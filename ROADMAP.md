@@ -42,6 +42,12 @@ Immediate order:
 
 RiftBuild Native Compile V1 may execute explicitly configured local/downloaded compiler toolchains through structured argument-vector process launches. Project/source text is never interpreted as a shell command, and `/system/bin/sh -c` remains outside the build path. Automatic Git push, CLI enablement and new MCP authority remain out of scope.
 
+### RiftOS-native app lane
+
+**SOURCE IMPLEMENTED; installed proof pending.** RiftBuild now has a parallel `.rapp` target that does not enter Android APK signing or PackageInstaller. A workspace project supplies `riftapp.json` plus compiler-produced program/runtime artifacts; `pack-rapp` creates a bounded hash-verified package under `D:/Builds`, `install-rapp` atomically installs only managed RAPP programs under `/C:/Programs`, `launch-rapp` dispatches an installed app into a RiftOS-owned window, and `rapp-list` reports installed native apps. The first engine is the existing bounded Rift++ RPA2/RPE2/RUI2 runtime path. Both the RAPP manager and JNI bridge are lazy so the existing APK `pack → sign → verify → install-proof` pipeline and normal desktop startup remain independent of this new lane.
+
+First proof gate: compile a tiny Rift++ RUI2 app, write `riftapp.json`, run `pack-rapp → install-rapp → launch-rapp`, close it, rebuild the program artifact, repeat the same three commands, and verify the second version runs without rebuilding or reinstalling the RiftOS APK.
+
 ## Semnexis self-hosting bootstrap
 
 Current source is `0.7.0-quickjs-bootstrap`. The installed gate remains `semnexis-bootstrap-self-test/17`, while the source/machine self-hosting frontier has advanced through a real Semnexis-source frontend and semantic-graph slice. Generated ARM32 now parses `fn main() -> i32 { let x = 12 + 3 * (4 + 1); return x; }` into a 12-node Arena AST, lowers it into 22 deterministic semantic facts, and resolves the return `x` NameRef to the local symbol. QuickJS remains only the bootstrap host.

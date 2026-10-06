@@ -51,6 +51,9 @@ class RiftBuildLocalExecutor(context: Context) {
     private val managedToolchains = RiftBuildManagedToolchains(workspaceRoot)
     private val kotlinCompiler = RiftBuildKotlinCompiler(appContext, workspaceRoot, riftRoot)
     private val nativeApp = RiftBuildNativeApp(workspaceRoot)
+    private val rappManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        RiftRappManager(appContext)
+    }
     private val apkSigner = RiftApkV2Signer(appContext)
     private val installer = RiftBuildInstaller(appContext)
 
@@ -59,7 +62,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | managed-status <project> | managed-payload <project> <id> | managed-copy <project> <id> <output> | compiler-status <project> | compiler-run <project> <compiler-id> <request.json> | kotlin-status | kotlin-compile <project> | compile-native <project> [arm32|arm64|universal] | compile-object <project> <source.S> [arm32|arm64] | extract-object-text <project> <object.o> [arm32|arm64] | prepare-native-app <project> | pack <project> [target] | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | managed-status <project> | managed-payload <project> <id> | managed-copy <project> <id> <output> | compiler-status <project> | compiler-run <project> <compiler-id> <request.json> | kotlin-status | kotlin-compile <project> | compile-native <project> [arm32|arm64|universal] | compile-object <project> <source.S> [arm32|arm64] | extract-object-text <project> <object.o> [arm32|arm64] | prepare-native-app <project> | pack <project> [target] | pack-rapp <project> | install-rapp <artifact.rapp> | launch-rapp <id> | rapp-list | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -125,6 +128,19 @@ class RiftBuildLocalExecutor(context: Context) {
                 args.getOrNull(1) ?: "universal",
                 cwd
             )
+            "pack-rapp" -> packRapp(
+                args.firstOrNull() ?: error("usage: riftbuild pack-rapp <project>"),
+                cwd
+            )
+            "install-rapp" -> installRapp(
+                args.firstOrNull() ?: error("usage: riftbuild install-rapp <artifact.rapp>")
+            )
+            "launch-rapp" -> launchRapp(
+                args.firstOrNull() ?: error("usage: riftbuild launch-rapp <id>")
+            )
+            "rapp-list" -> JSONObject()
+                .put("schema", "riftbuild-rapp-list-v1")
+                .put("apps", rappManager.listInstalled())
             "sign" -> signArtifact(args.firstOrNull() ?: error("usage: riftbuild sign <unsigned-apk>"))
             "verify" -> verifyArtifact(args.firstOrNull() ?: error("usage: riftbuild verify <signed-apk>"))
             "install-proof" -> installProof(args.firstOrNull() ?: error("usage: riftbuild install-proof <signed-apk>"))
@@ -830,6 +846,39 @@ class RiftBuildLocalExecutor(context: Context) {
                 .put("install is allowed only after independent v2 verification and Android user confirmation"))
             .put("createdAt", System.currentTimeMillis())
         atomicWrite(File(outDir, "receipt.json"), receipt.toString(2).toByteArray(Charsets.UTF_8))
+        writeRun(receipt)
+        return receipt
+    }
+
+    @Synchronized
+    fun packRapp(project: String, cwd: String = "/D:/Workspace"): JSONObject {
+        val ref = resolveProject(project, cwd)
+        val packed = rappManager.pack(ref.file)
+        val receipt = JSONObject(packed.receipt.toString())
+            .put("runId", runId())
+            .put("project", ref.display)
+            .put("artifact", artifactDisplay(packed.artifact))
+            .put("createdAt", System.currentTimeMillis())
+        writeRun(receipt)
+        return receipt
+    }
+
+    @Synchronized
+    fun installRapp(rawArtifact: String): JSONObject {
+        val artifact = resolveArtifact(rawArtifact)
+        val receipt = rappManager.install(artifact)
+            .put("runId", runId())
+            .put("artifact", artifactDisplay(artifact))
+            .put("artifactSha256", sha256(artifact))
+            .put("createdAt", System.currentTimeMillis())
+        writeRun(receipt)
+        return receipt
+    }
+
+    fun launchRapp(id: String): JSONObject {
+        val receipt = rappManager.launch(id)
+            .put("runId", runId())
+            .put("createdAt", System.currentTimeMillis())
         writeRun(receipt)
         return receipt
     }

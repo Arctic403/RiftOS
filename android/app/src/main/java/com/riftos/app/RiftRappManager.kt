@@ -1,0 +1,964 @@
+package com.riftos.app
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.security.MessageDigest
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+
+/**
+ * RiftOS-native application package manager.
+ *
+ * This is deliberately parallel to APK packaging. Compilers emit their normal
+ * artifacts into a workspace project, riftapp.json points at those artifacts,
+ * and this class packs/installs them without invoking Android APK signing.
+ */
+class RiftRappManager(context: Context) {
+    data class PackResult(
+        val artifact: File,
+        val receipt: JSONObject
+    )
+
+    data class InstalledApp(
+        val id: String,
+        val name: String,
+        val launcherIcon: String,
+        val engine: String,
+        val presentation: String,
+        val program: ByteArray,
+        val runtime: ByteArray
+    )
+
+    private data class ProjectSpec(
+        val id: String,
+        val name: String,
+        val launcherIcon: String,
+        val engine: String,
+        val presentation: String,
+        val entry: String,
+        val runtime: String
+    )
+
+    private data class PackagePayload(
+        val manifest: JSONObject,
+        val program: ByteArray,
+        val runtime: ByteArray
+    )
+
+    companion object {
+        const val PROJECT_SCHEMA = "riftos.rapp-project/1"
+        const val PACKAGE_SCHEMA = "riftos.rapp/1"
+        const val ENGINE_RIFTPP_RUI2 = "riftpp-rpa2-v1"
+
+        private const val PROJECT_MANIFEST = "riftapp.json"
+        private const val PACKAGE_MANIFEST = "manifest.json"
+        private const val PROGRAM_ENTRY = "program.bin"
+        private const val RUNTIME_ENTRY = "runtime.bin"
+        private const val MAX_MANIFEST_BYTES = 64 * 1024
+        private const val MAX_PROGRAM_BYTES = 1024 * 1024
+        private const val MAX_RUNTIME_BYTES = 1024 * 1024
+        private const val MAX_PACKAGE_BYTES = 4L * 1024L * 1024L
+        private const val MAX_INSTALLED_APPS = 128
+        private val SAFE_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
+        private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
+        private val RESERVED_IDS = setOf(
+            "files",
+            "workspace-live",
+            "terminal",
+            "browser",
+            "editor",
+            "devlab",
+            "tasks",
+            "settings",
+            "mcp"
+        )
+    }
+
+    private val appContext = context.applicationContext
+    private val riftRoot =
+        File(appContext.filesDir, "riftfs")
+            .apply { mkdirs() }
+            .canonicalFile
+    private val workspaceRoot =
+        File(riftRoot, "workspace")
+            .apply { mkdirs() }
+            .canonicalFile
+    private val artifactRoot =
+        File(riftRoot, "documents/builds")
+            .apply { mkdirs() }
+            .canonicalFile
+    private val programsRoot =
+        File(
+            riftRoot,
+            RiftVolumePaths.resolveRelative("/C:/Programs")
+        )
+            .apply { mkdirs() }
+            .canonicalFile
+    private val stageRoot =
+        File(riftRoot, "system/rapp/stage")
+            .apply { mkdirs() }
+            .canonicalFile
+
+    fun pack(projectRoot: File): PackResult {
+        val project = projectRoot.canonicalFile
+        require(confinedTo(workspaceRoot, project) && project.isDirectory) {
+            "RAPP project must live under D:/Workspace"
+        }
+
+        val spec = readProjectSpec(project)
+        val programFile = resolveProjectFile(project, spec.entry)
+        val runtimeFile = resolveProjectFile(project, spec.runtime)
+        val program = readBounded(programFile, MAX_PROGRAM_BYTES)
+        val runtime = readBounded(runtimeFile, MAX_RUNTIME_BYTES)
+        val programSha = sha256(program)
+        val runtimeSha = sha256(runtime)
+
+        val manifest =
+            JSONObject()
+                .put("schema", PACKAGE_SCHEMA)
+                .put("id", spec.id)
+                .put("name", spec.name)
+                .put("launcherIcon", spec.launcherIcon)
+                .put("engine", spec.engine)
+                .put("presentation", spec.presentation)
+                .put("programSha256", programSha)
+                .put("runtimeSha256", runtimeSha)
+
+        val manifestBytes =
+            manifest.toString()
+                .toByteArray(Charsets.UTF_8)
+        require(manifestBytes.size in 1..MAX_MANIFEST_BYTES) {
+            "RAPP manifest is out of bounds"
+        }
+
+        val contentKey =
+            sha256(
+                manifestBytes +
+                    programSha.toByteArray(Charsets.US_ASCII) +
+                    runtimeSha.toByteArray(Charsets.US_ASCII)
+            )
+                .take(16)
+        val target =
+            File(
+                artifactRoot,
+                "${spec.id}-$contentKey.rapp"
+            )
+                .canonicalFile
+        require(confinedTo(artifactRoot, target)) {
+            "RAPP artifact escaped D:/Builds"
+        }
+
+        val temp =
+            File(
+                artifactRoot,
+                ".${target.name}.tmp-${System.nanoTime()}"
+            )
+                .canonicalFile
+        require(confinedTo(artifactRoot, temp)) {
+            "RAPP temporary artifact escaped D:/Builds"
+        }
+
+        ZipOutputStream(temp.outputStream().buffered()).use { output ->
+            putZip(output, PACKAGE_MANIFEST, manifestBytes)
+            putZip(output, PROGRAM_ENTRY, program)
+            putZip(output, RUNTIME_ENTRY, runtime)
+        }
+
+        require(temp.length() in 1..MAX_PACKAGE_BYTES) {
+            temp.delete()
+            "RAPP package is out of bounds"
+        }
+
+        if (target.exists()) {
+            if (sha256(target) == sha256(temp)) {
+                temp.delete()
+            } else {
+                require(target.delete()) {
+                    temp.delete()
+                    "Could not replace existing RAPP artifact"
+                }
+                require(temp.renameTo(target)) {
+                    "Could not commit RAPP artifact"
+                }
+            }
+        } else {
+            require(temp.renameTo(target)) {
+                "Could not commit RAPP artifact"
+            }
+        }
+
+        val receipt =
+            JSONObject()
+                .put("schema", "riftbuild-rapp-pack-v1")
+                .put("packageSchema", PACKAGE_SCHEMA)
+                .put("id", spec.id)
+                .put("name", spec.name)
+                .put("engine", spec.engine)
+                .put("presentation", spec.presentation)
+                .put("entry", spec.entry)
+                .put("runtime", spec.runtime)
+                .put("programBytes", program.size)
+                .put("programSha256", programSha)
+                .put("runtimeBytes", runtime.size)
+                .put("runtimeSha256", runtimeSha)
+                .put("artifactBytes", target.length())
+                .put("artifactSha256", sha256(target))
+                .put("state", "packed-rapp")
+
+        return PackResult(target, receipt)
+    }
+
+    fun install(artifact: File): JSONObject {
+        val file = artifact.canonicalFile
+        require(confinedTo(artifactRoot, file) && file.isFile) {
+            "RAPP install artifact must live under D:/Builds"
+        }
+        require(file.name.endsWith(".rapp")) {
+            "RAPP install accepts only .rapp artifacts"
+        }
+        require(file.length() in 1..MAX_PACKAGE_BYTES) {
+            "RAPP artifact size is out of bounds"
+        }
+
+        val payload = readPackage(file)
+        val manifest = payload.manifest
+        val id = manifest.getString("id")
+        val name = manifest.getString("name")
+        val launcherIcon = manifest.getString("launcherIcon")
+        val engine = manifest.getString("engine")
+        val presentation = manifest.getString("presentation")
+
+        validateIdentity(id, name, launcherIcon)
+        require(engine == ENGINE_RIFTPP_RUI2) {
+            "Unsupported RAPP engine: $engine"
+        }
+        require(presentation == "rui2") {
+            "Unsupported RAPP presentation: $presentation"
+        }
+
+        val target = File(programsRoot, id).canonicalFile
+        require(confinedTo(programsRoot, target)) {
+            "RAPP install target escaped C:/Programs"
+        }
+
+        val stage =
+            File(
+                stageRoot,
+                "install-$id-${System.nanoTime()}"
+            )
+                .canonicalFile
+        require(confinedTo(stageRoot, stage)) {
+            "RAPP stage escaped stage root"
+        }
+        require(stage.mkdirs()) {
+            "Could not create RAPP install stage"
+        }
+
+        try {
+            writeAtomic(
+                File(stage, PROGRAM_ENTRY),
+                payload.program
+            )
+            writeAtomic(
+                File(stage, RUNTIME_ENTRY),
+                payload.runtime
+            )
+
+            val installedRuntime =
+                JSONObject(manifest.toString())
+                    .put("program", PROGRAM_ENTRY)
+                    .put("runtime", RUNTIME_ENTRY)
+
+            val packageJson =
+                JSONObject()
+                    .put("format", "rift-program-package-v1")
+                    .put(
+                        "manifest",
+                        JSONObject()
+                            .put("id", id)
+                            .put("name", name)
+                            .put("launcherIcon", launcherIcon)
+                    )
+                    .put("riftApp", installedRuntime)
+
+            writeAtomic(
+                File(stage, "package.json"),
+                packageJson
+                    .toString(2)
+                    .toByteArray(Charsets.UTF_8)
+            )
+
+            val backup =
+                File(
+                    stageRoot,
+                    "backup-$id-${System.nanoTime()}"
+                )
+                    .canonicalFile
+            var backedUp = false
+
+            if (target.exists()) {
+                require(isManagedRapp(target, id)) {
+                    "Refusing to replace non-RAPP program: $id"
+                }
+                require(target.renameTo(backup)) {
+                    "Could not stage existing RAPP for replacement"
+                }
+                backedUp = true
+            }
+
+            if (!stage.renameTo(target)) {
+                if (backedUp) {
+                    runCatching { backup.renameTo(target) }
+                }
+                error("Could not commit installed RAPP")
+            }
+
+            if (backedUp && backup.exists()) {
+                deleteTreeBounded(backup)
+            }
+        } catch (error: Throwable) {
+            if (stage.exists()) {
+                runCatching { deleteTreeBounded(stage) }
+            }
+            throw error
+        }
+
+        RiftRappHost.notifyProgramsChanged()
+
+        return JSONObject()
+            .put("schema", "riftbuild-rapp-install-v1")
+            .put("packageSchema", PACKAGE_SCHEMA)
+            .put("id", id)
+            .put("name", name)
+            .put("engine", engine)
+            .put("presentation", presentation)
+            .put("programSha256", manifest.getString("programSha256"))
+            .put("runtimeSha256", manifest.getString("runtimeSha256"))
+            .put("installedPath", "/C:/Programs/$id")
+            .put("state", "installed-rapp")
+    }
+
+    fun launch(id: String): JSONObject {
+        require(SAFE_ID.matches(id)) {
+            "RAPP id is invalid"
+        }
+        require(handlesInstalled(id)) {
+            "Installed RAPP not found: $id"
+        }
+        val accepted = RiftRappHost.launchInstalled(id)
+        return JSONObject()
+            .put("schema", "riftbuild-rapp-launch-v1")
+            .put("id", id)
+            .put("accepted", accepted)
+            .put(
+                "state",
+                if (accepted) "launch-dispatched" else "no-live-riftos-host"
+            )
+    }
+
+    fun listInstalled(): JSONArray {
+        val out = JSONArray()
+        val directories =
+            programsRoot.listFiles()
+                ?.filter { it.isDirectory }
+                ?.sortedBy { it.name.lowercase() }
+                .orEmpty()
+
+        var count = 0
+        for (directory in directories) {
+            if (++count > MAX_INSTALLED_APPS) break
+            val packageFile = File(directory, "package.json")
+            if (!packageFile.isFile || packageFile.length() !in 1..MAX_MANIFEST_BYTES.toLong()) {
+                continue
+            }
+
+            val root =
+                runCatching {
+                    JSONObject(
+                        packageFile.readText(Charsets.UTF_8)
+                    )
+                }.getOrNull()
+                    ?: continue
+            val manifest = root.optJSONObject("manifest") ?: continue
+            val runtime = root.optJSONObject("riftApp") ?: continue
+            if (runtime.optString("schema") != PACKAGE_SCHEMA) continue
+
+            val id = manifest.optString("id").trim()
+            if (
+                id != directory.name ||
+                !SAFE_ID.matches(id)
+            ) {
+                continue
+            }
+
+            out.put(
+                JSONObject()
+                    .put("id", id)
+                    .put(
+                        "name",
+                        manifest
+                            .optString("name", id)
+                            .trim()
+                            .ifBlank { id }
+                    )
+                    .put(
+                        "launcherIcon",
+                        manifest
+                            .optString("launcherIcon", "□")
+                    )
+                    .put(
+                        "engine",
+                        runtime.optString("engine")
+                    )
+                    .put(
+                        "presentation",
+                        runtime.optString("presentation")
+                    )
+                    .put(
+                        "path",
+                        "/C:/Programs/$id"
+                    )
+            )
+        }
+        return out
+    }
+
+    fun handlesInstalled(id: String): Boolean =
+        runCatching {
+            readInstalledMetadata(id) != null
+        }.getOrDefault(false)
+
+    fun loadInstalled(id: String): InstalledApp {
+        val metadata =
+            readInstalledMetadata(id)
+                ?: error("Installed RAPP not found: $id")
+
+        val root = metadata.first
+        val packageJson = metadata.second
+        val manifest =
+            packageJson.getJSONObject("manifest")
+        val runtime =
+            packageJson.getJSONObject("riftApp")
+
+        val engine = runtime.getString("engine")
+        val presentation = runtime.getString("presentation")
+        require(engine == ENGINE_RIFTPP_RUI2) {
+            "Unsupported installed RAPP engine: $engine"
+        }
+        require(presentation == "rui2") {
+            "Unsupported installed RAPP presentation: $presentation"
+        }
+
+        val programName = runtime.optString("program", PROGRAM_ENTRY)
+        val runtimeName = runtime.optString("runtime", RUNTIME_ENTRY)
+        require(programName == PROGRAM_ENTRY && runtimeName == RUNTIME_ENTRY) {
+            "Installed RAPP payload paths are invalid"
+        }
+
+        val program =
+            readBounded(
+                File(root, programName),
+                MAX_PROGRAM_BYTES
+            )
+        val runtimeBytes =
+            readBounded(
+                File(root, runtimeName),
+                MAX_RUNTIME_BYTES
+            )
+
+        val expectedProgram =
+            runtime.getString("programSha256")
+        val expectedRuntime =
+            runtime.getString("runtimeSha256")
+        require(
+            SHA256_HEX.matches(expectedProgram) &&
+                sha256(program) == expectedProgram
+        ) {
+            "Installed RAPP program hash mismatch"
+        }
+        require(
+            SHA256_HEX.matches(expectedRuntime) &&
+                sha256(runtimeBytes) == expectedRuntime
+        ) {
+            "Installed RAPP runtime hash mismatch"
+        }
+
+        return InstalledApp(
+            id = manifest.getString("id"),
+            name = manifest
+                .optString("name", id)
+                .trim()
+                .ifBlank { id },
+            launcherIcon = manifest
+                .optString("launcherIcon", "□"),
+            engine = engine,
+            presentation = presentation,
+            program = program,
+            runtime = runtimeBytes
+        )
+    }
+
+    private fun readProjectSpec(project: File): ProjectSpec {
+        val file =
+            File(project, PROJECT_MANIFEST)
+                .canonicalFile
+        require(confinedTo(project, file) && file.isFile) {
+            "RAPP project manifest missing: $PROJECT_MANIFEST"
+        }
+        require(file.length() in 1..MAX_MANIFEST_BYTES.toLong()) {
+            "RAPP project manifest is out of bounds"
+        }
+
+        val json =
+            JSONObject(
+                file.readText(Charsets.UTF_8)
+            )
+        require(json.optString("schema") == PROJECT_SCHEMA) {
+            "Unsupported RAPP project schema"
+        }
+
+        val id = json.optString("id").trim()
+        val name =
+            json.optString("name", id)
+                .trim()
+                .ifBlank { id }
+        val launcherIcon =
+            json.optString("launcherIcon", "□")
+                .trim()
+                .ifBlank { "□" }
+        validateIdentity(id, name, launcherIcon)
+
+        val engine =
+            json.optString("engine").trim()
+        require(engine == ENGINE_RIFTPP_RUI2) {
+            "Unsupported RAPP engine: $engine"
+        }
+
+        val presentation =
+            json.optString("presentation", "rui2")
+                .trim()
+        require(presentation == "rui2") {
+            "Unsupported RAPP presentation: $presentation"
+        }
+
+        val entry = json.optString("entry").trim()
+        val runtime = json.optString("runtime").trim()
+        validateRelativePath(entry, "entry")
+        validateRelativePath(runtime, "runtime")
+
+        return ProjectSpec(
+            id,
+            name,
+            launcherIcon,
+            engine,
+            presentation,
+            entry,
+            runtime
+        )
+    }
+
+    private fun readPackage(file: File): PackagePayload {
+        var manifestBytes: ByteArray? = null
+        var program: ByteArray? = null
+        var runtime: ByteArray? = null
+        val seen = HashSet<String>()
+        var totalBytes = 0L
+
+        ZipFile(file).use { zip ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                require(!entry.isDirectory) {
+                    "RAPP package contains a directory entry"
+                }
+                require(
+                    entry.name == PACKAGE_MANIFEST ||
+                        entry.name == PROGRAM_ENTRY ||
+                        entry.name == RUNTIME_ENTRY
+                ) {
+                    "RAPP package contains unexpected entry: ${entry.name}"
+                }
+                require(seen.add(entry.name)) {
+                    "RAPP package contains duplicate entry: ${entry.name}"
+                }
+
+                val limit =
+                    when (entry.name) {
+                        PACKAGE_MANIFEST -> MAX_MANIFEST_BYTES
+                        PROGRAM_ENTRY -> MAX_PROGRAM_BYTES
+                        RUNTIME_ENTRY -> MAX_RUNTIME_BYTES
+                        else -> error("unreachable")
+                    }
+                val bytes =
+                    readZipEntry(
+                        zip,
+                        entry,
+                        limit
+                    )
+                totalBytes += bytes.size.toLong()
+                require(totalBytes <= MAX_PACKAGE_BYTES) {
+                    "RAPP package content exceeds bound"
+                }
+
+                when (entry.name) {
+                    PACKAGE_MANIFEST -> manifestBytes = bytes
+                    PROGRAM_ENTRY -> program = bytes
+                    RUNTIME_ENTRY -> runtime = bytes
+                }
+            }
+        }
+
+        require(seen == setOf(PACKAGE_MANIFEST, PROGRAM_ENTRY, RUNTIME_ENTRY)) {
+            "RAPP package is incomplete"
+        }
+
+        val manifest =
+            JSONObject(
+                manifestBytes!!
+                    .toString(Charsets.UTF_8)
+            )
+        require(manifest.optString("schema") == PACKAGE_SCHEMA) {
+            "Unsupported RAPP package schema"
+        }
+
+        val id = manifest.optString("id").trim()
+        val name =
+            manifest.optString("name", id)
+                .trim()
+                .ifBlank { id }
+        val launcherIcon =
+            manifest.optString("launcherIcon", "□")
+                .trim()
+                .ifBlank { "□" }
+        validateIdentity(id, name, launcherIcon)
+
+        val programBytes = program!!
+        val runtimeBytes = runtime!!
+        val expectedProgram =
+            manifest.optString("programSha256")
+        val expectedRuntime =
+            manifest.optString("runtimeSha256")
+        require(
+            SHA256_HEX.matches(expectedProgram) &&
+                sha256(programBytes) == expectedProgram
+        ) {
+            "RAPP program hash mismatch"
+        }
+        require(
+            SHA256_HEX.matches(expectedRuntime) &&
+                sha256(runtimeBytes) == expectedRuntime
+        ) {
+            "RAPP runtime hash mismatch"
+        }
+
+        return PackagePayload(
+            manifest,
+            programBytes,
+            runtimeBytes
+        )
+    }
+
+    private fun readInstalledMetadata(
+        id: String
+    ): Pair<File, JSONObject>? {
+        if (!SAFE_ID.matches(id)) return null
+        val root =
+            File(programsRoot, id)
+                .canonicalFile
+        if (
+            !confinedTo(programsRoot, root) ||
+            !root.isDirectory
+        ) {
+            return null
+        }
+
+        val packageFile =
+            File(root, "package.json")
+                .canonicalFile
+        if (
+            !confinedTo(root, packageFile) ||
+            !packageFile.isFile ||
+            packageFile.length() !in
+                1..MAX_MANIFEST_BYTES.toLong()
+        ) {
+            return null
+        }
+
+        val json =
+            JSONObject(
+                packageFile.readText(Charsets.UTF_8)
+            )
+        val manifest =
+            json.optJSONObject("manifest")
+                ?: return null
+        val runtime =
+            json.optJSONObject("riftApp")
+                ?: return null
+
+        if (
+            manifest.optString("id") != id ||
+            runtime.optString("schema") != PACKAGE_SCHEMA
+        ) {
+            return null
+        }
+
+        return root to json
+    }
+
+    private fun isManagedRapp(
+        root: File,
+        id: String
+    ): Boolean =
+        runCatching {
+            val packageFile =
+                File(root, "package.json")
+            if (
+                !packageFile.isFile ||
+                packageFile.length() !in
+                    1..MAX_MANIFEST_BYTES.toLong()
+            ) {
+                return@runCatching false
+            }
+            val json =
+                JSONObject(
+                    packageFile.readText(Charsets.UTF_8)
+                )
+            json
+                .optJSONObject("manifest")
+                ?.optString("id") == id &&
+                json
+                    .optJSONObject("riftApp")
+                    ?.optString("schema") == PACKAGE_SCHEMA
+        }.getOrDefault(false)
+
+    private fun validateIdentity(
+        id: String,
+        name: String,
+        launcherIcon: String
+    ) {
+        require(
+            SAFE_ID.matches(id) &&
+                id !in RESERVED_IDS
+        ) {
+            "RAPP id is invalid or reserved"
+        }
+        require(
+            name.isNotBlank() &&
+                name.length <= 64 &&
+                !name.contains('\u0000')
+        ) {
+            "RAPP name is invalid"
+        }
+        require(
+            launcherIcon.isNotBlank() &&
+                launcherIcon.length <= 4 &&
+                !launcherIcon.contains('\u0000')
+        ) {
+            "RAPP launcher icon is invalid"
+        }
+    }
+
+    private fun resolveProjectFile(
+        project: File,
+        raw: String
+    ): File {
+        validateRelativePath(raw, "payload")
+        val file =
+            File(project, raw)
+                .canonicalFile
+        require(
+            confinedTo(project, file) &&
+                file.isFile
+        ) {
+            "RAPP payload not found: $raw"
+        }
+        return file
+    }
+
+    private fun validateRelativePath(
+        raw: String,
+        label: String
+    ) {
+        val value =
+            raw.trim()
+                .replace('\\', '/')
+        require(
+            value.isNotBlank() &&
+                !value.startsWith("/") &&
+                !value.contains(':')
+        ) {
+            "RAPP $label path must be project-relative"
+        }
+        val parts =
+            value.split('/')
+        require(
+            parts.all {
+                it.isNotBlank() &&
+                    it != "." &&
+                    it != ".."
+            }
+        ) {
+            "RAPP $label path is invalid"
+        }
+    }
+
+    private fun readBounded(
+        file: File,
+        maxBytes: Int
+    ): ByteArray {
+        require(file.isFile) {
+            "RAPP payload is missing: ${file.name}"
+        }
+        require(file.length() in 1..maxBytes.toLong()) {
+            "RAPP payload size is out of bounds: ${file.name}"
+        }
+        val bytes = file.readBytes()
+        require(bytes.size in 1..maxBytes) {
+            "RAPP payload read exceeded bound: ${file.name}"
+        }
+        return bytes
+    }
+
+    private fun readZipEntry(
+        zip: ZipFile,
+        entry: ZipEntry,
+        maxBytes: Int
+    ): ByteArray {
+        if (entry.size >= 0L) {
+            require(entry.size <= maxBytes.toLong()) {
+                "RAPP entry exceeds bound: ${entry.name}"
+            }
+        }
+
+        val output = ByteArrayOutputStream()
+        zip.getInputStream(entry).use { input ->
+            val buffer = ByteArray(16 * 1024)
+            var total = 0
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count == 0) continue
+                total += count
+                require(total <= maxBytes) {
+                    "RAPP entry exceeds bound while reading: ${entry.name}"
+                }
+                output.write(buffer, 0, count)
+            }
+        }
+        return output.toByteArray()
+    }
+
+    private fun putZip(
+        output: ZipOutputStream,
+        name: String,
+        bytes: ByteArray
+    ) {
+        val entry =
+            ZipEntry(name).apply {
+                time = 0L
+            }
+        output.putNextEntry(entry)
+        output.write(bytes)
+        output.closeEntry()
+    }
+
+    private fun writeAtomic(
+        file: File,
+        bytes: ByteArray
+    ) {
+        val parent =
+            file.parentFile
+                ?: error("RAPP output has no parent")
+        require(parent.mkdirs() || parent.isDirectory) {
+            "Could not create RAPP output directory"
+        }
+        val temp =
+            File(
+                parent,
+                ".${file.name}.tmp-${System.nanoTime()}"
+            )
+        temp.writeBytes(bytes)
+        if (file.exists()) {
+            require(file.delete()) {
+                temp.delete()
+                "Could not replace RAPP output"
+            }
+        }
+        require(temp.renameTo(file)) {
+            temp.delete()
+            "Could not commit RAPP output"
+        }
+    }
+
+    private fun deleteTreeBounded(root: File) {
+        var count = 0
+        fun remove(node: File) {
+            require(++count <= 64) {
+                "RAPP cleanup exceeded entry bound"
+            }
+            if (node.isDirectory) {
+                node.listFiles()
+                    ?.forEach(::remove)
+            }
+            require(node.delete() || !node.exists()) {
+                "Could not remove RAPP staging path"
+            }
+        }
+        remove(root)
+    }
+
+    private fun confinedTo(
+        root: File,
+        child: File
+    ): Boolean {
+        val rootPath = root.canonicalFile.path
+        val childPath = child.canonicalFile.path
+        return childPath == rootPath ||
+            childPath.startsWith(
+                rootPath + File.separator
+            )
+    }
+
+    private fun sha256(
+        bytes: ByteArray
+    ): String =
+        MessageDigest
+            .getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") {
+                "%02x".format(
+                    it.toInt() and 0xff
+                )
+            }
+
+    private fun sha256(
+        file: File
+    ): String =
+        file.inputStream().use { input ->
+            val digest =
+                MessageDigest
+                    .getInstance("SHA-256")
+            val buffer =
+                ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count == 0) continue
+                digest.update(
+                    buffer,
+                    0,
+                    count
+                )
+            }
+            digest.digest()
+                .joinToString("") {
+                    "%02x".format(
+                        it.toInt() and 0xff
+                    )
+                }
+        }
+}

@@ -9,7 +9,9 @@ const nativeToolchainPath = 'android/app/src/main/java/com/riftos/app/RiftBuildN
 const nativeAppPath = 'android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt';
 const signerPath = 'android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt';
 const installerPath = 'android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt';
-for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath]) {
+const rappHostPath = 'android/app/src/main/java/com/riftos/app/RiftRappHost.kt';
+const rappManagerPath = 'android/app/src/main/java/com/riftos/app/RiftRappManager.kt';
+for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, rappHostPath, rappManagerPath]) {
   assert.ok(exists(file), 'RiftBuild source owner is missing: ' + file);
 }
 
@@ -18,6 +20,8 @@ const nativeToolchain = read(nativeToolchainPath);
 const nativeApp = read(nativeAppPath);
 const signer = read(signerPath);
 const installer = read(installerPath);
+const rappHost = read(rappHostPath);
+const rappManager = read(rappManagerPath);
 assert.ok(nativeToolchain.includes("entry.name.replace('\\\\', '/')"), 'bundled toolchain ZIP paths must normalize a single escaped backslash char');
 assert.ok(!nativeToolchain.includes("entry.name.replace('\\\\\\\\', '/')"), 'bundled toolchain ZIP path normalization must not use the invalid four-backslash Kotlin char literal');
 const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
@@ -171,7 +175,30 @@ for (const required of [
   'RiftBuild install-proof accepts only *-signed.apk artifacts',
   'installableClaimed',
   'RiftBuild does not accept raw commands',
+  'RiftRappManager',
+  'pack-rapp',
+  'install-rapp',
+  'launch-rapp',
+  'rapp-list',
+  'private val rappManager by lazy',
 ]) assert.ok(nativeBuild.includes(required), 'native RiftBuild contract missing: ' + required);
+
+for (const required of [
+  'riftos.rapp-project/1',
+  'riftos.rapp/1',
+  'RAPP install artifact must live under D:/Builds',
+  'Refusing to replace non-RAPP program',
+  '/C:/Programs',
+  'programSha256',
+  'runtimeSha256',
+]) assert.ok(rappManager.includes(required), 'RAPP manager contract missing: ' + required);
+assert.doesNotMatch(rappManager, /RiftApkV2Signer|PackageInstaller/, 'RAPP manager must remain independent of APK signing/install');
+assert.match(rappHost, /private val bridge by lazy/);
+assert.match(rappHost, /RiftppUiCodec\.parse/);
+assert.match(rappHost, /showLaunchFailure/);
+assert.match(rappHost, /runCatching \{[\s\S]*?open\(id\)/);
+assert.match(mainActivity, /rappHost = RiftRappHost\(this, nativeDesktop, ::populateNativeLauncher\)/);
+assert.match(mainActivity, /rappHost\.openFromLauncher\(id\)/);
 
 for (const required of [
   'class RiftApkV2Signer',
@@ -744,7 +771,7 @@ assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\
 assert.match(appHost, /"build\.submit" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.submit\(args\) \}/);
 assert.match(appHost, /private val riftBuild = RiftBuildLocalExecutor\(activity\.applicationContext\)/);
 
-for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftBuildNativeToolchain.kt', 'RiftBuildNativeApp.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt']) {
+for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftBuildNativeToolchain.kt', 'RiftBuildNativeApp.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt', 'RiftRappHost.kt', 'RiftRappManager.kt']) {
   assert.ok(gradle.includes('src/main/java/com/riftos/app/' + source), 'Gradle exact source snapshot omitted ' + source);
 }
 assert.ok(gradle.includes('sourceSets["main"].assets.directories.add("build/generated/riftosAssets")'), 'Gradle must package generated RiftOS assets');
