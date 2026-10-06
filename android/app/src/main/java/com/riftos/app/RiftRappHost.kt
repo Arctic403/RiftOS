@@ -9,13 +9,13 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.riftpp.editor.RiftppNativeBridge
 import com.riftpp.editor.RiftppUiCodec
 import com.riftpp.editor.RiftppUiFrame
 import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.Executors
 
 /**
  * In-process RiftOS application host for installed .rapp programs.
@@ -30,7 +30,8 @@ class RiftRappHost(
     private val refreshLauncher: () -> Unit
 ) {
     companion object {
-        private const val OUTPUT_BYTES = 1024 * 1024
+        private const val OUTPUT_BYTES = 512 * 1024
+        private const val EVENT_TIMEOUT_MS = 6500L
 
         @Volatile
         private var active:
@@ -58,12 +59,26 @@ class RiftRappHost(
         val runtime: ByteArray
     )
 
+    private data class EventOutcome(
+        val frame: RiftppUiFrame? = null,
+        val error: String? = null
+    )
+
     private val manager by lazy(LazyThreadSafetyMode.NONE) {
         RiftRappManager(activity)
     }
-    private val bridge by lazy(LazyThreadSafetyMode.NONE) {
-        RiftppNativeBridge()
-    }
+    private val eventExecutor =
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "rift-rapp-event").apply {
+                isDaemon = true
+            }
+        }
+    private val eventWatchdog =
+        Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "rift-rapp-watchdog").apply {
+                isDaemon = true
+            }
+        }
     private val sessions =
         LinkedHashMap<String, Session>()
 
@@ -99,6 +114,8 @@ class RiftRappHost(
 
     fun destroy() {
         sessions.clear()
+        eventExecutor.shutdownNow()
+        eventWatchdog.shutdownNow()
         val current =
             active
                 ?.get()
@@ -144,74 +161,127 @@ class RiftRappHost(
                 )
         )
 
-        val initial =
-            runCatching {
-                runEvent(
-                    session,
-                    eventKind = 0,
-                    controlId = 0
-                )
+        desktop.attachContent(
+            id,
+            TextView(activity).apply {
+                text = "Launching RiftOS app…"
+                textSize = 17f
+                setPadding(dp(18), dp(18), dp(18), dp(18))
             }
+        )
 
-        if (initial.isSuccess) {
+        runEventAsync(
+            session,
+            eventKind = 0,
+            controlId = 0
+        ) { outcome ->
+            if (sessions[id] !== session) {
+                return@runEventAsync
+            }
+            val frame = outcome.frame
             desktop.attachContent(
                 id,
-                render(
-                    session,
-                    initial.getOrThrow()
-                )
-            )
-        } else {
-            desktop.attachContent(
-                id,
-                failureView(
-                    initial.exceptionOrNull()
-                        ?.message
-                        ?: "RAPP launch failed"
-                )
+                if (frame != null) {
+                    render(session, frame)
+                } else {
+                    failureView(
+                        outcome.error
+                            ?: "RAPP launch failed"
+                    )
+                }
             )
         }
     }
 
-    private fun runEvent(
+    private fun runEventAsync(
         session: Session,
         eventKind: Int,
-        controlId: Int
-    ): RiftppUiFrame {
-        val envelope =
-            ByteBuffer
-                .allocate(
-                    16 +
-                        session.program.size
+        controlId: Int,
+        complete: (EventOutcome) -> Unit
+    ) {
+        RiftBoundedAsync.submit(
+            executor = eventExecutor,
+            watchdog = eventWatchdog,
+            timeoutMs = EVENT_TIMEOUT_MS,
+            timeoutValue = {
+                EventOutcome(
+                    error = "RAPP event timed out"
                 )
-                .order(
-                    ByteOrder.LITTLE_ENDIAN
+            },
+            failureValue = { error ->
+                EventOutcome(
+                    error = error.message
+                        ?: error.javaClass.simpleName
                 )
-                .put(
-                    "RPE2".toByteArray(
-                        Charsets.US_ASCII
+            },
+            work = {
+                val envelope =
+                    ByteBuffer
+                        .allocate(
+                            16 +
+                                session.program.size
+                        )
+                        .order(
+                            ByteOrder.LITTLE_ENDIAN
+                        )
+                        .put(
+                            "RPE2".toByteArray(
+                                Charsets.US_ASCII
+                            )
+                        )
+                        .putInt(
+                            session.program.size
+                        )
+                        .putInt(eventKind)
+                        .putInt(controlId)
+                        .put(session.program)
+                        .array()
+
+                val result =
+                    RiftNativeBufferCompilerService.compile(
+                        activity,
+                        session.runtime,
+                        envelope,
+                        OUTPUT_BYTES
                     )
+                val status =
+                    result.getString("status")
+                        ?: "host-reject"
+                require(status == "success") {
+                    buildString {
+                        append("RAPP runtime ")
+                        append(status)
+                        append(" · host=")
+                        append(result.getInt("hostStatus", -1))
+                        append(" · return=")
+                        append(result.getLong("returnValue", 0xffffffffL))
+                        result.getString("detail")
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let {
+                                append(" · ")
+                                append(it)
+                            }
+                    }
+                }
+                val output =
+                    result.getByteArray("output")
+                        ?: error(
+                            "RAPP runtime succeeded without output"
+                        )
+                EventOutcome(
+                    frame = RiftppUiCodec.parse(output)
                 )
-                .putInt(
-                    session.program.size
-                )
-                .putInt(eventKind)
-                .putInt(controlId)
-                .put(session.program)
-                .array()
-
-        val output =
-            bridge.run(
-                session.runtime,
-                envelope,
-                OUTPUT_BYTES
-            )
-                ?: error(
-                    "Rift++ runtime rejected RAPP event"
-                )
-
-        return RiftppUiCodec.parse(
-            output
+            },
+            reply = { outcome ->
+                activity.runOnUiThread {
+                    if (
+                        !activity.isFinishing &&
+                        !activity.isDestroyed
+                    ) {
+                        complete(outcome)
+                    }
+                }
+            }
         )
     }
 
@@ -298,20 +368,34 @@ class RiftRappHost(
                                         ?.text
                                         ?.toString()
 
-                                    val next =
-                                        runEvent(
-                                            session,
-                                            eventKind = 1,
-                                            controlId = node.id
+                                    isEnabled = false
+                                    runEventAsync(
+                                        session,
+                                        eventKind = 1,
+                                        controlId = node.id
+                                    ) { outcome ->
+                                        if (
+                                            sessions[session.id] !==
+                                                session
+                                        ) {
+                                            return@runEventAsync
+                                        }
+                                        val next = outcome.frame
+                                        desktop.attachContent(
+                                            session.id,
+                                            if (next != null) {
+                                                render(
+                                                    session,
+                                                    next
+                                                )
+                                            } else {
+                                                failureView(
+                                                    outcome.error
+                                                        ?: "RAPP event failed"
+                                                )
+                                            }
                                         )
-
-                                    desktop.attachContent(
-                                        session.id,
-                                        render(
-                                            session,
-                                            next
-                                        )
-                                    )
+                                    }
                                 } catch (
                                     error: Throwable
                                 ) {

@@ -193,7 +193,9 @@ for (const required of [
   'runtimeSha256',
 ]) assert.ok(rappManager.includes(required), 'RAPP manager contract missing: ' + required);
 assert.doesNotMatch(rappManager, /RiftApkV2Signer|PackageInstaller/, 'RAPP manager must remain independent of APK signing/install');
-assert.match(rappHost, /private val bridge by lazy/);
+assert.match(rappHost, /RiftBoundedAsync\.submit/);
+assert.match(rappHost, /RiftNativeBufferCompilerService\.compile/);
+assert.doesNotMatch(rappHost, /RiftppNativeBridge/, 'RAPP host must not execute native payloads directly in the desktop process');
 assert.match(rappHost, /RiftppUiCodec\.parse/);
 assert.match(rappHost, /showLaunchFailure/);
 assert.match(rappHost, /runCatching \{[\s\S]*?open\(id\)/);

@@ -41,7 +41,7 @@ Source owners in this patch:
 - `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` — bounded APK Signature Scheme v2 signer/verifier;
 - `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` — user-confirmed PackageInstaller + launch-proof owner;
 - `android/app/src/main/java/com/riftos/app/RiftRappManager.kt` — bounded `.rapp` package, verification and `/C:/Programs` install owner;
-- `android/app/src/main/java/com/riftos/app/RiftRappHost.kt` — in-process RiftOS window/runtime host for installed `.rapp` programs.
+- `android/app/src/main/java/com/riftos/app/RiftRappHost.kt` — RiftOS window/lifecycle host for installed `.rapp` programs; native runtime bytes are executed through the crash-contained generic native-buffer service rather than directly in the desktop process.
 
 Existing callers to activate without expanding the MCP catalog:
 
@@ -62,7 +62,7 @@ Maintained live owners:
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt` — Native Compile V1 toolchain discovery, structured compiler argv execution, project-manifest validation and ARM32/ARM64 ELF output verification;
 - `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` — generic NativeActivity binary-manifest generation plus bounded project-asset materialization for normal native applications;
 - `android/app/src/main/java/com/riftos/app/RiftRappManager.kt` — parallel RiftOS-native `.rapp` packaging/install manager; it validates project/package schemas, confines artifacts to `D:/Builds`, verifies program/runtime SHA-256 identities and atomically installs only managed RAPPs into `/C:/Programs`;
-- `android/app/src/main/java/com/riftos/app/RiftRappHost.kt` — lazy in-process RAPP execution host that binds installed Rift++ RPE2/RUI2 programs to RiftOS-owned windows and contains launch failures inside the app window;
+- `android/app/src/main/java/com/riftos/app/RiftRappHost.kt` — RAPP window/lifecycle host that binds installed Rift++ RPE2/RUI2 programs to RiftOS-owned windows, dispatches native runtime events through the crash-contained `RiftNativeBufferCompilerService`, and contains launch failures inside the app window;
 - `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` — Android-Keystore RSA key owner plus narrow APK Signature Scheme v2 encoder/verifier;
 - `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` — exact-package PackageInstaller session/result/first-launch proof owner;
 - `android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt` — allowlisted localhost-UDP diagnostic session/evidence owner for Rift++ proof/editor launches;
@@ -138,7 +138,7 @@ riftbuild artifacts [project]
 
 Current source adds a parallel RiftOS-native application target without replacing the Android APK pipeline. A workspace project may provide `riftapp.json` with schema `riftos.rapp-project/1`, an app id/name/icon, the `riftpp-rpa2-v1` engine, `rui2` presentation, and project-relative program/runtime artifacts. `riftbuild pack-rapp` produces a bounded, content-addressed `.rapp` under `D:/Builds`; `install-rapp` verifies the package and payload hashes and atomically installs the managed app under `/C:/Programs/<id>`; `launch-rapp` dispatches the installed app into a RiftOS-owned window; `rapp-list` reports installed RAPP programs.
 
-This lane is intentionally isolated from Android APK packaging. It does not invoke `RiftApkV2Signer`, APK v2 verification, or `PackageInstaller`; the existing `pack -> sign -> verify -> install-proof` path remains unchanged. `RiftRappManager` and the Rift++ JNI bridge in `RiftRappHost` are lazy, so ordinary RiftBuild/APK operations and normal RiftOS startup do not depend on RAPP execution. Source implementation is complete; installed-device `pack-rapp -> install-rapp -> launch-rapp -> rebuild/reinstall app without rebuilding RiftOS` proof is still pending.
+This lane is intentionally isolated from Android APK packaging. It does not invoke `RiftApkV2Signer`, APK v2 verification, or `PackageInstaller`; the existing `pack -> sign -> verify -> install-proof` path remains unchanged. `RiftRappManager` remains lazy, and RAPP native runtime events execute off the desktop UI thread through the existing crash-contained `RiftNativeBufferCompilerService` with bounded timeout/status reporting instead of direct JNI execution in the RiftOS desktop process. Source implementation is complete; installed-device `pack-rapp -> install-rapp -> launch-rapp -> rebuild/reinstall app without rebuilding RiftOS` proof is still pending.
 
 ### Bundled Android-host toolchain provisioning
 
