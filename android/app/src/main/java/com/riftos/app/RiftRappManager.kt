@@ -27,7 +27,8 @@ class RiftRappManager(context: Context) {
         val id: String,
         val name: String,
         val launcherIcon: String,
-        val engine: String,
+        val abi: String,
+        val adapter: String,
         val presentation: String,
         val program: ByteArray,
         val runtime: ByteArray
@@ -37,7 +38,8 @@ class RiftRappManager(context: Context) {
         val id: String,
         val name: String,
         val launcherIcon: String,
-        val engine: String,
+        val abi: String,
+        val adapter: String,
         val presentation: String,
         val entry: String,
         val runtime: String
@@ -52,7 +54,7 @@ class RiftRappManager(context: Context) {
     companion object {
         const val PROJECT_SCHEMA = "riftos.rapp-project/1"
         const val PACKAGE_SCHEMA = "riftos.rapp/1"
-        const val ENGINE_RIFTPP_RUI2 = "riftpp-rpa2-v1"
+        const val APP_ABI_SCHEMA = RiftAppAbi.SCHEMA
 
         private const val PROJECT_MANIFEST = "riftapp.json"
         private const val PACKAGE_MANIFEST = "manifest.json"
@@ -64,6 +66,7 @@ class RiftRappManager(context: Context) {
         private const val MAX_PACKAGE_BYTES = 4L * 1024L * 1024L
         private const val MAX_INSTALLED_APPS = 128
         private val SAFE_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
+        private val SAFE_TOKEN = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
         private val SHA256_HEX = Regex("^[0-9a-f]{64}$")
         private val RESERVED_IDS = setOf(
             "files",
@@ -123,7 +126,9 @@ class RiftRappManager(context: Context) {
                 .put("id", spec.id)
                 .put("name", spec.name)
                 .put("launcherIcon", spec.launcherIcon)
-                .put("engine", spec.engine)
+                .put("abi", spec.abi)
+                .put("adapter", spec.adapter)
+                .put("engine", spec.adapter)
                 .put("presentation", spec.presentation)
                 .put("programSha256", programSha)
                 .put("runtimeSha256", runtimeSha)
@@ -197,7 +202,9 @@ class RiftRappManager(context: Context) {
                 .put("packageSchema", PACKAGE_SCHEMA)
                 .put("id", spec.id)
                 .put("name", spec.name)
-                .put("engine", spec.engine)
+                .put("abi", spec.abi)
+                .put("adapter", spec.adapter)
+                .put("engine", spec.adapter)
                 .put("presentation", spec.presentation)
                 .put("entry", spec.entry)
                 .put("runtime", spec.runtime)
@@ -229,16 +236,16 @@ class RiftRappManager(context: Context) {
         val id = manifest.getString("id")
         val name = manifest.getString("name")
         val launcherIcon = manifest.getString("launcherIcon")
-        val engine = manifest.getString("engine")
-        val presentation = manifest.getString("presentation")
+        val abi = manifest.optString("abi", APP_ABI_SCHEMA).trim()
+        val adapter =
+            manifest.optString(
+                "adapter",
+                manifest.optString("engine")
+            ).trim()
+        val presentation = manifest.getString("presentation").trim()
 
         validateIdentity(id, name, launcherIcon)
-        require(engine == ENGINE_RIFTPP_RUI2) {
-            "Unsupported RAPP engine: $engine"
-        }
-        require(presentation == "rui2") {
-            "Unsupported RAPP presentation: $presentation"
-        }
+        validateRuntimeContract(abi, adapter, presentation)
 
         val target = File(programsRoot, id).canonicalFile
         require(confinedTo(programsRoot, target)) {
@@ -334,7 +341,9 @@ class RiftRappManager(context: Context) {
             .put("packageSchema", PACKAGE_SCHEMA)
             .put("id", id)
             .put("name", name)
-            .put("engine", engine)
+            .put("abi", abi)
+            .put("adapter", adapter)
+            .put("engine", adapter)
             .put("presentation", presentation)
             .put("programSha256", manifest.getString("programSha256"))
             .put("runtimeSha256", manifest.getString("runtimeSha256"))
@@ -411,8 +420,22 @@ class RiftRappManager(context: Context) {
                             .optString("launcherIcon", "□")
                     )
                     .put(
+                        "abi",
+                        runtime.optString("abi", APP_ABI_SCHEMA)
+                    )
+                    .put(
+                        "adapter",
+                        runtime.optString(
+                            "adapter",
+                            runtime.optString("engine")
+                        )
+                    )
+                    .put(
                         "engine",
-                        runtime.optString("engine")
+                        runtime.optString(
+                            "adapter",
+                            runtime.optString("engine")
+                        )
                     )
                     .put(
                         "presentation",
@@ -444,14 +467,14 @@ class RiftRappManager(context: Context) {
         val runtime =
             packageJson.getJSONObject("riftApp")
 
-        val engine = runtime.getString("engine")
-        val presentation = runtime.getString("presentation")
-        require(engine == ENGINE_RIFTPP_RUI2) {
-            "Unsupported installed RAPP engine: $engine"
-        }
-        require(presentation == "rui2") {
-            "Unsupported installed RAPP presentation: $presentation"
-        }
+        val abi = runtime.optString("abi", APP_ABI_SCHEMA).trim()
+        val adapter =
+            runtime.optString(
+                "adapter",
+                runtime.optString("engine")
+            ).trim()
+        val presentation = runtime.getString("presentation").trim()
+        validateRuntimeContract(abi, adapter, presentation)
 
         val programName = runtime.optString("program", PROGRAM_ENTRY)
         val runtimeName = runtime.optString("runtime", RUNTIME_ENTRY)
@@ -495,7 +518,8 @@ class RiftRappManager(context: Context) {
                 .ifBlank { id },
             launcherIcon = manifest
                 .optString("launcherIcon", "□"),
-            engine = engine,
+            abi = abi,
+            adapter = adapter,
             presentation = presentation,
             program = program,
             runtime = runtimeBytes
@@ -532,18 +556,18 @@ class RiftRappManager(context: Context) {
                 .ifBlank { "□" }
         validateIdentity(id, name, launcherIcon)
 
-        val engine =
-            json.optString("engine").trim()
-        require(engine == ENGINE_RIFTPP_RUI2) {
-            "Unsupported RAPP engine: $engine"
-        }
-
-        val presentation =
-            json.optString("presentation", "rui2")
+        val abi =
+            json.optString("abi", APP_ABI_SCHEMA)
                 .trim()
-        require(presentation == "rui2") {
-            "Unsupported RAPP presentation: $presentation"
-        }
+        val adapter =
+            json.optString(
+                "adapter",
+                json.optString("engine")
+            ).trim()
+        val presentation =
+            json.optString("presentation")
+                .trim()
+        validateRuntimeContract(abi, adapter, presentation)
 
         val entry = json.optString("entry").trim()
         val runtime = json.optString("runtime").trim()
@@ -554,7 +578,8 @@ class RiftRappManager(context: Context) {
             id,
             name,
             launcherIcon,
-            engine,
+            abi,
+            adapter,
             presentation,
             entry,
             runtime
@@ -635,6 +660,14 @@ class RiftRappManager(context: Context) {
                 .trim()
                 .ifBlank { "□" }
         validateIdentity(id, name, launcherIcon)
+        val abi = manifest.optString("abi", APP_ABI_SCHEMA).trim()
+        val adapter =
+            manifest.optString(
+                "adapter",
+                manifest.optString("engine")
+            ).trim()
+        val presentation = manifest.optString("presentation").trim()
+        validateRuntimeContract(abi, adapter, presentation)
 
         val programBytes = program!!
         val runtimeBytes = runtime!!
@@ -734,6 +767,22 @@ class RiftRappManager(context: Context) {
                     .optJSONObject("riftApp")
                     ?.optString("schema") == PACKAGE_SCHEMA
         }.getOrDefault(false)
+
+    private fun validateRuntimeContract(
+        abi: String,
+        adapter: String,
+        presentation: String
+    ) {
+        require(abi == APP_ABI_SCHEMA) {
+            "Unsupported RiftOS app ABI: $abi"
+        }
+        require(SAFE_TOKEN.matches(adapter)) {
+            "RAPP adapter id is invalid"
+        }
+        require(SAFE_TOKEN.matches(presentation)) {
+            "RAPP presentation id is invalid"
+        }
+    }
 
     private fun validateIdentity(
         id: String,

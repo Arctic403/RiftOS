@@ -9,20 +9,15 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.riftpp.editor.RiftppUiCodec
-import com.riftpp.editor.RiftppUiFrame
 import org.json.JSONObject
 import java.lang.ref.WeakReference
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.concurrent.Executors
 
 /**
- * In-process RiftOS application host for installed .rapp programs.
+ * Generic RiftOS application host for installed .rapp programs.
  *
- * Window/lifecycle ownership stays in RiftOS. The first engine driver reuses
- * the existing bounded Rift++ RPE2/RUI2 runtime path. Additional compiler
- * targets can add engines without changing APK packaging.
+ * Window/lifecycle/input ownership stays in RiftOS. Language/runtime protocol
+ * details live behind RiftAppRuntimeAdapter and must not leak into this host.
  */
 class RiftRappHost(
     private val activity: Activity,
@@ -53,14 +48,15 @@ class RiftRappHost(
     }
 
     private data class Session(
-        val id: String,
-        val name: String,
-        val program: ByteArray,
-        val runtime: ByteArray
-    )
+        val payload: RiftAppAbi.RuntimePayload,
+        val adapter: RiftAppRuntimeAdapter
+    ) {
+        val id: String get() = payload.id
+        val name: String get() = payload.name
+    }
 
     private data class EventOutcome(
-        val frame: RiftppUiFrame? = null,
+        val frame: RiftAppAbi.Frame? = null,
         val error: String? = null
     )
 
@@ -129,24 +125,27 @@ class RiftRappHost(
     ) {
         val app =
             manager.loadInstalled(id)
-        require(
-            app.engine ==
-                RiftRappManager.ENGINE_RIFTPP_RUI2
-        ) {
-            "Unsupported RAPP engine"
+        require(app.abi == RiftAppAbi.SCHEMA) {
+            "Unsupported RiftOS app ABI: ${app.abi}"
         }
-        require(
-            app.presentation == "rui2"
-        ) {
-            "Unsupported RAPP presentation"
+        val adapter = RiftAppAdapters.require(app.adapter)
+        require(adapter.presentation == app.presentation) {
+            "RiftOS app presentation does not match adapter"
         }
 
         val session =
             Session(
-                id = app.id,
-                name = app.name,
-                program = app.program,
-                runtime = app.runtime
+                payload =
+                    RiftAppAbi.RuntimePayload(
+                        id = app.id,
+                        name = app.name,
+                        abi = app.abi,
+                        adapter = app.adapter,
+                        presentation = app.presentation,
+                        program = app.program,
+                        runtime = app.runtime
+                    ),
+                adapter = adapter
             )
         sessions[id] = session
 
@@ -157,7 +156,7 @@ class RiftRappHost(
                 .put("title", app.name)
                 .put(
                     "kicker",
-                    "RIFT APP · RIFTPP"
+                    "RIFTOS APP · ${app.adapter}"
                 )
         )
 
@@ -172,8 +171,9 @@ class RiftRappHost(
 
         runEventAsync(
             session,
-            eventKind = 0,
-            controlId = 0
+            RiftAppAbi.Event(
+                kind = RiftAppAbi.EventKind.BOOT
+            )
         ) { outcome ->
             if (sessions[id] !== session) {
                 return@runEventAsync
@@ -195,8 +195,7 @@ class RiftRappHost(
 
     private fun runEventAsync(
         session: Session,
-        eventKind: Int,
-        controlId: Int,
+        event: RiftAppAbi.Event,
         complete: (EventOutcome) -> Unit
     ) {
         RiftBoundedAsync.submit(
@@ -216,31 +215,15 @@ class RiftRappHost(
             },
             work = {
                 val envelope =
-                    ByteBuffer
-                        .allocate(
-                            16 +
-                                session.program.size
-                        )
-                        .order(
-                            ByteOrder.LITTLE_ENDIAN
-                        )
-                        .put(
-                            "RPE2".toByteArray(
-                                Charsets.US_ASCII
-                            )
-                        )
-                        .putInt(
-                            session.program.size
-                        )
-                        .putInt(eventKind)
-                        .putInt(controlId)
-                        .put(session.program)
-                        .array()
+                    session.adapter.encodeEvent(
+                        session.payload,
+                        event
+                    )
 
                 val result =
                     RiftNativeBufferCompilerService.compile(
                         activity,
-                        session.runtime,
+                        session.payload.runtime,
                         envelope,
                         OUTPUT_BYTES
                     )
@@ -269,7 +252,7 @@ class RiftRappHost(
                             "RAPP runtime succeeded without output"
                         )
                 EventOutcome(
-                    frame = RiftppUiCodec.parse(output)
+                    frame = session.adapter.decodeFrame(output)
                 )
             },
             reply = { outcome ->
@@ -287,8 +270,11 @@ class RiftRappHost(
 
     private fun render(
         session: Session,
-        frame: RiftppUiFrame
+        frame: RiftAppAbi.Frame
     ): View {
+        require(frame.layout == RiftAppAbi.Layout.FLOW_COLUMN) {
+            "RiftOS app layout is not supported by this renderer yet"
+        }
         val root =
             LinearLayout(activity).apply {
                 orientation =
@@ -306,7 +292,7 @@ class RiftRappHost(
 
         frame.nodes.forEach { node ->
             when (node.kind) {
-                1 -> {
+                RiftAppAbi.NodeKind.TEXT -> {
                     root.addView(
                         TextView(activity).apply {
                             text = node.text
@@ -321,7 +307,7 @@ class RiftRappHost(
                     )
                 }
 
-                2 -> {
+                RiftAppAbi.NodeKind.TEXT_INPUT -> {
                     val field =
                         EditText(activity).apply {
                             setText(node.text)
@@ -358,7 +344,7 @@ class RiftRappHost(
                     )
                 }
 
-                3 -> {
+                RiftAppAbi.NodeKind.ACTION -> {
                     root.addView(
                         Button(activity).apply {
                             text = node.text
@@ -371,8 +357,10 @@ class RiftRappHost(
                                     isEnabled = false
                                     runEventAsync(
                                         session,
-                                        eventKind = 1,
-                                        controlId = node.id
+                                        RiftAppAbi.Event(
+                                            kind = RiftAppAbi.EventKind.ACTION,
+                                            targetId = node.id
+                                        )
                                     ) { outcome ->
                                         if (
                                             sessions[session.id] !==
