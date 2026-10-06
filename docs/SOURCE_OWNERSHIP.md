@@ -74,6 +74,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
+| `android/app/src/main/java/com/riftos/app/RiftRappManager.kt` | `docs/systems/riftbuild/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftRappHost.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpActivity.kt` | `docs/systems/mcp/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpOperationJournal.kt` | `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/systems/mcp/relay/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt` | `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` |
