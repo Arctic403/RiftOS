@@ -14,7 +14,8 @@ object RiftRappRiftppAdapter : RiftAppRuntimeAdapter {
 
     override fun encodeEvent(
         payload: RiftAppAbi.RuntimePayload,
-        event: RiftAppAbi.Event
+        event: RiftAppAbi.Event,
+        eventSequence: Int
     ): ByteArray {
         val legacyKind =
             when (event.kind) {

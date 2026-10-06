@@ -11,9 +11,11 @@ const signerPath = 'android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt'
 const installerPath = 'android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt';
 const appAbiPath = 'android/app/src/main/java/com/riftos/app/RiftAppAbi.kt';
 const rappAdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappRiftppAdapter.kt';
+const rappWs15AdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappRiftppWs15Adapter.kt';
+const rappAbsoluteViewPath = 'android/app/src/main/java/com/riftos/app/RiftRappAbsoluteView.kt';
 const rappHostPath = 'android/app/src/main/java/com/riftos/app/RiftRappHost.kt';
 const rappManagerPath = 'android/app/src/main/java/com/riftos/app/RiftRappManager.kt';
-for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, appAbiPath, rappAdapterPath, rappHostPath, rappManagerPath]) {
+for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, appAbiPath, rappAdapterPath, rappWs15AdapterPath, rappAbsoluteViewPath, rappHostPath, rappManagerPath]) {
   assert.ok(exists(file), 'RiftBuild source owner is missing: ' + file);
 }
 
@@ -24,6 +26,8 @@ const signer = read(signerPath);
 const installer = read(installerPath);
 const appAbi = read(appAbiPath);
 const rappAdapter = read(rappAdapterPath);
+const rappWs15Adapter = read(rappWs15AdapterPath);
+const rappAbsoluteView = read(rappAbsoluteViewPath);
 const rappHost = read(rappHostPath);
 const rappManager = read(rappManagerPath);
 assert.ok(nativeToolchain.includes("entry.name.replace('\\\\', '/')"), 'bundled toolchain ZIP paths must normalize a single escaped backslash char');
@@ -203,6 +207,16 @@ assert.match(appAbi, /object RiftAppAdapters/);
 assert.match(rappAdapter, /RiftppUiCodec\.parse/);
 assert.match(rappAdapter, /RPE2/);
 assert.match(rappAdapter, /riftpp-rpa2-v1/);
+assert.match(appAbi, /RiftRappRiftppWs15Adapter/);
+assert.match(appAbi, /nextProgram/);
+assert.match(rappWs15Adapter, /riftpp-rws2-rui3-v1/);
+assert.match(rappWs15Adapter, /RPE3/);
+assert.match(rappWs15Adapter, /RUI3/);
+assert.match(rappWs15Adapter, /RWS2/);
+assert.match(rappAbsoluteView, /Layout\.ABSOLUTE/);
+assert.match(rappAbsoluteView, /POINTER_MOVE/);
+assert.match(rappHost, /session\.program/);
+assert.match(rappHost, /nextProgram\(output\)/);
 assert.match(rappHost, /RiftBoundedAsync\.submit/);
 assert.match(rappHost, /RiftNativeBufferCompilerService\.compile/);
 assert.match(rappHost, /RiftAppAbi\.Event/);

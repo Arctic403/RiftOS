@@ -26,6 +26,7 @@ class RiftRappHost(
 ) {
     companion object {
         private const val OUTPUT_BYTES = 512 * 1024
+        private const val MAX_SESSION_PROGRAM_BYTES = 1024 * 1024
         private const val EVENT_TIMEOUT_MS = 6500L
 
         @Volatile
@@ -53,6 +54,11 @@ class RiftRappHost(
     ) {
         val id: String get() = payload.id
         val name: String get() = payload.name
+
+        var program: ByteArray =
+            payload.program.copyOf()
+        var eventSequence: Int =
+            1
     }
 
     private data class EventOutcome(
@@ -214,10 +220,19 @@ class RiftRappHost(
                 )
             },
             work = {
+                val eventPayload =
+                    session.payload.copy(
+                        program =
+                            session.program.copyOf()
+                    )
+                val sequence =
+                    session.eventSequence++
+
                 val envelope =
                     session.adapter.encodeEvent(
-                        session.payload,
-                        event
+                        eventPayload,
+                        event,
+                        sequence
                     )
 
                 val result =
@@ -251,8 +266,25 @@ class RiftRappHost(
                         ?: error(
                             "RAPP runtime succeeded without output"
                         )
+
+                session.adapter
+                    .nextProgram(output)
+                    ?.let { nextProgram ->
+                        require(
+                            nextProgram.size in
+                                1..MAX_SESSION_PROGRAM_BYTES
+                        ) {
+                            "RAPP next program state is out of bounds"
+                        }
+                        session.program =
+                            nextProgram.copyOf()
+                    }
+
                 EventOutcome(
-                    frame = session.adapter.decodeFrame(output)
+                    frame =
+                        session.adapter.decodeFrame(
+                            output
+                        )
                 )
             },
             reply = { outcome ->
@@ -272,9 +304,23 @@ class RiftRappHost(
         session: Session,
         frame: RiftAppAbi.Frame
     ): View {
-        require(frame.layout == RiftAppAbi.Layout.FLOW_COLUMN) {
+        if (
+            frame.layout ==
+                RiftAppAbi.Layout.ABSOLUTE
+        ) {
+            return renderAbsolute(
+                session,
+                frame
+            )
+        }
+
+        require(
+            frame.layout ==
+                RiftAppAbi.Layout.FLOW_COLUMN
+        ) {
             "RiftOS app layout is not supported by this renderer yet"
         }
+
         val root =
             LinearLayout(activity).apply {
                 orientation =
@@ -411,6 +457,64 @@ class RiftRappHost(
         }
 
         return root
+    }
+
+    private fun renderAbsolute(
+        session: Session,
+        frame: RiftAppAbi.Frame
+    ): View {
+        lateinit var view:
+            RiftRappAbsoluteView
+
+        view =
+            RiftRappAbsoluteView(
+                activity,
+                frame
+            ) { event ->
+                runEventAsync(
+                    session,
+                    event
+                ) { outcome ->
+                    if (
+                        sessions[session.id] !==
+                            session
+                    ) {
+                        return@runEventAsync
+                    }
+
+                    val next =
+                        outcome.frame
+                    if (
+                        next != null &&
+                        next.layout ==
+                            RiftAppAbi.Layout.ABSOLUTE
+                    ) {
+                        view.updateFrame(
+                            next
+                        )
+                    } else if (
+                        next != null
+                    ) {
+                        desktop.attachContent(
+                            session.id,
+                            render(
+                                session,
+                                next
+                            )
+                        )
+                    } else {
+                        desktop.attachContent(
+                            session.id,
+                            failureView(
+                                outcome.error
+                                    ?: "RAPP event failed"
+                            )
+                        )
+                    }
+                }
+            }
+
+        return view
     }
 
     private fun showLaunchFailure(

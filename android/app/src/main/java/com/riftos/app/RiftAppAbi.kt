@@ -126,16 +126,23 @@ interface RiftAppRuntimeAdapter {
 
     fun encodeEvent(
         payload: RiftAppAbi.RuntimePayload,
-        event: RiftAppAbi.Event
+        event: RiftAppAbi.Event,
+        eventSequence: Int
     ): ByteArray
 
     fun decodeFrame(bytes: ByteArray): RiftAppAbi.Frame
+
+    fun nextProgram(
+        bytes: ByteArray
+    ): ByteArray? = null
 }
 
 object RiftAppAdapters {
     private val adapters: Map<String, RiftAppRuntimeAdapter> by lazy {
-        listOf(RiftRappRiftppAdapter)
-            .associateBy { it.id }
+        listOf(
+            RiftRappRiftppAdapter,
+            RiftRappRiftppWs15Adapter
+        ).associateBy { it.id }
     }
 
     fun find(id: String): RiftAppRuntimeAdapter? = adapters[id]
