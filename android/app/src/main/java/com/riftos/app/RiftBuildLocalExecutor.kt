@@ -62,7 +62,7 @@ class RiftBuildLocalExecutor(context: Context) {
         val value = when (sub) {
             "help" -> JSONObject()
                 .put("schema", "riftbuild-native-help-v1")
-                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | managed-status <project> | managed-payload <project> <id> | managed-copy <project> <id> <output> | compiler-status <project> | compiler-run <project> <compiler-id> <request.json> | kotlin-status | kotlin-compile <project> | compile-native <project> [arm32|arm64|universal] | compile-object <project> <source.S> [arm32|arm64] | assemble-linux-aarch64 <project> <source.S> [output] | extract-object-text <project> <object.o> [arm32|arm64] | prepare-native-app <project> | pack <project> [target] | pack-rapp <project> | install-rapp <artifact.rapp> | launch-rapp <id> | rapp-list | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
+                .put("usage", "riftbuild doctor [project] | validate <project> | plan <project> [arm32|arm64|universal] | toolchain-status | toolchain-install-bundled | managed-status <project> | managed-payload <project> <id> | managed-copy <project> <id> <output> | compiler-status <project> | compiler-run <project> <compiler-id> <request.json> | kotlin-status | kotlin-compile <project> | compile-native <project> [arm32|arm64|universal] | compile-object <project> <source.S> [arm32|arm64] | extract-object-text <project> <object.o> [arm32|arm64] | prepare-native-app <project> | pack <project> [target] | pack-rapp <project> | install-rapp <artifact.rapp> | launch-rapp <id> | rapp-list | sign <unsigned-apk> | verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof | runs [limit] | artifacts [project]")
             "doctor" -> doctor(args.firstOrNull(), cwd)
             "validate" -> validate(args.firstOrNull() ?: error("usage: riftbuild validate <project>"), cwd)
             "plan" -> plan(
@@ -111,12 +111,6 @@ class RiftBuildLocalExecutor(context: Context) {
                 args.firstOrNull() ?: error("usage: riftbuild compile-object <project> <source.S> [arm32|arm64]"),
                 args.getOrNull(1) ?: error("usage: riftbuild compile-object <project> <source.S> [arm32|arm64]"),
                 args.getOrNull(2) ?: "arm32",
-                cwd
-            )
-            "assemble-linux-aarch64" -> assembleLinuxAarch64(
-                args.firstOrNull() ?: error("usage: riftbuild assemble-linux-aarch64 <project> <source.S> [output]"),
-                args.getOrNull(1) ?: error("usage: riftbuild assemble-linux-aarch64 <project> <source.S> [output]"),
-                args.getOrNull(2) ?: "",
                 cwd
             )
             "extract-object-text" -> extractObjectText(
@@ -568,22 +562,6 @@ class RiftBuildLocalExecutor(context: Context) {
         ).put("project", ref.display)
     }
 
-    fun assembleLinuxAarch64(
-        project: String,
-        sourcePath: String,
-        outputPath: String = "",
-        cwd: String = "/D:/Workspace"
-    ): JSONObject {
-        val ref = resolveProject(project, cwd)
-        require(ref.file.isDirectory) {
-            "Build project is not a directory: " + ref.display
-        }
-        return nativeToolchain.assembleLinuxAarch64Executable(
-            ref.file,
-            sourcePath,
-            outputPath
-        ).put("project", ref.display)
-    }
     fun extractObjectText(
         project: String,
         objectPath: String,
