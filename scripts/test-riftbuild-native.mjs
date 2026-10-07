@@ -286,6 +286,7 @@ assert.match(rappCapabilityBroker, /KeyProperties\.SIGNATURE_PADDING_RSA_PKCS1/)
 assert.match(rappHost, /MAX_EFFECT_DEPTH\s*=\s*1024/);
 assert.match(rappHost, /ScrollView\(activity\)/);
 assert.match(rappHost, /isFillViewport\s*=\s*true/);
+assert.match(rappHost, /!field\.hasFocus\(\)/, 'focused generic text inputs must not be overwritten by async frame updates');
 assert.match(rappCapabilityBroker, /Capability\.CLIPBOARD_READ/);
 assert.match(rappCapabilityBroker, /Capability\.WINDOW_TITLE/);
 assert.match(rappAbsoluteView, /Layout\s*\.\s*ABSOLUTE/);
@@ -349,6 +350,9 @@ for (const required of [
 assert.match(hostedProviderState, /riftbuild-hosted-state\/1/);
 assert.doesNotMatch(hostedProviderRuntime, /RiftApkV2Signer|RiftBuildLocalExecutor|PackageInstaller|AndroidKeyStore/, 'hosted provider must use generic host effects rather than embedded RiftOS implementation classes');
 assert.doesNotMatch(hostedProviderRuntime, /Project changed/, 'project-path edits must not append one log row per keystroke');
+assert.match(hostedProviderRuntime, /projectDraft/);
+assert.match(hostedProviderRuntime, /SET PROJECT/);
+assert.match(hostedProviderRuntime, /ID\.setProject/);
 
 for (const required of [
   'class RiftApkV2Signer',

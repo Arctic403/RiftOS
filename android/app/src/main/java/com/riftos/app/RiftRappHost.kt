@@ -735,6 +735,7 @@ class RiftRappHost(
                                 node.text
 
                             if (
+                                !field.hasFocus() &&
                                 field.text
                                     .toString() !=
                                     canonical

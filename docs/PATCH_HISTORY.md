@@ -6,6 +6,12 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.66 — explicit hosted project commit / focused-input stability
+
+Live hosted-builder device testing showed that project-path typing still behaved like an active build-target mutation and that delayed async frame responses could rewrite the focused Android `EditText`, causing the keyboard/caret to fight the user during the first keystrokes. The provider now keeps `projectDraft` separate from the confirmed `project`; text events update only the draft, and a new `SET PROJECT` action is the sole promotion point that invalidates stale preflight/pack/sign/verify state. The active project is shown separately in the frame, and existing persisted state migrates in-place by initializing a missing draft from the confirmed project.
+
+The generic `RiftRappHost.kt` flow renderer now refuses to call `setText(canonical)` on an actively focused text input. Serialized provider events still persist draft state, but delayed frame responses cannot overwrite text underneath the soft keyboard. Once focus leaves, canonical state may synchronize normally. Hosted smoke now proves typing alone does not change the active project, SET PROJECT promotes it, and Preflight uses only the confirmed path. Source-contract tests guard both the focused-input rule and explicit project confirmation.
+
 ## Patch 10.65 — generic FLOW_COLUMN overflow boundary
 
 Live `riftbuild-hosted` device testing exposed a generic RAPP layout boundary: a `FLOW_COLUMN` whose content exceeded its desktop window could measure a `TEXT_INPUT` down to zero height while later controls/log rows remained present. `RiftRappHost.kt` now scroll-contains every generic `FLOW_COLUMN` frame with a fill-viewport `ScrollView`; the inner vertical layout and all existing generic event/state semantics remain unchanged. This is a reusable host boundary for all RAPPs, not a RiftBuild-specific renderer case.

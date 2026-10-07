@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const A=1,T=7,H=13,R=1,TX=3,IN=4,B=5,F=1;
-const ID={project:100,a32:110,a64:111,uni:112,pre:120,pack:121,sign:122,verify:123,reset:124};
+const ID={project:100,setProject:101,a32:110,a64:111,uni:112,pre:120,pack:121,sign:122,verify:123,reset:124};
 const LIM={io:262144,apk:50331648,entries:128,name:4096};
 const B64='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -11,11 +11,11 @@ function text(b){let s='';for(let i=0;i<b.length;){const a=b[i++]&255;let c;if(a
 function enc(b){if(!b||!b.length)return '';let s='';for(let i=0;i<b.length;i+=3){const a=b[i]&255,c=i+1<b.length?b[i+1]&255:0,d=i+2<b.length?b[i+2]&255:0,n=(a<<16)|(c<<8)|d;s+=B64[(n>>18)&63]+B64[(n>>12)&63]+(i+1<b.length?B64[(n>>6)&63]:'=')+(i+2<b.length?B64[n&63]:'=');}return s;}
 function dec(s){if(!s)return [];s=String(s).replace(/\s+/g,'');if(s.length%4)throw Error('invalid base64');const o=[];for(let i=0;i<s.length;i+=4){const a=B64.indexOf(s[i]),b=B64.indexOf(s[i+1]),c=s[i+2]==='='?0:B64.indexOf(s[i+2]),d=s[i+3]==='='?0:B64.indexOf(s[i+3]);if(a<0||b<0||c<0||d<0)throw Error('invalid base64');const n=(a<<18)|(b<<12)|(c<<6)|d;o.push((n>>16)&255);if(s[i+2]!=='=')o.push((n>>8)&255);if(s[i+3]!=='=')o.push(n&255);}return o;}
 function u16(b,o){return (b[o]|(b[o+1]<<8))>>>0;} function u32(b,o){return (b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;}
-function fresh(){return {schema:'riftbuild-hosted-state/1',project:'/D:/Workspace',target:'arm32',status:'Ready',phase:'idle',requestId:1,pending:null,log:['Hosted provider loaded'],work:null,pack:null,sign:null,verify:null};}
-function load(i){const b=dec(i.stateBase64||'');if(!b.length)return fresh();const s=JSON.parse(text(b));if(s.schema!=='riftbuild-hosted-state/1')throw Error('invalid provider state');s.log=Array.isArray(s.log)?s.log:[];s.requestId=Number.isInteger(s.requestId)&&s.requestId>0?s.requestId:1;return s;}
+function fresh(){return {schema:'riftbuild-hosted-state/1',project:'/D:/Workspace',projectDraft:'/D:/Workspace',target:'arm32',status:'Ready',phase:'idle',requestId:1,pending:null,log:['Hosted provider loaded'],work:null,pack:null,sign:null,verify:null};}
+function load(i){const b=dec(i.stateBase64||'');if(!b.length)return fresh();const s=JSON.parse(text(b));if(s.schema!=='riftbuild-hosted-state/1')throw Error('invalid provider state');s.log=Array.isArray(s.log)?s.log:[];s.requestId=Number.isInteger(s.requestId)&&s.requestId>0?s.requestId:1;s.project=String(s.project||'/D:/Workspace');s.projectDraft=typeof s.projectDraft==='string'?s.projectDraft:s.project;return s;}
 function log(s,m){s.log.push(String(m));if(s.log.length>8)s.log=s.log.slice(-8);}
 function n(k,id,t){return {kind:k,id,parentId:id===1?0:1,text:t||''};}
-function frame(s){const a=[n(R,1,''),n(TX,2,'RiftBuild Hosted · external RAPP provider'),n(IN,ID.project,s.project),n(TX,3,'Target: '+s.target+' · '+s.status),n(B,ID.a32,'ARM32'),n(B,ID.a64,'ARM64'),n(B,ID.uni,'Universal'),n(B,ID.pre,'Preflight'),n(B,ID.pack,'Pack APK'),n(B,ID.sign,'Sign APK'),n(B,ID.verify,'Verify APK'),n(B,ID.reset,'Reset')];let x=200;for(const l of s.log.slice(-6))a.push(n(TX,x++,l));return {layout:F,nodes:a};}
+function frame(s){const a=[n(R,1,''),n(TX,2,'RiftBuild Hosted · external RAPP provider'),n(IN,ID.project,s.projectDraft),n(B,ID.setProject,'SET PROJECT'),n(TX,4,'Active project: '+s.project),n(TX,3,'Target: '+s.target+' · '+s.status),n(B,ID.a32,'ARM32'),n(B,ID.a64,'ARM64'),n(B,ID.uni,'Universal'),n(B,ID.pre,'Preflight'),n(B,ID.pack,'Pack APK'),n(B,ID.sign,'Sign APK'),n(B,ID.verify,'Verify APK'),n(B,ID.reset,'Reset')];let x=200;for(const l of s.log.slice(-6))a.push(n(TX,x++,l));return {layout:F,nodes:a};}
 function out(s,e){const o={schema:'riftos-app-output-json/1',stateBase64:enc(utf8(JSON.stringify(s))),frame:frame(s)};if(e)o.effect=e;return JSON.stringify(o);}
 function fail(s,e){s.pending=null;s.phase='error';s.status='Error: '+String(e&&e.message?e.message:e);log(s,s.status);return out(s);}
 function req(s,cap,op,txt,bytes,p){const id=s.requestId++;s.pending=Object.assign({requestId:id},p||{});return out(s,{requestId:id,capability:cap,operation:op,token:0,text:txt||'',bytesBase64:enc(bytes||[])});}
@@ -40,7 +40,7 @@ function preFinish(s){s.work.entries.sort(cmp);if(!s.work.entries.length||s.work
 function invalidate(s,m){s.work=s.pack=s.sign=s.verify=null;s.pending=null;s.phase='idle';s.status='Ready';if(m)log(s,m);}
 function action(s,id){if(id===ID.a32||id===ID.a64||id===ID.uni){s.target=id===ID.a32?'arm32':id===ID.a64?'arm64':'universal';invalidate(s,'Target changed to '+s.target);return out(s);}if(id===ID.pre)return preflight(s);if(id===ID.reset){const p=s.project,t=s.target;s=fresh();s.project=p;s.target=t;return out(s);}if(id===ID.pack||id===ID.sign||id===ID.verify)throw Error('provider phase not installed yet');return out(s);}
 function effect(s,e){const p=s.pending;if(!p||p.requestId!==e.targetId)throw Error('unexpected host-effect result');if(e.arg0!==1){s.pending=null;throw Error(e.text||'host effect failed');}s.pending=null;if(p.k==='pre-root')return preRoot(s,e);if(p.k==='pre-manifest')return preManifest(s,e,p);if(p.k==='pre-abi')return preAbiDone(s,e,p);if(p.k==='pre-assets')return preAssetDone(s,e,p);throw Error('unknown continuation '+p.k);}
-function main(j){const i=JSON.parse(j),s=load(i),e=i.event||{};try{if(e.kind===T&&e.targetId===ID.project){const v=String(e.text||'').trim();if(v&&v!==s.project){s.project=v;invalidate(s);}return out(s);}if(e.kind===A)return action(s,e.targetId);if(e.kind===H)return effect(s,e);return out(s);}catch(x){return fail(s,x);}}
+function main(j){const i=JSON.parse(j),s=load(i),e=i.event||{};try{if(e.kind===T&&e.targetId===ID.project){s.projectDraft=String(e.text||'');return out(s);}if(e.kind===A)return action(s,e.targetId);if(e.kind===H)return effect(s,e);return out(s);}catch(x){return fail(s,x);}}
 globalThis.riftRappMain=main;
 
 function le16(v){v=Number(v)>>>0;return [v&255,(v>>>8)&255];}
@@ -266,9 +266,10 @@ function verifyFinish(s,e){
 }
 
 function action(s,id){
+  if(id===ID.setProject){const v=String(s.projectDraft||'').trim();if(!v)throw Error('project path is empty');s.projectDraft=v;if(v!==s.project){s.project=v;invalidate(s);log(s,'Project set');}return out(s);}
   if(id===ID.a32||id===ID.a64||id===ID.uni){s.target=id===ID.a32?'arm32':id===ID.a64?'arm64':'universal';invalidate(s,'Target changed to '+s.target);return out(s);}
   if(id===ID.pre)return preflight(s);if(id===ID.pack)return packStart(s);if(id===ID.sign)return signStart(s);if(id===ID.verify)return verifyStart(s);
-  if(id===ID.reset){const p=s.project,t=s.target;s=fresh();s.project=p;s.target=t;return out(s);}return out(s);
+  if(id===ID.reset){const p=s.project,t=s.target;s=fresh();s.project=p;s.projectDraft=p;s.target=t;return out(s);}return out(s);
 }
 function effect(s,e){
   const p=s.pending;if(!p||p.requestId!==e.targetId)throw Error('unexpected host-effect result');if(e.arg0!==1){s.pending=null;throw Error(e.text||'host effect failed');}s.pending=null;
