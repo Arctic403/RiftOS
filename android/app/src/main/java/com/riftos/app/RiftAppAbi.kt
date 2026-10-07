@@ -247,7 +247,6 @@ interface RiftAppRuntimeAdapter {
     ): ByteArray? = null
 
     /**
-    /**
      * New generic output lane. Older adapters inherit the legacy frame/state
      * behavior automatically; newer adapters may additionally expose effects.
      */
