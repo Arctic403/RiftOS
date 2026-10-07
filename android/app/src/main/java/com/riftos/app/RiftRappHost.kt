@@ -31,7 +31,9 @@ class RiftRappHost(
         private const val OUTPUT_BYTES = 512 * 1024
         private const val MAX_SESSION_PROGRAM_BYTES = 1024 * 1024
         private const val EVENT_TIMEOUT_MS = 6500L
-        private const val MAX_EFFECT_DEPTH = 16
+        // 1024 x 256 KiB binary host effects reaches the existing 256 MiB build ceiling
+        // while keeping every hosted-app transaction finite.
+        private const val MAX_EFFECT_DEPTH = 1024
 
         @Volatile
         private var active:

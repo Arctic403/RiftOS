@@ -6,10 +6,21 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.RandomAccessFile
+import java.math.BigInteger
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.MessageDigest
+import java.security.Signature
+import java.security.cert.X509Certificate
+import java.util.Date
 import java.util.concurrent.Executors
+import javax.security.auth.x500.X500Principal
 
 /**
  * Generic capability executor for native .rapp programs.
@@ -33,6 +44,14 @@ class RiftRappCapabilityBroker(
     companion object {
         private const val MAX_TEXT_BYTES =
             256 * 1024
+        private const val MAX_BINARY_CHUNK_BYTES =
+            256 * 1024
+        private const val MAX_BINARY_FILE_BYTES =
+            256L * 1024L * 1024L
+        private const val SIGNING_KEY_SIZE =
+            2048
+        private const val SIGNING_KEY_ALIAS =
+            "riftbuild-apk-v2-rsa-v1"
         private const val MAX_LIST_ENTRIES =
             5_000
         private const val MAX_CLIPBOARD_CHARS =
@@ -344,6 +363,25 @@ class RiftRappCapabilityBroker(
                                     )
                         )
 
+                    "stat" ->
+                        Result(
+                            ok = true,
+                            token =
+                                effect.token,
+                            text =
+                                statForApp(
+                                    appId,
+                                    effect.text
+                                )
+                                    .toString()
+                        )
+
+                    "readBytes" ->
+                        readBytesForApp(
+                            appId,
+                            effect
+                        )
+
                     else ->
                         unsupported(
                             effect
@@ -364,6 +402,38 @@ class RiftRappCapabilityBroker(
                                     appId,
                                     effect.text,
                                     effect.bytes
+                                )
+                                    .toString()
+                        )
+
+                    "writeBytes" ->
+                        writeBytesForApp(
+                            appId,
+                            effect
+                        )
+
+                    "mkdir" ->
+                        Result(
+                            ok = true,
+                            token =
+                                effect.token,
+                            text =
+                                mkdirForApp(
+                                    appId,
+                                    effect.text
+                                )
+                                    .toString()
+                        )
+
+                    "move" ->
+                        Result(
+                            ok = true,
+                            token =
+                                effect.token,
+                            text =
+                                moveForApp(
+                                    appId,
+                                    effect.text
                                 )
                                     .toString()
                         )
@@ -471,6 +541,26 @@ class RiftRappCapabilityBroker(
                                 effect.token
                         )
                     }
+
+                    else ->
+                        unsupported(
+                            effect
+                        )
+                }
+
+            RiftAppAbi.Capability.SIGNING_IDENTITY ->
+                when (
+                    effect.operation
+                ) {
+                    "describe" ->
+                        signingIdentityDescribe(
+                            effect.token
+                        )
+
+                    "signSha256RsaPkcs1" ->
+                        signingIdentitySign(
+                            effect
+                        )
 
                     else ->
                         unsupported(
@@ -588,6 +678,629 @@ class RiftRappCapabilityBroker(
 
         return target
     }
+
+    private fun statForApp(
+        appId: String,
+        rawPath: String
+    ): JSONObject {
+        val display =
+            enforceProgramPath(
+                appId,
+                rawPath,
+                false
+            )
+        val file =
+            safeFile(
+                display
+            )
+
+        require(file.exists()) {
+            "Path not found: $display"
+        }
+
+        return statJson(
+            file,
+            display
+        )
+    }
+
+    private fun readBytesForApp(
+        appId: String,
+        effect: RiftAppAbi.HostEffect
+    ): Result {
+        val request =
+            JSONObject(
+                effect.text
+            )
+        val rawPath =
+            request
+                .optString(
+                    "path"
+                )
+                .trim()
+        val offset =
+            request.optLong(
+                "offset",
+                0L
+            )
+        val length =
+            request.optInt(
+                "length",
+                MAX_BINARY_CHUNK_BYTES
+            )
+
+        require(rawPath.isNotBlank()) {
+            "Binary read requires path"
+        }
+        require(offset >= 0L) {
+            "Binary read offset is invalid"
+        }
+        require(
+            length in
+                1..MAX_BINARY_CHUNK_BYTES
+        ) {
+            "Binary read length is out of bounds"
+        }
+
+        val display =
+            enforceProgramPath(
+                appId,
+                rawPath,
+                false
+            )
+        val file =
+            safeFile(
+                display
+            )
+
+        require(file.isFile) {
+            "File not found: $display"
+        }
+        require(file.length() <= MAX_BINARY_FILE_BYTES) {
+            "Binary file exceeds hosted-app I/O limit"
+        }
+        require(offset <= file.length()) {
+            "Binary read offset exceeds file size"
+        }
+
+        val count =
+            minOf(
+                length.toLong(),
+                file.length() - offset
+            )
+                .toInt()
+        val bytes =
+            ByteArray(
+                count
+            )
+
+        RandomAccessFile(
+            file,
+            "r"
+        ).use {
+            input ->
+            input.seek(
+                offset
+            )
+            if (count > 0) {
+                input.readFully(
+                    bytes
+                )
+            }
+        }
+
+        val metadata =
+            JSONObject()
+                .put(
+                    "schema",
+                    "riftos-fs-bytes-read/1"
+                )
+                .put(
+                    "path",
+                    display
+                )
+                .put(
+                    "offset",
+                    offset
+                )
+                .put(
+                    "bytes",
+                    count
+                )
+                .put(
+                    "size",
+                    file.length()
+                )
+                .put(
+                    "eof",
+                    offset + count >=
+                        file.length()
+                )
+
+        return Result(
+            ok = true,
+            token =
+                effect.token,
+            text =
+                metadata.toString(),
+            bytes =
+                bytes
+        )
+    }
+
+    private fun writeBytesForApp(
+        appId: String,
+        effect: RiftAppAbi.HostEffect
+    ): Result {
+        require(
+            effect.bytes.size <=
+                MAX_BINARY_CHUNK_BYTES
+        ) {
+            "Binary write exceeds chunk limit"
+        }
+
+        val request =
+            JSONObject(
+                effect.text
+            )
+        val rawPath =
+            request
+                .optString(
+                    "path"
+                )
+                .trim()
+        val offset =
+            request.optLong(
+                "offset",
+                0L
+            )
+        val truncate =
+            request.optBoolean(
+                "truncate",
+                false
+            )
+
+        require(rawPath.isNotBlank()) {
+            "Binary write requires path"
+        }
+        require(offset >= 0L) {
+            "Binary write offset is invalid"
+        }
+        require(
+            offset <=
+                MAX_BINARY_FILE_BYTES -
+                    effect.bytes.size
+        ) {
+            "Binary write exceeds hosted-app file limit"
+        }
+        if (truncate) {
+            require(offset == 0L) {
+                "Truncating binary writes must start at offset 0"
+            }
+        }
+
+        val display =
+            enforceProgramPath(
+                appId,
+                rawPath,
+                true
+            )
+        val file =
+            safeFile(
+                display
+            )
+        val parent =
+            file.parentFile
+                ?: error(
+                    "Binary write target has no parent"
+                )
+
+        require(
+            parent.mkdirs() ||
+                parent.isDirectory
+        ) {
+            "Could not create binary write directory"
+        }
+        require(
+            !file.exists() ||
+                file.isFile
+        ) {
+            "Binary write target is not a file"
+        }
+
+        RandomAccessFile(
+            file,
+            "rw"
+        ).use {
+            output ->
+            if (truncate) {
+                output.setLength(
+                    0L
+                )
+            }
+            require(
+                offset <=
+                    output.length()
+            ) {
+                "Binary write cannot create sparse files"
+            }
+            output.seek(
+                offset
+            )
+            output.write(
+                effect.bytes
+            )
+            output.fd.sync()
+        }
+
+        val metadata =
+            statJson(
+                file,
+                display
+            )
+                .put(
+                    "schema",
+                    "riftos-fs-bytes-write/1"
+                )
+                .put(
+                    "offset",
+                    offset
+                )
+                .put(
+                    "written",
+                    effect.bytes.size
+                )
+
+        return Result(
+            ok = true,
+            token =
+                effect.token,
+            text =
+                metadata.toString()
+        )
+    }
+
+    private fun mkdirForApp(
+        appId: String,
+        rawPath: String
+    ): JSONObject {
+        val display =
+            enforceProgramPath(
+                appId,
+                rawPath,
+                true
+            )
+        val dir =
+            safeFile(
+                display
+            )
+
+        require(
+            dir.mkdirs() ||
+                dir.isDirectory
+        ) {
+            "Could not create directory: $display"
+        }
+
+        return statJson(
+            dir,
+            display
+        )
+    }
+
+    private fun moveForApp(
+        appId: String,
+        requestText: String
+    ): JSONObject {
+        val request =
+            JSONObject(
+                requestText
+            )
+        val rawFrom =
+            request
+                .optString(
+                    "from"
+                )
+                .trim()
+        val rawTo =
+            request
+                .optString(
+                    "to"
+                )
+                .trim()
+        val replace =
+            request.optBoolean(
+                "replace",
+                false
+            )
+
+        require(
+            rawFrom.isNotBlank() &&
+                rawTo.isNotBlank()
+        ) {
+            "Move requires from and to"
+        }
+
+        val fromDisplay =
+            enforceProgramPath(
+                appId,
+                rawFrom,
+                true
+            )
+        val toDisplay =
+            enforceProgramPath(
+                appId,
+                rawTo,
+                true
+            )
+        val source =
+            safeFile(
+                fromDisplay
+            )
+        val target =
+            safeFile(
+                toDisplay
+            )
+
+        require(source.exists()) {
+            "Move source not found: $fromDisplay"
+        }
+        require(
+            !target.exists() ||
+                replace
+        ) {
+            "Move target already exists: $toDisplay"
+        }
+        target.parentFile
+            ?.let {
+                parent ->
+                require(
+                    parent.mkdirs() ||
+                        parent.isDirectory
+                ) {
+                    "Could not create move target directory"
+                }
+            }
+
+        if (target.exists()) {
+            require(
+                target.isFile &&
+                    target.delete()
+            ) {
+                "Could not replace move target"
+            }
+        }
+
+        require(
+            source.renameTo(
+                target
+            )
+        ) {
+            "Could not move path"
+        }
+
+        return statJson(
+            target,
+            toDisplay
+        )
+    }
+
+    private fun signingIdentityDescribe(
+        token: Int
+    ): Result {
+        val entry =
+            signingKeyEntry()
+        val certificate =
+            entry.certificate as
+                X509Certificate
+        val encoded =
+            certificate.encoded
+        val metadata =
+            signingIdentityMetadata(
+                certificate
+            )
+
+        return Result(
+            ok = true,
+            token =
+                token,
+            text =
+                metadata.toString(),
+            bytes =
+                encoded
+        )
+    }
+
+    private fun signingIdentitySign(
+        effect: RiftAppAbi.HostEffect
+    ): Result {
+        require(
+            effect.bytes.isNotEmpty() &&
+                effect.bytes.size <=
+                    MAX_BINARY_CHUNK_BYTES
+        ) {
+            "Signing payload is out of bounds"
+        }
+
+        val entry =
+            signingKeyEntry()
+        val certificate =
+            entry.certificate as
+                X509Certificate
+        val signature =
+            Signature
+                .getInstance(
+                    "SHA256withRSA"
+                )
+                .apply {
+                    initSign(
+                        entry.privateKey
+                    )
+                    update(
+                        effect.bytes
+                    )
+                }
+                .sign()
+
+        return Result(
+            ok = true,
+            token =
+                effect.token,
+            text =
+                signingIdentityMetadata(
+                    certificate
+                )
+                    .toString(),
+            bytes =
+                signature
+        )
+    }
+
+    private fun signingIdentityMetadata(
+        certificate: X509Certificate
+    ): JSONObject =
+        JSONObject()
+            .put(
+                "schema",
+                "riftos-signing-identity/1"
+            )
+            .put(
+                "identity",
+                "rift-local-apk-signing-v1"
+            )
+            .put(
+                "algorithm",
+                "SHA256withRSA"
+            )
+            .put(
+                "padding",
+                "RSA_PKCS1"
+            )
+            .put(
+                "keyBits",
+                SIGNING_KEY_SIZE
+            )
+            .put(
+                "certificateSha256",
+                sha256(
+                    certificate.encoded
+                )
+            )
+            .put(
+                "publicKeySha256",
+                sha256(
+                    certificate.publicKey.encoded
+                )
+            )
+
+    private fun signingKeyEntry():
+        KeyStore.PrivateKeyEntry {
+        val store =
+            KeyStore
+                .getInstance(
+                    "AndroidKeyStore"
+                )
+                .apply {
+                    load(
+                        null
+                    )
+                }
+
+        if (
+            !store.containsAlias(
+                SIGNING_KEY_ALIAS
+            )
+        ) {
+            val now =
+                System.currentTimeMillis()
+            val generator =
+                KeyPairGenerator
+                    .getInstance(
+                        KeyProperties.KEY_ALGORITHM_RSA,
+                        "AndroidKeyStore"
+                    )
+            val spec =
+                KeyGenParameterSpec
+                    .Builder(
+                        SIGNING_KEY_ALIAS,
+                        KeyProperties.PURPOSE_SIGN or
+                            KeyProperties.PURPOSE_VERIFY
+                    )
+                    .setKeySize(
+                        SIGNING_KEY_SIZE
+                    )
+                    .setDigests(
+                        KeyProperties.DIGEST_SHA256
+                    )
+                    .setSignaturePaddings(
+                        KeyProperties.SIGNATURE_PADDING_RSA_PKCS1
+                    )
+                    .setCertificateSubject(
+                        X500Principal(
+                            "CN=RiftBuild Local APK V2"
+                        )
+                    )
+                    .setCertificateSerialNumber(
+                        BigInteger.ONE
+                    )
+                    .setCertificateNotBefore(
+                        Date(
+                            now -
+                                24L *
+                                    60L *
+                                    60L *
+                                    1000L
+                        )
+                    )
+                    .setCertificateNotAfter(
+                        Date(
+                            now +
+                                25L *
+                                    365L *
+                                    24L *
+                                    60L *
+                                    60L *
+                                    1000L
+                        )
+                    )
+                    .setUserAuthenticationRequired(
+                        false
+                    )
+                    .build()
+
+            generator.initialize(
+                spec
+            )
+            generator.generateKeyPair()
+        }
+
+        return store.getEntry(
+            SIGNING_KEY_ALIAS,
+            null
+        ) as? KeyStore.PrivateKeyEntry
+            ?: error(
+                "RiftOS signing identity is unavailable"
+            )
+    }
+
+    private fun sha256(
+        bytes: ByteArray
+    ): String =
+        MessageDigest
+            .getInstance(
+                "SHA-256"
+            )
+            .digest(
+                bytes
+            )
+            .joinToString(
+                ""
+            ) {
+                "%02x".format(
+                    it.toInt() and
+                        0xff
+                )
+            }
 
     private fun readTextForApp(
         appId: String,

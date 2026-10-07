@@ -48,6 +48,7 @@ object RiftAppAbi {
         const val CLIPBOARD_WRITE = "clipboard.write"
         const val SHARE = "share"
         const val BUILD_LOCAL = "build.local"
+        const val SIGNING_IDENTITY = "signing.identity"
         const val WINDOW_TITLE = "window.title"
 
         val DECLARABLE: Set<String> =
@@ -59,6 +60,7 @@ object RiftAppAbi {
                 CLIPBOARD_WRITE,
                 SHARE,
                 BUILD_LOCAL,
+                SIGNING_IDENTITY,
                 WINDOW_TITLE
             )
     }

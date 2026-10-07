@@ -27,6 +27,23 @@ Rift++ source
 
 Gradle/NDK compatibility is an adapter above that core, not the authority boundary.
 
+## Hosted build-provider migration boundary
+
+RiftOS is moving build semantics out of the base APK and behind the language-neutral RAPP host. The target boundary is: **RiftOS provides bounded platform primitives; the hosted editor/build runtime owns compile, preflight, package construction, signing-layout semantics and artifact verification.** A hosted provider may be written in Rift++, Codynex, or another runtime as long as its adapter speaks the generic RiftOS app ABI.
+
+Current migration infrastructure in the generic host:
+
+- `fs.read/readBytes/stat/list` and `fs.write/writeBytes/mkdir/move` allow a permission-granted hosted runtime to stream binary project/build data without teaching RiftOS what the artifact means;
+- binary transfers are capped at 256 KiB per host effect and 256 MiB per file, matching the existing bounded package ceiling;
+- the RAPP host effect chain remains finite at 1024 effects, allowing a complete 256 MiB stream while preserving a hard loop bound;
+- `signing.identity/describe` exposes the local certificate and public identity while private key material remains in Android Keystore;
+- `signing.identity/signSha256RsaPkcs1` exposes only the RSA/SHA-256 signing primitive. The hosted provider, not RiftOS, must construct and verify APK Signature Scheme structures;
+- the signing primitive intentionally reuses the existing `riftbuild-apk-v2-rsa-v1` Android Keystore alias so the migration does not silently change the local signing identity.
+
+This is a **migration layer, not retirement proof yet**. `RiftBuildLocalExecutor.pack`, `RiftApkV2Signer`, `verify`, and the existing build commands remain active until a hosted provider has produced, signed, independently verified, installed and launched a real APK on-device through the new boundary. Only after that device proof may the embedded pack/preflight/sign/verify implementation be removed.
+
+The native-buffer service used by `RiftRappHost` is a generic runtime execution primitive even though its current class name is `RiftNativeBufferCompilerService`. Final cleanup must preserve that execution capability (preferably under a neutral runtime/execution name) while removing compiler-specific ownership. `RiftBuildInstaller`/Android `PackageInstaller` is platform installation infrastructure and is not part of the compiler/package/signing semantics targeted for retirement.
+
 ## Native toolchain execution policy
 
 RiftBuild may use local or downloaded native compiler toolchains when they are explicitly provisioned for Android-host execution. The official desktop NDK host packages are not assumed to run on Android unchanged, so toolchain provisioning remains a separate compatibility responsibility.
