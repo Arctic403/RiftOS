@@ -13,11 +13,16 @@ const appAbiPath = 'android/app/src/main/java/com/riftos/app/RiftAppAbi.kt';
 const rappAdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappRiftppAdapter.kt';
 const rappWs15AdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappRiftppWs15Adapter.kt';
 const rappGenericAdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappRiftppGenericAdapter.kt';
+const rappJsonAdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappJsonAdapter.kt';
+const rappQuickJsExecutorPath = 'android/app/src/main/java/com/riftos/app/RiftRappQuickJsExecutor.kt';
 const rappCapabilityBrokerPath = 'android/app/src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt';
+const hostedProviderManifestPath = 'apps/riftbuild-hosted/riftapp.json';
+const hostedProviderRuntimePath = 'apps/riftbuild-hosted/runtime.js';
+const hostedProviderStatePath = 'apps/riftbuild-hosted/program.json';
 const rappAbsoluteViewPath = 'android/app/src/main/java/com/riftos/app/RiftRappAbsoluteView.kt';
 const rappHostPath = 'android/app/src/main/java/com/riftos/app/RiftRappHost.kt';
 const rappManagerPath = 'android/app/src/main/java/com/riftos/app/RiftRappManager.kt';
-for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, appAbiPath, rappAdapterPath, rappWs15AdapterPath, rappGenericAdapterPath, rappCapabilityBrokerPath, rappAbsoluteViewPath, rappHostPath, rappManagerPath]) {
+for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, appAbiPath, rappAdapterPath, rappWs15AdapterPath, rappGenericAdapterPath, rappJsonAdapterPath, rappQuickJsExecutorPath, rappCapabilityBrokerPath, rappAbsoluteViewPath, rappHostPath, rappManagerPath, hostedProviderManifestPath, hostedProviderRuntimePath, hostedProviderStatePath]) {
   assert.ok(exists(file), 'RiftBuild source owner is missing: ' + file);
 }
 
@@ -30,7 +35,12 @@ const appAbi = read(appAbiPath);
 const rappAdapter = read(rappAdapterPath);
 const rappWs15Adapter = read(rappWs15AdapterPath);
 const rappGenericAdapter = read(rappGenericAdapterPath);
+const rappJsonAdapter = read(rappJsonAdapterPath);
+const rappQuickJsExecutor = read(rappQuickJsExecutorPath);
 const rappCapabilityBroker = read(rappCapabilityBrokerPath);
+const hostedProviderManifest = read(hostedProviderManifestPath);
+const hostedProviderRuntime = read(hostedProviderRuntimePath);
+const hostedProviderState = read(hostedProviderStatePath);
 const rappAbsoluteView = read(rappAbsoluteViewPath);
 const rappHost = read(rappHostPath);
 const rappManager = read(rappManagerPath);
@@ -218,6 +228,11 @@ assert.match(rappAdapter, /RPE2/);
 assert.match(rappAdapter, /riftpp-rpa2-v1/);
 assert.match(appAbi, /RiftRappRiftppWs15Adapter/);
 assert.match(appAbi, /RiftRappRiftppGenericAdapter/);
+assert.match(appAbi, /RiftRappJsonAdapter/);
+assert.match(appAbi, /object RiftAppExecutionKind/);
+assert.match(appAbi, /NATIVE_BUFFER\s*=\s*"native-buffer-v1"/);
+assert.match(appAbi, /QUICKJS\s*=\s*"quickjs-v1"/);
+assert.match(appAbi, /val executorKind: String/);
 assert.match(appAbi, /HOST_EFFECT_RESULT/);
 assert.match(appAbi, /data class HostEffect/);
 assert.match(appAbi, /data class RuntimeOutput/);
@@ -233,6 +248,16 @@ assert.match(rappGenericAdapter, /RWS4/);
 assert.match(rappGenericAdapter, /RUI3/);
 assert.match(rappGenericAdapter, /EventKind\s*\.\s*HOST_EFFECT_RESULT/);
 assert.match(rappGenericAdapter, /NodeKind\s*\.\s*ROOT\s*\.\./);
+assert.match(rappJsonAdapter, /json-generic-v1/);
+assert.match(rappJsonAdapter, /json-frame-v1/);
+assert.match(rappJsonAdapter, /RiftAppExecutionKind\.QUICKJS/);
+assert.match(rappJsonAdapter, /riftos-app-event-json\/1/);
+assert.match(rappJsonAdapter, /riftos-app-output-json\/1/);
+assert.match(rappQuickJsExecutor, /class RiftRappQuickJsExecutor/);
+assert.match(rappQuickJsExecutor, /__rift_rapp_input/);
+assert.match(rappQuickJsExecutor, /__rift_rapp_result/);
+assert.match(rappQuickJsExecutor, /riftRappMain/);
+assert.doesNotMatch(rappQuickJsExecutor, /RiftVolumePaths|ProcessBuilder|Runtime\.getRuntime|PackageInstaller|RiftApkV2Signer/, 'generic QuickJS RAPP executor must not own filesystem, process, install, or APK-signing semantics');
 assert.match(rappCapabilityBroker, /class RiftRappCapabilityBroker/);
 assert.match(rappCapabilityBroker, /setting:permissions:/);
 assert.match(rappCapabilityBroker, /Capability\.FS_READ/);
@@ -249,6 +274,10 @@ assert.match(rappCapabilityBroker, /MAX_BINARY_FILE_BYTES\s*=\s*256L \* 1024L \*
 assert.match(appAbi, /SIGNING_IDENTITY\s*=\s*"signing\.identity"/);
 assert.match(rappCapabilityBroker, /Capability\.SIGNING_IDENTITY/);
 assert.match(rappCapabilityBroker, /"signSha256RsaPkcs1"/);
+assert.match(rappCapabilityBroker, /"verifySha256RsaPkcs1"/);
+assert.match(rappCapabilityBroker, /certificateDerBase64/);
+assert.match(rappCapabilityBroker, /publicKeyDerBase64/);
+assert.match(rappCapabilityBroker, /riftos-signing-verify\/1/);
 assert.match(rappCapabilityBroker, /riftos-signing-identity\/1/);
 assert.match(rappCapabilityBroker, /SIGNING_KEY_ALIAS\s*=\s*"riftbuild-apk-v2-rsa-v1"/);
 assert.match(rappCapabilityBroker, /SHA256withRSA/);
@@ -272,6 +301,10 @@ assert.match(rappHost, /pendingEvents/);
 assert.match(rappHost, /HOST_EFFECT_RESULT/);
 assert.match(rappHost, /RiftBoundedAsync\.submit/);
 assert.match(rappHost, /RiftNativeBufferCompilerService\.compile/);
+assert.match(rappHost, /RiftRappQuickJsExecutor/);
+assert.match(rappHost, /session\.adapter\.executorKind/);
+assert.match(rappHost, /RiftAppExecutionKind\.NATIVE_BUFFER/);
+assert.match(rappHost, /RiftAppExecutionKind\.QUICKJS/);
 assert.match(rappHost, /RiftAppAbi\.Event/);
 assert.match(rappHost, /RiftAppAdapters\.require/);
 assert.doesNotMatch(rappHost, /Riftpp|RPE2|RUI2/, 'generic RAPP host must not own language/runtime protocol semantics');
@@ -281,6 +314,38 @@ assert.match(mainActivity, /rappHost = RiftRappHost\(this, nativeDesktop, ::popu
 assert.match(mainActivity, /rappHost\.openFromLauncher\(id\)/);
 assert.match(mainActivity, /rappHost\.onResume\(\)/);
 assert.match(mainActivity, /rappHost\.onPause\(\)/);
+
+for (const required of [
+  '"id": "riftbuild-hosted"',
+  '"adapter": "json-generic-v1"',
+  '"presentation": "json-frame-v1"',
+  '"fs.read"',
+  '"fs.write"',
+  '"signing.identity"',
+]) assert.ok(hostedProviderManifest.includes(required), 'hosted provider manifest contract missing: ' + required);
+assert.doesNotMatch(hostedProviderManifest, /build\.local|network|clipboard/, 'hosted provider must request only the generic capabilities it needs');
+for (const required of [
+  'riftbuild-hosted-state/1',
+  'function preflight(',
+  'function packStart(',
+  'function signStart(',
+  'function verifyStart(',
+  '0x04034b50',
+  '0x02014b50',
+  '0x06054b50',
+  'APK Sig Block 42',
+  '0x7109871a',
+  '0x0103',
+  '0xa5',
+  '0x5a',
+  'signSha256RsaPkcs1',
+  'verifySha256RsaPkcs1',
+  'certificateDerBase64',
+  'publicKeyDerBase64',
+  'SHA-256 self-test failed',
+]) assert.ok(hostedProviderRuntime.includes(required), 'hosted provider runtime contract missing: ' + required);
+assert.match(hostedProviderState, /riftbuild-hosted-state\/1/);
+assert.doesNotMatch(hostedProviderRuntime, /RiftApkV2Signer|RiftBuildLocalExecutor|PackageInstaller|AndroidKeyStore/, 'hosted provider must use generic host effects rather than embedded RiftOS implementation classes');
 
 for (const required of [
   'class RiftApkV2Signer',

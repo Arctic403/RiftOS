@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -559,6 +560,11 @@ class RiftRappCapabilityBroker(
 
                     "signSha256RsaPkcs1" ->
                         signingIdentitySign(
+                            effect
+                        )
+
+                    "verifySha256RsaPkcs1" ->
+                        signingIdentityVerify(
                             effect
                         )
 
@@ -1156,6 +1162,86 @@ class RiftRappCapabilityBroker(
         )
     }
 
+    private fun signingIdentityVerify(
+        effect: RiftAppAbi.HostEffect
+    ): Result {
+        require(
+            effect.bytes.isNotEmpty() &&
+                effect.bytes.size <=
+                    MAX_BINARY_CHUNK_BYTES
+        ) {
+            "Verification payload is out of bounds"
+        }
+
+        val request =
+            JSONObject(
+                effect.text
+            )
+        val signatureBytes =
+            Base64.decode(
+                request.getString(
+                    "signatureBase64"
+                ),
+                Base64.DEFAULT
+            )
+        require(
+            signatureBytes.isNotEmpty() &&
+                signatureBytes.size <=
+                    8 * 1024
+        ) {
+            "Verification signature is out of bounds"
+        }
+
+        val entry =
+            signingKeyEntry()
+        val certificate =
+            entry.certificate as
+                X509Certificate
+        val verified =
+            Signature
+                .getInstance(
+                    "SHA256withRSA"
+                )
+                .apply {
+                    initVerify(
+                        certificate.publicKey
+                    )
+                    update(
+                        effect.bytes
+                    )
+                }
+                .verify(
+                    signatureBytes
+                )
+
+        require(verified) {
+            "RSA/SHA-256 signature verification failed"
+        }
+
+        return Result(
+            ok = true,
+            token =
+                effect.token,
+            text =
+                JSONObject()
+                    .put(
+                        "schema",
+                        "riftos-signing-verify/1"
+                    )
+                    .put(
+                        "verified",
+                        true
+                    )
+                    .put(
+                        "publicKeySha256",
+                        sha256(
+                            certificate.publicKey.encoded
+                        )
+                    )
+                    .toString()
+        )
+    }
+
     private fun signingIdentityMetadata(
         certificate: X509Certificate
     ): JSONObject =
@@ -1190,6 +1276,20 @@ class RiftRappCapabilityBroker(
                 "publicKeySha256",
                 sha256(
                     certificate.publicKey.encoded
+                )
+            )
+            .put(
+                "certificateDerBase64",
+                Base64.encodeToString(
+                    certificate.encoded,
+                    Base64.NO_WRAP
+                )
+            )
+            .put(
+                "publicKeyDerBase64",
+                Base64.encodeToString(
+                    certificate.publicKey.encoded,
+                    Base64.NO_WRAP
                 )
             )
 

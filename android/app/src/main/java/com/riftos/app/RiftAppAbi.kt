@@ -209,9 +209,25 @@ object RiftAppAbi {
     }
 }
 
+object RiftAppExecutionKind {
+    const val NATIVE_BUFFER =
+        "native-buffer-v1"
+    const val QUICKJS =
+        "quickjs-v1"
+
+    val SUPPORTED: Set<String> =
+        setOf(
+            NATIVE_BUFFER,
+            QUICKJS
+        )
+}
+
 interface RiftAppRuntimeAdapter {
     val id: String
     val presentation: String
+    val executorKind: String
+        get() =
+            RiftAppExecutionKind.NATIVE_BUFFER
 
     fun supportsEventKind(
         kind: Int
@@ -231,6 +247,7 @@ interface RiftAppRuntimeAdapter {
     ): ByteArray? = null
 
     /**
+    /**
      * New generic output lane. Older adapters inherit the legacy frame/state
      * behavior automatically; newer adapters may additionally expose effects.
      */
@@ -248,8 +265,18 @@ object RiftAppAdapters {
         listOf(
             RiftRappRiftppAdapter,
             RiftRappRiftppWs15Adapter,
-            RiftRappRiftppGenericAdapter
-        ).associateBy { it.id }
+            RiftRappRiftppGenericAdapter,
+            RiftRappJsonAdapter
+        )
+            .onEach { adapter ->
+                require(
+                    adapter.executorKind in
+                        RiftAppExecutionKind.SUPPORTED
+                ) {
+                    "Unsupported RiftOS app execution kind"
+                }
+            }
+            .associateBy { it.id }
     }
 
     fun find(id: String): RiftAppRuntimeAdapter? = adapters[id]

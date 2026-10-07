@@ -91,6 +91,8 @@ class RiftRappHost(
             activity,
             desktop
         )
+    private val quickJsExecutor =
+        RiftRappQuickJsExecutor()
     private val eventExecutor =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "rift-rapp-event").apply {
@@ -399,38 +401,11 @@ class RiftRappHost(
                         sequence
                     )
 
-                val result =
-                    RiftNativeBufferCompilerService.compile(
-                        activity,
-                        session.payload.runtime,
-                        envelope,
-                        OUTPUT_BYTES
-                    )
-                val status =
-                    result.getString("status")
-                        ?: "host-reject"
-                require(status == "success") {
-                    buildString {
-                        append("RAPP runtime ")
-                        append(status)
-                        append(" · host=")
-                        append(result.getInt("hostStatus", -1))
-                        append(" · return=")
-                        append(result.getLong("returnValue", 0xffffffffL))
-                        result.getString("detail")
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let {
-                                append(" · ")
-                                append(it)
-                            }
-                    }
-                }
-
                 val output =
-                    result.getByteArray("output")
-                        ?: error(
-                            "RAPP runtime succeeded without output"
-                        )
+                    executeRuntime(
+                        session,
+                        envelope
+                    )
 
                 val decoded =
                     session.adapter
@@ -505,6 +480,76 @@ class RiftRappHost(
             }
         )
     }
+
+    private fun executeRuntime(
+        session: Session,
+        envelope: ByteArray
+    ): ByteArray =
+        when (
+            session.adapter.executorKind
+        ) {
+            RiftAppExecutionKind.NATIVE_BUFFER -> {
+                val result =
+                    RiftNativeBufferCompilerService.compile(
+                        activity,
+                        session.payload.runtime,
+                        envelope,
+                        OUTPUT_BYTES
+                    )
+                val status =
+                    result.getString("status")
+                        ?: "host-reject"
+                require(status == "success") {
+                    buildString {
+                        append("RAPP runtime ")
+                        append(status)
+                        append(" · host=")
+                        append(
+                            result.getInt(
+                                "hostStatus",
+                                -1
+                            )
+                        )
+                        append(" · return=")
+                        append(
+                            result.getLong(
+                                "returnValue",
+                                0xffffffffL
+                            )
+                        )
+                        result.getString(
+                            "detail"
+                        )
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?.let {
+                                append(" · ")
+                                append(it)
+                            }
+                    }
+                }
+
+                result.getByteArray(
+                    "output"
+                )
+                    ?: error(
+                        "RAPP runtime succeeded without output"
+                    )
+            }
+
+            RiftAppExecutionKind.QUICKJS ->
+                quickJsExecutor.execute(
+                    session.payload.runtime,
+                    envelope,
+                    OUTPUT_BYTES
+                )
+
+            else ->
+                error(
+                    "Unsupported RAPP execution kind"
+                )
+        }
 
     private fun resolveHostEffect(
         session: Session,
