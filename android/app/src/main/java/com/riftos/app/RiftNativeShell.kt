@@ -503,7 +503,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
                     "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
-                    "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]\n" +
+                    "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful|run-software|exec-software   [CORE V1 / HEADLESS QUICKJS]\n" +
                     "riftpp-editor help|status|ls|stat|cat|write|push|pull|mkdir|mv|rm|compile|preflight|build-debug|build-production|native-compile|native-run|native-preflight|native-build-debug   [RIFT++ EDITOR BINDER BRIDGE]\n" +
                     "codynex-editor help|status|ls|stat|cat|write|push|pull|push-dir|pull-dir|mkdir|mv|rm|compile|preview|native-proof|build-apk   [CODYNEX EDITOR BINDER BRIDGE]\n" +
                     "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +

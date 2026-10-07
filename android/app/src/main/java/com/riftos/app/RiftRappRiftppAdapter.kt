@@ -12,6 +12,12 @@ object RiftRappRiftppAdapter : RiftAppRuntimeAdapter {
     override val id: String = "riftpp-rpa2-v1"
     override val presentation: String = "rui2"
 
+    override fun supportsEventKind(
+        kind: Int
+    ): Boolean =
+        kind == RiftAppAbi.EventKind.BOOT ||
+            kind == RiftAppAbi.EventKind.ACTION
+
     override fun encodeEvent(
         payload: RiftAppAbi.RuntimePayload,
         event: RiftAppAbi.Event,

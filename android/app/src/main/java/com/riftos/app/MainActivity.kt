@@ -351,6 +351,7 @@ class MainActivity : Activity() {
         RiftBuildInstaller.resumePendingConfirmation(this)
         if (::browserAppHost.isInitialized) browserAppHost.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
+        if (::rappHost.isInitialized) rappHost.onResume()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -362,6 +363,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        if (::rappHost.isInitialized) rappHost.onPause()
         if (::browserWindow.isInitialized) browserWindow.onPause()
         if (::browserAppHost.isInitialized) browserAppHost.onPause()
         super.onPause()

@@ -25,7 +25,7 @@ assert(slice.includes('riftpp-shell-self-test/1'));
 assert(slice.includes('compileRiftPlusPlusCoreProgramV1'));
 assert(batch.includes('DISABLED: RiftShell batch commands are disabled'), 'retired batch tombstone must remain disabled');
 
-assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful   [CORE V1 / HEADLESS QUICKJS]'));
+assert(nativeShell.includes('riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful|run-software|exec-software   [CORE V1 / HEADLESS QUICKJS]'));
 assert(nativeShell.includes('rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]'));
 assert(nativeShell.includes('rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]'));
 assert(nativeShell.includes('rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]'));
@@ -57,6 +57,15 @@ assert(headless.includes("u8:{literalRange:true,explicitConversions:true,bufferS
 assert(headless.includes("new Set(['state.load','state.save','state.remove'])"));
 assert(headless.includes("if (sub === 'run-stateful')"));
 assert(headless.includes("if (sub === 'exec-stateful')"));
+assert(headless.includes("hostMode === 'software'"));
+assert(headless.includes("new Set(['software.caseId','software.compileTest','software.context','software.language','software.source','software.spec'])"));
+assert(headless.includes("if (sub === 'run-software')"));
+assert(headless.includes("if (sub === 'exec-software')"));
+assert(headless.includes('private fun softwareCompileTest(root: File, candidateSource: String): String'));
+assert(headless.includes('private fun verifyJavaScript(source: String, expected: String): String'));
+assert(headless.includes("new Function('console', candidate)"));
+assert(headless.includes('software-expected.txt'));
+assert(!headless.includes("'software.expected'"), 'software expected output must never become a Rift++ host import');
 assert(headless.includes('private fun stateSave(namespace: String, key: String, value: String): Boolean'));
 assert(headless.includes('private fun stateLoad(namespace: String, key: String): String?'));
 assert(headless.includes('private fun stateRemove(namespace: String, key: String): Boolean'));

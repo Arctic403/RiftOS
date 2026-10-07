@@ -34,7 +34,7 @@ Normal `riftpp run/exec` rejects all host imports.
 - `state.save`;
 - `state.remove`.
 
-Repair/software imports remain specialized-host-only.
+Gate 6D.3 adds a separate bounded `run-software/exec-software` proof lane. It permits exactly `software.caseId`, `software.compileTest`, `software.context`, `software.language`, `software.source`, and `software.spec`. Expected output and compiler/runtime diagnostics stay host-private; there is no `software.expected` import. The first source candidate routes JavaScript candidates through a second isolated QuickJS context and returns only `compile-fail`, `wrong`, or `correct`. C++ and Kotlin remain fail-closed until their real-tool backends are implemented and device-proven.
 
 ## Source ownership
 

@@ -23,6 +23,7 @@ object RiftAppAbi {
         const val HOST_PAUSE = 10
         const val APP_CRASH_REPORT = 11
         const val SESSION_TERMINATE = 12
+        const val HOST_EFFECT_RESULT = 13
     }
 
     object NodeKind {
@@ -39,6 +40,29 @@ object RiftAppAbi {
         const val ABSOLUTE = 2
     }
 
+    object Capability {
+        const val FS_READ = "fs.read"
+        const val FS_WRITE = "fs.write"
+        const val NETWORK = "network"
+        const val CLIPBOARD_READ = "clipboard.read"
+        const val CLIPBOARD_WRITE = "clipboard.write"
+        const val SHARE = "share"
+        const val BUILD_LOCAL = "build.local"
+        const val WINDOW_TITLE = "window.title"
+
+        val DECLARABLE: Set<String> =
+            setOf(
+                FS_READ,
+                FS_WRITE,
+                NETWORK,
+                CLIPBOARD_READ,
+                CLIPBOARD_WRITE,
+                SHARE,
+                BUILD_LOCAL,
+                WINDOW_TITLE
+            )
+    }
+
     data class Event(
         val kind: Int,
         val targetId: Int = 0,
@@ -46,10 +70,11 @@ object RiftAppAbi {
         val arg1: Int = 0,
         val arg2: Int = 0,
         val arg3: Int = 0,
-        val text: String = ""
+        val text: String = "",
+        val bytes: ByteArray = ByteArray(0)
     ) {
         init {
-            require(kind in EventKind.BOOT..EventKind.SESSION_TERMINATE) {
+            require(kind in EventKind.BOOT..EventKind.HOST_EFFECT_RESULT) {
                 "Unsupported RiftOS app event kind"
             }
             require(targetId >= 0) {
@@ -57,6 +82,9 @@ object RiftAppAbi {
             }
             require(text.toByteArray(Charsets.UTF_8).size <= 64 * 1024) {
                 "RiftOS app event text exceeds bound"
+            }
+            require(bytes.size <= 256 * 1024) {
+                "RiftOS app event byte payload exceeds bound"
             }
         }
     }
@@ -109,20 +137,84 @@ object RiftAppAbi {
         }
     }
 
+    /**
+     * Generic runtime -> host request. The ABI stays stable as new platform
+     * operations are implemented behind declared capability names.
+     */
+    data class HostEffect(
+        val requestId: Int,
+        val capability: String,
+        val operation: String,
+        val token: Int = 0,
+        val text: String = "",
+        val bytes: ByteArray = ByteArray(0)
+    ) {
+        init {
+            require(requestId > 0) {
+                "RiftOS host effect request id is invalid"
+            }
+            require(capability in Capability.DECLARABLE) {
+                "RiftOS host effect capability is unsupported"
+            }
+            require(
+                operation.isNotBlank() &&
+                    operation.length <= 64 &&
+                    operation.all {
+                        it.isLetterOrDigit() ||
+                            it == '.' ||
+                            it == '_' ||
+                            it == '-'
+                    }
+            ) {
+                "RiftOS host effect operation is invalid"
+            }
+            require(text.toByteArray(Charsets.UTF_8).size <= 256 * 1024) {
+                "RiftOS host effect text exceeds bound"
+            }
+            require(bytes.size <= 256 * 1024) {
+                "RiftOS host effect byte payload exceeds bound"
+            }
+        }
+    }
+
+    data class RuntimeOutput(
+        val frame: Frame,
+        val nextProgram: ByteArray? = null,
+        val effects: List<HostEffect> = emptyList()
+    ) {
+        init {
+            require(effects.size <= 1) {
+                "RiftOS runtime may request at most one host effect per response"
+            }
+        }
+    }
+
     data class RuntimePayload(
         val id: String,
         val name: String,
         val abi: String,
         val adapter: String,
         val presentation: String,
+        val permissions: Set<String> = emptySet(),
         val program: ByteArray,
         val runtime: ByteArray
-    )
+    ) {
+        init {
+            require(permissions.all { it in Capability.DECLARABLE }) {
+                "RiftOS app declares unsupported capability"
+            }
+        }
+    }
 }
 
 interface RiftAppRuntimeAdapter {
     val id: String
     val presentation: String
+
+    fun supportsEventKind(
+        kind: Int
+    ): Boolean =
+        kind == RiftAppAbi.EventKind.BOOT
 
     fun encodeEvent(
         payload: RiftAppAbi.RuntimePayload,
@@ -135,13 +227,26 @@ interface RiftAppRuntimeAdapter {
     fun nextProgram(
         bytes: ByteArray
     ): ByteArray? = null
+
+    /**
+     * New generic output lane. Older adapters inherit the legacy frame/state
+     * behavior automatically; newer adapters may additionally expose effects.
+     */
+    fun decodeOutput(
+        bytes: ByteArray
+    ): RiftAppAbi.RuntimeOutput =
+        RiftAppAbi.RuntimeOutput(
+            frame = decodeFrame(bytes),
+            nextProgram = nextProgram(bytes)
+        )
 }
 
 object RiftAppAdapters {
     private val adapters: Map<String, RiftAppRuntimeAdapter> by lazy {
         listOf(
             RiftRappRiftppAdapter,
-            RiftRappRiftppWs15Adapter
+            RiftRappRiftppWs15Adapter,
+            RiftRappRiftppGenericAdapter
         ).associateBy { it.id }
     }
 

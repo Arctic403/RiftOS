@@ -1,8 +1,11 @@
 package com.riftos.app
 
 import android.app.Activity
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -28,6 +31,7 @@ class RiftRappHost(
         private const val OUTPUT_BYTES = 512 * 1024
         private const val MAX_SESSION_PROGRAM_BYTES = 1024 * 1024
         private const val EVENT_TIMEOUT_MS = 6500L
+        private const val MAX_EFFECT_DEPTH = 16
 
         @Volatile
         private var active:
@@ -48,6 +52,11 @@ class RiftRappHost(
                 ?: false
     }
 
+    private data class PendingEvent(
+        val event: RiftAppAbi.Event,
+        val complete: (EventOutcome) -> Unit
+    )
+
     private data class Session(
         val payload: RiftAppAbi.RuntimePayload,
         val adapter: RiftAppRuntimeAdapter
@@ -59,16 +68,27 @@ class RiftRappHost(
             payload.program.copyOf()
         var eventSequence: Int =
             1
+        var eventBusy: Boolean =
+            false
+        val pendingEvents =
+            ArrayDeque<PendingEvent>()
     }
 
     private data class EventOutcome(
         val frame: RiftAppAbi.Frame? = null,
+        val effects: List<RiftAppAbi.HostEffect> =
+            emptyList(),
         val error: String? = null
     )
 
     private val manager by lazy(LazyThreadSafetyMode.NONE) {
         RiftRappManager(activity)
     }
+    private val capabilityBroker =
+        RiftRappCapabilityBroker(
+            activity,
+            desktop
+        )
     private val eventExecutor =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "rift-rapp-event").apply {
@@ -114,8 +134,48 @@ class RiftRappHost(
         return removed || manager.handlesInstalled(id)
     }
 
+    fun onResume() {
+        broadcastLifecycle(
+            RiftAppAbi.EventKind.HOST_RESUME
+        )
+    }
+
+    fun onPause() {
+        broadcastLifecycle(
+            RiftAppAbi.EventKind.HOST_PAUSE
+        )
+    }
+
+    private fun broadcastLifecycle(
+        kind: Int
+    ) {
+        sessions.values
+            .toList()
+            .forEach {
+                session ->
+                if (
+                    session.adapter
+                        .supportsEventKind(
+                            kind
+                        )
+                ) {
+                    runEventAsync(
+                        session,
+                        RiftAppAbi.Event(
+                            kind =
+                                kind
+                        )
+                    ) {
+                        // Lifecycle delivery updates opaque program state.
+                        // The visible frame is refreshed by the next app event.
+                    }
+                }
+            }
+    }
+
     fun destroy() {
         sessions.clear()
+        capabilityBroker.destroy()
         eventExecutor.shutdownNow()
         eventWatchdog.shutdownNow()
         val current =
@@ -148,6 +208,7 @@ class RiftRappHost(
                         abi = app.abi,
                         adapter = app.adapter,
                         presentation = app.presentation,
+                        permissions = app.permissions,
                         program = app.program,
                         runtime = app.runtime
                     ),
@@ -204,6 +265,107 @@ class RiftRappHost(
         event: RiftAppAbi.Event,
         complete: (EventOutcome) -> Unit
     ) {
+        if (
+            sessions[session.id] !==
+                session
+        ) {
+            return
+        }
+
+        if (
+            session.eventBusy
+        ) {
+            require(
+                session.pendingEvents.size <
+                    64
+            ) {
+                "RAPP pending event queue exceeded bound"
+            }
+
+            session.pendingEvents.addLast(
+                PendingEvent(
+                    event,
+                    complete
+                )
+            )
+            return
+        }
+
+        session.eventBusy =
+            true
+
+        runEventStep(
+            session =
+                session,
+            event =
+                event,
+            effectDepth =
+                0
+        ) {
+            outcome ->
+            if (
+                sessions[session.id] !==
+                    session
+            ) {
+                return@runEventStep
+            }
+
+            try {
+                complete(
+                    outcome
+                )
+            } finally {
+                session.eventBusy =
+                    false
+                drainPendingEvent(
+                    session
+                )
+            }
+        }
+    }
+
+    private fun drainPendingEvent(
+        session: Session
+    ) {
+        if (
+            sessions[session.id] !==
+                session ||
+            session.eventBusy
+        ) {
+            return
+        }
+
+        val pending =
+            session.pendingEvents
+                .removeFirstOrNull()
+                ?: return
+
+        runEventAsync(
+            session,
+            pending.event,
+            pending.complete
+        )
+    }
+
+    private fun runEventStep(
+        session: Session,
+        event: RiftAppAbi.Event,
+        effectDepth: Int,
+        complete: (EventOutcome) -> Unit
+    ) {
+        if (
+            effectDepth >
+                MAX_EFFECT_DEPTH
+        ) {
+            complete(
+                EventOutcome(
+                    error =
+                        "RAPP host effect chain exceeded bound"
+                )
+            )
+            return
+        }
+
         RiftBoundedAsync.submit(
             executor = eventExecutor,
             watchdog = eventWatchdog,
@@ -261,43 +423,153 @@ class RiftRappHost(
                             }
                     }
                 }
+
                 val output =
                     result.getByteArray("output")
                         ?: error(
                             "RAPP runtime succeeded without output"
                         )
 
-                session.adapter
-                    .nextProgram(output)
-                    ?.let { nextProgram ->
+                val decoded =
+                    session.adapter
+                        .decodeOutput(
+                            output
+                        )
+
+                decoded.nextProgram
+                    ?.let {
+                        nextProgram ->
                         require(
                             nextProgram.size in
                                 1..MAX_SESSION_PROGRAM_BYTES
                         ) {
                             "RAPP next program state is out of bounds"
                         }
+
                         session.program =
                             nextProgram.copyOf()
                     }
 
                 EventOutcome(
                     frame =
-                        session.adapter.decodeFrame(
-                            output
-                        )
+                        decoded.frame,
+                    effects =
+                        decoded.effects
                 )
             },
             reply = { outcome ->
                 activity.runOnUiThread {
                     if (
-                        !activity.isFinishing &&
-                        !activity.isDestroyed
+                        activity.isFinishing ||
+                        activity.isDestroyed ||
+                        sessions[session.id] !==
+                            session
                     ) {
-                        complete(outcome)
+                        return@runOnUiThread
+                    }
+
+                    val effect =
+                        outcome.effects
+                            .singleOrNull()
+
+                    if (
+                        outcome.error !=
+                            null ||
+                        effect ==
+                            null
+                    ) {
+                        complete(
+                            outcome
+                        )
+                    } else {
+                        resolveHostEffect(
+                            session,
+                            effect,
+                            complete,
+                            effectDepth
+                        )
                     }
                 }
             }
         )
+    }
+
+    private fun resolveHostEffect(
+        session: Session,
+        effect: RiftAppAbi.HostEffect,
+        complete: (EventOutcome) -> Unit,
+        effectDepth: Int
+    ) {
+        if (
+            effectDepth >=
+                MAX_EFFECT_DEPTH
+        ) {
+            complete(
+                EventOutcome(
+                    error =
+                        "RAPP host effect chain exceeded bound"
+                )
+            )
+            return
+        }
+
+        capabilityBroker.execute(
+            appId =
+                session.id,
+            appName =
+                session.name,
+            declared =
+                session.payload
+                    .permissions,
+            effect =
+                effect
+        ) {
+            result ->
+            if (
+                sessions[session.id] !==
+                    session
+            ) {
+                return@execute
+            }
+
+            runEventStep(
+                session =
+                    session,
+                event =
+                    RiftAppAbi.Event(
+                        kind =
+                            RiftAppAbi.EventKind
+                                .HOST_EFFECT_RESULT,
+                        targetId =
+                            effect.requestId,
+                        arg0 =
+                            if (
+                                result.ok
+                            ) {
+                                1
+                            } else {
+                                0
+                            },
+                        arg1 =
+                            result.token,
+                        text =
+                            if (
+                                result.ok
+                            ) {
+                                result.text
+                            } else {
+                                result.error
+                                    .orEmpty()
+                            },
+                        bytes =
+                            result.bytes
+                    ),
+                effectDepth =
+                    effectDepth + 1,
+                complete =
+                    complete
+            )
+        }
     }
 
     private fun render(
@@ -333,16 +605,210 @@ class RiftRappHost(
                 )
             }
 
-        var textArea:
-            EditText? = null
+        val textNodes =
+            LinkedHashMap<Int, TextView>()
+        val inputNodes =
+            LinkedHashMap<Int, EditText>()
+        val actionNodes =
+            LinkedHashMap<Int, Button>()
+        val suppressInput =
+            HashSet<Int>()
+        var currentFrame =
+            frame
 
-        frame.nodes.forEach { node ->
-            when (node.kind) {
+        fun applyFrame(
+            next: RiftAppAbi.Frame
+        ) {
+            val structureChanged =
+                next.layout !=
+                    RiftAppAbi.Layout.FLOW_COLUMN ||
+                    next.nodes.map {
+                        it.id to it.kind
+                    } !=
+                    currentFrame.nodes.map {
+                        it.id to it.kind
+                    }
+
+            if (
+                structureChanged
+            ) {
+                desktop.attachContent(
+                    session.id,
+                    render(
+                        session,
+                        next
+                    )
+                )
+                return
+            }
+
+            next.nodes.forEach {
+                node ->
+                when (
+                    node.kind
+                ) {
+                    RiftAppAbi.NodeKind.TEXT ->
+                        textNodes[
+                            node.id
+                        ]?.text =
+                            node.text
+
+                    RiftAppAbi.NodeKind.TEXT_INPUT ->
+                        inputNodes[
+                            node.id
+                        ]?.let {
+                            field ->
+                            val canonical =
+                                node.text
+
+                            if (
+                                field.text
+                                    .toString() !=
+                                    canonical
+                            ) {
+                                val selection =
+                                    field.selectionStart
+                                        .coerceAtLeast(
+                                            0
+                                        )
+
+                                suppressInput.add(
+                                    node.id
+                                )
+                                field.setText(
+                                    canonical
+                                )
+                                field.setSelection(
+                                    minOf(
+                                        selection,
+                                        canonical.length
+                                    )
+                                )
+                                suppressInput.remove(
+                                    node.id
+                                )
+                            }
+                        }
+
+                    RiftAppAbi.NodeKind.ACTION ->
+                        actionNodes[
+                            node.id
+                        ]?.text =
+                            node.text
+                }
+            }
+
+            currentFrame =
+                next
+        }
+
+        fun acceptOutcome(
+            outcome: EventOutcome
+        ) {
+            val next =
+                outcome.frame
+
+            if (
+                next !=
+                    null
+            ) {
+                applyFrame(
+                    next
+                )
+            } else {
+                desktop.attachContent(
+                    session.id,
+                    failureView(
+                        outcome.error
+                            ?: "RAPP event failed"
+                    )
+                )
+            }
+        }
+
+        if (
+            session.adapter
+                .supportsEventKind(
+                    RiftAppAbi.EventKind
+                        .DISPLAY_RESIZE
+                )
+        ) {
+            root.addOnLayoutChangeListener {
+                _,
+                left,
+                top,
+                right,
+                bottom,
+                oldLeft,
+                oldTop,
+                oldRight,
+                oldBottom ->
+
+                val nextWidth =
+                    right -
+                        left
+                val nextHeight =
+                    bottom -
+                        top
+                val oldWidth =
+                    oldRight -
+                        oldLeft
+                val oldHeight =
+                    oldBottom -
+                        oldTop
+
+                if (
+                    nextWidth >
+                        0 &&
+                    nextHeight >
+                        0 &&
+                    (
+                        nextWidth !=
+                            oldWidth ||
+                        nextHeight !=
+                            oldHeight
+                        )
+                ) {
+                    runEventAsync(
+                        session,
+                        RiftAppAbi.Event(
+                            kind =
+                                RiftAppAbi.EventKind
+                                    .DISPLAY_RESIZE,
+                            arg0 =
+                                nextWidth,
+                            arg1 =
+                                nextHeight
+                        )
+                    ) {
+                        outcome ->
+                        if (
+                            sessions[
+                                session.id
+                            ] ===
+                                session
+                        ) {
+                            acceptOutcome(
+                                outcome
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        frame.nodes.forEach {
+            node ->
+            when (
+                node.kind
+            ) {
                 RiftAppAbi.NodeKind.TEXT -> {
-                    root.addView(
+                    val label =
                         TextView(activity).apply {
-                            text = node.text
-                            textSize = 24f
+                            text =
+                                node.text
+                            textSize =
+                                24f
                             setPadding(
                                 0,
                                 0,
@@ -350,13 +816,22 @@ class RiftRappHost(
                                 dp(12)
                             )
                         }
+
+                    textNodes[
+                        node.id
+                    ] =
+                        label
+                    root.addView(
+                        label
                     )
                 }
 
                 RiftAppAbi.NodeKind.TEXT_INPUT -> {
                     val field =
                         EditText(activity).apply {
-                            setText(node.text)
+                            setText(
+                                node.text
+                            )
                             gravity =
                                 Gravity.TOP or
                                     Gravity.START
@@ -366,9 +841,11 @@ class RiftRappHost(
                                     InputType
                                         .TYPE_TEXT_FLAG_MULTI_LINE or
                                     InputType
-                                        .TYPE_TEXT_FLAG_CAP_SENTENCES
-                            minLines = 8
-                            maxLines = 24
+                                        .TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                            minLines =
+                                8
+                            maxLines =
+                                24
                             setPadding(
                                 dp(10),
                                 dp(10),
@@ -377,7 +854,142 @@ class RiftRappHost(
                             )
                         }
 
-                    textArea = field
+                    inputNodes[
+                        node.id
+                    ] =
+                        field
+
+                    field.setOnKeyListener {
+                        _,
+                        keyCode,
+                        keyEvent ->
+                        val kind =
+                            when (
+                                keyEvent.action
+                            ) {
+                                KeyEvent.ACTION_DOWN ->
+                                    RiftAppAbi.EventKind
+                                        .KEY_DOWN
+
+                                KeyEvent.ACTION_UP ->
+                                    RiftAppAbi.EventKind
+                                        .KEY_UP
+
+                                else ->
+                                    null
+                            }
+
+                        if (
+                            kind !=
+                                null &&
+                            session.adapter
+                                .supportsEventKind(
+                                    kind
+                                )
+                        ) {
+                            runEventAsync(
+                                session,
+                                RiftAppAbi.Event(
+                                    kind =
+                                        kind,
+                                    targetId =
+                                        node.id,
+                                    arg0 =
+                                        keyCode,
+                                    arg1 =
+                                        keyEvent.repeatCount,
+                                    arg2 =
+                                        keyEvent.metaState
+                                )
+                            ) {
+                                outcome ->
+                                if (
+                                    sessions[
+                                        session.id
+                                    ] ===
+                                        session
+                                ) {
+                                    acceptOutcome(
+                                        outcome
+                                    )
+                                }
+                            }
+                        }
+
+                        false
+                    }
+
+                    field.addTextChangedListener(
+                        object :
+                            TextWatcher {
+                            override fun beforeTextChanged(
+                                value: CharSequence?,
+                                start: Int,
+                                count: Int,
+                                after: Int
+                            ) = Unit
+
+                            override fun onTextChanged(
+                                value: CharSequence?,
+                                start: Int,
+                                before: Int,
+                                count: Int
+                            ) = Unit
+
+                            override fun afterTextChanged(
+                                value: Editable?
+                            ) {
+                                if (
+                                    node.id in
+                                        suppressInput ||
+                                    !session.adapter
+                                        .supportsEventKind(
+                                            RiftAppAbi.EventKind
+                                                .TEXT_INPUT
+                                        )
+                                ) {
+                                    return
+                                }
+
+                                runEventAsync(
+                                    session,
+                                    RiftAppAbi.Event(
+                                        kind =
+                                            RiftAppAbi.EventKind
+                                                .TEXT_INPUT,
+                                        targetId =
+                                            node.id,
+                                        arg0 =
+                                            field.selectionStart
+                                                .coerceAtLeast(
+                                                    0
+                                                ),
+                                        arg1 =
+                                            field.selectionEnd
+                                                .coerceAtLeast(
+                                                    0
+                                                ),
+                                        text =
+                                            value
+                                                ?.toString()
+                                                .orEmpty()
+                                    )
+                                ) {
+                                    outcome ->
+                                    if (
+                                        sessions[
+                                            session.id
+                                        ] ===
+                                            session
+                                    ) {
+                                        acceptOutcome(
+                                            outcome
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    )
 
                     root.addView(
                         field,
@@ -391,66 +1003,68 @@ class RiftRappHost(
                 }
 
                 RiftAppAbi.NodeKind.ACTION -> {
-                    root.addView(
+                    val button =
                         Button(activity).apply {
-                            text = node.text
+                            text =
+                                node.text
                             setOnClickListener {
-                                try {
-                                    textArea
-                                        ?.text
-                                        ?.toString()
+                                isEnabled =
+                                    false
 
-                                    isEnabled = false
-                                    runEventAsync(
-                                        session,
-                                        RiftAppAbi.Event(
-                                            kind = RiftAppAbi.EventKind.ACTION,
-                                            targetId = node.id
-                                        )
-                                    ) { outcome ->
-                                        if (
-                                            sessions[session.id] !==
-                                                session
-                                        ) {
-                                            return@runEventAsync
-                                        }
-                                        val next = outcome.frame
-                                        desktop.attachContent(
-                                            session.id,
-                                            if (next != null) {
-                                                render(
-                                                    session,
-                                                    next
-                                                )
-                                            } else {
-                                                failureView(
-                                                    outcome.error
-                                                        ?: "RAPP event failed"
-                                                )
-                                            }
+                                runEventAsync(
+                                    session,
+                                    RiftAppAbi.Event(
+                                        kind =
+                                            RiftAppAbi.EventKind
+                                                .ACTION,
+                                        targetId =
+                                            node.id
+                                    )
+                                ) {
+                                    outcome ->
+                                    isEnabled =
+                                        true
+
+                                    if (
+                                        sessions[
+                                            session.id
+                                        ] ===
+                                            session
+                                    ) {
+                                        acceptOutcome(
+                                            outcome
                                         )
                                     }
-                                } catch (
-                                    error: Throwable
-                                ) {
-                                    desktop.attachContent(
-                                        session.id,
-                                        failureView(
-                                            error.message
-                                                ?: error
-                                                    .javaClass
-                                                    .simpleName
-                                        )
-                                    )
                                 }
                             }
-                        },
+                        }
+
+                    actionNodes[
+                        node.id
+                    ] =
+                        button
+
+                    root.addView(
+                        button,
                         LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams
                                 .MATCH_PARENT,
                             ViewGroup.LayoutParams
                                 .WRAP_CONTENT
                         )
+                    )
+                }
+
+                RiftAppAbi.NodeKind.IMAGE -> {
+                    root.addView(
+                        TextView(activity).apply {
+                            text =
+                                node.text
+                            textSize =
+                                16f
+                            gravity =
+                                Gravity.CENTER
+                        }
                     )
                 }
             }
@@ -469,7 +1083,14 @@ class RiftRappHost(
         view =
             RiftRappAbsoluteView(
                 activity,
-                frame
+                frame,
+                supportsEvent = {
+                    kind ->
+                    session.adapter
+                        .supportsEventKind(
+                            kind
+                        )
+                }
             ) { event ->
                 runEventAsync(
                     session,

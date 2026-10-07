@@ -77,6 +77,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftAppAbi.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappRiftppAdapter.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappRiftppWs15Adapter.kt` | `docs/systems/riftbuild/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftRappRiftppGenericAdapter.kt` | `docs/systems/riftbuild/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappAbsoluteView.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappManager.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappHost.kt` | `docs/systems/riftbuild/README.md` |

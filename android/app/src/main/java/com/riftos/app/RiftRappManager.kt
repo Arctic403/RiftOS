@@ -30,6 +30,7 @@ class RiftRappManager(context: Context) {
         val abi: String,
         val adapter: String,
         val presentation: String,
+        val permissions: Set<String>,
         val program: ByteArray,
         val runtime: ByteArray
     )
@@ -41,6 +42,7 @@ class RiftRappManager(context: Context) {
         val abi: String,
         val adapter: String,
         val presentation: String,
+        val permissions: Set<String>,
         val entry: String,
         val runtime: String
     )
@@ -130,6 +132,10 @@ class RiftRappManager(context: Context) {
                 .put("adapter", spec.adapter)
                 .put("engine", spec.adapter)
                 .put("presentation", spec.presentation)
+                .put(
+                    "permissions",
+                    JSONArray(spec.permissions.sorted())
+                )
                 .put("programSha256", programSha)
                 .put("runtimeSha256", runtimeSha)
 
@@ -206,6 +212,10 @@ class RiftRappManager(context: Context) {
                 .put("adapter", spec.adapter)
                 .put("engine", spec.adapter)
                 .put("presentation", spec.presentation)
+                .put(
+                    "permissions",
+                    JSONArray(spec.permissions.sorted())
+                )
                 .put("entry", spec.entry)
                 .put("runtime", spec.runtime)
                 .put("programBytes", program.size)
@@ -243,6 +253,10 @@ class RiftRappManager(context: Context) {
                 manifest.optString("engine")
             ).trim()
         val presentation = manifest.getString("presentation").trim()
+        val permissions =
+            readPermissions(
+                manifest
+            )
 
         validateIdentity(id, name, launcherIcon)
         validateRuntimeContract(abi, adapter, presentation)
@@ -345,6 +359,10 @@ class RiftRappManager(context: Context) {
             .put("adapter", adapter)
             .put("engine", adapter)
             .put("presentation", presentation)
+            .put(
+                "permissions",
+                JSONArray(permissions.sorted())
+            )
             .put("programSha256", manifest.getString("programSha256"))
             .put("runtimeSha256", manifest.getString("runtimeSha256"))
             .put("installedPath", "/C:/Programs/$id")
@@ -442,6 +460,11 @@ class RiftRappManager(context: Context) {
                         runtime.optString("presentation")
                     )
                     .put(
+                        "permissions",
+                        runtime.optJSONArray("permissions")
+                            ?: JSONArray()
+                    )
+                    .put(
                         "path",
                         "/C:/Programs/$id"
                     )
@@ -474,6 +497,10 @@ class RiftRappManager(context: Context) {
                 runtime.optString("engine")
             ).trim()
         val presentation = runtime.getString("presentation").trim()
+        val permissions =
+            readPermissions(
+                runtime
+            )
         validateRuntimeContract(abi, adapter, presentation)
 
         val programName = runtime.optString("program", PROGRAM_ENTRY)
@@ -521,6 +548,7 @@ class RiftRappManager(context: Context) {
             abi = abi,
             adapter = adapter,
             presentation = presentation,
+            permissions = permissions,
             program = program,
             runtime = runtimeBytes
         )
@@ -567,6 +595,10 @@ class RiftRappManager(context: Context) {
         val presentation =
             json.optString("presentation")
                 .trim()
+        val permissions =
+            readPermissions(
+                json
+            )
         validateRuntimeContract(abi, adapter, presentation)
 
         val entry = json.optString("entry").trim()
@@ -581,6 +613,7 @@ class RiftRappManager(context: Context) {
             abi,
             adapter,
             presentation,
+            permissions,
             entry,
             runtime
         )
@@ -667,6 +700,9 @@ class RiftRappManager(context: Context) {
                 manifest.optString("engine")
             ).trim()
         val presentation = manifest.optString("presentation").trim()
+        readPermissions(
+            manifest
+        )
         validateRuntimeContract(abi, adapter, presentation)
 
         val programBytes = program!!
@@ -768,6 +804,50 @@ class RiftRappManager(context: Context) {
                     ?.optString("schema") == PACKAGE_SCHEMA
         }.getOrDefault(false)
 
+    private fun readPermissions(
+        json: JSONObject
+    ): Set<String> {
+        val array =
+            json.optJSONArray(
+                "permissions"
+            )
+                ?: JSONArray()
+
+        require(array.length() <= 32) {
+            "RAPP permission declaration count is out of bounds"
+        }
+
+        val out =
+            linkedSetOf<String>()
+
+        for (
+            index in
+                0 until array.length()
+        ) {
+            val capability =
+                array.optString(
+                    index
+                )
+                    .trim()
+
+            require(
+                capability in
+                    RiftAppAbi.Capability.DECLARABLE
+            ) {
+                "RAPP declares unsupported capability: $capability"
+            }
+            require(
+                out.add(
+                    capability
+                )
+            ) {
+                "RAPP declares duplicate capability: $capability"
+            }
+        }
+
+        return out
+    }
+
     private fun validateRuntimeContract(
         abi: String,
         adapter: String,
@@ -781,6 +861,21 @@ class RiftRappManager(context: Context) {
         }
         require(SAFE_TOKEN.matches(presentation)) {
             "RAPP presentation id is invalid"
+        }
+
+        val runtimeAdapter =
+            RiftAppAdapters.find(
+                adapter
+            )
+                ?: error(
+                    "Unsupported RiftOS app adapter: $adapter"
+                )
+
+        require(
+            runtimeAdapter.presentation ==
+                presentation
+        ) {
+            "RAPP presentation does not match adapter"
         }
     }
 

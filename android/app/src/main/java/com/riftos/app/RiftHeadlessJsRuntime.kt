@@ -26,6 +26,13 @@ class RiftHeadlessJsRuntime(context: Context) {
         private const val MAX_STATE_BYTES = 64 * 1024
         private const val MAX_STATE_KEY_BYTES = 4 * 1024
         private const val MAX_STATE_FILES = 256
+        private const val MAX_SOFTWARE_SOURCE_BYTES = 256 * 1024
+        private const val MAX_SOFTWARE_EXPECTED_BYTES = 64 * 1024
+        private const val MAX_SOFTWARE_CONTEXT_BYTES = 256 * 1024
+        private const val MAX_SOFTWARE_METADATA_BYTES = 4 * 1024
+        private const val MAX_SOFTWARE_OUTPUT_BYTES = 64 * 1024
+        private const val MAX_SOFTWARE_OUTPUT_LINES = 256
+        private const val SOFTWARE_JS_TIMEOUT_MS = 15_000L
         private const val EVALUATION_TIMEOUT_MS = 120_000L
         private const val QJS_EVALUATION_TIMEOUT_MS = 30_000L
         private const val MAX_QJS_SOURCE_BYTES = 256 * 1024
@@ -141,6 +148,14 @@ class RiftHeadlessJsRuntime(context: Context) {
                 }
                 function("__rift_state_remove") { values ->
                     stateRemove(values.getOrNull(0)?.toString().orEmpty(), values.getOrNull(1)?.toString().orEmpty())
+                }
+                function("__rift_software_asset") { values ->
+                    val root = softwareCaseRoot(values.getOrNull(0)?.toString().orEmpty(), cwd)
+                    softwareModelAsset(root, values.getOrNull(1)?.toString().orEmpty())
+                }
+                function("__rift_software_compile_test") { values ->
+                    val root = softwareCaseRoot(values.getOrNull(0)?.toString().orEmpty(), cwd)
+                    softwareCompileTest(root, values.getOrNull(1)?.toString().orEmpty())
                 }
 
                 evaluate<Any?>(Scripts.POLYFILLS, filename = "rift-headless-polyfills.js")
@@ -716,6 +731,86 @@ class RiftHeadlessJsRuntime(context: Context) {
         if (!file.exists()) return false
         require(file.isFile) { "Invalid Rift++ state record" }
         return file.delete()
+    }
+
+    private fun softwareCaseRoot(rawPath: String, cwd: String): File {
+        val root = resolveFile(rawPath, cwd)
+        require(root.isDirectory) { "Software-eval case root is not a directory" }
+        return root
+    }
+
+    private fun softwareAsset(root: File, name: String, maxBytes: Int, optional: Boolean = false): String {
+        require(name.matches(Regex("^[a-z0-9-]+\\.txt$"))) { "Invalid software-eval asset name" }
+        val file = File(root, name).canonicalFile
+        require(file.parentFile == root.canonicalFile) { "Software-eval asset escaped case root" }
+        if (!file.exists() && optional) return ""
+        require(file.isFile) { "Software-eval asset is missing: $name" }
+        require(file.length() in 0L..maxBytes.toLong()) { "Software-eval asset exceeds bound: $name" }
+        return file.readText(Charsets.UTF_8)
+    }
+
+    private fun softwareModelAsset(root: File, field: String): String = when (field) {
+        "language" -> softwareAsset(root, "software-language.txt", MAX_SOFTWARE_METADATA_BYTES).trim().lowercase()
+        "source" -> softwareAsset(root, "software-case.txt", MAX_SOFTWARE_SOURCE_BYTES)
+        "spec" -> softwareAsset(root, "software-spec.txt", MAX_SOFTWARE_CONTEXT_BYTES)
+        "context" -> softwareAsset(root, "software-context.txt", MAX_SOFTWARE_CONTEXT_BYTES, optional = true)
+        "caseId" -> softwareAsset(root, "software-case-id.txt", MAX_SOFTWARE_METADATA_BYTES).trim()
+        else -> error("Software-eval model asset is not exposed: $field")
+    }
+
+    private fun softwareCompileTest(root: File, candidateSource: String): String {
+        val candidateBytes = canonicalUtf8Bytes(candidateSource)
+        require(candidateBytes.isNotEmpty() && candidateBytes.size <= MAX_SOFTWARE_SOURCE_BYTES) {
+            "Software-eval candidate source is empty or exceeds bound"
+        }
+        val language = softwareModelAsset(root, "language")
+        val expected = softwareAsset(root, "software-expected.txt", MAX_SOFTWARE_EXPECTED_BYTES)
+        return when (language) {
+            "javascript" -> verifyJavaScript(candidateSource, expected)
+            "cpp", "c++", "kotlin" -> error("Software verifier backend unavailable for $language")
+            else -> error("Unsupported software-eval language: $language")
+        }
+    }
+
+    private fun verifyJavaScript(source: String, expected: String): String {
+        val output = ArrayList<String>()
+        var outputBytes = 0
+        return try {
+            runBlocking {
+                quickJs {
+                    evaluationTimeoutMillis = SOFTWARE_JS_TIMEOUT_MS
+                    function("__rift_software_candidate") { source }
+                    function("__rift_software_log") { values ->
+                        val line = values.joinToString(" ") { it?.toString().orEmpty() }
+                        outputBytes += canonicalUtf8Bytes(line).size + 1
+                        require(output.size < MAX_SOFTWARE_OUTPUT_LINES && outputBytes <= MAX_SOFTWARE_OUTPUT_BYTES) {
+                            "Software-eval JavaScript output exceeded bound"
+                        }
+                        output += line
+                        Unit
+                    }
+                    evaluate<Any?>(
+                        """
+                        (function(){
+                          const console = Object.freeze({log:(...values)=>__rift_software_log(...values)});
+                          const candidate = String(__rift_software_candidate());
+                          const program = new Function('console', candidate);
+                          program(console);
+                        })();
+                        """.trimIndent(),
+                        filename = "software-verifier.js"
+                    )
+                }
+            }
+            if (output.joinToString("\n") == expected) "correct" else "wrong"
+        } catch (error: Throwable) {
+            val message = error.message.orEmpty()
+            if (message.contains("SyntaxError", ignoreCase = true) || message.contains("syntax", ignoreCase = true)) {
+                "compile-fail"
+            } else {
+                "wrong"
+            }
+        }
     }
 
     private fun atomicWrite(target: File, bytes: ByteArray) {
@@ -1985,7 +2080,8 @@ class RiftHeadlessJsRuntime(context: Context) {
                 'riftpp help\nriftpp version\nriftpp self-test\nriftpp check <source.riftpp>\n' +
                 'riftpp compile <source.riftpp> [output.rxe]\nriftpp inspect <source.riftpp|program.rxe>\n' +
                 'riftpp run <source.riftpp>\nriftpp exec <program.rxe>\n' +
-                'riftpp run-stateful <source.riftpp> <namespace>\nriftpp exec-stateful <program.rxe> <namespace>';
+                'riftpp run-stateful <source.riftpp> <namespace>\nriftpp exec-stateful <program.rxe> <namespace>\n' +
+                'riftpp run-software <source.riftpp> <case-dir>\nriftpp exec-software <program.rxe> <case-dir>';
 
               const normalizePath = value => {
                 const raw = String(value || '').replaceAll('\\\\','/');
@@ -2059,9 +2155,13 @@ class RiftHeadlessJsRuntime(context: Context) {
                 targetAbi: result.executable.abi
               });
 
-              const execute = async (raw, label, hostMode = 'none', stateNamespace = '') => {
+              const execute = async (raw, label, hostMode = 'none', hostArg = '') => {
                 const info = vm.inspectRiftExecutable(raw);
-                const allowedImports = hostMode === 'state' ? new Set(['state.load','state.save','state.remove']) : new Set();
+                const allowedImports = hostMode === 'state'
+                  ? new Set(['state.load','state.save','state.remove'])
+                  : hostMode === 'software'
+                    ? new Set(['software.caseId','software.compileTest','software.context','software.language','software.source','software.spec'])
+                    : new Set();
                 const deniedImports = info.imports.filter(method => !allowedImports.has(method));
                 if (deniedImports.length) throw new Error('riftpp shell execution denies host imports: ' + deniedImports.join(', '));
                 const lines = [];
@@ -2074,11 +2174,22 @@ class RiftHeadlessJsRuntime(context: Context) {
                     lines.push(text);
                   },
                   invoke: async (method, args) => {
-                    if (hostMode !== 'state') throw new Error('riftpp shell host imports are disabled');
-                    if (method === 'state.load') return __rift_state_load(stateNamespace, String(args[0] ?? ''));
-                    if (method === 'state.save') return __rift_state_save(stateNamespace, String(args[0] ?? ''), String(args[1] ?? ''));
-                    if (method === 'state.remove') return __rift_state_remove(stateNamespace, String(args[0] ?? ''));
-                    throw new Error('riftpp stateful execution denied host import: ' + method);
+                    if (hostMode === 'state') {
+                      if (method === 'state.load') return __rift_state_load(hostArg, String(args[0] ?? ''));
+                      if (method === 'state.save') return __rift_state_save(hostArg, String(args[0] ?? ''), String(args[1] ?? ''));
+                      if (method === 'state.remove') return __rift_state_remove(hostArg, String(args[0] ?? ''));
+                      throw new Error('riftpp stateful execution denied host import: ' + method);
+                    }
+                    if (hostMode === 'software') {
+                      if (method === 'software.language') return __rift_software_asset(hostArg, 'language');
+                      if (method === 'software.spec') return __rift_software_asset(hostArg, 'spec');
+                      if (method === 'software.context') return __rift_software_asset(hostArg, 'context');
+                      if (method === 'software.caseId') return __rift_software_asset(hostArg, 'caseId');
+                      if (method === 'software.source') return __rift_software_asset(hostArg, 'source');
+                      if (method === 'software.compileTest') return __rift_software_compile_test(hostArg, String(args[0] ?? ''));
+                      throw new Error('riftpp software execution denied host import: ' + method);
+                    }
+                    throw new Error('riftpp shell host imports are disabled');
                   }
                 };
                 const result = await vm.executeRiftExecutable(raw, host, {maxSteps:100000,maxStack:1024,maxCallDepth:32,yieldEvery:512});
@@ -2148,6 +2259,14 @@ class RiftHeadlessJsRuntime(context: Context) {
               if (sub === 'exec-stateful') {
                 const path = execPath(args[0]), namespace = stateNamespaceArg(args[1]), executed = await execute(read(path), path, 'state', namespace);
                 finish({backend:'headless-quickjs',hostMode:'state',namespace:namespace,steps:executed.result.steps,prints:executed.result.prints}); return;
+              }
+              if (sub === 'run-software') {
+                const path = sourcePath(args[0]), caseDir = normalizePath(args[1]), source = read(path), result = compileSource(path, source), executed = await execute(result.executable, path, 'software', caseDir);
+                finish({backend:'headless-quickjs',hostMode:'software',caseDir:caseDir,steps:executed.result.steps,prints:executed.result.prints}); return;
+              }
+              if (sub === 'exec-software') {
+                const path = execPath(args[0]), caseDir = normalizePath(args[1]), executed = await execute(read(path), path, 'software', caseDir);
+                finish({backend:'headless-quickjs',hostMode:'software',caseDir:caseDir,steps:executed.result.steps,prints:executed.result.prints}); return;
               }
               throw new Error('unknown riftpp command: ' + sub + '\n' + usage);
             })();

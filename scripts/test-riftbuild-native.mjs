@@ -12,10 +12,12 @@ const installerPath = 'android/app/src/main/java/com/riftos/app/RiftBuildInstall
 const appAbiPath = 'android/app/src/main/java/com/riftos/app/RiftAppAbi.kt';
 const rappAdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappRiftppAdapter.kt';
 const rappWs15AdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappRiftppWs15Adapter.kt';
+const rappGenericAdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappRiftppGenericAdapter.kt';
+const rappCapabilityBrokerPath = 'android/app/src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt';
 const rappAbsoluteViewPath = 'android/app/src/main/java/com/riftos/app/RiftRappAbsoluteView.kt';
 const rappHostPath = 'android/app/src/main/java/com/riftos/app/RiftRappHost.kt';
 const rappManagerPath = 'android/app/src/main/java/com/riftos/app/RiftRappManager.kt';
-for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, appAbiPath, rappAdapterPath, rappWs15AdapterPath, rappAbsoluteViewPath, rappHostPath, rappManagerPath]) {
+for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, appAbiPath, rappAdapterPath, rappWs15AdapterPath, rappGenericAdapterPath, rappCapabilityBrokerPath, rappAbsoluteViewPath, rappHostPath, rappManagerPath]) {
   assert.ok(exists(file), 'RiftBuild source owner is missing: ' + file);
 }
 
@@ -27,6 +29,8 @@ const installer = read(installerPath);
 const appAbi = read(appAbiPath);
 const rappAdapter = read(rappAdapterPath);
 const rappWs15Adapter = read(rappWs15AdapterPath);
+const rappGenericAdapter = read(rappGenericAdapterPath);
+const rappCapabilityBroker = read(rappCapabilityBrokerPath);
 const rappAbsoluteView = read(rappAbsoluteViewPath);
 const rappHost = read(rappHostPath);
 const rappManager = read(rappManagerPath);
@@ -199,6 +203,9 @@ for (const required of [
   '/C:/Programs',
   'programSha256',
   'runtimeSha256',
+  '"permissions"',
+  'RiftAppAbi.Capability.DECLARABLE',
+  'RiftAppAdapters.find',
 ]) assert.ok(rappManager.includes(required), 'RAPP manager contract missing: ' + required);
 assert.doesNotMatch(rappManager, /RiftApkV2Signer|PackageInstaller/, 'RAPP manager must remain independent of APK signing/install');
 assert.match(appAbi, /riftos-app-abi\/1/);
@@ -208,15 +215,40 @@ assert.match(rappAdapter, /RiftppUiCodec\.parse/);
 assert.match(rappAdapter, /RPE2/);
 assert.match(rappAdapter, /riftpp-rpa2-v1/);
 assert.match(appAbi, /RiftRappRiftppWs15Adapter/);
-assert.match(appAbi, /nextProgram/);
+assert.match(appAbi, /RiftRappRiftppGenericAdapter/);
+assert.match(appAbi, /HOST_EFFECT_RESULT/);
+assert.match(appAbi, /data class HostEffect/);
+assert.match(appAbi, /data class RuntimeOutput/);
+assert.match(appAbi, /permissions: Set<String>/);
+assert.match(appAbi, /fun decodeOutput/);
 assert.match(rappWs15Adapter, /riftpp-rws2-rui3-v1/);
 assert.match(rappWs15Adapter, /RPE3/);
 assert.match(rappWs15Adapter, /RUI3/);
 assert.match(rappWs15Adapter, /RWS2/);
+assert.match(rappGenericAdapter, /riftpp-generic-v1/);
+assert.match(rappGenericAdapter, /RPE4/);
+assert.match(rappGenericAdapter, /RWS4/);
+assert.match(rappGenericAdapter, /RUI3/);
+assert.match(rappGenericAdapter, /EventKind\.HOST_EFFECT_RESULT/);
+assert.match(rappGenericAdapter, /NodeKind\.ROOT\.\./);
+assert.match(rappCapabilityBroker, /class RiftRappCapabilityBroker/);
+assert.match(rappCapabilityBroker, /setting:permissions:/);
+assert.match(rappCapabilityBroker, /Capability\.FS_READ/);
+assert.match(rappCapabilityBroker, /Capability\.FS_WRITE/);
+assert.match(rappCapabilityBroker, /Capability\.CLIPBOARD_READ/);
+assert.match(rappCapabilityBroker, /Capability\.WINDOW_TITLE/);
 assert.match(rappAbsoluteView, /Layout\.ABSOLUTE/);
 assert.match(rappAbsoluteView, /POINTER_MOVE/);
+assert.match(rappAbsoluteView, /NodeKind\.TEXT_INPUT/);
+assert.match(rappAbsoluteView, /NodeKind\.ACTION/);
+assert.match(rappAbsoluteView, /EventKind\.TEXT_INPUT/);
+assert.match(rappAbsoluteView, /EventKind\.KEY_DOWN/);
+assert.match(rappAbsoluteView, /EventKind\.DISPLAY_RESIZE/);
 assert.match(rappHost, /session\.program/);
-assert.match(rappHost, /nextProgram\(output\)/);
+assert.match(rappHost, /decodeOutput/);
+assert.match(rappHost, /resolveHostEffect/);
+assert.match(rappHost, /pendingEvents/);
+assert.match(rappHost, /HOST_EFFECT_RESULT/);
 assert.match(rappHost, /RiftBoundedAsync\.submit/);
 assert.match(rappHost, /RiftNativeBufferCompilerService\.compile/);
 assert.match(rappHost, /RiftAppAbi\.Event/);
@@ -226,6 +258,8 @@ assert.match(rappHost, /showLaunchFailure/);
 assert.match(rappHost, /runCatching \{[\s\S]*?open\(id\)/);
 assert.match(mainActivity, /rappHost = RiftRappHost\(this, nativeDesktop, ::populateNativeLauncher\)/);
 assert.match(mainActivity, /rappHost\.openFromLauncher\(id\)/);
+assert.match(mainActivity, /rappHost\.onResume\(\)/);
+assert.match(mainActivity, /rappHost\.onPause\(\)/);
 
 for (const required of [
   'class RiftApkV2Signer',
@@ -798,7 +832,7 @@ assert.match(appHost, /"build\.prepare" -> withCapability\(instance, id, "build\
 assert.match(appHost, /"build\.submit" -> withCapability\(instance, id, "build\.local"\) \{ riftBuild\.submit\(args\) \}/);
 assert.match(appHost, /private val riftBuild = RiftBuildLocalExecutor\(activity\.applicationContext\)/);
 
-for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftBuildNativeToolchain.kt', 'RiftBuildNativeApp.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt', 'RiftAppAbi.kt', 'RiftRappRiftppAdapter.kt', 'RiftRappHost.kt', 'RiftRappManager.kt']) {
+for (const source of ['RiftBoundedAsync.kt', 'RiftBuildLocalExecutor.kt', 'RiftBuildNativeToolchain.kt', 'RiftBuildNativeApp.kt', 'RiftApkV2Signer.kt', 'RiftBuildInstaller.kt', 'RiftAppAbi.kt', 'RiftRappRiftppAdapter.kt', 'RiftRappRiftppWs15Adapter.kt', 'RiftRappRiftppGenericAdapter.kt', 'RiftRappCapabilityBroker.kt', 'RiftRappAbsoluteView.kt', 'RiftRappHost.kt', 'RiftRappManager.kt']) {
   assert.ok(gradle.includes('src/main/java/com/riftos/app/' + source), 'Gradle exact source snapshot omitted ' + source);
 }
 assert.ok(gradle.includes('sourceSets["main"].assets.directories.add("build/generated/riftosAssets")'), 'Gradle must package generated RiftOS assets');

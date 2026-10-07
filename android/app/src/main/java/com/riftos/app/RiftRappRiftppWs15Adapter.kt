@@ -17,6 +17,14 @@ object RiftRappRiftppWs15Adapter :
     override val presentation: String =
         "rui3"
 
+    override fun supportsEventKind(
+        kind: Int
+    ): Boolean =
+        kind == RiftAppAbi.EventKind.BOOT ||
+            kind == RiftAppAbi.EventKind.POINTER_DOWN ||
+            kind == RiftAppAbi.EventKind.POINTER_MOVE ||
+            kind == RiftAppAbi.EventKind.POINTER_UP
+
     private const val RPE3_HEADER_BYTES =
         40
     private const val RWS2_HEADER_BYTES =

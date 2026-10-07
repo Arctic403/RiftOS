@@ -14,6 +14,7 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftNativeGit.kt` | [`git`](../../../../../../../../docs/systems/git/README.md) + [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |
 | `RiftBrowserWindow.kt` | [`browser`](../../../../../../../../docs/systems/browser/README.md) |
 | `RiftBuildLocalExecutor.kt` | [`riftbuild`](../../../../../../../../docs/systems/riftbuild/README.md) + [`build-validation`](../../../../../../../../docs/systems/build-validation/README.md) |
+| `RiftAppAbi.kt`, `RiftRappManager.kt`, `RiftRappHost.kt`, `RiftRappAbsoluteView.kt`, `RiftRappRiftppAdapter.kt`, `RiftRappRiftppWs15Adapter.kt`, `RiftRappRiftppGenericAdapter.kt`, `RiftRappCapabilityBroker.kt` | [`riftbuild`](../../../../../../../../docs/systems/riftbuild/README.md) |
 | `RiftBrowserEngine.kt`, `RiftBrowserAndroidWebViewEngine.kt` | [`browser/engine`](../../../../../../../../docs/systems/browser/engine/README.md) |
 | `RiftBrowserMcpAppBridge.kt` | [`browser/mcp-compat`](../../../../../../../../docs/systems/browser/mcp-compat/README.md) |
 | `RiftMcpRuntime.kt`, `RiftMcpActivity.kt` | [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |

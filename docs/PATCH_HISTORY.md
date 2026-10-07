@@ -6,6 +6,22 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.64 — generic RAPP runtime completion / stable Rift++ app boundary
+
+This patch completes the RiftOS-native RAPP boundary as a generic platform contract rather than adding editor-specific host cases. The architectural goal is that future Rift++ editor/application evolution changes the runtime/package, not RiftOS, unless a genuinely new platform capability must be implemented.
+
+`RiftAppAbi.kt` keeps `riftos-app-abi/1` as the language-neutral host boundary and now carries the complete current event surface, including pointer, key, text-input, display-resize, lifecycle and generic `HOST_EFFECT_RESULT` delivery. Events carry target id, four integer arguments, bounded UTF-8 text and an opaque bounded byte payload. Generic nodes remain `ROOT`, `SURFACE`, `TEXT`, `TEXT_INPUT`, `ACTION`, and `IMAGE`. Runtime payloads now carry optional manifest-declared capability names, and runtime responses may request at most one ordered generic host effect; effects are chained through result events rather than hard-coding operations such as Open/Save into the host.
+
+Two older Rift++ adapters remain compatibility lanes: `riftpp-rpa2-v1` for RPE2/RUI2 and `riftpp-rws2-rui3-v1` for the pointer/stateful WS15 RPE3/RWS2/RUI3 lane already used by live RAPP proofs. New Rift++ runtime work targets `riftpp-generic-v1` in `RiftRappRiftppGenericAdapter.kt`. Its RPE4 envelope carries the ABI event losslessly (kind, target id, args, text, bytes and program state); its RWS4 response carries next program state, a RUI3 frame and an optional generic host-effect request. The host does not parse Rift++ application semantics.
+
+`RiftRappHost.kt` now serializes each app's event/effect chain with a bounded per-session queue, updates opaque next-state through `decodeOutput`, and resolves generic effects before allowing later input to overtake the transaction. `RiftRappAbsoluteView.kt` is upgraded from pointer-only painting to a generic absolute ViewGroup that still paints root/surface/text/image nodes while hosting live text-input and action child controls; it emits text, key, pointer and resize events only when the selected adapter advertises support. Flow-column text inputs/actions receive the same support gating so existing RPA2 packages remain compatible. MainActivity forwards resume/pause only through the generic RAPP lifecycle surface.
+
+`RiftRappManager.kt` now preserves optional `permissions` declarations through project -> package -> install -> launch, rejects unknown capabilities, and validates adapter/presentation identity at packaging/install time. `RiftRappCapabilityBroker.kt` uses the same persisted permission-grant store and capability names already used by other RiftOS apps. Current implemented operations are confined text filesystem read/list/write, clipboard read/write, text sharing and window-title updates. Network/build capability names are reserved in the stable broker vocabulary but remain unsupported until a real platform implementation is intentionally added. Filesystem policy mirrors the existing browser-app confinement: app-owned installed files are read-only; writes remain inside approved D: user/project/AppData roots.
+
+Focused `test-riftbuild-native.mjs`, Gradle's exact Kotlin source snapshot, subsystem docs, component index and SOURCE_OWNERSHIP are updated to include the generic adapter and capability broker. The historical RAPP/WS15 runtime remains untouched so already-installed apps retain their existing protocol.
+
+Lifecycle is **GENERIC RAPP SOURCE STAGED / BUILDER-KOTLIN GATE PENDING / DEVICE RPE4-RWS4 PROOF PENDING**. Promotion requires source validation, Android Kotlin compilation/package verification, one RiftOS update install, then a live `riftpp-generic-v1` RAPP proof covering real text input, independent multi-document state, resize/lifecycle delivery and at least one generic capability result.
+
 ## Patch 10.63 — Rift++ Android R8 native key-semantics lane
 
 R8 forks only from the exact preserved 3,248-byte R7 mutable-buffer proof ELF SHA-256 `c489adfd62155b3f916819726cde543eee91e54faefdd371c48c7413c5d6b49a`.
