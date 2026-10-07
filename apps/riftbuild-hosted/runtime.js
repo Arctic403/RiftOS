@@ -159,7 +159,7 @@ function signDescribe(s,e){
   const m=JSON.parse(e.text||'{}'),cert=dec(m.certificateDerBase64||''),pub=dec(m.publicKeyDerBase64||''),dig=dec(s.sign.digest);
   if(!cert.length||!pub.length)throw Error('signing identity public material missing');
   const signed=seq(algRecord(0x0103,dig),seq(cert),[]);
-  s.sign.cert=m.certificateDerBase64;s.sign.pub=m.publicKeyDerBase64;s.sign.signedData=enc(signed);s.status='Signing: AndroidKeyStore RSA/SHA-256';
+  s.sign.cert=m.certificateDerBase64;s.sign.pub=m.publicKeyDerBase64;s.sign.signedData=enc(signed);s.status='Signing: host RSA/SHA-256';
   return req(s,'signing.identity','signSha256RsaPkcs1','',signed,{k:'sign-rsa'});
 }
 function signRsa(s,e){
