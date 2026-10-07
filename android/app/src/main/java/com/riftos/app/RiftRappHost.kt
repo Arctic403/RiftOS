@@ -446,8 +446,18 @@ class RiftRappHost(
                             "RAPP next program state is out of bounds"
                         }
 
-                        session.program =
-                            nextProgram.copyOf()
+                        if (
+                            !nextProgram.contentEquals(
+                                session.program
+                            )
+                        ) {
+                            manager.persistState(
+                                session.id,
+                                nextProgram
+                            )
+                            session.program =
+                                nextProgram.copyOf()
+                        }
                     }
 
                 EventOutcome(

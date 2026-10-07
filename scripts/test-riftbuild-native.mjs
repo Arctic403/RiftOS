@@ -203,6 +203,8 @@ for (const required of [
   '/C:/Programs',
   'programSha256',
   'runtimeSha256',
+  'state.bin',
+  'persistState',
   '"permissions"',
   'RiftAppAbi.Capability.DECLARABLE',
   'RiftAppAdapters.find',
@@ -245,6 +247,7 @@ assert.match(rappAbsoluteView, /EventKind\s*\.\s*TEXT_INPUT/);
 assert.match(rappAbsoluteView, /EventKind\s*\.\s*KEY_DOWN/);
 assert.match(rappAbsoluteView, /EventKind\s*\.\s*DISPLAY_RESIZE/);
 assert.match(rappHost, /session\.program/);
+assert.match(rappHost, /manager\.persistState/);
 assert.match(rappHost, /decodeOutput/);
 assert.match(rappHost, /resolveHostEffect/);
 assert.match(rappHost, /pendingEvents/);

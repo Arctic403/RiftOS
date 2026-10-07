@@ -62,6 +62,7 @@ class RiftRappManager(context: Context) {
         private const val PACKAGE_MANIFEST = "manifest.json"
         private const val PROGRAM_ENTRY = "program.bin"
         private const val RUNTIME_ENTRY = "runtime.bin"
+        private const val STATE_ENTRY = "state.bin"
         private const val MAX_MANIFEST_BYTES = 64 * 1024
         private const val MAX_PROGRAM_BYTES = 1024 * 1024
         private const val MAX_RUNTIME_BYTES = 1024 * 1024
@@ -537,6 +538,25 @@ class RiftRappManager(context: Context) {
             "Installed RAPP runtime hash mismatch"
         }
 
+        val stateFile =
+            File(root, STATE_ENTRY)
+                .canonicalFile
+        require(confinedTo(root, stateFile)) {
+            "Installed RAPP state escaped program root"
+        }
+        val effectiveProgram =
+            if (stateFile.exists()) {
+                require(stateFile.isFile) {
+                    "Installed RAPP state is not a file"
+                }
+                readBounded(
+                    stateFile,
+                    MAX_PROGRAM_BYTES
+                )
+            } else {
+                program
+            }
+
         return InstalledApp(
             id = manifest.getString("id"),
             name = manifest
@@ -549,8 +569,34 @@ class RiftRappManager(context: Context) {
             adapter = adapter,
             presentation = presentation,
             permissions = permissions,
-            program = program,
+            program = effectiveProgram,
             runtime = runtimeBytes
+        )
+    }
+
+    fun persistState(
+        id: String,
+        state: ByteArray
+    ) {
+        require(SAFE_ID.matches(id)) {
+            "RAPP id is invalid"
+        }
+        require(state.size in 1..MAX_PROGRAM_BYTES) {
+            "RAPP persisted state is out of bounds"
+        }
+        val metadata =
+            readInstalledMetadata(id)
+                ?: error("Installed RAPP not found: $id")
+        val root = metadata.first
+        val stateFile =
+            File(root, STATE_ENTRY)
+                .canonicalFile
+        require(confinedTo(root, stateFile)) {
+            "RAPP persisted state escaped program root"
+        }
+        writeAtomic(
+            stateFile,
+            state.copyOf()
         )
     }
 
