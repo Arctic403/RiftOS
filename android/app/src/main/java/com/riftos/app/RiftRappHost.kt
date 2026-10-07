@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
 import java.lang.ref.WeakReference
@@ -662,6 +663,21 @@ class RiftRappHost(
                 )
             }
 
+        val scroll =
+            ScrollView(activity).apply {
+                isFillViewport =
+                    true
+                addView(
+                    root,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams
+                            .MATCH_PARENT,
+                        ViewGroup.LayoutParams
+                            .WRAP_CONTENT
+                    )
+                )
+            }
+
         val textNodes =
             LinkedHashMap<Int, TextView>()
         val inputNodes =
@@ -1127,7 +1143,7 @@ class RiftRappHost(
             }
         }
 
-        return root
+        return scroll
     }
 
     private fun renderAbsolute(

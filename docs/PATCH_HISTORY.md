@@ -6,6 +6,12 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.65 — generic FLOW_COLUMN overflow boundary
+
+Live `riftbuild-hosted` device testing exposed a generic RAPP layout boundary: a `FLOW_COLUMN` whose content exceeded its desktop window could measure a `TEXT_INPUT` down to zero height while later controls/log rows remained present. `RiftRappHost.kt` now scroll-contains every generic `FLOW_COLUMN` frame with a fill-viewport `ScrollView`; the inner vertical layout and all existing generic event/state semantics remain unchanged. This is a reusable host boundary for all RAPPs, not a RiftBuild-specific renderer case.
+
+The hosted RiftBuild provider also no longer appends `Project changed` on every path keystroke. Project edits still invalidate stale preflight/pack/sign/verify state immediately, but typing no longer grows the frame structure/log on every character. `test-riftbuild-native.mjs` now guards both the generic scroll boundary and the absence of per-keystroke project log spam. Device re-proof requires editing a long project path without input collapse, then hosted Preflight -> Pack -> Sign -> Verify against the current Rift++ editor hot-path prepared tree.
+
 ## Patch 10.64 — generic RAPP runtime completion / stable Rift++ app boundary
 
 This patch completes the RiftOS-native RAPP boundary as a generic platform contract rather than adding editor-specific host cases. The architectural goal is that future Rift++ editor/application evolution changes the runtime/package, not RiftOS, unless a genuinely new platform capability must be implemented.
